@@ -94,7 +94,18 @@ function createMockPrisma() {
 			mustChangePassword: data.mustChangePassword ?? false,
 			createdAt: new Date("2024-01-01T00:00:00Z"),
 		})),
+		updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		delete: vi.fn().mockResolvedValue(undefined),
+	};
+
+	const oidcAccountMock = {
+		count: vi.fn().mockResolvedValue(0),
+		updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+	};
+	const oidcProviderMock = {
+		findFirst: vi.fn().mockResolvedValue(null),
+		findUnique: vi.fn().mockResolvedValue(null),
+		updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 	};
 
 	return {
@@ -103,23 +114,21 @@ function createMockPrisma() {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
-		oIDCAccount: {
-			count: vi.fn().mockResolvedValue(0),
-		},
+		oIDCAccount: oidcAccountMock,
 		webAuthnCredential: {
 			count: vi.fn().mockResolvedValue(0),
 		},
-		oIDCProvider: {
-			findFirst: vi.fn().mockResolvedValue(null),
-			findUnique: vi.fn().mockResolvedValue(null),
-		},
+		oIDCProvider: oidcProviderMock,
 		session: {
 			findMany: vi.fn().mockResolvedValue([]),
 		},
 		// $transaction: execute the callback with the same prisma mock as `tx`
 		$transaction: vi.fn().mockImplementation(async (fn: (tx: any) => Promise<any>) => {
-			// The tx object exposes the same user methods
-			return fn({ user: userMock });
+			return fn({
+				user: userMock,
+				oIDCAccount: oidcAccountMock,
+				oIDCProvider: oidcProviderMock,
+			});
 		}),
 	};
 }
@@ -471,6 +480,65 @@ describe("PATCH /auth/account", () => {
 
 		expect(res.statusCode).toBe(200);
 		expect(hashPassword).toHaveBeenCalledWith("NewPass123!");
+	});
+});
+
+describe("DELETE /auth/password", () => {
+	const oidcProvider = {
+		id: 1,
+		enabled: true,
+		clientId: "arr-dashboard",
+		encryptedClientSecret: "encrypted-secret",
+		clientSecretIv: "secret-iv",
+		issuer: "https://auth.example.com",
+		redirectUri: "https://arr.example.com/auth/oidc/callback",
+		scopes: "openid,email,profile",
+	};
+
+	beforeEach(() => {
+		mockPrisma.user.findUnique.mockResolvedValue(makeUser());
+		mockPrisma.oIDCAccount.count.mockResolvedValue(1);
+		mockPrisma.oIDCProvider.findUnique.mockResolvedValue(oidcProvider);
+	});
+
+	it("revalidates the provider, link, and password in one transaction", async () => {
+		const res = await injectAuthenticated("DELETE", "/auth/password", {
+			body: { currentPassword: "oldpassword1" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.oIDCProvider.updateMany).toHaveBeenCalledWith({
+			where: {
+				...oidcProvider,
+				enabled: true,
+			},
+			data: { updatedAt: expect.any(Date) },
+		});
+		expect(mockPrisma.oIDCAccount.updateMany).toHaveBeenCalledWith({
+			where: { userId: "user-1" },
+			data: { updatedAt: expect.any(Date) },
+		});
+		expect(mockPrisma.user.updateMany).toHaveBeenCalledWith({
+			where: {
+				id: "user-1",
+				hashedPassword: "$argon2id$existing-hash",
+			},
+			data: { hashedPassword: null },
+		});
+	});
+
+	it("does not remove the replacement password after provider deletion wins the race", async () => {
+		mockPrisma.oIDCProvider.updateMany.mockResolvedValueOnce({ count: 0 });
+
+		const res = await injectAuthenticated("DELETE", "/auth/password", {
+			body: { currentPassword: "oldpassword1" },
+		});
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).error).toContain("Authentication settings changed");
+		expect(mockPrisma.oIDCAccount.updateMany).not.toHaveBeenCalled();
+		expect(mockPrisma.user.updateMany).not.toHaveBeenCalled();
+		expect(mockSessionService.invalidateAllUserSessions).not.toHaveBeenCalled();
 	});
 });
 

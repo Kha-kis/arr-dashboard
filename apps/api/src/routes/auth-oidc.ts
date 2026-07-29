@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { FastifyPluginCallback } from "fastify";
 import * as oauth from "oauth4webapi";
 import { z } from "zod";
@@ -16,6 +16,13 @@ interface OIDCStateData {
 	nonce: string;
 	codeVerifier: string;
 	expiresAt: number;
+	intent: "login" | "link" | "test";
+	/**
+	 * The authenticated admin who explicitly initiated an account-link flow.
+	 * The session digest binds the callback to the same still-active session.
+	 */
+	linkUserId?: string;
+	linkSessionDigest?: string;
 }
 
 const oidcStateStore = new Map<string, OIDCStateData>();
@@ -46,6 +53,10 @@ const oidcCallbackSchema = z.object({
 	state: z.string(),
 });
 
+const oidcLoginSchema = z.object({
+	intent: z.enum(["login", "link", "test"]).default("login"),
+});
+
 const oidcSetupSchema = z.object({
 	displayName: z.string().min(1).max(100),
 	clientId: z.string().min(1),
@@ -57,6 +68,7 @@ const oidcSetupSchema = z.object({
 
 const OIDC_SETUP_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 const OIDC_LOGIN_RATE_LIMIT = { max: 10, timeWindow: "1 minute" };
+const OIDC_PROVIDER_CHANGED = "OIDC_PROVIDER_CHANGED";
 
 const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
@@ -212,6 +224,15 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		"/oidc/login",
 		{ config: { rateLimit: OIDC_LOGIN_RATE_LIMIT } },
 		async (request, reply) => {
+			const { intent } = validateRequest(oidcLoginSchema, request.body ?? {});
+			const isAccountAction = intent === "link" || intent === "test";
+
+			if (isAccountAction && (!request.currentUser || !request.sessionToken)) {
+				return reply.status(401).send({
+					error: "Authentication is required to link or test an OIDC account.",
+				});
+			}
+
 			// Get OIDC configuration from database
 			const dbProvider = await app.prisma.oIDCProvider.findFirst({
 				where: { enabled: true },
@@ -254,6 +275,11 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				nonce,
 				codeVerifier,
 				expiresAt: Date.now() + 15 * 60 * 1000,
+				intent,
+				linkUserId: isAccountAction ? request.currentUser!.id : undefined,
+				linkSessionDigest: isAccountAction
+					? createHash("sha256").update(request.sessionToken!).digest("base64url")
+					: undefined,
 			});
 
 			try {
@@ -335,6 +361,21 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		// Remove state to prevent replay attacks
 		oidcStateStore.delete(state);
 
+		if (storedState.intent === "link" || storedState.intent === "test") {
+			const callbackSessionDigest = request.sessionToken
+				? createHash("sha256").update(request.sessionToken).digest("base64url")
+				: undefined;
+			if (
+				request.currentUser?.id !== storedState.linkUserId ||
+				callbackSessionDigest !== storedState.linkSessionDigest
+			) {
+				return reply.status(401).send({
+					error:
+						"The OIDC account action expired because the initiating session is no longer active. Sign in and try again.",
+				});
+			}
+		}
+
 		request.log.info({ hasCode: !!code }, "Processing OIDC callback");
 
 		// Get OIDC configuration from database
@@ -345,6 +386,17 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		if (!dbProvider) {
 			return reply.status(500).send({ error: "OIDC provider configuration error" });
 		}
+
+		const providerAuthVersion = {
+			id: dbProvider.id,
+			enabled: true,
+			clientId: dbProvider.clientId,
+			encryptedClientSecret: dbProvider.encryptedClientSecret,
+			clientSecretIv: dbProvider.clientSecretIv,
+			issuer: dbProvider.issuer,
+			redirectUri: dbProvider.redirectUri,
+			scopes: dbProvider.scopes,
+		};
 
 		// Decrypt client secret
 		const clientSecret = app.encryptor.decrypt({
@@ -362,6 +414,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		try {
 			let createdInitialUser = false;
+			const isAccountAction = storedState.intent === "link" || storedState.intent === "test";
 			// Convert query object to URLSearchParams for oauth4webapi
 			const queryParams = new URLSearchParams();
 			for (const [key, value] of Object.entries(request.query as Record<string, string>)) {
@@ -409,7 +462,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			request.log.info({ sub: userInfo.sub }, "Retrieved user info from OIDC provider");
 
 			// Find existing OIDC account
-			let oidcAccount = await app.prisma.oIDCAccount.findUnique({
+			const oidcAccount = await app.prisma.oIDCAccount.findUnique({
 				where: {
 					providerUserId: userInfo.sub,
 				},
@@ -417,87 +470,182 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 
 			let user: { id: string; username: string };
+			let replaceOidcLink = false;
+			let revalidateOidcLink = false;
 
-			if (oidcAccount) {
+			if (storedState.intent === "link") {
+				if (oidcAccount && oidcAccount.user.id !== storedState.linkUserId) {
+					return reply.status(409).send({
+						error: "This OIDC identity is already linked to another account.",
+					});
+				}
+				user = {
+					id: storedState.linkUserId!,
+					username: request.currentUser!.username,
+				};
+				replaceOidcLink = true;
+			} else if (storedState.intent === "test") {
+				if (!oidcAccount || oidcAccount.user.id !== storedState.linkUserId) {
+					return reply.status(401).send({
+						error:
+							"This OIDC identity is not linked to the admin account. Use Link Account to add it explicitly.",
+					});
+				}
+				user = oidcAccount.user;
+			} else if (oidcAccount) {
 				// Existing OIDC account - log them in
 				user = oidcAccount.user;
+				revalidateOidcLink = true;
 			} else {
-				// New OIDC account - check if user is authenticated or if this is setup
+				// User is not authenticated - check if this is initial setup
+				// Use transaction to atomically check user count and create user
+				// This prevents race condition where two concurrent callbacks both create admin accounts
+				try {
+					const newUser = await app.prisma.$transaction(async (tx) => {
+						// Check if any users exist (must be inside transaction for atomicity)
+						const userCount = await tx.user.count();
 
-				// Check if user is currently authenticated (has active session)
-				const currentUser = request.currentUser;
+						if (userCount > 0) {
+							throw new Error("SETUP_COMPLETE");
+						}
 
-				if (currentUser) {
-					// User is logged in - link OIDC to their account
-					oidcAccount = await app.prisma.oIDCAccount.create({
-						data: {
-							providerUserId: userInfo.sub,
-							userId: currentUser.id,
-						},
-						include: { user: true },
-					});
-					user = oidcAccount.user;
-				} else {
-					// User is not authenticated - check if this is initial setup
-					// Use transaction to atomically check user count and create user
-					// This prevents race condition where two concurrent callbacks both create admin accounts
-					try {
-						const newUser = await app.prisma.$transaction(async (tx) => {
-							// Check if any users exist (must be inside transaction for atomicity)
-							const userCount = await tx.user.count();
+						// Initial setup - create admin account atomically
+						const username = userInfo.preferred_username ?? `user_${userInfo.sub}`;
 
-							if (userCount > 0) {
-								throw new Error("SETUP_COMPLETE");
-							}
-
-							// Initial setup - create admin account atomically
-							const username = userInfo.preferred_username ?? `user_${userInfo.sub}`;
-
-							return await tx.user.create({
-								data: {
-									username,
-									hashedPassword: null, // OIDC-only user (no password)
-									oidcAccounts: {
-										create: {
-											providerUserId: userInfo.sub,
-										},
+						return await tx.user.create({
+							data: {
+								username,
+								hashedPassword: null, // OIDC-only user (no password)
+								oidcAccounts: {
+									create: {
+										providerUserId: userInfo.sub,
 									},
 								},
-							});
+							},
 						});
+					});
 
-						user = newUser;
-						createdInitialUser = true;
-					} catch (error) {
-						if (error instanceof Error && error.message === "SETUP_COMPLETE") {
-							// Setup already completed by concurrent request
-							return reply.status(401).send({
-								error:
-									"Cannot link OIDC account without authentication. Please log in first and add OIDC from settings.",
-							});
-						}
-						throw error;
+					user = newUser;
+					createdInitialUser = true;
+				} catch (error) {
+					if (error instanceof Error && error.message === "SETUP_COMPLETE") {
+						// Setup already completed by concurrent request
+						return reply.status(401).send({
+							error:
+								"Cannot sign in with an unlinked OIDC account. Sign in with your password, then use Link Account in Settings > Authentication.",
+						});
 					}
+					throw error;
 				}
 			}
 
 			// Create session with metadata
 			const metadata = getSessionMetadata(request);
-			const session = await app.sessionService.createSession(user.id, true, metadata);
-			app.sessionService.attachCookie(reply, session.token, true);
+			const session = isAccountAction
+				? await app.sessionService.rotateActiveSession(
+						request.sessionToken!,
+						user.id,
+						metadata,
+						replaceOidcLink
+							? {
+									onRotate: async (tx) => {
+										const providerStillCurrent = await tx.oIDCProvider.updateMany({
+											where: providerAuthVersion,
+											data: { updatedAt: new Date() },
+										});
+										if (providerStillCurrent.count !== 1) {
+											throw new Error(OIDC_PROVIDER_CHANGED);
+										}
+										await tx.oIDCAccount.deleteMany({
+											where: { userId: user.id },
+										});
+										await tx.oIDCAccount.create({
+											data: {
+												providerUserId: userInfo.sub,
+												userId: user.id,
+											},
+										});
+									},
+									revokeOtherSessions: true,
+								}
+							: {
+									onRotate: async (tx) => {
+										const providerStillCurrent = await tx.oIDCProvider.updateMany({
+											where: providerAuthVersion,
+											data: { updatedAt: new Date() },
+										});
+										if (providerStillCurrent.count !== 1) {
+											throw new Error(OIDC_PROVIDER_CHANGED);
+										}
+									},
+								},
+					)
+				: revalidateOidcLink
+					? await app.sessionService.createSessionIfAuthorized(
+							user.id,
+							true,
+							metadata,
+							async (tx) => {
+								const providerStillCurrent = await tx.oIDCProvider.updateMany({
+									where: providerAuthVersion,
+									data: { updatedAt: new Date() },
+								});
+								if (providerStillCurrent.count !== 1) {
+									return false;
+								}
+								const linked = await tx.oIDCAccount.updateMany({
+									where: {
+										providerUserId: userInfo.sub,
+										userId: user.id,
+									},
+									data: { updatedAt: new Date() },
+								});
+								return linked.count === 1;
+							},
+						)
+					: await app.sessionService.createSession(user.id, true, metadata);
+
+			if (!session) {
+				return reply.status(401).send({
+					error: isAccountAction
+						? "The OIDC account action expired because the initiating session is no longer active. Sign in and try again."
+						: "This OIDC identity is no longer linked. Sign in with another method and try again.",
+				});
+			}
+			app.sessionService.attachCookie(
+				reply,
+				session.token,
+				true,
+				isAccountAction ? session.expiresAt : undefined,
+			);
 
 			// Pre-warm connections to ARR instances in background (don't await)
 			warmConnectionsForUser(app, user.id).catch((err) => {
 				request.log.debug({ err }, "Connection warm-up wrapper error (non-critical)");
 			});
 
-			const redirectPath = createdInitialUser ? "/setup?stage=services" : "/";
+			const redirectPath = createdInitialUser
+				? "/setup?stage=services"
+				: isAccountAction
+					? "/settings#authentication"
+					: "/";
 			request.log.info(
 				{ userId: user.id, username: user.username, redirectPath },
 				"OIDC authentication successful",
 			);
 			return reply.redirect(redirectPath, 302);
 		} catch (error: unknown) {
+			if (error instanceof Error && error.message === OIDC_PROVIDER_CHANGED) {
+				request.log.warn(
+					{ providerId: dbProvider.id },
+					"OIDC provider changed while an account link was in progress",
+				);
+				return reply.status(409).send({
+					error:
+						"The OIDC provider changed while the account action was in progress. Start the action again with the current provider configuration.",
+				});
+			}
+
 			const errMsg = getErrorMessage(error);
 			const errStack = error instanceof Error ? error.stack : undefined;
 			request.log.error(

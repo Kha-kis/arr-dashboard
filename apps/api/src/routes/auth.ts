@@ -578,11 +578,51 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		// Remove password
-		await app.prisma.user.update({
-			where: { id: request.currentUser.id },
-			data: { hashedPassword: null },
+		const passwordRemoved = await app.prisma.$transaction(async (tx) => {
+			// Take the same provider write boundary used by OIDC callbacks and
+			// provider deletion. Matching auth fields instead of updatedAt allows
+			// simultaneous valid logins while rejecting a real configuration change.
+			const providerStillCurrent = await tx.oIDCProvider.updateMany({
+				where: {
+					id: oidcProvider.id,
+					enabled: true,
+					clientId: oidcProvider.clientId,
+					encryptedClientSecret: oidcProvider.encryptedClientSecret,
+					clientSecretIv: oidcProvider.clientSecretIv,
+					issuer: oidcProvider.issuer,
+					redirectUri: oidcProvider.redirectUri,
+					scopes: oidcProvider.scopes,
+				},
+				data: { updatedAt: new Date() },
+			});
+			if (providerStillCurrent.count !== 1) {
+				return false;
+			}
+
+			const linkedAccount = await tx.oIDCAccount.updateMany({
+				where: { userId: request.currentUser!.id },
+				data: { updatedAt: new Date() },
+			});
+			if (linkedAccount.count === 0) {
+				return false;
+			}
+
+			const removed = await tx.user.updateMany({
+				where: {
+					id: request.currentUser!.id,
+					hashedPassword: user.hashedPassword,
+				},
+				data: { hashedPassword: null },
+			});
+			return removed.count === 1;
 		});
+
+		if (!passwordRemoved) {
+			return reply.status(409).send({
+				error:
+					"Authentication settings changed while the password was being removed. Review the current sign-in methods and try again.",
+			});
+		}
 
 		request.log.info("Password removed");
 
