@@ -26,6 +26,17 @@ export function buildQuiNotificationTargetName(
 	return `arr-dashboard-${installationId}-${deploymentId}`;
 }
 
+export function buildQuiNotificationTargetOwnerId(
+	installationId: string,
+	userId: string,
+	serviceInstanceId: string,
+): string {
+	return createHash("sha256")
+		.update(`${installationId}\0${userId}\0${serviceInstanceId}`)
+		.digest("hex")
+		.slice(0, 24);
+}
+
 export function registerWebhookRoutes(app: FastifyInstance): void {
 	// The dashboard runs as one Node process, so a per-user in-memory queue
 	// is sufficient to make secret rotation and qUI target registration one
@@ -147,7 +158,11 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 	 * Unknown query keys are forwarded by Shoutrrr, so `secret` reaches
 	 * arr-dashboard without being treated as generic-service configuration.
 	 */
-	function buildQuiNotificationTargetUrl(baseUrl: string, secret?: string): string {
+	function buildQuiNotificationTargetUrl(
+		baseUrl: string,
+		secret?: string,
+		source?: { instanceId: string; ownerId: string },
+	): string {
 		const callback = new URL(`${baseUrl}/api/webhooks/qui`);
 		const usesPlainHttp = callback.protocol === "http:";
 		if (!usesPlainHttp && callback.protocol !== "https:") {
@@ -163,6 +178,10 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 		}
 		if (secret) {
 			target.searchParams.set("secret", secret);
+		}
+		if (source) {
+			target.searchParams.set("instanceId", source.instanceId);
+			target.searchParams.set("owner", source.ownerId);
 		}
 		return target.toString();
 	}
@@ -247,12 +266,17 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 				// The plaintext is supplied per-request in the validated body; we
 				// don't have it on the server. The frontend captures it from the
 				// rotate response and forwards it here.
-				const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret);
+				const ownerId = buildQuiNotificationTargetOwnerId(app.installationId, userId, instance.id);
+				const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret, {
+					instanceId: instance.id,
+					ownerId,
+				});
 
 				try {
 					const created = await client.ensureNotificationTarget({
 						name: buildQuiNotificationTargetName(app.installationId, userId, instance.baseUrl),
 						url: targetUrl,
+						ownerId,
 						eventTypes: body.eventTypes,
 						enabled: true,
 					});

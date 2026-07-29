@@ -24,6 +24,9 @@ function createMockPrisma(userRow: unknown) {
 		user: {
 			findUnique: vi.fn().mockResolvedValue(userRow),
 		},
+		serviceInstance: {
+			findFirst: vi.fn().mockResolvedValue({ id: "qui-1" }),
+		},
 		quiEventLog: {
 			create: vi.fn().mockResolvedValue({
 				id: "evt-row-1",
@@ -111,6 +114,7 @@ describe("POST /webhooks/qui", () => {
 		expect(mockPrisma.quiEventLog.create).toHaveBeenCalledOnce();
 		const createArgs = mockPrisma.quiEventLog.create.mock.calls[0]?.[0];
 		expect(createArgs.data.userId).toBe("user-1");
+		expect(createArgs.data.serviceInstanceId).toBeNull();
 		expect(createArgs.data.eventType).toBe("torrent_added");
 		// Hash extraction must pull the per-torrent hash out of the
 		// payload — otherwise the My Events tab can't deep-link to the
@@ -118,6 +122,39 @@ describe("POST /webhooks/qui", () => {
 		expect(createArgs.data.torrentHash).toBe("a".repeat(40));
 		// Bus publish hits exactly one subscriber for this user.
 		expect(seen).toHaveLength(1);
+	});
+
+	it("authenticates and persists the registered qUI source instance", async () => {
+		const res = await app.inject({
+			method: "POST",
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=qui-1`,
+			payload: {
+				type: "torrent_added",
+				payload: { hash: "a".repeat(40) },
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.serviceInstance.findFirst).toHaveBeenCalledWith({
+			where: { id: "qui-1", userId: "user-1", service: "QUI" },
+			select: { id: true },
+		});
+		const createArgs = mockPrisma.quiEventLog.create.mock.calls[0]?.[0];
+		expect(createArgs.data.serviceInstanceId).toBe("qui-1");
+	});
+
+	it("rejects a source instance that is not a qUI instance owned by the secret's user", async () => {
+		mockPrisma.serviceInstance.findFirst.mockResolvedValueOnce(null);
+
+		const res = await app.inject({
+			method: "POST",
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=other-instance`,
+			payload: { type: "torrent_added", payload: {} },
+		});
+
+		expect(res.statusCode).toBe(401);
+		expect(JSON.parse(res.payload)).toEqual({ error: "Invalid webhook source" });
+		expect(mockPrisma.quiEventLog.create).not.toHaveBeenCalled();
 	});
 
 	it("normalizes qUI's Shoutrrr JSON notification body", async () => {

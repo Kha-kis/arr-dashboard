@@ -178,6 +178,8 @@ export interface QuiClient {
 	ensureNotificationTarget(args: {
 		name: string;
 		url: string;
+		/** Stable local owner marker used to reconcile a renamed target. */
+		ownerId?: string;
 		eventTypes?: string[];
 		enabled?: boolean;
 	}): Promise<{ id: number }>;
@@ -712,7 +714,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			});
 		},
 
-		async ensureNotificationTarget({ name, url, eventTypes, enabled = true }) {
+		async ensureNotificationTarget({ name, url, ownerId, eventTypes, enabled = true }) {
 			type NotificationTarget = z.infer<typeof quiNotificationTargetSchema>;
 			const redactSecret = (message: string) => message.replace(/secret=[^&\s"']+/g, "secret=***");
 			const requestOptions = {
@@ -763,13 +765,20 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				target.url === url &&
 				target.enabled === enabled &&
 				sameEventTypes(target.eventTypes);
+			const isOwned = (target: NotificationTarget): boolean => {
+				if (target.name === name) return true;
+				if (!ownerId) return false;
+				try {
+					return new URL(target.url).searchParams.get("owner") === ownerId;
+				} catch {
+					return false;
+				}
+			};
 
 			const reconcile = async (
 				targets: NotificationTarget[],
 			): Promise<NotificationTarget | null> => {
-				const matches = targets
-					.filter((target) => target.name === name)
-					.sort((left, right) => left.id - right.id);
+				const matches = targets.filter(isOwned).sort((left, right) => left.id - right.id);
 				const primary = matches[0];
 				if (!primary) return null;
 

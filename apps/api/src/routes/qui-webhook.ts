@@ -60,7 +60,7 @@ const QUI_NOTIFICATION_EVENT_TYPES: Readonly<Record<string, string>> = {
 };
 
 const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
-	app.post<{ Querystring: { secret?: string } }>(
+	app.post<{ Querystring: { secret?: string; instanceId?: string } }>(
 		"/webhooks/qui",
 		{
 			// Conservative bounds for an inbound notification body. qui's
@@ -82,6 +82,17 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 				return reply.status(401).send({ error: "Invalid or missing secret" });
 			}
 
+			const instanceId = request.query?.instanceId;
+			const sourceInstance = instanceId
+				? await app.prisma.serviceInstance.findFirst({
+						where: { id: instanceId, userId: user.id, service: "QUI" },
+						select: { id: true },
+					})
+				: null;
+			if (instanceId && !sourceInstance) {
+				return reply.status(401).send({ error: "Invalid webhook source" });
+			}
+
 			const envelope = normalizeQuiWebhookBody(request.body);
 			if (!envelope) {
 				return reply.status(400).send({ error: "Malformed event envelope" });
@@ -97,6 +108,7 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 				const row = await app.prisma.quiEventLog.create({
 					data: {
 						userId: user.id,
+						serviceInstanceId: sourceInstance?.id ?? null,
 						eventType: envelope.type,
 						torrentHash,
 						payload: JSON.stringify(envelope),

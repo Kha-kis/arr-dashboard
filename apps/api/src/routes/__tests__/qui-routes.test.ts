@@ -69,7 +69,10 @@ import Fastify, { type FastifyRequest } from "fastify";
 import { InstanceNotFoundError } from "../../lib/errors.js";
 import { hashSecret } from "../../lib/qui/webhook-secret.js";
 import { registerQuiRoutes } from "../qui.js";
-import { buildQuiNotificationTargetName } from "../qui/webhook-routes.js";
+import {
+	buildQuiNotificationTargetName,
+	buildQuiNotificationTargetOwnerId,
+} from "../qui/webhook-routes.js";
 import {
 	createInjectAuthenticated,
 	createMockEncryptor,
@@ -906,6 +909,10 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(targetUrl.searchParams.get("template")).toBe("json");
 		expect(targetUrl.searchParams.get("disabletls")).toBe("yes");
 		expect(targetUrl.searchParams.get("secret")).toBe(secret);
+		expect(targetUrl.searchParams.get("instanceId")).toBe("qui-1");
+		const ownerId = buildQuiNotificationTargetOwnerId("installation-1", "user-1", "qui-1");
+		expect(targetUrl.searchParams.get("owner")).toBe(ownerId);
+		expect(call.ownerId).toBe(ownerId);
 		expect(call.eventTypes).toEqual(["torrent_added"]);
 		expect(call.enabled).toBe(true);
 	});

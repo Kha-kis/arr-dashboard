@@ -582,6 +582,50 @@ describe("createQuiClient", () => {
 			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("PUT");
 		});
 
+		it("renames an owned target after the qUI base URL changes instead of creating a duplicate", async () => {
+			const previousTarget = {
+				...target,
+				name: "arr-dashboard-previous-deployment",
+				url: `${target.url}&owner=owner-1&instanceId=qui-1`,
+			};
+			const desiredTarget = {
+				...previousTarget,
+				name: "arr-dashboard-current-deployment",
+			};
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([previousTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(desiredTarget), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: desiredTarget.name,
+					url: desiredTarget.url,
+					ownerId: "owner-1",
+					eventTypes: desiredTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(2);
+			expect(String(fetchSpy.mock.calls[1]?.[0])).toBe(
+				"http://qui.test/api/notifications/targets/42",
+			);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("PUT");
+			expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toMatchObject({
+				name: desiredTarget.name,
+			});
+		});
+
 		it("expands an empty requested event list and resets an existing subset", async () => {
 			const allEventTypes = ["torrent_added", "torrent_completed"];
 			fetchSpy
