@@ -270,8 +270,8 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 			detail: `${appUrlSource} is not a valid public URL.`,
 			severity: "warning",
 			remediation: configuredPublicAppUrl
-				? "Update External URL in Settings → System to an http(s) URL without surrounding whitespace, a query string, fragment, or repeated trailing slashes."
-				: "Set APP_URL to an http(s) URL without surrounding whitespace, a query string, fragment, or repeated trailing slashes.",
+				? "Update External URL in Settings → System to an http(s) URL without embedded credentials, surrounding whitespace, a query string, fragment, or repeated trailing slashes."
+				: "Set APP_URL to an http(s) URL without embedded credentials, surrounding whitespace, a query string, fragment, or repeated trailing slashes.",
 		});
 	} else if (isProduction && !appUrlIsHttps) {
 		checks.push({
@@ -360,6 +360,8 @@ function isValidPublicBaseUrl(value: string): boolean {
 		const url = new URL(value);
 		return (
 			(url.protocol === "http:" || url.protocol === "https:") &&
+			url.username === "" &&
+			url.password === "" &&
 			value === value.trim() &&
 			!value.includes("?") &&
 			!value.includes("#") &&

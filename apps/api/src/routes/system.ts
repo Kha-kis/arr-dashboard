@@ -212,6 +212,12 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						error: "External URL must use http or https protocol",
 					});
 				}
+				if (url.username || url.password) {
+					return reply.status(400).send({
+						success: false,
+						error: "External URL must not include credentials",
+					});
+				}
 				if (normalizedExternalUrl.includes("?") || normalizedExternalUrl.includes("#")) {
 					return reply.status(400).send({
 						success: false,
