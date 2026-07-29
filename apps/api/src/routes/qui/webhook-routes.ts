@@ -9,6 +9,13 @@ import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { QUI_INSTANCE_PARAM, safeParseJson } from "./qui-shared.js";
 
+export function buildQuiNotificationTargetName(
+	installationId: string,
+	serviceInstanceId: string,
+): string {
+	return `arr-dashboard-${installationId}-${serviceInstanceId}`;
+}
+
 export function registerWebhookRoutes(app: FastifyInstance): void {
 	// The dashboard runs as one Node process, so a per-user in-memory queue
 	// is sufficient to make secret rotation and qUI target registration one
@@ -234,7 +241,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 
 				try {
 					const created = await client.ensureNotificationTarget({
-						name: `arr-dashboard-${instance.id}`,
+						name: buildQuiNotificationTargetName(app.installationId, instance.id),
 						url: targetUrl,
 						eventTypes: body.eventTypes,
 						enabled: true,

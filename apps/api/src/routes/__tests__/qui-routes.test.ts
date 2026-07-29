@@ -69,6 +69,7 @@ import Fastify, { type FastifyRequest } from "fastify";
 import { InstanceNotFoundError } from "../../lib/errors.js";
 import { hashSecret } from "../../lib/qui/webhook-secret.js";
 import { registerQuiRoutes } from "../qui.js";
+import { buildQuiNotificationTargetName } from "../qui/webhook-routes.js";
 import {
 	createInjectAuthenticated,
 	createMockEncryptor,
@@ -154,6 +155,7 @@ beforeEach(async () => {
 	app = Fastify();
 	app.decorate("prisma", mockPrisma);
 	app.decorate("encryptor", createMockEncryptor("test-api-key"));
+	app.decorate("installationId", "installation-1");
 	app.decorate("arrClientFactory", { rawRequest: vi.fn() });
 	// Phase 5.1 — webhook-config routes resolve the public base URL via
 	// `app.config.APP_URL`. The real plugin wires this from validated env;
@@ -834,6 +836,12 @@ describe("POST /qui/webhook-config/rotate", () => {
 });
 
 describe("POST /qui/instances/:id/webhook-config/register", () => {
+	it("uses different target ownership names for restored database clones", () => {
+		expect(buildQuiNotificationTargetName("installation-a", "qui-1")).not.toBe(
+			buildQuiNotificationTargetName("installation-b", "qui-1"),
+		);
+	});
+
 	it("rejects with 409 when no secret has been generated yet", async () => {
 		mockPrisma.user.findUniqueOrThrow.mockResolvedValue({ hashedQuiWebhookSecret: null });
 		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
@@ -878,7 +886,7 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(res.statusCode).toBe(200);
 		expect(JSON.parse(res.payload)).toMatchObject({ ok: true, quiTargetId: 42 });
 		const call = mockQuiClient.ensureNotificationTarget.mock.calls[0]?.[0];
-		expect(call.name).toBe("arr-dashboard-qui-1");
+		expect(call.name).toBe("arr-dashboard-installation-1-qui-1");
 		const targetUrl = new URL(call.url);
 		expect(targetUrl.protocol).toBe("generic:");
 		expect(targetUrl.host).toBe("arr-dashboard.test:3000");
