@@ -555,13 +555,14 @@ describe("createQuiClient", () => {
 			expect(fetchSpy.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
 		});
 
-		it("upgrades a matching pre-owner arr-dashboard target in place", async () => {
+		it("reports manual cleanup when an old-secret legacy target cannot prove ownership", async () => {
 			const legacyTarget = {
 				...target,
 				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=old",
 			};
 			const desiredTarget = {
 				...legacyTarget,
+				id: 99,
 				name: "arr-dashboard-installation-deployment",
 				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=new&instanceId=qui-1&deploymentId=deployment-1&owner=owner-1",
 			};
@@ -574,6 +575,12 @@ describe("createQuiClient", () => {
 				)
 				.mockResolvedValueOnce(
 					new Response(JSON.stringify(desiredTarget), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([legacyTarget, desiredTarget]), {
 						status: 200,
 						headers: { "content-type": "application/json" },
 					}),
@@ -585,17 +592,15 @@ describe("createQuiClient", () => {
 					name: desiredTarget.name,
 					url: desiredTarget.url,
 					ownerId: "owner-1",
-					legacyTargetAdoption: "callback",
+					legacyTargetAdoption: "secret",
+					reportLegacyCleanupRequired: true,
 					eventTypes: desiredTarget.eventTypes,
 				}),
-			).resolves.toEqual({ id: 42 });
+			).resolves.toEqual({ id: 99, legacyCleanupRequired: true });
 
-			expect(fetchSpy).toHaveBeenCalledTimes(2);
-			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("PUT");
-			expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toMatchObject({
-				name: desiredTarget.name,
-				url: desiredTarget.url,
-			});
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+			expect(fetchSpy.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
 		});
 
 		it("upgrades an exact-secret legacy target when shared deployment adoption requires it", async () => {

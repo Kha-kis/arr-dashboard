@@ -181,10 +181,12 @@ export interface QuiClient {
 		/** Stable local owner marker used to reconcile a renamed target. */
 		ownerId?: string;
 		/** Evidence required before migrating a fixed-name, ownerless target. */
-		legacyTargetAdoption?: "callback" | "secret" | "never";
+		legacyTargetAdoption?: "secret" | "never";
+		/** Report an unowned enabled legacy target so the operator can remove it manually. */
+		reportLegacyCleanupRequired?: boolean;
 		eventTypes?: string[];
 		enabled?: boolean;
-	}): Promise<{ id: number; cleanupPending?: boolean }>;
+	}): Promise<{ id: number; cleanupPending?: boolean; legacyCleanupRequired?: boolean }>;
 	/**
 	 * Trigger a qui dir-scan for a specific path. Maps to qui's
 	 * `POST /api/dirscan/webhook` endpoint, which accepts a simple
@@ -721,6 +723,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			url,
 			ownerId,
 			legacyTargetAdoption = "never",
+			reportLegacyCleanupRequired = false,
 			eventTypes,
 			enabled = true,
 		}) {
@@ -795,6 +798,19 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					return null;
 				}
 			})();
+			const isLegacyCandidate = (target: NotificationTarget): boolean => {
+				if (!target.enabled || target.name !== "arr-dashboard") return false;
+				try {
+					const targetUrl = new URL(target.url);
+					return (
+						!targetUrl.searchParams.has("owner") &&
+						desiredCallbackIdentity !== null &&
+						callbackIdentity(target.url) === desiredCallbackIdentity
+					);
+				} catch {
+					return false;
+				}
+			};
 			const isOwned = (target: NotificationTarget): boolean => {
 				if (target.name === name) return true;
 				try {
@@ -803,14 +819,10 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 						return true;
 					}
 					return (
-						target.name === "arr-dashboard" &&
-						!targetUrl.searchParams.has("owner") &&
-						(legacyTargetAdoption === "callback" ||
-							(legacyTargetAdoption === "secret" &&
-								desiredSecret !== null &&
-								targetUrl.searchParams.get("secret") === desiredSecret)) &&
-						desiredCallbackIdentity !== null &&
-						callbackIdentity(target.url) === desiredCallbackIdentity
+						isLegacyCandidate(target) &&
+						legacyTargetAdoption === "secret" &&
+						desiredSecret !== null &&
+						targetUrl.searchParams.get("secret") === desiredSecret
 					);
 				} catch {
 					return false;
@@ -893,11 +905,20 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				return { target: reconciled, cleanupPending };
 			};
 
-			const existing = await reconcile(await listTargets());
+			const initialTargets = await listTargets();
+			const legacyCleanupRequired =
+				reportLegacyCleanupRequired &&
+				initialTargets.some((target) => isLegacyCandidate(target) && !isOwned(target));
+			const resultStatus = (cleanupPending = false) => ({
+				...(cleanupPending ? { cleanupPending: true as const } : {}),
+				...(legacyCleanupRequired ? { legacyCleanupRequired: true as const } : {}),
+			});
+
+			const existing = await reconcile(initialTargets);
 			if (existing) {
 				return {
 					id: existing.target.id,
-					...(existing.cleanupPending ? { cleanupPending: true } : {}),
+					...resultStatus(existing.cleanupPending),
 				};
 			}
 
@@ -917,7 +938,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					if (recovered) {
 						return {
 							id: recovered.target.id,
-							...(recovered.cleanupPending ? { cleanupPending: true } : {}),
+							...resultStatus(recovered.cleanupPending),
 						};
 					}
 				} catch {
@@ -932,12 +953,12 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			try {
 				afterCreate = await listTargets();
 			} catch {
-				return { id: created.id, cleanupPending: true };
+				return { id: created.id, ...resultStatus(true) };
 			}
 			const reconciled = await reconcile(afterCreate);
 			return {
 				id: reconciled?.target.id ?? created.id,
-				...(reconciled?.cleanupPending ? { cleanupPending: true } : {}),
+				...resultStatus(reconciled?.cleanupPending),
 			};
 		},
 

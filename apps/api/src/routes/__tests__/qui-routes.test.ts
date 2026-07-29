@@ -949,7 +949,8 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		const ownerId = buildQuiNotificationTargetOwnerId("installation-1", "user-1", "qui-1");
 		expect(targetUrl.searchParams.get("owner")).toBe(ownerId);
 		expect(call.ownerId).toBe(ownerId);
-		expect(call.legacyTargetAdoption).toBe("callback");
+		expect(call.legacyTargetAdoption).toBe("secret");
+		expect(call.reportLegacyCleanupRequired).toBe(true);
 		expect(call.eventTypes).toEqual(["torrent_added"]);
 		expect(call.enabled).toBe(true);
 	});
@@ -979,6 +980,7 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(res.statusCode).toBe(200);
 		expect(mockQuiClient.ensureNotificationTarget.mock.calls[0]?.[0]).toMatchObject({
 			legacyTargetAdoption: "secret",
+			reportLegacyCleanupRequired: false,
 		});
 	});
 
@@ -1003,6 +1005,7 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(res.statusCode).toBe(200);
 		expect(mockQuiClient.ensureNotificationTarget.mock.calls[0]?.[0]).toMatchObject({
 			legacyTargetAdoption: "never",
+			reportLegacyCleanupRequired: false,
 		});
 	});
 
@@ -1027,6 +1030,30 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 			quiTargetId: 42,
 			cleanupPending: true,
 			warning: expect.stringMatching(/cleanup remains pending/i),
+		});
+	});
+
+	it("reports manual cleanup when an ownerless legacy target cannot be verified", async () => {
+		const secret = "a".repeat(32);
+		mockPrisma.user.findUniqueOrThrow.mockResolvedValue({
+			hashedQuiWebhookSecret: hashSecret(secret),
+		});
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.ensureNotificationTarget.mockResolvedValue({
+			id: 42,
+			legacyCleanupRequired: true,
+		});
+
+		const res = await injectAuthenticated("POST", "/qui/instances/qui-1/webhook-config/register", {
+			body: { secret },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload)).toMatchObject({
+			ok: true,
+			quiTargetId: 42,
+			cleanupPending: true,
+			warning: expect.stringMatching(/remove the old arr-dashboard target manually/i),
 		});
 	});
 
