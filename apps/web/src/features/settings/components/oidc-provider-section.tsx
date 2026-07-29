@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { PremiumEmptyState, PremiumSection, PremiumSkeleton } from "../../../components/layout";
+import { ToggleSwitch } from "../../../components/layout/config-primitives";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
@@ -26,9 +27,9 @@ import {
 	useUpdateOIDCProvider,
 } from "../../../hooks/api/useOIDCProviders";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { initiateOIDCLogin } from "../../../lib/api-client/auth";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { ToggleSwitch } from "../../../components/layout/config-primitives";
 
 /**
  * Premium OIDC Provider Section
@@ -48,9 +49,12 @@ export const OIDCProviderSection = () => {
 	const deleteMutation = useDeleteOIDCProvider();
 
 	const provider = providerData?.provider;
+	const isLinked = providerData?.linked ?? false;
 
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
+	const [accountAction, setAccountAction] = useState<"link" | "test" | null>(null);
+	const isLinking = accountAction !== null;
 
 	// Form state for creating new provider
 	const [showCreateForm, setShowCreateForm] = useState(false);
@@ -88,7 +92,6 @@ export const OIDCProviderSection = () => {
 			};
 
 			await createMutation.mutateAsync(payload);
-			setSuccess("OIDC provider created successfully!");
 			setShowCreateForm(false);
 			setFormData({
 				displayName: "",
@@ -99,8 +102,48 @@ export const OIDCProviderSection = () => {
 				scopes: "openid,email,profile",
 				enabled: true,
 			});
+
+			if (payload.enabled) {
+				setSuccess("OIDC provider created. Redirecting you to link the admin account...");
+				setAccountAction("link");
+				try {
+					const authorizationUrl = await initiateOIDCLogin("link");
+					window.location.href = authorizationUrl;
+				} catch (linkError) {
+					setAccountAction(null);
+					setError(
+						getErrorMessage(
+							linkError,
+							"Provider was created, but the admin account could not be linked. Use the link button below to try again.",
+						),
+					);
+				}
+			} else {
+				setSuccess("OIDC provider created successfully!");
+			}
 		} catch (err) {
 			setError(getErrorMessage(err, "Failed to create OIDC provider"));
+		}
+	};
+
+	const handleAccountAction = async (intent: "link" | "test") => {
+		setError(null);
+		setSuccess(null);
+		setAccountAction(intent);
+
+		try {
+			const authorizationUrl = await initiateOIDCLogin(intent);
+			window.location.href = authorizationUrl;
+		} catch (err) {
+			setError(
+				getErrorMessage(
+					err,
+					intent === "link"
+						? "Failed to start OIDC account linking"
+						: "Failed to start OIDC account test",
+				),
+			);
+			setAccountAction(null);
 		}
 	};
 
@@ -346,7 +389,7 @@ export const OIDCProviderSection = () => {
 										) : (
 											<>
 												<Plus className="h-4 w-4" />
-												Create Provider
+												{formData.enabled ? "Create & Link Account" : "Create Provider"}
 											</>
 										)}
 									</Button>
@@ -603,6 +646,71 @@ export const OIDCProviderSection = () => {
 											<p className="text-xs text-muted-foreground">Scopes</p>
 											<p className="text-foreground">{provider.scopes}</p>
 										</div>
+									</div>
+								</div>
+
+								<div className="flex flex-col gap-3 rounded-lg border border-border/50 bg-card/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+									<div>
+										<p className="flex items-center gap-2 text-sm font-medium text-foreground">
+											Admin account
+											<span
+												className="rounded-full px-2 py-0.5 text-xs"
+												style={{
+													backgroundColor: isLinked
+														? SEMANTIC_COLORS.success.bg
+														: SEMANTIC_COLORS.warning.bg,
+													color: isLinked
+														? SEMANTIC_COLORS.success.text
+														: SEMANTIC_COLORS.warning.text,
+												}}
+											>
+												{isLinked ? "Linked" : "Not linked"}
+											</span>
+										</p>
+										<p className="text-xs text-muted-foreground">
+											{isLinked
+												? "An OIDC identity is linked. Test it before relying on this sign-in method. Relinking replaces the current identity and signs out other sessions."
+												: "Link this OIDC identity before signing out so it can access the dashboard."}
+										</p>
+									</div>
+									<div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row">
+										{isLinked && (
+											<Button
+												variant="outline"
+												onClick={() => handleAccountAction("link")}
+												disabled={!provider.enabled || isLinking}
+												className="gap-2"
+											>
+												{accountAction === "link" ? (
+													<>
+														<Loader2 className="h-4 w-4 animate-spin" />
+														Redirecting...
+													</>
+												) : (
+													<>
+														<Link className="h-4 w-4" />
+														Relink Account
+													</>
+												)}
+											</Button>
+										)}
+										<Button
+											onClick={() => handleAccountAction(isLinked ? "test" : "link")}
+											disabled={!provider.enabled || isLinking}
+											className="gap-2"
+										>
+											{accountAction === (isLinked ? "test" : "link") ? (
+												<>
+													<Loader2 className="h-4 w-4 animate-spin" />
+													Redirecting...
+												</>
+											) : (
+												<>
+													<Link className="h-4 w-4" />
+													{isLinked ? "Test Account" : "Link Account"}
+												</>
+											)}
+										</Button>
 									</div>
 								</div>
 							</div>

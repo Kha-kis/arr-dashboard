@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiEnv } from "../../config/env.js";
-import type { PrismaClient } from "../../lib/prisma.js";
+import type { Prisma, PrismaClient } from "../../lib/prisma.js";
 
 /**
  * Base cookie options for session management.
@@ -38,6 +38,11 @@ const hashToken = (token: string) => createHash("sha256").update(token).digest("
 export interface SessionMetadata {
 	userAgent?: string;
 	ipAddress?: string;
+}
+
+interface SessionRotationOptions {
+	onRotate?: (tx: Prisma.TransactionClient) => Promise<void>;
+	revokeOtherSessions?: boolean;
 }
 
 export class SessionService {
@@ -84,6 +89,106 @@ export class SessionService {
 				// The cookie is still cleared client-side, and the session expires via TTL.
 				this.logger?.debug({ err }, "Best-effort session deletion failed during logout");
 			});
+	}
+
+	/**
+	 * Atomically replace an active session and optionally perform an authorized
+	 * database mutation in the same transaction.
+	 *
+	 * Consuming the current session makes revocation and rotation race safely:
+	 * whichever transaction removes the session first wins. The callback only
+	 * runs when the exact session still belongs to the user and is unexpired.
+	 */
+	async rotateActiveSession(
+		token: string,
+		userId: string,
+		metadata?: SessionMetadata,
+		options?: SessionRotationOptions,
+	) {
+		const currentSessionId = hashToken(token);
+		const replacementToken = generateSessionToken();
+		const replacementSessionId = hashToken(replacementToken);
+
+		return this.prisma.$transaction(async (tx) => {
+			const currentSession = await tx.session.findUnique({
+				where: { id: currentSessionId },
+				select: {
+					userId: true,
+					expiresAt: true,
+				},
+			});
+			const now = new Date();
+			if (!currentSession || currentSession.userId !== userId || currentSession.expiresAt <= now) {
+				return null;
+			}
+
+			const consumed = await tx.session.deleteMany({
+				where: {
+					id: currentSessionId,
+					userId,
+					expiresAt: { gt: now },
+				},
+			});
+
+			if (consumed.count !== 1) {
+				return null;
+			}
+
+			await options?.onRotate?.(tx);
+			if (options?.revokeOtherSessions) {
+				await tx.session.deleteMany({
+					where: { userId },
+				});
+			}
+			await tx.session.create({
+				data: {
+					id: replacementSessionId,
+					userId,
+					expiresAt: currentSession.expiresAt,
+					userAgent: metadata?.userAgent,
+					ipAddress: metadata?.ipAddress,
+				},
+			});
+
+			return { token: replacementToken, expiresAt: currentSession.expiresAt };
+		});
+	}
+
+	/**
+	 * Create a session only when an authorization check succeeds inside the
+	 * same transaction. The check may take a write lock on the credential row
+	 * so a concurrent credential replacement can revoke the resulting session.
+	 */
+	async createSessionIfAuthorized(
+		userId: string,
+		rememberMe: boolean,
+		metadata: SessionMetadata | undefined,
+		authorize: (tx: Prisma.TransactionClient) => Promise<boolean>,
+	) {
+		const token = generateSessionToken();
+		const hashedToken = hashToken(token);
+		const ttlMs = rememberMe
+			? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60 * 1000
+			: this.env.SESSION_TTL_HOURS * 60 * 60 * 1000;
+		const expiresAt = new Date(Date.now() + ttlMs);
+
+		return this.prisma.$transaction(async (tx) => {
+			if (!(await authorize(tx))) {
+				return null;
+			}
+
+			await tx.session.create({
+				data: {
+					id: hashedToken,
+					userId,
+					expiresAt,
+					userAgent: metadata?.userAgent,
+					ipAddress: metadata?.ipAddress,
+				},
+			});
+
+			return { token, expiresAt };
+		});
 	}
 
 	async invalidateAllUserSessions(userId: string, exceptToken?: string) {
@@ -170,10 +275,12 @@ export class SessionService {
 		return true;
 	}
 
-	attachCookie(reply: FastifyReply, token: string, rememberMe = false) {
-		const maxAgeSeconds = rememberMe
-			? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60
-			: this.env.SESSION_TTL_HOURS * 60 * 60;
+	attachCookie(reply: FastifyReply, token: string, rememberMe = false, expiresAt?: Date) {
+		const maxAgeSeconds = expiresAt
+			? Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 1000))
+			: rememberMe
+				? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60
+				: this.env.SESSION_TTL_HOURS * 60 * 60;
 
 		const options = BASE_COOKIE_OPTIONS(this.env, maxAgeSeconds);
 		reply.setCookie(this.env.SESSION_COOKIE_NAME, token, {

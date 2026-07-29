@@ -50,7 +50,7 @@ function createPrismaStub() {
 		}
 	>();
 
-	return {
+	const prisma = {
 		_sessions: sessions,
 		session: {
 			create: vi.fn(async ({ data }: any) => {
@@ -84,7 +84,23 @@ function createPrismaStub() {
 				sessions.delete(where.id);
 				return row;
 			}),
-			deleteMany: vi.fn(async () => ({ count: 0 })),
+			deleteMany: vi.fn(async ({ where }: any) => {
+				let count = 0;
+				for (const [id, row] of sessions.entries()) {
+					const matchesId =
+						where?.id === undefined ||
+						where.id === id ||
+						(typeof where.id === "object" && where.id.not !== id);
+					const matchesUser = where?.userId === undefined || where.userId === row.userId;
+					const matchesExpiry =
+						where?.expiresAt?.gt === undefined || row.expiresAt > where.expiresAt.gt;
+					if (matchesId && matchesUser && matchesExpiry) {
+						sessions.delete(id);
+						count += 1;
+					}
+				}
+				return { count };
+			}),
 			update: vi.fn(async ({ where, data }: any) => {
 				const row = sessions.get(where.id);
 				if (row) Object.assign(row, data);
@@ -92,6 +108,11 @@ function createPrismaStub() {
 			}),
 			count: vi.fn(async () => sessions.size),
 		},
+	};
+
+	return {
+		...prisma,
+		$transaction: vi.fn(async (fn: (tx: typeof prisma) => unknown) => fn(prisma)),
 	};
 }
 
@@ -177,6 +198,104 @@ describe("SessionService.validateRequest", () => {
 		const standardTtlMs = standard.expiresAt.getTime() - Date.now();
 		const rememberedTtlMs = remembered.expiresAt.getTime() - Date.now();
 		expect(rememberedTtlMs).toBeGreaterThan(standardTtlMs * 10);
+	});
+
+	it("can attach a rotated cookie for only the session's remaining lifetime", () => {
+		const setCookie = vi.fn();
+		const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+		service.attachCookie({ setCookie } as never, "replacement-token", true, expiresAt);
+
+		const options = setCookie.mock.calls[0]![2];
+		expect(options.maxAge).toBeGreaterThanOrEqual(3599);
+		expect(options.maxAge).toBeLessThanOrEqual(3600);
+	});
+
+	it("atomically rotates only a still-active session and runs the authorized mutation", async () => {
+		const current = await service.createSession("user-1");
+		const onRotate = vi.fn().mockResolvedValue(undefined);
+
+		const replacement = await service.rotateActiveSession(
+			current.token,
+			"user-1",
+			{ userAgent: "vitest" },
+			{ onRotate },
+		);
+
+		expect(replacement).not.toBeNull();
+		expect(replacement!.expiresAt).toEqual(current.expiresAt);
+		expect(onRotate).toHaveBeenCalledTimes(1);
+		await expect(
+			service.validateRequest(makeRequest("signed-cookie", { valid: true, value: current.token })),
+		).resolves.toBeNull();
+		await expect(
+			service.validateRequest(
+				makeRequest("signed-cookie", { valid: true, value: replacement!.token }),
+			),
+		).resolves.not.toBeNull();
+	});
+
+	it("does not rotate or mutate after the initiating session is revoked", async () => {
+		const current = await service.createSession("user-1");
+		await service.invalidateSession(current.token);
+		const onRotate = vi.fn().mockResolvedValue(undefined);
+
+		await expect(
+			service.rotateActiveSession(current.token, "user-1", undefined, { onRotate }),
+		).resolves.toBeNull();
+		expect(onRotate).not.toHaveBeenCalled();
+	});
+
+	it("revokes every other user session before creating the rotated replacement", async () => {
+		const current = await service.createSession("user-1");
+		const otherSession = await service.createSession("user-1");
+		const otherUserSession = await service.createSession("user-2");
+		const onRotate = vi.fn(async () => {
+			// The initiating session is consumed first, while revocation runs
+			// after the credential mutation callback.
+			expect(prisma._sessions.size).toBe(2);
+		});
+
+		const replacement = await service.rotateActiveSession(current.token, "user-1", undefined, {
+			onRotate,
+			revokeOtherSessions: true,
+		});
+
+		expect(replacement).not.toBeNull();
+		await expect(
+			service.validateRequest(
+				makeRequest("signed-cookie", { valid: true, value: otherSession.token }),
+			),
+		).resolves.toBeNull();
+		await expect(
+			service.validateRequest(
+				makeRequest("signed-cookie", { valid: true, value: otherUserSession.token }),
+			),
+		).resolves.not.toBeNull();
+		await expect(
+			service.validateRequest(
+				makeRequest("signed-cookie", { valid: true, value: replacement!.token }),
+			),
+		).resolves.not.toBeNull();
+	});
+
+	it("creates a session only when the transactional authorization check succeeds", async () => {
+		const authorized = await service.createSessionIfAuthorized(
+			"user-1",
+			true,
+			undefined,
+			async () => true,
+		);
+		const denied = await service.createSessionIfAuthorized(
+			"user-1",
+			true,
+			undefined,
+			async () => false,
+		);
+
+		expect(authorized).not.toBeNull();
+		expect(denied).toBeNull();
+		expect(prisma._sessions.size).toBe(1);
 	});
 
 	it("invalidateAllUserSessions(userId, exceptToken) hashes the exceptToken before scoping the delete", async () => {
