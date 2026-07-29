@@ -20,6 +20,7 @@ declare module "fastify" {
 		encryptor: Encryptor;
 		sessionService: SessionService;
 		installationId: string;
+		secretsSynchronized: boolean;
 		arrClientFactory: ArrClientFactory;
 		deploymentExecutor: DeploymentExecutorService;
 		secureCookie: boolean;

@@ -119,6 +119,7 @@ export class BackupService {
 		private prisma: PrismaClient,
 		private secretsPath: string,
 		private encryptor?: Encryptor,
+		private secretsSynchronized = true,
 	) {
 		// Set backups directory next to the database file
 		const dataDir = path.dirname(secretsPath);
@@ -354,6 +355,12 @@ export class BackupService {
 			historyRetentionLimit?: number;
 		} = {},
 	): Promise<BackupFileInfo> {
+		if (!this.secretsSynchronized) {
+			throw new Error(
+				"Backups are unavailable because active environment secrets could not be synchronized to the secrets file",
+			);
+		}
+
 		// 1. Ensure backups directory exists
 		await ensureBackupsDirectory(this.backupsDir);
 
