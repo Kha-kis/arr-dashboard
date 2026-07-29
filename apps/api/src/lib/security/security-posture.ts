@@ -287,7 +287,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 
 	// OIDC authentication uses the enabled provider's stored redirect URI.
 	// Check that actual callback independently from the public-link URL.
-	if (input.oidcEnabled && !oidcRedirectUriIsHttps) {
+	if (input.oidcEnabled && !oidcRedirectUriIsHttps && (isProduction || effectiveSecureCookies)) {
 		checks.push({
 			id: "oidc-app-url",
 			label: "OIDC Redirect URI",
