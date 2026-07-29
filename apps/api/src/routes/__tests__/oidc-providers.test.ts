@@ -195,6 +195,8 @@ describe("DELETE /api/oidc-providers", () => {
 			data: {
 				hashedPassword: expect.any(String),
 				mustChangePassword: false,
+				failedLoginAttempts: 0,
+				lockedUntil: null,
 			},
 		});
 		expect(deleteSessions).toHaveBeenLastCalledWith({});
@@ -221,6 +223,8 @@ describe("DELETE /api/oidc-providers", () => {
 			data: {
 				hashedPassword: expect.any(String),
 				mustChangePassword: false,
+				failedLoginAttempts: 0,
+				lockedUntil: null,
 			},
 		});
 		expect(deleteProvider).toHaveBeenCalled();
@@ -247,6 +251,8 @@ describe("DELETE /api/oidc-providers", () => {
 			data: {
 				hashedPassword: expect.any(String),
 				mustChangePassword: false,
+				failedLoginAttempts: 0,
+				lockedUntil: null,
 			},
 		});
 	});

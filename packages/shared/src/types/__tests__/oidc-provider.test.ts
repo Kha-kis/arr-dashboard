@@ -23,6 +23,7 @@ describe("oidcRedirectUriSchema", () => {
 		"https://admin@arr.example.com/auth/oidc/callback",
 		"https://admin:secret@arr.example.com/auth/oidc/callback",
 		"https://arr.example.com//auth/oidc/callback",
+		"https://arr.example.com/wrong-callback",
 		"ftp://arr.example.com/auth/oidc/callback",
 	])("rejects an invalid OAuth callback: %s", (redirectUri) => {
 		expect(oidcRedirectUriSchema.safeParse(redirectUri).success).toBe(false);

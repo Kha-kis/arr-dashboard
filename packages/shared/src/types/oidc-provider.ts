@@ -51,6 +51,12 @@ export const oidcRedirectUriSchema = z
 					message: "OIDC redirect URI path must not include repeated slashes",
 				});
 			}
+			if (!url.pathname.endsWith("/auth/oidc/callback")) {
+				ctx.addIssue({
+					code: "custom",
+					message: "OIDC redirect URI must end with /auth/oidc/callback",
+				});
+			}
 		} catch {
 			// z.string().url() reports the canonical invalid-URL issue.
 		}
