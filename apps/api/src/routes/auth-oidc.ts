@@ -16,6 +16,12 @@ interface OIDCStateData {
 	nonce: string;
 	codeVerifier: string;
 	expiresAt: number;
+	/**
+	 * The authenticated admin who explicitly initiated an account-link flow.
+	 * This is server-side state, so the callback does not need to rely on the
+	 * browser session cookie surviving the round trip through the provider.
+	 */
+	linkUserId?: string;
 }
 
 const oidcStateStore = new Map<string, OIDCStateData>();
@@ -254,6 +260,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				nonce,
 				codeVerifier,
 				expiresAt: Date.now() + 15 * 60 * 1000,
+				linkUserId: request.currentUser?.id,
 			});
 
 			try {
@@ -362,6 +369,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		try {
 			let createdInitialUser = false;
+			let linkedExistingUser = false;
 			// Convert query object to URLSearchParams for oauth4webapi
 			const queryParams = new URLSearchParams();
 			for (const [key, value] of Object.entries(request.query as Record<string, string>)) {
@@ -419,24 +427,33 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			let user: { id: string; username: string };
 
 			if (oidcAccount) {
+				if (storedState.linkUserId && oidcAccount.user.id !== storedState.linkUserId) {
+					return reply.status(409).send({
+						error: "This OIDC identity is already linked to another account.",
+					});
+				}
 				// Existing OIDC account - log them in
 				user = oidcAccount.user;
+				linkedExistingUser = storedState.linkUserId !== undefined;
 			} else {
 				// New OIDC account - check if user is authenticated or if this is setup
 
-				// Check if user is currently authenticated (has active session)
-				const currentUser = request.currentUser;
+				// Prefer the authenticated admin captured when the flow started.
+				// Falling back to the callback session preserves existing behavior
+				// for flows initiated before this linking intent was introduced.
+				const linkUserId = storedState.linkUserId ?? request.currentUser?.id;
 
-				if (currentUser) {
-					// User is logged in - link OIDC to their account
+				if (linkUserId) {
+					// Link the provider identity to the admin who initiated the flow.
 					oidcAccount = await app.prisma.oIDCAccount.create({
 						data: {
 							providerUserId: userInfo.sub,
-							userId: currentUser.id,
+							userId: linkUserId,
 						},
 						include: { user: true },
 					});
 					user = oidcAccount.user;
+					linkedExistingUser = true;
 				} else {
 					// User is not authenticated - check if this is initial setup
 					// Use transaction to atomically check user count and create user
@@ -473,7 +490,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							// Setup already completed by concurrent request
 							return reply.status(401).send({
 								error:
-									"Cannot link OIDC account without authentication. Please log in first and add OIDC from settings.",
+									"Cannot sign in with an unlinked OIDC account. Sign in with your password, then use Link or Test Account in Settings > Authentication.",
 							});
 						}
 						throw error;
@@ -491,7 +508,11 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				request.log.debug({ err }, "Connection warm-up wrapper error (non-critical)");
 			});
 
-			const redirectPath = createdInitialUser ? "/setup?stage=services" : "/";
+			const redirectPath = createdInitialUser
+				? "/setup?stage=services"
+				: linkedExistingUser
+					? "/settings#authentication"
+					: "/";
 			request.log.info(
 				{ userId: user.id, username: user.username, redirectPath },
 				"OIDC authentication successful",

@@ -75,7 +75,7 @@ vi.mock("../../lib/auth/session-metadata.js", () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import { registerAuthOidcRoutes } from "../auth-oidc.js";
 import { resolveCanonicalIssuer } from "../../lib/auth/oidc-utils.js";
 
@@ -172,6 +172,17 @@ beforeEach(async () => {
 	// Request decorations
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
+	app.addHook("preHandler", async (request: FastifyRequest) => {
+		if (request.headers["x-test-current-user"] === "admin-user") {
+			request.currentUser = {
+				id: "admin-user",
+				username: "admin",
+				mustChangePassword: false,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			};
+		}
+	});
 
 	// Register OIDC routes
 	await app.register(registerAuthOidcRoutes, { prefix: "/auth" });
@@ -350,6 +361,91 @@ describe("GET /auth/oidc/callback", () => {
 
 		expect(res.statusCode).toBe(302);
 		expect(res.headers.location).toBe("/");
+	});
+
+	it("links the OIDC identity to the authenticated admin who initiated the flow", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.oIDCAccount.create.mockResolvedValue({
+			providerUserId: "provider-user-1",
+			user: { id: "admin-user", username: "admin" },
+		});
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+			headers: { "x-test-current-user": "admin-user" },
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+		});
+
+		expect(callback.statusCode).toBe(302);
+		expect(callback.headers.location).toBe("/settings#authentication");
+		expect(mockPrisma.oIDCAccount.create).toHaveBeenCalledWith({
+			data: {
+				providerUserId: "provider-user-1",
+				userId: "admin-user",
+			},
+			include: { user: true },
+		});
+		expect(mockSessionService.createSession).toHaveBeenCalledWith(
+			"admin-user",
+			true,
+			expect.any(Object),
+		);
+	});
+
+	it("still refuses an unlinked OIDC identity when no authenticated admin initiated the flow", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.user.count.mockResolvedValue(1);
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+		});
+
+		expect(callback.statusCode).toBe(401);
+		expect(JSON.parse(callback.payload).error).toContain(
+			"Cannot sign in with an unlinked OIDC account",
+		);
+		expect(mockPrisma.oIDCAccount.create).not.toHaveBeenCalled();
+	});
+
+	it("refuses to relink an OIDC identity owned by a different account", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.oIDCAccount.findUnique.mockResolvedValue({
+			providerUserId: "provider-user-1",
+			user: { id: "different-user", username: "different-admin" },
+		});
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+			headers: { "x-test-current-user": "admin-user" },
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+		});
+
+		expect(callback.statusCode).toBe(409);
+		expect(JSON.parse(callback.payload).error).toContain("already linked");
+		expect(mockPrisma.oIDCAccount.create).not.toHaveBeenCalled();
+		expect(mockSessionService.createSession).not.toHaveBeenCalled();
 	});
 
 	it("returns 400 with invalid state (CSRF protection)", async () => {
