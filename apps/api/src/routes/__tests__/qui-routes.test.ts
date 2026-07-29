@@ -177,6 +177,38 @@ afterAll(async () => {
 	await app?.close();
 });
 
+async function injectWebhookConfigWithTrustProxy(options: {
+	remoteAddress: string;
+	forwardedFor: string;
+	forwardedHost: string;
+}) {
+	const proxyApp = Fastify({ trustProxy: true });
+	proxyApp.decorate("prisma", mockPrisma as never);
+	proxyApp.decorate("encryptor", createMockEncryptor("test-api-key") as never);
+	proxyApp.decorate("arrClientFactory", { rawRequest: vi.fn() } as never);
+	proxyApp.decorate("config", { APP_URL: "http://localhost:3000" } as never);
+	setupAuthInjection(proxyApp);
+	registerTestErrorHandler(proxyApp);
+	await proxyApp.register(registerQuiRoutes);
+	await proxyApp.ready();
+
+	try {
+		return await proxyApp.inject({
+			method: "GET",
+			url: "/qui/webhook-config",
+			remoteAddress: options.remoteAddress,
+			headers: {
+				"x-test-auth": "1",
+				host: "localhost:3001",
+				"x-forwarded-for": options.forwardedFor,
+				"x-forwarded-host": options.forwardedHost,
+			},
+		});
+	} finally {
+		await proxyApp.close();
+	}
+}
+
 describe("GET /qui/instances", () => {
 	it("returns empty array when no QUI instances exist", async () => {
 		const res = await injectAuthenticated("GET", "/qui/instances");
@@ -727,6 +759,51 @@ describe("GET /qui/webhook-config", () => {
 		expect(targetUrl.protocol).toBe("generic:");
 		expect(targetUrl.host).toBe("dashboard.example");
 		expect(targetUrl.searchParams.has("disabletls")).toBe(false);
+	});
+
+	it("ignores a forged forwarded host from a non-loopback client", async () => {
+		const res = await app.inject({
+			method: "GET",
+			url: "/qui/webhook-config",
+			remoteAddress: "192.168.1.10",
+			headers: {
+				"x-test-auth": "1",
+				host: "localhost:3001",
+				"x-forwarded-host": "attacker.example",
+				"x-forwarded-proto": "https",
+			},
+		});
+		expect(res.statusCode).toBe(200);
+
+		const targetUrl = new URL(JSON.parse(res.payload).webhookUrl);
+		expect(targetUrl.host).toBe("localhost:3000");
+		expect(targetUrl.host).not.toBe("attacker.example");
+		expect(targetUrl.searchParams.get("disabletls")).toBe("yes");
+	});
+
+	it("uses the direct socket peer when trustProxy rewrites request.ip", async () => {
+		const res = await injectWebhookConfigWithTrustProxy({
+			remoteAddress: "127.0.0.1",
+			forwardedFor: "192.168.1.10",
+			forwardedHost: "192.168.1.50:3000",
+		});
+		expect(res.statusCode).toBe(200);
+
+		const targetUrl = new URL(JSON.parse(res.payload).webhookUrl);
+		expect(targetUrl.host).toBe("192.168.1.50:3000");
+	});
+
+	it("rejects forged loopback X-Forwarded-For from a remote socket", async () => {
+		const res = await injectWebhookConfigWithTrustProxy({
+			remoteAddress: "192.168.1.10",
+			forwardedFor: "127.0.0.1",
+			forwardedHost: "attacker.example",
+		});
+		expect(res.statusCode).toBe(200);
+
+		const targetUrl = new URL(JSON.parse(res.payload).webhookUrl);
+		expect(targetUrl.host).toBe("localhost:3000");
+		expect(targetUrl.host).not.toBe("attacker.example");
 	});
 });
 
