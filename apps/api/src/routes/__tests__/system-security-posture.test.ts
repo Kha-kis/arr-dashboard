@@ -107,6 +107,16 @@ describe("PUT /system/settings", () => {
 		expect(body.data.externalUrl).toBeNull();
 		expect(mockNotificationService.setBaseUrl).toHaveBeenCalledWith("http://localhost:3000");
 	});
+
+	it("rejects a non-string External URL without persisting it", async () => {
+		const res = await injectAuthenticated("PUT", "/system/settings", {
+			body: { externalUrl: 123 },
+		});
+
+		expect(res.statusCode, res.payload).toBe(400);
+		expect(mockPrisma.systemSettings.upsert).not.toHaveBeenCalled();
+		expect(mockNotificationService.setBaseUrl).not.toHaveBeenCalled();
+	});
 });
 
 describe("GET /system/security-posture", () => {

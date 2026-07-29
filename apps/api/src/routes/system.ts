@@ -2,8 +2,10 @@ import { createReadStream, existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
 import { evaluateSecurityPosture } from "../lib/security/security-posture.js";
+import { validateRequest } from "../lib/utils/validate.js";
 import { getAppVersionInfo } from "../lib/utils/version.js";
 import { KNOWN_INTEGRATIONS } from "../lib/validation/index.js";
 import { integrationHealth } from "../lib/validation/integration-health.js";
@@ -17,6 +19,16 @@ import { validationQuarantine } from "../lib/validation/validation-quarantine.js
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 const LOGS_RATE_LIMIT = { max: 30, timeWindow: "1 minute" };
+
+const systemSettingsBodySchema = z.object({
+	apiPort: z.number().optional(),
+	webPort: z.number().optional(),
+	listenAddress: z.string().optional(),
+	appName: z.string().optional(),
+	externalUrl: z.string().nullable().optional(),
+	trustProxy: z.boolean().optional(),
+	secureCookies: z.boolean().nullable().optional(),
+});
 
 /**
  * Extract a safe display identifier for the database connection.
@@ -97,19 +109,9 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Update system-wide settings
 	 * Note: Port and listen address changes require container restart to take effect
 	 */
-	app.put<{
-		Body: {
-			apiPort?: number;
-			webPort?: number;
-			listenAddress?: string;
-			appName?: string;
-			externalUrl?: string | null;
-			trustProxy?: boolean;
-			secureCookies?: boolean | null;
-		};
-	}>("/settings", async (request, reply) => {
+	app.put("/settings", async (request, reply) => {
 		const { apiPort, webPort, listenAddress, appName, externalUrl, trustProxy, secureCookies } =
-			request.body;
+			validateRequest(systemSettingsBodySchema, request.body);
 
 		// Validate port numbers if provided
 		if (apiPort !== undefined) {
