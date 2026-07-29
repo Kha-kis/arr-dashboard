@@ -103,7 +103,8 @@ export const passwordSchemaStrict = z.string()
 - Client secret encrypted at rest
 - Auto-generated redirect URI
 - Creating an enabled provider starts account linking immediately; configured
-  providers also expose a **Link or Test Account** action in Settings.
+  providers also expose their link status and a **Link Account** or **Test
+  Account** action in Settings.
 
 ## Passkey Authentication
 
