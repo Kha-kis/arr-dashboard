@@ -155,14 +155,37 @@ describe("SecretManager installation identity", () => {
 
 		const firstManager = new SecretManager(secretsPath);
 		const secondManager = new SecretManager(secretsPath);
-		const first = firstManager.getOrCreateEnvironmentSecrets(overrides);
-		const second = secondManager.getOrCreateEnvironmentSecrets(overrides);
+		const first = firstManager.getOrCreateEnvironmentSecrets(overrides, "deployment-a");
+		const second = secondManager.getOrCreateEnvironmentSecrets(overrides, "deployment-a");
 
 		expect(first).toEqual(second);
 		expect(first).toMatchObject(overrides);
 		expect(first.installationId).toMatch(/^[a-f0-9]{32}$/);
 		expect(firstManager.secretsSynchronized).toBe(false);
 		expect(secondManager.secretsSynchronized).toBe(false);
+	});
+
+	it("keeps read-only environment-managed installation identities deployment-specific", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "arr-dashboard-secrets-"));
+		tempDirectories.push(directory);
+		const pathBlocker = join(directory, "not-a-directory");
+		await writeFile(pathBlocker, "block directory creation");
+		const secretsPath = join(pathBlocker, "secrets.json");
+		const overrides = {
+			encryptionKey: "d".repeat(32),
+			sessionCookieSecret: "e".repeat(32),
+		};
+
+		const first = new SecretManager(secretsPath).getOrCreateEnvironmentSecrets(
+			overrides,
+			"postgresql://deployment-a/app\0https://dashboard-a.test",
+		);
+		const second = new SecretManager(secretsPath).getOrCreateEnvironmentSecrets(
+			overrides,
+			"postgresql://deployment-b/app\0https://dashboard-b.test",
+		);
+
+		expect(first.installationId).not.toBe(second.installationId);
 	});
 
 	it("does not expose a partially managed secret when persistence fails", async () => {
@@ -202,10 +225,13 @@ describe("SecretManager installation identity", () => {
 
 		try {
 			const manager = new SecretManager(secretsPath);
-			const active = manager.getOrCreateEnvironmentSecrets({
-				encryptionKey: "d".repeat(32),
-				sessionCookieSecret: "e".repeat(32),
-			});
+			const active = manager.getOrCreateEnvironmentSecrets(
+				{
+					encryptionKey: "d".repeat(32),
+					sessionCookieSecret: "e".repeat(32),
+				},
+				"deployment-a",
+			);
 
 			expect(active.encryptionKey).toBe("d".repeat(32));
 			expect(active.sessionCookieSecret).toBe("e".repeat(32));

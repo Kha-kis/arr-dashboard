@@ -23,7 +23,7 @@ export class BackupScheduler {
 		private logger: FastifyBaseLogger,
 		secretsPath: string,
 		notifyFn?: (payload: NotificationPayload) => Promise<void>,
-		options?: { trackTick?: TickWrapper; secretsSynchronized?: boolean },
+		private options?: { trackTick?: TickWrapper; secretsSynchronized?: boolean },
 	) {
 		this.backupService = new BackupService(
 			prisma,
@@ -32,7 +32,7 @@ export class BackupScheduler {
 			options?.secretsSynchronized,
 		);
 		this.notifyFn = notifyFn;
-		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
+		this.trackTick = this.options?.trackTick ?? passthroughTickWrapper;
 	}
 
 	/**
@@ -41,6 +41,12 @@ export class BackupScheduler {
 	start() {
 		if (this.intervalId) {
 			this.logger.warn("Backup scheduler already running");
+			return;
+		}
+		if (this.options?.secretsSynchronized === false) {
+			this.logger.warn(
+				"Backup scheduler disabled because active environment secrets could not be synchronized",
+			);
 			return;
 		}
 
