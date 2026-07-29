@@ -257,7 +257,7 @@ describe("POST /auth/oidc/setup", () => {
 	});
 
 	it("normalizes a trailing APP_URL slash when generating the callback", async () => {
-		Object.assign(app.config, { APP_URL: "https://arr.example.com/" });
+		Object.assign(app.config, { APP_URL: "https://arr.example.com/dashboard/" });
 
 		const res = await app.inject({
 			method: "POST",
@@ -273,7 +273,7 @@ describe("POST /auth/oidc/setup", () => {
 		expect(res.statusCode).toBe(201);
 		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
 			data: expect.objectContaining({
-				redirectUri: "https://arr.example.com/auth/oidc/callback",
+				redirectUri: "https://arr.example.com/dashboard/auth/oidc/callback",
 			}),
 		});
 	});
