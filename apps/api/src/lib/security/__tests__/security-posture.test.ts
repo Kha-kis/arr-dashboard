@@ -280,6 +280,32 @@ describe("evaluateSecurityPosture", () => {
 			});
 		});
 
+		it("keeps an APP_URL warning when OIDC is enabled with an HTTPS External URL", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "http://localhost:3000",
+					},
+					publicAppUrl: "https://arr.example.com",
+					oidcEnabled: true,
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "app-url")).toMatchObject({
+				severity: "healthy",
+				detail: "https://arr.example.com",
+			});
+			expect(checkById(result, "oidc-app-url")).toMatchObject({
+				severity: "warning",
+				detail: expect.stringContaining("OIDC callbacks use APP_URL"),
+				remediation: expect.stringContaining("APP_URL in the container environment"),
+			});
+		});
+
 		it("warns on non-https APP_URL in production", () => {
 			const result = evaluateSecurityPosture(
 				baseInput({
