@@ -23,9 +23,14 @@ export class BackupScheduler {
 		private logger: FastifyBaseLogger,
 		secretsPath: string,
 		notifyFn?: (payload: NotificationPayload) => Promise<void>,
-		options?: { trackTick?: TickWrapper },
+		options?: { trackTick?: TickWrapper; secretsSynchronized?: boolean },
 	) {
-		this.backupService = new BackupService(prisma, secretsPath);
+		this.backupService = new BackupService(
+			prisma,
+			secretsPath,
+			undefined,
+			options?.secretsSynchronized,
+		);
 		this.notifyFn = notifyFn;
 		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
 	}
