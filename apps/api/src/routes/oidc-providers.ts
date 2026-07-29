@@ -13,6 +13,8 @@ import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.j
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
+const OIDC_PROVIDER_CHANGED = "OIDC_PROVIDER_CHANGED";
+
 /**
  * Transform a Prisma OIDCProvider model to the public DTO shape
  * Strips encrypted client secret and IVs from response
@@ -286,72 +288,73 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				return reply.status(404).send({ error: "OIDC provider not found" });
 			}
 
-			// Check if any users would be locked out (users with OIDC-only and no password/passkeys)
-			const usersWithOidcOnly = await app.prisma.user.findMany({
-				where: {
-					hashedPassword: null, // No password
-					oidcAccounts: {
-						some: {}, // Has OIDC linked
-					},
-				},
-				include: {
-					webauthnCredentials: true,
-				},
-			});
+			// Deleting OIDC is an explicit switch to password authentication. Always
+			// prepare the supplied replacement so a concurrent passkey/password change
+			// cannot leave a linked account without a sign-in method.
+			const hashedPassword = await hashPassword(replacementPassword);
+			const providerAuthVersion = {
+				id: existing.id,
+				enabled: existing.enabled,
+				clientId: existing.clientId,
+				encryptedClientSecret: existing.encryptedClientSecret,
+				clientSecretIv: existing.clientSecretIv,
+				issuer: existing.issuer,
+				redirectUri: existing.redirectUri,
+				scopes: existing.scopes,
+			};
 
-			const lockedOutUsers = usersWithOidcOnly.filter(
-				(user) => user.webauthnCredentials.length === 0,
-			);
+			try {
+				const replacedUsers = await app.prisma.$transaction(async (tx) => {
+					// Delete the exact provider version first. This serializes deletion with an
+					// in-flight Link Account callback before either side changes OIDC links.
+					const deletedProvider = await tx.oIDCProvider.deleteMany({
+						where: providerAuthVersion,
+					});
+					if (deletedProvider.count !== 1) {
+						throw new Error(OIDC_PROVIDER_CHANGED);
+					}
 
-			if (lockedOutUsers.length > 0) {
-				// Hash the replacement password
-				const hashedPassword = await hashPassword(replacementPassword);
-
-				// Set password for all OIDC-only users to prevent lockout
-				await app.prisma.$transaction(
-					lockedOutUsers.map((user) =>
-						app.prisma.user.update({
+					// The provider lock prevents new links from being created while this
+					// snapshot is installed with a replacement password.
+					const linkedUsers = await tx.user.findMany({
+						where: { oidcAccounts: { some: {} } },
+						select: { id: true },
+					});
+					for (const user of linkedUsers) {
+						await tx.user.update({
 							where: { id: user.id },
 							data: {
 								hashedPassword,
-								mustChangePassword: user.id !== request.currentUser!.id, // Force password change for other users
+								mustChangePassword: user.id !== request.currentUser!.id,
 							},
-						}),
-					),
-				);
+						});
+					}
+
+					// OIDCAccount has no provider relation, so remove links explicitly.
+					await tx.oIDCAccount.deleteMany({});
+
+					// Credential removal and session revocation must commit or roll back
+					// together; otherwise a cleanup failure can preserve authenticated sessions.
+					await tx.session.deleteMany({});
+					return linkedUsers.length;
+				});
 
 				request.log.info(
-					{ userCount: lockedOutUsers.length },
-					"Set replacement password for OIDC-only users",
+					{ replacedUsers },
+					"Installed replacement passwords for OIDC-linked users",
 				);
-			}
-
-			request.log.info({ lockedOutUsers: lockedOutUsers.length }, "Deleting OIDC provider");
-
-			// Delete all OIDC account links (cascade will handle this, but explicit for clarity)
-			await app.prisma.oIDCAccount.deleteMany({});
-
-			// Delete provider (singleton with id=1)
-			await app.prisma.oIDCProvider.delete({
-				where: { id: 1 },
-			});
-
-			// Invalidate all sessions to force re-authentication with new method
-			if (request.sessionToken) {
-				// Preserve current session while invalidating all others
-				await app.sessionService.invalidateAllUserSessions(
-					request.currentUser!.id,
-					request.sessionToken,
-				);
-				// Also invalidate sessions for other users (single-admin architecture)
-				await app.prisma.session.deleteMany({
-					where: { userId: { not: request.currentUser!.id } },
-				});
-			} else {
-				await app.prisma.session.deleteMany({});
+			} catch (error) {
+				if (error instanceof Error && error.message === OIDC_PROVIDER_CHANGED) {
+					return reply.status(409).send({
+						error:
+							"The OIDC provider changed while deletion was in progress. Review the current configuration and try again.",
+					});
+				}
+				throw error;
 			}
 
 			request.log.info("OIDC provider deleted");
+			app.sessionService.clearCookie(reply);
 			return reply.status(204).send(undefined);
 		},
 	);
