@@ -458,6 +458,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			let user: { id: string; username: string };
 			let replaceOidcLink = false;
+			let revalidateOidcLink = false;
 
 			if (storedState.intent === "link") {
 				if (oidcAccount && oidcAccount.user.id !== storedState.linkUserId) {
@@ -481,6 +482,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			} else if (oidcAccount) {
 				// Existing OIDC account - log them in
 				user = oidcAccount.user;
+				revalidateOidcLink = true;
 			} else {
 				// User is not authenticated - check if this is initial setup
 				// Use transaction to atomically check user count and create user
@@ -532,25 +534,45 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						true,
 						metadata,
 						replaceOidcLink
-							? async (tx) => {
-									await tx.oIDCAccount.deleteMany({
-										where: { userId: user.id },
-									});
-									await tx.oIDCAccount.create({
-										data: {
-											providerUserId: userInfo.sub,
-											userId: user.id,
-										},
-									});
+							? {
+									onRotate: async (tx) => {
+										await tx.oIDCAccount.deleteMany({
+											where: { userId: user.id },
+										});
+										await tx.oIDCAccount.create({
+											data: {
+												providerUserId: userInfo.sub,
+												userId: user.id,
+											},
+										});
+									},
+									revokeOtherSessions: true,
 								}
 							: undefined,
 					)
-				: await app.sessionService.createSession(user.id, true, metadata);
+				: revalidateOidcLink
+					? await app.sessionService.createSessionIfAuthorized(
+							user.id,
+							true,
+							metadata,
+							async (tx) => {
+								const linked = await tx.oIDCAccount.updateMany({
+									where: {
+										providerUserId: userInfo.sub,
+										userId: user.id,
+									},
+									data: { updatedAt: new Date() },
+								});
+								return linked.count === 1;
+							},
+						)
+					: await app.sessionService.createSession(user.id, true, metadata);
 
 			if (!session) {
 				return reply.status(401).send({
-					error:
-						"The OIDC account action expired because the initiating session is no longer active. Sign in and try again.",
+					error: isAccountAction
+						? "The OIDC account action expired because the initiating session is no longer active. Sign in and try again."
+						: "This OIDC identity is no longer linked. Sign in with another method and try again.",
 				});
 			}
 			app.sessionService.attachCookie(reply, session.token, true);

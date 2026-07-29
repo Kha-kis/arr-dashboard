@@ -209,7 +209,7 @@ describe("SessionService.validateRequest", () => {
 			"user-1",
 			true,
 			{ userAgent: "vitest" },
-			onRotate,
+			{ onRotate },
 		);
 
 		expect(replacement).not.toBeNull();
@@ -230,9 +230,64 @@ describe("SessionService.validateRequest", () => {
 		const onRotate = vi.fn().mockResolvedValue(undefined);
 
 		await expect(
-			service.rotateActiveSession(current.token, "user-1", true, undefined, onRotate),
+			service.rotateActiveSession(current.token, "user-1", true, undefined, { onRotate }),
 		).resolves.toBeNull();
 		expect(onRotate).not.toHaveBeenCalled();
+	});
+
+	it("revokes every other user session before creating the rotated replacement", async () => {
+		const current = await service.createSession("user-1");
+		const otherSession = await service.createSession("user-1");
+		const otherUserSession = await service.createSession("user-2");
+		const onRotate = vi.fn(async () => {
+			// The initiating session is consumed first, while revocation runs
+			// after the credential mutation callback.
+			expect(prisma._sessions.size).toBe(2);
+		});
+
+		const replacement = await service.rotateActiveSession(
+			current.token,
+			"user-1",
+			true,
+			undefined,
+			{ onRotate, revokeOtherSessions: true },
+		);
+
+		expect(replacement).not.toBeNull();
+		await expect(
+			service.validateRequest(
+				makeRequest("signed-cookie", { valid: true, value: otherSession.token }),
+			),
+		).resolves.toBeNull();
+		await expect(
+			service.validateRequest(
+				makeRequest("signed-cookie", { valid: true, value: otherUserSession.token }),
+			),
+		).resolves.not.toBeNull();
+		await expect(
+			service.validateRequest(
+				makeRequest("signed-cookie", { valid: true, value: replacement!.token }),
+			),
+		).resolves.not.toBeNull();
+	});
+
+	it("creates a session only when the transactional authorization check succeeds", async () => {
+		const authorized = await service.createSessionIfAuthorized(
+			"user-1",
+			true,
+			undefined,
+			async () => true,
+		);
+		const denied = await service.createSessionIfAuthorized(
+			"user-1",
+			true,
+			undefined,
+			async () => false,
+		);
+
+		expect(authorized).not.toBeNull();
+		expect(denied).toBeNull();
+		expect(prisma._sessions.size).toBe(1);
 	});
 
 	it("invalidateAllUserSessions(userId, exceptToken) hashes the exceptToken before scoping the delete", async () => {

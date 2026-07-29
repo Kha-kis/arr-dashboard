@@ -9,6 +9,9 @@ const { mockSessionService } = vi.hoisted(() => ({
 		createSession: vi
 			.fn()
 			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
+		createSessionIfAuthorized: vi
+			.fn()
+			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
 		rotateActiveSession: vi
 			.fn()
 			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
@@ -131,6 +134,7 @@ function createMockPrisma() {
 			findUnique: vi.fn().mockResolvedValue(null),
 			create: vi.fn(),
 			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
 		$transaction: vi.fn().mockImplementation(async (fn: any) => {
 			return fn({
@@ -159,10 +163,14 @@ beforeEach(async () => {
 
 	mockPrisma = createMockPrisma();
 	mockSessionService.rotateActiveSession.mockImplementation(
-		async (_token, _userId, _rememberMe, _metadata, onRotate) => {
-			await onRotate?.(mockPrisma);
+		async (_token, _userId, _rememberMe, _metadata, options) => {
+			await options?.onRotate?.(mockPrisma);
 			return { token: "mock-session-token", id: "mock-session-id" };
 		},
+	);
+	mockSessionService.createSessionIfAuthorized.mockImplementation(
+		async (_userId, _rememberMe, _metadata, authorize) =>
+			(await authorize(mockPrisma)) ? { token: "mock-session-token", id: "mock-session-id" } : null,
 	);
 
 	app = Fastify();
@@ -373,7 +381,10 @@ describe("GET /auth/oidc/callback", () => {
 			"admin-user",
 			true,
 			expect.any(Object),
-			expect.any(Function),
+			{
+				onRotate: expect.any(Function),
+				revokeOtherSessions: true,
+			},
 		);
 	});
 
@@ -483,6 +494,67 @@ describe("GET /auth/oidc/callback", () => {
 			expect.any(Object),
 			undefined,
 		);
+	});
+
+	it("revalidates an ordinary OIDC login in the session-creation transaction", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.oIDCAccount.findUnique.mockResolvedValue({
+			providerUserId: "provider-user-1",
+			user: { id: "admin-user", username: "admin" },
+		});
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+		});
+
+		expect(callback.statusCode).toBe(302);
+		expect(mockPrisma.oIDCAccount.updateMany).toHaveBeenCalledWith({
+			where: {
+				providerUserId: "provider-user-1",
+				userId: "admin-user",
+			},
+			data: { updatedAt: expect.any(Date) },
+		});
+		expect(mockSessionService.createSessionIfAuthorized).toHaveBeenCalledWith(
+			"admin-user",
+			true,
+			expect.any(Object),
+			expect.any(Function),
+		);
+	});
+
+	it("does not mint an ordinary login session after Relink removes the old identity", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.oIDCAccount.findUnique.mockResolvedValue({
+			providerUserId: "provider-user-1",
+			user: { id: "admin-user", username: "admin" },
+		});
+		mockPrisma.oIDCAccount.updateMany.mockResolvedValueOnce({ count: 0 });
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+		});
+
+		expect(callback.statusCode).toBe(401);
+		expect(JSON.parse(callback.payload).error).toContain("no longer linked");
+		expect(mockSessionService.createSession).not.toHaveBeenCalled();
+		expect(mockSessionService.attachCookie).not.toHaveBeenCalled();
 	});
 
 	it("still refuses an unlinked OIDC identity when no authenticated admin initiated the flow", async () => {
