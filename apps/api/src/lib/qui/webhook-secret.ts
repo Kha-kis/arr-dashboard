@@ -2,11 +2,9 @@
  * Per-user qui-webhook secret manager (Phase 5.1).
  *
  * Mirrors the bearer-token pattern in `auto-tag/webhook-handler.ts` but uses
- * a query-param scheme instead of an Authorization header — qui's
- * notification system delivers webhooks via `POST <url>?secret=...` (the
- * `ApiKeyQuery` security scheme in qui's openapi), and inverting that to
- * fit our existing Bearer-header receiver would require a custom shim
- * inside qui (which arr-dashboard doesn't own).
+ * a query-param scheme instead of an Authorization header. qUI's generic
+ * Shoutrrr target forwards the `secret` query parameter to this receiver;
+ * its notification-target API does not expose a per-target header field.
  *
  * Plaintext secret is returned ONLY at generation/rotation time — never
  * stored, only hashed. Operators paste it into qui's notification target

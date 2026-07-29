@@ -35,8 +35,8 @@ You can monitor both jobs in **Settings → System → Background Jobs**.
 ### qui Activity page — three logs in one surface
 **Activity feed** — observed events emitted by arr-dashboard's own schedulers (sync ticks, gate firings, webhook drops). One row per scheduler tick.
 **My Actions** — tamper-evident audit log of mutations YOU initiated through arr-dashboard. One row per (action, info-hash) pair, including `failed` rows with qui's error message.
-**My Events** — inbound webhook events qui POSTed to arr-dashboard. Empty until you configure the Webhook tab.
-**Webhook** — rotate the secret + auto-register arr-dashboard as a NotificationTarget inside qui (Phase 5.1). When configured, qui pushes state changes to the dashboard within seconds instead of the 10-minute polled sync.
+**My Events** — inbound Shoutrrr notification events qui POSTed to arr-dashboard. Empty until you configure the Webhook tab.
+**Webhook** — rotate the secret + auto-register arr-dashboard as a generic Shoutrrr NotificationTarget inside qui (Phase 5.1). When configured, qui pushes supported notification events (including torrent added/completed) to the dashboard within seconds; the 10-minute sync remains the fallback for other state changes.
 
 ### Pulse (dashboard footer)
 - **Seeding Health domain badge** showing the rollup health of all your qui instances
@@ -90,13 +90,15 @@ By default, arr-dashboard polls qui every 10 minutes for torrent state. If you w
 
 1. **qui Activity → Webhook tab → "Rotate secret"**. The plaintext secret is shown EXACTLY ONCE — copy it or proceed directly to step 2.
 2. Either:
-   - **Auto-register** (single click): pick the qui instance from the list, click "Register selected instance." arr-dashboard POSTs to qui's `/api/notifications/targets` with the full URL + secret.
-   - **Manual**: copy the full URL (with `?secret=...`) into qui's Settings → Notifications → Targets → URL field. Method `POST`.
-3. Trigger an event in qui (pause/resume a torrent) to verify the wire works. The **Recent events** strip on the Webhook tab will show the event within a second, and the qui-activity tabs become push-driven instead of polled.
+   - **Auto-register** (single click): pick the qui instance from the list, click "Register selected instance." arr-dashboard POSTs a `generic://` Shoutrrr JSON target with the full callback URL + secret to qui's `/api/notifications/targets`.
+   - **Manual**: copy the full Shoutrrr target URL (including `template=json` and `secret=...`) into qui's Settings → Notifications → Targets → URL field.
+3. Trigger a configured notification event in qui (for example, add or complete a torrent) to verify the wire works. The **Recent events** strip on the Webhook tab will show the event within a second.
+
+The callback host is generated from **Settings → System → External URL**, falling back to `APP_URL`. It must be reachable from the qui container. If the Webhook tab shows `localhost`, set External URL to the LAN or reverse-proxy address qUI can actually call before registering the target.
 
 **Secret hygiene notes:**
 - The plaintext secret is never persisted — only its SHA-256 hash is stored. Rotating generates a new secret and invalidates the old; you'll need to re-register or update qui's NotificationTarget URL.
-- Query-string secrets land in nginx/Caddy/Cloudflare access logs by default. arr-dashboard's own pino logger redacts `?secret=` from request URLs, but **you should redact the same in your reverse-proxy access logs** if you're worried about log-aggregator access. qui's openapi only supports `ApiKeyQuery` so a header-based scheme isn't available upstream.
+- Query-string secrets land in nginx/Caddy/Cloudflare access logs by default. arr-dashboard's own pino logger redacts `secret=` from request URLs, but **you should redact the same in your reverse-proxy access logs** if you're worried about log-aggregator access. qUI's generic Shoutrrr target forwards the secret in the callback query because its target API does not provide a per-target header field.
 - The hash includes a domain prefix (`qui-webhook-v1:`) so a leak of this secret can't be replayed against the auto-tag webhook (which uses a separate hash domain).
 
 ## Privacy mode (incognito)

@@ -1,9 +1,9 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { createQuiClient } from "../../lib/qui/client-factory.js";
 import { quiEventBus } from "../../lib/qui/event-bus.js";
 import { requireQuiInstance } from "../../lib/qui/instance-helpers.js";
-import { generateQuiWebhookSecret } from "../../lib/qui/webhook-secret.js";
+import { generateQuiWebhookSecret, hashSecret } from "../../lib/qui/webhook-secret.js";
 import { createSseHandler } from "../../lib/sse/sse-handler.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -25,9 +25,83 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 	 *      typically set when the dashboard sits behind a reverse proxy.
 	 *   2. `app.config.APP_URL` — validated env var (default localhost:3000).
 	 */
-	async function resolvePublicBaseUrl(): Promise<string> {
+	async function resolvePublicBaseUrl(request: FastifyRequest): Promise<string> {
 		const settings = await app.prisma.systemSettings.findUnique({ where: { id: 1 } });
-		return settings?.externalUrl?.replace(/\/$/, "") ?? app.config.APP_URL;
+		if (settings?.externalUrl) {
+			return settings.externalUrl.replace(/\/$/, "");
+		}
+
+		const appUrl = app.config.APP_URL.replace(/\/$/, "");
+		const appHost = new URL(appUrl).hostname;
+		const appUrlIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(appHost);
+		if (!appUrlIsLoopback) {
+			return appUrl;
+		}
+
+		// Next's production rewrite changes Host to the internal API address,
+		// but always preserves the browser-facing Host in X-Forwarded-Host.
+		// Read that one header explicitly for callback URL discovery even when
+		// Fastify's global trustProxy setting is false. These routes require an
+		// authenticated user, and the submitted secret is verified against the
+		// current user's stored hash before the discovered URL is registered.
+		const forwardedHostHeader = request.headers["x-forwarded-host"];
+		const forwardedHost = Array.isArray(forwardedHostHeader)
+			? forwardedHostHeader[0]
+			: forwardedHostHeader?.split(",")[0]?.trim();
+		if (forwardedHost) {
+			const forwardedProtoHeader = request.headers["x-forwarded-proto"];
+			const forwardedProtoValue = Array.isArray(forwardedProtoHeader)
+				? forwardedProtoHeader[0]
+				: forwardedProtoHeader?.split(",")[0]?.trim();
+			const forwardedProto =
+				forwardedProtoValue === "http" || forwardedProtoValue === "https"
+					? forwardedProtoValue
+					: request.protocol;
+			try {
+				const forwardedOrigin = new URL(`${forwardedProto}://${forwardedHost}`).origin;
+				const forwardedHostname = new URL(forwardedOrigin).hostname;
+				if (!["localhost", "127.0.0.1", "::1"].includes(forwardedHostname)) {
+					return forwardedOrigin;
+				}
+			} catch {
+				// Ignore malformed proxy metadata and continue to the direct
+				// request origin / configured APP_URL fallbacks below.
+			}
+		}
+
+		// Direct development requests do not pass through Next's rewrite.
+		const requestOrigin = `${request.protocol}://${request.host}`;
+		const requestHost = new URL(requestOrigin).hostname;
+		return ["localhost", "127.0.0.1", "::1"].includes(requestHost) ? appUrl : requestOrigin;
+	}
+
+	/**
+	 * qui notification targets are Shoutrrr service URLs, not ordinary HTTP
+	 * callback URLs. Its generic service converts `generic://` back to HTTPS
+	 * (or HTTP when `disabletls=yes`) and `template=json` makes the delivered
+	 * body `{ title, message }`, which our public receiver understands.
+	 *
+	 * Unknown query keys are forwarded by Shoutrrr, so `secret` reaches
+	 * arr-dashboard without being treated as generic-service configuration.
+	 */
+	function buildQuiNotificationTargetUrl(baseUrl: string, secret?: string): string {
+		const callback = new URL(`${baseUrl}/api/webhooks/qui`);
+		const usesPlainHttp = callback.protocol === "http:";
+		if (!usesPlainHttp && callback.protocol !== "https:") {
+			throw new TypeError("qui webhook callback must use http or https");
+		}
+		// WHATWG URL objects ignore an assignment that crosses from a special
+		// scheme (`http`) to a non-special one (`generic`). Build a new URL
+		// from the serialized callback instead of mutating `.protocol`.
+		const target = new URL(callback.toString().replace(/^https?:/, "generic:"));
+		target.searchParams.set("template", "json");
+		if (usesPlainHttp) {
+			target.searchParams.set("disabletls", "yes");
+		}
+		if (secret) {
+			target.searchParams.set("secret", secret);
+		}
+		return target.toString();
 	}
 
 	app.get("/qui/webhook-config", async (request, reply) => {
@@ -36,14 +110,14 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 			where: { id: userId },
 			select: { hashedQuiWebhookSecret: true },
 		});
-		const baseUrl = await resolvePublicBaseUrl();
+		const baseUrl = await resolvePublicBaseUrl(request);
 		return reply.send({
 			hasSecret: Boolean(user.hashedQuiWebhookSecret),
 			// Public URL the operator pastes into qui's notification target.
 			// The query-param placeholder is intentional — the actual secret
 			// is only returned at rotation time; the operator copies the URL
 			// + secret together on the rotate response.
-			webhookUrl: `${baseUrl}/api/webhooks/qui`,
+			webhookUrl: buildQuiNotificationTargetUrl(baseUrl),
 		});
 	});
 
@@ -54,10 +128,10 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 			where: { id: userId },
 			data: { hashedQuiWebhookSecret: hashedSecret },
 		});
-		const baseUrl = await resolvePublicBaseUrl();
+		const baseUrl = await resolvePublicBaseUrl(request);
 		return reply.send({
 			hasSecret: true,
-			webhookUrl: `${baseUrl}/api/webhooks/qui`,
+			webhookUrl: buildQuiNotificationTargetUrl(baseUrl),
 			// Plaintext returned only here — never stored, never re-displayed.
 			// Operators copy it into qui's notification-target URL once.
 			secret: plaintextSecret,
@@ -94,12 +168,18 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 					error: "No webhook secret configured. Rotate to generate one first.",
 				});
 			}
+			if (hashSecret(body.secret) !== user.hashedQuiWebhookSecret) {
+				return reply.status(409).send({
+					error:
+						"This webhook secret is stale. Rotate the secret again before registering the target.",
+				});
+			}
 
-			const baseUrl = await resolvePublicBaseUrl();
+			const baseUrl = await resolvePublicBaseUrl(request);
 			// The plaintext is supplied per-request in the validated body; we
 			// don't have it on the server. The frontend captures it from the
 			// rotate response and forwards it here.
-			const targetUrl = `${baseUrl}/api/webhooks/qui?secret=${encodeURIComponent(body.secret)}`;
+			const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret);
 
 			try {
 				const created = await client.createNotificationTarget({
@@ -110,16 +190,15 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 				});
 				return reply.send({ ok: true, quiTargetId: created.id });
 			} catch (err) {
-				request.log.warn(
-					{ err, instanceId: instance.id },
-					"Failed to register webhook target in qui",
-				);
-				// If qui's error message echoes the URL we sent (e.g., a
-				// "couldn't reach <url>" 500), it would leak the plaintext
-				// secret back through the response and into any client-side
-				// logging. Strip `secret=...` defensively before relaying.
+				// qUI/Shoutrrr errors can echo the rejected target URL. Sanitize
+				// before both logging and returning so the one-time plaintext
+				// secret never lands in server logs or client-side telemetry.
 				const rawMessage = getErrorMessage(err, "qui registration failed");
 				const safeMessage = rawMessage.replace(/secret=[^&\s"']+/g, "secret=***");
+				request.log.warn(
+					{ error: safeMessage, instanceId: instance.id },
+					"Failed to register webhook target in qui",
+				);
 				return reply.status(502).send({
 					error: "qui rejected the notification target registration",
 					message: safeMessage,

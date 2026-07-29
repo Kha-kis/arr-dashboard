@@ -470,4 +470,28 @@ describe("createQuiClient", () => {
 			});
 		});
 	});
+
+	describe("createNotificationTarget error redaction", () => {
+		it("scrubs the callback secret before the shared request helper logs or throws", async () => {
+			const secret = "plaintext-webhook-secret";
+			const targetUrl = `generic://dashboard.example/api/webhooks/qui?template=json&secret=${secret}`;
+			fetchSpy.mockResolvedValueOnce(
+				new Response(JSON.stringify({ error: `invalid notification url: ${targetUrl}` }), {
+					status: 400,
+					headers: { "content-type": "application/json" },
+				}),
+			);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			const rejection = client.createNotificationTarget({
+				name: "arr-dashboard",
+				url: targetUrl,
+			});
+
+			await expect(rejection).rejects.toThrow("secret=***");
+			await expect(rejection).rejects.not.toThrow(secret);
+			expect(JSON.stringify(vi.mocked(fakeLog.warn).mock.calls)).toContain("secret=***");
+			expect(JSON.stringify(vi.mocked(fakeLog.warn).mock.calls)).not.toContain(secret);
+		});
+	});
 });

@@ -697,6 +697,10 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				{
 					method: "POST",
 					body: { name, url, eventTypes, enabled },
+					// qUI includes the rejected target URL in some validation
+					// errors. Scrub the one-time callback credential inside the
+					// shared request boundary, before either logging or throwing.
+					redactErrorMessage: (message) => message.replace(/secret=[^&\s"']+/g, "secret=***"),
 				},
 			);
 		},
