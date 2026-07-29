@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { PremiumEmptyState, PremiumSection, PremiumSkeleton } from "../../../components/layout";
+import { ToggleSwitch } from "../../../components/layout/config-primitives";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
@@ -29,7 +30,6 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { initiateOIDCLogin } from "../../../lib/api-client/auth";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { ToggleSwitch } from "../../../components/layout/config-primitives";
 
 /**
  * Premium OIDC Provider Section
@@ -53,7 +53,8 @@ export const OIDCProviderSection = () => {
 
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
-	const [isLinking, setIsLinking] = useState(false);
+	const [accountAction, setAccountAction] = useState<"link" | "test" | null>(null);
+	const isLinking = accountAction !== null;
 
 	// Form state for creating new provider
 	const [showCreateForm, setShowCreateForm] = useState(false);
@@ -104,12 +105,12 @@ export const OIDCProviderSection = () => {
 
 			if (payload.enabled) {
 				setSuccess("OIDC provider created. Redirecting you to link the admin account...");
-				setIsLinking(true);
+				setAccountAction("link");
 				try {
 					const authorizationUrl = await initiateOIDCLogin("link");
 					window.location.href = authorizationUrl;
 				} catch (linkError) {
-					setIsLinking(false);
+					setAccountAction(null);
 					setError(
 						getErrorMessage(
 							linkError,
@@ -125,17 +126,24 @@ export const OIDCProviderSection = () => {
 		}
 	};
 
-	const handleLinkAccount = async () => {
+	const handleAccountAction = async (intent: "link" | "test") => {
 		setError(null);
 		setSuccess(null);
-		setIsLinking(true);
+		setAccountAction(intent);
 
 		try {
-			const authorizationUrl = await initiateOIDCLogin(isLinked ? "test" : "link");
+			const authorizationUrl = await initiateOIDCLogin(intent);
 			window.location.href = authorizationUrl;
 		} catch (err) {
-			setError(getErrorMessage(err, "Failed to start OIDC account linking"));
-			setIsLinking(false);
+			setError(
+				getErrorMessage(
+					err,
+					intent === "link"
+						? "Failed to start OIDC account linking"
+						: "Failed to start OIDC account test",
+				),
+			);
+			setAccountAction(null);
 		}
 	};
 
@@ -661,27 +669,49 @@ export const OIDCProviderSection = () => {
 										</p>
 										<p className="text-xs text-muted-foreground">
 											{isLinked
-												? "This OIDC identity can access the dashboard. Test it before removing another sign-in method."
+												? "This OIDC identity can access the dashboard. Test it before removing another sign-in method. Relinking replaces the current identity."
 												: "Link this OIDC identity before signing out so it can access the dashboard."}
 										</p>
 									</div>
-									<Button
-										onClick={handleLinkAccount}
-										disabled={!provider.enabled || isLinking}
-										className="gap-2 sm:shrink-0"
-									>
-										{isLinking ? (
-											<>
-												<Loader2 className="h-4 w-4 animate-spin" />
-												Redirecting...
-											</>
-										) : (
-											<>
-												<Link className="h-4 w-4" />
-												{isLinked ? "Test Account" : "Link Account"}
-											</>
+									<div className="flex flex-col gap-2 sm:shrink-0 sm:flex-row">
+										{isLinked && (
+											<Button
+												variant="outline"
+												onClick={() => handleAccountAction("link")}
+												disabled={!provider.enabled || isLinking}
+												className="gap-2"
+											>
+												{accountAction === "link" ? (
+													<>
+														<Loader2 className="h-4 w-4 animate-spin" />
+														Redirecting...
+													</>
+												) : (
+													<>
+														<Link className="h-4 w-4" />
+														Relink Account
+													</>
+												)}
+											</Button>
 										)}
-									</Button>
+										<Button
+											onClick={() => handleAccountAction(isLinked ? "test" : "link")}
+											disabled={!provider.enabled || isLinking}
+											className="gap-2"
+										>
+											{accountAction === (isLinked ? "test" : "link") ? (
+												<>
+													<Loader2 className="h-4 w-4 animate-spin" />
+													Redirecting...
+												</>
+											) : (
+												<>
+													<Link className="h-4 w-4" />
+													{isLinked ? "Test Account" : "Link Account"}
+												</>
+											)}
+										</Button>
+									</div>
 								</div>
 							</div>
 						)}

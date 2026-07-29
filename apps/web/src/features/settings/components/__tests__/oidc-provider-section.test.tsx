@@ -58,15 +58,27 @@ describe("OIDCProviderSection account linking", () => {
 		expect(await screen.findByText("provider unavailable")).toBeDefined();
 	});
 
-	it("tests a linked identity without starting another link flow", async () => {
+	it("offers linked installations both test and relink recovery actions", async () => {
 		oidcState.linked = true;
 		initiateOIDCLogin.mockRejectedValueOnce(new Error("provider unavailable"));
 
 		render(<OIDCProviderSection />);
 
 		expect(screen.getByText("Linked")).toBeDefined();
+		expect(screen.getByRole("button", { name: /relink account/i })).toBeDefined();
 		fireEvent.click(screen.getByRole("button", { name: /test account/i }));
 
 		await waitFor(() => expect(initiateOIDCLogin).toHaveBeenCalledWith("test"));
+	});
+
+	it("starts a new link flow when the stored identity is stale", async () => {
+		oidcState.linked = true;
+		initiateOIDCLogin.mockRejectedValueOnce(new Error("provider unavailable"));
+
+		render(<OIDCProviderSection />);
+
+		fireEvent.click(screen.getByRole("button", { name: /relink account/i }));
+
+		await waitFor(() => expect(initiateOIDCLogin).toHaveBeenCalledWith("link"));
 	});
 });
