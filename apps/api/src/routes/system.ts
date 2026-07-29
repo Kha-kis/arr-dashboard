@@ -556,7 +556,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				}),
 				app.prisma.oIDCProvider.findFirst({
 					where: { enabled: true },
-					select: { id: true },
+					select: { redirectUri: true },
 				}),
 				app.prisma.webAuthnCredential.count(),
 				app.prisma.user.count({ where: { hashedPassword: { not: null } } }),
@@ -575,6 +575,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			},
 			publicAppUrl: systemSettings?.externalUrl,
 			oidcEnabled: oidcProvider !== null,
+			oidcRedirectUri: oidcProvider?.redirectUri,
 			passkeyCount,
 			passwordUserCount,
 			totalUserCount,

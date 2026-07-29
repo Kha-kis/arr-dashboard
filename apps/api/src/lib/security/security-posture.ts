@@ -52,6 +52,8 @@ export interface SecurityPostureInput {
 	publicAppUrl?: string | null;
 	/** True if at least one OIDC provider is enabled. */
 	oidcEnabled: boolean;
+	/** Stored callback URL for the enabled OIDC provider. */
+	oidcRedirectUri?: string | null;
 	/** Total passkey credentials registered across all users. */
 	passkeyCount: number;
 	/** Count of users with a password set (hashedPassword IS NOT NULL). */
@@ -103,11 +105,12 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		? appUrlProtocol.slice(0, -1).toUpperCase()
 		: "an unrecognized protocol";
 	const appUrlIsHttps = appUrlProtocol === "https:";
-	const oidcAppUrlProtocol = safeProtocol(input.env.APP_URL);
-	const oidcAppUrlProtocolLabel = oidcAppUrlProtocol
-		? oidcAppUrlProtocol.slice(0, -1).toUpperCase()
+	const oidcRedirectUri = input.oidcRedirectUri?.trim() || input.env.APP_URL;
+	const oidcRedirectUriProtocol = safeProtocol(oidcRedirectUri);
+	const oidcRedirectUriProtocolLabel = oidcRedirectUriProtocol
+		? oidcRedirectUriProtocol.slice(0, -1).toUpperCase()
 		: "an unrecognized protocol";
-	const oidcAppUrlIsHttps = oidcAppUrlProtocol === "https:";
+	const oidcRedirectUriIsHttps = oidcRedirectUriProtocol === "https:";
 
 	const checks: SecurityCheck[] = [];
 
@@ -282,17 +285,16 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		});
 	}
 
-	// OIDC still validates and generates redirect URIs from APP_URL. An
-	// External URL can make public links healthy without fixing that separate
-	// callback origin, so keep the OIDC-specific dependency visible.
-	if (input.oidcEnabled && !oidcAppUrlIsHttps) {
+	// OIDC authentication uses the enabled provider's stored redirect URI.
+	// Check that actual callback independently from the public-link URL.
+	if (input.oidcEnabled && !oidcRedirectUriIsHttps) {
 		checks.push({
 			id: "oidc-app-url",
-			label: "OIDC App URL",
-			detail: `OIDC callbacks use APP_URL, which uses ${oidcAppUrlProtocolLabel}.`,
+			label: "OIDC Redirect URI",
+			detail: `OIDC Redirect URI uses ${oidcRedirectUriProtocolLabel}.`,
 			severity: "warning",
 			remediation:
-				"Set APP_URL in the container environment to the public https:// origin used by your OIDC provider.",
+				"Update the enabled OIDC provider Redirect URI to the public https:// callback URL.",
 		});
 	}
 
