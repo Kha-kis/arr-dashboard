@@ -255,7 +255,11 @@ const AutoRegisterSection = ({
 	const register = useRegisterQuiWebhook();
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
 	const [resultByInstance, setResultByInstance] = useState<
-		Record<string, { ok: true; targetId?: number } | { ok: false; error: string }>
+		Record<
+			string,
+			| { ok: true; targetId?: number; cleanupPending?: boolean; warning?: string }
+			| { ok: false; error: string }
+		>
 	>({});
 
 	const canRegister = Boolean(plaintextSecret && selectedInstanceId && !register.isPending);
@@ -284,7 +288,12 @@ const AutoRegisterSection = ({
 			});
 			setResultByInstance((prev) => ({
 				...prev,
-				[selectedInstanceId]: { ok: true, targetId: res.quiTargetId },
+				[selectedInstanceId]: {
+					ok: true,
+					targetId: res.quiTargetId,
+					cleanupPending: res.cleanupPending,
+					warning: res.warning,
+				},
 			}));
 		} catch (err) {
 			setResultByInstance((prev) => ({
@@ -350,7 +359,12 @@ const AutoRegisterSection = ({
 							</div>
 							<span className="text-xs">
 								{result ? (
-									result.ok ? (
+									result.ok && result.cleanupPending ? (
+										<span className="text-amber-300 break-words text-left">
+											<AlertCircle className="h-3 w-3 inline mr-1" />
+											{result.warning ?? "Registered; duplicate cleanup remains pending."}
+										</span>
+									) : result.ok ? (
 										<span className="text-emerald-400">
 											<Check className="h-3 w-3 inline mr-1" />
 											{/* qui returns the new target's numeric id; surface it
