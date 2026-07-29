@@ -82,7 +82,9 @@ export const QuiWebhookConfigPanel = () => {
 	};
 
 	const baseUrl = config.data?.webhookUrl ?? "";
-	const fullUrl = plaintextSecret ? `${baseUrl}?secret=${plaintextSecret}` : "";
+	const fullUrl = plaintextSecret
+		? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}secret=${encodeURIComponent(plaintextSecret)}`
+		: "";
 
 	return (
 		<GlassmorphicCard>
@@ -92,9 +94,13 @@ export const QuiWebhookConfigPanel = () => {
 					<div className="flex-1 space-y-0.5">
 						<h3 className="text-sm font-semibold">qui webhook</h3>
 						<p className="text-xs text-muted-foreground">
-							Register arr-dashboard as a NotificationTarget in qui so torrent state changes push
-							here in real time instead of waiting for the 10-minute scheduled sync. Events flow
-							through SSE to live-invalidate the dashboard.
+							Register arr-dashboard as a NotificationTarget in qui so supported events, including
+							torrent added and completed, push here in real time. The 10-minute sync remains the
+							fallback for other state changes.
+						</p>
+						<p className="text-xs text-muted-foreground">
+							The callback host comes from Settings → System → External URL (or <code>APP_URL</code>
+							) and must be reachable from the qui container.
 						</p>
 					</div>
 				</div>
@@ -102,7 +108,7 @@ export const QuiWebhookConfigPanel = () => {
 				<div className="space-y-2">
 					<div className="space-y-1">
 						<label htmlFor="qui-webhook-url" className="text-xs font-medium text-muted-foreground">
-							Webhook URL (paste into qui → Settings → Notifications → Targets)
+							Shoutrrr target URL (paste into qui → Settings → Notifications → Targets)
 						</label>
 						<div className="flex gap-1">
 							<input
@@ -128,7 +134,7 @@ export const QuiWebhookConfigPanel = () => {
 							htmlFor="qui-webhook-secret"
 							className="text-xs font-medium text-muted-foreground"
 						>
-							Query-param secret (append as <code>?secret=…</code> on the URL above)
+							Query-param secret (append as <code>&amp;secret=…</code> on the URL above)
 						</label>
 						<div className="flex gap-1">
 							<input
@@ -177,7 +183,11 @@ export const QuiWebhookConfigPanel = () => {
 								<input
 									id="qui-webhook-full-url"
 									readOnly
-									value={isIncognito ? `${baseUrl}?secret=${SECRET_MASK}` : fullUrl}
+									value={
+										isIncognito
+											? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}secret=${SECRET_MASK}`
+											: fullUrl
+									}
 									className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-mono"
 								/>
 								<button
@@ -196,9 +206,9 @@ export const QuiWebhookConfigPanel = () => {
 
 				<div className="flex justify-between items-center pt-1">
 					<p className="text-xs text-muted-foreground">
-						qui → Settings → Notifications → Targets → URL + Method POST. arr-dashboard
-						authenticates the inbound webhook via the <code>?secret=</code> param (qui’s
-						<code> ApiKeyQuery </code>scheme).
+						qui → Settings → Notifications → Targets → URL. The generic Shoutrrr target sends JSON
+						and forwards the <code>secret=</code> query param for arr-dashboard to authenticate the
+						request.
 					</p>
 					<Button
 						type="button"

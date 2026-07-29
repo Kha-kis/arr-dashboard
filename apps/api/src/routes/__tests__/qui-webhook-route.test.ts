@@ -120,6 +120,48 @@ describe("POST /webhooks/qui", () => {
 		expect(seen).toHaveLength(1);
 	});
 
+	it("normalizes qUI's Shoutrrr JSON notification body", async () => {
+		const seen: unknown[] = [];
+		quiEventBus.subscribe("user-1", (msg) => seen.push(msg));
+		const res = await app.inject({
+			method: "POST",
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}`,
+			payload: {
+				title: "Torrent added",
+				message: "Instance: qbit-main\nTorrent: Example.Release [aaaaaaaa]\nState: downloading",
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		const createArgs = mockPrisma.quiEventLog.create.mock.calls[0]?.[0];
+		expect(createArgs.data.eventType).toBe("torrent_added");
+		expect(createArgs.data.torrentHash).toBeNull();
+		expect(JSON.parse(createArgs.data.payload)).toEqual({
+			type: "torrent_added",
+			payload: {
+				title: "Torrent added",
+				message: "Instance: qbit-main\nTorrent: Example.Release [aaaaaaaa]\nState: downloading",
+			},
+		});
+		expect(seen).toHaveLength(1);
+	});
+
+	it("keeps unknown qUI notification titles instead of rejecting new event definitions", async () => {
+		const res = await app.inject({
+			method: "POST",
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}`,
+			payload: {
+				title: "Future qUI event",
+				message: "Instance: qbit-main\nDetail: something changed",
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		const createArgs = mockPrisma.quiEventLog.create.mock.calls[0]?.[0];
+		expect(createArgs.data.eventType).toBe("notification");
+		expect(JSON.parse(createArgs.data.payload).payload.title).toBe("Future qUI event");
+	});
+
 	it("extracts hash from infoHash, torrent.hash, and torrents[0].hash shapes", async () => {
 		const variants = [
 			{ infoHash: "b".repeat(40) },

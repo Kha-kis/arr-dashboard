@@ -65,8 +65,9 @@ vi.mock("../../lib/library-sync/episode-file-backfill.js", () => ({
 	runEpisodeBackfillSweep: (...args: unknown[]) => mockRunEpisodeBackfillSweep(...args),
 }));
 
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import { InstanceNotFoundError } from "../../lib/errors.js";
+import { hashSecret } from "../../lib/qui/webhook-secret.js";
 import { registerQuiRoutes } from "../qui.js";
 import {
 	createInjectAuthenticated,
@@ -141,6 +142,7 @@ const VALID_HASH = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 let app: ReturnType<typeof Fastify>;
 let mockPrisma: ReturnType<typeof createMockPrisma>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
+let requestWarnSpy: ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
 	vi.clearAllMocks();
@@ -159,6 +161,10 @@ beforeEach(async () => {
 	app.decorate("config", { APP_URL: "http://localhost:3000" });
 
 	setupAuthInjection(app);
+	requestWarnSpy = vi.fn();
+	app.addHook("onRequest", async (request: FastifyRequest) => {
+		request.log.warn = requestWarnSpy as unknown as typeof request.log.warn;
+	});
 	registerTestErrorHandler(app);
 
 	await app.register(registerQuiRoutes);
@@ -648,7 +654,13 @@ describe("GET /qui/webhook-config", () => {
 		expect(res.statusCode).toBe(200);
 		const body = JSON.parse(res.payload);
 		expect(body.hasSecret).toBe(false);
-		expect(body.webhookUrl).toMatch(/\/api\/webhooks\/qui$/);
+		const targetUrl = new URL(body.webhookUrl);
+		expect(targetUrl.protocol).toBe("generic:");
+		expect(targetUrl.host).toBe("localhost:3000");
+		expect(targetUrl.pathname).toBe("/api/webhooks/qui");
+		expect(targetUrl.searchParams.get("template")).toBe("json");
+		expect(targetUrl.searchParams.get("disabletls")).toBe("yes");
+		expect(targetUrl.searchParams.has("secret")).toBe(false);
 		// CRITICAL — GET never returns the plaintext secret. The plaintext
 		// only exists at rotation time; persisting/echoing it from the DB
 		// would break the "shown once" invariant the operator relies on.
@@ -663,6 +675,58 @@ describe("GET /qui/webhook-config", () => {
 		const body = JSON.parse(res.payload);
 		expect(body.hasSecret).toBe(true);
 		expect(body).not.toHaveProperty("secret");
+	});
+
+	it("preserves an HTTPS external URL without enabling Shoutrrr's HTTP fallback", async () => {
+		mockPrisma.systemSettings.findUnique.mockResolvedValue({
+			externalUrl: "https://dashboard.example/",
+		});
+		const res = await injectAuthenticated("GET", "/qui/webhook-config");
+		expect(res.statusCode).toBe(200);
+
+		const targetUrl = new URL(JSON.parse(res.payload).webhookUrl);
+		expect(targetUrl.protocol).toBe("generic:");
+		expect(targetUrl.host).toBe("dashboard.example");
+		expect(targetUrl.pathname).toBe("/api/webhooks/qui");
+		expect(targetUrl.searchParams.get("template")).toBe("json");
+		expect(targetUrl.searchParams.has("disabletls")).toBe(false);
+	});
+
+	it("uses the browser-facing host preserved by Next's production rewrite", async () => {
+		const res = await app.inject({
+			method: "GET",
+			url: "/qui/webhook-config",
+			headers: {
+				"x-test-auth": "1",
+				host: "localhost:3001",
+				"x-forwarded-host": "192.168.1.50:3000",
+			},
+		});
+		expect(res.statusCode).toBe(200);
+
+		const targetUrl = new URL(JSON.parse(res.payload).webhookUrl);
+		expect(targetUrl.protocol).toBe("generic:");
+		expect(targetUrl.host).toBe("192.168.1.50:3000");
+		expect(targetUrl.searchParams.get("disabletls")).toBe("yes");
+	});
+
+	it("preserves the forwarded HTTPS protocol for a TLS-terminating proxy", async () => {
+		const res = await app.inject({
+			method: "GET",
+			url: "/qui/webhook-config",
+			headers: {
+				"x-test-auth": "1",
+				host: "localhost:3001",
+				"x-forwarded-host": "dashboard.example",
+				"x-forwarded-proto": "https",
+			},
+		});
+		expect(res.statusCode).toBe(200);
+
+		const targetUrl = new URL(JSON.parse(res.payload).webhookUrl);
+		expect(targetUrl.protocol).toBe("generic:");
+		expect(targetUrl.host).toBe("dashboard.example");
+		expect(targetUrl.searchParams.has("disabletls")).toBe(false);
 	});
 });
 
@@ -721,42 +785,69 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(mockQuiClient.createNotificationTarget).not.toHaveBeenCalled();
 	});
 
-	it("forwards the registration to qui with URL containing the operator-supplied secret", async () => {
+	it("forwards a Shoutrrr generic JSON URL containing the operator-supplied secret", async () => {
+		const secret = "a".repeat(32);
 		mockPrisma.user.findUniqueOrThrow.mockResolvedValue({
-			hashedQuiWebhookSecret: "deadbeef".repeat(8),
+			hashedQuiWebhookSecret: hashSecret(secret),
+		});
+		mockPrisma.systemSettings.findUnique.mockResolvedValue({
+			externalUrl: "http://arr-dashboard.test:3000",
 		});
 		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
 		mockQuiClient.createNotificationTarget.mockResolvedValue({ id: "target-42" });
 		const res = await injectAuthenticated("POST", "/qui/instances/qui-1/webhook-config/register", {
-			body: { secret: "a".repeat(32), eventTypes: ["torrent_added"] },
+			body: { secret, eventTypes: ["torrent_added"] },
 		});
 		expect(res.statusCode).toBe(200);
 		expect(JSON.parse(res.payload)).toMatchObject({ ok: true, quiTargetId: "target-42" });
-		// The URL must end with the secret as a query param so qui's
-		// ApiKeyQuery security scheme picks it up. URL-encoding is applied
-		// at the route layer; the secret is hex-clean here so we just check
-		// the substring.
 		const call = mockQuiClient.createNotificationTarget.mock.calls[0]?.[0];
 		expect(call.name).toBe("arr-dashboard");
-		expect(call.url).toContain("/api/webhooks/qui?secret=");
-		expect(call.url).toContain("a".repeat(32));
+		const targetUrl = new URL(call.url);
+		expect(targetUrl.protocol).toBe("generic:");
+		expect(targetUrl.host).toBe("arr-dashboard.test:3000");
+		expect(targetUrl.pathname).toBe("/api/webhooks/qui");
+		expect(targetUrl.searchParams.get("template")).toBe("json");
+		expect(targetUrl.searchParams.get("disabletls")).toBe("yes");
+		expect(targetUrl.searchParams.get("secret")).toBe(secret);
 		expect(call.eventTypes).toEqual(["torrent_added"]);
 		expect(call.enabled).toBe(true);
 	});
 
-	it("returns 502 when qui rejects the registration call", async () => {
+	it("rejects a stale plaintext secret that does not match the current stored hash", async () => {
 		mockPrisma.user.findUniqueOrThrow.mockResolvedValue({
-			hashedQuiWebhookSecret: "deadbeef".repeat(8),
+			hashedQuiWebhookSecret: hashSecret("current-secret-value"),
 		});
 		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
-		mockQuiClient.createNotificationTarget.mockRejectedValue(new Error("qui refused: 409"));
 		const res = await injectAuthenticated("POST", "/qui/instances/qui-1/webhook-config/register", {
-			body: { secret: "a".repeat(32) },
+			body: { secret: "stale-secret-value" },
+		});
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).error).toMatch(/stale/i);
+		expect(mockQuiClient.createNotificationTarget).not.toHaveBeenCalled();
+	});
+
+	it("returns 502 when qui rejects the registration call", async () => {
+		const secret = "a".repeat(32);
+		mockPrisma.user.findUniqueOrThrow.mockResolvedValue({
+			hashedQuiWebhookSecret: hashSecret(secret),
+		});
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.createNotificationTarget.mockImplementation(({ url }: { url: string }) =>
+			Promise.reject(new Error(`qui refused target ${url}: 409`)),
+		);
+		const res = await injectAuthenticated("POST", "/qui/instances/qui-1/webhook-config/register", {
+			body: { secret },
 		});
 		// 502 (bad gateway) rather than 500 — the upstream is the failure
 		// site, not arr-dashboard itself. Frontend renders the qui-side
 		// error message verbatim so the operator can fix the qui config.
 		expect(res.statusCode).toBe(502);
+		const body = JSON.parse(res.payload);
+		expect(body.message).toContain("secret=***");
+		expect(JSON.stringify(body)).not.toContain(secret);
+		expect(JSON.stringify(requestWarnSpy.mock.calls)).toContain("secret=***");
+		expect(JSON.stringify(requestWarnSpy.mock.calls)).not.toContain(secret);
 	});
 });
 
