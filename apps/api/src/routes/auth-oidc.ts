@@ -449,7 +449,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			request.log.info({ sub: userInfo.sub }, "Retrieved user info from OIDC provider");
 
 			// Find existing OIDC account
-			let oidcAccount = await app.prisma.oIDCAccount.findUnique({
+			const oidcAccount = await app.prisma.oIDCAccount.findUnique({
 				where: {
 					providerUserId: userInfo.sub,
 				},
@@ -457,77 +457,102 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 
 			let user: { id: string; username: string };
+			let replaceOidcLink = false;
 
-			if (oidcAccount) {
-				if (isAccountAction && oidcAccount.user.id !== storedState.linkUserId) {
+			if (storedState.intent === "link") {
+				if (oidcAccount && oidcAccount.user.id !== storedState.linkUserId) {
 					return reply.status(409).send({
 						error: "This OIDC identity is already linked to another account.",
 					});
 				}
-				// Existing OIDC account - log them in
-				user = oidcAccount.user;
-			} else {
-				if (storedState.intent === "link") {
-					// Link the provider identity to the admin who initiated the flow.
-					oidcAccount = await app.prisma.oIDCAccount.create({
-						data: {
-							providerUserId: userInfo.sub,
-							userId: storedState.linkUserId!,
-						},
-						include: { user: true },
-					});
-					user = oidcAccount.user;
-				} else if (storedState.intent === "test") {
+				user = {
+					id: storedState.linkUserId!,
+					username: request.currentUser!.username,
+				};
+				replaceOidcLink = true;
+			} else if (storedState.intent === "test") {
+				if (!oidcAccount || oidcAccount.user.id !== storedState.linkUserId) {
 					return reply.status(401).send({
 						error:
 							"This OIDC identity is not linked to the admin account. Use Link Account to add it explicitly.",
 					});
-				} else {
-					// User is not authenticated - check if this is initial setup
-					// Use transaction to atomically check user count and create user
-					// This prevents race condition where two concurrent callbacks both create admin accounts
-					try {
-						const newUser = await app.prisma.$transaction(async (tx) => {
-							// Check if any users exist (must be inside transaction for atomicity)
-							const userCount = await tx.user.count();
+				}
+				user = oidcAccount.user;
+			} else if (oidcAccount) {
+				// Existing OIDC account - log them in
+				user = oidcAccount.user;
+			} else {
+				// User is not authenticated - check if this is initial setup
+				// Use transaction to atomically check user count and create user
+				// This prevents race condition where two concurrent callbacks both create admin accounts
+				try {
+					const newUser = await app.prisma.$transaction(async (tx) => {
+						// Check if any users exist (must be inside transaction for atomicity)
+						const userCount = await tx.user.count();
 
-							if (userCount > 0) {
-								throw new Error("SETUP_COMPLETE");
-							}
+						if (userCount > 0) {
+							throw new Error("SETUP_COMPLETE");
+						}
 
-							// Initial setup - create admin account atomically
-							const username = userInfo.preferred_username ?? `user_${userInfo.sub}`;
+						// Initial setup - create admin account atomically
+						const username = userInfo.preferred_username ?? `user_${userInfo.sub}`;
 
-							return await tx.user.create({
-								data: {
-									username,
-									hashedPassword: null, // OIDC-only user (no password)
-									oidcAccounts: {
-										create: {
-											providerUserId: userInfo.sub,
-										},
+						return await tx.user.create({
+							data: {
+								username,
+								hashedPassword: null, // OIDC-only user (no password)
+								oidcAccounts: {
+									create: {
+										providerUserId: userInfo.sub,
 									},
 								},
-							});
+							},
 						});
+					});
 
-						user = newUser;
-					} catch (error) {
-						if (error instanceof Error && error.message === "SETUP_COMPLETE") {
-							// Setup already completed by concurrent request
-							return reply.status(401).send({
-								error:
-									"Cannot sign in with an unlinked OIDC account. Sign in with your password, then use Link Account in Settings > Authentication.",
-							});
-						}
-						throw error;
+					user = newUser;
+				} catch (error) {
+					if (error instanceof Error && error.message === "SETUP_COMPLETE") {
+						// Setup already completed by concurrent request
+						return reply.status(401).send({
+							error:
+								"Cannot sign in with an unlinked OIDC account. Sign in with your password, then use Link Account in Settings > Authentication.",
+						});
 					}
+					throw error;
 				}
 			}
 
 			// Create session with metadata
 			const metadata = getSessionMetadata(request);
-			const session = await app.sessionService.createSession(user.id, true, metadata);
+			const session = isAccountAction
+				? await app.sessionService.rotateActiveSession(
+						request.sessionToken!,
+						user.id,
+						true,
+						metadata,
+						replaceOidcLink
+							? async (tx) => {
+									await tx.oIDCAccount.deleteMany({
+										where: { userId: user.id },
+									});
+									await tx.oIDCAccount.create({
+										data: {
+											providerUserId: userInfo.sub,
+											userId: user.id,
+										},
+									});
+								}
+							: undefined,
+					)
+				: await app.sessionService.createSession(user.id, true, metadata);
+
+			if (!session) {
+				return reply.status(401).send({
+					error:
+						"The OIDC account action expired because the initiating session is no longer active. Sign in and try again.",
+				});
+			}
 			app.sessionService.attachCookie(reply, session.token, true);
 
 			// Pre-warm connections to ARR instances in background (don't await)

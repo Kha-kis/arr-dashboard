@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiEnv } from "../../config/env.js";
-import type { PrismaClient } from "../../lib/prisma.js";
+import type { Prisma, PrismaClient } from "../../lib/prisma.js";
 
 /**
  * Base cookie options for session management.
@@ -84,6 +84,58 @@ export class SessionService {
 				// The cookie is still cleared client-side, and the session expires via TTL.
 				this.logger?.debug({ err }, "Best-effort session deletion failed during logout");
 			});
+	}
+
+	/**
+	 * Atomically replace an active session and optionally perform an authorized
+	 * database mutation in the same transaction.
+	 *
+	 * Consuming the current session makes revocation and rotation race safely:
+	 * whichever transaction removes the session first wins. The callback only
+	 * runs when the exact session still belongs to the user and is unexpired.
+	 */
+	async rotateActiveSession(
+		token: string,
+		userId: string,
+		rememberMe = false,
+		metadata?: SessionMetadata,
+		onRotate?: (tx: Prisma.TransactionClient) => Promise<void>,
+	) {
+		const currentSessionId = hashToken(token);
+		const replacementToken = generateSessionToken();
+		const replacementSessionId = hashToken(replacementToken);
+		const ttlMs = rememberMe
+			? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60 * 1000
+			: this.env.SESSION_TTL_HOURS * 60 * 60 * 1000;
+		const expiresAt = new Date(Date.now() + ttlMs);
+		const now = new Date();
+
+		return this.prisma.$transaction(async (tx) => {
+			const consumed = await tx.session.deleteMany({
+				where: {
+					id: currentSessionId,
+					userId,
+					expiresAt: { gt: now },
+				},
+			});
+
+			if (consumed.count !== 1) {
+				return null;
+			}
+
+			await onRotate?.(tx);
+			await tx.session.create({
+				data: {
+					id: replacementSessionId,
+					userId,
+					expiresAt,
+					userAgent: metadata?.userAgent,
+					ipAddress: metadata?.ipAddress,
+				},
+			});
+
+			return { token: replacementToken, expiresAt };
+		});
 	}
 
 	async invalidateAllUserSessions(userId: string, exceptToken?: string) {

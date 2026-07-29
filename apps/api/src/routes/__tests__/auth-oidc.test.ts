@@ -9,6 +9,9 @@ const { mockSessionService } = vi.hoisted(() => ({
 		createSession: vi
 			.fn()
 			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
+		rotateActiveSession: vi
+			.fn()
+			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
 		attachCookie: vi.fn(),
 		invalidateSession: vi.fn().mockResolvedValue(undefined),
 		clearCookie: vi.fn(),
@@ -127,6 +130,7 @@ function createMockPrisma() {
 		oIDCAccount: {
 			findUnique: vi.fn().mockResolvedValue(null),
 			create: vi.fn(),
+			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 		},
 		$transaction: vi.fn().mockImplementation(async (fn: any) => {
 			return fn({
@@ -154,6 +158,12 @@ beforeEach(async () => {
 	);
 
 	mockPrisma = createMockPrisma();
+	mockSessionService.rotateActiveSession.mockImplementation(
+		async (_token, _userId, _rememberMe, _metadata, onRotate) => {
+			await onRotate?.(mockPrisma);
+			return { token: "mock-session-token", id: "mock-session-id" };
+		},
+	);
 
 	app = Fastify();
 
@@ -349,17 +359,21 @@ describe("GET /auth/oidc/callback", () => {
 
 		expect(callback.statusCode).toBe(302);
 		expect(callback.headers.location).toBe("/settings#authentication");
+		expect(mockPrisma.oIDCAccount.deleteMany).toHaveBeenCalledWith({
+			where: { userId: "admin-user" },
+		});
 		expect(mockPrisma.oIDCAccount.create).toHaveBeenCalledWith({
 			data: {
 				providerUserId: "provider-user-1",
 				userId: "admin-user",
 			},
-			include: { user: true },
 		});
-		expect(mockSessionService.createSession).toHaveBeenCalledWith(
+		expect(mockSessionService.rotateActiveSession).toHaveBeenCalledWith(
+			"admin-session-token",
 			"admin-user",
 			true,
 			expect.any(Object),
+			expect.any(Function),
 		);
 	});
 
@@ -384,6 +398,33 @@ describe("GET /auth/oidc/callback", () => {
 		expect(JSON.parse(callback.payload).error).toContain("session is no longer active");
 		expect(mockPrisma.oIDCAccount.create).not.toHaveBeenCalled();
 		expect(mockSessionService.createSession).not.toHaveBeenCalled();
+	});
+
+	it("does not link or mint a session when the initiating session is revoked during the OIDC exchange", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockSessionService.rotateActiveSession.mockResolvedValueOnce(null);
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+			headers: { "x-test-current-user": "admin-user" },
+			payload: { intent: "link" },
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+			headers: { "x-test-current-user": "admin-user" },
+		});
+
+		expect(callback.statusCode).toBe(401);
+		expect(JSON.parse(callback.payload).error).toContain("session is no longer active");
+		expect(mockPrisma.oIDCAccount.deleteMany).not.toHaveBeenCalled();
+		expect(mockPrisma.oIDCAccount.create).not.toHaveBeenCalled();
+		expect(mockSessionService.createSession).not.toHaveBeenCalled();
+		expect(mockSessionService.attachCookie).not.toHaveBeenCalled();
 	});
 
 	it("tests only an OIDC identity already linked to the authenticated admin", async () => {
@@ -435,10 +476,12 @@ describe("GET /auth/oidc/callback", () => {
 		expect(callback.statusCode).toBe(302);
 		expect(callback.headers.location).toBe("/settings#authentication");
 		expect(mockPrisma.oIDCAccount.create).not.toHaveBeenCalled();
-		expect(mockSessionService.createSession).toHaveBeenCalledWith(
+		expect(mockSessionService.rotateActiveSession).toHaveBeenCalledWith(
+			"admin-session-token",
 			"admin-user",
 			true,
 			expect.any(Object),
+			undefined,
 		);
 	});
 

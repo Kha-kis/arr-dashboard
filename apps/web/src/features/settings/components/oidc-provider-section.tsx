@@ -669,7 +669,7 @@ export const OIDCProviderSection = () => {
 										</p>
 										<p className="text-xs text-muted-foreground">
 											{isLinked
-												? "This OIDC identity can access the dashboard. Test it before removing another sign-in method. Relinking replaces the current identity."
+												? "An OIDC identity is linked. Test it before relying on this sign-in method. Relinking replaces the current identity."
 												: "Link this OIDC identity before signing out so it can access the dashboard."}
 										</p>
 									</div>
