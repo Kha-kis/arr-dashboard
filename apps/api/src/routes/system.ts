@@ -558,21 +558,31 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 *
 	 * Security: Requires authentication (single-admin architecture).
 	 */
-	app.get("/security-posture", async (_request, reply) => {
-		const [systemSettings, oidcProvider, passkeyCount, passwordUserCount, totalUserCount] =
-			await Promise.all([
-				app.prisma.systemSettings.findUnique({
-					where: { id: 1 },
-					select: { externalUrl: true },
-				}),
-				app.prisma.oIDCProvider.findFirst({
-					where: { enabled: true },
-					select: { redirectUri: true },
-				}),
-				app.prisma.webAuthnCredential.count(),
-				app.prisma.user.count({ where: { hashedPassword: { not: null } } }),
-				app.prisma.user.count(),
-			]);
+	app.get("/security-posture", async (request, reply) => {
+		const [
+			systemSettings,
+			oidcProvider,
+			linkedOidcAccount,
+			passkeyCount,
+			passwordUserCount,
+			totalUserCount,
+		] = await Promise.all([
+			app.prisma.systemSettings.findUnique({
+				where: { id: 1 },
+				select: { externalUrl: true },
+			}),
+			app.prisma.oIDCProvider.findFirst({
+				where: { enabled: true },
+				select: { redirectUri: true },
+			}),
+			app.prisma.oIDCAccount.findFirst({
+				where: { userId: request.currentUser!.id },
+				select: { id: true },
+			}),
+			app.prisma.webAuthnCredential.count(),
+			app.prisma.user.count({ where: { hashedPassword: { not: null } } }),
+			app.prisma.user.count(),
+		]);
 
 		const result = evaluateSecurityPosture({
 			env: {
@@ -585,7 +595,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				APP_URL: app.config.APP_URL,
 			},
 			publicAppUrl: systemSettings?.externalUrl,
-			oidcEnabled: oidcProvider !== null,
+			oidcEnabled: oidcProvider !== null && linkedOidcAccount !== null,
+			oidcProviderEnabled: oidcProvider !== null,
 			oidcRedirectUri: oidcProvider?.redirectUri,
 			passkeyCount,
 			passwordUserCount,

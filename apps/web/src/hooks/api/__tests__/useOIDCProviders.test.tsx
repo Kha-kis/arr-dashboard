@@ -53,9 +53,12 @@ describe("OIDC provider mutations", () => {
 		await waitFor(() => expect(updateMutation.result.current.isSuccess).toBe(true));
 
 		const deleteMutation = renderHook(() => useDeleteOIDCProvider(), { wrapper });
-		deleteMutation.result.current.mutate();
+		deleteMutation.result.current.mutate({ replacementPassword: "StrongPassword123!" });
 		await waitFor(() => expect(deleteMutation.result.current.isSuccess).toBe(true));
 
+		expect(oidcApi.deleteOIDCProvider).toHaveBeenCalledWith({
+			replacementPassword: "StrongPassword123!",
+		});
 		expect(invalidateQueries).toHaveBeenCalledTimes(6);
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: oidcKeys.provider });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: systemKeys.securityPosture });

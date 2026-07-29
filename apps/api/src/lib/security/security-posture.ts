@@ -50,8 +50,10 @@ export interface SecurityPostureInput {
 	};
 	/** Admin-configured public URL. When absent, APP_URL remains the fallback. */
 	publicAppUrl?: string | null;
-	/** True if at least one OIDC provider is enabled. */
+	/** True if an enabled OIDC provider is linked to the current admin. */
 	oidcEnabled: boolean;
+	/** True if an OIDC provider is enabled, even if the current admin is not linked yet. */
+	oidcProviderEnabled?: boolean;
 	/** Stored callback URL for the enabled OIDC provider. */
 	oidcRedirectUri?: string | null;
 	/** Total passkey credentials registered across all users. */
@@ -113,6 +115,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 	const oidcRedirectUriIsHttps = oidcRedirectUriProtocol === "https:";
 	const oidcRedirectUriIsDevelopmentLoopback =
 		input.env.NODE_ENV === "development" && isHttpLoopbackUrl(oidcRedirectUri);
+	const oidcProviderEnabled = input.oidcProviderEnabled ?? input.oidcEnabled;
 
 	const checks: SecurityCheck[] = [];
 
@@ -289,7 +292,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 
 	// OIDC authentication uses the enabled provider's stored redirect URI.
 	// Check that actual callback independently from the public-link URL.
-	if (input.oidcEnabled && !oidcRedirectUriIsHttps && !oidcRedirectUriIsDevelopmentLoopback) {
+	if (oidcProviderEnabled && !oidcRedirectUriIsHttps && !oidcRedirectUriIsDevelopmentLoopback) {
 		checks.push({
 			id: "oidc-app-url",
 			label: "OIDC Redirect URI",
@@ -348,7 +351,7 @@ function isHttpLoopbackUrl(value: string): boolean {
 		return (
 			hostname === "localhost" ||
 			hostname.endsWith(".localhost") ||
-			hostname.startsWith("127.") ||
+			/^127(?:\.\d{1,3}){3}$/.test(hostname) ||
 			hostname === "[::1]"
 		);
 	} catch {

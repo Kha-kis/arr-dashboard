@@ -1,4 +1,4 @@
-import type { CreateOIDCProvider, UpdateOIDCProvider } from "@arr/shared";
+import type { CreateOIDCProvider, DeleteOIDCProvider, UpdateOIDCProvider } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createOIDCProvider,
@@ -66,7 +66,7 @@ export function useDeleteOIDCProvider() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: () => deleteOIDCProvider(),
+		mutationFn: (data: DeleteOIDCProvider) => deleteOIDCProvider(data),
 		onSuccess: () => {
 			// Invalidate provider query to refetch
 			queryClient.invalidateQueries({ queryKey: oidcKeys.provider });

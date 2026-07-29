@@ -349,7 +349,11 @@ describe("evaluateSecurityPosture", () => {
 			expect(result.overall).toBe("healthy");
 		});
 
-		it.each(["http://public.example/auth/oidc/callback", "ftp://localhost/auth/oidc/callback"])(
+		it.each([
+			"http://public.example/auth/oidc/callback",
+			"http://127.attacker.invalid/auth/oidc/callback",
+			"ftp://localhost/auth/oidc/callback",
+		])(
 			"warns about a non-HTTPS OIDC callback outside the loopback exception: %s",
 			(oidcRedirectUri) => {
 				const result = evaluateSecurityPosture(

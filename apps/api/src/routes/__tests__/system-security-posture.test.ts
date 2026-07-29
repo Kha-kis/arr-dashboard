@@ -19,6 +19,7 @@ let mockPrisma: {
 		upsert: ReturnType<typeof vi.fn>;
 	};
 	oIDCProvider: { findFirst: ReturnType<typeof vi.fn> };
+	oIDCAccount: { findFirst: ReturnType<typeof vi.fn> };
 	webAuthnCredential: { count: ReturnType<typeof vi.fn> };
 	user: { count: ReturnType<typeof vi.fn> };
 };
@@ -46,6 +47,7 @@ beforeEach(async () => {
 			),
 		},
 		oIDCProvider: { findFirst: vi.fn().mockResolvedValue(null) },
+		oIDCAccount: { findFirst: vi.fn().mockResolvedValue(null) },
 		webAuthnCredential: { count: vi.fn().mockResolvedValue(1) },
 		user: { count: vi.fn().mockResolvedValue(1) },
 	};
@@ -162,5 +164,48 @@ describe("GET /system/security-posture", () => {
 			where: { enabled: true },
 			select: { redirectUri: true },
 		});
+	});
+
+	it("does not report OIDC as active until the current admin is linked", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue({
+			redirectUri: "https://arr.example.com/auth/oidc/callback",
+		});
+		mockPrisma.webAuthnCredential.count.mockResolvedValue(0);
+
+		const res = await injectAuthenticated("GET", "/system/security-posture");
+
+		expect(res.statusCode, res.payload).toBe(200);
+		const body = JSON.parse(res.payload);
+		const authentication = body.data.checks.find(
+			(check: { id: string }) => check.id === "authentication",
+		);
+		expect(body.data.auth.oidcEnabled).toBe(false);
+		expect(authentication).toMatchObject({
+			severity: "warning",
+			detail: "Password-only authentication is in use.",
+		});
+		expect(mockPrisma.oIDCAccount.findFirst).toHaveBeenCalledWith({
+			where: { userId: "user-1" },
+			select: { id: true },
+		});
+	});
+
+	it("reports OIDC as active when the enabled provider is linked to the current admin", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue({
+			redirectUri: "https://arr.example.com/auth/oidc/callback",
+		});
+		mockPrisma.oIDCAccount.findFirst.mockResolvedValue({ id: "oidc-account-1" });
+
+		const res = await injectAuthenticated("GET", "/system/security-posture");
+
+		expect(res.statusCode, res.payload).toBe(200);
+		const body = JSON.parse(res.payload);
+		expect(body.data.auth.oidcEnabled).toBe(true);
+		expect(body.data.checks).toContainEqual(
+			expect.objectContaining({
+				id: "authentication",
+				detail: expect.stringContaining("OIDC"),
+			}),
+		);
 	});
 });
