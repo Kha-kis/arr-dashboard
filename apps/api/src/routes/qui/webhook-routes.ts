@@ -13,9 +13,11 @@ import { QUI_INSTANCE_PARAM, safeParseJson } from "./qui-shared.js";
 export function buildQuiNotificationTargetName(
 	installationId: string,
 	userId: string,
+	serviceInstanceId: string,
 	quiBaseUrl: string,
 ): string {
-	return `arr-dashboard-${installationId}-${buildQuiDeploymentId(userId, quiBaseUrl)}`;
+	const ownerId = buildQuiNotificationTargetOwnerId(installationId, userId, serviceInstanceId);
+	return `arr-dashboard-${ownerId}-${buildQuiDeploymentId(userId, quiBaseUrl)}`;
 }
 
 export function buildQuiDeploymentId(userId: string, quiBaseUrl: string): string {
@@ -287,7 +289,12 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 
 				try {
 					const created = await client.ensureNotificationTarget({
-						name: buildQuiNotificationTargetName(app.installationId, userId, instance.baseUrl),
+						name: buildQuiNotificationTargetName(
+							app.installationId,
+							userId,
+							instance.id,
+							instance.baseUrl,
+						),
 						url: targetUrl,
 						ownerId,
 						eventTypes: body.eventTypes,
