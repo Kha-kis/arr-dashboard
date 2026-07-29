@@ -123,4 +123,21 @@ describe("SecretManager installation identity", () => {
 			"restored-api-key",
 		);
 	});
+
+	it("rejects an invalid environment key before changing persisted secrets", async () => {
+		const secretsPath = await createSecretsPath();
+		const persisted = {
+			encryptionKey: "a".repeat(64),
+			sessionCookieSecret: "b".repeat(64),
+			installationId: "c".repeat(32),
+		};
+		await writeFile(secretsPath, JSON.stringify(persisted));
+
+		expect(() =>
+			new SecretManager(secretsPath).getOrCreateSecrets({
+				encryptionKey: "x".repeat(33),
+			}),
+		).toThrow("ENCRYPTION_KEY must decode to 32 bytes");
+		expect(JSON.parse(await readFile(secretsPath, "utf8"))).toEqual(persisted);
+	});
 });

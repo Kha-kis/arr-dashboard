@@ -49,6 +49,13 @@ export class SecretManager {
 	 * for migration before generating new secrets.
 	 */
 	getOrCreateSecrets(overrides: SecretOverrides = {}): Secrets {
+		if (overrides.encryptionKey && !isValidEncryptionKey(overrides.encryptionKey)) {
+			throw new Error("ENCRYPTION_KEY must decode to 32 bytes");
+		}
+		if (overrides.sessionCookieSecret && overrides.sessionCookieSecret.length < 32) {
+			throw new Error("SESSION_COOKIE_SECRET must be at least 32 characters");
+		}
+
 		let preservedLocalFields: Record<string, unknown> = {};
 
 		// Try to load existing secrets (no existence check to avoid TOCTOU race)
