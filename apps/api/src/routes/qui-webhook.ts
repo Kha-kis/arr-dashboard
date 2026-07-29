@@ -60,6 +60,14 @@ const QUI_NOTIFICATION_EVENT_TYPES: Readonly<Record<string, string>> = {
 	"Automations run failed": "automations_run_failed",
 };
 
+function isForeignKeyConstraintError(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		"code" in error &&
+		(error as Error & { code?: unknown }).code === "P2003"
+	);
+}
+
 const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 	app.post<{
 		Querystring: {
@@ -122,15 +130,32 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const torrentHash = extractTorrentHash(envelope.payload);
 
 			try {
-				const row = await app.prisma.quiEventLog.create({
-					data: {
-						userId: user.id,
-						serviceInstanceId: sourceInstance?.id ?? null,
-						eventType: envelope.type,
-						torrentHash,
-						payload: JSON.stringify(envelope),
-					},
-				});
+				const eventData = {
+					userId: user.id,
+					serviceInstanceId: sourceInstance?.id ?? null,
+					eventType: envelope.type,
+					torrentHash,
+					payload: JSON.stringify(envelope),
+				};
+				const row = await (async () => {
+					try {
+						return await app.prisma.quiEventLog.create({ data: eventData });
+					} catch (err) {
+						if (!sourceInstance || !isForeignKeyConstraintError(err)) {
+							throw err;
+						}
+						// The source row can disappear after attribution but before
+						// this insert. Correlation is best-effort, so preserve the
+						// authenticated event without the now-stale foreign key.
+						request.log.warn(
+							{ instanceId: sourceInstance.id },
+							"qUI source instance disappeared during webhook persistence; retrying uncorrelated",
+						);
+						return await app.prisma.quiEventLog.create({
+							data: { ...eventData, serviceInstanceId: null },
+						});
+					}
+				})();
 				// Phase 5.2 — fan the event out to any open SSE connections for
 				// this user. Failures here are non-fatal: the event is already
 				// persisted; SSE is just a freshness optimization. Pass

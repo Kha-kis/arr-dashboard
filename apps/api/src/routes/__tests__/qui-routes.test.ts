@@ -1005,7 +1005,7 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(res.statusCode).toBe(200);
 		expect(mockQuiClient.ensureNotificationTarget.mock.calls[0]?.[0]).toMatchObject({
 			legacyTargetAdoption: "never",
-			reportLegacyCleanupRequired: false,
+			reportLegacyCleanupRequired: true,
 		});
 	});
 
