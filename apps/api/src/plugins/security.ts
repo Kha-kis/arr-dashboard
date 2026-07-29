@@ -12,36 +12,51 @@ export const securityPlugin = fp(
 		const databaseUrl = app.config.DATABASE_URL!;
 		const secretsPath = resolveSecretsPath(databaseUrl);
 
-		// Get or generate secrets
-		let encryptionKey = app.config.ENCRYPTION_KEY;
-		let sessionCookieSecret = app.config.SESSION_COOKIE_SECRET;
+		// Always load the local secrets file because it also carries the
+		// installation identity. Unlike database backups, that identity stays
+		// with this deployment so restored clones cannot claim its resources.
+		const secretManager = new SecretManager(secretsPath);
+		const secrets =
+			app.config.ENCRYPTION_KEY && app.config.SESSION_COOKIE_SECRET
+				? secretManager.getOrCreateEnvironmentSecrets(
+						{
+							encryptionKey: app.config.ENCRYPTION_KEY,
+							sessionCookieSecret: app.config.SESSION_COOKIE_SECRET,
+						},
+						`${databaseUrl}\0${app.config.APP_URL}`,
+					)
+				: secretManager.getOrCreateSecrets({
+						...(app.config.ENCRYPTION_KEY ? { encryptionKey: app.config.ENCRYPTION_KEY } : {}),
+						...(app.config.SESSION_COOKIE_SECRET
+							? { sessionCookieSecret: app.config.SESSION_COOKIE_SECRET }
+							: {}),
+					});
 
-		if (!encryptionKey || !sessionCookieSecret) {
+		if (!app.config.ENCRYPTION_KEY || !app.config.SESSION_COOKIE_SECRET) {
 			app.log.info("Auto-generating secrets (not provided in environment)");
-			const secretManager = new SecretManager(secretsPath);
-			const secrets = secretManager.getOrCreateSecrets();
-			encryptionKey = encryptionKey || secrets.encryptionKey;
-			sessionCookieSecret = sessionCookieSecret || secrets.sessionCookieSecret;
 		}
 
 		// Register cookie plugin with the secret (auto-generated or from env)
 		await app.register(fastifyCookie, {
-			secret: sessionCookieSecret,
+			secret: secrets.sessionCookieSecret,
 			hook: "onRequest",
 		});
 
-		const encryptor = new Encryptor(encryptionKey);
+		const encryptor = new Encryptor(secrets.encryptionKey);
 		const sessionService = new SessionService(
 			app.prisma,
 			{
 				...app.config,
-				SESSION_COOKIE_SECRET: sessionCookieSecret,
+				SESSION_COOKIE_SECRET: secrets.sessionCookieSecret,
 			},
 			app.log,
 		);
 
 		app.decorate("encryptor", encryptor);
 		app.decorate("sessionService", sessionService);
+		app.decorate("installationId", secrets.installationId);
+		app.decorate("installationIdIsPersistent", secretManager.installationIdIsPersistent);
+		app.decorate("secretsSynchronized", secretManager.secretsSynchronized);
 	},
 	{
 		name: "security",

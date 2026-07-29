@@ -101,7 +101,7 @@ function makeClient(overrides: Partial<QuiClient> = {}): QuiClient {
 		addTrackers: vi.fn().mockResolvedValue(undefined),
 		removeTrackers: vi.fn().mockResolvedValue(undefined),
 		editTracker: vi.fn().mockResolvedValue(undefined),
-		createNotificationTarget: vi.fn().mockResolvedValue({ id: 1 }),
+		ensureNotificationTarget: vi.fn().mockResolvedValue({ id: 1 }),
 		triggerDirScan: vi.fn().mockResolvedValue({
 			runId: 1,
 			directoryId: 1,

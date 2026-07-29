@@ -341,16 +341,26 @@ export async function registerQuiWebhook({
 	quiInstanceId,
 	secret,
 	eventTypes,
-}: RegisterQuiWebhookArgs): Promise<{ ok: boolean; quiTargetId?: number }> {
+}: RegisterQuiWebhookArgs): Promise<{
+	ok: boolean;
+	quiTargetId?: number;
+	cleanupPending?: boolean;
+	warning?: string;
+}> {
 	// `quiTargetId` is a number on the wire — qui's openapi declares it as
 	// `integer`, and the backend forwards `created.id` verbatim from qui's
 	// response. An earlier version of this client typed it as `string`,
 	// which caused the Settings panel to call `.slice()` on a number (which
 	// runtime-coerces in JS but is a TypeScript lie).
-	return apiRequest<{ ok: boolean; quiTargetId?: number }>(
-		`/api/qui/instances/${quiInstanceId}/webhook-config/register`,
-		{ method: "POST", json: { secret, eventTypes } },
-	);
+	return apiRequest<{
+		ok: boolean;
+		quiTargetId?: number;
+		cleanupPending?: boolean;
+		warning?: string;
+	}>(`/api/qui/instances/${quiInstanceId}/webhook-config/register`, {
+		method: "POST",
+		json: { secret, eventTypes },
+	});
 }
 
 export interface QuiEventLogParams {

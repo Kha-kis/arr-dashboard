@@ -38,6 +38,12 @@ export async function quiRequest<T>(
 		query?: Record<string, string>;
 		body?: unknown;
 		/**
+		 * Scrub credentials from upstream error text before it is logged or
+		 * wrapped in QuiApiError. Use for calls whose request values may be
+		 * echoed verbatim by qui.
+		 */
+		redactErrorMessage?: (message: string) => string;
+		/**
 		 * Per-call timeout override. Resolves in this order:
 		 *   init.timeoutMs → ctx.timeoutMs → DEFAULT_QUI_TIMEOUT_MS.
 		 * Used by `listAllTorrents` (which paginates and can legitimately
@@ -71,7 +77,8 @@ export async function quiRequest<T>(
 	}
 
 	if (!response.ok) {
-		const message = await readErrorMessage(response);
+		const rawMessage = await readErrorMessage(response);
+		const message = init?.redactErrorMessage?.(rawMessage) ?? rawMessage;
 		ctx.log.warn(
 			{ instanceId: ctx.instanceId, path, status: response.status, message },
 			"qui request failed",

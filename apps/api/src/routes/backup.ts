@@ -30,7 +30,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		// Use app.config.DATABASE_URL (includes env schema defaults) not process.env
 		const databaseUrl = app.config.DATABASE_URL || "file:./dev.db";
 		const secretsPath = resolveSecretsPath(databaseUrl);
-		return new BackupService(app.prisma, secretsPath, app.encryptor);
+		return new BackupService(app.prisma, secretsPath, app.encryptor, app.secretsSynchronized);
 	};
 
 	/**
