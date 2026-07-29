@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	createOidcProviderSchema,
 	deleteOidcProviderSchema,
@@ -14,6 +15,7 @@ import { getErrorMessage } from "../lib/utils/error-message.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 const OIDC_PROVIDER_CHANGED = "OIDC_PROVIDER_CHANGED";
+const OIDC_SESSION_INACTIVE = "OIDC_SESSION_INACTIVE";
 
 /**
  * Transform a Prisma OIDCProvider model to the public DTO shape
@@ -292,6 +294,12 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			// prepare the supplied replacement so a concurrent passkey/password change
 			// cannot leave a linked account without a sign-in method.
 			const hashedPassword = await hashPassword(replacementPassword);
+			if (!request.sessionToken) {
+				return reply.status(401).send({
+					error: "The initiating session is no longer active. Sign in and try again.",
+				});
+			}
+			const initiatingSessionId = createHash("sha256").update(request.sessionToken).digest("hex");
 			const providerAuthVersion = {
 				id: existing.id,
 				enabled: existing.enabled,
@@ -305,6 +313,18 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 			try {
 				const replacedUsers = await app.prisma.$transaction(async (tx) => {
+					const now = new Date();
+					const consumedSession = await tx.session.deleteMany({
+						where: {
+							id: initiatingSessionId,
+							userId: request.currentUser!.id,
+							expiresAt: { gt: now },
+						},
+					});
+					if (consumedSession.count !== 1) {
+						throw new Error(OIDC_SESSION_INACTIVE);
+					}
+
 					// Delete the exact provider version first. This serializes deletion with an
 					// in-flight Link Account callback before either side changes OIDC links.
 					const deletedProvider = await tx.oIDCProvider.deleteMany({
@@ -318,16 +338,20 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 					// snapshot is installed with a replacement password.
 					const linkedUsers = await tx.user.findMany({
 						where: { oidcAccounts: { some: {} } },
-						select: { id: true },
+						select: { id: true, hashedPassword: true },
 					});
+					let replacedUsers = 0;
 					for (const user of linkedUsers) {
-						await tx.user.update({
-							where: { id: user.id },
-							data: {
-								hashedPassword,
-								mustChangePassword: user.id !== request.currentUser!.id,
-							},
-						});
+						if (!user.hashedPassword) {
+							await tx.user.update({
+								where: { id: user.id },
+								data: {
+									hashedPassword,
+									mustChangePassword: user.id !== request.currentUser!.id,
+								},
+							});
+							replacedUsers += 1;
+						}
 					}
 
 					// OIDCAccount has no provider relation, so remove links explicitly.
@@ -336,7 +360,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 					// Credential removal and session revocation must commit or roll back
 					// together; otherwise a cleanup failure can preserve authenticated sessions.
 					await tx.session.deleteMany({});
-					return linkedUsers.length;
+					return replacedUsers;
 				});
 
 				request.log.info(
@@ -344,6 +368,11 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 					"Installed replacement passwords for OIDC-linked users",
 				);
 			} catch (error) {
+				if (error instanceof Error && error.message === OIDC_SESSION_INACTIVE) {
+					return reply.status(401).send({
+						error: "The initiating session is no longer active. Sign in and try again.",
+					});
+				}
 				if (error instanceof Error && error.message === OIDC_PROVIDER_CHANGED) {
 					return reply.status(409).send({
 						error:
