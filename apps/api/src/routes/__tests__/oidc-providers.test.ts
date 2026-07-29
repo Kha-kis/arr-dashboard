@@ -2,6 +2,16 @@ import Fastify, { type FastifyRequest } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import oidcProvidersRoutes from "../oidc-providers.js";
 
+vi.mock("../../lib/auth/password.js", () => ({
+	hashPassword: vi.fn().mockResolvedValue("$argon2id$replacement-password"),
+	verifyPassword: vi
+		.fn()
+		.mockImplementation(
+			async (password: string, hash: string) =>
+				password === "CurrentPassword1!" && hash === "$argon2id$existing-admin-password",
+		),
+}));
+
 vi.mock("../../lib/auth/oidc-utils.js", () => ({
 	resolveCanonicalIssuer: vi.fn().mockResolvedValue({
 		issuer: "https://auth.example.com/application/o/arr-dashboard/",
@@ -30,7 +40,9 @@ const findUniqueProvider = vi.fn();
 const deleteProvider = vi.fn();
 const deleteOidcAccounts = vi.fn();
 const findOidcOnlyUsers = vi.fn();
+const findUniqueUser = vi.fn();
 const updateUser = vi.fn();
+const updateManyUsers = vi.fn();
 const runTransaction = vi.fn();
 const deleteSessions = vi.fn();
 const clearCookie = vi.fn();
@@ -42,7 +54,9 @@ beforeEach(async () => {
 	deleteProvider.mockReset();
 	deleteOidcAccounts.mockReset();
 	findOidcOnlyUsers.mockReset();
+	findUniqueUser.mockReset();
 	updateUser.mockReset();
+	updateManyUsers.mockReset();
 	runTransaction.mockReset();
 	deleteSessions.mockReset();
 	clearCookie.mockReset();
@@ -51,13 +65,20 @@ beforeEach(async () => {
 	deleteProvider.mockResolvedValue({ count: 1 });
 	deleteOidcAccounts.mockResolvedValue({ count: 1 });
 	findOidcOnlyUsers.mockResolvedValue([{ id: "admin-user", hashedPassword: null }]);
+	findUniqueUser.mockResolvedValue({ hashedPassword: null });
 	updateUser.mockResolvedValue({ id: "admin-user" });
+	updateManyUsers.mockResolvedValue({ count: 1 });
 	deleteSessions.mockResolvedValue({ count: 1 });
 	runTransaction.mockImplementation(async (callback) =>
 		callback({
 			oIDCProvider: { deleteMany: deleteProvider },
 			oIDCAccount: { deleteMany: deleteOidcAccounts },
-			user: { findMany: findOidcOnlyUsers, update: updateUser },
+			user: {
+				findMany: findOidcOnlyUsers,
+				findUnique: findUniqueUser,
+				update: updateUser,
+				updateMany: updateManyUsers,
+			},
 			session: { deleteMany: deleteSessions },
 		}),
 	);
@@ -69,7 +90,7 @@ beforeEach(async () => {
 			findUnique: findUniqueProvider,
 		},
 		oIDCAccount: { findFirst: findLinkedAccount },
-		user: { findMany: findOidcOnlyUsers },
+		user: { findMany: findOidcOnlyUsers, findUnique: findUniqueUser },
 		session: { deleteMany: deleteSessions },
 		$transaction: runTransaction,
 	});
@@ -190,8 +211,8 @@ describe("DELETE /api/oidc-providers", () => {
 			},
 			select: { id: true, hashedPassword: true },
 		});
-		expect(updateUser).toHaveBeenCalledWith({
-			where: { id: "admin-user" },
+		expect(updateManyUsers).toHaveBeenCalledWith({
+			where: { id: "admin-user", hashedPassword: null },
 			data: {
 				hashedPassword: expect.any(String),
 				mustChangePassword: false,
@@ -207,19 +228,28 @@ describe("DELETE /api/oidc-providers", () => {
 	});
 
 	it("replaces the current admin password while deleting OIDC", async () => {
+		findUniqueUser.mockResolvedValueOnce({
+			hashedPassword: "$argon2id$existing-admin-password",
+		});
 		findOidcOnlyUsers.mockResolvedValueOnce([
-			{ id: "admin-user", hashedPassword: "$argon2id$existing-password" },
+			{ id: "admin-user", hashedPassword: "$argon2id$existing-admin-password" },
 		]);
 
 		const response = await app.inject({
 			method: "DELETE",
 			url: "/api/oidc-providers",
-			payload: { replacementPassword: "Safe-Replacement1!" },
+			payload: {
+				currentPassword: "CurrentPassword1!",
+				replacementPassword: "Safe-Replacement1!",
+			},
 		});
 
 		expect(response.statusCode).toBe(204);
-		expect(updateUser).toHaveBeenCalledWith({
-			where: { id: "admin-user" },
+		expect(updateManyUsers).toHaveBeenCalledWith({
+			where: {
+				id: "admin-user",
+				hashedPassword: "$argon2id$existing-admin-password",
+			},
 			data: {
 				hashedPassword: expect.any(String),
 				mustChangePassword: false,
@@ -233,6 +263,9 @@ describe("DELETE /api/oidc-providers", () => {
 	});
 
 	it("preserves another linked user's existing password", async () => {
+		findUniqueUser.mockResolvedValueOnce({
+			hashedPassword: "$argon2id$existing-admin-password",
+		});
 		findOidcOnlyUsers.mockResolvedValueOnce([
 			{ id: "admin-user", hashedPassword: "$argon2id$existing-admin-password" },
 			{ id: "other-user", hashedPassword: "$argon2id$existing-password" },
@@ -241,20 +274,70 @@ describe("DELETE /api/oidc-providers", () => {
 		const response = await app.inject({
 			method: "DELETE",
 			url: "/api/oidc-providers",
-			payload: { replacementPassword: "Safe-Replacement1!" },
+			payload: {
+				currentPassword: "CurrentPassword1!",
+				replacementPassword: "Safe-Replacement1!",
+			},
 		});
 
 		expect(response.statusCode).toBe(204);
-		expect(updateUser).toHaveBeenCalledTimes(1);
-		expect(updateUser).toHaveBeenCalledWith({
-			where: { id: "admin-user" },
-			data: {
-				hashedPassword: expect.any(String),
-				mustChangePassword: false,
-				failedLoginAttempts: 0,
-				lockedUntil: null,
+		expect(updateManyUsers).toHaveBeenCalledTimes(1);
+		expect(updateUser).not.toHaveBeenCalled();
+	});
+
+	it("requires the current password before replacing an existing admin password", async () => {
+		findUniqueUser.mockResolvedValueOnce({
+			hashedPassword: "$argon2id$existing-admin-password",
+		});
+
+		const response = await app.inject({
+			method: "DELETE",
+			url: "/api/oidc-providers",
+			payload: { replacementPassword: "Safe-Replacement1!" },
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(JSON.parse(response.payload).error).toContain("Current password is required");
+		expect(runTransaction).not.toHaveBeenCalled();
+	});
+
+	it("rejects an incorrect current password before deleting OIDC", async () => {
+		findUniqueUser.mockResolvedValueOnce({
+			hashedPassword: "$argon2id$existing-admin-password",
+		});
+
+		const response = await app.inject({
+			method: "DELETE",
+			url: "/api/oidc-providers",
+			payload: {
+				currentPassword: "WrongPassword1!",
+				replacementPassword: "Safe-Replacement1!",
 			},
 		});
+
+		expect(response.statusCode).toBe(401);
+		expect(JSON.parse(response.payload).error).toContain("Current password is incorrect");
+		expect(runTransaction).not.toHaveBeenCalled();
+	});
+
+	it("rolls back deletion when the verified admin credential changes", async () => {
+		findUniqueUser.mockResolvedValueOnce({
+			hashedPassword: "$argon2id$existing-admin-password",
+		});
+		updateManyUsers.mockResolvedValueOnce({ count: 0 });
+
+		const response = await app.inject({
+			method: "DELETE",
+			url: "/api/oidc-providers",
+			payload: {
+				currentPassword: "CurrentPassword1!",
+				replacementPassword: "Safe-Replacement1!",
+			},
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(JSON.parse(response.payload).error).toContain("password changed");
+		expect(deleteOidcAccounts).not.toHaveBeenCalled();
 	});
 
 	it("does not remove links when the provider changed before deletion acquired it", async () => {
@@ -304,7 +387,7 @@ describe("DELETE /api/oidc-providers", () => {
 		expect(response.statusCode).toBe(500);
 		expect(runTransaction).toHaveBeenCalledTimes(1);
 		expect(deleteProvider).toHaveBeenCalled();
-		expect(updateUser).toHaveBeenCalled();
+		expect(updateManyUsers).toHaveBeenCalled();
 		expect(deleteOidcAccounts).toHaveBeenCalled();
 		expect(deleteSessions).toHaveBeenCalledWith({});
 		expect(clearCookie).not.toHaveBeenCalled();
