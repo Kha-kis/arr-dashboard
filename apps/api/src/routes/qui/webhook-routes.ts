@@ -305,7 +305,8 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 					deploymentPeers.some((otherInstance) => otherInstance.userId === userId)
 						? "never"
 						: "secret";
-				const reportLegacyCleanupRequired = !normalizationUncertain && deploymentPeers.length === 0;
+				const reportLegacyCleanupRequired =
+					legacyTargetAdoption === "never" || deploymentPeers.length === 0;
 				const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret, {
 					instanceId: instance.id,
 					deploymentId,

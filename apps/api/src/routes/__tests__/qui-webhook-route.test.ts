@@ -148,6 +148,34 @@ describe("POST /webhooks/qui", () => {
 		expect(createArgs.data.serviceInstanceId).toBe("qui-1");
 	});
 
+	it("preserves the event when its correlated qUI instance is deleted during persistence", async () => {
+		const deploymentId = buildQuiDeploymentId("user-1", "http://qui.test");
+		const owner = buildQuiNotificationTargetOwnerId("installation-1", "user-1", "qui-1");
+		mockPrisma.quiEventLog.create
+			.mockRejectedValueOnce(
+				Object.assign(new Error("Foreign key constraint failed"), { code: "P2003" }),
+			)
+			.mockResolvedValueOnce({
+				id: "evt-row-1",
+				receivedAt: new Date("2026-05-14T10:00:00Z"),
+			});
+
+		const res = await app.inject({
+			method: "POST",
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=qui-1&deploymentId=${deploymentId}&owner=${owner}`,
+			payload: {
+				type: "torrent_added",
+				payload: { hash: "a".repeat(40) },
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload)).toMatchObject({ ok: true, eventId: "evt-row-1" });
+		expect(mockPrisma.quiEventLog.create).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.quiEventLog.create.mock.calls[0]?.[0].data.serviceInstanceId).toBe("qui-1");
+		expect(mockPrisma.quiEventLog.create.mock.calls[1]?.[0].data.serviceInstanceId).toBeNull();
+	});
+
 	it("rejects source attribution with a different installation owner", async () => {
 		const deploymentId = buildQuiDeploymentId("user-1", "http://qui.test");
 		const otherOwner = buildQuiNotificationTargetOwnerId("other-installation", "user-1", "qui-1");
