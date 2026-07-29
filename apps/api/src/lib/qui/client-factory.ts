@@ -180,6 +180,8 @@ export interface QuiClient {
 		url: string;
 		/** Stable local owner marker used to reconcile a renamed target. */
 		ownerId?: string;
+		/** Allow callback-only migration when this is the sole local row for the qUI deployment. */
+		allowLegacyTargetAdoption?: boolean;
 		eventTypes?: string[];
 		enabled?: boolean;
 	}): Promise<{ id: number; cleanupPending?: boolean }>;
@@ -714,7 +716,14 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			});
 		},
 
-		async ensureNotificationTarget({ name, url, ownerId, eventTypes, enabled = true }) {
+		async ensureNotificationTarget({
+			name,
+			url,
+			ownerId,
+			allowLegacyTargetAdoption = false,
+			eventTypes,
+			enabled = true,
+		}) {
 			type NotificationTarget = z.infer<typeof quiNotificationTargetSchema>;
 			const redactSecret = (message: string) => message.replace(/secret=[^&\s"']+/g, "secret=***");
 			const requestOptions = {
@@ -796,8 +805,8 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					return (
 						target.name === "arr-dashboard" &&
 						!targetUrl.searchParams.has("owner") &&
-						desiredSecret !== null &&
-						targetUrl.searchParams.get("secret") === desiredSecret &&
+						(allowLegacyTargetAdoption ||
+							(desiredSecret !== null && targetUrl.searchParams.get("secret") === desiredSecret)) &&
 						desiredCallbackIdentity !== null &&
 						callbackIdentity(target.url) === desiredCallbackIdentity
 					);
