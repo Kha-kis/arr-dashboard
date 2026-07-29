@@ -284,6 +284,8 @@ describe("evaluateSecurityPosture", () => {
 
 		it.each([
 			" https://arr.example.com ",
+			"https://admin@arr.example.com",
+			"https://admin:secret@arr.example.com",
 			"https://arr.example.com?source=proxy",
 			"https://arr.example.com#settings",
 			"https://arr.example.com///",
@@ -304,7 +306,7 @@ describe("evaluateSecurityPosture", () => {
 			expect(checkById(result, "app-url")).toMatchObject({
 				severity: "warning",
 				detail: "External URL is not a valid public URL.",
-				remediation: expect.stringContaining("without surrounding whitespace"),
+				remediation: expect.stringContaining("without embedded credentials"),
 			});
 			expect(result.effective.appUrl).toBe(publicAppUrl);
 		});

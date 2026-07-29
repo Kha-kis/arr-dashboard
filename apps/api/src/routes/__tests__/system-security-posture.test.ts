@@ -133,6 +133,19 @@ describe("PUT /system/settings", () => {
 		expect(mockPrisma.systemSettings.upsert).not.toHaveBeenCalled();
 		expect(mockNotificationService.setBaseUrl).not.toHaveBeenCalled();
 	});
+
+	it.each(["https://admin@arr.example.com", "https://admin:secret@arr.example.com"])(
+		"rejects an External URL containing credentials: %s",
+		async (externalUrl) => {
+			const res = await injectAuthenticated("PUT", "/system/settings", {
+				body: { externalUrl },
+			});
+
+			expect(res.statusCode, res.payload).toBe(400);
+			expect(mockPrisma.systemSettings.upsert).not.toHaveBeenCalled();
+			expect(mockNotificationService.setBaseUrl).not.toHaveBeenCalled();
+		},
+	);
 });
 
 describe("GET /system/security-posture", () => {
@@ -150,7 +163,11 @@ describe("GET /system/security-posture", () => {
 		expect(body.data.effective.appUrl).toBe("https://arr.example.com");
 	});
 
-	it.each([" https://arr.example.com ", "https://arr.example.com?source=proxy"])(
+	it.each([
+		" https://arr.example.com ",
+		"https://admin:secret@arr.example.com",
+		"https://arr.example.com?source=proxy",
+	])(
 		"warns when a legacy persisted External URL is not a valid public base: %s",
 		async (externalUrl) => {
 			mockPrisma.systemSettings.findUnique.mockResolvedValue({ externalUrl });
@@ -164,7 +181,7 @@ describe("GET /system/security-posture", () => {
 			expect(appUrlCheck).toMatchObject({
 				severity: "warning",
 				detail: "External URL is not a valid public URL.",
-				remediation: expect.stringContaining("without surrounding whitespace"),
+				remediation: expect.stringContaining("without embedded credentials"),
 			});
 			expect(body.data.effective.appUrl).toBe(externalUrl);
 		},

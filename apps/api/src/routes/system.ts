@@ -60,6 +60,12 @@ const systemSettingsSchema = z.object({
 						message: "External URL must use http or https protocol",
 					});
 				}
+				if (url.username || url.password) {
+					ctx.addIssue({
+						code: "custom",
+						message: "External URL must not include credentials",
+					});
+				}
 				if (value.includes("?") || value.includes("#")) {
 					ctx.addIssue({
 						code: "custom",
