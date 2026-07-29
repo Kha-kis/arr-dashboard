@@ -542,6 +542,25 @@ describe("createQuiClient", () => {
 			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("PUT");
 		});
 
+		it("treats an empty requested event list as qUI's all-events setting", async () => {
+			fetchSpy.mockResolvedValueOnce(
+				new Response(JSON.stringify([target]), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
+			);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: [],
+				}),
+			).resolves.toEqual({ id: 42 });
+			expect(fetchSpy).toHaveBeenCalledOnce();
+		});
+
 		it("accepts a committed update when qUI loses the PUT response", async () => {
 			const desiredUrl = "generic://dashboard.test/hook";
 			fetchSpy
