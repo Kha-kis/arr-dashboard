@@ -106,7 +106,7 @@ export const OIDCProviderSection = () => {
 				setSuccess("OIDC provider created. Redirecting you to link the admin account...");
 				setIsLinking(true);
 				try {
-					const authorizationUrl = await initiateOIDCLogin();
+					const authorizationUrl = await initiateOIDCLogin("link");
 					window.location.href = authorizationUrl;
 				} catch (linkError) {
 					setIsLinking(false);
@@ -131,7 +131,7 @@ export const OIDCProviderSection = () => {
 		setIsLinking(true);
 
 		try {
-			const authorizationUrl = await initiateOIDCLogin();
+			const authorizationUrl = await initiateOIDCLogin(isLinked ? "test" : "link");
 			window.location.href = authorizationUrl;
 		} catch (err) {
 			setError(getErrorMessage(err, "Failed to start OIDC account linking"));

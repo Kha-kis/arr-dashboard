@@ -54,16 +54,19 @@ describe("OIDCProviderSection account linking", () => {
 		expect(screen.getByText("Not linked")).toBeDefined();
 		fireEvent.click(screen.getByRole("button", { name: /link account/i }));
 
-		await waitFor(() => expect(initiateOIDCLogin).toHaveBeenCalledOnce());
+		await waitFor(() => expect(initiateOIDCLogin).toHaveBeenCalledWith("link"));
 		expect(await screen.findByText("provider unavailable")).toBeDefined();
 	});
 
-	it("shows a linked identity as ready to test", () => {
+	it("tests a linked identity without starting another link flow", async () => {
 		oidcState.linked = true;
+		initiateOIDCLogin.mockRejectedValueOnce(new Error("provider unavailable"));
 
 		render(<OIDCProviderSection />);
 
 		expect(screen.getByText("Linked")).toBeDefined();
-		expect(screen.getByRole("button", { name: /test account/i })).toBeDefined();
+		fireEvent.click(screen.getByRole("button", { name: /test account/i }));
+
+		await waitFor(() => expect(initiateOIDCLogin).toHaveBeenCalledWith("test"));
 	});
 });
