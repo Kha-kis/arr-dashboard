@@ -949,7 +949,7 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		const ownerId = buildQuiNotificationTargetOwnerId("installation-1", "user-1", "qui-1");
 		expect(targetUrl.searchParams.get("owner")).toBe(ownerId);
 		expect(call.ownerId).toBe(ownerId);
-		expect(call.allowLegacyTargetAdoption).toBe(true);
+		expect(call.legacyTargetAdoption).toBe("callback");
 		expect(call.eventTypes).toEqual(["torrent_added"]);
 		expect(call.enabled).toBe(true);
 	});
@@ -978,7 +978,31 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 
 		expect(res.statusCode).toBe(200);
 		expect(mockQuiClient.ensureNotificationTarget.mock.calls[0]?.[0]).toMatchObject({
-			allowLegacyTargetAdoption: false,
+			legacyTargetAdoption: "secret",
+		});
+	});
+
+	it("denies legacy target migration when the same user has another row for the qUI deployment", async () => {
+		const secret = "a".repeat(32);
+		mockPrisma.user.findUniqueOrThrow.mockResolvedValue({
+			hashedQuiWebhookSecret: hashSecret(secret),
+		});
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([
+			makeQuiInstance({
+				id: "qui-2",
+				baseUrl: "http://QUI.test/",
+			}),
+		]);
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.ensureNotificationTarget.mockResolvedValue({ id: 42 });
+
+		const res = await injectAuthenticated("POST", "/qui/instances/qui-1/webhook-config/register", {
+			body: { secret },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockQuiClient.ensureNotificationTarget.mock.calls[0]?.[0]).toMatchObject({
+			legacyTargetAdoption: "never",
 		});
 	});
 

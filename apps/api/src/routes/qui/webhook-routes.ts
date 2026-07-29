@@ -287,17 +287,26 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 						service: "QUI",
 						id: { not: instance.id },
 					},
-					select: { baseUrl: true },
+					select: { baseUrl: true, userId: true },
 				});
-				const allowLegacyTargetAdoption = !otherQuiInstances.some((otherInstance) => {
+				let normalizationUncertain = false;
+				const deploymentPeers = otherQuiInstances.filter((otherInstance) => {
 					try {
 						return buildQuiDeploymentId("", otherInstance.baseUrl) === deploymentKey;
 					} catch {
 						// Fail closed if legacy data prevents us from proving
 						// that the other qUI row belongs to a different server.
-						return true;
+						normalizationUncertain = true;
+						return false;
 					}
 				});
+				const legacyTargetAdoption =
+					normalizationUncertain ||
+					deploymentPeers.some((otherInstance) => otherInstance.userId === userId)
+						? "never"
+						: deploymentPeers.length > 0
+							? "secret"
+							: "callback";
 				const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret, {
 					instanceId: instance.id,
 					deploymentId,
@@ -314,7 +323,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 						),
 						url: targetUrl,
 						ownerId,
-						allowLegacyTargetAdoption,
+						legacyTargetAdoption,
 						eventTypes: body.eventTypes,
 						enabled: true,
 					});
