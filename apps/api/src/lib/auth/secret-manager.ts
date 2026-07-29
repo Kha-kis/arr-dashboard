@@ -21,6 +21,8 @@ type StoredSecrets = Omit<Secrets, "installationId"> & {
 	[key: string]: unknown;
 };
 
+type SecretOverrides = Partial<Pick<Secrets, "encryptionKey" | "sessionCookieSecret">>;
+
 /**
  * Known legacy secrets paths from previous versions.
  * When the primary path doesn't exist, these are checked in order
@@ -45,19 +47,25 @@ export class SecretManager {
 	 * Get or create secrets. If secrets file doesn't exist, checks legacy paths
 	 * for migration before generating new secrets.
 	 */
-	getOrCreateSecrets(): Secrets {
+	getOrCreateSecrets(overrides: SecretOverrides = {}): Secrets {
+		let preservedLocalFields: Record<string, unknown> = {};
+
 		// Try to load existing secrets (no existence check to avoid TOCTOU race)
 		try {
 			const content = readFileSync(this.secretsPath, "utf-8");
 			const secrets: unknown = JSON.parse(content);
+			if (secrets && typeof secrets === "object") {
+				preservedLocalFields = secrets as Record<string, unknown>;
+			}
 
 			// Validate loaded secrets
 			if (this.isValidSecrets(secrets)) {
-				return this.ensureInstallationId(secrets);
+				return this.applyOverrides(this.ensureInstallationId(secrets), overrides);
 			}
 
-			// Invalid format, will regenerate below
-			log.warn("Invalid secrets format, regenerating");
+			// Missing or invalid cryptographic fields are resolved below while
+			// preserving parseable deployment-local metadata.
+			log.warn("Secrets file is missing required cryptographic fields");
 		} catch (error) {
 			// ENOENT is expected on first run — only log unexpected errors
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -70,14 +78,29 @@ export class SecretManager {
 		// secrets were stored at /app/api/data/secrets.json instead of /config/.
 		const migrated = this.tryMigrateLegacySecrets();
 		if (migrated) {
-			return migrated;
+			return this.applyOverrides(migrated, overrides);
 		}
 
 		// Generate new secrets
 		const secrets: Secrets = {
-			encryptionKey: randomBytes(32).toString("hex"),
-			sessionCookieSecret: randomBytes(32).toString("hex"),
-			installationId: randomBytes(16).toString("hex"),
+			...preservedLocalFields,
+			encryptionKey:
+				overrides.encryptionKey ??
+				(typeof preservedLocalFields.encryptionKey === "string" &&
+				preservedLocalFields.encryptionKey.length === 64
+					? preservedLocalFields.encryptionKey
+					: randomBytes(32).toString("hex")),
+			sessionCookieSecret:
+				overrides.sessionCookieSecret ??
+				(typeof preservedLocalFields.sessionCookieSecret === "string" &&
+				preservedLocalFields.sessionCookieSecret.length === 64
+					? preservedLocalFields.sessionCookieSecret
+					: randomBytes(32).toString("hex")),
+			installationId:
+				typeof preservedLocalFields.installationId === "string" &&
+				/^[a-f0-9]{32}$/.test(preservedLocalFields.installationId)
+					? preservedLocalFields.installationId
+					: randomBytes(16).toString("hex"),
 		};
 
 		this.persistSecrets(secrets);
@@ -121,6 +144,24 @@ export class SecretManager {
 		}
 
 		return null;
+	}
+
+	private applyOverrides(secrets: Secrets, overrides: SecretOverrides): Secrets {
+		const resolved: Secrets = {
+			...secrets,
+			...(overrides.encryptionKey ? { encryptionKey: overrides.encryptionKey } : {}),
+			...(overrides.sessionCookieSecret
+				? { sessionCookieSecret: overrides.sessionCookieSecret }
+				: {}),
+		};
+		if (
+			resolved.encryptionKey !== secrets.encryptionKey ||
+			resolved.sessionCookieSecret !== secrets.sessionCookieSecret
+		) {
+			this.persistSecrets(resolved);
+			log.info({ path: this.secretsPath }, "Synchronized active environment secrets");
+		}
+		return resolved;
 	}
 
 	private ensureInstallationId(secrets: StoredSecrets): Secrets {

@@ -60,9 +60,14 @@ export async function writeSecrets(
 			}
 		}
 
-		// Merge backup secrets with existing ones
-		// Backup secrets take precedence, but existing fields are preserved
-		const mergedSecrets = { ...existingSecrets, ...secrets };
+		// Import only the cryptographic fields defined by the backup contract.
+		// Extra fields in legacy or crafted payloads must never replace local
+		// deployment identity or other destination metadata.
+		const mergedSecrets = {
+			...existingSecrets,
+			encryptionKey: secrets.encryptionKey,
+			sessionCookieSecret: secrets.sessionCookieSecret,
+		};
 
 		const secretsContent = JSON.stringify(mergedSecrets, null, 2);
 		// Write with restrictive permissions (owner read/write only)

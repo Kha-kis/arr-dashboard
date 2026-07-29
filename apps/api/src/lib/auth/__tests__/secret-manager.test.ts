@@ -63,12 +63,55 @@ describe("SecretManager installation identity", () => {
 		await writeSecrets(secretsPath, {
 			encryptionKey: "d".repeat(64),
 			sessionCookieSecret: "e".repeat(64),
-		});
+			installationId: "f".repeat(32),
+		} as Parameters<typeof writeSecrets>[1]);
 
 		expect(JSON.parse(await readFile(secretsPath, "utf8"))).toEqual({
 			encryptionKey: "d".repeat(64),
 			sessionCookieSecret: "e".repeat(64),
 			installationId,
+		});
+	});
+
+	it("backs up the active environment secrets without dropping local metadata", async () => {
+		const secretsPath = await createSecretsPath();
+		const installationId = "c".repeat(32);
+		await writeFile(
+			secretsPath,
+			JSON.stringify({
+				installationId,
+				backupPassword: "local-backup-password",
+			}),
+		);
+
+		const activeSecrets = new SecretManager(secretsPath).getOrCreateSecrets({
+			encryptionKey: "d".repeat(64),
+			sessionCookieSecret: "e".repeat(64),
+		});
+
+		expect(activeSecrets).toMatchObject({
+			encryptionKey: "d".repeat(64),
+			sessionCookieSecret: "e".repeat(64),
+			installationId,
+		});
+		const backupSecrets = await readSecrets(secretsPath);
+		expect(backupSecrets).toEqual({
+			encryptionKey: activeSecrets.encryptionKey,
+			sessionCookieSecret: activeSecrets.sessionCookieSecret,
+		});
+		expect(JSON.parse(await readFile(secretsPath, "utf8"))).toMatchObject({
+			...activeSecrets,
+			backupPassword: "local-backup-password",
+		});
+
+		const restorePath = await createSecretsPath();
+		const destinationInstallationId = "f".repeat(32);
+		await writeFile(restorePath, JSON.stringify({ installationId: destinationInstallationId }));
+		await writeSecrets(restorePath, backupSecrets);
+		expect(JSON.parse(await readFile(restorePath, "utf8"))).toEqual({
+			encryptionKey: activeSecrets.encryptionKey,
+			sessionCookieSecret: activeSecrets.sessionCookieSecret,
+			installationId: destinationInstallationId,
 		});
 	});
 });
