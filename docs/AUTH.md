@@ -80,21 +80,30 @@ export const passwordSchemaStrict = z.string()
 
 **Flow:**
 1. `POST /auth/oidc/login` -> Generate state, nonce, PKCE verifier
+   - When an authenticated admin starts the flow from Settings, the
+     server-side state also records that admin's user ID as a linking intent.
 2. Redirect to provider authorization URL
 3. `GET /auth/oidc/callback` -> Validate state, exchange code
 4. Verify ID token nonce, get user info
 5. Create/link OIDCAccount, create session
+   - With no users, the first OIDC identity creates the initial admin.
+   - With an existing admin, a new OIDC identity is linked only from an
+     authenticated, one-time Settings flow. Ordinary unlinked logins are rejected.
 
 **Security:**
 - PKCE (Proof Key for Code Exchange)
 - State parameter (CSRF protection)
 - Nonce validation (replay attack prevention)
 - Subject claim consistency check
+- Existing-admin linking is bound to expiring, single-use server-side state;
+  usernames and email claims are never used to claim the admin account.
 
 **Configuration** (`apps/api/src/routes/oidc-providers.ts`):
 - Singleton pattern (only one provider)
 - Client secret encrypted at rest
 - Auto-generated redirect URI
+- Creating an enabled provider starts account linking immediately; configured
+  providers also expose a **Link or Test Account** action in Settings.
 
 ## Passkey Authentication
 

@@ -26,6 +26,7 @@ import {
 	useUpdateOIDCProvider,
 } from "../../../hooks/api/useOIDCProviders";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { initiateOIDCLogin } from "../../../lib/api-client/auth";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { ToggleSwitch } from "../../../components/layout/config-primitives";
@@ -51,6 +52,7 @@ export const OIDCProviderSection = () => {
 
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
+	const [isLinking, setIsLinking] = useState(false);
 
 	// Form state for creating new provider
 	const [showCreateForm, setShowCreateForm] = useState(false);
@@ -88,7 +90,6 @@ export const OIDCProviderSection = () => {
 			};
 
 			await createMutation.mutateAsync(payload);
-			setSuccess("OIDC provider created successfully!");
 			setShowCreateForm(false);
 			setFormData({
 				displayName: "",
@@ -99,8 +100,41 @@ export const OIDCProviderSection = () => {
 				scopes: "openid,email,profile",
 				enabled: true,
 			});
+
+			if (payload.enabled) {
+				setSuccess("OIDC provider created. Redirecting you to link the admin account...");
+				setIsLinking(true);
+				try {
+					const authorizationUrl = await initiateOIDCLogin();
+					window.location.href = authorizationUrl;
+				} catch (linkError) {
+					setIsLinking(false);
+					setError(
+						getErrorMessage(
+							linkError,
+							"Provider was created, but the admin account could not be linked. Use the link button below to try again.",
+						),
+					);
+				}
+			} else {
+				setSuccess("OIDC provider created successfully!");
+			}
 		} catch (err) {
 			setError(getErrorMessage(err, "Failed to create OIDC provider"));
+		}
+	};
+
+	const handleLinkAccount = async () => {
+		setError(null);
+		setSuccess(null);
+		setIsLinking(true);
+
+		try {
+			const authorizationUrl = await initiateOIDCLogin();
+			window.location.href = authorizationUrl;
+		} catch (err) {
+			setError(getErrorMessage(err, "Failed to start OIDC account linking"));
+			setIsLinking(false);
 		}
 	};
 
@@ -346,7 +380,7 @@ export const OIDCProviderSection = () => {
 										) : (
 											<>
 												<Plus className="h-4 w-4" />
-												Create Provider
+												{formData.enabled ? "Create & Link Account" : "Create Provider"}
 											</>
 										)}
 									</Button>
@@ -604,6 +638,33 @@ export const OIDCProviderSection = () => {
 											<p className="text-foreground">{provider.scopes}</p>
 										</div>
 									</div>
+								</div>
+
+								<div className="flex flex-col gap-3 rounded-lg border border-border/50 bg-card/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+									<div>
+										<p className="text-sm font-medium text-foreground">Admin account linking</p>
+										<p className="text-xs text-muted-foreground">
+											Complete this once before signing out so this OIDC identity can access the
+											dashboard.
+										</p>
+									</div>
+									<Button
+										onClick={handleLinkAccount}
+										disabled={!provider.enabled || isLinking}
+										className="gap-2 sm:shrink-0"
+									>
+										{isLinking ? (
+											<>
+												<Loader2 className="h-4 w-4 animate-spin" />
+												Redirecting...
+											</>
+										) : (
+											<>
+												<Link className="h-4 w-4" />
+												Link or Test Account
+											</>
+										)}
+									</Button>
 								</div>
 							</div>
 						)}
