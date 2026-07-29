@@ -210,15 +210,16 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 	app.post("/qui/webhook-config/rotate", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		return withWebhookConfigLock(userId, async () => {
+			const baseUrl = await resolvePublicBaseUrl(request);
+			const webhookUrl = buildQuiNotificationTargetUrl(baseUrl);
 			const { plaintextSecret, hashedSecret } = generateQuiWebhookSecret();
 			await app.prisma.user.update({
 				where: { id: userId },
 				data: { hashedQuiWebhookSecret: hashedSecret },
 			});
-			const baseUrl = await resolvePublicBaseUrl(request);
 			return reply.send({
 				hasSecret: true,
-				webhookUrl: buildQuiNotificationTargetUrl(baseUrl),
+				webhookUrl,
 				// Plaintext returned only here — never stored, never re-displayed.
 				// Operators copy it into qui's notification-target URL once.
 				secret: plaintextSecret,
