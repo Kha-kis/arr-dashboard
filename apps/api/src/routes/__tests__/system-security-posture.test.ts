@@ -99,6 +99,25 @@ describe("PUT /system/settings", () => {
 		expect(mockNotificationService.setBaseUrl).toHaveBeenCalledWith("https://arr.example.com");
 	});
 
+	it.each([
+		["https://arr.example.com\\proxy", "https://arr.example.com/proxy"],
+		["https://arr.example.com/\tproxy", "https://arr.example.com/proxy"],
+	])("persists the parser-canonical External URL: %s", async (externalUrl, expected) => {
+		const res = await injectAuthenticated("PUT", "/system/settings", {
+			body: { externalUrl },
+		});
+
+		expect(res.statusCode, res.payload).toBe(200);
+		expect(JSON.parse(res.payload).data.externalUrl).toBe(expected);
+		expect(mockPrisma.systemSettings.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.objectContaining({ externalUrl: expected }),
+				create: expect.objectContaining({ externalUrl: expected }),
+			}),
+		);
+		expect(mockNotificationService.setBaseUrl).toHaveBeenCalledWith(expected);
+	});
+
 	it("clears a whitespace-only External URL and restores the APP_URL fallback", async () => {
 		const res = await injectAuthenticated("PUT", "/system/settings", {
 			body: { externalUrl: "   " },
@@ -166,6 +185,8 @@ describe("GET /system/security-posture", () => {
 	it.each([
 		" https://arr.example.com ",
 		"https://admin:secret@arr.example.com",
+		"https://arr.example.com\\proxy",
+		"https://arr.example.com/\tproxy",
 		"https://arr.example.com?source=proxy",
 	])(
 		"warns when a legacy persisted External URL is not a valid public base: %s",
@@ -207,7 +228,7 @@ describe("GET /system/security-posture", () => {
 		mockPrisma.oIDCProvider.findFirst.mockResolvedValue({
 			redirectUri: "https://arr.example.com/auth/oidc/callback",
 		});
-		mockPrisma.webAuthnCredential.count.mockResolvedValue(0);
+		mockPrisma.webAuthnCredential.count.mockResolvedValue(1);
 
 		const res = await injectAuthenticated("GET", "/system/security-posture");
 
@@ -216,12 +237,16 @@ describe("GET /system/security-posture", () => {
 		const authentication = body.data.checks.find(
 			(check: { id: string }) => check.id === "authentication",
 		);
+		const oidcAccountLink = body.data.checks.find(
+			(check: { id: string }) => check.id === "oidc-account-link",
+		);
 		expect(body.data.auth.oidcEnabled).toBe(false);
 		expect(body.data.auth.oidcProviderEnabled).toBe(true);
 		expect(authentication).toMatchObject({
-			severity: "warning",
-			detail: "Password-only authentication is in use.",
+			severity: "healthy",
 		});
+		expect(oidcAccountLink).toMatchObject({ severity: "warning" });
+		expect(body.data.overall).toBe("warning");
 		expect(mockPrisma.oIDCAccount.findFirst).toHaveBeenCalledWith({
 			where: { userId: "user-1" },
 			select: { id: true },

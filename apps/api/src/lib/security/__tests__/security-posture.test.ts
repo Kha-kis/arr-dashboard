@@ -29,6 +29,7 @@ function baseInput(overrides: Overrides = {}): SecurityPostureInput {
 			...overrides.env,
 		},
 		oidcEnabled: overrides.oidcEnabled ?? false,
+		oidcProviderEnabled: overrides.oidcProviderEnabled ?? overrides.oidcEnabled ?? false,
 		oidcRedirectUri: overrides.oidcRedirectUri ?? null,
 		passkeyCount: overrides.passkeyCount ?? 0,
 		passwordUserCount: overrides.passwordUserCount ?? 1,
@@ -165,6 +166,23 @@ describe("evaluateSecurityPosture", () => {
 			expect(check.detail).toContain("3 passkeys");
 		});
 
+		it("warns when the enabled OIDC provider is not linked to the admin", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					oidcEnabled: false,
+					oidcProviderEnabled: true,
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "authentication").severity).toBe("healthy");
+			expect(checkById(result, "oidc-account-link")).toMatchObject({
+				severity: "warning",
+				detail: "The OIDC provider is enabled, but the admin account is not linked.",
+			});
+			expect(result.overall).toBe("warning");
+		});
+
 		it("pluralizes passkeys correctly for a single credential", () => {
 			const result = evaluateSecurityPosture(baseInput({ passkeyCount: 1 }));
 			expect(checkById(result, "authentication").detail).toContain("1 passkey");
@@ -286,6 +304,8 @@ describe("evaluateSecurityPosture", () => {
 			" https://arr.example.com ",
 			"https://admin@arr.example.com",
 			"https://admin:secret@arr.example.com",
+			"https://arr.example.com\\proxy",
+			"https://arr.example.com/\tproxy",
 			"https://arr.example.com?source=proxy",
 			"https://arr.example.com#settings",
 			"https://arr.example.com///",
@@ -360,6 +380,32 @@ describe("evaluateSecurityPosture", () => {
 			});
 			expect(result.checks.find((check) => check.id === "oidc-app-url")).toBeUndefined();
 			expect(result.overall).toBe("healthy");
+		});
+
+		it.each([
+			"https://arr.example.com/auth/oidc/callback#fragment",
+			"https://admin:secret@arr.example.com/auth/oidc/callback",
+			"https://arr.example.com\\auth\\oidc\\callback",
+		])("warns about an invalid HTTPS OIDC callback: %s", (oidcRedirectUri) => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "https://arr.example.com",
+					},
+					oidcEnabled: true,
+					oidcRedirectUri,
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "oidc-app-url")).toMatchObject({
+				severity: "warning",
+				detail: "OIDC Redirect URI is not a valid callback URL.",
+			});
+			expect(result.overall).toBe("warning");
 		});
 
 		it.each([

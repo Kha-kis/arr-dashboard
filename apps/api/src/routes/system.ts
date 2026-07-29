@@ -210,13 +210,13 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		// URL shape and whitespace are handled by the schema. Canonicalize the
-		// persisted value so consumers cannot produce double-slash API paths.
+		// parsed value before persistence so all consumers see the same URL.
 		const normalizedExternalUrl =
 			externalUrl === undefined
 				? undefined
 				: externalUrl === null || externalUrl === ""
 					? null
-					: externalUrl.replace(/\/+$/, "");
+					: new URL(externalUrl).toString().replace(/\/+$/, "");
 
 		// Update or create settings
 		const settings = await app.prisma.systemSettings.upsert({

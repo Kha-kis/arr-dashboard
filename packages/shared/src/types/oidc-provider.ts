@@ -21,6 +21,36 @@ export const oidcProviderSchema = z.object({
 
 export type OIDCProvider = z.infer<typeof oidcProviderSchema>;
 
+export const oidcRedirectUriSchema = z
+	.string()
+	.url()
+	.superRefine((value, ctx) => {
+		try {
+			const url = new URL(value);
+			if (!["http:", "https:"].includes(url.protocol)) {
+				ctx.addIssue({
+					code: "custom",
+					message: "OIDC redirect URI must use http or https protocol",
+				});
+			}
+			if (url.username || url.password) {
+				ctx.addIssue({
+					code: "custom",
+					message: "OIDC redirect URI must not include credentials",
+				});
+			}
+			if (value.includes("#")) {
+				ctx.addIssue({
+					code: "custom",
+					message: "OIDC redirect URI must not include a fragment",
+				});
+			}
+		} catch {
+			// z.string().url() reports the canonical invalid-URL issue.
+		}
+	})
+	.transform((value) => new URL(value).toString());
+
 /**
  * Input schema for creating an OIDC provider
  * Includes clientSecret which will be encrypted on the backend
@@ -30,7 +60,7 @@ export const createOidcProviderSchema = z.object({
 	clientId: z.string().min(1),
 	clientSecret: z.string().min(1),
 	issuer: z.string().url(),
-	redirectUri: z.string().url().optional(),
+	redirectUri: oidcRedirectUriSchema.optional(),
 	scopes: z.string().default("openid,email,profile"),
 	enabled: z.boolean().default(true),
 });
