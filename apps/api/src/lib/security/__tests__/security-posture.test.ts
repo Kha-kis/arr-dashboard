@@ -332,17 +332,40 @@ describe("evaluateSecurityPosture", () => {
 			expect(result.overall).toBe("healthy");
 		});
 
-		it("accepts an HTTP OIDC loopback callback in development", () => {
+		it.each([
+			"http://localhost:3000/auth/oidc/callback",
+			"http://dashboard.localhost:3000/auth/oidc/callback",
+			"http://127.0.0.1:3000/auth/oidc/callback",
+			"http://[::1]:3000/auth/oidc/callback",
+		])("accepts an HTTP OIDC loopback callback in development: %s", (oidcRedirectUri) => {
 			const result = evaluateSecurityPosture(
 				baseInput({
 					oidcEnabled: true,
-					oidcRedirectUri: "http://localhost:3000/auth/oidc/callback",
+					oidcRedirectUri,
 				}),
 			);
 
 			expect(result.checks.find((check) => check.id === "oidc-app-url")).toBeUndefined();
 			expect(result.overall).toBe("healthy");
 		});
+
+		it.each(["http://public.example/auth/oidc/callback", "ftp://localhost/auth/oidc/callback"])(
+			"warns about a non-HTTPS OIDC callback outside the loopback exception: %s",
+			(oidcRedirectUri) => {
+				const result = evaluateSecurityPosture(
+					baseInput({
+						oidcEnabled: true,
+						oidcRedirectUri,
+						passkeyCount: 1,
+					}),
+				);
+
+				expect(checkById(result, "oidc-app-url")).toMatchObject({
+					severity: "warning",
+				});
+				expect(result.overall).toBe("warning");
+			},
+		);
 
 		it("warns on non-https APP_URL in production", () => {
 			const result = evaluateSecurityPosture(

@@ -107,6 +107,30 @@ describe("PUT /system/settings", () => {
 		expect(body.data.externalUrl).toBeNull();
 		expect(mockNotificationService.setBaseUrl).toHaveBeenCalledWith("http://localhost:3000");
 	});
+	it("rejects a non-string External URL without persisting it", async () => {
+		const res = await injectAuthenticated("PUT", "/system/settings", {
+			body: { externalUrl: 123 },
+		});
+
+		expect(res.statusCode, res.payload).toBe(400);
+		expect(mockPrisma.systemSettings.upsert).not.toHaveBeenCalled();
+		expect(mockNotificationService.setBaseUrl).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		"https://arr.example.com?source=proxy",
+		"https://arr.example.com#settings",
+		"https://arr.example.com?",
+		"https://arr.example.com#",
+	])("rejects an External URL with a query or fragment: %s", async (externalUrl) => {
+		const res = await injectAuthenticated("PUT", "/system/settings", {
+			body: { externalUrl },
+		});
+
+		expect(res.statusCode, res.payload).toBe(400);
+		expect(mockPrisma.systemSettings.upsert).not.toHaveBeenCalled();
+		expect(mockNotificationService.setBaseUrl).not.toHaveBeenCalled();
+	});
 });
 
 describe("GET /system/security-posture", () => {

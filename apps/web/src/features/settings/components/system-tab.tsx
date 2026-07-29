@@ -223,6 +223,10 @@ export function SystemTab() {
 					toast.error("External URL must use http or https protocol");
 					return;
 				}
+				if (externalUrl.includes("?") || externalUrl.includes("#")) {
+					toast.error("External URL must not include a query string or fragment");
+					return;
+				}
 			} catch {
 				toast.error("External URL must be a valid URL (e.g., https://arr.example.com)");
 				return;
@@ -858,7 +862,7 @@ ports:
 						/>
 						<p className="text-xs text-muted-foreground">
 							Leave empty to auto-detect from browser. Set this if you&apos;re behind a reverse
-							proxy.
+							proxy. Use a base URL without a query string or fragment.
 						</p>
 					</div>
 
