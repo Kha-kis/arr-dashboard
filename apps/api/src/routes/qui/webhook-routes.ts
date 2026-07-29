@@ -10,6 +10,19 @@ import { validateRequest } from "../../lib/utils/validate.js";
 import { QUI_INSTANCE_PARAM, safeParseJson } from "./qui-shared.js";
 
 export function registerWebhookRoutes(app: FastifyInstance): void {
+	function isLoopbackAddress(value: string): boolean {
+		const normalized = value
+			.trim()
+			.toLowerCase()
+			.replace(/^\[|\]$/g, "");
+		return (
+			normalized === "localhost" ||
+			normalized === "::1" ||
+			/^127(?:\.\d{1,3}){3}$/.test(normalized) ||
+			/^::ffff:127(?:\.\d{1,3}){3}$/.test(normalized)
+		);
+	}
+
 	// ────────────────────────────────────────────────────────────────────
 	// Phase 5.1 — webhook config (GET + rotate + register-in-qui)
 	// ────────────────────────────────────────────────────────────────────
@@ -33,22 +46,23 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 
 		const appUrl = app.config.APP_URL.replace(/\/$/, "");
 		const appHost = new URL(appUrl).hostname;
-		const appUrlIsLoopback = ["localhost", "127.0.0.1", "::1"].includes(appHost);
+		const appUrlIsLoopback = isLoopbackAddress(appHost);
 		if (!appUrlIsLoopback) {
 			return appUrl;
 		}
 
 		// Next's production rewrite changes Host to the internal API address,
 		// but always preserves the browser-facing Host in X-Forwarded-Host.
-		// Read that one header explicitly for callback URL discovery even when
-		// Fastify's global trustProxy setting is false. These routes require an
-		// authenticated user, and the submitted secret is verified against the
-		// current user's stored hash before the discovered URL is registered.
+		// Read that header explicitly only when the direct peer is loopback,
+		// which is the trusted in-container Next -> API hop. A remote client
+		// must not be able to forge this header and redirect qUI notifications
+		// (including their callback credential) to an attacker-controlled host.
 		const forwardedHostHeader = request.headers["x-forwarded-host"];
 		const forwardedHost = Array.isArray(forwardedHostHeader)
 			? forwardedHostHeader[0]
 			: forwardedHostHeader?.split(",")[0]?.trim();
-		if (forwardedHost) {
+		const directPeerIsLoopback = isLoopbackAddress(request.raw.socket.remoteAddress ?? "");
+		if (forwardedHost && directPeerIsLoopback) {
 			const forwardedProtoHeader = request.headers["x-forwarded-proto"];
 			const forwardedProtoValue = Array.isArray(forwardedProtoHeader)
 				? forwardedProtoHeader[0]
@@ -60,7 +74,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 			try {
 				const forwardedOrigin = new URL(`${forwardedProto}://${forwardedHost}`).origin;
 				const forwardedHostname = new URL(forwardedOrigin).hostname;
-				if (!["localhost", "127.0.0.1", "::1"].includes(forwardedHostname)) {
+				if (!isLoopbackAddress(forwardedHostname)) {
 					return forwardedOrigin;
 				}
 			} catch {
@@ -69,10 +83,17 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 			}
 		}
 
+		// With trustProxy enabled, request.host/protocol can also be derived
+		// from forwarded headers. Do not fall through to those values for a
+		// non-local peer after rejecting its forwarded host.
+		if (!directPeerIsLoopback) {
+			return appUrl;
+		}
+
 		// Direct development requests do not pass through Next's rewrite.
 		const requestOrigin = `${request.protocol}://${request.host}`;
 		const requestHost = new URL(requestOrigin).hostname;
-		return ["localhost", "127.0.0.1", "::1"].includes(requestHost) ? appUrl : requestOrigin;
+		return isLoopbackAddress(requestHost) ? appUrl : requestOrigin;
 	}
 
 	/**
