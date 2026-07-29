@@ -69,12 +69,17 @@ export class NotificationService {
 		this.logger = logger;
 		this.dedupGate = dedupGate;
 		this.retryHandler = retryHandler;
-		this.baseUrl = baseUrl.replace(/\/$/, "");
+		this.baseUrl = normalizeBaseUrl(baseUrl);
 		this.ruleEngine = ruleEngine ?? null;
 		this.aggregationBuffer = aggregationBuffer ?? null;
 
 		// Check deferred notifications every minute
 		this.deferFlushTimer = setInterval(() => this.flushDeferredNotifications(), 60_000);
+	}
+
+	/** Update the public URL used to resolve relative notification links. */
+	setBaseUrl(baseUrl: string): void {
+		this.baseUrl = normalizeBaseUrl(baseUrl);
 	}
 
 	/** Clean up timers on shutdown */
@@ -540,4 +545,8 @@ function resolveUrl(url: string, baseUrl: string): string {
 	if (/^https?:\/\//i.test(url)) return url;
 	if (url.startsWith("/")) return `${baseUrl}${url}`;
 	return `${baseUrl}/${url}`;
+}
+
+function normalizeBaseUrl(baseUrl: string): string {
+	return baseUrl.trim().replace(/\/+$/, "");
 }

@@ -158,6 +158,7 @@ export interface SecurityPosture {
 		passwordEnabled: boolean;
 		passwordUserCount: number;
 		oidcEnabled: boolean;
+		oidcProviderEnabled: boolean;
 		passkeyCount: number;
 	};
 	capturedAt: string;

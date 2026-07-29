@@ -2,8 +2,10 @@ import { createReadStream, existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
 import { evaluateSecurityPosture } from "../lib/security/security-posture.js";
+import { validateRequest } from "../lib/utils/validate.js";
 import { getAppVersionInfo } from "../lib/utils/version.js";
 import { KNOWN_INTEGRATIONS } from "../lib/validation/index.js";
 import { integrationHealth } from "../lib/validation/integration-health.js";
@@ -17,6 +19,16 @@ import { validationQuarantine } from "../lib/validation/validation-quarantine.js
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 const LOGS_RATE_LIMIT = { max: 30, timeWindow: "1 minute" };
+
+const systemSettingsBodySchema = z.object({
+	apiPort: z.number().optional(),
+	webPort: z.number().optional(),
+	listenAddress: z.string().optional(),
+	appName: z.string().optional(),
+	externalUrl: z.string().nullable().optional(),
+	trustProxy: z.boolean().optional(),
+	secureCookies: z.boolean().nullable().optional(),
+});
 
 /**
  * Extract a safe display identifier for the database connection.
@@ -97,19 +109,9 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Update system-wide settings
 	 * Note: Port and listen address changes require container restart to take effect
 	 */
-	app.put<{
-		Body: {
-			apiPort?: number;
-			webPort?: number;
-			listenAddress?: string;
-			appName?: string;
-			externalUrl?: string | null;
-			trustProxy?: boolean;
-			secureCookies?: boolean | null;
-		};
-	}>("/settings", async (request, reply) => {
+	app.put("/settings", async (request, reply) => {
 		const { apiPort, webPort, listenAddress, appName, externalUrl, trustProxy, secureCookies } =
-			request.body;
+			validateRequest(systemSettingsBodySchema, request.body);
 
 		// Validate port numbers if provided
 		if (apiPort !== undefined) {
@@ -194,10 +196,15 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		// Validate external URL if provided (not null - null means clear)
-		if (externalUrl !== undefined && externalUrl !== null && externalUrl !== "") {
+		// Normalize before validation and persistence so every URL consumer sees
+		// the same canonical value. Empty or whitespace-only input clears it.
+		let normalizedExternalUrl =
+			externalUrl === undefined ? undefined : externalUrl?.trim().replace(/\/+$/, "") || null;
+
+		// Validate external URL if provided (null means clear)
+		if (normalizedExternalUrl !== undefined && normalizedExternalUrl !== null) {
 			try {
-				const url = new URL(externalUrl);
+				const url = new URL(normalizedExternalUrl);
 				// Must be http or https
 				if (!["http:", "https:"].includes(url.protocol)) {
 					return reply.status(400).send({
@@ -205,6 +212,19 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						error: "External URL must use http or https protocol",
 					});
 				}
+				if (url.username || url.password) {
+					return reply.status(400).send({
+						success: false,
+						error: "External URL must not include credentials",
+					});
+				}
+				if (normalizedExternalUrl.includes("?") || normalizedExternalUrl.includes("#")) {
+					return reply.status(400).send({
+						success: false,
+						error: "External URL must not include a query string or fragment",
+					});
+				}
+				normalizedExternalUrl = url.toString().replace(/\/+$/, "");
 			} catch {
 				return reply.status(400).send({
 					success: false,
@@ -212,9 +232,6 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 		}
-
-		// Normalize external URL (empty string becomes null)
-		const normalizedExternalUrl = externalUrl === "" ? null : externalUrl;
 
 		// Update or create settings
 		const settings = await app.prisma.systemSettings.upsert({
@@ -239,6 +256,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				secureCookies: secureCookies ?? null,
 			},
 		});
+
+		if (externalUrl !== undefined) {
+			app.notificationService.setBaseUrl(settings.externalUrl ?? app.config.APP_URL);
+		}
 
 		// Get currently running values
 		const currentApiPort = Number(process.env.API_PORT) || 3001;
@@ -576,15 +597,31 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Read-only snapshot of the effective security configuration plus a list
 	 * of derived posture checks (healthy / warning / misconfigured).
 	 *
-	 * Inputs gathered: app.config (effective env), enabled OIDC providers,
-	 * total passkey credentials, count of users with a password set.
+	 * Inputs gathered: app.config (effective env), configured External URL,
+	 * enabled OIDC providers, total passkey credentials, count of users with
+	 * a password set.
 	 *
 	 * Security: Requires authentication (single-admin architecture).
 	 */
-	app.get("/security-posture", async (_request, reply) => {
-		const [oidcProvider, passkeyCount, passwordUserCount, totalUserCount] = await Promise.all([
+	app.get("/security-posture", async (request, reply) => {
+		const [
+			systemSettings,
+			oidcProvider,
+			linkedOidcAccount,
+			passkeyCount,
+			passwordUserCount,
+			totalUserCount,
+		] = await Promise.all([
+			app.prisma.systemSettings.findUnique({
+				where: { id: 1 },
+				select: { externalUrl: true },
+			}),
 			app.prisma.oIDCProvider.findFirst({
 				where: { enabled: true },
+				select: { redirectUri: true },
+			}),
+			app.prisma.oIDCAccount.findFirst({
+				where: { userId: request.currentUser!.id },
 				select: { id: true },
 			}),
 			app.prisma.webAuthnCredential.count(),
@@ -602,7 +639,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				PASSWORD_POLICY: app.config.PASSWORD_POLICY,
 				APP_URL: app.config.APP_URL,
 			},
-			oidcEnabled: oidcProvider !== null,
+			publicAppUrl: systemSettings?.externalUrl,
+			oidcEnabled: oidcProvider !== null && linkedOidcAccount !== null,
+			oidcProviderEnabled: oidcProvider !== null,
+			oidcRedirectUri: oidcProvider?.redirectUri,
 			passkeyCount,
 			passwordUserCount,
 			totalUserCount,

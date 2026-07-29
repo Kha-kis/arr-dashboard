@@ -1,5 +1,6 @@
 import type {
 	CreateOIDCProvider,
+	DeleteOIDCProvider,
 	OIDCProvider,
 	OIDCProviderResponse,
 	UpdateOIDCProvider,
@@ -43,8 +44,9 @@ export async function updateOIDCProvider(data: UpdateOIDCProvider): Promise<OIDC
 /**
  * Delete the OIDC provider (admin only, singleton)
  */
-export async function deleteOIDCProvider(): Promise<void> {
+export async function deleteOIDCProvider(data: DeleteOIDCProvider): Promise<void> {
 	await apiRequest<void>("/api/oidc-providers", {
 		method: "DELETE",
+		json: data,
 	});
 }

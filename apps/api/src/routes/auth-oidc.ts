@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { oidcRedirectUriSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import * as oauth from "oauth4webapi";
 import { z } from "zod";
@@ -8,6 +9,7 @@ import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { validateRequest } from "../lib/utils/validate.js";
+import { buildOidcRedirectUriFromAppUrl } from "../lib/auth/oidc-redirect-uri.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
@@ -62,7 +64,7 @@ const oidcSetupSchema = z.object({
 	clientId: z.string().min(1),
 	clientSecret: z.string().min(1),
 	issuer: z.string().url(),
-	redirectUri: z.string().url().optional(),
+	redirectUri: oidcRedirectUriSchema.optional(),
 	scopes: z.string().default("openid,email,profile"),
 });
 
@@ -140,7 +142,14 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					});
 				}
 			} else {
-				redirectUri = `${app.config.APP_URL}/auth/oidc/callback`;
+				const generatedRedirectUri = buildOidcRedirectUriFromAppUrl(app.config.APP_URL);
+				if (!generatedRedirectUri) {
+					return reply.status(400).send({
+						error:
+							"APP_URL must be a credential-free HTTP(S) URL that can generate a valid OIDC redirect URI.",
+					});
+				}
+				redirectUri = generatedRedirectUri;
 				request.log.info({ redirectUri }, "Auto-generated redirect URI from APP_URL");
 			}
 

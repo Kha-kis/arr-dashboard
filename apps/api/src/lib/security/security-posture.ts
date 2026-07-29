@@ -48,8 +48,14 @@ export interface SecurityPostureInput {
 		PASSWORD_POLICY: "strict" | "relaxed";
 		APP_URL: string;
 	};
-	/** True if at least one OIDC provider is enabled. */
+	/** Admin-configured public URL. When absent, APP_URL remains the fallback. */
+	publicAppUrl?: string | null;
+	/** True if an enabled OIDC provider is linked to the current admin. */
 	oidcEnabled: boolean;
+	/** True if an OIDC provider is enabled, even if the current admin is not linked yet. */
+	oidcProviderEnabled?: boolean;
+	/** Stored callback URL for the enabled OIDC provider. */
+	oidcRedirectUri?: string | null;
 	/** Total passkey credentials registered across all users. */
 	passkeyCount: number;
 	/** Count of users with a password set (hashedPassword IS NOT NULL). */
@@ -78,6 +84,7 @@ export interface SecurityPostureResult {
 		passwordEnabled: boolean;
 		passwordUserCount: number;
 		oidcEnabled: boolean;
+		oidcProviderEnabled: boolean;
 		passkeyCount: number;
 	};
 }
@@ -93,8 +100,25 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 	const effectiveSecureCookies = input.env.COOKIE_SECURE ?? input.env.TRUST_PROXY;
 	const isProduction = input.env.NODE_ENV === "production";
 	const passwordEnabled = input.passwordUserCount > 0;
-	const appUrlProtocol = safeProtocol(input.env.APP_URL);
+	const configuredPublicAppUrl = input.publicAppUrl || undefined;
+	const appUrl = configuredPublicAppUrl || input.env.APP_URL;
+	const appUrlSource = configuredPublicAppUrl ? "External URL" : "APP_URL";
+	const appUrlProtocol = safeProtocol(appUrl);
+	const appUrlProtocolLabel = appUrlProtocol
+		? appUrlProtocol.slice(0, -1).toUpperCase()
+		: "an unrecognized protocol";
 	const appUrlIsHttps = appUrlProtocol === "https:";
+	const appUrlIsValidPublicBase = isValidPublicBaseUrl(appUrl);
+	const oidcRedirectUri = input.oidcRedirectUri || input.env.APP_URL;
+	const oidcRedirectUriProtocol = safeProtocol(oidcRedirectUri);
+	const oidcRedirectUriProtocolLabel = oidcRedirectUriProtocol
+		? oidcRedirectUriProtocol.slice(0, -1).toUpperCase()
+		: "an unrecognized protocol";
+	const oidcRedirectUriIsHttps = oidcRedirectUriProtocol === "https:";
+	const oidcRedirectUriIsValid = isValidOidcRedirectUri(oidcRedirectUri);
+	const oidcRedirectUriIsDevelopmentLoopback =
+		input.env.NODE_ENV === "development" && isHttpLoopbackUrl(oidcRedirectUri);
+	const oidcProviderEnabled = input.oidcProviderEnabled ?? input.oidcEnabled;
 
 	const checks: SecurityCheck[] = [];
 
@@ -190,6 +214,16 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		});
 	}
 
+	if (oidcProviderEnabled && !input.oidcEnabled) {
+		checks.push({
+			id: "oidc-account-link",
+			label: "OIDC Account Link",
+			detail: "The OIDC provider is enabled, but the admin account is not linked.",
+			severity: "warning",
+			remediation: "Link the admin account to the OIDC provider, or disable the provider.",
+		});
+	}
+
 	// ──────────────────────────────────────────────────────────────────────
 	// 4. Password policy (informational — only flagged if relaxed in prod)
 	// ──────────────────────────────────────────────────────────────────────
@@ -240,28 +274,60 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 	// ──────────────────────────────────────────────────────────────────────
 	// 6. App URL consistency
 	// ──────────────────────────────────────────────────────────────────────
-	if (isProduction && !appUrlIsHttps) {
+	if (!appUrlIsValidPublicBase) {
 		checks.push({
 			id: "app-url",
 			label: "App URL",
-			detail: `APP_URL uses ${appUrlProtocol ?? "an unrecognized protocol"} in production.`,
+			detail: `${appUrlSource} is not a valid public URL.`,
 			severity: "warning",
-			remediation: "Set APP_URL to an https:// origin so OIDC redirect URIs and links are secure.",
+			remediation: configuredPublicAppUrl
+				? "Update External URL in Settings → System to an http(s) URL without embedded credentials, surrounding whitespace, a query string, fragment, or repeated trailing slashes."
+				: "Set APP_URL to an http(s) URL without embedded credentials, surrounding whitespace, a query string, fragment, or repeated trailing slashes.",
+		});
+	} else if (isProduction && !appUrlIsHttps) {
+		checks.push({
+			id: "app-url",
+			label: "App URL",
+			detail: `${appUrlSource} uses ${appUrlProtocolLabel} in production.`,
+			severity: "warning",
+			remediation: configuredPublicAppUrl
+				? "Update External URL in Settings → System to an https:// origin."
+				: "Set an https:// External URL in Settings → System, or set APP_URL in the container environment.",
 		});
 	} else if (effectiveSecureCookies && !appUrlIsHttps) {
 		checks.push({
 			id: "app-url",
 			label: "App URL",
-			detail: "Secure cookies are enabled but APP_URL is not https — clients may fail to log in.",
+			detail: `Secure cookies are enabled but ${appUrlSource} is not https — generated public links may be insecure.`,
 			severity: "warning",
-			remediation: "Update APP_URL to match the public https:// origin.",
+			remediation: configuredPublicAppUrl
+				? "Update External URL in Settings → System to match the public https:// origin."
+				: "Set an https:// External URL in Settings → System, or update APP_URL to match the public origin.",
 		});
 	} else {
 		checks.push({
 			id: "app-url",
 			label: "App URL",
-			detail: `${input.env.APP_URL}`,
+			detail: `${appUrlSource} uses ${appUrlProtocolLabel}.`,
 			severity: "healthy",
+		});
+	}
+
+	// OIDC authentication uses the enabled provider's stored redirect URI.
+	// Check that actual callback independently from the public-link URL.
+	if (
+		oidcProviderEnabled &&
+		(!oidcRedirectUriIsValid || (!oidcRedirectUriIsHttps && !oidcRedirectUriIsDevelopmentLoopback))
+	) {
+		checks.push({
+			id: "oidc-app-url",
+			label: "OIDC Redirect URI",
+			detail: oidcRedirectUriIsValid
+				? `OIDC Redirect URI uses ${oidcRedirectUriProtocolLabel}.`
+				: "OIDC Redirect URI is not a valid callback URL.",
+			severity: "warning",
+			remediation:
+				"Update the enabled OIDC provider Redirect URI to the public https:// callback URL.",
 		});
 	}
 
@@ -272,7 +338,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		sessionTtlHours: input.env.SESSION_TTL_HOURS,
 		sessionCookieName: input.env.SESSION_COOKIE_NAME,
 		passwordPolicy: input.env.PASSWORD_POLICY,
-		appUrl: input.env.APP_URL,
+		appUrl,
 	};
 
 	return {
@@ -283,6 +349,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 			passwordEnabled,
 			passwordUserCount: input.passwordUserCount,
 			oidcEnabled: input.oidcEnabled,
+			oidcProviderEnabled,
 			passkeyCount: input.passkeyCount,
 		},
 	};
@@ -301,5 +368,68 @@ function safeProtocol(url: string): string | null {
 		return new URL(url).protocol;
 	} catch {
 		return null;
+	}
+}
+
+function isValidPublicBaseUrl(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return (
+			(url.protocol === "http:" || url.protocol === "https:") &&
+			url.username === "" &&
+			url.password === "" &&
+			value === value.trim() &&
+			!hasUnsafeUrlCharacters(value) &&
+			!value.includes("?") &&
+			!value.includes("#") &&
+			!/\/{2,}$/.test(value)
+		);
+	} catch {
+		return false;
+	}
+}
+
+function isValidOidcRedirectUri(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return (
+			(url.protocol === "http:" || url.protocol === "https:") &&
+			url.username === "" &&
+			url.password === "" &&
+			value === value.trim() &&
+			!hasUnsafeUrlCharacters(value) &&
+			!value.includes("#") &&
+			!url.pathname.includes("//") &&
+			url.pathname.endsWith("/auth/oidc/callback")
+		);
+	} catch {
+		return false;
+	}
+}
+
+function hasUnsafeUrlCharacters(value: string): boolean {
+	for (const character of value) {
+		const codePoint = character.codePointAt(0) ?? 0;
+		if (character === "\\" || character.trim() === "" || codePoint <= 0x1f || codePoint === 0x7f) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function isHttpLoopbackUrl(value: string): boolean {
+	try {
+		const url = new URL(value);
+		if (url.protocol !== "http:") return false;
+
+		const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+		return (
+			hostname === "localhost" ||
+			hostname.endsWith(".localhost") ||
+			/^127(?:\.\d{1,3}){3}$/.test(hostname) ||
+			hostname === "[::1]"
+		);
+	} catch {
+		return false;
 	}
 }

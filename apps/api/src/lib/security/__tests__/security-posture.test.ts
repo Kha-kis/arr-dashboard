@@ -29,9 +29,12 @@ function baseInput(overrides: Overrides = {}): SecurityPostureInput {
 			...overrides.env,
 		},
 		oidcEnabled: overrides.oidcEnabled ?? false,
+		oidcProviderEnabled: overrides.oidcProviderEnabled ?? overrides.oidcEnabled ?? false,
+		oidcRedirectUri: overrides.oidcRedirectUri ?? null,
 		passkeyCount: overrides.passkeyCount ?? 0,
 		passwordUserCount: overrides.passwordUserCount ?? 1,
 		totalUserCount: overrides.totalUserCount ?? 1,
+		publicAppUrl: overrides.publicAppUrl ?? null,
 	};
 }
 
@@ -82,6 +85,7 @@ describe("evaluateSecurityPosture", () => {
 				passwordEnabled: true,
 				passwordUserCount: 1,
 				oidcEnabled: true,
+				oidcProviderEnabled: true,
 				passkeyCount: 0,
 			});
 		});
@@ -162,6 +166,23 @@ describe("evaluateSecurityPosture", () => {
 			expect(check.detail).toContain("3 passkeys");
 		});
 
+		it("warns when the enabled OIDC provider is not linked to the admin", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					oidcEnabled: false,
+					oidcProviderEnabled: true,
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "authentication").severity).toBe("healthy");
+			expect(checkById(result, "oidc-account-link")).toMatchObject({
+				severity: "warning",
+				detail: "The OIDC provider is enabled, but the admin account is not linked.",
+			});
+			expect(result.overall).toBe("warning");
+		});
+
 		it("pluralizes passkeys correctly for a single credential", () => {
 			const result = evaluateSecurityPosture(baseInput({ passkeyCount: 1 }));
 			expect(checkById(result, "authentication").detail).toContain("1 passkey");
@@ -237,6 +258,201 @@ describe("evaluateSecurityPosture", () => {
 	});
 
 	describe("app URL", () => {
+		it("uses the HTTPS External URL before the APP_URL fallback", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "http://localhost:3000",
+					},
+					publicAppUrl: "https://arr.example.com",
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "app-url")).toMatchObject({
+				severity: "healthy",
+				detail: "External URL uses HTTPS.",
+			});
+			expect(result.effective.appUrl).toBe("https://arr.example.com");
+		});
+
+		it("warns about the External URL when it overrides a secure APP_URL with http", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "https://arr.example.com",
+					},
+					publicAppUrl: "http://proxy.example.com",
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "app-url")).toMatchObject({
+				severity: "warning",
+				detail: "External URL uses HTTP in production.",
+				remediation: expect.stringContaining("External URL in Settings → System"),
+			});
+		});
+
+		it.each([
+			" https://arr.example.com ",
+			"https://admin@arr.example.com",
+			"https://admin:secret@arr.example.com",
+			"https://arr.example.com\\proxy",
+			"https://arr.example.com/\tproxy",
+			"https://arr.example.com/base path",
+			"https://arr.example.com?source=proxy",
+			"https://arr.example.com#settings",
+			"https://arr.example.com///",
+		])("warns about an invalid persisted External URL: %s", (publicAppUrl) => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "https://arr.example.com",
+					},
+					publicAppUrl,
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "app-url")).toMatchObject({
+				severity: "warning",
+				detail: "External URL is not a valid public URL.",
+				remediation: expect.stringContaining("without embedded credentials"),
+			});
+			expect(result.effective.appUrl).toBe(publicAppUrl);
+		});
+
+		it("warns when the enabled OIDC provider uses an HTTP redirect URI", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "http://localhost:3000",
+					},
+					publicAppUrl: "https://arr.example.com",
+					oidcEnabled: true,
+					oidcRedirectUri: "http://localhost:3000/auth/oidc/callback",
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "app-url")).toMatchObject({
+				severity: "healthy",
+				detail: "External URL uses HTTPS.",
+			});
+			expect(checkById(result, "oidc-app-url")).toMatchObject({
+				severity: "warning",
+				detail: "OIDC Redirect URI uses HTTP.",
+				remediation: expect.stringContaining("OIDC provider Redirect URI"),
+			});
+		});
+
+		it("accepts an explicit HTTPS OIDC redirect URI when APP_URL remains HTTP", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "http://localhost:3000",
+					},
+					publicAppUrl: "https://arr.example.com",
+					oidcEnabled: true,
+					oidcRedirectUri: "https://arr.example.com/auth/oidc/callback",
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "app-url")).toMatchObject({
+				severity: "healthy",
+				detail: "External URL uses HTTPS.",
+			});
+			expect(result.checks.find((check) => check.id === "oidc-app-url")).toBeUndefined();
+			expect(result.overall).toBe("healthy");
+		});
+
+		it.each([
+			"   ",
+			" https://arr.example.com/auth/oidc/callback ",
+			"https://arr.example.com/auth/oidc/callback#fragment",
+			"https://admin:secret@arr.example.com/auth/oidc/callback",
+			"https://arr.example.com//auth/oidc/callback",
+			"https://arr.example.com/wrong-callback",
+			"https://arr.example.com\\auth\\oidc\\callback",
+			"https://arr.example.com/auth callback",
+		])("warns about an invalid HTTPS OIDC callback: %s", (oidcRedirectUri) => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "https://arr.example.com",
+					},
+					oidcEnabled: true,
+					oidcRedirectUri,
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "oidc-app-url")).toMatchObject({
+				severity: "warning",
+				detail: "OIDC Redirect URI is not a valid callback URL.",
+			});
+			expect(result.overall).toBe("warning");
+		});
+
+		it.each([
+			"http://localhost:3000/auth/oidc/callback",
+			"http://dashboard.localhost:3000/auth/oidc/callback",
+			"http://127.0.0.1:3000/auth/oidc/callback",
+			"http://[::1]:3000/auth/oidc/callback",
+		])("accepts an HTTP OIDC loopback callback in development: %s", (oidcRedirectUri) => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					oidcEnabled: true,
+					oidcRedirectUri,
+				}),
+			);
+
+			expect(result.checks.find((check) => check.id === "oidc-app-url")).toBeUndefined();
+			expect(result.overall).toBe("healthy");
+		});
+
+		it.each([
+			"http://public.example/auth/oidc/callback",
+			"http://127.attacker.invalid/auth/oidc/callback",
+			"ftp://localhost/auth/oidc/callback",
+		])(
+			"warns about a non-HTTPS OIDC callback outside the loopback exception: %s",
+			(oidcRedirectUri) => {
+				const result = evaluateSecurityPosture(
+					baseInput({
+						oidcEnabled: true,
+						oidcRedirectUri,
+						passkeyCount: 1,
+					}),
+				);
+
+				expect(checkById(result, "oidc-app-url")).toMatchObject({
+					severity: "warning",
+				});
+				expect(result.overall).toBe("warning");
+			},
+		);
+
 		it("warns on non-https APP_URL in production", () => {
 			const result = evaluateSecurityPosture(
 				baseInput({

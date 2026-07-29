@@ -115,6 +115,22 @@ describe("NotificationService", () => {
 		});
 	});
 
+	it("uses an updated normalized base URL for subsequent notification links", async () => {
+		mockPrisma.notificationSubscription.findMany.mockResolvedValue([
+			makeSubscription("ch-1", "discord"),
+		]);
+		mockDispatcher.send.mockResolvedValue({ success: true, retryable: false } satisfies SendResult);
+
+		service.setBaseUrl("  https://arr.example.com/  ");
+		await service.notify(makePayload({ url: "/settings" }));
+
+		expect(mockDispatcher.send).toHaveBeenCalledWith(
+			"discord",
+			{ webhookUrl: "https://example.com" },
+			expect.objectContaining({ url: "https://arr.example.com/settings" }),
+		);
+	});
+
 	it("dedup gate blocks duplicate and returns early", async () => {
 		mockDedupGate.isDuplicate.mockReturnValue(true);
 
