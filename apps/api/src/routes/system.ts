@@ -194,10 +194,15 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		// Validate external URL if provided (not null - null means clear)
-		if (externalUrl !== undefined && externalUrl !== null && externalUrl !== "") {
+		// Normalize before validation and persistence so every URL consumer sees
+		// the same canonical value. Empty or whitespace-only input clears it.
+		const normalizedExternalUrl =
+			externalUrl === undefined ? undefined : externalUrl?.trim() || null;
+
+		// Validate external URL if provided (null means clear)
+		if (normalizedExternalUrl !== undefined && normalizedExternalUrl !== null) {
 			try {
-				const url = new URL(externalUrl);
+				const url = new URL(normalizedExternalUrl);
 				// Must be http or https
 				if (!["http:", "https:"].includes(url.protocol)) {
 					return reply.status(400).send({
@@ -212,9 +217,6 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 		}
-
-		// Normalize external URL (empty string becomes null)
-		const normalizedExternalUrl = externalUrl === "" ? null : externalUrl;
 
 		// Update or create settings
 		const settings = await app.prisma.systemSettings.upsert({
@@ -239,6 +241,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				secureCookies: secureCookies ?? null,
 			},
 		});
+
+		if (externalUrl !== undefined) {
+			app.notificationService.setBaseUrl(settings.externalUrl ?? app.config.APP_URL);
+		}
 
 		// Get currently running values
 		const currentApiPort = Number(process.env.API_PORT) || 3001;

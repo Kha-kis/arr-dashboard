@@ -1,9 +1,9 @@
 /**
- * GET /system/security-posture HTTP integration tests.
+ * System External URL and security-posture HTTP integration tests.
  *
  * The route combines runtime environment values with database-backed system
- * settings. Keep the reverse-proxy External URL path covered here so the
- * security diagnostic reports the same public origin configured in Settings.
+ * settings. Keep External URL persistence, live notification updates, and
+ * posture diagnostics aligned with the same public origin.
  */
 
 import Fastify from "fastify";
@@ -14,11 +14,15 @@ import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js
 let app: ReturnType<typeof Fastify>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 let mockPrisma: {
-	systemSettings: { findUnique: ReturnType<typeof vi.fn> };
+	systemSettings: {
+		findUnique: ReturnType<typeof vi.fn>;
+		upsert: ReturnType<typeof vi.fn>;
+	};
 	oIDCProvider: { findFirst: ReturnType<typeof vi.fn> };
 	webAuthnCredential: { count: ReturnType<typeof vi.fn> };
 	user: { count: ReturnType<typeof vi.fn> };
 };
+let mockNotificationService: { setBaseUrl: ReturnType<typeof vi.fn> };
 
 beforeEach(async () => {
 	mockPrisma = {
@@ -26,11 +30,26 @@ beforeEach(async () => {
 			findUnique: vi.fn().mockResolvedValue({
 				externalUrl: "https://arr.example.com",
 			}),
+			upsert: vi.fn().mockImplementation(({ update, create }) =>
+				Promise.resolve({
+					apiPort: 3001,
+					webPort: 3000,
+					listenAddress: process.env.HOST || process.env.HOSTNAME || "0.0.0.0",
+					appName: "Arr Dashboard",
+					externalUrl: null,
+					trustProxy: true,
+					secureCookies: true,
+					updatedAt: new Date(),
+					...create,
+					...update,
+				}),
+			),
 		},
 		oIDCProvider: { findFirst: vi.fn().mockResolvedValue(null) },
 		webAuthnCredential: { count: vi.fn().mockResolvedValue(1) },
 		user: { count: vi.fn().mockResolvedValue(1) },
 	};
+	mockNotificationService = { setBaseUrl: vi.fn() };
 
 	app = Fastify();
 	app.decorate("prisma", mockPrisma as never);
@@ -44,6 +63,7 @@ beforeEach(async () => {
 		APP_URL: "http://localhost:3000",
 	} as never);
 	app.decorate("dbProvider", "sqlite" as never);
+	app.decorate("notificationService", mockNotificationService as never);
 	app.decorate("lifecycle", {
 		getRestartMessage: () => "ok",
 		restart: vi.fn(),
@@ -57,6 +77,36 @@ beforeEach(async () => {
 
 afterAll(async () => {
 	await app?.close();
+});
+
+describe("PUT /system/settings", () => {
+	it("trims External URL and updates the live notification base URL", async () => {
+		const res = await injectAuthenticated("PUT", "/system/settings", {
+			body: { externalUrl: "  https://arr.example.com/  " },
+		});
+
+		expect(res.statusCode, res.payload).toBe(200);
+		const body = JSON.parse(res.payload);
+		expect(body.data.externalUrl).toBe("https://arr.example.com/");
+		expect(mockPrisma.systemSettings.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.objectContaining({ externalUrl: "https://arr.example.com/" }),
+				create: expect.objectContaining({ externalUrl: "https://arr.example.com/" }),
+			}),
+		);
+		expect(mockNotificationService.setBaseUrl).toHaveBeenCalledWith("https://arr.example.com/");
+	});
+
+	it("clears a whitespace-only External URL and restores the APP_URL fallback", async () => {
+		const res = await injectAuthenticated("PUT", "/system/settings", {
+			body: { externalUrl: "   " },
+		});
+
+		expect(res.statusCode, res.payload).toBe(200);
+		const body = JSON.parse(res.payload);
+		expect(body.data.externalUrl).toBeNull();
+		expect(mockNotificationService.setBaseUrl).toHaveBeenCalledWith("http://localhost:3000");
+	});
 });
 
 describe("GET /system/security-posture", () => {
