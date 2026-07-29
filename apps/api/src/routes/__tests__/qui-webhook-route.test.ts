@@ -17,7 +17,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { quiEventBus } from "../../lib/qui/event-bus.js";
 import { generateQuiWebhookSecret } from "../../lib/qui/webhook-secret.js";
 import { registerQuiWebhookRoutes } from "../qui-webhook.js";
-import { buildQuiDeploymentId } from "../qui/webhook-routes.js";
+import { buildQuiDeploymentId, buildQuiNotificationTargetOwnerId } from "../qui/webhook-routes.js";
 import { registerTestErrorHandler } from "./test-helpers.js";
 
 function createMockPrisma(userRow: unknown) {
@@ -56,6 +56,8 @@ beforeEach(async () => {
 
 	app = Fastify();
 	app.decorate("prisma", mockPrisma as never);
+	app.decorate("installationId", "installation-1");
+	app.decorate("installationIdIsPersistent", true);
 	registerTestErrorHandler(app);
 	await app.register(registerQuiWebhookRoutes);
 	await app.ready();
@@ -127,9 +129,10 @@ describe("POST /webhooks/qui", () => {
 
 	it("authenticates and persists the registered qUI source instance", async () => {
 		const deploymentId = buildQuiDeploymentId("user-1", "http://qui.test");
+		const owner = buildQuiNotificationTargetOwnerId("installation-1", "user-1", "qui-1");
 		const res = await app.inject({
 			method: "POST",
-			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=qui-1&deploymentId=${deploymentId}`,
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=qui-1&deploymentId=${deploymentId}&owner=${owner}`,
 			payload: {
 				type: "torrent_added",
 				payload: { hash: "a".repeat(40) },
@@ -143,6 +146,37 @@ describe("POST /webhooks/qui", () => {
 		});
 		const createArgs = mockPrisma.quiEventLog.create.mock.calls[0]?.[0];
 		expect(createArgs.data.serviceInstanceId).toBe("qui-1");
+	});
+
+	it("rejects source attribution with a different installation owner", async () => {
+		const deploymentId = buildQuiDeploymentId("user-1", "http://qui.test");
+		const otherOwner = buildQuiNotificationTargetOwnerId("other-installation", "user-1", "qui-1");
+
+		const res = await app.inject({
+			method: "POST",
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=qui-1&deploymentId=${deploymentId}&owner=${otherOwner}`,
+			payload: { type: "torrent_added", payload: {} },
+		});
+
+		expect(res.statusCode).toBe(401);
+		expect(JSON.parse(res.payload)).toEqual({ error: "Invalid webhook source" });
+		expect(mockPrisma.quiEventLog.create).not.toHaveBeenCalled();
+	});
+
+	it("rejects source attribution without a persistent installation identity", async () => {
+		app.installationIdIsPersistent = false;
+		const deploymentId = buildQuiDeploymentId("user-1", "http://qui.test");
+		const owner = buildQuiNotificationTargetOwnerId("installation-1", "user-1", "qui-1");
+
+		const res = await app.inject({
+			method: "POST",
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=qui-1&deploymentId=${deploymentId}&owner=${owner}`,
+			payload: { type: "torrent_added", payload: {} },
+		});
+
+		expect(res.statusCode).toBe(401);
+		expect(JSON.parse(res.payload)).toEqual({ error: "Invalid webhook source" });
+		expect(mockPrisma.quiEventLog.create).not.toHaveBeenCalled();
 	});
 
 	it("rejects a source instance that is not a qUI instance owned by the secret's user", async () => {

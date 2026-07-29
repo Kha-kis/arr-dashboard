@@ -241,6 +241,12 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 			const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
 			const body = validateRequest(REGISTER_BODY, request.body ?? {});
 			return withWebhookConfigLock(userId, async () => {
+				if (!app.installationIdIsPersistent) {
+					return reply.status(503).send({
+						error:
+							"qUI registration requires a writable secrets path with a persistent installation identity.",
+					});
+				}
 				const instance = await requireQuiInstance(app, userId, id);
 				const client = createQuiClient(app, instance);
 

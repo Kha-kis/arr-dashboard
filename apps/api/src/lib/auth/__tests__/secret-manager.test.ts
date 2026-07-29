@@ -163,6 +163,8 @@ describe("SecretManager installation identity", () => {
 		expect(first.installationId).toMatch(/^[a-f0-9]{32}$/);
 		expect(firstManager.secretsSynchronized).toBe(false);
 		expect(secondManager.secretsSynchronized).toBe(false);
+		expect(firstManager.installationIdIsPersistent).toBe(false);
+		expect(secondManager.installationIdIsPersistent).toBe(false);
 	});
 
 	it("keeps read-only environment-managed installation identities deployment-specific", async () => {
@@ -237,6 +239,7 @@ describe("SecretManager installation identity", () => {
 			expect(active.sessionCookieSecret).toBe("e".repeat(32));
 			expect(active.installationId).toBe("c".repeat(32));
 			expect(manager.secretsSynchronized).toBe(false);
+			expect(manager.installationIdIsPersistent).toBe(true);
 			expect(JSON.parse(await readFile(secretsPath, "utf8"))).toMatchObject({
 				encryptionKey: "a".repeat(64),
 				sessionCookieSecret: "b".repeat(64),
