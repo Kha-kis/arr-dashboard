@@ -10,6 +10,31 @@ import { validateRequest } from "../../lib/utils/validate.js";
 import { QUI_INSTANCE_PARAM, safeParseJson } from "./qui-shared.js";
 
 export function registerWebhookRoutes(app: FastifyInstance): void {
+	// The dashboard runs as one Node process, so a per-user in-memory queue
+	// is sufficient to make secret rotation and qUI target registration one
+	// critical section. Without this, an older registration can pass its
+	// hash check, pause on qUI I/O, then overwrite a newer rotated secret.
+	const webhookConfigTails = new Map<string, Promise<void>>();
+	async function withWebhookConfigLock<T>(userId: string, operation: () => Promise<T>): Promise<T> {
+		const previous = webhookConfigTails.get(userId) ?? Promise.resolve();
+		let release!: () => void;
+		const current = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const tail = previous.catch(() => undefined).then(() => current);
+		webhookConfigTails.set(userId, tail);
+
+		await previous.catch(() => undefined);
+		try {
+			return await operation();
+		} finally {
+			release();
+			if (webhookConfigTails.get(userId) === tail) {
+				webhookConfigTails.delete(userId);
+			}
+		}
+	}
+
 	function isLoopbackAddress(value: string): boolean {
 		const normalized = value
 			.trim()
@@ -144,18 +169,20 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 
 	app.post("/qui/webhook-config/rotate", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { plaintextSecret, hashedSecret } = generateQuiWebhookSecret();
-		await app.prisma.user.update({
-			where: { id: userId },
-			data: { hashedQuiWebhookSecret: hashedSecret },
-		});
-		const baseUrl = await resolvePublicBaseUrl(request);
-		return reply.send({
-			hasSecret: true,
-			webhookUrl: buildQuiNotificationTargetUrl(baseUrl),
-			// Plaintext returned only here — never stored, never re-displayed.
-			// Operators copy it into qui's notification-target URL once.
-			secret: plaintextSecret,
+		return withWebhookConfigLock(userId, async () => {
+			const { plaintextSecret, hashedSecret } = generateQuiWebhookSecret();
+			await app.prisma.user.update({
+				where: { id: userId },
+				data: { hashedQuiWebhookSecret: hashedSecret },
+			});
+			const baseUrl = await resolvePublicBaseUrl(request);
+			return reply.send({
+				hasSecret: true,
+				webhookUrl: buildQuiNotificationTargetUrl(baseUrl),
+				// Plaintext returned only here — never stored, never re-displayed.
+				// Operators copy it into qui's notification-target URL once.
+				secret: plaintextSecret,
+			});
 		});
 	});
 
@@ -173,58 +200,62 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 			const userId = request.currentUser!.id;
 			const { id } = validateRequest(QUI_INSTANCE_PARAM, request.params);
 			const body = validateRequest(REGISTER_BODY, request.body ?? {});
-			const instance = await requireQuiInstance(app, userId, id);
-			const client = createQuiClient(app, instance);
+			return withWebhookConfigLock(userId, async () => {
+				const instance = await requireQuiInstance(app, userId, id);
+				const client = createQuiClient(app, instance);
 
-			// Operator must rotate the secret first — we don't auto-create
-			// a secret as a side effect of registration, because that would
-			// silently reset any existing wired-up qui targets that depend
-			// on the prior secret.
-			const user = await app.prisma.user.findUniqueOrThrow({
-				where: { id: userId },
-				select: { hashedQuiWebhookSecret: true },
+				// Operator must rotate the secret first — we don't auto-create
+				// a secret as a side effect of registration, because that would
+				// silently reset any existing wired-up qui targets that depend
+				// on the prior secret. This check intentionally happens inside
+				// the rotate/register critical section so a stale request cannot
+				// pass validation and later overwrite the current target.
+				const user = await app.prisma.user.findUniqueOrThrow({
+					where: { id: userId },
+					select: { hashedQuiWebhookSecret: true },
+				});
+				if (!user.hashedQuiWebhookSecret) {
+					return reply.status(409).send({
+						error: "No webhook secret configured. Rotate to generate one first.",
+					});
+				}
+				if (hashSecret(body.secret) !== user.hashedQuiWebhookSecret) {
+					return reply.status(409).send({
+						error:
+							"This webhook secret is stale. Rotate the secret again before registering the target.",
+					});
+				}
+
+				const baseUrl = await resolvePublicBaseUrl(request);
+				// The plaintext is supplied per-request in the validated body; we
+				// don't have it on the server. The frontend captures it from the
+				// rotate response and forwards it here.
+				const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret);
+
+				try {
+					const created = await client.ensureNotificationTarget({
+						name: "arr-dashboard",
+						url: targetUrl,
+						eventTypes: body.eventTypes,
+						enabled: true,
+					});
+					return reply.send({ ok: true, quiTargetId: created.id });
+				} catch (err) {
+					// qUI/Shoutrrr errors can echo the rejected target URL. Sanitize
+					// before both logging and returning so the one-time plaintext
+					// secret never lands in server logs or client-side telemetry.
+					const rawMessage = getErrorMessage(err, "qui registration failed");
+					const safeMessage = rawMessage.replace(/secret=[^&\s"']+/g, "secret=***");
+					request.log.warn(
+						{ error: safeMessage, instanceId: instance.id },
+						"Failed to register webhook target in qui",
+					);
+					return reply.status(502).send({
+						error: "qui rejected the notification target registration",
+						message: safeMessage,
+					});
+				}
 			});
-			if (!user.hashedQuiWebhookSecret) {
-				return reply.status(409).send({
-					error: "No webhook secret configured. Rotate to generate one first.",
-				});
-			}
-			if (hashSecret(body.secret) !== user.hashedQuiWebhookSecret) {
-				return reply.status(409).send({
-					error:
-						"This webhook secret is stale. Rotate the secret again before registering the target.",
-				});
-			}
-
-			const baseUrl = await resolvePublicBaseUrl(request);
-			// The plaintext is supplied per-request in the validated body; we
-			// don't have it on the server. The frontend captures it from the
-			// rotate response and forwards it here.
-			const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret);
-
-			try {
-				const created = await client.ensureNotificationTarget({
-					name: "arr-dashboard",
-					url: targetUrl,
-					eventTypes: body.eventTypes,
-					enabled: true,
-				});
-				return reply.send({ ok: true, quiTargetId: created.id });
-			} catch (err) {
-				// qUI/Shoutrrr errors can echo the rejected target URL. Sanitize
-				// before both logging and returning so the one-time plaintext
-				// secret never lands in server logs or client-side telemetry.
-				const rawMessage = getErrorMessage(err, "qui registration failed");
-				const safeMessage = rawMessage.replace(/secret=[^&\s"']+/g, "secret=***");
-				request.log.warn(
-					{ error: safeMessage, instanceId: instance.id },
-					"Failed to register webhook target in qui",
-				);
-				return reply.status(502).send({
-					error: "qui rejected the notification target registration",
-					message: safeMessage,
-				});
-			}
 		},
 	);
 
