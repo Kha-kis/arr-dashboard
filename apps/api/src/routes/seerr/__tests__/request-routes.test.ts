@@ -185,6 +185,77 @@ describe("GET /:instanceId/count", () => {
 });
 
 // ===========================================================================
+// GET /:instanceId/attention — Requests needing admin intervention
+// ===========================================================================
+
+describe("GET /:instanceId/attention", () => {
+	it("returns failed requests as attention items", async () => {
+		const failedRequest = {
+			...sampleRequest,
+			id: 99,
+			status: 4,
+			updatedAt: "2024-01-01T00:00:00.000Z",
+			media: { ...sampleRequest.media, title: "Failed Movie" },
+		};
+		const failedResult = {
+			pageInfo: { pages: 1, pageSize: 10, results: 1, page: 1 },
+			results: [failedRequest],
+		};
+		const enrichedResult = {
+			...failedResult,
+			results: [{ ...failedRequest, media: { ...failedRequest.media, title: "Enriched Movie" } }],
+		};
+
+		mockClient.getRequests.mockResolvedValueOnce(failedResult);
+		mockClient.enrichRequestsWithMedia.mockResolvedValueOnce(enrichedResult);
+
+		const res = await app.inject({
+			method: "GET",
+			url: "/api/seerr/requests/inst-1/attention",
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockClient.getRequests).toHaveBeenCalledTimes(1);
+		expect(mockClient.getRequests).toHaveBeenCalledWith({
+			filter: "failed",
+			take: 10,
+			sort: "modified",
+		});
+
+		const body = JSON.parse(res.payload);
+		expect(body.total).toBe(1);
+		expect(body.items).toHaveLength(1);
+		expect(body.items[0]).toEqual(
+			expect.objectContaining({
+				reason: "failed",
+				request: enrichedResult.results[0],
+			}),
+		);
+		expect(body.items[0].ageMs).toBeGreaterThan(0);
+	});
+
+	it("does not classify approved processing requests as stuck attention items", async () => {
+		mockClient.getRequests.mockResolvedValueOnce({
+			pageInfo: { pages: 1, pageSize: 10, results: 0, page: 1 },
+			results: [],
+		});
+
+		const res = await app.inject({
+			method: "GET",
+			url: "/api/seerr/requests/inst-1/attention",
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockClient.getRequests).toHaveBeenCalledTimes(1);
+		expect(mockClient.getRequests).not.toHaveBeenCalledWith(
+			expect.objectContaining({ filter: "processing" }),
+		);
+		expect(mockClient.enrichRequestsWithMedia).not.toHaveBeenCalled();
+		expect(JSON.parse(res.payload)).toEqual({ items: [], total: 0 });
+	});
+});
+
+// ===========================================================================
 // GET /:instanceId/:requestId — Single request (enriched)
 // ===========================================================================
 
