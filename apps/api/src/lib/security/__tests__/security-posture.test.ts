@@ -332,6 +332,18 @@ describe("evaluateSecurityPosture", () => {
 			expect(result.overall).toBe("healthy");
 		});
 
+		it("accepts an HTTP OIDC loopback callback in development", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					oidcEnabled: true,
+					oidcRedirectUri: "http://localhost:3000/auth/oidc/callback",
+				}),
+			);
+
+			expect(result.checks.find((check) => check.id === "oidc-app-url")).toBeUndefined();
+			expect(result.overall).toBe("healthy");
+		});
+
 		it("warns on non-https APP_URL in production", () => {
 			const result = evaluateSecurityPosture(
 				baseInput({
