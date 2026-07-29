@@ -103,6 +103,8 @@ function makeOidcProvider(overrides: Record<string, unknown> = {}) {
 		redirectUri: "http://localhost:3000/auth/oidc/callback",
 		scopes: "openid,email,profile",
 		enabled: true,
+		createdAt: new Date("2026-07-29T00:00:00.000Z"),
+		updatedAt: new Date("2026-07-29T00:00:00.000Z"),
 		...overrides,
 	};
 }
@@ -128,6 +130,7 @@ function createMockPrisma() {
 			id: 1,
 			...data,
 		})),
+		updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 	};
 
 	return {
@@ -417,6 +420,19 @@ describe("GET /auth/oidc/callback", () => {
 
 		expect(callback.statusCode).toBe(302);
 		expect(callback.headers.location).toBe("/settings#authentication");
+		expect(mockPrisma.oIDCProvider.updateMany).toHaveBeenCalledWith({
+			where: {
+				id: 1,
+				enabled: true,
+				clientId: "test-client-id",
+				encryptedClientSecret: "encrypted-secret",
+				clientSecretIv: "mock-iv",
+				issuer: "https://provider.example.com",
+				redirectUri: "http://localhost:3000/auth/oidc/callback",
+				scopes: "openid,email,profile",
+			},
+			data: { updatedAt: expect.any(Date) },
+		});
 		expect(mockPrisma.oIDCAccount.deleteMany).toHaveBeenCalledWith({
 			where: { userId: "admin-user" },
 		});
@@ -435,6 +451,32 @@ describe("GET /auth/oidc/callback", () => {
 				revokeOtherSessions: true,
 			},
 		);
+	});
+
+	it("does not recreate an OIDC link after the provider changes or is deleted", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.oIDCProvider.updateMany.mockResolvedValueOnce({ count: 0 });
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+			headers: { "x-test-current-user": "admin-user" },
+			payload: { intent: "link" },
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+			headers: { "x-test-current-user": "admin-user" },
+		});
+
+		expect(callback.statusCode).toBe(409);
+		expect(JSON.parse(callback.payload).error).toContain("provider changed");
+		expect(mockPrisma.oIDCAccount.deleteMany).not.toHaveBeenCalled();
+		expect(mockPrisma.oIDCAccount.create).not.toHaveBeenCalled();
+		expect(mockSessionService.attachCookie).not.toHaveBeenCalled();
 	});
 
 	it("invalidates a pending account link when the initiating session is no longer active", async () => {
@@ -577,6 +619,19 @@ describe("GET /auth/oidc/callback", () => {
 			},
 			data: { updatedAt: expect.any(Date) },
 		});
+		expect(mockPrisma.oIDCProvider.updateMany).toHaveBeenCalledWith({
+			where: {
+				id: 1,
+				enabled: true,
+				clientId: "test-client-id",
+				encryptedClientSecret: "encrypted-secret",
+				clientSecretIv: "mock-iv",
+				issuer: "https://provider.example.com",
+				redirectUri: "http://localhost:3000/auth/oidc/callback",
+				scopes: "openid,email,profile",
+			},
+			data: { updatedAt: expect.any(Date) },
+		});
 		expect(mockSessionService.createSessionIfAuthorized).toHaveBeenCalledWith(
 			"admin-user",
 			true,
@@ -609,6 +664,73 @@ describe("GET /auth/oidc/callback", () => {
 		expect(JSON.parse(callback.payload).error).toContain("no longer linked");
 		expect(mockSessionService.createSession).not.toHaveBeenCalled();
 		expect(mockSessionService.attachCookie).not.toHaveBeenCalled();
+	});
+
+	it("does not mint an ordinary login session after the provider configuration changes", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.oIDCAccount.findUnique.mockResolvedValue({
+			providerUserId: "provider-user-1",
+			user: { id: "admin-user", username: "admin" },
+		});
+		mockPrisma.oIDCProvider.updateMany.mockResolvedValueOnce({ count: 0 });
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+		});
+
+		expect(callback.statusCode).toBe(401);
+		expect(JSON.parse(callback.payload).error).toContain("no longer linked");
+		expect(mockPrisma.oIDCAccount.updateMany).not.toHaveBeenCalled();
+		expect(mockSessionService.attachCookie).not.toHaveBeenCalled();
+	});
+
+	it("allows simultaneous callbacks from the same unchanged provider snapshot", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.oIDCAccount.findUnique.mockResolvedValue({
+			providerUserId: "provider-user-1",
+			user: { id: "admin-user", username: "admin" },
+		});
+
+		const firstLogin = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+		});
+		const secondLogin = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+		});
+		const firstState = new URL(JSON.parse(firstLogin.payload).authorizationUrl).searchParams.get(
+			"state",
+		);
+		const secondState = new URL(JSON.parse(secondLogin.payload).authorizationUrl).searchParams.get(
+			"state",
+		);
+
+		const [firstCallback, secondCallback] = await Promise.all([
+			app.inject({
+				method: "GET",
+				url: `/auth/oidc/callback?code=first-code&state=${encodeURIComponent(firstState ?? "")}`,
+			}),
+			app.inject({
+				method: "GET",
+				url: `/auth/oidc/callback?code=second-code&state=${encodeURIComponent(secondState ?? "")}`,
+			}),
+		]);
+
+		expect(firstCallback.statusCode).toBe(302);
+		expect(secondCallback.statusCode).toBe(302);
+		expect(mockPrisma.oIDCProvider.updateMany).toHaveBeenCalledTimes(2);
+		for (const [call] of mockPrisma.oIDCProvider.updateMany.mock.calls) {
+			expect(call.where).not.toHaveProperty("updatedAt");
+		}
 	});
 
 	it("still refuses an unlinked OIDC identity when no authenticated admin initiated the flow", async () => {

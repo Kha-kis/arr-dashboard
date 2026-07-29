@@ -68,6 +68,7 @@ const oidcSetupSchema = z.object({
 
 const OIDC_SETUP_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 const OIDC_LOGIN_RATE_LIMIT = { max: 10, timeWindow: "1 minute" };
+const OIDC_PROVIDER_CHANGED = "OIDC_PROVIDER_CHANGED";
 
 const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
@@ -386,6 +387,17 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(500).send({ error: "OIDC provider configuration error" });
 		}
 
+		const providerAuthVersion = {
+			id: dbProvider.id,
+			enabled: true,
+			clientId: dbProvider.clientId,
+			encryptedClientSecret: dbProvider.encryptedClientSecret,
+			clientSecretIv: dbProvider.clientSecretIv,
+			issuer: dbProvider.issuer,
+			redirectUri: dbProvider.redirectUri,
+			scopes: dbProvider.scopes,
+		};
+
 		// Decrypt client secret
 		const clientSecret = app.encryptor.decrypt({
 			value: dbProvider.encryptedClientSecret,
@@ -537,6 +549,13 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						replaceOidcLink
 							? {
 									onRotate: async (tx) => {
+										const providerStillCurrent = await tx.oIDCProvider.updateMany({
+											where: providerAuthVersion,
+											data: { updatedAt: new Date() },
+										});
+										if (providerStillCurrent.count !== 1) {
+											throw new Error(OIDC_PROVIDER_CHANGED);
+										}
 										await tx.oIDCAccount.deleteMany({
 											where: { userId: user.id },
 										});
@@ -557,6 +576,13 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							true,
 							metadata,
 							async (tx) => {
+								const providerStillCurrent = await tx.oIDCProvider.updateMany({
+									where: providerAuthVersion,
+									data: { updatedAt: new Date() },
+								});
+								if (providerStillCurrent.count !== 1) {
+									return false;
+								}
 								const linked = await tx.oIDCAccount.updateMany({
 									where: {
 										providerUserId: userInfo.sub,
@@ -599,6 +625,17 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 			return reply.redirect(redirectPath, 302);
 		} catch (error: unknown) {
+			if (error instanceof Error && error.message === OIDC_PROVIDER_CHANGED) {
+				request.log.warn(
+					{ providerId: dbProvider.id },
+					"OIDC provider changed while an account link was in progress",
+				);
+				return reply.status(409).send({
+					error:
+						"The OIDC provider changed while the account link was in progress. Start Link Account again with the current provider configuration.",
+				});
+			}
+
 			const errMsg = getErrorMessage(error);
 			const errStack = error instanceof Error ? error.stack : undefined;
 			request.log.error(
