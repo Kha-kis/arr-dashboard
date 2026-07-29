@@ -304,9 +304,8 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 					normalizationUncertain ||
 					deploymentPeers.some((otherInstance) => otherInstance.userId === userId)
 						? "never"
-						: deploymentPeers.length > 0
-							? "secret"
-							: "callback";
+						: "secret";
+				const reportLegacyCleanupRequired = !normalizationUncertain && deploymentPeers.length === 0;
 				const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret, {
 					instanceId: instance.id,
 					deploymentId,
@@ -324,17 +323,19 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 						url: targetUrl,
 						ownerId,
 						legacyTargetAdoption,
+						reportLegacyCleanupRequired,
 						eventTypes: body.eventTypes,
 						enabled: true,
 					});
 					return reply.send({
 						ok: true,
 						quiTargetId: created.id,
-						...(created.cleanupPending
+						...(created.cleanupPending || created.legacyCleanupRequired
 							? {
 									cleanupPending: true,
-									warning:
-										"Target registered, but stale duplicate cleanup remains pending. Retry registration to reconcile it.",
+									warning: created.legacyCleanupRequired
+										? "Target registered, but an ownerless legacy target could not be verified safely. Remove the old arr-dashboard target manually in qUI."
+										: "Target registered, but stale duplicate cleanup remains pending. Retry registration to reconcile it.",
 								}
 							: {}),
 					});
