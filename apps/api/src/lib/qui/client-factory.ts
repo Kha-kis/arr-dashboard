@@ -180,8 +180,8 @@ export interface QuiClient {
 		url: string;
 		/** Stable local owner marker used to reconcile a renamed target. */
 		ownerId?: string;
-		/** Allow callback-only migration when this is the sole local row for the qUI deployment. */
-		allowLegacyTargetAdoption?: boolean;
+		/** Evidence required before migrating a fixed-name, ownerless target. */
+		legacyTargetAdoption?: "callback" | "secret" | "never";
 		eventTypes?: string[];
 		enabled?: boolean;
 	}): Promise<{ id: number; cleanupPending?: boolean }>;
@@ -720,7 +720,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			name,
 			url,
 			ownerId,
-			allowLegacyTargetAdoption = false,
+			legacyTargetAdoption = "never",
 			eventTypes,
 			enabled = true,
 		}) {
@@ -805,8 +805,10 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					return (
 						target.name === "arr-dashboard" &&
 						!targetUrl.searchParams.has("owner") &&
-						(allowLegacyTargetAdoption ||
-							(desiredSecret !== null && targetUrl.searchParams.get("secret") === desiredSecret)) &&
+						(legacyTargetAdoption === "callback" ||
+							(legacyTargetAdoption === "secret" &&
+								desiredSecret !== null &&
+								targetUrl.searchParams.get("secret") === desiredSecret)) &&
 						desiredCallbackIdentity !== null &&
 						callbackIdentity(target.url) === desiredCallbackIdentity
 					);

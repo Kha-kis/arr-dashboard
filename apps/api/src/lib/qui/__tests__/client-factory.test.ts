@@ -587,7 +587,7 @@ describe("createQuiClient", () => {
 					name: desiredTarget.name,
 					url: desiredTarget.url,
 					ownerId: "owner-1",
-					allowLegacyTargetAdoption: true,
+					legacyTargetAdoption: "callback",
 					eventTypes: desiredTarget.eventTypes,
 				}),
 			).resolves.toEqual({ id: 42 });
@@ -598,6 +598,45 @@ describe("createQuiClient", () => {
 				name: desiredTarget.name,
 				url: desiredTarget.url,
 			});
+		});
+
+		it("upgrades an exact-secret legacy target when shared deployment adoption requires it", async () => {
+			const legacyTarget = {
+				...target,
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current",
+			};
+			const desiredTarget = {
+				...legacyTarget,
+				name: "arr-dashboard-installation-deployment",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current&instanceId=qui-1&deploymentId=deployment-1&owner=owner-1",
+			};
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([legacyTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(desiredTarget), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: desiredTarget.name,
+					url: desiredTarget.url,
+					ownerId: "owner-1",
+					legacyTargetAdoption: "secret",
+					eventTypes: desiredTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(2);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("PUT");
 		});
 
 		it("leaves ambiguous legacy targets at a shared callback untouched", async () => {
@@ -637,6 +676,54 @@ describe("createQuiClient", () => {
 					name: desiredTarget.name,
 					url: desiredTarget.url,
 					ownerId: "owner-1",
+					legacyTargetAdoption: "secret",
+					eventTypes: desiredTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+			expect(fetchSpy.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+		});
+
+		it("leaves same-secret legacy targets untouched when adoption is denied", async () => {
+			const ambiguousLegacyTarget = {
+				...target,
+				id: 7,
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current",
+			};
+			const desiredTarget = {
+				...target,
+				name: "arr-dashboard-installation-deployment",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current&instanceId=qui-2&deploymentId=deployment-1&owner=owner-2",
+			};
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([ambiguousLegacyTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(desiredTarget), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([ambiguousLegacyTarget, desiredTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: desiredTarget.name,
+					url: desiredTarget.url,
+					ownerId: "owner-2",
+					legacyTargetAdoption: "never",
 					eventTypes: desiredTarget.eventTypes,
 				}),
 			).resolves.toEqual({ id: 42 });
