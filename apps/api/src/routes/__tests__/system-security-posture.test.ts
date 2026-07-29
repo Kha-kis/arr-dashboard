@@ -117,6 +117,24 @@ describe("PUT /system/settings", () => {
 		expect(mockPrisma.systemSettings.upsert).not.toHaveBeenCalled();
 		expect(mockNotificationService.setBaseUrl).not.toHaveBeenCalled();
 	});
+
+	it.each([
+		"https://arr.example.com?source=proxy",
+		"https://arr.example.com#settings",
+		"https://arr.example.com?",
+		"https://arr.example.com#",
+	])("rejects an External URL with a query or fragment: %s", async (externalUrl) => {
+		const res = await injectAuthenticated("PUT", "/system/settings", {
+			body: { externalUrl },
+		});
+
+		expect(res.statusCode, res.payload).toBe(400);
+		expect(JSON.parse(res.payload)).toMatchObject({
+			error: "External URL must not include a query string or fragment",
+		});
+		expect(mockPrisma.systemSettings.upsert).not.toHaveBeenCalled();
+		expect(mockNotificationService.setBaseUrl).not.toHaveBeenCalled();
+	});
 });
 
 describe("GET /system/security-posture", () => {

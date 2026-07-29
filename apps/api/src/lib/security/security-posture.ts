@@ -111,6 +111,8 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		? oidcRedirectUriProtocol.slice(0, -1).toUpperCase()
 		: "an unrecognized protocol";
 	const oidcRedirectUriIsHttps = oidcRedirectUriProtocol === "https:";
+	const oidcRedirectUriIsDevelopmentLoopback =
+		input.env.NODE_ENV === "development" && isHttpLoopbackUrl(oidcRedirectUri);
 
 	const checks: SecurityCheck[] = [];
 
@@ -287,7 +289,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 
 	// OIDC authentication uses the enabled provider's stored redirect URI.
 	// Check that actual callback independently from the public-link URL.
-	if (input.oidcEnabled && !oidcRedirectUriIsHttps && (isProduction || effectiveSecureCookies)) {
+	if (input.oidcEnabled && !oidcRedirectUriIsHttps && !oidcRedirectUriIsDevelopmentLoopback) {
 		checks.push({
 			id: "oidc-app-url",
 			label: "OIDC Redirect URI",
@@ -334,5 +336,22 @@ function safeProtocol(url: string): string | null {
 		return new URL(url).protocol;
 	} catch {
 		return null;
+	}
+}
+
+function isHttpLoopbackUrl(value: string): boolean {
+	try {
+		const url = new URL(value);
+		if (url.protocol !== "http:") return false;
+
+		const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+		return (
+			hostname === "localhost" ||
+			hostname.endsWith(".localhost") ||
+			hostname.startsWith("127.") ||
+			hostname === "[::1]"
+		);
+	} catch {
+		return false;
 	}
 }
