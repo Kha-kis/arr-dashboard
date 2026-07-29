@@ -45,6 +45,12 @@ export const oidcRedirectUriSchema = z
 					message: "OIDC redirect URI must not include a fragment",
 				});
 			}
+			if (url.pathname.includes("//")) {
+				ctx.addIssue({
+					code: "custom",
+					message: "OIDC redirect URI path must not include repeated slashes",
+				});
+			}
 		} catch {
 			// z.string().url() reports the canonical invalid-URL issue.
 		}

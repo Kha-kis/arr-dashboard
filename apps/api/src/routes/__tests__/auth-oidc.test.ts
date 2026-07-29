@@ -256,6 +256,54 @@ describe("POST /auth/oidc/setup", () => {
 		expect(mockPrisma.$transaction).toHaveBeenCalled();
 	});
 
+	it("normalizes a trailing APP_URL slash when generating the callback", async () => {
+		Object.assign(app.config, { APP_URL: "https://arr.example.com/" });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/setup",
+			payload: {
+				displayName: "My OIDC Provider",
+				clientId: "my-client-id",
+				clientSecret: "my-client-secret",
+				issuer: "https://provider.example.com",
+			},
+		});
+
+		expect(res.statusCode).toBe(201);
+		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				redirectUri: "https://arr.example.com/auth/oidc/callback",
+			}),
+		});
+	});
+
+	it.each([
+		"https://admin:secret@arr.example.com/",
+		"ftp://arr.example.com/",
+		"mailto:admin@example.com",
+	])(
+		"rejects an unsafe APP_URL when generating the setup callback: %s",
+		async (appUrl) => {
+			Object.assign(app.config, { APP_URL: appUrl });
+
+			const res = await app.inject({
+				method: "POST",
+				url: "/auth/oidc/setup",
+				payload: {
+					displayName: "My OIDC Provider",
+					clientId: "my-client-id",
+					clientSecret: "my-client-secret",
+					issuer: "https://provider.example.com",
+				},
+			});
+
+			expect(res.statusCode).toBe(400);
+			expect(JSON.parse(res.payload).error).toContain("APP_URL");
+			expect(mockPrisma.oIDCProvider.create).not.toHaveBeenCalled();
+		},
+	);
+
 	it("returns 403 when users already exist", async () => {
 		// Make the transaction see existing users
 		mockPrisma.$transaction.mockImplementation(async (fn: any) => {

@@ -748,8 +748,8 @@ export const OIDCProviderSection = () => {
 						<DialogHeader>
 							<DialogTitle>Delete OIDC provider?</DialogTitle>
 							<DialogDescription>
-								Enter a strong fallback password before removing OIDC. Existing passwords are
-								preserved, and OIDC-only accounts receive this password. You will be signed out
+								Enter a strong fallback password before removing OIDC. This becomes your
+								password, and other OIDC-only accounts receive it. You will be signed out
 								afterward.
 							</DialogDescription>
 						</DialogHeader>
