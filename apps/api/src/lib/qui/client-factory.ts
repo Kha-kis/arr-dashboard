@@ -170,8 +170,12 @@ export interface QuiClient {
 	 * `PUT /api/instances/:id/torrents/:hash/trackers`.
 	 */
 	editTracker(instanceId: number, hash: string, oldURL: string, newURL: string): Promise<void>;
-	/** Create a notification target inside qui. Phase 5.1 — auto-registers arr-dashboard's webhook URL. */
-	createNotificationTarget(args: {
+	/**
+	 * Create or update arr-dashboard's notification target inside qui.
+	 * Discovers prior registrations by name and reconciles ambiguous create
+	 * responses so retrying registration stays idempotent.
+	 */
+	ensureNotificationTarget(args: {
 		name: string;
 		url: string;
 		eventTypes?: string[];
@@ -328,6 +332,23 @@ const wireCrossSeedMatchSchema = z
 const wireLocalMatchesResponseSchema = z.object({
 	matches: z.array(wireCrossSeedMatchSchema).nullable(),
 });
+
+const quiNotificationTargetSchema = z
+	.object({
+		id: z.number().int(),
+		name: z.string(),
+		url: z.string(),
+		enabled: z.boolean(),
+		eventTypes: z.array(z.string()),
+	})
+	.passthrough();
+
+// qUI's Go store returns a nil slice when no targets exist, which encodes
+// as JSON null rather than []. Normalize both wire shapes at the boundary.
+const quiNotificationTargetListSchema = z
+	.array(quiNotificationTargetSchema)
+	.nullable()
+	.transform((targets) => targets ?? []);
 
 /**
  * Build a request-scoped qui client.
@@ -685,24 +706,123 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			});
 		},
 
-		async createNotificationTarget({ name, url, eventTypes, enabled = true }) {
-			// qui's `POST /api/notifications/targets` returns the created
-			// target — we only need the id back for arr-dashboard's own
-			// bookkeeping ("we already registered our webhook against this qui").
-			// passthrough() lets future qui fields land without a shared-schema bump.
-			return quiRequest(
-				ctx,
-				"/api/notifications/targets",
-				z.object({ id: z.number().int() }).passthrough(),
-				{
+		async ensureNotificationTarget({ name, url, eventTypes, enabled = true }) {
+			type NotificationTarget = z.infer<typeof quiNotificationTargetSchema>;
+			const redactSecret = (message: string) => message.replace(/secret=[^&\s"']+/g, "secret=***");
+			const requestOptions = {
+				redactErrorMessage: redactSecret,
+			};
+			const desired = { name, url, eventTypes, enabled };
+
+			const listTargets = () =>
+				quiRequest(
+					ctx,
+					"/api/notifications/targets",
+					quiNotificationTargetListSchema,
+					requestOptions,
+				);
+			const updateTarget = (targetId: number, body: typeof desired) =>
+				quiRequest(ctx, `/api/notifications/targets/${targetId}`, quiNotificationTargetSchema, {
+					...requestOptions,
+					method: "PUT",
+					body,
+				});
+			const sameEventTypes = (actual: string[]): boolean => {
+				if (eventTypes === undefined) return true;
+				const expected = [...eventTypes].sort();
+				const received = [...actual].sort();
+				return (
+					expected.length === received.length &&
+					expected.every((value, index) => value === received[index])
+				);
+			};
+			const matchesDesired = (target: NotificationTarget): boolean =>
+				target.name === name &&
+				target.url === url &&
+				target.enabled === enabled &&
+				sameEventTypes(target.eventTypes);
+
+			const reconcile = async (
+				targets: NotificationTarget[],
+			): Promise<NotificationTarget | null> => {
+				const matches = targets
+					.filter((target) => target.name === name)
+					.sort((left, right) => left.id - right.id);
+				const primary = matches[0];
+				if (!primary) return null;
+
+				let reconciled = primary;
+				if (!matchesDesired(primary)) {
+					try {
+						reconciled = await updateTarget(primary.id, desired);
+					} catch (updateError) {
+						// A lost response can happen after qui commits the PUT.
+						// Re-read before surfacing a retryable upstream failure.
+						const afterUpdate = (await listTargets()).find((target) => target.id === primary.id);
+						if (!afterUpdate || !matchesDesired(afterUpdate)) {
+							throw updateError;
+						}
+						reconciled = afterUpdate;
+					}
+				}
+
+				// Old retries may already have created more than one target.
+				// Keep the oldest as the canonical registration and disable
+				// every other enabled copy so stale secrets cannot keep firing
+				// rejected callbacks or consume the receiver's rate limit.
+				for (const duplicate of matches.slice(1)) {
+					if (!duplicate.enabled) continue;
+					try {
+						await updateTarget(duplicate.id, {
+							name: duplicate.name,
+							url: duplicate.url,
+							eventTypes: duplicate.eventTypes,
+							enabled: false,
+						});
+					} catch (disableError) {
+						const afterDisable = (await listTargets()).find((target) => target.id === duplicate.id);
+						if (afterDisable?.enabled !== false) {
+							throw disableError;
+						}
+					}
+				}
+
+				return reconciled;
+			};
+
+			const existing = await reconcile(await listTargets());
+			if (existing) return { id: existing.id };
+
+			let created: NotificationTarget;
+			try {
+				created = await quiRequest(ctx, "/api/notifications/targets", quiNotificationTargetSchema, {
+					...requestOptions,
 					method: "POST",
-					body: { name, url, eventTypes, enabled },
-					// qUI includes the rejected target URL in some validation
-					// errors. Scrub the one-time callback credential inside the
-					// shared request boundary, before either logging or throwing.
-					redactErrorMessage: (message) => message.replace(/secret=[^&\s"']+/g, "secret=***"),
-				},
-			);
+					body: desired,
+				});
+			} catch (createError) {
+				// The POST may have committed even if its response was lost.
+				// Discover and reconcile that target before deciding the
+				// registration failed; the next click must not create another.
+				try {
+					const recovered = await reconcile(await listTargets());
+					if (recovered) return { id: recovered.id };
+				} catch {
+					// Preserve the original, already-redacted create failure.
+				}
+				throw createError;
+			}
+
+			// A concurrent registration can race the initial list. Re-list
+			// after a successful create and collapse any enabled duplicates.
+			let afterCreate: NotificationTarget[];
+			try {
+				afterCreate = await listTargets();
+			} catch {
+				return { id: created.id };
+			}
+			const reconciled = await reconcile(afterCreate);
+			return { id: reconciled?.id ?? created.id };
 		},
 
 		async triggerDirScan(path) {
