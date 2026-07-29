@@ -32,6 +32,7 @@ function baseInput(overrides: Overrides = {}): SecurityPostureInput {
 		passkeyCount: overrides.passkeyCount ?? 0,
 		passwordUserCount: overrides.passwordUserCount ?? 1,
 		totalUserCount: overrides.totalUserCount ?? 1,
+		publicAppUrl: overrides.publicAppUrl ?? null,
 	};
 }
 
@@ -237,6 +238,48 @@ describe("evaluateSecurityPosture", () => {
 	});
 
 	describe("app URL", () => {
+		it("uses the HTTPS External URL before the APP_URL fallback", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "http://localhost:3000",
+					},
+					publicAppUrl: "https://arr.example.com",
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "app-url")).toMatchObject({
+				severity: "healthy",
+				detail: "https://arr.example.com",
+			});
+			expect(result.effective.appUrl).toBe("https://arr.example.com");
+		});
+
+		it("warns about the External URL when it overrides a secure APP_URL with http", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "https://arr.example.com",
+					},
+					publicAppUrl: "http://proxy.example.com",
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "app-url")).toMatchObject({
+				severity: "warning",
+				detail: "External URL uses http: in production.",
+				remediation: expect.stringContaining("External URL in Settings → System"),
+			});
+		});
+
 		it("warns on non-https APP_URL in production", () => {
 			const result = evaluateSecurityPosture(
 				baseInput({
