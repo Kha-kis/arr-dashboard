@@ -27,7 +27,7 @@ type EnvironmentSecretOverrides = Required<SecretOverrides>;
 
 class SecretsPersistenceError extends Error {
 	constructor(
-		readonly attemptedSecrets: Secrets,
+		readonly attemptedInstallationId: string,
 		readonly installationIdWasPersistent: boolean,
 		options: { cause: unknown },
 	) {
@@ -51,9 +51,14 @@ const LEGACY_SECRETS_PATHS = [
  */
 export class SecretManager {
 	private readonly secretsPath: string;
+	private _secretsSynchronized = true;
 
 	constructor(secretsPath: string) {
 		this.secretsPath = secretsPath;
+	}
+
+	get secretsSynchronized(): boolean {
+		return this._secretsSynchronized;
 	}
 
 	/**
@@ -87,6 +92,9 @@ export class SecretManager {
 			// preserving parseable deployment-local metadata.
 			log.warn("Secrets file is missing required cryptographic fields");
 		} catch (error) {
+			if (error instanceof SecretsPersistenceError) {
+				throw error;
+			}
 			// ENOENT is expected on first run — only log unexpected errors
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
 				log.error({ err: error }, "Failed to load secrets, regenerating");
@@ -148,8 +156,9 @@ export class SecretManager {
 				throw error;
 			}
 
+			this._secretsSynchronized = false;
 			const installationId = error.installationIdWasPersistent
-				? error.attemptedSecrets.installationId
+				? error.attemptedInstallationId
 				: createHash("sha256")
 						.update(
 							`arr-dashboard-environment-installation\0${overrides.encryptionKey}\0${overrides.sessionCookieSecret}`,
@@ -197,7 +206,10 @@ export class SecretManager {
 				copyFileSync(legacyPath, this.secretsPath);
 
 				return this.ensureInstallationId(secrets);
-			} catch {
+			} catch (error) {
+				if (error instanceof SecretsPersistenceError) {
+					throw error;
+				}
 				// File doesn't exist or can't be read — try next legacy path
 			}
 		}
@@ -250,7 +262,9 @@ export class SecretManager {
 			renameSync(tmpPath, this.secretsPath);
 		} catch (error) {
 			log.error({ err: error, path: this.secretsPath }, "Failed to persist secrets");
-			throw new SecretsPersistenceError(secrets, installationIdWasPersistent, { cause: error });
+			throw new SecretsPersistenceError(secrets.installationId, installationIdWasPersistent, {
+				cause: error,
+			});
 		}
 	}
 

@@ -52,6 +52,7 @@ export const securityPlugin = fp(
 		app.decorate("encryptor", encryptor);
 		app.decorate("sessionService", sessionService);
 		app.decorate("installationId", secrets.installationId);
+		app.decorate("secretsSynchronized", secretManager.secretsSynchronized);
 	},
 	{
 		name: "security",

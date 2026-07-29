@@ -1,6 +1,7 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { inspect } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
 import { readSecrets, writeSecrets } from "../../backup/backup-file-utils.js";
 import { Encryptor } from "../encryption.js";
@@ -152,11 +153,70 @@ describe("SecretManager installation identity", () => {
 			sessionCookieSecret: "e".repeat(32),
 		};
 
-		const first = new SecretManager(secretsPath).getOrCreateEnvironmentSecrets(overrides);
-		const second = new SecretManager(secretsPath).getOrCreateEnvironmentSecrets(overrides);
+		const firstManager = new SecretManager(secretsPath);
+		const secondManager = new SecretManager(secretsPath);
+		const first = firstManager.getOrCreateEnvironmentSecrets(overrides);
+		const second = secondManager.getOrCreateEnvironmentSecrets(overrides);
 
 		expect(first).toEqual(second);
 		expect(first).toMatchObject(overrides);
 		expect(first.installationId).toMatch(/^[a-f0-9]{32}$/);
+		expect(firstManager.secretsSynchronized).toBe(false);
+		expect(secondManager.secretsSynchronized).toBe(false);
+	});
+
+	it("does not expose a partially managed secret when persistence fails", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "arr-dashboard-secrets-"));
+		tempDirectories.push(directory);
+		const pathBlocker = join(directory, "not-a-directory");
+		await writeFile(pathBlocker, "block directory creation");
+		const environmentEncryptionKey = "d".repeat(32);
+
+		let thrown: unknown;
+		try {
+			new SecretManager(join(pathBlocker, "secrets.json")).getOrCreateSecrets({
+				encryptionKey: environmentEncryptionKey,
+			});
+		} catch (error) {
+			thrown = error;
+		}
+
+		expect(thrown).toBeInstanceOf(Error);
+		expect(inspect(thrown)).not.toContain(environmentEncryptionKey);
+		expect(JSON.stringify(thrown)).not.toContain(environmentEncryptionKey);
+	});
+
+	it("marks stale readable secrets as unsynchronized when environment keys cannot be written", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "arr-dashboard-secrets-"));
+		tempDirectories.push(directory);
+		const secretsPath = join(directory, "secrets.json");
+		await writeFile(
+			secretsPath,
+			JSON.stringify({
+				encryptionKey: "a".repeat(64),
+				sessionCookieSecret: "b".repeat(64),
+				installationId: "c".repeat(32),
+			}),
+		);
+		await chmod(directory, 0o555);
+
+		try {
+			const manager = new SecretManager(secretsPath);
+			const active = manager.getOrCreateEnvironmentSecrets({
+				encryptionKey: "d".repeat(32),
+				sessionCookieSecret: "e".repeat(32),
+			});
+
+			expect(active.encryptionKey).toBe("d".repeat(32));
+			expect(active.sessionCookieSecret).toBe("e".repeat(32));
+			expect(active.installationId).toBe("c".repeat(32));
+			expect(manager.secretsSynchronized).toBe(false);
+			expect(JSON.parse(await readFile(secretsPath, "utf8"))).toMatchObject({
+				encryptionKey: "a".repeat(64),
+				sessionCookieSecret: "b".repeat(64),
+			});
+		} finally {
+			await chmod(directory, 0o755);
+		}
 	});
 });

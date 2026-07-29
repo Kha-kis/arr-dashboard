@@ -244,6 +244,19 @@ const mockEncryptor = {
 
 // Unit tests - these don't require database access
 describe("BackupService - Backup Validation (Unit)", () => {
+	it("rejects backup creation while active environment secrets are unsynchronized", async () => {
+		const backupService = new BackupService(
+			{} as PrismaClient,
+			"/unused/secrets.json",
+			undefined,
+			false,
+		);
+
+		await expect(backupService.createBackup("2.23.0")).rejects.toThrow(
+			"active environment secrets could not be synchronized",
+		);
+	});
+
 	it("should validate backup structure", () => {
 		const validBackup = {
 			version: "1.0",
