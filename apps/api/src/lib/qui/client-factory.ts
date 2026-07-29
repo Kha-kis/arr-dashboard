@@ -728,9 +728,11 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					body,
 				});
 			const sameEventTypes = (actual: string[]): boolean => {
-				if (eventTypes === undefined) return true;
-				const expected = [...eventTypes].sort();
-				const received = [...actual].sort();
+				// qUI treats both an omitted list and [] as "all events"; its
+				// response expands that to every concrete event name.
+				if (eventTypes === undefined || eventTypes.length === 0) return true;
+				const expected = [...new Set(eventTypes)].sort();
+				const received = [...new Set(actual)].sort();
 				return (
 					expected.length === received.length &&
 					expected.every((value, index) => value === received[index])
@@ -755,6 +757,9 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				if (!matchesDesired(primary)) {
 					try {
 						reconciled = await updateTarget(primary.id, desired);
+						if (!matchesDesired(reconciled)) {
+							throw new Error("qUI returned a notification target that does not match the update");
+						}
 					} catch (updateError) {
 						// A lost response can happen after qui commits the PUT.
 						// Re-read before surfacing a retryable upstream failure.
@@ -773,12 +778,15 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				for (const duplicate of matches.slice(1)) {
 					if (!duplicate.enabled) continue;
 					try {
-						await updateTarget(duplicate.id, {
+						const disabled = await updateTarget(duplicate.id, {
 							name: duplicate.name,
 							url: duplicate.url,
 							eventTypes: duplicate.eventTypes,
 							enabled: false,
 						});
+						if (disabled.enabled) {
+							throw new Error("qUI did not disable a duplicate notification target");
+						}
 					} catch (disableError) {
 						const afterDisable = (await listTargets()).find((target) => target.id === duplicate.id);
 						if (afterDisable?.enabled !== false) {
