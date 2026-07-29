@@ -16,12 +16,18 @@ export const securityPlugin = fp(
 		// installation identity. Unlike database backups, that identity stays
 		// with this deployment so restored clones cannot claim its resources.
 		const secretManager = new SecretManager(secretsPath);
-		const secrets = secretManager.getOrCreateSecrets({
-			...(app.config.ENCRYPTION_KEY ? { encryptionKey: app.config.ENCRYPTION_KEY } : {}),
-			...(app.config.SESSION_COOKIE_SECRET
-				? { sessionCookieSecret: app.config.SESSION_COOKIE_SECRET }
-				: {}),
-		});
+		const secrets =
+			app.config.ENCRYPTION_KEY && app.config.SESSION_COOKIE_SECRET
+				? secretManager.getOrCreateEnvironmentSecrets({
+						encryptionKey: app.config.ENCRYPTION_KEY,
+						sessionCookieSecret: app.config.SESSION_COOKIE_SECRET,
+					})
+				: secretManager.getOrCreateSecrets({
+						...(app.config.ENCRYPTION_KEY ? { encryptionKey: app.config.ENCRYPTION_KEY } : {}),
+						...(app.config.SESSION_COOKIE_SECRET
+							? { sessionCookieSecret: app.config.SESSION_COOKIE_SECRET }
+							: {}),
+					});
 
 		if (!app.config.ENCRYPTION_KEY || !app.config.SESSION_COOKIE_SECRET) {
 			app.log.info("Auto-generating secrets (not provided in environment)");

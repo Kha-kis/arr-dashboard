@@ -140,4 +140,23 @@ describe("SecretManager installation identity", () => {
 		).toThrow("ENCRYPTION_KEY must decode to 32 bytes");
 		expect(JSON.parse(await readFile(secretsPath, "utf8"))).toEqual(persisted);
 	});
+
+	it("starts consistently with environment-managed secrets when the secrets path is not writable", async () => {
+		const directory = await mkdtemp(join(tmpdir(), "arr-dashboard-secrets-"));
+		tempDirectories.push(directory);
+		const pathBlocker = join(directory, "not-a-directory");
+		await writeFile(pathBlocker, "block directory creation");
+		const secretsPath = join(pathBlocker, "secrets.json");
+		const overrides = {
+			encryptionKey: "d".repeat(32),
+			sessionCookieSecret: "e".repeat(32),
+		};
+
+		const first = new SecretManager(secretsPath).getOrCreateEnvironmentSecrets(overrides);
+		const second = new SecretManager(secretsPath).getOrCreateEnvironmentSecrets(overrides);
+
+		expect(first).toEqual(second);
+		expect(first).toMatchObject(overrides);
+		expect(first.installationId).toMatch(/^[a-f0-9]{32}$/);
+	});
 });

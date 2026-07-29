@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { loggers } from "../logger.js";
@@ -23,6 +23,18 @@ type StoredSecrets = Omit<Secrets, "installationId"> & {
 };
 
 type SecretOverrides = Partial<Pick<Secrets, "encryptionKey" | "sessionCookieSecret">>;
+type EnvironmentSecretOverrides = Required<SecretOverrides>;
+
+class SecretsPersistenceError extends Error {
+	constructor(
+		readonly attemptedSecrets: Secrets,
+		readonly installationIdWasPersistent: boolean,
+		options: { cause: unknown },
+	) {
+		super("Could not save secrets to disk", options);
+		this.name = "SecretsPersistenceError";
+	}
+}
 
 /**
  * Known legacy secrets paths from previous versions.
@@ -111,10 +123,49 @@ export class SecretManager {
 					: randomBytes(16).toString("hex"),
 		};
 
-		this.persistSecrets(secrets);
+		this.persistSecrets(
+			secrets,
+			typeof preservedLocalFields.installationId === "string" &&
+				/^[a-f0-9]{32}$/.test(preservedLocalFields.installationId),
+		);
 		log.info({ path: this.secretsPath }, "Generated new secrets");
 
 		return secrets;
+	}
+
+	/**
+	 * Resolve deployments whose cryptographic secrets are entirely managed by
+	 * the environment. A writable secrets file is still preferred so backups
+	 * contain the active keys and each installation gets a random local ID.
+	 * If the path is read-only, the active secrets are sufficient for startup
+	 * and provide a deterministic identity across container restarts.
+	 */
+	getOrCreateEnvironmentSecrets(overrides: EnvironmentSecretOverrides): Secrets {
+		try {
+			return this.getOrCreateSecrets(overrides);
+		} catch (error) {
+			if (!(error instanceof SecretsPersistenceError)) {
+				throw error;
+			}
+
+			const installationId = error.installationIdWasPersistent
+				? error.attemptedSecrets.installationId
+				: createHash("sha256")
+						.update(
+							`arr-dashboard-environment-installation\0${overrides.encryptionKey}\0${overrides.sessionCookieSecret}`,
+						)
+						.digest("hex")
+						.slice(0, 32);
+			log.warn(
+				{ path: this.secretsPath },
+				"Secrets path is not writable; using environment-managed secrets without local backup synchronization",
+			);
+			return {
+				encryptionKey: overrides.encryptionKey,
+				sessionCookieSecret: overrides.sessionCookieSecret,
+				installationId,
+			};
+		}
 	}
 
 	/**
@@ -166,7 +217,7 @@ export class SecretManager {
 			resolved.encryptionKey !== secrets.encryptionKey ||
 			resolved.sessionCookieSecret !== secrets.sessionCookieSecret
 		) {
-			this.persistSecrets(resolved);
+			this.persistSecrets(resolved, true);
 			log.info({ path: this.secretsPath }, "Synchronized active environment secrets");
 		}
 		return resolved;
@@ -189,17 +240,17 @@ export class SecretManager {
 		return upgraded;
 	}
 
-	private persistSecrets(secrets: Secrets): void {
-		mkdirSync(dirname(this.secretsPath), { recursive: true });
+	private persistSecrets(secrets: Secrets, installationIdWasPersistent = false): void {
 		const tmpPath = `${this.secretsPath}.tmp`;
 		try {
+			mkdirSync(dirname(this.secretsPath), { recursive: true });
 			writeFileSync(tmpPath, JSON.stringify(secrets, null, 2), {
 				mode: 0o600,
 			});
 			renameSync(tmpPath, this.secretsPath);
 		} catch (error) {
 			log.error({ err: error, path: this.secretsPath }, "Failed to persist secrets");
-			throw new Error("Could not save secrets to disk");
+			throw new SecretsPersistenceError(secrets, installationIdWasPersistent, { cause: error });
 		}
 	}
 

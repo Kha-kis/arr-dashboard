@@ -24,6 +24,7 @@ import { logQuiActivity } from "../lib/qui/activity-log.js";
 import { quiEventBus } from "../lib/qui/event-bus.js";
 import { resolveUserFromQuiSecret } from "../lib/qui/webhook-secret.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
+import { buildQuiDeploymentId } from "./qui/webhook-routes.js";
 
 const quiShoutrrrNotificationSchema = z
 	.object({
@@ -60,7 +61,9 @@ const QUI_NOTIFICATION_EVENT_TYPES: Readonly<Record<string, string>> = {
 };
 
 const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
-	app.post<{ Querystring: { secret?: string; instanceId?: string } }>(
+	app.post<{
+		Querystring: { secret?: string; instanceId?: string; deploymentId?: string };
+	}>(
 		"/webhooks/qui",
 		{
 			// Conservative bounds for an inbound notification body. qui's
@@ -83,13 +86,18 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			const instanceId = request.query?.instanceId;
+			const deploymentId = request.query?.deploymentId;
 			const sourceInstance = instanceId
 				? await app.prisma.serviceInstance.findFirst({
 						where: { id: instanceId, userId: user.id, service: "QUI" },
-						select: { id: true },
+						select: { id: true, baseUrl: true },
 					})
 				: null;
-			if (instanceId && !sourceInstance) {
+			const hasValidSource =
+				sourceInstance &&
+				deploymentId &&
+				buildQuiDeploymentId(user.id, sourceInstance.baseUrl) === deploymentId;
+			if ((instanceId || deploymentId) && !hasValidSource) {
 				return reply.status(401).send({ error: "Invalid webhook source" });
 			}
 
