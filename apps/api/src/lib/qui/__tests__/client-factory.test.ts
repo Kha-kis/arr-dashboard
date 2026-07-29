@@ -560,21 +560,16 @@ describe("createQuiClient", () => {
 		it("upgrades a matching pre-owner arr-dashboard target in place", async () => {
 			const legacyTarget = {
 				...target,
-				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current",
-			};
-			const otherUserLegacyTarget = {
-				...legacyTarget,
-				id: 7,
-				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=other-user",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=old",
 			};
 			const desiredTarget = {
 				...legacyTarget,
 				name: "arr-dashboard-installation-deployment",
-				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current&instanceId=qui-1&deploymentId=deployment-1&owner=owner-1",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=new&instanceId=qui-1&deploymentId=deployment-1&owner=owner-1",
 			};
 			fetchSpy
 				.mockResolvedValueOnce(
-					new Response(JSON.stringify([otherUserLegacyTarget, legacyTarget]), {
+					new Response(JSON.stringify([legacyTarget]), {
 						status: 200,
 						headers: { "content-type": "application/json" },
 					}),
@@ -592,6 +587,7 @@ describe("createQuiClient", () => {
 					name: desiredTarget.name,
 					url: desiredTarget.url,
 					ownerId: "owner-1",
+					allowLegacyTargetAdoption: true,
 					eventTypes: desiredTarget.eventTypes,
 				}),
 			).resolves.toEqual({ id: 42 });

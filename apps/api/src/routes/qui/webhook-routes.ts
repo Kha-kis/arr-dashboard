@@ -281,6 +281,23 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 				// rotate response and forwards it here.
 				const ownerId = buildQuiNotificationTargetOwnerId(app.installationId, userId, instance.id);
 				const deploymentId = buildQuiDeploymentId(userId, instance.baseUrl);
+				const deploymentKey = buildQuiDeploymentId("", instance.baseUrl);
+				const otherQuiInstances = await app.prisma.serviceInstance.findMany({
+					where: {
+						service: "QUI",
+						id: { not: instance.id },
+					},
+					select: { baseUrl: true },
+				});
+				const allowLegacyTargetAdoption = !otherQuiInstances.some((otherInstance) => {
+					try {
+						return buildQuiDeploymentId("", otherInstance.baseUrl) === deploymentKey;
+					} catch {
+						// Fail closed if legacy data prevents us from proving
+						// that the other qUI row belongs to a different server.
+						return true;
+					}
+				});
 				const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret, {
 					instanceId: instance.id,
 					deploymentId,
@@ -297,6 +314,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 						),
 						url: targetUrl,
 						ownerId,
+						allowLegacyTargetAdoption,
 						eventTypes: body.eventTypes,
 						enabled: true,
 					});
