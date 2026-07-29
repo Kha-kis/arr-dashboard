@@ -15,15 +15,18 @@ export function buildQuiNotificationTargetName(
 	userId: string,
 	quiBaseUrl: string,
 ): string {
+	return `arr-dashboard-${installationId}-${buildQuiDeploymentId(userId, quiBaseUrl)}`;
+}
+
+export function buildQuiDeploymentId(userId: string, quiBaseUrl: string): string {
 	const deploymentUrl = new URL(quiBaseUrl);
 	deploymentUrl.hash = "";
 	deploymentUrl.search = "";
 	deploymentUrl.pathname = deploymentUrl.pathname.replace(/\/+$/, "");
-	const deploymentId = createHash("sha256")
+	return createHash("sha256")
 		.update(`${userId}\0${deploymentUrl.toString()}`)
 		.digest("hex")
 		.slice(0, 24);
-	return `arr-dashboard-${installationId}-${deploymentId}`;
 }
 
 export function buildQuiNotificationTargetOwnerId(
@@ -161,7 +164,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 	function buildQuiNotificationTargetUrl(
 		baseUrl: string,
 		secret?: string,
-		source?: { instanceId: string; ownerId: string },
+		source?: { instanceId: string; deploymentId: string; ownerId: string },
 	): string {
 		const callback = new URL(`${baseUrl}/api/webhooks/qui`);
 		const usesPlainHttp = callback.protocol === "http:";
@@ -181,6 +184,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 		}
 		if (source) {
 			target.searchParams.set("instanceId", source.instanceId);
+			target.searchParams.set("deploymentId", source.deploymentId);
 			target.searchParams.set("owner", source.ownerId);
 		}
 		return target.toString();
@@ -267,8 +271,10 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 				// don't have it on the server. The frontend captures it from the
 				// rotate response and forwards it here.
 				const ownerId = buildQuiNotificationTargetOwnerId(app.installationId, userId, instance.id);
+				const deploymentId = buildQuiDeploymentId(userId, instance.baseUrl);
 				const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret, {
 					instanceId: instance.id,
+					deploymentId,
 					ownerId,
 				});
 

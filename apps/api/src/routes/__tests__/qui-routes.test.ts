@@ -70,6 +70,7 @@ import { InstanceNotFoundError } from "../../lib/errors.js";
 import { hashSecret } from "../../lib/qui/webhook-secret.js";
 import { registerQuiRoutes } from "../qui.js";
 import {
+	buildQuiDeploymentId,
 	buildQuiNotificationTargetName,
 	buildQuiNotificationTargetOwnerId,
 } from "../qui/webhook-routes.js";
@@ -910,6 +911,9 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(targetUrl.searchParams.get("disabletls")).toBe("yes");
 		expect(targetUrl.searchParams.get("secret")).toBe(secret);
 		expect(targetUrl.searchParams.get("instanceId")).toBe("qui-1");
+		expect(targetUrl.searchParams.get("deploymentId")).toBe(
+			buildQuiDeploymentId("user-1", "http://qui.test"),
+		);
 		const ownerId = buildQuiNotificationTargetOwnerId("installation-1", "user-1", "qui-1");
 		expect(targetUrl.searchParams.get("owner")).toBe(ownerId);
 		expect(call.ownerId).toBe(ownerId);

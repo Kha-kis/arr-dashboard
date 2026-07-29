@@ -17,6 +17,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { quiEventBus } from "../../lib/qui/event-bus.js";
 import { generateQuiWebhookSecret } from "../../lib/qui/webhook-secret.js";
 import { registerQuiWebhookRoutes } from "../qui-webhook.js";
+import { buildQuiDeploymentId } from "../qui/webhook-routes.js";
 import { registerTestErrorHandler } from "./test-helpers.js";
 
 function createMockPrisma(userRow: unknown) {
@@ -25,7 +26,7 @@ function createMockPrisma(userRow: unknown) {
 			findUnique: vi.fn().mockResolvedValue(userRow),
 		},
 		serviceInstance: {
-			findFirst: vi.fn().mockResolvedValue({ id: "qui-1" }),
+			findFirst: vi.fn().mockResolvedValue({ id: "qui-1", baseUrl: "http://qui.test" }),
 		},
 		quiEventLog: {
 			create: vi.fn().mockResolvedValue({
@@ -125,9 +126,10 @@ describe("POST /webhooks/qui", () => {
 	});
 
 	it("authenticates and persists the registered qUI source instance", async () => {
+		const deploymentId = buildQuiDeploymentId("user-1", "http://qui.test");
 		const res = await app.inject({
 			method: "POST",
-			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=qui-1`,
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=qui-1&deploymentId=${deploymentId}`,
 			payload: {
 				type: "torrent_added",
 				payload: { hash: "a".repeat(40) },
@@ -137,7 +139,7 @@ describe("POST /webhooks/qui", () => {
 		expect(res.statusCode).toBe(200);
 		expect(mockPrisma.serviceInstance.findFirst).toHaveBeenCalledWith({
 			where: { id: "qui-1", userId: "user-1", service: "QUI" },
-			select: { id: true },
+			select: { id: true, baseUrl: true },
 		});
 		const createArgs = mockPrisma.quiEventLog.create.mock.calls[0]?.[0];
 		expect(createArgs.data.serviceInstanceId).toBe("qui-1");
@@ -148,7 +150,21 @@ describe("POST /webhooks/qui", () => {
 
 		const res = await app.inject({
 			method: "POST",
-			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=other-instance`,
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=other-instance&deploymentId=${"a".repeat(24)}`,
+			payload: { type: "torrent_added", payload: {} },
+		});
+
+		expect(res.statusCode).toBe(401);
+		expect(JSON.parse(res.payload)).toEqual({ error: "Invalid webhook source" });
+		expect(mockPrisma.quiEventLog.create).not.toHaveBeenCalled();
+	});
+
+	it("rejects attribution from a target bound to the instance's previous deployment", async () => {
+		const previousDeploymentId = buildQuiDeploymentId("user-1", "http://previous-qui.test");
+
+		const res = await app.inject({
+			method: "POST",
+			url: `/webhooks/qui?secret=${secret.plaintextSecret}&instanceId=qui-1&deploymentId=${previousDeploymentId}`,
 			payload: { type: "torrent_added", payload: {} },
 		});
 
