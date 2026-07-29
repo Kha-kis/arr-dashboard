@@ -99,8 +99,14 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 	const appUrl = configuredPublicAppUrl || input.env.APP_URL;
 	const appUrlSource = configuredPublicAppUrl ? "External URL" : "APP_URL";
 	const appUrlProtocol = safeProtocol(appUrl);
+	const appUrlProtocolLabel = appUrlProtocol
+		? appUrlProtocol.slice(0, -1).toUpperCase()
+		: "an unrecognized protocol";
 	const appUrlIsHttps = appUrlProtocol === "https:";
 	const oidcAppUrlProtocol = safeProtocol(input.env.APP_URL);
+	const oidcAppUrlProtocolLabel = oidcAppUrlProtocol
+		? oidcAppUrlProtocol.slice(0, -1).toUpperCase()
+		: "an unrecognized protocol";
 	const oidcAppUrlIsHttps = oidcAppUrlProtocol === "https:";
 
 	const checks: SecurityCheck[] = [];
@@ -251,7 +257,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		checks.push({
 			id: "app-url",
 			label: "App URL",
-			detail: `${appUrlSource} uses ${appUrlProtocol ?? "an unrecognized protocol"} in production.`,
+			detail: `${appUrlSource} uses ${appUrlProtocolLabel} in production.`,
 			severity: "warning",
 			remediation: configuredPublicAppUrl
 				? "Update External URL in Settings → System to an https:// origin."
@@ -271,7 +277,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		checks.push({
 			id: "app-url",
 			label: "App URL",
-			detail: appUrl,
+			detail: `${appUrlSource} uses ${appUrlProtocolLabel}.`,
 			severity: "healthy",
 		});
 	}
@@ -283,9 +289,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		checks.push({
 			id: "oidc-app-url",
 			label: "OIDC App URL",
-			detail: `OIDC callbacks use APP_URL, which uses ${
-				oidcAppUrlProtocol ?? "an unrecognized protocol"
-			}.`,
+			detail: `OIDC callbacks use APP_URL, which uses ${oidcAppUrlProtocolLabel}.`,
 			severity: "warning",
 			remediation:
 				"Set APP_URL in the container environment to the public https:// origin used by your OIDC provider.",

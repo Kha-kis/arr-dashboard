@@ -254,7 +254,7 @@ describe("evaluateSecurityPosture", () => {
 
 			expect(checkById(result, "app-url")).toMatchObject({
 				severity: "healthy",
-				detail: "https://arr.example.com",
+				detail: "External URL uses HTTPS.",
 			});
 			expect(result.effective.appUrl).toBe("https://arr.example.com");
 		});
@@ -275,7 +275,7 @@ describe("evaluateSecurityPosture", () => {
 
 			expect(checkById(result, "app-url")).toMatchObject({
 				severity: "warning",
-				detail: "External URL uses http: in production.",
+				detail: "External URL uses HTTP in production.",
 				remediation: expect.stringContaining("External URL in Settings → System"),
 			});
 		});
@@ -297,7 +297,7 @@ describe("evaluateSecurityPosture", () => {
 
 			expect(checkById(result, "app-url")).toMatchObject({
 				severity: "healthy",
-				detail: "https://arr.example.com",
+				detail: "External URL uses HTTPS.",
 			});
 			expect(checkById(result, "oidc-app-url")).toMatchObject({
 				severity: "warning",
