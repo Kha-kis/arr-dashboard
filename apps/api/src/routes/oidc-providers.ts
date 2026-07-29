@@ -10,13 +10,14 @@ import {
 import type { FastifyInstance } from "fastify";
 import { buildOidcRedirectUriFromAppUrl } from "../lib/auth/oidc-redirect-uri.js";
 import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
-import { hashPassword } from "../lib/auth/password.js";
+import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 const OIDC_PROVIDER_CHANGED = "OIDC_PROVIDER_CHANGED";
 const OIDC_SESSION_INACTIVE = "OIDC_SESSION_INACTIVE";
+const OIDC_ADMIN_AUTH_CHANGED = "OIDC_ADMIN_AUTH_CHANGED";
 
 /**
  * Transform a Prisma OIDCProvider model to the public DTO shape
@@ -287,7 +288,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				});
 			}
 
-			const { replacementPassword } = validation.data;
+			const { replacementPassword, currentPassword } = validation.data;
 
 			// Check if provider exists (singleton with id=1)
 			const existing = await app.prisma.oIDCProvider.findUnique({
@@ -296,6 +297,26 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 			if (!existing) {
 				return reply.status(404).send({ error: "OIDC provider not found" });
+			}
+
+			const currentAdmin = await app.prisma.user.findUnique({
+				where: { id: request.currentUser!.id },
+				select: { hashedPassword: true },
+			});
+			if (!currentAdmin) {
+				return reply.status(404).send({ error: "User not found" });
+			}
+			if (currentAdmin.hashedPassword) {
+				if (!currentPassword) {
+					return reply
+						.status(400)
+						.send({ error: "Current password is required to replace your password" });
+				}
+				const valid = await verifyPassword(currentPassword, currentAdmin.hashedPassword);
+				if (!valid) {
+					request.log.warn("OIDC provider deletion failed: invalid current password");
+					return reply.status(401).send({ error: "Current password is incorrect" });
+				}
 			}
 
 			// Deleting OIDC is an explicit switch to password authentication. Always
@@ -342,6 +363,25 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 						throw new Error(OIDC_PROVIDER_CHANGED);
 					}
 
+					// Install the initiating admin's replacement only if the credential
+					// verified above is still current. A concurrent password change aborts
+					// and rolls back the provider deletion.
+					const updatedAdmin = await tx.user.updateMany({
+						where: {
+							id: request.currentUser!.id,
+							hashedPassword: currentAdmin.hashedPassword,
+						},
+						data: {
+							hashedPassword,
+							mustChangePassword: false,
+							failedLoginAttempts: 0,
+							lockedUntil: null,
+						},
+					});
+					if (updatedAdmin.count !== 1) {
+						throw new Error(OIDC_ADMIN_AUTH_CHANGED);
+					}
+
 					// The provider lock prevents new links from being created while this
 					// snapshot is installed with a replacement password.
 					const affectedUsers = await tx.user.findMany({
@@ -353,15 +393,15 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 						},
 						select: { id: true, hashedPassword: true },
 					});
-					let replacedUsers = 0;
+					let replacedUsers = 1;
 					for (const user of affectedUsers) {
 						const isCurrentAdmin = user.id === request.currentUser!.id;
-						if (isCurrentAdmin || !user.hashedPassword) {
+						if (!isCurrentAdmin && !user.hashedPassword) {
 							await tx.user.update({
 								where: { id: user.id },
 								data: {
 									hashedPassword,
-									mustChangePassword: !isCurrentAdmin,
+									mustChangePassword: true,
 									failedLoginAttempts: 0,
 									lockedUntil: null,
 								},
@@ -393,6 +433,12 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 					return reply.status(409).send({
 						error:
 							"The OIDC provider changed while deletion was in progress. Review the current configuration and try again.",
+					});
+				}
+				if (error instanceof Error && error.message === OIDC_ADMIN_AUTH_CHANGED) {
+					return reply.status(409).send({
+						error:
+							"Your password changed while deletion was in progress. Sign in and try again.",
 					});
 				}
 				throw error;

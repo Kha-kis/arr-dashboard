@@ -221,7 +221,7 @@ export const SettingsClient = () => {
 					>
 						<PasswordSection currentUser={currentUser} />
 						<PasskeySection />
-						<OIDCProviderSection />
+						<OIDCProviderSection currentUser={currentUser} />
 						<SessionsSection />
 					</div>
 				)}

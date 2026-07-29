@@ -123,4 +123,32 @@ describe("OIDCProviderSection account linking", () => {
 			}),
 		);
 	});
+
+	it("requires the current password before replacing an existing password", async () => {
+		deleteOIDCProvider.mockRejectedValueOnce(new Error("test stop"));
+		render(<OIDCProviderSection currentUser={{ hasPassword: true }} />);
+
+		fireEvent.click(screen.getByRole("button", { name: /^delete$/i }));
+		const submit = screen.getByRole("button", { name: /delete and sign out/i });
+
+		fireEvent.change(screen.getByLabelText(/^fallback password$/i), {
+			target: { value: "StrongPassword123!" },
+		});
+		fireEvent.change(screen.getByLabelText(/confirm fallback password/i), {
+			target: { value: "StrongPassword123!" },
+		});
+		expect((submit as HTMLButtonElement).disabled).toBe(true);
+
+		fireEvent.change(screen.getByLabelText(/^current password$/i), {
+			target: { value: "CurrentPassword1!" },
+		});
+		fireEvent.click(submit);
+
+		await waitFor(() =>
+			expect(deleteOIDCProvider).toHaveBeenCalledWith({
+				currentPassword: "CurrentPassword1!",
+				replacementPassword: "StrongPassword123!",
+			}),
+		);
+	});
 });
