@@ -115,6 +115,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		? oidcRedirectUriProtocol.slice(0, -1).toUpperCase()
 		: "an unrecognized protocol";
 	const oidcRedirectUriIsHttps = oidcRedirectUriProtocol === "https:";
+	const oidcRedirectUriIsValid = isValidOidcRedirectUri(oidcRedirectUri);
 	const oidcRedirectUriIsDevelopmentLoopback =
 		input.env.NODE_ENV === "development" && isHttpLoopbackUrl(oidcRedirectUri);
 	const oidcProviderEnabled = input.oidcProviderEnabled ?? input.oidcEnabled;
@@ -213,6 +214,16 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		});
 	}
 
+	if (oidcProviderEnabled && !input.oidcEnabled) {
+		checks.push({
+			id: "oidc-account-link",
+			label: "OIDC Account Link",
+			detail: "The OIDC provider is enabled, but the admin account is not linked.",
+			severity: "warning",
+			remediation: "Link the admin account to the OIDC provider, or disable the provider.",
+		});
+	}
+
 	// ──────────────────────────────────────────────────────────────────────
 	// 4. Password policy (informational — only flagged if relaxed in prod)
 	// ──────────────────────────────────────────────────────────────────────
@@ -304,11 +315,16 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 
 	// OIDC authentication uses the enabled provider's stored redirect URI.
 	// Check that actual callback independently from the public-link URL.
-	if (oidcProviderEnabled && !oidcRedirectUriIsHttps && !oidcRedirectUriIsDevelopmentLoopback) {
+	if (
+		oidcProviderEnabled &&
+		(!oidcRedirectUriIsValid || (!oidcRedirectUriIsHttps && !oidcRedirectUriIsDevelopmentLoopback))
+	) {
 		checks.push({
 			id: "oidc-app-url",
 			label: "OIDC Redirect URI",
-			detail: `OIDC Redirect URI uses ${oidcRedirectUriProtocolLabel}.`,
+			detail: oidcRedirectUriIsValid
+				? `OIDC Redirect URI uses ${oidcRedirectUriProtocolLabel}.`
+				: "OIDC Redirect URI is not a valid callback URL.",
 			severity: "warning",
 			remediation:
 				"Update the enabled OIDC provider Redirect URI to the public https:// callback URL.",
@@ -363,6 +379,7 @@ function isValidPublicBaseUrl(value: string): boolean {
 			url.username === "" &&
 			url.password === "" &&
 			value === value.trim() &&
+			!hasUnsafeUrlCharacters(value) &&
 			!value.includes("?") &&
 			!value.includes("#") &&
 			!/\/{2,}$/.test(value)
@@ -370,6 +387,30 @@ function isValidPublicBaseUrl(value: string): boolean {
 	} catch {
 		return false;
 	}
+}
+
+function isValidOidcRedirectUri(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return (
+			(url.protocol === "http:" || url.protocol === "https:") &&
+			url.username === "" &&
+			url.password === "" &&
+			value === value.trim() &&
+			!hasUnsafeUrlCharacters(value) &&
+			!value.includes("#")
+		);
+	} catch {
+		return false;
+	}
+}
+
+function hasUnsafeUrlCharacters(value: string): boolean {
+	for (const character of value) {
+		const codePoint = character.codePointAt(0) ?? 0;
+		if (character === "\\" || codePoint <= 0x1f || codePoint === 0x7f) return true;
+	}
+	return false;
 }
 
 function isHttpLoopbackUrl(value: string): boolean {

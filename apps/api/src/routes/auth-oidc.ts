@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { oidcRedirectUriSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import * as oauth from "oauth4webapi";
 import { z } from "zod";
@@ -62,7 +63,7 @@ const oidcSetupSchema = z.object({
 	clientId: z.string().min(1),
 	clientSecret: z.string().min(1),
 	issuer: z.string().url(),
-	redirectUri: z.string().url().optional(),
+	redirectUri: oidcRedirectUriSchema.optional(),
 	scopes: z.string().default("openid,email,profile"),
 });
 

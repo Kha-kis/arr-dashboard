@@ -198,7 +198,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Normalize before validation and persistence so every URL consumer sees
 		// the same canonical value. Empty or whitespace-only input clears it.
-		const normalizedExternalUrl =
+		let normalizedExternalUrl =
 			externalUrl === undefined ? undefined : externalUrl?.trim().replace(/\/+$/, "") || null;
 
 		// Validate external URL if provided (null means clear)
@@ -224,6 +224,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						error: "External URL must not include a query string or fragment",
 					});
 				}
+				normalizedExternalUrl = url.toString().replace(/\/+$/, "");
 			} catch {
 				return reply.status(400).send({
 					success: false,
