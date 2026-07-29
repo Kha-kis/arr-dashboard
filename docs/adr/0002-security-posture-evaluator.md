@@ -37,8 +37,9 @@ a **thin aggregator route** (`GET /system/security-posture`).
 
 `evaluateSecurityPosture(input) → SecurityPostureResult`
 
-- Input is a plain object: env snapshot + OIDC enabled + passkey count
-  + password user count + total user count.
+- Input is a plain object: env snapshot + configured public URL override +
+  OIDC enabled and its stored redirect URI + passkey count + password user
+  count + total user count.
 - Output: per-check severity-tagged list, a worst-case overall severity,
   the `effective` runtime values verbatim, and an `auth` summary.
 - Three severities: `healthy`, `warning`, `misconfigured`.
@@ -53,7 +54,7 @@ decide whether to act. We deliberately separate two kinds of finding:
 | Severity | Meaning | Examples |
 |---|---|---|
 | `misconfigured` | Cannot work / will lock users out / actively harms | Secure cookies + no trust proxy; users exist but no auth methods active |
-| `warning` | Works fine; an observable hardening opportunity exists | Password-only auth; relaxed password policy in production; >14-day session TTL in production; non-https `APP_URL` in production |
+| `warning` | Works fine; an observable hardening opportunity exists | Password-only auth; relaxed password policy in production; >14-day session TTL in production; non-https effective public URL; OIDC with a non-https stored redirect URI |
 | `healthy` | No issue detected | — |
 
 Hardening warnings must never be promoted to `misconfigured`. Doing so

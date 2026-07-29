@@ -47,6 +47,7 @@ const systemSettingsSchema = z.object({
 	appName: z.string().optional(),
 	externalUrl: z
 		.string()
+		.trim()
 		.nullable()
 		.optional()
 		.superRefine((value, ctx) => {
@@ -57,6 +58,18 @@ const systemSettingsSchema = z.object({
 					ctx.addIssue({
 						code: "custom",
 						message: "External URL must use http or https protocol",
+					});
+				}
+				if (url.username || url.password) {
+					ctx.addIssue({
+						code: "custom",
+						message: "External URL must not include credentials",
+					});
+				}
+				if (value.includes("?") || value.includes("#")) {
+					ctx.addIssue({
+						code: "custom",
+						message: "External URL must not include a query string or fragment",
 					});
 				}
 			} catch {
@@ -196,9 +209,14 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		// URL shape is validated by the schema; only normalize here
-		// (empty string becomes null = "clear the external URL")
-		const normalizedExternalUrl = externalUrl === "" ? null : externalUrl;
+		// URL shape and whitespace are handled by the schema. Canonicalize the
+		// parsed value before persistence so all consumers see the same URL.
+		const normalizedExternalUrl =
+			externalUrl === undefined
+				? undefined
+				: externalUrl === null || externalUrl === ""
+					? null
+					: new URL(externalUrl).toString().replace(/\/+$/, "");
 
 		// Update or create settings
 		const settings = await app.prisma.systemSettings.upsert({
@@ -223,6 +241,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				secureCookies: secureCookies ?? null,
 			},
 		});
+
+		if (externalUrl !== undefined) {
+			app.notificationService.setBaseUrl(settings.externalUrl ?? app.config.APP_URL);
+		}
 
 		// Get currently running values
 		const currentApiPort = Number(process.env.API_PORT) || 3001;
@@ -541,15 +563,31 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Read-only snapshot of the effective security configuration plus a list
 	 * of derived posture checks (healthy / warning / misconfigured).
 	 *
-	 * Inputs gathered: app.config (effective env), enabled OIDC providers,
-	 * total passkey credentials, count of users with a password set.
+	 * Inputs gathered: app.config (effective env), configured External URL,
+	 * enabled OIDC providers, total passkey credentials, count of users with
+	 * a password set.
 	 *
 	 * Security: Requires authentication (single-admin architecture).
 	 */
-	app.get("/security-posture", async (_request, reply) => {
-		const [oidcProvider, passkeyCount, passwordUserCount, totalUserCount] = await Promise.all([
+	app.get("/security-posture", async (request, reply) => {
+		const [
+			systemSettings,
+			oidcProvider,
+			linkedOidcAccount,
+			passkeyCount,
+			passwordUserCount,
+			totalUserCount,
+		] = await Promise.all([
+			app.prisma.systemSettings.findUnique({
+				where: { id: 1 },
+				select: { externalUrl: true },
+			}),
 			app.prisma.oIDCProvider.findFirst({
 				where: { enabled: true },
+				select: { redirectUri: true },
+			}),
+			app.prisma.oIDCAccount.findFirst({
+				where: { userId: request.currentUser!.id },
 				select: { id: true },
 			}),
 			app.prisma.webAuthnCredential.count(),
@@ -567,7 +605,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				PASSWORD_POLICY: app.config.PASSWORD_POLICY,
 				APP_URL: app.config.APP_URL,
 			},
-			oidcEnabled: oidcProvider !== null,
+			publicAppUrl: systemSettings?.externalUrl,
+			oidcEnabled: oidcProvider !== null && linkedOidcAccount !== null,
+			oidcProviderEnabled: oidcProvider !== null,
+			oidcRedirectUri: oidcProvider?.redirectUri,
 			passkeyCount,
 			passwordUserCount,
 			totalUserCount,

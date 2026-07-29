@@ -1,4 +1,4 @@
-import type { CreateOIDCProvider, UpdateOIDCProvider } from "@arr/shared";
+import type { CreateOIDCProvider, DeleteOIDCProvider, UpdateOIDCProvider } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	createOIDCProvider,
@@ -6,7 +6,7 @@ import {
 	getOIDCProvider,
 	updateOIDCProvider,
 } from "../../lib/api-client/oidc-providers";
-import { oidcKeys } from "../../lib/query-keys";
+import { oidcKeys, systemKeys } from "../../lib/query-keys";
 
 /**
  * Fetch the configured OIDC provider (admin only)
@@ -38,6 +38,7 @@ export function useCreateOIDCProvider() {
 		onSuccess: () => {
 			// Invalidate provider query to refetch
 			queryClient.invalidateQueries({ queryKey: oidcKeys.provider });
+			queryClient.invalidateQueries({ queryKey: systemKeys.securityPosture });
 		},
 	});
 }
@@ -53,6 +54,7 @@ export function useUpdateOIDCProvider() {
 		onSuccess: () => {
 			// Invalidate provider query to refetch
 			queryClient.invalidateQueries({ queryKey: oidcKeys.provider });
+			queryClient.invalidateQueries({ queryKey: systemKeys.securityPosture });
 		},
 	});
 }
@@ -64,10 +66,11 @@ export function useDeleteOIDCProvider() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: () => deleteOIDCProvider(),
+		mutationFn: (data: DeleteOIDCProvider) => deleteOIDCProvider(data),
 		onSuccess: () => {
 			// Invalidate provider query to refetch
 			queryClient.invalidateQueries({ queryKey: oidcKeys.provider });
+			queryClient.invalidateQueries({ queryKey: systemKeys.securityPosture });
 		},
 	});
 }

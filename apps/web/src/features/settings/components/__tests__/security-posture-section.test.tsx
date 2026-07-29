@@ -31,6 +31,7 @@ function makePosture(overrides: Partial<SecurityPosture> = {}): SecurityPosture 
 			passwordEnabled: true,
 			passwordUserCount: 1,
 			oidcEnabled: false,
+			oidcProviderEnabled: false,
 			passkeyCount: 0,
 		},
 		effective: {
@@ -123,5 +124,22 @@ describe("SecurityPostureSection", () => {
 		expect(screen.getByText("Password-only authentication is in use.")).toBeInTheDocument();
 		// The "Recommended improvements" banner copy only appears on the loaded path.
 		expect(screen.getByText("Recommended improvements")).toBeInTheDocument();
+	});
+
+	it("distinguishes an enabled but unlinked OIDC provider from no configuration", () => {
+		const posture = makePosture({
+			auth: {
+				passwordEnabled: true,
+				passwordUserCount: 1,
+				oidcEnabled: false,
+				oidcProviderEnabled: true,
+				passkeyCount: 0,
+			},
+		});
+
+		renderWithTheme(<SecurityPostureSection posture={posture} isLoading={false} />);
+
+		expect(screen.getByText("Provider enabled; admin not linked")).toBeInTheDocument();
+		expect(screen.queryByText("Not configured")).not.toBeInTheDocument();
 	});
 });
