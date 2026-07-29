@@ -582,14 +582,55 @@ describe("GET /auth/oidc/callback", () => {
 			"admin-session-token",
 			"admin-user",
 			expect.any(Object),
-			undefined,
+			{ onRotate: expect.any(Function) },
 		);
+		expect(mockPrisma.oIDCProvider.updateMany).toHaveBeenCalledWith({
+			where: {
+				id: 1,
+				enabled: true,
+				clientId: "test-client-id",
+				encryptedClientSecret: "encrypted-secret",
+				clientSecretIv: "mock-iv",
+				issuer: "https://provider.example.com",
+				redirectUri: "http://localhost:3000/auth/oidc/callback",
+				scopes: "openid,email,profile",
+			},
+			data: { updatedAt: expect.any(Date) },
+		});
 		expect(mockSessionService.attachCookie).toHaveBeenCalledWith(
 			expect.anything(),
 			"mock-session-token",
 			true,
 			new Date("2026-07-30T00:00:00.000Z"),
 		);
+	});
+
+	it("does not report a successful account test after the provider changes", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue(makeOidcProvider());
+		mockPrisma.oIDCAccount.findUnique.mockResolvedValue({
+			providerUserId: "provider-user-1",
+			user: { id: "admin-user", username: "admin" },
+		});
+		mockPrisma.oIDCProvider.updateMany.mockResolvedValueOnce({ count: 0 });
+
+		const login = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/login",
+			headers: { "x-test-current-user": "admin-user" },
+			payload: { intent: "test" },
+		});
+		const authorizationUrl = new URL(JSON.parse(login.payload).authorizationUrl);
+		const state = authorizationUrl.searchParams.get("state");
+
+		const callback = await app.inject({
+			method: "GET",
+			url: `/auth/oidc/callback?code=mock-auth-code&state=${encodeURIComponent(state ?? "")}`,
+			headers: { "x-test-current-user": "admin-user" },
+		});
+
+		expect(callback.statusCode).toBe(409);
+		expect(JSON.parse(callback.payload).error).toContain("provider changed");
+		expect(mockSessionService.attachCookie).not.toHaveBeenCalled();
 	});
 
 	it("revalidates an ordinary OIDC login in the session-creation transaction", async () => {

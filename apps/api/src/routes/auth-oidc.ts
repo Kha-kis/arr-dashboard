@@ -568,7 +568,17 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 									},
 									revokeOtherSessions: true,
 								}
-							: undefined,
+							: {
+									onRotate: async (tx) => {
+										const providerStillCurrent = await tx.oIDCProvider.updateMany({
+											where: providerAuthVersion,
+											data: { updatedAt: new Date() },
+										});
+										if (providerStillCurrent.count !== 1) {
+											throw new Error(OIDC_PROVIDER_CHANGED);
+										}
+									},
+								},
 					)
 				: revalidateOidcLink
 					? await app.sessionService.createSessionIfAuthorized(
@@ -632,7 +642,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				);
 				return reply.status(409).send({
 					error:
-						"The OIDC provider changed while the account link was in progress. Start Link Account again with the current provider configuration.",
+						"The OIDC provider changed while the account action was in progress. Start the action again with the current provider configuration.",
 				});
 			}
 

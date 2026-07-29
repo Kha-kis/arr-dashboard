@@ -43,7 +43,7 @@ beforeEach(async () => {
 	findUniqueProvider.mockResolvedValue(provider);
 	deleteProvider.mockResolvedValue({ count: 1 });
 	deleteOidcAccounts.mockResolvedValue({ count: 1 });
-	findOidcOnlyUsers.mockResolvedValue([{ id: "admin-user" }]);
+	findOidcOnlyUsers.mockResolvedValue([{ id: "admin-user", hashedPassword: null }]);
 	updateUser.mockResolvedValue({ id: "admin-user" });
 	deleteSessions.mockResolvedValue({ count: 1 });
 	runTransaction.mockImplementation(async (callback) =>
@@ -125,6 +125,13 @@ describe("DELETE /api/oidc-providers", () => {
 		});
 
 		expect(response.statusCode).toBe(204);
+		expect(deleteSessions).toHaveBeenNthCalledWith(1, {
+			where: {
+				id: expect.any(String),
+				userId: "admin-user",
+				expiresAt: { gt: expect.any(Date) },
+			},
+		});
 		expect(deleteProvider).toHaveBeenCalledWith({
 			where: {
 				id: provider.id,
@@ -140,7 +147,7 @@ describe("DELETE /api/oidc-providers", () => {
 		expect(deleteOidcAccounts).toHaveBeenCalledWith({});
 		expect(findOidcOnlyUsers).toHaveBeenCalledWith({
 			where: { oidcAccounts: { some: {} } },
-			select: { id: true },
+			select: { id: true, hashedPassword: true },
 		});
 		expect(updateUser).toHaveBeenCalledWith({
 			where: { id: "admin-user" },
@@ -149,11 +156,29 @@ describe("DELETE /api/oidc-providers", () => {
 				mustChangePassword: false,
 			},
 		});
-		expect(deleteSessions).toHaveBeenCalledWith({});
+		expect(deleteSessions).toHaveBeenLastCalledWith({});
 		expect(deleteProvider.mock.invocationCallOrder[0]).toBeLessThan(
 			deleteOidcAccounts.mock.invocationCallOrder[0]!,
 		);
 		expect(clearCookie).toHaveBeenCalledWith(expect.anything());
+	});
+
+	it("preserves an existing password while deleting OIDC", async () => {
+		findOidcOnlyUsers.mockResolvedValueOnce([
+			{ id: "admin-user", hashedPassword: "$argon2id$existing-password" },
+		]);
+
+		const response = await app.inject({
+			method: "DELETE",
+			url: "/api/oidc-providers",
+			payload: { replacementPassword: "Safe-Replacement1!" },
+		});
+
+		expect(response.statusCode).toBe(204);
+		expect(updateUser).not.toHaveBeenCalled();
+		expect(deleteProvider).toHaveBeenCalled();
+		expect(deleteOidcAccounts).toHaveBeenCalled();
+		expect(deleteSessions).toHaveBeenLastCalledWith({});
 	});
 
 	it("does not remove links when the provider changed before deletion acquired it", async () => {
@@ -168,12 +193,31 @@ describe("DELETE /api/oidc-providers", () => {
 		expect(response.statusCode).toBe(409);
 		expect(JSON.parse(response.payload).error).toContain("provider changed");
 		expect(deleteOidcAccounts).not.toHaveBeenCalled();
-		expect(deleteSessions).not.toHaveBeenCalled();
+		expect(deleteSessions).toHaveBeenCalledTimes(1);
+		expect(clearCookie).not.toHaveBeenCalled();
+	});
+
+	it("does not delete OIDC after the initiating session is revoked", async () => {
+		deleteSessions.mockResolvedValueOnce({ count: 0 });
+
+		const response = await app.inject({
+			method: "DELETE",
+			url: "/api/oidc-providers",
+			payload: { replacementPassword: "Safe-Replacement1!" },
+		});
+
+		expect(response.statusCode).toBe(401);
+		expect(JSON.parse(response.payload).error).toContain("session is no longer active");
+		expect(deleteProvider).not.toHaveBeenCalled();
+		expect(updateUser).not.toHaveBeenCalled();
+		expect(deleteOidcAccounts).not.toHaveBeenCalled();
 		expect(clearCookie).not.toHaveBeenCalled();
 	});
 
 	it("keeps provider cleanup and session revocation in one transaction", async () => {
-		deleteSessions.mockRejectedValueOnce(new Error("database cleanup failed"));
+		deleteSessions
+			.mockResolvedValueOnce({ count: 1 })
+			.mockRejectedValueOnce(new Error("database cleanup failed"));
 
 		const response = await app.inject({
 			method: "DELETE",
