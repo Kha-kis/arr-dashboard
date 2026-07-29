@@ -288,7 +288,7 @@ The `/config` volume contains critical data that must be preserved:
 | File | Purpose |
 |------|---------|
 | `prod.db` | SQLite database with all your settings, users, and configurations |
-| `secrets.json` | Auto-generated encryption keys for API credentials |
+| `secrets.json` | Auto-generated encryption keys and local installation identity |
 | `backups/` | Automated database backups (when enabled) |
 
 > **Important:** If `secrets.json` is lost, encrypted API keys cannot be decrypted. You would need to re-enter all service API keys. Always preserve your entire `/config` volume when upgrading or migrating.

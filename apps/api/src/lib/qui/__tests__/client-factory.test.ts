@@ -468,4 +468,674 @@ describe("createQuiClient", () => {
 			});
 		});
 	});
+
+	describe("ensureNotificationTarget", () => {
+		const target = {
+			id: 42,
+			name: "arr-dashboard",
+			url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current",
+			enabled: true,
+			eventTypes: ["torrent_added"],
+		};
+
+		it("creates the target when qUI's empty list is encoded as null", async () => {
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response("null", {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(target), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+		});
+
+		it("leaves targets owned by another dashboard instance untouched", async () => {
+			const legacyTarget = {
+				...target,
+				id: 7,
+				name: "arr-dashboard",
+				url: "generic://other-dashboard.example/api/webhooks/qui?template=json&secret=other",
+			};
+			const ownedTarget = { ...target, name: "arr-dashboard-qui-1" };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([legacyTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(ownedTarget), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([legacyTarget, ownedTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: ownedTarget.name,
+					url: ownedTarget.url,
+					eventTypes: ownedTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+			expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toMatchObject({
+				name: ownedTarget.name,
+			});
+			expect(fetchSpy.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+		});
+
+		it("reports manual cleanup when an old-secret legacy target cannot prove ownership", async () => {
+			const legacyTarget = {
+				...target,
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=old",
+			};
+			const desiredTarget = {
+				...legacyTarget,
+				id: 99,
+				name: "arr-dashboard-installation-deployment",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=new&instanceId=qui-1&deploymentId=deployment-1&owner=owner-1",
+			};
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([legacyTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(desiredTarget), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([legacyTarget, desiredTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: desiredTarget.name,
+					url: desiredTarget.url,
+					ownerId: "owner-1",
+					legacyTargetAdoption: "secret",
+					reportLegacyCleanupRequired: true,
+					eventTypes: desiredTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 99, legacyCleanupRequired: true });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+			expect(fetchSpy.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+		});
+
+		it("upgrades an exact-secret legacy target when shared deployment adoption requires it", async () => {
+			const legacyTarget = {
+				...target,
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current",
+			};
+			const desiredTarget = {
+				...legacyTarget,
+				name: "arr-dashboard-installation-deployment",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current&instanceId=qui-1&deploymentId=deployment-1&owner=owner-1",
+			};
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([legacyTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(desiredTarget), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: desiredTarget.name,
+					url: desiredTarget.url,
+					ownerId: "owner-1",
+					legacyTargetAdoption: "secret",
+					eventTypes: desiredTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(2);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("PUT");
+		});
+
+		it("leaves ambiguous legacy targets at a shared callback untouched", async () => {
+			const otherUserLegacyTarget = {
+				...target,
+				id: 7,
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=other-user",
+			};
+			const desiredTarget = {
+				...target,
+				name: "arr-dashboard-installation-deployment",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current&instanceId=qui-1&deploymentId=deployment-1&owner=owner-1",
+			};
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([otherUserLegacyTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(desiredTarget), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([otherUserLegacyTarget, desiredTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: desiredTarget.name,
+					url: desiredTarget.url,
+					ownerId: "owner-1",
+					legacyTargetAdoption: "secret",
+					eventTypes: desiredTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+			expect(fetchSpy.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+		});
+
+		it("leaves same-secret legacy targets untouched when adoption is denied", async () => {
+			const ambiguousLegacyTarget = {
+				...target,
+				id: 7,
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current",
+			};
+			const desiredTarget = {
+				...target,
+				name: "arr-dashboard-installation-deployment",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current&instanceId=qui-2&deploymentId=deployment-1&owner=owner-2",
+			};
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([ambiguousLegacyTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(desiredTarget), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([ambiguousLegacyTarget, desiredTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: desiredTarget.name,
+					url: desiredTarget.url,
+					ownerId: "owner-2",
+					legacyTargetAdoption: "never",
+					eventTypes: desiredTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+			expect(fetchSpy.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+		});
+
+		it("updates an existing target instead of creating a duplicate", async () => {
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ ...target, url: "generic://dashboard.test/hook" }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			const result = await client.ensureNotificationTarget({
+				name: "arr-dashboard",
+				url: "generic://dashboard.test/hook",
+				eventTypes: ["torrent_added"],
+			});
+
+			expect(result).toEqual({ id: 42 });
+			expect(fetchSpy).toHaveBeenCalledTimes(2);
+			expect(String(fetchSpy.mock.calls[1]?.[0])).toBe(
+				"http://qui.test/api/notifications/targets/42",
+			);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("PUT");
+		});
+
+		it("renames an owned target after the qUI base URL changes instead of creating a duplicate", async () => {
+			const previousTarget = {
+				...target,
+				name: "arr-dashboard-previous-deployment",
+				url: `${target.url}&owner=owner-1&instanceId=qui-1`,
+			};
+			const desiredTarget = {
+				...previousTarget,
+				name: "arr-dashboard-current-deployment",
+			};
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([previousTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(desiredTarget), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: desiredTarget.name,
+					url: desiredTarget.url,
+					ownerId: "owner-1",
+					eventTypes: desiredTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(2);
+			expect(String(fetchSpy.mock.calls[1]?.[0])).toBe(
+				"http://qui.test/api/notifications/targets/42",
+			);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("PUT");
+			expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toMatchObject({
+				name: desiredTarget.name,
+			});
+		});
+
+		it("expands an empty requested event list and resets an existing subset", async () => {
+			const allEventTypes = ["torrent_added", "torrent_completed"];
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(
+						JSON.stringify(allEventTypes.map((type) => ({ type, label: type, description: type }))),
+						{
+							status: 200,
+							headers: { "content-type": "application/json" },
+						},
+					),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ ...target, eventTypes: allEventTypes }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: [],
+				}),
+			).resolves.toEqual({ id: 42 });
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+			expect(String(fetchSpy.mock.calls[0]?.[0])).toBe("http://qui.test/api/notifications/events");
+			expect(JSON.parse(String(fetchSpy.mock.calls[2]?.[1]?.body))).toMatchObject({
+				eventTypes: allEventTypes,
+			});
+		});
+
+		it("accepts a committed update when qUI loses the PUT response", async () => {
+			const desiredUrl = "generic://dashboard.test/hook";
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: "upstream response lost" }), {
+						status: 502,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([{ ...target, url: desiredUrl }]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: desiredUrl,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+		});
+
+		it("keeps one canonical target and disables enabled duplicates", async () => {
+			const duplicate = { ...target, id: 99, url: "generic://dashboard.example/stale" };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target, duplicate]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ ...duplicate, enabled: false }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			const result = await client.ensureNotificationTarget({
+				name: target.name,
+				url: target.url,
+				eventTypes: target.eventTypes,
+			});
+
+			expect(result).toEqual({ id: 42 });
+			expect(String(fetchSpy.mock.calls[1]?.[0])).toBe(
+				"http://qui.test/api/notifications/targets/99",
+			);
+			expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toMatchObject({
+				url: duplicate.url,
+				enabled: false,
+			});
+		});
+
+		it("prefers an already-valid newer target during an initial retry", async () => {
+			const stale = { ...target, url: "generic://dashboard.example/stale" };
+			const valid = { ...target, id: 99 };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([stale, valid]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ ...stale, enabled: false }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 99 });
+			expect(String(fetchSpy.mock.calls[1]?.[0])).toBe(
+				"http://qui.test/api/notifications/targets/42",
+			);
+			expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toMatchObject({
+				enabled: false,
+			});
+		});
+
+		it("recovers a valid newer target after a lost POST response", async () => {
+			const stale = { ...target, url: "generic://dashboard.example/stale" };
+			const valid = { ...target, id: 99 };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: "upstream response lost" }), {
+						status: 502,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([stale, valid]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ ...stale, enabled: false }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 99 });
+			expect(fetchSpy).toHaveBeenCalledTimes(4);
+		});
+
+		it("preserves a successful POST when stale-target cleanup cannot finish", async () => {
+			const stale = { ...target, url: "generic://dashboard.example/stale" };
+			const valid = { ...target, id: 99 };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(valid), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([stale, valid]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: "cleanup failed" }), {
+						status: 500,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([stale, valid]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 99, cleanupPending: true });
+			expect(fetchSpy).toHaveBeenCalledTimes(5);
+		});
+
+		it("reports canonical success when duplicate cleanup remains pending", async () => {
+			const duplicate = { ...target, id: 99, url: "generic://dashboard.example/stale" };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target, duplicate]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: "cleanup failed" }), {
+						status: 500,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target, duplicate]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42, cleanupPending: true });
+			expect(vi.mocked(fakeLog.warn)).toHaveBeenCalledWith(
+				{ targetId: 99 },
+				expect.stringMatching(/cleanup remains pending/i),
+			);
+		});
+
+		it("recovers a target created when the POST response is lost", async () => {
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: "upstream response lost" }), {
+						status: 502,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+		});
+
+		it("scrubs the callback secret before the shared request helper logs or throws", async () => {
+			const secret = "plaintext-webhook-secret";
+			const targetUrl = `generic://dashboard.example/api/webhooks/qui?template=json&secret=${secret}`;
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: `invalid notification url: ${targetUrl}` }), {
+						status: 400,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			const rejection = client.ensureNotificationTarget({
+				name: "arr-dashboard",
+				url: targetUrl,
+			});
+
+			await expect(rejection).rejects.toThrow("secret=***");
+			await expect(rejection).rejects.not.toThrow(secret);
+			expect(JSON.stringify(vi.mocked(fakeLog.warn).mock.calls)).toContain("secret=***");
+			expect(JSON.stringify(vi.mocked(fakeLog.warn).mock.calls)).not.toContain(secret);
+		});
+	});
 });

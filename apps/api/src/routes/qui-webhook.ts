@@ -2,11 +2,10 @@
  * Public qui webhook receiver (Phase 5.1).
  *
  * Registered at `/api/webhooks/qui` (no auth prefix — public route).
- * qui POSTs here when an event matching the user's NotificationTarget
- * fires. We authenticate via a per-user `?secret=` query param (matches
- * qui's `ApiKeyQuery` scheme; qui doesn't send a body HMAC) and log the
- * event verbatim into `QuiEventLog` for the My Events surface + SSE
- * fan-out in Phase 5.2.
+ * qui POSTs here through its Shoutrrr generic notification target when a
+ * configured event fires. We authenticate via a per-user `?secret=` query
+ * param and normalize Shoutrrr's `{ title, message }` body into our event
+ * envelope for the My Events surface + SSE fan-out in Phase 5.2.
  *
  * Failure posture:
  *   - Missing/invalid secret → 401, no log row (someone is probing).
@@ -20,13 +19,64 @@
 
 import { quiWebhookEnvelopeSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import { logQuiActivity } from "../lib/qui/activity-log.js";
 import { quiEventBus } from "../lib/qui/event-bus.js";
 import { resolveUserFromQuiSecret } from "../lib/qui/webhook-secret.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
+import { buildQuiDeploymentId, buildQuiNotificationTargetOwnerId } from "./qui/webhook-routes.js";
+
+const quiShoutrrrNotificationSchema = z
+	.object({
+		title: z.string().min(1),
+		message: z.string(),
+	})
+	.passthrough();
+
+/**
+ * qUI v1.23 notification titles are human-readable while its target API stores
+ * machine event keys. Preserve the keys operators see in qUI's event selector.
+ * Unknown/custom titles still land as `notification` instead of being rejected,
+ * which keeps the receiver forward-compatible with new qUI event definitions.
+ */
+const QUI_NOTIFICATION_EVENT_TYPES: Readonly<Record<string, string>> = {
+	"Torrent added": "torrent_added",
+	"Torrent completed": "torrent_completed",
+	"Backup completed": "backup_succeeded",
+	"Backup failed": "backup_failed",
+	"Directory scan completed": "dir_scan_completed",
+	"Directory scan failed": "dir_scan_failed",
+	"Orphan scan completed": "orphan_scan_completed",
+	"Orphan scan failed": "orphan_scan_failed",
+	"Cross-seed RSS automation completed": "cross_seed_automation_succeeded",
+	"Cross-seed RSS automation failed": "cross_seed_automation_failed",
+	"Cross-seed seeded search completed": "cross_seed_search_succeeded",
+	"Cross-seed seeded search failed": "cross_seed_search_failed",
+	"Cross-seed completion search completed": "cross_seed_completion_succeeded",
+	"Cross-seed completion search failed": "cross_seed_completion_failed",
+	"Cross-seed webhook check completed": "cross_seed_webhook_succeeded",
+	"Cross-seed webhook check failed": "cross_seed_webhook_failed",
+	"Automations actions applied": "automations_actions_applied",
+	"Automations run failed": "automations_run_failed",
+};
+
+function isForeignKeyConstraintError(error: unknown): boolean {
+	return (
+		error instanceof Error &&
+		"code" in error &&
+		(error as Error & { code?: unknown }).code === "P2003"
+	);
+}
 
 const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
-	app.post<{ Querystring: { secret?: string } }>(
+	app.post<{
+		Querystring: {
+			secret?: string;
+			instanceId?: string;
+			deploymentId?: string;
+			owner?: string;
+		};
+	}>(
 		"/webhooks/qui",
 		{
 			// Conservative bounds for an inbound notification body. qui's
@@ -48,15 +98,30 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 				return reply.status(401).send({ error: "Invalid or missing secret" });
 			}
 
-			// Validate the envelope shape but don't reject on unknown keys — qui
-			// extends NotificationEvent without our schema needing a bump. The
-			// envelope schema uses `z.unknown()` for `payload` so anything
-			// well-formed at the outer layer is accepted.
-			const parsed = quiWebhookEnvelopeSchema.safeParse(request.body);
-			if (!parsed.success) {
+			const instanceId = request.query?.instanceId;
+			const deploymentId = request.query?.deploymentId;
+			const owner = request.query?.owner;
+			const sourceInstance = instanceId
+				? await app.prisma.serviceInstance.findFirst({
+						where: { id: instanceId, userId: user.id, service: "QUI" },
+						select: { id: true, baseUrl: true },
+					})
+				: null;
+			const hasValidSource =
+				app.installationIdIsPersistent &&
+				sourceInstance &&
+				deploymentId &&
+				owner &&
+				buildQuiDeploymentId(user.id, sourceInstance.baseUrl) === deploymentId &&
+				buildQuiNotificationTargetOwnerId(app.installationId, user.id, sourceInstance.id) === owner;
+			if ((instanceId || deploymentId || owner) && !hasValidSource) {
+				return reply.status(401).send({ error: "Invalid webhook source" });
+			}
+
+			const envelope = normalizeQuiWebhookBody(request.body);
+			if (!envelope) {
 				return reply.status(400).send({ error: "Malformed event envelope" });
 			}
-			const envelope = parsed.data;
 
 			// Extract a torrent hash if the payload looks like a per-torrent event.
 			// Multiple shapes are tolerated because qui's event payloads aren't
@@ -65,14 +130,32 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const torrentHash = extractTorrentHash(envelope.payload);
 
 			try {
-				const row = await app.prisma.quiEventLog.create({
-					data: {
-						userId: user.id,
-						eventType: envelope.type,
-						torrentHash,
-						payload: JSON.stringify(envelope),
-					},
-				});
+				const eventData = {
+					userId: user.id,
+					serviceInstanceId: sourceInstance?.id ?? null,
+					eventType: envelope.type,
+					torrentHash,
+					payload: JSON.stringify(envelope),
+				};
+				const row = await (async () => {
+					try {
+						return await app.prisma.quiEventLog.create({ data: eventData });
+					} catch (err) {
+						if (!sourceInstance || !isForeignKeyConstraintError(err)) {
+							throw err;
+						}
+						// The source row can disappear after attribution but before
+						// this insert. Correlation is best-effort, so preserve the
+						// authenticated event without the now-stale foreign key.
+						request.log.warn(
+							{ instanceId: sourceInstance.id },
+							"qUI source instance disappeared during webhook persistence; retrying uncorrelated",
+						);
+						return await app.prisma.quiEventLog.create({
+							data: { ...eventData, serviceInstanceId: null },
+						});
+					}
+				})();
 				// Phase 5.2 — fan the event out to any open SSE connections for
 				// this user. Failures here are non-fatal: the event is already
 				// persisted; SSE is just a freshness optimization. Pass
@@ -123,6 +206,30 @@ const quiWebhookRoute: FastifyPluginCallback = (app, _opts, done) => {
 	);
 	done();
 };
+
+function normalizeQuiWebhookBody(
+	body: unknown,
+): { type: string; payload?: unknown; timestamp?: string } | null {
+	// Retain compatibility with the original/raw envelope contract in case an
+	// upstream integration already posts it directly.
+	const envelope = quiWebhookEnvelopeSchema.safeParse(body);
+	if (envelope.success) {
+		return envelope.data;
+	}
+
+	// qUI's notification service formats events for Shoutrrr and the generic
+	// JSON template delivers this exact shape. Keep the original body as the
+	// payload so My Events shows what qUI actually sent.
+	const notification = quiShoutrrrNotificationSchema.safeParse(body);
+	if (!notification.success) {
+		return null;
+	}
+	const { title, message } = notification.data;
+	return {
+		type: QUI_NOTIFICATION_EVENT_TYPES[title.trim()] ?? "notification",
+		payload: { title, message },
+	};
+}
 
 function extractTorrentHash(payload: unknown): string | null {
 	if (!payload || typeof payload !== "object") return null;

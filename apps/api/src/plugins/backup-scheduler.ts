@@ -20,6 +20,14 @@ const backupSchedulerPlugin = fastifyPlugin(
 				JOB_ID.backup,
 				"backup",
 				async () => {
+					if (app.secretsSynchronized === false) {
+						const reason =
+							"Active environment secrets could not be synchronized to the secrets file";
+						app.schedulerRegistry.markDisabled(JOB_ID.backup, reason);
+						app.log.warn({ jobId: JOB_ID.backup, reason }, "Backup scheduler disabled");
+						return;
+					}
+
 					app.log.info("Initializing backup scheduler");
 
 					// Determine secrets path based on DATABASE_URL from app config (canonical source)
@@ -32,7 +40,10 @@ const backupSchedulerPlugin = fastifyPlugin(
 						app.log,
 						secretsPath,
 						(payload) => app.notificationService.notify(payload),
-						{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.backup, fn) },
+						{
+							trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.backup, fn),
+							secretsSynchronized: app.secretsSynchronized,
+						},
 					);
 					app.decorate("backupScheduler", scheduler);
 
