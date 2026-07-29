@@ -234,7 +234,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 
 				try {
 					const created = await client.ensureNotificationTarget({
-						name: "arr-dashboard",
+						name: `arr-dashboard-${instance.id}`,
 						url: targetUrl,
 						eventTypes: body.eventTypes,
 						enabled: true,
