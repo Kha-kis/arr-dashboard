@@ -49,6 +49,7 @@ export const OIDCProviderSection = () => {
 	const deleteMutation = useDeleteOIDCProvider();
 
 	const provider = providerData?.provider;
+	const isLinked = providerData?.linked ?? false;
 
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
@@ -642,10 +643,26 @@ export const OIDCProviderSection = () => {
 
 								<div className="flex flex-col gap-3 rounded-lg border border-border/50 bg-card/30 p-4 sm:flex-row sm:items-center sm:justify-between">
 									<div>
-										<p className="text-sm font-medium text-foreground">Admin account linking</p>
+										<p className="flex items-center gap-2 text-sm font-medium text-foreground">
+											Admin account
+											<span
+												className="rounded-full px-2 py-0.5 text-xs"
+												style={{
+													backgroundColor: isLinked
+														? SEMANTIC_COLORS.success.bg
+														: SEMANTIC_COLORS.warning.bg,
+													color: isLinked
+														? SEMANTIC_COLORS.success.text
+														: SEMANTIC_COLORS.warning.text,
+												}}
+											>
+												{isLinked ? "Linked" : "Not linked"}
+											</span>
+										</p>
 										<p className="text-xs text-muted-foreground">
-											Complete this once before signing out so this OIDC identity can access the
-											dashboard.
+											{isLinked
+												? "This OIDC identity can access the dashboard. Test it before removing another sign-in method."
+												: "Link this OIDC identity before signing out so it can access the dashboard."}
 										</p>
 									</div>
 									<Button
@@ -661,7 +678,7 @@ export const OIDCProviderSection = () => {
 										) : (
 											<>
 												<Link className="h-4 w-4" />
-												Link or Test Account
+												{isLinked ? "Test Account" : "Link Account"}
 											</>
 										)}
 									</Button>

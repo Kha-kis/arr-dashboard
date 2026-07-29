@@ -38,16 +38,22 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 */
 	app.get<{ Reply: OIDCProviderResponse | ErrorResponse }>(
 		"/api/oidc-providers",
-		async (_request, reply) => {
+		async (request, reply) => {
 			const provider = await app.prisma.oIDCProvider.findFirst();
 
 			if (!provider) {
-				return reply.send({ provider: null });
+				return reply.send({ provider: null, linked: false });
 			}
+
+			const linkedAccount = await app.prisma.oIDCAccount.findFirst({
+				where: { userId: request.currentUser!.id },
+				select: { id: true },
+			});
 
 			// Return provider without exposing client secret
 			return reply.send({
 				provider: toPublicProvider(provider),
+				linked: linkedAccount !== null,
 			});
 		},
 	);

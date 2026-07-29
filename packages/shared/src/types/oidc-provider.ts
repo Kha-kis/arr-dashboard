@@ -51,6 +51,7 @@ export type UpdateOIDCProvider = z.infer<typeof updateOidcProviderSchema>;
  */
 export const oidcProviderResponseSchema = z.object({
 	provider: oidcProviderSchema.nullable(),
+	linked: z.boolean(),
 });
 
 export type OIDCProviderResponse = z.infer<typeof oidcProviderResponseSchema>;

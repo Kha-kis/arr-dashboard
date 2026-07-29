@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { initiateOIDCLogin } = vi.hoisted(() => ({
+const { initiateOIDCLogin, oidcState } = vi.hoisted(() => ({
 	initiateOIDCLogin: vi.fn(),
+	oidcState: { linked: false },
 }));
 
 vi.mock("../../../../hooks/api/useOIDCProviders", () => ({
@@ -19,6 +20,7 @@ vi.mock("../../../../hooks/api/useOIDCProviders", () => ({
 				createdAt: "2026-07-29T00:00:00.000Z",
 				updatedAt: "2026-07-29T00:00:00.000Z",
 			},
+			linked: oidcState.linked,
 		},
 		isLoading: false,
 	}),
@@ -42,15 +44,26 @@ import { OIDCProviderSection } from "../oidc-provider-section";
 describe("OIDCProviderSection account linking", () => {
 	beforeEach(() => {
 		initiateOIDCLogin.mockReset();
+		oidcState.linked = false;
 	});
 
 	it("offers existing installations an explicit admin-link action", async () => {
 		initiateOIDCLogin.mockRejectedValueOnce(new Error("provider unavailable"));
 		render(<OIDCProviderSection />);
 
-		fireEvent.click(screen.getByRole("button", { name: /link or test account/i }));
+		expect(screen.getByText("Not linked")).toBeDefined();
+		fireEvent.click(screen.getByRole("button", { name: /link account/i }));
 
 		await waitFor(() => expect(initiateOIDCLogin).toHaveBeenCalledOnce());
 		expect(await screen.findByText("provider unavailable")).toBeDefined();
+	});
+
+	it("shows a linked identity as ready to test", () => {
+		oidcState.linked = true;
+
+		render(<OIDCProviderSection />);
+
+		expect(screen.getByText("Linked")).toBeDefined();
+		expect(screen.getByRole("button", { name: /test account/i })).toBeDefined();
 	});
 });
