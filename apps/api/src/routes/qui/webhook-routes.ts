@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { createQuiClient } from "../../lib/qui/client-factory.js";
@@ -9,11 +10,16 @@ import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { QUI_INSTANCE_PARAM, safeParseJson } from "./qui-shared.js";
 
-export function buildQuiNotificationTargetName(
-	installationId: string,
-	serviceInstanceId: string,
-): string {
-	return `arr-dashboard-${installationId}-${serviceInstanceId}`;
+export function buildQuiNotificationTargetName(installationId: string, quiBaseUrl: string): string {
+	const deploymentUrl = new URL(quiBaseUrl);
+	deploymentUrl.hash = "";
+	deploymentUrl.search = "";
+	deploymentUrl.pathname = deploymentUrl.pathname.replace(/\/+$/, "");
+	const deploymentId = createHash("sha256")
+		.update(deploymentUrl.toString())
+		.digest("hex")
+		.slice(0, 24);
+	return `arr-dashboard-${installationId}-${deploymentId}`;
 }
 
 export function registerWebhookRoutes(app: FastifyInstance): void {
@@ -241,7 +247,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 
 				try {
 					const created = await client.ensureNotificationTarget({
-						name: buildQuiNotificationTargetName(app.installationId, instance.id),
+						name: buildQuiNotificationTargetName(app.installationId, instance.baseUrl),
 						url: targetUrl,
 						eventTypes: body.eventTypes,
 						enabled: true,
