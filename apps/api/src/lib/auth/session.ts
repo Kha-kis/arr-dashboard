@@ -40,6 +40,11 @@ export interface SessionMetadata {
 	ipAddress?: string;
 }
 
+interface SessionRotationOptions {
+	onRotate?: (tx: Prisma.TransactionClient) => Promise<void>;
+	revokeOtherSessions?: boolean;
+}
+
 export class SessionService {
 	constructor(
 		private readonly prisma: PrismaClient,
@@ -99,7 +104,7 @@ export class SessionService {
 		userId: string,
 		rememberMe = false,
 		metadata?: SessionMetadata,
-		onRotate?: (tx: Prisma.TransactionClient) => Promise<void>,
+		options?: SessionRotationOptions,
 	) {
 		const currentSessionId = hashToken(token);
 		const replacementToken = generateSessionToken();
@@ -123,7 +128,12 @@ export class SessionService {
 				return null;
 			}
 
-			await onRotate?.(tx);
+			await options?.onRotate?.(tx);
+			if (options?.revokeOtherSessions) {
+				await tx.session.deleteMany({
+					where: { userId },
+				});
+			}
 			await tx.session.create({
 				data: {
 					id: replacementSessionId,
@@ -135,6 +145,43 @@ export class SessionService {
 			});
 
 			return { token: replacementToken, expiresAt };
+		});
+	}
+
+	/**
+	 * Create a session only when an authorization check succeeds inside the
+	 * same transaction. The check may take a write lock on the credential row
+	 * so a concurrent credential replacement can revoke the resulting session.
+	 */
+	async createSessionIfAuthorized(
+		userId: string,
+		rememberMe: boolean,
+		metadata: SessionMetadata | undefined,
+		authorize: (tx: Prisma.TransactionClient) => Promise<boolean>,
+	) {
+		const token = generateSessionToken();
+		const hashedToken = hashToken(token);
+		const ttlMs = rememberMe
+			? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60 * 1000
+			: this.env.SESSION_TTL_HOURS * 60 * 60 * 1000;
+		const expiresAt = new Date(Date.now() + ttlMs);
+
+		return this.prisma.$transaction(async (tx) => {
+			if (!(await authorize(tx))) {
+				return null;
+			}
+
+			await tx.session.create({
+				data: {
+					id: hashedToken,
+					userId,
+					expiresAt,
+					userAgent: metadata?.userAgent,
+					ipAddress: metadata?.ipAddress,
+				},
+			});
+
+			return { token, expiresAt };
 		});
 	}
 
