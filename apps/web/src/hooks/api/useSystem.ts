@@ -41,6 +41,7 @@ export function useUpdateSystemSettings() {
 		mutationFn: (data: UpdateSystemSettingsPayload) => updateSystemSettings(data),
 		onSuccess: (response) => {
 			queryClient.invalidateQueries({ queryKey: systemKeys.settings });
+			queryClient.invalidateQueries({ queryKey: systemKeys.securityPosture });
 			toast.success(response.message || "Settings saved");
 		},
 		onError: (error) => {

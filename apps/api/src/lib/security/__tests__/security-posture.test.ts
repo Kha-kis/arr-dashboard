@@ -29,6 +29,7 @@ function baseInput(overrides: Overrides = {}): SecurityPostureInput {
 			...overrides.env,
 		},
 		oidcEnabled: overrides.oidcEnabled ?? false,
+		oidcRedirectUri: overrides.oidcRedirectUri ?? null,
 		passkeyCount: overrides.passkeyCount ?? 0,
 		passwordUserCount: overrides.passwordUserCount ?? 1,
 		totalUserCount: overrides.totalUserCount ?? 1,
@@ -280,7 +281,7 @@ describe("evaluateSecurityPosture", () => {
 			});
 		});
 
-		it("keeps an APP_URL warning when OIDC is enabled with an HTTPS External URL", () => {
+		it("warns when the enabled OIDC provider uses an HTTP redirect URI", () => {
 			const result = evaluateSecurityPosture(
 				baseInput({
 					env: {
@@ -291,6 +292,7 @@ describe("evaluateSecurityPosture", () => {
 					},
 					publicAppUrl: "https://arr.example.com",
 					oidcEnabled: true,
+					oidcRedirectUri: "http://localhost:3000/auth/oidc/callback",
 					passkeyCount: 1,
 				}),
 			);
@@ -301,9 +303,33 @@ describe("evaluateSecurityPosture", () => {
 			});
 			expect(checkById(result, "oidc-app-url")).toMatchObject({
 				severity: "warning",
-				detail: expect.stringContaining("OIDC callbacks use APP_URL"),
-				remediation: expect.stringContaining("APP_URL in the container environment"),
+				detail: "OIDC Redirect URI uses HTTP.",
+				remediation: expect.stringContaining("OIDC provider Redirect URI"),
 			});
+		});
+
+		it("accepts an explicit HTTPS OIDC redirect URI when APP_URL remains HTTP", () => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "http://localhost:3000",
+					},
+					publicAppUrl: "https://arr.example.com",
+					oidcEnabled: true,
+					oidcRedirectUri: "https://arr.example.com/auth/oidc/callback",
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "app-url")).toMatchObject({
+				severity: "healthy",
+				detail: "External URL uses HTTPS.",
+			});
+			expect(result.checks.find((check) => check.id === "oidc-app-url")).toBeUndefined();
+			expect(result.overall).toBe("healthy");
 		});
 
 		it("warns on non-https APP_URL in production", () => {

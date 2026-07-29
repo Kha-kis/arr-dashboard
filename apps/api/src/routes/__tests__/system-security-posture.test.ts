@@ -73,4 +73,20 @@ describe("GET /system/security-posture", () => {
 		});
 		expect(body.data.effective.appUrl).toBe("https://arr.example.com");
 	});
+
+	it("checks the enabled provider's stored redirect URI instead of APP_URL", async () => {
+		mockPrisma.oIDCProvider.findFirst.mockResolvedValue({
+			redirectUri: "https://arr.example.com/auth/oidc/callback",
+		});
+
+		const res = await injectAuthenticated("GET", "/system/security-posture");
+
+		expect(res.statusCode, res.payload).toBe(200);
+		const body = JSON.parse(res.payload);
+		expect(body.data.checks).not.toContainEqual(expect.objectContaining({ id: "oidc-app-url" }));
+		expect(mockPrisma.oIDCProvider.findFirst).toHaveBeenCalledWith({
+			where: { enabled: true },
+			select: { redirectUri: true },
+		});
+	});
 });
