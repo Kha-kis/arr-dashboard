@@ -540,13 +540,30 @@ describe("createQuiClient", () => {
 			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("PUT");
 		});
 
-		it("treats an empty requested event list as qUI's all-events setting", async () => {
-			fetchSpy.mockResolvedValueOnce(
-				new Response(JSON.stringify([target]), {
-					status: 200,
-					headers: { "content-type": "application/json" },
-				}),
-			);
+		it("expands an empty requested event list and resets an existing subset", async () => {
+			const allEventTypes = ["torrent_added", "torrent_completed"];
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(
+						JSON.stringify(allEventTypes.map((type) => ({ type, label: type, description: type }))),
+						{
+							status: 200,
+							headers: { "content-type": "application/json" },
+						},
+					),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ ...target, eventTypes: allEventTypes }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
 
 			const client = createQuiClient(buildApp(), buildInstance());
 			await expect(
@@ -556,7 +573,11 @@ describe("createQuiClient", () => {
 					eventTypes: [],
 				}),
 			).resolves.toEqual({ id: 42 });
-			expect(fetchSpy).toHaveBeenCalledOnce();
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+			expect(String(fetchSpy.mock.calls[0]?.[0])).toBe("http://qui.test/api/notifications/events");
+			expect(JSON.parse(String(fetchSpy.mock.calls[2]?.[1]?.body))).toMatchObject({
+				eventTypes: allEventTypes,
+			});
 		});
 
 		it("accepts a committed update when qUI loses the PUT response", async () => {

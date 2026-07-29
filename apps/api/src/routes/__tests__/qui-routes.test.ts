@@ -926,6 +926,65 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(JSON.stringify(requestWarnSpy.mock.calls)).toContain("secret=***");
 		expect(JSON.stringify(requestWarnSpy.mock.calls)).not.toContain(secret);
 	});
+
+	it("serializes rotation with an in-flight registration so the newest secret wins", async () => {
+		const oldSecret = "o".repeat(32);
+		let currentHash = hashSecret(oldSecret);
+		mockPrisma.user.findUniqueOrThrow.mockImplementation(async () => ({
+			hashedQuiWebhookSecret: currentHash,
+		}));
+		mockPrisma.user.update.mockImplementation(async ({ data }) => {
+			currentHash = data.hashedQuiWebhookSecret;
+			return {};
+		});
+
+		let releaseOldRegistration!: () => void;
+		const oldRegistrationBlocked = new Promise<void>((resolve) => {
+			releaseOldRegistration = resolve;
+		});
+		let oldRegistrationStarted!: () => void;
+		const oldRegistrationEntered = new Promise<void>((resolve) => {
+			oldRegistrationStarted = resolve;
+		});
+		mockQuiClient.ensureNotificationTarget
+			.mockImplementationOnce(async () => {
+				oldRegistrationStarted();
+				await oldRegistrationBlocked;
+				return { id: 41 };
+			})
+			.mockResolvedValueOnce({ id: 42 });
+
+		const oldRegistration = injectAuthenticated(
+			"POST",
+			"/qui/instances/qui-1/webhook-config/register",
+			{ body: { secret: oldSecret } },
+		);
+		await oldRegistrationEntered;
+
+		const rotation = injectAuthenticated("POST", "/qui/webhook-config/rotate", { body: {} });
+		await Promise.resolve();
+		expect(mockPrisma.user.update).not.toHaveBeenCalled();
+
+		releaseOldRegistration();
+		expect((await oldRegistration).statusCode).toBe(200);
+		const rotationResponse = await rotation;
+		expect(rotationResponse.statusCode).toBe(200);
+		const newSecret = JSON.parse(rotationResponse.payload).secret as string;
+		expect(currentHash).toBe(hashSecret(newSecret));
+
+		const newRegistration = await injectAuthenticated(
+			"POST",
+			"/qui/instances/qui-1/webhook-config/register",
+			{ body: { secret: newSecret } },
+		);
+		expect(newRegistration.statusCode).toBe(200);
+		expect(mockQuiClient.ensureNotificationTarget).toHaveBeenCalledTimes(2);
+
+		const oldTarget = new URL(mockQuiClient.ensureNotificationTarget.mock.calls[0]?.[0].url);
+		const newTarget = new URL(mockQuiClient.ensureNotificationTarget.mock.calls[1]?.[0].url);
+		expect(oldTarget.searchParams.get("secret")).toBe(oldSecret);
+		expect(newTarget.searchParams.get("secret")).toBe(newSecret);
+	});
 });
 
 // ────────────────────────────────────────────────────────────────────────

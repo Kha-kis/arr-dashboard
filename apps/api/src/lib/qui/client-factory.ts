@@ -350,6 +350,12 @@ const quiNotificationTargetListSchema = z
 	.nullable()
 	.transform((targets) => targets ?? []);
 
+const quiNotificationEventDefinitionSchema = z
+	.object({
+		type: z.string(),
+	})
+	.passthrough();
+
 /**
  * Build a request-scoped qui client.
  *
@@ -712,7 +718,23 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			const requestOptions = {
 				redactErrorMessage: redactSecret,
 			};
-			const desired = { name, url, eventTypes, enabled };
+			// qUI interprets an explicit [] as "all events" and expands it to
+			// the concrete event list in target responses. Resolve that list
+			// up front so an existing subset cannot be mistaken for all events
+			// and ambiguous PUT responses remain verifiable. Omitted eventTypes
+			// retains qUI's current subscription on update.
+			const desiredEventTypes =
+				eventTypes?.length === 0
+					? (
+							await quiRequest(
+								ctx,
+								"/api/notifications/events",
+								z.array(quiNotificationEventDefinitionSchema),
+								requestOptions,
+							)
+						).map((definition) => definition.type)
+					: eventTypes;
+			const desired = { name, url, eventTypes: desiredEventTypes, enabled };
 
 			const listTargets = () =>
 				quiRequest(
@@ -728,10 +750,8 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					body,
 				});
 			const sameEventTypes = (actual: string[]): boolean => {
-				// qUI treats both an omitted list and [] as "all events"; its
-				// response expands that to every concrete event name.
-				if (eventTypes === undefined || eventTypes.length === 0) return true;
-				const expected = [...new Set(eventTypes)].sort();
+				if (desiredEventTypes === undefined) return true;
+				const expected = [...new Set(desiredEventTypes)].sort();
 				const received = [...new Set(actual)].sort();
 				return (
 					expected.length === received.length &&
