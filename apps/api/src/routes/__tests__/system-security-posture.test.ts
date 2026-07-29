@@ -150,6 +150,25 @@ describe("GET /system/security-posture", () => {
 		expect(body.data.effective.appUrl).toBe("https://arr.example.com");
 	});
 
+	it("warns when a legacy persisted External URL is not a valid public base", async () => {
+		mockPrisma.systemSettings.findUnique.mockResolvedValue({
+			externalUrl: "https://arr.example.com?source=proxy",
+		});
+
+		const res = await injectAuthenticated("GET", "/system/security-posture");
+
+		expect(res.statusCode, res.payload).toBe(200);
+		const body = JSON.parse(res.payload);
+		const appUrlCheck = body.data.checks.find((check: { id: string }) => check.id === "app-url");
+
+		expect(appUrlCheck).toMatchObject({
+			severity: "warning",
+			detail: "External URL is not a valid public URL.",
+			remediation: expect.stringContaining("without a query string, fragment"),
+		});
+		expect(body.data.effective.appUrl).toBe("https://arr.example.com?source=proxy");
+	});
+
 	it("checks the enabled provider's stored redirect URI instead of APP_URL", async () => {
 		mockPrisma.oIDCProvider.findFirst.mockResolvedValue({
 			redirectUri: "https://arr.example.com/auth/oidc/callback",

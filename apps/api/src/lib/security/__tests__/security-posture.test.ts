@@ -282,6 +282,32 @@ describe("evaluateSecurityPosture", () => {
 			});
 		});
 
+		it.each([
+			"https://arr.example.com?source=proxy",
+			"https://arr.example.com#settings",
+			"https://arr.example.com///",
+		])("warns about an invalid persisted External URL: %s", (publicAppUrl) => {
+			const result = evaluateSecurityPosture(
+				baseInput({
+					env: {
+						NODE_ENV: "production",
+						TRUST_PROXY: true,
+						COOKIE_SECURE: true,
+						APP_URL: "https://arr.example.com",
+					},
+					publicAppUrl,
+					passkeyCount: 1,
+				}),
+			);
+
+			expect(checkById(result, "app-url")).toMatchObject({
+				severity: "warning",
+				detail: "External URL is not a valid public URL.",
+				remediation: expect.stringContaining("without a query string, fragment"),
+			});
+			expect(result.effective.appUrl).toBe(publicAppUrl);
+		});
+
 		it("warns when the enabled OIDC provider uses an HTTP redirect URI", () => {
 			const result = evaluateSecurityPosture(
 				baseInput({
