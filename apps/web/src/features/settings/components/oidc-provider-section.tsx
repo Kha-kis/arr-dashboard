@@ -1,6 +1,6 @@
 "use client";
 
-import type { UpdateOIDCProvider } from "@arr/shared";
+import { deleteOidcProviderSchema, type UpdateOIDCProvider } from "@arr/shared";
 import {
 	AlertCircle,
 	Check,
@@ -19,6 +19,14 @@ import { useState } from "react";
 import { PremiumEmptyState, PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { ToggleSwitch } from "../../../components/layout/config-primitives";
 import { Button } from "../../../components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "../../../components/ui/dialog";
 import { Input } from "../../../components/ui/input";
 import {
 	useCreateOIDCProvider,
@@ -54,6 +62,9 @@ export const OIDCProviderSection = () => {
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
 	const [accountAction, setAccountAction] = useState<"link" | "test" | null>(null);
+	const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+	const [replacementPassword, setReplacementPassword] = useState("");
+	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const isLinking = accountAction !== null;
 
 	// Form state for creating new provider
@@ -174,18 +185,27 @@ export const OIDCProviderSection = () => {
 	const handleDelete = async () => {
 		if (!provider) return;
 
-		if (!confirm("Are you sure you want to delete this OIDC provider?")) {
+		const validation = deleteOidcProviderSchema.safeParse({ replacementPassword });
+		if (!validation.success) {
+			setDeleteError(validation.error.issues[0]?.message ?? "Enter a valid fallback password.");
 			return;
 		}
 
-		setError(null);
-		setSuccess(null);
-
+		setDeleteError(null);
 		try {
-			await deleteMutation.mutateAsync();
-			setSuccess("OIDC provider deleted successfully!");
+			await deleteMutation.mutateAsync(validation.data);
+			window.location.href = "/login";
 		} catch (err) {
-			setError(getErrorMessage(err, "Failed to delete OIDC provider"));
+			setDeleteError(getErrorMessage(err, "Failed to delete OIDC provider"));
+		}
+	};
+
+	const handleDeleteDialogChange = (open: boolean) => {
+		if (deleteMutation.isPending) return;
+		setDeleteDialogOpen(open);
+		if (!open) {
+			setReplacementPassword("");
+			setDeleteError(null);
 		}
 	};
 
@@ -603,7 +623,7 @@ export const OIDCProviderSection = () => {
 										<Button
 											size="sm"
 											variant="ghost"
-											onClick={handleDelete}
+											onClick={() => setDeleteDialogOpen(true)}
 											disabled={deleteMutation.isPending}
 											className="gap-1.5"
 											style={{ color: SEMANTIC_COLORS.error.text }}
@@ -717,6 +737,56 @@ export const OIDCProviderSection = () => {
 						)}
 					</div>
 				)}
+				<Dialog open={deleteDialogOpen} onOpenChange={handleDeleteDialogChange}>
+					<DialogContent className="max-w-md">
+						<DialogHeader>
+							<DialogTitle>Delete OIDC provider?</DialogTitle>
+							<DialogDescription>
+								Enter a strong fallback password before removing OIDC. Existing passwords are
+								preserved, and OIDC-only accounts receive this password. You will be signed out
+								afterward.
+							</DialogDescription>
+						</DialogHeader>
+						<div className="space-y-2">
+							<label
+								htmlFor="oidc-replacement-password"
+								className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+							>
+								Fallback password
+							</label>
+							<Input
+								id="oidc-replacement-password"
+								type="password"
+								autoComplete="new-password"
+								value={replacementPassword}
+								onChange={(event) => setReplacementPassword(event.target.value)}
+								disabled={deleteMutation.isPending}
+							/>
+							{deleteError && (
+								<p className="text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
+									{deleteError}
+								</p>
+							)}
+						</div>
+						<DialogFooter>
+							<Button
+								variant="outline"
+								onClick={() => handleDeleteDialogChange(false)}
+								disabled={deleteMutation.isPending}
+							>
+								Cancel
+							</Button>
+							<Button
+								variant="destructive"
+								onClick={handleDelete}
+								disabled={!replacementPassword || deleteMutation.isPending}
+							>
+								{deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+								Delete and sign out
+							</Button>
+						</DialogFooter>
+					</DialogContent>
+				</Dialog>
 			</div>
 		</PremiumSection>
 	);
