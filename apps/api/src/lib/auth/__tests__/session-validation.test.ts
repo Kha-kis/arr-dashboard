@@ -200,6 +200,17 @@ describe("SessionService.validateRequest", () => {
 		expect(rememberedTtlMs).toBeGreaterThan(standardTtlMs * 10);
 	});
 
+	it("can attach a rotated cookie for only the session's remaining lifetime", () => {
+		const setCookie = vi.fn();
+		const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+		service.attachCookie({ setCookie } as never, "replacement-token", true, expiresAt);
+
+		const options = setCookie.mock.calls[0]![2];
+		expect(options.maxAge).toBeGreaterThanOrEqual(3599);
+		expect(options.maxAge).toBeLessThanOrEqual(3600);
+	});
+
 	it("atomically rotates only a still-active session and runs the authorized mutation", async () => {
 		const current = await service.createSession("user-1");
 		const onRotate = vi.fn().mockResolvedValue(undefined);
@@ -207,12 +218,12 @@ describe("SessionService.validateRequest", () => {
 		const replacement = await service.rotateActiveSession(
 			current.token,
 			"user-1",
-			true,
 			{ userAgent: "vitest" },
 			{ onRotate },
 		);
 
 		expect(replacement).not.toBeNull();
+		expect(replacement!.expiresAt).toEqual(current.expiresAt);
 		expect(onRotate).toHaveBeenCalledTimes(1);
 		await expect(
 			service.validateRequest(makeRequest("signed-cookie", { valid: true, value: current.token })),
@@ -230,7 +241,7 @@ describe("SessionService.validateRequest", () => {
 		const onRotate = vi.fn().mockResolvedValue(undefined);
 
 		await expect(
-			service.rotateActiveSession(current.token, "user-1", true, undefined, { onRotate }),
+			service.rotateActiveSession(current.token, "user-1", undefined, { onRotate }),
 		).resolves.toBeNull();
 		expect(onRotate).not.toHaveBeenCalled();
 	});
@@ -245,13 +256,10 @@ describe("SessionService.validateRequest", () => {
 			expect(prisma._sessions.size).toBe(2);
 		});
 
-		const replacement = await service.rotateActiveSession(
-			current.token,
-			"user-1",
-			true,
-			undefined,
-			{ onRotate, revokeOtherSessions: true },
-		);
+		const replacement = await service.rotateActiveSession(current.token, "user-1", undefined, {
+			onRotate,
+			revokeOtherSessions: true,
+		});
 
 		expect(replacement).not.toBeNull();
 		await expect(
