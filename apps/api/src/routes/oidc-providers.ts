@@ -362,6 +362,8 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 								data: {
 									hashedPassword,
 									mustChangePassword: !isCurrentAdmin,
+									failedLoginAttempts: 0,
+									lockedUntil: null,
 								},
 							});
 							replacedUsers += 1;

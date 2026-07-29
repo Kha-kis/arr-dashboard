@@ -389,6 +389,7 @@ describe("evaluateSecurityPosture", () => {
 			"https://arr.example.com/auth/oidc/callback#fragment",
 			"https://admin:secret@arr.example.com/auth/oidc/callback",
 			"https://arr.example.com//auth/oidc/callback",
+			"https://arr.example.com/wrong-callback",
 			"https://arr.example.com\\auth\\oidc\\callback",
 			"https://arr.example.com/auth callback",
 		])("warns about an invalid HTTPS OIDC callback: %s", (oidcRedirectUri) => {

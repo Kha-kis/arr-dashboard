@@ -399,7 +399,8 @@ function isValidOidcRedirectUri(value: string): boolean {
 			value === value.trim() &&
 			!hasUnsafeUrlCharacters(value) &&
 			!value.includes("#") &&
-			!url.pathname.includes("//")
+			!url.pathname.includes("//") &&
+			url.pathname.endsWith("/auth/oidc/callback")
 		);
 	} catch {
 		return false;
