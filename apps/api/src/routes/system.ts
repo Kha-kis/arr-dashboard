@@ -47,6 +47,7 @@ const systemSettingsSchema = z.object({
 	appName: z.string().optional(),
 	externalUrl: z
 		.string()
+		.trim()
 		.nullable()
 		.optional()
 		.superRefine((value, ctx) => {
@@ -223,6 +224,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				secureCookies: secureCookies ?? null,
 			},
 		});
+
+		if (externalUrl !== undefined) {
+			app.notificationService.setBaseUrl(settings.externalUrl ?? app.config.APP_URL);
+		}
 
 		// Get currently running values
 		const currentApiPort = Number(process.env.API_PORT) || 3001;
