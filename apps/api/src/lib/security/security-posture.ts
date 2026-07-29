@@ -48,6 +48,8 @@ export interface SecurityPostureInput {
 		PASSWORD_POLICY: "strict" | "relaxed";
 		APP_URL: string;
 	};
+	/** Admin-configured public URL. When absent, APP_URL remains the fallback. */
+	publicAppUrl?: string | null;
 	/** True if at least one OIDC provider is enabled. */
 	oidcEnabled: boolean;
 	/** Total passkey credentials registered across all users. */
@@ -93,7 +95,10 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 	const effectiveSecureCookies = input.env.COOKIE_SECURE ?? input.env.TRUST_PROXY;
 	const isProduction = input.env.NODE_ENV === "production";
 	const passwordEnabled = input.passwordUserCount > 0;
-	const appUrlProtocol = safeProtocol(input.env.APP_URL);
+	const configuredPublicAppUrl = input.publicAppUrl?.trim();
+	const appUrl = configuredPublicAppUrl || input.env.APP_URL;
+	const appUrlSource = configuredPublicAppUrl ? "External URL" : "APP_URL";
+	const appUrlProtocol = safeProtocol(appUrl);
 	const appUrlIsHttps = appUrlProtocol === "https:";
 
 	const checks: SecurityCheck[] = [];
@@ -244,23 +249,27 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		checks.push({
 			id: "app-url",
 			label: "App URL",
-			detail: `APP_URL uses ${appUrlProtocol ?? "an unrecognized protocol"} in production.`,
+			detail: `${appUrlSource} uses ${appUrlProtocol ?? "an unrecognized protocol"} in production.`,
 			severity: "warning",
-			remediation: "Set APP_URL to an https:// origin so OIDC redirect URIs and links are secure.",
+			remediation: configuredPublicAppUrl
+				? "Update External URL in Settings → System to an https:// origin."
+				: "Set an https:// External URL in Settings → System, or set APP_URL in the container environment.",
 		});
 	} else if (effectiveSecureCookies && !appUrlIsHttps) {
 		checks.push({
 			id: "app-url",
 			label: "App URL",
-			detail: "Secure cookies are enabled but APP_URL is not https — clients may fail to log in.",
+			detail: `Secure cookies are enabled but ${appUrlSource} is not https — generated public links may be insecure.`,
 			severity: "warning",
-			remediation: "Update APP_URL to match the public https:// origin.",
+			remediation: configuredPublicAppUrl
+				? "Update External URL in Settings → System to match the public https:// origin."
+				: "Set an https:// External URL in Settings → System, or update APP_URL to match the public origin.",
 		});
 	} else {
 		checks.push({
 			id: "app-url",
 			label: "App URL",
-			detail: `${input.env.APP_URL}`,
+			detail: appUrl,
 			severity: "healthy",
 		});
 	}
@@ -272,7 +281,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		sessionTtlHours: input.env.SESSION_TTL_HOURS,
 		sessionCookieName: input.env.SESSION_COOKIE_NAME,
 		passwordPolicy: input.env.PASSWORD_POLICY,
-		appUrl: input.env.APP_URL,
+		appUrl,
 	};
 
 	return {

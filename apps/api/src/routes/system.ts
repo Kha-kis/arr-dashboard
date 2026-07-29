@@ -576,21 +576,27 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Read-only snapshot of the effective security configuration plus a list
 	 * of derived posture checks (healthy / warning / misconfigured).
 	 *
-	 * Inputs gathered: app.config (effective env), enabled OIDC providers,
-	 * total passkey credentials, count of users with a password set.
+	 * Inputs gathered: app.config (effective env), configured External URL,
+	 * enabled OIDC providers, total passkey credentials, count of users with
+	 * a password set.
 	 *
 	 * Security: Requires authentication (single-admin architecture).
 	 */
 	app.get("/security-posture", async (_request, reply) => {
-		const [oidcProvider, passkeyCount, passwordUserCount, totalUserCount] = await Promise.all([
-			app.prisma.oIDCProvider.findFirst({
-				where: { enabled: true },
-				select: { id: true },
-			}),
-			app.prisma.webAuthnCredential.count(),
-			app.prisma.user.count({ where: { hashedPassword: { not: null } } }),
-			app.prisma.user.count(),
-		]);
+		const [systemSettings, oidcProvider, passkeyCount, passwordUserCount, totalUserCount] =
+			await Promise.all([
+				app.prisma.systemSettings.findUnique({
+					where: { id: 1 },
+					select: { externalUrl: true },
+				}),
+				app.prisma.oIDCProvider.findFirst({
+					where: { enabled: true },
+					select: { id: true },
+				}),
+				app.prisma.webAuthnCredential.count(),
+				app.prisma.user.count({ where: { hashedPassword: { not: null } } }),
+				app.prisma.user.count(),
+			]);
 
 		const result = evaluateSecurityPosture({
 			env: {
@@ -602,6 +608,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				PASSWORD_POLICY: app.config.PASSWORD_POLICY,
 				APP_URL: app.config.APP_URL,
 			},
+			publicAppUrl: systemSettings?.externalUrl,
 			oidcEnabled: oidcProvider !== null,
 			passkeyCount,
 			passwordUserCount,
