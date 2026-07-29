@@ -184,6 +184,7 @@ describe("GET /system/security-posture", () => {
 			(check: { id: string }) => check.id === "authentication",
 		);
 		expect(body.data.auth.oidcEnabled).toBe(false);
+		expect(body.data.auth.oidcProviderEnabled).toBe(true);
 		expect(authentication).toMatchObject({
 			severity: "warning",
 			detail: "Password-only authentication is in use.",
@@ -205,6 +206,7 @@ describe("GET /system/security-posture", () => {
 		expect(res.statusCode, res.payload).toBe(200);
 		const body = JSON.parse(res.payload);
 		expect(body.data.auth.oidcEnabled).toBe(true);
+		expect(body.data.auth.oidcProviderEnabled).toBe(true);
 		expect(body.data.checks).toContainEqual(
 			expect.objectContaining({
 				id: "authentication",

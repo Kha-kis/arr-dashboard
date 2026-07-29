@@ -84,6 +84,7 @@ describe("evaluateSecurityPosture", () => {
 				passwordEnabled: true,
 				passwordUserCount: 1,
 				oidcEnabled: true,
+				oidcProviderEnabled: true,
 				passkeyCount: 0,
 			});
 		});
