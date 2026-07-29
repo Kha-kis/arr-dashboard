@@ -398,7 +398,8 @@ function isValidOidcRedirectUri(value: string): boolean {
 			url.password === "" &&
 			value === value.trim() &&
 			!hasUnsafeUrlCharacters(value) &&
-			!value.includes("#")
+			!value.includes("#") &&
+			!url.pathname.includes("//")
 		);
 	} catch {
 		return false;

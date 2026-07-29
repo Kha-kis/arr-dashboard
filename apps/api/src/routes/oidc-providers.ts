@@ -8,6 +8,7 @@ import {
 	updateOidcProviderSchema,
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
+import { buildOidcRedirectUriFromAppUrl } from "../lib/auth/oidc-redirect-uri.js";
 import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
 import { hashPassword } from "../lib/auth/password.js";
 import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.js";
@@ -100,7 +101,14 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			// Only fall back to request headers when TRUST_PROXY is enabled (headers are validated by Fastify).
 			let redirectUri = data.redirectUri;
 			if (!redirectUri) {
-				redirectUri = `${app.config.APP_URL}/auth/oidc/callback`;
+				const generatedRedirectUri = buildOidcRedirectUriFromAppUrl(app.config.APP_URL);
+				if (!generatedRedirectUri) {
+					return reply.status(400).send({
+						error:
+							"APP_URL must be a credential-free HTTP(S) URL that can generate a valid OIDC redirect URI.",
+					});
+				}
+				redirectUri = generatedRedirectUri;
 				request.log.info({ redirectUri }, "Auto-generated redirect URI from APP_URL");
 			}
 
@@ -336,18 +344,24 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 					// The provider lock prevents new links from being created while this
 					// snapshot is installed with a replacement password.
-					const linkedUsers = await tx.user.findMany({
-						where: { oidcAccounts: { some: {} } },
+					const affectedUsers = await tx.user.findMany({
+						where: {
+							OR: [
+								{ id: request.currentUser!.id },
+								{ oidcAccounts: { some: {} } },
+							],
+						},
 						select: { id: true, hashedPassword: true },
 					});
 					let replacedUsers = 0;
-					for (const user of linkedUsers) {
-						if (!user.hashedPassword) {
+					for (const user of affectedUsers) {
+						const isCurrentAdmin = user.id === request.currentUser!.id;
+						if (isCurrentAdmin || !user.hashedPassword) {
 							await tx.user.update({
 								where: { id: user.id },
 								data: {
 									hashedPassword,
-									mustChangePassword: user.id !== request.currentUser!.id,
+									mustChangePassword: !isCurrentAdmin,
 								},
 							});
 							replacedUsers += 1;

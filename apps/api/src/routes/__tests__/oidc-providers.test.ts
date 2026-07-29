@@ -2,6 +2,13 @@ import Fastify, { type FastifyRequest } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import oidcProvidersRoutes from "../oidc-providers.js";
 
+vi.mock("../../lib/auth/oidc-utils.js", () => ({
+	resolveCanonicalIssuer: vi.fn().mockResolvedValue({
+		issuer: "https://auth.example.com/application/o/arr-dashboard/",
+		source: "discovery",
+	}),
+}));
+
 const provider = {
 	id: 1,
 	displayName: "Authentik",
@@ -67,6 +74,10 @@ beforeEach(async () => {
 		$transaction: runTransaction,
 	});
 	app.decorate("sessionService", { clearCookie });
+	app.decorate("config", { APP_URL: "https://arr.example.com" });
+	app.decorate("encryptor", {
+		encrypt: vi.fn().mockReturnValue({ value: "encrypted", iv: "iv" }),
+	});
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
 	app.addHook("preHandler", async (request: FastifyRequest) => {
@@ -116,6 +127,34 @@ describe("GET /api/oidc-providers", () => {
 	});
 });
 
+describe("POST /api/oidc-providers", () => {
+	it.each([
+		"https://admin:secret@arr.example.com/",
+		"ftp://arr.example.com/",
+		"mailto:admin@example.com",
+	])(
+		"rejects an unsafe APP_URL when generating the admin callback: %s",
+		async (appUrl) => {
+			Object.assign(app.config, { APP_URL: appUrl });
+
+			const response = await app.inject({
+				method: "POST",
+				url: "/api/oidc-providers",
+				payload: {
+					displayName: "Authentik",
+					clientId: "arr-dashboard",
+					clientSecret: "secret",
+					issuer: "https://auth.example.com",
+				},
+			});
+
+			expect(response.statusCode).toBe(400);
+			expect(JSON.parse(response.payload).error).toContain("APP_URL");
+			expect(findProvider).not.toHaveBeenCalled();
+		},
+	);
+});
+
 describe("DELETE /api/oidc-providers", () => {
 	it("deletes the exact provider and its links in one transaction", async () => {
 		const response = await app.inject({
@@ -146,7 +185,9 @@ describe("DELETE /api/oidc-providers", () => {
 		});
 		expect(deleteOidcAccounts).toHaveBeenCalledWith({});
 		expect(findOidcOnlyUsers).toHaveBeenCalledWith({
-			where: { oidcAccounts: { some: {} } },
+			where: {
+				OR: [{ id: "admin-user" }, { oidcAccounts: { some: {} } }],
+			},
 			select: { id: true, hashedPassword: true },
 		});
 		expect(updateUser).toHaveBeenCalledWith({
@@ -163,7 +204,7 @@ describe("DELETE /api/oidc-providers", () => {
 		expect(clearCookie).toHaveBeenCalledWith(expect.anything());
 	});
 
-	it("preserves an existing password while deleting OIDC", async () => {
+	it("replaces the current admin password while deleting OIDC", async () => {
 		findOidcOnlyUsers.mockResolvedValueOnce([
 			{ id: "admin-user", hashedPassword: "$argon2id$existing-password" },
 		]);
@@ -175,10 +216,39 @@ describe("DELETE /api/oidc-providers", () => {
 		});
 
 		expect(response.statusCode).toBe(204);
-		expect(updateUser).not.toHaveBeenCalled();
+		expect(updateUser).toHaveBeenCalledWith({
+			where: { id: "admin-user" },
+			data: {
+				hashedPassword: expect.any(String),
+				mustChangePassword: false,
+			},
+		});
 		expect(deleteProvider).toHaveBeenCalled();
 		expect(deleteOidcAccounts).toHaveBeenCalled();
 		expect(deleteSessions).toHaveBeenLastCalledWith({});
+	});
+
+	it("preserves another linked user's existing password", async () => {
+		findOidcOnlyUsers.mockResolvedValueOnce([
+			{ id: "admin-user", hashedPassword: "$argon2id$existing-admin-password" },
+			{ id: "other-user", hashedPassword: "$argon2id$existing-password" },
+		]);
+
+		const response = await app.inject({
+			method: "DELETE",
+			url: "/api/oidc-providers",
+			payload: { replacementPassword: "Safe-Replacement1!" },
+		});
+
+		expect(response.statusCode).toBe(204);
+		expect(updateUser).toHaveBeenCalledTimes(1);
+		expect(updateUser).toHaveBeenCalledWith({
+			where: { id: "admin-user" },
+			data: {
+				hashedPassword: expect.any(String),
+				mustChangePassword: false,
+			},
+		});
 	});
 
 	it("does not remove links when the provider changed before deletion acquired it", async () => {
