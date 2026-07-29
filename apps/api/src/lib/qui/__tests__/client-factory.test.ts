@@ -779,6 +779,125 @@ describe("createQuiClient", () => {
 			});
 		});
 
+		it("prefers an already-valid newer target during an initial retry", async () => {
+			const stale = { ...target, url: "generic://dashboard.example/stale" };
+			const valid = { ...target, id: 99 };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([stale, valid]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ ...stale, enabled: false }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 99 });
+			expect(String(fetchSpy.mock.calls[1]?.[0])).toBe(
+				"http://qui.test/api/notifications/targets/42",
+			);
+			expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toMatchObject({
+				enabled: false,
+			});
+		});
+
+		it("recovers a valid newer target after a lost POST response", async () => {
+			const stale = { ...target, url: "generic://dashboard.example/stale" };
+			const valid = { ...target, id: 99 };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: "upstream response lost" }), {
+						status: 502,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([stale, valid]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ ...stale, enabled: false }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 99 });
+			expect(fetchSpy).toHaveBeenCalledTimes(4);
+		});
+
+		it("preserves a successful POST when stale-target cleanup cannot finish", async () => {
+			const stale = { ...target, url: "generic://dashboard.example/stale" };
+			const valid = { ...target, id: 99 };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(valid), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([stale, valid]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: "cleanup failed" }), {
+						status: 500,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([stale, valid]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 99, cleanupPending: true });
+			expect(fetchSpy).toHaveBeenCalledTimes(5);
+		});
+
 		it("reports canonical success when duplicate cleanup remains pending", async () => {
 			const duplicate = { ...target, id: 99, url: "generic://dashboard.example/stale" };
 			fetchSpy

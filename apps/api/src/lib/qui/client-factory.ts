@@ -800,8 +800,8 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			const reconcile = async (
 				targets: NotificationTarget[],
 			): Promise<{ target: NotificationTarget; cleanupPending: boolean } | null> => {
-				const matches = targets.filter(isOwned).sort((left, right) => left.id - right.id);
-				const primary = matches[0];
+				let matches = targets.filter(isOwned).sort((left, right) => left.id - right.id);
+				const primary = matches.find(matchesDesired) ?? matches[0];
 				if (!primary) return null;
 
 				let reconciled = primary;
@@ -814,11 +814,21 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					} catch (updateError) {
 						// A lost response can happen after qui commits the PUT.
 						// Re-read before surfacing a retryable upstream failure.
-						const afterUpdate = (await listTargets()).find((target) => target.id === primary.id);
-						if (!afterUpdate || !matchesDesired(afterUpdate)) {
+						// A concurrent registration may also have created a
+						// different owned target that already satisfies the
+						// desired state; prefer that valid target over a false
+						// total failure and reconcile the stale primary below.
+						matches = (await listTargets())
+							.filter(isOwned)
+							.sort((left, right) => left.id - right.id);
+						const afterUpdate = matches.find((target) => target.id === primary.id);
+						const validTarget =
+							(afterUpdate && matchesDesired(afterUpdate) ? afterUpdate : null) ??
+							matches.find(matchesDesired);
+						if (!validTarget) {
 							throw updateError;
 						}
-						reconciled = afterUpdate;
+						reconciled = validTarget;
 					}
 				}
 
@@ -827,7 +837,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				// every other enabled copy so stale secrets cannot keep firing
 				// rejected callbacks or consume the receiver's rate limit.
 				let cleanupPending = false;
-				for (const duplicate of matches.slice(1)) {
+				for (const duplicate of matches.filter((target) => target.id !== reconciled.id)) {
 					if (!duplicate.enabled) continue;
 					try {
 						const disabled = await updateTarget(duplicate.id, {
