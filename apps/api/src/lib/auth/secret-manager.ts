@@ -148,7 +148,10 @@ export class SecretManager {
 	 * If the path is read-only, the active secrets are sufficient for startup
 	 * and provide a deterministic identity across container restarts.
 	 */
-	getOrCreateEnvironmentSecrets(overrides: EnvironmentSecretOverrides): Secrets {
+	getOrCreateEnvironmentSecrets(
+		overrides: EnvironmentSecretOverrides,
+		deploymentScope: string,
+	): Secrets {
 		try {
 			return this.getOrCreateSecrets(overrides);
 		} catch (error) {
@@ -161,7 +164,7 @@ export class SecretManager {
 				? error.attemptedInstallationId
 				: createHash("sha256")
 						.update(
-							`arr-dashboard-environment-installation\0${overrides.encryptionKey}\0${overrides.sessionCookieSecret}`,
+							`arr-dashboard-environment-installation\0${deploymentScope}\0${overrides.encryptionKey}\0${overrides.sessionCookieSecret}`,
 						)
 						.digest("hex")
 						.slice(0, 32);

@@ -18,10 +18,13 @@ export const securityPlugin = fp(
 		const secretManager = new SecretManager(secretsPath);
 		const secrets =
 			app.config.ENCRYPTION_KEY && app.config.SESSION_COOKIE_SECRET
-				? secretManager.getOrCreateEnvironmentSecrets({
-						encryptionKey: app.config.ENCRYPTION_KEY,
-						sessionCookieSecret: app.config.SESSION_COOKIE_SECRET,
-					})
+				? secretManager.getOrCreateEnvironmentSecrets(
+						{
+							encryptionKey: app.config.ENCRYPTION_KEY,
+							sessionCookieSecret: app.config.SESSION_COOKIE_SECRET,
+						},
+						`${databaseUrl}\0${app.config.APP_URL}`,
+					)
 				: secretManager.getOrCreateSecrets({
 						...(app.config.ENCRYPTION_KEY ? { encryptionKey: app.config.ENCRYPTION_KEY } : {}),
 						...(app.config.SESSION_COOKIE_SECRET
