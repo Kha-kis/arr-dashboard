@@ -838,6 +838,17 @@ describe("POST /qui/webhook-config/rotate", () => {
 		// not actually hashing the value before persisting it.
 		expect(persisted).toMatch(/^[a-f0-9]{64}$/);
 	});
+
+	it("does not rotate the secret when the callback URL is invalid", async () => {
+		mockPrisma.systemSettings.findUnique.mockResolvedValue({
+			externalUrl: "ftp://dashboard.example",
+		});
+
+		const res = await injectAuthenticated("POST", "/qui/webhook-config/rotate", { body: {} });
+
+		expect(res.statusCode).toBe(500);
+		expect(mockPrisma.user.update).not.toHaveBeenCalled();
+	});
 });
 
 describe("POST /qui/instances/:id/webhook-config/register", () => {
