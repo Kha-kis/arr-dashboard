@@ -102,20 +102,26 @@ export class SessionService {
 	async rotateActiveSession(
 		token: string,
 		userId: string,
-		rememberMe = false,
 		metadata?: SessionMetadata,
 		options?: SessionRotationOptions,
 	) {
 		const currentSessionId = hashToken(token);
 		const replacementToken = generateSessionToken();
 		const replacementSessionId = hashToken(replacementToken);
-		const ttlMs = rememberMe
-			? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60 * 1000
-			: this.env.SESSION_TTL_HOURS * 60 * 60 * 1000;
-		const expiresAt = new Date(Date.now() + ttlMs);
-		const now = new Date();
 
 		return this.prisma.$transaction(async (tx) => {
+			const currentSession = await tx.session.findUnique({
+				where: { id: currentSessionId },
+				select: {
+					userId: true,
+					expiresAt: true,
+				},
+			});
+			const now = new Date();
+			if (!currentSession || currentSession.userId !== userId || currentSession.expiresAt <= now) {
+				return null;
+			}
+
 			const consumed = await tx.session.deleteMany({
 				where: {
 					id: currentSessionId,
@@ -138,13 +144,13 @@ export class SessionService {
 				data: {
 					id: replacementSessionId,
 					userId,
-					expiresAt,
+					expiresAt: currentSession.expiresAt,
 					userAgent: metadata?.userAgent,
 					ipAddress: metadata?.ipAddress,
 				},
 			});
 
-			return { token: replacementToken, expiresAt };
+			return { token: replacementToken, expiresAt: currentSession.expiresAt };
 		});
 	}
 
@@ -269,10 +275,12 @@ export class SessionService {
 		return true;
 	}
 
-	attachCookie(reply: FastifyReply, token: string, rememberMe = false) {
-		const maxAgeSeconds = rememberMe
-			? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60
-			: this.env.SESSION_TTL_HOURS * 60 * 60;
+	attachCookie(reply: FastifyReply, token: string, rememberMe = false, expiresAt?: Date) {
+		const maxAgeSeconds = expiresAt
+			? Math.max(0, Math.ceil((expiresAt.getTime() - Date.now()) / 1000))
+			: rememberMe
+				? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60
+				: this.env.SESSION_TTL_HOURS * 60 * 60;
 
 		const options = BASE_COOKIE_OPTIONS(this.env, maxAgeSeconds);
 		reply.setCookie(this.env.SESSION_COOKIE_NAME, token, {

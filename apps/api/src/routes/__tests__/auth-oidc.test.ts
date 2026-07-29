@@ -6,15 +6,18 @@ import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
 
 const { mockSessionService } = vi.hoisted(() => ({
 	mockSessionService: {
-		createSession: vi
-			.fn()
-			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
-		createSessionIfAuthorized: vi
-			.fn()
-			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
-		rotateActiveSession: vi
-			.fn()
-			.mockResolvedValue({ token: "mock-session-token", id: "mock-session-id" }),
+		createSession: vi.fn().mockResolvedValue({
+			token: "mock-session-token",
+			expiresAt: new Date("2026-07-30T00:00:00.000Z"),
+		}),
+		createSessionIfAuthorized: vi.fn().mockResolvedValue({
+			token: "mock-session-token",
+			expiresAt: new Date("2026-07-30T00:00:00.000Z"),
+		}),
+		rotateActiveSession: vi.fn().mockResolvedValue({
+			token: "mock-session-token",
+			expiresAt: new Date("2026-07-30T00:00:00.000Z"),
+		}),
 		attachCookie: vi.fn(),
 		invalidateSession: vi.fn().mockResolvedValue(undefined),
 		clearCookie: vi.fn(),
@@ -163,14 +166,22 @@ beforeEach(async () => {
 
 	mockPrisma = createMockPrisma();
 	mockSessionService.rotateActiveSession.mockImplementation(
-		async (_token, _userId, _rememberMe, _metadata, options) => {
+		async (_token, _userId, _metadata, options) => {
 			await options?.onRotate?.(mockPrisma);
-			return { token: "mock-session-token", id: "mock-session-id" };
+			return {
+				token: "mock-session-token",
+				expiresAt: new Date("2026-07-30T00:00:00.000Z"),
+			};
 		},
 	);
 	mockSessionService.createSessionIfAuthorized.mockImplementation(
 		async (_userId, _rememberMe, _metadata, authorize) =>
-			(await authorize(mockPrisma)) ? { token: "mock-session-token", id: "mock-session-id" } : null,
+			(await authorize(mockPrisma))
+				? {
+						token: "mock-session-token",
+						expiresAt: new Date("2026-07-30T00:00:00.000Z"),
+					}
+				: null,
 	);
 
 	app = Fastify();
@@ -379,7 +390,6 @@ describe("GET /auth/oidc/callback", () => {
 		expect(mockSessionService.rotateActiveSession).toHaveBeenCalledWith(
 			"admin-session-token",
 			"admin-user",
-			true,
 			expect.any(Object),
 			{
 				onRotate: expect.any(Function),
@@ -490,9 +500,14 @@ describe("GET /auth/oidc/callback", () => {
 		expect(mockSessionService.rotateActiveSession).toHaveBeenCalledWith(
 			"admin-session-token",
 			"admin-user",
-			true,
 			expect.any(Object),
 			undefined,
+		);
+		expect(mockSessionService.attachCookie).toHaveBeenCalledWith(
+			expect.anything(),
+			"mock-session-token",
+			true,
+			new Date("2026-07-30T00:00:00.000Z"),
 		);
 	});
 

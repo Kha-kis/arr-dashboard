@@ -531,7 +531,6 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				? await app.sessionService.rotateActiveSession(
 						request.sessionToken!,
 						user.id,
-						true,
 						metadata,
 						replaceOidcLink
 							? {
@@ -575,7 +574,12 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						: "This OIDC identity is no longer linked. Sign in with another method and try again.",
 				});
 			}
-			app.sessionService.attachCookie(reply, session.token, true);
+			app.sessionService.attachCookie(
+				reply,
+				session.token,
+				true,
+				isAccountAction ? session.expiresAt : undefined,
+			);
 
 			// Pre-warm connections to ARR instances in background (don't await)
 			warmConnectionsForUser(app, user.id).catch((err) => {
