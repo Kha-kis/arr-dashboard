@@ -837,11 +837,18 @@ describe("POST /qui/webhook-config/rotate", () => {
 
 describe("POST /qui/instances/:id/webhook-config/register", () => {
 	it("keys target ownership by the local installation and upstream qUI deployment", () => {
-		const first = buildQuiNotificationTargetName("installation-a", "http://qui.test/");
-		expect(first).toBe(buildQuiNotificationTargetName("installation-a", "http://QUI.test"));
-		expect(first).not.toBe(buildQuiNotificationTargetName("installation-b", "http://qui.test"));
+		const first = buildQuiNotificationTargetName("installation-a", "user-1", "http://qui.test/");
+		expect(first).toBe(
+			buildQuiNotificationTargetName("installation-a", "user-1", "http://QUI.test"),
+		);
 		expect(first).not.toBe(
-			buildQuiNotificationTargetName("installation-a", "http://other-qui.test"),
+			buildQuiNotificationTargetName("installation-b", "user-1", "http://qui.test"),
+		);
+		expect(first).not.toBe(
+			buildQuiNotificationTargetName("installation-a", "user-2", "http://qui.test"),
+		);
+		expect(first).not.toBe(
+			buildQuiNotificationTargetName("installation-a", "user-1", "http://other-qui.test"),
 		);
 	});
 
@@ -889,7 +896,9 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(res.statusCode).toBe(200);
 		expect(JSON.parse(res.payload)).toMatchObject({ ok: true, quiTargetId: 42 });
 		const call = mockQuiClient.ensureNotificationTarget.mock.calls[0]?.[0];
-		expect(call.name).toBe(buildQuiNotificationTargetName("installation-1", "http://qui.test"));
+		expect(call.name).toBe(
+			buildQuiNotificationTargetName("installation-1", "user-1", "http://qui.test"),
+		);
 		const targetUrl = new URL(call.url);
 		expect(targetUrl.protocol).toBe("generic:");
 		expect(targetUrl.host).toBe("arr-dashboard.test:3000");

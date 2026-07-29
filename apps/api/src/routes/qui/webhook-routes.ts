@@ -10,13 +10,17 @@ import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { QUI_INSTANCE_PARAM, safeParseJson } from "./qui-shared.js";
 
-export function buildQuiNotificationTargetName(installationId: string, quiBaseUrl: string): string {
+export function buildQuiNotificationTargetName(
+	installationId: string,
+	userId: string,
+	quiBaseUrl: string,
+): string {
 	const deploymentUrl = new URL(quiBaseUrl);
 	deploymentUrl.hash = "";
 	deploymentUrl.search = "";
 	deploymentUrl.pathname = deploymentUrl.pathname.replace(/\/+$/, "");
 	const deploymentId = createHash("sha256")
-		.update(deploymentUrl.toString())
+		.update(`${userId}\0${deploymentUrl.toString()}`)
 		.digest("hex")
 		.slice(0, 24);
 	return `arr-dashboard-${installationId}-${deploymentId}`;
@@ -247,7 +251,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 
 				try {
 					const created = await client.ensureNotificationTarget({
-						name: buildQuiNotificationTargetName(app.installationId, instance.baseUrl),
+						name: buildQuiNotificationTargetName(app.installationId, userId, instance.baseUrl),
 						url: targetUrl,
 						eventTypes: body.eventTypes,
 						enabled: true,
