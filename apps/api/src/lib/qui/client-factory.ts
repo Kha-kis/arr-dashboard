@@ -779,6 +779,13 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				}
 			};
 			const desiredCallbackIdentity = callbackIdentity(url);
+			const desiredSecret = (() => {
+				try {
+					return new URL(url).searchParams.get("secret");
+				} catch {
+					return null;
+				}
+			})();
 			const isOwned = (target: NotificationTarget): boolean => {
 				if (target.name === name) return true;
 				try {
@@ -789,6 +796,8 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					return (
 						target.name === "arr-dashboard" &&
 						!targetUrl.searchParams.has("owner") &&
+						desiredSecret !== null &&
+						targetUrl.searchParams.get("secret") === desiredSecret &&
 						desiredCallbackIdentity !== null &&
 						callbackIdentity(target.url) === desiredCallbackIdentity
 					);

@@ -558,16 +558,21 @@ describe("createQuiClient", () => {
 		it("upgrades a matching pre-owner arr-dashboard target in place", async () => {
 			const legacyTarget = {
 				...target,
-				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=old",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current",
+			};
+			const otherUserLegacyTarget = {
+				...legacyTarget,
+				id: 7,
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=other-user",
 			};
 			const desiredTarget = {
 				...legacyTarget,
 				name: "arr-dashboard-installation-deployment",
-				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=new&instanceId=qui-1&deploymentId=deployment-1&owner=owner-1",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current&instanceId=qui-1&deploymentId=deployment-1&owner=owner-1",
 			};
 			fetchSpy
 				.mockResolvedValueOnce(
-					new Response(JSON.stringify([legacyTarget]), {
+					new Response(JSON.stringify([otherUserLegacyTarget, legacyTarget]), {
 						status: 200,
 						headers: { "content-type": "application/json" },
 					}),
@@ -595,6 +600,52 @@ describe("createQuiClient", () => {
 				name: desiredTarget.name,
 				url: desiredTarget.url,
 			});
+		});
+
+		it("leaves ambiguous legacy targets at a shared callback untouched", async () => {
+			const otherUserLegacyTarget = {
+				...target,
+				id: 7,
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=other-user",
+			};
+			const desiredTarget = {
+				...target,
+				name: "arr-dashboard-installation-deployment",
+				url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current&instanceId=qui-1&deploymentId=deployment-1&owner=owner-1",
+			};
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([otherUserLegacyTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(desiredTarget), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([otherUserLegacyTarget, desiredTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: desiredTarget.name,
+					url: desiredTarget.url,
+					ownerId: "owner-1",
+					eventTypes: desiredTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+			expect(fetchSpy.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
 		});
 
 		it("updates an existing target instead of creating a duplicate", async () => {
