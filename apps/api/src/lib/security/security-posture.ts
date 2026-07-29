@@ -100,6 +100,8 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 	const appUrlSource = configuredPublicAppUrl ? "External URL" : "APP_URL";
 	const appUrlProtocol = safeProtocol(appUrl);
 	const appUrlIsHttps = appUrlProtocol === "https:";
+	const oidcAppUrlProtocol = safeProtocol(input.env.APP_URL);
+	const oidcAppUrlIsHttps = oidcAppUrlProtocol === "https:";
 
 	const checks: SecurityCheck[] = [];
 
@@ -271,6 +273,22 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 			label: "App URL",
 			detail: appUrl,
 			severity: "healthy",
+		});
+	}
+
+	// OIDC still validates and generates redirect URIs from APP_URL. An
+	// External URL can make public links healthy without fixing that separate
+	// callback origin, so keep the OIDC-specific dependency visible.
+	if (input.oidcEnabled && !oidcAppUrlIsHttps) {
+		checks.push({
+			id: "oidc-app-url",
+			label: "OIDC App URL",
+			detail: `OIDC callbacks use APP_URL, which uses ${
+				oidcAppUrlProtocol ?? "an unrecognized protocol"
+			}.`,
+			severity: "warning",
+			remediation:
+				"Set APP_URL in the container environment to the public https:// origin used by your OIDC provider.",
 		});
 	}
 

@@ -53,7 +53,7 @@ decide whether to act. We deliberately separate two kinds of finding:
 | Severity | Meaning | Examples |
 |---|---|---|
 | `misconfigured` | Cannot work / will lock users out / actively harms | Secure cookies + no trust proxy; users exist but no auth methods active |
-| `warning` | Works fine; an observable hardening opportunity exists | Password-only auth; relaxed password policy in production; >14-day session TTL in production; non-https effective public URL in production |
+| `warning` | Works fine; an observable hardening opportunity exists | Password-only auth; relaxed password policy in production; >14-day session TTL in production; non-https effective public URL; OIDC with non-https `APP_URL` |
 | `healthy` | No issue detected | — |
 
 Hardening warnings must never be promoted to `misconfigured`. Doing so
