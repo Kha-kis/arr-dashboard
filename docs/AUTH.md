@@ -144,6 +144,7 @@ const plaintext = app.encryptor.decrypt({ value, iv });
 
 - `ENCRYPTION_KEY`: 32 bytes hex
 - `SESSION_COOKIE_SECRET`: 32 bytes hex
+- `installationId`: local deployment identity (excluded from app backup payloads)
 - Persisted to `/config/secrets.json` (Docker) or `./secrets.json` (dev)
 
 ### Session Invalidation Pattern

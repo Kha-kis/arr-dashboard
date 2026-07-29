@@ -8,7 +8,18 @@ const log = loggers.auth;
 export interface Secrets {
 	encryptionKey: string;
 	sessionCookieSecret: string;
+	/**
+	 * Identifies this local installation independently of database contents.
+	 * Backups intentionally omit it so restoring a database cannot make two
+	 * live dashboard installations claim the same external resources.
+	 */
+	installationId: string;
 }
+
+type StoredSecrets = Omit<Secrets, "installationId"> & {
+	installationId?: unknown;
+	[key: string]: unknown;
+};
 
 /**
  * Known legacy secrets paths from previous versions.
@@ -38,11 +49,11 @@ export class SecretManager {
 		// Try to load existing secrets (no existence check to avoid TOCTOU race)
 		try {
 			const content = readFileSync(this.secretsPath, "utf-8");
-			const secrets = JSON.parse(content) as Secrets;
+			const secrets: unknown = JSON.parse(content);
 
 			// Validate loaded secrets
 			if (this.isValidSecrets(secrets)) {
-				return secrets;
+				return this.ensureInstallationId(secrets);
 			}
 
 			// Invalid format, will regenerate below
@@ -66,23 +77,11 @@ export class SecretManager {
 		const secrets: Secrets = {
 			encryptionKey: randomBytes(32).toString("hex"),
 			sessionCookieSecret: randomBytes(32).toString("hex"),
+			installationId: randomBytes(16).toString("hex"),
 		};
 
-		// Ensure directory exists (recursive is idempotent)
-		mkdirSync(dirname(this.secretsPath), { recursive: true });
-
-		// Persist to disk atomically (write to temp, then rename)
-		const tmpPath = `${this.secretsPath}.tmp`;
-		try {
-			writeFileSync(tmpPath, JSON.stringify(secrets, null, 2), {
-				mode: 0o600, // Read/write for owner only
-			});
-			renameSync(tmpPath, this.secretsPath);
-			log.info({ path: this.secretsPath }, "Generated new secrets");
-		} catch (error) {
-			log.error({ err: error, path: this.secretsPath }, "Failed to persist secrets");
-			throw new Error("Could not save secrets to disk");
-		}
+		this.persistSecrets(secrets);
+		log.info({ path: this.secretsPath }, "Generated new secrets");
 
 		return secrets;
 	}
@@ -100,7 +99,7 @@ export class SecretManager {
 
 			try {
 				const content = readFileSync(legacyPath, "utf-8");
-				const secrets = JSON.parse(content) as Secrets;
+				const secrets: unknown = JSON.parse(content);
 
 				if (!this.isValidSecrets(secrets)) {
 					log.warn({ legacyPath }, "Found legacy secrets file but format is invalid, skipping");
@@ -115,7 +114,7 @@ export class SecretManager {
 				mkdirSync(dirname(this.secretsPath), { recursive: true });
 				copyFileSync(legacyPath, this.secretsPath);
 
-				return secrets;
+				return this.ensureInstallationId(secrets);
 			} catch {
 				// File doesn't exist or can't be read — try next legacy path
 			}
@@ -124,7 +123,38 @@ export class SecretManager {
 		return null;
 	}
 
-	private isValidSecrets(secrets: unknown): secrets is Secrets {
+	private ensureInstallationId(secrets: StoredSecrets): Secrets {
+		if (
+			typeof secrets.installationId === "string" &&
+			/^[a-f0-9]{32}$/.test(secrets.installationId)
+		) {
+			return secrets as Secrets;
+		}
+
+		const upgraded: Secrets = {
+			...secrets,
+			installationId: randomBytes(16).toString("hex"),
+		};
+		this.persistSecrets(upgraded);
+		log.info({ path: this.secretsPath }, "Added local installation identity");
+		return upgraded;
+	}
+
+	private persistSecrets(secrets: Secrets): void {
+		mkdirSync(dirname(this.secretsPath), { recursive: true });
+		const tmpPath = `${this.secretsPath}.tmp`;
+		try {
+			writeFileSync(tmpPath, JSON.stringify(secrets, null, 2), {
+				mode: 0o600,
+			});
+			renameSync(tmpPath, this.secretsPath);
+		} catch (error) {
+			log.error({ err: error, path: this.secretsPath }, "Failed to persist secrets");
+			throw new Error("Could not save secrets to disk");
+		}
+	}
+
+	private isValidSecrets(secrets: unknown): secrets is StoredSecrets {
 		if (!secrets || typeof secrets !== "object") {
 			return false;
 		}

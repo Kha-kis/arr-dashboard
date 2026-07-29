@@ -30,7 +30,8 @@ export async function readSecrets(secretsPath: string): Promise<BackupData["secr
 
 /**
  * Write secrets to secrets.json with restrictive permissions (0o600)
- * Merges with existing secrets to preserve additional fields like backupPassword
+ * Merges with existing secrets to preserve deployment-local fields such as
+ * installationId, plus additional fields like backupPassword.
  * Only the owner can read/write the secrets file for enhanced security
  */
 export async function writeSecrets(
@@ -38,7 +39,8 @@ export async function writeSecrets(
 	secrets: BackupData["secrets"],
 ): Promise<void> {
 	try {
-		// Read existing secrets to preserve fields not in backup (e.g., backupPassword)
+		// Preserve fields deliberately omitted from backups (installationId)
+		// as well as other local metadata (for example backupPassword).
 		let existingSecrets: Record<string, unknown> = {};
 		try {
 			const existingContent = await fs.readFile(secretsPath, "utf-8");

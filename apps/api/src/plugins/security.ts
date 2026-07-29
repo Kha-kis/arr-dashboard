@@ -12,14 +12,18 @@ export const securityPlugin = fp(
 		const databaseUrl = app.config.DATABASE_URL!;
 		const secretsPath = resolveSecretsPath(databaseUrl);
 
-		// Get or generate secrets
+		// Always load the local secrets file because it also carries the
+		// installation identity. Unlike database backups, that identity stays
+		// with this deployment so restored clones cannot claim its resources.
+		const secretManager = new SecretManager(secretsPath);
+		const secrets = secretManager.getOrCreateSecrets();
+
+		// Get or generate cryptographic secrets
 		let encryptionKey = app.config.ENCRYPTION_KEY;
 		let sessionCookieSecret = app.config.SESSION_COOKIE_SECRET;
 
 		if (!encryptionKey || !sessionCookieSecret) {
 			app.log.info("Auto-generating secrets (not provided in environment)");
-			const secretManager = new SecretManager(secretsPath);
-			const secrets = secretManager.getOrCreateSecrets();
 			encryptionKey = encryptionKey || secrets.encryptionKey;
 			sessionCookieSecret = sessionCookieSecret || secrets.sessionCookieSecret;
 		}
@@ -42,6 +46,7 @@ export const securityPlugin = fp(
 
 		app.decorate("encryptor", encryptor);
 		app.decorate("sessionService", sessionService);
+		app.decorate("installationId", secrets.installationId);
 	},
 	{
 		name: "security",
