@@ -84,6 +84,7 @@ export interface SecurityPostureResult {
 		passwordEnabled: boolean;
 		passwordUserCount: number;
 		oidcEnabled: boolean;
+		oidcProviderEnabled: boolean;
 		passkeyCount: number;
 	};
 }
@@ -321,6 +322,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 			passwordEnabled,
 			passwordUserCount: input.passwordUserCount,
 			oidcEnabled: input.oidcEnabled,
+			oidcProviderEnabled,
 			passkeyCount: input.passkeyCount,
 		},
 	};

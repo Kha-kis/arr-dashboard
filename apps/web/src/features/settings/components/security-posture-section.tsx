@@ -203,7 +203,7 @@ function AuthSummary({ posture }: { posture: SecurityPosture }) {
 			<AuthBadge
 				icon={KeyRound}
 				label="Password auth"
-				active={posture.auth.passwordEnabled}
+				status={posture.auth.passwordEnabled ? "active" : "inactive"}
 				detail={
 					posture.auth.passwordEnabled
 						? `${posture.auth.passwordUserCount} user${
@@ -215,13 +215,25 @@ function AuthSummary({ posture }: { posture: SecurityPosture }) {
 			<AuthBadge
 				icon={UserCheck}
 				label="OIDC"
-				active={posture.auth.oidcEnabled}
-				detail={posture.auth.oidcEnabled ? "Provider enabled" : "Not configured"}
+				status={
+					posture.auth.oidcEnabled
+						? "active"
+						: posture.auth.oidcProviderEnabled
+							? "warning"
+							: "inactive"
+				}
+				detail={
+					posture.auth.oidcEnabled
+						? "Provider linked"
+						: posture.auth.oidcProviderEnabled
+							? "Provider enabled; admin not linked"
+							: "Not configured"
+				}
 			/>
 			<AuthBadge
 				icon={Fingerprint}
 				label="Passkeys"
-				active={posture.auth.passkeyCount > 0}
+				status={posture.auth.passkeyCount > 0 ? "active" : "inactive"}
 				detail={
 					posture.auth.passkeyCount > 0
 						? `${posture.auth.passkeyCount} credential${posture.auth.passkeyCount === 1 ? "" : "s"}`
@@ -235,25 +247,33 @@ function AuthSummary({ posture }: { posture: SecurityPosture }) {
 function AuthBadge({
 	icon: Icon,
 	label,
-	active,
+	status,
 	detail,
 }: {
 	icon: typeof KeyRound;
 	label: string;
-	active: boolean;
+	status: "active" | "warning" | "inactive";
 	detail: string;
 }) {
 	return (
 		<div
 			className={cn(
 				"flex items-start gap-3 rounded-lg border p-3 transition-colors",
-				active ? "border-emerald-500/30 bg-emerald-500/5" : "border-border/40 bg-muted/10",
+				status === "active"
+					? "border-emerald-500/30 bg-emerald-500/5"
+					: status === "warning"
+						? "border-amber-500/30 bg-amber-500/5"
+						: "border-border/40 bg-muted/10",
 			)}
 		>
 			<Icon
 				className={cn(
 					"h-4 w-4 shrink-0 mt-0.5",
-					active ? "text-emerald-500" : "text-muted-foreground",
+					status === "active"
+						? "text-emerald-500"
+						: status === "warning"
+							? "text-amber-500"
+							: "text-muted-foreground",
 				)}
 				aria-hidden="true"
 			/>
