@@ -878,7 +878,7 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(res.statusCode).toBe(200);
 		expect(JSON.parse(res.payload)).toMatchObject({ ok: true, quiTargetId: 42 });
 		const call = mockQuiClient.ensureNotificationTarget.mock.calls[0]?.[0];
-		expect(call.name).toBe("arr-dashboard");
+		expect(call.name).toBe("arr-dashboard-qui-1");
 		const targetUrl = new URL(call.url);
 		expect(targetUrl.protocol).toBe("generic:");
 		expect(targetUrl.host).toBe("arr-dashboard.test:3000");

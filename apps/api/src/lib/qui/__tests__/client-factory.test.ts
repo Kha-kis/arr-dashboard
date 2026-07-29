@@ -512,6 +512,46 @@ describe("createQuiClient", () => {
 			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
 		});
 
+		it("leaves targets owned by another dashboard instance untouched", async () => {
+			const legacyTarget = { ...target, id: 7, name: "arr-dashboard" };
+			const ownedTarget = { ...target, name: "arr-dashboard-qui-1" };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([legacyTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(ownedTarget), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([legacyTarget, ownedTarget]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: ownedTarget.name,
+					url: ownedTarget.url,
+					eventTypes: ownedTarget.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+			expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toMatchObject({
+				name: ownedTarget.name,
+			});
+			expect(fetchSpy.mock.calls.some(([, init]) => init?.method === "PUT")).toBe(false);
+		});
+
 		it("updates an existing target instead of creating a duplicate", async () => {
 			fetchSpy
 				.mockResolvedValueOnce(
