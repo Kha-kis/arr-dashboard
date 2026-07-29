@@ -109,7 +109,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 		: "an unrecognized protocol";
 	const appUrlIsHttps = appUrlProtocol === "https:";
 	const appUrlIsValidPublicBase = isValidPublicBaseUrl(appUrl);
-	const oidcRedirectUri = input.oidcRedirectUri?.trim() || input.env.APP_URL;
+	const oidcRedirectUri = input.oidcRedirectUri || input.env.APP_URL;
 	const oidcRedirectUriProtocol = safeProtocol(oidcRedirectUri);
 	const oidcRedirectUriProtocolLabel = oidcRedirectUriProtocol
 		? oidcRedirectUriProtocol.slice(0, -1).toUpperCase()
@@ -408,7 +408,9 @@ function isValidOidcRedirectUri(value: string): boolean {
 function hasUnsafeUrlCharacters(value: string): boolean {
 	for (const character of value) {
 		const codePoint = character.codePointAt(0) ?? 0;
-		if (character === "\\" || codePoint <= 0x1f || codePoint === 0x7f) return true;
+		if (character === "\\" || character.trim() === "" || codePoint <= 0x1f || codePoint === 0x7f) {
+			return true;
+		}
 	}
 	return false;
 }

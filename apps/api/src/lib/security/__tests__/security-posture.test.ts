@@ -306,6 +306,7 @@ describe("evaluateSecurityPosture", () => {
 			"https://admin:secret@arr.example.com",
 			"https://arr.example.com\\proxy",
 			"https://arr.example.com/\tproxy",
+			"https://arr.example.com/base path",
 			"https://arr.example.com?source=proxy",
 			"https://arr.example.com#settings",
 			"https://arr.example.com///",
@@ -383,9 +384,12 @@ describe("evaluateSecurityPosture", () => {
 		});
 
 		it.each([
+			"   ",
+			" https://arr.example.com/auth/oidc/callback ",
 			"https://arr.example.com/auth/oidc/callback#fragment",
 			"https://admin:secret@arr.example.com/auth/oidc/callback",
 			"https://arr.example.com\\auth\\oidc\\callback",
+			"https://arr.example.com/auth callback",
 		])("warns about an invalid HTTPS OIDC callback: %s", (oidcRedirectUri) => {
 			const result = evaluateSecurityPosture(
 				baseInput({

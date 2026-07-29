@@ -187,6 +187,7 @@ describe("GET /system/security-posture", () => {
 		"https://admin:secret@arr.example.com",
 		"https://arr.example.com\\proxy",
 		"https://arr.example.com/\tproxy",
+		"https://arr.example.com/base path",
 		"https://arr.example.com?source=proxy",
 	])(
 		"warns when a legacy persisted External URL is not a valid public base: %s",
