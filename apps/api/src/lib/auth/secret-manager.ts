@@ -52,6 +52,7 @@ const LEGACY_SECRETS_PATHS = [
 export class SecretManager {
 	private readonly secretsPath: string;
 	private _secretsSynchronized = true;
+	private _installationIdIsPersistent = true;
 
 	constructor(secretsPath: string) {
 		this.secretsPath = secretsPath;
@@ -61,11 +62,17 @@ export class SecretManager {
 		return this._secretsSynchronized;
 	}
 
+	get installationIdIsPersistent(): boolean {
+		return this._installationIdIsPersistent;
+	}
+
 	/**
 	 * Get or create secrets. If secrets file doesn't exist, checks legacy paths
 	 * for migration before generating new secrets.
 	 */
 	getOrCreateSecrets(overrides: SecretOverrides = {}): Secrets {
+		this._secretsSynchronized = true;
+		this._installationIdIsPersistent = true;
 		if (overrides.encryptionKey && !isValidEncryptionKey(overrides.encryptionKey)) {
 			throw new Error("ENCRYPTION_KEY must decode to 32 bytes");
 		}
@@ -160,6 +167,7 @@ export class SecretManager {
 			}
 
 			this._secretsSynchronized = false;
+			this._installationIdIsPersistent = error.installationIdWasPersistent;
 			const installationId = error.installationIdWasPersistent
 				? error.attemptedInstallationId
 				: createHash("sha256")

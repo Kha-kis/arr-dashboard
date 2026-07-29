@@ -160,6 +160,7 @@ beforeEach(async () => {
 	app.decorate("prisma", mockPrisma);
 	app.decorate("encryptor", createMockEncryptor("test-api-key"));
 	app.decorate("installationId", "installation-1");
+	app.decorate("installationIdIsPersistent", true);
 	app.decorate("arrClientFactory", { rawRequest: vi.fn() });
 	// Phase 5.1 — webhook-config routes resolve the public base URL via
 	// `app.config.APP_URL`. The real plugin wires this from validated env;
@@ -866,6 +867,18 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		// with the request preconditions. The frontend uses this to prompt
 		// "Rotate first" instead of failing silently.
 		expect(res.statusCode).toBe(409);
+		expect(mockQuiClient.ensureNotificationTarget).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when the installation identity is not persistent", async () => {
+		app.installationIdIsPersistent = false;
+		const res = await injectAuthenticated("POST", "/qui/instances/qui-1/webhook-config/register", {
+			body: { secret: "x".repeat(32) },
+		});
+
+		expect(res.statusCode).toBe(503);
+		expect(JSON.parse(res.payload).error).toMatch(/persistent installation identity/i);
+		expect(mockRequireQuiInstance).not.toHaveBeenCalled();
 		expect(mockQuiClient.ensureNotificationTarget).not.toHaveBeenCalled();
 	});
 
