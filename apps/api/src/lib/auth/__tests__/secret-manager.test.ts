@@ -190,6 +190,25 @@ describe("SecretManager installation identity", () => {
 		expect(first.installationId).not.toBe(second.installationId);
 	});
 
+	it("starts from readable legacy secrets when the installation ID cannot be persisted", async () => {
+		const secretsPath = await createSecretsPath();
+		const persisted = {
+			encryptionKey: "a".repeat(64),
+			sessionCookieSecret: "b".repeat(64),
+		};
+		await writeFile(secretsPath, JSON.stringify(persisted));
+		await mkdir(`${secretsPath}.tmp`);
+
+		const manager = new SecretManager(secretsPath);
+		const active = manager.getOrCreateSecrets();
+
+		expect(active).toMatchObject(persisted);
+		expect(active.installationId).toMatch(/^[a-f0-9]{32}$/);
+		expect(manager.installationIdIsPersistent).toBe(false);
+		expect(manager.secretsSynchronized).toBe(true);
+		expect(JSON.parse(await readFile(secretsPath, "utf8"))).toEqual(persisted);
+	});
+
 	it("does not expose a partially managed secret when persistence fails", async () => {
 		const directory = await mkdtemp(join(tmpdir(), "arr-dashboard-secrets-"));
 		tempDirectories.push(directory);

@@ -182,7 +182,7 @@ export interface QuiClient {
 		ownerId?: string;
 		eventTypes?: string[];
 		enabled?: boolean;
-	}): Promise<{ id: number }>;
+	}): Promise<{ id: number; cleanupPending?: boolean }>;
 	/**
 	 * Trigger a qui dir-scan for a specific path. Maps to qui's
 	 * `POST /api/dirscan/webhook` endpoint, which accepts a simple
@@ -765,11 +765,33 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				target.url === url &&
 				target.enabled === enabled &&
 				sameEventTypes(target.eventTypes);
+			const callbackIdentity = (value: string): string | null => {
+				try {
+					const callback = new URL(value);
+					callback.hash = "";
+					for (const key of ["secret", "instanceId", "deploymentId", "owner"]) {
+						callback.searchParams.delete(key);
+					}
+					callback.searchParams.sort();
+					return callback.toString();
+				} catch {
+					return null;
+				}
+			};
+			const desiredCallbackIdentity = callbackIdentity(url);
 			const isOwned = (target: NotificationTarget): boolean => {
 				if (target.name === name) return true;
-				if (!ownerId) return false;
 				try {
-					return new URL(target.url).searchParams.get("owner") === ownerId;
+					const targetUrl = new URL(target.url);
+					if (ownerId && targetUrl.searchParams.get("owner") === ownerId) {
+						return true;
+					}
+					return (
+						target.name === "arr-dashboard" &&
+						!targetUrl.searchParams.has("owner") &&
+						desiredCallbackIdentity !== null &&
+						callbackIdentity(target.url) === desiredCallbackIdentity
+					);
 				} catch {
 					return false;
 				}
@@ -777,7 +799,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 
 			const reconcile = async (
 				targets: NotificationTarget[],
-			): Promise<NotificationTarget | null> => {
+			): Promise<{ target: NotificationTarget; cleanupPending: boolean } | null> => {
 				const matches = targets.filter(isOwned).sort((left, right) => left.id - right.id);
 				const primary = matches[0];
 				if (!primary) return null;
@@ -804,6 +826,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				// Keep the oldest as the canonical registration and disable
 				// every other enabled copy so stale secrets cannot keep firing
 				// rejected callbacks or consume the receiver's rate limit.
+				let cleanupPending = false;
 				for (const duplicate of matches.slice(1)) {
 					if (!duplicate.enabled) continue;
 					try {
@@ -816,19 +839,37 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 						if (disabled.enabled) {
 							throw new Error("qUI did not disable a duplicate notification target");
 						}
-					} catch (disableError) {
-						const afterDisable = (await listTargets()).find((target) => target.id === duplicate.id);
-						if (afterDisable?.enabled !== false) {
-							throw disableError;
+					} catch {
+						let cleanupConfirmed = false;
+						try {
+							const afterDisable = (await listTargets()).find(
+								(target) => target.id === duplicate.id,
+							);
+							cleanupConfirmed = afterDisable?.enabled === false;
+						} catch {
+							// The canonical target is already valid. Preserve
+							// that success and report cleanup as retryable.
+						}
+						if (!cleanupConfirmed) {
+							cleanupPending = true;
+							ctx.log.warn(
+								{ targetId: duplicate.id },
+								"qUI notification target registered but duplicate cleanup remains pending",
+							);
 						}
 					}
 				}
 
-				return reconciled;
+				return { target: reconciled, cleanupPending };
 			};
 
 			const existing = await reconcile(await listTargets());
-			if (existing) return { id: existing.id };
+			if (existing) {
+				return {
+					id: existing.target.id,
+					...(existing.cleanupPending ? { cleanupPending: true } : {}),
+				};
+			}
 
 			let created: NotificationTarget;
 			try {
@@ -843,7 +884,12 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				// registration failed; the next click must not create another.
 				try {
 					const recovered = await reconcile(await listTargets());
-					if (recovered) return { id: recovered.id };
+					if (recovered) {
+						return {
+							id: recovered.target.id,
+							...(recovered.cleanupPending ? { cleanupPending: true } : {}),
+						};
+					}
 				} catch {
 					// Preserve the original, already-redacted create failure.
 				}
@@ -856,10 +902,13 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			try {
 				afterCreate = await listTargets();
 			} catch {
-				return { id: created.id };
+				return { id: created.id, cleanupPending: true };
 			}
 			const reconciled = await reconcile(afterCreate);
-			return { id: reconciled?.id ?? created.id };
+			return {
+				id: reconciled?.target.id ?? created.id,
+				...(reconciled?.cleanupPending ? { cleanupPending: true } : {}),
+			};
 		},
 
 		async triggerDirScan(path) {

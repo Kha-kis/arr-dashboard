@@ -92,7 +92,31 @@ export class SecretManager {
 
 			// Validate loaded secrets
 			if (this.isValidSecrets(secrets)) {
-				return this.applyOverrides(this.ensureInstallationId(secrets), overrides);
+				try {
+					return this.applyOverrides(this.ensureInstallationId(secrets), overrides);
+				} catch (error) {
+					if (!(error instanceof SecretsPersistenceError)) {
+						throw error;
+					}
+
+					const resolved: Secrets = {
+						...secrets,
+						...(overrides.encryptionKey ? { encryptionKey: overrides.encryptionKey } : {}),
+						...(overrides.sessionCookieSecret
+							? { sessionCookieSecret: overrides.sessionCookieSecret }
+							: {}),
+						installationId: error.attemptedInstallationId,
+					};
+					this._installationIdIsPersistent = error.installationIdWasPersistent;
+					this._secretsSynchronized =
+						resolved.encryptionKey === secrets.encryptionKey &&
+						resolved.sessionCookieSecret === secrets.sessionCookieSecret;
+					log.warn(
+						{ path: this.secretsPath },
+						"Secrets path is not writable; using readable secrets without synchronized local metadata",
+					);
+					return resolved;
+				}
 			}
 
 			// Missing or invalid cryptographic fields are resolved below while

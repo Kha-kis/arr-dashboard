@@ -945,6 +945,30 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		expect(call.enabled).toBe(true);
 	});
 
+	it("reports partial success when stale target cleanup remains pending", async () => {
+		const secret = "a".repeat(32);
+		mockPrisma.user.findUniqueOrThrow.mockResolvedValue({
+			hashedQuiWebhookSecret: hashSecret(secret),
+		});
+		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
+		mockQuiClient.ensureNotificationTarget.mockResolvedValue({
+			id: 42,
+			cleanupPending: true,
+		});
+
+		const res = await injectAuthenticated("POST", "/qui/instances/qui-1/webhook-config/register", {
+			body: { secret },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(JSON.parse(res.payload)).toMatchObject({
+			ok: true,
+			quiTargetId: 42,
+			cleanupPending: true,
+			warning: expect.stringMatching(/cleanup remains pending/i),
+		});
+	});
+
 	it("rejects a stale plaintext secret that does not match the current stored hash", async () => {
 		mockPrisma.user.findUniqueOrThrow.mockResolvedValue({
 			hashedQuiWebhookSecret: hashSecret("current-secret-value"),

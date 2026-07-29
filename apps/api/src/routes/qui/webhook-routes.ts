@@ -293,7 +293,17 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 						eventTypes: body.eventTypes,
 						enabled: true,
 					});
-					return reply.send({ ok: true, quiTargetId: created.id });
+					return reply.send({
+						ok: true,
+						quiTargetId: created.id,
+						...(created.cleanupPending
+							? {
+									cleanupPending: true,
+									warning:
+										"Target registered, but stale duplicate cleanup remains pending. Retry registration to reconcile it.",
+								}
+							: {}),
+					});
 				} catch (err) {
 					// qUI/Shoutrrr errors can echo the rejected target URL. Sanitize
 					// before both logging and returning so the one-time plaintext
