@@ -36,7 +36,7 @@ const mockQuiClient = vi.hoisted(() => ({
 	addTrackers: vi.fn(),
 	removeTrackers: vi.fn(),
 	editTracker: vi.fn(),
-	createNotificationTarget: vi.fn(),
+	ensureNotificationTarget: vi.fn(),
 	triggerDirScan: vi.fn(),
 }));
 
@@ -844,7 +844,7 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		// with the request preconditions. The frontend uses this to prompt
 		// "Rotate first" instead of failing silently.
 		expect(res.statusCode).toBe(409);
-		expect(mockQuiClient.createNotificationTarget).not.toHaveBeenCalled();
+		expect(mockQuiClient.ensureNotificationTarget).not.toHaveBeenCalled();
 	});
 
 	it("rejects with 400 when the inline secret is missing or too short", async () => {
@@ -859,7 +859,7 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 		// rejecting at registration prevents the operator from wiring up an
 		// unguessable-yet-truncated value that the receiver would refuse anyway.
 		expect(res.statusCode).toBe(400);
-		expect(mockQuiClient.createNotificationTarget).not.toHaveBeenCalled();
+		expect(mockQuiClient.ensureNotificationTarget).not.toHaveBeenCalled();
 	});
 
 	it("forwards a Shoutrrr generic JSON URL containing the operator-supplied secret", async () => {
@@ -871,13 +871,13 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 			externalUrl: "http://arr-dashboard.test:3000",
 		});
 		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
-		mockQuiClient.createNotificationTarget.mockResolvedValue({ id: "target-42" });
+		mockQuiClient.ensureNotificationTarget.mockResolvedValue({ id: 42 });
 		const res = await injectAuthenticated("POST", "/qui/instances/qui-1/webhook-config/register", {
 			body: { secret, eventTypes: ["torrent_added"] },
 		});
 		expect(res.statusCode).toBe(200);
-		expect(JSON.parse(res.payload)).toMatchObject({ ok: true, quiTargetId: "target-42" });
-		const call = mockQuiClient.createNotificationTarget.mock.calls[0]?.[0];
+		expect(JSON.parse(res.payload)).toMatchObject({ ok: true, quiTargetId: 42 });
+		const call = mockQuiClient.ensureNotificationTarget.mock.calls[0]?.[0];
 		expect(call.name).toBe("arr-dashboard");
 		const targetUrl = new URL(call.url);
 		expect(targetUrl.protocol).toBe("generic:");
@@ -901,7 +901,7 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 
 		expect(res.statusCode).toBe(409);
 		expect(JSON.parse(res.payload).error).toMatch(/stale/i);
-		expect(mockQuiClient.createNotificationTarget).not.toHaveBeenCalled();
+		expect(mockQuiClient.ensureNotificationTarget).not.toHaveBeenCalled();
 	});
 
 	it("returns 502 when qui rejects the registration call", async () => {
@@ -910,7 +910,7 @@ describe("POST /qui/instances/:id/webhook-config/register", () => {
 			hashedQuiWebhookSecret: hashSecret(secret),
 		});
 		mockRequireQuiInstance.mockResolvedValue(makeQuiInstance());
-		mockQuiClient.createNotificationTarget.mockImplementation(({ url }: { url: string }) =>
+		mockQuiClient.ensureNotificationTarget.mockImplementation(({ url }: { url: string }) =>
 			Promise.reject(new Error(`qui refused target ${url}: 409`)),
 		);
 		const res = await injectAuthenticated("POST", "/qui/instances/qui-1/webhook-config/register", {

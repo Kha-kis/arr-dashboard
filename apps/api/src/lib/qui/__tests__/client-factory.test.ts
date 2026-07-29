@@ -471,19 +471,200 @@ describe("createQuiClient", () => {
 		});
 	});
 
-	describe("createNotificationTarget error redaction", () => {
+	describe("ensureNotificationTarget", () => {
+		const target = {
+			id: 42,
+			name: "arr-dashboard",
+			url: "generic://dashboard.example/api/webhooks/qui?template=json&secret=current",
+			enabled: true,
+			eventTypes: ["torrent_added"],
+		};
+
+		it("creates the target when qUI's empty list is encoded as null", async () => {
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response("null", {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify(target), {
+						status: 201,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("POST");
+		});
+
+		it("updates an existing target instead of creating a duplicate", async () => {
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ ...target, url: "generic://dashboard.test/hook" }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			const result = await client.ensureNotificationTarget({
+				name: "arr-dashboard",
+				url: "generic://dashboard.test/hook",
+				eventTypes: ["torrent_added"],
+			});
+
+			expect(result).toEqual({ id: 42 });
+			expect(fetchSpy).toHaveBeenCalledTimes(2);
+			expect(String(fetchSpy.mock.calls[1]?.[0])).toBe(
+				"http://qui.test/api/notifications/targets/42",
+			);
+			expect(fetchSpy.mock.calls[1]?.[1]?.method).toBe("PUT");
+		});
+
+		it("accepts a committed update when qUI loses the PUT response", async () => {
+			const desiredUrl = "generic://dashboard.test/hook";
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: "upstream response lost" }), {
+						status: 502,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([{ ...target, url: desiredUrl }]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: desiredUrl,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+		});
+
+		it("keeps one canonical target and disables enabled duplicates", async () => {
+			const duplicate = { ...target, id: 99, url: "generic://dashboard.example/stale" };
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target, duplicate]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ ...duplicate, enabled: false }), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			const result = await client.ensureNotificationTarget({
+				name: target.name,
+				url: target.url,
+				eventTypes: target.eventTypes,
+			});
+
+			expect(result).toEqual({ id: 42 });
+			expect(String(fetchSpy.mock.calls[1]?.[0])).toBe(
+				"http://qui.test/api/notifications/targets/99",
+			);
+			expect(JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body))).toMatchObject({
+				url: duplicate.url,
+				enabled: false,
+			});
+		});
+
+		it("recovers a target created when the POST response is lost", async () => {
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: "upstream response lost" }), {
+						status: 502,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([target]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
+
+			const client = createQuiClient(buildApp(), buildInstance());
+			await expect(
+				client.ensureNotificationTarget({
+					name: target.name,
+					url: target.url,
+					eventTypes: target.eventTypes,
+				}),
+			).resolves.toEqual({ id: 42 });
+			expect(fetchSpy).toHaveBeenCalledTimes(3);
+		});
+
 		it("scrubs the callback secret before the shared request helper logs or throws", async () => {
 			const secret = "plaintext-webhook-secret";
 			const targetUrl = `generic://dashboard.example/api/webhooks/qui?template=json&secret=${secret}`;
-			fetchSpy.mockResolvedValueOnce(
-				new Response(JSON.stringify({ error: `invalid notification url: ${targetUrl}` }), {
-					status: 400,
-					headers: { "content-type": "application/json" },
-				}),
-			);
+			fetchSpy
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify({ error: `invalid notification url: ${targetUrl}` }), {
+						status: 400,
+						headers: { "content-type": "application/json" },
+					}),
+				)
+				.mockResolvedValueOnce(
+					new Response(JSON.stringify([]), {
+						status: 200,
+						headers: { "content-type": "application/json" },
+					}),
+				);
 
 			const client = createQuiClient(buildApp(), buildInstance());
-			const rejection = client.createNotificationTarget({
+			const rejection = client.ensureNotificationTarget({
 				name: "arr-dashboard",
 				url: targetUrl,
 			});

@@ -203,7 +203,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 			const targetUrl = buildQuiNotificationTargetUrl(baseUrl, body.secret);
 
 			try {
-				const created = await client.createNotificationTarget({
+				const created = await client.ensureNotificationTarget({
 					name: "arr-dashboard",
 					url: targetUrl,
 					eventTypes: body.eventTypes,
