@@ -100,7 +100,7 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 	const effectiveSecureCookies = input.env.COOKIE_SECURE ?? input.env.TRUST_PROXY;
 	const isProduction = input.env.NODE_ENV === "production";
 	const passwordEnabled = input.passwordUserCount > 0;
-	const configuredPublicAppUrl = input.publicAppUrl?.trim();
+	const configuredPublicAppUrl = input.publicAppUrl || undefined;
 	const appUrl = configuredPublicAppUrl || input.env.APP_URL;
 	const appUrlSource = configuredPublicAppUrl ? "External URL" : "APP_URL";
 	const appUrlProtocol = safeProtocol(appUrl);
@@ -270,8 +270,8 @@ export function evaluateSecurityPosture(input: SecurityPostureInput): SecurityPo
 			detail: `${appUrlSource} is not a valid public URL.`,
 			severity: "warning",
 			remediation: configuredPublicAppUrl
-				? "Update External URL in Settings → System to an http(s) URL without a query string, fragment, or repeated trailing slashes."
-				: "Set APP_URL to an http(s) URL without a query string, fragment, or repeated trailing slashes.",
+				? "Update External URL in Settings → System to an http(s) URL without surrounding whitespace, a query string, fragment, or repeated trailing slashes."
+				: "Set APP_URL to an http(s) URL without surrounding whitespace, a query string, fragment, or repeated trailing slashes.",
 		});
 	} else if (isProduction && !appUrlIsHttps) {
 		checks.push({
@@ -360,6 +360,7 @@ function isValidPublicBaseUrl(value: string): boolean {
 		const url = new URL(value);
 		return (
 			(url.protocol === "http:" || url.protocol === "https:") &&
+			value === value.trim() &&
 			!value.includes("?") &&
 			!value.includes("#") &&
 			!/\/{2,}$/.test(value)
