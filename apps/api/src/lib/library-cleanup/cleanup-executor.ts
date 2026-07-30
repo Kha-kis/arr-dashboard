@@ -2050,7 +2050,7 @@ function hasCompleteLiveSonarrEvidenceForRuleType(
 	}
 }
 
-function assertCompleteLiveSonarrRetentionEvidence(
+function assertCompleteLiveSonarrSeriesRuleEvidence(
 	rawSeries: Record<string, unknown>,
 	item: CacheItemForEval,
 	rules: LibraryCleanupRule[],
@@ -2069,7 +2069,7 @@ function assertCompleteLiveSonarrRetentionEvidence(
 				(ruleType) => !hasCompleteLiveSonarrEvidenceForRuleType(rawSeries, ruleType),
 			)
 		) {
-			throw new Error(`Current evidence was unavailable for retention rule ${rule.id}`);
+			throw new Error(`Current evidence was unavailable for series rule ${rule.id}`);
 		}
 	}
 }
@@ -2116,9 +2116,11 @@ async function assertCurrentEpisodeMutationAuthority(
 		);
 	}
 
-	const seriesRetentionRules = config.rules.filter(
-		(rule) => rule.enabled && rule.retentionMode && rule.targetScope !== "episode",
+	const currentSeriesRules = config.rules.filter(
+		(rule) => rule.enabled && rule.targetScope !== "episode",
 	);
+	const seriesRetentionRules = currentSeriesRules.filter((rule) => rule.retentionMode);
+	const seriesCleanupRules = currentSeriesRules.filter((rule) => !rule.retentionMode);
 	const currentEpisodeRule = config.rules.find((rule) => rule.id === expectedRule.matchedRuleId);
 	if (
 		!currentEpisodeRule ||
@@ -2189,9 +2191,19 @@ async function assertCurrentEpisodeMutationAuthority(
 			infoHash: null,
 			torrentState: null,
 		};
-		assertCompleteLiveSonarrRetentionEvidence(rawSeries, item, seriesRetentionRules);
+		assertCompleteLiveSonarrSeriesRuleEvidence(rawSeries, item, currentSeriesRules);
 		if (!liveSonarrRuleApplies(rawSeries, item, currentEpisodeRule)) {
 			throw new Error("The matched episode cleanup rule no longer applies to the live series");
+		}
+		const currentSeriesMatch = seriesCleanupRules.find(
+			(rule) =>
+				liveSonarrRuleApplies(rawSeries, item, rule) &&
+				evaluateRule(item, rule, "SONARR", { now: new Date() }) !== null,
+		);
+		if (currentSeriesMatch) {
+			throw new Error(
+				`Series rule ${currentSeriesMatch.id} now takes precedence over episode cleanup`,
+			);
 		}
 		if (evidence) {
 			const currentMatch = config.rules.find((rule) => {

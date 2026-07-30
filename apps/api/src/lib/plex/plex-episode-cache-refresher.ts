@@ -273,6 +273,7 @@ export async function refreshPlexEpisodeCache(
 				}
 			}
 			if (successfulCopies === 0) continue;
+			const copyCoverageIncomplete = successfulCopies !== sortedShowRatingKeys.length;
 			const episodesByCoordinate = new Map<string, PlexEpisodeItem[]>();
 			for (const episode of episodeCopies) {
 				const coordinate = `${episode.seasonNumber}:${episode.episodeNumber}`;
@@ -327,7 +328,8 @@ export async function refreshPlexEpisodeCache(
 				);
 				const compatibleExistingState =
 					existingState &&
-					copies.some((copy) => copy.ratingKey === existingState.ratingKey) &&
+					(copyCoverageIncomplete ||
+						copies.some((copy) => copy.ratingKey === existingState.ratingKey)) &&
 					existingState.sourceFingerprint === sourceFingerprint
 						? existingState
 						: null;
