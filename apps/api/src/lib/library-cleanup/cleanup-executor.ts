@@ -681,6 +681,7 @@ function episodePlansMatchWithRefreshedWatchProof(
 	livePlan: ExecutableSharedMediaSafetyPlan | null | undefined,
 	allowMonitoredToUnmonitored: boolean,
 	allowChangedPathMappingWitness = false,
+	allowNewQuiProtectionWitness = false,
 ): boolean {
 	if (
 		approvedPlan?.kind !== "verified_sonarr_episode" ||
@@ -734,6 +735,17 @@ function episodePlansMatchWithRefreshedWatchProof(
 	) {
 		return false;
 	}
+	if (
+		allowNewQuiProtectionWitness &&
+		!(
+			approvedPlan.quiIdentity.enabled === false &&
+			livePlan.quiIdentity.enabled === true &&
+			approvedPlan.quiIdentity.infoHash === livePlan.quiIdentity.infoHash &&
+			approvedPlan.quiIdentity.torrentState === livePlan.quiIdentity.torrentState
+		)
+	) {
+		return false;
+	}
 	if (allowChangedPathMappingWitness) {
 		const stableNotificationIdentity = (
 			notification: (typeof approvedPlan.targetDeleteNotifications)[number],
@@ -761,6 +773,9 @@ function episodePlansMatchWithRefreshedWatchProof(
 			? { ...livePlan.episode, monitored: approvedPlan.episode.monitored }
 			: livePlan.episode,
 		watchProof: approvedPlan.watchProof,
+		quiIdentity: allowNewQuiProtectionWitness
+			? approvedPlan.quiIdentity
+			: livePlan.quiIdentity,
 		targetDeleteNotifications: allowChangedPathMappingWitness
 			? approvedPlan.targetDeleteNotifications
 			: livePlan.targetDeleteNotifications,
@@ -2561,6 +2576,8 @@ async function executeQueuedCleanupItems(
 									livePlan,
 									true,
 									true,
+									approvedPlan.quiIdentity.enabled === false &&
+										livePlan.quiIdentity.enabled === true,
 								));
 						if (idempotentEpisodeUnmonitorMatch) {
 							// The live Sonarr snapshot is the durable recovery marker. A lease
@@ -2920,9 +2937,9 @@ async function executeQueuedCleanupItems(
 				const preserveEpisodeUnmonitorPartial =
 					recoveringEpisodeUnmonitorPartial &&
 					error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError;
-				const episodeDeletePartialAfterUnmonitor =
+				const episodeFileDeletePartial =
 					error instanceof ArrDeletePartialError &&
-					action === "delete" &&
+					(action === "delete" || action === "delete_files") &&
 					safetyPlan?.kind === "verified_sonarr_episode";
 				const executionError = preserveEpisodeUnmonitorPartial
 					? SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE
@@ -2960,7 +2977,7 @@ async function executeQueuedCleanupItems(
 							status:
 								error instanceof SonarrEpisodeUnmonitorPartialError ||
 								error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
-								episodeDeletePartialAfterUnmonitor ||
+								episodeFileDeletePartial ||
 								preserveEpisodeUnmonitorPartial
 									? "retry_pending"
 									: mutationAuthorityChanged

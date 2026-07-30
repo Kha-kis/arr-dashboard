@@ -2667,6 +2667,71 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.deleteSeries).not.toHaveBeenCalled();
 	});
 
+	it("keeps an already-unmonitored episode retry durable when qUI protection is enabled", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = { ...exactEpisodeTarget(), respectQuiSeeding: false };
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const liveEpisodes = await fixture.targetClient.episode.getAll();
+		let unmonitorAttempted = false;
+		fixture.setEpisodeMonitored.mockImplementation(async (episodeIds, monitored) => {
+			for (const episodeId of episodeIds) {
+				fixture.setLiveEpisodeMonitored(episodeId, monitored);
+			}
+			unmonitorAttempted = true;
+			throw new Error("Sonarr response timed out");
+		});
+		fixture.targetClient.episode.getAll.mockImplementation(async () => {
+			if (unmonitorAttempted) throw new Error("Sonarr readback unavailable");
+			return liveEpisodes;
+		});
+		const currentConfig = {
+			id: "config-1",
+			respectQuiSeeding: false,
+			rules: [episodeCleanupRule()],
+		};
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockImplementation(
+			(async () => currentConfig) as never,
+		);
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		};
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const firstAttempt = await executeApprovedItems(
+			fixture.deps,
+			"user-1",
+			["approval-1"],
+		);
+
+		expect(firstAttempt).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "retry_pending" });
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+
+		currentConfig.respectQuiSeeding = true;
+		fixture.targetClient.episode.getAll.mockResolvedValue(liveEpisodes);
+		fixture.setEpisodeMonitored.mockResolvedValue(undefined);
+
+		const retry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(retry).toMatchObject({ removed: 1, failed: 0, errors: [] });
+		expect(storedApproval).toMatchObject({ status: "executed" });
+		expect(fixture.deps.quiFileHashIndexFactory).toHaveBeenCalled();
+		expect(fixture.deps.quiClientFactory).toHaveBeenCalled();
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		["unmonitor", false],
 		["delete", true],
@@ -4284,7 +4349,7 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(result.errors[0]).toContain("outcome could not be verified");
 		expect(result.errors[0]).not.toContain("unmonitored");
 		expect(storedApproval).toMatchObject({
-			status: "pending",
+			status: "retry_pending",
 			lastExecutionError: expect.stringContaining("selected file may already be deleted"),
 		});
 		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
