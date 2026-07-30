@@ -348,12 +348,12 @@ class ArrDeletePartialError extends Error {
 	}
 }
 
+const SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE =
+	"Partial cleanup: Sonarr accepted the episode unmonitor, but its file was not deleted. The upstream change was recorded and the mutation will remain retryable.";
+
 class SonarrEpisodeUnmonitorPartialError extends Error {
 	constructor(cause: unknown) {
-		super(
-			"Partial cleanup: Sonarr accepted the episode unmonitor, but its file was not deleted. The upstream change was recorded and the mutation will remain retryable.",
-			{ cause },
-		);
+		super(SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE, { cause });
 	}
 }
 
@@ -2288,9 +2288,12 @@ async function executeQueuedCleanupItems(
 			let approvalIdentityChanged = false;
 			let approvedPlan = parseExecutableSafetyPlan(approval.safetySnapshot);
 			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
+			let recoveringEpisodeUnmonitorPartial =
+				approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE;
 			const recoveringInterruptedMutation =
 				options.claimStatus === "retry_pending" ||
-				approval.lastExecutionError === INTERRUPTED_CLEANUP_RECOVERY_MESSAGE;
+				approval.lastExecutionError === INTERRUPTED_CLEANUP_RECOVERY_MESSAGE ||
+				recoveringEpisodeUnmonitorPartial;
 			if (
 				!approvedPlan ||
 				approvedPlan.target.serviceFingerprint !== createArrServiceFingerprint(instance)
@@ -2447,6 +2450,13 @@ async function executeQueuedCleanupItems(
 									monitored: approvedPlan.episode.monitored,
 								},
 							});
+						if (idempotentEpisodeUnmonitorMatch) {
+							// The live Sonarr snapshot is the durable recovery marker. A lease
+							// or transient error may have replaced lastExecutionError after the
+							// unmonitor succeeded, but the exact approved identity plus the sole
+							// monitored -> unmonitored transition proves which stage completed.
+							recoveringEpisodeUnmonitorPartial = true;
+						}
 						const recoverableFileRemainder =
 							recoveringInterruptedMutation &&
 							(action === "delete" || action === "delete_files") &&
@@ -2795,14 +2805,19 @@ async function executeQueuedCleanupItems(
 					}
 					continue;
 				}
-				const executionError =
-					error instanceof ArrFileChangedDuringSafetyCheckError ||
-					error instanceof ArrDeletePartialError ||
-					error instanceof SonarrEpisodeUnmonitorPartialError
+				const preserveEpisodeUnmonitorPartial =
+					recoveringEpisodeUnmonitorPartial &&
+					error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError;
+				const executionError = preserveEpisodeUnmonitorPartial
+					? SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE
+					: error instanceof ArrFileChangedDuringSafetyCheckError ||
+						  error instanceof ArrDeletePartialError ||
+						  error instanceof SonarrEpisodeUnmonitorPartialError
 						? error.message
 						: "Cleanup item could not be executed. Review the API logs for details.";
 				const mutationAuthorityChanged =
-					error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError;
+					error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError &&
+					!preserveEpisodeUnmonitorPartial;
 				errors.push(executionError);
 				failed++;
 				const postPartialRetrySnapshot =
@@ -2825,7 +2840,13 @@ async function executeQueuedCleanupItems(
 						options.executeStatus,
 						claimedExecutionToken,
 						{
-							status: mutationAuthorityChanged ? "expired" : options.retryStatus,
+							status:
+								error instanceof SonarrEpisodeUnmonitorPartialError ||
+								preserveEpisodeUnmonitorPartial
+									? "retry_pending"
+									: mutationAuthorityChanged
+										? "expired"
+										: options.retryStatus,
 							executionToken: null,
 							lastExecutionError: executionError,
 							...(mutationAuthorityChanged ? { reviewedAt: new Date() } : {}),

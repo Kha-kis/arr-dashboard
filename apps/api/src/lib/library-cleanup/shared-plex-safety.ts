@@ -2596,17 +2596,29 @@ async function verifyEpisodePlexWatchProof(
 			row.refreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000 ||
 			row.refreshedAt.getTime() < sourceUpdatedAt!
 		) {
+			continue;
+		}
+		let plex: SafetyPlexClient;
+		try {
+			plex = await requirePlexClient(deps, context, ownerChecks, plexInstance);
+		} catch {
 			throw new EpisodeWatchProofError(
-				"Plex episode policy evidence was incomplete or stale at the mutation boundary",
+				"Plex episode policy source was unavailable at the mutation boundary",
 			);
 		}
-		const plex = await requirePlexClient(deps, context, ownerChecks, plexInstance);
 		if (!plex.getEpisodeWatchCount) {
 			throw new EpisodeWatchProofError(
 				"Plex episode policy watch counts were unavailable at the mutation boundary",
 			);
 		}
-		const liveWatchCount = await plex.getEpisodeWatchCount(row.ratingKey);
+		let liveWatchCount: number;
+		try {
+			liveWatchCount = await plex.getEpisodeWatchCount(row.ratingKey);
+		} catch {
+			throw new EpisodeWatchProofError(
+				"Plex episode policy watch counts were unavailable at the mutation boundary",
+			);
+		}
 		if (!Number.isSafeInteger(liveWatchCount) || liveWatchCount < 0) {
 			throw new EpisodeWatchProofError(
 				"Plex returned an invalid episode policy watch count at the mutation boundary",
@@ -2639,7 +2651,10 @@ async function verifyEpisodePlexWatchProof(
 		const sourceEpisodes = mediaItems.flatMap((show) =>
 			show.episodes.filter((episode) => episode.ratingKey === row.ratingKey),
 		);
-		if (sourceEpisodes.length !== 1) {
+		if (sourceEpisodes.length === 0) {
+			continue;
+		}
+		if (sourceEpisodes.length > 1) {
 			throw new EpisodeWatchProofError(
 				"Plex episode policy media identity was ambiguous at the mutation boundary",
 			);
@@ -2663,16 +2678,23 @@ async function verifyEpisodePlexWatchProof(
 				return false;
 			}
 		});
-		const pathCandidates: Array<{
+		let pathCandidates: Array<{
 			fullPath: NormalizedMediaPath;
 			mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
-		}> =
-			!deletesFile && matchingNotifications.length === 0
-				? [{ fullPath: selectedComparable.fullPath, mapping: null }]
-				: matchingNotifications.map((notification) => ({
-					fullPath: mappedArrPathForNotification(selectedComparable, notification, "SONARR"),
-					mapping: notificationPathMapping(notification, "Sonarr target"),
-				}));
+		}>;
+		try {
+			pathCandidates =
+				!deletesFile && matchingNotifications.length === 0
+					? [{ fullPath: selectedComparable.fullPath, mapping: null }]
+					: matchingNotifications.map((notification) => ({
+							fullPath: mappedArrPathForNotification(selectedComparable, notification, "SONARR"),
+							mapping: notificationPathMapping(notification, "Sonarr target"),
+						}));
+		} catch {
+			throw new EpisodeWatchProofError(
+				"Plex episode policy media path mapping was invalid at the mutation boundary",
+			);
+		}
 		const matches = new Map<
 			string,
 			{

@@ -81,6 +81,7 @@ export async function runQuiTorrentStateSync(
 		let userTorrentsSeen = 0;
 		let userRowsUpdated = 0;
 		let userRowsCleared = 0;
+		let successfulInstanceScans = 0;
 		const instances = await listQuiInstances(app, userId);
 
 		// Track every hash this user's qui instances reported across all of them
@@ -133,6 +134,7 @@ export async function runQuiTorrentStateSync(
 				// Single qui call returns torrents across every qBit instance behind
 				// this qui — exactly what we need for hash-based correlation.
 				const torrents = await client.listAllTorrents();
+				successfulInstanceScans++;
 				result.torrentsSeen += torrents.length;
 				userTorrentsSeen += torrents.length;
 
@@ -213,12 +215,12 @@ export async function runQuiTorrentStateSync(
 				{ userId, userErrors, seenHashes: seenHashesThisRun.size },
 				"qui torrent-state sync: skipping stale-state cleanup for user (instance errors → incomplete view, over-clearing risk)",
 			);
-		} else if (seenHashesThisRun.size === 0) {
+		} else if (instances.length === 0 || successfulInstanceScans !== instances.length) {
 			log.debug(
-				{ userId },
-				"qui torrent-state sync: skipping stale-state cleanup for user (no torrents seen)",
+				{ userId, instances: instances.length, successfulInstanceScans },
+				"qui torrent-state sync: skipping stale-state cleanup for user (no complete instance inventory)",
 			);
-		} else if (userErrors === 0 && seenHashesThisRun.size > 0) {
+		} else {
 			try {
 				// Two-step diff-and-batch-update to avoid SQLite's
 				// IN/NOT-IN parameter cap (P2029). The naive
@@ -246,7 +248,11 @@ export async function runQuiTorrentStateSync(
 				for (let i = 0; i < staleIds.length; i += CHUNK) {
 					const batch = staleIds.slice(i, i + CHUNK);
 					const cleared = await app.prisma.libraryCache.updateMany({
-						where: { id: { in: batch } },
+						where: {
+							id: { in: batch },
+							instance: { userId },
+							torrentSyncedAt: { lt: runStartedAt },
+						},
 						data: {
 							torrentState: null,
 							torrentRatio: null,
@@ -269,7 +275,11 @@ export async function runQuiTorrentStateSync(
 				for (let i = 0; i < staleEpisodeIds.length; i += CHUNK) {
 					const batch = staleEpisodeIds.slice(i, i + CHUNK);
 					const cleared = await app.prisma.episodeFileCache.updateMany({
-						where: { id: { in: batch } },
+						where: {
+							id: { in: batch },
+							instance: { userId },
+							torrentSyncedAt: { lt: runStartedAt },
+						},
 						data: {
 							torrentState: null,
 							torrentRatio: null,
