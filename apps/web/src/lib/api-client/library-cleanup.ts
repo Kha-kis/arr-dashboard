@@ -166,10 +166,14 @@ export const libraryCleanupApi = {
 	},
 
 	// Explain
-	async explain(instanceId: string, arrItemId: number): Promise<CleanupExplainResponse> {
+	async explain(
+		instanceId: string,
+		arrItemId: number,
+		arrEpisodeId?: number,
+	): Promise<CleanupExplainResponse> {
 		return apiRequest<CleanupExplainResponse>("/api/library-cleanup/explain", {
 			method: "POST",
-			json: { instanceId, arrItemId },
+			json: { instanceId, arrItemId, arrEpisodeId },
 		});
 	},
 

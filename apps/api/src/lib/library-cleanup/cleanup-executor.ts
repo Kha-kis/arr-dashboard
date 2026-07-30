@@ -11,7 +11,7 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { type DataSourceDependency, ruleDataSourceMap } from "@arr/shared";
+import type { DataSourceDependency } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
@@ -27,11 +27,13 @@ import {
 	evaluateRule,
 	extractRating,
 	passesCleanupRuleFilters,
+	ruleUsesUnavailableData,
 } from "./rule-evaluators.js";
 import {
 	evaluateEpisodeWatchCountRule,
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
+	isSupportedEpisodeCleanupRule,
 	toEpisodeTargetMetadata,
 } from "./episode-scope.js";
 import {
@@ -1779,6 +1781,64 @@ async function retryTargetRecordIsAbsent(
 	}
 }
 
+/**
+ * Re-check the current parent-series retention policy immediately before an
+ * episode mutation. Pending approvals are durable intent, not durable
+ * authorization: a series that became protected after preview must fail closed.
+ */
+async function assertCurrentSeriesRetentionAllowsEpisodeMutation(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	instanceId: string,
+	arrSeriesId: number,
+): Promise<void> {
+	const config = await deps.prisma.libraryCleanupConfig.findUnique({
+		where: { userId },
+		include: { rules: { orderBy: { priority: "asc" } } },
+	});
+	if (!config) {
+		throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+			"Skipped for safety: the cleanup configuration changed after this episode was queued.",
+		);
+	}
+
+	const seriesRetentionRules = config.rules.filter(
+		(rule) => rule.enabled && rule.retentionMode && rule.targetScope !== "episode",
+	);
+	if (seriesRetentionRules.length === 0) return;
+
+	const item = await deps.prisma.libraryCache.findFirst({
+		where: {
+			instanceId,
+			arrItemId: arrSeriesId,
+			itemType: "series",
+		},
+	});
+	if (!item) {
+		throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+			"Skipped for safety: the parent series could not be revalidated against current retention rules.",
+		);
+	}
+
+	const { ctx, failedSources } = await buildEvalContextWithHealth(
+		deps,
+		userId,
+		seriesRetentionRules,
+	);
+	if (
+		seriesRetentionProtectsEpisode(
+			item as CacheItemForEval,
+			seriesRetentionRules,
+			ctx,
+			failedSources,
+		)
+	) {
+		throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+			"Skipped for safety: the parent series is protected by the current retention policy or its required evidence is unavailable.",
+		);
+	}
+}
+
 async function executeQueuedCleanupItems(
 	deps: CleanupExecutorDeps,
 	userId: string,
@@ -2195,6 +2255,14 @@ async function executeQueuedCleanupItems(
 				);
 				const assertExecutionAuthority = async () => {
 					await options.assertExecutionAllowed?.();
+					if (safetyPlan!.kind === "verified_sonarr_episode") {
+						await assertCurrentSeriesRetentionAllowsEpisodeMutation(
+							deps,
+							userId,
+							approval.instanceId,
+							approval.arrItemId,
+						);
+					}
 					mutationBudgetConsumedIds.add(approval.id);
 				};
 				const assertMutationAuthority = withSharedPlexOwnershipRevalidation(
@@ -2986,7 +3054,7 @@ async function prefetchJellyfinEpisodeData(
 			select: { id: true },
 		});
 		const instanceIds = instances.map((i) => i.id);
-		if (instanceIds.length === 0) return new Map();
+		if (instanceIds.length === 0) return undefined;
 
 		const totalCounts = await prisma.jellyfinEpisodeCache.groupBy({
 			by: ["showTmdbId"],
@@ -3064,11 +3132,11 @@ async function prefetchPlexEpisodeData(
 
 	try {
 		const instances = await prisma.serviceInstance.findMany({
-			where: { userId },
+			where: { userId, service: "PLEX" },
 			select: { id: true },
 		});
 		const instanceIds = instances.map((i) => i.id);
-		if (instanceIds.length === 0) return new Map();
+		if (instanceIds.length === 0) return undefined;
 
 		// Three groupBy queries: show-level totals, show-level watched, and per-season counts
 		const totalCounts = await prisma.plexEpisodeCache.groupBy({
@@ -3165,8 +3233,10 @@ async function evaluateAllItems(
 	});
 	const instanceServiceMap = new Map(instances.map((i) => [i.id, i.service]));
 	const persistedEpisodeRules = rules.filter((rule) => rule.targetScope === "episode");
+	const seriesRules = rules.filter((rule) => rule.targetScope !== "episode");
+	const episodeRules = rules.filter(isSupportedEpisodeCleanupRule);
 	const unsupportedEpisodeRules = persistedEpisodeRules.filter(
-		(rule) => rule.enabled && !isInitialEpisodeCleanupRule(rule),
+		(rule) => rule.enabled && !isSupportedEpisodeCleanupRule(rule),
 	);
 	if (unsupportedEpisodeRules.length > 0) {
 		warnings.push(
@@ -3174,8 +3244,9 @@ async function evaluateAllItems(
 		);
 	}
 
-	// Collect all active rule types (including inside composite conditions)
-	const activeTypes = collectActiveRuleTypes(rules);
+	// Series-level prefetches do not satisfy episode-scoped rules. Those rules
+	// use their own fresh, per-episode evidence below.
+	const activeTypes = collectActiveRuleTypes(seriesRules);
 
 	// Prefetch Seerr requests if any Seerr rule types are active
 	const SEERR_RULE_TYPES = [
@@ -3258,8 +3329,19 @@ async function evaluateAllItems(
 	const prefetchHealth: PrefetchResults = {
 		seerr: hasSeerrRules ? (seerrMap ? "ok" : "failed") : "skipped",
 		tautulli: hasTautulliRules ? (tautulliMap ? "ok" : "failed") : "skipped",
-		plex: hasPlexRules ? (plexMap ? "ok" : "failed") : "skipped",
-		jellyfin: hasJellyfinRules ? (jellyfinMap ? "ok" : "failed") : "skipped",
+		plex:
+			hasPlexRules || hasEpisodeCompletionRules
+				? (!hasPlexRules || plexMap) && (!hasEpisodeCompletionRules || plexEpisodeMap)
+					? "ok"
+					: "failed"
+				: "skipped",
+		jellyfin:
+			hasJellyfinRules || hasJellyfinEpisodeRules
+				? (!hasJellyfinRules || jellyfinMap) &&
+					(!hasJellyfinEpisodeRules || jellyfinEpisodeMap)
+					? "ok"
+					: "failed"
+				: "skipped",
 	};
 
 	// Check for failed prefetches that have dependent rules — generate warnings
@@ -3270,16 +3352,8 @@ async function evaluateAllItems(
 	if (prefetchHealth.jellyfin === "failed") failedSources.add("jellyfin");
 
 	if (failedSources.size > 0) {
-		for (const source of failedSources) {
-			const affectedRuleCount = rules.filter(
-				(rule) => rule.enabled && getRuleDataSources(rule).has(source!),
-			).length;
-			if (affectedRuleCount > 0) {
-				warnings.push(
-					`${source} data unavailable; ${affectedRuleCount} dependent cleanup ${affectedRuleCount === 1 ? "rule was" : "rules were"} skipped for safety.`,
-				);
-			}
-		}
+		const unavailableRuleWarning = buildUnavailableRuleWarning(seriesRules, failedSources);
+		if (unavailableRuleWarning) warnings.push(unavailableRuleWarning);
 		log.warn(
 			{ prefetchHealth, warnings },
 			"Cleanup run has failed prefetches with dependent rules",
@@ -3300,8 +3374,6 @@ async function evaluateAllItems(
 	const flagged: FlaggedItem[] = [];
 	let totalEvaluated = 0;
 	let cursor: string | undefined;
-	const seriesRules = rules.filter((rule) => rule.targetScope !== "episode");
-	const episodeRules = rules.filter(isInitialEpisodeCleanupRule);
 	const freshEpisodeWatchMap =
 		episodeRules.length > 0
 			? await prefetchFreshPlexEpisodeWatchData(deps, instances, now, warnings)
@@ -3409,7 +3481,7 @@ async function evaluateAllItems(
 
 const PLEX_EPISODE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
 
-function episodeCoordinateKey(
+export function episodeCoordinateKey(
 	showTmdbId: number,
 	seasonNumber: number,
 	episodeNumber: number,
@@ -3417,7 +3489,7 @@ function episodeCoordinateKey(
 	return `${showTmdbId}:${seasonNumber}:${episodeNumber}`;
 }
 
-function extractSeriesTmdbId(data: string): number | null {
+export function extractSeriesTmdbId(data: string): number | null {
 	const parsed = safeJsonParse(data) as
 		| { remoteIds?: { tmdbId?: unknown }; tmdbId?: unknown }
 		| null;
@@ -3425,40 +3497,19 @@ function extractSeriesTmdbId(data: string): number | null {
 	return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
-function isInitialEpisodeCleanupRule(rule: LibraryCleanupRule): boolean {
-	const storedConditions = safeJsonParse(rule.conditions) as unknown;
-	const storedPlexLibraryFilter = safeJsonParse(rule.plexLibraryFilter) as unknown;
-	if (
-		!rule.enabled ||
-		rule.targetScope !== "episode" ||
-		rule.retentionMode ||
-		(rule.action !== "delete" &&
-			rule.action !== "delete_files" &&
-			rule.action !== "unmonitor") ||
-		rule.ruleType !== "plex_watch_count" ||
-		rule.operator !== null ||
-		(rule.conditions !== null &&
-			(!Array.isArray(storedConditions) || storedConditions.length > 0)) ||
-		(rule.plexLibraryFilter !== null &&
-			(!Array.isArray(storedPlexLibraryFilter) || storedPlexLibraryFilter.length > 0))
-	) {
-		return false;
-	}
-	const params = safeJsonParse(rule.parameters) as
-		| { operator?: unknown; count?: unknown }
-		| null;
-	return (
-		params?.operator === "greater_than" &&
-		typeof params.count === "number" &&
-		Number.isFinite(params.count)
-	);
-}
-
 export async function prefetchFreshPlexEpisodeWatchData(
 	deps: CleanupExecutorDeps,
 	instances: ServiceInstance[],
 	now: Date,
 	warnings: string[],
+	options: {
+		includeUnwatched?: boolean;
+		coordinate?: {
+			showTmdbId: number;
+			seasonNumber: number;
+			episodeNumber: number;
+		};
+	} = {},
 ): Promise<Map<string, EpisodePlexWatchEvidence[]>> {
 	const plexInstanceIds = instances
 		.filter((instance) => instance.service === "PLEX" && instance.enabled)
@@ -3484,7 +3535,8 @@ export async function prefetchFreshPlexEpisodeWatchData(
 		const rows = await deps.prisma.plexEpisodeCache.findMany({
 			where: {
 				instanceId: { in: plexInstanceIds },
-				watchCount: { gt: 0 },
+				...(options.includeUnwatched ? {} : { watchCount: { gt: 0 } }),
+				...(options.coordinate ?? {}),
 			},
 			select: {
 				instanceId: true,
@@ -3601,20 +3653,7 @@ async function evaluateSeriesEpisodes(
 	);
 	if (applicableRules.length === 0) return { evaluated: 0, flagged: [] };
 
-	// A series-level retention rule protects every episode. If its source is
-	// unavailable, protection cannot be disproved and episode cleanup fails closed.
-	const retentionRules = seriesRules.filter(
-		(rule) =>
-			rule.enabled &&
-			rule.retentionMode &&
-			passesCleanupRuleFilters(item, rule, "SONARR"),
-	);
-	if (
-		retentionRules.some((rule) =>
-			[...getRuleDataSources(rule)].some((source) => failedSources.has(source)),
-		) ||
-		retentionRules.some((rule) => evaluateRule(item, rule, "SONARR", ctx) !== null)
-	) {
+	if (seriesRetentionProtectsEpisode(item, seriesRules, ctx, failedSources)) {
 		return { evaluated: 0, flagged: [] };
 	}
 
@@ -3770,22 +3809,54 @@ async function evaluateSeriesEpisodes(
 }
 
 /**
- * Get all data sources a rule depends on (including composite sub-conditions).
+ * A series-level retention rule protects every episode. If any required
+ * external source is unavailable, protection cannot be disproved and episode
+ * cleanup fails closed before a candidate is built.
  */
-function getRuleDataSources(rule: LibraryCleanupRule): Set<DataSourceDependency> {
-	const sources = new Set<DataSourceDependency>();
-	const dep = ruleDataSourceMap[rule.ruleType];
-	if (dep) sources.add(dep);
-	if (rule.conditions) {
-		const conds = safeJsonParse(rule.conditions) as Array<{ ruleType?: string }> | null;
-		if (Array.isArray(conds)) {
-			for (const c of conds) {
-				const cdep = c.ruleType ? ruleDataSourceMap[c.ruleType] : undefined;
-				if (cdep) sources.add(cdep);
-			}
-		}
+export function seriesRetentionProtectsEpisode(
+	item: CacheItemForEval,
+	seriesRules: LibraryCleanupRule[],
+	ctx: EvalContext,
+	failedSources: Set<DataSourceDependency>,
+): boolean {
+	const retentionRules = seriesRules.filter(
+		(rule) =>
+			rule.enabled &&
+			rule.retentionMode &&
+			passesCleanupRuleFilters(item, rule, "SONARR"),
+	);
+	return (
+		retentionRules.some((rule) => ruleUsesUnavailableData(rule, failedSources)) ||
+		retentionRules.some((rule) => evaluateRule(item, rule, "SONARR", ctx) !== null)
+	);
+}
+
+export function buildUnavailableRuleWarning(
+	rules: LibraryCleanupRule[],
+	failedSources: Set<DataSourceDependency>,
+): string | null {
+	const affectedRules = rules.filter(
+		(rule) =>
+			rule.enabled &&
+			rule.targetScope !== "episode" &&
+			ruleUsesUnavailableData(rule, failedSources),
+	);
+	if (affectedRules.length === 0) return null;
+	const retentionRuleCount = affectedRules.filter((rule) => rule.retentionMode).length;
+	const cleanupRuleCount = affectedRules.length - retentionRuleCount;
+	const sources = [...failedSources].sort().join(", ");
+	const effects: string[] = [];
+	if (retentionRuleCount > 0) {
+		effects.push(
+			`${retentionRuleCount} retention ${retentionRuleCount === 1 ? "rule defaults" : "rules default"} to protection`,
+		);
 	}
-	return sources;
+	if (cleanupRuleCount > 0) {
+		effects.push(
+			`${cleanupRuleCount} cleanup ${cleanupRuleCount === 1 ? "rule was" : "rules were"} skipped`,
+		);
+	}
+	return `${sources} data unavailable; ${effects.join(" and ")} for safety.`;
 }
 
 function buildApprovalDedupSkipReason(
@@ -4509,12 +4580,23 @@ export async function executeDirectRemoval(
 				instance.id,
 				safetyPlan!,
 			);
+			const assertDirectExecutionAuthority = async () => {
+				await assertRunLease?.();
+				if (safetyPlan!.kind === "verified_sonarr_episode") {
+					await assertCurrentSeriesRetentionAllowsEpisodeMutation(
+						deps,
+						userId,
+						item.cacheItem.instanceId,
+						item.cacheItem.arrItemId,
+					);
+				}
+			};
 			const assertMutationAuthority = withSharedPlexOwnershipRevalidation(
 				deps,
 				userId,
 				flaggedDeleteTarget(item),
 				safetyPlan!,
-				assertRunLease,
+				assertDirectExecutionAuthority,
 			);
 
 			if (ruleAction === "unmonitor") {
@@ -5667,11 +5749,11 @@ async function deleteFilesFromArr(
  * Used by the explain endpoint so it can evaluate rules with real external data
  * rather than an empty context that always returns "not matched" for external rules.
  */
-export async function buildEvalContext(
+export async function buildEvalContextWithHealth(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	rules: Array<{ enabled: boolean; ruleType: string; conditions: string | null }>,
-): Promise<EvalContext> {
+): Promise<{ ctx: EvalContext; failedSources: Set<DataSourceDependency> }> {
 	const activeTypes = collectActiveRuleTypes(rules);
 
 	const SEERR_RULE_TYPES = [
@@ -5708,27 +5790,57 @@ export async function buildEvalContext(
 		"seerr_requester_watched",
 		"seerr_requester_not_watched",
 	];
+	const JELLYFIN_RULE_TYPES = [
+		"jellyfin_last_watched",
+		"jellyfin_watch_count",
+		"jellyfin_on_deck",
+		"jellyfin_user_rating",
+		"jellyfin_watched_by",
+		"jellyfin_added_at",
+	];
 
-	const [seerrMap, tautulliMap, plexMap, plexEpisodeMap] = await Promise.all([
-		SEERR_RULE_TYPES.some((t) => activeTypes.has(t))
-			? prefetchSeerrRequests(deps, userId)
-			: undefined,
-		TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t))
-			? prefetchTautulliData(deps, userId)
-			: undefined,
-		PLEX_RULE_TYPES_LIST.some((t) => activeTypes.has(t))
-			? prefetchPlexData(deps, userId)
-			: undefined,
-		activeTypes.has("plex_episode_completion") ? prefetchPlexEpisodeData(deps, userId) : undefined,
-	]);
+	const needsSeerr = SEERR_RULE_TYPES.some((type) => activeTypes.has(type));
+	const needsTautulli = TAUTULLI_RULE_TYPES.some((type) => activeTypes.has(type));
+	const needsPlex = PLEX_RULE_TYPES_LIST.some((type) => activeTypes.has(type));
+	const needsPlexEpisodes = activeTypes.has("plex_episode_completion");
+	const needsJellyfin = JELLYFIN_RULE_TYPES.some((type) => activeTypes.has(type));
+	const needsJellyfinEpisodes = activeTypes.has("jellyfin_episode_completion");
+	const [seerrMap, tautulliMap, plexMap, plexEpisodeMap, jellyfinMap, jellyfinEpisodeMap] =
+		await Promise.all([
+			needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
+			needsTautulli ? prefetchTautulliData(deps, userId) : undefined,
+			needsPlex ? prefetchPlexData(deps, userId) : undefined,
+			needsPlexEpisodes ? prefetchPlexEpisodeData(deps, userId) : undefined,
+			needsJellyfin ? prefetchJellyfinData(deps, userId) : undefined,
+			needsJellyfinEpisodes ? prefetchJellyfinEpisodeData(deps, userId) : undefined,
+		]);
 
-	return {
+	const failedSources = new Set<DataSourceDependency>();
+	if (needsSeerr && !seerrMap) failedSources.add("seerr");
+	if (needsTautulli && !tautulliMap) failedSources.add("tautulli");
+	if (needsPlex && !plexMap) failedSources.add("plex");
+	if (needsPlexEpisodes && !plexEpisodeMap) failedSources.add("plex");
+	if (needsJellyfin && !jellyfinMap) failedSources.add("jellyfin");
+	if (needsJellyfinEpisodes && !jellyfinEpisodeMap) failedSources.add("jellyfin");
+
+	const ctx: EvalContext = {
 		now: new Date(),
 		seerrMap: seerrMap ?? undefined,
 		tautulliMap: tautulliMap ?? undefined,
 		plexMap: plexMap ?? undefined,
 		plexEpisodeMap: plexEpisodeMap ?? undefined,
+		jellyfinMap: jellyfinMap ?? undefined,
+		jellyfinEpisodeMap: jellyfinEpisodeMap ?? undefined,
 	};
+	return { ctx, failedSources };
+}
+
+export async function buildEvalContext(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	rules: Array<{ enabled: boolean; ruleType: string; conditions: string | null }>,
+): Promise<EvalContext> {
+	return (await buildEvalContextWithHealth(deps, userId, rules)).ctx;
 }
 
 /**

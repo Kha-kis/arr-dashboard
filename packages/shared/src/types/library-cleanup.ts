@@ -403,11 +403,13 @@ export interface CleanupStatusResponse {
 export interface CleanupExplainRequest {
 	instanceId: string;
 	arrItemId: number;
+	arrEpisodeId?: number;
 }
 
 export const cleanupExplainRequestSchema = z.object({
 	instanceId: z.string().min(1),
 	arrItemId: z.number().int().min(1),
+	arrEpisodeId: z.number().int().min(1).optional(),
 });
 
 export interface CleanupExplainResult {
@@ -420,6 +422,9 @@ export interface CleanupExplainResult {
 		| "instance_filter"
 		| "tag_exclusion"
 		| "title_exclusion"
+		| "scope_filter"
+		| "evidence_unavailable"
+		| "unsupported_rule"
 		| "disabled"
 		| null;
 	retentionMode: boolean;
@@ -431,6 +436,11 @@ export interface CleanupExplainResponse {
 		year: number | null;
 		instanceId: string;
 		itemType: string;
+		targetScope?: "series" | "episode";
+		arrEpisodeId?: number;
+		seasonNumber?: number;
+		episodeNumber?: number;
+		episodeTitle?: string | null;
 	};
 	results: CleanupExplainResult[];
 	retentionProtected: boolean;

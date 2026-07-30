@@ -1,6 +1,6 @@
 import type { CleanupConfigResponse } from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
@@ -495,6 +495,27 @@ describe("LibraryCleanupClient", () => {
 
 	describe("shared Plex safety feedback", () => {
 		it("renders structured episode identifiers and titles in preview results", () => {
+			const explainMutate = vi.fn();
+			mockUseCleanupExplain.mockReturnValue(
+				defaultMutation({
+					mutate: explainMutate,
+					data: {
+						item: {
+							title: "Example Series",
+							year: 2024,
+							instanceId: "sonarr-hd",
+							itemType: "episode",
+							targetScope: "episode",
+							arrEpisodeId: 202,
+							seasonNumber: 1,
+							episodeNumber: 2,
+							episodeTitle: "The Second Episode",
+						},
+						results: [],
+						retentionProtected: false,
+					},
+				}),
+			);
 			mockUseCleanupPreview.mockReturnValue(
 				defaultMutation({
 					data: {
@@ -530,9 +551,124 @@ describe("LibraryCleanupClient", () => {
 			expect(screen.getByText("Example Series")).toBeInTheDocument();
 			expect(screen.getByText("S01E02")).toBeInTheDocument();
 			expect(screen.getByText("The Second Episode")).toBeInTheDocument();
+			fireEvent.click(screen.getByTitle("Explain why this item was flagged"));
+			expect(explainMutate).toHaveBeenCalledWith({
+				instanceId: "sonarr-hd",
+				arrItemId: 101,
+				arrEpisodeId: 202,
+			});
+			const dialog = screen.getByRole("dialog");
+			expect(within(dialog).getByText("S01E02")).toBeInTheDocument();
+			expect(within(dialog).getByText("The Second Episode")).toBeInTheDocument();
+		});
+
+		it("omits episode identity from a series preview explanation", () => {
+			const explainMutate = vi.fn();
+			mockUseCleanupExplain.mockReturnValue(defaultMutation({ mutate: explainMutate }));
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 1,
+						totalFlagged: 1,
+						items: [
+							{
+								instanceId: "sonarr-hd",
+								instanceLabel: "Sonarr",
+								arrItemId: 101,
+								itemType: "series",
+								targetScope: "series",
+								arrEpisodeId: null,
+								title: "Example Series",
+								matchedRuleName: "Old series",
+								reason: "Added before threshold",
+								action: "delete",
+								sizeOnDisk: "1000",
+								year: 2024,
+								rating: null,
+								quiStatus: "no_signal",
+							},
+						],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByTitle("Explain why this item was flagged"));
+
+			expect(explainMutate).toHaveBeenCalledWith({
+				instanceId: "sonarr-hd",
+				arrItemId: 101,
+				arrEpisodeId: undefined,
+			});
+		});
+
+		it("shows unavailable retention evidence as active protection", () => {
+			mockUseCleanupExplain.mockReturnValue(
+				defaultMutation({
+					data: {
+						item: {
+							title: "Example Series",
+							year: 2024,
+							instanceId: "sonarr-hd",
+							itemType: "series",
+							targetScope: "series",
+						},
+						results: [
+							{
+								ruleId: "retention-rule",
+								ruleName: "Keep watched series",
+								matched: false,
+								reason: null,
+								filteredBy: "evidence_unavailable",
+								retentionMode: true,
+							},
+						],
+						retentionProtected: true,
+					},
+				}),
+			);
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 1,
+						totalFlagged: 1,
+						items: [
+							{
+								instanceId: "sonarr-hd",
+								instanceLabel: "Sonarr",
+								arrItemId: 101,
+								itemType: "series",
+								targetScope: "series",
+								arrEpisodeId: null,
+								title: "Example Series",
+								matchedRuleName: "Old series",
+								reason: "Added before threshold",
+								action: "delete",
+								sizeOnDisk: "1000",
+								year: 2024,
+								rating: null,
+								quiStatus: "no_signal",
+							},
+						],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByTitle("Explain why this item was flagged"));
+
+			const dialog = screen.getByRole("dialog");
+			expect(within(dialog).getByText("Protected: evidence unavailable")).toBeInTheDocument();
+			expect(
+				within(dialog).getByText(
+					"This item is protected because required retention evidence is unavailable.",
+				),
+			).toBeInTheDocument();
 		});
 
 		it("renders structured episode identifiers and titles in the approval queue", async () => {
+			const explainMutate = vi.fn();
+			mockUseCleanupExplain.mockReturnValue(defaultMutation({ mutate: explainMutate }));
 			mockUseCleanupApprovalQueue.mockReturnValue({
 				data: {
 					items: [
@@ -572,6 +708,12 @@ describe("LibraryCleanupClient", () => {
 
 			expect(await screen.findByText("S03E07")).toBeInTheDocument();
 			expect(screen.getByText("A Specific Episode")).toBeInTheDocument();
+			fireEvent.click(screen.getByTitle("Explain why this item was flagged"));
+			expect(explainMutate).toHaveBeenCalledWith({
+				instanceId: "sonarr-hd",
+				arrItemId: 101,
+				arrEpisodeId: 202,
+			});
 		});
 
 		it("reports durable retries separately from current rule matches", () => {

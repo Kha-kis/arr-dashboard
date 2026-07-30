@@ -72,6 +72,48 @@ interface PlexWatchCountParameters {
 	count?: unknown;
 }
 
+interface EpisodeCleanupRuleShape extends EpisodeWatchCountRule {
+	enabled: boolean;
+	targetScope: string;
+	retentionMode: boolean;
+	ruleType: string;
+	operator: string | null;
+	conditions: string | null;
+	plexLibraryFilter: string | null;
+}
+
+/**
+ * Initial episode scope intentionally supports only a simple Plex watch-count
+ * cleanup rule. Preview and explanation both use this predicate so unsupported
+ * stored rule shapes cannot be represented as executable.
+ */
+export function isSupportedEpisodeCleanupRule(rule: EpisodeCleanupRuleShape): boolean {
+	const storedConditions = safeJsonParse(rule.conditions) as unknown;
+	const storedPlexLibraryFilter = safeJsonParse(rule.plexLibraryFilter) as unknown;
+	if (
+		!rule.enabled ||
+		rule.targetScope !== "episode" ||
+		rule.retentionMode ||
+		(rule.action !== "delete" &&
+			rule.action !== "delete_files" &&
+			rule.action !== "unmonitor") ||
+		rule.ruleType !== "plex_watch_count" ||
+		rule.operator !== null ||
+		(rule.conditions !== null &&
+			(!Array.isArray(storedConditions) || storedConditions.length > 0)) ||
+		(rule.plexLibraryFilter !== null &&
+			(!Array.isArray(storedPlexLibraryFilter) || storedPlexLibraryFilter.length > 0))
+	) {
+		return false;
+	}
+	const params = safeJsonParse(rule.parameters) as PlexWatchCountParameters | null;
+	return (
+		params?.operator === "greater_than" &&
+		typeof params.count === "number" &&
+		Number.isFinite(params.count)
+	);
+}
+
 export function toEpisodeTargetMetadata(
 	candidate: EpisodeCleanupCandidate,
 ): EpisodeTargetMetadata {
@@ -105,12 +147,8 @@ export function buildEpisodeTargetKey(
 	return `${target.instanceId}:series:${target.arrSeriesId}:episode:${target.arrEpisodeId}`;
 }
 
-/**
- * Initial episode scope intentionally supports only a simple Plex watch-count
- * rule with `greater_than`. Unsupported or malformed shapes fail closed.
- */
 export function evaluateEpisodeWatchCountRule(
-	candidate: EpisodeCleanupCandidate,
+	candidate: Pick<EpisodeCleanupCandidate, "watchCount">,
 	rule: EpisodeWatchCountRule,
 ): RuleMatch | null {
 	const params = safeJsonParse(rule.parameters) as PlexWatchCountParameters | null;

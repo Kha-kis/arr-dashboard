@@ -63,6 +63,10 @@ import type {
 import { type DataSourceDependency, isRegexSafe, ruleDataSourceMap } from "@arr/shared";
 import type { LibraryCleanupRule } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
+import {
+	evaluateEpisodeWatchCountRule,
+	isSupportedEpisodeCleanupRule,
+} from "./episode-scope.js";
 import type {
 	CacheItemForEval,
 	EvalContext,
@@ -76,6 +80,12 @@ import type {
 	SeerrRequestMap,
 	TautulliWatchMap,
 } from "./types.js";
+
+export interface EpisodeExplainEvidence {
+	arrEpisodeId: number;
+	watchCount: number | null;
+	available: boolean;
+}
 
 // ============================================================================
 // Per-Type Evaluators
@@ -2324,8 +2334,9 @@ export function evaluateRule(
  * 1. Retention rules checked first — if ANY match, item is protected (returns null).
  * 2. Cleanup rules checked in priority order — first match wins.
  *
- * When `failedSources` is provided, rules depending on unavailable data sources
- * are skipped to prevent false matches (the C1 safety fix).
+ * When `failedSources` is provided, unavailable cleanup rules are skipped.
+ * An applicable retention rule with unavailable evidence protects the item:
+ * cleanup cannot safely disprove that retention rule.
  */
 export function evaluateItemAgainstRules(
 	item: CacheItemForEval,
@@ -2337,7 +2348,8 @@ export function evaluateItemAgainstRules(
 	// Phase 1: Check retention rules first — any match = protected
 	for (const rule of rules) {
 		if (!rule.retentionMode) continue;
-		if (shouldSkipForFailedSource(rule, failedSources)) continue;
+		if (!passesCleanupRuleFilters(item, rule, instanceService)) continue;
+		if (ruleUsesUnavailableData(rule, failedSources)) return null;
 		const match = evaluateRule(item, rule, instanceService, ctx);
 		if (match) return null; // Item is protected by retention rule
 	}
@@ -2345,7 +2357,7 @@ export function evaluateItemAgainstRules(
 	// Phase 2: Check cleanup rules — first match wins
 	for (const rule of rules) {
 		if (rule.retentionMode) continue;
-		if (shouldSkipForFailedSource(rule, failedSources)) continue;
+		if (ruleUsesUnavailableData(rule, failedSources)) continue;
 		const match = evaluateRule(item, rule, instanceService, ctx);
 		if (match) return match;
 	}
@@ -2361,6 +2373,8 @@ export function explainItemAgainstRules(
 	rules: LibraryCleanupRule[],
 	instanceService: string,
 	ctx: EvalContext,
+	episodeEvidence?: EpisodeExplainEvidence,
+	failedSources?: Set<DataSourceDependency>,
 ): Array<{
 	ruleId: string;
 	ruleName: string;
@@ -2371,6 +2385,9 @@ export function explainItemAgainstRules(
 		| "instance_filter"
 		| "tag_exclusion"
 		| "title_exclusion"
+		| "scope_filter"
+		| "evidence_unavailable"
+		| "unsupported_rule"
 		| "disabled"
 		| null;
 	retentionMode: boolean;
@@ -2385,6 +2402,9 @@ export function explainItemAgainstRules(
 			| "instance_filter"
 			| "tag_exclusion"
 			| "title_exclusion"
+			| "scope_filter"
+			| "evidence_unavailable"
+			| "unsupported_rule"
 			| "disabled"
 			| null;
 		retentionMode: boolean;
@@ -2398,6 +2418,45 @@ export function explainItemAgainstRules(
 				matched: false,
 				reason: null,
 				filteredBy: "disabled",
+				retentionMode: rule.retentionMode,
+			});
+			continue;
+		}
+
+		const targetsEpisode = rule.targetScope === "episode";
+		if (targetsEpisode && !isSupportedEpisodeCleanupRule(rule)) {
+			results.push({
+				ruleId: rule.id,
+				ruleName: rule.name,
+				matched: false,
+				reason: null,
+				filteredBy: "unsupported_rule",
+				retentionMode: rule.retentionMode,
+			});
+			continue;
+		}
+		if (
+			(targetsEpisode && !episodeEvidence) ||
+			(!targetsEpisode && episodeEvidence && !rule.retentionMode)
+		) {
+			results.push({
+				ruleId: rule.id,
+				ruleName: rule.name,
+				matched: false,
+				reason: null,
+				filteredBy: "scope_filter",
+				retentionMode: rule.retentionMode,
+			});
+			continue;
+		}
+
+		if (targetsEpisode && episodeEvidence && !episodeEvidence.available) {
+			results.push({
+				ruleId: rule.id,
+				ruleName: rule.name,
+				matched: false,
+				reason: null,
+				filteredBy: "evidence_unavailable",
 				retentionMode: rule.retentionMode,
 			});
 			continue;
@@ -2417,8 +2476,24 @@ export function explainItemAgainstRules(
 			continue;
 		}
 
+		if (!targetsEpisode && ruleUsesUnavailableData(rule, failedSources)) {
+			results.push({
+				ruleId: rule.id,
+				ruleName: rule.name,
+				matched: false,
+				reason: null,
+				filteredBy: "evidence_unavailable",
+				retentionMode: rule.retentionMode,
+			});
+			continue;
+		}
+
 		// Evaluate the rule
-		const match = evaluateRule(item, rule, instanceService, ctx);
+		const match = targetsEpisode
+			? episodeEvidence?.watchCount === null || episodeEvidence?.watchCount === undefined
+				? null
+				: evaluateEpisodeWatchCountRule({ watchCount: episodeEvidence.watchCount }, rule)
+			: evaluateRule(item, rule, instanceService, ctx);
 		results.push({
 			ruleId: rule.id,
 			ruleName: rule.name,
@@ -2436,7 +2511,7 @@ export function explainItemAgainstRules(
  * Check if a rule should be skipped because its data source failed.
  * Examines both the top-level ruleType and composite sub-conditions.
  */
-function shouldSkipForFailedSource(
+export function ruleUsesUnavailableData(
 	rule: LibraryCleanupRule,
 	failedSources?: Set<DataSourceDependency>,
 ): boolean {
@@ -2485,8 +2560,14 @@ function shouldSkipRuleType(
 		const source = (params?.source as string) ?? "plex";
 		if (source === "plex") return failedSources.has("plex");
 		if (source === "tautulli") return failedSources.has("tautulli");
-		if (source === "either") return failedSources.has("plex") && failedSources.has("tautulli");
+		if (source === "either") return failedSources.has("plex") || failedSources.has("tautulli");
 		return false;
+	}
+	if (
+		ruleType === "seerr_requester_watched" ||
+		ruleType === "seerr_requester_not_watched"
+	) {
+		return failedSources.has("seerr") || failedSources.has("plex");
 	}
 
 	const dep = ruleDataSourceMap[ruleType];

@@ -17,20 +17,26 @@ import {
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import {
-	buildEvalContext,
+	buildEvalContextWithHealth,
 	CleanupPolicyMutationConflictError,
 	CleanupRunAlreadyInProgressError,
+	episodeCoordinateKey,
 	executeApprovedItems,
 	executeCleanupPreview,
 	executeCleanupRun,
 	executeRetryItems,
+	extractSeriesTmdbId,
+	prefetchFreshPlexEpisodeWatchData,
 	withCleanupPolicyMutationLease,
 } from "../lib/library-cleanup/cleanup-executor.js";
 import {
 	CleanupMaintenanceConflictError,
 	withCleanupOperationGuard,
 } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
-import { explainItemAgainstRules } from "../lib/library-cleanup/rule-evaluators.js";
+import {
+	type EpisodeExplainEvidence,
+	explainItemAgainstRules,
+} from "../lib/library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval } from "../lib/library-cleanup/types.js";
 import {
 	buildFreshCompleteFileIdIndex,
@@ -1327,12 +1333,14 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	 */
 	app.post("/library-cleanup/explain", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { instanceId, arrItemId } = validateRequest(cleanupExplainRequestSchema, request.body);
+		const { instanceId, arrItemId, arrEpisodeId } = validateRequest(
+			cleanupExplainRequestSchema,
+			request.body,
+		);
 
 		// Verify instance ownership
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: { id: instanceId, userId },
-			select: { id: true, service: true },
 		});
 		if (!instance) {
 			return reply.status(404).send({ error: "Instance not found" });
@@ -1362,6 +1370,91 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			return reply.status(404).send({ error: "Item not found in library cache" });
 		}
 
+		let episodeEvidence: EpisodeExplainEvidence | undefined;
+		let episodeDisplay:
+			| {
+					arrEpisodeId: number;
+					seasonNumber: number;
+					episodeNumber: number;
+					episodeTitle: string | null;
+			  }
+			| undefined;
+		if (arrEpisodeId !== undefined) {
+			if (instance.service !== "SONARR") {
+				return reply
+					.status(400)
+					.send({ error: "Episode explanations are only available for Sonarr instances" });
+			}
+
+			const sonarr = app.arrClientFactory.createSonarrClient(instance);
+			const episodes = (await sonarr.episode.getAll({
+				seriesId: arrItemId,
+				includeEpisodeFile: true,
+			})) as Array<Record<string, unknown>>;
+			const episode = episodes.find((candidate) => candidate.id === arrEpisodeId);
+			const seasonNumber = episode?.seasonNumber;
+			const episodeNumber = episode?.episodeNumber;
+			if (
+				!episode ||
+				typeof seasonNumber !== "number" ||
+				!Number.isSafeInteger(seasonNumber) ||
+				seasonNumber < 0 ||
+				typeof episodeNumber !== "number" ||
+				!Number.isSafeInteger(episodeNumber) ||
+				episodeNumber <= 0
+			) {
+				return reply
+					.status(404)
+					.send({ error: "Episode not found in the requested Sonarr series" });
+			}
+
+			const tmdbId = extractSeriesTmdbId(cacheItem.data);
+			let watchCount: number | null = null;
+			if (tmdbId !== null) {
+				const instances = await app.prisma.serviceInstance.findMany({
+					where: { userId, enabled: true },
+				});
+				const watchMap = await prefetchFreshPlexEpisodeWatchData(
+					{ prisma: app.prisma, arrClientFactory: app.arrClientFactory, log: request.log },
+					instances,
+					new Date(),
+					[],
+					{
+						includeUnwatched: true,
+						coordinate: { showTmdbId: tmdbId, seasonNumber, episodeNumber },
+					},
+				);
+				const watchEvidence = watchMap.get(
+					episodeCoordinateKey(tmdbId, seasonNumber, episodeNumber),
+				)?.[0];
+				watchCount = watchEvidence?.watchCount ?? null;
+				episodeEvidence = {
+					arrEpisodeId,
+					watchCount,
+					available: watchEvidence !== undefined,
+				};
+			}
+			episodeEvidence ??= { arrEpisodeId, watchCount, available: false };
+			episodeDisplay = {
+				arrEpisodeId,
+				seasonNumber,
+				episodeNumber,
+				episodeTitle:
+					typeof episode.title === "string" && episode.title.trim().length > 0
+						? episode.title
+						: null,
+			};
+		}
+
+		const explainedItem = {
+			title: cacheItem.title,
+			year: cacheItem.year,
+			instanceId,
+			itemType: episodeDisplay ? "episode" : cacheItem.itemType,
+			targetScope: episodeDisplay ? ("episode" as const) : ("series" as const),
+			...episodeDisplay,
+		};
+
 		// Load config + rules
 		const config = await app.prisma.libraryCleanupConfig.findUnique({
 			where: { userId },
@@ -1369,22 +1462,17 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		});
 		if (!config || config.rules.length === 0) {
 			return reply.send({
-				item: {
-					title: cacheItem.title,
-					year: cacheItem.year,
-					instanceId,
-					itemType: cacheItem.itemType,
-				},
+				item: explainedItem,
 				results: [],
 				retentionProtected: false,
 			});
 		}
 
 		// Build a fully-populated eval context with prefetched external data
-		const ctx = await buildEvalContext(
+		const { ctx, failedSources } = await buildEvalContextWithHealth(
 			{ prisma: app.prisma, arrClientFactory: app.arrClientFactory, log: request.log },
 			userId,
-			config.rules,
+			config.rules.filter((rule) => rule.targetScope !== "episode"),
 		);
 
 		const results = explainItemAgainstRules(
@@ -1392,18 +1480,19 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			config.rules,
 			instance.service,
 			ctx,
+			episodeEvidence,
+			failedSources,
 		);
 
 		// Determine if any retention rule matched
-		const retentionProtected = results.some((r) => r.retentionMode && r.matched);
+		const retentionProtected = results.some(
+			(result) =>
+				result.retentionMode &&
+				(result.matched || result.filteredBy === "evidence_unavailable"),
+		);
 
 		return reply.send({
-			item: {
-				title: cacheItem.title,
-				year: cacheItem.year,
-				instanceId,
-				itemType: cacheItem.itemType,
-			},
+			item: explainedItem,
 			results,
 			retentionProtected,
 		});
