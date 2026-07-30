@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { refreshPlexEpisodeCache } from "./plex-episode-cache-refresher.js";
 
 describe("refreshPlexEpisodeCache watch count", () => {
-	it("persists the greater conservative lower bound from viewCount and history", async () => {
+	it("uses the configured account viewCount while retaining history attribution", async () => {
 		const upsert = vi.fn().mockResolvedValue({});
 		const prisma = {
 			plexCache: {
@@ -53,12 +53,12 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			1,
 			expect.objectContaining({
 				create: expect.objectContaining({
-					watchCount: 2,
+					watchCount: 1,
 					watched: true,
 					sourceFingerprint: "connection-fingerprint",
 				}),
 				update: expect.objectContaining({
-					watchCount: 2,
+					watchCount: 1,
 					watched: true,
 					sourceFingerprint: "connection-fingerprint",
 				}),
@@ -74,6 +74,56 @@ describe("refreshPlexEpisodeCache watch count", () => {
 		const firstCall = upsert.mock.calls[0]?.[0];
 		expect(firstCall.create.refreshedAt).toBeInstanceOf(Date);
 		expect(firstCall.update.refreshedAt).toEqual(firstCall.create.refreshedAt);
+	});
+
+	it("refreshes authoritative metadata when history attribution is unavailable", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue([{ tmdbId: 123, ratingKey: "show-1" }]),
+			},
+			plexEpisodeCache: { groupBy: vi.fn().mockResolvedValue([]), upsert },
+		};
+		const client = {
+			getHistory: vi.fn().mockRejectedValue(new Error("history unavailable")),
+			getAccounts: vi.fn(),
+			getEpisodes: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "episode-1",
+					title: "Current metadata",
+					seasonNumber: 1,
+					episodeNumber: 1,
+					viewCount: 2,
+					lastViewedAt: 1_700_000_000,
+				},
+			]),
+		};
+		const log = {
+			debug: vi.fn(),
+			info: vi.fn(),
+			warn: vi.fn(),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			log as never,
+			"connection-fingerprint",
+		);
+
+		expect(result).toMatchObject({ upserted: 1, errors: 1, refreshedShows: 1 });
+		expect(upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					watchCount: 2,
+					watched: true,
+					watchedByUsers: "[]",
+					lastWatchedAt: new Date(1_700_000_000 * 1000),
+				}),
+			}),
+		);
+		expect(client.getAccounts).not.toHaveBeenCalled();
 	});
 
 	it("records a refreshed zero without treating it as a positive witness", async () => {

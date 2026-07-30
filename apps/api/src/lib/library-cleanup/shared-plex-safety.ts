@@ -53,7 +53,8 @@ export interface CleanupDeleteTarget {
 type SafetyPlexClient = Pick<
 	PlexClient,
 	"getAccounts" | "getMovieMediaPartsByTmdbId" | "getSeriesEpisodeMediaPartsByTvdbId"
->;
+> &
+	Partial<Pick<PlexClient, "getEpisodeWatchCount">>;
 
 export interface SharedPlexSafetyContext {
 	plexClients: Map<string, SafetyPlexClient>;
@@ -375,14 +376,8 @@ function canonicalSonarrEpisodeIdentity(value: unknown): VerifiedSonarrEpisodeId
 	return {
 		arrEpisodeId,
 		seasonNumber,
-		episodeNumber: requiredPositiveSafeInteger(
-			episode.episodeNumber,
-			"Sonarr episode number",
-		),
-		episodeFileId: requiredPositiveSafeInteger(
-			episode.episodeFileId,
-			"Sonarr episode file ID",
-		),
+		episodeNumber: requiredPositiveSafeInteger(episode.episodeNumber, "Sonarr episode number"),
+		episodeFileId: requiredPositiveSafeInteger(episode.episodeFileId, "Sonarr episode file ID"),
 		episodeFileConsumerIds: consumerIds,
 		monitored: episode.monitored,
 	};
@@ -408,20 +403,14 @@ function canonicalEpisodeWatchProof(value: unknown): VerifiedEpisodePlexWatchPro
 		ratingKey: requiredNonEmptyString(proof.ratingKey, "Plex episode rating key"),
 		watchCount: requiredPositiveSafeInteger(proof.watchCount, "Plex episode watch count"),
 		refreshedAt: new Date(refreshedAt).toISOString(),
-		fullPath: normalizeMediaPath(
-			(proof.fullPath as Record<string, unknown> | undefined)?.value,
-		),
+		fullPath: normalizeMediaPath((proof.fullPath as Record<string, unknown> | undefined)?.value),
 		size: requiredPositiveSafeInteger(proof.size, "Plex episode media part size"),
 		mapping:
 			mapping === null
 				? null
 				: {
-						from: normalizeMediaPath(
-							(mapping?.from as Record<string, unknown> | undefined)?.value,
-						),
-						to: normalizeMediaPath(
-							(mapping?.to as Record<string, unknown> | undefined)?.value,
-						),
+						from: normalizeMediaPath((mapping?.from as Record<string, unknown> | undefined)?.value),
+						to: normalizeMediaPath((mapping?.to as Record<string, unknown> | undefined)?.value),
 					},
 	};
 }
@@ -2412,11 +2401,7 @@ async function verifyPlexMediaState(
 					const mediaItems = await mediaPartsPromise;
 					const targetMatches = matchingPlexSeriesParts(input.files, mediaItems, notification);
 					const retainedTargetMatches = input.retainedSonarrTargetFiles
-						? matchingPlexSeriesParts(
-								input.retainedSonarrTargetFiles,
-								mediaItems,
-								notification,
-							)
+						? matchingPlexSeriesParts(input.retainedSonarrTargetFiles, mediaItems, notification)
 						: [];
 					const targetPhysicalKeys = new Set(
 						targetMatches.map((match) => `${match.show.ratingKey}:${plexPartKey(match.part)}`),
@@ -2541,23 +2526,14 @@ async function verifyEpisodePlexWatchProof(
 	const showTmdbId = requiredPositiveSafeInteger(series.tmdbId, "Sonarr series TMDb ID");
 	const seasonNumber = target.seasonNumber;
 	const episodeNumber = target.episodeNumber;
-	if (
-		typeof seasonNumber !== "number" ||
-		!Number.isSafeInteger(seasonNumber) ||
-		seasonNumber < 0
-	) {
+	if (typeof seasonNumber !== "number" || !Number.isSafeInteger(seasonNumber) || seasonNumber < 0) {
 		throw new EpisodeWatchProofError("Sonarr episode season coordinate is invalid");
 	}
-	const exactEpisodeNumber = requiredPositiveSafeInteger(
-		episodeNumber,
-		"Sonarr episode number",
-	);
+	const exactEpisodeNumber = requiredPositiveSafeInteger(episodeNumber, "Sonarr episode number");
 	const selectedComparable = comparableFile(selectedFile);
 	for (const evidence of target.plexWatchEvidence) {
 		const approvedRefreshedAt =
-			evidence.refreshedAt instanceof Date
-				? evidence.refreshedAt
-				: new Date(evidence.refreshedAt);
+			evidence.refreshedAt instanceof Date ? evidence.refreshedAt : new Date(evidence.refreshedAt);
 		if (
 			!Number.isFinite(approvedRefreshedAt.getTime()) ||
 			approvedRefreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000
@@ -2574,10 +2550,7 @@ async function verifyEpisodePlexWatchProof(
 		const plexUpdatedAt = plexInstance.updatedAt.getTime();
 		const currentPlexFingerprint = plexEvidenceSourceFingerprint(plexInstance);
 		if (evidence.sourceFingerprint !== currentPlexFingerprint) continue;
-		if (
-			!Number.isFinite(plexUpdatedAt) ||
-			approvedRefreshedAt.getTime() < plexUpdatedAt
-		) {
+		if (!Number.isFinite(plexUpdatedAt) || approvedRefreshedAt.getTime() < plexUpdatedAt) {
 			continue;
 		}
 		const currentEvidence = await deps.prisma.plexEpisodeCache.findFirst({
@@ -2630,6 +2603,17 @@ async function verifyEpisodePlexWatchProof(
 			show.episodes.filter((episode) => episode.ratingKey === evidence.ratingKey),
 		);
 		if (watchedEpisodes.length !== 1) continue;
+		if (!plex.getEpisodeWatchCount) continue;
+		let liveMetadataWatchCount: number;
+		try {
+			liveMetadataWatchCount = await plex.getEpisodeWatchCount(evidence.ratingKey);
+		} catch {
+			continue;
+		}
+		if (!Number.isSafeInteger(liveMetadataWatchCount) || liveMetadataWatchCount <= 0) {
+			continue;
+		}
+		if (liveMetadataWatchCount < evidence.watchCount) continue;
 
 		const matchingNotifications = notifications.filter((notification) => {
 			if (
@@ -2652,17 +2636,12 @@ async function verifyEpisodePlexWatchProof(
 		const pathCandidates: Array<{
 			fullPath: NormalizedMediaPath;
 			mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
-		}> =
-			!deletesFile
-				? [{ fullPath: selectedComparable.fullPath, mapping: null }]
-				: matchingNotifications.map((notification) => ({
-						fullPath: mappedArrPathForNotification(
-							selectedComparable,
-							notification,
-							"SONARR",
-						),
-						mapping: notificationPathMapping(notification, "Sonarr target"),
-					}));
+		}> = !deletesFile
+			? [{ fullPath: selectedComparable.fullPath, mapping: null }]
+			: matchingNotifications.map((notification) => ({
+					fullPath: mappedArrPathForNotification(selectedComparable, notification, "SONARR"),
+					mapping: notificationPathMapping(notification, "Sonarr target"),
+				}));
 		const matches = new Map<
 			string,
 			{
@@ -3246,9 +3225,7 @@ export async function findSharedPlexDeleteBlocks(
 					.map((episode) => requiredPositiveSafeInteger(episode.id, "Sonarr episode consumer ID"))
 					.sort((left, right) => left - right);
 				if (consumerIds.length !== 1 || consumerIds[0] !== requestedEpisodeId) {
-					throw new FileMatchVerificationError(
-						"Target Sonarr file belongs to multiple episodes",
-					);
+					throw new FileMatchVerificationError("Target Sonarr file belongs to multiple episodes");
 				}
 				const selectedFile = verifiedFiles.episodeFiles.find(
 					(file) => file.episodeFileId === selectedEpisodeFileId,
@@ -3264,9 +3241,7 @@ export async function findSharedPlexDeleteBlocks(
 					select: { infoHash: true, torrentState: true },
 				});
 				if (!cachedEpisodeFile) {
-					throw new FileMatchVerificationError(
-						"Target Sonarr episode qUI identity is unavailable",
-					);
+					throw new FileMatchVerificationError("Target Sonarr episode qUI identity is unavailable");
 				}
 				const quiIdentity: VerifiedEpisodeQuiIdentity = {
 					enabled: target.respectQuiSeeding === true,
@@ -3477,10 +3452,9 @@ export async function findSharedPlexDeleteBlocks(
 					target,
 					notifications: plexNotifications,
 					externalId: tvdbId,
-					files: (episodePlan
-						? [episodePlan.selectedFile]
-						: verifiedFiles.episodeFiles
-					).map(comparableFile),
+					files: (episodePlan ? [episodePlan.selectedFile] : verifiedFiles.episodeFiles).map(
+						comparableFile,
+					),
 					retainedSonarrTargetFiles: episodePlan
 						? episodePlan.retainedTargetFiles.map(comparableFile)
 						: undefined,
@@ -3511,9 +3485,9 @@ export async function findSharedPlexDeleteBlocks(
 					? error.message
 					: error instanceof EpisodeWatchProofError
 						? "Skipped for safety: the watched Plex episode could not be mapped to the exact selected Sonarr episode file. Refresh Plex episode data and verify path mappings."
-					: error instanceof FileMatchVerificationError
-						? fileMatchFailedReason(service)
-						: verificationFailedReason(service);
+						: error instanceof FileMatchVerificationError
+							? fileMatchFailedReason(service)
+							: verificationFailedReason(service);
 			blocks.set(targetKey, reason);
 			context.plans.set(targetKey, { kind: "blocked", reason });
 			deps.log.warn(
@@ -3557,8 +3531,7 @@ export async function findSharedPlexDeleteBlocks(
 			}
 			const freshTargetDeleteNotifications = sonarrTargetDeleteNotificationWitnesses(
 				(await pending.client.notification.getAll()).filter(
-					(notification) =>
-						!pending.episodePlan || notification.onEpisodeFileDelete === true,
+					(notification) => !pending.episodePlan || notification.onEpisodeFileDelete === true,
 				),
 				await pending.client.series.getById(pending.target.arrItemId),
 				pending.action,

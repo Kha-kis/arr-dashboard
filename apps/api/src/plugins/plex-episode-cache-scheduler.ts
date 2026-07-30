@@ -17,6 +17,18 @@ import { getErrorMessage } from "../lib/utils/error-message.js";
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 5 * 60_000; // 5 minutes — staggered well after plex-cache (30s) + tautulli (2min) to avoid overlapping memory peaks
 
+export function plexEpisodeRefreshResultStatus(result: {
+	errors: number;
+	upserted: number;
+	refreshedShows: number;
+	capacityDegraded: boolean;
+}): "success" | "partial" | "error" {
+	if (result.errors > 0) {
+		return result.upserted > 0 ? "partial" : "error";
+	}
+	return result.capacityDegraded ? "partial" : "success";
+}
+
 const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		let intervalHandle: ReturnType<typeof setInterval> | null = null;
@@ -68,12 +80,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 										? `Capacity degraded: ${result.eligibleShows} watched shows exceed the 200-show/24-hour freshness capacity; only ${result.refreshedShows} were refreshed this cycle.`
 										: `Coverage incomplete: refreshed ${result.refreshedShows} of ${result.eligibleShows} watched shows; rotation will continue next run.`
 									: null;
-								const lastResult =
-									result.errors > 0
-										? "error"
-										: result.capacityDegraded
-											? "partial"
-											: "success";
+								const lastResult = plexEpisodeRefreshResultStatus(result);
 								const statusMessage =
 									result.errorMessages.length > 0
 										? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)

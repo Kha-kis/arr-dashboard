@@ -104,48 +104,52 @@ export async function refreshPlexEpisodeCache(
 		})
 		.slice(0, MAX_SHOWS_PER_REFRESH);
 	const coverageIncomplete = eligibleShows > selectedShows.length;
-	const capacityDegraded =
-		eligibleShows > MAX_SHOWS_PER_REFRESH * REFRESHES_PER_FRESHNESS_WINDOW;
+	const capacityDegraded = eligibleShows > MAX_SHOWS_PER_REFRESH * REFRESHES_PER_FRESHNESS_WINDOW;
 
-	// Fetch history for user attribution
-	let historyMap: Map<string, { users: Set<string>; lastWatched: number; eventCount: number }>;
+	// Fetch history for best-effort user attribution. Metadata viewCount is
+	// authoritative for cleanup, so attribution failures must not prevent it
+	// from being refreshed.
+	const historyMap = new Map<
+		string,
+		{ users: Set<string>; lastWatched: number; eventCount: number }
+	>();
+	let history: Awaited<ReturnType<PlexClient["getHistory"]>> = [];
 	try {
-		const history = await client.getHistory({ maxResults: 5000 });
-		const accounts = await client.getAccounts();
-		const accountMap = new Map(accounts.map((a) => [a.id, a.name]));
-
-		historyMap = new Map();
-		for (const item of history) {
-			if (item.type !== "episode") continue;
-			const key = item.ratingKey;
-			const existing = historyMap.get(key);
-			const userName = accountMap.get(item.accountID) ?? `Account ${item.accountID}`;
-			if (existing) {
-				existing.users.add(userName);
-				existing.eventCount++;
-				if (item.viewedAt > existing.lastWatched) {
-					existing.lastWatched = item.viewedAt;
-				}
-			} else {
-				historyMap.set(key, {
-					users: new Set([userName]),
-					lastWatched: item.viewedAt,
-					eventCount: 1,
-				});
-			}
-		}
+		history = await client.getHistory({ maxResults: 5000 });
 	} catch (err) {
 		log.warn({ err, instanceId }, "Failed to fetch history for episode cache refresh");
+		errors++;
 		errorMessages.push(`Failed to fetch history: ${getErrorMessage(err)}`);
-		return {
-			upserted,
-			errors: 1,
-			errorMessages,
-			eligibleShows,
-			refreshedShows: 0,
-			coverageIncomplete,
-			capacityDegraded,
-		};
+	}
+	let accountMap = new Map<number, string>();
+	if (history.length > 0) {
+		try {
+			const accounts = await client.getAccounts();
+			accountMap = new Map(accounts.map((account) => [account.id, account.name]));
+		} catch (err) {
+			log.warn({ err, instanceId }, "Failed to fetch Plex accounts for episode attribution");
+			errors++;
+			errorMessages.push(`Failed to fetch Plex accounts: ${getErrorMessage(err)}`);
+		}
+	}
+	for (const item of history) {
+		if (item.type !== "episode") continue;
+		const key = item.ratingKey;
+		const existing = historyMap.get(key);
+		const userName = accountMap.get(item.accountID) ?? `Account ${item.accountID}`;
+		if (existing) {
+			existing.users.add(userName);
+			existing.eventCount++;
+			if (item.viewedAt > existing.lastWatched) {
+				existing.lastWatched = item.viewedAt;
+			}
+		} else {
+			historyMap.set(key, {
+				users: new Set([userName]),
+				lastWatched: item.viewedAt,
+				eventCount: 1,
+			});
+		}
 	}
 
 	// Process each show
@@ -160,11 +164,11 @@ export async function refreshPlexEpisodeCache(
 				const watchData = historyMap.get(episode.ratingKey);
 				const plexViewCount =
 					Number.isInteger(episode.viewCount) && episode.viewCount > 0 ? episode.viewCount : 0;
-				// History is bounded, so its event count is a lower bound. Plex's
-				// episode viewCount may contain events outside that window; taking
-				// the maximum never invents a play while preserving either positive
-				// witness.
-				const watchCount = Math.max(plexViewCount, watchData?.eventCount ?? 0);
+				// Plex watch state is account-specific. History is still used for
+				// attribution and last-watched details, but it cannot authorize
+				// destructive cleanup because old or other-account events do not
+				// prove the configured Plex account's current play count.
+				const watchCount = plexViewCount;
 				const watched = watchCount > 0;
 				const watchedByUsers = watchData ? [...watchData.users] : [];
 				const lastWatchedAt = watchData

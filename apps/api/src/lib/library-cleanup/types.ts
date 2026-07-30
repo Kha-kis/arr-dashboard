@@ -30,18 +30,15 @@ export interface CleanupExecutorDeps {
 	) => Pick<
 		PlexClient,
 		"getAccounts" | "getMovieMediaPartsByTmdbId" | "getSeriesEpisodeMediaPartsByTvdbId"
-	>;
+	> &
+		Partial<Pick<PlexClient, "getEpisodeWatchCount">>;
 	/** Test seam and production adapter for exact-hash mutation-boundary qUI reads. */
-	quiClientFactory?: (
-		instance: ServiceInstance,
-	) => Pick<QuiClient, "getTorrentsByHash">;
+	quiClientFactory?: (instance: ServiceInstance) => Pick<QuiClient, "getTorrentsByHash">;
 	/**
 	 * Resolve every torrent hash sharing the exact physical file inode from
 	 * an uncached, explicitly complete qUI/filesystem snapshot.
 	 */
-	quiFileHashIndexFactory?: (
-		instance: ServiceInstance,
-	) => Promise<CompleteQuiFileHashIndex>;
+	quiFileHashIndexFactory?: (instance: ServiceInstance) => Promise<CompleteQuiFileHashIndex>;
 	log: FastifyBaseLogger;
 }
 

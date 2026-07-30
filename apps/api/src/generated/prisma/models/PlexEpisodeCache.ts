@@ -836,8 +836,9 @@ export type $PlexEpisodeCachePayload<ExtArgs extends runtime.Types.Extensions.In
     watchedByUsers: string
     lastWatchedAt: Date | null
     /**
-     * Conservative lower bound from Plex's episode viewCount and the bounded
-     * history window. Null means this row predates count-aware refresh.
+     * Current episode viewCount for the configured Plex account. History is
+     * retained separately for attribution and never authorizes cleanup.
+     * Null means this row predates count-aware refresh.
      */
     watchCount: number | null
     refreshedAt: Date | null

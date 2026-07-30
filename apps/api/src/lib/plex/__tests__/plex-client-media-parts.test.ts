@@ -366,3 +366,31 @@ describe("PlexClient.getSeriesEpisodeMediaPartsByTvdbId", () => {
 		).toBe("1");
 	});
 });
+
+describe("PlexClient.getEpisodeWatchCount", () => {
+	it("reads the current count for the exact episode rating key", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					MediaContainer: {
+						Metadata: [
+							{
+								ratingKey: "episode-1",
+								title: "Episode 1",
+								viewCount: 3,
+							},
+						],
+					},
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex:32400", "token", log);
+
+		await expect(client.getEpisodeWatchCount("episode-1")).resolves.toBe(3);
+		expect(new URL(fetchMock.mock.calls[0]![0] as string).pathname).toBe(
+			"/library/metadata/episode-1",
+		);
+	});
+});
