@@ -32,6 +32,7 @@ import {
 	assertVerifiedRadarrFileUnchanged,
 	assertVerifiedRadarrPeerOwnershipRetained,
 	assertVerifiedSonarrFilesUnchanged,
+	assertVerifiedSonarrPeerOwnershipRetained,
 	buildCacheTargetSafetyPlan,
 	buildRadarrCacheSafetyPlan,
 	buildSonarrCacheSafetyPlan,
@@ -359,6 +360,7 @@ async function updateClaimedCleanupApproval(
 function buildPostPartialRetrySnapshot(
 	safetyPlan: SharedMediaSafetyPlan | undefined,
 	error: ArrDeletePartialError,
+	action: RuleAction,
 ): string | undefined {
 	if (error.hasRemainingFiles || error.deletedFileIds.length === 0) return undefined;
 
@@ -393,6 +395,9 @@ function buildPostPartialRetrySnapshot(
 			seriesPath: safetyPlan.files.seriesPath,
 			episodeFiles: [],
 		},
+		peers: safetyPlan.peers,
+		ownership: action === "delete" ? safetyPlan.ownership : [],
+		targetDeleteNotifications: safetyPlan.targetDeleteNotifications,
 	});
 }
 
@@ -436,6 +441,25 @@ function isVerifiedFileRemainder(
 	return livePlan.files.episodeFiles.every(
 		(file) => approvedFiles.get(file.episodeFileId) === JSON.stringify(file),
 	);
+}
+
+function hasVerifiedSonarrOwnershipProof(
+	action: string,
+	plan: ExecutableSharedMediaSafetyPlan | null,
+): plan is Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr" }> {
+	return (
+		action === "delete" &&
+		plan?.kind === "verified_sonarr" &&
+		plan.peers.length > 0 &&
+		plan.ownership.length > 0
+	);
+}
+
+function isVerifiedSonarrRecordOnlyRetry(
+	action: string,
+	plan: ExecutableSharedMediaSafetyPlan | null,
+): plan is Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr" }> {
+	return hasVerifiedSonarrOwnershipProof(action, plan) && plan.files.episodeFiles.length === 0;
 }
 
 const SHARED_PLEX_WARNING =
@@ -650,17 +674,55 @@ async function loadCurrentMutationInstance(
 		}
 	} else if (
 		executablePlan.kind === "verified_sonarr" &&
-		executablePlan.files.episodeFiles.length > 0 &&
-		instances.some(
-			(candidate) => candidate.id !== instance.id && candidate.service === instance.service,
-		)
+		(executablePlan.files.episodeFiles.length > 0 || executablePlan.peers.length > 0)
 	) {
-		throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+		const peerInstances = instances.filter(
+			(candidate) => candidate.id !== instance.id && candidate.service === "SONARR",
+		);
+		const peerIds = new Set(executablePlan.peers.map((peer) => peer.instanceId));
+		if (
+			peerInstances.length !== peerIds.size ||
+			peerInstances.some((peerInstance) => !peerIds.has(peerInstance.id))
+		) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+		}
+		for (const peer of executablePlan.peers) {
+			const peerInstance = peerInstances.find((candidate) => candidate.id === peer.instanceId);
+			if (!peerInstance || createArrServiceFingerprint(peerInstance) !== peer.serviceFingerprint) {
+				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+			}
+			const peerClient = deps.arrClientFactory.create(peerInstance) as InstanceType<
+				typeof SonarrClient
+			>;
+			const peerSeries = (await peerClient.series.getAll({ tvdbId: peer.externalId })).filter(
+				(series) => series.tvdbId === peer.externalId,
+			);
+			if (peer.arrItemId === null) {
+				if (peerSeries.length !== 0) {
+					throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+				}
+				continue;
+			}
+			if (
+				peerSeries.length !== 1 ||
+				peerSeries[0]?.id !== peer.arrItemId ||
+				peer.mediaPath === null ||
+				peer.files === null
+			) {
+				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+			}
+			const peerTarget = {
+				serviceFingerprint: peer.serviceFingerprint,
+				externalId: peer.externalId,
+				mediaPath: peer.mediaPath,
+			};
+			await assertVerifiedSonarrFilesUnchanged(peerClient, peer.arrItemId, peerTarget, peer.files);
+		}
 	}
 	return instance;
 }
 
-function withRadarrPeerOwnershipRevalidation(
+function withSharedPlexOwnershipRevalidation(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	target: CleanupDeleteTarget,
@@ -670,21 +732,35 @@ function withRadarrPeerOwnershipRevalidation(
 	let ownershipRevalidationCount = 0;
 	return async () => {
 		await assertMutationAuthority?.();
-		if (safetyPlan.kind !== "verified_radarr" || safetyPlan.peers.length === 0) {
+		if (
+			(safetyPlan.kind !== "verified_radarr" && safetyPlan.kind !== "verified_sonarr") ||
+			safetyPlan.peers.length === 0
+		) {
 			return;
 		}
 		if (ownershipRevalidationCount === 0) {
-			const context = createSharedPlexSafetyContext();
-			const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
-			const targetKey = cleanupDeleteTargetKey(target);
-			const livePlan = asExecutableSafetyPlan(context.plans.get(targetKey));
-			if (blocks.has(targetKey) || !livePlan || !executableSafetyPlansEqual(safetyPlan, livePlan)) {
-				throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
-					"Skipped for safety: the verified Radarr-to-Plex ownership changed at the mutation boundary. Run cleanup again before deleting the file.",
-				);
+			if (isVerifiedSonarrRecordOnlyRetry(target.action ?? "delete", safetyPlan)) {
+				await assertVerifiedSonarrPeerOwnershipRetained(deps, userId, target.arrItemId, safetyPlan);
+			} else {
+				const context = createSharedPlexSafetyContext();
+				const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
+				const targetKey = cleanupDeleteTargetKey(target);
+				const livePlan = asExecutableSafetyPlan(context.plans.get(targetKey));
+				if (
+					blocks.has(targetKey) ||
+					!livePlan ||
+					!executableSafetyPlansEqual(safetyPlan, livePlan)
+				) {
+					const service = safetyPlan.kind === "verified_radarr" ? "Radarr" : "Sonarr";
+					throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+						`Skipped for safety: the verified ${service}-to-Plex ownership changed at the mutation boundary. Run cleanup again before deleting the file.`,
+					);
+				}
 			}
-		} else {
+		} else if (safetyPlan.kind === "verified_radarr") {
 			await assertVerifiedRadarrPeerOwnershipRetained(deps, userId, target.arrItemId, safetyPlan);
+		} else {
+			await assertVerifiedSonarrPeerOwnershipRetained(deps, userId, target.arrItemId, safetyPlan);
 		}
 		ownershipRevalidationCount++;
 		await assertMutationAuthority?.();
@@ -806,13 +882,21 @@ async function buildEvaluatedCacheSafetyPlan(
 		where: { instanceId: item.instanceId, arrSeriesId: item.arrItemId },
 		select: { arrEpisodeFileId: true, path: true, size: true },
 	});
-	return buildSonarrCacheSafetyPlan(
+	const cachePlan = buildSonarrCacheSafetyPlan(
 		seriesPath,
 		tvdbId,
 		item.hasFile,
 		episodeFiles,
 		livePlan.target,
 	);
+	return cachePlan?.kind === "verified_sonarr"
+		? {
+				...cachePlan,
+				peers: livePlan.peers,
+				ownership: livePlan.ownership,
+				targetDeleteNotifications: livePlan.targetDeleteNotifications,
+			}
+		: cachePlan;
 }
 
 async function blockPlansThatDifferFromEvaluatedCache(
@@ -1640,7 +1724,7 @@ async function executeQueuedCleanupItems(
 
 			let sharedPlexBlock: string | undefined;
 			let approvalIdentityChanged = false;
-			const approvedPlan = parseExecutableSafetyPlan(approval.safetySnapshot);
+			let approvedPlan = parseExecutableSafetyPlan(approval.safetySnapshot);
 			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
 			const recoveringInterruptedMutation =
 				options.claimStatus === "retry_pending" ||
@@ -1669,71 +1753,138 @@ async function executeQueuedCleanupItems(
 					);
 				}
 			}
-			if (!sharedPlexBlock && !retryTargetAlreadyAbsent) {
+			if (
+				!sharedPlexBlock &&
+				!retryTargetAlreadyAbsent &&
+				recoveringInterruptedMutation &&
+				hasVerifiedSonarrOwnershipProof(action, approvedPlan) &&
+				approvedPlan.files.episodeFiles.length > 0
+			) {
 				try {
-					const targetKey = cleanupDeleteTargetKey(approval);
-					const blocks = await findSharedPlexDeleteBlocks(
+					await assertVerifiedSonarrPeerOwnershipRetained(
 						deps,
 						userId,
-						[
-							{
-								instanceId: approval.instanceId,
-								arrItemId: approval.arrItemId,
-								itemType: approval.itemType,
-								action,
-							},
-						],
-						sharedPlexSafetyContext,
+						approval.arrItemId,
+						approvedPlan,
 					);
-					sharedPlexBlock = blocks.get(targetKey);
-					safetyPlan = sharedPlexSafetyContext.plans.get(targetKey);
+					const reconciledPlan: Extract<
+						ExecutableSharedMediaSafetyPlan,
+						{ kind: "verified_sonarr" }
+					> = {
+						...approvedPlan,
+						files: {
+							seriesPath: approvedPlan.files.seriesPath,
+							episodeFiles: [],
+						},
+					};
+					await updateClaimedCleanupApproval(
+						prisma,
+						userId,
+						approval.id,
+						options.executeStatus,
+						claimedExecutionToken,
+						{
+							safetySnapshot: serializeExecutableSafetyPlan(reconciledPlan),
+							lastExecutionError:
+								"Recovered a persisted Sonarr mutation after verifying that its target files were already removed.",
+						},
+					);
+					approvedPlan = reconciledPlan;
+					safetyPlan = reconciledPlan;
 				} catch (error) {
-					log.error(
+					log.info(
 						{ err: error, approvalId: approval.id },
-						"Approved cleanup item safety preflight failed closed",
+						"Interrupted Sonarr cleanup was not a verified record-only recovery",
 					);
-					sharedPlexBlock =
-						"Skipped for safety: arr-dashboard could not complete the live ARR and media-server preflight.";
 				}
-				if (!sharedPlexBlock && !safetyPlan) {
-					sharedPlexBlock =
-						"Skipped for safety: arr-dashboard did not produce an explicit ARR mutation safety plan.";
-				}
-				if (!sharedPlexBlock) {
-					const livePlan = asExecutableSafetyPlan(safetyPlan);
-					const exactPlanMatch =
-						approvedPlan && livePlan && executableSafetyPlansEqual(approvedPlan, livePlan);
-					const recoverableFileRemainder =
-						recoveringInterruptedMutation &&
-						(action === "delete" || action === "delete_files") &&
-						approvedPlan &&
-						livePlan &&
-						isVerifiedFileRemainder(approvedPlan, livePlan);
-					if (!exactPlanMatch && !recoverableFileRemainder) {
-						approvalIdentityChanged = true;
+			}
+			const sonarrRecordOnlyRetryPlan = isVerifiedSonarrRecordOnlyRetry(action, approvedPlan)
+				? approvedPlan
+				: null;
+			if (!sharedPlexBlock && !retryTargetAlreadyAbsent) {
+				if (sonarrRecordOnlyRetryPlan) {
+					try {
+						await assertVerifiedSonarrPeerOwnershipRetained(
+							deps,
+							userId,
+							approval.arrItemId,
+							sonarrRecordOnlyRetryPlan,
+						);
+						safetyPlan = sonarrRecordOnlyRetryPlan;
+					} catch (error) {
+						log.error(
+							{ err: error, approvalId: approval.id },
+							"Approved Sonarr record-only retry ownership revalidation failed closed",
+						);
 						sharedPlexBlock =
-							"Skipped for safety: the ARR target or file identity changed after this cleanup item was queued. Run cleanup again and review a new approval.";
-					} else if (recoverableFileRemainder && !exactPlanMatch) {
-						try {
-							await updateClaimedCleanupApproval(
-								prisma,
-								userId,
-								approval.id,
-								options.executeStatus,
-								claimedExecutionToken,
+							"Skipped for safety: the retained Sonarr-to-Plex ownership changed before the series record could be retried.";
+					}
+				} else {
+					try {
+						const targetKey = cleanupDeleteTargetKey(approval);
+						const blocks = await findSharedPlexDeleteBlocks(
+							deps,
+							userId,
+							[
 								{
-									safetySnapshot: serializeExecutableSafetyPlan(livePlan),
-									lastExecutionError:
-										"Recovered a persisted cleanup mutation after verifying the remaining ARR file set.",
+									instanceId: approval.instanceId,
+									arrItemId: approval.arrItemId,
+									itemType: approval.itemType,
+									action,
 								},
-							);
-						} catch (error) {
-							log.error(
-								{ err: error, approvalId: approval.id },
-								"Cleanup could not persist its reconciled crash-recovery snapshot",
-							);
+							],
+							sharedPlexSafetyContext,
+						);
+						sharedPlexBlock = blocks.get(targetKey);
+						safetyPlan = sharedPlexSafetyContext.plans.get(targetKey);
+					} catch (error) {
+						log.error(
+							{ err: error, approvalId: approval.id },
+							"Approved cleanup item safety preflight failed closed",
+						);
+						sharedPlexBlock =
+							"Skipped for safety: arr-dashboard could not complete the live ARR and media-server preflight.";
+					}
+					if (!sharedPlexBlock && !safetyPlan) {
+						sharedPlexBlock =
+							"Skipped for safety: arr-dashboard did not produce an explicit ARR mutation safety plan.";
+					}
+					if (!sharedPlexBlock) {
+						const livePlan = asExecutableSafetyPlan(safetyPlan);
+						const exactPlanMatch =
+							approvedPlan && livePlan && executableSafetyPlansEqual(approvedPlan, livePlan);
+						const recoverableFileRemainder =
+							recoveringInterruptedMutation &&
+							(action === "delete" || action === "delete_files") &&
+							approvedPlan &&
+							livePlan &&
+							isVerifiedFileRemainder(approvedPlan, livePlan);
+						if (!exactPlanMatch && !recoverableFileRemainder) {
+							approvalIdentityChanged = true;
 							sharedPlexBlock =
-								"Skipped for safety: arr-dashboard could not persist the verified crash-recovery state before continuing.";
+								"Skipped for safety: the ARR target or file identity changed after this cleanup item was queued. Run cleanup again and review a new approval.";
+						} else if (recoverableFileRemainder && !exactPlanMatch) {
+							try {
+								await updateClaimedCleanupApproval(
+									prisma,
+									userId,
+									approval.id,
+									options.executeStatus,
+									claimedExecutionToken,
+									{
+										safetySnapshot: serializeExecutableSafetyPlan(livePlan),
+										lastExecutionError:
+											"Recovered a persisted cleanup mutation after verifying the remaining ARR file set.",
+									},
+								);
+							} catch (error) {
+								log.error(
+									{ err: error, approvalId: approval.id },
+									"Cleanup could not persist its reconciled crash-recovery snapshot",
+								);
+								sharedPlexBlock =
+									"Skipped for safety: arr-dashboard could not persist the verified crash-recovery state before continuing.";
+							}
 						}
 					}
 				}
@@ -1801,7 +1952,7 @@ async function executeQueuedCleanupItems(
 					await options.assertExecutionAllowed?.();
 					mutationBudgetConsumedIds.add(approval.id);
 				};
-				const assertMutationAuthority = withRadarrPeerOwnershipRevalidation(
+				const assertMutationAuthority = withSharedPlexOwnershipRevalidation(
 					deps,
 					userId,
 					{
@@ -2003,7 +2154,7 @@ async function executeQueuedCleanupItems(
 				failed++;
 				const postPartialRetrySnapshot =
 					error instanceof ArrDeletePartialError
-						? buildPostPartialRetrySnapshot(safetyPlan, error)
+						? buildPostPartialRetrySnapshot(safetyPlan, error, action)
 						: undefined;
 				if (error instanceof ArrDeletePartialError && error.deletedFileIds.length > 0) {
 					confirmedPartialFileDeletionIds.add(approval.id);
@@ -3663,7 +3814,7 @@ export async function executeDirectRemoval(
 				instance.id,
 				safetyPlan!,
 			);
-			const assertMutationAuthority = withRadarrPeerOwnershipRevalidation(
+			const assertMutationAuthority = withSharedPlexOwnershipRevalidation(
 				deps,
 				userId,
 				{
@@ -3837,7 +3988,11 @@ export async function executeDirectRemoval(
 				partialArrDeletes++;
 				const deletedAnyVerifiedFiles = error.deletedFileIds.length > 0;
 				if (deletedAnyVerifiedFiles) filesDeleted++;
-				const postPartialRetrySnapshot = buildPostPartialRetrySnapshot(safetyPlan, error);
+				const postPartialRetrySnapshot = buildPostPartialRetrySnapshot(
+					safetyPlan,
+					error,
+					item.match.action,
+				);
 				let retryPersistenceSucceeded = true;
 				try {
 					await updateClaimedCleanupApproval(
