@@ -2155,6 +2155,134 @@ describe("verified Sonarr mutation handoff", () => {
 		});
 	});
 
+	it("uses the Sonarr-to-Plex path mapping when revalidating an episode unmonitor", async () => {
+		const fixture = makeSonarrDeps({
+			mapFrom: "/tv-4k",
+			mapTo: "/plex/tv-4k",
+			plexSeries: [
+				{
+					ratingKey: "show-123",
+					episodes: [
+						{
+							ratingKey: "episode-1",
+							parts: [
+								{
+									file: "/plex/tv-4k/Example Series/Season 01/Example.S01E01.2160p.mkv",
+									size: 2_001,
+								},
+							],
+						},
+						{
+							ratingKey: "episode-2",
+							parts: [
+								{
+									file: "/plex/tv-4k/Example Series/Season 01/Example.S01E02.2160p.mkv",
+									size: 2_002,
+								},
+							],
+						},
+					],
+				},
+			],
+		});
+		const episodeTarget = { ...exactEpisodeTarget(), action: "unmonitor" as const };
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule("unmonitor")],
+		} as never);
+		const storedApproval = {
+			...approval("unmonitor"),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		};
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+			removed: 1,
+			failed: 0,
+			errors: [],
+		});
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(fixture.episodeFileCacheDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["unmonitor", false],
+		["delete", true],
+		["delete_files", true],
+	] as const)(
+		"uses a non-file-delete Plex mapping for episode %s only when no file is removed",
+		async (action, shouldBlock) => {
+			const fixture = makeSonarrDeps({
+				onSeriesDelete: true,
+				onEpisodeFileDelete: false,
+				mapFrom: "/tv-4k",
+				mapTo: "/plex/tv-4k",
+				plexSeries: [
+					{
+						ratingKey: "show-123",
+						episodes: [
+							{
+								ratingKey: "episode-1",
+								parts: [
+									{
+										file: "/plex/tv-4k/Example Series/Season 01/Example.S01E01.2160p.mkv",
+										size: 2_001,
+									},
+								],
+							},
+							{
+								ratingKey: "episode-2",
+								parts: [
+									{
+										file: "/plex/tv-4k/Example Series/Season 01/Example.S01E02.2160p.mkv",
+										size: 2_002,
+									},
+								],
+							},
+						],
+					},
+				],
+			});
+			const episodeTarget = { ...exactEpisodeTarget(), action };
+			const context = createSharedPlexSafetyContext();
+
+			const blocks = await findSharedPlexDeleteBlocks(
+				fixture.deps,
+				"user-1",
+				[episodeTarget],
+				context,
+			);
+
+			if (shouldBlock) {
+				expect(blocks.get(cleanupDeleteTargetKey(episodeTarget))).toContain(
+					"watched Plex episode could not be mapped",
+				);
+				expect(context.plans.get(cleanupDeleteTargetKey(episodeTarget))).toMatchObject({
+					kind: "blocked",
+				});
+			} else {
+				expect(blocks).toEqual(new Map());
+				expect(context.plans.get(cleanupDeleteTargetKey(episodeTarget))).toMatchObject({
+					kind: "verified_sonarr_episode",
+					targetDeleteNotifications: [],
+				});
+			}
+		},
+	);
+
 	it.each([
 		["deleted", null],
 		["disabled", { enabled: false }],

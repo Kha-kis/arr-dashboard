@@ -114,12 +114,42 @@ export async function refreshPlexEpisodeCache(
 		{ users: Set<string>; lastWatched: number; eventCount: number }
 	>();
 	let history: Awaited<ReturnType<PlexClient["getHistory"]>> = [];
+	let historyAvailable = true;
 	try {
 		history = await client.getHistory({ maxResults: 5000 });
 	} catch (err) {
+		historyAvailable = false;
 		log.warn({ err, instanceId }, "Failed to fetch history for episode cache refresh");
 		errors++;
 		errorMessages.push(`Failed to fetch history: ${getErrorMessage(err)}`);
+	}
+	const existingEpisodeIdentities = new Map<
+		string,
+		{ ratingKey: string; sourceFingerprint: string | null }
+	>();
+	if (!historyAvailable) {
+		const existingEpisodes = await prisma.plexEpisodeCache.findMany({
+			where: {
+				instanceId,
+				showTmdbId: { in: selectedShows.map(([tmdbId]) => tmdbId) },
+			},
+			select: {
+				showTmdbId: true,
+				seasonNumber: true,
+				episodeNumber: true,
+				ratingKey: true,
+				sourceFingerprint: true,
+			},
+		});
+		for (const episode of existingEpisodes) {
+			existingEpisodeIdentities.set(
+				`${episode.showTmdbId}:${episode.seasonNumber}:${episode.episodeNumber}`,
+				{
+					ratingKey: episode.ratingKey,
+					sourceFingerprint: episode.sourceFingerprint,
+				},
+			);
+		}
 	}
 	let accountMap = new Map<number, string>();
 	if (history.length > 0) {
@@ -175,8 +205,49 @@ export async function refreshPlexEpisodeCache(
 					: episode.lastViewedAt
 						? new Date(episode.lastViewedAt * 1000)
 						: null;
+				const existingIdentity = existingEpisodeIdentities.get(
+					`${tmdbId}:${episode.seasonNumber}:${episode.episodeNumber}`,
+				);
+				const canPreserveAggregateWatchState =
+					!historyAvailable &&
+					existingIdentity?.ratingKey === episode.ratingKey &&
+					existingIdentity.sourceFingerprint === sourceFingerprint;
+				const aggregateWatchUpdate =
+					!historyAvailable && watchCount > 0
+						? {
+								watched: true,
+								...(lastWatchedAt ? { lastWatchedAt } : {}),
+							}
+						: {};
 
 				try {
+					if (!historyAvailable) {
+						// Without shared history we cannot safely initialize a new
+						// aggregate row or attach old progress to a new Plex identity.
+						// The identity predicates also make the update fail closed if
+						// another refresh changes the row after the read above.
+						if (!canPreserveAggregateWatchState) continue;
+						const updated = await prisma.plexEpisodeCache.updateMany({
+							where: {
+								instanceId,
+								showTmdbId: tmdbId,
+								seasonNumber: episode.seasonNumber,
+								episodeNumber: episode.episodeNumber,
+								ratingKey: episode.ratingKey,
+								sourceFingerprint,
+							},
+							data: {
+								ratingKey: episode.ratingKey,
+								title: episode.title,
+								...aggregateWatchUpdate,
+								watchCount,
+								refreshedAt,
+								sourceFingerprint,
+							},
+						});
+						upserted += updated.count;
+						continue;
+					}
 					await prisma.plexEpisodeCache.upsert({
 						where: {
 							instanceId_showTmdbId_seasonNumber_episodeNumber: {

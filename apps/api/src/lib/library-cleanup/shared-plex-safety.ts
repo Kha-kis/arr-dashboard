@@ -2647,8 +2647,10 @@ async function verifyEpisodePlexWatchProof(
 		const matchingNotifications = notifications.filter((notification) => {
 			if (
 				mediaServerNotificationKind(notification) !== "plex" ||
-				notification.onEpisodeFileDelete !== true ||
-				!sonarrNotificationApplies(notification, series, target.action ?? "delete")
+				(notification as NotificationLike).enable === false ||
+				(deletesFile &&
+					(notification.onEpisodeFileDelete !== true ||
+						!sonarrNotificationApplies(notification, series, target.action ?? "delete")))
 			) {
 				return false;
 			}
@@ -2664,9 +2666,10 @@ async function verifyEpisodePlexWatchProof(
 		const pathCandidates: Array<{
 			fullPath: NormalizedMediaPath;
 			mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
-		}> = !deletesFile
-			? [{ fullPath: selectedComparable.fullPath, mapping: null }]
-			: matchingNotifications.map((notification) => ({
+		}> =
+			!deletesFile && matchingNotifications.length === 0
+				? [{ fullPath: selectedComparable.fullPath, mapping: null }]
+				: matchingNotifications.map((notification) => ({
 					fullPath: mappedArrPathForNotification(selectedComparable, notification, "SONARR"),
 					mapping: notificationPathMapping(notification, "Sonarr target"),
 				}));
