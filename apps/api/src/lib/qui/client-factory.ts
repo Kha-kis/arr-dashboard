@@ -272,8 +272,11 @@ const wireTorrentSchema = z
 		}),
 	);
 
-const wireCrossInstanceResponseSchema = z.object({
+const wireCrossInstanceLookupResponseSchema = z.object({
 	cross_instance_torrents: z.array(wireTorrentSchema).nullable(),
+});
+
+const wireCrossInstanceResponseSchema = wireCrossInstanceLookupResponseSchema.extend({
 	hasMore: z.boolean(),
 	partialResults: z.boolean(),
 	total: z.number().int().nonnegative(),
@@ -469,8 +472,28 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		},
 
 		async getTorrentByHash(hash) {
-			const torrents = await this.getTorrentsByHash(hash);
-			return torrents[0] ?? null;
+			// Point lookups predate qUI's completeness metadata and are used by
+			// ordinary routes and queue-cleaner policy checks. Keep this boundary
+			// compatible with metadata-free responses; destructive callers use
+			// getTorrentsByHash(), whose paginated parser remains fail-closed.
+			const data = await quiRequest(
+				ctx,
+				"/api/torrents/cross-instance",
+				wireCrossInstanceLookupResponseSchema,
+				{
+					query: {
+						search: hash,
+						limit: "20",
+					},
+				},
+			);
+			const exact = (data.cross_instance_torrents ?? []).filter(
+				(torrent) => torrent.hash.toLowerCase() === hash.toLowerCase(),
+			);
+			for (const torrent of exact) {
+				crossInstanceTorrentIdentity(torrent, "exact-hash point lookup");
+			}
+			return exact[0] ?? null;
 		},
 
 		async listAllTorrents() {

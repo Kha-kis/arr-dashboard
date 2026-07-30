@@ -217,6 +217,25 @@ describe("createQuiClient", () => {
 		expect(result).toBeNull();
 	});
 
+	it("accepts metadata-free qUI responses for an ordinary exact-hash point lookup", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					cross_instance_torrents: [wireTorrent({ hash: "ABC123", instance_id: 7 })],
+				}),
+				{
+					status: 200,
+					headers: { "content-type": "application/json" },
+				},
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const result = await client.getTorrentByHash("abc123");
+
+		expect(result).toMatchObject({ hash: "ABC123", instanceId: 7 });
+	});
+
 	it("filters fuzzy matches to the exact lowercased hash", async () => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(
