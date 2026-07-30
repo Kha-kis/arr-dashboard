@@ -1,142 +1,229 @@
-#!/bin/bash
-# Bootstrap Authentik OIDC provider for arr-dashboard testing
+#!/usr/bin/env bash
+# Bootstrap a real Authentik provider for the OIDC account-linking E2E test.
 #
-# This script:
-# 1. Waits for Authentik to be healthy
-# 2. Completes initial admin setup via Playwright
-# 3. Creates an OIDC provider and application via the API
-# 4. Writes credentials to .env.test for the Playwright spec
+# Run through `pnpm e2e:authentik:up`, which pins the isolated Compose
+# project name before this script makes any API changes.
 #
-# Prerequisites: docker compose up -d
-# Usage: bash bootstrap.sh
+# The issuer uses Authentik's container IP so both the host-run Playwright
+# browser and the arr-dashboard container can resolve the same canonical URL.
+# This harness is intended for Linux hosts and Linux CI runners.
 
 set -euo pipefail
 
-AUTHENTIK_URL="${AUTHENTIK_URL:-http://localhost:9000}"
-ARR_DASHBOARD_URL="${ARR_DASHBOARD_URL:-http://localhost:3000}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="${SCRIPT_DIR}/.env.test"
+
+COMPOSE_PROJECT="arr-dashboard-authentik-e2e"
+AUTHENTIK_CONTAINER="authentik-test-server"
+AUTHENTIK_TOKEN="e2e-test-api-token"
+ARR_DASHBOARD_URL="http://localhost:${DASHBOARD_PORT:-3000}"
+ADMIN_USERNAME="akadmin"
 ADMIN_PASSWORD="TestPassword123!"
-ADMIN_EMAIL="admin@test.local"
 APP_SLUG="arr-dashboard-test"
 CLIENT_ID="arr-dashboard-e2e-test"
-CLIENT_SECRET="e2e-test-secret-value-$(openssl rand -hex 8)"
+CLIENT_SECRET="e2e-test-secret-value"
 
-echo "🔧 Bootstrapping Authentik OIDC for arr-dashboard testing..."
+log() {
+	echo "[authentik-bootstrap] $*"
+}
 
-# Wait for Authentik
-echo "⏳ Waiting for Authentik..."
-for i in $(seq 1 60); do
-  if curl -sf "$AUTHENTIK_URL/-/health/ready/" > /dev/null 2>&1; then
-    echo "✅ Authentik is ready"
-    break
-  fi
-  [ "$i" -eq 60 ] && echo "❌ Timeout" && exit 1
-  sleep 5
+fail() {
+	echo "[authentik-bootstrap] ERROR: $*" >&2
+	exit 1
+}
+
+require_value() {
+	local label="$1"
+	local value="$2"
+	[ -n "$value" ] || fail "Could not resolve ${label}"
+}
+
+urlencode() {
+	jq -rn --arg value "$1" '$value | @uri'
+}
+
+CONTAINER_METADATA="$(docker inspect "$AUTHENTIK_CONTAINER")"
+ACTUAL_PROJECT="$(
+	jq -er '.[0].Config.Labels["com.docker.compose.project"]' <<<"$CONTAINER_METADATA"
+)"
+ACTUAL_SERVICE="$(
+	jq -er '.[0].Config.Labels["com.docker.compose.service"]' <<<"$CONTAINER_METADATA"
+)"
+
+[ "$ACTUAL_PROJECT" = "$COMPOSE_PROJECT" ] ||
+	fail "${AUTHENTIK_CONTAINER} belongs to Compose project ${ACTUAL_PROJECT}, not ${COMPOSE_PROJECT}"
+[ "$ACTUAL_SERVICE" = "authentik-server" ] ||
+	fail "${AUTHENTIK_CONTAINER} is service ${ACTUAL_SERVICE}, not authentik-server"
+
+AUTHENTIK_IP="$(
+	jq -er '.[0].NetworkSettings.Networks | to_entries[0].value.IPAddress' \
+		<<<"$CONTAINER_METADATA"
+)"
+AUTHENTIK_URL="http://${AUTHENTIK_IP}:9000"
+
+api() {
+	local path="$1"
+	shift
+	curl -fsS \
+		-H "Authorization: Bearer ${AUTHENTIK_TOKEN}" \
+		-H "Content-Type: application/json" \
+		"$@" \
+		"${AUTHENTIK_URL}${path}"
+}
+
+log "Waiting for Authentik at ${AUTHENTIK_URL}"
+for attempt in $(seq 1 60); do
+	if curl -fsS "${AUTHENTIK_URL}/-/health/ready/" >/dev/null 2>&1; then
+		break
+	fi
+	[ "$attempt" -lt 60 ] || fail "Authentik did not become ready"
+	sleep 2
 done
 
-# Step 1: Complete initial setup via Playwright
-echo "🔧 Completing initial admin setup..."
-npx playwright-cli open "$AUTHENTIK_URL/if/flow/initial-setup/" 2>/dev/null
+log "Waiting for arr-dashboard at ${ARR_DASHBOARD_URL}"
+for attempt in $(seq 1 60); do
+	if curl -fsS "${ARR_DASHBOARD_URL}/health" >/dev/null 2>&1; then
+		break
+	fi
+	[ "$attempt" -lt 60 ] || fail "arr-dashboard did not become ready"
+	sleep 2
+done
 
-sleep 3
+log "Resolving Authentik OAuth defaults"
+FLOWS="$(api "/api/v3/flows/instances/?pagination=false")"
+AUTHORIZATION_FLOW="$(
+	jq -er '.results[] | select(.slug == "default-provider-authorization-implicit-consent") | .pk' \
+		<<<"$FLOWS"
+)"
+INVALIDATION_FLOW="$(
+	jq -er '.results[] | select(.slug == "default-provider-invalidation-flow") | .pk' \
+		<<<"$FLOWS"
+)"
+SIGNING_KEY="$(
+	api "/api/v3/crypto/certificatekeypairs/?pagination=false" |
+		jq -er '.results[0].pk'
+)"
+PROPERTY_MAPPINGS="$(
+	api "/api/v3/propertymappings/all/?pagination=false" |
+		jq -cer '
+			[
+				.results[]
+				| select(
+					.managed == "goauthentik.io/providers/oauth2/scope-openid"
+					or .managed == "goauthentik.io/providers/oauth2/scope-email"
+					or .managed == "goauthentik.io/providers/oauth2/scope-profile"
+				)
+				| .pk
+			]
+			| if length == 3 then . else error("missing default OIDC scope mappings") end
+		'
+)"
 
-npx playwright-cli run-code "async (page) => {
-  await page.waitForTimeout(2000);
-  const emailInput = page.getByRole('textbox', { name: 'Admin email' });
-  if (await emailInput.count() > 0) {
-    await emailInput.fill('$ADMIN_EMAIL');
-    await page.getByRole('textbox', { name: 'Password', exact: true }).fill('$ADMIN_PASSWORD');
-    await page.getByRole('textbox', { name: 'Password (repeat)' }).fill('$ADMIN_PASSWORD');
-    await page.getByRole('button', { name: 'Continue' }).click();
-    await page.waitForTimeout(3000);
-    return 'Setup completed';
-  }
-  return 'Already set up';
-}" 2>/dev/null
+require_value "authorization flow" "$AUTHORIZATION_FLOW"
+require_value "invalidation flow" "$INVALIDATION_FLOW"
+require_value "signing key" "$SIGNING_KEY"
+require_value "OIDC property mappings" "$PROPERTY_MAPPINGS"
 
-# Step 2: Create OIDC provider via API (using Playwright session)
-echo "🔧 Creating OIDC provider and application..."
-RESULT=$(npx playwright-cli run-code "async (page) => {
-  // Log in if needed
-  if (page.url().includes('flow')) {
-    await page.getByRole('textbox', { name: 'Email or Username' }).fill('akadmin');
-    await page.getByRole('button', { name: 'Log in' }).click();
-    await page.waitForTimeout(1000);
-    await page.getByRole('textbox', { name: 'Please enter your password' }).fill('$ADMIN_PASSWORD');
-    await page.getByRole('button', { name: 'Continue' }).click();
-    await page.waitForTimeout(3000);
-  }
+log "Removing an existing test application, if present"
+ENCODED_APP_SLUG="$(urlencode "$APP_SLUG")"
+APPLICATIONS="$(api "/api/v3/core/applications/?slug=${ENCODED_APP_SLUG}")"
+EXACT_APPLICATIONS="$(
+	jq -c --arg slug "$APP_SLUG" '[.results[] | select(.slug == $slug)]' \
+		<<<"$APPLICATIONS"
+)"
+APPLICATION_COUNT="$(jq -r 'length' <<<"$EXACT_APPLICATIONS")"
+[ "$APPLICATION_COUNT" -le 1 ] ||
+	fail "Found ${APPLICATION_COUNT} applications with exact slug ${APP_SLUG}"
+if [ "$APPLICATION_COUNT" -eq 1 ]; then
+	EXISTING_APP="$(jq -er '.[0].slug' <<<"$EXACT_APPLICATIONS")"
+	api "/api/v3/core/applications/$(urlencode "$EXISTING_APP")/" -X DELETE >/dev/null
+fi
 
-  const cookies = await page.context().cookies();
-  const csrf = cookies.find(c => c.name === 'authentik_csrf')?.value;
+PROVIDER_NAME="${APP_SLUG}-provider"
+ENCODED_PROVIDER_NAME="$(urlencode "$PROVIDER_NAME")"
+PROVIDERS="$(api "/api/v3/providers/oauth2/?name=${ENCODED_PROVIDER_NAME}")"
+EXACT_PROVIDERS="$(
+	jq -c --arg name "$PROVIDER_NAME" '[.results[] | select(.name == $name)]' \
+		<<<"$PROVIDERS"
+)"
+PROVIDER_COUNT="$(jq -r 'length' <<<"$EXACT_PROVIDERS")"
+[ "$PROVIDER_COUNT" -le 1 ] ||
+	fail "Found ${PROVIDER_COUNT} providers with exact name ${PROVIDER_NAME}"
+if [ "$PROVIDER_COUNT" -eq 1 ]; then
+	EXISTING_PROVIDER="$(jq -er '.[0].pk' <<<"$EXACT_PROVIDERS")"
+	api "/api/v3/providers/oauth2/${EXISTING_PROVIDER}/" -X DELETE >/dev/null
+fi
 
-  async function api(path, method, body) {
-    return page.evaluate(async ({path, method, body, csrf}) => {
-      const res = await fetch(path, {
-        method,
-        headers: { 'Content-Type': 'application/json', 'X-authentik-CSRF': csrf },
-        body: body ? JSON.stringify(body) : undefined,
-      });
-      return { status: res.status, body: await res.json() };
-    }, {path, method, body, csrf});
-  }
+REDIRECT_URI="${ARR_DASHBOARD_URL}/auth/oidc/callback"
+PROVIDER_PAYLOAD="$(
+	jq -cn \
+		--arg name "$PROVIDER_NAME" \
+		--arg authorization_flow "$AUTHORIZATION_FLOW" \
+		--arg invalidation_flow "$INVALIDATION_FLOW" \
+		--arg client_id "$CLIENT_ID" \
+		--arg client_secret "$CLIENT_SECRET" \
+		--arg redirect_uri "$REDIRECT_URI" \
+		--arg signing_key "$SIGNING_KEY" \
+		--argjson property_mappings "$PROPERTY_MAPPINGS" \
+		'{
+			name: $name,
+			authorization_flow: $authorization_flow,
+			invalidation_flow: $invalidation_flow,
+			client_type: "confidential",
+			grant_types: ["authorization_code", "refresh_token"],
+			client_id: $client_id,
+			client_secret: $client_secret,
+			redirect_uris: [{matching_mode: "strict", url: $redirect_uri}],
+			signing_key: $signing_key,
+			property_mappings: $property_mappings,
+			access_token_validity: "hours=1",
+			sub_mode: "user_username",
+			include_claims_in_id_token: true
+		}'
+)"
 
-  const flows = await api('/api/v3/flows/instances/', 'GET');
-  const authFlow = flows.body.results?.find(f => f.slug === 'default-authentication-flow')?.pk;
-  const invalidFlow = flows.body.results?.find(f => f.slug.includes('invalidation'))?.pk || authFlow;
-  const keys = await api('/api/v3/crypto/certificatekeypairs/', 'GET');
-  const keyUuid = keys.body.results?.[0]?.pk;
+log "Creating OAuth2/OpenID provider"
+PROVIDER="$(
+	api "/api/v3/providers/oauth2/" \
+		-X POST \
+		--data "$PROVIDER_PAYLOAD"
+)"
+PROVIDER_PK="$(jq -er '.pk' <<<"$PROVIDER")"
 
-  const provider = await api('/api/v3/providers/oauth2/', 'POST', {
-    name: '$APP_SLUG-provider',
-    authorization_flow: authFlow,
-    invalidation_flow: invalidFlow,
-    client_type: 'confidential',
-    client_id: '$CLIENT_ID',
-    client_secret: '$CLIENT_SECRET',
-    redirect_uris: [{ matching_mode: 'strict', url: '$ARR_DASHBOARD_URL/auth/oidc/callback' }],
-    signing_key: keyUuid,
-    access_token_validity: 'hours=1',
-    sub_mode: 'user_username',
-    include_claims_in_id_token: true,
-  });
+log "Creating Authentik application"
+APPLICATION_PAYLOAD="$(
+	jq -cn \
+		--arg name "$APP_SLUG" \
+		--arg slug "$APP_SLUG" \
+		--argjson provider "$PROVIDER_PK" \
+		'{name: $name, slug: $slug, provider: $provider}'
+)"
+api "/api/v3/core/applications/" \
+	-X POST \
+	--data "$APPLICATION_PAYLOAD" >/dev/null
 
-  if (provider.status !== 201) return 'ERROR:Provider:' + JSON.stringify(provider.body);
+DISCOVERY_URL="${AUTHENTIK_URL}/application/o/${APP_SLUG}/.well-known/openid-configuration"
+DISCOVERY="$(curl -fsS "$DISCOVERY_URL")"
+ISSUER_URL="$(jq -er '.issuer' <<<"$DISCOVERY")"
+EXPECTED_ISSUER="${AUTHENTIK_URL}/application/o/${APP_SLUG}/"
 
-  const app = await api('/api/v3/core/applications/', 'POST', {
-    name: '$APP_SLUG',
-    slug: '$APP_SLUG',
-    provider: provider.body.pk,
-  });
+[ "$ISSUER_URL" = "$EXPECTED_ISSUER" ] ||
+	fail "Discovery issuer ${ISSUER_URL} did not match ${EXPECTED_ISSUER}"
 
-  if (app.status !== 201) return 'ERROR:App:' + JSON.stringify(app.body);
+jq -e '
+	.token_endpoint_auth_methods_supported
+	| index("client_secret_basic") != null
+' <<<"$DISCOVERY" >/dev/null ||
+	fail "Authentik discovery does not advertise client_secret_basic"
 
-  const disc = await page.evaluate(async () => {
-    const res = await fetch('/application/o/$APP_SLUG/.well-known/openid-configuration');
-    return res.ok ? await res.json() : null;
-  });
-
-  return JSON.stringify({ issuer: disc?.issuer });
-}" 2>/dev/null | grep -o '{.*}')
-
-npx playwright-cli close 2>/dev/null
-
-ISSUER_URL=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin)['issuer'])")
-
-echo ""
-echo "✅ Authentik OIDC setup complete!"
-echo "============================================"
-echo "ISSUER_URL=$ISSUER_URL"
-echo "CLIENT_ID=$CLIENT_ID"
-echo "CLIENT_SECRET=$CLIENT_SECRET"
-echo "============================================"
-
-cat > "$(dirname "$0")/.env.test" << EOF
+cat >"$ENV_FILE" <<EOF
 AUTHENTIK_ISSUER_URL=$ISSUER_URL
 AUTHENTIK_CLIENT_ID=$CLIENT_ID
 AUTHENTIK_CLIENT_SECRET=$CLIENT_SECRET
-AUTHENTIK_ADMIN_USERNAME=akadmin
+AUTHENTIK_ADMIN_USERNAME=$ADMIN_USERNAME
 AUTHENTIK_ADMIN_PASSWORD=$ADMIN_PASSWORD
 AUTHENTIK_URL=$AUTHENTIK_URL
 ARR_DASHBOARD_URL=$ARR_DASHBOARD_URL
 EOF
-echo "📄 Wrote credentials to .env.test"
+
+log "OIDC provider ready; wrote ${ENV_FILE}"
