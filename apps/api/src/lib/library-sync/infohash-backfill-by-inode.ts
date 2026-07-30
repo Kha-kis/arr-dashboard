@@ -460,10 +460,10 @@ export async function buildFreshCompleteFileIdIndex(
 	log?: FastifyBaseLogger,
 ): Promise<FileIdIndex> {
 	for (let attempt = 0; attempt < 2; attempt++) {
-		const before = await client.listAllTorrents();
+		const before = await client.listAllTorrents({ requireComplete: true });
 		const index = await doBuildFileIdIndex(client, instance, log, before, true);
 		assertCompleteFileIdIndex(index);
-		const after = await client.listAllTorrents();
+		const after = await client.listAllTorrents({ requireComplete: true });
 		if (torrentInventoryFingerprint(before) === torrentInventoryFingerprint(after)) {
 			try {
 				await assertStableFileSystemSnapshot(index);

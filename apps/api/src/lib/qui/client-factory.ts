@@ -66,8 +66,13 @@ export interface QuiClient {
 	 * List every torrent qui knows about, aggregated across every qBit
 	 * instance behind this qui. Used by the periodic state-snapshot job;
 	 * NOT for per-page UI calls (qui returns large payloads here).
+	 *
+	 * Older qUI releases omit pagination completeness metadata. Ordinary
+	 * read-only consumers remain compatible with those releases. Destructive
+	 * authorization must pass `requireComplete: true`, which rejects any
+	 * response that cannot prove the inventory is complete.
 	 */
-	listAllTorrents(): Promise<QuiTorrent[]>;
+	listAllTorrents(options?: { requireComplete?: boolean }): Promise<QuiTorrent[]>;
 	testConnection(): Promise<{ ok: true } | { ok: false; reason: string }>;
 	/**
 	 * Apply a bulk action to one-or-more torrents on a specific qBit
@@ -274,6 +279,12 @@ const wireTorrentSchema = z
 
 const wireCrossInstanceLookupResponseSchema = z.object({
 	cross_instance_torrents: z.array(wireTorrentSchema).nullable(),
+});
+
+const wireCrossInstanceInventoryResponseSchema = wireCrossInstanceLookupResponseSchema.extend({
+	hasMore: z.boolean().optional(),
+	partialResults: z.boolean().optional(),
+	total: z.number().int().nonnegative().optional(),
 });
 
 const wireCrossInstanceResponseSchema = wireCrossInstanceLookupResponseSchema.extend({
@@ -496,7 +507,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			return exact[0] ?? null;
 		},
 
-		async listAllTorrents() {
+		async listAllTorrents(options) {
 			// Cross-instance endpoint paginates server-side. qui's openapi
 			// caps `limit` at 2000 per page; `hasMore` flags when more pages
 			// exist. Pre-fix versions sent `limit=10000` once and returned
@@ -523,21 +534,31 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			let rawRowsRead = 0;
 			const rawIdentities = new Set<string>();
 			for (let page = 0; page < MAX_PAGES; page++) {
-				const data = await quiRequest(
-					ctx,
-					"/api/torrents/cross-instance",
-					wireCrossInstanceResponseSchema,
-					{
-						query: { limit: String(PAGE_SIZE), page: String(page) },
-						timeoutMs: PER_PAGE_TIMEOUT_MS,
-					},
-				);
+				const data = options?.requireComplete
+					? await quiRequest(
+							ctx,
+							"/api/torrents/cross-instance",
+							wireCrossInstanceResponseSchema,
+							{
+								query: { limit: String(PAGE_SIZE), page: String(page) },
+								timeoutMs: PER_PAGE_TIMEOUT_MS,
+							},
+						)
+					: await quiRequest(
+							ctx,
+							"/api/torrents/cross-instance",
+							wireCrossInstanceInventoryResponseSchema,
+							{
+								query: { limit: String(PAGE_SIZE), page: String(page) },
+								timeoutMs: PER_PAGE_TIMEOUT_MS,
+							},
+						);
 				if (data.partialResults === true) {
 					throw new Error("qUI torrent inventory returned partial results");
 				}
-				if (expectedTotal === null) {
+				if (data.total !== undefined && expectedTotal === null) {
 					expectedTotal = data.total;
-				} else if (data.total !== expectedTotal) {
+				} else if (data.total !== undefined && data.total !== expectedTotal) {
 					throw new Error("qUI torrent inventory total changed during pagination");
 				}
 				const batch = data.cross_instance_torrents ?? [];
@@ -549,12 +570,12 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 					}
 					rawIdentities.add(identity);
 				}
-				if (rawRowsRead > data.total) {
+				if (data.total !== undefined && rawRowsRead > data.total) {
 					throw new Error("qUI torrent inventory returned more rows than its total");
 				}
 				all.push(...batch);
-				if (!data.hasMore) {
-					if (rawRowsRead !== data.total) {
+				if (data.hasMore !== true) {
+					if (data.total !== undefined && rawRowsRead !== data.total) {
 						throw new Error("qUI torrent inventory ended before its declared total");
 					}
 					exhausted = true;

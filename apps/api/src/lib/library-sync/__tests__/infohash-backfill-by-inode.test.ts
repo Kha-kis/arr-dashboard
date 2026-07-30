@@ -443,6 +443,9 @@ describe("buildFileIdIndex — caching", () => {
 		await buildFileIdIndex(client as never, QUI_INSTANCE);
 		await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
 		expect(client.listAllTorrents).toHaveBeenCalledTimes(3);
+		expect(client.listAllTorrents).toHaveBeenNthCalledWith(1);
+		expect(client.listAllTorrents).toHaveBeenNthCalledWith(2, { requireComplete: true });
+		expect(client.listAllTorrents).toHaveBeenNthCalledWith(3, { requireComplete: true });
 	});
 
 	it("destructive snapshots reject an incomplete torrent inventory", async () => {

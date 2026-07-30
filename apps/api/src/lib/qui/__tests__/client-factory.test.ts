@@ -326,13 +326,19 @@ describe("createQuiClient", () => {
 		});
 
 		const client = createQuiClient(buildApp(), buildInstance());
-		await expect(client.listAllTorrents()).rejects.toThrow("torrent inventory exceeded");
+		await expect(client.listAllTorrents({ requireComplete: true })).rejects.toThrow(
+			"torrent inventory exceeded",
+		);
 		expect(fetchSpy).toHaveBeenCalledTimes(50);
 	});
 
 	it.each([
 		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
-		["torrent inventory", (client: ReturnType<typeof createQuiClient>) => client.listAllTorrents()],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
 	] as const)("fails closed when qUI marks the %s response partial", async (_label, invoke) => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(
@@ -348,7 +354,11 @@ describe("createQuiClient", () => {
 
 	it.each([
 		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
-		["torrent inventory", (client: ReturnType<typeof createQuiClient>) => client.listAllTorrents()],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
 	] as const)("fails closed when the %s returns an empty page with hasMore", async (_label, invoke) => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(
@@ -364,7 +374,11 @@ describe("createQuiClient", () => {
 
 	it.each([
 		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
-		["torrent inventory", (client: ReturnType<typeof createQuiClient>) => client.listAllTorrents()],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
 	] as const)("rejects missing completeness metadata for the %s", async (_label, invoke) => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(JSON.stringify({ cross_instance_torrents: [] }), {
@@ -378,7 +392,11 @@ describe("createQuiClient", () => {
 
 	it.each([
 		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
-		["torrent inventory", (client: ReturnType<typeof createQuiClient>) => client.listAllTorrents()],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
 	] as const)("rejects an early total for the %s", async (_label, invoke) => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(
@@ -394,7 +412,11 @@ describe("createQuiClient", () => {
 
 	it.each([
 		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
-		["torrent inventory", (client: ReturnType<typeof createQuiClient>) => client.listAllTorrents()],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
 	] as const)("rejects changing totals while paginating the %s", async (_label, invoke) => {
 		fetchSpy
 			.mockResolvedValueOnce(
@@ -417,7 +439,11 @@ describe("createQuiClient", () => {
 
 	it.each([
 		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
-		["torrent inventory", (client: ReturnType<typeof createQuiClient>) => client.listAllTorrents()],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
 	] as const)("rejects duplicate torrents across pages for the %s", async (_label, invoke) => {
 		fetchSpy
 			.mockResolvedValueOnce(
@@ -436,6 +462,24 @@ describe("createQuiClient", () => {
 		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
 			"duplicate torrent across pages",
 		);
+	});
+
+	it("accepts metadata-free torrent inventories for non-destructive consumers", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					cross_instance_torrents: [wireTorrent({ hash: "legacy", instance_id: 2 })],
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const torrents = await client.listAllTorrents();
+
+		expect(torrents).toHaveLength(1);
+		expect(torrents[0]).toMatchObject({ hash: "legacy", instanceId: 2 });
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
 	});
 
 	it("handles cross_instance_torrents:null gracefully", async () => {

@@ -368,6 +368,29 @@ describe("CleanupRuleDialog", () => {
 				screen.getByText("Set the item as unmonitored (keeps files and data)."),
 			).toBeInTheDocument();
 		});
+
+		it("keeps target scope and rule configuration immutable while editing", async () => {
+			const onSave = vi.fn();
+			renderDialog({ editRule: makeEditRule(), onSave });
+
+			const seriesButton = screen.getByRole("button", { name: /^Series/ });
+			const episodeButton = screen.getByRole("button", { name: /^Episodes/ });
+			expect(seriesButton).toBeDisabled();
+			expect(episodeButton).toBeDisabled();
+			expect(screen.getByText(/Target scope cannot be changed while editing/)).toBeInTheDocument();
+
+			fireEvent.click(episodeButton);
+			expect(seriesButton).toHaveAttribute("aria-pressed", "true");
+			expect(screen.getByText("Age")).toBeInTheDocument();
+
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				targetScope: "series",
+				ruleType: "age",
+				parameters: { field: "arrAddedAt", operator: "older_than", days: 365 },
+			});
+		});
 	});
 
 	// ================================================================

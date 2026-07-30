@@ -1080,6 +1080,11 @@ export function CleanupRuleDialog({
 	const buildParams = () => buildParamsPure(buildParamsState);
 
 	const selectTargetScope = (scope: "series" | "episode") => {
+		// Scope determines the rule's supported type, filters, and action
+		// semantics. Treat it as immutable during edit just like ruleType;
+		// changing scope belongs in a new rule rather than silently replacing
+		// the existing rule's configuration.
+		if (isEdit) return;
 		setTargetScope(scope);
 		if (scope === "episode") {
 			setRuleType("plex_watch_count");
@@ -1273,8 +1278,14 @@ export function CleanupRuleDialog({
 										key={scope}
 										type="button"
 										onClick={() => selectTargetScope(scope)}
+										disabled={isEdit}
 										aria-pressed={targetScope === scope}
-										className="rounded-lg border px-3 py-2 text-left transition-all duration-200"
+										title={
+											isEdit
+												? "Target scope cannot be changed while editing a rule"
+												: undefined
+										}
+										className="rounded-lg border px-3 py-2 text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60"
 										style={
 											targetScope === scope
 												? {
@@ -1296,6 +1307,12 @@ export function CleanupRuleDialog({
 									</button>
 								))}
 							</div>
+							{isEdit && (
+								<p className="mt-2 text-xs text-muted-foreground">
+									Target scope cannot be changed while editing. Create a new rule to use a
+									different scope.
+								</p>
+							)}
 							{targetScope === "series" ? (
 								<p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
 									Plex conditions use show-level totals. Delete and Delete Files affect the entire
