@@ -715,7 +715,15 @@ async function indexDirectoryFiles(
 	if (limited.length !== entries.length) complete = false;
 
 	for (const entry of limited) {
-		if (!entry.isFile()) continue;
+		if (entry.isDirectory()) continue;
+		if (!entry.isFile()) {
+			// readdir does not follow symbolic links. Skipping a symlink (or
+			// another unsupported non-directory entry) would let a destructive
+			// inventory claim completeness without indexing content qBit may
+			// still be reading through that entry.
+			complete = false;
+			continue;
+		}
 		// `parentPath` is always present on Node 20.12+. We target Node 22
 		// (Dockerfile uses node:22-alpine3.21), so no fallback needed.
 		const filePath = `${entry.parentPath}/${entry.name}`;

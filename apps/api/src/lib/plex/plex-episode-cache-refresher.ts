@@ -124,7 +124,7 @@ export async function refreshPlexEpisodeCache(
 			return leftRefresh - rightRefresh;
 		})
 		.slice(0, MAX_SHOWS_PER_REFRESH);
-	const coverageIncomplete = eligibleShows > selectedShows.length;
+	let coverageIncomplete = eligibleShows > selectedShows.length;
 	const capacityDegraded = eligibleShows > MAX_SHOWS_PER_REFRESH * REFRESHES_PER_FRESHNESS_WINDOW;
 
 	// Fetch history for best-effort user attribution. Metadata viewCount is
@@ -247,11 +247,32 @@ export async function refreshPlexEpisodeCache(
 	let refreshedShows = 0;
 	for (const [tmdbId, showRatingKeys] of selectedShows) {
 		try {
-			const episodeCopies = (
-				await Promise.all(
-					[...showRatingKeys].sort().map((showRatingKey) => client.getEpisodes(showRatingKey)),
-				)
-			).flat();
+			const sortedShowRatingKeys = [...showRatingKeys].sort();
+			const copyResults = await Promise.allSettled(
+				sortedShowRatingKeys.map((showRatingKey) => client.getEpisodes(showRatingKey)),
+			);
+			const episodeCopies: PlexEpisodeItem[] = [];
+			let successfulCopies = 0;
+			for (const [index, result] of copyResults.entries()) {
+				const showRatingKey = sortedShowRatingKeys[index]!;
+				if (result.status === "fulfilled") {
+					successfulCopies++;
+					episodeCopies.push(...result.value);
+					continue;
+				}
+				errors++;
+				coverageIncomplete = true;
+				log.warn(
+					{ err: result.reason, instanceId, tmdbId, showRatingKey },
+					"Failed to fetch one Plex show copy during episode cache refresh",
+				);
+				if (errorMessages.length < 5) {
+					errorMessages.push(
+						`Failed to fetch episodes for show tmdb:${tmdbId} copy:${showRatingKey}: ${getErrorMessage(result.reason)}`,
+					);
+				}
+			}
+			if (successfulCopies === 0) continue;
 			const episodesByCoordinate = new Map<string, PlexEpisodeItem[]>();
 			for (const episode of episodeCopies) {
 				const coordinate = `${episode.seasonNumber}:${episode.episodeNumber}`;

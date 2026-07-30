@@ -70,7 +70,7 @@ vi.mock("node:fs/promises", () => ({
 			path: child.parentPath, // back-compat alias
 			isFile: () => child.type === "file",
 			isDirectory: () => child.type === "directory",
-			isSymbolicLink: () => false,
+			isSymbolicLink: () => child.type === "symlink",
 			isBlockDevice: () => false,
 			isCharacterDevice: () => false,
 			isFIFO: () => false,
@@ -90,7 +90,7 @@ interface StagedStat {
 interface StagedChild {
 	name: string;
 	parentPath: string;
-	type: "file" | "directory";
+	type: "file" | "directory" | "symlink";
 }
 
 const stagedStats = new Map<string, StagedStat>();
@@ -452,6 +452,28 @@ describe("buildFileIdIndex — caching", () => {
 		const client = makeFakeClient([
 			makeQuiTorrent({ hash: "missing", name: "Missing.mkv", savePath: "/unreachable" }),
 		]);
+		await expect(buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE)).rejects.toThrow(
+			"inode inventory was incomplete",
+		);
+	});
+
+	it("destructive snapshots reject directory torrents containing symlinks", async () => {
+		const root = "/data/torrents/Symlinked";
+		stagedStats.set(root, {
+			dev: 100,
+			ino: 1_000,
+			nlink: 1,
+			ctimeMs: 1_000,
+			mtimeMs: 1_000,
+			type: "directory",
+		});
+		stagedDirs.set(root, [
+			{ name: "Episode.mkv", parentPath: root, type: "symlink" },
+		]);
+		const client = makeFakeClient([
+			makeQuiTorrent({ hash: "symlinked", name: "Symlinked", savePath: "/data/torrents" }),
+		]);
+
 		await expect(buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE)).rejects.toThrow(
 			"inode inventory was incomplete",
 		);
