@@ -1815,13 +1815,15 @@ async function retryTargetRecordIsAbsent(
 			plan.kind === "verified_sonarr_episode")
 	) {
 		const sonarr = client as InstanceType<typeof SonarrClient>;
+		let series: Awaited<ReturnType<typeof sonarr.series.getById>>;
 		try {
-			await sonarr.series.getById(arrItemId);
+			series = await sonarr.series.getById(arrItemId);
 		} catch (error) {
 			if (isNotFoundError(error)) return "record_absent";
 			throw error;
 		}
 		if (plan.kind === "verified_sonarr_episode") {
+			assertVerifiedArrTargetUnchanged(instance, series.tvdbId, series.path, plan.target);
 			const episodes = (await sonarr.episode.getAll({
 				seriesId: arrItemId,
 				includeEpisodeFile: true,
@@ -1839,10 +1841,6 @@ async function retryTargetRecordIsAbsent(
 			if (action === "unmonitor") {
 				return selected.monitored === false ? "episode_action_complete" : false;
 			}
-			await assertVerifiedSonarrFilesUnchanged(sonarr, arrItemId, plan.target, {
-				seriesPath: plan.target.mediaPath,
-				episodeFiles: plan.retainedTargetFiles,
-			});
 			if (
 				typeof selected.episodeFileId === "number" &&
 				selected.episodeFileId > 0
@@ -1857,6 +1855,10 @@ async function retryTargetRecordIsAbsent(
 				)
 			) {
 				throw new ArrTargetChangedDuringSafetyCheckError();
+			}
+			const episodeFiles = await sonarr.episodeFile.getBySeries(arrItemId);
+			if (episodeFiles.some((file) => file.id === plan.selectedFile.episodeFileId)) {
+				return false;
 			}
 			if (action === "delete" && selected.monitored !== false) {
 				return false;
@@ -3850,6 +3852,7 @@ async function evaluateAllItems(
 			if (
 				instanceService === "SONARR" &&
 				item.itemType === "series" &&
+				!match &&
 				episodeRules.length > 0
 			) {
 				const episodeMatches = await evaluateSeriesEpisodes(

@@ -2808,18 +2808,15 @@ async function verifyFreshEpisodeQuiState(
 	context: SharedPlexSafetyContext,
 	userId: string,
 	filePath: string,
-	infoHash: string | null,
 ): Promise<void> {
-	if (!infoHash || !deps.quiClientFactory || !deps.quiFileHashIndexFactory) {
-		throw new FileMatchVerificationError(
-			"Target Sonarr episode qUI state could not be verified live",
-		);
-	}
 	context.quiInstances ??= deps.prisma.serviceInstance.findMany({
 		where: { userId, service: "QUI", enabled: true },
 	});
 	const quiInstances = await context.quiInstances;
 	if (quiInstances.length === 0) {
+		return;
+	}
+	if (!deps.quiClientFactory || !deps.quiFileHashIndexFactory) {
 		throw new FileMatchVerificationError(
 			"Target Sonarr episode qUI state could not be verified live",
 		);
@@ -2848,11 +2845,7 @@ async function verifyFreshEpisodeQuiState(
 			);
 		}
 	}
-	if (hashes.size === 0 || !hashes.has(infoHash.toLowerCase())) {
-		throw new FileMatchVerificationError(
-			"Target Sonarr episode qUI state could not be verified live",
-		);
-	}
+	if (hashes.size === 0) return;
 	for (const hash of hashes) {
 		for (const instance of quiInstances) {
 			const cacheKey = `${instance.id}\0${hash}`;
@@ -3377,12 +3370,11 @@ export async function findSharedPlexDeleteBlocks(
 				};
 				if (
 					quiIdentity.enabled &&
-					(isQuiSeedingTorrentState(quiIdentity.torrentState) ||
-						target.episodeFileInfoHash !== quiIdentity.infoHash ||
+					(target.episodeFileInfoHash !== quiIdentity.infoHash ||
 						target.episodeFileTorrentState !== quiIdentity.torrentState)
 				) {
 					throw new FileMatchVerificationError(
-						"Target Sonarr episode qUI state changed or is actively seeding",
+						"Target Sonarr episode qUI state changed",
 					);
 				}
 				if (quiIdentity.enabled) {
@@ -3391,7 +3383,6 @@ export async function findSharedPlexDeleteBlocks(
 						context,
 						userId,
 						selectedFile.fullPath.value,
-						quiIdentity.infoHash,
 					);
 				}
 				const verifiedWatch = await verifyEpisodePlexWatchProof(
