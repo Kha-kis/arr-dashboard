@@ -77,6 +77,13 @@ export interface PlexSeriesMediaItem {
 	episodes: PlexEpisodeMediaItem[];
 }
 
+export class PlexSeriesNotFoundError extends Error {
+	constructor(tvdbId: number) {
+		super(`Plex returned no series item for TVDB ${tvdbId}`);
+		this.name = "PlexSeriesNotFoundError";
+	}
+}
+
 export interface PlexHistoryItem {
 	ratingKey: string;
 	parentRatingKey?: string;
@@ -349,7 +356,7 @@ export class PlexClient {
 			(item) => item.type === "show" && item.Guid?.some((guid) => guid.id === `tvdb://${tvdbId}`),
 		);
 		if (exactShows.length === 0) {
-			throw new Error(`Plex returned no series item for TVDB ${tvdbId}`);
+			throw new PlexSeriesNotFoundError(tvdbId);
 		}
 
 		const seriesItems = await Promise.all(

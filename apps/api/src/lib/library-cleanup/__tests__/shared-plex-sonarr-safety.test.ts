@@ -1,5 +1,6 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
+import { PlexSeriesNotFoundError } from "../../plex/plex-client.js";
 import {
 	executeApprovedItems,
 	executeDirectRemoval,
@@ -7,11 +8,13 @@ import {
 	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
 } from "../cleanup-executor.js";
 import {
+	assertVerifiedSonarrPeerOwnershipRetained,
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
 	createSharedPlexSafetyContext,
 	findSharedPlexDeleteBlocks,
 	serializeExecutableSafetyPlan,
+	type VerifiedSonarrTargetDeleteNotification,
 } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
@@ -256,8 +259,10 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 	return {
 		deps,
 		targetInstance,
+		plexInstance,
 		targetClient,
 		series,
+		notification,
 		episodeFiles,
 		bulkDelete,
 		deleteSeries,
@@ -276,6 +281,63 @@ const target = {
 	itemType: "series",
 	action: "delete",
 };
+
+function addSonarrPeer(
+	fixture: ReturnType<typeof makeSonarrDeps>,
+	options: {
+		episodeFiles?: Array<{ id: number; path: string; relativePath?: string; size: number }>;
+		seriesPath?: string;
+		tvdbId?: number | null;
+		notification?: Record<string, unknown>;
+	} = {},
+) {
+	const seriesPath = options.seriesPath ?? "/tv-hd/Example Series";
+	const episodeFiles = options.episodeFiles ?? [
+		{
+			id: 4003,
+			path: `${seriesPath}/Season 01/Example.S01E03.1080p.mkv`,
+			relativePath: "Season 01/Example.S01E03.1080p.mkv",
+			size: 1_003,
+		},
+	];
+	const peerInstance = {
+		...fixture.targetInstance,
+		id: "sonarr-hd",
+		label: "HD Sonarr",
+		baseUrl: "http://sonarr-hd.internal:8989",
+		encryptedApiKey: "encrypted-sonarr-hd-key",
+		encryptionIv: "sonarr-hd-iv",
+	};
+	const peerSeries = {
+		...fixture.series,
+		id: 202,
+		path: seriesPath,
+		...(options.tvdbId === null ? { tvdbId: undefined } : { tvdbId: options.tvdbId ?? 123 }),
+	};
+	const peerNotification = options.notification ?? fixture.notification;
+	const peerClient = {
+		series: {
+			getAll: vi.fn().mockResolvedValue([peerSeries]),
+			getById: vi.fn().mockResolvedValue(peerSeries),
+		},
+		episodeFile: {
+			getBySeries: vi.fn().mockResolvedValue(episodeFiles),
+		},
+		notification: {
+			getAll: vi.fn().mockResolvedValue([peerNotification]),
+		},
+	};
+	vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation(
+		(args) =>
+			(args?.where?.service === "PLEX"
+				? Promise.resolve([fixture.plexInstance])
+				: Promise.resolve([fixture.targetInstance, peerInstance])) as never,
+	);
+	vi.mocked(fixture.deps.arrClientFactory.create).mockImplementation(
+		(instance) => (instance.id === peerInstance.id ? peerClient : fixture.targetClient) as never,
+	);
+	return { peerInstance, peerSeries, peerClient, episodeFiles };
+}
 
 describe("shared Plex deletion safety for Sonarr", () => {
 	it("blocks at scale when another Sonarr may mount the same storage under a different path", async () => {
@@ -313,7 +375,7 @@ describe("shared Plex deletion safety for Sonarr", () => {
 				service: { in: ["RADARR", "SONARR"] },
 			},
 		});
-		expect(targetClient.notification.getAll).not.toHaveBeenCalled();
+		expect(targetClient.notification.getAll).toHaveBeenCalledOnce();
 	});
 
 	it("verifies the complete exact episode-file set for a single-source Plex show", async () => {
@@ -328,7 +390,674 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		});
 	});
 
-	it("loads Sonarr notifications once per instance across multiple safety targets", async () => {
+	it("allows a shared Plex show when every retained part has an exact peer Sonarr file", async () => {
+		const fixture = makeSonarrDeps();
+		const { episodeFiles: peerFiles } = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peerFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		const context = createSharedPlexSafetyContext();
+
+		expect(await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context)).toEqual(
+			new Map(),
+		);
+		expect(context.plans.get(cleanupDeleteTargetKey(target))).toMatchObject({
+			kind: "verified_sonarr",
+			peers: [
+				{
+					instanceId: "sonarr-hd",
+					arrItemId: 202,
+					files: { episodeFiles: [{ episodeFileId: 4003 }] },
+				},
+			],
+			ownership: [
+				{
+					target: expect.arrayContaining([
+						expect.objectContaining({ ratingKey: "show-123", size: 2_001 }),
+						expect.objectContaining({ ratingKey: "show-123", size: 2_002 }),
+					]),
+					retained: [
+						expect.objectContaining({
+							instanceId: "sonarr-hd",
+							ratingKey: "show-123",
+							size: 1_003,
+						}),
+					],
+				},
+			],
+		});
+	});
+
+	it("allows separate Plex show items when each one maps completely to a Sonarr instance", async () => {
+		const fixture = makeSonarrDeps();
+		const { episodeFiles: peerFiles } = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-4k",
+				episodes: fixture.episodeFiles.map((file, index) => ({
+					ratingKey: `target-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+			{
+				ratingKey: "show-hd",
+				episodes: peerFiles.map((file, index) => ({
+					ratingKey: `peer-${index + 1}`,
+					parts: [{ file: file.path, size: file.size }],
+				})),
+			},
+		]);
+
+		await expect(findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target])).resolves.toEqual(
+			new Map(),
+		);
+	});
+
+	it("snapshots a configured Sonarr peer that does not contain the TVDB series", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture);
+		peer.peerClient.series.getAll.mockResolvedValue([]);
+		const context = createSharedPlexSafetyContext();
+
+		expect(await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context)).toEqual(
+			new Map(),
+		);
+		expect(context.plans.get(cleanupDeleteTargetKey(target))).toMatchObject({
+			kind: "verified_sonarr",
+			peers: [
+				{
+					instanceId: "sonarr-hd",
+					arrItemId: null,
+					mediaPath: null,
+					files: null,
+				},
+			],
+		});
+		expect(peer.peerClient.episodeFile.getBySeries).not.toHaveBeenCalled();
+		expect(peer.peerClient.series.getAll).toHaveBeenCalledTimes(3);
+	});
+
+	it("applies the retained Sonarr peer's own Plex path mapping", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture, {
+			notification: {
+				...fixture.notification,
+				fields: notificationFields({
+					mapFrom: "/tv-hd",
+					mapTo: "/media/tv-hd",
+				}),
+			},
+		});
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [
+					...fixture.episodeFiles.map((file, index) => ({
+						ratingKey: `target-${index + 1}`,
+						parts: [{ file: file.path!, size: file.size! }],
+					})),
+					{
+						ratingKey: "peer-1",
+						parts: [
+							{
+								file: peer.episodeFiles[0]!.path.replace("/tv-hd", "/media/tv-hd"),
+								size: peer.episodeFiles[0]!.size,
+							},
+						],
+					},
+				],
+			},
+		]);
+		const context = createSharedPlexSafetyContext();
+
+		expect(await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context)).toEqual(
+			new Map(),
+		);
+		expect(context.plans.get(cleanupDeleteTargetKey(target))).toMatchObject({
+			kind: "verified_sonarr",
+			ownership: [
+				{
+					retained: [
+						expect.objectContaining({
+							mapping: {
+								from: expect.objectContaining({ value: "/tv-hd" }),
+								to: expect.objectContaining({ value: "/media/tv-hd" }),
+							},
+						}),
+					],
+				},
+			],
+		});
+	});
+
+	it("blocks a shared Plex show when any retained part lacks a peer Sonarr file", async () => {
+		const fixture = makeSonarrDeps();
+		const { episodeFiles: peerFiles } = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [
+					...fixture.episodeFiles.map((file, index) => ({
+						ratingKey: `target-${index + 1}`,
+						parts: [{ file: file.path!, size: file.size! }],
+					})),
+					{
+						ratingKey: "peer-1",
+						parts: [{ file: peerFiles[0]!.path, size: peerFiles[0]!.size }],
+					},
+					{
+						ratingKey: "unowned-1",
+						parts: [{ file: "/tv-other/Example.S01E04.mkv", size: 1_004 }],
+					},
+				],
+			},
+		]);
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain("Plex has multiple files merged");
+	});
+
+	it("blocks when target and peer Sonarr instances claim the same Plex part", async () => {
+		const fixture = makeSonarrDeps();
+		addSonarrPeer(fixture, {
+			episodeFiles: [
+				{
+					id: 4001,
+					path: fixture.episodeFiles[0]!.path!,
+					relativePath: fixture.episodeFiles[0]!.relativePath!,
+					size: fixture.episodeFiles[0]!.size!,
+				},
+			],
+		});
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"another configured Sonarr instance may access the same storage",
+		);
+	});
+
+	it.each([
+		["a different TVDB ID", 999],
+		["no TVDB ID", null],
+	])("blocks a peer that tracks the target file under %s", async (_label, tvdbId) => {
+		const fixture = makeSonarrDeps();
+		addSonarrPeer(fixture, {
+			tvdbId,
+			seriesPath: fixture.series.path,
+			episodeFiles: [
+				{
+					id: 4001,
+					path: fixture.episodeFiles[0]!.path!,
+					relativePath: fixture.episodeFiles[0]!.relativePath!,
+					size: fixture.episodeFiles[0]!.size!,
+				},
+			],
+		});
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"another configured Sonarr instance may access the same storage",
+		);
+	});
+
+	it("allows an alternate-TVDB peer whose physical series path is unrelated", async () => {
+		const fixture = makeSonarrDeps();
+		addSonarrPeer(fixture, { tvdbId: 999 });
+
+		await expect(findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target])).resolves.toEqual(
+			new Map(),
+		);
+	});
+
+	it("bounds concurrent episode-file reads while checking every untracked peer series", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture, { tvdbId: 998 });
+		const allSeries = Array.from({ length: 12 }, (_, index) => ({
+			...peer.peerSeries,
+			id: 202 + index,
+			tvdbId: 998 + index,
+			path: `/tv-alt/Series ${index + 1}`,
+		}));
+		peer.peerClient.series.getAll.mockResolvedValue(allSeries);
+		let activeReads = 0;
+		let maximumActiveReads = 0;
+		peer.peerClient.episodeFile.getBySeries.mockImplementation(async (seriesId) => {
+			activeReads += 1;
+			maximumActiveReads = Math.max(maximumActiveReads, activeReads);
+			await new Promise((resolve) => setTimeout(resolve, 1));
+			activeReads -= 1;
+			return [
+				{
+					id: 4_000 + seriesId,
+					seriesId,
+					path: `/tv-alt/Series ${seriesId - 201}/Season 01/Episode.mkv`,
+					relativePath: "Season 01/Episode.mkv",
+					size: 1_000 + seriesId,
+				},
+			];
+		});
+
+		await expect(findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target])).resolves.toEqual(
+			new Map(),
+		);
+		expect(peer.peerClient.episodeFile.getBySeries).toHaveBeenCalledTimes(allSeries.length * 2);
+		expect(maximumActiveReads).toBeGreaterThan(1);
+		expect(maximumActiveReads).toBeLessThanOrEqual(8);
+	});
+
+	it("reuses one stable peer inventory across a batch of target series", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture, { tvdbId: 998 });
+		const secondTarget = { ...target, arrItemId: 202 };
+
+		await expect(
+			findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target, secondTarget]),
+		).resolves.toEqual(new Map());
+
+		expect(peer.peerClient.episodeFile.getBySeries).toHaveBeenCalledTimes(2);
+		expect(peer.peerClient.series.getAll).toHaveBeenCalledTimes(3);
+	});
+
+	it("blocks an alternate-TVDB peer through its own Plex path mapping", async () => {
+		const fixture = makeSonarrDeps();
+		addSonarrPeer(fixture, {
+			tvdbId: 999,
+			seriesPath: "/tv-alt/Example Series",
+			episodeFiles: [
+				{
+					id: 4001,
+					path: "/tv-alt/Example Series/Season 01/Example.S01E01.2160p.mkv",
+					relativePath: "Season 01/Example.S01E01.2160p.mkv",
+					size: fixture.episodeFiles[0]!.size!,
+				},
+			],
+			notification: {
+				...fixture.notification,
+				fields: notificationFields({
+					mapFrom: "/tv-alt",
+					mapTo: "/tv-4k",
+				}),
+			},
+		});
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"another configured Sonarr instance may access the same storage",
+		);
+	});
+
+	it("fails closed when an alternate-TVDB peer has files but no target-Plex correlation", async () => {
+		const fixture = makeSonarrDeps();
+		addSonarrPeer(fixture, {
+			tvdbId: 999,
+			notification: {
+				...fixture.notification,
+				fields: [
+					{ name: "host", value: "different-plex.internal" },
+					{ name: "port", value: 32400 },
+					{ name: "useSsl", value: false },
+					{ name: "urlBase", value: "" },
+					{ name: "updateLibrary", value: true },
+				],
+			},
+		});
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"another configured Sonarr instance may access the same storage",
+		);
+	});
+
+	it("blocks an alternate-TVDB peer that claims the target path with a stale size", async () => {
+		const fixture = makeSonarrDeps();
+		addSonarrPeer(fixture, {
+			tvdbId: 999,
+			seriesPath: fixture.series.path,
+			episodeFiles: [
+				{
+					id: 4001,
+					path: fixture.episodeFiles[0]!.path!,
+					relativePath: fixture.episodeFiles[0]!.relativePath!,
+					size: fixture.episodeFiles[0]!.size! + 1,
+				},
+			],
+		});
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"another configured Sonarr instance may access the same storage",
+		);
+	});
+
+	it("checks alternate-TVDB episode files even when the current series root is unrelated", async () => {
+		const fixture = makeSonarrDeps();
+		addSonarrPeer(fixture, {
+			tvdbId: 999,
+			seriesPath: "/tv-new/Example Series",
+			episodeFiles: [
+				{
+					id: 4001,
+					path: fixture.episodeFiles[0]!.path!,
+					relativePath: fixture.episodeFiles[0]!.relativePath!,
+					size: fixture.episodeFiles[0]!.size!,
+				},
+			],
+		});
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"another configured Sonarr instance may access the same storage",
+		);
+	});
+
+	it("refetches the peer catalog after Plex verification", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture);
+		peer.peerClient.series.getAll
+			.mockResolvedValueOnce([])
+			.mockResolvedValue([{ ...peer.peerSeries, tvdbId: 999, path: fixture.series.path }]);
+		peer.peerClient.episodeFile.getBySeries.mockResolvedValue([
+			{
+				id: 4001,
+				seriesId: peer.peerSeries.id,
+				path: fixture.episodeFiles[0]!.path!,
+				relativePath: fixture.episodeFiles[0]!.relativePath!,
+				size: fixture.episodeFiles[0]!.size!,
+			},
+		]);
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(fixture.getSeriesEpisodeMediaPartsByTvdbId).toHaveBeenCalledWith(123);
+		expect(peer.peerClient.series.getAll).toHaveBeenCalledTimes(3);
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"another configured Sonarr instance may access the same storage",
+		);
+	});
+
+	it("revalidates a tracked peer's path mapping after Plex verification", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture, {
+			episodeFiles: [
+				{
+					id: 4001,
+					path: fixture.episodeFiles[0]!.path!.replace("/tv-4k", "/tv-hd"),
+					relativePath: fixture.episodeFiles[0]!.relativePath!,
+					size: 1_001,
+				},
+			],
+		});
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peer.episodeFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		peer.peerClient.notification.getAll
+			.mockResolvedValueOnce([fixture.notification])
+			.mockResolvedValue([
+				{
+					...fixture.notification,
+					fields: notificationFields({
+						mapFrom: "/tv-hd",
+						mapTo: "/tv-4k",
+					}),
+				},
+			]);
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"another configured Sonarr instance may access the same storage",
+		);
+	});
+
+	it("revalidates the target delete notification after Plex verification", async () => {
+		const fixture = makeSonarrDeps();
+		fixture.targetClient.notification.getAll
+			.mockResolvedValueOnce([fixture.notification])
+			.mockResolvedValue([
+				{
+					...fixture.notification,
+					onEpisodeFileDelete: false,
+				},
+			]);
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(fixture.getSeriesEpisodeMediaPartsByTvdbId).toHaveBeenCalledWith(123);
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"could not verify the live Sonarr series and Plex media state",
+		);
+	});
+
+	it("revalidates the target delete notification after the terminal peer scan", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peer.episodeFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		peer.peerClient.series.getAll
+			.mockResolvedValueOnce([peer.peerSeries])
+			.mockImplementation(async () => {
+				fixture.targetClient.notification.getAll.mockResolvedValue([
+					{
+						...fixture.notification,
+						onEpisodeFileDelete: false,
+					},
+				]);
+				return [peer.peerSeries];
+			});
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target]);
+
+		expect(peer.peerClient.series.getAll).toHaveBeenCalledTimes(3);
+		expect(blocks.get(cleanupDeleteTargetKey(target))).toContain(
+			"could not verify the live Sonarr series and Plex media state",
+		);
+	});
+
+	it("revalidates retained peer files after the target episode files are gone", async () => {
+		const fixture = makeSonarrDeps();
+		const { episodeFiles: peerFiles } = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peerFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		await fixture.targetClient.episodeFile.bulkDelete([3001, 3002]);
+
+		await expect(
+			assertVerifiedSonarrPeerOwnershipRetained(fixture.deps, "user-1", target.arrItemId, plan),
+		).resolves.toBeUndefined();
+	});
+
+	it("accepts a vanished Plex show after deletion when no peer parts were retained", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture);
+		peer.peerClient.series.getAll.mockResolvedValue([]);
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		expect(plan.ownership).toEqual([expect.objectContaining({ retained: [] })]);
+		await fixture.targetClient.episodeFile.bulkDelete([3001, 3002]);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockRejectedValue(new PlexSeriesNotFoundError(123));
+
+		await expect(
+			assertVerifiedSonarrPeerOwnershipRetained(fixture.deps, "user-1", target.arrItemId, plan),
+		).resolves.toBeUndefined();
+	});
+
+	it("accepts a legacy series-only notification snapshot after target files are gone", async () => {
+		const fixture = makeSonarrDeps();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		expect(plan.targetDeleteNotifications).toEqual([
+			expect.objectContaining({
+				onSeriesDelete: false,
+				onEpisodeFileDelete: true,
+			}),
+		]);
+		await fixture.targetClient.episodeFile.bulkDelete([3001, 3002]);
+
+		await expect(
+			assertVerifiedSonarrPeerOwnershipRetained(fixture.deps, "user-1", target.arrItemId, {
+				...plan,
+				targetDeleteNotifications: [],
+			}),
+		).resolves.toBeUndefined();
+	});
+
+	it("blocks a new alternate-TVDB peer claim after target files are gone", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture);
+		peer.peerClient.series.getAll.mockResolvedValue([]);
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		await fixture.targetClient.episodeFile.bulkDelete([3001, 3002]);
+		peer.peerClient.series.getAll.mockResolvedValue([
+			{ ...peer.peerSeries, tvdbId: 999, path: fixture.series.path },
+		]);
+		peer.peerClient.episodeFile.getBySeries.mockResolvedValue([
+			{
+				id: 4001,
+				seriesId: peer.peerSeries.id,
+				path: fixture.episodeFiles[0]!.path!,
+				relativePath: fixture.episodeFiles[0]!.relativePath!,
+				size: fixture.episodeFiles[0]!.size!,
+			},
+		]);
+
+		await expect(
+			assertVerifiedSonarrPeerOwnershipRetained(fixture.deps, "user-1", target.arrItemId, plan),
+		).rejects.toThrow("another configured Sonarr instance");
+	});
+
+	it("rejects a vanished Plex show when peer parts were retained", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peer.episodeFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		await fixture.targetClient.episodeFile.bulkDelete([3001, 3002]);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockRejectedValue(new PlexSeriesNotFoundError(123));
+
+		await expect(
+			assertVerifiedSonarrPeerOwnershipRetained(fixture.deps, "user-1", target.arrItemId, plan),
+		).rejects.toThrow("no series item for TVDB 123");
+	});
+
+	it("blocks record deletion when a retained peer episode file changes", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peer.episodeFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		await fixture.targetClient.episodeFile.bulkDelete([3001, 3002]);
+		peer.peerClient.episodeFile.getBySeries.mockResolvedValue([
+			{
+				...peer.episodeFiles[0]!,
+				size: peer.episodeFiles[0]!.size + 1,
+			},
+		]);
+
+		await expect(
+			assertVerifiedSonarrPeerOwnershipRetained(fixture.deps, "user-1", target.arrItemId, plan),
+		).rejects.toThrow("another configured Sonarr instance");
+	});
+
+	it("blocks record deletion when Plex gains an unowned part after file deletion", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture);
+		const initialPlexSeries = [
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peer.episodeFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		];
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue(initialPlexSeries);
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		await fixture.targetClient.episodeFile.bulkDelete([3001, 3002]);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				...initialPlexSeries[0]!,
+				episodes: [
+					...initialPlexSeries[0]!.episodes,
+					{
+						ratingKey: "episode-new",
+						parts: [{ file: "/tv-other/Example.S01E04.mkv", size: 1_004 }],
+					},
+				],
+			},
+		]);
+
+		await expect(
+			assertVerifiedSonarrPeerOwnershipRetained(fixture.deps, "user-1", target.arrItemId, plan),
+		).rejects.toThrow("another configured Sonarr instance");
+	});
+
+	it("caches initial Sonarr notifications and revalidates each target after Plex", async () => {
 		const { deps, targetClient } = makeSonarrDeps();
 		const context = createSharedPlexSafetyContext();
 
@@ -339,8 +1068,8 @@ describe("shared Plex deletion safety for Sonarr", () => {
 			context,
 		);
 
-		expect(targetClient.notification.getAll).toHaveBeenCalledOnce();
-		expect(targetClient.series.getById).toHaveBeenCalledTimes(2);
+		expect(targetClient.notification.getAll).toHaveBeenCalledTimes(3);
+		expect(targetClient.series.getById).toHaveBeenCalledTimes(4);
 	});
 
 	it("refetches Sonarr notifications across separate safety checks", async () => {
@@ -664,6 +1393,14 @@ describe("verified Sonarr mutation handoff", () => {
 				size: 2_002,
 			},
 		],
+		targetDeleteNotifications: VerifiedSonarrTargetDeleteNotification[] = [
+			{
+				plexServerUrl: "http://plex.internal:32400",
+				onSeriesDelete: false,
+				onEpisodeFileDelete: true,
+				mapping: null,
+			},
+		],
 	) {
 		return {
 			id: "approval-1",
@@ -695,6 +1432,9 @@ describe("verified Sonarr mutation handoff", () => {
 						size: file.size!,
 					})),
 				},
+				peers: [],
+				ownership: [],
+				targetDeleteNotifications,
 			}),
 		};
 	}
@@ -794,7 +1534,9 @@ describe("verified Sonarr mutation handoff", () => {
 		const { deps, targetClient, episodeFiles, bulkDelete, deleteSeries } = makeSonarrDeps({
 			notificationKind: "none",
 		});
-		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([approval()] as never);
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+			approval("delete", undefined, []),
+		] as never);
 		targetClient.episodeFile.getBySeries
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
@@ -840,6 +1582,76 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(episodeFileCacheDeleteMany).toHaveBeenCalledWith({
 			where: { instanceId: "sonarr-4k", arrSeriesId: 201 },
 		});
+	});
+
+	it("deletes only the target Sonarr files after revalidating shared Plex ownership", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peer.episodeFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		const storedApproval = {
+			...approval(),
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+			removed: 1,
+			failed: 0,
+			errors: [],
+		});
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3001, 3002]);
+		expect(peer.peerClient.episodeFile.getBySeries).toHaveBeenCalled();
+		expect(fixture.deleteSeries).toHaveBeenCalledWith(201, {
+			deleteFiles: false,
+			addImportListExclusion: false,
+		});
+	});
+
+	it("retains the series when peer ownership changes after target file deletion", async () => {
+		const fixture = makeSonarrDeps();
+		const peer = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peer.episodeFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		const storedApproval = {
+			...approval(),
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+		peer.peerClient.episodeFile.getBySeries.mockImplementation(async () => {
+			return fixture.bulkDelete.mock.calls.length === 0
+				? peer.episodeFiles
+				: [{ ...peer.episodeFiles[0]!, size: peer.episodeFiles[0]!.size + 1 }];
+		});
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3001, 3002]);
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "pending" });
 	});
 
 	it("blocks when the Sonarr file set changes after Plex verification", async () => {
@@ -1060,6 +1872,55 @@ describe("verified Sonarr mutation handoff", () => {
 		});
 	});
 
+	it("retries a shared Sonarr series-delete notification after target files were removed", async () => {
+		const fixture = makeSonarrDeps({
+			onSeriesDelete: true,
+			onEpisodeFileDelete: true,
+		});
+		const peer = addSonarrPeer(fixture);
+		peer.peerClient.series.getAll.mockResolvedValue([]);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: fixture.episodeFiles.map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		const storedApproval = {
+			...approval(),
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+		fixture.deleteSeries
+			.mockRejectedValueOnce(new Error("series delete unavailable"))
+			.mockRejectedValueOnce(new Error("series delete unavailable"));
+
+		const firstResult = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(firstResult).toMatchObject({ removed: 0, failed: 1 });
+		expect(JSON.parse(storedApproval.safetySnapshot as string)).toMatchObject({
+			kind: "verified_sonarr",
+			files: { episodeFiles: [] },
+			peers: [expect.objectContaining({ instanceId: "sonarr-hd", arrItemId: null })],
+			ownership: [expect.objectContaining({ retained: [] })],
+		});
+
+		storedApproval.status = "approved";
+		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+			removed: 1,
+			failed: 0,
+			errors: [],
+		});
+		expect(fixture.bulkDelete).toHaveBeenCalledOnce();
+		expect(fixture.deleteSeries).toHaveBeenCalledTimes(3);
+	});
+
 	it("reconciles an interrupted approved Sonarr mutation to the unchanged file remainder", async () => {
 		const remainingFile = {
 			id: 3002,
@@ -1090,6 +1951,52 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(approvalUpdate.mock.invocationCallOrder[0]).toBeLessThan(
 			bulkDelete.mock.invocationCallOrder[0]!,
 		);
+	});
+
+	it("recovers a shared Sonarr crash after files were deleted but before the snapshot changed", async () => {
+		const fixture = makeSonarrDeps({
+			onSeriesDelete: true,
+			onEpisodeFileDelete: true,
+		});
+		const peer = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peer.episodeFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		await fixture.targetClient.episodeFile.bulkDelete([3001, 3002]);
+		fixture.bulkDelete.mockClear();
+		const storedApproval = {
+			...approval(),
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+			lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+			removed: 1,
+			failed: 0,
+			errors: [],
+		});
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(fixture.deleteSeries).toHaveBeenCalledOnce();
+		expect(JSON.parse(storedApproval.safetySnapshot as string)).toMatchObject({
+			kind: "verified_sonarr",
+			files: { episodeFiles: [] },
+			ownership: [
+				expect.objectContaining({
+					retained: [expect.objectContaining({ instanceId: "sonarr-hd" })],
+				}),
+			],
+		});
 	});
 
 	it("reconciles an interrupted Sonarr file-delete retry when no episode files remain", async () => {
@@ -1217,8 +2124,22 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(storedApproval).toMatchObject({ status: "expired", executionToken: null });
 	});
 
-	it("durably retries a direct Sonarr record deletion after exact file removal", async () => {
-		const { deps, episodeFiles, bulkDelete, deleteSeries } = makeSonarrDeps();
+	it("durably retries direct shared-Sonarr record deletion after exact file removal", async () => {
+		const fixture = makeSonarrDeps({
+			onSeriesDelete: true,
+			onEpisodeFileDelete: true,
+		});
+		const peer = addSonarrPeer(fixture);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockResolvedValue([
+			{
+				ratingKey: "show-123",
+				episodes: [...fixture.episodeFiles, ...peer.episodeFiles].map((file, index) => ({
+					ratingKey: `episode-${index + 1}`,
+					parts: [{ file: file.path!, size: file.size! }],
+				})),
+			},
+		]);
+		const { deps, episodeFiles, bulkDelete, deleteSeries } = fixture;
 		const retries = configureRetryStore(deps);
 		deleteSeries
 			.mockRejectedValueOnce(new Error("series delete unavailable"))
@@ -1270,7 +2191,17 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(retries).toHaveLength(1);
 		expect(retries[0]).toMatchObject({
 			status: "executed",
-			safetySnapshot: approval("delete", []).safetySnapshot,
+			safetySnapshot: expect.any(String),
+		});
+		expect(JSON.parse(retries[0]!.safetySnapshot as string)).toMatchObject({
+			kind: "verified_sonarr",
+			files: { episodeFiles: [] },
+			peers: [expect.objectContaining({ instanceId: "sonarr-hd" })],
+			ownership: [
+				expect.objectContaining({
+					retained: [expect.objectContaining({ instanceId: "sonarr-hd" })],
+				}),
+			],
 		});
 		expect(retryResult).toMatchObject({
 			status: "completed",
@@ -1303,6 +2234,30 @@ describe("verified Sonarr mutation handoff", () => {
 			addImportListExclusion: false,
 		});
 	});
+
+	it.each(["delete", "delete_files"] as const)(
+		"allows %s for a fileless no-notification series when a sibling Sonarr exists",
+		async (action) => {
+			const fixture = makeSonarrDeps({
+				action,
+				notificationKind: "none",
+				episodeFiles: [],
+			});
+			const peer = addSonarrPeer(fixture);
+			vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+				approval(action, [], []),
+			] as never);
+
+			await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+				removed: action === "delete" ? 1 : 0,
+				failed: 0,
+				errors: [],
+			});
+			expect(fixture.bulkDelete).not.toHaveBeenCalled();
+			expect(fixture.deleteSeries).toHaveBeenCalledTimes(action === "delete" ? 1 : 0);
+			expect(peer.peerClient.series.getAll).not.toHaveBeenCalled();
+		},
+	);
 
 	it("accepts a lost Sonarr record-delete response after a not-found readback", async () => {
 		const { deps, targetClient, episodeFiles, deleteSeries, setLiveSeriesExists } =
