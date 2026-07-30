@@ -325,14 +325,12 @@ export async function refreshPlexEpisodeCache(
 				const existingState = existingEpisodeStates.get(
 					`${tmdbId}:${episode.seasonNumber}:${episode.episodeNumber}`,
 				);
-				const exactExistingState =
-					existingState?.ratingKey === episode.ratingKey &&
+				const compatibleExistingState =
+					existingState &&
+					copies.some((copy) => copy.ratingKey === existingState.ratingKey) &&
 					existingState.sourceFingerprint === sourceFingerprint
 						? existingState
 						: null;
-				const canPreserveAggregateWatchState =
-					!historyAvailable &&
-					exactExistingState !== null;
 				const aggregateWatchUpdate =
 					!historyAvailable && watchCount > 0
 						? {
@@ -342,19 +340,19 @@ export async function refreshPlexEpisodeCache(
 						: {};
 				const effectiveWatched = historyComplete
 					? watched
-					: (exactExistingState?.watched ?? false) || watched;
+					: (compatibleExistingState?.watched ?? false) || watched;
 				const effectiveWatchedByUsers =
 					historyComplete && episodeAttributionComplete
 						? observedUsers
 						: [
 								...new Set([
-									...(exactExistingState?.watchedByUsers ?? []),
+									...(compatibleExistingState?.watchedByUsers ?? []),
 									...observedUsers,
 								]),
 							];
 				const effectiveLastWatchedAt = historyComplete
 					? lastWatchedAt
-					: latestDate(exactExistingState?.lastWatchedAt ?? null, lastWatchedAt);
+					: latestDate(compatibleExistingState?.lastWatchedAt ?? null, lastWatchedAt);
 
 				try {
 					if (!historyAvailable) {
@@ -362,14 +360,14 @@ export async function refreshPlexEpisodeCache(
 						// aggregate row or attach old progress to a new Plex identity.
 						// The identity predicates also make the update fail closed if
 						// another refresh changes the row after the read above.
-						if (!canPreserveAggregateWatchState) continue;
+						if (!compatibleExistingState) continue;
 						const updated = await prisma.plexEpisodeCache.updateMany({
 							where: {
 								instanceId,
 								showTmdbId: tmdbId,
 								seasonNumber: episode.seasonNumber,
 								episodeNumber: episode.episodeNumber,
-								ratingKey: episode.ratingKey,
+								ratingKey: compatibleExistingState.ratingKey,
 								sourceFingerprint,
 							},
 							data: {

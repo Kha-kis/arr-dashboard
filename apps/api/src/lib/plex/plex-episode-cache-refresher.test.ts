@@ -294,6 +294,86 @@ describe("refreshPlexEpisodeCache watch count", () => {
 		);
 	});
 
+	it("preserves capped-history watches when a duplicate copy changes the selected key", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const existingLastWatchedAt = new Date("2025-01-02T03:04:05.000Z");
+		const prisma = {
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue([
+					{ tmdbId: 123, ratingKey: "show-library-a" },
+					{ tmdbId: 123, ratingKey: "show-library-b" },
+				]),
+			},
+			plexEpisodeCache: {
+				groupBy: vi.fn().mockResolvedValue([]),
+				findMany: vi.fn().mockResolvedValue([
+					{
+						showTmdbId: 123,
+						seasonNumber: 1,
+						episodeNumber: 1,
+						ratingKey: "episode-z",
+						sourceFingerprint: "connection-fingerprint",
+						watched: true,
+						watchedByUsers: JSON.stringify(["Archived Viewer"]),
+						lastWatchedAt: existingLastWatchedAt,
+					},
+				]),
+				upsert,
+			},
+		};
+		const client = {
+			getHistory: vi.fn().mockResolvedValue(
+				Array.from({ length: 5_000 }, (_, index) => ({
+					type: "episode",
+					ratingKey: `newer-episode-${index}`,
+					accountID: 1,
+					viewedAt: index + 1,
+				})),
+			),
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Current Viewer" }]),
+			getEpisodes: vi
+				.fn()
+				.mockResolvedValueOnce([
+					{
+						ratingKey: "episode-z",
+						title: "Existing copy",
+						seasonNumber: 1,
+						episodeNumber: 1,
+						viewCount: 0,
+					},
+				])
+				.mockResolvedValueOnce([
+					{
+						ratingKey: "episode-a",
+						title: "New duplicate",
+						seasonNumber: 1,
+						episodeNumber: 1,
+						viewCount: 0,
+					},
+				]),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn() } as never,
+			"connection-fingerprint",
+		);
+
+		expect(result).toMatchObject({ upserted: 1, errors: 0 });
+		expect(upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.objectContaining({
+					ratingKey: "episode-a",
+					watched: true,
+					watchedByUsers: JSON.stringify(["Archived Viewer"]),
+					lastWatchedAt: existingLastWatchedAt,
+				}),
+			}),
+		);
+	});
+
 	it("preserves resolved usernames when Plex account lookup fails", async () => {
 		const upsert = vi.fn().mockResolvedValue({});
 		const prisma = {
