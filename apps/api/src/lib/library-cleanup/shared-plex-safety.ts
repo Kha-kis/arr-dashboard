@@ -2095,6 +2095,12 @@ export async function assertVerifiedRadarrPeerOwnershipRetained(
 		for (const plexInstance of matchingPlexInstances) {
 			const plex = await requirePlexClient(deps, context, ownerChecks, plexInstance);
 			const mediaItems = await plex.getMovieMediaPartsByTmdbId(plan.target.externalId);
+			const targetItems = mediaItems.filter(
+				(item) => item.ratingKey === ownership.target.ratingKey,
+			);
+			if (targetItems.length > 1) {
+				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+			}
 			for (const expected of ownership.retained) {
 				const peer = livePeers.get(expected.instanceId);
 				if (!peer) {
@@ -2107,6 +2113,30 @@ export async function assertVerifiedRadarrPeerOwnershipRetained(
 					match.part.size !== expected.size ||
 					!pathsEqual(normalizeMediaPath(match.part.file), expected.fullPath) ||
 					JSON.stringify(match.mapping) !== JSON.stringify(expected.mapping)
+				) {
+					throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+				}
+			}
+			const currentTargetItem = targetItems[0];
+			if (currentTargetItem) {
+				const allowedTargetItemParts = new Set([
+					plexPartKey({
+						file: ownership.target.fullPath.value,
+						size: ownership.target.size,
+					}),
+					...ownership.retained
+						.filter((expected) => expected.ratingKey === ownership.target.ratingKey)
+						.map((expected) =>
+							plexPartKey({
+								file: expected.fullPath.value,
+								size: expected.size,
+							}),
+						),
+				]);
+				const currentTargetItemPartKeys = currentTargetItem.parts.map(plexPartKey);
+				if (
+					new Set(currentTargetItemPartKeys).size !== currentTargetItemPartKeys.length ||
+					currentTargetItemPartKeys.some((partKey) => !allowedTargetItemParts.has(partKey))
 				) {
 					throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
 				}

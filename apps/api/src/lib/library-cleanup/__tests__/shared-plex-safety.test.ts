@@ -1541,6 +1541,113 @@ describe("shared Plex deletion safety", () => {
 		expect(result.errors[0]).toContain("Partial cleanup");
 	});
 
+	it("retains the target record when a new unowned Plex part appears after exact file deletion", async () => {
+		const fixture = makeDeps();
+		configureVerifiedRadarrPeer(fixture);
+		const context = createSharedPlexSafetyContext();
+		expect(await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context)).toEqual(
+			new Map(),
+		);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_radarr") {
+			throw new Error("Expected a verified Radarr safety plan");
+		}
+		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+			approvalRecord({ safetySnapshot: serializeExecutableSafetyPlan(plan) }) as never,
+		]);
+		const deleteSelectedFile = fixture.deleteMovieFile.getMockImplementation();
+		if (!deleteSelectedFile) throw new Error("Expected a target file delete implementation");
+		fixture.deleteMovieFile.mockImplementation(async (movieFileId) => {
+			await deleteSelectedFile(movieFileId);
+			fixture.getMovieMediaPartsByTmdbId.mockResolvedValue([
+				{
+					ratingKey: "plex-movie-42",
+					parts: [
+						{
+							file: "/plex/movies-hd/Example Movie (2024)/Example.Movie.1080p.mkv",
+							size: 1_000,
+						},
+						{
+							file: "/plex/movies-remux/Example Movie (2024)/Example.Movie.Remux.mkv",
+							size: 3_000,
+						},
+					],
+				},
+			]);
+		});
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(fixture.deleteMovieFile).toHaveBeenCalledWith(1001);
+		expect(fixture.deleteMovie).not.toHaveBeenCalled();
+		expect(result.errors[0]).toContain("Partial cleanup");
+	});
+
+	it("allows the deleted target Plex item to disappear when the retained peer has its own item", async () => {
+		const fixture = makeDeps({
+			plexItems: [
+				{
+					ratingKey: "plex-movie-4k",
+					parts: [
+						{
+							file: "/movies-4k/Example Movie (2024)/Example.Movie.2160p.mkv",
+							size: 2_000,
+						},
+					],
+				},
+				{
+					ratingKey: "plex-movie-hd",
+					parts: [
+						{
+							file: "/plex/movies-hd/Example Movie (2024)/Example.Movie.1080p.mkv",
+							size: 1_000,
+						},
+					],
+				},
+			],
+		});
+		configureVerifiedRadarrPeer(fixture);
+		const context = createSharedPlexSafetyContext();
+		expect(await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context)).toEqual(
+			new Map(),
+		);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_radarr") {
+			throw new Error("Expected a verified Radarr safety plan");
+		}
+		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+			approvalRecord({ safetySnapshot: serializeExecutableSafetyPlan(plan) }) as never,
+		]);
+		const deleteSelectedFile = fixture.deleteMovieFile.getMockImplementation();
+		if (!deleteSelectedFile) throw new Error("Expected a target file delete implementation");
+		fixture.deleteMovieFile.mockImplementation(async (movieFileId) => {
+			await deleteSelectedFile(movieFileId);
+			fixture.getMovieMediaPartsByTmdbId.mockResolvedValue([
+				{
+					ratingKey: "plex-movie-hd",
+					parts: [
+						{
+							file: "/plex/movies-hd/Example Movie (2024)/Example.Movie.1080p.mkv",
+							size: 1_000,
+						},
+					],
+				},
+			]);
+		});
+
+		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+			removed: 1,
+			failed: 0,
+			errors: [],
+		});
+		expect(fixture.deleteMovieFile).toHaveBeenCalledWith(1001);
+		expect(fixture.deleteMovie).toHaveBeenCalledWith(101, {
+			deleteFiles: false,
+			addImportExclusion: false,
+		});
+	});
+
 	it("renders only preview items that can receive live safety inspection", () => {
 		const flagged = Array.from({ length: 201 }, (_, index) => ({
 			cacheItem: { arrItemId: index + 1 },
