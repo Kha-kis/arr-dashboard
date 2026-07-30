@@ -13,7 +13,10 @@
 		"clean": "turbo prune --scope='@arr/*' --docker",
 		"e2e:integration:up": "cd e2e/integration && docker compose up -d --build && bash bootstrap-services.sh",
 		"e2e:integration": "playwright test --config=e2e/integration/playwright.integration.config.ts",
-		"e2e:integration:down": "cd e2e/integration && bash teardown.sh"
+		"e2e:integration:down": "cd e2e/integration && bash teardown.sh",
+		"e2e:authentik:up": "cd e2e/authentik-test && docker compose --project-name arr-dashboard-authentik-e2e down -v --remove-orphans && docker compose --project-name arr-dashboard-authentik-e2e up -d --build && bash bootstrap.sh",
+		"e2e:authentik": "playwright test --config=e2e/authentik-test/playwright.config.ts",
+		"e2e:authentik:down": "cd e2e/authentik-test && docker compose --project-name arr-dashboard-authentik-e2e down -v --remove-orphans"
 	},
 	"pnpm": {
 		"overrides": {
