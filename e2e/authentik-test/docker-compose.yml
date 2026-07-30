@@ -1,9 +1,10 @@
-# Docker Compose for Authentik OIDC integration testing
-# Validates fix for GitHub Issue #208: OIDC issuer URL trailing slash normalization
+# Docker Compose for real Authentik OIDC integration testing.
+# Covers canonical issuer handling (#208) and the linked-admin lifecycle (#650).
 #
 # Usage:
-#   docker compose up -d
-#   # Wait for health checks, then run: npx playwright test authentik-oidc.spec.ts
+#   pnpm e2e:authentik:up
+#   pnpm e2e:authentik
+#   pnpm e2e:authentik:down
 
 services:
   postgresql:
@@ -35,7 +36,7 @@ services:
       - authentik-net
 
   authentik-server:
-    image: ghcr.io/goauthentik/server:latest
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2026.5.6}
     container_name: authentik-test-server
     command: server
     environment:
@@ -58,7 +59,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/-/health/ready/"]
+      test: ["CMD", "ak", "healthcheck"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -67,7 +68,7 @@ services:
       - authentik-net
 
   authentik-worker:
-    image: ghcr.io/goauthentik/server:latest
+    image: ghcr.io/goauthentik/server:${AUTHENTIK_VERSION:-2026.5.6}
     container_name: authentik-test-worker
     command: worker
     environment:
@@ -84,6 +85,42 @@ services:
         condition: service_healthy
     networks:
       - authentik-net
+
+  arr-dashboard:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+      args:
+        VERSION: e2e-authentik
+        COMMIT_SHA: local
+    container_name: authentik-test-dashboard
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+      - "${DASHBOARD_API_PORT:-3001}:3001"
+    volumes:
+      - dashboard-config:/config
+    environment:
+      PUID: 1000
+      PGID: 1000
+      PORT: 3000
+      API_PORT: 3001
+      DATABASE_URL: file:/config/prod.db
+      APP_URL: http://localhost:${DASHBOARD_PORT:-3000}
+      API_RATE_LIMIT_MAX: 10000
+    depends_on:
+      authentik-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    networks:
+      - authentik-net
+
+volumes:
+  dashboard-config:
 
 networks:
   authentik-net:

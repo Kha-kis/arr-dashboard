@@ -110,6 +110,22 @@ export const passwordSchemaStrict = z.string()
   providers also expose their link status and a **Link Account** or **Test
   Account** action in Settings.
 
+### Linking OIDC to an Existing Administrator
+
+OIDC identities are never matched to an existing administrator by username or
+email. To add OIDC after password setup:
+
+1. Sign in with the existing administrator account.
+2. Open **Settings → Auth** and choose **Configure OIDC**.
+3. Enter the provider settings and select **Create & Link Account**.
+4. Complete the provider login while the initiating dashboard session remains
+   active.
+
+An existing provider that has not been linked shows **Link Account** instead.
+After linking, **Test Account** verifies the configured identity without
+changing the link. Do not sign out or remove the password until the linked
+OIDC login has been tested successfully.
+
 ## Passkey Authentication
 
 **Library**: @simplewebauthn/server v13+
