@@ -680,6 +680,7 @@ function episodePlansMatchWithRefreshedWatchProof(
 	approvedPlan: ExecutableSharedMediaSafetyPlan | null | undefined,
 	livePlan: ExecutableSharedMediaSafetyPlan | null | undefined,
 	allowMonitoredToUnmonitored: boolean,
+	allowChangedPathMappingWitness = false,
 ): boolean {
 	if (
 		approvedPlan?.kind !== "verified_sonarr_episode" ||
@@ -697,10 +698,29 @@ function episodePlansMatchWithRefreshedWatchProof(
 		refreshedAt: liveRefreshedAt,
 		...liveProofIdentity
 	} = livePlan.watchProof;
+	const approvedComparableProofIdentity = allowChangedPathMappingWitness
+		? {
+				plexInstanceId: approvedProofIdentity.plexInstanceId,
+				sourceFingerprint: approvedProofIdentity.sourceFingerprint,
+				plexServerUrl: approvedProofIdentity.plexServerUrl,
+				ratingKey: approvedProofIdentity.ratingKey,
+				size: approvedProofIdentity.size,
+			}
+		: approvedProofIdentity;
+	const liveComparableProofIdentity = allowChangedPathMappingWitness
+		? {
+				plexInstanceId: liveProofIdentity.plexInstanceId,
+				sourceFingerprint: liveProofIdentity.sourceFingerprint,
+				plexServerUrl: liveProofIdentity.plexServerUrl,
+				ratingKey: liveProofIdentity.ratingKey,
+				size: liveProofIdentity.size,
+			}
+		: liveProofIdentity;
 	const approvedRefreshTime = Date.parse(approvedRefreshedAt);
 	const liveRefreshTime = Date.parse(liveRefreshedAt);
 	if (
-		JSON.stringify(approvedProofIdentity) !== JSON.stringify(liveProofIdentity) ||
+		JSON.stringify(approvedComparableProofIdentity) !==
+			JSON.stringify(liveComparableProofIdentity) ||
 		liveWatchCount < approvedWatchCount ||
 		!Number.isFinite(approvedRefreshTime) ||
 		!Number.isFinite(liveRefreshTime) ||
@@ -714,12 +734,36 @@ function episodePlansMatchWithRefreshedWatchProof(
 	) {
 		return false;
 	}
+	if (allowChangedPathMappingWitness) {
+		const stableNotificationIdentity = (
+			notification: (typeof approvedPlan.targetDeleteNotifications)[number],
+		) => ({
+			plexServerUrl: notification.plexServerUrl,
+			onSeriesDelete: notification.onSeriesDelete,
+			onEpisodeFileDelete: notification.onEpisodeFileDelete,
+		});
+		const stableNotificationIdentities = (
+			notifications: typeof approvedPlan.targetDeleteNotifications,
+		) =>
+			notifications
+				.map(stableNotificationIdentity)
+				.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+		if (
+			JSON.stringify(stableNotificationIdentities(approvedPlan.targetDeleteNotifications)) !==
+			JSON.stringify(stableNotificationIdentities(livePlan.targetDeleteNotifications))
+		) {
+			return false;
+		}
+	}
 	return executableSafetyPlansEqual(approvedPlan, {
 		...livePlan,
 		episode: allowMonitoredToUnmonitored
 			? { ...livePlan.episode, monitored: approvedPlan.episode.monitored }
 			: livePlan.episode,
 		watchProof: approvedPlan.watchProof,
+		targetDeleteNotifications: allowChangedPathMappingWitness
+			? approvedPlan.targetDeleteNotifications
+			: livePlan.targetDeleteNotifications,
 	});
 }
 
@@ -2512,7 +2556,12 @@ async function executeQueuedCleanupItems(
 									monitored: approvedPlan.episode.monitored,
 								},
 							}) ||
-								episodePlansMatchWithRefreshedWatchProof(approvedPlan, livePlan, true));
+								episodePlansMatchWithRefreshedWatchProof(
+									approvedPlan,
+									livePlan,
+									true,
+									true,
+								));
 						if (idempotentEpisodeUnmonitorMatch) {
 							// The live Sonarr snapshot is the durable recovery marker. A lease
 							// or transient error may have replaced lastExecutionError after the
@@ -3637,6 +3686,10 @@ async function evaluateAllItems(
 		where: { userId: config.userId },
 	});
 	const instanceServiceMap = new Map(instances.map((i) => [i.id, i.service]));
+	const respectQuiSeeding = Boolean(config.respectQuiSeeding);
+	const useCachedQuiSeedingGate =
+		respectQuiSeeding &&
+		instances.some((instance) => instance.service === "QUI" && instance.enabled);
 	const persistedEpisodeRules = rules.filter((rule) => rule.targetScope === "episode");
 	const seriesRules = rules.filter((rule) => rule.targetScope !== "episode");
 	const episodeRules = rules.filter(isSupportedEpisodeCleanupRule);
@@ -3799,7 +3852,7 @@ async function evaluateAllItems(
 			? { instanceId: { in: instances.map((i) => i.id) } }
 			: applyQuiSeedingFilter(
 					{ instanceId: { in: instances.map((i) => i.id) } },
-					Boolean(config.respectQuiSeeding),
+					useCachedQuiSeedingGate,
 				);
 
 	// Paginate through LibraryCache with cursor-based pagination
@@ -3838,7 +3891,7 @@ async function evaluateAllItems(
 			if (!instanceService) continue; // Skip orphaned cache items with no matching instance
 
 			const match =
-				config.respectQuiSeeding && isQuiSeedingState(item.torrentState)
+				useCachedQuiSeedingGate && isQuiSeedingState(item.torrentState)
 					? null
 					: evaluateItemAgainstRules(
 							item,
@@ -3870,7 +3923,8 @@ async function evaluateAllItems(
 					failedSources,
 					freshEpisodeWatchMap,
 					watchedEpisodeSeriesTmdbIds,
-					Boolean(config.respectQuiSeeding),
+					respectQuiSeeding,
+					useCachedQuiSeedingGate,
 					warnings,
 				);
 				totalEvaluated += episodeMatches.evaluated;
@@ -4047,6 +4101,7 @@ async function evaluateSeriesEpisodes(
 	watchMap: Map<string, EpisodePlexWatchEvidence[]>,
 	watchedSeriesTmdbIds: Set<number>,
 	respectQuiSeeding: boolean,
+	useCachedQuiSeedingGate: boolean,
 	warnings: string[],
 ): Promise<{ evaluated: number; flagged: FlaggedItem[] }> {
 	if (!instance) return { evaluated: 0, flagged: [] };
@@ -4139,7 +4194,7 @@ async function evaluateSeriesEpisodes(
 		);
 		const file = filesById.get(episodeFileId);
 		if (!watchEvidence?.length || !file) continue;
-		if (respectQuiSeeding && isQuiSeedingState(file.torrentState)) {
+		if (useCachedQuiSeedingGate && isQuiSeedingState(file.torrentState)) {
 			warnings.push(
 				`Episode S${seasonNumber}E${episodeNumber} was skipped because its exact file has an active qUI state.`,
 			);
@@ -6017,6 +6072,7 @@ async function sonarrEpisodeRemainsUnmonitored(
 		) {
 			return false;
 		}
+		if (typeof episode.monitored !== "boolean") return null;
 		return episode.monitored === false;
 	} catch {
 		return null;
