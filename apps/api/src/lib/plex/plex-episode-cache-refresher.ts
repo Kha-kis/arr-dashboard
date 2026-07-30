@@ -9,7 +9,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClientInstance } from "../prisma.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import type { PlexClient } from "./plex-client.js";
+import type { PlexClient, PlexEpisodeItem } from "./plex-client.js";
 
 const MAX_SHOWS_PER_REFRESH = 50;
 const REFRESHES_PER_FRESHNESS_WINDOW = 4;
@@ -88,12 +88,15 @@ export async function refreshPlexEpisodeCache(
 		};
 	}
 
-	// Deduplicate by tmdbId (same show may appear in multiple sections)
-	const showMap = new Map<number, string>();
+	// Group every Plex copy of the same logical show. Duplicate sections and
+	// quality libraries have distinct rating keys, and any one of them may own
+	// the Sonarr path or carry the configured account's current watch count.
+	const showMap = new Map<number, Set<string>>();
 	for (const show of recentlyWatchedShows) {
-		if (show.ratingKey && !showMap.has(show.tmdbId)) {
-			showMap.set(show.tmdbId, show.ratingKey);
-		}
+		if (!show.ratingKey) continue;
+		const ratingKeys = showMap.get(show.tmdbId) ?? new Set<string>();
+		ratingKeys.add(show.ratingKey);
+		showMap.set(show.tmdbId, ratingKeys);
 	}
 	const eligibleShows = showMap.size;
 
@@ -242,27 +245,62 @@ export async function refreshPlexEpisodeCache(
 	// Process each show
 	const refreshedAt = new Date();
 	let refreshedShows = 0;
-	for (const [tmdbId, showRatingKey] of selectedShows) {
+	for (const [tmdbId, showRatingKeys] of selectedShows) {
 		try {
-			const episodes = await client.getEpisodes(showRatingKey);
+			const episodeCopies = (
+				await Promise.all(
+					[...showRatingKeys].sort().map((showRatingKey) => client.getEpisodes(showRatingKey)),
+				)
+			).flat();
+			const episodesByCoordinate = new Map<string, PlexEpisodeItem[]>();
+			for (const episode of episodeCopies) {
+				const coordinate = `${episode.seasonNumber}:${episode.episodeNumber}`;
+				const copies = episodesByCoordinate.get(coordinate) ?? [];
+				copies.push(episode);
+				episodesByCoordinate.set(coordinate, copies);
+			}
 			refreshedShows++;
 
-			for (const episode of episodes) {
-				const watchData = historyMap.get(episode.ratingKey);
+			for (const copies of episodesByCoordinate.values()) {
+				// Keep one cache row per logical episode so duplicate Plex copies
+				// cannot inflate the completion denominator. The strongest live
+				// configured-account count is the destructive proof; ties are
+				// deterministic so incomplete-history preservation stays stable.
+				const episode = [...copies].sort((left, right) => {
+					const leftCount =
+						Number.isInteger(left.viewCount) && left.viewCount > 0 ? left.viewCount : 0;
+					const rightCount =
+						Number.isInteger(right.viewCount) && right.viewCount > 0 ? right.viewCount : 0;
+					return rightCount - leftCount || left.ratingKey.localeCompare(right.ratingKey);
+				})[0]!;
+				const watchData = copies
+					.map((copy) => historyMap.get(copy.ratingKey))
+					.filter((data) => data !== undefined);
 				const plexViewCount =
 					Number.isInteger(episode.viewCount) && episode.viewCount > 0 ? episode.viewCount : 0;
 				// Shared history drives aggregate progress/completion, while the
 				// configured account's current metadata count remains the only
 				// destructive episode-cleanup authorization signal.
 				const watchCount = plexViewCount;
-				const watched = watchCount > 0 || (watchData?.eventCount ?? 0) > 0;
-				const observedUsers = watchData ? [...watchData.users] : [];
-				const episodeAttributionComplete = watchData?.attributionComplete ?? true;
-				const lastWatchedAt = watchData
-					? new Date(watchData.lastWatched * 1000)
-					: episode.lastViewedAt
-						? new Date(episode.lastViewedAt * 1000)
-						: null;
+				const watched =
+					watchCount > 0 || watchData.some((data) => data.eventCount > 0);
+				const observedUsers = [
+					...new Set(watchData.flatMap((data) => [...data.users])),
+				];
+				const episodeAttributionComplete = watchData.every(
+					(data) => data.attributionComplete,
+				);
+				const latestHistoryAt = watchData.reduce(
+					(latest, data) => Math.max(latest, data.lastWatched),
+					0,
+				);
+				const latestMetadataAt = copies.reduce(
+					(latest, copy) => Math.max(latest, copy.lastViewedAt ?? 0),
+					0,
+				);
+				const latestWatchedAt = Math.max(latestHistoryAt, latestMetadataAt);
+				const lastWatchedAt =
+					latestWatchedAt > 0 ? new Date(latestWatchedAt * 1000) : null;
 				const existingState = existingEpisodeStates.get(
 					`${tmdbId}:${episode.seasonNumber}:${episode.episodeNumber}`,
 				);
@@ -386,7 +424,10 @@ export async function refreshPlexEpisodeCache(
 			}
 		} catch (err) {
 			errors++;
-			log.warn({ err, instanceId, tmdbId, showRatingKey }, "Failed to fetch episodes for show");
+			log.warn(
+				{ err, instanceId, tmdbId, showRatingKeys: [...showRatingKeys] },
+				"Failed to fetch episodes for show",
+			);
 			if (errorMessages.length < 5) {
 				errorMessages.push(
 					`Failed to fetch episodes for show tmdb:${tmdbId}: ${getErrorMessage(err)}`,

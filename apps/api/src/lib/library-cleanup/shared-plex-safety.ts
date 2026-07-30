@@ -2650,8 +2650,17 @@ async function verifyEpisodePlexWatchProof(
 				"Plex episode policy media paths were unavailable at the mutation boundary",
 			);
 		}
-		const sourceEpisodes = mediaItems.flatMap((show) =>
-			show.episodes.filter((episode) => episode.ratingKey === row.ratingKey),
+		const allMediaEpisodes = mediaItems.flatMap((show) => show.episodes);
+		const hasEpisodeCoordinates = allMediaEpisodes.some(
+			(episode) =>
+				episode.seasonNumber !== undefined || episode.episodeNumber !== undefined,
+		);
+		const sourceEpisodes = allMediaEpisodes.filter(
+			(episode) =>
+				episode.ratingKey === row.ratingKey &&
+				(!hasEpisodeCoordinates ||
+					(episode.seasonNumber === seasonNumber &&
+						episode.episodeNumber === exactEpisodeNumber)),
 		);
 		if (sourceEpisodes.length === 0) {
 			continue;
@@ -2660,6 +2669,16 @@ async function verifyEpisodePlexWatchProof(
 			throw new EpisodeWatchProofError(
 				"Plex episode policy media identity was ambiguous at the mutation boundary",
 			);
+		}
+		const pathEpisodes = hasEpisodeCoordinates
+			? allMediaEpisodes.filter(
+					(episode) =>
+						episode.seasonNumber === seasonNumber &&
+						episode.episodeNumber === exactEpisodeNumber,
+				)
+			: sourceEpisodes;
+		if (pathEpisodes.length === 0) {
+			continue;
 		}
 		const matchingNotifications = notifications.filter((notification) => {
 			if (
@@ -2706,9 +2725,11 @@ async function verifyEpisodePlexWatchProof(
 		>();
 		for (const candidate of pathCandidates) {
 			const mappedFile = { ...selectedComparable, fullPath: candidate.fullPath };
-			for (const part of sourceEpisodes[0]!.parts) {
-				if (mediaPartMatchesTarget(mappedFile, part)) {
-					matches.set(plexPartKey(part), { part, mapping: candidate.mapping });
+			for (const episode of pathEpisodes) {
+				for (const part of episode.parts) {
+					if (mediaPartMatchesTarget(mappedFile, part)) {
+						matches.set(plexPartKey(part), { part, mapping: candidate.mapping });
+					}
 				}
 			}
 		}

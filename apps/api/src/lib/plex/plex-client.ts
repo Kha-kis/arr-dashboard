@@ -70,7 +70,10 @@ export interface PlexMovieMediaItem {
 	parts: PlexMovieMediaPart[];
 }
 
-export type PlexEpisodeMediaItem = PlexMovieMediaItem;
+export interface PlexEpisodeMediaItem extends PlexMovieMediaItem {
+	seasonNumber?: number;
+	episodeNumber?: number;
+}
 
 export interface PlexSeriesMediaItem {
 	ratingKey: string;
@@ -368,6 +371,8 @@ export class PlexClient {
 				);
 				const episodes = completeEpisodes.map((item) => ({
 					ratingKey: item.ratingKey,
+					seasonNumber: item.parentIndex,
+					episodeNumber: item.index,
 					parts: item.Media.flatMap((media) =>
 						media.Part.map((part) => ({ file: part.file, size: part.size })),
 					),

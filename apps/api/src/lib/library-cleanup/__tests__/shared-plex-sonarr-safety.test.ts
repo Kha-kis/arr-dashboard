@@ -96,6 +96,8 @@ interface SonarrTestOptions {
 		ratingKey: string;
 		episodes: Array<{
 			ratingKey: string;
+			seasonNumber?: number;
+			episodeNumber?: number;
 			parts: Array<{ file: string; size: number }>;
 		}>;
 	}>;
@@ -247,6 +249,8 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			ratingKey: "show-123",
 			episodes: episodeFiles.map((file, index) => ({
 				ratingKey: `episode-${index + 1}`,
+				seasonNumber: 1,
+				episodeNumber: index + 1,
 				parts: [{ file: file.path!, size: file.size! }],
 			})),
 		},
@@ -580,6 +584,78 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		).resolves.toEqual(new Map());
 
 		expect(fixture.getEpisodeWatchCount).toHaveBeenCalledWith("episode-1");
+	});
+
+	it("matches the exact episode path across duplicate Plex show copies", async () => {
+		const fixture = makeSonarrDeps({
+			plexSeries: [
+				{
+					ratingKey: "show-library-a",
+					episodes: [
+						{
+							ratingKey: "episode-1",
+							seasonNumber: 1,
+							episodeNumber: 1,
+							parts: [
+								{
+									file: "/tv-hd/Example Series/Season 01/Example.S01E01.1080p.mkv",
+									size: 1_001,
+								},
+							],
+						},
+					],
+				},
+				{
+					ratingKey: "show-library-b",
+					episodes: [
+						{
+							ratingKey: "duplicate-episode-1",
+							seasonNumber: 1,
+							episodeNumber: 1,
+							parts: [
+								{
+									file: "/tv-4k/Example Series/Season 01/Example.S01E01.2160p.mkv",
+									size: 2_001,
+								},
+							],
+						},
+						{
+							ratingKey: "duplicate-episode-2",
+							seasonNumber: 1,
+							episodeNumber: 2,
+							parts: [
+								{
+									file: "/tv-4k/Example Series/Season 01/Example.S01E02.2160p.mkv",
+									size: 2_002,
+								},
+							],
+						},
+					],
+				},
+			],
+		});
+		addSonarrPeer(fixture, {
+			episodeFiles: [
+				{
+					id: 4_001,
+					path: "/tv-hd/Example Series/Season 01/Example.S01E01.1080p.mkv",
+					relativePath: "Season 01/Example.S01E01.1080p.mkv",
+					size: 1_001,
+				},
+			],
+		});
+		const context = createSharedPlexSafetyContext();
+		const episodeTarget = exactEpisodeTarget();
+
+		await expect(
+			findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context),
+		).resolves.toEqual(new Map());
+		expect(fixture.getEpisodeWatchCount).toHaveBeenCalledWith("episode-1");
+		expect(context.plans.get(cleanupDeleteTargetKey(episodeTarget))).toMatchObject({
+			kind: "verified_sonarr_episode",
+			selectedFile: { episodeFileId: 3_001 },
+			watchProof: { ratingKey: "episode-1", watchCount: 1 },
+		});
 	});
 
 	it.each([

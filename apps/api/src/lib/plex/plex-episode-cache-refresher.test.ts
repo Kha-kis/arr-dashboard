@@ -80,6 +80,77 @@ describe("refreshPlexEpisodeCache watch count", () => {
 		expect(firstCall.update.refreshedAt).toEqual(firstCall.create.refreshedAt);
 	});
 
+	it("coalesces duplicate Plex show copies without losing the strongest episode proof", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue([
+					{ tmdbId: 123, ratingKey: "show-library-a" },
+					{ tmdbId: 123, ratingKey: "show-library-b" },
+				]),
+			},
+			plexEpisodeCache: { groupBy: vi.fn().mockResolvedValue([]), upsert },
+		};
+		const client = {
+			getHistory: vi.fn().mockResolvedValue([
+				{ type: "episode", ratingKey: "episode-a", accountID: 1, viewedAt: 100 },
+				{ type: "episode", ratingKey: "episode-b", accountID: 2, viewedAt: 200 },
+			]),
+			getAccounts: vi.fn().mockResolvedValue([
+				{ id: 1, name: "Viewer A" },
+				{ id: 2, name: "Viewer B" },
+			]),
+			getEpisodes: vi
+				.fn()
+				.mockResolvedValueOnce([
+					{
+						ratingKey: "episode-a",
+						title: "Library A",
+						seasonNumber: 1,
+						episodeNumber: 1,
+						viewCount: 1,
+					},
+				])
+				.mockResolvedValueOnce([
+					{
+						ratingKey: "episode-b",
+						title: "Library B",
+						seasonNumber: 1,
+						episodeNumber: 1,
+						viewCount: 3,
+					},
+				]),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn() } as never,
+			"connection-fingerprint",
+		);
+
+		expect(result).toMatchObject({ eligibleShows: 1, refreshedShows: 1, upserted: 1 });
+		expect(client.getEpisodes).toHaveBeenNthCalledWith(1, "show-library-a");
+		expect(client.getEpisodes).toHaveBeenNthCalledWith(2, "show-library-b");
+		expect(upsert).toHaveBeenCalledOnce();
+		expect(upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					ratingKey: "episode-b",
+					watchCount: 3,
+					watched: true,
+					watchedByUsers: JSON.stringify(["Viewer A", "Viewer B"]),
+					lastWatchedAt: new Date(200 * 1000),
+				}),
+				update: expect.objectContaining({
+					ratingKey: "episode-b",
+					watchCount: 3,
+				}),
+			}),
+		);
+	});
+
 	it("preserves cached aggregate watches omitted by bounded successful history", async () => {
 		const upsert = vi.fn().mockResolvedValue({});
 		const existingLastWatchedAt = new Date("2025-01-02T03:04:05.000Z");

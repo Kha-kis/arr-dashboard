@@ -314,6 +314,8 @@ describe("PlexClient.getSeriesEpisodeMediaPartsByTvdbId", () => {
 							Metadata: [
 								{
 									ratingKey: "episode-4k",
+									parentIndex: 1,
+									index: 1,
 									Media: [{ Part: [{ file: "/tv-4k/Example/S01E01.mkv", size: 2_000 }] }],
 								},
 							],
@@ -332,6 +334,8 @@ describe("PlexClient.getSeriesEpisodeMediaPartsByTvdbId", () => {
 							Metadata: [
 								{
 									ratingKey: "episode-hd",
+									parentIndex: 1,
+									index: 2,
 									Media: [{ Part: [{ file: "/tv-hd/Example/S01E01.mkv", size: 1_000 }] }],
 								},
 							],
@@ -349,10 +353,14 @@ describe("PlexClient.getSeriesEpisodeMediaPartsByTvdbId", () => {
 				episodes: [
 					{
 						ratingKey: "episode-4k",
+						seasonNumber: 1,
+						episodeNumber: 1,
 						parts: [{ file: "/tv-4k/Example/S01E01.mkv", size: 2_000 }],
 					},
 					{
 						ratingKey: "episode-hd",
+						seasonNumber: 1,
+						episodeNumber: 2,
 						parts: [{ file: "/tv-hd/Example/S01E01.mkv", size: 1_000 }],
 					},
 				],
