@@ -348,6 +348,15 @@ class ArrDeletePartialError extends Error {
 	}
 }
 
+class SonarrEpisodeUnmonitorPartialError extends Error {
+	constructor(cause: unknown) {
+		super(
+			"Partial cleanup: Sonarr accepted the episode unmonitor, but its file was not deleted. The upstream change was recorded and the mutation will remain retryable.",
+			{ cause },
+		);
+	}
+}
+
 class CleanupApprovalOwnershipLostError extends Error {
 	constructor() {
 		super("Cleanup approval mutation ownership changed");
@@ -1722,73 +1731,85 @@ async function retryTargetRecordIsAbsent(
 	instance: ServiceInstance,
 	arrItemId: number,
 	safetySnapshot: unknown,
-): Promise<boolean> {
+	action: RuleAction,
+): Promise<"record_absent" | "episode_action_complete" | false> {
 	const plan = parseExecutableSafetyPlan(safetySnapshot);
 	if (!plan || plan.target.serviceFingerprint !== createArrServiceFingerprint(instance)) {
 		return false;
 	}
 	const client = deps.arrClientFactory.create(instance);
-	try {
-		if (
-			instance.service === "RADARR" &&
-			(plan.kind === "verified_arr_target" ||
-				plan.kind === "verified_radarr" ||
-				plan.kind === "verified_radarr_empty")
-		) {
+	if (
+		instance.service === "RADARR" &&
+		(plan.kind === "verified_arr_target" ||
+			plan.kind === "verified_radarr" ||
+			plan.kind === "verified_radarr_empty")
+	) {
+		try {
 			await (client as InstanceType<typeof RadarrClient>).movie.getById(arrItemId);
-			return false;
-		}
-		if (
-			instance.service === "SONARR" &&
-			(plan.kind === "verified_arr_target" ||
-				plan.kind === "verified_sonarr" ||
-				plan.kind === "verified_sonarr_episode")
-		) {
-			const sonarr = client as InstanceType<typeof SonarrClient>;
-			await sonarr.series.getById(arrItemId);
-			if (plan.kind === "verified_sonarr_episode") {
-				await assertVerifiedSonarrFilesUnchanged(sonarr, arrItemId, plan.target, {
-					seriesPath: plan.target.mediaPath,
-					episodeFiles: plan.retainedTargetFiles,
-				});
-				const episodes = (await sonarr.episode.getAll({
-					seriesId: arrItemId,
-					includeEpisodeFile: true,
-				})) as unknown as Array<Record<string, unknown>>;
-				const selected = episodes.find(
-					(episode) => episode.id === plan.episode.arrEpisodeId,
-				);
-				if (
-					!selected ||
-					selected.seasonNumber !== plan.episode.seasonNumber ||
-					selected.episodeNumber !== plan.episode.episodeNumber
-				) {
-					throw new ArrTargetChangedDuringSafetyCheckError();
-				}
-				if (
-					typeof selected.episodeFileId === "number" &&
-					selected.episodeFileId > 0
-				) {
-					// The old file still exists or a replacement appeared. Neither
-					// can be reconciled as an already-completed retry.
-					return false;
-				}
-				if (
-					episodes.some(
-						(episode) => episode.episodeFileId === plan.selectedFile.episodeFileId,
-					)
-				) {
-					throw new ArrTargetChangedDuringSafetyCheckError();
-				}
-				return true;
-			}
-			return false;
+		} catch (error) {
+			if (isNotFoundError(error)) return "record_absent";
+			throw error;
 		}
 		return false;
-	} catch (error) {
-		if (isNotFoundError(error)) return true;
-		throw error;
 	}
+	if (
+		instance.service === "SONARR" &&
+		(plan.kind === "verified_arr_target" ||
+			plan.kind === "verified_sonarr" ||
+			plan.kind === "verified_sonarr_episode")
+	) {
+		const sonarr = client as InstanceType<typeof SonarrClient>;
+		try {
+			await sonarr.series.getById(arrItemId);
+		} catch (error) {
+			if (isNotFoundError(error)) return "record_absent";
+			throw error;
+		}
+		if (plan.kind === "verified_sonarr_episode") {
+			const episodes = (await sonarr.episode.getAll({
+				seriesId: arrItemId,
+				includeEpisodeFile: true,
+			})) as unknown as Array<Record<string, unknown>>;
+			const selected = episodes.find(
+				(episode) => episode.id === plan.episode.arrEpisodeId,
+			);
+			if (
+				!selected ||
+				selected.seasonNumber !== plan.episode.seasonNumber ||
+				selected.episodeNumber !== plan.episode.episodeNumber
+			) {
+				throw new ArrTargetChangedDuringSafetyCheckError();
+			}
+			if (action === "unmonitor") {
+				return selected.monitored === false ? "episode_action_complete" : false;
+			}
+			await assertVerifiedSonarrFilesUnchanged(sonarr, arrItemId, plan.target, {
+				seriesPath: plan.target.mediaPath,
+				episodeFiles: plan.retainedTargetFiles,
+			});
+			if (
+				typeof selected.episodeFileId === "number" &&
+				selected.episodeFileId > 0
+			) {
+				// The old file still exists or a replacement appeared. Neither
+				// can be reconciled as an already-completed retry.
+				return false;
+			}
+			if (
+				episodes.some(
+					(episode) => episode.episodeFileId === plan.selectedFile.episodeFileId,
+				)
+			) {
+				throw new ArrTargetChangedDuringSafetyCheckError();
+			}
+			if (action === "delete" && selected.monitored !== false) {
+				return false;
+			}
+			return "episode_action_complete";
+		}
+		return false;
+	}
+	return false;
 }
 
 /**
@@ -2287,7 +2308,10 @@ async function executeQueuedCleanupItems(
 				sharedPlexBlock =
 					"Skipped for safety: the approved Plex episode evidence expired; run cleanup again and review a new approval.";
 			}
-			let retryTargetAlreadyAbsent = false;
+			let retryTargetAlreadyAbsent:
+				| "record_absent"
+				| "episode_action_complete"
+				| false = false;
 			if (!sharedPlexBlock && recoveringInterruptedMutation) {
 				try {
 					retryTargetAlreadyAbsent = await retryTargetRecordIsAbsent(
@@ -2295,6 +2319,7 @@ async function executeQueuedCleanupItems(
 						instance,
 						approval.arrItemId,
 						approval.safetySnapshot,
+						action,
 					);
 				} catch (error) {
 					log.warn(
@@ -2561,16 +2586,26 @@ async function executeQueuedCleanupItems(
 				if (retryTargetAlreadyAbsent) {
 					executionCompleted = true;
 					reconciledWithoutMutation = true;
-					await reconcileSonarrEpisodeFileCache(
-						prisma,
-						mutationInstance,
-						approval.arrItemId,
-						log,
-						safetyPlan!.kind === "verified_sonarr_episode"
-							? safetyPlan!.selectedFile.episodeFileId
-							: undefined,
-					);
-					if (safetyPlan!.kind !== "verified_sonarr_episode") await prisma.libraryCache
+					if (
+						retryTargetAlreadyAbsent === "record_absent" ||
+						action !== "unmonitor" ||
+						safetyPlan!.kind !== "verified_sonarr_episode"
+					) {
+						await reconcileSonarrEpisodeFileCache(
+							prisma,
+							mutationInstance,
+							approval.arrItemId,
+							log,
+							retryTargetAlreadyAbsent !== "record_absent" &&
+								safetyPlan!.kind === "verified_sonarr_episode"
+								? safetyPlan!.selectedFile.episodeFileId
+								: undefined,
+						);
+					}
+					if (
+						retryTargetAlreadyAbsent === "record_absent" ||
+						safetyPlan!.kind !== "verified_sonarr_episode"
+					) await prisma.libraryCache
 						.deleteMany({
 							where: {
 								instanceId: approval.instanceId,
@@ -2762,7 +2797,8 @@ async function executeQueuedCleanupItems(
 				}
 				const executionError =
 					error instanceof ArrFileChangedDuringSafetyCheckError ||
-					error instanceof ArrDeletePartialError
+					error instanceof ArrDeletePartialError ||
+					error instanceof SonarrEpisodeUnmonitorPartialError
 						? error.message
 						: "Cleanup item could not be executed. Review the API logs for details.";
 				const mutationAuthorityChanged =
@@ -2834,6 +2870,12 @@ async function executeQueuedCleanupItems(
 								"Cleanup partial ARR delete could not update the cache",
 							);
 						});
+				}
+				if (
+					error instanceof SonarrEpisodeUnmonitorPartialError &&
+					error.cause instanceof CleanupRunLeaseLostError
+				) {
+					throw error.cause;
 				}
 			}
 		}
@@ -5038,6 +5080,43 @@ export async function executeDirectRemoval(
 					});
 				throw error;
 			}
+			if (error instanceof SonarrEpisodeUnmonitorPartialError) {
+				partialArrDeletes++;
+				try {
+					await updateClaimedCleanupApproval(
+						prisma,
+						userId,
+						directMutationIntentId,
+						"retry_executing",
+						directMutationExecutionToken,
+						{
+							status: "retry_pending",
+							executionToken: null,
+							lastExecutionError: error.message,
+						},
+					);
+				} catch (retryError) {
+					directRetryPersistenceFailures++;
+					log.error(
+						{
+							err: retryError,
+							title: item.cacheItem.title,
+							instanceId: instance.id,
+							arrItemId: item.cacheItem.arrItemId,
+						},
+						"Cleanup could not persist the partial episode unmonitor",
+					);
+				}
+				details.push(buildDetail(item, "skipped", error.message));
+				log.error(
+					{ err: error, title: item.cacheItem.title, instanceId: instance.id },
+					"Cleanup unmonitored the Sonarr episode but did not delete its file",
+				);
+				if (error.cause instanceof CleanupRunLeaseLostError) {
+					throw error.cause;
+				}
+				continue;
+			}
 			if (error instanceof ArrDeletePartialError) {
 				partialArrDeletes++;
 				const deletedAnyVerifiedFiles = error.deletedFileIds.length > 0;
@@ -5571,10 +5650,37 @@ async function deleteVerifiedSonarrEpisodeFile(
 		monitoredMode,
 	});
 	await assertMutationAuthority?.();
-	await sonarr.episodeFile.bulkDelete([plan.selectedFile.episodeFileId]);
+	let bulkError: unknown;
+	try {
+		await sonarr.episodeFile.bulkDelete([plan.selectedFile.episodeFileId]);
+	} catch (error) {
+		bulkError = error;
+	}
 
-	const remaining = await sonarr.episodeFile.getBySeries(arrItemId);
-	if (remaining.some((file) => file.id === plan.selectedFile.episodeFileId)) {
+	let remaining: Awaited<ReturnType<typeof sonarr.episodeFile.getBySeries>>;
+	try {
+		remaining = await sonarr.episodeFile.getBySeries(arrItemId);
+	} catch (verificationError) {
+		throw new ArrDeletePartialError({
+			cause: bulkError ?? verificationError,
+			service: "SONARR",
+			deletedFileIds: [],
+			hasRemainingFiles: true,
+			remainingSize: sonarrFileSetSize([
+				plan.selectedFile,
+				...plan.retainedTargetFiles,
+			]),
+			message:
+				monitoredMode === "require_unmonitored"
+					? "Partial cleanup: Sonarr's selected episode-file deletion outcome could not be verified. The episode remains unmonitored and the mutation will be retried safely."
+					: "Partial cleanup: Sonarr's selected episode-file deletion outcome could not be verified. The selected file may already be deleted, and the mutation will be retried safely.",
+		});
+	}
+	const selectedFileRemains = remaining.some(
+		(file) => file.id === plan.selectedFile.episodeFileId,
+	);
+	if (selectedFileRemains) {
+		if (bulkError) throw bulkError;
 		throw new Error("Sonarr did not delete the verified episode file");
 	}
 	const expectedRetainedIds = new Set(
@@ -5598,6 +5704,17 @@ async function deleteVerifiedSonarrEpisodeFile(
 			remainingSize,
 			message:
 				"Partial cleanup: the selected Sonarr episode file was deleted, but the retained series inventory changed.",
+		});
+	}
+	if (bulkError) {
+		throw new ArrDeletePartialError({
+			cause: bulkError,
+			service: "SONARR",
+			deletedFileIds: [plan.selectedFile.episodeFileId],
+			hasRemainingFiles: remaining.length > 0,
+			remainingSize: sonarrFileSetSize(remaining),
+			message:
+				"Partial cleanup: Sonarr deleted the selected episode file, but its response was lost. The confirmed deletion was recorded and will be reconciled safely.",
 		});
 	}
 }
@@ -5789,6 +5906,30 @@ function validateCleanupMutationShape(
 	return normalizedAction;
 }
 
+async function sonarrEpisodeRemainsUnmonitored(
+	sonarr: InstanceType<typeof SonarrClient>,
+	arrItemId: number,
+	plan: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr_episode" }>,
+): Promise<boolean | null> {
+	try {
+		const episodes = (await sonarr.episode.getAll({
+			seriesId: arrItemId,
+			includeEpisodeFile: true,
+		})) as unknown as Array<Record<string, unknown>>;
+		const episode = episodes.find((candidate) => candidate.id === plan.episode.arrEpisodeId);
+		if (
+			!episode ||
+			episode.seasonNumber !== plan.episode.seasonNumber ||
+			episode.episodeNumber !== plan.episode.episodeNumber
+		) {
+			return false;
+		}
+		return episode.monitored === false;
+	} catch {
+		return null;
+	}
+}
+
 /**
  * Delete an item from an ARR instance via the SDK client.
  */
@@ -5854,13 +5995,24 @@ async function deleteFromArr(
 				});
 				await assertMutationAuthority?.();
 				await sonarr.episode.setMonitored([safetyPlan.episode.arrEpisodeId], false);
-				await deleteVerifiedSonarrEpisodeFile(
-					sonarr,
-					arrItemId,
-					safetyPlan,
-					assertMutationAuthority,
-					"require_unmonitored",
-				);
+				try {
+					await deleteVerifiedSonarrEpisodeFile(
+						sonarr,
+						arrItemId,
+						safetyPlan,
+						assertMutationAuthority,
+						"require_unmonitored",
+					);
+				} catch (error) {
+					if (error instanceof ArrDeletePartialError) throw error;
+					if (
+						(await sonarrEpisodeRemainsUnmonitored(sonarr, arrItemId, safetyPlan)) ===
+						false
+					) {
+						throw error;
+					}
+					throw new SonarrEpisodeUnmonitorPartialError(error);
+				}
 			} else if (safetyPlan.kind === "verified_sonarr") {
 				const deletedFileIds = await deleteVerifiedSonarrFiles(
 					sonarr,
