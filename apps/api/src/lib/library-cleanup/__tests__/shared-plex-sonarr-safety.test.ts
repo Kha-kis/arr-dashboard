@@ -2218,6 +2218,109 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.episodeFileCacheDeleteMany).not.toHaveBeenCalled();
 	});
 
+	it("reconciles an episode unmonitor whose successful Sonarr response was lost", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = { ...exactEpisodeTarget(), action: "unmonitor" as const };
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		fixture.setEpisodeMonitored.mockImplementation(async (episodeIds, monitored) => {
+			for (const episodeId of episodeIds) {
+				fixture.setLiveEpisodeMonitored(episodeId, monitored);
+			}
+			throw new Error("Sonarr response timed out");
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule("unmonitor")],
+		} as never);
+		const storedApproval = {
+			...approval("unmonitor"),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		};
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+			removed: 1,
+			failed: 0,
+			errors: [],
+		});
+		expect(storedApproval).toMatchObject({ status: "executed" });
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("keeps an unconfirmed episode unmonitor retryable until Sonarr can be read back", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = { ...exactEpisodeTarget(), action: "unmonitor" as const };
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const liveEpisodes = await fixture.targetClient.episode.getAll();
+		let unmonitorAttempted = false;
+		fixture.setEpisodeMonitored.mockImplementation(async () => {
+			unmonitorAttempted = true;
+			throw new Error("Sonarr response timed out");
+		});
+		fixture.targetClient.episode.getAll.mockImplementation(async () => {
+			if (unmonitorAttempted) throw new Error("Sonarr readback unavailable");
+			return liveEpisodes;
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule("unmonitor")],
+		} as never);
+		const storedApproval = {
+			...approval("unmonitor"),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		};
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const firstAttempt = await executeApprovedItems(
+			fixture.deps,
+			"user-1",
+			["approval-1"],
+		);
+
+		expect(firstAttempt).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "retry_pending",
+			lastExecutionError: expect.stringContaining("could not confirm"),
+		});
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+
+		unmonitorAttempted = false;
+		fixture.targetClient.episode.getAll.mockResolvedValue(liveEpisodes);
+		fixture.setEpisodeMonitored.mockImplementation(async (episodeIds, monitored) => {
+			for (const episodeId of episodeIds) {
+				fixture.setLiveEpisodeMonitored(episodeId, monitored);
+			}
+		});
+		const retry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(retry).toMatchObject({ removed: 1, failed: 0 });
+		expect(storedApproval).toMatchObject({ status: "executed" });
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		["unmonitor", false],
 		["delete", true],
@@ -2923,6 +3026,45 @@ describe("verified Sonarr mutation handoff", () => {
 		});
 		expect(intents).toEqual([expect.objectContaining({ status: "executed" })]);
 		expect(fixture.bulkDelete).toHaveBeenCalledOnce();
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+	});
+
+	it("refreshes expired Plex proof before completing a partial episode retry", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const stalePlan = {
+			...plan,
+			watchProof: {
+				...plan.watchProof,
+				refreshedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
+			},
+		};
+		fixture.setLiveEpisodeMonitored(9_001, false);
+		const storedRetry = {
+			...approval(),
+			status: "retry_pending",
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			lastExecutionError:
+				"Partial cleanup: Sonarr accepted the episode unmonitor, but its file was not deleted. The upstream change was recorded and the mutation will remain retryable.",
+			safetySnapshot: serializeExecutableSafetyPlan(stalePlan),
+		};
+		configureApprovalStore(fixture.deps, storedRetry);
+
+		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 1, failed: 0 });
+		expect(storedRetry).toMatchObject({ status: "executed" });
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
 		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
 	});
 

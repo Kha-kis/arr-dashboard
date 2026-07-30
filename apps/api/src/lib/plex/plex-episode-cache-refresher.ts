@@ -13,6 +13,24 @@ import type { PlexClient } from "./plex-client.js";
 
 const MAX_SHOWS_PER_REFRESH = 50;
 const REFRESHES_PER_FRESHNESS_WINDOW = 4;
+const MAX_HISTORY_RESULTS = 5000;
+
+function parseWatchedByUsers(value: string): string[] {
+	try {
+		const parsed = JSON.parse(value);
+		return Array.isArray(parsed)
+			? parsed.filter((user): user is string => typeof user === "string")
+			: [];
+	} catch {
+		return [];
+	}
+}
+
+function latestDate(left: Date | null, right: Date | null): Date | null {
+	if (!left) return right;
+	if (!right) return left;
+	return left.getTime() >= right.getTime() ? left : right;
+}
 
 /**
  * Refresh episode-level watch data for recently-watched shows on a single Plex instance.
@@ -116,18 +134,64 @@ export async function refreshPlexEpisodeCache(
 	let history: Awaited<ReturnType<PlexClient["getHistory"]>> = [];
 	let historyAvailable = true;
 	try {
-		history = await client.getHistory({ maxResults: 5000 });
+		history = await client.getHistory({ maxResults: MAX_HISTORY_RESULTS });
 	} catch (err) {
 		historyAvailable = false;
 		log.warn({ err, instanceId }, "Failed to fetch history for episode cache refresh");
 		errors++;
 		errorMessages.push(`Failed to fetch history: ${getErrorMessage(err)}`);
 	}
-	const existingEpisodeIdentities = new Map<
+	const historyComplete = historyAvailable && history.length < MAX_HISTORY_RESULTS;
+	if (historyAvailable && !historyComplete) {
+		log.warn(
+			{ instanceId, maxResults: MAX_HISTORY_RESULTS },
+			"Plex history reached its bounded result limit; preserving aggregate state for omitted episodes",
+		);
+	}
+	const existingEpisodeStates = new Map<
 		string,
-		{ ratingKey: string; sourceFingerprint: string | null }
+		{
+			ratingKey: string;
+			sourceFingerprint: string | null;
+			watched: boolean;
+			watchedByUsers: string[];
+			lastWatchedAt: Date | null;
+		}
 	>();
-	if (!historyAvailable) {
+	let accountMap = new Map<number, string>();
+	let accountAttributionComplete = true;
+	if (history.length > 0) {
+		try {
+			const accounts = await client.getAccounts();
+			accountMap = new Map(accounts.map((account) => [account.id, account.name]));
+		} catch (err) {
+			accountAttributionComplete = false;
+			log.warn({ err, instanceId }, "Failed to fetch Plex accounts for episode attribution");
+			errors++;
+			errorMessages.push(`Failed to fetch Plex accounts: ${getErrorMessage(err)}`);
+		}
+	}
+	for (const item of history) {
+		if (item.type !== "episode") continue;
+		const key = item.ratingKey;
+		const existing = historyMap.get(key);
+		const userName = accountMap.get(item.accountID);
+		if (!userName) accountAttributionComplete = false;
+		if (existing) {
+			if (userName) existing.users.add(userName);
+			existing.eventCount++;
+			if (item.viewedAt > existing.lastWatched) {
+				existing.lastWatched = item.viewedAt;
+			}
+		} else {
+			historyMap.set(key, {
+				users: new Set(userName ? [userName] : []),
+				lastWatched: item.viewedAt,
+				eventCount: 1,
+			});
+		}
+	}
+	if (!historyComplete || !accountAttributionComplete) {
 		const existingEpisodes = await prisma.plexEpisodeCache.findMany({
 			where: {
 				instanceId,
@@ -139,46 +203,22 @@ export async function refreshPlexEpisodeCache(
 				episodeNumber: true,
 				ratingKey: true,
 				sourceFingerprint: true,
+				watched: true,
+				watchedByUsers: true,
+				lastWatchedAt: true,
 			},
 		});
 		for (const episode of existingEpisodes) {
-			existingEpisodeIdentities.set(
+			existingEpisodeStates.set(
 				`${episode.showTmdbId}:${episode.seasonNumber}:${episode.episodeNumber}`,
 				{
 					ratingKey: episode.ratingKey,
 					sourceFingerprint: episode.sourceFingerprint,
+					watched: episode.watched,
+					watchedByUsers: parseWatchedByUsers(episode.watchedByUsers),
+					lastWatchedAt: episode.lastWatchedAt,
 				},
 			);
-		}
-	}
-	let accountMap = new Map<number, string>();
-	if (history.length > 0) {
-		try {
-			const accounts = await client.getAccounts();
-			accountMap = new Map(accounts.map((account) => [account.id, account.name]));
-		} catch (err) {
-			log.warn({ err, instanceId }, "Failed to fetch Plex accounts for episode attribution");
-			errors++;
-			errorMessages.push(`Failed to fetch Plex accounts: ${getErrorMessage(err)}`);
-		}
-	}
-	for (const item of history) {
-		if (item.type !== "episode") continue;
-		const key = item.ratingKey;
-		const existing = historyMap.get(key);
-		const userName = accountMap.get(item.accountID) ?? `Account ${item.accountID}`;
-		if (existing) {
-			existing.users.add(userName);
-			existing.eventCount++;
-			if (item.viewedAt > existing.lastWatched) {
-				existing.lastWatched = item.viewedAt;
-			}
-		} else {
-			historyMap.set(key, {
-				users: new Set([userName]),
-				lastWatched: item.viewedAt,
-				eventCount: 1,
-			});
 		}
 	}
 
@@ -199,19 +239,23 @@ export async function refreshPlexEpisodeCache(
 				// destructive episode-cleanup authorization signal.
 				const watchCount = plexViewCount;
 				const watched = watchCount > 0 || (watchData?.eventCount ?? 0) > 0;
-				const watchedByUsers = watchData ? [...watchData.users] : [];
+				const observedUsers = watchData ? [...watchData.users] : [];
 				const lastWatchedAt = watchData
 					? new Date(watchData.lastWatched * 1000)
 					: episode.lastViewedAt
 						? new Date(episode.lastViewedAt * 1000)
 						: null;
-				const existingIdentity = existingEpisodeIdentities.get(
+				const existingState = existingEpisodeStates.get(
 					`${tmdbId}:${episode.seasonNumber}:${episode.episodeNumber}`,
 				);
+				const exactExistingState =
+					existingState?.ratingKey === episode.ratingKey &&
+					existingState.sourceFingerprint === sourceFingerprint
+						? existingState
+						: null;
 				const canPreserveAggregateWatchState =
 					!historyAvailable &&
-					existingIdentity?.ratingKey === episode.ratingKey &&
-					existingIdentity.sourceFingerprint === sourceFingerprint;
+					exactExistingState !== null;
 				const aggregateWatchUpdate =
 					!historyAvailable && watchCount > 0
 						? {
@@ -219,6 +263,22 @@ export async function refreshPlexEpisodeCache(
 								...(lastWatchedAt ? { lastWatchedAt } : {}),
 							}
 						: {};
+				const effectiveWatched = historyComplete
+					? watched
+					: (exactExistingState?.watched ?? false) || watched;
+				const effectiveWatchedByUsers = accountAttributionComplete
+					? historyComplete
+						? observedUsers
+						: [
+								...new Set([
+									...(exactExistingState?.watchedByUsers ?? []),
+									...observedUsers,
+								]),
+							]
+					: (exactExistingState?.watchedByUsers ?? []);
+				const effectiveLastWatchedAt = historyComplete
+					? lastWatchedAt
+					: latestDate(exactExistingState?.lastWatchedAt ?? null, lastWatchedAt);
 
 				try {
 					if (!historyAvailable) {
@@ -248,6 +308,18 @@ export async function refreshPlexEpisodeCache(
 						upserted += updated.count;
 						continue;
 					}
+					if (!historyComplete && !exactExistingState && !watched) {
+						// A bounded successful history response proves only what it
+						// contains. Do not create a false negative for an omitted
+						// shared-account watch.
+						continue;
+					}
+					if (!accountAttributionComplete && !exactExistingState) {
+						// A new row with an empty or placeholder username set would
+						// understate per-user completion. Wait for attribution to
+						// recover instead of creating user-sensitive evidence.
+						continue;
+					}
 					await prisma.plexEpisodeCache.upsert({
 						where: {
 							instanceId_showTmdbId_seasonNumber_episodeNumber: {
@@ -264,9 +336,9 @@ export async function refreshPlexEpisodeCache(
 							episodeNumber: episode.episodeNumber,
 							ratingKey: episode.ratingKey,
 							title: episode.title,
-							watched,
-							watchedByUsers: JSON.stringify(watchedByUsers),
-							lastWatchedAt,
+							watched: effectiveWatched,
+							watchedByUsers: JSON.stringify(effectiveWatchedByUsers),
+							lastWatchedAt: effectiveLastWatchedAt,
 							watchCount,
 							refreshedAt,
 							sourceFingerprint,
@@ -274,9 +346,9 @@ export async function refreshPlexEpisodeCache(
 						update: {
 							ratingKey: episode.ratingKey,
 							title: episode.title,
-							watched,
-							watchedByUsers: JSON.stringify(watchedByUsers),
-							lastWatchedAt,
+							watched: effectiveWatched,
+							watchedByUsers: JSON.stringify(effectiveWatchedByUsers),
+							lastWatchedAt: effectiveLastWatchedAt,
 							watchCount,
 							refreshedAt,
 							sourceFingerprint,

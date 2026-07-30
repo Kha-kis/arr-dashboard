@@ -2731,10 +2731,7 @@ async function verifyEpisodePlexWatchProof(
 	for (const evidence of target.plexWatchEvidence) {
 		const approvedRefreshedAt =
 			evidence.refreshedAt instanceof Date ? evidence.refreshedAt : new Date(evidence.refreshedAt);
-		if (
-			!Number.isFinite(approvedRefreshedAt.getTime()) ||
-			approvedRefreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000
-		) {
+		if (!Number.isFinite(approvedRefreshedAt.getTime())) {
 			continue;
 		}
 		const plexInstance = plexInstances.find(
@@ -2789,8 +2786,11 @@ async function verifyEpisodePlexWatchProof(
 				sourceFingerprint: currentPlexFingerprint,
 				plexServerUrl: verifiedSource.serverUrl,
 				ratingKey: evidence.ratingKey,
-				watchCount: evidence.watchCount,
-				refreshedAt: approvedRefreshedAt.toISOString(),
+				watchCount: Math.min(
+					currentEvidence.watchCount,
+					verifiedSource.source.liveWatchCount,
+				),
+				refreshedAt: currentEvidence.refreshedAt.toISOString(),
 				fullPath: normalizeMediaPath(match.part.file),
 				size: match.part.size,
 				mapping: match.mapping,

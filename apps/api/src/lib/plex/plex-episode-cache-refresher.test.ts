@@ -80,6 +80,164 @@ describe("refreshPlexEpisodeCache watch count", () => {
 		expect(firstCall.update.refreshedAt).toEqual(firstCall.create.refreshedAt);
 	});
 
+	it("preserves cached aggregate watches omitted by bounded successful history", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const existingLastWatchedAt = new Date("2025-01-02T03:04:05.000Z");
+		const prisma = {
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue([{ tmdbId: 123, ratingKey: "show-1" }]),
+			},
+			plexEpisodeCache: {
+				groupBy: vi.fn().mockResolvedValue([]),
+				findMany: vi.fn().mockResolvedValue([
+					{
+						showTmdbId: 123,
+						seasonNumber: 1,
+						episodeNumber: 1,
+						ratingKey: "episode-1",
+						sourceFingerprint: "connection-fingerprint",
+						watched: true,
+						watchedByUsers: JSON.stringify(["Shared Viewer"]),
+						lastWatchedAt: existingLastWatchedAt,
+					},
+				]),
+				upsert,
+			},
+		};
+		const history = Array.from({ length: 5000 }, (_, index) => ({
+			type: "episode",
+			ratingKey: `newer-episode-${index}`,
+			accountID: 1,
+			viewedAt: 2_000_000_000 + index,
+		}));
+		const client = {
+			getHistory: vi.fn().mockResolvedValue(history),
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Owner" }]),
+			getEpisodes: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "episode-1",
+					title: "Older shared watch",
+					seasonNumber: 1,
+					episodeNumber: 1,
+					viewCount: 0,
+				},
+			]),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn() } as never,
+			"connection-fingerprint",
+		);
+
+		expect(result).toMatchObject({ upserted: 1, errors: 0 });
+		expect(upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.objectContaining({
+					watched: true,
+					watchedByUsers: JSON.stringify(["Shared Viewer"]),
+					lastWatchedAt: existingLastWatchedAt,
+					watchCount: 0,
+				}),
+			}),
+		);
+	});
+
+	it("preserves resolved usernames when Plex account lookup fails", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue([{ tmdbId: 123, ratingKey: "show-1" }]),
+			},
+			plexEpisodeCache: {
+				groupBy: vi.fn().mockResolvedValue([]),
+				findMany: vi.fn().mockResolvedValue([
+					{
+						showTmdbId: 123,
+						seasonNumber: 1,
+						episodeNumber: 1,
+						ratingKey: "episode-1",
+						sourceFingerprint: "connection-fingerprint",
+						watched: true,
+						watchedByUsers: JSON.stringify(["Real Viewer"]),
+						lastWatchedAt: new Date("2025-01-02T03:04:05.000Z"),
+					},
+				]),
+				upsert,
+			},
+		};
+		const client = {
+			getHistory: vi.fn().mockResolvedValue([
+				{ type: "episode", ratingKey: "episode-1", accountID: 7, viewedAt: 300 },
+			]),
+			getAccounts: vi.fn().mockRejectedValue(new Error("accounts unavailable")),
+			getEpisodes: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "episode-1",
+					title: "Attributed previously",
+					seasonNumber: 1,
+					episodeNumber: 1,
+					viewCount: 0,
+				},
+			]),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn() } as never,
+			"connection-fingerprint",
+		);
+
+		expect(result).toMatchObject({ upserted: 1, errors: 1 });
+		const call = upsert.mock.calls[0]?.[0];
+		expect(JSON.parse(call.update.watchedByUsers)).toEqual(["Real Viewer"]);
+		expect(call.update.watchedByUsers).not.toContain("Account 7");
+	});
+
+	it("does not create user-sensitive evidence while account attribution is unavailable", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue([{ tmdbId: 123, ratingKey: "show-1" }]),
+			},
+			plexEpisodeCache: {
+				groupBy: vi.fn().mockResolvedValue([]),
+				findMany: vi.fn().mockResolvedValue([]),
+				upsert,
+			},
+		};
+		const client = {
+			getHistory: vi.fn().mockResolvedValue([
+				{ type: "episode", ratingKey: "episode-1", accountID: 7, viewedAt: 300 },
+			]),
+			getAccounts: vi.fn().mockRejectedValue(new Error("accounts unavailable")),
+			getEpisodes: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "episode-1",
+					title: "No resolved account",
+					seasonNumber: 1,
+					episodeNumber: 1,
+					viewCount: 0,
+				},
+			]),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn() } as never,
+			"connection-fingerprint",
+		);
+
+		expect(result).toMatchObject({ upserted: 0, errors: 1 });
+		expect(upsert).not.toHaveBeenCalled();
+	});
+
 	it("refreshes authoritative metadata when history attribution is unavailable", async () => {
 		const upsert = vi.fn().mockResolvedValue({});
 		const updateMany = vi.fn().mockResolvedValue({ count: 1 });

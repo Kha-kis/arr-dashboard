@@ -357,6 +357,15 @@ class SonarrEpisodeUnmonitorPartialError extends Error {
 	}
 }
 
+class SonarrEpisodeUnmonitorOutcomeUnknownError extends Error {
+	constructor(cause: unknown) {
+		super(
+			"Sonarr may have accepted the episode unmonitor, but arr-dashboard could not confirm the result. The mutation will remain retryable and no file deletion was attempted.",
+			{ cause },
+		);
+	}
+}
+
 class CleanupApprovalOwnershipLostError extends Error {
 	constructor() {
 		super("Cleanup approval mutation ownership changed");
@@ -665,6 +674,53 @@ function episodePlanTargetFields(
 		episodeFileInfoHash: plan.quiIdentity.infoHash,
 		episodeFileTorrentState: plan.quiIdentity.torrentState,
 	};
+}
+
+function episodePlansMatchWithRefreshedWatchProof(
+	approvedPlan: ExecutableSharedMediaSafetyPlan | null | undefined,
+	livePlan: ExecutableSharedMediaSafetyPlan | null | undefined,
+	allowMonitoredToUnmonitored: boolean,
+): boolean {
+	if (
+		approvedPlan?.kind !== "verified_sonarr_episode" ||
+		livePlan?.kind !== "verified_sonarr_episode"
+	) {
+		return false;
+	}
+	const {
+		watchCount: approvedWatchCount,
+		refreshedAt: approvedRefreshedAt,
+		...approvedProofIdentity
+	} = approvedPlan.watchProof;
+	const {
+		watchCount: liveWatchCount,
+		refreshedAt: liveRefreshedAt,
+		...liveProofIdentity
+	} = livePlan.watchProof;
+	const approvedRefreshTime = Date.parse(approvedRefreshedAt);
+	const liveRefreshTime = Date.parse(liveRefreshedAt);
+	if (
+		JSON.stringify(approvedProofIdentity) !== JSON.stringify(liveProofIdentity) ||
+		liveWatchCount < approvedWatchCount ||
+		!Number.isFinite(approvedRefreshTime) ||
+		!Number.isFinite(liveRefreshTime) ||
+		liveRefreshTime < approvedRefreshTime
+	) {
+		return false;
+	}
+	if (
+		allowMonitoredToUnmonitored &&
+		!(approvedPlan.episode.monitored === true && livePlan.episode.monitored === false)
+	) {
+		return false;
+	}
+	return executableSafetyPlansEqual(approvedPlan, {
+		...livePlan,
+		episode: allowMonitoredToUnmonitored
+			? { ...livePlan.episode, monitored: approvedPlan.episode.monitored }
+			: livePlan.episode,
+		watchProof: approvedPlan.watchProof,
+	});
 }
 
 export function selectInspectableCleanupPreviewItems(
@@ -2304,6 +2360,7 @@ async function executeQueuedCleanupItems(
 			}
 			if (
 				approvedPlan?.kind === "verified_sonarr_episode" &&
+				!recoveringInterruptedMutation &&
 				Date.parse(approvedPlan.watchProof.refreshedAt) <
 					now.getTime() - PLEX_EPISODE_FRESHNESS_MS
 			) {
@@ -2435,7 +2492,10 @@ async function executeQueuedCleanupItems(
 					if (!sharedPlexBlock) {
 						const livePlan = asExecutableSafetyPlan(safetyPlan);
 						const exactPlanMatch =
-							approvedPlan && livePlan && executableSafetyPlansEqual(approvedPlan, livePlan);
+							approvedPlan &&
+							livePlan &&
+							(executableSafetyPlansEqual(approvedPlan, livePlan) ||
+								episodePlansMatchWithRefreshedWatchProof(approvedPlan, livePlan, false));
 						const idempotentEpisodeUnmonitorMatch =
 							recoveringInterruptedMutation &&
 							(action === "delete" || action === "unmonitor") &&
@@ -2443,13 +2503,14 @@ async function executeQueuedCleanupItems(
 							livePlan?.kind === "verified_sonarr_episode" &&
 							approvedPlan.episode.monitored === true &&
 							livePlan.episode.monitored === false &&
-							executableSafetyPlansEqual(approvedPlan, {
+							(executableSafetyPlansEqual(approvedPlan, {
 								...livePlan,
 								episode: {
 									...livePlan.episode,
 									monitored: approvedPlan.episode.monitored,
 								},
-							});
+							}) ||
+								episodePlansMatchWithRefreshedWatchProof(approvedPlan, livePlan, true));
 						if (idempotentEpisodeUnmonitorMatch) {
 							// The live Sonarr snapshot is the durable recovery marker. A lease
 							// or transient error may have replaced lastExecutionError after the
@@ -2812,7 +2873,8 @@ async function executeQueuedCleanupItems(
 					? SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE
 					: error instanceof ArrFileChangedDuringSafetyCheckError ||
 						  error instanceof ArrDeletePartialError ||
-						  error instanceof SonarrEpisodeUnmonitorPartialError
+						  error instanceof SonarrEpisodeUnmonitorPartialError ||
+						  error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError
 						? error.message
 						: "Cleanup item could not be executed. Review the API logs for details.";
 				const mutationAuthorityChanged =
@@ -2842,6 +2904,7 @@ async function executeQueuedCleanupItems(
 						{
 							status:
 								error instanceof SonarrEpisodeUnmonitorPartialError ||
+								error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
 								preserveEpisodeUnmonitorPartial
 									? "retry_pending"
 									: mutationAuthorityChanged
@@ -6015,7 +6078,19 @@ async function deleteFromArr(
 					monitoredMode: "allow_unmonitored",
 				});
 				await assertMutationAuthority?.();
-				await sonarr.episode.setMonitored([safetyPlan.episode.arrEpisodeId], false);
+				try {
+					await sonarr.episode.setMonitored([safetyPlan.episode.arrEpisodeId], false);
+				} catch (error) {
+					const unmonitored = await sonarrEpisodeRemainsUnmonitored(
+						sonarr,
+						arrItemId,
+						safetyPlan,
+					);
+					if (unmonitored === false) throw error;
+					if (unmonitored === null) {
+						throw new SonarrEpisodeUnmonitorOutcomeUnknownError(error);
+					}
+				}
 				try {
 					await deleteVerifiedSonarrEpisodeFile(
 						sonarr,
@@ -6098,7 +6173,19 @@ async function unmonitorInArr(
 					monitoredMode: "allow_unmonitored",
 				});
 				await assertMutationAuthority?.();
-				await sonarr.episode.setMonitored([safetyPlan.episode.arrEpisodeId], false);
+				try {
+					await sonarr.episode.setMonitored([safetyPlan.episode.arrEpisodeId], false);
+				} catch (error) {
+					const unmonitored = await sonarrEpisodeRemainsUnmonitored(
+						sonarr,
+						arrItemId,
+						safetyPlan,
+					);
+					if (unmonitored === false) throw error;
+					if (unmonitored === null) {
+						throw new SonarrEpisodeUnmonitorOutcomeUnknownError(error);
+					}
+				}
 				break;
 			}
 			const series = await sonarr.series.getById(arrItemId);
