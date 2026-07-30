@@ -66,6 +66,7 @@ import {
 	SonarrFilesChangedDuringSafetyCheckError,
 	serializeExecutableSafetyPlan,
 	type VerifiedRadarrFileIdentity,
+	type VerifiedEpisodePlexWatchSource,
 	type VerifiedSonarrFileIdentity,
 } from "./shared-plex-safety.js";
 import type {
@@ -789,7 +790,9 @@ function withSharedPlexOwnershipRevalidation(
 	userId: string,
 	target: CleanupDeleteTarget,
 	safetyPlan: SharedMediaSafetyPlan,
-	assertMutationAuthority?: () => Promise<void>,
+	assertMutationAuthority?: (evidence?: {
+		liveEpisodeWatchSources: VerifiedEpisodePlexWatchSource[];
+	}) => Promise<void>,
 ): () => Promise<void> {
 	let ownershipRevalidationCount = 0;
 	let episodeRevalidationCount = 0;
@@ -858,7 +861,13 @@ function withSharedPlexOwnershipRevalidation(
 				);
 			}
 			episodeRevalidationCount++;
-			await assertMutationAuthority?.();
+			const liveEpisodeWatchSources = context.liveEpisodeWatchSources.get(targetKey);
+			if (!liveEpisodeWatchSources?.length) {
+				throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+					"Skipped for safety: the live Plex episode watch counts were unavailable at the mutation boundary.",
+				);
+			}
+			await assertMutationAuthority?.({ liveEpisodeWatchSources });
 			return;
 		}
 		if (
@@ -1913,22 +1922,7 @@ function assertCompleteLiveSonarrRetentionEvidence(
 	}
 
 	for (const rule of rules) {
-		// Service, instance, and title filters do not depend on live tag
-		// evidence. Apply them first so an unrelated rule cannot block this
-		// Sonarr target merely because Sonarr omitted its optional tags field.
-		if (!passesCleanupRuleFilters(item, { ...rule, excludeTags: null }, "SONARR")) continue;
-
-		const excludedTags = safeJsonParse(rule.excludeTags) as unknown;
-		if (
-			Array.isArray(excludedTags) &&
-			excludedTags.length > 0 &&
-			!hasCompleteLiveSonarrTags(rawSeries)
-		) {
-			throw new Error(`Live Sonarr tags were unavailable for retention rule ${rule.id}`);
-		}
-
-		// Now apply the tag filter using the live, shape-checked tag evidence.
-		if (!passesCleanupRuleFilters(item, rule, "SONARR")) continue;
+		if (!liveSonarrRuleApplies(rawSeries, item, rule)) continue;
 
 		const ruleTypes = liveSonarrRetentionRuleTypes(rule);
 		if (
@@ -1942,11 +1936,37 @@ function assertCompleteLiveSonarrRetentionEvidence(
 	}
 }
 
-async function assertCurrentSeriesRetentionAllowsEpisodeMutation(
+function liveSonarrRuleApplies(
+	rawSeries: Record<string, unknown>,
+	item: CacheItemForEval,
+	rule: LibraryCleanupRule,
+): boolean {
+	// Service, instance, and title filters do not depend on live tag evidence.
+	// Apply them first so an unrelated rule cannot block this target merely
+	// because Sonarr omitted its optional tags field.
+	if (!passesCleanupRuleFilters(item, { ...rule, excludeTags: null }, "SONARR")) {
+		return false;
+	}
+
+	const excludedTags = safeJsonParse(rule.excludeTags) as unknown;
+	if (
+		Array.isArray(excludedTags) &&
+		excludedTags.length > 0 &&
+		!hasCompleteLiveSonarrTags(rawSeries)
+	) {
+		throw new Error(`Live Sonarr tags were unavailable for cleanup rule ${rule.id}`);
+	}
+
+	return passesCleanupRuleFilters(item, rule, "SONARR");
+}
+
+async function assertCurrentEpisodeMutationAuthority(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	instance: ServiceInstance,
 	arrSeriesId: number,
+	expectedRule: { matchedRuleId: string; action: RuleAction },
+	evidence?: { liveEpisodeWatchSources: VerifiedEpisodePlexWatchSource[] },
 ): Promise<void> {
 	const config = await deps.prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
@@ -1961,12 +1981,22 @@ async function assertCurrentSeriesRetentionAllowsEpisodeMutation(
 	const seriesRetentionRules = config.rules.filter(
 		(rule) => rule.enabled && rule.retentionMode && rule.targetScope !== "episode",
 	);
-	if (seriesRetentionRules.length === 0) return;
+	const currentEpisodeRule = config.rules.find((rule) => rule.id === expectedRule.matchedRuleId);
+	if (
+		!currentEpisodeRule ||
+		!isSupportedEpisodeCleanupRule(currentEpisodeRule) ||
+		currentEpisodeRule.action !== expectedRule.action
+	) {
+		throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+			"Skipped for safety: the matched episode cleanup rule changed after this item was queued.",
+		);
+	}
 
 	let item: CacheItemForEval;
+	let rawSeries: Record<string, unknown>;
 	try {
 		const sonarr = deps.arrClientFactory.create(instance) as InstanceType<typeof SonarrClient>;
-		const rawSeries = (await sonarr.series.getById(arrSeriesId)) as unknown as Record<
+		rawSeries = (await sonarr.series.getById(arrSeriesId)) as unknown as Record<
 			string,
 			unknown
 		>;
@@ -2022,13 +2052,38 @@ async function assertCurrentSeriesRetentionAllowsEpisodeMutation(
 			torrentState: null,
 		};
 		assertCompleteLiveSonarrRetentionEvidence(rawSeries, item, seriesRetentionRules);
+		if (!liveSonarrRuleApplies(rawSeries, item, currentEpisodeRule)) {
+			throw new Error("The matched episode cleanup rule no longer applies to the live series");
+		}
+		if (evidence) {
+			const currentMatch = config.rules.find((rule) => {
+				if (
+					!isSupportedEpisodeCleanupRule(rule) ||
+					!liveSonarrRuleApplies(rawSeries, item, rule)
+				) {
+					return false;
+				}
+				return evidence.liveEpisodeWatchSources.some(({ liveWatchCount }) =>
+					Boolean(evaluateEpisodeWatchCountRule({ watchCount: liveWatchCount }, rule)),
+				);
+			});
+			if (
+				!currentMatch ||
+				currentMatch.id !== expectedRule.matchedRuleId ||
+				currentMatch.action !== expectedRule.action
+			) {
+				throw new Error(
+					"The matched episode cleanup rule is no longer the current live policy match",
+				);
+			}
+		}
 	} catch (error) {
 		deps.log.warn(
 			{ err: error, instanceId: instance.id, arrSeriesId },
 			"Cleanup could not load live Sonarr series state for retention revalidation",
 		);
 		throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
-			"Skipped for safety: live Sonarr series state could not be revalidated against current retention rules.",
+			"Skipped for safety: live Sonarr series state could not be revalidated against the current episode cleanup and retention rules.",
 		);
 	}
 
@@ -2466,14 +2521,18 @@ async function executeQueuedCleanupItems(
 					approval.instanceId,
 					safetyPlan!,
 				);
-				const assertExecutionAuthority = async () => {
+				const assertExecutionAuthority = async (evidence?: {
+					liveEpisodeWatchSources: VerifiedEpisodePlexWatchSource[];
+				}) => {
 					await options.assertExecutionAllowed?.();
 					if (safetyPlan!.kind === "verified_sonarr_episode") {
-						await assertCurrentSeriesRetentionAllowsEpisodeMutation(
+						await assertCurrentEpisodeMutationAuthority(
 							deps,
 							userId,
 							mutationInstance,
 							approval.arrItemId,
+							{ matchedRuleId: approval.matchedRuleId, action },
+							evidence,
 						);
 					}
 					mutationBudgetConsumedIds.add(approval.id);
@@ -4793,14 +4852,18 @@ export async function executeDirectRemoval(
 				instance.id,
 				safetyPlan!,
 			);
-			const assertDirectExecutionAuthority = async () => {
+			const assertDirectExecutionAuthority = async (evidence?: {
+				liveEpisodeWatchSources: VerifiedEpisodePlexWatchSource[];
+			}) => {
 				await assertRunLease?.();
 				if (safetyPlan!.kind === "verified_sonarr_episode") {
-					await assertCurrentSeriesRetentionAllowsEpisodeMutation(
+					await assertCurrentEpisodeMutationAuthority(
 						deps,
 						userId,
 						mutationInstance,
 						item.cacheItem.arrItemId,
+						{ matchedRuleId: item.match.ruleId, action: ruleAction },
+						evidence,
 					);
 				}
 			};
@@ -5526,11 +5589,13 @@ async function deleteVerifiedSonarrEpisodeFile(
 		expectedRetainedIds.size !== currentRetainedIds.size ||
 		[...expectedRetainedIds].some((id) => !currentRetainedIds.has(id))
 	) {
+		const remainingSize = sonarrFileSetSize(remaining);
 		throw new ArrDeletePartialError({
 			cause: new SonarrFilesChangedDuringSafetyCheckError(),
 			service: "SONARR",
 			deletedFileIds: [plan.selectedFile.episodeFileId],
-			hasRemainingFiles: currentRetainedIds.size > 0,
+			hasRemainingFiles: remaining.length > 0,
+			remainingSize,
 			message:
 				"Partial cleanup: the selected Sonarr episode file was deleted, but the retained series inventory changed.",
 		});

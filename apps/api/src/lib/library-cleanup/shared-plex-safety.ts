@@ -62,6 +62,7 @@ export interface SharedPlexSafetyContext {
 	verifiedRadarrFiles: Map<string, VerifiedRadarrFileIdentity>;
 	verifiedSonarrFiles: Map<string, VerifiedSonarrFileIdentity>;
 	plans: Map<string, SharedMediaSafetyPlan>;
+	liveEpisodeWatchSources: Map<string, VerifiedEpisodePlexWatchSource[]>;
 	quiInstances?: Promise<ServiceInstance[]>;
 	quiFileIndexes: Map<string, Promise<CompleteQuiFileHashIndex>>;
 	quiHashTorrents: Map<
@@ -83,6 +84,7 @@ export function createSharedPlexSafetyContext(): SharedPlexSafetyContext {
 		verifiedRadarrFiles: new Map(),
 		verifiedSonarrFiles: new Map(),
 		plans: new Map(),
+		liveEpisodeWatchSources: new Map(),
 		quiFileIndexes: new Map(),
 		quiHashTorrents: new Map(),
 	};
@@ -142,6 +144,12 @@ export interface VerifiedEpisodePlexWatchProof {
 	fullPath: NormalizedMediaPath;
 	size: number;
 	mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
+}
+
+export interface VerifiedEpisodePlexWatchSource {
+	plexInstanceId: string;
+	ratingKey: string;
+	liveWatchCount: number;
 }
 
 export interface VerifiedEpisodeQuiIdentity {
@@ -2519,7 +2527,10 @@ async function verifyEpisodePlexWatchProof(
 	tvdbId: number,
 	selectedFile: VerifiedSonarrEpisodeFileIdentity,
 	notifications: SonarrNotification[],
-): Promise<VerifiedEpisodePlexWatchProof> {
+): Promise<{
+	proof: VerifiedEpisodePlexWatchProof;
+	liveWatchSources: VerifiedEpisodePlexWatchSource[];
+}> {
 	if (!target.plexWatchEvidence?.length) {
 		throw new EpisodeWatchProofError("No Plex episode watch evidence was carried to safety");
 	}
@@ -2531,6 +2542,167 @@ async function verifyEpisodePlexWatchProof(
 	}
 	const exactEpisodeNumber = requiredPositiveSafeInteger(episodeNumber, "Sonarr episode number");
 	const selectedComparable = comparableFile(selectedFile);
+	const enabledPlexInstances = plexInstances.filter(
+		(instance) => instance.service === "PLEX" && instance.enabled === true,
+	);
+	const policyRows = await deps.prisma.plexEpisodeCache.findMany({
+		where: {
+			instanceId: { in: enabledPlexInstances.map((instance) => instance.id) },
+			showTmdbId,
+			seasonNumber,
+			episodeNumber: exactEpisodeNumber,
+		},
+		select: {
+			instanceId: true,
+			ratingKey: true,
+			watchCount: true,
+			refreshedAt: true,
+			sourceFingerprint: true,
+		},
+	});
+	if (policyRows.length === 0) {
+		throw new EpisodeWatchProofError(
+			"No complete Plex episode policy evidence was available at the mutation boundary",
+		);
+	}
+	const deletesFile = target.action === "delete" || target.action === "delete_files";
+	const verifiedPolicySources = new Map<
+		string,
+		{
+			source: VerifiedEpisodePlexWatchSource;
+			sourceFingerprint: string;
+			serverUrl: string;
+			match: {
+				part: { file: string; size: number };
+				mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
+			};
+		}
+	>();
+	for (const row of policyRows) {
+		const plexInstance = enabledPlexInstances.find((instance) => instance.id === row.instanceId);
+		const sourceFingerprint = plexInstance
+			? plexEvidenceSourceFingerprint(plexInstance)
+			: null;
+		const sourceUpdatedAt = plexInstance?.updatedAt.getTime();
+		if (
+			!plexInstance ||
+			typeof sourceFingerprint !== "string" ||
+			typeof row.ratingKey !== "string" ||
+			row.ratingKey.trim().length === 0 ||
+			row.watchCount === null ||
+			row.refreshedAt === null ||
+			row.sourceFingerprint !== sourceFingerprint ||
+			!Number.isFinite(sourceUpdatedAt) ||
+			row.refreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000 ||
+			row.refreshedAt.getTime() < sourceUpdatedAt!
+		) {
+			throw new EpisodeWatchProofError(
+				"Plex episode policy evidence was incomplete or stale at the mutation boundary",
+			);
+		}
+		const plex = await requirePlexClient(deps, context, ownerChecks, plexInstance);
+		if (!plex.getEpisodeWatchCount) {
+			throw new EpisodeWatchProofError(
+				"Plex episode policy watch counts were unavailable at the mutation boundary",
+			);
+		}
+		const liveWatchCount = await plex.getEpisodeWatchCount(row.ratingKey);
+		if (!Number.isSafeInteger(liveWatchCount) || liveWatchCount < 0) {
+			throw new EpisodeWatchProofError(
+				"Plex returned an invalid episode policy watch count at the mutation boundary",
+			);
+		}
+		const serverUrl = normalizedServerUrl(plexInstance.baseUrl);
+		if (!serverUrl) {
+			throw new EpisodeWatchProofError(
+				"Plex episode policy source was invalid at the mutation boundary",
+			);
+		}
+		let clientLookups = seriesLookups.get(plex);
+		if (!clientLookups) {
+			clientLookups = new Map();
+			seriesLookups.set(plex, clientLookups);
+		}
+		let mediaPartsPromise = clientLookups.get(tvdbId);
+		if (!mediaPartsPromise) {
+			mediaPartsPromise = plex.getSeriesEpisodeMediaPartsByTvdbId(tvdbId);
+			clientLookups.set(tvdbId, mediaPartsPromise);
+		}
+		let mediaItems: PlexSeriesMediaItem[];
+		try {
+			mediaItems = await mediaPartsPromise;
+		} catch {
+			throw new EpisodeWatchProofError(
+				"Plex episode policy media paths were unavailable at the mutation boundary",
+			);
+		}
+		const sourceEpisodes = mediaItems.flatMap((show) =>
+			show.episodes.filter((episode) => episode.ratingKey === row.ratingKey),
+		);
+		if (sourceEpisodes.length !== 1) {
+			throw new EpisodeWatchProofError(
+				"Plex episode policy media identity was ambiguous at the mutation boundary",
+			);
+		}
+		const matchingNotifications = notifications.filter((notification) => {
+			if (
+				mediaServerNotificationKind(notification) !== "plex" ||
+				notification.onEpisodeFileDelete !== true ||
+				!sonarrNotificationApplies(notification, series, target.action ?? "delete")
+			) {
+				return false;
+			}
+			try {
+				return (
+					normalizedServerUrl(plexConnectionBaseUrl(notification)) === serverUrl &&
+					notificationTagsApply(notification, series.tags)
+				);
+			} catch {
+				return false;
+			}
+		});
+		const pathCandidates: Array<{
+			fullPath: NormalizedMediaPath;
+			mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
+		}> = !deletesFile
+			? [{ fullPath: selectedComparable.fullPath, mapping: null }]
+			: matchingNotifications.map((notification) => ({
+					fullPath: mappedArrPathForNotification(selectedComparable, notification, "SONARR"),
+					mapping: notificationPathMapping(notification, "Sonarr target"),
+				}));
+		const matches = new Map<
+			string,
+			{
+				part: { file: string; size: number };
+				mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
+			}
+		>();
+		for (const candidate of pathCandidates) {
+			const mappedFile = { ...selectedComparable, fullPath: candidate.fullPath };
+			for (const part of sourceEpisodes[0]!.parts) {
+				if (mediaPartMatchesTarget(mappedFile, part)) {
+					matches.set(plexPartKey(part), { part, mapping: candidate.mapping });
+				}
+			}
+		}
+		if (matches.size > 1) {
+			throw new EpisodeWatchProofError(
+				"Plex episode policy media path was ambiguous at the mutation boundary",
+			);
+		}
+		if (matches.size === 1) {
+			verifiedPolicySources.set(`${row.instanceId}:${row.ratingKey}`, {
+				source: {
+					plexInstanceId: row.instanceId,
+					ratingKey: row.ratingKey,
+					liveWatchCount,
+				},
+				sourceFingerprint,
+				serverUrl,
+				match: [...matches.values()][0]!,
+			});
+		}
+	}
 	for (const evidence of target.plexWatchEvidence) {
 		const approvedRefreshedAt =
 			evidence.refreshedAt instanceof Date ? evidence.refreshedAt : new Date(evidence.refreshedAt);
@@ -2574,101 +2746,31 @@ async function verifyEpisodePlexWatchProof(
 		) {
 			continue;
 		}
-		const serverUrl = normalizedServerUrl(plexInstance.baseUrl);
-		if (!serverUrl) continue;
-
-		let plex: SafetyPlexClient;
-		try {
-			plex = await requirePlexClient(deps, context, ownerChecks, plexInstance);
-		} catch {
-			continue;
-		}
-		let clientLookups = seriesLookups.get(plex);
-		if (!clientLookups) {
-			clientLookups = new Map();
-			seriesLookups.set(plex, clientLookups);
-		}
-		let mediaPartsPromise = clientLookups.get(tvdbId);
-		if (!mediaPartsPromise) {
-			mediaPartsPromise = plex.getSeriesEpisodeMediaPartsByTvdbId(tvdbId);
-			clientLookups.set(tvdbId, mediaPartsPromise);
-		}
-		let mediaItems: PlexSeriesMediaItem[];
-		try {
-			mediaItems = await mediaPartsPromise;
-		} catch {
-			continue;
-		}
-		const watchedEpisodes = mediaItems.flatMap((show) =>
-			show.episodes.filter((episode) => episode.ratingKey === evidence.ratingKey),
+		const verifiedSource = verifiedPolicySources.get(
+			`${plexInstance.id}:${evidence.ratingKey}`,
 		);
-		if (watchedEpisodes.length !== 1) continue;
-		if (!plex.getEpisodeWatchCount) continue;
-		let liveMetadataWatchCount: number;
-		try {
-			liveMetadataWatchCount = await plex.getEpisodeWatchCount(evidence.ratingKey);
-		} catch {
+		if (
+			!verifiedSource ||
+			verifiedSource.sourceFingerprint !== currentPlexFingerprint ||
+			verifiedSource.source.liveWatchCount <= 0
+		) {
 			continue;
 		}
-		if (!Number.isSafeInteger(liveMetadataWatchCount) || liveMetadataWatchCount <= 0) {
-			continue;
-		}
-		if (liveMetadataWatchCount < evidence.watchCount) continue;
-
-		const matchingNotifications = notifications.filter((notification) => {
-			if (
-				mediaServerNotificationKind(notification) !== "plex" ||
-				notification.onEpisodeFileDelete !== true ||
-				!sonarrNotificationApplies(notification, series, target.action ?? "delete")
-			) {
-				return false;
-			}
-			try {
-				return (
-					normalizedServerUrl(plexConnectionBaseUrl(notification)) === serverUrl &&
-					notificationTagsApply(notification, series.tags)
-				);
-			} catch {
-				return false;
-			}
-		});
-		const deletesFile = target.action === "delete" || target.action === "delete_files";
-		const pathCandidates: Array<{
-			fullPath: NormalizedMediaPath;
-			mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
-		}> = !deletesFile
-			? [{ fullPath: selectedComparable.fullPath, mapping: null }]
-			: matchingNotifications.map((notification) => ({
-					fullPath: mappedArrPathForNotification(selectedComparable, notification, "SONARR"),
-					mapping: notificationPathMapping(notification, "Sonarr target"),
-				}));
-		const matches = new Map<
-			string,
-			{
-				part: { file: string; size: number };
-				mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
-			}
-		>();
-		for (const candidate of pathCandidates) {
-			const mappedFile = { ...selectedComparable, fullPath: candidate.fullPath };
-			for (const part of watchedEpisodes[0]!.parts) {
-				if (mediaPartMatchesTarget(mappedFile, part)) {
-					matches.set(plexPartKey(part), { part, mapping: candidate.mapping });
-				}
-			}
-		}
-		if (matches.size !== 1) continue;
-		const match = [...matches.values()][0]!;
+		if (verifiedSource.source.liveWatchCount < evidence.watchCount) continue;
+		const match = verifiedSource.match;
 		return {
-			plexInstanceId: plexInstance.id,
-			sourceFingerprint: currentPlexFingerprint,
-			plexServerUrl: serverUrl,
-			ratingKey: evidence.ratingKey,
-			watchCount: evidence.watchCount,
-			refreshedAt: approvedRefreshedAt.toISOString(),
-			fullPath: normalizeMediaPath(match.part.file),
-			size: match.part.size,
-			mapping: match.mapping,
+			proof: {
+				plexInstanceId: plexInstance.id,
+				sourceFingerprint: currentPlexFingerprint,
+				plexServerUrl: verifiedSource.serverUrl,
+				ratingKey: evidence.ratingKey,
+				watchCount: evidence.watchCount,
+				refreshedAt: approvedRefreshedAt.toISOString(),
+				fullPath: normalizeMediaPath(match.part.file),
+				size: match.part.size,
+				mapping: match.mapping,
+			},
+			liveWatchSources: [...verifiedPolicySources.values()].map(({ source }) => source),
 		};
 	}
 	throw new EpisodeWatchProofError(
@@ -3267,7 +3369,7 @@ export async function findSharedPlexDeleteBlocks(
 						quiIdentity.infoHash,
 					);
 				}
-				const watchProof = await verifyEpisodePlexWatchProof(
+				const verifiedWatch = await verifyEpisodePlexWatchProof(
 					deps,
 					context,
 					plexOwnerChecks,
@@ -3279,6 +3381,8 @@ export async function findSharedPlexDeleteBlocks(
 					selectedFile,
 					allNotifications,
 				);
+				const watchProof = verifiedWatch.proof;
+				context.liveEpisodeWatchSources.set(targetKey, verifiedWatch.liveWatchSources);
 				episodePlan = {
 					episode: {
 						arrEpisodeId: requestedEpisodeId,

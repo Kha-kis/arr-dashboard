@@ -164,12 +164,11 @@ export async function refreshPlexEpisodeCache(
 				const watchData = historyMap.get(episode.ratingKey);
 				const plexViewCount =
 					Number.isInteger(episode.viewCount) && episode.viewCount > 0 ? episode.viewCount : 0;
-				// Plex watch state is account-specific. History is still used for
-				// attribution and last-watched details, but it cannot authorize
-				// destructive cleanup because old or other-account events do not
-				// prove the configured Plex account's current play count.
+				// Shared history drives aggregate progress/completion, while the
+				// configured account's current metadata count remains the only
+				// destructive episode-cleanup authorization signal.
 				const watchCount = plexViewCount;
-				const watched = watchCount > 0;
+				const watched = watchCount > 0 || (watchData?.eventCount ?? 0) > 0;
 				const watchedByUsers = watchData ? [...watchData.users] : [];
 				const lastWatchedAt = watchData
 					? new Date(watchData.lastWatched * 1000)

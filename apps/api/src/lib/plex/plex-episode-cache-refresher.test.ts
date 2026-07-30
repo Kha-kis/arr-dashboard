@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { refreshPlexEpisodeCache } from "./plex-episode-cache-refresher.js";
 
 describe("refreshPlexEpisodeCache watch count", () => {
-	it("uses the configured account viewCount while retaining history attribution", async () => {
+	it("keeps shared history in watched while using account metadata for watchCount", async () => {
 		const upsert = vi.fn().mockResolvedValue({});
 		const prisma = {
 			plexCache: {
@@ -23,7 +23,7 @@ describe("refreshPlexEpisodeCache watch count", () => {
 					title: "History wins",
 					seasonNumber: 1,
 					episodeNumber: 1,
-					viewCount: 1,
+					viewCount: 0,
 				},
 				{
 					ratingKey: "episode-2",
@@ -53,13 +53,17 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			1,
 			expect.objectContaining({
 				create: expect.objectContaining({
-					watchCount: 1,
+					watchCount: 0,
 					watched: true,
+					watchedByUsers: JSON.stringify(["Viewer"]),
+					lastWatchedAt: new Date(200 * 1000),
 					sourceFingerprint: "connection-fingerprint",
 				}),
 				update: expect.objectContaining({
-					watchCount: 1,
+					watchCount: 0,
 					watched: true,
+					watchedByUsers: JSON.stringify(["Viewer"]),
+					lastWatchedAt: new Date(200 * 1000),
 					sourceFingerprint: "connection-fingerprint",
 				}),
 			}),
