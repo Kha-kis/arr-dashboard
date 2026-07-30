@@ -15,6 +15,7 @@ import type { DataSourceDependency } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
+import { buildLibraryItem } from "../library/library-item-builder.js";
 import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
 import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "../prisma.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
@@ -1786,10 +1787,165 @@ async function retryTargetRecordIsAbsent(
  * episode mutation. Pending approvals are durable intent, not durable
  * authorization: a series that became protected after preview must fail closed.
  */
+function liveSonarrRetentionRuleTypes(rule: LibraryCleanupRule): string[] | null {
+	if (!rule.operator && !rule.conditions) return [rule.ruleType];
+	if (!rule.operator || !rule.conditions) return null;
+
+	const conditions = safeJsonParse(rule.conditions) as Array<{ ruleType?: unknown }> | null;
+	if (!Array.isArray(conditions) || conditions.length === 0) return null;
+	const ruleTypes = conditions.map((condition) => condition.ruleType);
+	return ruleTypes.every((ruleType): ruleType is string => typeof ruleType === "string")
+		? ruleTypes
+		: null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value);
+}
+
+function hasCompleteLiveSonarrTags(rawSeries: Record<string, unknown>): boolean {
+	return (
+		Array.isArray(rawSeries.tags) &&
+		rawSeries.tags.every(
+			(tag) =>
+				(typeof tag === "number" && Number.isFinite(tag)) ||
+				(typeof tag === "string" && tag.trim().length > 0),
+		)
+	);
+}
+
+function hasCompleteLiveSonarrEvidenceForRuleType(
+	rawSeries: Record<string, unknown>,
+	ruleType: string,
+): boolean {
+	const statistics =
+		typeof rawSeries.statistics === "object" && rawSeries.statistics !== null
+			? (rawSeries.statistics as Record<string, unknown>)
+			: null;
+
+	switch (ruleType) {
+		case "age":
+			return (
+				typeof rawSeries.added === "string" &&
+				!Number.isNaN(new Date(rawSeries.added).getTime())
+			);
+		case "size":
+			return isFiniteNumber(statistics?.sizeOnDisk);
+		case "rating":
+		case "imdb_rating":
+			return (
+				typeof rawSeries.ratings === "object" &&
+				rawSeries.ratings !== null &&
+				!Array.isArray(rawSeries.ratings)
+			);
+		case "status":
+			return typeof rawSeries.status === "string" && rawSeries.status.trim().length > 0;
+		case "unmonitored":
+			return typeof rawSeries.monitored === "boolean";
+		case "genre":
+			return (
+				Array.isArray(rawSeries.genres) &&
+				rawSeries.genres.every((genre) => typeof genre === "string")
+			);
+		case "year_range":
+			return isFiniteNumber(rawSeries.year);
+		case "no_file":
+			return (
+				isFiniteNumber(statistics?.episodeFileCount) ||
+				isFiniteNumber(rawSeries.episodeFileCount)
+			);
+		case "quality_profile": {
+			const profile =
+				typeof rawSeries.qualityProfile === "object" && rawSeries.qualityProfile !== null
+					? (rawSeries.qualityProfile as Record<string, unknown>)
+					: null;
+			return (
+				(typeof profile?.name === "string" && profile.name.length > 0) ||
+				(typeof rawSeries.profileName === "string" && rawSeries.profileName.length > 0)
+			);
+		}
+		case "language":
+			if (typeof rawSeries.originalLanguage === "string") {
+				return rawSeries.originalLanguage.trim().length > 0;
+			}
+			if (
+				typeof rawSeries.originalLanguage === "object" &&
+				rawSeries.originalLanguage !== null &&
+				!Array.isArray(rawSeries.originalLanguage)
+			) {
+				const name = (rawSeries.originalLanguage as Record<string, unknown>).name;
+				return typeof name === "string" && name.trim().length > 0;
+			}
+			return (
+				Array.isArray(rawSeries.languages) &&
+				rawSeries.languages.every(
+					(language) =>
+						(typeof language === "string" && language.trim().length > 0) ||
+						(typeof language === "object" &&
+							language !== null &&
+							!Array.isArray(language) &&
+							typeof (language as Record<string, unknown>).name === "string"),
+				)
+			);
+		case "runtime":
+			return isFiniteNumber(rawSeries.runtime) || isFiniteNumber(statistics?.runtime);
+		case "file_path":
+			return (
+				(typeof rawSeries.path === "string" && rawSeries.path.length > 0) ||
+				(typeof rawSeries.rootFolderPath === "string" && rawSeries.rootFolderPath.length > 0)
+			);
+		case "tag_match":
+			return hasCompleteLiveSonarrTags(rawSeries);
+		default:
+			// Provider-backed, list-backed, file-metadata, and unknown rules
+			// cannot be proven from a live Sonarr series response alone.
+			return false;
+	}
+}
+
+function assertCompleteLiveSonarrRetentionEvidence(
+	rawSeries: Record<string, unknown>,
+	item: CacheItemForEval,
+	rules: LibraryCleanupRule[],
+): void {
+	if (typeof rawSeries.title !== "string" || rawSeries.title.trim().length === 0) {
+		throw new Error("Live Sonarr series title was unavailable");
+	}
+
+	for (const rule of rules) {
+		// Service, instance, and title filters do not depend on live tag
+		// evidence. Apply them first so an unrelated rule cannot block this
+		// Sonarr target merely because Sonarr omitted its optional tags field.
+		if (!passesCleanupRuleFilters(item, { ...rule, excludeTags: null }, "SONARR")) continue;
+
+		const excludedTags = safeJsonParse(rule.excludeTags) as unknown;
+		if (
+			Array.isArray(excludedTags) &&
+			excludedTags.length > 0 &&
+			!hasCompleteLiveSonarrTags(rawSeries)
+		) {
+			throw new Error(`Live Sonarr tags were unavailable for retention rule ${rule.id}`);
+		}
+
+		// Now apply the tag filter using the live, shape-checked tag evidence.
+		if (!passesCleanupRuleFilters(item, rule, "SONARR")) continue;
+
+		const ruleTypes = liveSonarrRetentionRuleTypes(rule);
+		if (
+			!ruleTypes ||
+			ruleTypes.some(
+				(ruleType) => !hasCompleteLiveSonarrEvidenceForRuleType(rawSeries, ruleType),
+			)
+		) {
+			throw new Error(`Current evidence was unavailable for retention rule ${rule.id}`);
+		}
+	}
+}
+
 async function assertCurrentSeriesRetentionAllowsEpisodeMutation(
 	deps: CleanupExecutorDeps,
 	userId: string,
-	instanceId: string,
+	instance: ServiceInstance,
 	arrSeriesId: number,
 ): Promise<void> {
 	const config = await deps.prisma.libraryCleanupConfig.findUnique({
@@ -1807,24 +1963,81 @@ async function assertCurrentSeriesRetentionAllowsEpisodeMutation(
 	);
 	if (seriesRetentionRules.length === 0) return;
 
-	const item = await deps.prisma.libraryCache.findFirst({
-		where: {
-			instanceId,
+	let item: CacheItemForEval;
+	try {
+		const sonarr = deps.arrClientFactory.create(instance) as InstanceType<typeof SonarrClient>;
+		const rawSeries = (await sonarr.series.getById(arrSeriesId)) as unknown as Record<
+			string,
+			unknown
+		>;
+		const liveSeries = buildLibraryItem(instance, "sonarr", rawSeries);
+		const liveSeriesId =
+			typeof liveSeries.id === "number"
+				? liveSeries.id
+				: Number.parseInt(liveSeries.id, 10);
+		if (liveSeries.type !== "series" || liveSeriesId !== arrSeriesId) {
+			throw new Error("Live Sonarr series identity did not match the cleanup target");
+		}
+		const addedAt = liveSeries.added ? new Date(liveSeries.added) : null;
+		item = {
+			id: `live:${instance.id}:series:${arrSeriesId}`,
+			instanceId: instance.id,
 			arrItemId: arrSeriesId,
 			itemType: "series",
-		},
-	});
-	if (!item) {
+			title: liveSeries.title,
+			year: liveSeries.year ?? null,
+			monitored: liveSeries.monitored ?? true,
+			hasFile: liveSeries.hasFile ?? false,
+			status: liveSeries.status ?? null,
+			qualityProfileId: liveSeries.qualityProfileId ?? null,
+			qualityProfileName:
+				liveSeries.qualityProfileName ??
+				(typeof rawSeries.profileName === "string" ? rawSeries.profileName : null),
+			sizeOnDisk: BigInt(Math.max(0, Math.trunc(liveSeries.sizeOnDisk ?? 0))),
+			arrAddedAt: addedAt && !Number.isNaN(addedAt.getTime()) ? addedAt : null,
+			cachedAt: new Date(),
+			data: JSON.stringify({
+				// The shared normalizer intentionally projects common library
+				// fields and omits some rule evidence (for example ratings).
+				// Preserve the validated live response for retention evaluation,
+				// while normalized fields remain authoritative where they overlap.
+				...rawSeries,
+				...liveSeries,
+				statistics: {
+					...(typeof rawSeries.statistics === "object" && rawSeries.statistics !== null
+						? (rawSeries.statistics as Record<string, unknown>)
+						: {}),
+					...liveSeries.statistics,
+					runtime:
+						liveSeries.statistics?.runtime ??
+						(typeof rawSeries.statistics === "object" && rawSeries.statistics !== null
+							? (rawSeries.statistics as Record<string, unknown>).runtime
+							: undefined),
+				},
+				_arrDashboardSource: {
+					serviceFingerprint: createArrServiceFingerprint(instance),
+				},
+			}),
+			infoHash: null,
+			torrentState: null,
+		};
+		assertCompleteLiveSonarrRetentionEvidence(rawSeries, item, seriesRetentionRules);
+	} catch (error) {
+		deps.log.warn(
+			{ err: error, instanceId: instance.id, arrSeriesId },
+			"Cleanup could not load live Sonarr series state for retention revalidation",
+		);
 		throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
-			"Skipped for safety: the parent series could not be revalidated against current retention rules.",
+			"Skipped for safety: live Sonarr series state could not be revalidated against current retention rules.",
 		);
 	}
 
-	const { ctx, failedSources } = await buildEvalContextWithHealth(
-		deps,
-		userId,
-		seriesRetentionRules,
-	);
+	// The mutation boundary deliberately does not trust provider or list caches:
+	// they can be healthy but stale relative to the approval. Rules that require
+	// those sources are rejected above because current protection cannot be
+	// disproved from the live Sonarr response.
+	const ctx: EvalContext = { now: new Date() };
+	const failedSources = new Set<DataSourceDependency>();
 	if (
 		seriesRetentionProtectsEpisode(
 			item as CacheItemForEval,
@@ -2259,7 +2472,7 @@ async function executeQueuedCleanupItems(
 						await assertCurrentSeriesRetentionAllowsEpisodeMutation(
 							deps,
 							userId,
-							approval.instanceId,
+							mutationInstance,
 							approval.arrItemId,
 						);
 					}
@@ -4586,7 +4799,7 @@ export async function executeDirectRemoval(
 					await assertCurrentSeriesRetentionAllowsEpisodeMutation(
 						deps,
 						userId,
-						item.cacheItem.instanceId,
+						mutationInstance,
 						item.cacheItem.arrItemId,
 					);
 				}
