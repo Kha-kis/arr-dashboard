@@ -1,7 +1,7 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Dot, RefreshCw } from "lucide-react";
-import { DataFreshness } from "../../../components/layout";
+import { CalendarDays, ChevronLeft, ChevronRight, Dot, RefreshCw } from "lucide-react";
+import { DataFreshness, PremiumPageHeader } from "../../../components/layout";
 import { POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -36,67 +36,37 @@ export const CalendarHeader = ({
 	const label = formatMonthLabel(monthStart);
 
 	return (
-		<header
-			className="animate-in fade-in slide-in-from-bottom-2 duration-400"
-			style={{ animationFillMode: "backwards" }}
-		>
-			<div className="flex items-center justify-between gap-4">
-				{/* Left: Title + Month Navigation */}
-				<div className="flex items-center gap-5">
-					{/* Title with ambient glow */}
-					<div className="relative">
-						<h1 className="text-[22px] font-bold tracking-tight relative z-10">
-							<span
-								style={{
-									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-									WebkitBackgroundClip: "text",
-									WebkitTextFillColor: "transparent",
-									backgroundClip: "text",
-								}}
-							>
-								Calendar
-							</span>
-						</h1>
-						{/* Ambient radial glow */}
-						<div
-							className="absolute -inset-6 -z-10 blur-2xl rounded-full"
-							style={{
-								background: `radial-gradient(circle, ${themeGradient.from}12, transparent 70%)`,
-							}}
-						/>
-					</div>
-
-					{/* Separator */}
-					<span className="w-px h-7 bg-border/15" />
-
-					{/* Month nav */}
-					<div className="flex items-center gap-0.5">
+		<PremiumPageHeader
+			label="Media planning"
+			labelIcon={CalendarDays}
+			title="Calendar"
+			gradientTitle
+			description="Plan upcoming releases across your connected media services."
+			actions={
+				<div className="flex flex-wrap items-center gap-2">
+					<div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/30 p-0.5">
 						<button
 							type="button"
 							onClick={onPreviousMonth}
-							className="rounded-lg p-1.5 text-muted-foreground/35 hover:text-foreground hover:bg-white/[0.04] transition-all"
+							className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 							aria-label="Previous month"
 						>
 							<ChevronLeft className="h-4 w-4" />
 						</button>
 
-						<span className="min-w-[155px] text-center text-[15px] font-semibold text-foreground tracking-tight">
+						<span className="min-w-36 text-center text-sm font-semibold text-foreground">
 							{label}
 						</span>
 
 						<button
 							type="button"
 							onClick={onNextMonth}
-							className="rounded-lg p-1.5 text-muted-foreground/35 hover:text-foreground hover:bg-white/[0.04] transition-all"
+							className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 							aria-label="Next month"
 						>
 							<ChevronRight className="h-4 w-4" />
 						</button>
 					</div>
-				</div>
-
-				{/* Right: Actions */}
-				<div className="flex items-center gap-3">
 					{/* Calendar feed freshness (single polled query drives the grid) */}
 					<DataFreshness
 						dataUpdatedAt={dataUpdatedAt}
@@ -107,7 +77,7 @@ export const CalendarHeader = ({
 					<button
 						type="button"
 						onClick={onGoToday}
-						className="rounded-lg px-3 py-1.5 text-xs font-semibold transition-all hover:bg-white/[0.04]"
+						className="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors hover:bg-accent"
 						style={{
 							color: themeGradient.from,
 						}}
@@ -120,7 +90,7 @@ export const CalendarHeader = ({
 						type="button"
 						onClick={handleRefresh}
 						disabled={isLoading}
-						className="rounded-lg p-1.5 text-muted-foreground/35 hover:text-foreground hover:bg-white/[0.04] transition-all disabled:opacity-30"
+						className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-30"
 						aria-label="Refresh calendar"
 					>
 						<RefreshCw
@@ -128,7 +98,7 @@ export const CalendarHeader = ({
 						/>
 					</button>
 				</div>
-			</div>
-		</header>
+			}
+		/>
 	);
 };

@@ -249,18 +249,13 @@ test.describe("Navigation - Mobile", () => {
 	test("should have hamburger menu or collapsible sidebar on mobile", async ({ page }) => {
 		await page.goto(ROUTES.dashboard);
 
-		// Look for hamburger menu button
+		// The compact shell must retain a discoverable control for the sidebar.
 		const menuButton = page.getByRole("button", { name: /menu|toggle/i });
-		const hamburgerIcon = page.locator('[class*="hamburger"], [class*="menu-toggle"]');
+		await expect(menuButton).toBeVisible({ timeout: TIMEOUTS.medium });
 
-		const hasMenuButton = (await menuButton.count()) > 0;
-		const hasHamburger = (await hamburgerIcon.count()) > 0;
-
-		// On mobile, sidebar is hidden but main content should be visible
-		// Scope to main element to avoid hidden sidebar content
-		await expect(page.locator("main").getByText(/welcome back/i)).toBeVisible({
-			timeout: TIMEOUTS.medium,
-		});
+		// The mobile shell must not obscure the route's primary content. Avoid
+		// coupling this navigation contract to dashboard greeting copy.
+		await expect(page.getByRole("main")).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
 
 	test("should navigate using mobile menu", async ({ page }) => {

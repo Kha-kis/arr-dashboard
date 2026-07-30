@@ -19,13 +19,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { PremiumPageHeader } from "../../../components/layout";
 import {
 	DataFreshness,
 	GlassmorphicCard,
 	PremiumEmptyState,
 } from "../../../components/layout/premium-components";
 import { usePulseQuery, usePulseRestoreAllMutation } from "../../../hooks/api/usePulse";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { anonymizePulseItemContent, useIncognitoMode } from "../../../lib/incognito";
 import { POLLING_STATS } from "../../../lib/polling-intervals";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -295,7 +295,6 @@ function PulseSummary({
 
 export const PulseClient: React.FC = () => {
 	const { data, isLoading, isError, isFetching, dataUpdatedAt } = usePulseQuery();
-	const { gradient: themeGradient } = useThemeGradient();
 	const [incognito] = useIncognitoMode();
 	const restoreAll = usePulseRestoreAllMutation();
 
@@ -367,66 +366,50 @@ export const PulseClient: React.FC = () => {
 
 	return (
 		<div className="space-y-6">
-			{/* Page header */}
-			<div className="flex items-center justify-between">
-				<div className="flex items-center gap-3">
-					<div
-						className="flex h-10 w-10 items-center justify-center rounded-xl"
-						style={{
-							background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-						}}
-					>
-						<Activity className="h-5 w-5 text-white" />
+			<PremiumPageHeader
+				label="System health"
+				labelIcon={Activity}
+				title="Pulse"
+				gradientTitle
+				description={
+					totalItems === 0
+						? canAssertHealthy
+							? "Everything looks good"
+							: "No signals in the last successful check"
+						: `${totalItems} signal${totalItems === 1 ? "" : "s"} across your stack`
+				}
+				actions={
+					<div className="flex flex-wrap items-center justify-end gap-2">
+						<PulseSummary
+							critical={data.summary.critical}
+							warning={data.summary.warning}
+							info={data.summary.info}
+						/>
+						<DataFreshness
+							dataUpdatedAt={dataUpdatedAt}
+							isFetching={isFetching}
+							isError={isError}
+							pollIntervalMs={POLLING_STATS}
+						/>
+						{data.dismissedCount > 0 && (
+							<button
+								type="button"
+								onClick={() => restoreAll.mutate()}
+								disabled={restoreAll.isPending}
+								aria-busy={restoreAll.isPending}
+								className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+							>
+								{restoreAll.isPending ? (
+									<Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+								) : (
+									<EyeOff className="h-3 w-3" aria-hidden="true" />
+								)}
+								{data.dismissedCount} dismissed · Restore all
+							</button>
+						)}
 					</div>
-					<div>
-						<h1 className="text-xl font-bold text-foreground">System Pulse</h1>
-						<div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-							<p className="text-sm text-muted-foreground">
-								{totalItems === 0
-									? canAssertHealthy
-										? "Everything looks good"
-										: "No signals in last successful check"
-									: `${totalItems} signal${totalItems === 1 ? "" : "s"} across your stack`}
-							</p>
-							{/* Pulse polls every 2min — operators otherwise have no way to tell
-							    whether they're looking at fresh or 90s-old health data. */}
-							<DataFreshness
-								dataUpdatedAt={dataUpdatedAt}
-								isFetching={isFetching}
-								isError={isError}
-								pollIntervalMs={POLLING_STATS}
-							/>
-							{/* Honest-counting affordance for dismiss-until-recovery: the
-							    operator must be able to SEE that signals are hidden (and
-							    get them back) — a silently shrunken feed would undercut
-							    the whole trust thesis. Doubles as the management surface
-							    for dismissals whose undo toast is long gone. */}
-							{data.dismissedCount > 0 && (
-								<button
-									type="button"
-									onClick={() => restoreAll.mutate()}
-									disabled={restoreAll.isPending}
-									aria-busy={restoreAll.isPending}
-									className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-								>
-									{restoreAll.isPending ? (
-										<Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
-									) : (
-										<EyeOff className="h-3 w-3" aria-hidden="true" />
-									)}
-									{data.dismissedCount} dismissed · Restore all
-								</button>
-							)}
-						</div>
-					</div>
-				</div>
-
-				<PulseSummary
-					critical={data.summary.critical}
-					warning={data.summary.warning}
-					info={data.summary.info}
-				/>
-			</div>
+				}
+			/>
 
 			{/* Empty state — only claim "all clear" when the refresh actually succeeded.
 			    On a failed refresh we still render the card (so the freshness badge in the
