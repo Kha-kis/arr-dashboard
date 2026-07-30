@@ -325,12 +325,10 @@ export async function refreshPlexEpisodeCache(
 						upserted += updated.count;
 						continue;
 					}
-					if (!historyComplete && !exactExistingState && !watched) {
-						// A bounded successful history response proves only what it
-						// contains. Do not create a false negative for an omitted
-						// shared-account watch.
-						continue;
-					}
+					// A bounded successful history response proves only what it
+					// contains, but getEpisodes still proves this episode exists.
+					// Keep a conservative unwatched row for newly discovered
+					// episodes so completion rules retain the full denominator.
 					await prisma.plexEpisodeCache.upsert({
 						where: {
 							instanceId_showTmdbId_seasonNumber_episodeNumber: {

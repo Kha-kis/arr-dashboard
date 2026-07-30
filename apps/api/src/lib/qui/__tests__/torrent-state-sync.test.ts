@@ -299,6 +299,35 @@ describe("runQuiTorrentStateSync", () => {
 		expect(result.errors).toBe(1);
 	});
 
+	it("updates observed hashes but does not clear stale rows from an unproven inventory", async () => {
+		const app = makeApp();
+		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);
+		mockListQuiInstances.mockResolvedValue([
+			{ id: "qui-legacy", userId: "user-1", label: "legacy", baseUrl: "http://legacy" },
+		]);
+		mockCreateQuiClient.mockReturnValue({
+			listAllTorrents: vi.fn(),
+			listTorrentInventory: vi.fn().mockResolvedValue({
+				torrents: [{ hash: "AAAA", state: "pausedUP", ratio: 1.25 }],
+				complete: false,
+			}),
+		});
+
+		const result = await runQuiTorrentStateSync(app);
+
+		expect(result).toMatchObject({ errors: 0, torrentsSeen: 1 });
+		expect(app.__updateMany).toHaveBeenCalledWith({
+			where: { infoHash: "aaaa", instance: { userId: "user-1" } },
+			data: expect.objectContaining({ torrentState: "paused", torrentRatio: 1.25 }),
+		});
+		const cleanupFinds = app.__libraryCacheFindMany.mock.calls.filter(
+			(call: [{ where?: { torrentState?: unknown } }]) =>
+				call[0]?.where?.torrentState !== undefined,
+		);
+		expect(cleanupFinds).toHaveLength(0);
+		expect(app.__episodeFileCacheFindMany).not.toHaveBeenCalled();
+	});
+
 	it("reports an error when stale EpisodeFileCache clearing fails", async () => {
 		const app = makeApp();
 		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);

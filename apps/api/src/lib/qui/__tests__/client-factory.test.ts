@@ -482,6 +482,37 @@ describe("createQuiClient", () => {
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
 	});
 
+	it("reports whether the read-only torrent inventory proves completeness", async () => {
+		fetchSpy
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						cross_instance_torrents: [wireTorrent({ hash: "legacy", instance_id: 2 })],
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify(
+						wireTorrentPage([wireTorrent({ hash: "current", instance_id: 3 })]),
+					),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+
+		await expect(client.listTorrentInventory()).resolves.toMatchObject({
+			complete: false,
+			torrents: [expect.objectContaining({ hash: "legacy", instanceId: 2 })],
+		});
+		await expect(client.listTorrentInventory()).resolves.toMatchObject({
+			complete: true,
+			torrents: [expect.objectContaining({ hash: "current", instanceId: 3 })],
+		});
+	});
+
 	it("handles cross_instance_torrents:null gracefully", async () => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(JSON.stringify(wireTorrentPage(null)), {

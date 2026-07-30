@@ -121,6 +121,13 @@ describe("refreshPlexEpisodeCache watch count", () => {
 					episodeNumber: 1,
 					viewCount: 0,
 				},
+				{
+					ratingKey: "episode-2",
+					title: "New unwatched episode",
+					seasonNumber: 1,
+					episodeNumber: 2,
+					viewCount: 0,
+				},
 			]),
 		};
 
@@ -132,13 +139,31 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			"connection-fingerprint",
 		);
 
-		expect(result).toMatchObject({ upserted: 1, errors: 0 });
-		expect(upsert).toHaveBeenCalledWith(
+		expect(result).toMatchObject({ upserted: 2, errors: 0 });
+		expect(upsert).toHaveBeenNthCalledWith(
+			1,
 			expect.objectContaining({
 				update: expect.objectContaining({
 					watched: true,
 					watchedByUsers: JSON.stringify(["Shared Viewer"]),
 					lastWatchedAt: existingLastWatchedAt,
+					watchCount: 0,
+				}),
+			}),
+		);
+		expect(upsert).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				create: expect.objectContaining({
+					ratingKey: "episode-2",
+					watched: false,
+					watchedByUsers: "[]",
+					watchCount: 0,
+				}),
+				update: expect.objectContaining({
+					ratingKey: "episode-2",
+					watched: false,
+					watchedByUsers: "[]",
 					watchCount: 0,
 				}),
 			}),

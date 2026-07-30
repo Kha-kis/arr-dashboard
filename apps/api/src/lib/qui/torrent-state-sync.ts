@@ -82,6 +82,7 @@ export async function runQuiTorrentStateSync(
 		let userRowsUpdated = 0;
 		let userRowsCleared = 0;
 		let successfulInstanceScans = 0;
+		let completeInstanceScans = 0;
 		const instances = await listQuiInstances(app, userId);
 
 		// Track every hash this user's qui instances reported across all of them
@@ -133,8 +134,13 @@ export async function runQuiTorrentStateSync(
 				const client = createQuiClient(app, instance);
 				// Single qui call returns torrents across every qBit instance behind
 				// this qui — exactly what we need for hash-based correlation.
-				const torrents = await client.listAllTorrents();
+				const inventory =
+					typeof client.listTorrentInventory === "function"
+						? await client.listTorrentInventory()
+						: { torrents: await client.listAllTorrents(), complete: true };
+				const torrents = inventory.torrents;
 				successfulInstanceScans++;
+				if (inventory.complete) completeInstanceScans++;
 				result.torrentsSeen += torrents.length;
 				userTorrentsSeen += torrents.length;
 
@@ -215,9 +221,18 @@ export async function runQuiTorrentStateSync(
 				{ userId, userErrors, seenHashes: seenHashesThisRun.size },
 				"qui torrent-state sync: skipping stale-state cleanup for user (instance errors → incomplete view, over-clearing risk)",
 			);
-		} else if (instances.length === 0 || successfulInstanceScans !== instances.length) {
+		} else if (
+			instances.length === 0 ||
+			successfulInstanceScans !== instances.length ||
+			completeInstanceScans !== instances.length
+		) {
 			log.debug(
-				{ userId, instances: instances.length, successfulInstanceScans },
+				{
+					userId,
+					instances: instances.length,
+					successfulInstanceScans,
+					completeInstanceScans,
+				},
 				"qui torrent-state sync: skipping stale-state cleanup for user (no complete instance inventory)",
 			);
 		} else {

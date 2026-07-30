@@ -69,6 +69,7 @@ function makeClient(overrides: Partial<QuiClient> = {}): QuiClient {
 		getCrossSeedMatches: vi.fn().mockResolvedValue([]),
 		listInstances: vi.fn().mockResolvedValue([]),
 		listAllTorrents: vi.fn().mockResolvedValue([]),
+		listTorrentInventory: vi.fn().mockResolvedValue({ torrents: [], complete: true }),
 		testConnection: vi.fn().mockResolvedValue({ ok: true }),
 		bulkAction: vi.fn().mockResolvedValue(undefined),
 		getTorrentProperties: vi.fn().mockResolvedValue({
