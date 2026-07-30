@@ -1,0 +1,140 @@
+import { safeJsonParse } from "../utils/json.js";
+import type { RuleAction, RuleMatch } from "./types.js";
+
+export interface EpisodeCleanupFile {
+	arrEpisodeFileId: number;
+	path: string;
+	size: bigint;
+	infoHash: string | null;
+	torrentState: string | null;
+}
+
+export interface EpisodePlexWatchEvidence {
+	plexInstanceId: string;
+	sourceFingerprint: string;
+	ratingKey: string;
+	watchCount: number;
+	lastWatchedAt: Date | null;
+	watchedByUsers: string[];
+	refreshedAt: Date;
+}
+
+/**
+ * Immutable identity carried from preview through approval and execution.
+ *
+ * `episodeFileConsumerIds` is part of the target rather than an incidental
+ * lookup: a file consumed by more than one Sonarr episode is not an exact
+ * episode deletion unit and must fail closed before a write is attempted.
+ */
+export interface EpisodeCleanupCandidate {
+	instanceId: string;
+	arrSeriesId: number;
+	arrEpisodeId: number;
+	seasonNumber: number;
+	episodeNumber: number;
+	episodeFileId: number;
+	episodeFileConsumerIds: number[];
+	seriesTitle: string;
+	episodeTitle: string;
+	monitored: boolean;
+	respectQuiSeeding: boolean;
+	watchCount: number;
+	lastWatchedAt: Date | null;
+	watchedByUsers: string[];
+	plexWatchEvidence: EpisodePlexWatchEvidence[];
+	file: EpisodeCleanupFile;
+}
+
+export interface EpisodeTargetMetadata {
+	targetScope: "episode";
+	arrEpisodeId: number;
+	seasonNumber: number;
+	episodeNumber: number;
+	episodeFileId: number;
+	episodeFileConsumerIds: number[];
+	seriesTitle: string;
+	episodeTitle: string;
+	plexWatchEvidence: EpisodePlexWatchEvidence[];
+	fileInfoHash: string | null;
+	fileTorrentState: string | null;
+	respectQuiSeeding: boolean;
+}
+
+interface EpisodeWatchCountRule {
+	id: string;
+	name: string;
+	parameters: string;
+	action: string | null;
+}
+
+interface PlexWatchCountParameters {
+	operator?: unknown;
+	count?: unknown;
+}
+
+export function toEpisodeTargetMetadata(
+	candidate: EpisodeCleanupCandidate,
+): EpisodeTargetMetadata {
+	return {
+		targetScope: "episode",
+		arrEpisodeId: candidate.arrEpisodeId,
+		seasonNumber: candidate.seasonNumber,
+		episodeNumber: candidate.episodeNumber,
+		episodeFileId: candidate.episodeFileId,
+		episodeFileConsumerIds: [...candidate.episodeFileConsumerIds],
+		seriesTitle: candidate.seriesTitle,
+		episodeTitle: candidate.episodeTitle,
+		plexWatchEvidence: candidate.plexWatchEvidence.map((evidence) => ({
+			...evidence,
+			watchedByUsers: [...evidence.watchedByUsers],
+		})),
+		fileInfoHash: candidate.file.infoHash,
+		fileTorrentState: candidate.file.torrentState,
+		respectQuiSeeding: candidate.respectQuiSeeding,
+	};
+}
+
+/**
+ * A stable identity for deduplication, approval compare-and-set, and retries.
+ * The series id remains present to prevent accidental cross-series collisions,
+ * while the Sonarr episode id makes sibling episodes independent targets.
+ */
+export function buildEpisodeTargetKey(
+	target: Pick<EpisodeCleanupCandidate, "instanceId" | "arrSeriesId" | "arrEpisodeId">,
+): string {
+	return `${target.instanceId}:series:${target.arrSeriesId}:episode:${target.arrEpisodeId}`;
+}
+
+/**
+ * Initial episode scope intentionally supports only a simple Plex watch-count
+ * rule with `greater_than`. Unsupported or malformed shapes fail closed.
+ */
+export function evaluateEpisodeWatchCountRule(
+	candidate: EpisodeCleanupCandidate,
+	rule: EpisodeWatchCountRule,
+): RuleMatch | null {
+	const params = safeJsonParse(rule.parameters) as PlexWatchCountParameters | null;
+	if (
+		params?.operator !== "greater_than" ||
+		typeof params.count !== "number" ||
+		!Number.isFinite(params.count)
+	) {
+		return null;
+	}
+	if (candidate.watchCount <= params.count) return null;
+
+	if (
+		rule.action !== "delete" &&
+		rule.action !== "delete_files" &&
+		rule.action !== "unmonitor"
+	) {
+		return null;
+	}
+	const action = rule.action as RuleAction;
+	return {
+		ruleId: rule.id,
+		ruleName: rule.name,
+		reason: `Plex watch count ${candidate.watchCount} > ${params.count}`,
+		action,
+	};
+}

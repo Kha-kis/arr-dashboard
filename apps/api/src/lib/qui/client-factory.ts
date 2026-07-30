@@ -29,6 +29,8 @@ import {
 import { mapTrackerHealth } from "./tracker-health-mapper.js";
 
 export interface QuiClient {
+	/** Return every exact-hash match across all qBit instances behind this qUI. */
+	getTorrentsByHash(hash: string): Promise<QuiTorrent[]>;
 	getTorrentByHash(hash: string): Promise<QuiTorrent | null>;
 	getTrackers(instanceId: number, hash: string): Promise<QuiTracker[]>;
 	/**
@@ -272,9 +274,25 @@ const wireTorrentSchema = z
 
 const wireCrossInstanceResponseSchema = z.object({
 	cross_instance_torrents: z.array(wireTorrentSchema).nullable(),
-	hasMore: z.boolean().optional(),
-	total: z.number().int().optional(),
+	hasMore: z.boolean(),
+	partialResults: z.boolean(),
+	total: z.number().int().nonnegative(),
 });
+
+function crossInstanceTorrentIdentity(torrent: QuiTorrent, operation: string): string {
+	if (
+		!Number.isSafeInteger(torrent.instanceId) ||
+		torrent.instanceId === undefined ||
+		torrent.instanceId <= 0
+	) {
+		throw new Error(`qUI ${operation} returned a torrent without a valid instance identity`);
+	}
+	const hash = torrent.hash.trim().toLowerCase();
+	if (!hash) {
+		throw new Error(`qUI ${operation} returned a torrent without a hash`);
+	}
+	return `${torrent.instanceId}:${hash}`;
+}
 
 const wireTrackerSchema = z
 	.object({
@@ -386,15 +404,73 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 	};
 
 	return {
+		async getTorrentsByHash(hash) {
+			const PAGE_SIZE = 2000;
+			const MAX_PAGES = 50;
+			const exact: QuiTorrent[] = [];
+			let exhausted = false;
+			let expectedTotal: number | null = null;
+			let rawRowsRead = 0;
+			const rawIdentities = new Set<string>();
+			for (let page = 0; page < MAX_PAGES; page++) {
+				const data = await quiRequest(
+					ctx,
+					"/api/torrents/cross-instance",
+					wireCrossInstanceResponseSchema,
+					{
+						query: {
+							search: hash,
+							limit: String(PAGE_SIZE),
+							page: String(page),
+						},
+						timeoutMs: 30_000,
+					},
+				);
+				if (data.partialResults === true) {
+					throw new Error("qUI exact-hash lookup returned partial results");
+				}
+				if (expectedTotal === null) {
+					expectedTotal = data.total;
+				} else if (data.total !== expectedTotal) {
+					throw new Error("qUI exact-hash lookup total changed during pagination");
+				}
+				const batch = data.cross_instance_torrents ?? [];
+				rawRowsRead += batch.length;
+				for (const torrent of batch) {
+					const identity = crossInstanceTorrentIdentity(torrent, "exact-hash lookup");
+					if (rawIdentities.has(identity)) {
+						throw new Error("qUI exact-hash lookup returned a duplicate torrent across pages");
+					}
+					rawIdentities.add(identity);
+				}
+				if (rawRowsRead > data.total) {
+					throw new Error("qUI exact-hash lookup returned more rows than its total");
+				}
+				exact.push(
+					...batch.filter((torrent) => torrent.hash.toLowerCase() === hash.toLowerCase()),
+				);
+				if (!data.hasMore) {
+					if (rawRowsRead !== data.total) {
+						throw new Error("qUI exact-hash lookup ended before its declared total");
+					}
+					exhausted = true;
+					break;
+				}
+				if (batch.length === 0) {
+					throw new Error("qUI exact-hash lookup returned an empty page with more results");
+				}
+			}
+			if (!exhausted) {
+				throw new Error(
+					`qUI exact-hash lookup exceeded the ${MAX_PAGES * PAGE_SIZE} torrent safety limit`,
+				);
+			}
+			return exact;
+		},
+
 		async getTorrentByHash(hash) {
-			const data = await quiRequest(
-				ctx,
-				"/api/torrents/cross-instance",
-				wireCrossInstanceResponseSchema,
-				{ query: { search: hash, limit: "20" } },
-			);
-			const torrents = data.cross_instance_torrents ?? [];
-			return torrents.find((t) => t.hash.toLowerCase() === hash.toLowerCase()) ?? null;
+			const torrents = await this.getTorrentsByHash(hash);
+			return torrents[0] ?? null;
 		},
 
 		async listAllTorrents() {
@@ -419,6 +495,10 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 			const MAX_PAGES = 50;
 			const PER_PAGE_TIMEOUT_MS = 30_000;
 			const all: QuiTorrent[] = [];
+			let exhausted = false;
+			let expectedTotal: number | null = null;
+			let rawRowsRead = 0;
+			const rawIdentities = new Set<string>();
 			for (let page = 0; page < MAX_PAGES; page++) {
 				const data = await quiRequest(
 					ctx,
@@ -429,9 +509,42 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 						timeoutMs: PER_PAGE_TIMEOUT_MS,
 					},
 				);
+				if (data.partialResults === true) {
+					throw new Error("qUI torrent inventory returned partial results");
+				}
+				if (expectedTotal === null) {
+					expectedTotal = data.total;
+				} else if (data.total !== expectedTotal) {
+					throw new Error("qUI torrent inventory total changed during pagination");
+				}
 				const batch = data.cross_instance_torrents ?? [];
+				rawRowsRead += batch.length;
+				for (const torrent of batch) {
+					const identity = crossInstanceTorrentIdentity(torrent, "torrent inventory");
+					if (rawIdentities.has(identity)) {
+						throw new Error("qUI torrent inventory returned a duplicate torrent across pages");
+					}
+					rawIdentities.add(identity);
+				}
+				if (rawRowsRead > data.total) {
+					throw new Error("qUI torrent inventory returned more rows than its total");
+				}
 				all.push(...batch);
-				if (!data.hasMore || batch.length === 0) break;
+				if (!data.hasMore) {
+					if (rawRowsRead !== data.total) {
+						throw new Error("qUI torrent inventory ended before its declared total");
+					}
+					exhausted = true;
+					break;
+				}
+				if (batch.length === 0) {
+					throw new Error("qUI torrent inventory returned an empty page with more results");
+				}
+			}
+			if (!exhausted) {
+				throw new Error(
+					`qUI torrent inventory exceeded the ${MAX_PAGES * PAGE_SIZE} torrent safety limit`,
+				);
 			}
 			return all;
 		},

@@ -10,6 +10,7 @@ import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { createPlexClient } from "../lib/plex/plex-client.js";
 import { refreshPlexEpisodeCache } from "../lib/plex/plex-episode-cache-refresher.js";
+import { plexConnectionFingerprint } from "../lib/plex/service-instance-fingerprint.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
@@ -52,6 +53,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 								app.prisma,
 								instance.id,
 								app.log,
+								plexConnectionFingerprint(instance),
 							);
 							app.log.info(
 								{ instanceId: instance.id, label: instance.label, ...result },
@@ -61,6 +63,21 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 							// Track refresh status — separate try so a DB failure
 							// doesn't masquerade as a refresh failure in the outer catch
 							try {
+								const coverageMessage = result.coverageIncomplete
+									? result.capacityDegraded
+										? `Capacity degraded: ${result.eligibleShows} watched shows exceed the 200-show/24-hour freshness capacity; only ${result.refreshedShows} were refreshed this cycle.`
+										: `Coverage incomplete: refreshed ${result.refreshedShows} of ${result.eligibleShows} watched shows; rotation will continue next run.`
+									: null;
+								const lastResult =
+									result.errors > 0
+										? "error"
+										: result.capacityDegraded
+											? "partial"
+											: "success";
+								const statusMessage =
+									result.errorMessages.length > 0
+										? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
+										: coverageMessage;
 								await app.prisma.cacheRefreshStatus.upsert({
 									where: {
 										instanceId_cacheType: { instanceId: instance.id, cacheType: "plex_episode" },
@@ -69,20 +86,14 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 										instanceId: instance.id,
 										cacheType: "plex_episode",
 										lastRefreshedAt: new Date(),
-										lastResult: result.errors > 0 ? "error" : "success",
-										lastErrorMessage:
-											result.errorMessages.length > 0
-												? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-												: null,
+										lastResult,
+										lastErrorMessage: statusMessage,
 										itemCount: result.upserted,
 									},
 									update: {
 										lastRefreshedAt: new Date(),
-										lastResult: result.errors > 0 ? "error" : "success",
-										lastErrorMessage:
-											result.errorMessages.length > 0
-												? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-												: null,
+										lastResult,
+										lastErrorMessage: statusMessage,
 										itemCount: result.upserted,
 									},
 								});

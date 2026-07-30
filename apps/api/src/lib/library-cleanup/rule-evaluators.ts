@@ -2010,6 +2010,25 @@ function passesTitleExclusion(title: string, excludeTitles: string | null): bool
 	return true;
 }
 
+/**
+ * Apply the ordinary cleanup-rule filters without evaluating its condition.
+ * Episode-scoped rules reuse the series cache row for tags and instance/service
+ * filtering, then evaluate the episode condition against live episode identity.
+ */
+export function passesCleanupRuleFilters(
+	item: CacheItemForEval,
+	rule: LibraryCleanupRule,
+	instanceService: string,
+): boolean {
+	return (
+		rule.enabled &&
+		passesServiceFilter(instanceService, rule.serviceFilter) &&
+		passesInstanceFilter(item.instanceId, rule.instanceFilter) &&
+		passesTagExclusion(item, rule.excludeTags) &&
+		passesTitleExclusion(item.title, rule.excludeTitles)
+	);
+}
+
 // ============================================================================
 // Single Condition Evaluator (extracted for composite rule support)
 // ============================================================================

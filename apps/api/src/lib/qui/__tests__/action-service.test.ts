@@ -61,6 +61,7 @@ function makeApp(opts: { txReturn?: { id: string }[] } = {}) {
 
 function makeClient(overrides: Partial<QuiClient> = {}): QuiClient {
 	return {
+		getTorrentsByHash: vi.fn().mockResolvedValue([]),
 		getTorrentByHash: vi.fn().mockResolvedValue(null),
 		getTrackers: vi.fn().mockResolvedValue([]),
 		getTrackerIcons: vi.fn().mockResolvedValue({}),

@@ -7,11 +7,12 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
-import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClientInstance } from "../prisma.js";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { PlexClient } from "./plex-client.js";
 
 const MAX_SHOWS_PER_REFRESH = 50;
+const REFRESHES_PER_FRESHNESS_WINDOW = 4;
 
 /**
  * Refresh episode-level watch data for recently-watched shows on a single Plex instance.
@@ -27,7 +28,16 @@ export async function refreshPlexEpisodeCache(
 	prisma: PrismaClientInstance,
 	instanceId: string,
 	log: FastifyBaseLogger,
-): Promise<{ upserted: number; errors: number; errorMessages: string[] }> {
+	sourceFingerprint: string,
+): Promise<{
+	upserted: number;
+	errors: number;
+	errorMessages: string[];
+	eligibleShows: number;
+	refreshedShows: number;
+	coverageIncomplete: boolean;
+	capacityDegraded: boolean;
+}> {
 	let upserted = 0;
 	let errors = 0;
 	const errorMessages: string[] = [];
@@ -41,7 +51,6 @@ export async function refreshPlexEpisodeCache(
 			watchCount: { gt: 0 },
 		},
 		orderBy: { lastWatchedAt: "desc" },
-		take: MAX_SHOWS_PER_REFRESH,
 		select: {
 			tmdbId: true,
 			ratingKey: true,
@@ -50,7 +59,15 @@ export async function refreshPlexEpisodeCache(
 
 	if (recentlyWatchedShows.length === 0) {
 		log.debug({ instanceId }, "No recently watched shows to refresh episodes for");
-		return { upserted, errors, errorMessages };
+		return {
+			upserted,
+			errors,
+			errorMessages,
+			eligibleShows: 0,
+			refreshedShows: 0,
+			coverageIncomplete: false,
+			capacityDegraded: false,
+		};
 	}
 
 	// Deduplicate by tmdbId (same show may appear in multiple sections)
@@ -60,9 +77,38 @@ export async function refreshPlexEpisodeCache(
 			showMap.set(show.tmdbId, show.ratingKey);
 		}
 	}
+	const eligibleShows = showMap.size;
+
+	// Rotate the bounded batch toward shows with the oldest episode evidence.
+	// This guarantees eventual coverage instead of permanently refreshing only
+	// the same newest 50 watched shows.
+	const existingRefreshes = await prisma.plexEpisodeCache.groupBy({
+		by: ["showTmdbId"],
+		where: {
+			instanceId,
+			showTmdbId: { in: [...showMap.keys()] },
+		},
+		_max: { refreshedAt: true },
+	});
+	const newestRefreshByShow = new Map<number, number>();
+	for (const row of existingRefreshes) {
+		if (row._max.refreshedAt) {
+			newestRefreshByShow.set(row.showTmdbId, row._max.refreshedAt.getTime());
+		}
+	}
+	const selectedShows = [...showMap.entries()]
+		.sort(([leftTmdbId], [rightTmdbId]) => {
+			const leftRefresh = newestRefreshByShow.get(leftTmdbId) ?? Number.NEGATIVE_INFINITY;
+			const rightRefresh = newestRefreshByShow.get(rightTmdbId) ?? Number.NEGATIVE_INFINITY;
+			return leftRefresh - rightRefresh;
+		})
+		.slice(0, MAX_SHOWS_PER_REFRESH);
+	const coverageIncomplete = eligibleShows > selectedShows.length;
+	const capacityDegraded =
+		eligibleShows > MAX_SHOWS_PER_REFRESH * REFRESHES_PER_FRESHNESS_WINDOW;
 
 	// Fetch history for user attribution
-	let historyMap: Map<string, { users: Set<string>; lastWatched: number }>;
+	let historyMap: Map<string, { users: Set<string>; lastWatched: number; eventCount: number }>;
 	try {
 		const history = await client.getHistory({ maxResults: 5000 });
 		const accounts = await client.getAccounts();
@@ -76,6 +122,7 @@ export async function refreshPlexEpisodeCache(
 			const userName = accountMap.get(item.accountID) ?? `Account ${item.accountID}`;
 			if (existing) {
 				existing.users.add(userName);
+				existing.eventCount++;
 				if (item.viewedAt > existing.lastWatched) {
 					existing.lastWatched = item.viewedAt;
 				}
@@ -83,23 +130,42 @@ export async function refreshPlexEpisodeCache(
 				historyMap.set(key, {
 					users: new Set([userName]),
 					lastWatched: item.viewedAt,
+					eventCount: 1,
 				});
 			}
 		}
 	} catch (err) {
 		log.warn({ err, instanceId }, "Failed to fetch history for episode cache refresh");
 		errorMessages.push(`Failed to fetch history: ${getErrorMessage(err)}`);
-		return { upserted, errors: 1, errorMessages };
+		return {
+			upserted,
+			errors: 1,
+			errorMessages,
+			eligibleShows,
+			refreshedShows: 0,
+			coverageIncomplete,
+			capacityDegraded,
+		};
 	}
 
 	// Process each show
-	for (const [tmdbId, showRatingKey] of showMap) {
+	const refreshedAt = new Date();
+	let refreshedShows = 0;
+	for (const [tmdbId, showRatingKey] of selectedShows) {
 		try {
 			const episodes = await client.getEpisodes(showRatingKey);
+			refreshedShows++;
 
 			for (const episode of episodes) {
 				const watchData = historyMap.get(episode.ratingKey);
-				const watched = episode.viewCount > 0 || !!watchData;
+				const plexViewCount =
+					Number.isInteger(episode.viewCount) && episode.viewCount > 0 ? episode.viewCount : 0;
+				// History is bounded, so its event count is a lower bound. Plex's
+				// episode viewCount may contain events outside that window; taking
+				// the maximum never invents a play while preserving either positive
+				// witness.
+				const watchCount = Math.max(plexViewCount, watchData?.eventCount ?? 0);
+				const watched = watchCount > 0;
 				const watchedByUsers = watchData ? [...watchData.users] : [];
 				const lastWatchedAt = watchData
 					? new Date(watchData.lastWatched * 1000)
@@ -127,6 +193,9 @@ export async function refreshPlexEpisodeCache(
 							watched,
 							watchedByUsers: JSON.stringify(watchedByUsers),
 							lastWatchedAt,
+							watchCount,
+							refreshedAt,
+							sourceFingerprint,
 						},
 						update: {
 							ratingKey: episode.ratingKey,
@@ -134,6 +203,9 @@ export async function refreshPlexEpisodeCache(
 							watched,
 							watchedByUsers: JSON.stringify(watchedByUsers),
 							lastWatchedAt,
+							watchCount,
+							refreshedAt,
+							sourceFingerprint,
 						},
 					});
 					upserted++;
@@ -169,9 +241,25 @@ export async function refreshPlexEpisodeCache(
 	}
 
 	log.info(
-		{ instanceId, showCount: showMap.size, upserted, errors },
+		{
+			instanceId,
+			eligibleShows,
+			refreshedShows,
+			coverageIncomplete,
+			capacityDegraded,
+			upserted,
+			errors,
+		},
 		"Plex episode cache refresh completed",
 	);
 
-	return { upserted, errors, errorMessages };
+	return {
+		upserted,
+		errors,
+		errorMessages,
+		eligibleShows,
+		refreshedShows,
+		coverageIncomplete,
+		capacityDegraded,
+	};
 }

@@ -637,6 +637,20 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				source: status.cacheType === "tautulli" ? "tautulli" : "plex",
 				timestamp: status.lastRefreshedAt.toISOString(),
 			});
+		} else if (status.lastResult === "partial") {
+			items.push({
+				id: `cache-partial-${status.id}`,
+				severity: "warning",
+				category: "health",
+				title: `${label}: ${cacheLabel} cache coverage is degraded`,
+				detail:
+					status.lastErrorMessage ??
+					"The cache refresh completed with incomplete freshness coverage.",
+				actionUrl: "/settings",
+				actionLabel: "Check settings",
+				source: status.cacheType === "tautulli" ? "tautulli" : "plex",
+				timestamp: status.lastRefreshedAt.toISOString(),
+			});
 		} else if (status.lastRefreshedAt.getTime() < staleThreshold) {
 			const hoursAgo = Math.round(
 				(Date.now() - status.lastRefreshedAt.getTime()) / (60 * 60 * 1000),

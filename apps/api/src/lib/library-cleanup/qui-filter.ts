@@ -28,6 +28,10 @@
  */
 const SEEDING_STATES = ["seeding", "downloading"] as const;
 
+export function isQuiSeedingState(state: string | null | undefined): boolean {
+	return SEEDING_STATES.includes(state?.toLowerCase() as (typeof SEEDING_STATES)[number]);
+}
+
 /**
  * Shape of the WHERE clause this filter contributes to. Kept narrow so
  * the caller doesn't need to import a Prisma WhereInput type (which is

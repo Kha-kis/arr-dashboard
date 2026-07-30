@@ -35,7 +35,7 @@ type CacheStatusRow = {
 	instanceId: string;
 	cacheType: string;
 	lastRefreshedAt: Date;
-	lastResult: "success" | "error";
+	lastResult: "success" | "error" | "partial";
 	lastErrorMessage: string | null;
 	itemCount: number;
 	instance: { label: string };
@@ -137,6 +137,32 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		const item = body.items.find((i: { id: string }) => i.id === "cache-error-error-row");
 
 		expect(item).toBeDefined();
+		expect(item.action).toBeUndefined();
+	});
+
+	it("surfaces a first-class partial Plex episode capacity result", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "episode-capacity",
+				cacheType: "plex_episode",
+				lastResult: "partial",
+				lastRefreshedAt: new Date(),
+				lastErrorMessage:
+					"Capacity degraded: 201 watched shows exceed the 200-show/24-hour freshness capacity.",
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const body = JSON.parse(res.payload);
+		const item = body.items.find(
+			(candidate: { id: string }) => candidate.id === "cache-partial-episode-capacity",
+		);
+
+		expect(item).toMatchObject({
+			severity: "warning",
+			title: "Home Plex: Plex episodes cache coverage is degraded",
+		});
+		expect(item.detail).toContain("200-show/24-hour freshness capacity");
 		expect(item.action).toBeUndefined();
 	});
 

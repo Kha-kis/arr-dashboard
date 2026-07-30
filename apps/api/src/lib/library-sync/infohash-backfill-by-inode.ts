@@ -89,12 +89,45 @@ export interface InodeMatchResult {
 export interface FileIdIndex {
 	/** Map from `"dev:ino"` → set of torrent hashes that share this inode. */
 	byFileId: Map<string, Set<string>>;
+	/**
+	 * Filesystem marker captured when an indexed inode was observed.
+	 * Destructive resolution re-stats the target and requires this marker
+	 * to match, so a hardlink added or removed after the scan fails closed.
+	 *
+	 * Optional because persisted and display-only indexes predate this field.
+	 */
+	inodeMarkers?: Map<string, FileSystemMarker>;
 	/** Number of file→hash associations added (one per torrent file). */
 	statted: number;
 	/** Number of files skipped because `nlink == 1` (no hardlinks possible). */
 	skippedNoLinks: number;
 	/** Number of torrents whose root content path couldn't be stat'd. */
 	skippedUnstatable: number;
+	/**
+	 * Number of directory inventories that could not be read completely,
+	 * were capped, or contained files that could not be stat'd.
+	 *
+	 * Optional for backward compatibility with persisted/UI-only indexes.
+	 * Destructive callers must use `buildFreshCompleteFileIdIndex`, which
+	 * always supplies and validates this field.
+	 */
+	incompleteDirectoryWalks?: number;
+	/**
+	 * Torrent-root and nested-directory markers captured before their files
+	 * were indexed. A destructive build validates them after the walk, which
+	 * catches a torrent path changing after it was visited without requiring
+	 * a second 5-15 minute full-file stat pass.
+	 */
+	stabilityMarkers?: Map<string, FileSystemMarker>;
+}
+
+interface FileSystemMarker {
+	dev: number;
+	ino: number;
+	nlink: number;
+	ctimeMs: number;
+	mtimeMs: number;
+	kind: "file" | "directory" | "other";
 }
 
 interface CachedIndex {
@@ -410,27 +443,70 @@ export async function buildFileIdIndex(
 	}
 }
 
-async function doBuildFileIdIndex(
+/**
+ * Build an uncached inode snapshot suitable for destructive authorization.
+ *
+ * Unlike `buildFileIdIndex`, this never consumes the 30-minute in-memory or
+ * persisted snapshot. It also refuses to return an index when any torrent
+ * root or directory inventory could not be examined completely. A missing
+ * entry is safe for display/backfill heuristics, but is not proof that a
+ * newly added cross-seed does not own the target file.
+ */
+export async function buildFreshCompleteFileIdIndex(
 	client: QuiClient,
 	instance: Pick<ServiceInstance, "id" | "label" | "pathPrefix">,
 	log?: FastifyBaseLogger,
 ): Promise<FileIdIndex> {
-	const torrents = await client.listAllTorrents();
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const before = await client.listAllTorrents();
+		const index = await doBuildFileIdIndex(client, instance, log, before, true);
+		assertCompleteFileIdIndex(index);
+		const after = await client.listAllTorrents();
+		if (torrentInventoryFingerprint(before) === torrentInventoryFingerprint(after)) {
+			try {
+				await assertStableFileSystemSnapshot(index);
+				return index;
+			} catch {
+				// Fall through to the shared retry warning below.
+			}
+		}
+		log?.warn(
+			{ quiInstanceId: instance.id, attempt: attempt + 1 },
+			"qUI torrent or filesystem inode inventory changed during destructive verification; rebuilding",
+		);
+	}
+	throw new Error("qUI torrent and filesystem inode inventory did not remain stable");
+}
+
+async function doBuildFileIdIndex(
+	client: QuiClient,
+	instance: Pick<ServiceInstance, "id" | "label" | "pathPrefix">,
+	log?: FastifyBaseLogger,
+	snapshot?: QuiTorrent[],
+	requireStableSnapshot = false,
+): Promise<FileIdIndex> {
+	const torrents = snapshot ?? (await client.listAllTorrents());
 	const byFileId = new Map<string, Set<string>>();
+	const inodeMarkers = new Map<string, FileSystemMarker>();
+	const stabilityMarkers = requireStableSnapshot ? new Map<string, FileSystemMarker>() : undefined;
 	let statted = 0;
 	let skippedNoLinks = 0;
 	let skippedUnstatable = 0;
+	let incompleteDirectoryWalks = 0;
 	let firstStatErrorLogged = false;
 
 	// Helper: add a hash to the set at this FileID key, creating the set
 	// if needed. Centralized so the single-file and directory branches
 	// stay consistent.
-	const addHash = (key: string, hash: string): void => {
+	const addHash = (key: string, hash: string, info: StatInfo): void => {
 		const existing = byFileId.get(key);
 		if (existing) {
 			existing.add(hash);
 		} else {
 			byFileId.set(key, new Set([hash]));
+		}
+		if (!inodeMarkers.has(key)) {
+			inodeMarkers.set(key, toFileSystemMarker(info));
 		}
 	};
 
@@ -458,18 +534,22 @@ async function doBuildFileIdIndex(
 			const rootInfo = await statSafe(rootPath);
 			if (!rootInfo) continue;
 			resolved = true;
+			if (stabilityMarkers && !stabilityMarkers.has(rootPath)) {
+				stabilityMarkers.set(rootPath, toFileSystemMarker(rootInfo));
+			}
 
 			if (rootInfo.kind === "file") {
 				if (rootInfo.nlink < 2) {
 					skippedNoLinks++;
 				} else {
-					addHash(`${rootInfo.dev}:${rootInfo.ino}`, torrent.hash);
+					addHash(`${rootInfo.dev}:${rootInfo.ino}`, torrent.hash, rootInfo);
 					statted++;
 				}
 			} else if (rootInfo.kind === "directory") {
-				const stats = await indexDirectoryFiles(rootPath, torrent.hash, addHash);
+				const stats = await indexDirectoryFiles(rootPath, torrent.hash, addHash, stabilityMarkers);
 				statted += stats.statted;
 				skippedNoLinks += stats.skippedNoLinks;
+				if (!stats.complete) incompleteDirectoryWalks++;
 			}
 			break;
 		}
@@ -492,7 +572,15 @@ async function doBuildFileIdIndex(
 		}
 	}
 
-	const index: FileIdIndex = { byFileId, statted, skippedNoLinks, skippedUnstatable };
+	const index: FileIdIndex = {
+		byFileId,
+		inodeMarkers,
+		statted,
+		skippedNoLinks,
+		skippedUnstatable,
+		incompleteDirectoryWalks,
+		...(stabilityMarkers ? { stabilityMarkers } : {}),
+	};
 	// Cache write happens in the buildFileIdIndex wrapper (after this
 	// function resolves) so the in-flight Promise dedup stays consistent.
 	log?.info(
@@ -502,10 +590,47 @@ async function doBuildFileIdIndex(
 			filesIndexed: statted,
 			skippedNoLinks,
 			skippedUnstatable,
+			incompleteDirectoryWalks,
 		},
 		"inode-backfill: built FileID index",
 	);
 	return index;
+}
+
+function torrentInventoryFingerprint(torrents: QuiTorrent[]): string {
+	return JSON.stringify(
+		torrents
+			.map((torrent) =>
+				JSON.stringify([
+					torrent.instanceId ?? null,
+					torrent.hash.toLowerCase(),
+					torrent.name,
+					torrent.savePath,
+					torrent.size,
+				]),
+			)
+			.sort(),
+	);
+}
+
+function assertCompleteFileIdIndex(index: FileIdIndex): void {
+	if (index.skippedUnstatable > 0 || (index.incompleteDirectoryWalks ?? 0) > 0) {
+		throw new Error(
+			`qUI inode inventory was incomplete (${index.skippedUnstatable} unreachable torrents, ${index.incompleteDirectoryWalks ?? 0} incomplete directory walks)`,
+		);
+	}
+}
+
+async function assertStableFileSystemSnapshot(index: FileIdIndex): Promise<void> {
+	if (!index.stabilityMarkers) {
+		throw new Error("qUI inode inventory has no filesystem stability markers");
+	}
+	for (const [path, expected] of index.stabilityMarkers) {
+		const current = await statSafe(path);
+		if (!current || !sameFileSystemMarker(expected, current)) {
+			throw new Error("qUI torrent filesystem changed during inode verification");
+		}
+	}
 }
 
 /**
@@ -524,16 +649,51 @@ async function doBuildFileIdIndex(
 async function indexDirectoryFiles(
 	rootPath: string,
 	hash: string,
-	addHash: (key: string, hash: string) => void,
-): Promise<{ statted: number; skippedNoLinks: number }> {
+	addHash: (key: string, hash: string, info: StatInfo) => void,
+	stabilityMarkers?: Map<string, FileSystemMarker>,
+): Promise<{ statted: number; skippedNoLinks: number; complete: boolean }> {
 	let statted = 0;
 	let skippedNoLinks = 0;
+	let complete = true;
 
 	let entries: Dirent[];
 	try {
 		entries = await readdir(rootPath, { recursive: true, withFileTypes: true });
 	} catch {
-		return { statted, skippedNoLinks };
+		return { statted, skippedNoLinks, complete: false };
+	}
+
+	if (stabilityMarkers) {
+		const directoryPaths = new Set([rootPath]);
+		for (const entry of entries) {
+			directoryPaths.add(entry.parentPath);
+			if (entry.isDirectory()) {
+				directoryPaths.add(`${entry.parentPath}/${entry.name}`);
+			}
+		}
+		for (const directoryPath of directoryPaths) {
+			if (stabilityMarkers.has(directoryPath)) continue;
+			const directoryInfo = await statSafe(directoryPath);
+			if (directoryInfo?.kind !== "directory") {
+				complete = false;
+				continue;
+			}
+			stabilityMarkers.set(directoryPath, toFileSystemMarker(directoryInfo));
+		}
+
+		let verifiedEntries: Dirent[];
+		try {
+			verifiedEntries = await readdir(rootPath, {
+				recursive: true,
+				withFileTypes: true,
+			});
+		} catch {
+			return { statted, skippedNoLinks, complete: false };
+		}
+		if (directoryEntriesFingerprint(entries) !== directoryEntriesFingerprint(verifiedEntries)) {
+			return { statted, skippedNoLinks, complete: false };
+		}
+		entries = verifiedEntries;
 	}
 
 	// Cap the walk so a misconfigured torrent pointing at a media root
@@ -543,6 +703,7 @@ async function indexDirectoryFiles(
 		entries.length > MAX_WALK_ENTRIES_PER_TORRENT
 			? entries.slice(0, MAX_WALK_ENTRIES_PER_TORRENT)
 			: entries;
+	if (limited.length !== entries.length) complete = false;
 
 	for (const entry of limited) {
 		if (!entry.isFile()) continue;
@@ -550,16 +711,31 @@ async function indexDirectoryFiles(
 		// (Dockerfile uses node:22-alpine3.21), so no fallback needed.
 		const filePath = `${entry.parentPath}/${entry.name}`;
 		const info = await statSafe(filePath);
-		if (info?.kind !== "file") continue;
+		if (!info) {
+			complete = false;
+			continue;
+		}
+		if (info.kind !== "file") continue;
 		if (info.nlink < 2) {
 			skippedNoLinks++;
 			continue;
 		}
-		addHash(`${info.dev}:${info.ino}`, hash);
+		addHash(`${info.dev}:${info.ino}`, hash, info);
 		statted++;
 	}
 
-	return { statted, skippedNoLinks };
+	return { statted, skippedNoLinks, complete };
+}
+
+function directoryEntriesFingerprint(entries: Dirent[]): string {
+	return JSON.stringify(
+		entries
+			.map((entry): [string, string] => [
+				`${entry.parentPath}/${entry.name}`,
+				entry.isFile() ? "file" : entry.isDirectory() ? "directory" : "other",
+			])
+			.sort(([left], [right]) => left.localeCompare(right)),
+	);
 }
 
 /**
@@ -617,11 +793,83 @@ export async function getAllHashesForFileId(
 	return Array.from(hashes);
 }
 
+export interface CompleteFileIdHashResolution {
+	hashes: string[];
+	complete: true;
+}
+
+/**
+ * Resolve all inode-sharing hashes while preserving whether the target path
+ * itself could be verified. This is intentionally separate from the lenient
+ * display/backfill helper above: destructive cleanup must fail closed on an
+ * unreadable path instead of treating it as "no matches".
+ */
+export async function getAllHashesForFileIdComplete(
+	libraryPath: string,
+	index: FileIdIndex,
+): Promise<CompleteFileIdHashResolution> {
+	if (index.skippedUnstatable > 0 || (index.incompleteDirectoryWalks ?? 0) > 0) {
+		throw new Error("qUI inode inventory is incomplete");
+	}
+	let info: StatInfo;
+	try {
+		const value = await stat(libraryPath);
+		info = {
+			dev: value.dev,
+			ino: value.ino,
+			nlink: value.nlink,
+			ctimeMs: value.ctimeMs,
+			mtimeMs: value.mtimeMs,
+			kind: value.isFile() ? "file" : value.isDirectory() ? "directory" : "other",
+		};
+	} catch {
+		throw new Error("Target media path could not be stat'd");
+	}
+	if (info.kind !== "file") {
+		throw new Error("Target media path is not a file");
+	}
+	if (info.nlink < 2) return { hashes: [], complete: true };
+	const fileId = `${info.dev}:${info.ino}`;
+	const hashes = Array.from(index.byFileId.get(fileId) ?? []);
+	const marker = index.inodeMarkers?.get(fileId);
+	if (hashes.length > 0 && (!marker || !sameFileSystemMarker(marker, info))) {
+		throw new Error("Target media inode changed after qUI inventory verification");
+	}
+	return {
+		hashes,
+		complete: true,
+	};
+}
+
 interface StatInfo {
 	dev: number;
 	ino: number;
 	nlink: number;
+	ctimeMs: number;
+	mtimeMs: number;
 	kind: "file" | "directory" | "other";
+}
+
+function toFileSystemMarker(info: StatInfo): FileSystemMarker {
+	return {
+		dev: info.dev,
+		ino: info.ino,
+		nlink: info.nlink,
+		ctimeMs: info.ctimeMs,
+		mtimeMs: info.mtimeMs,
+		kind: info.kind,
+	};
+}
+
+function sameFileSystemMarker(expected: FileSystemMarker, current: StatInfo): boolean {
+	return (
+		expected.dev === current.dev &&
+		expected.ino === current.ino &&
+		expected.nlink === current.nlink &&
+		expected.ctimeMs === current.ctimeMs &&
+		expected.mtimeMs === current.mtimeMs &&
+		expected.kind === current.kind
+	);
 }
 
 /**
@@ -638,7 +886,14 @@ async function statSafe(path: string): Promise<StatInfo | null> {
 	try {
 		const s = await stat(path);
 		const kind: StatInfo["kind"] = s.isFile() ? "file" : s.isDirectory() ? "directory" : "other";
-		return { dev: Number(s.dev), ino: Number(s.ino), nlink: Number(s.nlink), kind };
+		return {
+			dev: Number(s.dev),
+			ino: Number(s.ino),
+			nlink: Number(s.nlink),
+			ctimeMs: Number(s.ctimeMs),
+			mtimeMs: Number(s.mtimeMs),
+			kind,
+		};
 	} catch {
 		return null;
 	}

@@ -10,6 +10,7 @@ import type {
 	SonarrClient,
 	Notification as SonarrNotification,
 } from "arr-sdk/sonarr";
+import { normalizeTorrentState } from "@arr/shared";
 import {
 	createPlexClient,
 	type PlexClient,
@@ -17,19 +18,36 @@ import {
 	type PlexSeriesMediaItem,
 	PlexSeriesNotFoundError,
 } from "../plex/plex-client.js";
+import { plexConnectionFingerprint as plexEvidenceSourceFingerprint } from "../plex/service-instance-fingerprint.js";
 import type { ServiceInstance } from "../prisma.js";
 
 export { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
 
 import { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import type { CleanupExecutorDeps } from "./types.js";
+import type { CleanupExecutorDeps, CompleteQuiFileHashIndex } from "./types.js";
 
 export interface CleanupDeleteTarget {
 	instanceId: string;
 	arrItemId: number;
 	itemType: string;
 	action?: string | null;
+	targetScope?: string | null;
+	arrEpisodeId?: number | null;
+	seasonNumber?: number | null;
+	episodeNumber?: number | null;
+	episodeFileId?: number | null;
+	episodeFileConsumerIds?: number[];
+	plexWatchEvidence?: Array<{
+		plexInstanceId: string;
+		sourceFingerprint: string;
+		ratingKey: string;
+		watchCount: number;
+		refreshedAt: Date | string;
+	}>;
+	respectQuiSeeding?: boolean;
+	episodeFileInfoHash?: string | null;
+	episodeFileTorrentState?: string | null;
 }
 
 type SafetyPlexClient = Pick<
@@ -43,6 +61,18 @@ export interface SharedPlexSafetyContext {
 	verifiedRadarrFiles: Map<string, VerifiedRadarrFileIdentity>;
 	verifiedSonarrFiles: Map<string, VerifiedSonarrFileIdentity>;
 	plans: Map<string, SharedMediaSafetyPlan>;
+	quiInstances?: Promise<ServiceInstance[]>;
+	quiFileIndexes: Map<string, Promise<CompleteQuiFileHashIndex>>;
+	quiHashTorrents: Map<
+		string,
+		Promise<
+			Awaited<
+				ReturnType<
+					ReturnType<NonNullable<CleanupExecutorDeps["quiClientFactory"]>>["getTorrentsByHash"]
+				>
+			>
+		>
+	>;
 }
 
 export function createSharedPlexSafetyContext(): SharedPlexSafetyContext {
@@ -52,10 +82,17 @@ export function createSharedPlexSafetyContext(): SharedPlexSafetyContext {
 		verifiedRadarrFiles: new Map(),
 		verifiedSonarrFiles: new Map(),
 		plans: new Map(),
+		quiFileIndexes: new Map(),
+		quiHashTorrents: new Map(),
 	};
 }
 
 class FileMatchVerificationError extends Error {}
+class EpisodeWatchProofError extends FileMatchVerificationError {}
+
+function isQuiSeedingTorrentState(state: string | null | undefined): boolean {
+	return state === "seeding" || state === "downloading";
+}
 
 interface NormalizedMediaPath {
 	value: string;
@@ -83,6 +120,33 @@ export interface VerifiedSonarrEpisodeFileIdentity {
 export interface VerifiedSonarrFileIdentity {
 	seriesPath: NormalizedMediaPath;
 	episodeFiles: VerifiedSonarrEpisodeFileIdentity[];
+}
+
+export interface VerifiedSonarrEpisodeIdentity {
+	arrEpisodeId: number;
+	seasonNumber: number;
+	episodeNumber: number;
+	episodeFileId: number;
+	episodeFileConsumerIds: number[];
+	monitored: boolean;
+}
+
+export interface VerifiedEpisodePlexWatchProof {
+	plexInstanceId: string;
+	sourceFingerprint: string;
+	plexServerUrl: string;
+	ratingKey: string;
+	watchCount: number;
+	refreshedAt: string;
+	fullPath: NormalizedMediaPath;
+	size: number;
+	mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
+}
+
+export interface VerifiedEpisodeQuiIdentity {
+	enabled: boolean;
+	infoHash: string | null;
+	torrentState: string | null;
 }
 
 export interface VerifiedSonarrPeerIdentity {
@@ -179,12 +243,29 @@ export type SharedMediaSafetyPlan =
 			peers: VerifiedSonarrPeerIdentity[];
 			ownership: VerifiedSonarrPlexOwnership[];
 			targetDeleteNotifications: VerifiedSonarrTargetDeleteNotification[];
+	  }
+	| {
+			kind: "verified_sonarr_episode";
+			target: VerifiedArrTargetIdentity;
+			episode: VerifiedSonarrEpisodeIdentity;
+			selectedFile: VerifiedSonarrEpisodeFileIdentity;
+			retainedTargetFiles: VerifiedSonarrEpisodeFileIdentity[];
+			watchProof: VerifiedEpisodePlexWatchProof;
+			quiIdentity: VerifiedEpisodeQuiIdentity;
+			peers: VerifiedSonarrPeerIdentity[];
+			ownership: VerifiedSonarrPlexOwnership[];
+			targetDeleteNotifications: VerifiedSonarrTargetDeleteNotification[];
 	  };
 
 export type ExecutableSharedMediaSafetyPlan = Extract<
 	SharedMediaSafetyPlan,
 	{
-		kind: "verified_arr_target" | "verified_radarr_empty" | "verified_radarr" | "verified_sonarr";
+		kind:
+			| "verified_arr_target"
+			| "verified_radarr_empty"
+			| "verified_radarr"
+			| "verified_sonarr"
+			| "verified_sonarr_episode";
 	}
 >;
 
@@ -263,6 +344,139 @@ function canonicalSonarrFiles(value: unknown): VerifiedSonarrFileIdentity {
 		),
 		episodeFiles,
 	};
+}
+
+function canonicalSonarrEpisodeIdentity(value: unknown): VerifiedSonarrEpisodeIdentity {
+	if (!value || typeof value !== "object") {
+		throw new FileMatchVerificationError("Sonarr episode safety snapshot is invalid");
+	}
+	const episode = value as Record<string, unknown>;
+	if (!Array.isArray(episode.episodeFileConsumerIds)) {
+		throw new FileMatchVerificationError("Sonarr episode file membership is invalid");
+	}
+	const consumerIds = episode.episodeFileConsumerIds
+		.map((id) => requiredPositiveSafeInteger(id, "Sonarr episode consumer ID"))
+		.sort((left, right) => left - right);
+	if (
+		consumerIds.length !== 1 ||
+		new Set(consumerIds).size !== consumerIds.length ||
+		typeof episode.monitored !== "boolean"
+	) {
+		throw new FileMatchVerificationError("Sonarr episode is not an exact single-episode target");
+	}
+	const arrEpisodeId = requiredPositiveSafeInteger(episode.arrEpisodeId, "Sonarr episode ID");
+	if (consumerIds[0] !== arrEpisodeId) {
+		throw new FileMatchVerificationError("Sonarr episode file membership changed");
+	}
+	const seasonNumber = episode.seasonNumber;
+	if (typeof seasonNumber !== "number" || !Number.isSafeInteger(seasonNumber) || seasonNumber < 0) {
+		throw new FileMatchVerificationError("Sonarr season number is invalid");
+	}
+	return {
+		arrEpisodeId,
+		seasonNumber,
+		episodeNumber: requiredPositiveSafeInteger(
+			episode.episodeNumber,
+			"Sonarr episode number",
+		),
+		episodeFileId: requiredPositiveSafeInteger(
+			episode.episodeFileId,
+			"Sonarr episode file ID",
+		),
+		episodeFileConsumerIds: consumerIds,
+		monitored: episode.monitored,
+	};
+}
+
+function canonicalEpisodeWatchProof(value: unknown): VerifiedEpisodePlexWatchProof {
+	if (!value || typeof value !== "object") {
+		throw new FileMatchVerificationError("Plex episode watch proof is invalid");
+	}
+	const proof = value as Record<string, unknown>;
+	const refreshedAt = requiredNonEmptyString(proof.refreshedAt, "Plex watch refresh time");
+	if (!Number.isFinite(Date.parse(refreshedAt))) {
+		throw new FileMatchVerificationError("Plex watch refresh time is invalid");
+	}
+	const mapping = proof.mapping as Record<string, unknown> | null | undefined;
+	return {
+		plexInstanceId: requiredNonEmptyString(proof.plexInstanceId, "Plex watch instance ID"),
+		sourceFingerprint: requiredNonEmptyString(
+			proof.sourceFingerprint,
+			"Plex watch source fingerprint",
+		),
+		plexServerUrl: requiredNonEmptyString(proof.plexServerUrl, "Plex watch server URL"),
+		ratingKey: requiredNonEmptyString(proof.ratingKey, "Plex episode rating key"),
+		watchCount: requiredPositiveSafeInteger(proof.watchCount, "Plex episode watch count"),
+		refreshedAt: new Date(refreshedAt).toISOString(),
+		fullPath: normalizeMediaPath(
+			(proof.fullPath as Record<string, unknown> | undefined)?.value,
+		),
+		size: requiredPositiveSafeInteger(proof.size, "Plex episode media part size"),
+		mapping:
+			mapping === null
+				? null
+				: {
+						from: normalizeMediaPath(
+							(mapping?.from as Record<string, unknown> | undefined)?.value,
+						),
+						to: normalizeMediaPath(
+							(mapping?.to as Record<string, unknown> | undefined)?.value,
+						),
+					},
+	};
+}
+
+function canonicalEpisodeQuiIdentity(value: unknown): VerifiedEpisodeQuiIdentity {
+	if (!value || typeof value !== "object") {
+		throw new FileMatchVerificationError("Episode qUI identity is invalid");
+	}
+	const identity = value as Record<string, unknown>;
+	if (typeof identity.enabled !== "boolean") {
+		throw new FileMatchVerificationError("Episode qUI protection setting is invalid");
+	}
+	const infoHash =
+		identity.infoHash === null
+			? null
+			: requiredNonEmptyString(identity.infoHash, "Episode qUI info hash");
+	const torrentState =
+		identity.torrentState === null
+			? null
+			: requiredNonEmptyString(identity.torrentState, "Episode qUI torrent state");
+	return { enabled: identity.enabled, infoHash, torrentState };
+}
+
+function canonicalSonarrEpisodeFile(
+	value: unknown,
+	label: string,
+): VerifiedSonarrEpisodeFileIdentity {
+	if (!value || typeof value !== "object") {
+		throw new FileMatchVerificationError(`${label} is invalid`);
+	}
+	const file = value as Record<string, unknown>;
+	return {
+		episodeFileId: requiredPositiveSafeInteger(file.episodeFileId, "Sonarr episode file ID"),
+		fullPath: normalizeMediaPath((file.fullPath as Record<string, unknown> | undefined)?.value),
+		size: requiredPositiveSafeInteger(file.size, "Sonarr episode file size"),
+	};
+}
+
+function canonicalRetainedSonarrEpisodeFiles(
+	value: unknown,
+	selectedFileId: number,
+): VerifiedSonarrEpisodeFileIdentity[] {
+	if (!Array.isArray(value)) {
+		throw new FileMatchVerificationError("Sonarr retained file inventory is invalid");
+	}
+	const files = value
+		.map((file) => canonicalSonarrEpisodeFile(file, "Sonarr retained episode file"))
+		.sort((left, right) => left.episodeFileId - right.episodeFileId);
+	if (
+		files.some((file) => file.episodeFileId === selectedFileId) ||
+		new Set(files.map((file) => file.episodeFileId)).size !== files.length
+	) {
+		throw new FileMatchVerificationError("Sonarr retained file inventory is ambiguous");
+	}
+	return files;
 }
 
 function canonicalSonarrPeers(value: unknown): VerifiedSonarrPeerIdentity[] {
@@ -619,6 +833,33 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 			kind: "verified_sonarr",
 			target: canonicalTargetIdentity(candidate.target),
 			files: canonicalSonarrFiles(candidate.files),
+			peers: canonicalSonarrPeers(candidate.peers),
+			ownership: canonicalSonarrOwnership(candidate.ownership),
+			targetDeleteNotifications: canonicalSonarrTargetDeleteNotifications(
+				candidate.targetDeleteNotifications,
+			),
+		};
+	}
+	if (candidate.kind === "verified_sonarr_episode") {
+		const episode = canonicalSonarrEpisodeIdentity(candidate.episode);
+		const selectedFile = canonicalSonarrEpisodeFile(
+			candidate.selectedFile,
+			"Sonarr selected episode file",
+		);
+		if (selectedFile.episodeFileId !== episode.episodeFileId) {
+			throw new FileMatchVerificationError("Sonarr selected episode file identity is inconsistent");
+		}
+		return {
+			kind: "verified_sonarr_episode",
+			target: canonicalTargetIdentity(candidate.target),
+			episode,
+			selectedFile,
+			retainedTargetFiles: canonicalRetainedSonarrEpisodeFiles(
+				candidate.retainedTargetFiles,
+				selectedFile.episodeFileId,
+			),
+			watchProof: canonicalEpisodeWatchProof(candidate.watchProof),
+			quiIdentity: canonicalEpisodeQuiIdentity(candidate.quiIdentity),
 			peers: canonicalSonarrPeers(candidate.peers),
 			ownership: canonicalSonarrOwnership(candidate.ownership),
 			targetDeleteNotifications: canonicalSonarrTargetDeleteNotifications(
@@ -1058,6 +1299,53 @@ export async function assertVerifiedSonarrFilesUnchanged(
 	}
 }
 
+export async function assertVerifiedSonarrEpisodeUnchanged(
+	sonarr: InstanceType<typeof SonarrClient>,
+	arrItemId: number,
+	plan: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr_episode" }>,
+	options: {
+		monitoredMode?: "exact" | "allow_unmonitored" | "require_unmonitored";
+	} = {},
+): Promise<void> {
+	await assertVerifiedSonarrFilesUnchanged(sonarr, arrItemId, plan.target, {
+		seriesPath: plan.target.mediaPath,
+		episodeFiles: [plan.selectedFile, ...plan.retainedTargetFiles],
+	});
+	const episodes = (await sonarr.episode.getAll({
+		seriesId: arrItemId,
+		includeEpisodeFile: true,
+	})) as unknown as Array<Record<string, unknown>>;
+	const selected = episodes.find((episode) => episode.id === plan.episode.arrEpisodeId);
+	const currentMonitored = selected?.monitored === true;
+	const monitoredMatches =
+		options.monitoredMode === "require_unmonitored"
+			? currentMonitored === false
+			: options.monitoredMode === "allow_unmonitored"
+				? currentMonitored === plan.episode.monitored ||
+					(plan.episode.monitored === true && currentMonitored === false)
+				: currentMonitored === plan.episode.monitored;
+	if (
+		!selected ||
+		selected.seasonNumber !== plan.episode.seasonNumber ||
+		selected.episodeNumber !== plan.episode.episodeNumber ||
+		selected.episodeFileId !== plan.episode.episodeFileId ||
+		!monitoredMatches
+	) {
+		throw new SonarrFilesChangedDuringSafetyCheckError();
+	}
+	const consumers = episodes
+		.filter((episode) => episode.episodeFileId === plan.episode.episodeFileId)
+		.map((episode) => episode.id)
+		.filter((id): id is number => typeof id === "number")
+		.sort((left, right) => left - right);
+	if (
+		consumers.length !== plan.episode.episodeFileConsumerIds.length ||
+		consumers.some((id, index) => id !== plan.episode.episodeFileConsumerIds[index])
+	) {
+		throw new SonarrFilesChangedDuringSafetyCheckError();
+	}
+}
+
 function mediaPartMatchesTarget(
 	target: MediaFileIdentity,
 	part: { file: string; size: number },
@@ -1205,9 +1493,13 @@ function matchingPlexSeriesParts(
 }
 
 export function cleanupDeleteTargetKey(
-	target: Pick<CleanupDeleteTarget, "instanceId" | "arrItemId" | "itemType">,
+	target: Pick<CleanupDeleteTarget, "instanceId" | "arrItemId" | "itemType"> &
+		Partial<Pick<CleanupDeleteTarget, "targetScope" | "arrEpisodeId">>,
 ): string {
-	return `${target.instanceId}:${target.arrItemId}:${target.itemType}`;
+	const seriesKey = `${target.instanceId}:${target.arrItemId}:${target.itemType}`;
+	return target.targetScope === "episode" && typeof target.arrEpisodeId === "number"
+		? `${seriesKey}:episode:${target.arrEpisodeId}`
+		: seriesKey;
 }
 
 function isDestructiveTarget(target: CleanupDeleteTarget): boolean {
@@ -1505,6 +1797,8 @@ interface PlexVerificationInput {
 	notifications: PlexNotification[];
 	externalId: number;
 	files: MediaFileIdentity[];
+	/** Files retained on the same Sonarr target during an episode-scoped delete. */
+	retainedSonarrTargetFiles?: MediaFileIdentity[];
 	radarrPeers?: Array<{
 		identity: VerifiedRadarrPeerIdentity;
 		movieTags: number[];
@@ -2117,6 +2411,13 @@ async function verifyPlexMediaState(
 					}
 					const mediaItems = await mediaPartsPromise;
 					const targetMatches = matchingPlexSeriesParts(input.files, mediaItems, notification);
+					const retainedTargetMatches = input.retainedSonarrTargetFiles
+						? matchingPlexSeriesParts(
+								input.retainedSonarrTargetFiles,
+								mediaItems,
+								notification,
+							)
+						: [];
 					const targetPhysicalKeys = new Set(
 						targetMatches.map((match) => `${match.show.ratingKey}:${plexPartKey(match.part)}`),
 					);
@@ -2182,6 +2483,9 @@ async function verifyPlexMediaState(
 					}
 					const allowedPartKeys = new Set([
 						...targetMatches.map((match) => `${match.show.ratingKey}:${plexPartKey(match.part)}`),
+						...retainedTargetMatches.map(
+							(match) => `${match.show.ratingKey}:${plexPartKey(match.part)}`,
+						),
 						...retainedMatches.map((match) => `${match.show.ratingKey}:${plexPartKey(match.part)}`),
 					]);
 					for (const show of mediaItems) {
@@ -2219,6 +2523,259 @@ async function verifyPlexMediaState(
 	return { ownership, sonarrOwnership };
 }
 
+async function verifyEpisodePlexWatchProof(
+	deps: CleanupExecutorDeps,
+	context: SharedPlexSafetyContext,
+	ownerChecks: Map<string, Promise<void>>,
+	plexInstances: ServiceInstance[],
+	seriesLookups: Map<SafetyPlexClient, Map<number, Promise<PlexSeriesMediaItem[]>>>,
+	target: CleanupDeleteTarget,
+	series: Series,
+	tvdbId: number,
+	selectedFile: VerifiedSonarrEpisodeFileIdentity,
+	notifications: SonarrNotification[],
+): Promise<VerifiedEpisodePlexWatchProof> {
+	if (!target.plexWatchEvidence?.length) {
+		throw new EpisodeWatchProofError("No Plex episode watch evidence was carried to safety");
+	}
+	const showTmdbId = requiredPositiveSafeInteger(series.tmdbId, "Sonarr series TMDb ID");
+	const seasonNumber = target.seasonNumber;
+	const episodeNumber = target.episodeNumber;
+	if (
+		typeof seasonNumber !== "number" ||
+		!Number.isSafeInteger(seasonNumber) ||
+		seasonNumber < 0
+	) {
+		throw new EpisodeWatchProofError("Sonarr episode season coordinate is invalid");
+	}
+	const exactEpisodeNumber = requiredPositiveSafeInteger(
+		episodeNumber,
+		"Sonarr episode number",
+	);
+	const selectedComparable = comparableFile(selectedFile);
+	for (const evidence of target.plexWatchEvidence) {
+		const approvedRefreshedAt =
+			evidence.refreshedAt instanceof Date
+				? evidence.refreshedAt
+				: new Date(evidence.refreshedAt);
+		if (
+			!Number.isFinite(approvedRefreshedAt.getTime()) ||
+			approvedRefreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000
+		) {
+			continue;
+		}
+		const plexInstance = plexInstances.find(
+			(instance) =>
+				instance.id === evidence.plexInstanceId &&
+				instance.service === "PLEX" &&
+				instance.enabled === true,
+		);
+		if (!plexInstance) continue;
+		const plexUpdatedAt = plexInstance.updatedAt.getTime();
+		const currentPlexFingerprint = plexEvidenceSourceFingerprint(plexInstance);
+		if (evidence.sourceFingerprint !== currentPlexFingerprint) continue;
+		if (
+			!Number.isFinite(plexUpdatedAt) ||
+			approvedRefreshedAt.getTime() < plexUpdatedAt
+		) {
+			continue;
+		}
+		const currentEvidence = await deps.prisma.plexEpisodeCache.findFirst({
+			where: {
+				instanceId: plexInstance.id,
+				showTmdbId,
+				seasonNumber,
+				episodeNumber: exactEpisodeNumber,
+				ratingKey: evidence.ratingKey,
+			},
+			select: { watchCount: true, refreshedAt: true, sourceFingerprint: true },
+		});
+		if (
+			!currentEvidence ||
+			currentEvidence.watchCount === null ||
+			currentEvidence.refreshedAt === null ||
+			currentEvidence.sourceFingerprint !== currentPlexFingerprint ||
+			currentEvidence.watchCount < evidence.watchCount ||
+			currentEvidence.refreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000 ||
+			currentEvidence.refreshedAt.getTime() < plexUpdatedAt
+		) {
+			continue;
+		}
+		const serverUrl = normalizedServerUrl(plexInstance.baseUrl);
+		if (!serverUrl) continue;
+
+		let plex: SafetyPlexClient;
+		try {
+			plex = await requirePlexClient(deps, context, ownerChecks, plexInstance);
+		} catch {
+			continue;
+		}
+		let clientLookups = seriesLookups.get(plex);
+		if (!clientLookups) {
+			clientLookups = new Map();
+			seriesLookups.set(plex, clientLookups);
+		}
+		let mediaPartsPromise = clientLookups.get(tvdbId);
+		if (!mediaPartsPromise) {
+			mediaPartsPromise = plex.getSeriesEpisodeMediaPartsByTvdbId(tvdbId);
+			clientLookups.set(tvdbId, mediaPartsPromise);
+		}
+		let mediaItems: PlexSeriesMediaItem[];
+		try {
+			mediaItems = await mediaPartsPromise;
+		} catch {
+			continue;
+		}
+		const watchedEpisodes = mediaItems.flatMap((show) =>
+			show.episodes.filter((episode) => episode.ratingKey === evidence.ratingKey),
+		);
+		if (watchedEpisodes.length !== 1) continue;
+
+		const matchingNotifications = notifications.filter((notification) => {
+			if (
+				mediaServerNotificationKind(notification) !== "plex" ||
+				notification.onEpisodeFileDelete !== true ||
+				!sonarrNotificationApplies(notification, series, target.action ?? "delete")
+			) {
+				return false;
+			}
+			try {
+				return (
+					normalizedServerUrl(plexConnectionBaseUrl(notification)) === serverUrl &&
+					notificationTagsApply(notification, series.tags)
+				);
+			} catch {
+				return false;
+			}
+		});
+		const deletesFile = target.action === "delete" || target.action === "delete_files";
+		const pathCandidates: Array<{
+			fullPath: NormalizedMediaPath;
+			mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
+		}> =
+			!deletesFile
+				? [{ fullPath: selectedComparable.fullPath, mapping: null }]
+				: matchingNotifications.map((notification) => ({
+						fullPath: mappedArrPathForNotification(
+							selectedComparable,
+							notification,
+							"SONARR",
+						),
+						mapping: notificationPathMapping(notification, "Sonarr target"),
+					}));
+		const matches = new Map<
+			string,
+			{
+				part: { file: string; size: number };
+				mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
+			}
+		>();
+		for (const candidate of pathCandidates) {
+			const mappedFile = { ...selectedComparable, fullPath: candidate.fullPath };
+			for (const part of watchedEpisodes[0]!.parts) {
+				if (mediaPartMatchesTarget(mappedFile, part)) {
+					matches.set(plexPartKey(part), { part, mapping: candidate.mapping });
+				}
+			}
+		}
+		if (matches.size !== 1) continue;
+		const match = [...matches.values()][0]!;
+		return {
+			plexInstanceId: plexInstance.id,
+			sourceFingerprint: currentPlexFingerprint,
+			plexServerUrl: serverUrl,
+			ratingKey: evidence.ratingKey,
+			watchCount: evidence.watchCount,
+			refreshedAt: approvedRefreshedAt.toISOString(),
+			fullPath: normalizeMediaPath(match.part.file),
+			size: match.part.size,
+			mapping: match.mapping,
+		};
+	}
+	throw new EpisodeWatchProofError(
+		"No watched Plex episode media part mapped to the selected Sonarr episode file",
+	);
+}
+
+async function verifyFreshEpisodeQuiState(
+	deps: CleanupExecutorDeps,
+	context: SharedPlexSafetyContext,
+	userId: string,
+	filePath: string,
+	infoHash: string | null,
+): Promise<void> {
+	if (!infoHash || !deps.quiClientFactory || !deps.quiFileHashIndexFactory) {
+		throw new FileMatchVerificationError(
+			"Target Sonarr episode qUI state could not be verified live",
+		);
+	}
+	context.quiInstances ??= deps.prisma.serviceInstance.findMany({
+		where: { userId, service: "QUI", enabled: true },
+	});
+	const quiInstances = await context.quiInstances;
+	if (quiInstances.length === 0) {
+		throw new FileMatchVerificationError(
+			"Target Sonarr episode qUI state could not be verified live",
+		);
+	}
+	const hashes = new Set<string>();
+	for (const instance of quiInstances) {
+		if (instance.hasLocalFilesystemAccess !== true) {
+			throw new FileMatchVerificationError(
+				"Target Sonarr episode qUI state could not be verified live",
+			);
+		}
+		let index = context.quiFileIndexes.get(instance.id);
+		if (!index) {
+			index = deps.quiFileHashIndexFactory(instance);
+			context.quiFileIndexes.set(instance.id, index);
+		}
+		try {
+			const resolution = await (await index).resolve(filePath);
+			if (resolution.complete !== true) {
+				throw new Error("Incomplete qUI inode resolution");
+			}
+			for (const hash of resolution.hashes) hashes.add(hash.toLowerCase());
+		} catch {
+			throw new FileMatchVerificationError(
+				"Target Sonarr episode qUI state could not be verified live",
+			);
+		}
+	}
+	if (hashes.size === 0 || !hashes.has(infoHash.toLowerCase())) {
+		throw new FileMatchVerificationError(
+			"Target Sonarr episode qUI state could not be verified live",
+		);
+	}
+	for (const hash of hashes) {
+		for (const instance of quiInstances) {
+			const cacheKey = `${instance.id}\0${hash}`;
+			let torrents = context.quiHashTorrents.get(cacheKey);
+			if (!torrents) {
+				torrents = deps.quiClientFactory(instance).getTorrentsByHash(hash);
+				context.quiHashTorrents.set(cacheKey, torrents);
+			}
+			let exactResults: Awaited<typeof torrents>;
+			try {
+				exactResults = await torrents;
+			} catch {
+				throw new FileMatchVerificationError(
+					"Target Sonarr episode qUI state could not be verified live",
+				);
+			}
+			if (
+				exactResults.some((torrent) =>
+					isQuiSeedingTorrentState(normalizeTorrentState(torrent.state)),
+				)
+			) {
+				throw new FileMatchVerificationError(
+					"Target Sonarr episode is actively seeding or downloading in qUI",
+				);
+			}
+		}
+	}
+}
+
 /**
  * Fail-closed preflight for shared Plex library deletions initiated through
  * either Radarr or Sonarr. The live ARR file set is correlated to exact Plex
@@ -2248,7 +2805,8 @@ export async function findSharedPlexDeleteBlocks(
 			},
 		});
 		plexInstances =
-			deleteTargets.length === 0
+			deleteTargets.length === 0 &&
+			!safetyTargets.some((target) => target.targetScope === "episode")
 				? []
 				: await deps.prisma.serviceInstance.findMany({
 						where: { userId, service: "PLEX" },
@@ -2295,6 +2853,13 @@ export async function findSharedPlexDeleteBlocks(
 		}>;
 		ownership: VerifiedSonarrPlexOwnership[];
 		targetDeleteNotifications: VerifiedSonarrTargetDeleteNotification[];
+		episodePlan?: {
+			episode: VerifiedSonarrEpisodeIdentity;
+			selectedFile: VerifiedSonarrEpisodeFileIdentity;
+			retainedTargetFiles: VerifiedSonarrEpisodeFileIdentity[];
+			watchProof: VerifiedEpisodePlexWatchProof;
+			quiIdentity: VerifiedEpisodeQuiIdentity;
+		};
 	}> = [];
 
 	const getRadarrClient = (instance: ServiceInstance): InstanceType<typeof RadarrClient> => {
@@ -2613,7 +3178,7 @@ export async function findSharedPlexDeleteBlocks(
 				throw new Error("Target series has no valid TVDB ID");
 			}
 			const targetIdentity = buildTargetIdentity(targetInstance, tvdbId, series.path);
-			if (action === "unmonitor") {
+			if (action === "unmonitor" && target.targetScope !== "episode") {
 				context.plans.set(targetKey, {
 					kind: "verified_arr_target",
 					target: targetIdentity,
@@ -2626,25 +3191,181 @@ export async function findSharedPlexDeleteBlocks(
 					sonarrEpisodeFileIdentity(series, file),
 				),
 			};
-			const notifications = (await getSonarrNotifications(targetInstance, sonarr)).filter(
-				(notification) => sonarrNotificationApplies(notification, series, action),
+			const allNotifications = await getSonarrNotifications(targetInstance, sonarr);
+			let episodePlan:
+				| {
+						episode: VerifiedSonarrEpisodeIdentity;
+						selectedFile: VerifiedSonarrEpisodeFileIdentity;
+						retainedTargetFiles: VerifiedSonarrEpisodeFileIdentity[];
+						watchProof: VerifiedEpisodePlexWatchProof;
+						quiIdentity: VerifiedEpisodeQuiIdentity;
+				  }
+				| undefined;
+			if (target.targetScope === "episode") {
+				const requestedEpisodeId = requiredPositiveSafeInteger(
+					target.arrEpisodeId,
+					"Target Sonarr episode ID",
+				);
+				const requestedSeasonNumber = target.seasonNumber;
+				if (
+					typeof requestedSeasonNumber !== "number" ||
+					!Number.isSafeInteger(requestedSeasonNumber) ||
+					requestedSeasonNumber < 0
+				) {
+					throw new FileMatchVerificationError("Target Sonarr season number is invalid");
+				}
+				const requestedEpisodeNumber = requiredPositiveSafeInteger(
+					target.episodeNumber,
+					"Target Sonarr episode number",
+				);
+				const liveEpisodes = (await sonarr.episode.getAll({
+					seriesId: target.arrItemId,
+					includeEpisodeFile: true,
+				})) as unknown as Array<Record<string, unknown>>;
+				const selectedEpisode = liveEpisodes.find(
+					(episode) =>
+						episode.id === requestedEpisodeId &&
+						episode.seasonNumber === requestedSeasonNumber &&
+						episode.episodeNumber === requestedEpisodeNumber,
+				);
+				if (!selectedEpisode) {
+					throw new FileMatchVerificationError("Target Sonarr episode identity changed");
+				}
+				const selectedEpisodeFileId = requiredPositiveSafeInteger(
+					selectedEpisode.episodeFileId,
+					"Target Sonarr episode file ID",
+				);
+				if (
+					typeof target.episodeFileId === "number" &&
+					target.episodeFileId !== selectedEpisodeFileId
+				) {
+					throw new FileMatchVerificationError("Target Sonarr episode file changed");
+				}
+				const consumerIds = liveEpisodes
+					.filter((episode) => episode.episodeFileId === selectedEpisodeFileId)
+					.map((episode) => requiredPositiveSafeInteger(episode.id, "Sonarr episode consumer ID"))
+					.sort((left, right) => left - right);
+				if (consumerIds.length !== 1 || consumerIds[0] !== requestedEpisodeId) {
+					throw new FileMatchVerificationError(
+						"Target Sonarr file belongs to multiple episodes",
+					);
+				}
+				const selectedFile = verifiedFiles.episodeFiles.find(
+					(file) => file.episodeFileId === selectedEpisodeFileId,
+				);
+				if (!selectedFile) {
+					throw new FileMatchVerificationError("Target Sonarr episode file is unavailable");
+				}
+				const cachedEpisodeFile = await deps.prisma.episodeFileCache.findFirst({
+					where: {
+						instanceId: target.instanceId,
+						arrEpisodeFileId: selectedEpisodeFileId,
+					},
+					select: { infoHash: true, torrentState: true },
+				});
+				if (!cachedEpisodeFile) {
+					throw new FileMatchVerificationError(
+						"Target Sonarr episode qUI identity is unavailable",
+					);
+				}
+				const quiIdentity: VerifiedEpisodeQuiIdentity = {
+					enabled: target.respectQuiSeeding === true,
+					infoHash: cachedEpisodeFile.infoHash,
+					torrentState: cachedEpisodeFile.torrentState,
+				};
+				if (
+					quiIdentity.enabled &&
+					(isQuiSeedingTorrentState(quiIdentity.torrentState) ||
+						target.episodeFileInfoHash !== quiIdentity.infoHash ||
+						target.episodeFileTorrentState !== quiIdentity.torrentState)
+				) {
+					throw new FileMatchVerificationError(
+						"Target Sonarr episode qUI state changed or is actively seeding",
+					);
+				}
+				if (quiIdentity.enabled) {
+					await verifyFreshEpisodeQuiState(
+						deps,
+						context,
+						userId,
+						selectedFile.fullPath.value,
+						quiIdentity.infoHash,
+					);
+				}
+				const watchProof = await verifyEpisodePlexWatchProof(
+					deps,
+					context,
+					plexOwnerChecks,
+					plexInstances,
+					plexSeriesLookups,
+					target,
+					series,
+					tvdbId,
+					selectedFile,
+					allNotifications,
+				);
+				episodePlan = {
+					episode: {
+						arrEpisodeId: requestedEpisodeId,
+						seasonNumber: requestedSeasonNumber,
+						episodeNumber: requestedEpisodeNumber,
+						episodeFileId: selectedEpisodeFileId,
+						episodeFileConsumerIds: consumerIds,
+						monitored: selectedEpisode.monitored === true,
+					},
+					selectedFile,
+					retainedTargetFiles: verifiedFiles.episodeFiles.filter(
+						(file) => file.episodeFileId !== selectedEpisodeFileId,
+					),
+					watchProof,
+					quiIdentity,
+				};
+				if (action === "unmonitor") {
+					context.plans.set(targetKey, {
+						kind: "verified_sonarr_episode",
+						target: targetIdentity,
+						...episodePlan,
+						peers: [],
+						ownership: [],
+						targetDeleteNotifications: [],
+					});
+					continue;
+				}
+			}
+			const notifications = allNotifications.filter(
+				(notification) =>
+					sonarrNotificationApplies(notification, series, action) &&
+					(!episodePlan || notification.onEpisodeFileDelete === true),
 			);
 			if (notifications.length === 0) {
-				if (otherInstanceMayOwnFile(targetInstance, service, verifiedFiles.episodeFiles.length)) {
+				const mutationFileCount = episodePlan ? 1 : verifiedFiles.episodeFiles.length;
+				if (otherInstanceMayOwnFile(targetInstance, service, mutationFileCount)) {
 					const reason = crossInstanceOwnershipReason(service);
 					blocks.set(targetKey, reason);
 					context.plans.set(targetKey, { kind: "blocked", reason });
 					continue;
 				}
 				context.verifiedSonarrFiles.set(targetKey, verifiedFiles);
-				context.plans.set(targetKey, {
-					kind: "verified_sonarr",
-					target: targetIdentity,
-					files: verifiedFiles,
-					peers: [],
-					ownership: [],
-					targetDeleteNotifications: [],
-				});
+				context.plans.set(
+					targetKey,
+					episodePlan
+						? {
+								kind: "verified_sonarr_episode",
+								target: targetIdentity,
+								...episodePlan,
+								peers: [],
+								ownership: [],
+								targetDeleteNotifications: [],
+							}
+						: {
+								kind: "verified_sonarr",
+								target: targetIdentity,
+								files: verifiedFiles,
+								peers: [],
+								ownership: [],
+								targetDeleteNotifications: [],
+							},
+				);
 				continue;
 			}
 			const unsupported = notifications.find(
@@ -2756,7 +3477,13 @@ export async function findSharedPlexDeleteBlocks(
 					target,
 					notifications: plexNotifications,
 					externalId: tvdbId,
-					files: verifiedFiles.episodeFiles.map(comparableFile),
+					files: (episodePlan
+						? [episodePlan.selectedFile]
+						: verifiedFiles.episodeFiles
+					).map(comparableFile),
+					retainedSonarrTargetFiles: episodePlan
+						? episodePlan.retainedTargetFiles.map(comparableFile)
+						: undefined,
 					sonarrPeers,
 				},
 			);
@@ -2775,12 +3502,15 @@ export async function findSharedPlexDeleteBlocks(
 					peerCatalogs: sonarrPeerCatalogs,
 					ownership: verification.sonarrOwnership,
 					targetDeleteNotifications,
+					episodePlan,
 				});
 			}
 		} catch (error) {
 			const reason =
 				error instanceof ArrCrossInstanceOwnershipChangedDuringSafetyCheckError
 					? error.message
+					: error instanceof EpisodeWatchProofError
+						? "Skipped for safety: the watched Plex episode could not be mapped to the exact selected Sonarr episode file. Refresh Plex episode data and verify path mappings."
 					: error instanceof FileMatchVerificationError
 						? fileMatchFailedReason(service)
 						: verificationFailedReason(service);
@@ -2826,7 +3556,10 @@ export async function findSharedPlexDeleteBlocks(
 				);
 			}
 			const freshTargetDeleteNotifications = sonarrTargetDeleteNotificationWitnesses(
-				await pending.client.notification.getAll(),
+				(await pending.client.notification.getAll()).filter(
+					(notification) =>
+						!pending.episodePlan || notification.onEpisodeFileDelete === true,
+				),
 				await pending.client.series.getById(pending.target.arrItemId),
 				pending.action,
 			);
@@ -2837,14 +3570,26 @@ export async function findSharedPlexDeleteBlocks(
 				throw new ArrTargetChangedDuringSafetyCheckError();
 			}
 			context.verifiedSonarrFiles.set(pending.targetKey, pending.verifiedFiles);
-			context.plans.set(pending.targetKey, {
-				kind: "verified_sonarr",
-				target: pending.targetIdentity,
-				files: pending.verifiedFiles,
-				peers: pending.peers.map((peer) => peer.identity),
-				ownership: pending.ownership,
-				targetDeleteNotifications: pending.targetDeleteNotifications,
-			});
+			context.plans.set(
+				pending.targetKey,
+				pending.episodePlan
+					? {
+							kind: "verified_sonarr_episode",
+							target: pending.targetIdentity,
+							...pending.episodePlan,
+							peers: pending.peers.map((peer) => peer.identity),
+							ownership: pending.ownership,
+							targetDeleteNotifications: pending.targetDeleteNotifications,
+						}
+					: {
+							kind: "verified_sonarr",
+							target: pending.targetIdentity,
+							files: pending.verifiedFiles,
+							peers: pending.peers.map((peer) => peer.identity),
+							ownership: pending.ownership,
+							targetDeleteNotifications: pending.targetDeleteNotifications,
+						},
+			);
 		} catch (error) {
 			const reason =
 				error instanceof ArrCrossInstanceOwnershipChangedDuringSafetyCheckError

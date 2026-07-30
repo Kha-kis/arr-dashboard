@@ -35,6 +35,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // return whatever we've staged via `stagedStats` / `stagedDirs`.
 vi.mock("node:fs/promises", () => ({
 	stat: vi.fn(async (path: string) => {
+		statHook?.(path);
 		const info = stagedStats.get(path);
 		if (!info) {
 			const err = new Error(`ENOENT: no such file '${path}'`);
@@ -45,6 +46,8 @@ vi.mock("node:fs/promises", () => ({
 			dev: info.dev,
 			ino: info.ino,
 			nlink: info.nlink,
+			ctimeMs: info.ctimeMs,
+			mtimeMs: info.mtimeMs,
 			isFile: () => info.type === "file",
 			isDirectory: () => info.type === "directory",
 		};
@@ -80,6 +83,8 @@ interface StagedStat {
 	dev: number;
 	ino: number;
 	nlink: number;
+	ctimeMs: number;
+	mtimeMs: number;
 	type: "file" | "directory";
 }
 interface StagedChild {
@@ -90,14 +95,17 @@ interface StagedChild {
 
 const stagedStats = new Map<string, StagedStat>();
 const stagedDirs = new Map<string, StagedChild[]>();
+let statHook: ((path: string) => void) | null = null;
 
 import {
 	__testOnly,
 	applyPathRewrite,
 	buildFileIdIndex,
+	buildFreshCompleteFileIdIndex,
 	deserializeFileIdIndex,
 	type FileIdIndex,
 	getAllHashesForFileId,
+	getAllHashesForFileIdComplete,
 	matchLibraryByFileId,
 	serializeFileIdIndex,
 } from "../infohash-backfill-by-inode.js";
@@ -144,8 +152,15 @@ function makeQuiTorrent(o: {
  * Stage a single file at `path` with the given inode/link metadata.
  * Files are leaves — they never appear in `stagedDirs`.
  */
-function stageFile(path: string, dev: number, ino: number, nlink: number): void {
-	stagedStats.set(path, { dev, ino, nlink, type: "file" });
+function stageFile(path: string, dev: number, ino: number, nlink: number, changedAt = ino): void {
+	stagedStats.set(path, {
+		dev,
+		ino,
+		nlink,
+		ctimeMs: changedAt,
+		mtimeMs: changedAt,
+		type: "file",
+	});
 }
 
 /**
@@ -165,7 +180,14 @@ function stageDir(
 	ino: number,
 	files: Array<{ name: string; ino: number; nlink: number; subdir?: string }>,
 ): void {
-	stagedStats.set(dirPath, { dev, ino, nlink: 1, type: "directory" });
+	stagedStats.set(dirPath, {
+		dev,
+		ino,
+		nlink: 1,
+		ctimeMs: ino,
+		mtimeMs: ino,
+		type: "directory",
+	});
 	const children: StagedChild[] = [];
 	for (const f of files) {
 		const parent = f.subdir ? `${dirPath}/${f.subdir}` : dirPath;
@@ -181,6 +203,7 @@ const QUI_INSTANCE = { id: "qui-1", label: "qui-1", pathPrefix: null as string |
 beforeEach(() => {
 	stagedStats.clear();
 	stagedDirs.clear();
+	statHook = null;
 	__testOnly.clearCache();
 });
 
@@ -348,7 +371,14 @@ describe("buildFileIdIndex — folder-wrapped torrents (THE BUG FIX)", () => {
 		// confirming it doesn't end up in the map.
 		const folder = "/data/torrents/weird";
 		stageDir(folder, 61, 400000, [{ name: "x.mkv", ino: 4001, nlink: 2 }]);
-		stagedStats.set(folder, { dev: 61, ino: 400000, nlink: 2, type: "directory" });
+		stagedStats.set(folder, {
+			dev: 61,
+			ino: 400000,
+			nlink: 2,
+			ctimeMs: 400000,
+			mtimeMs: 400000,
+			type: "directory",
+		});
 		const client = makeFakeClient([
 			makeQuiTorrent({ hash: "h", name: "weird", savePath: "/data/torrents" }),
 		]);
@@ -403,6 +433,143 @@ describe("buildFileIdIndex — caching", () => {
 		__testOnly.clearCache();
 		await buildFileIdIndex(client as never, QUI_INSTANCE);
 		expect(client.listAllTorrents).toHaveBeenCalledTimes(2);
+	});
+
+	it("destructive snapshots bypass the normal 30-minute cache", async () => {
+		stageFile("/data/torrents/Foo.mkv", 100, 42, 2);
+		const client = makeFakeClient([
+			makeQuiTorrent({ hash: "h1", name: "Foo.mkv", savePath: "/data/torrents" }),
+		]);
+		await buildFileIdIndex(client as never, QUI_INSTANCE);
+		await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
+		expect(client.listAllTorrents).toHaveBeenCalledTimes(3);
+	});
+
+	it("destructive snapshots reject an incomplete torrent inventory", async () => {
+		const client = makeFakeClient([
+			makeQuiTorrent({ hash: "missing", name: "Missing.mkv", savePath: "/unreachable" }),
+		]);
+		await expect(buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE)).rejects.toThrow(
+			"inode inventory was incomplete",
+		);
+	});
+
+	it("rebuilds when a cross-seed appears during the filesystem walk", async () => {
+		stageFile("/data/torrents/Foo.mkv", 100, 42, 3);
+		stageFile("/data/cross-seeds/Foo.mkv", 100, 42, 3);
+		const primary = makeQuiTorrent({
+			hash: "primary",
+			name: "Foo.mkv",
+			savePath: "/data/torrents",
+		});
+		const crossSeed = makeQuiTorrent({
+			hash: "cross-seed",
+			name: "Foo.mkv",
+			savePath: "/data/cross-seeds",
+		});
+		const client = makeFakeClient([]);
+		client.listAllTorrents
+			.mockResolvedValueOnce([primary])
+			.mockResolvedValueOnce([primary, crossSeed])
+			.mockResolvedValueOnce([primary, crossSeed])
+			.mockResolvedValueOnce([primary, crossSeed])
+			.mockResolvedValueOnce([primary, crossSeed]);
+
+		const index = await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
+
+		expect(index.byFileId.get("100:42")).toEqual(new Set(["primary", "cross-seed"]));
+		expect(client.listAllTorrents).toHaveBeenCalledTimes(4);
+	});
+
+	it("rebuilds when an existing torrent creates a hardlink during the walk", async () => {
+		stageFile("/data/torrents/Foo.mkv", 100, 42, 3);
+		stageFile("/data/cross-seeds/Foo.mkv", 100, 43, 1);
+		const torrents = [
+			makeQuiTorrent({ hash: "primary", name: "Foo.mkv", savePath: "/data/torrents" }),
+			makeQuiTorrent({ hash: "cross-seed", name: "Foo.mkv", savePath: "/data/cross-seeds" }),
+		];
+		let inventoryReads = 0;
+		const client = {
+			listAllTorrents: vi.fn(async () => {
+				inventoryReads++;
+				if (inventoryReads === 2) {
+					stageFile("/data/cross-seeds/Foo.mkv", 100, 42, 3);
+				}
+				return torrents;
+			}),
+		};
+
+		const index = await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
+
+		expect(index.byFileId.get("100:42")).toEqual(new Set(["primary", "cross-seed"]));
+		expect(client.listAllTorrents).toHaveBeenCalledTimes(4);
+	});
+
+	it("preserves the earliest marker when torrents share the same root", async () => {
+		const sharedPath = "/data/torrents/Foo.mkv";
+		stageFile(sharedPath, 100, 42, 2);
+		const torrents = [
+			makeQuiTorrent({ hash: "primary", name: "Foo.mkv", savePath: "/data/torrents" }),
+			makeQuiTorrent({ hash: "duplicate", name: "Foo.mkv", savePath: "/data/torrents" }),
+		];
+		let sharedStats = 0;
+		statHook = (path) => {
+			if (path !== sharedPath) return;
+			sharedStats++;
+			if (sharedStats === 2) {
+				stageFile(sharedPath, 100, 42, 3, 43);
+			}
+		};
+		const client = makeFakeClient(torrents);
+
+		const index = await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
+
+		expect(index.byFileId.get("100:42")).toEqual(new Set(["primary", "duplicate"]));
+		expect(client.listAllTorrents).toHaveBeenCalledTimes(4);
+	});
+
+	it("rejects a nested-directory entry added between inventory and marker capture", async () => {
+		const root = "/data/torrents/Season";
+		const nested = `${root}/Season 01`;
+		stagedStats.set(root, {
+			dev: 100,
+			ino: 1000,
+			nlink: 1,
+			ctimeMs: 1000,
+			mtimeMs: 1000,
+			type: "directory",
+		});
+		stagedStats.set(nested, {
+			dev: 100,
+			ino: 1001,
+			nlink: 1,
+			ctimeMs: 1001,
+			mtimeMs: 1001,
+			type: "directory",
+		});
+		stageFile(`${nested}/S01E01.mkv`, 100, 42, 2);
+		stagedDirs.set(root, [
+			{ name: "Season 01", parentPath: root, type: "directory" },
+			{ name: "S01E01.mkv", parentPath: nested, type: "file" },
+		]);
+		let injected = false;
+		statHook = (path) => {
+			if (path !== nested || injected) return;
+			injected = true;
+			stageFile(`${nested}/S01E02.mkv`, 100, 43, 2);
+			stagedDirs.get(root)?.push({
+				name: "S01E02.mkv",
+				parentPath: nested,
+				type: "file",
+			});
+		};
+		const client = makeFakeClient([
+			makeQuiTorrent({ hash: "season", name: "Season", savePath: "/data/torrents" }),
+		]);
+
+		await expect(buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE)).rejects.toThrow(
+			"inode inventory was incomplete",
+		);
 	});
 });
 
@@ -491,6 +658,8 @@ describe("matchLibraryByFileId", () => {
 			dev: 100,
 			ino: 42,
 			nlink: 2,
+			ctimeMs: 42,
+			mtimeMs: 42,
 			type: "directory",
 		});
 		const index = makeIndex([["100:42", "hash-A"]]);
@@ -565,6 +734,51 @@ describe("multi-hash per FileID (cross-seed visibility)", () => {
 		// Order matches insertion order. Tests can rely on this for
 		// deterministic snapshot assertions.
 		expect(hashes).toEqual(["primary-hash", "ptp-hash", "bhd-hash"]);
+	});
+
+	it("complete resolver returns every exact hash and fails on an unreadable target", async () => {
+		stageFile("/data/media/foo.mkv", 61, 12345, 4);
+		const index: FileIdIndex = {
+			byFileId: new Map([["61:12345", new Set(["primary-hash", "cross-seed-hash"])]]),
+			inodeMarkers: new Map([
+				[
+					"61:12345",
+					{
+						dev: 61,
+						ino: 12345,
+						nlink: 4,
+						ctimeMs: 12345,
+						mtimeMs: 12345,
+						kind: "file",
+					},
+				],
+			]),
+			statted: 2,
+			skippedNoLinks: 0,
+			skippedUnstatable: 0,
+			incompleteDirectoryWalks: 0,
+		};
+		await expect(getAllHashesForFileIdComplete("/data/media/foo.mkv", index)).resolves.toEqual({
+			hashes: ["primary-hash", "cross-seed-hash"],
+			complete: true,
+		});
+		await expect(getAllHashesForFileIdComplete("/missing.mkv", index)).rejects.toThrow(
+			"could not be stat'd",
+		);
+	});
+
+	it("complete resolver fails closed when the target inode changes after indexing", async () => {
+		stageFile("/data/media/foo.mkv", 61, 12345, 3);
+		const client = makeFakeClient([
+			makeQuiTorrent({ hash: "primary-hash", name: "foo.mkv", savePath: "/data/media" }),
+		]);
+		const index = await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
+
+		stageFile("/data/media/foo.mkv", 61, 12345, 4, 12346);
+
+		await expect(getAllHashesForFileIdComplete("/data/media/foo.mkv", index)).rejects.toThrow(
+			"inode changed after qUI inventory verification",
+		);
 	});
 
 	it("getAllHashesForFileId returns [] for nlink==1 / stat failure / no match", async () => {

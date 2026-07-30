@@ -175,8 +175,17 @@ export async function runQuiTorrentStateSync(
 							torrentSyncedAt: new Date(),
 						},
 					});
-					result.rowsUpdated += updated.count;
-					userRowsUpdated += updated.count;
+					const episodeFilesUpdated = await app.prisma.episodeFileCache.updateMany({
+						where: { infoHash: hashLower, instance: { userId } },
+						data: {
+							torrentState: normalizedState,
+							torrentRatio: Number.isFinite(torrent.ratio) ? torrent.ratio : null,
+							torrentSyncedAt: new Date(),
+						},
+					});
+					const updatedCount = updated.count + episodeFilesUpdated.count;
+					result.rowsUpdated += updatedCount;
+					userRowsUpdated += updatedCount;
 				});
 
 				await Promise.all(updates);
@@ -246,9 +255,34 @@ export async function runQuiTorrentStateSync(
 					});
 					userCleared += cleared.count;
 				}
+				const staleEpisodeCandidates = await app.prisma.episodeFileCache.findMany({
+					where: {
+						instance: { userId },
+						torrentState: { not: null },
+						torrentSyncedAt: { lt: runStartedAt },
+					},
+					select: { id: true, infoHash: true },
+				});
+				const staleEpisodeIds = staleEpisodeCandidates
+					.filter((row) => row.infoHash && !seenHashesThisRun.has(row.infoHash))
+					.map((row) => row.id);
+				for (let i = 0; i < staleEpisodeIds.length; i += CHUNK) {
+					const batch = staleEpisodeIds.slice(i, i + CHUNK);
+					const cleared = await app.prisma.episodeFileCache.updateMany({
+						where: { id: { in: batch } },
+						data: {
+							torrentState: null,
+							torrentRatio: null,
+							torrentSyncedAt: null,
+						},
+					});
+					userCleared += cleared.count;
+				}
 				result.rowsCleared += userCleared;
 				userRowsCleared += userCleared;
 			} catch (error) {
+				userErrors++;
+				result.errors++;
 				log.warn({ err: error, userId }, "qui torrent-state sync: stale-state cleanup failed");
 			}
 		}

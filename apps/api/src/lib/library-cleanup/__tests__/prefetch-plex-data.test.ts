@@ -12,7 +12,11 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
-import { prefetchPlexData } from "../cleanup-executor.js";
+import { plexConnectionFingerprint } from "../../plex/service-instance-fingerprint.js";
+import {
+	prefetchFreshPlexEpisodeWatchData,
+	prefetchPlexData,
+} from "../cleanup-executor.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
 function makePlexRow(overrides: {
@@ -153,5 +157,109 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 		expect(findManySpy).toHaveBeenCalledTimes(1);
 		expect(map?.size).toBe(1);
+	});
+});
+
+describe("prefetchFreshPlexEpisodeWatchData", () => {
+	it("ignores fresh-looking evidence produced by the pre-repoint Plex connection", async () => {
+		const now = new Date("2026-07-30T12:00:00.000Z");
+		const warnings: string[] = [];
+		const currentInstance = {
+			id: "plex-inst-1",
+			service: "PLEX",
+			enabled: true,
+			baseUrl: "http://new-plex.internal:32400",
+			encryptedApiKey: "new-encrypted-token",
+			encryptionIv: "new-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			updatedAt: new Date("2026-07-30T11:30:00.000Z"),
+		};
+		const oldFingerprint = plexConnectionFingerprint({
+			...currentInstance,
+			baseUrl: "http://old-plex.internal:32400",
+			encryptedApiKey: "old-encrypted-token",
+			encryptionIv: "old-iv",
+		} as never);
+		const prisma = {
+			plexEpisodeCache: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "plex-inst-1",
+						showTmdbId: 42,
+						seasonNumber: 1,
+						episodeNumber: 2,
+						watchCount: 1,
+						lastWatchedAt: now,
+						watchedByUsers: "[]",
+						ratingKey: "episode-123",
+						// This timestamp is after the repoint. It models an old
+						// in-flight refresh committing after settings changed.
+						refreshedAt: new Date("2026-07-30T11:45:00.000Z"),
+						sourceFingerprint: oldFingerprint,
+					},
+				]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await prefetchFreshPlexEpisodeWatchData(
+			{ prisma, log } as CleanupExecutorDeps,
+			[currentInstance] as never,
+			now,
+			warnings,
+		);
+
+		expect(result).toEqual(new Map());
+		expect(warnings).toContainEqual(expect.stringContaining("stale Plex episode watch"));
+	});
+
+	it("accepts fresh episode evidence bound to the current Plex connection", async () => {
+		const now = new Date("2026-07-30T12:00:00.000Z");
+		const warnings: string[] = [];
+		const currentInstance = {
+			id: "plex-inst-1",
+			service: "PLEX",
+			enabled: true,
+			baseUrl: "http://plex.internal:32400",
+			encryptedApiKey: "encrypted-token",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			updatedAt: new Date("2026-07-30T10:00:00.000Z"),
+		};
+		const prisma = {
+			plexEpisodeCache: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "plex-inst-1",
+						showTmdbId: 42,
+						seasonNumber: 1,
+						episodeNumber: 2,
+						watchCount: 3,
+						lastWatchedAt: now,
+						watchedByUsers: '["Viewer"]',
+						ratingKey: "episode-123",
+						refreshedAt: new Date("2026-07-30T11:45:00.000Z"),
+						sourceFingerprint: plexConnectionFingerprint(currentInstance as never),
+					},
+				]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await prefetchFreshPlexEpisodeWatchData(
+			{ prisma, log } as CleanupExecutorDeps,
+			[currentInstance] as never,
+			now,
+			warnings,
+		);
+
+		expect(result.get("42:1:2")).toEqual([
+			expect.objectContaining({
+				plexInstanceId: "plex-inst-1",
+				ratingKey: "episode-123",
+				watchCount: 3,
+			}),
+		]);
+		expect(warnings).toEqual([]);
 	});
 });

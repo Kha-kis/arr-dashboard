@@ -102,6 +102,50 @@ interface ExplainTarget {
 	title: string;
 }
 
+interface EpisodeDisplayFields {
+	targetScope?: "series" | "episode";
+	seasonNumber?: number | null;
+	episodeNumber?: number | null;
+	episodeTitle?: string | null;
+}
+
+function formatEpisodeIdentifier(item: EpisodeDisplayFields): string | null {
+	if (
+		item.targetScope !== "episode" ||
+		item.seasonNumber === null ||
+		item.seasonNumber === undefined ||
+		item.episodeNumber === null ||
+		item.episodeNumber === undefined
+	) {
+		return null;
+	}
+	return `S${String(item.seasonNumber).padStart(2, "0")}E${String(item.episodeNumber).padStart(2, "0")}`;
+}
+
+function EpisodeIdentity({
+	item,
+	incognitoMode,
+}: {
+	item: EpisodeDisplayFields;
+	incognitoMode: boolean;
+}) {
+	const identifier = formatEpisodeIdentifier(item);
+	if (!identifier) return null;
+
+	return (
+		<p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+			<span className="rounded border border-border/50 bg-muted/40 px-1.5 py-0.5 font-mono font-medium text-foreground">
+				{identifier}
+			</span>
+			{item.episodeTitle && (
+				<span className="truncate">
+					{incognitoMode ? getLinuxIsoName(item.episodeTitle) : item.episodeTitle}
+				</span>
+			)}
+		</p>
+	);
+}
+
 export function LibraryCleanupClient() {
 	const { gradient } = useThemeGradient();
 	const [activeTab, setActiveTab] = useState<Tab>("config");
@@ -659,6 +703,7 @@ function ConfigTab({
 							<div className="max-h-80 overflow-y-auto space-y-2">
 								{previewData.items.map((item, i) => {
 									const score = extractStalenessScore(item.reason);
+									const episodeItem = item as typeof item & EpisodeDisplayFields;
 									const ruleSummary = incognitoMode
 										? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
 										: `${item.matchedRuleName}: ${item.reason}`;
@@ -674,6 +719,7 @@ function ConfigTab({
 													</span>
 													<QuiStatusBadge status={item.quiStatus} />
 												</div>
+												<EpisodeIdentity item={episodeItem} incognitoMode={incognitoMode} />
 												{item.action === "skipped" && (
 													<p className="mt-1 text-xs text-muted-foreground">{ruleSummary}</p>
 												)}
@@ -826,6 +872,9 @@ function ConfigTab({
 											Protection
 										</span>
 									)}
+									<StatusBadge status={rule.targetScope === "episode" ? "info" : "default"}>
+										{rule.targetScope === "episode" ? "Episode target" : "Series target"}
+									</StatusBadge>
 									{rule.action && rule.action !== "delete" && !rule.retentionMode && (
 										<StatusBadge status={rule.action === "unmonitor" ? "warning" : "info"}>
 											{rule.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
@@ -1136,6 +1185,10 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 												</StatusBadge>
 											)}
 										</div>
+										<EpisodeIdentity
+											item={item as typeof item & EpisodeDisplayFields}
+											incognitoMode={incognitoMode}
+										/>
 										<p className="text-xs text-muted-foreground mt-0.5">
 											{incognitoMode
 												? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`

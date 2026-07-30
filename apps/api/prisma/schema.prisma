@@ -1242,6 +1242,7 @@ model LibraryCleanupRule {
   excludeTags       String?                    // JSON array of tag names to exclude
   excludeTitles     String?                    // JSON array of title patterns to exclude
   plexLibraryFilter String?                    // JSON array of Plex section names
+  targetScope       String   @default("series") // "series" | "episode"
   action            String   @default("delete") // "delete" | "unmonitor" | "delete_files"
   operator          String?                    // "AND" | "OR" for composite rules
   conditions        String?                    // JSON array of sub-conditions
@@ -1271,6 +1272,11 @@ model LibraryCleanupApproval {
   instanceId      String                       // Denormalized for quick lookup
   arrItemId       Int
   itemType        LibraryItemType              // movie | series
+  targetScope     String    @default("series") // "series" | "episode"
+  arrEpisodeId    Int?
+  seasonNumber    Int?
+  episodeNumber   Int?
+  episodeTitle    String?
   title           String
   matchedRuleId   String
   matchedRuleName String                       // Denormalized
@@ -1472,6 +1478,13 @@ model PlexEpisodeCache {
   watched         Boolean
   watchedByUsers  String                       // JSON array of usernames
   lastWatchedAt   DateTime?
+  /// Conservative lower bound from Plex's episode viewCount and the bounded
+  /// history window. Null means this row predates count-aware refresh.
+  watchCount      Int?
+  refreshedAt     DateTime?
+  /// SHA-256 digest of the Plex connection snapshot that produced this row.
+  /// Null means the row predates connection-bound refresh evidence.
+  sourceFingerprint String?
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
@@ -1563,7 +1576,7 @@ model CacheRefreshStatus {
   instanceId       String
   cacheType        String    // "plex" | "tautulli" | "plex_episode"
   lastRefreshedAt  DateTime
-  lastResult       String    // "success" | "error"
+  lastResult       String    // "success" | "partial" | "error"
   lastErrorMessage String?
   itemCount        Int       @default(0)
 

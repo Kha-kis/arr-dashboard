@@ -4,17 +4,18 @@
  * CRUD for cleanup config, rules, approval queue, preview, execution, and logs.
  */
 
+import { randomUUID } from "node:crypto";
 import {
 	bulkApprovalSchema,
 	cleanupExplainRequestSchema,
 	createCleanupRuleSchema,
+	getCleanupRuleScopeValidationError,
 	reorderRulesSchema,
 	ruleParamSchemaMap,
 	updateCleanupConfigSchema,
 	updateCleanupRuleSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
-import { randomUUID } from "node:crypto";
 import {
 	buildEvalContext,
 	CleanupPolicyMutationConflictError,
@@ -31,6 +32,11 @@ import {
 } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { explainItemAgainstRules } from "../lib/library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval } from "../lib/library-cleanup/types.js";
+import {
+	buildFreshCompleteFileIdIndex,
+	getAllHashesForFileIdComplete,
+} from "../lib/library-sync/infohash-backfill-by-inode.js";
+import { createQuiClient } from "../lib/qui/client-factory.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { safeJsonParse as utilSafeJsonParse } from "../lib/utils/json.js";
 import { parsePaginationQuery } from "../lib/utils/pagination.js";
@@ -77,7 +83,7 @@ function serializeConfig(config: Record<string, unknown>) {
 	};
 }
 
-function serializeRule(rule: Record<string, unknown>) {
+export function serializeRule(rule: Record<string, unknown>) {
 	return {
 		id: rule.id,
 		name: rule.name,
@@ -90,6 +96,7 @@ function serializeRule(rule: Record<string, unknown>) {
 		excludeTags: safeJsonParse(rule.excludeTags as string | null),
 		excludeTitles: safeJsonParse(rule.excludeTitles as string | null),
 		plexLibraryFilter: safeJsonParse(rule.plexLibraryFilter as string | null),
+		targetScope: rule.targetScope === "episode" ? "episode" : "series",
 		action: (rule.action as string) ?? "delete",
 		operator: (rule.operator as string) ?? null,
 		conditions: safeJsonParse(rule.conditions as string | null),
@@ -107,6 +114,12 @@ export function serializeApproval(a: Record<string, unknown>) {
 		instanceId: a.instanceId,
 		arrItemId: a.arrItemId,
 		itemType: a.itemType,
+		targetScope: a.targetScope === "episode" ? "episode" : "series",
+		arrEpisodeId: (a.arrEpisodeId as number | null) ?? null,
+		seasonNumber: (a.seasonNumber as number | null) ?? null,
+		episodeNumber: (a.episodeNumber as number | null) ?? null,
+		seriesTitle: (a.title as string | null) ?? null,
+		episodeTitle: (a.episodeTitle as string | null) ?? null,
 		title: a.title,
 		matchedRuleId: a.matchedRuleId,
 		matchedRuleName: a.matchedRuleName,
@@ -163,6 +176,15 @@ const fieldOptionsCache = new Map<string, { data: unknown; expiresAt: number }>(
 const FIELD_OPTIONS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	const quiFileHashIndexFactory = async (
+		instance: Parameters<typeof createQuiClient>[1],
+	) => {
+		const client = createQuiClient(app, instance);
+		const index = await buildFreshCompleteFileIdIndex(client, instance, app.log);
+		return {
+			resolve: (path: string) => getAllHashesForFileIdComplete(path, index),
+		};
+	};
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
 			return reply.status(401).send({ error: "Authentication required" });
@@ -515,12 +537,13 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						instanceFilter: data.instanceFilter ? JSON.stringify(data.instanceFilter) : null,
 						excludeTags: data.excludeTags ? JSON.stringify(data.excludeTags) : null,
 						excludeTitles: data.excludeTitles ? JSON.stringify(data.excludeTitles) : null,
-						plexLibraryFilter: data.plexLibraryFilter
+						plexLibraryFilter: data.plexLibraryFilter?.length
 							? JSON.stringify(data.plexLibraryFilter)
 							: null,
+						targetScope: data.targetScope ?? "series",
 						action: data.action ?? "delete",
 						operator: data.operator ?? null,
-						conditions: data.conditions ? JSON.stringify(data.conditions) : null,
+						conditions: data.conditions?.length ? JSON.stringify(data.conditions) : null,
 						retentionMode: data.retentionMode ?? false,
 						useGlobalRejectionMemory: data.useGlobalRejectionMemory ?? true,
 						// `?? 0` would collapse a deliberate `null` (forever) to `0` (off),
@@ -622,6 +645,29 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						ruleType: string;
 						parameters: Record<string, unknown>;
 					}> | null);
+		const effectiveTargetScope =
+			data.targetScope ?? (existing.targetScope === "episode" ? "episode" : "series");
+		const effectiveServiceFilter =
+			data.serviceFilter !== undefined
+				? data.serviceFilter
+				: (utilSafeJsonParse(existing.serviceFilter ?? "") as string[] | null);
+		const effectivePlexLibraryFilter =
+			data.plexLibraryFilter !== undefined
+				? data.plexLibraryFilter
+				: (utilSafeJsonParse(existing.plexLibraryFilter ?? "") as string[] | null);
+		const scopeValidationError = getCleanupRuleScopeValidationError({
+			targetScope: effectiveTargetScope,
+			serviceFilter: effectiveServiceFilter,
+			plexLibraryFilter: effectivePlexLibraryFilter,
+			retentionMode: data.retentionMode ?? existing.retentionMode,
+			ruleType: effectiveRuleType,
+			parameters: effectiveParams ?? {},
+			operator: data.operator !== undefined ? data.operator : existing.operator,
+			conditions: effectiveConditions ?? null,
+		});
+		if (scopeValidationError) {
+			return reply.status(400).send({ error: scopeValidationError });
+		}
 		if (
 			data.ruleType !== undefined ||
 			data.parameters !== undefined ||
@@ -652,13 +698,14 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		if (data.excludeTitles !== undefined)
 			updateData.excludeTitles = data.excludeTitles ? JSON.stringify(data.excludeTitles) : null;
 		if (data.plexLibraryFilter !== undefined)
-			updateData.plexLibraryFilter = data.plexLibraryFilter
+			updateData.plexLibraryFilter = data.plexLibraryFilter?.length
 				? JSON.stringify(data.plexLibraryFilter)
 				: null;
+		if (data.targetScope !== undefined) updateData.targetScope = data.targetScope;
 		if (data.action !== undefined) updateData.action = data.action;
 		if (data.operator !== undefined) updateData.operator = data.operator ?? null;
 		if (data.conditions !== undefined)
-			updateData.conditions = data.conditions ? JSON.stringify(data.conditions) : null;
+			updateData.conditions = data.conditions?.length ? JSON.stringify(data.conditions) : null;
 		if (data.retentionMode !== undefined) updateData.retentionMode = data.retentionMode;
 		if (data.useGlobalRejectionMemory !== undefined)
 			updateData.useGlobalRejectionMemory = data.useGlobalRejectionMemory;
@@ -723,6 +770,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						prisma: app.prisma,
 						arrClientFactory: app.arrClientFactory,
 						encryptor: app.encryptor,
+						quiClientFactory: (instance) => createQuiClient(app, instance),
+						quiFileHashIndexFactory,
 						log: request.log,
 					},
 					userId,
@@ -756,8 +805,11 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				const quiStatusByKey = new Map<string, "seeding" | "paused_or_error" | "not_in_qui">();
 				try {
 					if (previewDetails.length > 0) {
-						const instanceIds = [...new Set(previewDetails.map((d) => d.instanceId))];
-						const itemIds = [...new Set(previewDetails.map((d) => d.arrItemId))];
+						const seriesDetails = previewDetails.filter(
+							(detail) => detail.targetScope !== "episode",
+						);
+						const instanceIds = [...new Set(seriesDetails.map((d) => d.instanceId))];
+						const itemIds = [...new Set(seriesDetails.map((d) => d.arrItemId))];
 						const rows = await app.prisma.libraryCache.findMany({
 							where: {
 								instance: { userId },
@@ -792,6 +844,48 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 							}
 							quiStatusByKey.set(key, status);
 						}
+						const episodeDetails = previewDetails.filter(
+							(detail) =>
+								detail.targetScope === "episode" &&
+								typeof detail.episodeFileId === "number",
+						);
+						if (episodeDetails.length > 0) {
+							const episodeInstanceIds = [
+								...new Set(episodeDetails.map((detail) => detail.instanceId)),
+							];
+							const episodeFileIds = [
+								...new Set(
+									episodeDetails
+										.map((detail) => detail.episodeFileId)
+										.filter((id): id is number => typeof id === "number"),
+								),
+							];
+							const episodeRows = await app.prisma.episodeFileCache.findMany({
+								where: {
+									instance: { userId },
+									instanceId: { in: episodeInstanceIds },
+									arrEpisodeFileId: { in: episodeFileIds },
+								},
+								select: {
+									instanceId: true,
+									arrEpisodeFileId: true,
+									infoHash: true,
+									torrentState: true,
+								},
+							});
+							for (const row of episodeRows) {
+								if (!row.infoHash) continue;
+								const key = `${row.instanceId}|episode-file|${row.arrEpisodeFileId}`;
+								if (!row.torrentState) quiStatusByKey.set(key, "not_in_qui");
+								else if (row.torrentState === "seeding")
+									quiStatusByKey.set(key, "seeding");
+								else if (
+									row.torrentState === "paused" ||
+									row.torrentState === "error"
+								)
+									quiStatusByKey.set(key, "paused_or_error");
+							}
+						}
 					}
 				} catch (err) {
 					// Non-fatal. Surface in logs only; items render with no qui badge.
@@ -807,12 +901,21 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					pendingRetryCount: result.pendingRetryCount ?? 0,
 					items: previewDetails.map((d) => {
 						const itemType = d.itemType ?? "movie";
-						const key = `${d.instanceId}|${d.arrItemId}|${itemType.toLowerCase()}`;
+						const key =
+							d.targetScope === "episode" && typeof d.episodeFileId === "number"
+								? `${d.instanceId}|episode-file|${d.episodeFileId}`
+								: `${d.instanceId}|${d.arrItemId}|${itemType.toLowerCase()}`;
 						return {
 							instanceId: d.instanceId,
 							instanceLabel: instanceLabelMap.get(d.instanceId) ?? null,
 							arrItemId: d.arrItemId,
 							itemType,
+							targetScope: d.targetScope ?? "series",
+							arrEpisodeId: d.arrEpisodeId ?? null,
+							seasonNumber: d.seasonNumber ?? null,
+							episodeNumber: d.episodeNumber ?? null,
+							seriesTitle: d.seriesTitle ?? d.title,
+							episodeTitle: d.episodeTitle ?? null,
 							title: d.title,
 							matchedRuleName: d.rule,
 							reason: d.reason,
@@ -859,6 +962,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						prisma: app.prisma,
 						arrClientFactory: app.arrClientFactory,
 						encryptor: app.encryptor,
+						quiClientFactory: (instance) => createQuiClient(app, instance),
+						quiFileHashIndexFactory,
 						log: request.log,
 					},
 					userId,
@@ -980,6 +1085,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 							prisma: app.prisma,
 							arrClientFactory: app.arrClientFactory,
 							encryptor: app.encryptor,
+							quiClientFactory: (instance) => createQuiClient(app, instance),
+							quiFileHashIndexFactory,
 							log: request.log,
 						},
 						userId,
@@ -1012,6 +1119,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						prisma: app.prisma,
 						arrClientFactory: app.arrClientFactory,
 						encryptor: app.encryptor,
+						quiClientFactory: (instance) => createQuiClient(app, instance),
+						quiFileHashIndexFactory,
 						log: request.log,
 					},
 					userId,
@@ -1092,6 +1201,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						prisma: app.prisma,
 						arrClientFactory: app.arrClientFactory,
 						encryptor: app.encryptor,
+						quiClientFactory: (instance) => createQuiClient(app, instance),
+						quiFileHashIndexFactory,
 						log: request.log,
 					},
 					userId,
