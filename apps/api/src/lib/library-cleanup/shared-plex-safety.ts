@@ -1313,14 +1313,16 @@ export async function assertVerifiedSonarrEpisodeUnchanged(
 		includeEpisodeFile: true,
 	})) as unknown as Array<Record<string, unknown>>;
 	const selected = episodes.find((episode) => episode.id === plan.episode.arrEpisodeId);
-	const currentMonitored = selected?.monitored === true;
+	const currentMonitored =
+		typeof selected?.monitored === "boolean" ? selected.monitored : null;
 	const monitoredMatches =
-		options.monitoredMode === "require_unmonitored"
+		currentMonitored !== null &&
+		(options.monitoredMode === "require_unmonitored"
 			? currentMonitored === false
 			: options.monitoredMode === "allow_unmonitored"
 				? currentMonitored === plan.episode.monitored ||
 					(plan.episode.monitored === true && currentMonitored === false)
-				: currentMonitored === plan.episode.monitored;
+				: currentMonitored === plan.episode.monitored);
 	if (
 		!selected ||
 		selected.seasonNumber !== plan.episode.seasonNumber ||
@@ -3330,6 +3332,11 @@ export async function findSharedPlexDeleteBlocks(
 				if (!selectedEpisode) {
 					throw new FileMatchVerificationError("Target Sonarr episode identity changed");
 				}
+				if (typeof selectedEpisode.monitored !== "boolean") {
+					throw new FileMatchVerificationError(
+						"Target Sonarr episode monitored state is unavailable",
+					);
+				}
 				const selectedEpisodeFileId = requiredPositiveSafeInteger(
 					selectedEpisode.episodeFileId,
 					"Target Sonarr episode file ID",
@@ -3406,7 +3413,7 @@ export async function findSharedPlexDeleteBlocks(
 						episodeNumber: requestedEpisodeNumber,
 						episodeFileId: selectedEpisodeFileId,
 						episodeFileConsumerIds: consumerIds,
-						monitored: selectedEpisode.monitored === true,
+						monitored: selectedEpisode.monitored,
 					},
 					selectedFile,
 					retainedTargetFiles: verifiedFiles.episodeFiles.filter(

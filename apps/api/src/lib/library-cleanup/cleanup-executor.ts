@@ -4124,7 +4124,8 @@ async function evaluateSeriesEpisodes(
 			episodeNumber <= 0 ||
 			typeof episodeFileId !== "number" ||
 			!Number.isSafeInteger(episodeFileId) ||
-			episodeFileId <= 0
+			episodeFileId <= 0 ||
+			typeof raw.monitored !== "boolean"
 		) {
 			continue;
 		}
@@ -4153,7 +4154,7 @@ async function evaluateSeriesEpisodes(
 			),
 			seriesTitle: item.title,
 			episodeTitle: typeof raw.title === "string" && raw.title.trim() ? raw.title : "Episode",
-			monitored: raw.monitored === true,
+			monitored: raw.monitored,
 			respectQuiSeeding,
 			watchCount: watchEvidence[0]!.watchCount,
 			lastWatchedAt: watchEvidence[0]!.lastWatchedAt,

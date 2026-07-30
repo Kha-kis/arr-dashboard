@@ -4297,6 +4297,49 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.deleteSeries).not.toHaveBeenCalled();
 	});
 
+	it("fails closed when Sonarr omits the selected episode monitored state", async () => {
+		const episodes = [
+			{
+				id: 9_001,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				episodeFileId: 3_001,
+				monitored: false,
+			},
+			{
+				id: 9_002,
+				seasonNumber: 1,
+				episodeNumber: 2,
+				episodeFileId: 3_002,
+				monitored: true,
+			},
+		];
+		const fixture = makeSonarrDeps({ episodes });
+		const episodeTarget = { ...exactEpisodeTarget(), action: "delete_files" as const };
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		(episodes[0] as unknown as Record<string, unknown>).monitored = undefined;
+		configureApprovalStore(fixture.deps, {
+			...approval("delete_files"),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		});
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+	});
+
 	it("blocks an episode file write if the user re-monitors after cleanup unmonitors it", async () => {
 		const fixture = makeSonarrDeps();
 		const episodeTarget = exactEpisodeTarget();

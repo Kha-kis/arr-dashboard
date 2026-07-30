@@ -767,6 +767,27 @@ describe("multi-hash per FileID (cross-seed visibility)", () => {
 		);
 	});
 
+	it("complete resolver finds a single-link qUI content file used directly by the library", async () => {
+		stageFile("/data/torrents/foo.mkv", 61, 54321, 1);
+		const client = makeFakeClient([
+			makeQuiTorrent({
+				hash: "single-link-hash",
+				name: "foo.mkv",
+				savePath: "/data/torrents",
+			}),
+		]);
+
+		const index = await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
+
+		expect(index.byFileId.get("61:54321")).toEqual(new Set(["single-link-hash"]));
+		await expect(
+			getAllHashesForFileIdComplete("/data/torrents/foo.mkv", index),
+		).resolves.toEqual({
+			hashes: ["single-link-hash"],
+			complete: true,
+		});
+	});
+
 	it("complete resolver fails closed when the target inode changes after indexing", async () => {
 		stageFile("/data/media/foo.mkv", 61, 12345, 3);
 		const client = makeFakeClient([

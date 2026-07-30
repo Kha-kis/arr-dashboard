@@ -15,9 +15,10 @@
  *
  *  - qui's `FileID` = `{Dev, Ino}` on Unix; ours is the string `"dev:ino"`
  *    for use as a JS Map key (Node has no comparable struct primitive).
- *  - qui's `LinkInfo` returns `(fileID, nlink, err)`; we early-out when
- *    `nlink == 1` because a file with one link has no hardlinks elsewhere
- *    and can't correlate to anything.
+ *  - qui's `LinkInfo` returns `(fileID, nlink, err)`; display/backfill
+ *    indexes skip `nlink == 1` because those files cannot correlate to a
+ *    separate hardlink. Destructive verification also indexes them so a
+ *    library path that is the qBit content file itself remains visible.
  *  - qui's `addTorrentFilesToFileIDIndex` walks each torrent's FILE list
  *    (from qBit's API) and stats every file. We do the same by walking
  *    the directory tree under each torrent's content path — when the
@@ -447,10 +448,11 @@ export async function buildFileIdIndex(
  * Build an uncached inode snapshot suitable for destructive authorization.
  *
  * Unlike `buildFileIdIndex`, this never consumes the 30-minute in-memory or
- * persisted snapshot. It also refuses to return an index when any torrent
- * root or directory inventory could not be examined completely. A missing
- * entry is safe for display/backfill heuristics, but is not proof that a
- * newly added cross-seed does not own the target file.
+ * persisted snapshot. It indexes single-link torrent files as well as
+ * hardlinks, and refuses to return an index when any torrent root or directory
+ * inventory could not be examined completely. A missing entry is safe for
+ * display/backfill heuristics, but is not proof that a newly added cross-seed
+ * or same-file torrent does not own the target file.
  */
 export async function buildFreshCompleteFileIdIndex(
 	client: QuiClient,
@@ -539,14 +541,20 @@ async function doBuildFileIdIndex(
 			}
 
 			if (rootInfo.kind === "file") {
-				if (rootInfo.nlink < 2) {
+				if (rootInfo.nlink < 2 && !requireStableSnapshot) {
 					skippedNoLinks++;
 				} else {
 					addHash(`${rootInfo.dev}:${rootInfo.ino}`, torrent.hash, rootInfo);
 					statted++;
 				}
 			} else if (rootInfo.kind === "directory") {
-				const stats = await indexDirectoryFiles(rootPath, torrent.hash, addHash, stabilityMarkers);
+				const stats = await indexDirectoryFiles(
+					rootPath,
+					torrent.hash,
+					addHash,
+					stabilityMarkers,
+					requireStableSnapshot,
+				);
 				statted += stats.statted;
 				skippedNoLinks += stats.skippedNoLinks;
 				if (!stats.complete) incompleteDirectoryWalks++;
@@ -651,6 +659,7 @@ async function indexDirectoryFiles(
 	hash: string,
 	addHash: (key: string, hash: string, info: StatInfo) => void,
 	stabilityMarkers?: Map<string, FileSystemMarker>,
+	includeSingleLinks = false,
 ): Promise<{ statted: number; skippedNoLinks: number; complete: boolean }> {
 	let statted = 0;
 	let skippedNoLinks = 0;
@@ -716,7 +725,7 @@ async function indexDirectoryFiles(
 			continue;
 		}
 		if (info.kind !== "file") continue;
-		if (info.nlink < 2) {
+		if (info.nlink < 2 && !includeSingleLinks) {
 			skippedNoLinks++;
 			continue;
 		}
@@ -828,7 +837,6 @@ export async function getAllHashesForFileIdComplete(
 	if (info.kind !== "file") {
 		throw new Error("Target media path is not a file");
 	}
-	if (info.nlink < 2) return { hashes: [], complete: true };
 	const fileId = `${info.dev}:${info.ino}`;
 	const hashes = Array.from(index.byFileId.get(fileId) ?? []);
 	const marker = index.inodeMarkers?.get(fileId);
