@@ -32,6 +32,7 @@ import {
 	assertVerifiedRadarrFileUnchanged,
 	assertVerifiedRadarrPeerOwnershipRetained,
 	assertVerifiedSonarrFilesUnchanged,
+	assertVerifiedSonarrPeerInventoryUnchanged,
 	assertVerifiedSonarrPeerOwnershipRetained,
 	buildCacheTargetSafetyPlan,
 	buildRadarrCacheSafetyPlan,
@@ -694,29 +695,13 @@ async function loadCurrentMutationInstance(
 			const peerClient = deps.arrClientFactory.create(peerInstance) as InstanceType<
 				typeof SonarrClient
 			>;
-			const peerSeries = (await peerClient.series.getAll({ tvdbId: peer.externalId })).filter(
-				(series) => series.tvdbId === peer.externalId,
+			const peerSeriesCatalog = await peerClient.series.getAll();
+			await assertVerifiedSonarrPeerInventoryUnchanged(
+				peerClient,
+				peer,
+				executablePlan.ownership,
+				peerSeriesCatalog,
 			);
-			if (peer.arrItemId === null) {
-				if (peerSeries.length !== 0) {
-					throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
-				}
-				continue;
-			}
-			if (
-				peerSeries.length !== 1 ||
-				peerSeries[0]?.id !== peer.arrItemId ||
-				peer.mediaPath === null ||
-				peer.files === null
-			) {
-				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
-			}
-			const peerTarget = {
-				serviceFingerprint: peer.serviceFingerprint,
-				externalId: peer.externalId,
-				mediaPath: peer.mediaPath,
-			};
-			await assertVerifiedSonarrFilesUnchanged(peerClient, peer.arrItemId, peerTarget, peer.files);
 		}
 	}
 	return instance;

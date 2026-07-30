@@ -15,6 +15,7 @@ import {
 	type PlexClient,
 	type PlexMovieMediaItem,
 	type PlexSeriesMediaItem,
+	PlexSeriesNotFoundError,
 } from "../plex/plex-client.js";
 import type { ServiceInstance } from "../prisma.js";
 
@@ -112,6 +113,7 @@ export interface VerifiedSonarrPlexOwnership {
 
 export interface VerifiedSonarrTargetDeleteNotification {
 	plexServerUrl: string;
+	onSeriesDelete: boolean;
 	onEpisodeFileDelete: boolean;
 	mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
 }
@@ -404,6 +406,8 @@ function canonicalSonarrTargetDeleteNotifications(
 		const mapping = notification.mapping as Record<string, unknown> | null | undefined;
 		return {
 			plexServerUrl: normalizedUrl,
+			onSeriesDelete:
+				notification.onSeriesDelete === undefined ? true : notification.onSeriesDelete === true,
 			onEpisodeFileDelete: notification.onEpisodeFileDelete === true,
 			mapping:
 				mapping === null
@@ -1083,11 +1087,19 @@ function mappedArrPathForNotification(
 	notification: NotificationLike,
 	service: "RADARR" | "SONARR",
 ): NormalizedMediaPath {
+	return mappedMediaPathForNotification(target.fullPath, notification, service);
+}
+
+function mappedMediaPathForNotification(
+	fullPath: NormalizedMediaPath,
+	notification: NotificationLike,
+	service: "RADARR" | "SONARR",
+): NormalizedMediaPath {
 	const rawMapFrom = fieldValue(notification, "mapFrom");
 	const rawMapTo = fieldValue(notification, "mapTo");
 	const hasMapFrom = typeof rawMapFrom === "string" && rawMapFrom.trim() !== "";
 	const hasMapTo = typeof rawMapTo === "string" && rawMapTo.trim() !== "";
-	if (!hasMapFrom && !hasMapTo) return target.fullPath;
+	if (!hasMapFrom && !hasMapTo) return fullPath;
 	if (!hasMapFrom || !hasMapTo) {
 		throw new FileMatchVerificationError(
 			`${serviceLabel(service)} Plex path mapping is incomplete`,
@@ -1096,21 +1108,22 @@ function mappedArrPathForNotification(
 
 	const mapFrom = normalizeMediaPath(rawMapFrom);
 	const mapTo = normalizeMediaPath(rawMapTo);
-	if (mapFrom.windows !== target.fullPath.windows) {
+	if (mapFrom.windows !== fullPath.windows) {
 		throw new FileMatchVerificationError(
 			`${serviceLabel(service)} Plex source mapping uses a different path type`,
 		);
 	}
-	const caseInsensitive = target.fullPath.windows;
-	const targetPath = comparablePath(target.fullPath, caseInsensitive);
+	const caseInsensitive = fullPath.windows;
+	const targetPath = comparablePath(fullPath, caseInsensitive);
 	const sourceValue = mapFrom.value.replace(/\/+$/, "");
 	const sourcePrefix = comparablePath({ ...mapFrom, value: sourceValue }, caseInsensitive);
-	if (!targetPath.startsWith(`${sourcePrefix}/`)) {
+	if (targetPath !== sourcePrefix && !targetPath.startsWith(`${sourcePrefix}/`)) {
 		throw new FileMatchVerificationError(
 			`${serviceLabel(service)} path is outside its Plex source mapping`,
 		);
 	}
-	const relativePath = target.fullPath.value.slice(sourceValue.length + 1);
+	if (targetPath === sourcePrefix) return mapTo;
+	const relativePath = fullPath.value.slice(sourceValue.length + 1);
 	return normalizeMediaPath(`${mapTo.value.replace(/\/+$/, "")}/${relativePath}`);
 }
 
@@ -1406,12 +1419,14 @@ function radarrTargetDeleteNotificationWitnesses(
 function sonarrTargetDeleteNotificationWitnesses(
 	notifications: SonarrNotification[],
 	series: Series,
+	action: string,
+	seriesDeleteOnly = false,
 ): VerifiedSonarrTargetDeleteNotification[] {
 	const witnesses = notifications
 		.filter(
 			(notification) =>
-				sonarrNotificationApplies(notification, series, "delete") &&
-				notification.onSeriesDelete === true,
+				sonarrNotificationApplies(notification, series, action) &&
+				(!seriesDeleteOnly || notification.onSeriesDelete === true),
 		)
 		.map((notification) => {
 			if (mediaServerNotificationKind(notification) !== "plex") {
@@ -1425,6 +1440,7 @@ function sonarrTargetDeleteNotificationWitnesses(
 			}
 			return {
 				plexServerUrl,
+				onSeriesDelete: notification.onSeriesDelete === true,
 				onEpisodeFileDelete: notification.onEpisodeFileDelete === true,
 				mapping: notificationPathMapping(notification, "Sonarr target"),
 			};
@@ -1602,18 +1618,18 @@ function matchingPeerPlexPart(
 	return [...matches.values()][0]!;
 }
 
-function matchingSonarrPeerPlexParts(
-	peer: NonNullable<PlexVerificationInput["sonarrPeers"]>[number],
-	items: PlexSeriesMediaItem[],
+function mappedSonarrPeerFileCandidate(
+	files: MediaFileIdentity[],
+	seriesTags: number[],
+	notifications: SonarrNotification[],
 	notificationUrl: string,
-): Array<{
-	show: PlexSeriesMediaItem;
-	part: { file: string; size: number };
+): {
 	mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
-}> {
-	if (!peer.identity.files) return [];
+	files: MediaFileIdentity[];
+	hasExplicitServerCorrelation: boolean;
+} {
 	const serverNotifications: SonarrNotification[] = [];
-	for (const notification of peer.notifications) {
+	for (const notification of notifications) {
 		if (mediaServerNotificationKind(notification) !== "plex") continue;
 		let peerUrl: string | null = null;
 		try {
@@ -1627,7 +1643,7 @@ function matchingSonarrPeerPlexParts(
 		(notification) =>
 			(notification as NotificationLike).enable !== false &&
 			notificationMutatesLibrary(notification) &&
-			notificationTagsApply(notification, peer.seriesTags),
+			notificationTagsApply(notification, seriesTags),
 	);
 	const unusableConfiguredMapping = serverNotifications.some((notification) => {
 		const rawMapFrom = fieldValue(notification, "mapFrom");
@@ -1649,30 +1665,50 @@ function matchingSonarrPeerPlexParts(
 			files: MediaFileIdentity[];
 		}
 	>();
-	const peerFiles = peer.identity.files.episodeFiles.map(comparableFile);
 	if (matchingNotifications.length === 0) {
-		pathCandidates.set(JSON.stringify([null, peerFiles.map((file) => file.fullPath)]), {
+		pathCandidates.set(JSON.stringify([null, files.map((file) => file.fullPath)]), {
 			mapping: null,
-			files: peerFiles,
+			files,
 		});
 	}
 	for (const notification of matchingNotifications) {
 		const mapping = notificationPathMapping(notification, "Sonarr peer");
-		const files = peerFiles.map((file) => ({
+		const mappedFiles = files.map((file) => ({
 			...file,
 			fullPath: mapping
 				? mappedArrPathForNotification(file, notification, "SONARR")
 				: file.fullPath,
 		}));
-		pathCandidates.set(JSON.stringify([mapping, files.map((file) => file.fullPath)]), {
+		pathCandidates.set(JSON.stringify([mapping, mappedFiles.map((file) => file.fullPath)]), {
 			mapping,
-			files,
+			files: mappedFiles,
 		});
 	}
 	if (pathCandidates.size !== 1) {
 		throw new FileMatchVerificationError("Sonarr peer Plex path mappings conflict");
 	}
-	const pathCandidate = [...pathCandidates.values()][0]!;
+	return {
+		...[...pathCandidates.values()][0]!,
+		hasExplicitServerCorrelation: matchingNotifications.length > 0,
+	};
+}
+
+function matchingSonarrPeerPlexParts(
+	peer: NonNullable<PlexVerificationInput["sonarrPeers"]>[number],
+	items: PlexSeriesMediaItem[],
+	notificationUrl: string,
+): Array<{
+	show: PlexSeriesMediaItem;
+	part: { file: string; size: number };
+	mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
+}> {
+	if (!peer.identity.files) return [];
+	const pathCandidate = mappedSonarrPeerFileCandidate(
+		peer.identity.files.episodeFiles.map(comparableFile),
+		peer.seriesTags,
+		peer.notifications,
+		notificationUrl,
+	);
 
 	return pathCandidate.files.map((file) => {
 		const matches = new Map<
@@ -1697,6 +1733,268 @@ function matchingSonarrPeerPlexParts(
 		}
 		return { ...[...matches.values()][0]!, mapping: pathCandidate.mapping };
 	});
+}
+
+function assertVerifiedSonarrTrackedPeerMappingUnchanged(
+	peer: VerifiedSonarrPeerIdentity,
+	series: Series | null,
+	notifications: SonarrNotification[],
+	ownership: VerifiedSonarrPlexOwnership[],
+): void {
+	for (const witness of ownership) {
+		const expected = witness.retained
+			.filter((part) => part.instanceId === peer.instanceId)
+			.map((part) => ({
+				fullPath: part.fullPath,
+				size: part.size,
+				mapping: part.mapping,
+			}))
+			.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+		if (peer.files === null) {
+			if (expected.length !== 0) {
+				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+			}
+			continue;
+		}
+		if (!series) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+		}
+		const mappedCandidate = mappedSonarrPeerFileCandidate(
+			peer.files.episodeFiles.map(comparableFile),
+			series.tags ?? [],
+			notifications,
+			witness.plexServerUrl,
+		);
+		if (
+			mappedCandidate.files.some((file) =>
+				witness.target.some((part) => pathsEqual(file.fullPath, part.fullPath)),
+			)
+		) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+		}
+		const current = mappedCandidate.files
+			.map((file) => ({
+				fullPath: file.fullPath,
+				size: file.size,
+				mapping: mappedCandidate.mapping,
+			}))
+			.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+		if (JSON.stringify(current) !== JSON.stringify(expected)) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+		}
+	}
+}
+
+/**
+ * A TVDB lookup is not a complete ownership boundary: another Sonarr may have
+ * imported the same physical file under a different or missing external ID.
+ * Inspect every untracked peer series whose mapped root can contain a target
+ * Plex part and fail closed if one of its exact episode files matches.
+ */
+const SONARR_PEER_FILE_READ_CONCURRENCY = 8;
+
+interface StableSonarrPeerInventory {
+	seriesCatalog: Series[];
+	notifications: SonarrNotification[];
+	filesBySeries: Map<number, VerifiedSonarrEpisodeFileIdentity[]>;
+}
+
+function sonarrPeerSeriesCatalogWitness(seriesCatalog: Series[]): string {
+	return JSON.stringify(
+		seriesCatalog
+			.map((series) => ({
+				id: requiredPositiveSafeInteger(series.id, "Unverified Sonarr peer series ID"),
+				tvdbId: series.tvdbId ?? null,
+				path: normalizeMediaPath(series.path),
+				tags: [...(series.tags ?? [])].sort((left, right) => left - right),
+				episodeFileCount: series.statistics?.episodeFileCount ?? null,
+				sizeOnDisk: series.statistics?.sizeOnDisk ?? null,
+			}))
+			.sort((left, right) => left.id - right.id),
+	);
+}
+
+function sonarrPeerNotificationCatalogWitness(notifications: SonarrNotification[]): string {
+	return JSON.stringify(notifications.map((notification) => JSON.stringify(notification)).sort());
+}
+
+function sonarrPeerFileCatalogWitness(
+	filesBySeries: ReadonlyMap<number, VerifiedSonarrEpisodeFileIdentity[]>,
+): string {
+	return JSON.stringify(
+		[...filesBySeries]
+			.map(([seriesId, files]) => ({
+				seriesId,
+				files: files
+					.map((file) => [
+						file.episodeFileId,
+						file.fullPath.windows,
+						comparablePath(file.fullPath, file.fullPath.windows),
+						file.size,
+					])
+					.sort((left, right) => Number(left[0]) - Number(right[0])),
+			}))
+			.sort((left, right) => left.seriesId - right.seriesId),
+	);
+}
+
+async function readSonarrPeerFilesBySeries(
+	sonarr: InstanceType<typeof SonarrClient>,
+	seriesCatalog: Series[],
+): Promise<Map<number, VerifiedSonarrEpisodeFileIdentity[]>> {
+	const seriesById = new Map<number, Series>();
+	for (const series of seriesCatalog) {
+		const seriesId = requiredPositiveSafeInteger(series.id, "Unverified Sonarr peer series ID");
+		if (seriesById.has(seriesId)) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+		}
+		seriesById.set(seriesId, series);
+	}
+	const filesBySeries = new Map<number, VerifiedSonarrEpisodeFileIdentity[]>();
+	const allSeries = [...seriesById.entries()];
+	let nextSeriesIndex = 0;
+	await Promise.all(
+		Array.from(
+			{
+				length: Math.min(SONARR_PEER_FILE_READ_CONCURRENCY, allSeries.length),
+			},
+			async () => {
+				while (nextSeriesIndex < allSeries.length) {
+					const [seriesId, series] = allSeries[nextSeriesIndex++]!;
+					const files = (await sonarr.episodeFile.getBySeries(seriesId)).map((file) => {
+						if (
+							requiredPositiveSafeInteger(
+								file.seriesId ?? seriesId,
+								"Unverified Sonarr episode file series ID",
+							) !== seriesId
+						) {
+							throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+						}
+						return sonarrEpisodeFileIdentity(series, file);
+					});
+					filesBySeries.set(seriesId, files);
+				}
+			},
+		),
+	);
+	return filesBySeries;
+}
+
+async function readStableSonarrPeerInventory(
+	sonarr: InstanceType<typeof SonarrClient>,
+	initialSeriesCatalog?: Series[],
+	initialNotifications?: SonarrNotification[],
+): Promise<StableSonarrPeerInventory> {
+	const seriesCatalog = initialSeriesCatalog ?? (await sonarr.series.getAll());
+	const notifications = initialNotifications ?? (await sonarr.notification.getAll());
+	const firstFilesBySeries = await readSonarrPeerFilesBySeries(sonarr, seriesCatalog);
+	const finalFilesBySeries = await readSonarrPeerFilesBySeries(sonarr, seriesCatalog);
+	const [finalSeriesCatalog, finalNotifications] = await Promise.all([
+		sonarr.series.getAll(),
+		sonarr.notification.getAll(),
+	]);
+	if (
+		sonarrPeerSeriesCatalogWitness(finalSeriesCatalog) !==
+			sonarrPeerSeriesCatalogWitness(seriesCatalog) ||
+		sonarrPeerNotificationCatalogWitness(finalNotifications) !==
+			sonarrPeerNotificationCatalogWitness(notifications) ||
+		sonarrPeerFileCatalogWitness(finalFilesBySeries) !==
+			sonarrPeerFileCatalogWitness(firstFilesBySeries)
+	) {
+		throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+	}
+	return {
+		seriesCatalog: finalSeriesCatalog,
+		notifications: finalNotifications,
+		filesBySeries: finalFilesBySeries,
+	};
+}
+
+function assertNoUnverifiedSonarrPeerOwnsTargetPartsFromInventory(
+	trackedSeriesIds: ReadonlySet<number>,
+	ownership: VerifiedSonarrPlexOwnership[],
+	inventory: StableSonarrPeerInventory,
+): void {
+	for (const series of inventory.seriesCatalog) {
+		const seriesId = requiredPositiveSafeInteger(series.id, "Unverified Sonarr peer series ID");
+		if (trackedSeriesIds.has(seriesId)) continue;
+		const peerFiles = (inventory.filesBySeries.get(seriesId) ?? []).map(comparableFile);
+		for (const witness of ownership) {
+			if (peerFiles.length === 0) continue;
+			const mappedCandidate = mappedSonarrPeerFileCandidate(
+				peerFiles,
+				series.tags ?? [],
+				inventory.notifications,
+				witness.plexServerUrl,
+			);
+			if (
+				!mappedCandidate.hasExplicitServerCorrelation ||
+				mappedCandidate.files.some((file) =>
+					witness.target.some((part) => pathsEqual(file.fullPath, part.fullPath)),
+				)
+			) {
+				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+			}
+		}
+	}
+}
+
+function assertVerifiedSonarrPeerIdentityFromInventory(
+	peer: VerifiedSonarrPeerIdentity,
+	inventory: StableSonarrPeerInventory,
+): Series | null {
+	const matchingSeries = inventory.seriesCatalog.filter(
+		(series) => series.tvdbId === peer.externalId,
+	);
+	if (peer.arrItemId === null) {
+		if (matchingSeries.length !== 0) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+		}
+		return null;
+	}
+	const series = matchingSeries[0];
+	if (
+		matchingSeries.length !== 1 ||
+		!series ||
+		series.id !== peer.arrItemId ||
+		peer.mediaPath === null ||
+		peer.files === null ||
+		!pathsEqual(normalizeMediaPath(series.path), peer.mediaPath) ||
+		sonarrPeerFileCatalogWitness(
+			new Map([[peer.arrItemId, inventory.filesBySeries.get(peer.arrItemId) ?? []]]),
+		) !== sonarrPeerFileCatalogWitness(new Map([[peer.arrItemId, peer.files.episodeFiles]]))
+	) {
+		throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+	}
+	return series;
+}
+
+export async function assertVerifiedSonarrPeerInventoryUnchanged(
+	sonarr: InstanceType<typeof SonarrClient>,
+	peer: VerifiedSonarrPeerIdentity,
+	ownership: VerifiedSonarrPlexOwnership[],
+	seriesCatalog?: Series[],
+	notifications?: SonarrNotification[],
+): Promise<{ series: Series | null; notifications: SonarrNotification[] }> {
+	try {
+		const inventory = await readStableSonarrPeerInventory(sonarr, seriesCatalog, notifications);
+		const series = assertVerifiedSonarrPeerIdentityFromInventory(peer, inventory);
+		assertVerifiedSonarrTrackedPeerMappingUnchanged(
+			peer,
+			series,
+			inventory.notifications,
+			ownership,
+		);
+		assertNoUnverifiedSonarrPeerOwnsTargetPartsFromInventory(
+			new Set(peer.arrItemId === null ? [] : [peer.arrItemId]),
+			ownership,
+			inventory,
+		);
+		return { series, notifications: inventory.notifications };
+	} catch (error) {
+		if (error instanceof ArrCrossInstanceOwnershipChangedDuringSafetyCheckError) throw error;
+		throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+	}
 }
 
 async function verifyPlexMediaState(
@@ -1983,6 +2281,21 @@ export async function findSharedPlexDeleteBlocks(
 		SafetyPlexClient,
 		Map<number, Promise<PlexSeriesMediaItem[]>>
 	>();
+	const pendingSonarrPlans: Array<{
+		target: CleanupDeleteTarget;
+		targetKey: string;
+		client: InstanceType<typeof SonarrClient>;
+		action: string;
+		targetIdentity: VerifiedArrTargetIdentity;
+		verifiedFiles: VerifiedSonarrFileIdentity;
+		peers: NonNullable<PlexVerificationInput["sonarrPeers"]>;
+		peerCatalogs: Array<{
+			client: InstanceType<typeof SonarrClient>;
+			peer: VerifiedSonarrPeerIdentity;
+		}>;
+		ownership: VerifiedSonarrPlexOwnership[];
+		targetDeleteNotifications: VerifiedSonarrTargetDeleteNotification[];
+	}> = [];
 
 	const getRadarrClient = (instance: ServiceInstance): InstanceType<typeof RadarrClient> => {
 		let client = radarrClients.get(instance.id);
@@ -2043,13 +2356,11 @@ export async function findSharedPlexDeleteBlocks(
 	const getSonarrSeries = (
 		instance: ServiceInstance,
 		client: InstanceType<typeof SonarrClient>,
-		tvdbId: number,
 	): Promise<Series[]> => {
-		const lookupKey = `${instance.id}:${tvdbId}`;
-		let series = sonarrSeries.get(lookupKey);
+		let series = sonarrSeries.get(instance.id);
 		if (!series) {
-			series = client.series.getAll({ tvdbId });
-			sonarrSeries.set(lookupKey, series);
+			series = client.series.getAll();
+			sonarrSeries.set(instance.id, series);
 		}
 		return series;
 	};
@@ -2374,24 +2685,32 @@ export async function findSharedPlexDeleteBlocks(
 				(candidate) => candidate.id !== targetInstance.id && candidate.service === "SONARR",
 			);
 			const sonarrPeers: NonNullable<PlexVerificationInput["sonarrPeers"]> = [];
+			const sonarrPeerCatalogs: Array<{
+				client: InstanceType<typeof SonarrClient>;
+				peer: VerifiedSonarrPeerIdentity;
+			}> = [];
 			for (const peerInstance of peerInstances) {
 				const peerClient = getSonarrClient(peerInstance);
-				const peerSeriesItems = (await getSonarrSeries(peerInstance, peerClient, tvdbId)).filter(
+				const peerSeriesCatalog = await getSonarrSeries(peerInstance, peerClient);
+				const peerSeriesItems = peerSeriesCatalog.filter(
 					(candidate) => candidate.tvdbId === tvdbId,
 				);
+				const peerNotifications = await getSonarrNotifications(peerInstance, peerClient);
 				if (peerSeriesItems.length > 1) {
 					throw new FileMatchVerificationError("Sonarr peer returned multiple matching series");
 				}
 				if (peerSeriesItems.length === 0) {
+					const peerIdentity: VerifiedSonarrPeerIdentity = {
+						instanceId: peerInstance.id,
+						serviceFingerprint: createArrServiceFingerprint(peerInstance),
+						externalId: tvdbId,
+						arrItemId: null,
+						mediaPath: null,
+						files: null,
+					};
+					sonarrPeerCatalogs.push({ client: peerClient, peer: peerIdentity });
 					sonarrPeers.push({
-						identity: {
-							instanceId: peerInstance.id,
-							serviceFingerprint: createArrServiceFingerprint(peerInstance),
-							externalId: tvdbId,
-							arrItemId: null,
-							mediaPath: null,
-							files: null,
-						},
+						identity: peerIdentity,
 						seriesTags: [],
 						notifications: [],
 					});
@@ -2405,22 +2724,26 @@ export async function findSharedPlexDeleteBlocks(
 						sonarrEpisodeFileIdentity(peerSeries, file),
 					),
 				};
+				const peerIdentity: VerifiedSonarrPeerIdentity = {
+					instanceId: peerInstance.id,
+					serviceFingerprint: createArrServiceFingerprint(peerInstance),
+					externalId: tvdbId,
+					arrItemId: peerSeriesId,
+					mediaPath: normalizeMediaPath(peerSeries.path),
+					files: peerFiles,
+				};
+				sonarrPeerCatalogs.push({ client: peerClient, peer: peerIdentity });
 				sonarrPeers.push({
-					identity: {
-						instanceId: peerInstance.id,
-						serviceFingerprint: createArrServiceFingerprint(peerInstance),
-						externalId: tvdbId,
-						arrItemId: peerSeriesId,
-						mediaPath: normalizeMediaPath(peerSeries.path),
-						files: peerFiles,
-					},
+					identity: peerIdentity,
 					seriesTags: peerSeries.tags ?? [],
-					notifications:
-						peerFiles.episodeFiles.length === 0
-							? []
-							: await getSonarrNotifications(peerInstance, peerClient),
+					notifications: peerFiles.episodeFiles.length === 0 ? [] : peerNotifications,
 				});
 			}
+			const targetDeleteNotifications = sonarrTargetDeleteNotificationWitnesses(
+				plexNotifications,
+				series,
+				action,
+			);
 			const verification = await verifyPlexMediaState(
 				deps,
 				context,
@@ -2441,24 +2764,26 @@ export async function findSharedPlexDeleteBlocks(
 				blocks.set(targetKey, verification.block);
 				context.plans.set(targetKey, { kind: "blocked", reason: verification.block });
 			} else {
-				context.verifiedSonarrFiles.set(targetKey, verifiedFiles);
-				context.plans.set(targetKey, {
-					kind: "verified_sonarr",
-					target: targetIdentity,
-					files: verifiedFiles,
-					peers: sonarrPeers.map((peer) => peer.identity),
+				pendingSonarrPlans.push({
+					target,
+					targetKey,
+					client: sonarr,
+					action,
+					targetIdentity,
+					verifiedFiles,
+					peers: sonarrPeers,
+					peerCatalogs: sonarrPeerCatalogs,
 					ownership: verification.sonarrOwnership,
-					targetDeleteNotifications: sonarrTargetDeleteNotificationWitnesses(
-						plexNotifications,
-						series,
-					),
+					targetDeleteNotifications,
 				});
 			}
 		} catch (error) {
 			const reason =
-				error instanceof FileMatchVerificationError
-					? fileMatchFailedReason(service)
-					: verificationFailedReason(service);
+				error instanceof ArrCrossInstanceOwnershipChangedDuringSafetyCheckError
+					? error.message
+					: error instanceof FileMatchVerificationError
+						? fileMatchFailedReason(service)
+						: verificationFailedReason(service);
 			blocks.set(targetKey, reason);
 			context.plans.set(targetKey, { kind: "blocked", reason });
 			deps.log.warn(
@@ -2467,6 +2792,74 @@ export async function findSharedPlexDeleteBlocks(
 					instanceId: target.instanceId,
 					arrItemId: target.arrItemId,
 					service,
+				},
+				"Cleanup shared-Plex safety check failed closed",
+			);
+		}
+	}
+
+	const sonarrPeerInventories = new Map<string, Promise<StableSonarrPeerInventory>>();
+	for (const pending of pendingSonarrPlans) {
+		try {
+			for (const peerCatalog of pending.peerCatalogs) {
+				const inventoryKey = `${peerCatalog.peer.instanceId}:${peerCatalog.peer.serviceFingerprint}`;
+				let inventoryPromise = sonarrPeerInventories.get(inventoryKey);
+				if (!inventoryPromise) {
+					inventoryPromise = readStableSonarrPeerInventory(peerCatalog.client);
+					sonarrPeerInventories.set(inventoryKey, inventoryPromise);
+				}
+				const inventory = await inventoryPromise;
+				const freshPeerSeries = assertVerifiedSonarrPeerIdentityFromInventory(
+					peerCatalog.peer,
+					inventory,
+				);
+				assertVerifiedSonarrTrackedPeerMappingUnchanged(
+					peerCatalog.peer,
+					freshPeerSeries,
+					inventory.notifications,
+					pending.ownership,
+				);
+				assertNoUnverifiedSonarrPeerOwnsTargetPartsFromInventory(
+					new Set(peerCatalog.peer.arrItemId === null ? [] : [peerCatalog.peer.arrItemId]),
+					pending.ownership,
+					inventory,
+				);
+			}
+			const freshTargetDeleteNotifications = sonarrTargetDeleteNotificationWitnesses(
+				await pending.client.notification.getAll(),
+				await pending.client.series.getById(pending.target.arrItemId),
+				pending.action,
+			);
+			if (
+				JSON.stringify(freshTargetDeleteNotifications) !==
+				JSON.stringify(pending.targetDeleteNotifications)
+			) {
+				throw new ArrTargetChangedDuringSafetyCheckError();
+			}
+			context.verifiedSonarrFiles.set(pending.targetKey, pending.verifiedFiles);
+			context.plans.set(pending.targetKey, {
+				kind: "verified_sonarr",
+				target: pending.targetIdentity,
+				files: pending.verifiedFiles,
+				peers: pending.peers.map((peer) => peer.identity),
+				ownership: pending.ownership,
+				targetDeleteNotifications: pending.targetDeleteNotifications,
+			});
+		} catch (error) {
+			const reason =
+				error instanceof ArrCrossInstanceOwnershipChangedDuringSafetyCheckError
+					? error.message
+					: error instanceof FileMatchVerificationError
+						? fileMatchFailedReason("SONARR")
+						: verificationFailedReason("SONARR");
+			blocks.set(pending.targetKey, reason);
+			context.plans.set(pending.targetKey, { kind: "blocked", reason });
+			deps.log.warn(
+				{
+					err: getErrorMessage(error),
+					instanceId: pending.target.instanceId,
+					arrItemId: pending.target.arrItemId,
+					service: "SONARR",
 				},
 				"Cleanup shared-Plex safety check failed closed",
 			);
@@ -2674,6 +3067,9 @@ export async function assertVerifiedSonarrPeerOwnershipRetained(
 		seriesPath: plan.files.seriesPath,
 		episodeFiles: [],
 	};
+	const expectedTargetSeriesDeleteNotifications = plan.targetDeleteNotifications.filter(
+		(notification) => notification.onSeriesDelete,
+	);
 	await assertVerifiedSonarrFilesUnchanged(
 		targetClient,
 		targetArrItemId,
@@ -2684,10 +3080,12 @@ export async function assertVerifiedSonarrPeerOwnershipRetained(
 	const currentTargetDeleteNotifications = sonarrTargetDeleteNotificationWitnesses(
 		await targetClient.notification.getAll(),
 		currentTargetSeries,
+		"delete",
+		true,
 	);
 	if (
 		JSON.stringify(currentTargetDeleteNotifications) !==
-		JSON.stringify(plan.targetDeleteNotifications)
+		JSON.stringify(expectedTargetSeriesDeleteNotifications)
 	) {
 		throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
 	}
@@ -2699,35 +3097,20 @@ export async function assertVerifiedSonarrPeerOwnershipRetained(
 			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
 		}
 		const client = deps.arrClientFactory.create(peerInstance) as InstanceType<typeof SonarrClient>;
-		const seriesItems = (await client.series.getAll({ tvdbId: peer.externalId })).filter(
-			(series) => series.tvdbId === peer.externalId,
+		const seriesCatalog = await client.series.getAll();
+		const peerNotifications = await client.notification.getAll();
+		const verifiedPeer = await assertVerifiedSonarrPeerInventoryUnchanged(
+			client,
+			peer,
+			plan.ownership,
+			seriesCatalog,
+			peerNotifications,
 		);
-		if (peer.arrItemId === null) {
-			if (seriesItems.length !== 0) {
-				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
-			}
-			continue;
-		}
-		const series = seriesItems[0];
-		if (
-			seriesItems.length !== 1 ||
-			!series ||
-			series.id !== peer.arrItemId ||
-			peer.mediaPath === null ||
-			peer.files === null
-		) {
-			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
-		}
-		const peerTarget: VerifiedArrTargetIdentity = {
-			serviceFingerprint: peer.serviceFingerprint,
-			externalId: peer.externalId,
-			mediaPath: peer.mediaPath,
-		};
-		await assertVerifiedSonarrFilesUnchanged(client, peer.arrItemId, peerTarget, peer.files);
+		if (peer.arrItemId === null || peer.files === null || verifiedPeer.series === null) continue;
 		livePeers.set(peer.instanceId, {
 			identity: peer,
-			seriesTags: series.tags ?? [],
-			notifications: peer.files.episodeFiles.length ? await client.notification.getAll() : [],
+			seriesTags: verifiedPeer.series.tags ?? [],
+			notifications: peer.files.episodeFiles.length ? verifiedPeer.notifications : [],
 		});
 	}
 
@@ -2742,7 +3125,16 @@ export async function assertVerifiedSonarrPeerOwnershipRetained(
 		}
 		for (const plexInstance of matchingPlexInstances) {
 			const plex = await requirePlexClient(deps, context, ownerChecks, plexInstance);
-			const mediaItems = await plex.getSeriesEpisodeMediaPartsByTvdbId(plan.target.externalId);
+			let mediaItems: PlexSeriesMediaItem[];
+			try {
+				mediaItems = await plex.getSeriesEpisodeMediaPartsByTvdbId(plan.target.externalId);
+			} catch (error) {
+				if (error instanceof PlexSeriesNotFoundError && ownership.retained.length === 0) {
+					mediaItems = [];
+				} else {
+					throw error;
+				}
+			}
 			const liveRetained: VerifiedSonarrPlexOwnership["retained"] = [];
 			for (const expectedPeer of plan.peers) {
 				const peer = livePeers.get(expectedPeer.instanceId);
@@ -2789,6 +3181,34 @@ export async function assertVerifiedSonarrPeerOwnershipRetained(
 				}
 			}
 		}
+	}
+	for (const peer of plan.peers) {
+		const peerInstance = peerInstances.find((instance) => instance.id === peer.instanceId);
+		if (!peerInstance || createArrServiceFingerprint(peerInstance) !== peer.serviceFingerprint) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
+		}
+		const client = deps.arrClientFactory.create(peerInstance) as InstanceType<typeof SonarrClient>;
+		const seriesCatalog = await client.series.getAll();
+		const currentPeerNotifications = await client.notification.getAll();
+		await assertVerifiedSonarrPeerInventoryUnchanged(
+			client,
+			peer,
+			plan.ownership,
+			seriesCatalog,
+			currentPeerNotifications,
+		);
+	}
+	const finalTargetDeleteNotifications = sonarrTargetDeleteNotificationWitnesses(
+		await targetClient.notification.getAll(),
+		await targetClient.series.getById(targetArrItemId),
+		"delete",
+		true,
+	);
+	if (
+		JSON.stringify(finalTargetDeleteNotifications) !==
+		JSON.stringify(expectedTargetSeriesDeleteNotifications)
+	) {
+		throw new ArrTargetChangedDuringSafetyCheckError();
 	}
 	await assertVerifiedSonarrFilesUnchanged(
 		targetClient,
