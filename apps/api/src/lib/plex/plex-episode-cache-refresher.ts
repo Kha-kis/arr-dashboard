@@ -129,7 +129,12 @@ export async function refreshPlexEpisodeCache(
 	// from being refreshed.
 	const historyMap = new Map<
 		string,
-		{ users: Set<string>; lastWatched: number; eventCount: number }
+		{
+			users: Set<string>;
+			lastWatched: number;
+			eventCount: number;
+			attributionComplete: boolean;
+		}
 	>();
 	let history: Awaited<ReturnType<PlexClient["getHistory"]>> = [];
 	let historyAvailable = true;
@@ -159,13 +164,14 @@ export async function refreshPlexEpisodeCache(
 		}
 	>();
 	let accountMap = new Map<number, string>();
-	let accountAttributionComplete = true;
+	let accountLookupComplete = true;
+	let hasIncompleteAccountAttribution = false;
 	if (history.length > 0) {
 		try {
 			const accounts = await client.getAccounts();
 			accountMap = new Map(accounts.map((account) => [account.id, account.name]));
 		} catch (err) {
-			accountAttributionComplete = false;
+			accountLookupComplete = false;
 			log.warn({ err, instanceId }, "Failed to fetch Plex accounts for episode attribution");
 			errors++;
 			errorMessages.push(`Failed to fetch Plex accounts: ${getErrorMessage(err)}`);
@@ -175,11 +181,15 @@ export async function refreshPlexEpisodeCache(
 		if (item.type !== "episode") continue;
 		const key = item.ratingKey;
 		const existing = historyMap.get(key);
-		const userName = accountMap.get(item.accountID);
-		if (!userName) accountAttributionComplete = false;
+		const mappedUserName = accountLookupComplete ? accountMap.get(item.accountID) : undefined;
+		const userName =
+			typeof mappedUserName === "string" && mappedUserName.trim() ? mappedUserName : null;
+		const attributionComplete = userName !== null;
+		if (!attributionComplete) hasIncompleteAccountAttribution = true;
 		if (existing) {
 			if (userName) existing.users.add(userName);
 			existing.eventCount++;
+			existing.attributionComplete &&= attributionComplete;
 			if (item.viewedAt > existing.lastWatched) {
 				existing.lastWatched = item.viewedAt;
 			}
@@ -188,10 +198,17 @@ export async function refreshPlexEpisodeCache(
 				users: new Set(userName ? [userName] : []),
 				lastWatched: item.viewedAt,
 				eventCount: 1,
+				attributionComplete,
 			});
 		}
 	}
-	if (!historyComplete || !accountAttributionComplete) {
+	if (hasIncompleteAccountAttribution && accountLookupComplete) {
+		log.warn(
+			{ instanceId },
+			"Plex history referenced accounts absent from the current account list; preserving attribution per episode",
+		);
+	}
+	if (!historyComplete || hasIncompleteAccountAttribution) {
 		const existingEpisodes = await prisma.plexEpisodeCache.findMany({
 			where: {
 				instanceId,
@@ -240,6 +257,7 @@ export async function refreshPlexEpisodeCache(
 				const watchCount = plexViewCount;
 				const watched = watchCount > 0 || (watchData?.eventCount ?? 0) > 0;
 				const observedUsers = watchData ? [...watchData.users] : [];
+				const episodeAttributionComplete = watchData?.attributionComplete ?? true;
 				const lastWatchedAt = watchData
 					? new Date(watchData.lastWatched * 1000)
 					: episode.lastViewedAt
@@ -266,16 +284,15 @@ export async function refreshPlexEpisodeCache(
 				const effectiveWatched = historyComplete
 					? watched
 					: (exactExistingState?.watched ?? false) || watched;
-				const effectiveWatchedByUsers = accountAttributionComplete
-					? historyComplete
+				const effectiveWatchedByUsers =
+					historyComplete && episodeAttributionComplete
 						? observedUsers
 						: [
 								...new Set([
 									...(exactExistingState?.watchedByUsers ?? []),
 									...observedUsers,
 								]),
-							]
-					: (exactExistingState?.watchedByUsers ?? []);
+							];
 				const effectiveLastWatchedAt = historyComplete
 					? lastWatchedAt
 					: latestDate(exactExistingState?.lastWatchedAt ?? null, lastWatchedAt);
@@ -312,12 +329,6 @@ export async function refreshPlexEpisodeCache(
 						// A bounded successful history response proves only what it
 						// contains. Do not create a false negative for an omitted
 						// shared-account watch.
-						continue;
-					}
-					if (!accountAttributionComplete && !exactExistingState) {
-						// A new row with an empty or placeholder username set would
-						// understate per-user completion. Wait for attribution to
-						// recover instead of creating user-sensitive evidence.
 						continue;
 					}
 					await prisma.plexEpisodeCache.upsert({

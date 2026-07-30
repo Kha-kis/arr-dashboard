@@ -198,7 +198,7 @@ describe("refreshPlexEpisodeCache watch count", () => {
 		expect(call.update.watchedByUsers).not.toContain("Account 7");
 	});
 
-	it("does not create user-sensitive evidence while account attribution is unavailable", async () => {
+	it("creates aggregate evidence without user attribution when account lookup is unavailable", async () => {
 		const upsert = vi.fn().mockResolvedValue({});
 		const prisma = {
 			plexCache: {
@@ -234,8 +234,87 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			"connection-fingerprint",
 		);
 
-		expect(result).toMatchObject({ upserted: 0, errors: 1 });
-		expect(upsert).not.toHaveBeenCalled();
+		expect(result).toMatchObject({ upserted: 1, errors: 1 });
+		expect(upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					watched: true,
+					watchedByUsers: JSON.stringify([]),
+				}),
+			}),
+		);
+	});
+
+	it("keeps the episode denominator complete when history references a removed account", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue([{ tmdbId: 123, ratingKey: "show-1" }]),
+			},
+			plexEpisodeCache: {
+				groupBy: vi.fn().mockResolvedValue([]),
+				findMany: vi.fn().mockResolvedValue([]),
+				upsert,
+			},
+		};
+		const client = {
+			getHistory: vi.fn().mockResolvedValue([
+				{ type: "episode", ratingKey: "episode-1", accountID: 7, viewedAt: 300 },
+				{ type: "episode", ratingKey: "episode-2", accountID: 1, viewedAt: 301 },
+			]),
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Owner" }]),
+			getEpisodes: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "episode-1",
+					title: "Removed account watch",
+					seasonNumber: 1,
+					episodeNumber: 1,
+					viewCount: 0,
+				},
+				{
+					ratingKey: "episode-2",
+					title: "Resolved owner watch",
+					seasonNumber: 1,
+					episodeNumber: 2,
+					viewCount: 0,
+				},
+				{
+					ratingKey: "episode-3",
+					title: "Unwatched sibling",
+					seasonNumber: 1,
+					episodeNumber: 3,
+					viewCount: 0,
+				},
+			]),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn() } as never,
+			"connection-fingerprint",
+		);
+
+		expect(result).toMatchObject({ upserted: 3, errors: 0 });
+		expect(upsert).toHaveBeenCalledTimes(3);
+		expect(upsert.mock.calls.map(([call]) => call.create)).toEqual([
+			expect.objectContaining({
+				ratingKey: "episode-1",
+				watched: true,
+				watchedByUsers: JSON.stringify([]),
+			}),
+			expect.objectContaining({
+				ratingKey: "episode-2",
+				watched: true,
+				watchedByUsers: JSON.stringify(["Owner"]),
+			}),
+			expect.objectContaining({
+				ratingKey: "episode-3",
+				watched: false,
+				watchedByUsers: JSON.stringify([]),
+			}),
+		]);
 	});
 
 	it("refreshes authoritative metadata when history attribution is unavailable", async () => {

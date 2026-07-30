@@ -2871,6 +2871,10 @@ async function executeQueuedCleanupItems(
 				const preserveEpisodeUnmonitorPartial =
 					recoveringEpisodeUnmonitorPartial &&
 					error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError;
+				const episodeDeletePartialAfterUnmonitor =
+					error instanceof ArrDeletePartialError &&
+					action === "delete" &&
+					safetyPlan?.kind === "verified_sonarr_episode";
 				const executionError = preserveEpisodeUnmonitorPartial
 					? SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE
 					: error instanceof ArrFileChangedDuringSafetyCheckError ||
@@ -2907,6 +2911,7 @@ async function executeQueuedCleanupItems(
 							status:
 								error instanceof SonarrEpisodeUnmonitorPartialError ||
 								error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
+								episodeDeletePartialAfterUnmonitor ||
 								preserveEpisodeUnmonitorPartial
 									? "retry_pending"
 									: mutationAuthorityChanged

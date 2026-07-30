@@ -3849,7 +3849,7 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.deleteSeries).not.toHaveBeenCalled();
 	});
 
-	it("preserves the live retained size when episode inventory changes after deletion", async () => {
+	it("preserves the live retained size and durable retry when inventory changes after deletion", async () => {
 		const fixture = makeSonarrDeps();
 		const episodeTarget = exactEpisodeTarget();
 		const context = createSharedPlexSafetyContext();
@@ -3890,7 +3890,7 @@ describe("verified Sonarr mutation handoff", () => {
 			where: { instanceId: "sonarr-4k", arrItemId: 201, itemType: "series" },
 			data: { hasFile: true, sizeOnDisk: 4_005 },
 		});
-		expect(storedApproval).toMatchObject({ status: "pending" });
+		expect(storedApproval).toMatchObject({ status: "retry_pending" });
 	});
 
 	it("preserves the live retained size for direct episode cleanup partials", async () => {
@@ -3974,7 +3974,7 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(result).toMatchObject({ removed: 0, failed: 1 });
 		expect(result.errors[0]).toContain("response was lost");
 		expect(storedApproval).toMatchObject({
-			status: "pending",
+			status: "retry_pending",
 			lastExecutionError: expect.stringContaining("response was lost"),
 		});
 		expect(fixture.deps.prisma.episodeFileCache.deleteMany).toHaveBeenCalledWith({
