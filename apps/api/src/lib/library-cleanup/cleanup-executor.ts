@@ -10,26 +10,28 @@
  * Supports three actions per rule: delete, unmonitor, delete_files.
  */
 
+import { createHash, randomUUID } from "node:crypto";
 import { type DataSourceDependency, ruleDataSourceMap } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
-import { createHash, randomUUID } from "node:crypto";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
 import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "../prisma.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
+import { withCleanupOperationGuard } from "./cleanup-maintenance-gate.js";
 import { applyQuiSeedingFilter } from "./qui-filter.js";
 import { evaluateItemAgainstRules, extractRating } from "./rule-evaluators.js";
 import {
 	ArrCrossInstanceOwnershipChangedDuringSafetyCheckError,
 	ArrFileChangedDuringSafetyCheckError,
 	ArrMutationAuthorityChangedDuringSafetyCheckError,
+	ArrTargetChangedDuringSafetyCheckError,
 	assertVerifiedArrTargetUnchanged,
 	assertVerifiedRadarrEmptyUnchanged,
 	assertVerifiedRadarrFileUnchanged,
+	assertVerifiedRadarrPeerOwnershipRetained,
 	assertVerifiedSonarrFilesUnchanged,
-	ArrTargetChangedDuringSafetyCheckError,
 	buildCacheTargetSafetyPlan,
 	buildRadarrCacheSafetyPlan,
 	buildSonarrCacheSafetyPlan,
@@ -42,9 +44,9 @@ import {
 	findSharedPlexDeleteBlocks,
 	parseExecutableSafetyPlan,
 	RadarrFileChangedDuringSafetyCheckError,
-	serializeExecutableSafetyPlan,
 	type SharedMediaSafetyPlan,
 	SonarrFilesChangedDuringSafetyCheckError,
+	serializeExecutableSafetyPlan,
 	type VerifiedRadarrFileIdentity,
 	type VerifiedSonarrFileIdentity,
 } from "./shared-plex-safety.js";
@@ -65,7 +67,6 @@ import type {
 	SeerrRequestMap,
 	TautulliWatchMap,
 } from "./types.js";
-import { withCleanupOperationGuard } from "./cleanup-maintenance-gate.js";
 
 // Default approval expiry: 7 days
 const APPROVAL_EXPIRY_DAYS = 7;
@@ -601,21 +602,93 @@ async function loadCurrentMutationInstance(
 	) {
 		throw new ArrTargetChangedDuringSafetyCheckError();
 	}
-	const verifiedFileCount =
-		executablePlan.kind === "verified_radarr"
-			? 1
-			: executablePlan.kind === "verified_sonarr"
-				? executablePlan.files.episodeFiles.length
-				: 0;
-	if (
-		verifiedFileCount > 0 &&
+	if (executablePlan.kind === "verified_radarr") {
+		const peerInstances = instances.filter(
+			(candidate) => candidate.id !== instance.id && candidate.service === "RADARR",
+		);
+		const peerIds = new Set(executablePlan.peers.map((peer) => peer.instanceId));
+		if (
+			peerInstances.length !== peerIds.size ||
+			peerInstances.some((peerInstance) => !peerIds.has(peerInstance.id))
+		) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+		}
+		for (const peer of executablePlan.peers) {
+			const peerInstance = peerInstances.find((candidate) => candidate.id === peer.instanceId);
+			if (!peerInstance || createArrServiceFingerprint(peerInstance) !== peer.serviceFingerprint) {
+				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+			}
+			const peerClient = deps.arrClientFactory.create(peerInstance) as InstanceType<
+				typeof RadarrClient
+			>;
+			const peerMovies = (await peerClient.movie.getAll({ tmdbId: peer.externalId })).filter(
+				(movie) => movie.tmdbId === peer.externalId,
+			);
+			if (peer.arrItemId === null) {
+				if (peerMovies.length !== 0) {
+					throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+				}
+				continue;
+			}
+			if (
+				peerMovies.length !== 1 ||
+				peerMovies[0]?.id !== peer.arrItemId ||
+				peer.mediaPath === null
+			) {
+				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+			}
+			const peerTarget = {
+				serviceFingerprint: peer.serviceFingerprint,
+				externalId: peer.externalId,
+				mediaPath: peer.mediaPath,
+			};
+			if (peer.file) {
+				await assertVerifiedRadarrFileUnchanged(peerClient, peer.arrItemId, peerTarget, peer.file);
+			} else {
+				await assertVerifiedRadarrEmptyUnchanged(peerClient, peer.arrItemId, peerTarget);
+			}
+		}
+	} else if (
+		executablePlan.kind === "verified_sonarr" &&
+		executablePlan.files.episodeFiles.length > 0 &&
 		instances.some(
 			(candidate) => candidate.id !== instance.id && candidate.service === instance.service,
 		)
 	) {
-		throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError(instance.service);
+		throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("SONARR");
 	}
 	return instance;
+}
+
+function withRadarrPeerOwnershipRevalidation(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	target: CleanupDeleteTarget,
+	safetyPlan: SharedMediaSafetyPlan,
+	assertMutationAuthority?: () => Promise<void>,
+): () => Promise<void> {
+	let ownershipRevalidationCount = 0;
+	return async () => {
+		await assertMutationAuthority?.();
+		if (safetyPlan.kind !== "verified_radarr" || safetyPlan.peers.length === 0) {
+			return;
+		}
+		if (ownershipRevalidationCount === 0) {
+			const context = createSharedPlexSafetyContext();
+			const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
+			const targetKey = cleanupDeleteTargetKey(target);
+			const livePlan = asExecutableSafetyPlan(context.plans.get(targetKey));
+			if (blocks.has(targetKey) || !livePlan || !executableSafetyPlansEqual(safetyPlan, livePlan)) {
+				throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+					"Skipped for safety: the verified Radarr-to-Plex ownership changed at the mutation boundary. Run cleanup again before deleting the file.",
+				);
+			}
+		} else {
+			await assertVerifiedRadarrPeerOwnershipRetained(deps, userId, target.arrItemId, safetyPlan);
+		}
+		ownershipRevalidationCount++;
+		await assertMutationAuthority?.();
+	};
 }
 
 async function persistAndClaimDirectMutationIntent(
@@ -706,7 +779,15 @@ async function buildEvaluatedCacheSafetyPlan(
 		return buildCacheTargetSafetyPlan(data, item.itemType, livePlan.target);
 	}
 	if (livePlan.kind === "verified_radarr" || livePlan.kind === "verified_radarr_empty") {
-		return buildRadarrCacheSafetyPlan(data, item.hasFile, livePlan.target);
+		const cachePlan = buildRadarrCacheSafetyPlan(data, item.hasFile, livePlan.target);
+		return cachePlan?.kind === "verified_radarr" && livePlan.kind === "verified_radarr"
+			? {
+					...cachePlan,
+					peers: livePlan.peers,
+					ownership: livePlan.ownership,
+					targetDeleteNotifications: livePlan.targetDeleteNotifications,
+				}
+			: cachePlan;
 	}
 	const seriesPath =
 		data && typeof data === "object" && "path" in data
@@ -1716,10 +1797,22 @@ async function executeQueuedCleanupItems(
 					approval.instanceId,
 					safetyPlan!,
 				);
-				const assertMutationAuthority = async () => {
+				const assertExecutionAuthority = async () => {
 					await options.assertExecutionAllowed?.();
 					mutationBudgetConsumedIds.add(approval.id);
 				};
+				const assertMutationAuthority = withRadarrPeerOwnershipRevalidation(
+					deps,
+					userId,
+					{
+						instanceId: approval.instanceId,
+						arrItemId: approval.arrItemId,
+						itemType: approval.itemType,
+						action,
+					},
+					safetyPlan!,
+					assertExecutionAuthority,
+				);
 
 				if (retryTargetAlreadyAbsent) {
 					executionCompleted = true;
@@ -3570,6 +3663,18 @@ export async function executeDirectRemoval(
 				instance.id,
 				safetyPlan!,
 			);
+			const assertMutationAuthority = withRadarrPeerOwnershipRevalidation(
+				deps,
+				userId,
+				{
+					instanceId: item.cacheItem.instanceId,
+					arrItemId: item.cacheItem.arrItemId,
+					itemType: item.cacheItem.itemType,
+					action: ruleAction,
+				},
+				safetyPlan!,
+				assertRunLease,
+			);
 
 			if (ruleAction === "unmonitor") {
 				await unmonitorInArr(
@@ -3577,7 +3682,7 @@ export async function executeDirectRemoval(
 					mutationInstance,
 					item.cacheItem.arrItemId,
 					safetyPlan!,
-					assertRunLease,
+					assertMutationAuthority,
 				);
 				try {
 					await prisma.libraryCache.updateMany({
@@ -3607,7 +3712,7 @@ export async function executeDirectRemoval(
 					mutationInstance,
 					item.cacheItem.arrItemId,
 					safetyPlan!,
-					assertRunLease,
+					assertMutationAuthority,
 				);
 				await reconcileSonarrEpisodeFileCache(
 					prisma,
@@ -3654,7 +3759,7 @@ export async function executeDirectRemoval(
 					mutationInstance,
 					item.cacheItem.arrItemId,
 					safetyPlan!,
-					assertRunLease,
+					assertMutationAuthority,
 				);
 				await reconcileSonarrEpisodeFileCache(
 					prisma,
