@@ -28,7 +28,7 @@ import {
 	CleanupMaintenanceConflictError,
 	withCleanupOperationGuard,
 } from "./cleanup-maintenance-gate.js";
-import type { CleanupRunResult } from "./types.js";
+import type { CleanupExecutorDeps, CleanupRunResult } from "./types.js";
 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
 
@@ -90,6 +90,8 @@ export class CleanupScheduler {
 	private _isRunning = false;
 	private notifyFn?: (payload: NotificationPayload) => Promise<void>;
 	private trackTick: TickWrapper;
+	private quiClientFactory?: CleanupExecutorDeps["quiClientFactory"];
+	private quiFileHashIndexFactory?: CleanupExecutorDeps["quiFileHashIndexFactory"];
 
 	/** Whether a cleanup run is currently in progress */
 	get isRunning(): boolean {
@@ -102,10 +104,16 @@ export class CleanupScheduler {
 		private encryptor: Encryptor,
 		private logger: FastifyBaseLogger,
 		notifyFn?: (payload: NotificationPayload) => Promise<void>,
-		options?: { trackTick?: TickWrapper },
+		options?: {
+			trackTick?: TickWrapper;
+			quiClientFactory?: CleanupExecutorDeps["quiClientFactory"];
+			quiFileHashIndexFactory?: CleanupExecutorDeps["quiFileHashIndexFactory"];
+		},
 	) {
 		this.notifyFn = notifyFn;
 		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
+		this.quiClientFactory = options?.quiClientFactory;
+		this.quiFileHashIndexFactory = options?.quiFileHashIndexFactory;
 	}
 
 	/**
@@ -297,6 +305,8 @@ export class CleanupScheduler {
 							prisma: this.prisma,
 							arrClientFactory: this.arrClientFactory,
 							encryptor: this.encryptor,
+							quiClientFactory: this.quiClientFactory,
+							quiFileHashIndexFactory: this.quiFileHashIndexFactory,
 							log: this.logger,
 						},
 						config.userId,

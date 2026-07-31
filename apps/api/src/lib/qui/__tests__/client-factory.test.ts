@@ -65,6 +65,17 @@ const wireTorrent = (over: Record<string, unknown> = {}) => ({
 	...over,
 });
 
+const wireTorrentPage = (
+	torrents: unknown[] | null,
+	over: Record<string, unknown> = {},
+) => ({
+	cross_instance_torrents: torrents,
+	total: torrents?.length ?? 0,
+	hasMore: false,
+	partialResults: false,
+	...over,
+});
+
 // qui's cross-seed local-matches wire shape (snake_case, qBit-native fields).
 const wireCrossSeedMatch = (over: Record<string, unknown> = {}) => ({
 	hash: "sibhash",
@@ -96,7 +107,7 @@ describe("createQuiClient", () => {
 
 	it("sends X-API-Key header with the decrypted key on every call", async () => {
 		fetchSpy.mockResolvedValueOnce(
-			new Response(JSON.stringify({ cross_instance_torrents: [wireTorrent()] }), {
+			new Response(JSON.stringify(wireTorrentPage([wireTorrent()])), {
 				status: 200,
 				headers: { "content-type": "application/json" },
 			}),
@@ -112,7 +123,7 @@ describe("createQuiClient", () => {
 
 	it("sends stored reverse-proxy Basic Auth alongside the qui API key", async () => {
 		fetchSpy.mockResolvedValueOnce(
-			new Response(JSON.stringify({ cross_instance_torrents: [wireTorrent()] }), {
+			new Response(JSON.stringify(wireTorrentPage([wireTorrent()])), {
 				status: 200,
 				headers: { "content-type": "application/json" },
 			}),
@@ -144,8 +155,8 @@ describe("createQuiClient", () => {
 	it("transforms snake_case wire format into canonical camelCase", async () => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(
-				JSON.stringify({
-					cross_instance_torrents: [
+				JSON.stringify(
+					wireTorrentPage([
 						wireTorrent({
 							hash: "abc123",
 							num_seeds: 5,
@@ -158,8 +169,8 @@ describe("createQuiClient", () => {
 							upspeed: 2048,
 							tags: "linux,iso,private",
 						}),
-					],
-				}),
+					]),
+				),
 				{ status: 200, headers: { "content-type": "application/json" } },
 			),
 		);
@@ -181,9 +192,9 @@ describe("createQuiClient", () => {
 	it("normalizes completion_on=0 to completedOn=null (incomplete torrents)", async () => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(
-				JSON.stringify({
-					cross_instance_torrents: [wireTorrent({ completion_on: 0, progress: 0.5 })],
-				}),
+				JSON.stringify(
+					wireTorrentPage([wireTorrent({ completion_on: 0, progress: 0.5 })]),
+				),
 				{ status: 200, headers: { "content-type": "application/json" } },
 			),
 		);
@@ -195,7 +206,7 @@ describe("createQuiClient", () => {
 
 	it("returns null when cross-instance search has no exact hash match", async () => {
 		fetchSpy.mockResolvedValueOnce(
-			new Response(JSON.stringify({ cross_instance_torrents: [] }), {
+			new Response(JSON.stringify(wireTorrentPage([])), {
 				status: 200,
 				headers: { "content-type": "application/json" },
 			}),
@@ -206,15 +217,34 @@ describe("createQuiClient", () => {
 		expect(result).toBeNull();
 	});
 
-	it("filters fuzzy matches to the exact lowercased hash", async () => {
+	it("accepts metadata-free qUI responses for an ordinary exact-hash point lookup", async () => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(
 				JSON.stringify({
-					cross_instance_torrents: [
+					cross_instance_torrents: [wireTorrent({ hash: "ABC123", instance_id: 7 })],
+				}),
+				{
+					status: 200,
+					headers: { "content-type": "application/json" },
+				},
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const result = await client.getTorrentByHash("abc123");
+
+		expect(result).toMatchObject({ hash: "ABC123", instanceId: 7 });
+	});
+
+	it("filters fuzzy matches to the exact lowercased hash", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify(
+					wireTorrentPage([
 						wireTorrent({ hash: "ABC123", instance_id: 1 }),
 						wireTorrent({ hash: "differenthash", instance_id: 2 }),
-					],
-				}),
+					]),
+				),
 				{ status: 200, headers: { "content-type": "application/json" } },
 			),
 		);
@@ -225,9 +255,267 @@ describe("createQuiClient", () => {
 		expect(result?.instanceId).toBe(1);
 	});
 
+	it("returns every exact-hash result across paginated qBit instances", async () => {
+		fetchSpy
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify(
+						wireTorrentPage(
+							[
+							wireTorrent({ hash: "ABC123", instance_id: 1 }),
+							wireTorrent({ hash: "abc123-near-match", instance_id: 9 }),
+							],
+							{ total: 3, hasMore: true },
+						),
+					),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify(
+						wireTorrentPage([wireTorrent({ hash: "abc123", instance_id: 2 })], {
+							total: 3,
+						}),
+					),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const results = await client.getTorrentsByHash("abc123");
+
+		expect(results.map((torrent) => torrent.instanceId)).toEqual([1, 2]);
+		expect(fetchSpy).toHaveBeenCalledTimes(2);
+		expect(new URL(fetchSpy.mock.calls[1]![0] as string).searchParams.get("page")).toBe("1");
+	});
+
+	it("fails closed when exact-hash pagination still has more results at the cap", async () => {
+		fetchSpy.mockImplementation(async (input) => {
+			const page = new URL(input as string).searchParams.get("page") ?? "0";
+			return new Response(
+				JSON.stringify(
+					wireTorrentPage([wireTorrent({ hash: `abc123-${page}`, instance_id: 1 })], {
+						total: 100_001,
+						hasMore: true,
+					}),
+				),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			);
+		});
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		await expect(client.getTorrentsByHash("abc123")).rejects.toThrow(
+			"exact-hash lookup exceeded",
+		);
+		expect(fetchSpy).toHaveBeenCalledTimes(50);
+	});
+
+	it("fails closed when the full torrent inventory exceeds its pagination cap", async () => {
+		fetchSpy.mockImplementation(async (input) => {
+			const page = new URL(input as string).searchParams.get("page") ?? "0";
+			return new Response(
+				JSON.stringify(
+					wireTorrentPage([wireTorrent({ hash: `abc123-${page}`, instance_id: 1 })], {
+						total: 100_001,
+						hasMore: true,
+					}),
+				),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			);
+		});
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		await expect(client.listAllTorrents({ requireComplete: true })).rejects.toThrow(
+			"torrent inventory exceeded",
+		);
+		expect(fetchSpy).toHaveBeenCalledTimes(50);
+	});
+
+	it.each([
+		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
+	] as const)("fails closed when qUI marks the %s response partial", async (_label, invoke) => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify(wireTorrentPage([], { partialResults: true })),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
+			"partial results",
+		);
+	});
+
+	it.each([
+		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
+	] as const)("fails closed when the %s returns an empty page with hasMore", async (_label, invoke) => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify(wireTorrentPage([], { total: 1, hasMore: true })),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
+			"empty page with more results",
+		);
+	});
+
+	it.each([
+		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
+	] as const)("rejects missing completeness metadata for the %s", async (_label, invoke) => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(JSON.stringify({ cross_instance_torrents: [] }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow();
+	});
+
+	it.each([
+		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
+	] as const)("rejects an early total for the %s", async (_label, invoke) => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify(wireTorrentPage([wireTorrent()], { total: 2 })),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
+			"ended before its declared total",
+		);
+	});
+
+	it.each([
+		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
+	] as const)("rejects changing totals while paginating the %s", async (_label, invoke) => {
+		fetchSpy
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify(wireTorrentPage([wireTorrent()], { total: 2, hasMore: true })),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify(wireTorrentPage([wireTorrent()], { total: 3 })),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			);
+
+		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
+			"total changed during pagination",
+		);
+	});
+
+	it.each([
+		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"torrent inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
+	] as const)("rejects duplicate torrents across pages for the %s", async (_label, invoke) => {
+		fetchSpy
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify(wireTorrentPage([wireTorrent()], { total: 2, hasMore: true })),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify(wireTorrentPage([wireTorrent()], { total: 2 })),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			);
+
+		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
+			"duplicate torrent across pages",
+		);
+	});
+
+	it("accepts metadata-free torrent inventories for non-destructive consumers", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					cross_instance_torrents: [wireTorrent({ hash: "legacy", instance_id: 2 })],
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const torrents = await client.listAllTorrents();
+
+		expect(torrents).toHaveLength(1);
+		expect(torrents[0]).toMatchObject({ hash: "legacy", instanceId: 2 });
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("reports whether the read-only torrent inventory proves completeness", async () => {
+		fetchSpy
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						cross_instance_torrents: [wireTorrent({ hash: "legacy", instance_id: 2 })],
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify(
+						wireTorrentPage([wireTorrent({ hash: "current", instance_id: 3 })]),
+					),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+
+		await expect(client.listTorrentInventory()).resolves.toMatchObject({
+			complete: false,
+			torrents: [expect.objectContaining({ hash: "legacy", instanceId: 2 })],
+		});
+		await expect(client.listTorrentInventory()).resolves.toMatchObject({
+			complete: true,
+			torrents: [expect.objectContaining({ hash: "current", instanceId: 3 })],
+		});
+	});
+
 	it("handles cross_instance_torrents:null gracefully", async () => {
 		fetchSpy.mockResolvedValueOnce(
-			new Response(JSON.stringify({ cross_instance_torrents: null }), {
+			new Response(JSON.stringify(wireTorrentPage(null)), {
 				status: 200,
 				headers: { "content-type": "application/json" },
 			}),

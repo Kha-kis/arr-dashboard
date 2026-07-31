@@ -4953,4 +4953,107 @@ describe("shared Plex deletion safety", () => {
 			}),
 		]);
 	});
+
+	it("uses structured exact episode identity in dry-run preview details", () => {
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "sonarr-1",
+				arrItemId: 201,
+				itemType: "series",
+				title: "Private Series Title",
+				year: 2024,
+				sizeOnDisk: 2_001n,
+			},
+			match: {
+				ruleId: "rule-episode",
+				ruleName: "Episode cleanup",
+				reason: "Plex watch count 2 > 1",
+				action: "delete",
+			},
+			rating: 8.5,
+			episodeTarget: {
+				targetScope: "episode",
+				arrEpisodeId: 9_001,
+				seasonNumber: 1,
+				episodeNumber: 2,
+				episodeFileId: 3_001,
+				episodeFileConsumerIds: [9_001],
+				seriesTitle: "Private Series Title",
+				episodeTitle: "Private Episode Title",
+				plexWatchEvidence: [],
+				fileInfoHash: "hash",
+				fileTorrentState: "paused",
+				respectQuiSeeding: true,
+			},
+		} as never;
+
+		expect(buildCleanupPreviewDetails([flaggedItem], new Map())).toEqual([
+			expect.objectContaining({
+				title: "Private Series Title",
+				seriesTitle: "Private Series Title",
+				episodeTitle: "Private Episode Title",
+				targetScope: "episode",
+				arrEpisodeId: 9_001,
+				seasonNumber: 1,
+				episodeNumber: 2,
+				episodeFileId: 3_001,
+				sizeOnDisk: "2001",
+				rating: 8.5,
+			}),
+		]);
+	});
+
+	it("keeps episode warnings incognito, ignores disabled shapes, and emits no-Plex once", async () => {
+		const { deps } = makeDeps();
+		const sensitiveRuleName = "Delete Private Family Show";
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			userId: "user-1",
+			enabled: true,
+			dryRunMode: true,
+			maxRemovalsPerRun: 10,
+			requireApproval: false,
+			respectQuiSeeding: true,
+			rules: [
+				{
+					id: "episode-valid",
+					name: sensitiveRuleName,
+					enabled: true,
+					priority: 1,
+					targetScope: "episode",
+					retentionMode: false,
+					action: "delete",
+					ruleType: "plex_watch_count",
+					operator: null,
+					parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+					conditions: null,
+					plexLibraryFilter: null,
+				},
+				{
+					id: "episode-disabled",
+					name: "Disabled Private Rule",
+					enabled: false,
+					priority: 2,
+					targetScope: "episode",
+					retentionMode: false,
+					action: null,
+					ruleType: "unsupported_private_shape",
+					operator: null,
+					parameters: "{}",
+					conditions: null,
+					plexLibraryFilter: null,
+				},
+			],
+		} as never);
+
+		const result = await executeCleanupPreview(deps, "user-1");
+		const warningText = (result.warnings ?? []).join("\n");
+
+		expect(warningText).not.toContain(sensitiveRuleName);
+		expect(warningText).not.toContain("Disabled Private Rule");
+		expect(warningText).not.toContain("unsupported_private_shape");
+		expect(
+			(result.warnings ?? []).filter((warning) => warning.includes("No enabled Plex instance")),
+		).toHaveLength(1);
+	});
 });

@@ -99,7 +99,53 @@ const tabConfig: PremiumTab[] = [
 interface ExplainTarget {
 	instanceId: string;
 	arrItemId: number;
+	arrEpisodeId?: number;
 	title: string;
+}
+
+interface EpisodeDisplayFields {
+	targetScope?: "series" | "episode";
+	arrEpisodeId?: number;
+	seasonNumber?: number | null;
+	episodeNumber?: number | null;
+	episodeTitle?: string | null;
+}
+
+function formatEpisodeIdentifier(item: EpisodeDisplayFields): string | null {
+	if (
+		item.targetScope !== "episode" ||
+		item.seasonNumber === null ||
+		item.seasonNumber === undefined ||
+		item.episodeNumber === null ||
+		item.episodeNumber === undefined
+	) {
+		return null;
+	}
+	return `S${String(item.seasonNumber).padStart(2, "0")}E${String(item.episodeNumber).padStart(2, "0")}`;
+}
+
+function EpisodeIdentity({
+	item,
+	incognitoMode,
+}: {
+	item: EpisodeDisplayFields;
+	incognitoMode: boolean;
+}) {
+	const identifier = formatEpisodeIdentifier(item);
+	if (!identifier) return null;
+
+	return (
+		<p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+			<span className="rounded border border-border/50 bg-muted/40 px-1.5 py-0.5 font-mono font-medium text-foreground">
+				{identifier}
+			</span>
+			{item.episodeTitle && (
+				<span className="truncate">
+					{incognitoMode ? getLinuxIsoName(item.episodeTitle) : item.episodeTitle}
+				</span>
+			)}
+		</p>
+	);
 }
 
 export function LibraryCleanupClient() {
@@ -148,7 +194,11 @@ export function LibraryCleanupClient() {
 						executeError={execute.error}
 						onExplain={(target) => {
 							setExplainTarget(target);
-							explain.mutate({ instanceId: target.instanceId, arrItemId: target.arrItemId });
+							explain.mutate({
+								instanceId: target.instanceId,
+								arrItemId: target.arrItemId,
+								arrEpisodeId: target.arrEpisodeId,
+							});
 						}}
 					/>
 				)}
@@ -157,7 +207,11 @@ export function LibraryCleanupClient() {
 					<ApprovalsTab
 						onExplain={(target) => {
 							setExplainTarget(target);
-							explain.mutate({ instanceId: target.instanceId, arrItemId: target.arrItemId });
+							explain.mutate({
+								instanceId: target.instanceId,
+								arrItemId: target.arrItemId,
+								arrEpisodeId: target.arrEpisodeId,
+							});
 						}}
 					/>
 				)}
@@ -659,6 +713,7 @@ function ConfigTab({
 							<div className="max-h-80 overflow-y-auto space-y-2">
 								{previewData.items.map((item, i) => {
 									const score = extractStalenessScore(item.reason);
+									const episodeItem = item as typeof item & EpisodeDisplayFields;
 									const ruleSummary = incognitoMode
 										? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
 										: `${item.matchedRuleName}: ${item.reason}`;
@@ -674,6 +729,7 @@ function ConfigTab({
 													</span>
 													<QuiStatusBadge status={item.quiStatus} />
 												</div>
+												<EpisodeIdentity item={episodeItem} incognitoMode={incognitoMode} />
 												{item.action === "skipped" && (
 													<p className="mt-1 text-xs text-muted-foreground">{ruleSummary}</p>
 												)}
@@ -685,6 +741,11 @@ function ConfigTab({
 														onExplain({
 															instanceId: item.instanceId,
 															arrItemId: item.arrItemId,
+															arrEpisodeId:
+																episodeItem.targetScope === "episode" &&
+																typeof episodeItem.arrEpisodeId === "number"
+																	? episodeItem.arrEpisodeId
+																	: undefined,
 															title: item.title,
 														})
 													}
@@ -826,6 +887,9 @@ function ConfigTab({
 											Protection
 										</span>
 									)}
+									<StatusBadge status={rule.targetScope === "episode" ? "info" : "default"}>
+										{rule.targetScope === "episode" ? "Episode target" : "Series target"}
+									</StatusBadge>
 									{rule.action && rule.action !== "delete" && !rule.retentionMode && (
 										<StatusBadge status={rule.action === "unmonitor" ? "warning" : "info"}>
 											{rule.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
@@ -1136,6 +1200,10 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 												</StatusBadge>
 											)}
 										</div>
+										<EpisodeIdentity
+											item={item as typeof item & EpisodeDisplayFields}
+											incognitoMode={incognitoMode}
+										/>
 										<p className="text-xs text-muted-foreground mt-0.5">
 											{incognitoMode
 												? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
@@ -1160,6 +1228,10 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											onExplain({
 												instanceId: item.instanceId,
 												arrItemId: item.arrItemId,
+												arrEpisodeId:
+													item.targetScope === "episode"
+														? (item.arrEpisodeId ?? undefined)
+														: undefined,
 												title: item.title,
 											})
 										}
@@ -1800,6 +1872,11 @@ function ExplainDialog({
 	onClose: () => void;
 }) {
 	const [incognitoMode] = useIncognitoMode();
+	const retentionEvidenceUnavailable =
+		data?.results.some(
+			(result) =>
+				result.retentionMode && result.filteredBy === "evidence_unavailable",
+		) ?? false;
 	return (
 		<Dialog
 			open={target !== null}
@@ -1814,6 +1891,9 @@ function ExplainDialog({
 						{target?.title ? (incognitoMode ? getLinuxIsoName(target.title) : target.title) : ""}
 					</DialogTitle>
 					<DialogDescription>How each cleanup rule evaluated this item.</DialogDescription>
+					{data?.item.targetScope === "episode" && (
+						<EpisodeIdentity item={data.item} incognitoMode={incognitoMode} />
+					)}
 				</DialogHeader>
 
 				{isPending ? (
@@ -1833,7 +1913,9 @@ function ExplainDialog({
 											{r.ruleName}
 										</span>
 										<span className="ml-auto shrink-0 inline-flex items-center rounded-full bg-muted/30 px-2 py-0.5 text-[10px] text-muted-foreground border border-border/30">
-											Skipped: {r.filteredBy.replace(/_/g, " ")}
+											{r.retentionMode && r.filteredBy === "evidence_unavailable"
+												? "Protected: evidence unavailable"
+												: `Skipped: ${r.filteredBy.replace(/_/g, " ")}`}
 										</span>
 									</>
 								) : (
@@ -1871,7 +1953,9 @@ function ExplainDialog({
 						{data.retentionProtected && (
 							<div className="mt-3 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-xs text-emerald-400 flex items-center gap-2">
 								<Shield className="h-4 w-4 shrink-0" />
-								This item is protected by a retention rule.
+								{retentionEvidenceUnavailable
+									? "This item is protected because required retention evidence is unavailable."
+									: "This item is protected by a matching retention rule."}
 							</div>
 						)}
 					</div>

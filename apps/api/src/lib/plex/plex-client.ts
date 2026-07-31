@@ -70,7 +70,10 @@ export interface PlexMovieMediaItem {
 	parts: PlexMovieMediaPart[];
 }
 
-export type PlexEpisodeMediaItem = PlexMovieMediaItem;
+export interface PlexEpisodeMediaItem extends PlexMovieMediaItem {
+	seasonNumber?: number;
+	episodeNumber?: number;
+}
 
 export interface PlexSeriesMediaItem {
 	ratingKey: string;
@@ -368,6 +371,8 @@ export class PlexClient {
 				);
 				const episodes = completeEpisodes.map((item) => ({
 					ratingKey: item.ratingKey,
+					seasonNumber: item.parentIndex,
+					episodeNumber: item.index,
 					parts: item.Media.flatMap((media) =>
 						media.Part.map((part) => ({ file: part.file, size: part.size })),
 					),
@@ -495,6 +500,29 @@ export class PlexClient {
 			viewCount: m.viewCount ?? 0,
 			lastViewedAt: m.lastViewedAt,
 		}));
+	}
+
+	/**
+	 * Read the current Plex play count for one exact episode.
+	 *
+	 * Destructive cleanup uses this at the mutation boundary instead of
+	 * authorizing from the periodically refreshed episode cache alone.
+	 */
+	async getEpisodeWatchCount(ratingKey: string): Promise<number> {
+		const data = await this.request(`/library/metadata/${encodeURIComponent(ratingKey)}`, {
+			schema: plexEpisodesResponseSchema,
+		});
+		const matches = (data.MediaContainer.Metadata ?? []).filter(
+			(item) => item.ratingKey === ratingKey,
+		);
+		if (matches.length !== 1) {
+			throw new Error(`Plex returned ${matches.length} items for episode ${ratingKey}`);
+		}
+		const watchCount = matches[0]!.viewCount ?? 0;
+		if (!Number.isSafeInteger(watchCount) || watchCount < 0) {
+			throw new Error(`Plex episode ${ratingKey} returned an invalid watch count`);
+		}
+		return watchCount;
 	}
 
 	/**

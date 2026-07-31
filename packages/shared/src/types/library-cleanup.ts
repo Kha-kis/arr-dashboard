@@ -37,6 +37,9 @@ export type CleanupRuleType = RuleType;
 export const cleanupActionSchema = z.enum(["delete", "unmonitor", "delete_files"]);
 export type CleanupAction = z.infer<typeof cleanupActionSchema>;
 
+export const cleanupTargetScopeSchema = z.enum(["series", "episode"]);
+export type CleanupTargetScope = z.infer<typeof cleanupTargetScopeSchema>;
+
 // ============================================================================
 // Cleanup Rule Schema — generic criteria + cleanup-specific filters/action
 // ============================================================================
@@ -62,6 +65,7 @@ const baseCleanupRuleSchema = z.object({
 		.nullable()
 		.optional(),
 	plexLibraryFilter: z.array(z.string()).nullable().optional(),
+	targetScope: cleanupTargetScopeSchema.optional().default("series"),
 	action: cleanupActionSchema.optional().default("delete"),
 	operator: compositeOperatorSchema.nullable().optional(),
 	conditions: z.array(conditionSchema).nullable().optional(),
@@ -82,6 +86,51 @@ const baseCleanupRuleSchema = z.object({
 	rejectionMemoryDays: z.number().int().min(0).max(36500).nullable().optional(),
 });
 
+interface CleanupRuleScopeInput {
+	targetScope?: CleanupTargetScope | null;
+	serviceFilter?: string[] | null;
+	plexLibraryFilter?: string[] | null;
+	retentionMode?: boolean | null;
+	ruleType?: RuleType | string | null;
+	parameters?: Record<string, unknown> | null;
+	operator?: CompositeOperator | string | null;
+	conditions?: readonly unknown[] | null;
+}
+
+/**
+ * Episode cleanup deliberately starts with the one rule shape for which a
+ * positive per-episode Plex witness can be evaluated without inferring
+ * unwatched/absent state from an incomplete cache.
+ */
+export function getCleanupRuleScopeValidationError(rule: CleanupRuleScopeInput): string | null {
+	if ((rule.targetScope ?? "series") !== "episode") return null;
+
+	if (rule.serviceFilter?.length !== 1 || rule.serviceFilter[0]?.toUpperCase() !== "SONARR") {
+		return "Episode-scoped cleanup rules must target Sonarr only";
+	}
+	if (rule.retentionMode === true) {
+		return "Episode-scoped cleanup rules cannot use retention mode";
+	}
+	if ((rule.plexLibraryFilter?.length ?? 0) > 0) {
+		return "Episode-scoped cleanup rules cannot use a Plex library filter";
+	}
+	if (
+		rule.ruleType === "composite" ||
+		rule.operator != null ||
+		(rule.conditions?.length ?? 0) > 0
+	) {
+		return "Episode-scoped cleanup rules cannot be composite";
+	}
+	if (rule.ruleType !== "plex_watch_count") {
+		return "Episode-scoped cleanup rules must use Plex watch count";
+	}
+	if (rule.parameters?.operator !== "greater_than") {
+		return "Episode-scoped Plex watch count rules must use greater than";
+	}
+
+	return null;
+}
+
 export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine((data, ctx) => {
 	if (data.operator != null && (!data.conditions || data.conditions.length === 0)) {
 		ctx.addIssue({
@@ -90,17 +139,31 @@ export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine((data, 
 			path: ["conditions"],
 		});
 	}
-});
-
-export const updateCleanupRuleSchema = baseCleanupRuleSchema.partial().superRefine((data, ctx) => {
-	if (data.operator != null && (!data.conditions || data.conditions.length === 0)) {
+	const scopeError = getCleanupRuleScopeValidationError(data);
+	if (scopeError) {
 		ctx.addIssue({
 			code: z.ZodIssueCode.custom,
-			message: "Composite rules must have at least one condition",
-			path: ["conditions"],
+			message: scopeError,
+			path: ["targetScope"],
 		});
 	}
 });
+
+export const updateCleanupRuleSchema = baseCleanupRuleSchema
+	.partial()
+	// Zod 4 preserves inner defaults through `partial()`. A PATCH/PUT body
+	// that omits targetScope must not silently rewrite an existing episode
+	// rule back to series scope.
+	.extend({ targetScope: cleanupTargetScopeSchema.optional() })
+	.superRefine((data, ctx) => {
+		if (data.operator != null && (!data.conditions || data.conditions.length === 0)) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "Composite rules must have at least one condition",
+				path: ["conditions"],
+			});
+		}
+	});
 
 export const reorderRulesSchema = z.object({
 	ruleIds: z.array(z.string().min(1)).min(1),
@@ -166,6 +229,7 @@ export interface CleanupRuleResponse {
 	excludeTags: number[] | null;
 	excludeTitles: string[] | null;
 	plexLibraryFilter: string[] | null;
+	targetScope: CleanupTargetScope;
 	action: string;
 	operator: CompositeOperator | null;
 	conditions: Condition[] | null;
@@ -199,6 +263,13 @@ export interface CleanupApprovalResponse {
 	instanceLabel: string | null;
 	arrItemId: number;
 	itemType: string;
+	targetScope: CleanupTargetScope;
+	arrEpisodeId: number | null;
+	seasonNumber: number | null;
+	episodeNumber: number | null;
+	/** Structured series title. `title` remains the series title for compatibility. */
+	seriesTitle?: string | null;
+	episodeTitle?: string | null;
 	title: string;
 	matchedRuleId: string;
 	matchedRuleName: string;
@@ -275,6 +346,13 @@ export interface CleanupPreviewItem {
 	instanceLabel: string | null;
 	arrItemId: number;
 	itemType: string;
+	targetScope?: CleanupTargetScope;
+	arrEpisodeId?: number | null;
+	seasonNumber?: number | null;
+	episodeNumber?: number | null;
+	/** Structured series title. `title` remains the series title for compatibility. */
+	seriesTitle?: string | null;
+	episodeTitle?: string | null;
 	title: string;
 	matchedRuleName: string;
 	reason: string;
@@ -325,11 +403,13 @@ export interface CleanupStatusResponse {
 export interface CleanupExplainRequest {
 	instanceId: string;
 	arrItemId: number;
+	arrEpisodeId?: number;
 }
 
 export const cleanupExplainRequestSchema = z.object({
 	instanceId: z.string().min(1),
 	arrItemId: z.number().int().min(1),
+	arrEpisodeId: z.number().int().min(1).optional(),
 });
 
 export interface CleanupExplainResult {
@@ -342,6 +422,9 @@ export interface CleanupExplainResult {
 		| "instance_filter"
 		| "tag_exclusion"
 		| "title_exclusion"
+		| "scope_filter"
+		| "evidence_unavailable"
+		| "unsupported_rule"
 		| "disabled"
 		| null;
 	retentionMode: boolean;
@@ -353,6 +436,11 @@ export interface CleanupExplainResponse {
 		year: number | null;
 		instanceId: string;
 		itemType: string;
+		targetScope?: "series" | "episode";
+		arrEpisodeId?: number;
+		seasonNumber?: number;
+		episodeNumber?: number;
+		episodeTitle?: string | null;
 	};
 	results: CleanupExplainResult[];
 	retentionProtected: boolean;

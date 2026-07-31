@@ -113,4 +113,14 @@ describe("buildCacheHealthItems", () => {
 
 		expect(items[0]!.lastErrorMessage).toBe("Crash at [path]:99");
 	});
+
+	it("preserves partial refresh results in the public response", () => {
+		const items = buildCacheHealthItems(
+			[makeRow({ lastResult: "partial" })],
+			instanceNameMap,
+			baseDateMs,
+		);
+
+		expect(items[0]!.lastResult).toBe("partial");
+	});
 });

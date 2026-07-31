@@ -41,6 +41,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 		buildRule: () => ({
 			name: "Requested & Watched by Requester",
 			enabled: true,
+			targetScope: "series",
 			priority: 0,
 			ruleType: "seerr_requester_watched" as const,
 			parameters: {},
@@ -60,6 +61,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 		buildRule: () => ({
 			name: "Requested but Not Watched by Requester",
 			enabled: true,
+			targetScope: "series",
 			priority: 0,
 			ruleType: "seerr_requester_not_watched" as const,
 			parameters: {},
@@ -81,6 +83,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 		buildRule: () => ({
 			name: "Stale & Unwatched",
 			enabled: true,
+			targetScope: "series",
 			priority: 0,
 			ruleType: "staleness_score" as const,
 			parameters: { operator: "greater_than", threshold: 75 },
@@ -100,6 +103,7 @@ export const RULE_TEMPLATES: RuleTemplate[] = [
 		buildRule: () => ({
 			name: "Finished & Fully Watched Series",
 			enabled: true,
+			targetScope: "series",
 			priority: 0,
 			ruleType: "composite" as const,
 			parameters: {},

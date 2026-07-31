@@ -71,10 +71,13 @@ export function useCleanupExplain() {
 		mutationFn: ({
 			instanceId,
 			arrItemId,
+			arrEpisodeId,
 		}: {
 			instanceId: string;
 			arrItemId: number;
-		}): Promise<CleanupExplainResponse> => libraryCleanupApi.explain(instanceId, arrItemId),
+			arrEpisodeId?: number;
+		}): Promise<CleanupExplainResponse> =>
+			libraryCleanupApi.explain(instanceId, arrItemId, arrEpisodeId),
 	});
 }
 

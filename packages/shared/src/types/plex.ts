@@ -215,7 +215,7 @@ export interface CacheHealthItem {
 		| "emby"
 		| "emby_episode";
 	lastRefreshedAt: string;
-	lastResult: "success" | "error";
+	lastResult: "success" | "partial" | "error";
 	lastErrorMessage: string | null;
 	itemCount: number;
 	isStale: boolean;

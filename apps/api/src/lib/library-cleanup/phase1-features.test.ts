@@ -13,9 +13,18 @@
  */
 
 import { ruleParamSchemaMap } from "@arr/shared";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { LibraryCleanupRule } from "../prisma.js";
-import { evaluateItemAgainstRules, explainItemAgainstRules } from "./rule-evaluators.js";
+import {
+	buildEvalContextWithHealth,
+	buildUnavailableRuleWarning,
+	seriesRetentionProtectsEpisode,
+} from "./cleanup-executor.js";
+import {
+	evaluateItemAgainstRules,
+	explainItemAgainstRules,
+	ruleUsesUnavailableData,
+} from "./rule-evaluators.js";
 import type { CacheItemForEval, EvalContext, PlexWatchInfo, SeerrRequestInfo } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -34,6 +43,7 @@ interface TestRule {
 	excludeTags: string | null;
 	excludeTitles: string | null;
 	plexLibraryFilter: string | null;
+	targetScope: "series" | "episode";
 	action: string;
 	operator: string | null;
 	conditions: string | null;
@@ -103,6 +113,7 @@ function makeRule(overrides: Partial<TestRule> = {}): TestRule {
 		excludeTags: null,
 		excludeTitles: null,
 		plexLibraryFilter: null,
+		targetScope: "series",
 		action: "delete",
 		operator: null,
 		conditions: null,
@@ -325,7 +336,7 @@ describe("prefetch failure handling", () => {
 		expect(result!.ruleId).toBe("composite-2");
 	});
 
-	it("skips retention rule when its data source has failed", () => {
+	it("fails closed when an applicable retention rule's data source has failed", () => {
 		const retRule = makeRule({
 			id: "ret-plex",
 			name: "Protect watched",
@@ -347,9 +358,34 @@ describe("prefetch failure handling", () => {
 			ctx,
 			failedSources,
 		);
-		// Retention rule skipped (plex failed) → cleanup rule matches
-		expect(result).not.toBeNull();
-		expect(result!.ruleId).toBe("cleanup-age");
+		// Plex evidence cannot disprove retention, so cleanup is blocked.
+		expect(result).toBeNull();
+	});
+
+	it("does not let an inapplicable unavailable retention rule protect the item", () => {
+		const retRule = makeRule({
+			id: "ret-other-instance",
+			retentionMode: true,
+			ruleType: "plex_watch_count",
+			parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+			instanceFilter: JSON.stringify(["another-instance"]),
+		});
+		const cleanupRule = makeRule({
+			id: "cleanup-age",
+			retentionMode: false,
+			ruleType: "age",
+			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+		});
+
+		const result = evaluateItemAgainstRules(
+			makeCacheItem(),
+			[retRule, cleanupRule] as LibraryCleanupRule[],
+			"RADARR",
+			ctx,
+			new Set(["plex"]),
+		);
+
+		expect(result?.ruleId).toBe("cleanup-age");
 	});
 
 	it("no failedSources = normal evaluation", () => {
@@ -464,6 +500,279 @@ describe("explainItemAgainstRules", () => {
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "RADARR", ctx);
 		expect(results[0]!.retentionMode).toBe(true);
 		expect(results[0]!.matched).toBe(true); // item has 5 plex watches
+	});
+
+	it("uses episode watch evidence instead of the parent series aggregate", () => {
+		const rules = [
+			makeRule({
+				id: "episode-watch-count",
+				name: "Remove watched episodes",
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count: 2 }),
+				targetScope: "episode",
+			}),
+		] as LibraryCleanupRule[];
+
+		const results = explainItemAgainstRules(makeCacheItem(), rules, "SONARR", ctx, {
+			arrEpisodeId: 202,
+			watchCount: 1,
+			available: true,
+		});
+
+		expect(results[0]).toMatchObject({
+			ruleId: "episode-watch-count",
+			matched: false,
+			reason: null,
+			filteredBy: null,
+		});
+	});
+
+	it("matches an episode rule from the selected episode's watch evidence", () => {
+		const rules = [
+			makeRule({
+				id: "episode-watch-count",
+				name: "Remove watched episodes",
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+				targetScope: "episode",
+			}),
+		] as LibraryCleanupRule[];
+
+		const results = explainItemAgainstRules(makeCacheItem(), rules, "SONARR", ctx, {
+			arrEpisodeId: 202,
+			watchCount: 1,
+			available: true,
+		});
+
+		expect(results[0]).toMatchObject({
+			matched: true,
+			reason: "Plex watch count 1 > 0",
+			filteredBy: null,
+		});
+	});
+
+	it("does not evaluate episode rules against a series-only explanation", () => {
+		const rules = [
+			makeRule({
+				id: "episode-watch-count",
+				name: "Remove watched episodes",
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+				targetScope: "episode",
+			}),
+		] as LibraryCleanupRule[];
+
+		const results = explainItemAgainstRules(makeCacheItem(), rules, "SONARR", ctx);
+
+		expect(results[0]).toMatchObject({
+			matched: false,
+			reason: null,
+			filteredBy: "scope_filter",
+		});
+	});
+
+	it("reports unavailable episode evidence instead of a proven no-match", () => {
+		const rules = [
+			makeRule({
+				id: "episode-watch-count",
+				name: "Remove watched episodes",
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+				targetScope: "episode",
+			}),
+		] as LibraryCleanupRule[];
+
+		const results = explainItemAgainstRules(makeCacheItem(), rules, "SONARR", ctx, {
+			arrEpisodeId: 202,
+			watchCount: null,
+			available: false,
+		});
+
+		expect(results[0]).toMatchObject({
+			matched: false,
+			reason: null,
+			filteredBy: "evidence_unavailable",
+		});
+	});
+
+	it("does not explain an unsupported episode retention rule as executable", () => {
+		const rules = [
+			makeRule({
+				id: "episode-retention",
+				name: "Unsupported episode retention",
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+				targetScope: "episode",
+				retentionMode: true,
+			}),
+		] as LibraryCleanupRule[];
+
+		const results = explainItemAgainstRules(makeCacheItem(), rules, "SONARR", ctx, {
+			arrEpisodeId: 202,
+			watchCount: 1,
+			available: true,
+		});
+
+		expect(results[0]).toMatchObject({
+			matched: false,
+			reason: null,
+			filteredBy: "unsupported_rule",
+		});
+	});
+
+	it("reports an unavailable series-retention dependency for an episode", () => {
+		const rules = [
+			makeRule({
+				id: "series-retention",
+				name: "Protect watched series",
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+				targetScope: "series",
+				retentionMode: true,
+			}),
+		] as LibraryCleanupRule[];
+
+		const results = explainItemAgainstRules(
+			makeCacheItem(),
+			rules,
+			"SONARR",
+			baseCtx(),
+			{ arrEpisodeId: 202, watchCount: 1, available: true },
+			new Set(["plex"]),
+		);
+
+		expect(results[0]).toMatchObject({
+			matched: false,
+			reason: null,
+			filteredBy: "evidence_unavailable",
+			retentionMode: true,
+		});
+	});
+});
+
+describe("buildEvalContextWithHealth", () => {
+	it("tracks an unavailable Jellyfin or Emby dependency", async () => {
+		const serviceInstanceFindMany = vi.fn().mockResolvedValue([]);
+		const { ctx, failedSources } = await buildEvalContextWithHealth(
+			{
+				prisma: {
+					serviceInstance: { findMany: serviceInstanceFindMany },
+				},
+				arrClientFactory: {},
+				log: {},
+			} as never,
+			"user-1",
+			[{ enabled: true, ruleType: "jellyfin_watch_count", conditions: null }],
+		);
+
+		expect(serviceInstanceFindMany).toHaveBeenCalledWith({
+			where: { userId: "user-1", service: { in: ["JELLYFIN", "EMBY"] } },
+			select: { id: true },
+		});
+		expect(ctx.jellyfinMap).toBeUndefined();
+		expect(failedSources).toEqual(new Set(["jellyfin"]));
+	});
+
+	it("tracks an unavailable Jellyfin or Emby episode-completion dependency", async () => {
+		const serviceInstanceFindMany = vi.fn().mockResolvedValue([]);
+		const { ctx, failedSources } = await buildEvalContextWithHealth(
+			{
+				prisma: {
+					serviceInstance: { findMany: serviceInstanceFindMany },
+				},
+				arrClientFactory: {},
+				log: {},
+			} as never,
+			"user-1",
+			[{ enabled: true, ruleType: "jellyfin_episode_completion", conditions: null }],
+		);
+
+		expect(ctx.jellyfinEpisodeMap).toBeUndefined();
+		expect(failedSources).toEqual(new Set(["jellyfin"]));
+	});
+});
+
+describe("episode series-retention dependency safety", () => {
+	it("does not report episode-scoped rules as skipped by a series prefetch failure", () => {
+		const episodeRule = makeRule({
+			id: "episode-watch-count",
+			ruleType: "plex_watch_count",
+			parameters: JSON.stringify({ operator: "less_than", count: 1 }),
+			targetScope: "episode",
+		}) as unknown as LibraryCleanupRule;
+
+		expect(buildUnavailableRuleWarning([episodeRule], new Set(["plex"]))).toBeNull();
+	});
+
+	it("fails closed when a Tautulli-backed user-retention source is unavailable", () => {
+		const retentionRule = makeRule({
+			id: "tautulli-user-retention",
+			ruleType: "user_retention",
+			parameters: JSON.stringify({
+				source: "tautulli",
+				mode: "watched_by_all",
+				users: ["alice"],
+			}),
+			retentionMode: true,
+		}) as unknown as LibraryCleanupRule;
+
+		expect(ruleUsesUnavailableData(retentionRule, new Set(["tautulli"]))).toBe(true);
+		expect(buildUnavailableRuleWarning([retentionRule], new Set(["tautulli"]))).toContain(
+			"1 retention rule defaults to protection for safety",
+		);
+		expect(
+			seriesRetentionProtectsEpisode(
+				makeCacheItem({ itemType: "series" }),
+				[retentionRule],
+				baseCtx(),
+				new Set(["tautulli"]),
+			),
+		).toBe(true);
+	});
+
+	it("fails closed when either source of a combined user-retention rule is unavailable", () => {
+		const retentionRule = makeRule({
+			id: "combined-user-retention",
+			ruleType: "user_retention",
+			parameters: JSON.stringify({
+				source: "either",
+				mode: "watched_by_all",
+				users: ["alice"],
+			}),
+			retentionMode: true,
+		}) as unknown as LibraryCleanupRule;
+
+		expect(ruleUsesUnavailableData(retentionRule, new Set(["plex"]))).toBe(true);
+		expect(buildUnavailableRuleWarning([retentionRule], new Set(["plex"]))).toContain(
+			"1 retention rule defaults to protection for safety",
+		);
+		expect(
+			seriesRetentionProtectsEpisode(
+				makeCacheItem({ itemType: "series" }),
+				[retentionRule],
+				baseCtx(),
+				new Set(["plex"]),
+			),
+		).toBe(true);
+	});
+
+	it("fails closed when Plex is unavailable to a requester-aware retention rule", () => {
+		const retentionRule = makeRule({
+			id: "requester-watched-retention",
+			ruleType: "seerr_requester_watched",
+			parameters: JSON.stringify({}),
+			retentionMode: true,
+		}) as unknown as LibraryCleanupRule;
+
+		expect(ruleUsesUnavailableData(retentionRule, new Set(["plex"]))).toBe(true);
+		expect(
+			seriesRetentionProtectsEpisode(
+				makeCacheItem({ itemType: "series" }),
+				[retentionRule],
+				baseCtx(),
+				new Set(["plex"]),
+			),
+		).toBe(true);
 	});
 });
 
@@ -637,7 +946,7 @@ describe("circuit breaker logic", () => {
 describe("retention + prefetch failure interaction", () => {
 	const ctx = baseCtx();
 
-	it("item is NOT protected when retention rule's data source failed", () => {
+	it("item is protected when an applicable retention rule's data source failed", () => {
 		// Retention: protect if plex watch count > 0 (but plex is down)
 		// Cleanup: remove if age > 30 days
 		const retRule = makeRule({
@@ -661,9 +970,8 @@ describe("retention + prefetch failure interaction", () => {
 			ctx,
 			failedSources,
 		);
-		// Retention is skipped (plex failed) → age rule matches → item flagged
-		expect(result).not.toBeNull();
-		expect(result!.ruleId).toBe("clean-age");
+		// Missing Plex evidence cannot disprove retention.
+		expect(result).toBeNull();
 	});
 
 	it("item is still protected by retention rule using healthy data source", () => {

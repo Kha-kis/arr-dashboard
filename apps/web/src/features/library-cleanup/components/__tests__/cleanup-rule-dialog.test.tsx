@@ -129,6 +129,7 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 		excludeTags: null,
 		excludeTitles: null,
 		plexLibraryFilter: null,
+		targetScope: "series",
 		action: "delete",
 		operator: null,
 		conditions: null,
@@ -195,6 +196,80 @@ describe("CleanupRuleDialog", () => {
 			renderDialog();
 			expect(screen.getByText("Single Condition")).toBeInTheDocument();
 			expect(screen.getByText("Composite Rule")).toBeInTheDocument();
+		});
+
+		it("defaults to series scope and warns that Plex totals and destructive actions are series-wide", () => {
+			renderDialog();
+
+			expect(screen.getByRole("button", { name: /^Series/ })).toHaveAttribute(
+				"aria-pressed",
+				"true",
+			);
+			expect(
+				screen.getByText(
+					/Plex conditions use show-level totals.*affect the entire series and all of its episode files/,
+				),
+			).toBeInTheDocument();
+		});
+
+		it("constrains episode scope to a positive Plex watch count on Sonarr", () => {
+			renderDialog();
+
+			fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+
+			expect(screen.queryByText("Composite Rule")).not.toBeInTheDocument();
+			expect(screen.queryByText("Retention Rule")).not.toBeInTheDocument();
+			expect(screen.getByText("Plex: Watch Count")).toBeInTheDocument();
+			expect(screen.getByText(/Only Plex Watch Count is supported/)).toBeInTheDocument();
+			expect(screen.getByDisplayValue("Greater than")).toBeDisabled();
+			expect(screen.getByRole("button", { name: "Filter by sonarr" })).toHaveAttribute(
+				"aria-pressed",
+				"true",
+			);
+			expect(screen.queryByRole("button", { name: "Filter by radarr" })).not.toBeInTheDocument();
+		});
+
+		it("submits the enforced episode rule shape", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+
+			fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Watched episodes" },
+			});
+			fireEvent.change(screen.getByLabelText("Count"), { target: { value: "2" } });
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				targetScope: "episode",
+				ruleType: "plex_watch_count",
+				parameters: { operator: "greater_than", count: 2 },
+				serviceFilter: ["sonarr"],
+				retentionMode: false,
+				plexLibraryFilter: null,
+				operator: null,
+				conditions: null,
+			});
+		});
+
+		it("explains exact episode action semantics", () => {
+			renderDialog();
+			fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+
+			expect(
+				screen.getByText(
+					/Unmonitor the exact Sonarr episode, then delete its verified episode file/,
+				),
+			).toBeInTheDocument();
+
+			fireEvent.click(screen.getByText("Delete Files"));
+			expect(
+				screen.getByText(/episode remains monitored, so Sonarr may download it again/),
+			).toBeInTheDocument();
+
+			fireEvent.click(screen.getByText("Unmonitor"));
+			expect(screen.getByText(/Unmonitor only the exact Sonarr episode/)).toBeInTheDocument();
 		});
 
 		it("defaults to delete action", () => {
@@ -293,6 +368,29 @@ describe("CleanupRuleDialog", () => {
 				screen.getByText("Set the item as unmonitored (keeps files and data)."),
 			).toBeInTheDocument();
 		});
+
+		it("keeps target scope and rule configuration immutable while editing", async () => {
+			const onSave = vi.fn();
+			renderDialog({ editRule: makeEditRule(), onSave });
+
+			const seriesButton = screen.getByRole("button", { name: /^Series/ });
+			const episodeButton = screen.getByRole("button", { name: /^Episodes/ });
+			expect(seriesButton).toBeDisabled();
+			expect(episodeButton).toBeDisabled();
+			expect(screen.getByText(/Target scope cannot be changed while editing/)).toBeInTheDocument();
+
+			fireEvent.click(episodeButton);
+			expect(seriesButton).toHaveAttribute("aria-pressed", "true");
+			expect(screen.getByText("Age")).toBeInTheDocument();
+
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				targetScope: "series",
+				ruleType: "age",
+				parameters: { field: "arrAddedAt", operator: "older_than", days: 365 },
+			});
+		});
 	});
 
 	// ================================================================
@@ -306,6 +404,7 @@ describe("CleanupRuleDialog", () => {
 					name: "Template Rule",
 					ruleType: "composite",
 					enabled: true,
+					targetScope: "series",
 					priority: 0,
 					parameters: {},
 					action: "unmonitor",
@@ -325,6 +424,7 @@ describe("CleanupRuleDialog", () => {
 					name: "Template Rule",
 					ruleType: "age",
 					enabled: true,
+					targetScope: "series",
 					priority: 0,
 					parameters: { operator: "older_than", days: 90 },
 					action: "delete",
@@ -343,6 +443,7 @@ describe("CleanupRuleDialog", () => {
 					name: "Template Rule",
 					ruleType: "age",
 					enabled: true,
+					targetScope: "series",
 					priority: 0,
 					parameters: {},
 					action: "unmonitor",
@@ -362,6 +463,7 @@ describe("CleanupRuleDialog", () => {
 					name: "Template Rule",
 					ruleType: "composite",
 					enabled: true,
+					targetScope: "series",
 					priority: 0,
 					parameters: {},
 					action: "delete",
@@ -386,6 +488,7 @@ describe("CleanupRuleDialog", () => {
 					name: "Template Rule",
 					ruleType: "age",
 					enabled: true,
+					targetScope: "series",
 					priority: 0,
 					parameters: {},
 					action: "delete",
@@ -403,6 +506,7 @@ describe("CleanupRuleDialog", () => {
 					name: "Composite Template",
 					ruleType: "composite",
 					enabled: true,
+					targetScope: "series",
 					priority: 0,
 					parameters: {},
 					action: "delete",

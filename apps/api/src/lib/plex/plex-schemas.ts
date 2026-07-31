@@ -117,6 +117,8 @@ export const plexEpisodeMediaItemsResponseSchema = z.looseObject({
 			.array(
 				z.looseObject({
 					ratingKey: z.string(),
+					parentIndex: z.number().int().nonnegative().optional(),
+					index: z.number().int().positive().optional(),
 					Media: z.array(plexMediaSchema).min(1),
 				}),
 			)

@@ -28,8 +28,41 @@ describe("library cleanup approval serialization", () => {
 			}),
 		).toMatchObject({
 			id: "approval-1",
+			targetScope: "series",
+			arrEpisodeId: null,
+			seasonNumber: null,
+			episodeNumber: null,
+			seriesTitle: "Example Movie",
+			episodeTitle: null,
 			status: "pending",
 			lastExecutionError: "Skipped for safety: shared Plex risk",
+		});
+	});
+
+	it("serializes episode approval coordinates without changing them", () => {
+		const timestamp = new Date("2026-07-27T12:00:00.000Z");
+
+		expect(
+			serializeApproval({
+				id: "approval-episode",
+				targetScope: "episode",
+				arrEpisodeId: 456,
+				seasonNumber: 2,
+				episodeNumber: 7,
+				title: "Example Series",
+				episodeTitle: "Episode Seven",
+				sizeOnDisk: 42n,
+				createdAt: timestamp,
+				expiresAt: timestamp,
+			}),
+		).toMatchObject({
+			targetScope: "episode",
+			arrEpisodeId: 456,
+			seasonNumber: 2,
+			episodeNumber: 7,
+			title: "Example Series",
+			seriesTitle: "Example Series",
+			episodeTitle: "Episode Seven",
 		});
 	});
 
