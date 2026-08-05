@@ -236,72 +236,81 @@ export async function refreshJellyfinCache(
 		if (errors === 0 && complete) {
 			completedAt = new Date();
 			try {
-				await prisma.$transaction(async (tx) => {
-					if (expectedConnectionFingerprint) {
-						const currentInstance = await tx.serviceInstance.findUnique({
-							where: { id: instanceId },
-							select: {
-								service: true,
-								baseUrl: true,
-								encryptedApiKey: true,
-								encryptionIv: true,
-								encryptedHttpAuthCredentials: true,
-								httpAuthEncryptionIv: true,
-								enabled: true,
+				await prisma.$transaction(
+					async (tx) => {
+						if (expectedConnectionFingerprint) {
+							if (isPostgresqlDatabase()) {
+								await tx.$queryRawUnsafe(
+									'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+									instanceId,
+								);
+							}
+							const currentInstance = await tx.serviceInstance.findUnique({
+								where: { id: instanceId },
+								select: {
+									service: true,
+									baseUrl: true,
+									encryptedApiKey: true,
+									encryptionIv: true,
+									encryptedHttpAuthCredentials: true,
+									httpAuthEncryptionIv: true,
+									enabled: true,
+								},
+							});
+							if (
+								!currentInstance?.enabled ||
+								(currentInstance.service !== "JELLYFIN" && currentInstance.service !== "EMBY") ||
+								jellyfinConnectionFingerprint(currentInstance) !== expectedConnectionFingerprint
+							) {
+								throw new JellyfinRefreshSupersededError();
+							}
+						}
+						await tx.jellyfinCache.deleteMany({ where: { instanceId } });
+						if (items.length > 0) {
+							await tx.jellyfinCache.createMany({
+								data: items.map((agg) => ({
+									instanceId,
+									tmdbId: agg.tmdbId,
+									mediaType: agg.mediaType,
+									libraryId: agg.libraryId,
+									libraryName: agg.libraryName,
+									title: agg.title,
+									jellyfinId: agg.jellyfinId,
+									lastWatchedAt: agg.lastWatchedAt,
+									watchCount: agg.watchCount,
+									watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
+									onDeck: agg.onDeck,
+									userRating: agg.userRating,
+									collections: JSON.stringify(agg.collections),
+									addedAt: agg.addedAt,
+									thumb: agg.thumb,
+								})),
+							});
+						}
+						await tx.cacheRefreshStatus.upsert({
+							where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
+							create: {
+								instanceId,
+								cacheType: "jellyfin",
+								lastRefreshedAt: completedAt!,
+								lastResult: "success",
+								itemCount: items.length,
+								lastAttemptAt: completedAt!,
+								lastAttemptResult: "success",
+							},
+							update: {
+								lastRefreshedAt: completedAt!,
+								lastResult: "success",
+								lastErrorMessage: null,
+								itemCount: items.length,
+								lastAttemptAt: completedAt!,
+								lastAttemptResult: "success",
+								lastAttemptErrorMessage: null,
 							},
 						});
-						if (
-							!currentInstance?.enabled ||
-							(currentInstance.service !== "JELLYFIN" && currentInstance.service !== "EMBY") ||
-							jellyfinConnectionFingerprint(currentInstance) !== expectedConnectionFingerprint
-						) {
-							throw new JellyfinRefreshSupersededError();
-						}
-					}
-					await tx.jellyfinCache.deleteMany({ where: { instanceId } });
-					if (items.length > 0) {
-						await tx.jellyfinCache.createMany({
-							data: items.map((agg) => ({
-								instanceId,
-								tmdbId: agg.tmdbId,
-								mediaType: agg.mediaType,
-								libraryId: agg.libraryId,
-								libraryName: agg.libraryName,
-								title: agg.title,
-								jellyfinId: agg.jellyfinId,
-								lastWatchedAt: agg.lastWatchedAt,
-								watchCount: agg.watchCount,
-								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-								onDeck: agg.onDeck,
-								userRating: agg.userRating,
-								collections: JSON.stringify(agg.collections),
-								addedAt: agg.addedAt,
-								thumb: agg.thumb,
-							})),
-						});
-					}
-					await tx.cacheRefreshStatus.upsert({
-						where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
-						create: {
-							instanceId,
-							cacheType: "jellyfin",
-							lastRefreshedAt: completedAt!,
-							lastResult: "success",
-							itemCount: items.length,
-							lastAttemptAt: completedAt!,
-							lastAttemptResult: "success",
-						},
-						update: {
-							lastRefreshedAt: completedAt!,
-							lastResult: "success",
-							lastErrorMessage: null,
-							itemCount: items.length,
-							lastAttemptAt: completedAt!,
-							lastAttemptResult: "success",
-							lastAttemptErrorMessage: null,
-						},
-					});
-				});
+					},
+					{ isolationLevel: "Serializable" },
+				);
 				upserted = items.length;
 			} catch (err) {
 				complete = false;
@@ -344,4 +353,8 @@ class JellyfinRefreshSupersededError extends Error {
 		super("Jellyfin service connection changed during refresh");
 		this.name = "JellyfinRefreshSupersededError";
 	}
+}
+
+function isPostgresqlDatabase(): boolean {
+	return /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
 }

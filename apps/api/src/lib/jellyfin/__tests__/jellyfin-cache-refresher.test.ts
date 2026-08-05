@@ -6,7 +6,7 @@
  * lastPlayedDate is present, even if item.played === false.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { refreshJellyfinCache } from "../jellyfin-cache-refresher.js";
 import type {
 	JellyfinClient,
@@ -70,6 +70,7 @@ function makeMockClient(items: JellyfinItem[]): JellyfinClient {
 function makeMockPrisma() {
 	const upserts: unknown[] = [];
 	const tx = {
+		$queryRawUnsafe: vi.fn().mockResolvedValue([]),
 		serviceInstance: {
 			findUnique: vi.fn().mockResolvedValue({
 				service: "JELLYFIN",
@@ -99,6 +100,10 @@ function makeMockPrisma() {
 	};
 	return { stub, upserts, tx };
 }
+
+afterEach(() => {
+	vi.unstubAllEnvs();
+});
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -376,5 +381,58 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
 		expect(tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
 		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it("locks the PostgreSQL service row before validating identity and publishing", async () => {
+		vi.stubEnv("DATABASE_URL", "postgresql://database.example.com/arr");
+		const client = makeMockClient([]);
+		const { stub, tx } = makeMockPrisma();
+		const order: string[] = [];
+		tx.$queryRawUnsafe.mockImplementation(async () => {
+			order.push("lock");
+			return [];
+		});
+		tx.serviceInstance.findUnique.mockImplementation(async () => {
+			order.push("identity");
+			return {
+				service: "JELLYFIN",
+				baseUrl: "https://jellyfin-current.example.com",
+				encryptedApiKey: "current-key",
+				encryptionIv: "current-iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				enabled: true,
+			};
+		});
+		tx.jellyfinCache.deleteMany.mockImplementation(async () => {
+			order.push("publish");
+			return { count: 0 };
+		});
+		const expectedConnectionFingerprint = jellyfinConnectionFingerprint({
+			service: "JELLYFIN",
+			baseUrl: "https://jellyfin-current.example.com",
+			encryptedApiKey: "current-key",
+			encryptionIv: "current-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+		} as never);
+
+		const result = await refreshJellyfinCache(
+			client,
+			stub as never,
+			"inst-1",
+			silentLog,
+			expectedConnectionFingerprint,
+		);
+
+		expect(result.complete).toBe(true);
+		expect(order).toEqual(["lock", "identity", "publish"]);
+		expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(
+			'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+			"inst-1",
+		);
+		expect(stub.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+			isolationLevel: "Serializable",
+		});
 	});
 });
