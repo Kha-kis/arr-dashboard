@@ -153,6 +153,7 @@ scenario before testing the opposite direction:
 ```sh
 sh ./run-live-scenario.sh policy-gate
 sh ./run-live-scenario.sh policy-core
+sh ./run-browser-policy.sh
 sh ./run-live-scenario.sh delete:radarr-uhd
 
 sh ./bootstrap-arr.sh
@@ -171,6 +172,20 @@ can occur between them. `policy-gate` is the deterministic qUI assertion: run
 it only after the qUI torrent-state scheduler has published a complete fresh
 generation. `policy-core` covers #618, #619, and #660 independently of that
 scheduler timing.
+
+`run-browser-policy.sh` drives a signed Chromium session against the selected
+candidate dashboard. It authors and round-trips `(A AND B) OR (A AND NOT C)`,
+then authors the direct Monitored condition with an Unmonitor action. Both rules
+are disabled before their first save, and the gate refuses non-harness rules and
+removes only `LC E2E` rules. It derives the endpoint from the exact
+project/service container and its Compose-labeled isolated network. In WSL
+environments where the container's loopback binding is unreachable, it falls
+back to that selected container's private address. Timestamped,
+candidate-labeled JSON evidence under `.artifacts/playwright/` records the exact
+container/image identity and OCI revision, the test-suite hash, the invoking
+checkout and dirty state, and the UTC start time. Set
+`LC_E2E_DASHBOARD_SERVICE=dashboard-postgres` to run the same flow against the
+PostgreSQL candidate.
 
 The ARR bootstrap is idempotent for an already populated fixture. It skips an
 unnecessary rescan when the exact expected file has one record and fails if an

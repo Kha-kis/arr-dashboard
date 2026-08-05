@@ -5,7 +5,15 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 REQUIRE_LIVE_NAME=0
 EXPECTED_PROJECT=""
-COMPOSE_BIN=${ARR_COMPOSE_BIN:-/home/khak1s/.docker/cli-plugins/docker-compose}
+DOCKER_BIN=${ARR_DOCKER_BIN:-docker}
+
+run_compose() {
+  if [ -n "${ARR_COMPOSE_BIN:-}" ]; then
+    "$ARR_COMPOSE_BIN" "$@"
+  else
+    "$DOCKER_BIN" compose "$@"
+  fi
+}
 
 if [ "$#" -gt 0 ]; then
   if [ "$#" -ne 2 ] || [ "$1" != "--live-project" ]; then
@@ -21,7 +29,7 @@ elif [ -z "${COMPOSE_PROJECT_NAME:-}" ]; then
   export COMPOSE_PROJECT_NAME
 fi
 
-if [ ! -x "$COMPOSE_BIN" ] || ! "$COMPOSE_BIN" version >/dev/null 2>&1; then
+if ! run_compose version >/dev/null 2>&1; then
   echo "Docker Compose v2 is not available." >&2
   exit 2
 fi
@@ -61,7 +69,7 @@ check_base_model() {
   fi
 }
 
-"$COMPOSE_BIN" \
+run_compose \
   --profile candidate-sqlite \
   --profile candidate-postgres \
   --profile baseline \
@@ -78,7 +86,7 @@ check_debug_model() {
   fi
 }
 
-"$COMPOSE_BIN" \
+run_compose \
   --profile candidate-sqlite \
   --profile candidate-postgres \
   --profile baseline \
