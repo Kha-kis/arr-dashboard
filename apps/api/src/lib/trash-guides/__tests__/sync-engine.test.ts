@@ -199,8 +199,15 @@ describe("SyncEngine - execute()", () => {
 				data: expect.objectContaining({
 					status: "PARTIAL_SUCCESS",
 					configsApplied: 1,
+					configsFailed: 1,
 					appliedConfigs: JSON.stringify([
 						{ name: "Template refreshed from TRaSH Guides", action: "updated" },
+					]),
+					failedConfigs: JSON.stringify([
+						{
+							name: "Quality profile deployment",
+							error: "Template changed after validation",
+						},
 					]),
 				}),
 			}),
@@ -219,7 +226,7 @@ describe("SyncEngine - execute()", () => {
 			partialDeployment: {
 				created: 1,
 				updated: 1,
-				skipped: 0,
+				skipped: 2,
 				details: { created: ["Created CF"], updated: ["Updated CF"] },
 			},
 		});
@@ -228,6 +235,8 @@ describe("SyncEngine - execute()", () => {
 			{ syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }) } as never,
 			{ deploySingleInstance: vi.fn().mockRejectedValue(partialConflict) } as never,
 		);
+		const progress = vi.fn();
+		engine.onProgress("sync-1", progress);
 
 		await expect(engine.execute(createSyncOptions(), undefined, "a".repeat(64))).rejects.toThrow(
 			"Profile changed during deploy",
@@ -238,12 +247,20 @@ describe("SyncEngine - execute()", () => {
 					status: "PARTIAL_SUCCESS",
 					configsApplied: 3,
 					configsFailed: 1,
+					configsSkipped: 2,
 					appliedConfigs: JSON.stringify([
 						{ name: "Template refreshed from TRaSH Guides", action: "updated" },
 						{ name: "Created CF", action: "created" },
 						{ name: "Updated CF", action: "updated" },
 					]),
 				}),
+			}),
+		);
+		expect(progress).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				totalConfigs: 6,
+				appliedConfigs: 3,
+				failedConfigs: 1,
 			}),
 		);
 	});

@@ -610,6 +610,18 @@ export class SyncEngine {
 						...partialDeployment.details.updated.map((name) => ({ name, action: "updated" })),
 					]
 				: [];
+			const deploymentFailureCount = reviewedDeploymentBlocked
+				? (partialDeployment?.details.failed?.length ?? 0) + 1
+				: 0;
+			const failedConfigEntries = reviewedDeploymentBlocked
+				? [
+						...(partialDeployment?.details.failed ?? []).map((name) => ({
+							name,
+							error: "Custom Format deployment failed",
+						})),
+						{ name: "Quality profile deployment", error: errorMessage },
+					]
+				: [];
 
 			// Preserve an honest partial state when the local template refresh succeeded
 			// but the reviewed upstream deployment was blocked before mutation.
@@ -620,9 +632,7 @@ export class SyncEngine {
 					completedAt: new Date(),
 					duration,
 					configsApplied: reviewedDeploymentBlocked ? 1 + appliedDeploymentCount : 0,
-					configsFailed: partialDeployment
-						? (partialDeployment.details.failed?.length ?? 0) + 1
-						: 0,
+					configsFailed: deploymentFailureCount,
 					configsSkipped: partialDeployment?.skipped ?? 0,
 					appliedConfigs: reviewedDeploymentBlocked
 						? JSON.stringify([
@@ -630,6 +640,7 @@ export class SyncEngine {
 								...appliedConfigEntries,
 							])
 						: "[]",
+					failedConfigs: JSON.stringify(failedConfigEntries),
 					errorLog: errorMessage,
 				},
 			});
@@ -643,10 +654,10 @@ export class SyncEngine {
 					: errorMessage,
 				progress: 0,
 				totalConfigs: reviewedDeploymentBlocked
-					? 1 + appliedDeploymentCount + (partialDeployment ? 1 : 0)
+					? 1 + appliedDeploymentCount + deploymentFailureCount + (partialDeployment?.skipped ?? 0)
 					: 0,
 				appliedConfigs: reviewedDeploymentBlocked ? 1 + appliedDeploymentCount : 0,
-				failedConfigs: partialDeployment ? (partialDeployment.details.failed?.length ?? 0) + 1 : 0,
+				failedConfigs: deploymentFailureCount,
 				errors: [{ configName: "Sync", error: errorMessage, retryable: false }],
 			});
 
