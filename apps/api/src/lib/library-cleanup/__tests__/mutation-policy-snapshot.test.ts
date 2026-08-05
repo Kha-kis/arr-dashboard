@@ -89,31 +89,43 @@ function makeDeps(
 	);
 	const publishedAt = new Date();
 	const cacheStatusUpsert = vi.fn().mockResolvedValue({});
+	const findInstance = vi.fn(async ({ where }: { where: { id: string } }) =>
+		instances.find((entry) => entry.id === where.id),
+	);
+	const cacheRefreshStatus = {
+		upsert: cacheStatusUpsert,
+		findMany: vi.fn(async ({ where }: { where: { instanceId: { in: string[] } } }) =>
+			where.instanceId.in.map((instanceId) => ({
+				instanceId,
+				lastRefreshedAt: publishedAt,
+				lastResult: "success",
+				itemCount: 0,
+				generationId: `generation-${instanceId}`,
+				generationMetadata: JSON.stringify({
+					sections: [{ key: "1", title: "Movies", type: "movie" }],
+				}),
+				lastErrorMessage: null,
+				lastAttemptResult: "success",
+				lastAttemptErrorMessage: null,
+			})),
+		),
+	};
+	const refreshTransaction = {
+		$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+		serviceInstance: { findUnique: findInstance },
+		cacheRefreshStatus,
+	};
 	const deps = {
 		prisma: {
+			$transaction: vi.fn(async (callback: (tx: typeof refreshTransaction) => Promise<unknown>) =>
+				callback(refreshTransaction),
+			),
 			libraryCleanupConfig: { findUnique: findConfig },
 			serviceInstance: { findMany: findInstances },
 			plexCache: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
 			tautulliCache: { findMany: vi.fn().mockResolvedValue([]) },
 			jellyfinCache: { findMany: vi.fn().mockResolvedValue([]) },
-			cacheRefreshStatus: {
-				upsert: cacheStatusUpsert,
-				findMany: vi.fn(async ({ where }: { where: { instanceId: { in: string[] } } }) =>
-					where.instanceId.in.map((instanceId) => ({
-						instanceId,
-						lastRefreshedAt: publishedAt,
-						lastResult: "success",
-						itemCount: 0,
-						generationId: `generation-${instanceId}`,
-						generationMetadata: JSON.stringify({
-							sections: [{ key: "1", title: "Movies", type: "movie" }],
-						}),
-						lastErrorMessage: null,
-						lastAttemptResult: "success",
-						lastAttemptErrorMessage: null,
-					})),
-				),
-			},
+			cacheRefreshStatus,
 			plexEpisodeCache: {
 				findMany: vi.fn().mockResolvedValue([]),
 				groupBy: vi.fn().mockResolvedValue([]),

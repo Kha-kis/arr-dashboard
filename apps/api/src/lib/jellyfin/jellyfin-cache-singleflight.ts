@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { recordCacheRefreshFailure } from "../cache-refresh-status.js";
 import type { PrismaClient } from "../prisma.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import { withCurrentJellyfinConnection } from "./jellyfin-connection-guard.js";
 import type { refreshJellyfinCache } from "./jellyfin-cache-refresher.js";
 
 type JellyfinCacheRefreshResult = Awaited<ReturnType<typeof refreshJellyfinCache>>;
@@ -13,17 +14,24 @@ function refreshKey(instanceId: string, connectionFingerprint: string): string {
 }
 
 type JellyfinCacheRefreshObserver = {
-	prisma: Pick<PrismaClient, "cacheRefreshStatus">;
+	prisma: Pick<PrismaClient, "$transaction">;
 	log: Pick<FastifyBaseLogger, "warn">;
 };
 
 async function recordRefreshFailure(
 	instanceId: string,
+	connectionFingerprint: string,
 	message: string,
 	observer: JellyfinCacheRefreshObserver,
 ): Promise<void> {
 	try {
-		await recordCacheRefreshFailure(observer.prisma, instanceId, "jellyfin", message.slice(0, 500));
+		await withCurrentJellyfinConnection(
+			observer.prisma,
+			instanceId,
+			connectionFingerprint,
+			async (tx) =>
+				await recordCacheRefreshFailure(tx, instanceId, "jellyfin", message.slice(0, 500)),
+		);
 	} catch (statusError) {
 		observer.log.warn(
 			{ err: statusError, instanceId },
@@ -34,6 +42,7 @@ async function recordRefreshFailure(
 
 async function runObservedRefresh(
 	instanceId: string,
+	connectionFingerprint: string,
 	refresh: () => Promise<JellyfinCacheRefreshResult>,
 	observer: JellyfinCacheRefreshObserver,
 ): Promise<JellyfinCacheRefreshResult> {
@@ -42,6 +51,7 @@ async function runObservedRefresh(
 		if ((!result.complete || !result.completedAt) && !result.superseded) {
 			await recordRefreshFailure(
 				instanceId,
+				connectionFingerprint,
 				result.errorMessages.slice(0, 3).join("; ") ||
 					"Jellyfin refresh did not publish a complete generation",
 				observer,
@@ -51,6 +61,7 @@ async function runObservedRefresh(
 	} catch (error) {
 		await recordRefreshFailure(
 			instanceId,
+			connectionFingerprint,
 			getErrorMessage(error, "Unknown Jellyfin cache refresh error"),
 			observer,
 		);
@@ -76,7 +87,12 @@ export function runJellyfinCacheRefreshSingleFlight(
 	if (existing) return existing;
 
 	const pending = Promise.resolve().then(() =>
-		runObservedRefresh(instanceId, () => refresh(connectionFingerprint), observer),
+		runObservedRefresh(
+			instanceId,
+			connectionFingerprint,
+			() => refresh(connectionFingerprint),
+			observer,
+		),
 	);
 	inFlightRefreshes.set(key, pending);
 	void pending

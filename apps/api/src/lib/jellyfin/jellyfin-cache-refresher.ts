@@ -17,8 +17,8 @@
 import type { FastifyBaseLogger } from "fastify";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
+import { withCurrentJellyfinConnection } from "./jellyfin-connection-guard.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
-import { jellyfinConnectionFingerprint } from "./service-instance-fingerprint.js";
 
 export const JELLYFIN_STALE_EVICTION_CHUNK_SIZE = 500;
 
@@ -236,35 +236,11 @@ export async function refreshJellyfinCache(
 		if (errors === 0 && complete) {
 			completedAt = new Date();
 			try {
-				await prisma.$transaction(
+				const publication = await withCurrentJellyfinConnection(
+					prisma,
+					instanceId,
+					expectedConnectionFingerprint,
 					async (tx) => {
-						if (expectedConnectionFingerprint) {
-							if (isPostgresqlDatabase()) {
-								await tx.$queryRawUnsafe(
-									'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
-									instanceId,
-								);
-							}
-							const currentInstance = await tx.serviceInstance.findUnique({
-								where: { id: instanceId },
-								select: {
-									service: true,
-									baseUrl: true,
-									encryptedApiKey: true,
-									encryptionIv: true,
-									encryptedHttpAuthCredentials: true,
-									httpAuthEncryptionIv: true,
-									enabled: true,
-								},
-							});
-							if (
-								!currentInstance?.enabled ||
-								(currentInstance.service !== "JELLYFIN" && currentInstance.service !== "EMBY") ||
-								jellyfinConnectionFingerprint(currentInstance) !== expectedConnectionFingerprint
-							) {
-								throw new JellyfinRefreshSupersededError();
-							}
-						}
 						await tx.jellyfinCache.deleteMany({ where: { instanceId } });
 						if (items.length > 0) {
 							await tx.jellyfinCache.createMany({
@@ -309,8 +285,8 @@ export async function refreshJellyfinCache(
 							},
 						});
 					},
-					isPostgresqlDatabase() ? undefined : { isolationLevel: "Serializable" },
 				);
+				if (!publication.matched) throw new JellyfinRefreshSupersededError();
 				upserted = items.length;
 			} catch (err) {
 				complete = false;
@@ -353,8 +329,4 @@ class JellyfinRefreshSupersededError extends Error {
 		super("Jellyfin service connection changed during refresh");
 		this.name = "JellyfinRefreshSupersededError";
 	}
-}
-
-function isPostgresqlDatabase(): boolean {
-	return /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
 }
