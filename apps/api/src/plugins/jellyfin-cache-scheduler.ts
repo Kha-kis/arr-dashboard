@@ -7,12 +7,10 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { recordCacheRefreshFailure } from "../lib/cache-refresh-status.js";
 import { refreshJellyfinCache } from "../lib/jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-cache-singleflight.js";
 import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 45_000; // 45 seconds
@@ -48,46 +46,20 @@ const jellyfinCacheSchedulerPlugin = fastifyPlugin(
 					for (const instance of instances) {
 						try {
 							const client = createJellyfinClient(app.encryptor, instance, app.log);
-							const result = await runJellyfinCacheRefreshSingleFlight(instance.id, () =>
-								refreshJellyfinCache(client, app.prisma, instance.id, app.log),
+							const result = await runJellyfinCacheRefreshSingleFlight(
+								instance.id,
+								() => refreshJellyfinCache(client, app.prisma, instance.id, app.log),
+								{ prisma: app.prisma, log: app.log },
 							);
 							app.log.info(
 								{ instanceId: instance.id, label: instance.label, ...result },
 								"Jellyfin cache refresh completed for instance",
 							);
-
-							try {
-								if (!result.complete || !result.completedAt) {
-									await recordCacheRefreshFailure(
-										app.prisma,
-										instance.id,
-										"jellyfin",
-										result.errorMessages.join("; ").slice(0, 500) ||
-											"Jellyfin refresh did not produce a complete generation",
-									);
-								}
-							} catch (statusErr) {
-								app.log.warn(
-									{ err: statusErr, instanceId: instance.id },
-									"Failed to update Jellyfin cache refresh status",
-								);
-							}
 						} catch (err) {
 							app.log.error(
 								{ err, instanceId: instance.id, label: instance.label },
 								"Jellyfin cache refresh failed for instance",
 							);
-							await recordCacheRefreshFailure(
-								app.prisma,
-								instance.id,
-								"jellyfin",
-								getErrorMessage(err, "Unknown error"),
-							).catch((statusErr) => {
-								app.log.warn(
-									{ err: statusErr, instanceId: instance.id },
-									"Failed to record Jellyfin cache refresh failure status",
-								);
-							});
 						}
 					}
 				});

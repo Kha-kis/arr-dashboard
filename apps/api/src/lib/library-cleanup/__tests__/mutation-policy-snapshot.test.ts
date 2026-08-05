@@ -88,6 +88,7 @@ function makeDeps(
 		},
 	);
 	const publishedAt = new Date();
+	const cacheStatusUpsert = vi.fn().mockResolvedValue({});
 	const deps = {
 		prisma: {
 			libraryCleanupConfig: { findUnique: findConfig },
@@ -96,6 +97,7 @@ function makeDeps(
 			tautulliCache: { findMany: vi.fn().mockResolvedValue([]) },
 			jellyfinCache: { findMany: vi.fn().mockResolvedValue([]) },
 			cacheRefreshStatus: {
+				upsert: cacheStatusUpsert,
 				findMany: vi.fn(async ({ where }: { where: { instanceId: { in: string[] } } }) =>
 					where.instanceId.in.map((instanceId) => ({
 						instanceId,
@@ -124,7 +126,7 @@ function makeDeps(
 		jellyfinCacheClientFactory: vi.fn(() => ({}) as never),
 		log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 	} as unknown as CleanupExecutorDeps;
-	return { deps, findConfig, findInstances };
+	return { deps, findConfig, findInstances, cacheStatusUpsert };
 }
 
 describe("authoritative mutation policy snapshots", () => {
@@ -202,6 +204,32 @@ describe("authoritative mutation policy snapshots", () => {
 			expect(refreshMock).toHaveBeenCalledOnce();
 		},
 	);
+
+	it("records an incomplete cleanup-triggered Jellyfin refresh without advancing freshness", async () => {
+		refreshMocks.jellyfin.mockResolvedValue({
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["Jellyfin request timed out"],
+			complete: false,
+		});
+		const { deps, cacheStatusUpsert } = makeDeps(
+			[rule("jellyfin_watch_count")],
+			[instance("JELLYFIN")],
+		);
+
+		const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+
+		expect(snapshot.failedSources).toEqual(new Set(["jellyfin"]));
+		expect(cacheStatusUpsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.objectContaining({
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: "Jellyfin request timed out",
+				}),
+			}),
+		);
+		expect(cacheStatusUpsert.mock.calls[0]?.[0].update).not.toHaveProperty("lastRefreshedAt");
+	});
 
 	it("requires explicit complete episode coverage before accepting Plex episode evidence", async () => {
 		refreshMocks.plexEpisodes.mockResolvedValue({

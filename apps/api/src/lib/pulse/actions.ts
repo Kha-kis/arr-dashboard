@@ -178,9 +178,12 @@ async function dispatchCacheRefresh(
 			instanceId,
 			cacheType: "jellyfin",
 			refresh: () =>
-				runJellyfinCacheRefreshSingleFlight(instanceId, () =>
-					refreshJellyfinCache(client, app.prisma, instanceId, log),
+				runJellyfinCacheRefreshSingleFlight(
+					instanceId,
+					() => refreshJellyfinCache(client, app.prisma, instanceId, log),
+					{ prisma: app.prisma, log },
 				),
+			failureRecordedByRefresh: true,
 		});
 		log.info({ instanceId, cacheType }, "pulse-action: jellyfin cache refresh dispatched");
 		return { status: "ok", backgroundTask };
@@ -205,12 +208,13 @@ function runBackgroundCacheRefresh(opts: {
 	instanceId: string;
 	cacheType: PulseCacheType;
 	refresh: () => Promise<CacheRefreshResult>;
+	failureRecordedByRefresh?: boolean;
 }): Promise<void> {
-	const { app, log, instanceId, cacheType, refresh } = opts;
+	const { app, log, instanceId, cacheType, refresh, failureRecordedByRefresh = false } = opts;
 	return (async () => {
 		try {
 			const result = await refresh();
-			if (!result.complete || !result.completedAt) {
+			if ((!result.complete || !result.completedAt) && !failureRecordedByRefresh) {
 				await recordCacheRefreshFailure(
 					app.prisma,
 					instanceId,
@@ -224,14 +228,16 @@ function runBackgroundCacheRefresh(opts: {
 				"pulse-action: cache refresh completed (background)",
 			);
 		} catch (err) {
-			await recordCacheRefreshFailure(
-				app.prisma,
-				instanceId,
-				cacheType,
-				err instanceof Error ? err.message : String(err),
-			).catch((statusError) => {
-				log.warn({ err: statusError, instanceId, cacheType }, "Failed to record cache failure");
-			});
+			if (!failureRecordedByRefresh) {
+				await recordCacheRefreshFailure(
+					app.prisma,
+					instanceId,
+					cacheType,
+					err instanceof Error ? err.message : String(err),
+				).catch((statusError) => {
+					log.warn({ err: statusError, instanceId, cacheType }, "Failed to record cache failure");
+				});
+			}
 			log.error({ err, instanceId, cacheType }, "pulse-action: cache refresh failed (background)");
 		}
 	})();

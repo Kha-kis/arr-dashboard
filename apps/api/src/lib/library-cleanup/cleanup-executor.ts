@@ -8662,8 +8662,10 @@ async function refreshJellyfinMutationEvidence(
 					deps.jellyfinCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createJellyfinClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Jellyfin credentials were unavailable");
-				const refreshed = await runJellyfinCacheRefreshSingleFlight(instance.id, () =>
-					refreshJellyfinCache(client, deps.prisma, instance.id, deps.log),
+				const refreshed = await runJellyfinCacheRefreshSingleFlight(
+					instance.id,
+					() => refreshJellyfinCache(client, deps.prisma, instance.id, deps.log),
+					{ prisma: deps.prisma, log: deps.log },
 				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Jellyfin cache refresh was incomplete");

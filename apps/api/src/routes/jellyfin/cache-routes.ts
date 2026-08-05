@@ -8,11 +8,9 @@
 import type { CacheHealthResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { recordCacheRefreshFailure } from "../../lib/cache-refresh-status.js";
 import { refreshJellyfinCache } from "../../lib/jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../../lib/jellyfin/jellyfin-cache-singleflight.js";
 import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
-import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { buildCacheHealthItems } from "../plex/lib/cache-health-helpers.js";
 
@@ -69,36 +67,17 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 
 			const { client } = await requireJellyfinClient(app, userId, instanceId);
 
-			try {
-				const result = await runJellyfinCacheRefreshSingleFlight(instanceId, () =>
-					refreshJellyfinCache(client, app.prisma, instanceId, request.log),
-				);
+			const result = await runJellyfinCacheRefreshSingleFlight(
+				instanceId,
+				() => refreshJellyfinCache(client, app.prisma, instanceId, request.log),
+				{ prisma: app.prisma, log: request.log },
+			);
 
-				if (!result.complete || !result.completedAt) {
-					await recordCacheRefreshFailure(
-						app.prisma,
-						instanceId,
-						"jellyfin",
-						result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
-							"Jellyfin refresh did not publish a complete generation",
-					);
-				}
-
-				return reply.send({
-					success: result.complete && Boolean(result.completedAt),
-					upserted: result.upserted,
-					errors: result.errors,
-				});
-			} catch (err) {
-				await recordCacheRefreshFailure(
-					app.prisma,
-					instanceId,
-					"jellyfin",
-					getErrorMessage(err, "Unknown error"),
-				).catch(() => {});
-
-				throw err;
-			}
+			return reply.send({
+				success: result.complete && Boolean(result.completedAt),
+				upserted: result.upserted,
+				errors: result.errors,
+			});
 		},
 	);
 }
