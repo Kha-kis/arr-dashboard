@@ -201,6 +201,7 @@ export const DeploymentPreviewModal = ({
 				syncStrategy,
 				conflictResolutions:
 					Object.keys(conflictResolutions).length > 0 ? conflictResolutions : undefined,
+				executionToken: data?.data?.executionToken ?? "",
 			},
 			{
 				onSuccess: (response) => {

@@ -7,6 +7,7 @@
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import { AppValidationError, ConflictError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
@@ -68,6 +69,7 @@ export interface ValidationResult {
 	conflicts: ConflictInfo[];
 	errors: string[];
 	warnings: string[];
+	executionToken?: string;
 }
 
 // ============================================================================
@@ -410,10 +412,17 @@ export class SyncEngine {
 	async execute(
 		options: SyncOptions,
 		conflictResolutions?: Map<string, "REPLACE" | "SKIP">,
+		executionToken?: string,
 	): Promise<SyncResult> {
+		if (options.syncType === "MANUAL" && !executionToken) {
+			throw new AppValidationError(
+				"Manual sync requires a fresh validation token. Validate the sync again before executing.",
+			);
+		}
 		const startTime = Date.now();
 		const metrics = getSyncMetrics();
 		const completeMetrics = metrics.startOperation("sync");
+		let templateRefreshSucceeded = false;
 
 		// Create sync history record
 		const syncHistory = await this.prisma.trashSyncHistory.create({
@@ -456,6 +465,7 @@ export class SyncEngine {
 					`Template sync failed: ${syncResult.errors?.join(", ") || "Unknown error"}`,
 				);
 			}
+			templateRefreshSucceeded = true;
 
 			// Step 2: Deploy to instance using deployment executor
 			this.emitProgress({
@@ -492,6 +502,7 @@ export class SyncEngine {
 				options.userId,
 				undefined, // syncStrategy - not used in sync engine
 				deploymentConflictResolutions,
+				executionToken,
 			);
 
 			// Calculate duration and status
@@ -577,16 +588,48 @@ export class SyncEngine {
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
 
-			// Update sync history with failure
+			const partialDeployment =
+				error instanceof ConflictError &&
+				"partialDeployment" in error &&
+				error.partialDeployment &&
+				typeof error.partialDeployment === "object"
+					? (error.partialDeployment as {
+							created: number;
+							updated: number;
+							skipped: number;
+							details: { created: string[]; updated: string[]; failed?: string[] };
+						})
+					: undefined;
+			const reviewedDeploymentBlocked = templateRefreshSucceeded && error instanceof ConflictError;
+			const appliedDeploymentCount = partialDeployment
+				? partialDeployment.created + partialDeployment.updated
+				: 0;
+			const appliedConfigEntries = partialDeployment
+				? [
+						...partialDeployment.details.created.map((name) => ({ name, action: "created" })),
+						...partialDeployment.details.updated.map((name) => ({ name, action: "updated" })),
+					]
+				: [];
+
+			// Preserve an honest partial state when the local template refresh succeeded
+			// but the reviewed upstream deployment was blocked before mutation.
 			await this.prisma.trashSyncHistory.update({
 				where: { id: syncId },
 				data: {
-					status: "FAILED",
+					status: reviewedDeploymentBlocked ? "PARTIAL_SUCCESS" : "FAILED",
 					completedAt: new Date(),
 					duration,
-					configsApplied: 0,
-					configsFailed: 0,
-					configsSkipped: 0,
+					configsApplied: reviewedDeploymentBlocked ? 1 + appliedDeploymentCount : 0,
+					configsFailed: partialDeployment
+						? (partialDeployment.details.failed?.length ?? 0) + 1
+						: 0,
+					configsSkipped: partialDeployment?.skipped ?? 0,
+					appliedConfigs: reviewedDeploymentBlocked
+						? JSON.stringify([
+								{ name: "Template refreshed from TRaSH Guides", action: "updated" },
+								...appliedConfigEntries,
+							])
+						: "[]",
 					errorLog: errorMessage,
 				},
 			});
@@ -595,13 +638,21 @@ export class SyncEngine {
 			this.emitProgress({
 				syncId,
 				status: "FAILED",
-				currentStep: errorMessage,
+				currentStep: reviewedDeploymentBlocked
+					? `Template refresh completed; deployment blocked: ${errorMessage}`
+					: errorMessage,
 				progress: 0,
-				totalConfigs: 0,
-				appliedConfigs: 0,
-				failedConfigs: 0,
+				totalConfigs: reviewedDeploymentBlocked
+					? 1 + appliedDeploymentCount + (partialDeployment ? 1 : 0)
+					: 0,
+				appliedConfigs: reviewedDeploymentBlocked ? 1 + appliedDeploymentCount : 0,
+				failedConfigs: partialDeployment ? (partialDeployment.details.failed?.length ?? 0) + 1 : 0,
 				errors: [{ configName: "Sync", error: errorMessage, retryable: false }],
 			});
+
+			if (error instanceof ConflictError) {
+				throw error;
+			}
 
 			return {
 				syncId,

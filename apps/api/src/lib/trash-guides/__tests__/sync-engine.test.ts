@@ -8,6 +8,7 @@
 import { describe, it, expect, vi } from "vitest";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
+import { ConflictError } from "../../errors.js";
 import { SyncEngine, type SyncOptions } from "../sync-engine.js";
 
 // Create mock template
@@ -156,6 +157,96 @@ const createSyncOptions = (overrides: Partial<SyncOptions> = {}): SyncOptions =>
 	userId: "user-123",
 	syncType: "MANUAL",
 	...overrides,
+});
+
+describe("SyncEngine - execute()", () => {
+	it("requires a fresh validation token for manual execution", async () => {
+		const engine = new SyncEngine({} as never);
+
+		await expect(engine.execute(createSyncOptions())).rejects.toThrow(
+			"Manual sync requires a fresh validation token",
+		);
+	});
+
+	it("records an honest partial result when refresh succeeds but reviewed deployment is stale", async () => {
+		const historyUpdate = vi.fn().mockResolvedValue({});
+		const prisma = {
+			trashSyncHistory: {
+				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
+				update: historyUpdate,
+			},
+		};
+		const templateUpdater = {
+			syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }),
+		};
+		const deploymentExecutor = {
+			deploySingleInstance: vi
+				.fn()
+				.mockRejectedValue(new ConflictError("Template changed after validation")),
+		};
+		const engine = new SyncEngine(
+			prisma as never,
+			templateUpdater as never,
+			deploymentExecutor as never,
+		);
+
+		await expect(engine.execute(createSyncOptions(), undefined, "a".repeat(64))).rejects.toThrow(
+			"Template changed after validation",
+		);
+		expect(historyUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "sync-1" },
+				data: expect.objectContaining({
+					status: "PARTIAL_SUCCESS",
+					configsApplied: 1,
+					appliedConfigs: JSON.stringify([
+						{ name: "Template refreshed from TRaSH Guides", action: "updated" },
+					]),
+				}),
+			}),
+		);
+	});
+
+	it("includes upstream CF writes when a later reviewed profile mutation is blocked", async () => {
+		const historyUpdate = vi.fn().mockResolvedValue({});
+		const prisma = {
+			trashSyncHistory: {
+				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
+				update: historyUpdate,
+			},
+		};
+		const partialConflict = Object.assign(new ConflictError("Profile changed during deploy"), {
+			partialDeployment: {
+				created: 1,
+				updated: 1,
+				skipped: 0,
+				details: { created: ["Created CF"], updated: ["Updated CF"] },
+			},
+		});
+		const engine = new SyncEngine(
+			prisma as never,
+			{ syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }) } as never,
+			{ deploySingleInstance: vi.fn().mockRejectedValue(partialConflict) } as never,
+		);
+
+		await expect(engine.execute(createSyncOptions(), undefined, "a".repeat(64))).rejects.toThrow(
+			"Profile changed during deploy",
+		);
+		expect(historyUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "PARTIAL_SUCCESS",
+					configsApplied: 3,
+					configsFailed: 1,
+					appliedConfigs: JSON.stringify([
+						{ name: "Template refreshed from TRaSH Guides", action: "updated" },
+						{ name: "Created CF", action: "created" },
+						{ name: "Updated CF", action: "updated" },
+					]),
+				}),
+			}),
+		);
+	});
 });
 
 describe("SyncEngine - validate()", () => {

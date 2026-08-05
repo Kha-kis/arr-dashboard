@@ -23,7 +23,8 @@ import {
 	type ValidationResult,
 	validateSync,
 } from "../../lib/api-client/trash-guides";
-import { syncKeys, trashGuidesKeys } from "../../lib/query-keys";
+import { ApiError } from "../../lib/api-client/base";
+import { deploymentHistoryKeys, syncKeys, trashGuidesKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // Validation Hook
@@ -228,19 +229,27 @@ export function useValidateSync(options?: UseValidateSyncOptions) {
 
 export function useExecuteSync() {
 	const queryClient = useQueryClient();
+	const invalidateSyncConsumers = (variables: SyncExecuteRequest) => {
+		queryClient.invalidateQueries({ queryKey: syncKeys.history(variables.instanceId) });
+		queryClient.invalidateQueries({
+			queryKey: trashGuidesKeys.templates.stats(variables.templateId),
+		});
+		queryClient.invalidateQueries({ queryKey: trashGuidesKeys.templates.all });
+		queryClient.invalidateQueries({
+			queryKey: trashGuidesKeys.deployment.preview(variables.templateId, variables.instanceId),
+		});
+		queryClient.invalidateQueries({ queryKey: deploymentHistoryKeys.all });
+	};
 
 	return useMutation<SyncResult, Error, SyncExecuteRequest>({
 		mutationFn: executeSync,
-		onSuccess: (data, variables) => {
-			// Invalidate sync history for the instance
-			queryClient.invalidateQueries({
-				queryKey: syncKeys.history(variables.instanceId),
-			});
-
-			// Invalidate template stats
-			queryClient.invalidateQueries({
-				queryKey: trashGuidesKeys.templates.stats(variables.templateId),
-			});
+		onError: (error, variables) => {
+			if (error instanceof ApiError && error.status === 409) {
+				invalidateSyncConsumers(variables);
+			}
+		},
+		onSuccess: (_data, variables) => {
+			invalidateSyncConsumers(variables);
 		},
 	});
 }

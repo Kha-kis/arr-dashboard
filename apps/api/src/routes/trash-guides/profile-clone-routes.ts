@@ -532,8 +532,6 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			customFormatSelections,
 			sourceInstanceId,
 			sourceProfileId,
-			sourceProfileName,
-			sourceInstanceLabel,
 			profileConfig,
 			matchedTrashProfileId,
 			matchedScoreSet,
@@ -558,6 +556,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const instance = await requireInstance(app, userId, sourceInstanceId);
+		if (instance.service.toUpperCase() !== serviceType) {
+			return reply.status(400).send({
+				success: false,
+				error: `Service type mismatch: instance is ${instance.service}, request is ${serviceType}`,
+			});
+		}
 
 		// Create SDK client
 		const client = app.arrClientFactory.create(instance);
@@ -603,6 +607,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				trashCFLookup.set(cf.trash_id, cf);
 			}
 		}
+		const sourceProfileScores = new Map<number, number>();
+		for (const item of fullProfile.formatItems ?? []) {
+			if (Number.isInteger(item.format) && Number.isFinite(item.score)) {
+				sourceProfileScores.set(item.format, item.score);
+			}
+		}
 
 		// Build template config from selections using extracted helpers
 		const customFormatsConfig = buildCustomFormatsConfig(
@@ -610,13 +620,14 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			cfLookup,
 			trashCFLookup,
 			sourceInstanceId,
+			sourceProfileScores,
 		);
 
 		const completeQualityProfile = buildCompleteQualityProfile(fullProfile, profileConfig, {
 			sourceInstanceId,
-			sourceInstanceLabel,
-			sourceProfileId,
-			sourceProfileName,
+			sourceInstanceLabel: instance.label,
+			sourceProfileId: fullProfile.id,
+			sourceProfileName: fullProfile.name,
 		});
 
 		// Debug: Log the built completeQualityProfile items
@@ -648,17 +659,16 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const templateService = createTemplateService(app.prisma, app.dbProvider);
 		const template = await templateService.createTemplate(userId, {
 			name: templateName,
-			description:
-				templateDescription || `Cloned from ${sourceInstanceLabel}: ${sourceProfileName}`,
+			description: templateDescription || `Cloned from ${instance.label}: ${fullProfile.name}`,
 			serviceType,
 			config: templateConfig,
 			sourceQualityProfileTrashId: safeMatchedTrashProfileId || trashId,
-			sourceQualityProfileName: sourceProfileName,
+			sourceQualityProfileName: fullProfile.name,
 			trashGuidesCommitHash: currentCommitHash || undefined,
 		});
 
 		app.log.info(
-			`Created template "${templateName}" from cloned profile ${sourceProfileName} (${customFormatsConfig.length} CFs)`,
+			`Created template "${templateName}" from cloned profile ${fullProfile.name} (${customFormatsConfig.length} CFs)`,
 		);
 
 		return reply.status(201).send({

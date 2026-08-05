@@ -50,6 +50,11 @@ export function useExecuteDeployment() {
 
 	return useMutation<ExecuteDeploymentResponse, Error, ExecuteDeploymentPayload>({
 		mutationFn: (payload) => executeDeployment(payload),
+		onError: (_error, variables) => {
+			queryClient.invalidateQueries({
+				queryKey: trashGuidesKeys.deployment.preview(variables.templateId, variables.instanceId),
+			});
+		},
 		onSuccess: () => {
 			// Invalidate relevant queries
 			queryClient.invalidateQueries({

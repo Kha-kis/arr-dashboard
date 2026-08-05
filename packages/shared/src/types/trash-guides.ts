@@ -1508,6 +1508,8 @@ export interface DeploymentPreview {
 	requiresConflictResolution: boolean;
 	instanceReachable: boolean;
 	instanceVersion?: string;
+	/** Binds execution to the exact template and upstream state shown in this preview. */
+	executionToken: string;
 
 	// Existing deployment settings (if previously deployed)
 	existingSyncStrategy?: "auto" | "manual" | "notify";

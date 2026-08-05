@@ -1,0 +1,248 @@
+import { createHash } from "node:crypto";
+import { ConflictError } from "../errors.js";
+
+export interface DeploymentQualityProfile {
+	id?: number;
+	name?: string | null;
+}
+
+export interface DeploymentProfileMapping {
+	templateId?: string;
+	qualityProfileId: number;
+	qualityProfileName: string;
+}
+
+export interface DeploymentServiceInstance {
+	id: string;
+	service: string;
+	baseUrl: string;
+}
+
+export interface ResolvedDeploymentTarget<TProfile extends DeploymentQualityProfile> {
+	profile: TProfile | undefined;
+	profileName: string;
+	matchedBy: "mapping_id" | "mapping_name" | "source_id" | "source_name" | "template_name" | "new";
+}
+
+function findUniqueProfileByName<TProfile extends DeploymentQualityProfile>(
+	profiles: TProfile[],
+	name: string,
+): TProfile | undefined {
+	const matches = profiles.filter((profile) => profile.name === name);
+	if (matches.length > 1) {
+		throw new ConflictError(
+			`Multiple quality profiles named "${name}" exist in the instance. Rename or remove the duplicate before deploying.`,
+		);
+	}
+	return matches[0];
+}
+
+/**
+ * Resolve the one quality profile a deployment is authorized to mutate.
+ *
+ * A stored mapping is authoritative. For a first deployment, cloned templates
+ * retain the source profile identity even when the template itself was renamed.
+ * Every name fallback must be unique so preview and execution fail closed on
+ * ambiguous upstream state.
+ */
+export function resolveDeploymentTarget<TProfile extends DeploymentQualityProfile>(args: {
+	profiles: TProfile[];
+	mapping?: DeploymentProfileMapping | null;
+	sourceProfileId?: number | null;
+	isSourceInstance?: boolean;
+	sourceProfileName?: string | null;
+	templateName?: string | null;
+}): ResolvedDeploymentTarget<TProfile> {
+	const { profiles, mapping, sourceProfileId, isSourceInstance, sourceProfileName, templateName } =
+		args;
+
+	if (mapping) {
+		const mappedProfile = profiles.find((profile) => profile.id === mapping.qualityProfileId);
+		if (mappedProfile) {
+			return {
+				profile: mappedProfile,
+				profileName: mappedProfile.name ?? mapping.qualityProfileName,
+				matchedBy: "mapping_id",
+			};
+		}
+
+		const recoveredProfile = findUniqueProfileByName(profiles, mapping.qualityProfileName);
+		if (recoveredProfile) {
+			return {
+				profile: recoveredProfile,
+				profileName: recoveredProfile.name ?? mapping.qualityProfileName,
+				matchedBy: "mapping_name",
+			};
+		}
+
+		throw new ConflictError(
+			`The mapped quality profile "${mapping.qualityProfileName}" no longer exists in the instance. Unlink this deployment before selecting a different profile.`,
+		);
+	}
+
+	if (isSourceInstance && sourceProfileId !== undefined && sourceProfileId !== null) {
+		const sourceProfile = profiles.find((profile) => profile.id === sourceProfileId);
+		if (!sourceProfile) {
+			throw new ConflictError(
+				`The cloned source quality profile (ID: ${sourceProfileId}) no longer exists in the source instance. Refresh or recreate the template before deploying.`,
+			);
+		}
+		if (sourceProfileName && sourceProfile.name !== sourceProfileName) {
+			throw new ConflictError(
+				`The cloned source quality profile identity changed from "${sourceProfileName}" to "${sourceProfile.name ?? "Unknown"}". Refresh or recreate the template before deploying.`,
+			);
+		}
+		return {
+			profile: sourceProfile,
+			profileName: sourceProfile.name ?? sourceProfileName ?? "TRaSH Guides HD/UHD",
+			matchedBy: "source_id",
+		};
+	}
+
+	const candidates: Array<{
+		name: string | null | undefined;
+		matchedBy: Exclude<
+			ResolvedDeploymentTarget<TProfile>["matchedBy"],
+			"mapping_id" | "mapping_name" | "source_id" | "new"
+		>;
+	}> = [
+		{ name: sourceProfileName, matchedBy: "source_name" },
+		{ name: templateName, matchedBy: "template_name" },
+	];
+
+	const checkedNames = new Set<string>();
+	for (const candidate of candidates) {
+		if (!candidate.name || checkedNames.has(candidate.name)) continue;
+		checkedNames.add(candidate.name);
+		const profile = findUniqueProfileByName(profiles, candidate.name);
+		if (profile) {
+			return {
+				profile,
+				profileName: profile.name ?? candidate.name,
+				matchedBy: candidate.matchedBy,
+			};
+		}
+	}
+
+	return {
+		profile: undefined,
+		profileName: sourceProfileName || templateName || "TRaSH Guides HD/UHD",
+		matchedBy: "new",
+	};
+}
+
+/** Reject a deployment that would take over a profile managed by another template. */
+export function assertDeploymentTargetOwnership(args: {
+	target: ResolvedDeploymentTarget<DeploymentQualityProfile>;
+	templateId: string;
+	existingMappings: DeploymentProfileMapping[];
+}): void {
+	const targetProfileId = args.target.profile?.id;
+	if (targetProfileId === undefined) return;
+
+	const owner = args.existingMappings
+		.filter((mapping) => mapping.templateId !== args.templateId)
+		.find(
+			(mapping) =>
+				mapping.qualityProfileId === targetProfileId ||
+				mapping.qualityProfileName === args.target.profileName,
+		);
+	if (owner?.templateId && owner.templateId !== args.templateId) {
+		throw new ConflictError(
+			`Quality profile "${args.target.profileName}" is already managed by another template. Unlink that deployment before using this profile.`,
+		);
+	}
+}
+
+function stableValue(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return value.map(stableValue);
+	}
+	if (value && typeof value === "object") {
+		return Object.fromEntries(
+			Object.entries(value as Record<string, unknown>)
+				.sort(([left], [right]) => left.localeCompare(right))
+				.map(([key, item]) => [key, stableValue(item)]),
+		);
+	}
+	return value;
+}
+
+export function normalizeDeploymentBaseUrl(baseUrl: string): string {
+	try {
+		const url = new URL(baseUrl);
+		url.hash = "";
+		url.search = "";
+		url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+		return url.toString();
+	} catch {
+		return baseUrl.trim().replace(/\/+$/, "");
+	}
+}
+
+/** Resolve every local service record that represents the same upstream ARR endpoint. */
+export function getEquivalentServiceInstanceIds(
+	instances: DeploymentServiceInstance[],
+	target: DeploymentServiceInstance,
+): string[] {
+	const targetService = target.service.toUpperCase();
+	const targetBaseUrl = normalizeDeploymentBaseUrl(target.baseUrl);
+	return instances
+		.filter(
+			(instance) =>
+				instance.service.toUpperCase() === targetService &&
+				normalizeDeploymentBaseUrl(instance.baseUrl) === targetBaseUrl,
+		)
+		.map((instance) => instance.id);
+}
+
+/** Stable in-process lock identity for one user's physical ARR endpoint. */
+export function createDeploymentEndpointKey(
+	userId: string,
+	instance: Pick<DeploymentServiceInstance, "service" | "baseUrl">,
+): string {
+	return `${userId}:${instance.service.toUpperCase()}:${normalizeDeploymentBaseUrl(instance.baseUrl)}`;
+}
+
+/** Create an opaque fingerprint for the exact upstream state shown in preview. */
+export function createDeploymentStateToken(args: {
+	template: {
+		id: string;
+		name: string;
+		configData: string;
+		instanceOverrides?: string | null;
+		sourceQualityProfileName?: string | null;
+	};
+	instanceId: string;
+	connection: {
+		service: string;
+		baseUrl: string;
+		credentialIdentity: string;
+	};
+	target: ResolvedDeploymentTarget<DeploymentQualityProfile>;
+	customFormats: unknown[];
+}): string {
+	const state = stableValue({
+		template: args.template,
+		instanceId: args.instanceId,
+		connection: {
+			...args.connection,
+			baseUrl: normalizeDeploymentBaseUrl(args.connection.baseUrl),
+		},
+		target: {
+			matchedBy: args.target.matchedBy,
+			profileName: args.target.profileName,
+			profile: args.target.profile ?? null,
+		},
+		customFormats: args.customFormats,
+	});
+
+	return createHash("sha256").update(JSON.stringify(state)).digest("hex");
+}
+
+/** Fingerprint a full upstream profile for a last-moment concurrency check. */
+export function createQualityProfileStateToken(profile: unknown): string {
+	return createHash("sha256")
+		.update(JSON.stringify(stableValue(profile)))
+		.digest("hex");
+}

@@ -22,12 +22,12 @@ import type {
 
 // Re-export deployment types from shared for convenience
 export type {
-	DeploymentPreview,
-	CustomFormatDeploymentItem,
-	CustomFormatConflict,
-	DeploymentAction,
-	ConflictType,
 	ConflictResolution,
+	ConflictType,
+	CustomFormatConflict,
+	CustomFormatDeploymentItem,
+	DeploymentAction,
+	DeploymentPreview,
 };
 
 // ============================================================================
@@ -109,6 +109,7 @@ export type ExecuteDeploymentPayload = {
 	syncStrategy?: SyncStrategy;
 	/** Conflict resolutions: trashId -> resolution (use_template, keep_existing) */
 	conflictResolutions?: Record<string, ConflictResolution>;
+	executionToken: string;
 };
 
 export type ExecuteDeploymentResponse = {
@@ -122,6 +123,7 @@ export type ExecuteBulkDeploymentPayload = {
 	syncStrategy?: SyncStrategy;
 	/** Per-instance sync strategies - overrides global syncStrategy for specific instances */
 	instanceSyncStrategies?: Record<string, SyncStrategy>;
+	executionTokens: Record<string, string>;
 };
 
 export type ExecuteBulkDeploymentResponse = {

@@ -638,9 +638,10 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		Body: {
 			templateId: string;
 			instanceId: string;
+			executionToken?: string;
 		};
 	}>("/deployment/execute", async (request, reply) => {
-		const { templateId, instanceId } = request.body;
+		const { templateId, instanceId, executionToken } = request.body;
 
 		if (!templateId || !instanceId) {
 			return reply.status(400).send({
@@ -658,6 +659,9 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			templateId,
 			instanceId,
 			request.currentUser!.id,
+			undefined,
+			undefined,
+			executionToken,
 		);
 
 		return reply.send({
@@ -674,9 +678,10 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		Body: {
 			templateId: string;
 			instanceIds: string[];
+			executionTokens?: Record<string, string>;
 		};
 	}>("/deployment/bulk", async (request, reply) => {
-		const { templateId, instanceIds } = request.body;
+		const { templateId, instanceIds, executionTokens } = request.body;
 
 		if (!templateId || !instanceIds || !Array.isArray(instanceIds)) {
 			return reply.status(400).send({
@@ -717,6 +722,9 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			templateId,
 			instanceIds,
 			request.currentUser!.id,
+			undefined,
+			undefined,
+			executionTokens,
 		);
 
 		return reply.send({

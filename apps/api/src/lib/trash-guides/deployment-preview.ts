@@ -11,8 +11,8 @@ import type {
 	CustomFormatSpecification,
 	DeploymentAction,
 	DeploymentPreview,
-	TrashConflictGroup,
 	TemplateCustomFormat,
+	TrashConflictGroup,
 	UnmatchedCustomFormat,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
@@ -23,6 +23,12 @@ import type { ArrClientFactory } from "../arr/client-factory.js";
 import { AppValidationError, InstanceNotFoundError, TemplateNotFoundError } from "../errors.js";
 import { createCacheManager } from "./cache-manager.js";
 import { checkMutualExclusions } from "./conflict-checker.js";
+import {
+	assertDeploymentTargetOwnership,
+	createDeploymentStateToken,
+	getEquivalentServiceInstanceIds,
+	resolveDeploymentTarget,
+} from "./deployment-target.js";
 
 // SDK type aliases
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -59,6 +65,10 @@ interface InstanceOverridesMap {
  */
 interface ParsedTemplateConfig {
 	customFormats?: TemplateCustomFormat[];
+	completeQualityProfile?: {
+		sourceInstanceId?: string;
+		sourceProfileId?: number;
+	};
 	qualityProfile?: {
 		trash_score_set?: string;
 	};
@@ -400,55 +410,61 @@ export class DeploymentPreviewService {
 		const instanceCFScoreMap = new Map<number, number>(); // CF ID -> score
 		let targetProfile: (typeof instanceQualityProfiles)[0] | undefined;
 
-		// Strategy 1: Try to find quality profile by ID from TemplateQualityProfileMapping
-		// This is the most reliable method as it uses the actual instance profile ID
-		const qualityProfileMapping = await this.prisma.templateQualityProfileMapping.findFirst({
-			where: {
-				templateId,
-				instanceId,
-			},
+		const serviceAliases = await this.prisma.serviceInstance.findMany({
+			where: { userId, service: instance.service },
+			select: { id: true, service: true, baseUrl: true },
+		});
+		const equivalentInstanceIds = getEquivalentServiceInstanceIds(serviceAliases, instance);
+		if (!equivalentInstanceIds.includes(instanceId)) {
+			equivalentInstanceIds.push(instanceId);
+		}
+		const qualityProfileMappings = await this.prisma.templateQualityProfileMapping.findMany({
+			where: { instanceId: { in: equivalentInstanceIds } },
 			orderBy: { updatedAt: "desc" },
 		});
-
-		if (qualityProfileMapping) {
-			targetProfile = instanceQualityProfiles.find(
-				(p) => p.id === qualityProfileMapping.qualityProfileId,
+		const templateMappings = qualityProfileMappings.filter(
+			(mapping) => mapping.templateId === templateId,
+		);
+		if (new Set(templateMappings.map((mapping) => mapping.qualityProfileId)).size > 1) {
+			throw new AppValidationError(
+				"This template has conflicting quality-profile mappings for duplicate records of the same ARR instance. Unlink the stale deployment before continuing.",
 			);
-			if (targetProfile) {
-				// Successfully matched by ID - this is the preferred method
-				for (const formatItem of targetProfile.formatItems || []) {
-					instanceCFScoreMap.set(formatItem.format, formatItem.score);
-				}
-			}
 		}
+		const qualityProfileMapping =
+			templateMappings.find((mapping) => mapping.instanceId === instanceId) ?? templateMappings[0];
 
-		// Strategy 2: Fall back to name-based matching if ID-based matching failed
-		if (!targetProfile) {
-			// Try sourceQualityProfileName first (more reliable than template.name)
-			const profileNameToMatch =
-				template.sourceQualityProfileName || template.name || "TRaSH Guides HD/UHD";
-			targetProfile = instanceQualityProfiles.find((p) => p.name === profileNameToMatch);
+		const resolvedTarget = resolveDeploymentTarget({
+			profiles: instanceQualityProfiles,
+			mapping: qualityProfileMapping,
+			sourceProfileId: templateConfig.completeQualityProfile?.sourceProfileId,
+			isSourceInstance: equivalentInstanceIds.includes(
+				templateConfig.completeQualityProfile?.sourceInstanceId ?? "",
+			),
+			sourceProfileName: template.sourceQualityProfileName,
+			templateName: template.name,
+		});
+		assertDeploymentTargetOwnership({
+			target: resolvedTarget,
+			templateId,
+			existingMappings: qualityProfileMappings,
+		});
+		targetProfile = resolvedTarget.profile;
 
-			if (targetProfile) {
-				// Profile recovered by name — ID changed (e.g., profile was recreated)
-				if (qualityProfileMapping) {
-					warnings.push(
-						`Quality profile "${qualityProfileMapping.qualityProfileName}" (ID: ${qualityProfileMapping.qualityProfileId}) was recreated in the instance (now ID: ${targetProfile.id}). The stored mapping will be updated on deploy.`,
-					);
-				} else {
-					warnings.push(
-						`Quality profile matched by name ("${profileNameToMatch}") rather than stored ID. Score conflict detection is based on name match.`,
-					);
-				}
-				for (const formatItem of targetProfile.formatItems || []) {
-					instanceCFScoreMap.set(formatItem.format, formatItem.score);
-				}
-			} else {
-				// No profile found at all — deployment will create the profile
+		if (targetProfile) {
+			if (resolvedTarget.matchedBy !== "mapping_id") {
 				warnings.push(
-					`Quality profile "${profileNameToMatch}" not found in instance. Deploying will create it with the template's quality settings and Custom Format scores.`,
+					qualityProfileMapping
+						? `Quality profile "${qualityProfileMapping.qualityProfileName}" (ID: ${qualityProfileMapping.qualityProfileId}) was recovered as "${resolvedTarget.profileName}" (ID: ${targetProfile.id}). The stored mapping will be updated on deploy.`
+						: `Quality profile matched by name ("${resolvedTarget.profileName}") rather than stored ID. Score conflict detection is based on name match.`,
 				);
 			}
+			for (const formatItem of targetProfile.formatItems || []) {
+				instanceCFScoreMap.set(formatItem.format, formatItem.score);
+			}
+		} else {
+			warnings.push(
+				`Quality profile "${resolvedTarget.profileName}" not found in instance. Deploying will create it with the template's quality settings and Custom Format scores.`,
+			);
 		}
 
 		// Track which instance CFs are matched by template CFs
@@ -627,6 +643,28 @@ export class DeploymentPreviewService {
 			requiresConflictResolution,
 			instanceReachable,
 			instanceVersion,
+			executionToken: createDeploymentStateToken({
+				template: {
+					id: template.id,
+					name: template.name,
+					configData: template.configData,
+					instanceOverrides: template.instanceOverrides,
+					sourceQualityProfileName: template.sourceQualityProfileName,
+				},
+				instanceId,
+				connection: {
+					service: instance.service,
+					baseUrl: instance.baseUrl,
+					credentialIdentity: [
+						instance.encryptedApiKey,
+						instance.encryptionIv,
+						instance.encryptedHttpAuthCredentials,
+						instance.httpAuthEncryptionIv,
+					].join(":"),
+				},
+				target: resolvedTarget,
+				customFormats: instanceCustomFormats,
+			}),
 			warnings,
 		};
 	}

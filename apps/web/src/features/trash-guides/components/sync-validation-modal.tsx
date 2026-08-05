@@ -13,12 +13,12 @@
  */
 
 import { Info, Loader2, RefreshCw, X } from "lucide-react";
-import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
 import { useValidateSync } from "../../../hooks/api/useSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { ValidationResult } from "../../../lib/api-client/trash-guides";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import {
 	detectErrorTypes,
 	type ErrorType,
@@ -42,7 +42,7 @@ interface SyncValidationModalProps {
 	templateName: string;
 	instanceId: string;
 	instanceName: string;
-	onConfirm: (resolutions: Record<string, "REPLACE" | "SKIP">) => void;
+	onConfirm: (resolutions: Record<string, "REPLACE" | "SKIP">, executionToken: string) => void;
 	onCancel: () => void;
 	/** Optional callback to navigate to deployment workflow */
 	onNavigateToDeploy?: () => void;
@@ -264,14 +264,16 @@ export const SyncValidationModal = ({
 	};
 
 	const handleConfirm = () => {
-		onConfirm(resolutions);
+		if (validation?.executionToken) {
+			onConfirm(resolutions, validation.executionToken);
+		}
 	};
 
 	const isValidating = validateMutation.isPending;
 	const hasErrors = Array.isArray(validation?.errors) && validation.errors.length > 0;
 	const _hasWarnings = Array.isArray(validation?.warnings) && validation.warnings.length > 0;
 	const hasConflicts = Array.isArray(validation?.conflicts) && validation.conflicts.length > 0;
-	const canProceed = validation && validation.valid && !hasErrors;
+	const canProceed = validation && validation.valid && !hasErrors && !!validation.executionToken;
 
 	const hasSilentFailure = validation && !validation.valid && !hasErrors;
 

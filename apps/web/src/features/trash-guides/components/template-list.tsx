@@ -58,6 +58,7 @@ const EnhancedTemplateImportModal = lazy(() =>
 
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
+import { isSyncExecutionConflict } from "../lib/sync-validation-utils";
 
 interface TemplateListProps {
 	serviceType?: "RADARR" | "SONARR";
@@ -85,6 +86,7 @@ export const TemplateList = ({
 }: TemplateListProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
+	const [validationRevision, setValidationRevision] = useState(0);
 
 	// Search, filter, and sort state
 	const [searchInput, setSearchInput] = useState("");
@@ -147,7 +149,10 @@ export const TemplateList = ({
 		}
 	};
 
-	const handleSyncValidationComplete = async (resolutions: Record<string, "REPLACE" | "SKIP">) => {
+	const handleSyncValidationComplete = async (
+		resolutions: Record<string, "REPLACE" | "SKIP">,
+		executionToken: string,
+	) => {
 		if (!modals.validationModal) return;
 
 		try {
@@ -156,6 +161,7 @@ export const TemplateList = ({
 				instanceId: modals.validationModal.instanceId,
 				syncType: "MANUAL",
 				conflictResolutions: resolutions,
+				executionToken,
 			});
 
 			dispatch({
@@ -168,6 +174,13 @@ export const TemplateList = ({
 			});
 		} catch (error) {
 			const errorMessage = getErrorMessage(error, "Unknown error occurred");
+			if (isSyncExecutionConflict(error)) {
+				setValidationRevision((revision) => revision + 1);
+				toast.warning("The instance changed after validation", {
+					description: "Validation has been refreshed. Review the latest changes and try again.",
+				});
+				return;
+			}
 			toast.error("Failed to start sync operation", { description: errorMessage });
 		}
 	};
@@ -517,6 +530,7 @@ export const TemplateList = ({
 			{modals.validationModal && (
 				<Suspense>
 					<SyncValidationModal
+						key={`${modals.validationModal.templateId}:${modals.validationModal.instanceId}:${validationRevision}`}
 						templateId={modals.validationModal.templateId}
 						templateName={modals.validationModal.templateName}
 						instanceId={modals.validationModal.instanceId}

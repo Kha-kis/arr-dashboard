@@ -9,47 +9,47 @@
  * - Glassmorphic content cards
  */
 
-import { useState, useEffect, useMemo } from "react";
+import type { CustomQualityConfig, TemplateInstanceOverride } from "@arr/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-	LegacyDialog,
-	LegacyDialogHeader,
-	LegacyDialogTitle,
-	LegacyDialogDescription,
-	LegacyDialogContent,
-	LegacyDialogFooter,
-	LegacyDialogClose,
-} from "../../../components/ui";
-import { Button } from "../../../components/ui";
-import {
 	AlertCircle,
-	CheckCircle2,
-	Server,
-	Layers,
 	AlertTriangle,
-	Rocket,
-	RefreshCw,
 	Bell,
-	Hand,
+	CheckCircle2,
 	ChevronDown,
+	Hand,
+	Layers,
 	Loader2,
+	RefreshCw,
+	Rocket,
+	Server,
 	Sliders,
 } from "lucide-react";
-import {
-	useBulkDeploymentPreviews,
-	useExecuteBulkDeployment,
-} from "../../../hooks/api/useDeploymentPreview";
-import { cn } from "../../../lib/utils";
+import { useEffect, useMemo, useState } from "react";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import {
+	Button,
+	LegacyDialog,
+	LegacyDialogClose,
+	LegacyDialogContent,
+	LegacyDialogDescription,
+	LegacyDialogFooter,
+	LegacyDialogHeader,
+	LegacyDialogTitle,
+} from "../../../components/ui";
+import {
+	useBulkDeploymentPreviews,
+	useExecuteBulkDeployment,
+} from "../../../hooks/api/useDeploymentPreview";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { cn } from "../../../lib/utils";
 import { InstanceQualityOverrideModal } from "./instance-quality-override-modal";
-import type { CustomQualityConfig, TemplateInstanceOverride } from "@arr/shared";
 
 type SyncStrategy = "auto" | "manual" | "notify";
 
@@ -65,6 +65,7 @@ interface InstancePreview {
 		updatedCustomFormats: number;
 		conflicts: number;
 		canDeploy: boolean;
+		executionToken: string;
 	};
 	loading: boolean;
 	error?: Error;
@@ -213,6 +214,7 @@ export const BulkDeploymentModal = ({
 							updatedCustomFormats: preview.summary.updatedCustomFormats,
 							conflicts: preview.summary.totalConflicts,
 							canDeploy: preview.canDeploy,
+							executionToken: preview.executionToken,
 						}
 					: undefined,
 			};
@@ -291,8 +293,10 @@ export const BulkDeploymentModal = ({
 
 		// Build per-instance sync strategies map
 		const instanceSyncStrategies: Record<string, SyncStrategy> = {};
+		const executionTokens: Record<string, string> = {};
 		for (const inst of deployableInstances) {
 			instanceSyncStrategies[inst.instanceId] = inst.syncStrategy;
+			executionTokens[inst.instanceId] = inst.preview!.executionToken;
 		}
 
 		bulkDeployMutation.mutate(
@@ -300,6 +304,7 @@ export const BulkDeploymentModal = ({
 				templateId,
 				instanceIds: deployableInstances.map((inst) => inst.instanceId),
 				instanceSyncStrategies,
+				executionTokens,
 			},
 			{
 				onSuccess: (response) => {
