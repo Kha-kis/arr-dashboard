@@ -39,9 +39,13 @@ function client(overrides: Partial<PlexClient> = {}): PlexClient {
 	} as unknown as PlexClient;
 }
 
-function prisma(shows = [{ tmdbId: 42, ratingKey: "show-1" }]) {
+function prisma(
+	shows = [{ tmdbId: 42, ratingKey: "show-1" }],
+	currentConnection = { service: "PLEX", enabled: true, connectionGeneration: 7 },
+) {
 	const published: unknown[] = [];
 	const tx = {
+		serviceInstance: { findUnique: vi.fn().mockResolvedValue(currentConnection) },
 		plexEpisodeCache: {
 			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
@@ -69,6 +73,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			"plex-1",
 			log,
 			"fingerprint-1",
+			undefined,
 		);
 
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
@@ -92,6 +97,38 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		);
 	});
 
+	it("discards an outgoing episode generation after its Plex connection changes", async () => {
+		const currentConnection = {
+			service: "PLEX",
+			enabled: true,
+			connectionGeneration: 7,
+		};
+		const fixture = prisma(undefined, currentConnection);
+		let resolveHistory: (history: unknown[]) => void = () => {};
+		const pendingHistory = new Promise<unknown[]>((resolve) => {
+			resolveHistory = resolve;
+		});
+		const plexClient = client({ getHistory: vi.fn().mockReturnValue(pendingHistory) });
+		const refresh = refreshPlexEpisodeCache(
+			plexClient,
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			{ service: "PLEX", connectionGeneration: 7 },
+		);
+		await vi.waitFor(() => expect(plexClient.getHistory).toHaveBeenCalledOnce());
+		currentConnection.connectionGeneration = 8;
+		resolveHistory([
+			{ type: "episode", ratingKey: "episode-1", accountID: 1, viewedAt: 1_700_000_000 },
+		]);
+		const result = await refresh;
+
+		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
 	it("publishes a complete eligible-empty inventory and evicts stale rows", async () => {
 		const fixture = prisma([]);
 		const result = await refreshPlexEpisodeCache(
@@ -100,6 +137,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			"plex-1",
 			log,
 			"fingerprint-1",
+			undefined,
 		);
 
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 0 });
@@ -123,6 +161,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			"plex-1",
 			log,
 			"fingerprint-1",
+			undefined,
 		);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
@@ -144,6 +183,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			"plex-1",
 			log,
 			"fingerprint-1",
+			undefined,
 		);
 
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
@@ -165,6 +205,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			"plex-1",
 			log,
 			"fingerprint-1",
+			undefined,
 		);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
@@ -184,6 +225,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			"plex-1",
 			log,
 			"fingerprint-1",
+			undefined,
 		);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
@@ -202,6 +244,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			"plex-1",
 			log,
 			"fingerprint-1",
+			undefined,
 		);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
@@ -218,6 +261,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			"plex-1",
 			log,
 			"fingerprint-1",
+			undefined,
 		);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
@@ -236,6 +280,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			"plex-1",
 			log,
 			"fingerprint-1",
+			undefined,
 		);
 
 		expect(result).toMatchObject({

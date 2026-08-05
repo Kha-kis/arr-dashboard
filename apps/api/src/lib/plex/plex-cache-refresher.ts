@@ -16,8 +16,12 @@
 
 import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
-import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
+import {
+	type ProviderConnectionIdentity,
+	withCurrentProviderConnection,
+} from "../services/provider-connection-guard.js";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { PlexClient } from "./plex-client.js";
 
 // ============================================================================
@@ -88,17 +92,20 @@ export async function refreshPlexCache(
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
+	expectedConnection: ProviderConnectionIdentity | undefined,
 ): Promise<{
 	upserted: number;
 	errors: number;
 	errorMessages: string[];
 	complete: boolean;
 	completedAt?: Date;
+	superseded?: boolean;
 }> {
 	let upserted = 0;
 	let errors = 0;
 	let complete = true;
 	let completedAt: Date | undefined;
+	let superseded = false;
 	const errorMessages: string[] = [];
 
 	try {
@@ -316,57 +323,68 @@ export async function refreshPlexCache(
 					),
 			});
 			try {
-				await prisma.$transaction(async (tx) => {
-					await tx.plexCache.deleteMany({ where: { instanceId } });
-					if (aggregationsArray.length > 0) {
-						await tx.plexCache.createMany({
-							data: aggregationsArray.map((agg) => ({
+				const publication = await withCurrentProviderConnection(
+					prisma,
+					instanceId,
+					expectedConnection,
+					async (tx) => {
+						await tx.plexCache.deleteMany({ where: { instanceId } });
+						if (aggregationsArray.length > 0) {
+							await tx.plexCache.createMany({
+								data: aggregationsArray.map((agg) => ({
+									instanceId,
+									tmdbId: agg.tmdbId,
+									mediaType: agg.mediaType,
+									sectionId: agg.sectionId,
+									sectionTitle: agg.sectionTitle,
+									title: agg.title,
+									ratingKey: agg.ratingKey,
+									lastWatchedAt: agg.lastWatchedAt,
+									watchCount: agg.watchCount,
+									watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
+									onDeck: agg.onDeck,
+									userRating: agg.userRating,
+									collections: JSON.stringify(agg.collections),
+									labels: JSON.stringify(agg.labels),
+									addedAt: agg.addedAt,
+									thumb: agg.thumb,
+								})),
+							});
+						}
+						await tx.cacheRefreshStatus.upsert({
+							where: { instanceId_cacheType: { instanceId, cacheType: "plex" } },
+							create: {
 								instanceId,
-								tmdbId: agg.tmdbId,
-								mediaType: agg.mediaType,
-								sectionId: agg.sectionId,
-								sectionTitle: agg.sectionTitle,
-								title: agg.title,
-								ratingKey: agg.ratingKey,
-								lastWatchedAt: agg.lastWatchedAt,
-								watchCount: agg.watchCount,
-								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-								onDeck: agg.onDeck,
-								userRating: agg.userRating,
-								collections: JSON.stringify(agg.collections),
-								labels: JSON.stringify(agg.labels),
-								addedAt: agg.addedAt,
-								thumb: agg.thumb,
-							})),
+								cacheType: "plex",
+								lastRefreshedAt: completedAt!,
+								lastResult: "success",
+								itemCount: aggregationsArray.length,
+								generationId,
+								generationMetadata,
+								lastAttemptAt: completedAt!,
+								lastAttemptResult: "success",
+							},
+							update: {
+								lastRefreshedAt: completedAt!,
+								lastResult: "success",
+								lastErrorMessage: null,
+								itemCount: aggregationsArray.length,
+								generationId,
+								generationMetadata,
+								lastAttemptAt: completedAt!,
+								lastAttemptResult: "success",
+								lastAttemptErrorMessage: null,
+							},
 						});
-					}
-					await tx.cacheRefreshStatus.upsert({
-						where: { instanceId_cacheType: { instanceId, cacheType: "plex" } },
-						create: {
-							instanceId,
-							cacheType: "plex",
-							lastRefreshedAt: completedAt!,
-							lastResult: "success",
-							itemCount: aggregationsArray.length,
-							generationId,
-							generationMetadata,
-							lastAttemptAt: completedAt!,
-							lastAttemptResult: "success",
-						},
-						update: {
-							lastRefreshedAt: completedAt!,
-							lastResult: "success",
-							lastErrorMessage: null,
-							itemCount: aggregationsArray.length,
-							generationId,
-							generationMetadata,
-							lastAttemptAt: completedAt!,
-							lastAttemptResult: "success",
-							lastAttemptErrorMessage: null,
-						},
-					});
-				});
-				upserted = aggregationsArray.length;
+					},
+				);
+				if (publication.matched) {
+					upserted = aggregationsArray.length;
+				} else {
+					superseded = true;
+					complete = false;
+					completedAt = undefined;
+				}
 			} catch (error) {
 				complete = false;
 				completedAt = undefined;
@@ -400,7 +418,14 @@ export async function refreshPlexCache(
 		errorMessages.push(msg);
 	}
 
-	return { upserted, errors, errorMessages, complete: complete && errors === 0, completedAt };
+	return {
+		upserted,
+		errors,
+		errorMessages,
+		complete: complete && errors === 0,
+		completedAt,
+		superseded: superseded || undefined,
+	};
 }
 
 // ============================================================================

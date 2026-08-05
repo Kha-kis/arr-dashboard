@@ -11,8 +11,9 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { recordCacheRefreshFailure } from "../lib/cache-refresh-status.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import { recordProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
+import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
 import { refreshTautulliCache } from "../lib/tautulli/tautulli-cache-refresher.js";
 import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
@@ -49,9 +50,16 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
+						const expectedConnection = providerConnectionIdentity(instance);
 						try {
 							const client = createTautulliClient(app.encryptor, instance, app.log);
-							const result = await refreshTautulliCache(client, app.prisma, instance.id, app.log);
+							const result = await refreshTautulliCache(
+								client,
+								app.prisma,
+								instance.id,
+								app.log,
+								expectedConnection,
+							);
 							app.log.info(
 								{ instanceId: instance.id, label: instance.label, ...result },
 								"Tautulli cache refresh completed for instance",
@@ -59,12 +67,14 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 
 							try {
 								if (!result.complete || !result.completedAt) {
-									await recordCacheRefreshFailure(
+									await recordProviderCacheRefreshFailure(
 										app.prisma,
 										instance.id,
 										"tautulli",
 										result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
 											"Tautulli refresh did not produce a complete generation",
+										expectedConnection,
+										app.log,
 									);
 								}
 							} catch (trackErr) {
@@ -80,21 +90,14 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 							);
 
 							// Track failure
-							await recordCacheRefreshFailure(
+							await recordProviderCacheRefreshFailure(
 								app.prisma,
 								instance.id,
 								"tautulli",
 								getErrorMessage(err, "Unknown error"),
-							).catch((trackErr) => {
-								app.log.warn(
-									{
-										err: trackErr,
-										originalErr: getErrorMessage(err, "Unknown error"),
-										instanceId: instance.id,
-									},
-									"Failed to record cache refresh failure status",
-								);
-							});
+								expectedConnection,
+								app.log,
+							);
 						}
 					}
 

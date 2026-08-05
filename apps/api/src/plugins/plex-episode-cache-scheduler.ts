@@ -8,11 +8,12 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { recordCacheRefreshFailure } from "../lib/cache-refresh-status.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
 import { refreshPlexEpisodeCache } from "../lib/plex/plex-episode-cache-refresher.js";
 import { plexConnectionFingerprint } from "../lib/plex/service-instance-fingerprint.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import { recordProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
+import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -59,6 +60,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
+						const expectedConnection = providerConnectionIdentity(instance);
 						try {
 							const client = createPlexClient(app.encryptor, instance, app.log);
 							const result = await refreshPlexEpisodeCache(
@@ -67,6 +69,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 								instance.id,
 								app.log,
 								plexConnectionFingerprint(instance),
+								expectedConnection,
 							);
 							app.log.info(
 								{ instanceId: instance.id, label: instance.label, ...result },
@@ -84,11 +87,13 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 										? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
 										: coverageMessage;
 								if (!result.complete || !result.completedAt) {
-									await recordCacheRefreshFailure(
+									await recordProviderCacheRefreshFailure(
 										app.prisma,
 										instance.id,
 										"plex_episode",
 										statusMessage ?? "Plex episode refresh did not produce a complete generation",
+										expectedConnection,
+										app.log,
 									);
 								}
 							} catch (trackErr) {
@@ -104,21 +109,14 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 							);
 
 							// Track failure
-							await recordCacheRefreshFailure(
+							await recordProviderCacheRefreshFailure(
 								app.prisma,
 								instance.id,
 								"plex_episode",
 								getErrorMessage(err, "Unknown error"),
-							).catch((trackErr) => {
-								app.log.warn(
-									{
-										err: trackErr,
-										originalErr: getErrorMessage(err, "Unknown error"),
-										instanceId: instance.id,
-									},
-									"Failed to record episode cache refresh failure status",
-								);
-							});
+								expectedConnection,
+								app.log,
+							);
 						}
 					}
 

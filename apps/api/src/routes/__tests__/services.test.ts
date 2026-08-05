@@ -1,4 +1,4 @@
-import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -62,13 +62,13 @@ vi.mock("../../lib/services/service-formatter.js", () => ({
 // ---------------------------------------------------------------------------
 
 import Fastify from "fastify";
-import { registerServiceRoutes } from "../services.js";
 import { InstanceNotFoundError } from "../../lib/errors.js";
+import { registerServiceRoutes } from "../services.js";
 import {
-	setupAuthInjection,
 	createInjectAuthenticated,
 	createMockEncryptor,
 	registerTestErrorHandler,
+	setupAuthInjection,
 } from "./test-helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -354,10 +354,7 @@ describe("PUT /services/:id", () => {
 		)?.[0];
 		expect(connectionUpdate?.data.connectionGeneration).toEqual({ increment: 1 });
 		expect(mockPrisma.cacheRefreshStatus.deleteMany).toHaveBeenCalledWith({
-			where: {
-				instanceId: "inst-1",
-				cacheType: { in: ["jellyfin", "jellyfin_episode"] },
-			},
+			where: { instanceId: "inst-1" },
 		});
 		expect(mockInvalidatePulseCache).toHaveBeenCalledWith("user-1");
 	});
@@ -428,6 +425,43 @@ describe("PUT /services/:id", () => {
 				where: { instanceId: "inst-1" },
 			});
 			expect(mockPrisma.jellyfinEpisodeCache.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
+			expect(mockPrisma.cacheRefreshStatus.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
+			expect(mockInvalidatePulseCache).toHaveBeenCalledWith("user-1");
+		},
+	);
+
+	it.each([
+		["PLEX", "http://plex-old:32400", "http://plex-new:32400"],
+		["TAUTULLI", "http://tautulli-old:8181", "http://tautulli-new:8181"],
+	] as const)(
+		"advances the %s connection generation and clears every provider cache on URL replacement",
+		async (service, oldUrl, newUrl) => {
+			mockRequireInstance.mockResolvedValue(makeInstance({ service, baseUrl: oldUrl }));
+			mockBuildUpdateData.mockReturnValue({ baseUrl: newUrl });
+			mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+				makeInstance({ service, baseUrl: newUrl, connectionGeneration: 1 }),
+			);
+
+			const res = await injectAuthenticated("PUT", "/services/inst-1", {
+				body: { baseUrl: newUrl },
+			});
+
+			expect(res.statusCode).toBe(200);
+			const connectionUpdate = mockPrisma.serviceInstance.updateMany.mock.calls.find(
+				([args]) => args.where.id === "inst-1",
+			)?.[0];
+			expect(connectionUpdate?.data.connectionGeneration).toEqual({ increment: 1 });
+			expect(mockPrisma.plexCache.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
+			expect(mockPrisma.plexEpisodeCache.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
+			expect(mockPrisma.tautulliCache.deleteMany).toHaveBeenCalledWith({
 				where: { instanceId: "inst-1" },
 			});
 			expect(mockPrisma.cacheRefreshStatus.deleteMany).toHaveBeenCalledWith({

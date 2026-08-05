@@ -70,9 +70,25 @@ const fakeLog = {
 
 const markEnabled = vi.fn();
 const cacheStatusUpsert = vi.fn();
+const plexInstance = { service: "PLEX" as const, connectionGeneration: 7 };
+const tautulliInstance = { service: "TAUTULLI" as const, connectionGeneration: 11 };
 
 const fakeApp = {
 	prisma: {
+		$transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+			callback({
+				$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+				serviceInstance: {
+					findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
+						where.id === "inst-plex-1"
+							? { ...plexInstance, enabled: true }
+							: { ...tautulliInstance, enabled: true },
+					),
+				},
+				cacheRefreshStatus: {
+					upsert: (...args: unknown[]) => cacheStatusUpsert(...args),
+				},
+			}),
 		cacheRefreshStatus: {
 			upsert: (...args: unknown[]) => cacheStatusUpsert(...args),
 		},
@@ -198,7 +214,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 	it("refreshes the plex cache via requirePlexClient + refreshPlexCache", async () => {
 		const fakeClient = { id: "plex-client" };
-		requirePlexClient.mockResolvedValue({ client: fakeClient, instance: {} });
+		requirePlexClient.mockResolvedValue({ client: fakeClient, instance: plexInstance });
 		refreshPlexCache.mockResolvedValue({
 			upserted: 42,
 			errors: 0,
@@ -228,6 +244,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			fakeApp.prisma,
 			"inst-plex-1",
 			fakeLog,
+			plexInstance,
 		);
 		// The refresher transaction is the sole successful-generation publisher.
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
@@ -235,7 +252,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 	it("refreshes the tautulli cache via requireTautulliClient + refreshTautulliCache", async () => {
 		const fakeClient = { id: "tautulli-client" };
-		requireTautulliClient.mockResolvedValue({ client: fakeClient, instance: {} });
+		requireTautulliClient.mockResolvedValue({ client: fakeClient, instance: tautulliInstance });
 		refreshTautulliCache.mockResolvedValue({
 			upserted: 7,
 			errors: 0,
@@ -258,12 +275,13 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			fakeApp.prisma,
 			"inst-tautulli-1",
 			fakeLog,
+			tautulliInstance,
 		);
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("records an errors-zero incomplete refresh as failed instead of publishing success", async () => {
-		requirePlexClient.mockResolvedValue({ client: {}, instance: {} });
+		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
 		refreshPlexCache.mockResolvedValue({
 			upserted: 42,
 			errors: 0,
@@ -287,7 +305,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// test times out or returns after the refresher resolves, someone
 		// has re-introduced the `await refreshPlexCache(...)` in the main
 		// code path.
-		requirePlexClient.mockResolvedValue({ client: {}, instance: {} });
+		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
 		let resolveRefresh: (v: unknown) => void = () => {};
 		const pendingRefresh = new Promise((r) => {
 			resolveRefresh = r;
@@ -325,7 +343,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// unchanged so the staleness collector re-emits the row on the next
 		// poll. Writing on failure would tell operators "it's fresh" when
 		// it isn't — trust regression.
-		requirePlexClient.mockResolvedValue({ client: {}, instance: {} });
+		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
 		refreshPlexCache.mockRejectedValue(new Error("upstream Plex timeout"));
 
 		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);

@@ -33,6 +33,7 @@ import type {
 } from "../prisma.js";
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
+import { providerConnectionIdentity } from "../services/provider-connection-guard.js";
 import { refreshTautulliCache } from "../tautulli/tautulli-cache-refresher.js";
 import { createTautulliClient } from "../tautulli/tautulli-client.js";
 import { createTmdbV3Client } from "../tmdb/list-client.js";
@@ -8522,7 +8523,14 @@ async function refreshPlexMutationEvidence(
 					deps.plexCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createPlexClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Plex credentials were unavailable");
-				const refreshed = await refreshPlexCache(client, deps.prisma, instance.id, deps.log);
+				const expectedConnection = providerConnectionIdentity(instance);
+				const refreshed = await refreshPlexCache(
+					client,
+					deps.prisma,
+					instance.id,
+					deps.log,
+					expectedConnection,
+				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Plex cache refresh was incomplete");
 				}
@@ -8535,6 +8543,7 @@ async function refreshPlexMutationEvidence(
 						instance.id,
 						deps.log,
 						plexConnectionFingerprint(instance),
+						expectedConnection,
 					);
 					if (episodes.errors > 0 || episodes.complete !== true) {
 						throw new Error("Plex episode evidence refresh was incomplete");
@@ -8602,7 +8611,13 @@ async function refreshTautulliMutationEvidence(
 					deps.tautulliCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createTautulliClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Tautulli credentials were unavailable");
-				const refreshed = await refreshTautulliCache(client, deps.prisma, instance.id, deps.log);
+				const refreshed = await refreshTautulliCache(
+					client,
+					deps.prisma,
+					instance.id,
+					deps.log,
+					providerConnectionIdentity(instance),
+				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Tautulli cache refresh was incomplete");
 				}

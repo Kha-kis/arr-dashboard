@@ -193,7 +193,13 @@ describe("refreshTautulliCache (end-to-end)", () => {
 			),
 		} as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, mockPrisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(
+			mockClient,
+			mockPrisma,
+			"inst-1",
+			silentLog,
+			undefined,
+		);
 
 		expect(result.errors).toBe(0);
 		expect(result.errorMessages).toEqual([]);
@@ -245,7 +251,13 @@ describe("refreshTautulliCache (end-to-end)", () => {
 			},
 		} as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, mockPrisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(
+			mockClient,
+			mockPrisma,
+			"inst-1",
+			silentLog,
+			undefined,
+		);
 
 		expect(result.errors).toBe(1);
 		expect(result.errorMessages).toContain("Tautulli metadata inventory exceeded 500 unique items");
@@ -278,11 +290,68 @@ describe("refreshTautulliCache (end-to-end)", () => {
 			),
 		} as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ errors: 0, complete: true, upserted: 0 });
 		expect(deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
 		expect(tx.tautulliCache.createMany).not.toHaveBeenCalled();
+	});
+
+	it("discards an outgoing Tautulli generation after its connection changes before publication", async () => {
+		let resolveHistory: (result: {
+			data: unknown[];
+			recordsFiltered: number;
+			recordsTotal: number;
+		}) => void = () => {};
+		const pendingHistory = new Promise<{
+			data: unknown[];
+			recordsFiltered: number;
+			recordsTotal: number;
+		}>((resolve) => {
+			resolveHistory = resolve;
+		});
+		let currentGeneration = 7;
+		const mockClient = {
+			getLibraries: vi
+				.fn()
+				.mockResolvedValue([
+					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "0" },
+				]),
+			getHistory: vi
+				.fn()
+				.mockReturnValueOnce(pendingHistory)
+				.mockResolvedValue({ data: [], recordsFiltered: 0, recordsTotal: 0 }),
+			getMetadata: vi.fn(),
+		} as unknown as TautulliClient;
+		const tx = {
+			serviceInstance: {
+				findUnique: vi.fn(async () => ({
+					service: "TAUTULLI",
+					enabled: true,
+					connectionGeneration: currentGeneration,
+				})),
+			},
+			tautulliCache: { deleteMany: vi.fn(), createMany: vi.fn() },
+			cacheRefreshStatus: { upsert: vi.fn() },
+		};
+		const prisma = {
+			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+				callback(tx),
+			),
+		} as unknown as PrismaClient;
+
+		const refresh = refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, {
+			service: "TAUTULLI",
+			connectionGeneration: 7,
+		});
+		await vi.waitFor(() => expect(mockClient.getHistory).toHaveBeenCalledOnce());
+		currentGeneration = 8;
+		resolveHistory({ data: [], recordsFiltered: 0, recordsTotal: 0 });
+		const result = await refresh;
+
+		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
+		expect(tx.tautulliCache.deleteMany).not.toHaveBeenCalled();
+		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("fails closed when no media libraries can be discovered", async () => {
@@ -293,7 +362,7 @@ describe("refreshTautulliCache (end-to-end)", () => {
 		} as unknown as TautulliClient;
 		const { prisma, deleteCalls } = makeMockPrisma(["stale-1"]);
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result.complete).toBe(false);
 		expect(result.errors).toBeGreaterThan(0);
@@ -399,7 +468,7 @@ describe("refreshTautulliCache — sparse metadata handling (#497)", () => {
 
 		const log = { warn: vi.fn(), info: vi.fn(), error: vi.fn() } as unknown as FastifyBaseLogger;
 
-		const result = await refreshTautulliCache(mockClient, mockPrisma, "inst-1", log);
+		const result = await refreshTautulliCache(mockClient, mockPrisma, "inst-1", log, undefined);
 
 		// The incomplete scan publishes nothing; the previous generation remains intact.
 		expect(result.upserted).toBe(0);
@@ -475,7 +544,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 			),
 		} as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
 		expect(getHistory).toHaveBeenCalledTimes(12);
@@ -517,7 +586,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		} as unknown as TautulliClient;
 		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/exceeding the safe 100000-row refresh limit/i);
@@ -555,7 +624,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		const deleteMany = vi.fn();
 		const prisma = { tautulliCache: { deleteMany } } as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result.complete).toBe(false);
 		expect(result.errors).toBeGreaterThan(0);
@@ -590,7 +659,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		} as unknown as TautulliClient;
 		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/100001 aggregate rows/i);
@@ -645,7 +714,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		} as unknown as TautulliClient;
 		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/changed before the snapshot/i);
@@ -690,7 +759,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		} as unknown as TautulliClient;
 		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/changed before the snapshot/i);
@@ -735,7 +804,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		} as unknown as TautulliClient;
 		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/changed before the snapshot/i);
@@ -808,7 +877,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 			),
 		} as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
 		expect(publishedRows).toEqual([expect.objectContaining({ watchCount: 2 })]);
@@ -847,7 +916,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		} as unknown as TautulliClient;
 		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/grouped play rows/i);
@@ -882,7 +951,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		} as unknown as TautulliClient;
 		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/stable row ordering/i);
@@ -924,7 +993,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 		} as unknown as TautulliClient;
 		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/changed before the snapshot/i);
@@ -972,7 +1041,7 @@ describe("refreshTautulliCache — authoritative completeness", () => {
 			},
 		} as unknown as PrismaClient;
 
-		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, errors: 0, upserted: 0 });
 		expect(deleteMany).not.toHaveBeenCalled();

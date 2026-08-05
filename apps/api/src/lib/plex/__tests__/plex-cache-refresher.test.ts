@@ -12,15 +12,15 @@
  * behaviour so we don't regress it.
  */
 
+import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
+import type { PrismaClient } from "../../prisma.js";
 import {
 	evictStaleRows,
 	refreshPlexCache,
 	STALE_EVICTION_CHUNK_SIZE,
 } from "../plex-cache-refresher.js";
 import type { PlexClient } from "../plex-client.js";
-import type { PrismaClient } from "../../prisma.js";
-import type { FastifyBaseLogger } from "fastify";
 
 const silentLog = {
 	warn: vi.fn(),
@@ -167,7 +167,7 @@ describe("evictStaleRows", () => {
 			),
 		} as unknown as PrismaClient;
 
-		const result = await refreshPlexCache(mockClient, mockPrisma, "inst-1", silentLog);
+		const result = await refreshPlexCache(mockClient, mockPrisma, "inst-1", silentLog, undefined);
 
 		expect(result.errors).toBe(0);
 		expect(result.errorMessages).toEqual([]);
@@ -214,11 +214,56 @@ describe("evictStaleRows", () => {
 			),
 		} as unknown as PrismaClient;
 
-		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ errors: 0, complete: true, upserted: 0 });
 		expect(deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
 		expect(tx.plexCache.createMany).not.toHaveBeenCalled();
+	});
+
+	it("discards an outgoing Plex generation after its connection changes before publication", async () => {
+		let resolveLibraryItems: (items: unknown[]) => void = () => {};
+		const pendingLibraryItems = new Promise<unknown[]>((resolve) => {
+			resolveLibraryItems = resolve;
+		});
+		let currentGeneration = 7;
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockReturnValue(pendingLibraryItems),
+			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const tx = {
+			serviceInstance: {
+				findUnique: vi.fn(async () => ({
+					service: "PLEX",
+					enabled: true,
+					connectionGeneration: currentGeneration,
+				})),
+			},
+			plexCache: { deleteMany: vi.fn(), createMany: vi.fn() },
+			cacheRefreshStatus: { upsert: vi.fn() },
+		};
+		const prisma = {
+			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+				callback(tx),
+			),
+		} as unknown as PrismaClient;
+
+		const refresh = refreshPlexCache(mockClient, prisma, "inst-1", silentLog, {
+			service: "PLEX",
+			connectionGeneration: 7,
+		});
+		await vi.waitFor(() => expect(mockClient.getLibraryItems).toHaveBeenCalledOnce());
+		currentGeneration = 8;
+		resolveLibraryItems([]);
+		const result = await refresh;
+
+		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
+		expect(tx.plexCache.deleteMany).not.toHaveBeenCalled();
+		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("keeps the previous generation when history changes after enrichment", async () => {
@@ -233,7 +278,7 @@ describe("evictStaleRows", () => {
 		} as unknown as PlexClient;
 		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
 
-		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/history changed/i);
@@ -256,7 +301,7 @@ describe("evictStaleRows", () => {
 		} as unknown as PlexClient;
 		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
 
-		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/on-deck state changed/i);
@@ -291,7 +336,7 @@ describe("evictStaleRows", () => {
 			$transaction: vi.fn(async (ops: Promise<unknown>[]) => await Promise.all(ops)),
 		} as unknown as PrismaClient;
 
-		const result = await refreshPlexCache(mockClient, mockPrisma, "inst-1", silentLog);
+		const result = await refreshPlexCache(mockClient, mockPrisma, "inst-1", silentLog, undefined);
 
 		expect(result.complete).toBe(false);
 		expect(result.errors).toBeGreaterThan(0);
@@ -312,7 +357,7 @@ describe("evictStaleRows", () => {
 			$transaction: vi.fn(),
 		} as unknown as PrismaClient;
 
-		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false });
 		expect(result.errors).toBeGreaterThan(0);
@@ -332,7 +377,7 @@ describe("evictStaleRows", () => {
 			$transaction: vi.fn(),
 		} as unknown as PrismaClient;
 
-		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false });
 		expect(result.errors).toBeGreaterThan(0);
@@ -372,7 +417,7 @@ describe("evictStaleRows", () => {
 			$transaction: vi.fn(async (operations: Promise<unknown>[]) => Promise.all(operations)),
 		} as unknown as PrismaClient;
 
-		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result.complete).toBe(false);
 		expect(deleteMany).not.toHaveBeenCalled();
@@ -392,7 +437,7 @@ describe("evictStaleRows", () => {
 			$transaction: vi.fn(),
 		} as unknown as PrismaClient;
 
-		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result.complete).toBe(false);
 		expect(result.errors).toBeGreaterThan(0);
