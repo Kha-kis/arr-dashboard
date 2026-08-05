@@ -15,6 +15,7 @@ import { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { triggerLabelSyncForItem } from "../label-sync/trigger-for-item.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
+import { arrPolicyEvidenceFromRaw } from "../library-cleanup/arr-policy-evidence.js";
 import { getErrorMessage } from "../utils/error-message.js";
 
 // ============================================================================
@@ -192,10 +193,16 @@ function buildCacheCreate(
 	};
 }
 
-function serializeCacheItem(item: LibraryItem, serviceFingerprint: string): string {
+function serializeCacheItem(
+	item: LibraryItem,
+	raw: Record<string, unknown>,
+	service: LibraryService,
+	serviceFingerprint: string,
+): string {
 	return JSON.stringify({
 		...item,
 		_arrDashboardSource: { serviceFingerprint },
+		_arrDashboardEvidence: arrPolicyEvidenceFromRaw(raw, service),
 	});
 }
 
@@ -416,7 +423,7 @@ export async function syncInstance(
 
 					const existing = existingMap.get(key);
 					const fields = extractCacheFields(item, cutoffUnmetIds);
-					const serializedItem = serializeCacheItem(item, sourceServiceFingerprint);
+					const serializedItem = serializeCacheItem(item, raw, service, sourceServiceFingerprint);
 
 					if (existing) {
 						const updateData: Prisma.LibraryCacheUpdateInput = {

@@ -100,13 +100,12 @@ describe("createTmdbV3Client", () => {
 		expect(items).toEqual([{ tmdbId: 100, mediaType: "movie", title: "(untitled)" }]);
 	});
 
-	it("treats absent media_type as movie (default)", async () => {
+	it("rejects absent media_type because negative membership would be incomplete", async () => {
 		mockFetch({
 			id: "1",
 			items: [{ id: 100, title: "Untyped Movie" }], // no media_type field
 		});
 		const client = createTmdbV3Client("k", log);
-		const items = await client.getListItems("1");
-		expect(items[0]?.mediaType).toBe("movie");
+		await expect(client.getListItems("1")).rejects.toThrow(/lacked a usable media_type/i);
 	});
 });

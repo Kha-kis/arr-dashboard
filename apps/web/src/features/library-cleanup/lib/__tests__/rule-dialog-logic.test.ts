@@ -161,6 +161,10 @@ describe("buildParams", () => {
 			expect(buildParams(makeState({ ruleType: "unmonitored" }))).toEqual({});
 		});
 
+		it("monitored: returns empty object", () => {
+			expect(buildParams(makeState({ ruleType: "monitored" }))).toEqual({});
+		});
+
 		it("no_file: returns empty object", () => {
 			expect(buildParams(makeState({ ruleType: "no_file" }))).toEqual({});
 		});
@@ -531,6 +535,13 @@ describe("buildParams", () => {
 			expect(buildParams(makeState({ ruleType: "recently_active", behaviorParams: bp }))).toEqual(
 				bp,
 			);
+		});
+
+		it.each([
+			["tmdb_list_member", { listId: "8068", operator: "not_in" }],
+			["trakt_list_member", { listSlug: "alice/favorites", operator: "is_in" }],
+		] as const)("%s: returns list parameters as-is", (ruleType, behaviorParams) => {
+			expect(buildParams(makeState({ ruleType, behaviorParams }))).toEqual(behaviorParams);
 		});
 	});
 

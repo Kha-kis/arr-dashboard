@@ -308,6 +308,7 @@ export type LibraryCleanupConfigWhereInput = {
   rules?: Prisma.LibraryCleanupRuleListRelationFilter
   approvals?: Prisma.LibraryCleanupApprovalListRelationFilter
   logs?: Prisma.LibraryCleanupLogListRelationFilter
+  auditEvents?: Prisma.LibraryCleanupAuditEventListRelationFilter
 }
 
 export type LibraryCleanupConfigOrderByWithRelationInput = {
@@ -330,6 +331,7 @@ export type LibraryCleanupConfigOrderByWithRelationInput = {
   rules?: Prisma.LibraryCleanupRuleOrderByRelationAggregateInput
   approvals?: Prisma.LibraryCleanupApprovalOrderByRelationAggregateInput
   logs?: Prisma.LibraryCleanupLogOrderByRelationAggregateInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventOrderByRelationAggregateInput
 }
 
 export type LibraryCleanupConfigWhereUniqueInput = Prisma.AtLeast<{
@@ -355,6 +357,7 @@ export type LibraryCleanupConfigWhereUniqueInput = Prisma.AtLeast<{
   rules?: Prisma.LibraryCleanupRuleListRelationFilter
   approvals?: Prisma.LibraryCleanupApprovalListRelationFilter
   logs?: Prisma.LibraryCleanupLogListRelationFilter
+  auditEvents?: Prisma.LibraryCleanupAuditEventListRelationFilter
 }, "id" | "userId">
 
 export type LibraryCleanupConfigOrderByWithAggregationInput = {
@@ -420,6 +423,7 @@ export type LibraryCleanupConfigCreateInput = {
   rules?: Prisma.LibraryCleanupRuleCreateNestedManyWithoutConfigInput
   approvals?: Prisma.LibraryCleanupApprovalCreateNestedManyWithoutConfigInput
   logs?: Prisma.LibraryCleanupLogCreateNestedManyWithoutConfigInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventCreateNestedManyWithoutConfigInput
 }
 
 export type LibraryCleanupConfigUncheckedCreateInput = {
@@ -441,6 +445,7 @@ export type LibraryCleanupConfigUncheckedCreateInput = {
   rules?: Prisma.LibraryCleanupRuleUncheckedCreateNestedManyWithoutConfigInput
   approvals?: Prisma.LibraryCleanupApprovalUncheckedCreateNestedManyWithoutConfigInput
   logs?: Prisma.LibraryCleanupLogUncheckedCreateNestedManyWithoutConfigInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUncheckedCreateNestedManyWithoutConfigInput
 }
 
 export type LibraryCleanupConfigUpdateInput = {
@@ -462,6 +467,7 @@ export type LibraryCleanupConfigUpdateInput = {
   rules?: Prisma.LibraryCleanupRuleUpdateManyWithoutConfigNestedInput
   approvals?: Prisma.LibraryCleanupApprovalUpdateManyWithoutConfigNestedInput
   logs?: Prisma.LibraryCleanupLogUpdateManyWithoutConfigNestedInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUpdateManyWithoutConfigNestedInput
 }
 
 export type LibraryCleanupConfigUncheckedUpdateInput = {
@@ -483,6 +489,7 @@ export type LibraryCleanupConfigUncheckedUpdateInput = {
   rules?: Prisma.LibraryCleanupRuleUncheckedUpdateManyWithoutConfigNestedInput
   approvals?: Prisma.LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigNestedInput
   logs?: Prisma.LibraryCleanupLogUncheckedUpdateManyWithoutConfigNestedInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUncheckedUpdateManyWithoutConfigNestedInput
 }
 
 export type LibraryCleanupConfigCreateManyInput = {
@@ -703,6 +710,20 @@ export type LibraryCleanupConfigUpdateOneRequiredWithoutLogsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.LibraryCleanupConfigUpdateToOneWithWhereWithoutLogsInput, Prisma.LibraryCleanupConfigUpdateWithoutLogsInput>, Prisma.LibraryCleanupConfigUncheckedUpdateWithoutLogsInput>
 }
 
+export type LibraryCleanupConfigCreateNestedOneWithoutAuditEventsInput = {
+  create?: Prisma.XOR<Prisma.LibraryCleanupConfigCreateWithoutAuditEventsInput, Prisma.LibraryCleanupConfigUncheckedCreateWithoutAuditEventsInput>
+  connectOrCreate?: Prisma.LibraryCleanupConfigCreateOrConnectWithoutAuditEventsInput
+  connect?: Prisma.LibraryCleanupConfigWhereUniqueInput
+}
+
+export type LibraryCleanupConfigUpdateOneRequiredWithoutAuditEventsNestedInput = {
+  create?: Prisma.XOR<Prisma.LibraryCleanupConfigCreateWithoutAuditEventsInput, Prisma.LibraryCleanupConfigUncheckedCreateWithoutAuditEventsInput>
+  connectOrCreate?: Prisma.LibraryCleanupConfigCreateOrConnectWithoutAuditEventsInput
+  upsert?: Prisma.LibraryCleanupConfigUpsertWithoutAuditEventsInput
+  connect?: Prisma.LibraryCleanupConfigWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.LibraryCleanupConfigUpdateToOneWithWhereWithoutAuditEventsInput, Prisma.LibraryCleanupConfigUpdateWithoutAuditEventsInput>, Prisma.LibraryCleanupConfigUncheckedUpdateWithoutAuditEventsInput>
+}
+
 export type LibraryCleanupConfigCreateWithoutUserInput = {
   id?: string
   enabled?: boolean
@@ -721,6 +742,7 @@ export type LibraryCleanupConfigCreateWithoutUserInput = {
   rules?: Prisma.LibraryCleanupRuleCreateNestedManyWithoutConfigInput
   approvals?: Prisma.LibraryCleanupApprovalCreateNestedManyWithoutConfigInput
   logs?: Prisma.LibraryCleanupLogCreateNestedManyWithoutConfigInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventCreateNestedManyWithoutConfigInput
 }
 
 export type LibraryCleanupConfigUncheckedCreateWithoutUserInput = {
@@ -741,6 +763,7 @@ export type LibraryCleanupConfigUncheckedCreateWithoutUserInput = {
   rules?: Prisma.LibraryCleanupRuleUncheckedCreateNestedManyWithoutConfigInput
   approvals?: Prisma.LibraryCleanupApprovalUncheckedCreateNestedManyWithoutConfigInput
   logs?: Prisma.LibraryCleanupLogUncheckedCreateNestedManyWithoutConfigInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUncheckedCreateNestedManyWithoutConfigInput
 }
 
 export type LibraryCleanupConfigCreateOrConnectWithoutUserInput = {
@@ -807,6 +830,7 @@ export type LibraryCleanupConfigCreateWithoutRulesInput = {
   user: Prisma.UserCreateNestedOneWithoutLibraryCleanupConfigsInput
   approvals?: Prisma.LibraryCleanupApprovalCreateNestedManyWithoutConfigInput
   logs?: Prisma.LibraryCleanupLogCreateNestedManyWithoutConfigInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventCreateNestedManyWithoutConfigInput
 }
 
 export type LibraryCleanupConfigUncheckedCreateWithoutRulesInput = {
@@ -827,6 +851,7 @@ export type LibraryCleanupConfigUncheckedCreateWithoutRulesInput = {
   updatedAt?: Date | string
   approvals?: Prisma.LibraryCleanupApprovalUncheckedCreateNestedManyWithoutConfigInput
   logs?: Prisma.LibraryCleanupLogUncheckedCreateNestedManyWithoutConfigInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUncheckedCreateNestedManyWithoutConfigInput
 }
 
 export type LibraryCleanupConfigCreateOrConnectWithoutRulesInput = {
@@ -863,6 +888,7 @@ export type LibraryCleanupConfigUpdateWithoutRulesInput = {
   user?: Prisma.UserUpdateOneRequiredWithoutLibraryCleanupConfigsNestedInput
   approvals?: Prisma.LibraryCleanupApprovalUpdateManyWithoutConfigNestedInput
   logs?: Prisma.LibraryCleanupLogUpdateManyWithoutConfigNestedInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUpdateManyWithoutConfigNestedInput
 }
 
 export type LibraryCleanupConfigUncheckedUpdateWithoutRulesInput = {
@@ -883,6 +909,7 @@ export type LibraryCleanupConfigUncheckedUpdateWithoutRulesInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   approvals?: Prisma.LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigNestedInput
   logs?: Prisma.LibraryCleanupLogUncheckedUpdateManyWithoutConfigNestedInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUncheckedUpdateManyWithoutConfigNestedInput
 }
 
 export type LibraryCleanupConfigCreateWithoutApprovalsInput = {
@@ -903,6 +930,7 @@ export type LibraryCleanupConfigCreateWithoutApprovalsInput = {
   user: Prisma.UserCreateNestedOneWithoutLibraryCleanupConfigsInput
   rules?: Prisma.LibraryCleanupRuleCreateNestedManyWithoutConfigInput
   logs?: Prisma.LibraryCleanupLogCreateNestedManyWithoutConfigInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventCreateNestedManyWithoutConfigInput
 }
 
 export type LibraryCleanupConfigUncheckedCreateWithoutApprovalsInput = {
@@ -923,6 +951,7 @@ export type LibraryCleanupConfigUncheckedCreateWithoutApprovalsInput = {
   updatedAt?: Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedCreateNestedManyWithoutConfigInput
   logs?: Prisma.LibraryCleanupLogUncheckedCreateNestedManyWithoutConfigInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUncheckedCreateNestedManyWithoutConfigInput
 }
 
 export type LibraryCleanupConfigCreateOrConnectWithoutApprovalsInput = {
@@ -959,6 +988,7 @@ export type LibraryCleanupConfigUpdateWithoutApprovalsInput = {
   user?: Prisma.UserUpdateOneRequiredWithoutLibraryCleanupConfigsNestedInput
   rules?: Prisma.LibraryCleanupRuleUpdateManyWithoutConfigNestedInput
   logs?: Prisma.LibraryCleanupLogUpdateManyWithoutConfigNestedInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUpdateManyWithoutConfigNestedInput
 }
 
 export type LibraryCleanupConfigUncheckedUpdateWithoutApprovalsInput = {
@@ -979,6 +1009,7 @@ export type LibraryCleanupConfigUncheckedUpdateWithoutApprovalsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedUpdateManyWithoutConfigNestedInput
   logs?: Prisma.LibraryCleanupLogUncheckedUpdateManyWithoutConfigNestedInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUncheckedUpdateManyWithoutConfigNestedInput
 }
 
 export type LibraryCleanupConfigCreateWithoutLogsInput = {
@@ -999,6 +1030,7 @@ export type LibraryCleanupConfigCreateWithoutLogsInput = {
   user: Prisma.UserCreateNestedOneWithoutLibraryCleanupConfigsInput
   rules?: Prisma.LibraryCleanupRuleCreateNestedManyWithoutConfigInput
   approvals?: Prisma.LibraryCleanupApprovalCreateNestedManyWithoutConfigInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventCreateNestedManyWithoutConfigInput
 }
 
 export type LibraryCleanupConfigUncheckedCreateWithoutLogsInput = {
@@ -1019,6 +1051,7 @@ export type LibraryCleanupConfigUncheckedCreateWithoutLogsInput = {
   updatedAt?: Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedCreateNestedManyWithoutConfigInput
   approvals?: Prisma.LibraryCleanupApprovalUncheckedCreateNestedManyWithoutConfigInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUncheckedCreateNestedManyWithoutConfigInput
 }
 
 export type LibraryCleanupConfigCreateOrConnectWithoutLogsInput = {
@@ -1055,6 +1088,7 @@ export type LibraryCleanupConfigUpdateWithoutLogsInput = {
   user?: Prisma.UserUpdateOneRequiredWithoutLibraryCleanupConfigsNestedInput
   rules?: Prisma.LibraryCleanupRuleUpdateManyWithoutConfigNestedInput
   approvals?: Prisma.LibraryCleanupApprovalUpdateManyWithoutConfigNestedInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUpdateManyWithoutConfigNestedInput
 }
 
 export type LibraryCleanupConfigUncheckedUpdateWithoutLogsInput = {
@@ -1075,6 +1109,107 @@ export type LibraryCleanupConfigUncheckedUpdateWithoutLogsInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   rules?: Prisma.LibraryCleanupRuleUncheckedUpdateManyWithoutConfigNestedInput
   approvals?: Prisma.LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigNestedInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUncheckedUpdateManyWithoutConfigNestedInput
+}
+
+export type LibraryCleanupConfigCreateWithoutAuditEventsInput = {
+  id?: string
+  enabled?: boolean
+  intervalHours?: number
+  lastRunAt?: Date | string | null
+  nextRunAt?: Date | string | null
+  dryRunMode?: boolean
+  maxRemovalsPerRun?: number
+  requireApproval?: boolean
+  runClaimToken?: string | null
+  runClaimedAt?: Date | string | null
+  respectQuiSeeding?: boolean
+  rejectionMemoryDays?: number | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutLibraryCleanupConfigsInput
+  rules?: Prisma.LibraryCleanupRuleCreateNestedManyWithoutConfigInput
+  approvals?: Prisma.LibraryCleanupApprovalCreateNestedManyWithoutConfigInput
+  logs?: Prisma.LibraryCleanupLogCreateNestedManyWithoutConfigInput
+}
+
+export type LibraryCleanupConfigUncheckedCreateWithoutAuditEventsInput = {
+  id?: string
+  userId: string
+  enabled?: boolean
+  intervalHours?: number
+  lastRunAt?: Date | string | null
+  nextRunAt?: Date | string | null
+  dryRunMode?: boolean
+  maxRemovalsPerRun?: number
+  requireApproval?: boolean
+  runClaimToken?: string | null
+  runClaimedAt?: Date | string | null
+  respectQuiSeeding?: boolean
+  rejectionMemoryDays?: number | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  rules?: Prisma.LibraryCleanupRuleUncheckedCreateNestedManyWithoutConfigInput
+  approvals?: Prisma.LibraryCleanupApprovalUncheckedCreateNestedManyWithoutConfigInput
+  logs?: Prisma.LibraryCleanupLogUncheckedCreateNestedManyWithoutConfigInput
+}
+
+export type LibraryCleanupConfigCreateOrConnectWithoutAuditEventsInput = {
+  where: Prisma.LibraryCleanupConfigWhereUniqueInput
+  create: Prisma.XOR<Prisma.LibraryCleanupConfigCreateWithoutAuditEventsInput, Prisma.LibraryCleanupConfigUncheckedCreateWithoutAuditEventsInput>
+}
+
+export type LibraryCleanupConfigUpsertWithoutAuditEventsInput = {
+  update: Prisma.XOR<Prisma.LibraryCleanupConfigUpdateWithoutAuditEventsInput, Prisma.LibraryCleanupConfigUncheckedUpdateWithoutAuditEventsInput>
+  create: Prisma.XOR<Prisma.LibraryCleanupConfigCreateWithoutAuditEventsInput, Prisma.LibraryCleanupConfigUncheckedCreateWithoutAuditEventsInput>
+  where?: Prisma.LibraryCleanupConfigWhereInput
+}
+
+export type LibraryCleanupConfigUpdateToOneWithWhereWithoutAuditEventsInput = {
+  where?: Prisma.LibraryCleanupConfigWhereInput
+  data: Prisma.XOR<Prisma.LibraryCleanupConfigUpdateWithoutAuditEventsInput, Prisma.LibraryCleanupConfigUncheckedUpdateWithoutAuditEventsInput>
+}
+
+export type LibraryCleanupConfigUpdateWithoutAuditEventsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  intervalHours?: Prisma.IntFieldUpdateOperationsInput | number
+  lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  nextRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
+  requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  runClaimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  runClaimedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rejectionMemoryDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutLibraryCleanupConfigsNestedInput
+  rules?: Prisma.LibraryCleanupRuleUpdateManyWithoutConfigNestedInput
+  approvals?: Prisma.LibraryCleanupApprovalUpdateManyWithoutConfigNestedInput
+  logs?: Prisma.LibraryCleanupLogUpdateManyWithoutConfigNestedInput
+}
+
+export type LibraryCleanupConfigUncheckedUpdateWithoutAuditEventsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  intervalHours?: Prisma.IntFieldUpdateOperationsInput | number
+  lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  nextRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  dryRunMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  maxRemovalsPerRun?: Prisma.IntFieldUpdateOperationsInput | number
+  requireApproval?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  runClaimToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  runClaimedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  respectQuiSeeding?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  rejectionMemoryDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  rules?: Prisma.LibraryCleanupRuleUncheckedUpdateManyWithoutConfigNestedInput
+  approvals?: Prisma.LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigNestedInput
+  logs?: Prisma.LibraryCleanupLogUncheckedUpdateManyWithoutConfigNestedInput
 }
 
 export type LibraryCleanupConfigCreateManyUserInput = {
@@ -1112,6 +1247,7 @@ export type LibraryCleanupConfigUpdateWithoutUserInput = {
   rules?: Prisma.LibraryCleanupRuleUpdateManyWithoutConfigNestedInput
   approvals?: Prisma.LibraryCleanupApprovalUpdateManyWithoutConfigNestedInput
   logs?: Prisma.LibraryCleanupLogUpdateManyWithoutConfigNestedInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUpdateManyWithoutConfigNestedInput
 }
 
 export type LibraryCleanupConfigUncheckedUpdateWithoutUserInput = {
@@ -1132,6 +1268,7 @@ export type LibraryCleanupConfigUncheckedUpdateWithoutUserInput = {
   rules?: Prisma.LibraryCleanupRuleUncheckedUpdateManyWithoutConfigNestedInput
   approvals?: Prisma.LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigNestedInput
   logs?: Prisma.LibraryCleanupLogUncheckedUpdateManyWithoutConfigNestedInput
+  auditEvents?: Prisma.LibraryCleanupAuditEventUncheckedUpdateManyWithoutConfigNestedInput
 }
 
 export type LibraryCleanupConfigUncheckedUpdateManyWithoutUserInput = {
@@ -1160,12 +1297,14 @@ export type LibraryCleanupConfigCountOutputType = {
   rules: number
   approvals: number
   logs: number
+  auditEvents: number
 }
 
 export type LibraryCleanupConfigCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   rules?: boolean | LibraryCleanupConfigCountOutputTypeCountRulesArgs
   approvals?: boolean | LibraryCleanupConfigCountOutputTypeCountApprovalsArgs
   logs?: boolean | LibraryCleanupConfigCountOutputTypeCountLogsArgs
+  auditEvents?: boolean | LibraryCleanupConfigCountOutputTypeCountAuditEventsArgs
 }
 
 /**
@@ -1199,6 +1338,13 @@ export type LibraryCleanupConfigCountOutputTypeCountLogsArgs<ExtArgs extends run
   where?: Prisma.LibraryCleanupLogWhereInput
 }
 
+/**
+ * LibraryCleanupConfigCountOutputType without action
+ */
+export type LibraryCleanupConfigCountOutputTypeCountAuditEventsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.LibraryCleanupAuditEventWhereInput
+}
+
 
 export type LibraryCleanupConfigSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -1220,6 +1366,7 @@ export type LibraryCleanupConfigSelect<ExtArgs extends runtime.Types.Extensions.
   rules?: boolean | Prisma.LibraryCleanupConfig$rulesArgs<ExtArgs>
   approvals?: boolean | Prisma.LibraryCleanupConfig$approvalsArgs<ExtArgs>
   logs?: boolean | Prisma.LibraryCleanupConfig$logsArgs<ExtArgs>
+  auditEvents?: boolean | Prisma.LibraryCleanupConfig$auditEventsArgs<ExtArgs>
   _count?: boolean | Prisma.LibraryCleanupConfigCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["libraryCleanupConfig"]>
 
@@ -1285,6 +1432,7 @@ export type LibraryCleanupConfigInclude<ExtArgs extends runtime.Types.Extensions
   rules?: boolean | Prisma.LibraryCleanupConfig$rulesArgs<ExtArgs>
   approvals?: boolean | Prisma.LibraryCleanupConfig$approvalsArgs<ExtArgs>
   logs?: boolean | Prisma.LibraryCleanupConfig$logsArgs<ExtArgs>
+  auditEvents?: boolean | Prisma.LibraryCleanupConfig$auditEventsArgs<ExtArgs>
   _count?: boolean | Prisma.LibraryCleanupConfigCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type LibraryCleanupConfigIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1301,6 +1449,7 @@ export type $LibraryCleanupConfigPayload<ExtArgs extends runtime.Types.Extension
     rules: Prisma.$LibraryCleanupRulePayload<ExtArgs>[]
     approvals: Prisma.$LibraryCleanupApprovalPayload<ExtArgs>[]
     logs: Prisma.$LibraryCleanupLogPayload<ExtArgs>[]
+    auditEvents: Prisma.$LibraryCleanupAuditEventPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1737,6 +1886,7 @@ export interface Prisma__LibraryCleanupConfigClient<T, Null = never, ExtArgs ext
   rules<T extends Prisma.LibraryCleanupConfig$rulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LibraryCleanupConfig$rulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LibraryCleanupRulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   approvals<T extends Prisma.LibraryCleanupConfig$approvalsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LibraryCleanupConfig$approvalsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LibraryCleanupApprovalPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   logs<T extends Prisma.LibraryCleanupConfig$logsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LibraryCleanupConfig$logsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LibraryCleanupLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  auditEvents<T extends Prisma.LibraryCleanupConfig$auditEventsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LibraryCleanupConfig$auditEventsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LibraryCleanupAuditEventPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2249,6 +2399,30 @@ export type LibraryCleanupConfig$logsArgs<ExtArgs extends runtime.Types.Extensio
   take?: number
   skip?: number
   distinct?: Prisma.LibraryCleanupLogScalarFieldEnum | Prisma.LibraryCleanupLogScalarFieldEnum[]
+}
+
+/**
+ * LibraryCleanupConfig.auditEvents
+ */
+export type LibraryCleanupConfig$auditEventsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the LibraryCleanupAuditEvent
+   */
+  select?: Prisma.LibraryCleanupAuditEventSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the LibraryCleanupAuditEvent
+   */
+  omit?: Prisma.LibraryCleanupAuditEventOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.LibraryCleanupAuditEventInclude<ExtArgs> | null
+  where?: Prisma.LibraryCleanupAuditEventWhereInput
+  orderBy?: Prisma.LibraryCleanupAuditEventOrderByWithRelationInput | Prisma.LibraryCleanupAuditEventOrderByWithRelationInput[]
+  cursor?: Prisma.LibraryCleanupAuditEventWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.LibraryCleanupAuditEventScalarFieldEnum | Prisma.LibraryCleanupAuditEventScalarFieldEnum[]
 }
 
 /**

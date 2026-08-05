@@ -43,6 +43,7 @@ export type TmdbListCacheMinAggregateOutputType = {
   tmdbId: number | null
   mediaType: string | null
   title: string | null
+  generation: string | null
   refreshedAt: Date | null
 }
 
@@ -53,6 +54,7 @@ export type TmdbListCacheMaxAggregateOutputType = {
   tmdbId: number | null
   mediaType: string | null
   title: string | null
+  generation: string | null
   refreshedAt: Date | null
 }
 
@@ -63,6 +65,7 @@ export type TmdbListCacheCountAggregateOutputType = {
   tmdbId: number
   mediaType: number
   title: number
+  generation: number
   refreshedAt: number
   _all: number
 }
@@ -83,6 +86,7 @@ export type TmdbListCacheMinAggregateInputType = {
   tmdbId?: true
   mediaType?: true
   title?: true
+  generation?: true
   refreshedAt?: true
 }
 
@@ -93,6 +97,7 @@ export type TmdbListCacheMaxAggregateInputType = {
   tmdbId?: true
   mediaType?: true
   title?: true
+  generation?: true
   refreshedAt?: true
 }
 
@@ -103,6 +108,7 @@ export type TmdbListCacheCountAggregateInputType = {
   tmdbId?: true
   mediaType?: true
   title?: true
+  generation?: true
   refreshedAt?: true
   _all?: true
 }
@@ -200,6 +206,7 @@ export type TmdbListCacheGroupByOutputType = {
   tmdbId: number
   mediaType: string
   title: string
+  generation: string
   refreshedAt: Date
   _count: TmdbListCacheCountAggregateOutputType | null
   _avg: TmdbListCacheAvgAggregateOutputType | null
@@ -233,6 +240,7 @@ export type TmdbListCacheWhereInput = {
   tmdbId?: Prisma.IntFilter<"TmdbListCache"> | number
   mediaType?: Prisma.StringFilter<"TmdbListCache"> | string
   title?: Prisma.StringFilter<"TmdbListCache"> | string
+  generation?: Prisma.StringFilter<"TmdbListCache"> | string
   refreshedAt?: Prisma.DateTimeFilter<"TmdbListCache"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
 }
@@ -244,13 +252,14 @@ export type TmdbListCacheOrderByWithRelationInput = {
   tmdbId?: Prisma.SortOrder
   mediaType?: Prisma.SortOrder
   title?: Prisma.SortOrder
+  generation?: Prisma.SortOrder
   refreshedAt?: Prisma.SortOrder
   user?: Prisma.UserOrderByWithRelationInput
 }
 
 export type TmdbListCacheWhereUniqueInput = Prisma.AtLeast<{
   id?: string
-  userId_listId_tmdbId?: Prisma.TmdbListCacheUserIdListIdTmdbIdCompoundUniqueInput
+  userId_listId_mediaType_tmdbId?: Prisma.TmdbListCacheUserIdListIdMediaTypeTmdbIdCompoundUniqueInput
   AND?: Prisma.TmdbListCacheWhereInput | Prisma.TmdbListCacheWhereInput[]
   OR?: Prisma.TmdbListCacheWhereInput[]
   NOT?: Prisma.TmdbListCacheWhereInput | Prisma.TmdbListCacheWhereInput[]
@@ -259,9 +268,10 @@ export type TmdbListCacheWhereUniqueInput = Prisma.AtLeast<{
   tmdbId?: Prisma.IntFilter<"TmdbListCache"> | number
   mediaType?: Prisma.StringFilter<"TmdbListCache"> | string
   title?: Prisma.StringFilter<"TmdbListCache"> | string
+  generation?: Prisma.StringFilter<"TmdbListCache"> | string
   refreshedAt?: Prisma.DateTimeFilter<"TmdbListCache"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
-}, "id" | "userId_listId_tmdbId">
+}, "id" | "userId_listId_mediaType_tmdbId">
 
 export type TmdbListCacheOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
@@ -270,6 +280,7 @@ export type TmdbListCacheOrderByWithAggregationInput = {
   tmdbId?: Prisma.SortOrder
   mediaType?: Prisma.SortOrder
   title?: Prisma.SortOrder
+  generation?: Prisma.SortOrder
   refreshedAt?: Prisma.SortOrder
   _count?: Prisma.TmdbListCacheCountOrderByAggregateInput
   _avg?: Prisma.TmdbListCacheAvgOrderByAggregateInput
@@ -288,6 +299,7 @@ export type TmdbListCacheScalarWhereWithAggregatesInput = {
   tmdbId?: Prisma.IntWithAggregatesFilter<"TmdbListCache"> | number
   mediaType?: Prisma.StringWithAggregatesFilter<"TmdbListCache"> | string
   title?: Prisma.StringWithAggregatesFilter<"TmdbListCache"> | string
+  generation?: Prisma.StringWithAggregatesFilter<"TmdbListCache"> | string
   refreshedAt?: Prisma.DateTimeWithAggregatesFilter<"TmdbListCache"> | Date | string
 }
 
@@ -297,6 +309,7 @@ export type TmdbListCacheCreateInput = {
   tmdbId: number
   mediaType: string
   title: string
+  generation?: string
   refreshedAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutTmdbListCacheRowsInput
 }
@@ -308,6 +321,7 @@ export type TmdbListCacheUncheckedCreateInput = {
   tmdbId: number
   mediaType: string
   title: string
+  generation?: string
   refreshedAt?: Date | string
 }
 
@@ -317,6 +331,7 @@ export type TmdbListCacheUpdateInput = {
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
+  generation?: Prisma.StringFieldUpdateOperationsInput | string
   refreshedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutTmdbListCacheRowsNestedInput
 }
@@ -328,6 +343,7 @@ export type TmdbListCacheUncheckedUpdateInput = {
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
+  generation?: Prisma.StringFieldUpdateOperationsInput | string
   refreshedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -338,6 +354,7 @@ export type TmdbListCacheCreateManyInput = {
   tmdbId: number
   mediaType: string
   title: string
+  generation?: string
   refreshedAt?: Date | string
 }
 
@@ -347,6 +364,7 @@ export type TmdbListCacheUpdateManyMutationInput = {
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
+  generation?: Prisma.StringFieldUpdateOperationsInput | string
   refreshedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -357,6 +375,7 @@ export type TmdbListCacheUncheckedUpdateManyInput = {
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
+  generation?: Prisma.StringFieldUpdateOperationsInput | string
   refreshedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -370,9 +389,10 @@ export type TmdbListCacheOrderByRelationAggregateInput = {
   _count?: Prisma.SortOrder
 }
 
-export type TmdbListCacheUserIdListIdTmdbIdCompoundUniqueInput = {
+export type TmdbListCacheUserIdListIdMediaTypeTmdbIdCompoundUniqueInput = {
   userId: string
   listId: string
+  mediaType: string
   tmdbId: number
 }
 
@@ -383,6 +403,7 @@ export type TmdbListCacheCountOrderByAggregateInput = {
   tmdbId?: Prisma.SortOrder
   mediaType?: Prisma.SortOrder
   title?: Prisma.SortOrder
+  generation?: Prisma.SortOrder
   refreshedAt?: Prisma.SortOrder
 }
 
@@ -397,6 +418,7 @@ export type TmdbListCacheMaxOrderByAggregateInput = {
   tmdbId?: Prisma.SortOrder
   mediaType?: Prisma.SortOrder
   title?: Prisma.SortOrder
+  generation?: Prisma.SortOrder
   refreshedAt?: Prisma.SortOrder
 }
 
@@ -407,6 +429,7 @@ export type TmdbListCacheMinOrderByAggregateInput = {
   tmdbId?: Prisma.SortOrder
   mediaType?: Prisma.SortOrder
   title?: Prisma.SortOrder
+  generation?: Prisma.SortOrder
   refreshedAt?: Prisma.SortOrder
 }
 
@@ -462,6 +485,7 @@ export type TmdbListCacheCreateWithoutUserInput = {
   tmdbId: number
   mediaType: string
   title: string
+  generation?: string
   refreshedAt?: Date | string
 }
 
@@ -471,6 +495,7 @@ export type TmdbListCacheUncheckedCreateWithoutUserInput = {
   tmdbId: number
   mediaType: string
   title: string
+  generation?: string
   refreshedAt?: Date | string
 }
 
@@ -509,6 +534,7 @@ export type TmdbListCacheScalarWhereInput = {
   tmdbId?: Prisma.IntFilter<"TmdbListCache"> | number
   mediaType?: Prisma.StringFilter<"TmdbListCache"> | string
   title?: Prisma.StringFilter<"TmdbListCache"> | string
+  generation?: Prisma.StringFilter<"TmdbListCache"> | string
   refreshedAt?: Prisma.DateTimeFilter<"TmdbListCache"> | Date | string
 }
 
@@ -518,6 +544,7 @@ export type TmdbListCacheCreateManyUserInput = {
   tmdbId: number
   mediaType: string
   title: string
+  generation?: string
   refreshedAt?: Date | string
 }
 
@@ -527,6 +554,7 @@ export type TmdbListCacheUpdateWithoutUserInput = {
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
+  generation?: Prisma.StringFieldUpdateOperationsInput | string
   refreshedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -536,6 +564,7 @@ export type TmdbListCacheUncheckedUpdateWithoutUserInput = {
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
+  generation?: Prisma.StringFieldUpdateOperationsInput | string
   refreshedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -545,6 +574,7 @@ export type TmdbListCacheUncheckedUpdateManyWithoutUserInput = {
   tmdbId?: Prisma.IntFieldUpdateOperationsInput | number
   mediaType?: Prisma.StringFieldUpdateOperationsInput | string
   title?: Prisma.StringFieldUpdateOperationsInput | string
+  generation?: Prisma.StringFieldUpdateOperationsInput | string
   refreshedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
@@ -557,6 +587,7 @@ export type TmdbListCacheSelect<ExtArgs extends runtime.Types.Extensions.Interna
   tmdbId?: boolean
   mediaType?: boolean
   title?: boolean
+  generation?: boolean
   refreshedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["tmdbListCache"]>
@@ -568,6 +599,7 @@ export type TmdbListCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   tmdbId?: boolean
   mediaType?: boolean
   title?: boolean
+  generation?: boolean
   refreshedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["tmdbListCache"]>
@@ -579,6 +611,7 @@ export type TmdbListCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   tmdbId?: boolean
   mediaType?: boolean
   title?: boolean
+  generation?: boolean
   refreshedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["tmdbListCache"]>
@@ -590,10 +623,11 @@ export type TmdbListCacheSelectScalar = {
   tmdbId?: boolean
   mediaType?: boolean
   title?: boolean
+  generation?: boolean
   refreshedAt?: boolean
 }
 
-export type TmdbListCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "listId" | "tmdbId" | "mediaType" | "title" | "refreshedAt", ExtArgs["result"]["tmdbListCache"]>
+export type TmdbListCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "listId" | "tmdbId" | "mediaType" | "title" | "generation" | "refreshedAt", ExtArgs["result"]["tmdbListCache"]>
 export type TmdbListCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }
@@ -616,6 +650,7 @@ export type $TmdbListCachePayload<ExtArgs extends runtime.Types.Extensions.Inter
     tmdbId: number
     mediaType: string
     title: string
+    generation: string
     refreshedAt: Date
   }, ExtArgs["result"]["tmdbListCache"]>
   composites: {}
@@ -1047,6 +1082,7 @@ export interface TmdbListCacheFieldRefs {
   readonly tmdbId: Prisma.FieldRef<"TmdbListCache", 'Int'>
   readonly mediaType: Prisma.FieldRef<"TmdbListCache", 'String'>
   readonly title: Prisma.FieldRef<"TmdbListCache", 'String'>
+  readonly generation: Prisma.FieldRef<"TmdbListCache", 'String'>
   readonly refreshedAt: Prisma.FieldRef<"TmdbListCache", 'DateTime'>
 }
     

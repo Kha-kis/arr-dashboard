@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { ServiceInstance } from "../prisma.js";
 import { logQuiActivity, type QuiBackfillCompleteDetails } from "../qui/activity-log.js";
+import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 
 /**
  * Backfill `LibraryCache.infoHash` from *arr download history (Phase 2.1).
@@ -196,10 +197,17 @@ export async function backfillInfoHashForRow(args: {
 	});
 	if (!hash) return null;
 
-	await app.prisma.libraryCache.update({
-		where: { id: cacheRowId },
-		data: { infoHash: hash },
-	});
+	await withQuiObservationTopologyGuard(userId, () =>
+		app.prisma.libraryCache.update({
+			where: { id: cacheRowId },
+			data: {
+				infoHash: hash,
+				torrentState: null,
+				torrentRatio: null,
+				torrentSyncedAt: null,
+			},
+		}),
+	);
 	return hash;
 }
 

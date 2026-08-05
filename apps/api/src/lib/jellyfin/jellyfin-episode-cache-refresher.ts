@@ -1,165 +1,183 @@
-/**
- * Jellyfin Episode Cache Refresher
- *
- * Fetches per-episode watch status for recently-watched series
- * and upserts into JellyfinEpisodeCache.
- *
- * Strategy:
- * 1. Query JellyfinCache for recently watched series (by lastWatchedAt)
- * 2. For each series, get episodes via Jellyfin API
- * 3. Aggregate watch status across all users
- * 4. Upsert into JellyfinEpisodeCache
- */
+/** Publishes a complete per-instance Jellyfin episode snapshot atomically. */
 
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../prisma.js";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
 
-const MAX_SERIES = 50;
+export const JELLYFIN_EPISODE_MAX_SERIES = 50;
 
 export async function refreshJellyfinEpisodeCache(
 	client: JellyfinClient,
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-): Promise<{ upserted: number; errors: number }> {
-	let upserted = 0;
-	let errors = 0;
-
+): Promise<{ upserted: number; errors: number; complete: boolean; completedAt?: Date }> {
 	try {
-		// Get users for cross-user watch aggregation
 		const users = await client.getUsers();
-		if (users.length === 0) return { upserted: 0, errors: 0 };
-
-		// Get recently watched series from JellyfinCache
+		if (users.length === 0) {
+			log.warn({ instanceId }, "Jellyfin episode refresh returned no users");
+			return { upserted: 0, errors: 1, complete: false };
+		}
 		const recentSeries = await prisma.jellyfinCache.findMany({
-			where: {
-				instanceId,
-				mediaType: "series",
-				lastWatchedAt: { not: null },
-			},
+			where: { instanceId, mediaType: "series", lastWatchedAt: { not: null } },
 			orderBy: { lastWatchedAt: "desc" },
-			take: MAX_SERIES,
-			select: {
-				tmdbId: true,
-				jellyfinId: true,
-				title: true,
-			},
+			take: JELLYFIN_EPISODE_MAX_SERIES + 1,
+			select: { tmdbId: true, jellyfinId: true, title: true },
 		});
+		if (recentSeries.length > JELLYFIN_EPISODE_MAX_SERIES) {
+			log.warn(
+				{ instanceId, limit: JELLYFIN_EPISODE_MAX_SERIES },
+				"Jellyfin episode inventory exceeded its safe series limit",
+			);
+			return { upserted: 0, errors: 1, complete: false };
+		}
 
-		// Deduplicate by tmdbId
-		const seen = new Set<number>();
-		const uniqueSeries = recentSeries.filter((s) => {
-			if (!s.jellyfinId || seen.has(s.tmdbId)) return false;
-			seen.add(s.tmdbId);
-			return true;
-		});
+		const seriesByTmdbId = new Map<number, (typeof recentSeries)[number]>();
+		for (const series of recentSeries) {
+			if (!series.jellyfinId) {
+				log.warn({ instanceId, tmdbId: series.tmdbId }, "Jellyfin series lacked an item id");
+				return { upserted: 0, errors: 1, complete: false };
+			}
+			const existing = seriesByTmdbId.get(series.tmdbId);
+			if (existing && existing.jellyfinId !== series.jellyfinId) {
+				log.warn({ instanceId, tmdbId: series.tmdbId }, "Jellyfin series identity was ambiguous");
+				return { upserted: 0, errors: 1, complete: false };
+			}
+			seriesByTmdbId.set(series.tmdbId, series);
+		}
 
-		for (const series of uniqueSeries) {
-			if (!series.jellyfinId) continue;
+		const rows: Array<{
+			instanceId: string;
+			showTmdbId: number;
+			seasonNumber: number;
+			episodeNumber: number;
+			jellyfinId: string;
+			title: string;
+			watched: boolean;
+			watchedByUsers: string;
+			lastWatchedAt: Date | null;
+		}> = [];
 
-			try {
-				// Aggregate episode watch status across all users
-				const episodeMap = new Map<
-					string,
-					{
-						jellyfinId: string;
-						seasonNumber: number;
-						episodeNumber: number;
-						title: string;
-						watched: boolean;
-						watchedByUsers: Set<string>;
-						lastWatchedAt: Date | null;
+		for (const series of [...seriesByTmdbId.values()].sort((a, b) => a.tmdbId - b.tmdbId)) {
+			const episodeMap = new Map<
+				string,
+				{
+					jellyfinId: string;
+					seasonNumber: number;
+					episodeNumber: number;
+					title: string;
+					watched: boolean;
+					watchedByUsers: Set<string>;
+					lastWatchedAt: Date | null;
+				}
+			>();
+			for (const user of users) {
+				let episodes: Awaited<ReturnType<JellyfinClient["getEpisodes"]>>;
+				try {
+					episodes = await client.getEpisodes(user.id, series.jellyfinId!);
+				} catch (error) {
+					log.warn(
+						{ err: error, instanceId, seriesId: series.jellyfinId, userId: user.id },
+						"Failed to prove complete Jellyfin episode inventory",
+					);
+					return { upserted: 0, errors: 1, complete: false };
+				}
+				const seenCoordinates = new Set<string>();
+				for (const episode of episodes) {
+					const seasonNumber = episode.seasonNumber;
+					const episodeNumber = episode.episodeNumber;
+					if (
+						!Number.isSafeInteger(seasonNumber) ||
+						seasonNumber === undefined ||
+						seasonNumber < 0 ||
+						!Number.isSafeInteger(episodeNumber) ||
+						episodeNumber === undefined ||
+						episodeNumber <= 0
+					) {
+						return { upserted: 0, errors: 1, complete: false };
 					}
-				>();
-
-				for (const user of users) {
-					try {
-						const episodes = await client.getEpisodes(user.id, series.jellyfinId!);
-
-						for (const ep of episodes) {
-							if (!ep.seasonNumber || !ep.episodeNumber) continue;
-
-							const key = `${ep.seasonNumber}:${ep.episodeNumber}`;
-							let entry = episodeMap.get(key);
-							if (!entry) {
-								entry = {
-									jellyfinId: ep.id,
-									seasonNumber: ep.seasonNumber,
-									episodeNumber: ep.episodeNumber,
-									title: ep.name,
-									watched: false,
-									watchedByUsers: new Set(),
-									lastWatchedAt: null,
-								};
-								episodeMap.set(key, entry);
+					const key = `${seasonNumber}:${episodeNumber}`;
+					if (seenCoordinates.has(key)) return { upserted: 0, errors: 1, complete: false };
+					seenCoordinates.add(key);
+					const entry = episodeMap.get(key);
+					if (entry && entry.jellyfinId !== episode.id) {
+						return { upserted: 0, errors: 1, complete: false };
+					}
+					const current = entry ?? {
+						jellyfinId: episode.id,
+						seasonNumber,
+						episodeNumber,
+						title: episode.name,
+						watched: false,
+						watchedByUsers: new Set<string>(),
+						lastWatchedAt: null,
+					};
+					if (episode.played) {
+						current.watched = true;
+						current.watchedByUsers.add(user.name);
+						if (episode.lastPlayedDate) {
+							const playedAt = new Date(episode.lastPlayedDate);
+							if (Number.isNaN(playedAt.getTime())) {
+								return { upserted: 0, errors: 1, complete: false };
 							}
-
-							if (ep.played) {
-								entry.watched = true;
-								entry.watchedByUsers.add(user.name);
-								if (ep.lastPlayedDate) {
-									const d = new Date(ep.lastPlayedDate);
-									if (!entry.lastWatchedAt || d > entry.lastWatchedAt) {
-										entry.lastWatchedAt = d;
-									}
-								}
+							if (!current.lastWatchedAt || playedAt > current.lastWatchedAt) {
+								current.lastWatchedAt = playedAt;
 							}
 						}
-					} catch {
-						// Per-user episode fetch failure — skip, don't fail the series
 					}
+					episodeMap.set(key, current);
 				}
-
-				// Upsert episodes
-				const episodeEntries = Array.from(episodeMap.values());
-				if (episodeEntries.length > 0) {
-					await prisma.$transaction(
-						episodeEntries.map((ep) =>
-							prisma.jellyfinEpisodeCache.upsert({
-								where: {
-									instanceId_showTmdbId_seasonNumber_episodeNumber: {
-										instanceId,
-										showTmdbId: series.tmdbId,
-										seasonNumber: ep.seasonNumber,
-										episodeNumber: ep.episodeNumber,
-									},
-								},
-								create: {
-									instanceId,
-									showTmdbId: series.tmdbId,
-									seasonNumber: ep.seasonNumber,
-									episodeNumber: ep.episodeNumber,
-									jellyfinId: ep.jellyfinId,
-									title: ep.title,
-									watched: ep.watched,
-									watchedByUsers: JSON.stringify([...ep.watchedByUsers]),
-									lastWatchedAt: ep.lastWatchedAt,
-								},
-								update: {
-									jellyfinId: ep.jellyfinId,
-									title: ep.title,
-									watched: ep.watched,
-									watchedByUsers: JSON.stringify([...ep.watchedByUsers]),
-									lastWatchedAt: ep.lastWatchedAt,
-								},
-							}),
-						),
-					);
-					upserted += episodeEntries.length;
-				}
-			} catch (err) {
-				errors++;
-				log.warn(
-					{ err, seriesId: series.jellyfinId, title: series.title },
-					"Failed to refresh Jellyfin episode cache for series",
-				);
+			}
+			for (const episode of [...episodeMap.values()].sort(
+				(a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber,
+			)) {
+				rows.push({
+					instanceId,
+					showTmdbId: series.tmdbId,
+					seasonNumber: episode.seasonNumber,
+					episodeNumber: episode.episodeNumber,
+					jellyfinId: episode.jellyfinId,
+					title: episode.title,
+					watched: episode.watched,
+					watchedByUsers: JSON.stringify([...episode.watchedByUsers].sort()),
+					lastWatchedAt: episode.lastWatchedAt,
+				});
 			}
 		}
-	} catch (err) {
-		errors++;
-		log.error({ err, instanceId }, "Jellyfin episode cache refresh failed");
-	}
 
-	return { upserted, errors };
+		const completedAt = new Date();
+		await prisma.$transaction(async (tx) => {
+			await tx.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
+			if (rows.length > 0) await tx.jellyfinEpisodeCache.createMany({ data: rows });
+			await tx.cacheRefreshStatus.upsert({
+				where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin_episode" } },
+				create: {
+					instanceId,
+					cacheType: "jellyfin_episode",
+					lastRefreshedAt: completedAt,
+					lastResult: "success",
+					itemCount: rows.length,
+					lastAttemptAt: completedAt,
+					lastAttemptResult: "success",
+				},
+				update: {
+					lastRefreshedAt: completedAt,
+					lastResult: "success",
+					lastErrorMessage: null,
+					itemCount: rows.length,
+					lastAttemptAt: completedAt,
+					lastAttemptResult: "success",
+					lastAttemptErrorMessage: null,
+				},
+			});
+		});
+		return { upserted: rows.length, errors: 0, complete: true, completedAt };
+	} catch (error) {
+		log.error(
+			{ err: error, instanceId },
+			`Jellyfin episode cache refresh failed: ${getErrorMessage(error)}`,
+		);
+		return { upserted: 0, errors: 1, complete: false };
+	}
 }

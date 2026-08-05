@@ -7,6 +7,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { recordCacheRefreshFailure } from "../../lib/cache-refresh-status.js";
 import { requireTautulliClient } from "../../lib/tautulli/tautulli-helpers.js";
 import { refreshTautulliCache } from "../../lib/tautulli/tautulli-cache-refresher.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -54,9 +55,18 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { client } = await requireTautulliClient(app, userId, instanceId);
 
 			const result = await refreshTautulliCache(client, app.prisma, instanceId, request.log);
+			if (!result.complete || !result.completedAt) {
+				await recordCacheRefreshFailure(
+					app.prisma,
+					instanceId,
+					"tautulli",
+					result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
+						"Tautulli refresh did not publish a complete generation",
+				);
+			}
 
 			return reply.send({
-				success: true,
+				success: result.complete && Boolean(result.completedAt),
 				upserted: result.upserted,
 				errors: result.errors,
 			});

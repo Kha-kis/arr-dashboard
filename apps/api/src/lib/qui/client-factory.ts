@@ -445,15 +445,10 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 		const rawIdentities = new Set<string>();
 		for (let page = 0; page < MAX_PAGES; page++) {
 			const data = requireComplete
-				? await quiRequest(
-						ctx,
-						"/api/torrents/cross-instance",
-						wireCrossInstanceResponseSchema,
-						{
-							query: { limit: String(PAGE_SIZE), page: String(page) },
-							timeoutMs: PER_PAGE_TIMEOUT_MS,
-						},
-					)
+				? await quiRequest(ctx, "/api/torrents/cross-instance", wireCrossInstanceResponseSchema, {
+						query: { limit: String(PAGE_SIZE), page: String(page) },
+						timeoutMs: PER_PAGE_TIMEOUT_MS,
+					})
 				: await quiRequest(
 						ctx,
 						"/api/torrents/cross-instance",
@@ -553,9 +548,7 @@ export function createQuiClient(app: FastifyInstance, instance: ServiceInstance)
 				if (rawRowsRead > data.total) {
 					throw new Error("qUI exact-hash lookup returned more rows than its total");
 				}
-				exact.push(
-					...batch.filter((torrent) => torrent.hash.toLowerCase() === hash.toLowerCase()),
-				);
+				exact.push(...batch.filter((torrent) => torrent.hash.toLowerCase() === hash.toLowerCase()));
 				if (!data.hasMore) {
 					if (rawRowsRead !== data.total) {
 						throw new Error("qUI exact-hash lookup ended before its declared total");

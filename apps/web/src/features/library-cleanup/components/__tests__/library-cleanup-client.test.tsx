@@ -69,6 +69,8 @@ const mockUseApproveCleanupItem = vi.fn();
 const mockUseRetryCleanupItem = vi.fn();
 const mockUseRejectCleanupItem = vi.fn();
 const mockUseBulkCleanupAction = vi.fn();
+const mockUseCleanupActivity = vi.fn();
+const mockUseCleanupActivityEvents = vi.fn();
 const mockUseCleanupLogs = vi.fn();
 const mockUseCleanupStatistics = vi.fn();
 
@@ -88,6 +90,8 @@ vi.mock("../../../../hooks/api/useLibraryCleanup", () => ({
 	useRetryCleanupItem: () => mockUseRetryCleanupItem(),
 	useRejectCleanupItem: () => mockUseRejectCleanupItem(),
 	useBulkCleanupAction: () => mockUseBulkCleanupAction(),
+	useCleanupActivity: (...args: unknown[]) => mockUseCleanupActivity(...args),
+	useCleanupActivityEvents: (...args: unknown[]) => mockUseCleanupActivityEvents(...args),
 	useCleanupLogs: () => mockUseCleanupLogs(),
 	useCleanupStatistics: () => mockUseCleanupStatistics(),
 }));
@@ -182,6 +186,7 @@ function makeConfig(overrides: Partial<CleanupConfigResponse> = {}): CleanupConf
 				plexLibraryFilter: null,
 				targetScope: "series",
 				action: "delete",
+				scanMediaServerAfterDelete: false,
 				operator: null,
 				conditions: null,
 				retentionMode: false,
@@ -219,6 +224,22 @@ function setupDefaultMocks(configOverrides: Partial<CleanupConfigResponse> = {})
 	mockUseRetryCleanupItem.mockReturnValue(defaultMutation());
 	mockUseRejectCleanupItem.mockReturnValue(defaultMutation());
 	mockUseBulkCleanupAction.mockReturnValue(defaultMutation());
+	mockUseCleanupActivity.mockReturnValue({
+		data: undefined,
+		isLoading: false,
+		isError: false,
+		refetch: vi.fn(),
+	});
+	mockUseCleanupActivityEvents.mockReturnValue({
+		data: undefined,
+		hasNextPage: undefined,
+		isError: false,
+		isFetchNextPageError: false,
+		isFetching: false,
+		isFetchingNextPage: false,
+		fetchNextPage: vi.fn(),
+		refetch: vi.fn(),
+	});
 	mockUseCleanupLogs.mockReturnValue({
 		data: undefined,
 		isLoading: false,
@@ -242,6 +263,16 @@ describe("LibraryCleanupClient", () => {
 		vi.clearAllMocks();
 		localStorage.clear();
 		setupDefaultMocks();
+	});
+
+	it("shows which destructive rules request a media-server scan", () => {
+		const config = makeConfig();
+		config.rules[0]!.scanMediaServerAfterDelete = true;
+		mockUseCleanupConfig.mockReturnValue({ data: config, isLoading: false });
+
+		render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+		expect(screen.getByText("Media scan")).toBeInTheDocument();
 	});
 
 	// ================================================================
@@ -491,6 +522,33 @@ describe("LibraryCleanupClient", () => {
 
 			expect(retryReset).toHaveBeenCalledOnce();
 		});
+
+		it("shows successful approval, retry, and bulk follow-up warnings", async () => {
+			setupApprovalTab();
+			mockUseApproveCleanupItem.mockReturnValue(
+				defaultMutation({
+					data: { removed: 1, failed: 0, errors: [], warnings: ["Approval scan deferred"] },
+				}),
+			);
+			mockUseRetryCleanupItem.mockReturnValue(
+				defaultMutation({
+					data: { removed: 1, failed: 0, errors: [], warnings: ["Retry scan deferred"] },
+				}),
+			);
+			mockUseBulkCleanupAction.mockReturnValue(
+				defaultMutation({
+					data: { removed: 2, failed: 0, errors: [], warnings: ["Bulk scan deferred"] },
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Approval Queue"));
+
+			const warningStatus = await screen.findByRole("status");
+			expect(warningStatus).toHaveTextContent("Approval scan deferred");
+			expect(warningStatus).toHaveTextContent("Retry scan deferred");
+			expect(warningStatus).toHaveTextContent("Bulk scan deferred");
+		});
 	});
 
 	describe("shared Plex safety feedback", () => {
@@ -731,7 +789,7 @@ describe("LibraryCleanupClient", () => {
 			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
 
 			expect(
-				screen.getByText("Preview Results (0 of 0 items flagged · 1 retry pending)"),
+				screen.getByText("Preview Results (0 of 0 rule matches · 1 retry pending)"),
 			).toBeInTheDocument();
 		});
 
@@ -751,6 +809,8 @@ describe("LibraryCleanupClient", () => {
 								matchedRuleName: "4K cleanup",
 								reason: "Skipped for safety: shared Plex risk",
 								action: "skipped",
+								selectionStatus: "blocked",
+								plannedAction: "delete",
 								sizeOnDisk: "1000",
 								year: 2024,
 								rating: 8,
@@ -767,6 +827,236 @@ describe("LibraryCleanupClient", () => {
 			expect(screen.getAllByText("1 Safety-blocked")).toHaveLength(1);
 			expect(screen.queryByText("1 Delete")).not.toBeInTheDocument();
 			expect(screen.getByText(/Skipped for safety: shared Plex risk/)).toBeInTheDocument();
+		});
+
+		it("shows exact next-run, deferred, blocked, and in-flight counts", () => {
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 8,
+						totalFlagged: 6,
+						pendingRetryCount: 2,
+						selectionCountsComplete: true,
+						selection: {
+							selectedFresh: 2,
+							selectedRetries: 1,
+							deferredBudget: 1,
+							deferredApproval: 1,
+							deferredRetryFairness: 1,
+							deferredInFlightTarget: 1,
+							deferredDuplicateTarget: 1,
+							inFlight: 1,
+							blocked: 1,
+							retryStateUnavailable: 0,
+							retryState: "complete",
+							total: 8,
+						},
+						display: { shown: 4, hidden: 3, limit: 200, complete: false },
+						items: [
+							{
+								instanceId: "radarr-1",
+								instanceLabel: "Radarr",
+								arrItemId: 1,
+								itemType: "movie",
+								title: "Selected Movie",
+								matchedRuleName: "Old media",
+								reason: "Matched",
+								action: "delete",
+								selectionStatus: "selected",
+								plannedAction: "delete",
+								sizeOnDisk: "1000",
+								year: 2020,
+								rating: 7,
+								quiStatus: "no_signal",
+							},
+							{
+								instanceId: "radarr-1",
+								instanceLabel: "Radarr",
+								arrItemId: 2,
+								itemType: "movie",
+								title: "Deferred Movie",
+								matchedRuleName: "Old media",
+								reason: "Deferred: the next cleanup run budget is full",
+								action: "skipped",
+								selectionStatus: "deferred",
+								plannedAction: "delete",
+								sizeOnDisk: "1000",
+								year: 2020,
+								rating: 7,
+								quiStatus: "no_signal",
+							},
+							{
+								instanceId: "radarr-1",
+								instanceLabel: "Radarr",
+								arrItemId: 3,
+								itemType: "movie",
+								title: "Running Movie",
+								matchedRuleName: "Old media",
+								reason: "Deferred: another cleanup run is already executing this durable retry.",
+								action: "skipped",
+								selectionStatus: "in_flight",
+								plannedAction: "delete",
+								sizeOnDisk: "1000",
+								year: 2020,
+								rating: 7,
+								quiStatus: "no_signal",
+							},
+							{
+								instanceId: "radarr-1",
+								instanceLabel: "Radarr",
+								arrItemId: 4,
+								itemType: "movie",
+								title: "Retry Movie",
+								matchedRuleName: "Old media",
+								reason:
+									"Selected for a retry attempt in the next cleanup run. The mutation outcome depends on live ARR authority and is not predicted.",
+								action: "delete",
+								selectionStatus: "selected",
+								plannedAction: "delete",
+								isRetryAttempt: true,
+								sizeOnDisk: "1000",
+								year: 2020,
+								rating: 7,
+								quiStatus: "no_signal",
+							},
+						],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getByText("Based on current rules and state.")).toBeInTheDocument();
+			expect(screen.getByText(/Next run reserves/)).toHaveTextContent(
+				"Next run reserves 2 fresh slots + 1 retry attempt. 6 deferred. Selected fresh slots include 1 currently safety-blocked item.",
+			);
+			expect(screen.getByText("1 Deferred (shown items)")).toBeInTheDocument();
+			expect(screen.getByText("1 In flight (shown items)")).toBeInTheDocument();
+			expect(screen.getByText("1 Retry attempt (shown items)")).toBeInTheDocument();
+			expect(screen.getByText("Retry attempt")).toBeInTheDocument();
+			expect(
+				screen.getAllByText(/mutation outcome depends on live ARR authority and is not predicted/),
+			).not.toHaveLength(0);
+			expect(screen.getByText(/next cleanup run budget is full/)).toBeInTheDocument();
+		});
+
+		it("keeps approval pending retries outside the next-run total while showing in-flight work", () => {
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 1,
+						totalFlagged: 1,
+						pendingRetryCount: 1,
+						selectionCountsComplete: true,
+						selection: {
+							selectedFresh: 1,
+							selectedRetries: 0,
+							deferredBudget: 0,
+							deferredApproval: 0,
+							deferredRetryFairness: 0,
+							deferredInFlightTarget: 0,
+							deferredDuplicateTarget: 0,
+							inFlight: 1,
+							blocked: 0,
+							retryStateUnavailable: 0,
+							retryState: "complete",
+							total: 2,
+						},
+						display: { shown: 2, hidden: 0, limit: 200, complete: true },
+						items: [
+							{
+								instanceId: "radarr-1",
+								instanceLabel: "Radarr",
+								arrItemId: 101,
+								itemType: "movie",
+								title: "Fresh movie",
+								matchedRuleName: "Cleanup",
+								reason: "Selected for the next approval run",
+								action: "delete",
+								selectionStatus: "selected",
+								plannedAction: "delete",
+								sizeOnDisk: "1000",
+								year: 2024,
+								rating: 8,
+								quiStatus: "no_signal",
+							},
+							{
+								instanceId: "radarr-1",
+								instanceLabel: "Radarr",
+								arrItemId: 202,
+								itemType: "movie",
+								title: "Executing retry",
+								matchedRuleName: "Cleanup",
+								reason: "Another cleanup run is already executing this durable retry",
+								action: "skipped",
+								selectionStatus: "in_flight",
+								plannedAction: "delete",
+								isRetryAttempt: true,
+								sizeOnDisk: "1000",
+								year: 2024,
+								rating: 8,
+								quiStatus: "no_signal",
+							},
+						],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getByText(/Preview Results/)).toHaveTextContent(
+				"1 of 1 rule matches · 1 retry pending",
+			);
+			expect(screen.getByText(/Next run reserves/)).toHaveTextContent(
+				"Next run reserves 1 fresh slot. 1 deferred.",
+			);
+			expect(screen.getByText("1 In flight")).toBeInTheDocument();
+			expect(screen.queryByText(/retry attempt in the next cleanup run/i)).not.toBeInTheDocument();
+		});
+
+		it("states that retry counts and next-run selection are unknown during an outage", () => {
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 250,
+						totalFlagged: 250,
+						pendingRetryCount: null,
+						selectionCountsComplete: false,
+						selection: {
+							selectedFresh: 0,
+							selectedRetries: 0,
+							deferredBudget: 0,
+							deferredApproval: 0,
+							deferredRetryFairness: 0,
+							deferredInFlightTarget: 0,
+							inFlight: 0,
+							blocked: 0,
+							retryStateUnavailable: 250,
+							retryState: "unavailable",
+							total: 250,
+						},
+						display: { shown: 200, hidden: 50, limit: 200, complete: false },
+						items: [],
+						warnings: [
+							"Durable cleanup retry state could not be loaded.",
+							"Display capped at 200 of 250 known preview items; retry-backed selection counts are incomplete.",
+						],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getByText(/Preview Results/)).toHaveTextContent(
+				"250 of 250 rule matches · retry count unavailable",
+			);
+			expect(screen.getByText(/Next run cannot be determined/)).toHaveTextContent(
+				"durable retry state is unavailable",
+			);
+			expect(screen.getByText(/Next run cannot be determined/)).toHaveTextContent(
+				"250 fresh matches are deferred for safety",
+			);
+			expect(screen.queryByText(/0 retries pending/)).not.toBeInTheDocument();
 		});
 
 		it("masks cleanup rule details in preview results in incognito mode", () => {
@@ -973,6 +1263,264 @@ describe("LibraryCleanupClient", () => {
 				screen.queryByRole("checkbox", { name: "Select Private Movie" }),
 			).not.toBeInTheDocument();
 			expect(screen.queryByText("Private Movie")).not.toBeInTheDocument();
+		});
+	});
+
+	describe("Activity history", () => {
+		it("renders and expands a per-action audit timeline", async () => {
+			mockUseCleanupActivity.mockReturnValue({
+				data: {
+					items: [
+						{
+							actionId: "approval-1",
+							instanceId: "radarr-1",
+							arrItemId: 101,
+							itemType: "movie",
+							targetScope: "series",
+							arrEpisodeId: null,
+							title: "Retained Movie",
+							ruleId: "rule-1",
+							ruleName: "Old Movies",
+							action: "delete",
+							trigger: "approval",
+							latestOutcome: "success",
+							actionableReason: "The selected file was removed.",
+							startedAt: "2026-08-03T12:00:00.000Z",
+							updatedAt: "2026-08-03T12:01:00.000Z",
+							eventCount: 2,
+							eventsTruncated: false,
+							olderEventsCursor: null,
+							events: [
+								{
+									id: "1",
+									actionId: "approval-1",
+									correlationId: "run-1",
+									sequence: 1,
+									eventType: "candidate_selected",
+									outcome: "info",
+									trigger: "manual",
+									actorType: "operator",
+									actorId: "user-1",
+									approvalId: "approval-1",
+									runLogId: "run-1",
+									reason: "Matched the configured cleanup rule.",
+									evidence: null,
+									details: null,
+									createdAt: "2026-08-03T12:00:00.000Z",
+								},
+							],
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Activity Log"));
+
+			expect(await screen.findByText("Action history")).toBeInTheDocument();
+			expect(screen.getByText("Retained Movie")).toBeInTheDocument();
+			expect(screen.getByText("The selected file was removed.")).toBeInTheDocument();
+			expect(mockUseCleanupActivity).toHaveBeenCalledWith(1, 20);
+
+			fireEvent.click(screen.getByRole("button", { name: /Retained Movie/ }));
+			expect(await screen.findByText("candidate selected")).toBeInTheDocument();
+			expect(screen.getByText("Matched the configured cleanup rule.")).toBeInTheDocument();
+		});
+
+		it("loads and merges more than 200 events without duplicates or ordering loss", async () => {
+			const makeAuditEvent = (id: number) => ({
+				id: String(id),
+				actionId: "action-long",
+				correlationId: "run-long",
+				sequence: id,
+				eventType: `audit_event_${id}`,
+				outcome: "info" as const,
+				trigger: "scheduled" as const,
+				actorType: "scheduler" as const,
+				actorId: null,
+				approvalId: null,
+				runLogId: "run-long",
+				reason: `Reason ${id}`,
+				evidence: null,
+				details: null,
+				createdAt: "2026-08-03T12:00:00.000Z",
+			});
+			mockUseCleanupActivity.mockReturnValue({
+				data: {
+					items: [
+						{
+							actionId: "action-long",
+							instanceId: "radarr-1",
+							arrItemId: 101,
+							itemType: "movie",
+							targetScope: "series",
+							arrEpisodeId: null,
+							title: "Long Audit Movie",
+							ruleId: "rule-1",
+							ruleName: "Old Movies",
+							action: "delete",
+							trigger: "scheduled",
+							latestOutcome: "success",
+							actionableReason: "Completed",
+							startedAt: "2026-08-03T12:00:00.000Z",
+							updatedAt: "2026-08-03T12:01:00.000Z",
+							eventCount: 400,
+							eventsTruncated: true,
+							olderEventsCursor: "201",
+							events: Array.from({ length: 200 }, (_, index) => makeAuditEvent(index + 201)),
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+			const fetchNextPage = vi.fn();
+			const refetch = vi.fn();
+			let loadedPages = 0;
+			mockUseCleanupActivityEvents.mockImplementation(() => ({
+				data:
+					loadedPages > 0
+						? {
+								pages: [
+									{
+										items: Array.from({ length: 100 }, (_, index) => makeAuditEvent(index + 101)),
+										olderEventsCursor: "101",
+									},
+									...(loadedPages > 1
+										? [
+												{
+													items: Array.from({ length: 101 }, (_, index) =>
+														makeAuditEvent(index + 1),
+													),
+													olderEventsCursor: null,
+												},
+											]
+										: []),
+								],
+							}
+						: undefined,
+				hasNextPage: loadedPages === 0 ? undefined : loadedPages === 1,
+				isError: false,
+				isFetchNextPageError: false,
+				isFetching: false,
+				isFetchingNextPage: false,
+				fetchNextPage,
+				refetch,
+			}));
+
+			const view = render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Activity Log"));
+			fireEvent.click(await screen.findByRole("button", { name: /Long Audit Movie/ }));
+			expect(mockUseCleanupActivityEvents).toHaveBeenCalledWith("action-long", "201");
+
+			fireEvent.click(screen.getByRole("button", { name: "Load earlier events" }));
+			expect(refetch).toHaveBeenCalledTimes(1);
+			expect(fetchNextPage).not.toHaveBeenCalled();
+
+			loadedPages = 1;
+			view.rerender(<LibraryCleanupClient />);
+			fireEvent.click(screen.getByRole("button", { name: "Load earlier events" }));
+			expect(fetchNextPage).toHaveBeenCalledTimes(1);
+
+			loadedPages = 2;
+			view.rerender(<LibraryCleanupClient />);
+			const renderedEvents = screen
+				.getAllByText(/^audit event \d+$/)
+				.map((node) => node.textContent);
+			expect(renderedEvents).toEqual(
+				Array.from({ length: 400 }, (_, index) => `audit event ${index + 1}`),
+			);
+			expect(new Set(renderedEvents).size).toBe(400);
+			expect(screen.getByText("Showing 400 of 400 audit events.")).toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Load earlier events" })).not.toBeInTheDocument();
+		});
+
+		it("keeps loaded events visible and offers a retry when an older page fails", async () => {
+			mockUseCleanupActivity.mockReturnValue({
+				data: {
+					items: [
+						{
+							actionId: "action-error",
+							instanceId: "radarr-1",
+							arrItemId: 101,
+							itemType: "movie",
+							targetScope: "series",
+							arrEpisodeId: null,
+							title: "Retry Audit Movie",
+							ruleId: "rule-1",
+							ruleName: "Old Movies",
+							action: "delete",
+							trigger: "scheduled",
+							latestOutcome: "failed",
+							actionableReason: "Retry pending",
+							startedAt: "2026-08-03T12:00:00.000Z",
+							updatedAt: "2026-08-03T12:01:00.000Z",
+							eventCount: 201,
+							eventsTruncated: true,
+							olderEventsCursor: "2",
+							events: [
+								{
+									id: "2",
+									actionId: "action-error",
+									correlationId: "run-error",
+									sequence: 2,
+									eventType: "retry_pending",
+									outcome: "failed",
+									trigger: "retry",
+									actorType: "operator",
+									actorId: "user-1",
+									approvalId: null,
+									runLogId: "run-error",
+									reason: "The latest attempt is still visible.",
+									evidence: null,
+									details: null,
+									createdAt: "2026-08-03T12:01:00.000Z",
+								},
+							],
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+			const fetchNextPage = vi.fn();
+			const refetch = vi.fn();
+			mockUseCleanupActivityEvents.mockReturnValue({
+				data: undefined,
+				hasNextPage: undefined,
+				isError: true,
+				isFetchNextPageError: false,
+				isFetching: false,
+				isFetchingNextPage: false,
+				fetchNextPage,
+				refetch,
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Activity Log"));
+			fireEvent.click(await screen.findByRole("button", { name: /Retry Audit Movie/ }));
+
+			expect(screen.getByText("The latest attempt is still visible.")).toBeInTheDocument();
+			expect(screen.getByRole("alert")).toHaveTextContent(
+				"Earlier audit events could not be loaded",
+			);
+			fireEvent.click(screen.getByRole("button", { name: "Retry earlier events" }));
+			expect(refetch).toHaveBeenCalledTimes(1);
+			expect(fetchNextPage).not.toHaveBeenCalled();
 		});
 	});
 });

@@ -55,6 +55,7 @@ import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { ServiceInstance } from "../prisma.js";
 import { createQuiClient } from "../qui/client-factory.js";
+import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { buildFileIdIndex, matchLibraryByFileId } from "./infohash-backfill-by-inode.js";
 
@@ -435,10 +436,18 @@ export async function runEpisodeBackfillSweep({
 				continue;
 			}
 			try {
-				await app.prisma.episodeFileCache.update({
-					where: { id: row.id },
-					data: { infoHash: match.hash, infoHashSource: match.source },
-				});
+				await withQuiObservationTopologyGuard(userId, () =>
+					app.prisma.episodeFileCache.update({
+						where: { id: row.id },
+						data: {
+							infoHash: match.hash,
+							infoHashSource: match.source,
+							torrentState: null,
+							torrentRatio: null,
+							torrentSyncedAt: null,
+						},
+					}),
+				);
 				result.rowsHashed++;
 			} catch (err) {
 				result.errors++;

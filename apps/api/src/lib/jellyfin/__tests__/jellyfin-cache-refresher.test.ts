@@ -68,18 +68,24 @@ function makeMockClient(items: JellyfinItem[]): JellyfinClient {
  */
 function makeMockPrisma() {
 	const upserts: unknown[] = [];
-	const stub = {
+	const tx = {
 		jellyfinCache: {
-			upsert: vi.fn((args: unknown) => {
-				upserts.push(args);
-				return Promise.resolve({});
+			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
+				for (const row of data) upserts.push({ create: row });
+				return { count: data.length };
 			}),
 		},
-		$transaction: vi.fn(async (ops: unknown[]) => {
-			for (const op of ops) await op;
-		}),
+		cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
 	};
-	return { stub, upserts };
+	const stub = {
+		jellyfinCache: tx.jellyfinCache,
+		cacheRefreshStatus: tx.cacheRefreshStatus,
+		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+			callback(tx),
+		),
+	};
+	return { stub, upserts, tx };
 }
 
 // ---------------------------------------------------------------------------
@@ -170,5 +176,168 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(upserts).toHaveLength(1);
 		const payload = (upserts[0] as { create: { lastWatchedAt: Date | null } }).create;
 		expect(payload.lastWatchedAt).toEqual(new Date("2024-06-20T22:00:00Z"));
+	});
+
+	it("evicts stale rows when a discovered library is authoritatively empty", async () => {
+		const client = makeMockClient([]);
+		const { stub, tx } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ errors: 0, complete: true, upserted: 0 });
+		expect(tx.jellyfinCache.deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
+	});
+
+	it("fails closed without evicting when user discovery is empty", async () => {
+		const client = {
+			getUsers: vi.fn().mockResolvedValue([]),
+		} as unknown as JellyfinClient;
+		const deleteMany = vi.fn();
+		const stub = { jellyfinCache: { deleteMany } };
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result.complete).toBe(false);
+		expect(result.errors).toBeGreaterThan(0);
+		expect(deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("leaves the previous generation unchanged when atomic publication fails", async () => {
+		const client = makeMockClient([]);
+		const stub = {
+			$transaction: vi.fn().mockRejectedValue(new Error("database unavailable")),
+		};
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result.complete).toBe(false);
+		expect(result.errors).toBeGreaterThan(0);
+		expect(result.errorMessages).toContainEqual(
+			expect.stringContaining("Atomic cache publication failed"),
+		);
+	});
+
+	it("aggregates on-deck evidence across every discovered user", async () => {
+		const twoUsers: JellyfinUser[] = [
+			{ id: "user-1", name: "Alice" },
+			{ id: "user-2", name: "Bob" },
+		];
+		const item = makeSeriesItem();
+		const client = {
+			getUsers: vi.fn().mockResolvedValue(twoUsers),
+			getLibraries: vi.fn().mockResolvedValue(oneLibrary),
+			getLibraryItems: vi.fn().mockResolvedValue([item]),
+			getResumeItems: vi
+				.fn()
+				.mockResolvedValueOnce([])
+				.mockResolvedValueOnce([
+					{
+						id: "episode-1",
+						name: "Pilot",
+						type: "Episode",
+						seriesId: item.id,
+						played: false,
+						playCount: 0,
+						lastPlayedDate: null,
+						isFavorite: false,
+					},
+				]),
+			getNextUp: vi.fn().mockResolvedValue([]),
+		} as unknown as JellyfinClient;
+		const { stub, upserts } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result.complete).toBe(true);
+		expect(client.getResumeItems).toHaveBeenCalledTimes(2);
+		expect((upserts[0] as { create: { onDeck: boolean } }).create.onDeck).toBe(true);
+	});
+
+	it("fails closed when any user's on-deck inventory is unavailable", async () => {
+		const twoUsers: JellyfinUser[] = [
+			{ id: "user-1", name: "Alice" },
+			{ id: "user-2", name: "Bob" },
+		];
+		const client = {
+			getUsers: vi.fn().mockResolvedValue(twoUsers),
+			getLibraries: vi.fn().mockResolvedValue(oneLibrary),
+			getLibraryItems: vi.fn().mockResolvedValue([makeSeriesItem()]),
+			getResumeItems: vi.fn().mockResolvedValue([]),
+			getNextUp: vi
+				.fn()
+				.mockResolvedValueOnce([])
+				.mockRejectedValueOnce(new Error("next-up unavailable")),
+		} as unknown as JellyfinClient;
+		const deleteMany = vi.fn();
+		const stub = {
+			jellyfinCache: {
+				upsert: vi.fn().mockResolvedValue({ id: "fresh-1" }),
+				findMany: vi.fn(),
+				deleteMany,
+			},
+			$transaction: vi.fn(async (operations: Promise<unknown>[]) => Promise.all(operations)),
+		};
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result.complete).toBe(false);
+		expect(result.errors).toBeGreaterThan(0);
+		expect(deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("fails closed without evicting when media library discovery is empty", async () => {
+		const client = {
+			getUsers: vi.fn().mockResolvedValue(oneUser),
+			getLibraries: vi.fn().mockResolvedValue([]),
+		} as unknown as JellyfinClient;
+		const deleteMany = vi.fn();
+		const stub = { jellyfinCache: { deleteMany } };
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result.complete).toBe(false);
+		expect(result.errors).toBeGreaterThan(0);
+		expect(deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("fails closed without evicting when a library inventory is partial", async () => {
+		const client = {
+			...makeMockClient([]),
+			getLibraryItems: vi.fn().mockRejectedValue(new Error("pagination stopped early")),
+		} as unknown as JellyfinClient;
+		const deleteMany = vi.fn();
+		const stub = { jellyfinCache: { findMany: vi.fn(), deleteMany }, $transaction: vi.fn() };
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result.complete).toBe(false);
+		expect(result.errors).toBeGreaterThan(0);
+		expect(deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("fails closed without evicting when a relevant item has no TMDb mapping", async () => {
+		const client = makeMockClient([makeSeriesItem({ tmdbId: undefined })]);
+		const deleteMany = vi.fn();
+		const stub = {
+			jellyfinCache: { findMany: vi.fn(), deleteMany },
+			$transaction: vi.fn(),
+		};
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, errors: 0, upserted: 0 });
+		expect(deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("publishes a complete empty replacement in one transaction", async () => {
+		const client = makeMockClient([]);
+		const { stub, tx } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 0 });
+		expect(tx.jellyfinCache.deleteMany).toHaveBeenCalledOnce();
+		expect(tx.jellyfinCache.createMany).not.toHaveBeenCalled();
+		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 	});
 });

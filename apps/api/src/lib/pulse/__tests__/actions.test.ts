@@ -199,7 +199,13 @@ describe("dispatchPulseAction — cache.refresh", () => {
 	it("refreshes the plex cache via requirePlexClient + refreshPlexCache", async () => {
 		const fakeClient = { id: "plex-client" };
 		requirePlexClient.mockResolvedValue({ client: fakeClient, instance: {} });
-		refreshPlexCache.mockResolvedValue({ upserted: 42, errors: 0, errorMessages: [] });
+		refreshPlexCache.mockResolvedValue({
+			upserted: 42,
+			errors: 0,
+			errorMessages: [],
+			complete: true,
+			completedAt: new Date(),
+		});
 
 		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
 
@@ -223,27 +229,19 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			"inst-plex-1",
 			fakeLog,
 		);
-		// Write-through: collectCacheStaleness reads lastRefreshedAt from
-		// CacheRefreshStatus. Without this upsert the row stays stale and
-		// re-emits on the next poll.
-		expect(cacheStatusUpsert).toHaveBeenCalledTimes(1);
-		const upsertArgs = cacheStatusUpsert.mock.calls[0]?.[0] as {
-			where: { instanceId_cacheType: { instanceId: string; cacheType: string } };
-			update: { lastRefreshedAt: Date; lastResult: string; itemCount: number };
-		};
-		expect(upsertArgs.where.instanceId_cacheType).toEqual({
-			instanceId: "inst-plex-1",
-			cacheType: "plex",
-		});
-		expect(upsertArgs.update.lastResult).toBe("success");
-		expect(upsertArgs.update.itemCount).toBe(42);
-		expect(upsertArgs.update.lastRefreshedAt).toBeInstanceOf(Date);
+		// The refresher transaction is the sole successful-generation publisher.
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("refreshes the tautulli cache via requireTautulliClient + refreshTautulliCache", async () => {
 		const fakeClient = { id: "tautulli-client" };
 		requireTautulliClient.mockResolvedValue({ client: fakeClient, instance: {} });
-		refreshTautulliCache.mockResolvedValue({ upserted: 7, errors: 0 });
+		refreshTautulliCache.mockResolvedValue({
+			upserted: 7,
+			errors: 0,
+			complete: true,
+			completedAt: new Date(),
+		});
 
 		const result = await dispatchPulseAction(fakeApp, "user-1", tautulliAction, fakeLog);
 
@@ -261,15 +259,27 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			"inst-tautulli-1",
 			fakeLog,
 		);
-		// Same write-through contract for the tautulli branch.
-		expect(cacheStatusUpsert).toHaveBeenCalledTimes(1);
-		const upsertArgs = cacheStatusUpsert.mock.calls[0]?.[0] as {
-			where: { instanceId_cacheType: { instanceId: string; cacheType: string } };
-		};
-		expect(upsertArgs.where.instanceId_cacheType).toEqual({
-			instanceId: "inst-tautulli-1",
-			cacheType: "tautulli",
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+	});
+
+	it("records an errors-zero incomplete refresh as failed instead of publishing success", async () => {
+		requirePlexClient.mockResolvedValue({ client: {}, instance: {} });
+		refreshPlexCache.mockResolvedValue({
+			upserted: 42,
+			errors: 0,
+			errorMessages: [],
+			complete: false,
 		});
+
+		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
+		await result.backgroundTask;
+
+		expect(cacheStatusUpsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({ lastResult: "error" }),
+				update: expect.objectContaining({ lastAttemptResult: "error" }),
+			}),
+		);
 	});
 
 	it("returns 200 immediately even when the refresher is slow — fire-and-forget contract", async () => {
@@ -298,10 +308,16 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 		// Let the slow refresh complete, then the background task should
 		// run the write-through.
-		resolveRefresh({ upserted: 999, errors: 0, errorMessages: [] });
+		resolveRefresh({
+			upserted: 999,
+			errors: 0,
+			errorMessages: [],
+			complete: true,
+			completedAt: new Date(),
+		});
 		await result.backgroundTask;
 
-		expect(cacheStatusUpsert).toHaveBeenCalledTimes(1);
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("does NOT write through when the BACKGROUND refresher throws — stale row must keep emitting", async () => {
@@ -316,10 +332,17 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(result.status).toBe("ok");
 
 		// Background task runs; it should swallow the error (logged) and
-		// deliberately NOT call cacheStatusUpsert.
+		// record a failed attempt without advancing the successful pointer.
 		await result.backgroundTask;
 
-		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+		expect(cacheStatusUpsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.objectContaining({
+					lastAttemptResult: "error",
+					lastErrorMessage: "upstream Plex timeout",
+				}),
+			}),
+		);
 	});
 
 	it("does NOT call cacheRefreshStatus.upsert when the refresher rejects before completing", async () => {

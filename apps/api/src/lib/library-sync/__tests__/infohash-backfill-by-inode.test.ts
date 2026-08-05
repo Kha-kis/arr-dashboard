@@ -235,6 +235,17 @@ describe("applyPathRewrite", () => {
 });
 
 describe("buildFileIdIndex — single-file torrents", () => {
+	it("normalizes qUI hashes before publishing inode evidence", async () => {
+		stageFile("/data/torrents/Case.mkv", 100, 41, 2);
+		const client = makeFakeClient([
+			makeQuiTorrent({ hash: " ABCDEF ", name: "Case.mkv", savePath: "/data/torrents" }),
+		]);
+
+		const index = await buildFileIdIndex(client as never, QUI_INSTANCE);
+
+		expect(index.byFileId.get("100:41")).toEqual(new Set(["abcdef"]));
+	});
+
 	it("indexes single-file torrents at the full content path", async () => {
 		stageFile("/data/torrents/Foo.mkv", 100, 42, 2);
 		const client = makeFakeClient([
@@ -467,9 +478,7 @@ describe("buildFileIdIndex — caching", () => {
 			mtimeMs: 1_000,
 			type: "directory",
 		});
-		stagedDirs.set(root, [
-			{ name: "Episode.mkv", parentPath: root, type: "symlink" },
-		]);
+		stagedDirs.set(root, [{ name: "Episode.mkv", parentPath: root, type: "symlink" }]);
 		const client = makeFakeClient([
 			makeQuiTorrent({ hash: "symlinked", name: "Symlinked", savePath: "/data/torrents" }),
 		]);
@@ -805,9 +814,7 @@ describe("multi-hash per FileID (cross-seed visibility)", () => {
 		const index = await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
 
 		expect(index.byFileId.get("61:54321")).toEqual(new Set(["single-link-hash"]));
-		await expect(
-			getAllHashesForFileIdComplete("/data/torrents/foo.mkv", index),
-		).resolves.toEqual({
+		await expect(getAllHashesForFileIdComplete("/data/torrents/foo.mkv", index)).resolves.toEqual({
 			hashes: ["single-link-hash"],
 			complete: true,
 		});

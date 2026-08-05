@@ -12,16 +12,19 @@
  * 5. Upsert into TautulliCache keyed by (instanceId, tmdbId, mediaType)
  */
 
+import type { TautulliHistoryItem } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
-import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
 import { delay } from "../utils/delay.js";
-import type { TautulliHistoryItem } from "@arr/shared";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { TautulliClient } from "./tautulli-client.js";
 
-// Maximum pages of history to fetch per library (50 items per page)
-const MAX_HISTORY_PAGES = 20;
-const HISTORY_PAGE_SIZE = 50;
+// Tautulli exposes offset/length pagination without a documented page-count
+// ceiling. Bound both the aggregate inventory and requests for the whole
+// refresh so multiple libraries cannot multiply the safety limit.
+const MAX_HISTORY_RESULTS = 100_000;
+const HISTORY_PAGE_SIZE = 200;
+const MAX_HISTORY_REQUESTS = 1_000;
 
 // Rate limit: max metadata lookups per refresh cycle
 const MAX_METADATA_LOOKUPS = 500;
@@ -41,9 +44,16 @@ export async function refreshTautulliCache(
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-): Promise<{ upserted: number; errors: number; errorMessages: string[] }> {
+): Promise<{
+	upserted: number;
+	errors: number;
+	errorMessages: string[];
+	complete: boolean;
+	completedAt?: Date;
+}> {
 	let upserted = 0;
 	let errors = 0;
+	let complete = true;
 	const errorMessages: string[] = [];
 
 	try {
@@ -52,27 +62,232 @@ export async function refreshTautulliCache(
 		const movieAndShowLibs = libraries.filter(
 			(lib) => lib.section_type === "movie" || lib.section_type === "show",
 		);
+		if (movieAndShowLibs.length === 0) {
+			complete = false;
+			errors++;
+			errorMessages.push("Tautulli returned no movie or show libraries");
+			log.warn({ instanceId }, "Tautulli cache refresh: no movie or show libraries discovered");
+		}
 
-		// 2. Collect all history items across libraries
+		// 2. Probe every library first and freeze an oldest-first snapshot. New
+		// plays append after that snapshot, so they cannot shift later pages.
 		const allHistory: TautulliHistoryItem[] = [];
+		const historyPlans: Array<{
+			sectionId: string;
+			expectedRows: number;
+			firstPage: TautulliHistoryItem[];
+			rowSignatures: string[];
+		}> = [];
+		let expectedHistoryRows = 0;
+		let historyRequests = 0;
 		for (const lib of movieAndShowLibs) {
-			for (let page = 0; page < MAX_HISTORY_PAGES; page++) {
-				const result = await client.getHistory({
-					section_id: lib.section_id,
-					length: HISTORY_PAGE_SIZE,
-					start: page * HISTORY_PAGE_SIZE,
-				});
+			historyRequests++;
+			if (historyRequests > MAX_HISTORY_REQUESTS) {
+				throw new Error(
+					`Tautulli history exceeded the safe ${MAX_HISTORY_REQUESTS}-request refresh limit`,
+				);
+			}
+			const firstResult = await client.getHistory({
+				section_id: lib.section_id,
+				length: HISTORY_PAGE_SIZE,
+				start: 0,
+				order_column: "row_id",
+				order_dir: "asc",
+				grouping: 0,
+				include_activity: 0,
+			});
+			if (
+				!Number.isSafeInteger(firstResult.recordsFiltered) ||
+				firstResult.recordsFiltered < 0 ||
+				!Number.isSafeInteger(firstResult.recordsTotal) ||
+				firstResult.recordsTotal < firstResult.recordsFiltered
+			) {
+				throw new Error(`Tautulli history returned invalid totals for library ${lib.section_id}`);
+			}
+			if (
+				firstResult.data.length > HISTORY_PAGE_SIZE ||
+				firstResult.data.length > firstResult.recordsFiltered
+			) {
+				throw new Error(
+					`Tautulli history exceeded the requested page or declared total for library ${lib.section_id}`,
+				);
+			}
+			expectedHistoryRows += firstResult.recordsFiltered;
+			if (expectedHistoryRows > MAX_HISTORY_RESULTS) {
+				throw new Error(
+					`Tautulli history contains ${expectedHistoryRows} aggregate rows, exceeding the safe ${MAX_HISTORY_RESULTS}-row refresh limit`,
+				);
+			}
+			historyPlans.push({
+				sectionId: lib.section_id,
+				expectedRows: firstResult.recordsFiltered,
+				firstPage: firstResult.data,
+				rowSignatures: [],
+			});
+		}
 
-				allHistory.push(...result.data);
-				if (result.data.length < HISTORY_PAGE_SIZE) break;
-				if (page === MAX_HISTORY_PAGES - 1) {
-					log.warn(
-						{ sectionId: lib.section_id, limit: MAX_HISTORY_PAGES * HISTORY_PAGE_SIZE },
-						"Tautulli history page cap reached — watch data may be incomplete for this library",
+		const historySignature = (item: TautulliHistoryItem): string =>
+			JSON.stringify([
+				item.row_id,
+				item.rating_key,
+				item.parent_rating_key,
+				item.grandparent_rating_key,
+				item.media_type,
+				item.user,
+				item.date,
+				item.play_count ?? null,
+			]);
+		const assertUngroupedHistoryRow = (item: TautulliHistoryItem, sectionId: string): void => {
+			if (!Number.isSafeInteger(item.row_id) || item.row_id === undefined || item.row_id < 0) {
+				throw new Error(
+					`Tautulli history did not provide a stable row identity for library ${sectionId}`,
+				);
+			}
+			if ((item.group_count !== undefined && item.group_count > 1) || (item.play_count ?? 1) > 1) {
+				throw new Error(`Tautulli history returned grouped play rows for library ${sectionId}`);
+			}
+		};
+
+		for (const plan of historyPlans) {
+			let fetchedRows = 0;
+			let previousRowId = -1;
+			const seenHistoryRows = new Set<string>();
+			let result = {
+				data: plan.firstPage,
+				recordsFiltered: plan.expectedRows,
+				recordsTotal: plan.expectedRows,
+			};
+			while (fetchedRows < plan.expectedRows) {
+				const requestedRows = Math.min(HISTORY_PAGE_SIZE, plan.expectedRows - fetchedRows);
+				if (fetchedRows > 0) {
+					historyRequests++;
+					if (historyRequests > MAX_HISTORY_REQUESTS) {
+						throw new Error(
+							`Tautulli history exceeded the safe ${MAX_HISTORY_REQUESTS}-request refresh limit`,
+						);
+					}
+					result = await client.getHistory({
+						section_id: plan.sectionId,
+						length: requestedRows,
+						start: fetchedRows,
+						order_column: "row_id",
+						order_dir: "asc",
+						grouping: 0,
+						include_activity: 0,
+					});
+				}
+
+				if (
+					!Number.isSafeInteger(result.recordsFiltered) ||
+					result.recordsFiltered < 0 ||
+					!Number.isSafeInteger(result.recordsTotal) ||
+					result.recordsTotal < result.recordsFiltered
+				) {
+					throw new Error(`Tautulli history returned invalid totals for library ${plan.sectionId}`);
+				}
+				if (result.data.length > requestedRows) {
+					throw new Error(
+						`Tautulli history exceeded the requested page size for library ${plan.sectionId}`,
+					);
+				}
+				if (result.recordsFiltered < plan.expectedRows) {
+					throw new Error(`Tautulli history shrank while paging library ${plan.sectionId}`);
+				}
+				if (fetchedRows + result.data.length > plan.expectedRows) {
+					throw new Error(
+						`Tautulli history exceeded its frozen total for library ${plan.sectionId}`,
+					);
+				}
+				for (const item of result.data) {
+					assertUngroupedHistoryRow(item, plan.sectionId);
+					if (item.row_id! <= previousRowId) {
+						throw new Error(
+							`Tautulli history did not honor stable row ordering for library ${plan.sectionId}`,
+						);
+					}
+					previousRowId = item.row_id!;
+					const rowIdentity = String(item.row_id);
+					if (seenHistoryRows.has(rowIdentity)) {
+						throw new Error(
+							`Tautulli history returned a duplicate row while paging library ${plan.sectionId}`,
+						);
+					}
+					seenHistoryRows.add(rowIdentity);
+					plan.rowSignatures.push(historySignature(item));
+					allHistory.push(item);
+				}
+				fetchedRows += result.data.length;
+				if (fetchedRows === plan.expectedRows) break;
+				if (result.data.length < requestedRows) {
+					throw new Error(
+						`Tautulli history stopped before its frozen total for library ${plan.sectionId}`,
 					);
 				}
 			}
 		}
+
+		const verifyCompleteHistorySnapshot = async (): Promise<void> => {
+			for (const plan of historyPlans) {
+				let fetchedRows = 0;
+				let previousRowId = -1;
+				const seenRows = new Set<string>();
+				const signatures: string[] = [];
+				do {
+					historyRequests++;
+					if (historyRequests > MAX_HISTORY_REQUESTS) {
+						throw new Error(
+							`Tautulli history exceeded the safe ${MAX_HISTORY_REQUESTS}-request refresh limit`,
+						);
+					}
+					const expectedPageRows = Math.min(HISTORY_PAGE_SIZE, plan.expectedRows - fetchedRows);
+					const result = await client.getHistory({
+						section_id: plan.sectionId,
+						length: Math.max(1, expectedPageRows),
+						start: fetchedRows,
+						order_column: "row_id",
+						order_dir: "asc",
+						grouping: 0,
+						include_activity: 0,
+					});
+					if (
+						result.recordsFiltered !== plan.expectedRows ||
+						!Number.isSafeInteger(result.recordsTotal) ||
+						result.recordsTotal < result.recordsFiltered ||
+						result.data.length !== expectedPageRows
+					) {
+						throw new Error(
+							`Tautulli history changed before the snapshot for library ${plan.sectionId} could be verified`,
+						);
+					}
+					for (const item of result.data) {
+						assertUngroupedHistoryRow(item, plan.sectionId);
+						if (item.row_id! <= previousRowId) {
+							throw new Error(
+								`Tautulli history did not honor stable row ordering for library ${plan.sectionId}`,
+							);
+						}
+						previousRowId = item.row_id!;
+						const rowIdentity = String(item.row_id);
+						if (seenRows.has(rowIdentity)) {
+							throw new Error(
+								`Tautulli history returned a duplicate row while verifying library ${plan.sectionId}`,
+							);
+						}
+						seenRows.add(rowIdentity);
+						signatures.push(historySignature(item));
+					}
+					fetchedRows += result.data.length;
+				} while (fetchedRows < plan.expectedRows);
+
+				if (
+					JSON.stringify([...signatures].sort()) !== JSON.stringify([...plan.rowSignatures].sort())
+				) {
+					throw new Error(
+						`Tautulli history changed before the snapshot for library ${plan.sectionId} could be verified`,
+					);
+				}
+			}
+		};
 
 		// 3. Group history by rating_key (for movies) or grandparent_rating_key (for shows)
 		const itemMap = new Map<
@@ -87,10 +302,17 @@ export async function refreshTautulliCache(
 		>();
 
 		for (const item of allHistory) {
+			if (item.media_type !== "movie" && item.media_type !== "episode") {
+				complete = false;
+				continue;
+			}
 			const isShow = item.media_type === "episode";
 			// For episodes, use the show's rating key; for movies, use the item's
 			const key = isShow ? item.grandparent_rating_key : item.rating_key;
-			if (!key) continue;
+			if (!key) {
+				complete = false;
+				continue;
+			}
 
 			const existing = itemMap.get(key);
 			if (existing) {
@@ -111,13 +333,20 @@ export async function refreshTautulliCache(
 		// 4. For each unique item, look up TMDB ID via metadata
 		let lookupCount = 0;
 		const ratingKeyToGuid = new Map<string, ParsedGuid>();
+		if (itemMap.size > MAX_METADATA_LOOKUPS) {
+			complete = false;
+			errors++;
+			errorMessages.push(
+				`Tautulli metadata inventory exceeded ${MAX_METADATA_LOOKUPS} unique items`,
+			);
+			log.warn(
+				{ limit: MAX_METADATA_LOOKUPS, itemCount: itemMap.size },
+				"Tautulli cache refresh: hit metadata lookup limit",
+			);
+		}
 
 		for (const [ratingKey, info] of itemMap) {
 			if (lookupCount >= MAX_METADATA_LOOKUPS) {
-				log.warn(
-					{ limit: MAX_METADATA_LOOKUPS },
-					"Tautulli cache refresh: hit metadata lookup limit",
-				);
 				break;
 			}
 
@@ -131,8 +360,11 @@ export async function refreshTautulliCache(
 					// Override mediaType based on actual Tautulli data
 					guid.mediaType = info.isShow ? "series" : "movie";
 					ratingKeyToGuid.set(ratingKey, guid);
+				} else {
+					complete = false;
 				}
 			} catch (error) {
+				complete = false;
 				errors++;
 				log.warn({ err: error, ratingKey }, "Tautulli cache: failed to fetch metadata for item");
 				if (errorMessages.length < 5) {
@@ -143,64 +375,70 @@ export async function refreshTautulliCache(
 			}
 		}
 
-		// 5. Upsert into TautulliCache
-		const upsertedIds: string[] = [];
+		// 5. Stage every row, then publish a complete replacement atomically.
+		const rows: Array<{
+			instanceId: string;
+			tmdbId: number;
+			mediaType: "movie" | "series";
+			lastWatchedAt: Date;
+			watchCount: number;
+			watchedByUsers: string;
+		}> = [];
 		for (const [ratingKey, info] of itemMap) {
 			const guid = ratingKeyToGuid.get(ratingKey);
 			if (!guid) continue;
-
-			try {
-				const row = await prisma.tautulliCache.upsert({
-					where: {
-						instanceId_tmdbId_mediaType: {
-							instanceId,
-							tmdbId: guid.tmdbId,
-							mediaType: guid.mediaType,
-						},
-					},
-					create: {
-						instanceId,
-						tmdbId: guid.tmdbId,
-						mediaType: guid.mediaType,
-						lastWatchedAt: new Date(info.lastDate * 1000),
-						watchCount: info.playCount,
-						watchedByUsers: JSON.stringify([...info.users]),
-					},
-					update: {
-						lastWatchedAt: new Date(info.lastDate * 1000),
-						watchCount: info.playCount,
-						watchedByUsers: JSON.stringify([...info.users]),
-					},
-				});
-				upsertedIds.push(row.id);
-				upserted++;
-			} catch (error) {
-				errors++;
-				log.warn(
-					{ err: error, instanceId, tmdbId: guid.tmdbId, mediaType: guid.mediaType },
-					"Tautulli cache: failed to upsert item",
-				);
-				if (errorMessages.length < 5) {
-					errorMessages.push(
-						`Failed to upsert tmdb:${guid.tmdbId} (${guid.mediaType}): ${getErrorMessage(error)}`,
-					);
-				}
-			}
+			rows.push({
+				instanceId,
+				tmdbId: guid.tmdbId,
+				mediaType: guid.mediaType,
+				lastWatchedAt: new Date(info.lastDate * 1000),
+				watchCount: info.playCount,
+				watchedByUsers: JSON.stringify([...info.users].sort()),
+			});
 		}
 
-		// Evict stale rows: items that were in a previous refresh but no longer exist in Tautulli.
-		//
-		// NOTE: We cannot do `deleteMany({ id: { notIn: upsertedIds } })` here — Prisma binds
-		// each id as a separate parameter, so a large upsert set blows past SQLite's default
-		// SQLITE_MAX_VARIABLE_NUMBER (999) and raises P2029. This is the same shape that was
-		// fixed for the Plex refresher in PR #328 / issue #323. Even though Tautulli's current
-		// MAX_METADATA_LOOKUPS caps a single refresh, the query still reads every row already
-		// in the table, so the parameter count is unbounded in practice. Mirror the Plex fix.
-		if (upsertedIds.length > 0) {
-			const evictedCount = await evictStaleRows(prisma, instanceId, upsertedIds);
-			if (evictedCount > 0) {
-				log.info({ instanceId, evicted: evictedCount }, "Tautulli cache: evicted stale rows");
+		let completedAt: Date | undefined;
+		if (errors === 0 && complete) {
+			// Metadata lookups can take long enough for watch history to change.
+			// Re-read the entire snapshot immediately before publication.
+			await verifyCompleteHistorySnapshot();
+			completedAt = new Date();
+			try {
+				await prisma.$transaction(async (tx) => {
+					await tx.tautulliCache.deleteMany({ where: { instanceId } });
+					if (rows.length > 0) await tx.tautulliCache.createMany({ data: rows });
+					await tx.cacheRefreshStatus.upsert({
+						where: { instanceId_cacheType: { instanceId, cacheType: "tautulli" } },
+						create: {
+							instanceId,
+							cacheType: "tautulli",
+							lastRefreshedAt: completedAt!,
+							lastResult: "success",
+							itemCount: rows.length,
+							lastAttemptAt: completedAt!,
+							lastAttemptResult: "success",
+						},
+						update: {
+							lastRefreshedAt: completedAt!,
+							lastResult: "success",
+							lastErrorMessage: null,
+							itemCount: rows.length,
+							lastAttemptAt: completedAt!,
+							lastAttemptResult: "success",
+							lastAttemptErrorMessage: null,
+						},
+					});
+				});
+				upserted = rows.length;
+			} catch (error) {
+				completedAt = undefined;
+				complete = false;
+				errors++;
+				errorMessages.push(`Atomic cache publication failed: ${getErrorMessage(error)}`);
+				log.error({ err: error, instanceId }, "Tautulli cache publication failed");
 			}
+		} else {
+			log.warn({ instanceId, errors }, "Skipping cache publication due to incomplete refresh");
 		}
 
 		log.info(
@@ -213,13 +451,15 @@ export async function refreshTautulliCache(
 			},
 			"Tautulli cache refresh complete",
 		);
+		return { upserted, errors, errorMessages, complete: complete && errors === 0, completedAt };
 	} catch (error) {
+		complete = false;
 		log.error({ err: error, instanceId }, "Tautulli cache refresh failed");
 		errors++;
 		errorMessages.push(`Tautulli cache refresh failed: ${getErrorMessage(error)}`);
 	}
 
-	return { upserted, errors, errorMessages };
+	return { upserted, errors, errorMessages, complete: false };
 }
 
 // ============================================================================

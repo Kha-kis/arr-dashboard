@@ -24,6 +24,7 @@ export const ruleTypeSchema = z.enum([
 	"size",
 	"rating",
 	"status",
+	"monitored",
 	"unmonitored",
 	"genre",
 	"year_range",
@@ -130,6 +131,7 @@ export const statusRuleParamsSchema = z.object({
 	statuses: z.array(z.string().min(1)).min(1),
 });
 
+export const monitoredRuleParamsSchema = z.object({});
 export const unmonitoredRuleParamsSchema = z.object({});
 
 export const genreRuleParamsSchema = z.object({
@@ -411,6 +413,7 @@ export type AgeRuleParams = z.infer<typeof ageRuleParamsSchema>;
 export type SizeRuleParams = z.infer<typeof sizeRuleParamsSchema>;
 export type RatingRuleParams = z.infer<typeof ratingRuleParamsSchema>;
 export type StatusRuleParams = z.infer<typeof statusRuleParamsSchema>;
+export type MonitoredRuleParams = z.infer<typeof monitoredRuleParamsSchema>;
 export type UnmonitoredRuleParams = z.infer<typeof unmonitoredRuleParamsSchema>;
 export type GenreRuleParams = z.infer<typeof genreRuleParamsSchema>;
 export type YearRangeRuleParams = z.infer<typeof yearRangeRuleParamsSchema>;
@@ -473,6 +476,7 @@ export const ruleParamSchemaMap: Record<string, z.ZodType> = {
 	size: sizeRuleParamsSchema,
 	rating: ratingRuleParamsSchema,
 	status: statusRuleParamsSchema,
+	monitored: monitoredRuleParamsSchema,
 	unmonitored: unmonitoredRuleParamsSchema,
 	genre: genreRuleParamsSchema,
 	year_range: yearRangeRuleParamsSchema,
@@ -530,7 +534,14 @@ export const ruleParamSchemaMap: Record<string, z.ZodType> = {
  * Data source each rule type depends on.
  * Rules whose data source fails should be skipped to avoid false matches.
  */
-export type DataSourceDependency = "seerr" | "tautulli" | "plex" | "jellyfin" | null;
+export type DataSourceDependency =
+	| "seerr"
+	| "tautulli"
+	| "plex"
+	| "jellyfin"
+	| "tmdb"
+	| "trakt"
+	| null;
 
 export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	seerr_requested_by: "seerr",
@@ -560,15 +571,11 @@ export const ruleDataSourceMap: Record<string, DataSourceDependency> = {
 	jellyfin_added_at: "jellyfin",
 	jellyfin_episode_completion: "jellyfin",
 	plex_episode_completion: "plex",
+	tmdb_list_member: "tmdb",
+	trakt_list_member: "trakt",
 	user_retention: null, // Dynamic: depends on params.source
 	staleness_score: "plex",
 	recently_active: "plex",
 	seerr_requester_watched: "seerr",
 	seerr_requester_not_watched: "seerr",
-	// List membership rules don't depend on Plex/Jellyfin/Seerr/Tautulli prefetch.
-	// Their data source is the dedicated cache tables (TmdbListCache /
-	// TraktListCache) refreshed by their own schedulers — `null` here means
-	// the prefetch dispatch ignores them.
-	tmdb_list_member: null,
-	trakt_list_member: null,
 };

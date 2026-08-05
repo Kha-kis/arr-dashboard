@@ -36,11 +36,7 @@ const libraryCleanupSchedulerPlugin = fastifyPlugin(
 							quiClientFactory: (instance) => createQuiClient(app, instance),
 							quiFileHashIndexFactory: async (instance) => {
 								const client = createQuiClient(app, instance);
-								const index = await buildFreshCompleteFileIdIndex(
-									client,
-									instance,
-									app.log,
-								);
+								const index = await buildFreshCompleteFileIdIndex(client, instance, app.log);
 								return {
 									resolve: (path) => getAllHashesForFileIdComplete(path, index),
 								};

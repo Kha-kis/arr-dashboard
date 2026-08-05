@@ -73,9 +73,11 @@ function createMockPrisma() {
 	return {
 		libraryCache: {
 			findFirst: vi.fn().mockResolvedValue(null),
+			update: vi.fn().mockResolvedValue({}),
 		},
 		episodeFileCache: {
 			findMany: vi.fn().mockResolvedValue([]),
+			update: vi.fn().mockResolvedValue({}),
 		},
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
@@ -268,5 +270,60 @@ describe("GET /qui/movie/:arrInstanceId/:arrItemId/torrents — input + ownershi
 		// Should not crash — exact status depends on downstream behavior
 		// but it's NOT a 500 / unhandled error.
 		expect(res.statusCode).toBeLessThan(500);
+	});
+
+	it("clears inherited qUI observation provenance when healing a stale movie hash", async () => {
+		mockPrisma.libraryCache.findFirst.mockResolvedValue({
+			id: "lib-1",
+			title: "Some Movie",
+			year: 2024,
+			infoHash: "old-hash",
+			infoHashSource: "history",
+			sizeOnDisk: 1_000n,
+			qualityProfileName: null,
+			data: JSON.stringify({
+				path: "/movies/Some Movie",
+				movieFile: { relativePath: "Some Movie.mkv" },
+			}),
+		});
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue({
+			id: "qui-1",
+			userId: "user-1",
+			service: "QUI",
+			enabled: true,
+			hasLocalFilesystemAccess: true,
+		});
+		mockGetAllHashesForFileId.mockResolvedValue(["new-hash"]);
+		mockEnrichTorrentHashes.mockResolvedValue(
+			new Map([
+				[
+					"new-hash",
+					{
+						hash: "new-hash",
+						role: "library",
+						tracker: null,
+						quiUnreachable: false,
+						numSeeds: 1,
+						numLeechs: 0,
+						ratio: 1,
+						state: "pausedUP",
+					},
+				],
+			]),
+		);
+
+		const res = await injectAuthenticated("GET", "/qui/movie/radarr-1/77/torrents");
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.libraryCache.update).toHaveBeenCalledWith({
+			where: { id: "lib-1" },
+			data: {
+				infoHash: "new-hash",
+				infoHashSource: "inode",
+				torrentState: null,
+				torrentRatio: null,
+				torrentSyncedAt: null,
+			},
+		});
 	});
 });

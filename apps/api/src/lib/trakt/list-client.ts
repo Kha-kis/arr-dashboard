@@ -80,31 +80,69 @@ export function createTraktClient(
 		if (!username || !slug) {
 			throw new Error(`Trakt list slug must be 'username/list-slug', got: ${listSlug}`);
 		}
-		const url = `${baseUrl}/users/${encodeURIComponent(username)}/lists/${encodeURIComponent(slug)}/items?extended=metadata`;
-		const res = await fetch(url, {
-			method: "GET",
-			headers: {
-				Accept: "application/json",
-				"Content-Type": "application/json",
-				"trakt-api-version": "2",
-				"trakt-api-key": clientId,
-				Authorization: `Bearer ${accessToken}`,
-			},
-			signal: AbortSignal.timeout(timeout),
-		});
-		if (!res.ok) {
-			throw new Error(`Trakt list ${listSlug}: HTTP ${res.status} ${res.statusText}`);
+		const pageSize = 1000;
+		const allItems: z.infer<typeof traktListItemSchema>[] = [];
+		let expectedPages: number | null = null;
+		let expectedItems: number | null = null;
+		for (let page = 1; page <= 100; page++) {
+			const url = `${baseUrl}/users/${encodeURIComponent(username)}/lists/${encodeURIComponent(slug)}/items?extended=metadata&page=${page}&limit=${pageSize}`;
+			const res = await fetch(url, {
+				method: "GET",
+				headers: {
+					Accept: "application/json",
+					"Content-Type": "application/json",
+					"trakt-api-version": "2",
+					"trakt-api-key": clientId,
+					Authorization: `Bearer ${accessToken}`,
+				},
+				signal: AbortSignal.timeout(timeout),
+			});
+			if (!res.ok) {
+				throw new Error(`Trakt list ${listSlug}: HTTP ${res.status} ${res.statusText}`);
+			}
+			const raw = await res.json();
+			const parsed = traktListResponseSchema.safeParse(raw);
+			if (!parsed.success) {
+				log.warn(
+					{ listSlug, issues: parsed.error.issues },
+					"Trakt list response failed schema validation",
+				);
+				throw new Error(`Trakt list ${listSlug}: malformed response`);
+			}
+			const pageCountHeader = res.headers?.get?.("x-pagination-page-count") ?? null;
+			const itemCountHeader = res.headers?.get?.("x-pagination-item-count") ?? null;
+			const pageCount = pageCountHeader ? Number.parseInt(pageCountHeader, 10) : null;
+			const itemCount = itemCountHeader ? Number.parseInt(itemCountHeader, 10) : null;
+			if (
+				(pageCount !== null && (!Number.isSafeInteger(pageCount) || pageCount < 1)) ||
+				(itemCount !== null && (!Number.isSafeInteger(itemCount) || itemCount < 0))
+			) {
+				throw new Error(`Trakt list ${listSlug}: invalid pagination metadata`);
+			}
+			if (expectedPages === null) expectedPages = pageCount;
+			else if (pageCount !== expectedPages) {
+				throw new Error(`Trakt list ${listSlug}: pagination changed during fetch`);
+			}
+			if (expectedItems === null) expectedItems = itemCount;
+			else if (itemCount !== expectedItems) {
+				throw new Error(`Trakt list ${listSlug}: item count changed during fetch`);
+			}
+			allItems.push(...parsed.data);
+			const finalPage =
+				expectedPages !== null ? page >= expectedPages : parsed.data.length < pageSize;
+			if (finalPage) {
+				if (expectedItems !== null && allItems.length !== expectedItems) {
+					throw new Error(
+						`Trakt list ${listSlug}: incomplete response (${allItems.length} of ${expectedItems})`,
+					);
+				}
+				if (expectedPages === null && parsed.data.length === pageSize) {
+					throw new Error(`Trakt list ${listSlug}: pagination metadata was unavailable`);
+				}
+				return allItems;
+			}
 		}
-		const raw = await res.json();
-		const parsed = traktListResponseSchema.safeParse(raw);
-		if (!parsed.success) {
-			log.warn(
-				{ listSlug, issues: parsed.error.issues },
-				"Trakt list response failed schema validation",
-			);
-			throw new Error(`Trakt list ${listSlug}: malformed response`);
-		}
-		return parsed.data;
+		throw new Error(`Trakt list ${listSlug}: exceeded safe pagination limit`);
 	}
 
 	return {
@@ -114,9 +152,16 @@ export function createTraktClient(
 			for (const entry of raw) {
 				const body =
 					entry.type === "movie" ? entry.movie : entry.type === "show" ? entry.show : null;
-				if (!body) continue;
+				if (entry.type !== "movie" && entry.type !== "show") continue;
+				if (!body) {
+					throw new Error(`Trakt list ${listSlug}: ${entry.type} entry had no usable body`);
+				}
 				const tmdbId = body.ids?.tmdb;
-				if (typeof tmdbId !== "number" || tmdbId <= 0) continue; // require TMDb mapping
+				if (typeof tmdbId !== "number" || tmdbId <= 0) {
+					throw new Error(
+						`Trakt list ${listSlug}: ${entry.type} entry lacked a usable TMDb correlation`,
+					);
+				}
 				const mediaType: "movie" | "series" = entry.type === "movie" ? "movie" : "series";
 				items.push({
 					tmdbId,

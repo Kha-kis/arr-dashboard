@@ -210,10 +210,30 @@ export type LibraryCleanupRule = Prisma.LibraryCleanupRuleModel
  */
 export type LibraryCleanupApproval = Prisma.LibraryCleanupApprovalModel
 /**
+ * Model LibraryCleanupMediaServerScan
+ * Durable, independently retryable media-server scan requests created before
+ * a cleanup deletion. A failed scan never reopens or repeats the ARR mutation.
+ */
+export type LibraryCleanupMediaServerScan = Prisma.LibraryCleanupMediaServerScanModel
+/**
+ * Model LibraryCleanupMediaServerScanLease
+ * Cross-worker lease for one physical media-server refresh operation. The
+ * durable scan rows remain the source of work; this lease only prevents two
+ * schedulers from issuing the same upstream refresh concurrently.
+ */
+export type LibraryCleanupMediaServerScanLease = Prisma.LibraryCleanupMediaServerScanLeaseModel
+/**
  * Model LibraryCleanupLog
  * Library cleanup activity audit log
  */
 export type LibraryCleanupLog = Prisma.LibraryCleanupLogModel
+/**
+ * Model LibraryCleanupAuditEvent
+ * Append-only, per-action operator history for library cleanup.
+ * Aggregate LibraryCleanupLog rows remain the run summary; this stream records
+ * lifecycle facts and must never be synthesized back into run totals.
+ */
+export type LibraryCleanupAuditEvent = Prisma.LibraryCleanupAuditEventModel
 /**
  * Model NotificationChannel
  * Notification channel configuration (email, webhook, browser push, etc.)
@@ -329,6 +349,12 @@ export type TmdbListCache = Prisma.TmdbListCacheModel
  * scheduler every 4h. Used by the `trakt_list_member` rule type's evaluator.
  */
 export type TraktListCache = Prisma.TraktListCacheModel
+/**
+ * Model ListCacheRefreshStatus
+ * Per-list publication pointer. Replacement rows and successful-generation
+ * metadata commit together; failed attempts preserve the last good pointer.
+ */
+export type ListCacheRefreshStatus = Prisma.ListCacheRefreshStatusModel
 /**
  * Model QuiActivityLog
  * One discrete event from arr-dashboard's qui-related operations.

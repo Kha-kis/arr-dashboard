@@ -305,6 +305,7 @@ export type UserWhereInput = {
   autoTagRules?: Prisma.AutoTagRuleListRelationFilter
   tmdbListCacheRows?: Prisma.TmdbListCacheListRelationFilter
   traktListCacheRows?: Prisma.TraktListCacheListRelationFilter
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusListRelationFilter
   quiActivityLogs?: Prisma.QuiActivityLogListRelationFilter
   quiActionLogs?: Prisma.QuiActionLogListRelationFilter
   quiEventLogs?: Prisma.QuiEventLogListRelationFilter
@@ -342,6 +343,7 @@ export type UserOrderByWithRelationInput = {
   autoTagRules?: Prisma.AutoTagRuleOrderByRelationAggregateInput
   tmdbListCacheRows?: Prisma.TmdbListCacheOrderByRelationAggregateInput
   traktListCacheRows?: Prisma.TraktListCacheOrderByRelationAggregateInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusOrderByRelationAggregateInput
   quiActivityLogs?: Prisma.QuiActivityLogOrderByRelationAggregateInput
   quiActionLogs?: Prisma.QuiActionLogOrderByRelationAggregateInput
   quiEventLogs?: Prisma.QuiEventLogOrderByRelationAggregateInput
@@ -382,6 +384,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   autoTagRules?: Prisma.AutoTagRuleListRelationFilter
   tmdbListCacheRows?: Prisma.TmdbListCacheListRelationFilter
   traktListCacheRows?: Prisma.TraktListCacheListRelationFilter
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusListRelationFilter
   quiActivityLogs?: Prisma.QuiActivityLogListRelationFilter
   quiActionLogs?: Prisma.QuiActionLogListRelationFilter
   quiEventLogs?: Prisma.QuiEventLogListRelationFilter
@@ -461,6 +464,7 @@ export type UserCreateInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -498,6 +502,7 @@ export type UserUncheckedCreateInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -535,6 +540,7 @@ export type UserUpdateInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -572,6 +578,7 @@ export type UserUncheckedUpdateInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -958,6 +965,20 @@ export type UserUpdateOneRequiredWithoutTraktListCacheRowsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutTraktListCacheRowsInput, Prisma.UserUpdateWithoutTraktListCacheRowsInput>, Prisma.UserUncheckedUpdateWithoutTraktListCacheRowsInput>
 }
 
+export type UserCreateNestedOneWithoutListCacheRefreshStatusesInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutListCacheRefreshStatusesInput, Prisma.UserUncheckedCreateWithoutListCacheRefreshStatusesInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutListCacheRefreshStatusesInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutListCacheRefreshStatusesNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutListCacheRefreshStatusesInput, Prisma.UserUncheckedCreateWithoutListCacheRefreshStatusesInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutListCacheRefreshStatusesInput
+  upsert?: Prisma.UserUpsertWithoutListCacheRefreshStatusesInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutListCacheRefreshStatusesInput, Prisma.UserUpdateWithoutListCacheRefreshStatusesInput>, Prisma.UserUncheckedUpdateWithoutListCacheRefreshStatusesInput>
+}
+
 export type UserCreateNestedOneWithoutQuiActivityLogsInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutQuiActivityLogsInput, Prisma.UserUncheckedCreateWithoutQuiActivityLogsInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutQuiActivityLogsInput
@@ -1031,6 +1052,7 @@ export type UserCreateWithoutSessionsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -1067,6 +1089,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -1119,6 +1142,7 @@ export type UserUpdateWithoutSessionsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -1155,6 +1179,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -1191,6 +1216,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -1227,6 +1253,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -1279,6 +1306,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -1315,6 +1343,7 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -1351,6 +1380,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -1387,6 +1417,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -1439,6 +1470,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -1475,6 +1507,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -1511,6 +1544,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -1547,6 +1581,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -1599,6 +1634,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -1635,6 +1671,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -1671,6 +1708,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -1707,6 +1745,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -1759,6 +1798,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -1795,6 +1835,7 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -1831,6 +1872,7 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -1867,6 +1909,7 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -1919,6 +1962,7 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -1955,6 +1999,7 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -1991,6 +2036,7 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -2027,6 +2073,7 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -2079,6 +2126,7 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -2115,6 +2163,7 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -2151,6 +2200,7 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -2187,6 +2237,7 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -2239,6 +2290,7 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -2275,6 +2327,7 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -2311,6 +2364,7 @@ export type UserCreateWithoutNotificationChannelsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -2347,6 +2401,7 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -2399,6 +2454,7 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -2435,6 +2491,7 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -2471,6 +2528,7 @@ export type UserCreateWithoutNotificationRulesInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -2507,6 +2565,7 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -2559,6 +2618,7 @@ export type UserUpdateWithoutNotificationRulesInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -2595,6 +2655,7 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -2631,6 +2692,7 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -2667,6 +2729,7 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -2719,6 +2782,7 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -2755,6 +2819,7 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -2791,6 +2856,7 @@ export type UserCreateWithoutNamingConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -2827,6 +2893,7 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -2879,6 +2946,7 @@ export type UserUpdateWithoutNamingConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -2915,6 +2983,7 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -2951,6 +3020,7 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -2987,6 +3057,7 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -3039,6 +3110,7 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -3075,6 +3147,7 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -3111,6 +3184,7 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -3147,6 +3221,7 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -3199,6 +3274,7 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -3235,6 +3311,7 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -3271,6 +3348,7 @@ export type UserCreateWithoutAutoTagRulesInput = {
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -3307,6 +3385,7 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -3359,6 +3438,7 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -3395,6 +3475,7 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -3431,6 +3512,7 @@ export type UserCreateWithoutTmdbListCacheRowsInput = {
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -3467,6 +3549,7 @@ export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -3519,6 +3602,7 @@ export type UserUpdateWithoutTmdbListCacheRowsInput = {
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -3555,6 +3639,7 @@ export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -3591,6 +3676,7 @@ export type UserCreateWithoutTraktListCacheRowsInput = {
   labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
@@ -3627,6 +3713,7 @@ export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
@@ -3679,6 +3766,7 @@ export type UserUpdateWithoutTraktListCacheRowsInput = {
   labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
@@ -3715,6 +3803,171 @@ export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
   labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutListCacheRefreshStatusesInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutListCacheRefreshStatusesInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutListCacheRefreshStatusesInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutListCacheRefreshStatusesInput, Prisma.UserUncheckedCreateWithoutListCacheRefreshStatusesInput>
+}
+
+export type UserUpsertWithoutListCacheRefreshStatusesInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutListCacheRefreshStatusesInput, Prisma.UserUncheckedUpdateWithoutListCacheRefreshStatusesInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutListCacheRefreshStatusesInput, Prisma.UserUncheckedCreateWithoutListCacheRefreshStatusesInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutListCacheRefreshStatusesInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutListCacheRefreshStatusesInput, Prisma.UserUncheckedUpdateWithoutListCacheRefreshStatusesInput>
+}
+
+export type UserUpdateWithoutListCacheRefreshStatusesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutListCacheRefreshStatusesInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
@@ -3752,6 +4005,7 @@ export type UserCreateWithoutQuiActivityLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
@@ -3788,6 +4042,7 @@ export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
@@ -3840,6 +4095,7 @@ export type UserUpdateWithoutQuiActivityLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
@@ -3876,6 +4132,7 @@ export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
@@ -3912,6 +4169,7 @@ export type UserCreateWithoutQuiActionLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
 }
@@ -3948,6 +4206,7 @@ export type UserUncheckedCreateWithoutQuiActionLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
 }
@@ -4000,6 +4259,7 @@ export type UserUpdateWithoutQuiActionLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
 }
@@ -4036,6 +4296,7 @@ export type UserUncheckedUpdateWithoutQuiActionLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
 }
@@ -4072,6 +4333,7 @@ export type UserCreateWithoutQuiEventLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
 }
@@ -4108,6 +4370,7 @@ export type UserUncheckedCreateWithoutQuiEventLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedCreateNestedManyWithoutUserInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
 }
@@ -4160,6 +4423,7 @@ export type UserUpdateWithoutQuiEventLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
 }
@@ -4196,6 +4460,7 @@ export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
   autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
   tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
   traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  listCacheRefreshStatuses?: Prisma.ListCacheRefreshStatusUncheckedUpdateManyWithoutUserNestedInput
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
 }
@@ -4222,6 +4487,7 @@ export type UserCountOutputType = {
   autoTagRules: number
   tmdbListCacheRows: number
   traktListCacheRows: number
+  listCacheRefreshStatuses: number
   quiActivityLogs: number
   quiActionLogs: number
   quiEventLogs: number
@@ -4244,6 +4510,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   autoTagRules?: boolean | UserCountOutputTypeCountAutoTagRulesArgs
   tmdbListCacheRows?: boolean | UserCountOutputTypeCountTmdbListCacheRowsArgs
   traktListCacheRows?: boolean | UserCountOutputTypeCountTraktListCacheRowsArgs
+  listCacheRefreshStatuses?: boolean | UserCountOutputTypeCountListCacheRefreshStatusesArgs
   quiActivityLogs?: boolean | UserCountOutputTypeCountQuiActivityLogsArgs
   quiActionLogs?: boolean | UserCountOutputTypeCountQuiActionLogsArgs
   quiEventLogs?: boolean | UserCountOutputTypeCountQuiEventLogsArgs
@@ -4374,6 +4641,13 @@ export type UserCountOutputTypeCountTraktListCacheRowsArgs<ExtArgs extends runti
 /**
  * UserCountOutputType without action
  */
+export type UserCountOutputTypeCountListCacheRefreshStatusesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ListCacheRefreshStatusWhereInput
+}
+
+/**
+ * UserCountOutputType without action
+ */
 export type UserCountOutputTypeCountQuiActivityLogsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.QuiActivityLogWhereInput
 }
@@ -4425,6 +4699,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   autoTagRules?: boolean | Prisma.User$autoTagRulesArgs<ExtArgs>
   tmdbListCacheRows?: boolean | Prisma.User$tmdbListCacheRowsArgs<ExtArgs>
   traktListCacheRows?: boolean | Prisma.User$traktListCacheRowsArgs<ExtArgs>
+  listCacheRefreshStatuses?: boolean | Prisma.User$listCacheRefreshStatusesArgs<ExtArgs>
   quiActivityLogs?: boolean | Prisma.User$quiActivityLogsArgs<ExtArgs>
   quiActionLogs?: boolean | Prisma.User$quiActionLogsArgs<ExtArgs>
   quiEventLogs?: boolean | Prisma.User$quiEventLogsArgs<ExtArgs>
@@ -4501,6 +4776,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   autoTagRules?: boolean | Prisma.User$autoTagRulesArgs<ExtArgs>
   tmdbListCacheRows?: boolean | Prisma.User$tmdbListCacheRowsArgs<ExtArgs>
   traktListCacheRows?: boolean | Prisma.User$traktListCacheRowsArgs<ExtArgs>
+  listCacheRefreshStatuses?: boolean | Prisma.User$listCacheRefreshStatusesArgs<ExtArgs>
   quiActivityLogs?: boolean | Prisma.User$quiActivityLogsArgs<ExtArgs>
   quiActionLogs?: boolean | Prisma.User$quiActionLogsArgs<ExtArgs>
   quiEventLogs?: boolean | Prisma.User$quiEventLogsArgs<ExtArgs>
@@ -4529,6 +4805,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     autoTagRules: Prisma.$AutoTagRulePayload<ExtArgs>[]
     tmdbListCacheRows: Prisma.$TmdbListCachePayload<ExtArgs>[]
     traktListCacheRows: Prisma.$TraktListCachePayload<ExtArgs>[]
+    listCacheRefreshStatuses: Prisma.$ListCacheRefreshStatusPayload<ExtArgs>[]
     quiActivityLogs: Prisma.$QuiActivityLogPayload<ExtArgs>[]
     quiActionLogs: Prisma.$QuiActionLogPayload<ExtArgs>[]
     quiEventLogs: Prisma.$QuiEventLogPayload<ExtArgs>[]
@@ -4978,6 +5255,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   autoTagRules<T extends Prisma.User$autoTagRulesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$autoTagRulesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AutoTagRulePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   tmdbListCacheRows<T extends Prisma.User$tmdbListCacheRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$tmdbListCacheRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TmdbListCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   traktListCacheRows<T extends Prisma.User$traktListCacheRowsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$traktListCacheRowsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TraktListCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  listCacheRefreshStatuses<T extends Prisma.User$listCacheRefreshStatusesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$listCacheRefreshStatusesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ListCacheRefreshStatusPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiActivityLogs<T extends Prisma.User$quiActivityLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiActivityLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActivityLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiActionLogs<T extends Prisma.User$quiActionLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiActionLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActionLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiEventLogs<T extends Prisma.User$quiEventLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiEventLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiEventLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -5815,6 +6093,30 @@ export type User$traktListCacheRowsArgs<ExtArgs extends runtime.Types.Extensions
   take?: number
   skip?: number
   distinct?: Prisma.TraktListCacheScalarFieldEnum | Prisma.TraktListCacheScalarFieldEnum[]
+}
+
+/**
+ * User.listCacheRefreshStatuses
+ */
+export type User$listCacheRefreshStatusesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ListCacheRefreshStatus
+   */
+  select?: Prisma.ListCacheRefreshStatusSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ListCacheRefreshStatus
+   */
+  omit?: Prisma.ListCacheRefreshStatusOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ListCacheRefreshStatusInclude<ExtArgs> | null
+  where?: Prisma.ListCacheRefreshStatusWhereInput
+  orderBy?: Prisma.ListCacheRefreshStatusOrderByWithRelationInput | Prisma.ListCacheRefreshStatusOrderByWithRelationInput[]
+  cursor?: Prisma.ListCacheRefreshStatusWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ListCacheRefreshStatusScalarFieldEnum | Prisma.ListCacheRefreshStatusScalarFieldEnum[]
 }
 
 /**

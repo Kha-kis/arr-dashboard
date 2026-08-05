@@ -13,6 +13,7 @@ import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
 	plexAccountsResponseSchema,
+	plexAllLeavesResponseSchema,
 	plexEpisodeMediaItemsResponseSchema,
 	plexEpisodesResponseSchema,
 	plexHistoryResponseSchema,
@@ -88,6 +89,7 @@ export class PlexSeriesNotFoundError extends Error {
 }
 
 export interface PlexHistoryItem {
+	historyKey?: string;
 	ratingKey: string;
 	parentRatingKey?: string;
 	grandparentRatingKey?: string;
@@ -214,7 +216,13 @@ export class PlexClient {
 		const data = await this.request("/library/sections", {
 			schema: plexSectionsResponseSchema,
 		});
-		return (data.MediaContainer.Directory ?? []).map((d) => ({
+		const directories = data.MediaContainer.Directory ?? [];
+		this.assertCompleteSinglePageContainer(
+			data.MediaContainer,
+			directories.length,
+			"Plex library section inventory",
+		);
+		return directories.map((d) => ({
 			key: d.key,
 			title: d.title,
 			type: d.type,
@@ -225,12 +233,13 @@ export class PlexClient {
 	 * Get all items from a library section.
 	 */
 	async getLibraryItems(sectionId: string): Promise<PlexLibraryItem[]> {
-		const data = await this.request(
+		const items = await this.getCompleteSafetyMetadata(
 			`/library/sections/${sectionId}/all?includeGuids=1&includeCollections=1&includeLabels=1`,
-			{ schema: plexLibraryItemsResponseSchema },
+			plexLibraryItemsResponseSchema,
+			(item) => item.ratingKey,
 		);
 
-		return (data.MediaContainer.Metadata ?? []).map((m) => ({
+		return items.map((m) => ({
 			ratingKey: m.ratingKey,
 			title: m.title,
 			type: m.type,
@@ -312,10 +321,14 @@ export class PlexClient {
 	async getMovieMediaPartsByTmdbId(tmdbId: number): Promise<PlexMovieMediaItem[]> {
 		const params = new URLSearchParams({
 			type: "1",
-			guid: `tmdb://${tmdbId}`,
 			includeGuids: "1",
 			includeMedia: "1",
 		});
+		// Modern Plex agents use a plex:// primary GUID. Plex's `guid=` query
+		// filters only that primary value on current servers, so asking for an
+		// alternate tmdb:// GUID returns an empty result even when `Guid` contains
+		// the exact identifier. Page the complete movie inventory and perform the
+		// authoritative alternate-GUID match below instead.
 		const completeItems = await this.getCompleteSafetyMetadata(
 			`/library/all?${params.toString()}`,
 			plexLibraryMediaItemsResponseSchema,
@@ -345,9 +358,10 @@ export class PlexClient {
 	 * media parts on the episode item, so callers must retain the grouping.
 	 */
 	async getSeriesEpisodeMediaPartsByTvdbId(tvdbId: number): Promise<PlexSeriesMediaItem[]> {
+		// As with movies, TVDB is an alternate GUID under modern Plex agents and
+		// cannot safely be used as the server-side primary `guid=` filter.
 		const params = new URLSearchParams({
 			type: "2",
-			guid: `tvdb://${tvdbId}`,
 			includeGuids: "1",
 		});
 		const shows = await this.getCompleteSafetyMetadata(
@@ -390,24 +404,71 @@ export class PlexClient {
 	 * Get watch history across all users.
 	 * Uses /status/sessions/history/all for multi-user history.
 	 */
-	async getHistory(options?: { maxResults?: number }): Promise<PlexHistoryItem[]> {
+	async getHistory(options?: {
+		maxResults?: number;
+		requireComplete?: boolean;
+	}): Promise<PlexHistoryItem[]> {
+		return this.getHistoryPass(options);
+	}
+
+	private async getHistoryPass(options?: {
+		maxResults?: number;
+		requireComplete?: boolean;
+	}): Promise<PlexHistoryItem[]> {
 		const allItems: PlexHistoryItem[] = [];
 		const pageSize = 200;
 		const maxResults = options?.maxResults ?? 5000;
+		const requireComplete = options?.requireComplete ?? false;
+		const seenHistoryRows = new Set<string>();
+		let expectedTotal: number | undefined;
 		let offset = 0;
 
-		while (allItems.length < maxResults) {
-			const remaining = maxResults - allItems.length;
+		while (
+			allItems.length < maxResults &&
+			(expectedTotal === undefined || allItems.length < expectedTotal)
+		) {
+			const remaining =
+				expectedTotal === undefined
+					? maxResults - allItems.length
+					: Math.min(maxResults, expectedTotal) - allItems.length;
 			const take = Math.min(pageSize, remaining);
 
 			const data = await this.request(
-				`/status/sessions/history/all?sort=viewedAt:desc&X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${take}`,
+				`/status/sessions/history/all?sort=viewedAt:desc,historyKey:desc&X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${take}`,
 				{ schema: plexHistoryResponseSchema },
 			);
 
-			const items = data.MediaContainer.Metadata ?? [];
+			const container = data.MediaContainer;
+			const items = container.Metadata ?? [];
+			if (container.offset !== offset || container.size !== items.length) {
+				throw new Error("Plex history pagination metadata did not match the returned page");
+			}
+			if (expectedTotal === undefined) {
+				expectedTotal = container.totalSize;
+				if (requireComplete && expectedTotal > maxResults) {
+					throw new Error(
+						`Plex history contains ${expectedTotal} rows, exceeding the safe ${maxResults}-row limit`,
+					);
+				}
+			} else if (container.totalSize !== expectedTotal) {
+				throw new Error("Plex history changed while it was being paged");
+			}
+			if (offset + items.length > expectedTotal) {
+				throw new Error("Plex history pagination exceeded its declared total");
+			}
+			if (items.length === 0 && offset < Math.min(expectedTotal, maxResults)) {
+				throw new Error("Plex history pagination stopped before the declared total");
+			}
 			for (const item of items) {
+				if (requireComplete && !item.historyKey) {
+					throw new Error("Plex history did not provide a stable row identity");
+				}
+				if (item.historyKey && seenHistoryRows.has(item.historyKey)) {
+					throw new Error("Plex history returned a duplicate row while paging");
+				}
+				if (item.historyKey) seenHistoryRows.add(item.historyKey);
 				allItems.push({
+					historyKey: item.historyKey,
 					ratingKey: item.ratingKey,
 					parentRatingKey: item.parentRatingKey ?? extractRatingKey(item.parentKey),
 					grandparentRatingKey: item.grandparentRatingKey ?? extractRatingKey(item.grandparentKey),
@@ -418,23 +479,55 @@ export class PlexClient {
 					accountID: item.accountID,
 				});
 			}
-
-			if (items.length < take) break;
-			offset += take;
+			offset += items.length;
 		}
 
+		if (requireComplete && (expectedTotal === undefined || allItems.length !== expectedTotal)) {
+			throw new Error("Plex history inventory could not be verified as complete");
+		}
 		return allItems;
+	}
+
+	/** Re-read and compare every watch-relevant field before publication. */
+	async verifyHistorySnapshot(history: readonly PlexHistoryItem[]): Promise<void> {
+		const verification = await this.getHistoryPass({
+			maxResults: SAFETY_MAX_ITEMS,
+			requireComplete: true,
+		});
+		const signatures = (items: readonly PlexHistoryItem[]) =>
+			items
+				.map((item) =>
+					JSON.stringify([
+						item.historyKey,
+						item.ratingKey,
+						item.parentRatingKey ?? null,
+						item.grandparentRatingKey ?? null,
+						item.type,
+						item.viewedAt,
+						item.accountID,
+					]),
+				)
+				.sort();
+		if (
+			verification.length !== history.length ||
+			JSON.stringify(signatures(verification)) !== JSON.stringify(signatures(history))
+		) {
+			throw new Error("Plex history changed before its complete snapshot could be verified");
+		}
 	}
 
 	/**
 	 * Get on-deck (continue watching) items.
 	 */
 	async getOnDeck(): Promise<PlexOnDeckItem[]> {
-		const data = await this.request("/library/onDeck", {
-			schema: plexOnDeckResponseSchema,
-		});
+		const items = await this.getCompleteSafetyMetadata(
+			"/library/onDeck",
+			plexOnDeckResponseSchema,
+			(item) =>
+				`${item.type}:${item.grandparentRatingKey ?? item.parentRatingKey ?? item.ratingKey}:${item.ratingKey}`,
+		);
 
-		return (data.MediaContainer.Metadata ?? []).map((m) => ({
+		return items.map((m) => ({
 			ratingKey: m.ratingKey,
 			parentRatingKey: m.parentRatingKey,
 			grandparentRatingKey: m.grandparentRatingKey,
@@ -488,18 +581,30 @@ export class PlexClient {
 	 * Get all episodes for a show (all leaves).
 	 */
 	async getEpisodes(showRatingKey: string): Promise<PlexEpisodeItem[]> {
-		const data = await this.request(`/library/metadata/${showRatingKey}/allLeaves`, {
-			schema: plexEpisodesResponseSchema,
+		const items = await this.getCompleteSafetyMetadata(
+			`/library/metadata/${encodeURIComponent(showRatingKey)}/allLeaves`,
+			plexAllLeavesResponseSchema,
+			(item) => item.ratingKey,
+		);
+		const seenCoordinates = new Set<string>();
+		return items.map((item) => {
+			if (item.parentIndex === undefined || item.index === undefined) {
+				throw new Error(`Plex episode ${item.ratingKey} did not provide a complete coordinate`);
+			}
+			const coordinate = `${item.parentIndex}:${item.index}`;
+			if (seenCoordinates.has(coordinate)) {
+				throw new Error(`Plex allLeaves returned duplicate episode coordinate ${coordinate}`);
+			}
+			seenCoordinates.add(coordinate);
+			return {
+				ratingKey: item.ratingKey,
+				title: item.title,
+				seasonNumber: item.parentIndex,
+				episodeNumber: item.index,
+				viewCount: item.viewCount ?? 0,
+				lastViewedAt: item.lastViewedAt,
+			};
 		});
-
-		return (data.MediaContainer.Metadata ?? []).map((m) => ({
-			ratingKey: m.ratingKey,
-			title: m.title,
-			seasonNumber: m.parentIndex ?? 0,
-			episodeNumber: m.index ?? 0,
-			viewCount: m.viewCount ?? 0,
-			lastViewedAt: m.lastViewedAt,
-		}));
 	}
 
 	/**
@@ -549,10 +654,30 @@ export class PlexClient {
 			schema: plexAccountsResponseSchema,
 		});
 
-		return (data.MediaContainer.Account ?? []).map((a) => ({
+		const accounts = data.MediaContainer.Account ?? [];
+		this.assertCompleteSinglePageContainer(
+			data.MediaContainer,
+			accounts.length,
+			"Plex account inventory",
+		);
+		return accounts.map((a) => ({
 			id: a.id,
 			name: a.name,
 		}));
+	}
+
+	private assertCompleteSinglePageContainer(
+		container: { offset?: number; size?: number; totalSize?: number },
+		returnedCount: number,
+		label: string,
+	): void {
+		if (
+			container.size !== returnedCount ||
+			(container.offset !== undefined && container.offset !== 0) ||
+			(container.totalSize !== undefined && container.totalSize !== returnedCount)
+		) {
+			throw new Error(`${label} did not provide a complete single-page result`);
+		}
 	}
 
 	/**

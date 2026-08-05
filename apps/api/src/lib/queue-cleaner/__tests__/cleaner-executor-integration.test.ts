@@ -188,6 +188,89 @@ describe("executeQueueCleaner — integration", () => {
 		expect(delArgs?.[0]).toBe(42); // item id
 	});
 
+	it("fails closed after an incomplete multi-qUI sync invalidates correlated evidence", async () => {
+		const hash = "a".repeat(40);
+		const del = vi.fn().mockResolvedValue(undefined);
+		const app = makeApp({
+			get: async () => ({ records: [{ ...STALLED_ITEM, downloadId: hash }] }),
+			del,
+		});
+		const prisma = app.prisma as unknown as {
+			serviceInstance: { findFirst: ReturnType<typeof vi.fn> };
+			libraryCache: { findMany: ReturnType<typeof vi.fn> };
+		};
+		prisma.serviceInstance = {
+			findFirst: vi.fn().mockResolvedValue({ id: "qui-1" }),
+		};
+		prisma.libraryCache = {
+			// A failed/incomplete qUI topology scan clears all three observation
+			// fields, including the freshness publication marker.
+			findMany: vi
+				.fn()
+				.mockResolvedValue([{ infoHash: hash, torrentState: null, torrentSyncedAt: null }]),
+		};
+
+		const result = await executeQueueCleaner(
+			app,
+			makeInstance(),
+			makeConfig({ quiAwareMode: true }),
+		);
+
+		expect(result.itemsCleaned).toBe(0);
+		expect(result.skippedItems[0]?.reason).toContain("qUI evidence is unavailable or stale");
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("keeps preview and execution aligned when qUI evidence is only partially populated", async () => {
+		const observedHash = "b".repeat(40);
+		const missingHash = "c".repeat(40);
+		const observedItem = { ...STALLED_ITEM, id: 43, downloadId: observedHash };
+		const missingItem = { ...STALLED_ITEM, id: 44, downloadId: missingHash };
+		const del = vi.fn().mockResolvedValue(undefined);
+		const app = makeApp({
+			get: async () => ({ records: [observedItem, missingItem] }),
+			del,
+		});
+		const prisma = app.prisma as unknown as {
+			serviceInstance: { findFirst: ReturnType<typeof vi.fn> };
+			libraryCache: { findMany: ReturnType<typeof vi.fn> };
+		};
+		prisma.serviceInstance = {
+			findFirst: vi.fn().mockResolvedValue({ id: "qui-1" }),
+		};
+		prisma.libraryCache = {
+			findMany: vi.fn().mockResolvedValue([
+				{
+					infoHash: observedHash,
+					torrentState: "seeding",
+					torrentSyncedAt: new Date(),
+				},
+			]),
+		};
+		const config = makeConfig({ quiAwareMode: true });
+
+		const execution = await executeQueueCleaner(app, makeInstance(), config);
+
+		expect(execution.cleanedItems.map((item) => item.id)).toEqual([43]);
+		expect(execution.skippedItems).toEqual([
+			expect.objectContaining({
+				id: 44,
+				reason: expect.stringContaining("qUI evidence is unavailable or stale"),
+			}),
+		]);
+		expect(del).toHaveBeenCalledOnce();
+		expect(del).toHaveBeenCalledWith(43, expect.objectContaining({ removeFromClient: true }));
+
+		del.mockClear();
+		const preview = await executeEnhancedPreview(app, makeInstance(), config);
+		const previewById = new Map(preview.previewItems.map((item) => [item.id, item]));
+		expect(previewById.get(43)?.action).toBe("remove");
+		expect(previewById.get(44)).toMatchObject({ action: "skip" });
+		expect(previewById.get(44)?.reason).toContain("qUI evidence is unavailable or stale");
+		expect(preview.wouldRemove).toBe(1);
+		expect(del).not.toHaveBeenCalled();
+	});
+
 	it("dry-run mode returns the same matches WITHOUT calling client.queue.del", async () => {
 		const del = vi.fn();
 		const app = makeApp({

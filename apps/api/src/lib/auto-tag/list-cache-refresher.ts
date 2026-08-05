@@ -4,13 +4,15 @@
  * For each enabled `AutoTagRule` with `ruleType` `tmdb_list_member` or
  * `trakt_list_member` (or composite rule containing such a condition),
  * extract the list identifier, fetch the live membership from the
- * upstream API, and upsert into `TmdbListCache` / `TraktListCache`.
+ * upstream API, and atomically replace `TmdbListCache` / `TraktListCache`
+ * alongside a successful-generation pointer.
  *
  * Refresh cadence: every 4 hours (registry-declared `intervalMs`).
  * Stale rows for lists that aren't referenced by any enabled rule
  * anymore are garbage-collected at the end of each run.
  */
 
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import type { PrismaClient } from "../prisma.js";
@@ -56,6 +58,16 @@ export async function refreshTmdbListCache(deps: RefresherDeps): Promise<Refresh
 		});
 		if (!user?.encryptedTmdbApiKey || !user.tmdbEncryptionIv) {
 			log.debug({ userId }, "User has no TMDb API key — skipping their list refresh");
+			for (const listId of listIds) {
+				failures++;
+				await recordListRefreshFailure(
+					prisma,
+					userId,
+					"tmdb",
+					listId,
+					"TMDb credentials are unavailable",
+				);
+			}
 			continue;
 		}
 
@@ -67,7 +79,16 @@ export async function refreshTmdbListCache(deps: RefresherDeps): Promise<Refresh
 			});
 		} catch (err) {
 			log.warn({ err, userId }, "Failed to decrypt TMDb API key");
-			failures++;
+			for (const listId of listIds) {
+				failures++;
+				await recordListRefreshFailure(
+					prisma,
+					userId,
+					"tmdb",
+					listId,
+					"TMDb credentials could not be decrypted",
+				);
+			}
 			continue;
 		}
 
@@ -76,46 +97,20 @@ export async function refreshTmdbListCache(deps: RefresherDeps): Promise<Refresh
 		for (const listId of listIds) {
 			try {
 				const items = await client.getListItems(listId);
+				await publishTmdbListGeneration(prisma, userId, listId, items);
 				listsRefreshed++;
-
-				// Upsert all items, then delete rows for items no longer on the list.
-				const seenTmdbIds = new Set<number>();
-				for (const item of items) {
-					await prisma.tmdbListCache.upsert({
-						where: {
-							userId_listId_tmdbId: {
-								userId,
-								listId,
-								tmdbId: item.tmdbId,
-							},
-						},
-						update: {
-							mediaType: item.mediaType,
-							title: item.title,
-							refreshedAt: new Date(),
-						},
-						create: {
-							userId,
-							listId,
-							tmdbId: item.tmdbId,
-							mediaType: item.mediaType,
-							title: item.title,
-						},
-					});
-					itemsUpserted++;
-					seenTmdbIds.add(item.tmdbId);
-				}
-
-				// GC stale rows: anything in cache for this list that wasn't on this fetch.
-				await prisma.tmdbListCache.deleteMany({
-					where: {
-						userId,
-						listId,
-						tmdbId: { notIn: [...seenTmdbIds] },
-					},
-				});
+				itemsUpserted += items.length;
 			} catch (err) {
 				failures++;
+				await recordListRefreshFailure(
+					prisma,
+					userId,
+					"tmdb",
+					listId,
+					getRefreshErrorMessage(err),
+				).catch((statusError) => {
+					log.warn({ err: statusError, userId, listId }, "Failed to record TMDb list failure");
+				});
 				log.warn({ err, userId, listId }, "Failed to refresh TMDb list");
 			}
 		}
@@ -167,6 +162,16 @@ export async function refreshTraktListCache(
 		});
 		if (!user?.encryptedTraktAccessToken || !user.traktTokenIv) {
 			log.debug({ userId }, "User has no Trakt PAT — skipping their list refresh");
+			for (const listSlug of listSlugs) {
+				failures++;
+				await recordListRefreshFailure(
+					prisma,
+					userId,
+					"trakt",
+					listSlug,
+					"Trakt credentials are unavailable",
+				);
+			}
 			continue;
 		}
 
@@ -178,7 +183,16 @@ export async function refreshTraktListCache(
 			});
 		} catch (err) {
 			log.warn({ err, userId }, "Failed to decrypt Trakt access token");
-			failures++;
+			for (const listSlug of listSlugs) {
+				failures++;
+				await recordListRefreshFailure(
+					prisma,
+					userId,
+					"trakt",
+					listSlug,
+					"Trakt credentials could not be decrypted",
+				);
+			}
 			continue;
 		}
 
@@ -187,44 +201,20 @@ export async function refreshTraktListCache(
 		for (const listSlug of listSlugs) {
 			try {
 				const items = await client.getListItems(listSlug);
+				await publishTraktListGeneration(prisma, userId, listSlug, items);
 				listsRefreshed++;
-
-				const seenTmdbIds = new Set<number>();
-				for (const item of items) {
-					await prisma.traktListCache.upsert({
-						where: {
-							userId_listSlug_tmdbId: {
-								userId,
-								listSlug,
-								tmdbId: item.tmdbId,
-							},
-						},
-						update: {
-							mediaType: item.mediaType,
-							title: item.title,
-							refreshedAt: new Date(),
-						},
-						create: {
-							userId,
-							listSlug,
-							tmdbId: item.tmdbId,
-							mediaType: item.mediaType,
-							title: item.title,
-						},
-					});
-					itemsUpserted++;
-					seenTmdbIds.add(item.tmdbId);
-				}
-
-				await prisma.traktListCache.deleteMany({
-					where: {
-						userId,
-						listSlug,
-						tmdbId: { notIn: [...seenTmdbIds] },
-					},
-				});
+				itemsUpserted += items.length;
 			} catch (err) {
 				failures++;
+				await recordListRefreshFailure(
+					prisma,
+					userId,
+					"trakt",
+					listSlug,
+					getRefreshErrorMessage(err),
+				).catch((statusError) => {
+					log.warn({ err: statusError, userId, listSlug }, "Failed to record Trakt list failure");
+				});
 				log.warn({ err, userId, listSlug }, "Failed to refresh Trakt list");
 			}
 		}
@@ -242,6 +232,159 @@ export async function refreshTraktListCache(
 // ============================================================================
 // Helpers
 // ============================================================================
+
+type ListItem = { tmdbId: number; mediaType: "movie" | "series"; title: string };
+
+function getRefreshErrorMessage(error: unknown): string {
+	return (error instanceof Error ? error.message : String(error)).slice(0, 500);
+}
+
+function dedupeListItems(items: ListItem[]): ListItem[] {
+	const byTypedId = new Map<string, ListItem>();
+	for (const item of items) {
+		const key = `${item.mediaType}:${item.tmdbId}`;
+		if (byTypedId.has(key)) {
+			throw new Error(`List returned duplicate membership ${key}`);
+		}
+		byTypedId.set(key, item);
+	}
+	return [...byTypedId.values()].sort(
+		(left, right) =>
+			left.mediaType.localeCompare(right.mediaType) ||
+			left.tmdbId - right.tmdbId ||
+			left.title.localeCompare(right.title),
+	);
+}
+
+export async function publishTmdbListGeneration(
+	prisma: PrismaClient,
+	userId: string,
+	listId: string,
+	items: ListItem[],
+): Promise<void> {
+	const rows = dedupeListItems(items);
+	const generationId = randomUUID();
+	const completedAt = new Date();
+	await prisma.$transaction(async (tx) => {
+		await tx.tmdbListCache.deleteMany({ where: { userId, listId } });
+		if (rows.length > 0) {
+			await tx.tmdbListCache.createMany({
+				data: rows.map((item) => ({
+					userId,
+					listId,
+					tmdbId: item.tmdbId,
+					mediaType: item.mediaType,
+					title: item.title,
+					generation: generationId,
+					refreshedAt: completedAt,
+				})),
+			});
+		}
+		await tx.listCacheRefreshStatus.upsert({
+			where: { userId_provider_listKey: { userId, provider: "tmdb", listKey: listId } },
+			create: {
+				userId,
+				provider: "tmdb",
+				listKey: listId,
+				generationId,
+				lastRefreshedAt: completedAt,
+				lastResult: "success",
+				itemCount: rows.length,
+				lastAttemptAt: completedAt,
+				lastAttemptResult: "success",
+			},
+			update: {
+				generationId,
+				lastRefreshedAt: completedAt,
+				lastResult: "success",
+				lastErrorMessage: null,
+				itemCount: rows.length,
+				lastAttemptAt: completedAt,
+				lastAttemptResult: "success",
+				lastAttemptErrorMessage: null,
+			},
+		});
+	});
+}
+
+export async function publishTraktListGeneration(
+	prisma: PrismaClient,
+	userId: string,
+	listSlug: string,
+	items: ListItem[],
+): Promise<void> {
+	const rows = dedupeListItems(items);
+	const generationId = randomUUID();
+	const completedAt = new Date();
+	await prisma.$transaction(async (tx) => {
+		await tx.traktListCache.deleteMany({ where: { userId, listSlug } });
+		if (rows.length > 0) {
+			await tx.traktListCache.createMany({
+				data: rows.map((item) => ({
+					userId,
+					listSlug,
+					tmdbId: item.tmdbId,
+					mediaType: item.mediaType,
+					title: item.title,
+					generation: generationId,
+					refreshedAt: completedAt,
+				})),
+			});
+		}
+		await tx.listCacheRefreshStatus.upsert({
+			where: { userId_provider_listKey: { userId, provider: "trakt", listKey: listSlug } },
+			create: {
+				userId,
+				provider: "trakt",
+				listKey: listSlug,
+				generationId,
+				lastRefreshedAt: completedAt,
+				lastResult: "success",
+				itemCount: rows.length,
+				lastAttemptAt: completedAt,
+				lastAttemptResult: "success",
+			},
+			update: {
+				generationId,
+				lastRefreshedAt: completedAt,
+				lastResult: "success",
+				lastErrorMessage: null,
+				itemCount: rows.length,
+				lastAttemptAt: completedAt,
+				lastAttemptResult: "success",
+				lastAttemptErrorMessage: null,
+			},
+		});
+	});
+}
+
+async function recordListRefreshFailure(
+	prisma: PrismaClient,
+	userId: string,
+	provider: "tmdb" | "trakt",
+	listKey: string,
+	message: string,
+): Promise<void> {
+	const attemptedAt = new Date();
+	await prisma.listCacheRefreshStatus.upsert({
+		where: { userId_provider_listKey: { userId, provider, listKey } },
+		create: {
+			userId,
+			provider,
+			listKey,
+			lastErrorMessage: message,
+			lastAttemptAt: attemptedAt,
+			lastAttemptResult: "error",
+			lastAttemptErrorMessage: message,
+		},
+		update: {
+			lastErrorMessage: message,
+			lastAttemptAt: attemptedAt,
+			lastAttemptResult: "error",
+			lastAttemptErrorMessage: message,
+		},
+	});
+}
 
 /**
  * Walk every enabled AutoTagRule and extract the (userId, listIdentifier)
@@ -316,18 +459,35 @@ async function deleteOrphanedTmdbCacheRows(
 	// For each user, delete cache rows for listIds no longer referenced
 	// by any enabled rule.
 	let deleted = 0;
-	const userIds = await prisma.tmdbListCache.findMany({
-		select: { userId: true },
-		distinct: ["userId"],
-	});
-	for (const { userId } of userIds) {
+	const [rowUsers, statusUsers] = await Promise.all([
+		prisma.tmdbListCache.findMany({
+			select: { userId: true },
+			distinct: ["userId"],
+		}),
+		prisma.listCacheRefreshStatus.findMany({
+			where: { provider: "tmdb" },
+			select: { userId: true },
+			distinct: ["userId"],
+		}),
+	]);
+	const userIds = [...new Set([...rowUsers, ...statusUsers].map(({ userId }) => userId))];
+	for (const userId of userIds) {
 		const activeListIds = [...(activeTargets.get(userId) ?? new Set<string>())];
-		const result = await prisma.tmdbListCache.deleteMany({
-			where: {
-				userId,
-				listId: activeListIds.length > 0 ? { notIn: activeListIds } : undefined, // no active lists → delete all this user's rows
-				...(activeListIds.length === 0 ? {} : {}),
-			},
+		const result = await prisma.$transaction(async (tx) => {
+			const deletedRows = await tx.tmdbListCache.deleteMany({
+				where: {
+					userId,
+					listId: activeListIds.length > 0 ? { notIn: activeListIds } : undefined,
+				},
+			});
+			await tx.listCacheRefreshStatus.deleteMany({
+				where: {
+					userId,
+					provider: "tmdb",
+					listKey: activeListIds.length > 0 ? { notIn: activeListIds } : undefined,
+				},
+			});
+			return deletedRows;
 		});
 		deleted += result.count;
 	}
@@ -339,17 +499,32 @@ async function deleteOrphanedTraktCacheRows(
 	activeTargets: Map<string, Set<string>>,
 ): Promise<number> {
 	let deleted = 0;
-	const userIds = await prisma.traktListCache.findMany({
-		select: { userId: true },
-		distinct: ["userId"],
-	});
-	for (const { userId } of userIds) {
+	const [rowUsers, statusUsers] = await Promise.all([
+		prisma.traktListCache.findMany({ select: { userId: true }, distinct: ["userId"] }),
+		prisma.listCacheRefreshStatus.findMany({
+			where: { provider: "trakt" },
+			select: { userId: true },
+			distinct: ["userId"],
+		}),
+	]);
+	const userIds = [...new Set([...rowUsers, ...statusUsers].map(({ userId }) => userId))];
+	for (const userId of userIds) {
 		const activeListSlugs = [...(activeTargets.get(userId) ?? new Set<string>())];
-		const result = await prisma.traktListCache.deleteMany({
-			where: {
-				userId,
-				listSlug: activeListSlugs.length > 0 ? { notIn: activeListSlugs } : undefined,
-			},
+		const result = await prisma.$transaction(async (tx) => {
+			const deletedRows = await tx.traktListCache.deleteMany({
+				where: {
+					userId,
+					listSlug: activeListSlugs.length > 0 ? { notIn: activeListSlugs } : undefined,
+				},
+			});
+			await tx.listCacheRefreshStatus.deleteMany({
+				where: {
+					userId,
+					provider: "trakt",
+					listKey: activeListSlugs.length > 0 ? { notIn: activeListSlugs } : undefined,
+				},
+			});
+			return deletedRows;
 		});
 		deleted += result.count;
 	}

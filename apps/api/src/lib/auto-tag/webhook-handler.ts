@@ -18,15 +18,21 @@
  */
 
 import { createHash } from "node:crypto";
+import type { DataSourceDependency } from "@arr/shared";
 import { ArrError } from "arr-sdk";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClient, ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
-import { buildEvalContext } from "../library-cleanup/cleanup-executor.js";
-import { evaluateSingleCondition } from "../library-cleanup/rule-evaluators.js";
+import { buildEvalContextWithHealth } from "../library-cleanup/cleanup-executor.js";
+import {
+	evaluateSingleConditionState,
+	type RuleEvaluationState,
+} from "../library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval } from "../library-cleanup/types.js";
 import type { AutoTagRule, PrismaClient, ServiceInstance, User } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
+import { loadCompleteListEvidence } from "./list-evidence-loader.js";
+import { adaptLiveArrItemForAutoTag } from "./live-arr-evidence.js";
 
 export interface WebhookHandlerDeps {
 	prisma: PrismaClient;
@@ -138,18 +144,18 @@ export async function processWebhook(opts: {
 	// Build prefetch context once, in case any rule needs Plex/Jellyfin/Seerr
 	// prefetched data. The rules pass their criteria types in via the same
 	// shape `buildEvalContext` expects.
-	const ctx = await safeBuildContext(deps, user.id, applicable, log);
+	const { ctx, failedSources } = await safeBuildContext(deps, user.id, applicable, log);
 
 	let tagsApplied = 0;
-	const tagsToApply: string[] = [];
+	const candidateRules: AutoTagRule[] = [];
 	for (const rule of applicable) {
 		const ruleInput = adaptRuleForEval(rule);
-		if (matchesRule(cacheItem, ruleInput, ctx)) {
-			tagsToApply.push(rule.tagName);
+		if (matchesRule(cacheItem, ruleInput, ctx, failedSources) === "true") {
+			candidateRules.push(rule);
 		}
 	}
 
-	if (tagsToApply.length === 0) {
+	if (candidateRules.length === 0) {
 		return {
 			status: "ok",
 			message: "No rules matched the imported item.",
@@ -159,39 +165,56 @@ export async function processWebhook(opts: {
 
 	// Apply each unique tag. Use ensureTag + series/movie.update with merge
 	// semantics — same pattern as the scheduled executor.
-	const uniqueTags = [...new Set(tagsToApply)];
-
-	// `cacheItem.data` is the JSON-stringified full *arr item we already
-	// fetched in `fetchAndAdaptItem` above — reuse it instead of doing a
-	// second `getById` (which on transient failure used to silent-fall-back
-	// to `existingTags = []` and erase the user's existing tags on write).
-	const existingTags = extractItemTags(cacheItem.data);
-
-	const newTagIds: number[] = [];
+	const uniqueTags = [...new Set(candidateRules.map((rule) => rule.tagName))];
+	const tagIds = new Map<string, number>();
 	for (const tagName of uniqueTags) {
 		try {
 			const tagId = await ensureTag(arrClient, tagName);
-			if (!existingTags.includes(tagId) && !newTagIds.includes(tagId)) {
-				newTagIds.push(tagId);
-			}
-			tagsApplied++;
+			tagIds.set(tagName, tagId);
 		} catch (err) {
 			log.warn({ err, tag: tagName }, "Failed to ensure tag");
 		}
 	}
 
-	if (newTagIds.length > 0) {
-		const merged = [...existingTags, ...newTagIds];
-		try {
-			const accessor = event.mediaType === "series" ? "series" : "movie";
-			// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
-			const resource = (arrClient as any)[accessor];
-			await resource.update(event.arrItemId, { id: event.arrItemId, tags: merged });
-		} catch (err) {
-			const reason = err instanceof ArrError ? err.message : String(err);
-			log.warn({ err: reason }, "Failed to update item tags");
-			return { status: "error", message: `Tag update failed: ${reason}` };
+	try {
+		const accessor = event.mediaType === "series" ? "series" : "movie";
+		// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
+		const resource = (arrClient as any)[accessor];
+		const fullItem = (await resource.getById(event.arrItemId)) as Record<string, unknown>;
+		const latestItem = adaptLiveArrItemForAutoTag(fullItem, {
+			instanceId: instance.id,
+			arrItemId: event.arrItemId,
+			itemType: event.mediaType,
+		});
+		const latestEvidence = await safeBuildContext(deps, user.id, candidateRules, log);
+		const matchingTagIds: number[] = [];
+		for (const rule of candidateRules) {
+			const ruleInput = adaptRuleForEval(rule);
+			if (
+				matchesRule(latestItem, ruleInput, latestEvidence.ctx, latestEvidence.failedSources) !==
+				"true"
+			) {
+				continue;
+			}
+			const tagId = tagIds.get(rule.tagName);
+			if (tagId === undefined) continue;
+			tagsApplied++;
+			if (!matchingTagIds.includes(tagId)) matchingTagIds.push(tagId);
 		}
+
+		const existingTags = extractItemTags(latestItem.data);
+		const newTagIds = matchingTagIds.filter((tagId) => !existingTags.includes(tagId));
+		if (newTagIds.length > 0) {
+			await resource.update(event.arrItemId, {
+				...fullItem,
+				id: event.arrItemId,
+				tags: [...existingTags, ...newTagIds],
+			});
+		}
+	} catch (err) {
+		const reason = err instanceof ArrError ? err.message : String(err);
+		log.warn({ err: reason }, "Failed to revalidate or update item tags");
+		return { status: "error", message: `Tag update failed: ${reason}` };
 	}
 
 	return {
@@ -206,12 +229,10 @@ export async function processWebhook(opts: {
 // Connect payload parsing
 // ============================================================================
 
-interface ConnectEvent {
-	kind: "import" | "test" | "unsupported";
-	mediaType?: "series" | "movie";
-	arrItemId?: number;
-	reason?: string;
-}
+type ConnectEvent =
+	| { kind: "import"; mediaType: "series" | "movie"; arrItemId: number }
+	| { kind: "test" }
+	| { kind: "unsupported"; reason: string };
 
 function parseConnectEvent(payload: unknown): ConnectEvent {
 	if (!payload || typeof payload !== "object") {
@@ -260,12 +281,9 @@ function parseConnectEvent(payload: unknown): ConnectEvent {
 
 async function fetchAndAdaptItem(
 	arrClient: ArrClient,
-	event: ConnectEvent,
+	event: Extract<ConnectEvent, { kind: "import" }>,
 	instanceId: string,
 ): Promise<CacheItemForEval> {
-	if (!event.mediaType || event.arrItemId === undefined) {
-		throw new Error("Cannot fetch item without mediaType + arrItemId");
-	}
 	const accessor = event.mediaType === "series" ? "series" : "movie";
 	// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
 	const resource = (arrClient as any)[accessor];
@@ -273,45 +291,11 @@ async function fetchAndAdaptItem(
 
 	// CacheItemForEval mirrors LibraryCache. We synthesize what the evaluator
 	// needs from the live API response.
-	const r = raw as Record<string, unknown>;
-	const sizeOnDisk = typeof r.sizeOnDisk === "number" ? BigInt(r.sizeOnDisk) : BigInt(0);
-	const arrAddedAt = typeof r.added === "string" ? new Date(r.added) : null;
-	const qualityProfileId = typeof r.qualityProfileId === "number" ? r.qualityProfileId : null;
-	const monitored = typeof r.monitored === "boolean" ? r.monitored : true;
-	const hasFile = inferHasFile(r, event.mediaType);
-	const status = typeof r.status === "string" ? r.status : null;
-	const title = typeof r.title === "string" ? r.title : "(untitled)";
-	const year = typeof r.year === "number" ? r.year : null;
-
-	return {
-		id: `webhook-${instanceId}-${event.arrItemId}`,
+	return adaptLiveArrItemForAutoTag(raw as Record<string, unknown>, {
 		instanceId,
 		arrItemId: event.arrItemId,
 		itemType: event.mediaType,
-		title,
-		year,
-		monitored,
-		hasFile,
-		status,
-		qualityProfileId,
-		qualityProfileName: null,
-		sizeOnDisk,
-		arrAddedAt,
-		data: JSON.stringify(raw),
-	};
-}
-
-function inferHasFile(item: Record<string, unknown>, mediaType: "series" | "movie"): boolean {
-	if (mediaType === "movie") {
-		// Radarr's hasFile is a top-level boolean
-		return typeof item.hasFile === "boolean" ? item.hasFile : false;
-	}
-	// Sonarr's series.hasFile isn't always present; fall back to statistics
-	const stats = item.statistics as Record<string, unknown> | undefined;
-	if (stats && typeof stats.episodeFileCount === "number") {
-		return stats.episodeFileCount > 0;
-	}
-	return false;
+	});
 }
 
 // ============================================================================
@@ -364,18 +348,19 @@ function adaptRuleForEval(rule: AutoTagRule): AdaptedRule {
 function matchesRule(
 	item: CacheItemForEval,
 	rule: AdaptedRule,
-	ctx: Awaited<ReturnType<typeof buildEvalContext>>,
-): boolean {
+	ctx: Awaited<ReturnType<typeof buildEvalContextWithHealth>>["ctx"],
+	failedSources: Set<DataSourceDependency>,
+): RuleEvaluationState {
 	// Apply excludeTags pre-filter (item carries any excluded tag → skip)
 	if (rule.excludeTags && rule.excludeTags.length > 0) {
 		const itemTags = extractItemTags(item.data);
-		if (itemTags.some((t) => rule.excludeTags?.includes(t))) return false;
+		if (itemTags.some((t) => rule.excludeTags?.includes(t))) return "false";
 	}
 	// Apply excludeTitles pre-filter
 	if (rule.excludeTitles && rule.excludeTitles.length > 0) {
 		for (const pattern of rule.excludeTitles) {
 			try {
-				if (new RegExp(pattern, "i").test(item.title)) return false;
+				if (new RegExp(pattern, "i").test(item.title)) return "false";
 			} catch {
 				// invalid regex; skip pattern
 			}
@@ -386,34 +371,46 @@ function matchesRule(
 
 	if (rule.operator && rule.conditions && rule.conditions.length > 0) {
 		if (rule.operator === "AND") {
+			let unknown = false;
 			for (const cond of rule.conditions) {
-				const reason = evaluateSingleCondition(
+				const evaluation = evaluateSingleConditionState(
 					item,
 					cond.ruleType,
 					cond.parameters,
 					ctx,
 					plexLibFilter,
+					failedSources,
 				);
-				if (reason === null) return false;
+				if (evaluation.state === "false") return "false";
+				if (evaluation.state === "unknown") unknown = true;
 			}
-			return true;
+			return unknown ? "unknown" : "true";
 		}
 		// OR
+		let unknown = false;
 		for (const cond of rule.conditions) {
-			const reason = evaluateSingleCondition(
+			const evaluation = evaluateSingleConditionState(
 				item,
 				cond.ruleType,
 				cond.parameters,
 				ctx,
 				plexLibFilter,
+				failedSources,
 			);
-			if (reason !== null) return true;
+			if (evaluation.state === "true") return "true";
+			if (evaluation.state === "unknown") unknown = true;
 		}
-		return false;
+		return unknown ? "unknown" : "false";
 	}
 
-	const reason = evaluateSingleCondition(item, rule.ruleType, rule.parameters, ctx, plexLibFilter);
-	return reason !== null;
+	return evaluateSingleConditionState(
+		item,
+		rule.ruleType,
+		rule.parameters,
+		ctx,
+		plexLibFilter,
+		failedSources,
+	).state;
 }
 
 async function safeBuildContext(
@@ -421,21 +418,76 @@ async function safeBuildContext(
 	userId: string,
 	rules: AutoTagRule[],
 	log: FastifyBaseLogger,
-): Promise<Awaited<ReturnType<typeof buildEvalContext>>> {
+): Promise<Awaited<ReturnType<typeof buildEvalContextWithHealth>>> {
 	try {
-		return await buildEvalContext(
-			{ prisma: deps.prisma, arrClientFactory: deps.arrClientFactory, log },
+		const evidence = await buildEvalContextWithHealth(
+			{
+				prisma: deps.prisma,
+				arrClientFactory: deps.arrClientFactory,
+				encryptor: deps.encryptor,
+				log,
+			},
 			userId,
 			rules.map((r) => ({
 				enabled: true,
 				ruleType: r.ruleType,
+				parameters: r.parameters,
+				operator: r.operator,
 				conditions: r.conditions,
+				plexLibraryFilter: r.plexLibraryFilter,
 			})),
 		);
+		const tmdbKeys = collectRawListIdentifiers(rules, "tmdb_list_member", "listId");
+		if (tmdbKeys.length > 0) {
+			const lists = await loadCompleteListEvidence(deps.prisma, userId, "tmdb", tmdbKeys);
+			if (lists) {
+				evidence.ctx.tmdbListMemberships = lists.memberships;
+				evidence.failedSources.delete("tmdb");
+			} else {
+				evidence.ctx.tmdbListMemberships = undefined;
+				evidence.failedSources.add("tmdb");
+			}
+		}
+		const traktKeys = collectRawListIdentifiers(rules, "trakt_list_member", "listSlug");
+		if (traktKeys.length > 0) {
+			const lists = await loadCompleteListEvidence(deps.prisma, userId, "trakt", traktKeys);
+			if (lists) {
+				evidence.ctx.traktListMemberships = lists.memberships;
+				evidence.failedSources.delete("trakt");
+			} else {
+				evidence.ctx.traktListMemberships = undefined;
+				evidence.failedSources.add("trakt");
+			}
+		}
+		return evidence;
 	} catch (err) {
-		log.warn({ err }, "Failed to build evaluation context — continuing with empty maps");
-		return { now: new Date() };
+		log.warn({ err }, "Failed to build evaluation context — provider rules remain unknown");
+		return {
+			ctx: { now: new Date() },
+			failedSources: new Set(["seerr", "tautulli", "plex", "jellyfin", "tmdb", "trakt"]),
+		};
 	}
+}
+
+function collectRawListIdentifiers(
+	rules: AutoTagRule[],
+	ruleType: "tmdb_list_member" | "trakt_list_member",
+	parameterName: "listId" | "listSlug",
+): string[] {
+	const values = new Set<string>();
+	for (const rule of rules) {
+		const adapted = adaptRuleForEval(rule);
+		if (adapted.ruleType === ruleType) {
+			const value = adapted.parameters[parameterName];
+			if (typeof value === "string" && value.length > 0) values.add(value);
+		}
+		for (const condition of adapted.conditions ?? []) {
+			if (condition.ruleType !== ruleType) continue;
+			const value = condition.parameters[parameterName];
+			if (typeof value === "string" && value.length > 0) values.add(value);
+		}
+	}
+	return [...values].sort();
 }
 
 // ============================================================================

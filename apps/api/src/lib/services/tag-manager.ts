@@ -27,7 +27,7 @@ export async function upsertTags(
  * Updates tags for a service instance
  */
 export async function updateInstanceTags(
-	prisma: PrismaClient,
+	prisma: Pick<PrismaClient, "serviceInstanceTag" | "serviceTag">,
 	instanceId: string,
 	tagNames: string[],
 ): Promise<void> {

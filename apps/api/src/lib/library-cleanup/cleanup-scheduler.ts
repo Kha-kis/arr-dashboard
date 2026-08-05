@@ -19,6 +19,13 @@ import {
 } from "../scheduler-registry/scheduler-registry.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import {
+	approvalRecordToAuditSnapshot,
+	cleanupAuditEnabled,
+	recordApprovalExpired,
+	recordApprovalRecoveryTransition,
+	runCleanupAuditBestEffort,
+} from "./cleanup-audit.js";
+import {
 	CLEANUP_RUN_LEASE_MS,
 	CleanupRunAlreadyInProgressError,
 	executeCleanupRun,
@@ -28,6 +35,7 @@ import {
 	CleanupMaintenanceConflictError,
 	withCleanupOperationGuard,
 } from "./cleanup-maintenance-gate.js";
+import { retryAllPendingMediaServerRescans } from "./media-server-rescan.js";
 import type { CleanupExecutorDeps, CleanupRunResult } from "./types.js";
 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
@@ -178,102 +186,287 @@ export class CleanupScheduler {
 
 		try {
 			await withCleanupOperationGuard(async () => {
-				// Expire stale pending approvals
-				await this.prisma.libraryCleanupApproval
-					.updateMany({
-						where: { status: "pending", expiresAt: { lt: new Date() } },
-						data: { status: "expired" },
-					})
-					.catch((err) => {
-						this.logger.warn({ err }, "Failed to expire stale approvals");
+				try {
+					const rescanResult = await retryAllPendingMediaServerRescans({
+						prisma: this.prisma,
+						arrClientFactory: this.arrClientFactory,
+						encryptor: this.encryptor,
+						auditTrigger: "recovery",
+						log: this.logger,
 					});
+					if (rescanResult.failed > 0) {
+						this.logger.warn(
+							{ failedCount: rescanResult.failed },
+							"Pending cleanup media-server scans remain retryable",
+						);
+					}
+				} catch (error) {
+					this.logger.warn(
+						{ err: error },
+						"Pending cleanup media-server scans could not be retried",
+					);
+				}
+
+				// Expire stale pending approvals
+				const expiryNow = new Date();
+				const expiryAuditRows = cleanupAuditEnabled(this.prisma)
+					? await this.prisma.libraryCleanupApproval.findMany({
+							where: { status: "pending", expiresAt: { lt: expiryNow } },
+						})
+					: [];
+				if (expiryAuditRows.length === 0) {
+					await this.prisma.libraryCleanupApproval
+						.updateMany({
+							where: { status: "pending", expiresAt: { lt: expiryNow } },
+							data: {
+								status: "expired",
+								reviewedAt: expiryNow,
+								lastExecutionError: "Approval expired before operator action.",
+							},
+						})
+						.catch((err) => {
+							this.logger.warn({ err }, "Failed to expire stale approvals");
+						});
+				} else {
+					for (const approval of expiryAuditRows) {
+						try {
+							const transition = await this.prisma.libraryCleanupApproval.updateMany({
+								where: {
+									id: approval.id,
+									status: "pending",
+									expiresAt: { lt: expiryNow },
+								},
+								data: {
+									status: "expired",
+									reviewedAt: expiryNow,
+									lastExecutionError: "Approval expired before operator action.",
+								},
+							});
+							if (transition.count !== 1) continue;
+							await runCleanupAuditBestEffort(
+								() =>
+									recordApprovalExpired(
+										this.prisma,
+										approvalRecordToAuditSnapshot({
+											...approval,
+											status: "expired",
+											reviewedAt: expiryNow,
+											lastExecutionError: "Approval expired before operator action.",
+										}),
+										this.logger,
+									),
+								this.logger,
+								"scheduler approval expiry",
+							);
+						} catch (err) {
+							this.logger.warn({ err, approvalId: approval.id }, "Failed to expire stale approval");
+						}
+					}
+				}
 
 				// Recover stuck "executing" items (crash recovery: >1 hour since approval).
 				// The persisted safety snapshot is reconciled against the live file
 				// remainder when the operator approves it again.
 				const stuckThreshold = new Date(Date.now() - 60 * 60 * 1000);
 				const staleRunLeaseThreshold = new Date(Date.now() - CLEANUP_RUN_LEASE_MS);
+				const recoverableConfigWhere = {
+					OR: [
+						{ runClaimToken: null },
+						{ runClaimedAt: null },
+						{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+					],
+				};
+				const approvedRecoveryAuditRows = cleanupAuditEnabled(this.prisma)
+					? await this.prisma.libraryCleanupApproval.findMany({
+							where: {
+								status: "approved",
+								reviewedAt: { lt: stuckThreshold },
+								config: recoverableConfigWhere,
+							},
+						})
+					: [];
+				const approvedRecoveryAt = new Date();
 				await this.prisma.libraryCleanupApproval
 					.updateMany({
 						where: {
 							status: "approved",
 							reviewedAt: { lt: stuckThreshold },
-							config: {
-								OR: [
-									{ runClaimToken: null },
-									{ runClaimedAt: null },
-									{ runClaimedAt: { lt: staleRunLeaseThreshold } },
-								],
-							},
+							config: recoverableConfigWhere,
 						},
 						data: {
 							status: "pending",
 							executionToken: null,
+							reviewedAt: approvedRecoveryAt,
 							lastExecutionError:
 								"Recovered an interrupted approval request. Review and approve again.",
 						},
 					})
-					.then((result) => {
+					.then(async (result) => {
 						if (result.count > 0) {
 							this.logger.warn(
 								{ recoveredCount: result.count },
 								"Recovered stuck approved cleanup items — returned them to pending review",
+							);
+							await runCleanupAuditBestEffort(
+								async () => {
+									const transitioned = await this.prisma.libraryCleanupApproval.findMany({
+										where: {
+											id: { in: approvedRecoveryAuditRows.map((approval) => approval.id) },
+											status: "pending",
+											reviewedAt: approvedRecoveryAt,
+											lastExecutionError:
+												"Recovered an interrupted approval request. Review and approve again.",
+										},
+									});
+									for (const approval of transitioned) {
+										await recordApprovalRecoveryTransition(
+											this.prisma,
+											{
+												approval: approvalRecordToAuditSnapshot(approval),
+												correlationId: `recovery:${approval.id}:approved:${approval.reviewedAt?.getTime() ?? 0}`,
+												fromStatus: "approved",
+												toStatus: "pending",
+												reason:
+													"Recovered an interrupted approval request. Review and approve again.",
+												mutationOutcome: "not_started",
+												trigger: "scheduled",
+											},
+											this.logger,
+										);
+									}
+								},
+								this.logger,
+								"scheduler approved recovery",
 							);
 						}
 					})
 					.catch((err) => {
 						this.logger.warn({ err }, "Failed to recover stuck approved cleanup items");
 					});
+				const executingRecoveryAuditRows = cleanupAuditEnabled(this.prisma)
+					? await this.prisma.libraryCleanupApproval.findMany({
+							where: {
+								status: "executing",
+								reviewedAt: { lt: stuckThreshold },
+								config: recoverableConfigWhere,
+							},
+						})
+					: [];
+				const executingRecoveryAt = new Date();
 				await this.prisma.libraryCleanupApproval
 					.updateMany({
 						where: {
 							status: "executing",
 							reviewedAt: { lt: stuckThreshold },
-							config: {
-								OR: [
-									{ runClaimToken: null },
-									{ runClaimedAt: null },
-									{ runClaimedAt: { lt: staleRunLeaseThreshold } },
-								],
-							},
+							config: recoverableConfigWhere,
 						},
 						data: {
 							status: "pending",
 							executionToken: null,
+							reviewedAt: executingRecoveryAt,
 							lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
 						},
 					})
-					.then((result) => {
+					.then(async (result) => {
 						if (result.count > 0) {
 							this.logger.warn(
 								{ recoveredCount: result.count },
 								"Recovered stuck executing approval items — returned them to pending review",
+							);
+							await runCleanupAuditBestEffort(
+								async () => {
+									const transitioned = await this.prisma.libraryCleanupApproval.findMany({
+										where: {
+											id: { in: executingRecoveryAuditRows.map((approval) => approval.id) },
+											status: "pending",
+											reviewedAt: executingRecoveryAt,
+											lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+										},
+									});
+									for (const approval of transitioned) {
+										await recordApprovalRecoveryTransition(
+											this.prisma,
+											{
+												approval: approvalRecordToAuditSnapshot(approval),
+												correlationId: `recovery:${approval.id}:executing:${approval.reviewedAt?.getTime() ?? 0}`,
+												fromStatus: "executing",
+												toStatus: "pending",
+												reason: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+												mutationOutcome: "unknown",
+												trigger: "scheduled",
+											},
+											this.logger,
+										);
+									}
+								},
+								this.logger,
+								"scheduler executing recovery",
 							);
 						}
 					})
 					.catch((err) => {
 						this.logger.warn({ err }, "Failed to recover stuck executing approvals");
 					});
+				const retryRecoveryAuditRows = cleanupAuditEnabled(this.prisma)
+					? await this.prisma.libraryCleanupApproval.findMany({
+							where: {
+								status: "retry_executing",
+								reviewedAt: { lt: stuckThreshold },
+								config: recoverableConfigWhere,
+							},
+						})
+					: [];
+				const retryRecoveryAt = new Date();
+				const retryRecoveryReason =
+					"Recovered an interrupted record-only cleanup retry for another safe attempt.";
 				await this.prisma.libraryCleanupApproval
 					.updateMany({
 						where: {
 							status: "retry_executing",
 							reviewedAt: { lt: stuckThreshold },
-							config: {
-								OR: [
-									{ runClaimToken: null },
-									{ runClaimedAt: null },
-									{ runClaimedAt: { lt: staleRunLeaseThreshold } },
-								],
-							},
+							config: recoverableConfigWhere,
 						},
-						data: { status: "retry_pending", executionToken: null },
+						data: {
+							status: "retry_pending",
+							executionToken: null,
+							reviewedAt: retryRecoveryAt,
+							lastExecutionError: retryRecoveryReason,
+						},
 					})
-					.then((result) => {
+					.then(async (result) => {
 						if (result.count > 0) {
 							this.logger.warn(
 								{ recoveredCount: result.count },
 								"Recovered stuck record-only cleanup retries — returned them to retry pending",
+							);
+							await runCleanupAuditBestEffort(
+								async () => {
+									const transitioned = await this.prisma.libraryCleanupApproval.findMany({
+										where: {
+											id: { in: retryRecoveryAuditRows.map((approval) => approval.id) },
+											status: "retry_pending",
+											reviewedAt: retryRecoveryAt,
+											lastExecutionError: retryRecoveryReason,
+										},
+									});
+									for (const approval of transitioned) {
+										await recordApprovalRecoveryTransition(
+											this.prisma,
+											{
+												approval: approvalRecordToAuditSnapshot(approval),
+												correlationId: `recovery:${approval.id}:retry:${approval.reviewedAt?.getTime() ?? 0}`,
+												fromStatus: "retry_executing",
+												toStatus: "retry_pending",
+												reason: retryRecoveryReason,
+												mutationOutcome: "unknown",
+												trigger: "scheduled",
+											},
+											this.logger,
+										);
+									}
+								},
+								this.logger,
+								"scheduler retry recovery",
 							);
 						}
 					})
@@ -307,6 +500,8 @@ export class CleanupScheduler {
 							encryptor: this.encryptor,
 							quiClientFactory: this.quiClientFactory,
 							quiFileHashIndexFactory: this.quiFileHashIndexFactory,
+							auditTrigger: "scheduled",
+							skipPendingMediaServerRescanRetry: true,
 							log: this.logger,
 						},
 						config.userId,

@@ -10,7 +10,7 @@ afterEach(() => {
 });
 
 describe("PlexClient.getMovieMediaPartsByTmdbId", () => {
-	it("uses a targeted GUID query and returns file identity for the matched item", async () => {
+	it("matches an alternate TMDb GUID from the complete movie inventory", async () => {
 		const fetchMock = vi.fn().mockResolvedValue(
 			new Response(
 				JSON.stringify({
@@ -52,7 +52,8 @@ describe("PlexClient.getMovieMediaPartsByTmdbId", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		const requestedUrl = new URL(fetchMock.mock.calls[0]![0] as string);
 		expect(requestedUrl.pathname).toBe("/library/all");
-		expect(requestedUrl.searchParams.get("guid")).toBe("tmdb://42");
+		expect(requestedUrl.searchParams.has("guid")).toBe(false);
+		expect(requestedUrl.searchParams.get("type")).toBe("1");
 		expect(requestedUrl.searchParams.get("includeMedia")).toBe("1");
 	});
 
@@ -76,6 +77,62 @@ describe("PlexClient.getMovieMediaPartsByTmdbId", () => {
 		await expect(client.getMovieMediaPartsByTmdbId(42)).rejects.toThrow(
 			"no movie item for TMDb 42",
 		);
+	});
+
+	it("pages past unrelated primary GUIDs before matching the alternate TMDb GUID", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						MediaContainer: {
+							offset: 0,
+							size: 1,
+							totalSize: 2,
+							Metadata: [
+								{
+									ratingKey: "plex-primary-other",
+									Guid: [{ id: "tmdb://999" }],
+									Media: [{ Part: [{ file: "/movies/Other.mkv", size: 500 }] }],
+								},
+							],
+						},
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						MediaContainer: {
+							offset: 1,
+							size: 1,
+							totalSize: 2,
+							Metadata: [
+								{
+									ratingKey: "plex-primary-target",
+									Guid: [{ id: "tmdb://42" }],
+									Media: [{ Part: [{ file: "/movies/Target.mkv", size: 1000 }] }],
+								},
+							],
+						},
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex:32400", "token", log);
+
+		await expect(client.getMovieMediaPartsByTmdbId(42)).resolves.toEqual([
+			{
+				ratingKey: "plex-primary-target",
+				parts: [{ file: "/movies/Target.mkv", size: 1000 }],
+			},
+		]);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(
+			new URL(fetchMock.mock.calls[1]![0] as string).searchParams.get("X-Plex-Container-Start"),
+		).toBe("1");
 	});
 
 	it("rejects a matched part without a path and size", async () => {
@@ -203,7 +260,8 @@ describe("PlexClient.getSeriesEpisodeMediaPartsByTvdbId", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		const showUrl = new URL(fetchMock.mock.calls[0]![0] as string);
 		expect(showUrl.pathname).toBe("/library/all");
-		expect(showUrl.searchParams.get("guid")).toBe("tvdb://123");
+		expect(showUrl.searchParams.has("guid")).toBe(false);
+		expect(showUrl.searchParams.get("type")).toBe("2");
 		expect(fetchMock.mock.calls[1]![0]).toContain(
 			"/library/metadata/show-1/allLeaves?includeMedia=1",
 		);

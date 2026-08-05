@@ -123,4 +123,26 @@ describe("buildCacheHealthItems", () => {
 
 		expect(items[0]!.lastResult).toBe("partial");
 	});
+
+	it("reports a newer failed attempt as degraded without replacing the successful timestamp", () => {
+		const failedAt = new Date(baseDateMs + 60_000);
+		const items = buildCacheHealthItems(
+			[
+				makeRow({
+					lastAttemptAt: failedAt,
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: "upstream pagination failed",
+					lastErrorMessage: "upstream pagination failed",
+				}),
+			],
+			instanceNameMap,
+			failedAt.getTime(),
+		);
+
+		expect(items[0]).toMatchObject({
+			lastRefreshedAt: baseDate.toISOString(),
+			lastResult: "partial",
+			lastErrorMessage: "upstream pagination failed",
+		});
+	});
 });

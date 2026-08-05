@@ -51,6 +51,7 @@ describe("episode cleanup scope", () => {
 			name: "Remove watched episodes",
 			parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
 			action: "delete",
+			scanMediaServerAfterDelete: false,
 		});
 
 		expect(match).toEqual({

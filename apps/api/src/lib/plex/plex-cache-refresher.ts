@@ -14,6 +14,7 @@
  * 6. Upsert into PlexCache
  */
 
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
@@ -62,6 +63,19 @@ interface ItemAggregation {
 	thumb: string | null;
 }
 
+function onDeckSignature(items: Awaited<ReturnType<PlexClient["getOnDeck"]>>): string[] {
+	return items
+		.map((item) =>
+			JSON.stringify([
+				item.type,
+				item.ratingKey,
+				item.parentRatingKey ?? null,
+				item.grandparentRatingKey ?? null,
+			]),
+		)
+		.sort();
+}
+
 // ============================================================================
 // Refresher
 // ============================================================================
@@ -74,14 +88,28 @@ export async function refreshPlexCache(
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-): Promise<{ upserted: number; errors: number; errorMessages: string[] }> {
+): Promise<{
+	upserted: number;
+	errors: number;
+	errorMessages: string[];
+	complete: boolean;
+	completedAt?: Date;
+}> {
 	let upserted = 0;
 	let errors = 0;
+	let complete = true;
+	let completedAt: Date | undefined;
 	const errorMessages: string[] = [];
 
 	try {
 		// 1. Build accountId → username map
 		const accounts = await client.getAccounts();
+		if (accounts.length === 0) {
+			complete = false;
+			errors++;
+			errorMessages.push("Plex returned no user accounts");
+			log.warn({ instanceId }, "Plex cache refresh: no user accounts discovered");
+		}
 		const accountMap = new Map<number, string>();
 		for (const account of accounts) {
 			accountMap.set(account.id, account.name);
@@ -90,6 +118,12 @@ export async function refreshPlexCache(
 		// 2. Get library sections (movie and show only)
 		const sections = await client.getLibrarySections();
 		const mediaLibs = sections.filter((s) => s.type === "movie" || s.type === "show");
+		if (mediaLibs.length === 0) {
+			complete = false;
+			errors++;
+			errorMessages.push("Plex returned no movie or show libraries");
+			log.warn({ instanceId }, "Plex cache refresh: no movie or show libraries discovered");
+		}
 
 		// 3. Build ratingKey → item data (TMDB ID, media type, rating, section)
 		const ratingKeyMap = new Map<
@@ -114,7 +148,10 @@ export async function refreshPlexCache(
 				const items = await client.getLibraryItems(lib.key);
 				for (const item of items) {
 					const tmdbId = parsePlexTmdbId(item.Guid);
-					if (!tmdbId) continue;
+					if (!tmdbId) {
+						complete = false;
+						continue;
+					}
 
 					const mediaType: "movie" | "series" = item.type === "movie" ? "movie" : "series";
 					ratingKeyMap.set(item.ratingKey, {
@@ -132,6 +169,7 @@ export async function refreshPlexCache(
 					});
 				}
 			} catch (err) {
+				complete = false;
 				const msg = `Failed to fetch library "${lib.title}": ${getErrorMessage(err)}`;
 				log.warn({ err, sectionId: lib.key, sectionTitle: lib.title }, msg);
 				errors++;
@@ -140,8 +178,7 @@ export async function refreshPlexCache(
 		}
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
-		let history: Awaited<ReturnType<typeof client.getHistory>> | undefined =
-			await client.getHistory({ maxResults: 5000 });
+		const history = await client.getHistory({ maxResults: 100_000, requireComplete: true });
 		const historyCount = history.length;
 		const aggregations = new Map<string, ItemAggregation>();
 
@@ -153,10 +190,17 @@ export async function refreshPlexCache(
 				: entry.ratingKey;
 
 			const itemData = ratingKeyMap.get(itemRatingKey);
-			if (!itemData) continue;
+			if (!itemData) {
+				if (entry.type === "movie" || entry.type === "episode") complete = false;
+				continue;
+			}
 
 			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
-			const username = accountMap.get(entry.accountID) ?? `account-${entry.accountID}`;
+			const username = accountMap.get(entry.accountID);
+			if (!username) {
+				complete = false;
+				continue;
+			}
 
 			const existing = aggregations.get(aggKey);
 			if (existing) {
@@ -187,9 +231,6 @@ export async function refreshPlexCache(
 			}
 		}
 
-		// Release history array — only historyCount is needed from here (#239)
-		history = undefined;
-
 		// Ensure all library items are in aggregations (even if unwatched)
 		for (const [_ratingKey, itemData] of ratingKeyMap) {
 			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
@@ -215,8 +256,10 @@ export async function refreshPlexCache(
 		}
 
 		// 5. Get on-deck items and mark
+		let verifiedOnDeckSignature: string[] = [];
 		try {
 			const onDeckItems = await client.getOnDeck();
+			verifiedOnDeckSignature = onDeckSignature(onDeckItems);
 			for (const deckItem of onDeckItems) {
 				// For episodes, use the show's ratingKey
 				const itemRatingKey =
@@ -225,7 +268,10 @@ export async function refreshPlexCache(
 						: deckItem.ratingKey;
 
 				const itemData = ratingKeyMap.get(itemRatingKey);
-				if (!itemData) continue;
+				if (!itemData) {
+					if (deckItem.type === "movie" || deckItem.type === "episode") complete = false;
+					continue;
+				}
 
 				const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
 				const agg = aggregations.get(aggKey);
@@ -234,6 +280,9 @@ export async function refreshPlexCache(
 				}
 			}
 		} catch (err) {
+			complete = false;
+			errors++;
+			errorMessages.push(`Failed to fetch Plex on-deck items: ${getErrorMessage(err)}`);
 			log.warn({ err }, "Failed to fetch Plex on-deck items");
 		}
 
@@ -241,80 +290,37 @@ export async function refreshPlexCache(
 		const libraryItemCount = ratingKeyMap.size;
 		ratingKeyMap.clear();
 
-		// 6. Upsert into PlexCache in batches (reduces 2000 transactions to ~20)
-		const BATCH_SIZE = 100;
-		const upsertedIds: string[] = [];
+		// 6. Publish one complete generation atomically. Until every upstream
+		// dependency has been verified, the previously published evidence remains
+		// untouched and continues to describe the last successful inventory.
 		const aggregationsArray = [...aggregations.values()];
 		// Release Map hash table — aggregationsArray now owns all references (#239)
 		aggregations.clear();
 
-		for (let i = 0; i < aggregationsArray.length; i += BATCH_SIZE) {
-			const chunk = aggregationsArray.slice(i, i + BATCH_SIZE);
-			try {
-				const results = await prisma.$transaction(
-					chunk.map((agg) =>
-						prisma.plexCache.upsert({
-							where: {
-								instanceId_tmdbId_mediaType_sectionId: {
-									instanceId,
-									tmdbId: agg.tmdbId,
-									mediaType: agg.mediaType,
-									sectionId: agg.sectionId,
-								},
-							},
-							create: {
-								instanceId,
-								tmdbId: agg.tmdbId,
-								mediaType: agg.mediaType,
-								sectionId: agg.sectionId,
-								sectionTitle: agg.sectionTitle,
-								title: agg.title,
-								ratingKey: agg.ratingKey,
-								lastWatchedAt: agg.lastWatchedAt,
-								watchCount: agg.watchCount,
-								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-								onDeck: agg.onDeck,
-								userRating: agg.userRating,
-								collections: JSON.stringify(agg.collections),
-								labels: JSON.stringify(agg.labels),
-								addedAt: agg.addedAt,
-								thumb: agg.thumb,
-							},
-							update: {
-								sectionTitle: agg.sectionTitle,
-								title: agg.title,
-								ratingKey: agg.ratingKey,
-								lastWatchedAt: agg.lastWatchedAt,
-								watchCount: agg.watchCount,
-								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-								onDeck: agg.onDeck,
-								userRating: agg.userRating,
-								collections: JSON.stringify(agg.collections),
-								labels: JSON.stringify(agg.labels),
-								addedAt: agg.addedAt,
-								thumb: agg.thumb,
-							},
-						}),
+		if (errors === 0 && complete) {
+			await client.verifyHistorySnapshot(history);
+			const latestOnDeckSignature = onDeckSignature(await client.getOnDeck());
+			if (JSON.stringify(latestOnDeckSignature) !== JSON.stringify(verifiedOnDeckSignature)) {
+				throw new Error("Plex on-deck state changed before cache publication");
+			}
+			completedAt = new Date();
+			const generationId = randomUUID();
+			const generationMetadata = JSON.stringify({
+				sections: mediaLibs
+					.map((section) => ({ key: section.key, title: section.title, type: section.type }))
+					.sort(
+						(left, right) =>
+							left.key.localeCompare(right.key) ||
+							left.title.localeCompare(right.title) ||
+							left.type.localeCompare(right.type),
 					),
-				);
-				for (const row of results) {
-					upsertedIds.push(row.id);
-					upserted++;
-				}
-			} catch (_error) {
-				// If a batch fails, fall back to individual upserts for that chunk
-				for (const agg of chunk) {
-					try {
-						const row = await prisma.plexCache.upsert({
-							where: {
-								instanceId_tmdbId_mediaType_sectionId: {
-									instanceId,
-									tmdbId: agg.tmdbId,
-									mediaType: agg.mediaType,
-									sectionId: agg.sectionId,
-								},
-							},
-							create: {
+			});
+			try {
+				await prisma.$transaction(async (tx) => {
+					await tx.plexCache.deleteMany({ where: { instanceId } });
+					if (aggregationsArray.length > 0) {
+						await tx.plexCache.createMany({
+							data: aggregationsArray.map((agg) => ({
 								instanceId,
 								tmdbId: agg.tmdbId,
 								mediaType: agg.mediaType,
@@ -331,53 +337,47 @@ export async function refreshPlexCache(
 								labels: JSON.stringify(agg.labels),
 								addedAt: agg.addedAt,
 								thumb: agg.thumb,
-							},
-							update: {
-								sectionTitle: agg.sectionTitle,
-								title: agg.title,
-								ratingKey: agg.ratingKey,
-								lastWatchedAt: agg.lastWatchedAt,
-								watchCount: agg.watchCount,
-								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-								onDeck: agg.onDeck,
-								userRating: agg.userRating,
-								collections: JSON.stringify(agg.collections),
-								labels: JSON.stringify(agg.labels),
-								addedAt: agg.addedAt,
-								thumb: agg.thumb,
-							},
+							})),
 						});
-						upsertedIds.push(row.id);
-						upserted++;
-					} catch (itemError) {
-						const msg = `Failed to upsert ${agg.mediaType} tmdb:${agg.tmdbId}: ${getErrorMessage(itemError)}`;
-						errors++;
-						errorMessages.push(msg);
-						log.warn(
-							{ err: itemError, instanceId, tmdbId: agg.tmdbId, mediaType: agg.mediaType },
-							msg,
-						);
 					}
-				}
+					await tx.cacheRefreshStatus.upsert({
+						where: { instanceId_cacheType: { instanceId, cacheType: "plex" } },
+						create: {
+							instanceId,
+							cacheType: "plex",
+							lastRefreshedAt: completedAt!,
+							lastResult: "success",
+							itemCount: aggregationsArray.length,
+							generationId,
+							generationMetadata,
+							lastAttemptAt: completedAt!,
+							lastAttemptResult: "success",
+						},
+						update: {
+							lastRefreshedAt: completedAt!,
+							lastResult: "success",
+							lastErrorMessage: null,
+							itemCount: aggregationsArray.length,
+							generationId,
+							generationMetadata,
+							lastAttemptAt: completedAt!,
+							lastAttemptResult: "success",
+							lastAttemptErrorMessage: null,
+						},
+					});
+				});
+				upserted = aggregationsArray.length;
+			} catch (error) {
+				complete = false;
+				completedAt = undefined;
+				errors++;
+				errorMessages.push(`Atomic Plex cache publication failed: ${getErrorMessage(error)}`);
+				log.error({ err: error, instanceId }, "Plex cache atomic publication failed");
 			}
-		}
-
-		// Evict stale rows: items that were in a previous refresh but no longer exist in Plex.
-		//
-		// NOTE: We cannot do `deleteMany({ id: { notIn: upsertedIds } })` here — Prisma binds
-		// each id as a separate parameter, and libraries with >999 cached items blow past
-		// SQLite's default SQLITE_MAX_VARIABLE_NUMBER, surfacing as Prisma P2029 (issue #323).
-		// Instead we read the existing ids, compute the stale diff in memory, and delete in
-		// bounded chunks using `id: { in: chunk }` so each statement stays well under the limit.
-		if (upsertedIds.length > 0) {
-			const evictedCount = await evictStaleRows(prisma, instanceId, upsertedIds);
-			if (evictedCount > 0) {
-				log.info({ instanceId, evicted: evictedCount }, "Plex cache: evicted stale rows");
-			}
-		} else if (aggregationsArray.length > 0) {
+		} else {
 			log.warn(
 				{ instanceId, aggregationSize: aggregationsArray.length, errors },
-				"Plex cache: skipping eviction — all upserts failed, stale rows may accumulate",
+				"Plex cache: skipping eviction because the refreshed inventory was incomplete",
 			);
 		}
 
@@ -393,13 +393,14 @@ export async function refreshPlexCache(
 			"Plex cache refresh complete",
 		);
 	} catch (error) {
+		complete = false;
 		const msg = `Plex cache refresh failed: ${getErrorMessage(error)}`;
 		log.error({ err: error, instanceId }, msg);
 		errors++;
 		errorMessages.push(msg);
 	}
 
-	return { upserted, errors, errorMessages };
+	return { upserted, errors, errorMessages, complete: complete && errors === 0, completedAt };
 }
 
 // ============================================================================

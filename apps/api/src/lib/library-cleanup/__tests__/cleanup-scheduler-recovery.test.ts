@@ -1,4 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const executorMocks = vi.hoisted(() => ({ executeCleanupRun: vi.fn() }));
+const rescanMocks = vi.hoisted(() => ({
+	retryAllPendingMediaServerRescans: vi
+		.fn()
+		.mockResolvedValue({ targets: 0, triggered: 0, failed: 0, warnings: [] }),
+}));
+vi.mock("../cleanup-executor.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../cleanup-executor.js")>()),
+	executeCleanupRun: executorMocks.executeCleanupRun,
+}));
+vi.mock("../media-server-rescan.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../media-server-rescan.js")>()),
+	retryAllPendingMediaServerRescans: rescanMocks.retryAllPendingMediaServerRescans,
+}));
+
 import { CleanupScheduler } from "../cleanup-scheduler.js";
 import {
 	CleanupMaintenanceConflictError,
@@ -8,6 +24,63 @@ import {
 describe("library cleanup scheduler recovery", () => {
 	afterEach(() => {
 		vi.useRealTimers();
+		vi.clearAllMocks();
+	});
+
+	it("retries durable media-server scans even when cleanup is disabled or not due", async () => {
+		const prisma = {
+			libraryCleanupApproval: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+			libraryCleanupConfig: { findFirst: vi.fn().mockResolvedValue(null) },
+		};
+		const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+		const scheduler = new CleanupScheduler(prisma as never, {} as never, {} as never, log as never);
+
+		await (scheduler as unknown as { checkAndRun: () => Promise<void> }).checkAndRun();
+
+		expect(rescanMocks.retryAllPendingMediaServerRescans).toHaveBeenCalledWith(
+			expect.objectContaining({ prisma, auditTrigger: "recovery" }),
+		);
+		expect(executorMocks.executeCleanupRun).not.toHaveBeenCalled();
+	});
+
+	it("passes scheduled audit origin into an automatically consumed retry run", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-08-03T12:00:00.000Z"));
+		executorMocks.executeCleanupRun.mockResolvedValue({
+			isDryRun: false,
+			status: "completed",
+			itemsEvaluated: 0,
+			itemsFlagged: 0,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 0,
+			details: [],
+			durationMs: 1,
+		});
+		const prisma = {
+			libraryCleanupApproval: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
+			libraryCleanupConfig: {
+				findFirst: vi.fn().mockResolvedValue({
+					id: "config-1",
+					userId: "user-1",
+					enabled: true,
+					nextRunAt: new Date("2026-08-03T11:00:00.000Z"),
+					intervalHours: 24,
+					dryRunMode: false,
+				}),
+				update: vi.fn().mockResolvedValue({}),
+			},
+		};
+		const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+		const scheduler = new CleanupScheduler(prisma as never, {} as never, {} as never, log as never);
+
+		await (scheduler as unknown as { checkAndRun: () => Promise<void> }).checkAndRun();
+
+		expect(executorMocks.executeCleanupRun).toHaveBeenCalledWith(
+			expect.objectContaining({ auditTrigger: "scheduled" }),
+			"user-1",
+		);
 	});
 
 	it("recovers stale execution rows only when their config has no active run lease", async () => {
@@ -108,6 +181,110 @@ describe("library cleanup scheduler recovery", () => {
 			approvalUpdateMany.mock.calls.find(([args]) => args.where.status === "executing")?.[0].where
 				.config,
 		).toBeDefined();
+	});
+
+	it("appends expiry and crash-recovery events only after the authoritative transitions", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-30T15:00:00.000Z"));
+		const expired = {
+			id: "expired-1",
+			configId: "config-1",
+			instanceId: "radarr-1",
+			arrItemId: 1,
+			itemType: "movie",
+			targetScope: "series",
+			arrEpisodeId: null,
+			title: "Expired",
+			matchedRuleId: "rule-1",
+			matchedRuleName: "Old",
+			reason: "Matched",
+			action: "delete",
+			status: "pending",
+			reviewedAt: null as Date | null,
+			expiresAt: new Date("2026-07-30T14:00:00.000Z"),
+			lastExecutionError: null as string | null,
+		};
+		const crashed = {
+			...expired,
+			id: "crashed-1",
+			title: "Crashed",
+			status: "executing",
+			reviewedAt: new Date("2026-07-30T12:00:00.000Z"),
+			expiresAt: new Date("2026-08-01T12:00:00.000Z"),
+		};
+		const auditCreate = vi.fn().mockResolvedValue({});
+		const approvalFindMany = vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+			if (where.expiresAt) return expired.status === "pending" ? [expired] : [];
+			if (where.status === "approved" || where.status === "retry_executing") return [];
+			if (where.status === "executing") return crashed.status === "executing" ? [crashed] : [];
+			if (where.status === "pending" && "id" in where) return [crashed];
+			return [];
+		});
+		const approvalUpdateMany = vi.fn(
+			async ({
+				where,
+				data,
+			}: {
+				where: Record<string, unknown>;
+				data: Record<string, unknown>;
+			}) => {
+				if (where.id === expired.id && expired.status === "pending") {
+					Object.assign(expired, data);
+					return { count: 1 };
+				}
+				if (where.status === "executing" && crashed.status === "executing") {
+					Object.assign(crashed, data);
+					return { count: 1 };
+				}
+				return { count: 0 };
+			},
+		);
+		const prisma = {
+			libraryCleanupAuditEvent: { create: auditCreate },
+			libraryCleanupApproval: {
+				findMany: approvalFindMany,
+				updateMany: approvalUpdateMany,
+			},
+			libraryCleanupConfig: { findFirst: vi.fn().mockResolvedValue(null) },
+		};
+		const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+		const scheduler = new CleanupScheduler(prisma as never, {} as never, {} as never, log as never);
+
+		await (
+			scheduler as unknown as {
+				checkAndRun: () => Promise<void>;
+			}
+		).checkAndRun();
+
+		expect(expired).toMatchObject({
+			status: "expired",
+			lastExecutionError: "Approval expired before operator action.",
+		});
+		expect(crashed).toMatchObject({
+			status: "pending",
+			lastExecutionError: expect.stringContaining("interrupted"),
+		});
+		const events = auditCreate.mock.calls.map(([call]) => call.data);
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ actionId: "expired-1", eventType: "approval_expired" }),
+				expect.objectContaining({
+					actionId: "crashed-1",
+					eventType: "recovery_transition",
+					trigger: "scheduled",
+					outcome: "failed",
+					details: expect.stringContaining('"mutationOutcome":"unknown"'),
+				}),
+			]),
+		);
+		const executingWriteOrder = approvalUpdateMany.mock.invocationCallOrder.find(
+			(_order, index) => approvalUpdateMany.mock.calls[index]?.[0].where.status === "executing",
+		);
+		const recoveryAuditOrder = auditCreate.mock.invocationCallOrder.find(
+			(_order, index) =>
+				auditCreate.mock.calls[index]?.[0].data.eventType === "recovery_transition",
+		);
+		expect(executingWriteOrder).toBeLessThan(recoveryAuditOrder!);
 	});
 
 	it("does not run recovery writes while database maintenance is active", async () => {

@@ -6,7 +6,10 @@
  * assumption: qui (or a human operating qui) is already acting, and a strike
  * from arr-dashboard would be either redundant or actively interfering.
  *
- * Gate predicate: `LibraryCache.torrentState ∈ {"paused", "error"}`.
+ * Gate predicate: a fresh `LibraryCache.torrentState` in {"paused", "error"},
+ * or unavailable/stale evidence for an otherwise correlated hash while qUI is
+ * enabled. The latter fails closed so an incomplete multi-qUI sync cannot
+ * silently disable protection.
  *
  * No-op when the user has no qui instance configured — `torrentState` stays
  * NULL across rows, the predicate never matches, and the original strike
@@ -17,6 +20,11 @@ import type { PrismaClient } from "../prisma.js";
 
 /** qui torrent states that mean "qui or human-via-qui is already acting". */
 const GATED_STATES = new Set(["paused", "error"]);
+
+/** Three scheduler intervals (10m each) before cached qUI evidence is stale. */
+const QUI_EVIDENCE_FRESHNESS_MS = 30 * 60 * 1000;
+
+export type QuiAwareGateReason = "paused_or_error" | "evidence_unavailable";
 
 /** qBit info hashes are 40-hex (SHA-1) or 64-hex (SHA-256), lowercase canonical. */
 const HASH_RE = /^[a-f0-9]{40,64}$/;
@@ -63,14 +71,21 @@ export function partitionByGatedHashes(
  *
  * Returns the subset of itemIds whose torrents are paused/error in qui.
  */
-export async function resolveGatedItemIds(
+export async function resolveQuiAwareGateReasons(
 	prisma: PrismaClient,
 	userId: string,
 	hashesByItemId: Map<string, string>,
-): Promise<Set<string>> {
+	now: Date = new Date(),
+): Promise<Map<string, QuiAwareGateReason>> {
 	if (hashesByItemId.size === 0) {
-		return new Set();
+		return new Map();
 	}
+
+	const enabledQui = await prisma.serviceInstance.findFirst({
+		where: { userId, service: "QUI", enabled: true },
+		select: { id: true },
+	});
+	if (!enabledQui) return new Map();
 
 	const uniqueHashes = Array.from(new Set(hashesByItemId.values()));
 	// Ownership flows through the parent ServiceInstance — `LibraryCache` has
@@ -83,15 +98,35 @@ export async function resolveGatedItemIds(
 		where: {
 			instance: { userId },
 			infoHash: { in: uniqueHashes },
-			torrentState: { in: Array.from(GATED_STATES) },
 		},
-		select: { infoHash: true },
+		select: { infoHash: true, torrentState: true, torrentSyncedAt: true },
 	});
 
-	const gatedHashes = new Set<string>();
+	const reasonByHash = new Map<string, QuiAwareGateReason>();
+	const hashesWithFreshEvidence = new Set<string>();
+	const freshnessCutoff = now.getTime() - QUI_EVIDENCE_FRESHNESS_MS;
 	for (const row of rows) {
-		if (row.infoHash) gatedHashes.add(row.infoHash);
+		if (!row.infoHash) continue;
+		const hash = row.infoHash.toLowerCase();
+		if (!row.torrentSyncedAt || row.torrentSyncedAt.getTime() < freshnessCutoff) {
+			reasonByHash.set(hash, "evidence_unavailable");
+			continue;
+		}
+		hashesWithFreshEvidence.add(hash);
+		if (GATED_STATES.has(row.torrentState ?? "") && !reasonByHash.has(hash)) {
+			reasonByHash.set(hash, "paused_or_error");
+		}
+	}
+	for (const hash of uniqueHashes) {
+		if (!hashesWithFreshEvidence.has(hash) && !reasonByHash.has(hash)) {
+			reasonByHash.set(hash, "evidence_unavailable");
+		}
 	}
 
-	return partitionByGatedHashes(hashesByItemId, gatedHashes).gatedItemIds;
+	const reasons = new Map<string, QuiAwareGateReason>();
+	for (const [itemId, hash] of hashesByItemId) {
+		const reason = reasonByHash.get(hash);
+		if (reason) reasons.set(itemId, reason);
+	}
+	return reasons;
 }

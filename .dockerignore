@@ -55,3 +55,8 @@ docker-compose*.yml
 
 # Data directory
 data/
+
+# Disposable Library Cleanup harness (never part of the candidate image context)
+# This covers ignored .env files, Docker-secret inputs, rendered Compose models,
+# logs, fixtures, and every other generated harness artifact.
+e2e/library-cleanup/**

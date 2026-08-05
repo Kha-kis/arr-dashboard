@@ -1,4 +1,5 @@
-import type { CleanupRuleResponse, CreateCleanupRule } from "@arr/shared";
+import type { CleanupRuleExpression, CleanupRuleResponse, CreateCleanupRule } from "@arr/shared";
+import { createCleanupRuleSchema } from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -46,12 +47,24 @@ const mockFieldOptions = {
 	arrTags: [],
 };
 
+const mockServicesQueryState: {
+	data: Array<{ id: string; service: "sonarr" | "radarr"; enabled: boolean }> | undefined;
+	isLoading: boolean;
+	isFetching: boolean;
+	isError: boolean;
+} = {
+	data: [],
+	isLoading: false,
+	isFetching: false,
+	isError: false,
+};
+
 vi.mock("@/hooks/api/useLibraryCleanup", () => ({
 	useCleanupFieldOptions: () => ({ data: mockFieldOptions, isLoading: false }),
 }));
 
 vi.mock("@/hooks/api/useServicesQuery", () => ({
-	useServicesQuery: () => ({ data: [] }),
+	useServicesQuery: () => mockServicesQueryState,
 }));
 
 vi.mock("@/hooks/useThemeGradient", () => ({
@@ -130,6 +143,7 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 		excludeTitles: null,
 		plexLibraryFilter: null,
 		targetScope: "series",
+		scanMediaServerAfterDelete: false,
 		action: "delete",
 		operator: null,
 		conditions: null,
@@ -149,6 +163,10 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 describe("CleanupRuleDialog", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockServicesQueryState.data = [];
+		mockServicesQueryState.isLoading = false;
+		mockServicesQueryState.isFetching = false;
+		mockServicesQueryState.isError = false;
 	});
 
 	// ================================================================
@@ -253,6 +271,231 @@ describe("CleanupRuleDialog", () => {
 			});
 		});
 
+		it("submits the optional post-delete media-server scan setting", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Delete and refresh" },
+			});
+			fireEvent.click(screen.getByRole("switch", { name: "Scan media servers after deletion" }));
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				action: "delete",
+				scanMediaServerAfterDelete: true,
+			});
+		});
+
+		it("hides and clears the scan setting for unmonitor", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Unmonitor only" },
+			});
+			fireEvent.click(screen.getByRole("switch", { name: "Scan media servers after deletion" }));
+			fireEvent.click(screen.getByText("Unmonitor"));
+			expect(
+				screen.queryByRole("switch", { name: "Scan media servers after deletion" }),
+			).not.toBeInTheDocument();
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				action: "unmonitor",
+				scanMediaServerAfterDelete: false,
+			});
+		});
+
+		it("creates a top-level TMDb list rule with its parameters", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Not in collection" },
+			});
+			fireEvent.click(screen.getByText("Curated Lists"));
+			fireEvent.click(screen.getByText("TMDb List Membership"));
+			fireEvent.change(screen.getByLabelText("TMDb list ID"), { target: { value: "8068" } });
+			fireEvent.change(screen.getByLabelText("Operator"), { target: { value: "not_in" } });
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "tmdb_list_member",
+				parameters: { listId: "8068", operator: "not_in" },
+			});
+		});
+
+		it("submits monitored as a standalone parameterless rule", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Currently monitored" },
+			});
+			fireEvent.click(screen.getByText("Monitored"));
+			expect(
+				screen.getByText("Matches all monitored items. No additional parameters."),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "monitored",
+				parameters: {},
+			});
+		});
+
+		it("forces a top-level IMDb rule to Radarr only", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Low IMDb" },
+			});
+			fireEvent.click(screen.getByText("IMDb Rating"));
+			await waitFor(() => {
+				expect(screen.queryByRole("button", { name: "Filter by sonarr" })).not.toBeInTheDocument();
+			});
+			expect(screen.getByRole("button", { name: "Filter by radarr" })).toHaveAttribute(
+				"aria-pressed",
+				"true",
+			);
+			expect(
+				screen.getByText(
+					"IMDb ratings are provided by Radarr, so this rule always targets Radarr only.",
+				),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "imdb_rating",
+				serviceFilter: ["radarr"],
+			});
+		});
+
+		it("preserves a saved IMDb instance scope while services are still loading", async () => {
+			mockServicesQueryState.data = undefined;
+			mockServicesQueryState.isLoading = true;
+			mockServicesQueryState.isFetching = true;
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "imdb_rating",
+					parameters: { operator: "unrated" },
+					instanceFilter: ["radarr-1"],
+				}),
+			});
+
+			expect(
+				screen.getByText(
+					"Service instances must finish loading successfully before this IMDb scope can be saved.",
+				),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			expect(onSave).not.toHaveBeenCalled();
+
+			mockServicesQueryState.data = [{ id: "radarr-1", service: "radarr", enabled: true }];
+			mockServicesQueryState.isLoading = false;
+			mockServicesQueryState.isFetching = false;
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "IMDb after loading" },
+			});
+			await waitFor(() =>
+				expect(
+					screen.queryByText(/Service instances must finish loading successfully/),
+				).not.toBeInTheDocument(),
+			);
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({ instanceFilter: ["radarr-1"] });
+		});
+
+		it("preserves and blocks a saved IMDb scope when service loading fails", () => {
+			mockServicesQueryState.data = [{ id: "radarr-1", service: "radarr", enabled: true }];
+			mockServicesQueryState.isError = true;
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "imdb_rating",
+					parameters: { operator: "unrated" },
+					instanceFilter: ["radarr-1"],
+				}),
+			});
+
+			expect(
+				screen.getByText(
+					"Service instances must finish loading successfully before this IMDb scope can be saved.",
+				),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			expect(onSave).not.toHaveBeenCalled();
+		});
+
+		it("preserves disabled and unknown Radarr IDs but blocks saving them", () => {
+			mockServicesQueryState.data = [{ id: "radarr-disabled", service: "radarr", enabled: false }];
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "imdb_rating",
+					parameters: { operator: "unrated" },
+					instanceFilter: ["radarr-disabled", "radarr-unknown"],
+				}),
+			});
+
+			expect(
+				screen.getByText(
+					"Every selected IMDb instance must be an enabled Radarr instance. Unknown and disabled selections are preserved until they can be corrected.",
+				),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			expect(onSave).not.toHaveBeenCalled();
+		});
+
+		it("removes only a proven Sonarr ID from an IMDb instance scope", async () => {
+			mockServicesQueryState.data = [
+				{ id: "sonarr-1", service: "sonarr", enabled: true },
+				{ id: "radarr-1", service: "radarr", enabled: true },
+			];
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "imdb_rating",
+					parameters: { operator: "unrated" },
+					instanceFilter: ["sonarr-1", "radarr-1"],
+				}),
+			});
+
+			await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({ instanceFilter: ["radarr-1"] });
+		});
+
+		it("blocks an IMDb rule whose proven Sonarr scope would otherwise become all instances", async () => {
+			mockServicesQueryState.data = [{ id: "sonarr-1", service: "sonarr", enabled: true }];
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "imdb_rating",
+					parameters: { operator: "unrated" },
+					instanceFilter: ["sonarr-1"],
+				}),
+			});
+
+			await waitFor(() =>
+				expect(
+					screen.getByText(
+						"The saved IMDb instance scope contained only Sonarr instances. Select an enabled Radarr instance before saving.",
+					),
+				).toBeInTheDocument(),
+			);
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			expect(onSave).not.toHaveBeenCalled();
+		});
+
 		it("explains exact episode action semantics", () => {
 			renderDialog();
 			fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
@@ -324,6 +567,26 @@ describe("CleanupRuleDialog", () => {
 			expect(screen.queryByText("Rule Type")).not.toBeInTheDocument();
 		});
 
+		it("keeps rule mode immutable while editing", () => {
+			renderDialog({
+				editRule: makeEditRule({
+					ruleType: "composite",
+					operator: "AND",
+					conditions: [{ ruleType: "age", parameters: { operator: "older_than", days: 90 } }],
+					parameters: {},
+				}),
+			});
+
+			expect(screen.queryByRole("button", { name: "Single Condition" })).not.toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Composite Rule" })).not.toBeInTheDocument();
+			expect(
+				screen.getByText(
+					"Rule mode and type cannot be changed while editing. Create a new rule to use a different mode or condition type.",
+				),
+			).toBeInTheDocument();
+			expect(screen.getByText("Condition 1")).toBeInTheDocument();
+		});
+
 		it("hydrates rating rule with unrated operator", () => {
 			renderDialog({
 				editRule: makeEditRule({
@@ -332,6 +595,82 @@ describe("CleanupRuleDialog", () => {
 				}),
 			});
 			expect(screen.getByText("Rating")).toBeInTheDocument();
+		});
+
+		it("hydrates and preserves a monitored rule while editing", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					name: "Currently monitored",
+					ruleType: "monitored",
+					parameters: {},
+				}),
+			});
+			expect(
+				screen.getByText("Matches all monitored items. No additional parameters."),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({ ruleType: "monitored", parameters: {} });
+		});
+
+		it("detects nested NOT IMDb and preserves Radarr-only scope", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					serviceFilter: ["SONARR", "RADARR"],
+					expression: {
+						version: 1,
+						root: {
+							type: "not",
+							child: {
+								type: "condition",
+								ruleType: "imdb_rating",
+								parameters: { operator: "unrated" },
+							},
+						},
+					},
+				}),
+			});
+			await waitFor(() => {
+				expect(screen.queryByRole("button", { name: "Filter by sonarr" })).not.toBeInTheDocument();
+			});
+			expect(screen.getByRole("button", { name: "Filter by radarr" })).toHaveAttribute(
+				"aria-pressed",
+				"true",
+			);
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				serviceFilter: ["radarr"],
+				expression: { version: 1, root: { type: "not" } },
+			});
+		});
+
+		it("hydrates and round-trips an existing Trakt list rule", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "trakt_list_member",
+					parameters: { listSlug: "alice/favorites", operator: "not_in" },
+				}),
+			});
+
+			expect(screen.getByLabelText("Trakt list (username/list-slug)")).toHaveValue(
+				"alice/favorites",
+			);
+			expect(screen.getByLabelText("Operator")).toHaveValue("not_in");
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "trakt_list_member",
+				parameters: { listSlug: "alice/favorites", operator: "not_in" },
+			});
 		});
 
 		it("hydrates composite rule with conditions", () => {
@@ -349,6 +688,118 @@ describe("CleanupRuleDialog", () => {
 			// Should switch to composite mode and show conditions
 			expect(screen.getByText("Condition 1")).toBeInTheDocument();
 			expect(screen.getByText("Condition 2")).toBeInTheDocument();
+		});
+
+		it("round-trips an existing nested expression without flattening it", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					expression: {
+						version: 1,
+						root: {
+							type: "group",
+							operator: "OR",
+							children: [
+								{
+									type: "not",
+									child: {
+										type: "condition",
+										ruleType: "age",
+										parameters: { operator: "older_than", days: 90 },
+									},
+								},
+							],
+						},
+					},
+				}),
+			});
+			expect(screen.getByText("NOT")).toBeInTheDocument();
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect((onSave.mock.calls[0]![0] as CreateCleanupRule).expression).toMatchObject({
+				version: 1,
+				root: { type: "group", operator: "OR", children: [{ type: "not" }] },
+			});
+		});
+
+		it("round-trips a non-group root at the exact depth limit", async () => {
+			const onSave = vi.fn();
+			let root: CleanupRuleExpression = {
+				type: "condition",
+				ruleType: "age",
+				parameters: { operator: "older_than", days: 90 },
+			};
+			for (let depth = 1; depth < 8; depth++) {
+				root = { type: "not", child: root };
+			}
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					expression: { version: 1, root },
+				}),
+			});
+
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			const payload = onSave.mock.calls[0]![0] as CreateCleanupRule;
+			expect(payload.expression).toEqual({ version: 1, root });
+			expect(createCleanupRuleSchema.safeParse(payload).success).toBe(true);
+		});
+
+		it("keeps a direct condition root versioned instead of flattening it to legacy storage", async () => {
+			const onSave = vi.fn();
+			const root: CleanupRuleExpression = {
+				type: "condition",
+				ruleType: "age",
+				parameters: { operator: "older_than", days: 90 },
+			};
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					expression: { version: 1, root },
+				}),
+			});
+
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			const payload = onSave.mock.calls[0]![0] as CreateCleanupRule;
+			expect(payload.operator).toBeNull();
+			expect(payload.conditions).toBeNull();
+			expect(payload.expression).toEqual({ version: 1, root });
+		});
+
+		it("round-trips a non-group root at the exact node limit", async () => {
+			const onSave = vi.fn();
+			const conditions: CleanupRuleExpression[] = Array.from({ length: 98 }, () => ({
+				type: "condition",
+				ruleType: "age",
+				parameters: { operator: "older_than", days: 90 },
+			}));
+			const root: CleanupRuleExpression = {
+				type: "not",
+				child: { type: "group", operator: "AND", children: conditions },
+			};
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					expression: { version: 1, root },
+				}),
+			});
+
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			const payload = onSave.mock.calls[0]![0] as CreateCleanupRule;
+			expect(payload.expression).toEqual({ version: 1, root });
+			expect(createCleanupRuleSchema.safeParse(payload).success).toBe(true);
 		});
 
 		it("hydrates retention mode from editRule", () => {
@@ -408,6 +859,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "unmonitor",
+					scanMediaServerAfterDelete: false,
 					retentionMode: true,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -428,6 +880,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: { operator: "older_than", days: 90 },
 					action: "delete",
+					scanMediaServerAfterDelete: false,
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -447,6 +900,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "unmonitor",
+					scanMediaServerAfterDelete: false,
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -467,6 +921,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "delete",
+					scanMediaServerAfterDelete: false,
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -492,6 +947,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "delete",
+					scanMediaServerAfterDelete: false,
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -510,6 +966,7 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "delete",
+					scanMediaServerAfterDelete: false,
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -613,6 +1070,107 @@ describe("CleanupRuleDialog", () => {
 			expect(savedData.operator).toBe("AND");
 			expect(savedData.conditions).toHaveLength(1);
 			expect(savedData.conditions![0]!.ruleType).toBe("age");
+		});
+
+		it("creates and serializes a nested Trakt list condition", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Nested list rule" },
+			});
+			fireEvent.click(screen.getByText("Composite Rule"));
+			fireEvent.click(screen.getByText("+ Add Condition"));
+			fireEvent.change(screen.getByLabelText("Condition type"), {
+				target: { value: "trakt_list_member" },
+			});
+			fireEvent.change(screen.getByLabelText("Trakt list (username/list-slug)"), {
+				target: { value: "alice/favorites" },
+			});
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "composite",
+				conditions: [
+					{
+						ruleType: "trakt_list_member",
+						parameters: { listSlug: "alice/favorites", operator: "is_in" },
+					},
+				],
+			});
+		});
+
+		it("serializes nested groups and NOT as a versioned expression", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Nested Test" },
+			});
+			fireEvent.click(screen.getByText("Composite Rule"));
+			fireEvent.click(screen.getByText("+ Group"));
+			fireEvent.click(screen.getAllByText("+ NOT")[0]!);
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			const savedData = onSave.mock.calls[0]![0] as CreateCleanupRule;
+			expect(savedData.operator).toBeNull();
+			expect(savedData.conditions).toBeNull();
+			expect(savedData.expression).toMatchObject({
+				version: 1,
+				root: {
+					type: "group",
+					operator: "AND",
+					children: [
+						{
+							type: "group",
+							children: [{ type: "condition" }, { type: "not" }],
+						},
+					],
+				},
+			});
+		});
+
+		it("can negate a nested group", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Negated Group" },
+			});
+			fireEvent.click(screen.getByText("Composite Rule"));
+			fireEvent.click(screen.getByText("+ NOT"));
+			fireEvent.click(screen.getByText("Use group"));
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect((onSave.mock.calls[0]![0] as CreateCleanupRule).expression).toMatchObject({
+				version: 1,
+				root: {
+					type: "group",
+					children: [
+						{
+							type: "not",
+							child: { type: "group", children: [{ type: "condition" }] },
+						},
+					],
+				},
+			});
+		});
+
+		it("authors the deepest UI expression at the same boundary accepted by the API", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Depth Boundary" },
+			});
+			fireEvent.click(screen.getByText("Composite Rule"));
+			fireEvent.click(screen.getByText("+ Group"));
+			for (let depth = 0; depth < 5; depth++) {
+				fireEvent.click(screen.getAllByText("+ Group")[0]!);
+			}
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(createCleanupRuleSchema.safeParse(onSave.mock.calls[0]![0]).success).toBe(true);
 		});
 	});
 

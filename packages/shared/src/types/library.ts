@@ -75,6 +75,34 @@ export const librarySeasonSchema = z.object({
 
 export type LibrarySeason = z.infer<typeof librarySeasonSchema>;
 
+export const libraryRatingChildSchema = z.object({
+	votes: z.number().optional(),
+	value: z.number(),
+	type: z.string().optional(),
+});
+
+export type LibraryRatingChild = z.infer<typeof libraryRatingChildSchema>;
+
+/**
+ * Normalized *arr ratings while preserving the upstream rating source.
+ *
+ * Radarr supplies source-keyed children (`imdb`, `tmdb`, etc.). Sonarr
+ * supplies a source-less SkyHook rating directly as `{ value, votes }`.
+ * Keeping those shapes distinct prevents consumers from treating Sonarr's
+ * general series score as an IMDb score.
+ */
+export const libraryRatingsSchema = z.object({
+	imdb: libraryRatingChildSchema.optional(),
+	tmdb: libraryRatingChildSchema.optional(),
+	metacritic: libraryRatingChildSchema.optional(),
+	rottenTomatoes: libraryRatingChildSchema.optional(),
+	trakt: libraryRatingChildSchema.optional(),
+	value: z.number().optional(),
+	votes: z.number().optional(),
+});
+
+export type LibraryRatings = z.infer<typeof libraryRatingsSchema>;
+
 export const libraryItemSchema = z.object({
 	id: z.union([z.number(), z.string()]),
 	instanceId: z.string(),
@@ -126,6 +154,7 @@ export const libraryItemSchema = z.object({
 			asin: z.string().optional(),
 		})
 		.optional(),
+	ratings: libraryRatingsSchema.optional(),
 	statistics: libraryItemStatisticsSchema.optional(),
 });
 

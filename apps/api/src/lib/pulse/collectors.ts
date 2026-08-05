@@ -621,8 +621,18 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 			plex_episode: "Plex episodes",
 		};
 		const cacheLabel = cacheLabels[status.cacheType] ?? status.cacheType;
+		const newerFailedAttempt =
+			status.lastAttemptResult === "error" &&
+			status.lastAttemptAt != null &&
+			status.lastAttemptAt.getTime() > status.lastRefreshedAt.getTime();
+		const effectiveResult =
+			status.lastResult === "success" && (newerFailedAttempt || status.lastErrorMessage !== null)
+				? "partial"
+				: status.lastResult;
+		const effectiveError = status.lastAttemptErrorMessage ?? status.lastErrorMessage;
+		const effectiveTimestamp = status.lastAttemptAt ?? status.lastRefreshedAt;
 
-		if (status.lastResult === "error") {
+		if (effectiveResult === "error") {
 			// Error items intentionally do NOT carry an inline action — a
 			// failed refresh likely fails again on the same network/config
 			// issue, so the "Check settings" link remains the right affordance.
@@ -631,25 +641,23 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				severity: "warning",
 				category: "health",
 				title: `${label}: ${cacheLabel} cache refresh failed`,
-				detail: status.lastErrorMessage ?? "Unknown error",
+				detail: effectiveError ?? "Unknown error",
 				actionUrl: "/settings",
 				actionLabel: "Check settings",
 				source: status.cacheType === "tautulli" ? "tautulli" : "plex",
-				timestamp: status.lastRefreshedAt.toISOString(),
+				timestamp: effectiveTimestamp.toISOString(),
 			});
-		} else if (status.lastResult === "partial") {
+		} else if (effectiveResult === "partial") {
 			items.push({
 				id: `cache-partial-${status.id}`,
 				severity: "warning",
 				category: "health",
 				title: `${label}: ${cacheLabel} cache coverage is degraded`,
-				detail:
-					status.lastErrorMessage ??
-					"The cache refresh completed with incomplete freshness coverage.",
+				detail: effectiveError ?? "The cache refresh completed with incomplete freshness coverage.",
 				actionUrl: "/settings",
 				actionLabel: "Check settings",
 				source: status.cacheType === "tautulli" ? "tautulli" : "plex",
-				timestamp: status.lastRefreshedAt.toISOString(),
+				timestamp: effectiveTimestamp.toISOString(),
 			});
 		} else if (status.lastRefreshedAt.getTime() < staleThreshold) {
 			const hoursAgo = Math.round(

@@ -1,0 +1,36 @@
+# Optional loopback-only service entrypoints for manual bootstrap and inspection.
+# Always combine this with compose.yml; never expose these ports on a LAN address.
+services:
+  radarr-a:
+    ports:
+      - "127.0.0.1:${RADARR_A_PORT:-17878}:7878"
+  radarr-b:
+    ports:
+      - "127.0.0.1:${RADARR_B_PORT:-27878}:7878"
+  sonarr-a:
+    ports:
+      - "127.0.0.1:${SONARR_A_PORT:-18989}:8989"
+  sonarr-b:
+    ports:
+      - "127.0.0.1:${SONARR_B_PORT:-28989}:8989"
+  plex:
+    ports:
+      - "127.0.0.1:${PLEX_PORT:-32400}:32400"
+  qbittorrent-a:
+    ports:
+      - "127.0.0.1:${QBITTORRENT_A_PORT:-18080}:8080"
+  qbittorrent-b:
+    ports:
+      - "127.0.0.1:${QBITTORRENT_B_PORT:-28080}:8080"
+  qui-a:
+    ports:
+      - "127.0.0.1:${QUI_A_PORT:-17476}:7476"
+  qui-b:
+    ports:
+      - "127.0.0.1:${QUI_B_PORT:-27476}:7476"
+  toxiproxy:
+    ports:
+      - "127.0.0.1:${TOXIPROXY_PORT:-18474}:8474"
+  postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-15432}:5432"

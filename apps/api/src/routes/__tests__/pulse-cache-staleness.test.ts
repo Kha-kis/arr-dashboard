@@ -37,6 +37,9 @@ type CacheStatusRow = {
 	lastRefreshedAt: Date;
 	lastResult: "success" | "error" | "partial";
 	lastErrorMessage: string | null;
+	lastAttemptAt?: Date | null;
+	lastAttemptResult?: string | null;
+	lastAttemptErrorMessage?: string | null;
 	itemCount: number;
 	instance: { label: string };
 };
@@ -89,6 +92,32 @@ describe("GET /pulse — cache.refresh action emission", () => {
 			target: { instanceId: "inst-plex", cacheType: "plex" },
 			label: "Refresh now",
 			destructive: false,
+		});
+	});
+
+	it("shows a newer failed attempt as degraded instead of unqualified success", async () => {
+		const failedAt = new Date();
+		cacheStatuses = [
+			makeRow({
+				id: "degraded-row",
+				lastRefreshedAt: new Date(Date.now() - HOURS),
+				lastErrorMessage: "Plex pagination was incomplete",
+				lastAttemptAt: failedAt,
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "Plex pagination was incomplete",
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const body = JSON.parse(res.payload);
+		const item = body.items.find((candidate: { id: string }) =>
+			candidate.id.includes("degraded-row"),
+		);
+
+		expect(item).toMatchObject({
+			id: "cache-partial-degraded-row",
+			title: "Home Plex: Plex cache coverage is degraded",
+			detail: "Plex pagination was incomplete",
 		});
 	});
 

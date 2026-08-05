@@ -46,6 +46,7 @@
 import type { QuiTorrent } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { createQuiClient } from "../qui/client-factory.js";
+import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import {
 	buildFileIdIndex,
@@ -222,6 +223,8 @@ function buildSearchIndex(torrents: QuiTorrent[]): QuiSearchIndex {
 	const byNameAndSize = new Map<string, string>();
 	const bySize = new Map<number, Array<{ hash: string; name: string }>>();
 	for (const t of torrents) {
+		const hash = t.hash.trim().toLowerCase();
+		if (!hash) continue;
 		// qBittorrent convention: `savePath` is the parent directory the
 		// torrent content lives in. For a single-file torrent the full
 		// path is `savePath + "/" + name`. For multi-file torrents the
@@ -230,18 +233,18 @@ function buildSearchIndex(torrents: QuiTorrent[]): QuiSearchIndex {
 		// to cover both cases without callers having to know which is which.
 		const trimmedSave = t.savePath ? t.savePath.replace(/\/+$/, "") : "";
 		if (trimmedSave) {
-			byContentPath.set(`${trimmedSave}/${t.name}`, t.hash);
-			byContentPath.set(trimmedSave, t.hash);
+			byContentPath.set(`${trimmedSave}/${t.name}`, hash);
+			byContentPath.set(trimmedSave, hash);
 		}
-		byNameAndSize.set(`${t.name}:${t.size}`, t.hash);
+		byNameAndSize.set(`${t.name}:${t.size}`, hash);
 		// Size index: store ALL torrents at each size. The third pass
 		// resolves ambiguity by filtering candidates via title+year token
 		// match against qui's torrent name.
 		const bucket = bySize.get(t.size);
 		if (bucket) {
-			bucket.push({ hash: t.hash, name: t.name });
+			bucket.push({ hash, name: t.name });
 		} else {
-			bySize.set(t.size, [{ hash: t.hash, name: t.name }]);
+			bySize.set(t.size, [{ hash, name: t.name }]);
 		}
 	}
 	return { byContentPath, byNameAndSize, bySize };
@@ -457,10 +460,18 @@ export async function runPathBackfillSweep({
 			}
 
 			try {
-				await app.prisma.libraryCache.update({
-					where: { id: row.id },
-					data: { infoHash: match.hash, infoHashSource: match.source },
-				});
+				await withQuiObservationTopologyGuard(userId, () =>
+					app.prisma.libraryCache.update({
+						where: { id: row.id },
+						data: {
+							infoHash: match.hash,
+							infoHashSource: match.source,
+							torrentState: null,
+							torrentRatio: null,
+							torrentSyncedAt: null,
+						},
+					}),
+				);
 				result.rowsHashed++;
 				log?.debug(
 					{

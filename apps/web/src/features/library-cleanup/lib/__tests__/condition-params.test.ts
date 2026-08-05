@@ -45,6 +45,7 @@ const OPERATOR_RULE_TYPES: CleanupRuleType[] = [
 
 // Rule types that intentionally return empty objects
 const EMPTY_PARAMS_TYPES: CleanupRuleType[] = [
+	"monitored",
 	"unmonitored",
 	"no_file",
 	"composite",
@@ -83,6 +84,7 @@ describe("getDefaultConditionParams", () => {
 			["size", { operator: "greater_than", sizeGb: 50 }],
 			["rating", { source: "tmdb", operator: "less_than", score: 5 }],
 			["status", { statuses: [] }],
+			["monitored", {}],
 			["genre", { operator: "includes_any", genres: [] }],
 			["year_range", { operator: "before", year: 2020 }],
 			["quality_profile", { profileNames: [] }],

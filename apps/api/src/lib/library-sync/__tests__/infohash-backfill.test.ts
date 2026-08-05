@@ -235,7 +235,12 @@ describe("backfillInfoHashForRow", () => {
 		expect(hash).toBe(VALID_SHA1);
 		expect(app.prisma.libraryCache.update).toHaveBeenCalledWith({
 			where: { id: "cache-1" },
-			data: { infoHash: VALID_SHA1 },
+			data: {
+				infoHash: VALID_SHA1,
+				torrentState: null,
+				torrentRatio: null,
+				torrentSyncedAt: null,
+			},
 		});
 	});
 

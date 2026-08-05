@@ -7,15 +7,28 @@
 import { randomUUID } from "node:crypto";
 import {
 	bulkApprovalSchema,
+	type CleanupRuleExpression,
 	cleanupExplainRequestSchema,
+	cleanupRuleRequiresRadarrRatings,
 	createCleanupRuleSchema,
 	getCleanupRuleScopeValidationError,
+	isVersionedCleanupRuleExpression,
 	reorderRulesSchema,
 	ruleParamSchemaMap,
+	type UpdateCleanupRule,
 	updateCleanupConfigSchema,
 	updateCleanupRuleSchema,
+	type VersionedCleanupRuleExpression,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
+import {
+	approvalRecordToAuditSnapshot,
+	cleanupAuditEnabled,
+	recordApprovalExpired,
+	recordApprovalTransition,
+	runCleanupAuditBestEffort,
+} from "../lib/library-cleanup/cleanup-audit.js";
 import {
 	buildEvalContextWithHealth,
 	CleanupPolicyMutationConflictError,
@@ -36,6 +49,7 @@ import {
 import {
 	type EpisodeExplainEvidence,
 	explainItemAgainstRules,
+	normalizeStoredCleanupRuleExpression,
 } from "../lib/library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval } from "../lib/library-cleanup/types.js";
 import {
@@ -51,6 +65,7 @@ import { validateRequest } from "../lib/utils/validate.js";
 // Rate limits
 const PREVIEW_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 const EXECUTE_RATE_LIMIT = { max: 3, timeWindow: "1 minute" };
+const QUI_PREVIEW_CACHE_FRESHNESS_MS = 30 * 60_000;
 
 // In-memory guard against concurrent execute/preview overlap (single-admin app)
 let cleanupRunInProgress = false;
@@ -90,6 +105,30 @@ function serializeConfig(config: Record<string, unknown>) {
 }
 
 export function serializeRule(rule: Record<string, unknown>) {
+	const storedConditions = safeJsonParse(rule.conditions as string | null);
+	const storedExpression = isVersionedCleanupRuleExpression(storedConditions)
+		? storedConditions
+		: null;
+	const normalizedStoredRule = normalizeStoredCleanupRuleExpression({
+		ruleType: typeof rule.ruleType === "string" ? rule.ruleType : "",
+		parameters: typeof rule.parameters === "string" ? rule.parameters : "{}",
+		operator: typeof rule.operator === "string" ? rule.operator : null,
+		conditions: typeof rule.conditions === "string" ? rule.conditions : null,
+	});
+	const expression = storedExpression && normalizedStoredRule ? storedExpression : null;
+	const legacyConditions = Array.isArray(storedConditions) ? storedConditions : null;
+	const executableLegacyConditions =
+		!storedExpression && legacyConditions && normalizedStoredRule ? legacyConditions : null;
+	const requiresRadarrRatings = cleanupRuleRequiresRadarrRatings({
+		ruleType: typeof rule.ruleType === "string" ? rule.ruleType : null,
+		parameters:
+			typeof safeJsonParse(rule.parameters as string) === "object"
+				? (safeJsonParse(rule.parameters as string) as Record<string, unknown>)
+				: {},
+		operator: typeof rule.operator === "string" ? rule.operator : null,
+		conditions: executableLegacyConditions,
+		expression,
+	});
 	return {
 		id: rule.id,
 		name: rule.name,
@@ -97,21 +136,60 @@ export function serializeRule(rule: Record<string, unknown>) {
 		priority: rule.priority,
 		ruleType: rule.ruleType,
 		parameters: safeJsonParse(rule.parameters as string) ?? {},
-		serviceFilter: safeJsonParse(rule.serviceFilter as string | null),
+		serviceFilter: requiresRadarrRatings
+			? ["RADARR"]
+			: safeJsonParse(rule.serviceFilter as string | null),
 		instanceFilter: safeJsonParse(rule.instanceFilter as string | null),
 		excludeTags: safeJsonParse(rule.excludeTags as string | null),
 		excludeTitles: safeJsonParse(rule.excludeTitles as string | null),
 		plexLibraryFilter: safeJsonParse(rule.plexLibraryFilter as string | null),
 		targetScope: rule.targetScope === "episode" ? "episode" : "series",
 		action: (rule.action as string) ?? "delete",
-		operator: (rule.operator as string) ?? null,
-		conditions: safeJsonParse(rule.conditions as string | null),
+		scanMediaServerAfterDelete: rule.scanMediaServerAfterDelete ?? false,
+		operator: executableLegacyConditions ? ((rule.operator as string) ?? null) : null,
+		conditions: executableLegacyConditions,
+		expression,
 		retentionMode: rule.retentionMode ?? false,
 		useGlobalRejectionMemory: rule.useGlobalRejectionMemory ?? true,
 		rejectionMemoryDays: rule.rejectionMemoryDays ?? null,
 		createdAt: (rule.createdAt as Date).toISOString(),
 		updatedAt: (rule.updatedAt as Date).toISOString(),
 	};
+}
+
+export function getRecursiveRuleUpdateError(
+	data: UpdateCleanupRule,
+	effectiveRuleType: string,
+	effectiveOperator: string | null,
+	effectiveConditions: readonly unknown[] | null,
+	effectiveExpression: VersionedCleanupRuleExpression | null,
+	storedExpression: VersionedCleanupRuleExpression | null,
+): string | null {
+	if (effectiveExpression && effectiveRuleType !== "composite") {
+		return "Recursive expressions require the composite rule type";
+	}
+	if (
+		storedExpression &&
+		data.expression === undefined &&
+		(data.operator !== undefined || data.conditions !== undefined) &&
+		(data.operator == null || !data.conditions?.length)
+	) {
+		return "Replacing a recursive expression with legacy conditions requires both an operator and conditions";
+	}
+	if (
+		effectiveRuleType === "composite" &&
+		!effectiveExpression &&
+		(effectiveOperator == null || !effectiveConditions?.length)
+	) {
+		return "Composite rules require an expression or an operator with conditions";
+	}
+	if (
+		effectiveRuleType !== "composite" &&
+		(effectiveExpression || effectiveOperator != null || effectiveConditions != null)
+	) {
+		return "Only composite rules can contain conditions or expressions";
+	}
+	return null;
 }
 
 export function serializeApproval(a: Record<string, unknown>) {
@@ -131,6 +209,7 @@ export function serializeApproval(a: Record<string, unknown>) {
 		matchedRuleName: a.matchedRuleName,
 		reason: a.reason,
 		action: (a.action as string) ?? "delete",
+		scanMediaServerAfterDelete: a.scanMediaServerAfterDelete ?? false,
 		sizeOnDisk: String(a.sizeOnDisk),
 		year: a.year,
 		rating: a.rating,
@@ -180,16 +259,123 @@ function safeJsonParse(val: string | null | undefined): unknown {
 // Field options cache: userId → { data, expiresAt }
 const fieldOptionsCache = new Map<string, { data: unknown; expiresAt: number }>();
 const FIELD_OPTIONS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CLEANUP_ACTIVITY_EVENTS_PER_TIMELINE = 200;
+const cleanupActivityEventParamsSchema = z.object({
+	actionId: z.string().min(1),
+});
+const cleanupActivityEventQuerySchema = z.object({
+	cursor: z.coerce.number().int().positive().max(2_147_483_647),
+	pageSize: z.coerce
+		.number()
+		.int()
+		.min(1)
+		.max(CLEANUP_ACTIVITY_EVENTS_PER_TIMELINE)
+		.default(CLEANUP_ACTIVITY_EVENTS_PER_TIMELINE),
+});
 
 export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	const quiFileHashIndexFactory = async (
-		instance: Parameters<typeof createQuiClient>[1],
-	) => {
+	const appendApprovalTransition = async (
+		id: string,
+		userId: string,
+		eventType: "approval_approved" | "approval_rejected",
+		correlationId: string,
+		reviewedAt?: Date,
+	): Promise<void> => {
+		await runCleanupAuditBestEffort(
+			async () => {
+				if (!cleanupAuditEnabled(app.prisma)) return;
+				const approval = await app.prisma.libraryCleanupApproval.findFirst({
+					where: {
+						id,
+						config: { userId },
+						status: eventType === "approval_approved" ? "approved" : "rejected",
+						...(eventType === "approval_approved" ? { executionToken: correlationId } : {}),
+						...(reviewedAt ? { reviewedAt } : {}),
+					},
+				});
+				if (!approval) return;
+				await recordApprovalTransition(
+					app.prisma,
+					{
+						approval: approvalRecordToAuditSnapshot(approval),
+						eventType,
+						actorId: userId,
+						correlationId,
+					},
+					app.log,
+				);
+			},
+			app.log,
+			"approval transition",
+		);
+	};
+	const expirePendingApprovals = async (userId: string): Promise<void> => {
+		if (!cleanupAuditEnabled(app.prisma)) return;
+		const now = new Date();
+		const expired = await app.prisma.libraryCleanupApproval.updateMany({
+			where: {
+				config: { userId },
+				status: "pending",
+				expiresAt: { lte: now },
+			},
+			data: {
+				status: "expired",
+				reviewedAt: now,
+				lastExecutionError: "Approval expired before operator action.",
+			},
+		});
+		if (expired.count === 0) return;
+		await runCleanupAuditBestEffort(
+			async () => {
+				if (!cleanupAuditEnabled(app.prisma)) return;
+				const expiring = await app.prisma.libraryCleanupApproval.findMany({
+					where: {
+						config: { userId },
+						status: "expired",
+						expiresAt: { lte: now },
+						reviewedAt: now,
+					},
+				});
+				for (const approval of expiring) {
+					await recordApprovalExpired(app.prisma, approvalRecordToAuditSnapshot(approval), app.log);
+				}
+			},
+			app.log,
+			"approval expiry",
+		);
+	};
+
+	const quiFileHashIndexFactory = async (instance: Parameters<typeof createQuiClient>[1]) => {
 		const client = createQuiClient(app, instance);
 		const index = await buildFreshCompleteFileIdIndex(client, instance, app.log);
 		return {
 			resolve: (path: string) => getAllHashesForFileIdComplete(path, index),
 		};
+	};
+	const canonicalizeImdbInstanceFilter = async (
+		userId: string,
+		instanceFilter: string[] | null | undefined,
+	): Promise<{ value: string[] | null; error: string | null }> => {
+		const value = instanceFilter?.length ? [...new Set(instanceFilter)] : null;
+		if (!value) return { value: null, error: null };
+		const compatible = await app.prisma.serviceInstance.findMany({
+			where: {
+				id: { in: value },
+				userId,
+				enabled: true,
+				service: "RADARR",
+			},
+			select: { id: true },
+		});
+		const compatibleIds = new Set(compatible.map((instance) => instance.id));
+		if (value.some((id) => !compatibleIds.has(id))) {
+			return {
+				value,
+				error:
+					"IMDb rating cleanup rules can target only enabled Radarr instances owned by this user.",
+			};
+		}
+		return { value, error: null };
 	};
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
@@ -449,7 +635,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 		let config = await app.prisma.libraryCleanupConfig.findUnique({
 			where: { userId },
-			include: { rules: { orderBy: { priority: "asc" } } },
+			include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 		});
 
 		if (!config) {
@@ -461,7 +647,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				async () => {
 					const initialized = await app.prisma.libraryCleanupConfig.findUnique({
 						where: { userId },
-						include: { rules: { orderBy: { priority: "asc" } } },
+						include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 					});
 					if (!initialized) throw new Error("Cleanup configuration could not be initialized");
 					return initialized;
@@ -485,7 +671,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					where: { userId },
 					update: data,
 					create: { userId, ...data },
-					include: { rules: { orderBy: { priority: "asc" } } },
+					include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 				});
 
 				// Recalculate nextRunAt when enabled or intervalHours changes
@@ -509,12 +695,34 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	app.post("/library-cleanup/rules", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const data = validateRequest(createCleanupRuleSchema, request.body);
+		const normalizedParameters = applyRuleParameterDefaults(data.ruleType, data.parameters);
+		const normalizedConditions = data.conditions?.map((condition) => ({
+			...condition,
+			parameters: applyRuleParameterDefaults(condition.ruleType, condition.parameters),
+		}));
+		const normalizedExpression = data.expression
+			? applyExpressionParameterDefaults(data.expression)
+			: null;
+		const requiresRadarrRatings = cleanupRuleRequiresRadarrRatings({
+			...data,
+			expression: normalizedExpression,
+		});
+		const imdbInstanceFilter = requiresRadarrRatings
+			? await canonicalizeImdbInstanceFilter(userId, data.instanceFilter)
+			: {
+					value: data.instanceFilter?.length ? [...new Set(data.instanceFilter)] : null,
+					error: null,
+				};
+		if (imdbInstanceFilter.error) {
+			return reply.status(400).send({ error: imdbInstanceFilter.error });
+		}
 
 		// Write-time parameter validation: validate params against type-specific schema
 		const paramValidationError = validateRuleParameters(
 			data.ruleType,
-			data.parameters,
-			data.conditions ?? null,
+			normalizedParameters,
+			normalizedConditions ?? null,
+			normalizedExpression,
 		);
 		if (paramValidationError) {
 			return reply.status(400).send({ error: paramValidationError });
@@ -538,9 +746,15 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						enabled: data.enabled,
 						priority: data.priority,
 						ruleType: data.ruleType,
-						parameters: JSON.stringify(data.parameters),
-						serviceFilter: data.serviceFilter ? JSON.stringify(data.serviceFilter) : null,
-						instanceFilter: data.instanceFilter ? JSON.stringify(data.instanceFilter) : null,
+						parameters: JSON.stringify(normalizedParameters),
+						serviceFilter: requiresRadarrRatings
+							? JSON.stringify(["RADARR"])
+							: data.serviceFilter
+								? JSON.stringify(data.serviceFilter)
+								: null,
+						instanceFilter: imdbInstanceFilter.value
+							? JSON.stringify(imdbInstanceFilter.value)
+							: null,
 						excludeTags: data.excludeTags ? JSON.stringify(data.excludeTags) : null,
 						excludeTitles: data.excludeTitles ? JSON.stringify(data.excludeTitles) : null,
 						plexLibraryFilter: data.plexLibraryFilter?.length
@@ -548,8 +762,13 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 							: null,
 						targetScope: data.targetScope ?? "series",
 						action: data.action ?? "delete",
-						operator: data.operator ?? null,
-						conditions: data.conditions?.length ? JSON.stringify(data.conditions) : null,
+						scanMediaServerAfterDelete: data.scanMediaServerAfterDelete ?? false,
+						operator: normalizedExpression ? null : (data.operator ?? null),
+						conditions: normalizedExpression
+							? JSON.stringify(normalizedExpression)
+							: normalizedConditions?.length
+								? JSON.stringify(normalizedConditions)
+								: null,
 						retentionMode: data.retentionMode ?? false,
 						useGlobalRejectionMemory: data.useGlobalRejectionMemory ?? true,
 						// `?? 0` would collapse a deliberate `null` (forever) to `0` (off),
@@ -618,7 +837,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 				const updated = await app.prisma.libraryCleanupConfig.findUnique({
 					where: { userId },
-					include: { rules: { orderBy: { priority: "asc" } } },
+					include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 				});
 				return reply.send(serializeConfig(updated as unknown as Record<string, unknown>));
 			},
@@ -644,13 +863,44 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const effectiveRuleType = data.ruleType ?? existing.ruleType;
 		const effectiveParams =
 			data.parameters ?? (utilSafeJsonParse(existing.parameters) as Record<string, unknown>);
+		const storedConditions = utilSafeJsonParse(existing.conditions ?? "") as unknown;
+		const storedExpression = isVersionedCleanupRuleExpression(storedConditions)
+			? storedConditions
+			: null;
 		const effectiveConditions =
-			data.conditions !== undefined
-				? data.conditions
-				: (utilSafeJsonParse(existing.conditions ?? "") as Array<{
-						ruleType: string;
-						parameters: Record<string, unknown>;
-					}> | null);
+			data.expression != null
+				? null
+				: data.conditions !== undefined
+					? data.conditions
+					: data.expression === null || storedExpression
+						? null
+						: (storedConditions as Array<{
+								ruleType: string;
+								parameters: Record<string, unknown>;
+							}> | null);
+		const effectiveExpression =
+			data.expression != null
+				? data.expression
+				: data.expression === null || data.operator !== undefined || data.conditions !== undefined
+					? null
+					: storedExpression;
+		const effectiveOperator =
+			data.expression != null
+				? null
+				: data.operator !== undefined
+					? data.operator
+					: effectiveExpression
+						? null
+						: existing.operator;
+		const representationError = getRecursiveRuleUpdateError(
+			data,
+			effectiveRuleType,
+			effectiveOperator,
+			effectiveConditions,
+			effectiveExpression,
+			storedExpression,
+		);
+		if (representationError) return reply.status(400).send({ error: representationError });
 		const effectiveTargetScope =
 			data.targetScope ?? (existing.targetScope === "episode" ? "episode" : "series");
 		const effectiveServiceFilter =
@@ -666,23 +916,49 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			serviceFilter: effectiveServiceFilter,
 			plexLibraryFilter: effectivePlexLibraryFilter,
 			retentionMode: data.retentionMode ?? existing.retentionMode,
+			action: data.action ?? existing.action,
+			scanMediaServerAfterDelete:
+				data.scanMediaServerAfterDelete ?? existing.scanMediaServerAfterDelete,
 			ruleType: effectiveRuleType,
 			parameters: effectiveParams ?? {},
-			operator: data.operator !== undefined ? data.operator : existing.operator,
+			operator: effectiveOperator,
 			conditions: effectiveConditions ?? null,
+			expression: effectiveExpression,
 		});
 		if (scopeValidationError) {
 			return reply.status(400).send({ error: scopeValidationError });
 		}
+		const requiresRadarrRatings = cleanupRuleRequiresRadarrRatings({
+			ruleType: effectiveRuleType,
+			parameters: effectiveParams ?? {},
+			operator: effectiveOperator,
+			conditions: effectiveConditions ?? null,
+			expression: effectiveExpression,
+		});
+		const effectiveInstanceFilter =
+			data.instanceFilter !== undefined
+				? data.instanceFilter
+				: (utilSafeJsonParse(existing.instanceFilter ?? "") as string[] | null);
+		const imdbInstanceFilter = requiresRadarrRatings
+			? await canonicalizeImdbInstanceFilter(userId, effectiveInstanceFilter)
+			: {
+					value: data.instanceFilter?.length ? [...new Set(data.instanceFilter)] : null,
+					error: null,
+				};
+		if (imdbInstanceFilter.error) {
+			return reply.status(400).send({ error: imdbInstanceFilter.error });
+		}
 		if (
 			data.ruleType !== undefined ||
 			data.parameters !== undefined ||
-			data.conditions !== undefined
+			data.conditions !== undefined ||
+			data.expression !== undefined
 		) {
 			const paramValidationError = validateRuleParameters(
 				effectiveRuleType,
 				effectiveParams ?? {},
 				effectiveConditions ?? null,
+				effectiveExpression,
 			);
 			if (paramValidationError) {
 				return reply.status(400).send({ error: paramValidationError });
@@ -694,11 +970,24 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		if (data.enabled !== undefined) updateData.enabled = data.enabled;
 		if (data.priority !== undefined) updateData.priority = data.priority;
 		if (data.ruleType !== undefined) updateData.ruleType = data.ruleType;
-		if (data.parameters !== undefined) updateData.parameters = JSON.stringify(data.parameters);
-		if (data.serviceFilter !== undefined)
+		if (data.parameters !== undefined)
+			updateData.parameters = JSON.stringify(
+				applyRuleParameterDefaults(effectiveRuleType, data.parameters),
+			);
+		if (requiresRadarrRatings) {
+			updateData.serviceFilter = JSON.stringify(["RADARR"]);
+		} else if (data.serviceFilter !== undefined) {
 			updateData.serviceFilter = data.serviceFilter ? JSON.stringify(data.serviceFilter) : null;
-		if (data.instanceFilter !== undefined)
-			updateData.instanceFilter = data.instanceFilter ? JSON.stringify(data.instanceFilter) : null;
+		}
+		if (requiresRadarrRatings) {
+			updateData.instanceFilter = imdbInstanceFilter.value
+				? JSON.stringify(imdbInstanceFilter.value)
+				: null;
+		} else if (data.instanceFilter !== undefined) {
+			updateData.instanceFilter = imdbInstanceFilter.value
+				? JSON.stringify(imdbInstanceFilter.value)
+				: null;
+		}
 		if (data.excludeTags !== undefined)
 			updateData.excludeTags = data.excludeTags ? JSON.stringify(data.excludeTags) : null;
 		if (data.excludeTitles !== undefined)
@@ -709,9 +998,31 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				: null;
 		if (data.targetScope !== undefined) updateData.targetScope = data.targetScope;
 		if (data.action !== undefined) updateData.action = data.action;
-		if (data.operator !== undefined) updateData.operator = data.operator ?? null;
-		if (data.conditions !== undefined)
-			updateData.conditions = data.conditions?.length ? JSON.stringify(data.conditions) : null;
+		if (data.scanMediaServerAfterDelete !== undefined)
+			updateData.scanMediaServerAfterDelete = data.scanMediaServerAfterDelete;
+		if (data.expression != null) {
+			updateData.operator = null;
+			updateData.conditions = JSON.stringify(applyExpressionParameterDefaults(data.expression));
+		} else if (data.operator !== undefined) {
+			updateData.operator = data.operator ?? null;
+		}
+		if (data.expression == null && data.conditions !== undefined)
+			updateData.conditions = data.conditions?.length
+				? JSON.stringify(
+						data.conditions.map((condition) => ({
+							...condition,
+							parameters: applyRuleParameterDefaults(condition.ruleType, condition.parameters),
+						})),
+					)
+				: null;
+		else if (
+			data.expression === null &&
+			data.conditions === undefined &&
+			data.operator === undefined
+		) {
+			updateData.conditions = null;
+			updateData.operator = null;
+		}
 		if (data.retentionMode !== undefined) updateData.retentionMode = data.retentionMode;
 		if (data.useGlobalRejectionMemory !== undefined)
 			updateData.useGlobalRejectionMemory = data.useGlobalRejectionMemory;
@@ -797,99 +1108,137 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				}
 
 				const MAX_PREVIEW_ITEMS = 200;
+				const selectionCountsComplete =
+					result.selectionCountsComplete ?? result.previewSelection?.retryState !== "unavailable";
 				const totalPreviewItems =
 					result.previewItemCount ??
-					Math.max(result.itemsFlagged + (result.pendingRetryCount ?? 0), result.details.length);
+					Math.max(
+						result.itemsFlagged +
+							(typeof result.pendingRetryCount === "number" ? result.pendingRetryCount : 0),
+						result.details.length,
+					);
 				const previewDetails = result.details.slice(0, MAX_PREVIEW_ITEMS);
-				const truncated = totalPreviewItems > previewDetails.length;
+				const hiddenPreviewItems = Math.max(0, totalPreviewItems - previewDetails.length);
 
-				// qui-derived safety hint (Phase 3.3). Single bulk query joins
-				// LibraryCache for every previewed item so operators see
-				// "qui says: safe to delete" / "still seeding" inline. Failure
-				// of this enrichment is non-fatal — items fall back to
-				// `no_signal` (renders no badge).
-				const quiStatusByKey = new Map<string, "seeding" | "paused_or_error" | "not_in_qui">();
+				// Cached qUI observation (Phase 3.3). This enrichment is
+				// informational only: it must not be presented or consumed as
+				// execution authority. Destructive cleanup obtains a complete,
+				// fresh qUI view again at the physical-file mutation boundary.
+				// Failure is non-fatal and falls back to `no_signal`.
+				type CachedQuiObservation = {
+					status: "seeding" | "paused_or_error" | "not_in_qui";
+					observedAt: Date;
+				};
+				const quiStatusByKey = new Map<string, CachedQuiObservation>();
 				try {
 					if (previewDetails.length > 0) {
-						const seriesDetails = previewDetails.filter(
-							(detail) => detail.targetScope !== "episode",
-						);
-						const instanceIds = [...new Set(seriesDetails.map((d) => d.instanceId))];
-						const itemIds = [...new Set(seriesDetails.map((d) => d.arrItemId))];
-						const rows = await app.prisma.libraryCache.findMany({
-							where: {
-								instance: { userId },
-								instanceId: { in: instanceIds },
-								arrItemId: { in: itemIds },
-							},
-							select: {
-								instanceId: true,
-								arrItemId: true,
-								itemType: true,
-								infoHash: true,
-								torrentState: true,
-							},
+						const enabledQuiInstance = await app.prisma.serviceInstance.findFirst({
+							where: { userId, service: "QUI", enabled: true },
+							select: { id: true },
 						});
-						for (const row of rows) {
-							// Only items with a backfilled infoHash can have a meaningful
-							// "not in qui" signal — without infoHash we don't know whether
-							// qui would or wouldn't recognize the torrent.
-							if (!row.infoHash) continue;
-							const key = `${row.instanceId}|${row.arrItemId}|${row.itemType.toLowerCase()}`;
-							let status: "seeding" | "paused_or_error" | "not_in_qui";
-							if (!row.torrentState) {
-								status = "not_in_qui";
-							} else if (row.torrentState === "seeding") {
-								status = "seeding";
-							} else if (row.torrentState === "paused" || row.torrentState === "error") {
-								status = "paused_or_error";
-							} else {
-								// downloading/stalled_dl/queued/checking/moving/unknown —
-								// no strong cleanup signal either way.
-								continue;
-							}
-							quiStatusByKey.set(key, status);
-						}
-						const episodeDetails = previewDetails.filter(
-							(detail) =>
-								detail.targetScope === "episode" &&
-								typeof detail.episodeFileId === "number",
-						);
-						if (episodeDetails.length > 0) {
-							const episodeInstanceIds = [
-								...new Set(episodeDetails.map((detail) => detail.instanceId)),
-							];
-							const episodeFileIds = [
-								...new Set(
-									episodeDetails
-										.map((detail) => detail.episodeFileId)
-										.filter((id): id is number => typeof id === "number"),
-								),
-							];
-							const episodeRows = await app.prisma.episodeFileCache.findMany({
+						if (enabledQuiInstance) {
+							const quiObservationCutoff = Date.now() - QUI_PREVIEW_CACHE_FRESHNESS_MS;
+							const seriesDetails = previewDetails.filter(
+								(detail) => detail.targetScope !== "episode",
+							);
+							const instanceIds = [...new Set(seriesDetails.map((d) => d.instanceId))];
+							const itemIds = [...new Set(seriesDetails.map((d) => d.arrItemId))];
+							const rows = await app.prisma.libraryCache.findMany({
 								where: {
 									instance: { userId },
-									instanceId: { in: episodeInstanceIds },
-									arrEpisodeFileId: { in: episodeFileIds },
+									instanceId: { in: instanceIds },
+									arrItemId: { in: itemIds },
 								},
 								select: {
 									instanceId: true,
-									arrEpisodeFileId: true,
+									arrItemId: true,
+									itemType: true,
 									infoHash: true,
 									torrentState: true,
+									torrentSyncedAt: true,
 								},
 							});
-							for (const row of episodeRows) {
-								if (!row.infoHash) continue;
-								const key = `${row.instanceId}|episode-file|${row.arrEpisodeFileId}`;
-								if (!row.torrentState) quiStatusByKey.set(key, "not_in_qui");
-								else if (row.torrentState === "seeding")
-									quiStatusByKey.set(key, "seeding");
-								else if (
-									row.torrentState === "paused" ||
-									row.torrentState === "error"
-								)
-									quiStatusByKey.set(key, "paused_or_error");
+							for (const row of rows) {
+								// A fresh timestamp with null state is a durable complete-
+								// absence observation. Failed/incomplete scans and qUI
+								// topology mutations clear the timestamp as well, so they
+								// remain `no_signal`.
+								if (
+									!row.infoHash ||
+									!row.torrentSyncedAt ||
+									row.torrentSyncedAt.getTime() < quiObservationCutoff
+								) {
+									continue;
+								}
+								const key = `${row.instanceId}|${row.arrItemId}|${row.itemType.toLowerCase()}`;
+								let status: "seeding" | "paused_or_error" | "not_in_qui";
+								if (row.torrentState === null) {
+									status = "not_in_qui";
+								} else if (row.torrentState === "seeding") {
+									status = "seeding";
+								} else if (row.torrentState === "paused" || row.torrentState === "error") {
+									status = "paused_or_error";
+								} else {
+									// downloading/stalled_dl/queued/checking/moving/unknown —
+									// no strong cleanup signal either way.
+									continue;
+								}
+								quiStatusByKey.set(key, { status, observedAt: row.torrentSyncedAt });
+							}
+							const episodeDetails = previewDetails.filter(
+								(detail) =>
+									detail.targetScope === "episode" && typeof detail.episodeFileId === "number",
+							);
+							if (episodeDetails.length > 0) {
+								const episodeInstanceIds = [
+									...new Set(episodeDetails.map((detail) => detail.instanceId)),
+								];
+								const episodeFileIds = [
+									...new Set(
+										episodeDetails
+											.map((detail) => detail.episodeFileId)
+											.filter((id): id is number => typeof id === "number"),
+									),
+								];
+								const episodeRows = await app.prisma.episodeFileCache.findMany({
+									where: {
+										instance: { userId },
+										instanceId: { in: episodeInstanceIds },
+										arrEpisodeFileId: { in: episodeFileIds },
+									},
+									select: {
+										instanceId: true,
+										arrEpisodeFileId: true,
+										infoHash: true,
+										torrentState: true,
+										torrentSyncedAt: true,
+									},
+								});
+								for (const row of episodeRows) {
+									if (
+										!row.infoHash ||
+										!row.torrentSyncedAt ||
+										row.torrentSyncedAt.getTime() < quiObservationCutoff
+									) {
+										continue;
+									}
+									const key = `${row.instanceId}|episode-file|${row.arrEpisodeFileId}`;
+									if (row.torrentState === null)
+										quiStatusByKey.set(key, {
+											status: "not_in_qui",
+											observedAt: row.torrentSyncedAt,
+										});
+									else if (row.torrentState === "seeding")
+										quiStatusByKey.set(key, {
+											status: "seeding",
+											observedAt: row.torrentSyncedAt,
+										});
+									else if (row.torrentState === "paused" || row.torrentState === "error")
+										quiStatusByKey.set(key, {
+											status: "paused_or_error",
+											observedAt: row.torrentSyncedAt,
+										});
+								}
 							}
 						}
 					}
@@ -904,13 +1253,22 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				return reply.send({
 					totalEvaluated: result.itemsEvaluated,
 					totalFlagged: result.itemsFlagged,
-					pendingRetryCount: result.pendingRetryCount ?? 0,
+					pendingRetryCount: result.pendingRetryCount === undefined ? 0 : result.pendingRetryCount,
+					selectionCountsComplete,
+					selection: result.previewSelection,
+					display: {
+						shown: previewDetails.length,
+						hidden: hiddenPreviewItems,
+						limit: MAX_PREVIEW_ITEMS,
+						complete: hiddenPreviewItems === 0,
+					},
 					items: previewDetails.map((d) => {
 						const itemType = d.itemType ?? "movie";
 						const key =
 							d.targetScope === "episode" && typeof d.episodeFileId === "number"
 								? `${d.instanceId}|episode-file|${d.episodeFileId}`
 								: `${d.instanceId}|${d.arrItemId}|${itemType.toLowerCase()}`;
+						const cachedQuiObservation = quiStatusByKey.get(key);
 						return {
 							instanceId: d.instanceId,
 							instanceLabel: instanceLabelMap.get(d.instanceId) ?? null,
@@ -929,14 +1287,23 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 							sizeOnDisk: d.sizeOnDisk ?? "0",
 							year: d.year ?? null,
 							rating: d.rating ?? null,
-							quiStatus: quiStatusByKey.get(key) ?? "no_signal",
+							quiStatus: cachedQuiObservation?.status ?? "no_signal",
+							quiStatusSource: cachedQuiObservation ? "cached" : null,
+							quiStatusObservedAt: cachedQuiObservation?.observedAt.toISOString() ?? null,
+							selectionStatus: d.previewDisposition,
+							plannedAction: d.plannedAction,
+							isRetryAttempt: d.isRetryAttempt,
 						};
 					}),
 					prefetchHealth: result.prefetchHealth,
 					warnings: [
 						...(result.warnings ?? []),
-						...(truncated
-							? [`Showing ${previewDetails.length} of ${totalPreviewItems} preview items`]
+						...(hiddenPreviewItems > 0
+							? [
+									selectionCountsComplete
+										? `Display capped at ${previewDetails.length} of ${totalPreviewItems} preview items; selection counts remain complete.`
+										: `Display capped at ${previewDetails.length} of ${totalPreviewItems} known preview items; retry-backed selection counts are incomplete because durable retry state could not be loaded.`,
+								]
 							: []),
 					],
 				});
@@ -971,6 +1338,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						quiClientFactory: (instance) => createQuiClient(app, instance),
 						quiFileHashIndexFactory,
 						log: request.log,
+						auditTrigger: "manual",
+						auditActorId: userId,
 					},
 					userId,
 				);
@@ -994,6 +1363,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	app.get("/library-cleanup/approval-queue", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { page, pageSize } = parsePaginationQuery(request.query as Record<string, string>);
+		const presentationNow = new Date();
 
 		const validStatuses = [
 			"pending",
@@ -1015,7 +1385,16 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 							{ status: "executed", id: { not: { startsWith: "mutation-intent:" } } },
 						],
 					}
-				: { status: statusFilter };
+				: statusFilter === "pending"
+					? { status: "pending", expiresAt: { gt: presentationNow } }
+					: statusFilter === "expired"
+						? {
+								OR: [
+									{ status: "expired" },
+									{ status: "pending", expiresAt: { lte: presentationNow } },
+								],
+							}
+						: { status: statusFilter };
 
 		const [approvals, total] = await Promise.all([
 			app.prisma.libraryCleanupApproval.findMany({
@@ -1049,10 +1428,15 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		}
 
 		return reply.send({
-			items: approvals.map((a) => ({
-				...serializeApproval(a as unknown as Record<string, unknown>),
-				instanceLabel: instanceLabelMap.get(a.instanceId) ?? null,
-			})),
+			items: approvals.map((a) => {
+				const presentationExpired =
+					a.status === "pending" && a.expiresAt.getTime() <= presentationNow.getTime();
+				return {
+					...serializeApproval(a as unknown as Record<string, unknown>),
+					...(presentationExpired ? { status: "expired" } : {}),
+					instanceLabel: instanceLabelMap.get(a.instanceId) ?? null,
+				};
+			}),
 			total,
 			page,
 			pageSize,
@@ -1069,6 +1453,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 			try {
 				return await withCleanupOperationGuard(async () => {
+					await expirePendingApprovals(userId);
+					const reviewedAt = new Date();
 					const transition = await app.prisma.libraryCleanupApproval.updateMany({
 						where: {
 							id,
@@ -1079,12 +1465,19 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						data: {
 							status: "approved",
 							executionToken: approvalRequestToken,
-							reviewedAt: new Date(),
+							reviewedAt,
 						},
 					});
 					if (transition.count !== 1) {
 						return reply.status(404).send({ error: "Approval not found or not pending" });
 					}
+					await appendApprovalTransition(
+						id,
+						userId,
+						"approval_approved",
+						approvalRequestToken,
+						reviewedAt,
+					);
 
 					const result = await executeApprovedItems(
 						{
@@ -1094,6 +1487,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 							quiClientFactory: (instance) => createQuiClient(app, instance),
 							quiFileHashIndexFactory,
 							log: request.log,
+							auditTrigger: "approval",
+							auditActorId: userId,
 						},
 						userId,
 						[id],
@@ -1128,6 +1523,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						quiClientFactory: (instance) => createQuiClient(app, instance),
 						quiFileHashIndexFactory,
 						log: request.log,
+						auditTrigger: "retry",
+						auditActorId: userId,
 					},
 					userId,
 					[id],
@@ -1151,13 +1548,20 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 			try {
 				return await withCleanupOperationGuard(async () => {
+					const reviewedAt = new Date();
 					const transition = await app.prisma.libraryCleanupApproval.updateMany({
-						where: { id, config: { userId }, status: "pending" },
-						data: { status: "rejected", executionToken: null, reviewedAt: new Date() },
+						where: {
+							id,
+							config: { userId },
+							status: "pending",
+							expiresAt: { gt: reviewedAt },
+						},
+						data: { status: "rejected", executionToken: null, reviewedAt },
 					});
 					if (transition.count !== 1) {
 						return reply.status(404).send({ error: "Approval not found or not pending" });
 					}
+					await appendApprovalTransition(id, userId, "approval_rejected", randomUUID(), reviewedAt);
 
 					return reply.status(204).send();
 				});
@@ -1178,16 +1582,34 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		try {
 			return await withCleanupOperationGuard(async () => {
 				if (action === "rejected") {
+					const correlationId = randomUUID();
+					const reviewedAt = new Date();
 					const result = await app.prisma.libraryCleanupApproval.updateMany({
-						where: { id: { in: ids }, config: { userId }, status: "pending" },
-						data: { status: "rejected", executionToken: null, reviewedAt: new Date() },
+						where: {
+							id: { in: ids },
+							config: { userId },
+							status: "pending",
+							expiresAt: { gt: reviewedAt },
+						},
+						data: { status: "rejected", executionToken: null, reviewedAt },
 					});
+					for (const id of ids) {
+						await appendApprovalTransition(
+							id,
+							userId,
+							"approval_rejected",
+							correlationId,
+							reviewedAt,
+						);
+					}
 					return reply.send({ updated: result.count });
 				}
 
 				// Approve and execute under one guard so restore cannot observe
 				// an intermediate approved state.
 				const approvalRequestToken = randomUUID();
+				await expirePendingApprovals(userId);
+				const reviewedAt = new Date();
 				await app.prisma.libraryCleanupApproval.updateMany({
 					where: {
 						id: { in: ids },
@@ -1198,9 +1620,18 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					data: {
 						status: "approved",
 						executionToken: approvalRequestToken,
-						reviewedAt: new Date(),
+						reviewedAt,
 					},
 				});
+				for (const id of ids) {
+					await appendApprovalTransition(
+						id,
+						userId,
+						"approval_approved",
+						approvalRequestToken,
+						reviewedAt,
+					);
+				}
 
 				const result = await executeApprovedItems(
 					{
@@ -1210,6 +1641,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						quiClientFactory: (instance) => createQuiClient(app, instance),
 						quiFileHashIndexFactory,
 						log: request.log,
+						auditTrigger: "approval",
+						auditActorId: userId,
 					},
 					userId,
 					ids,
@@ -1227,6 +1660,155 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	});
 
 	// ─── Logs ─────────────────────────────────────────────────────────
+
+	/** GET /api/library-cleanup/activity
+	 *  Per-action append-only timelines. Aggregate run logs remain available
+	 *  separately and are intentionally not folded into these timelines.
+	 */
+	app.get("/library-cleanup/activity", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { page, pageSize } = parsePaginationQuery(request.query as Record<string, string>);
+		const offset = (page - 1) * pageSize;
+		const [countRow] = await app.prisma.$queryRaw<Array<{ total: bigint | number }>>`
+			SELECT COUNT(DISTINCT audit."actionId") AS "total"
+			FROM "library_cleanup_audit_events" AS audit
+			INNER JOIN "library_cleanup_configs" AS config
+				ON config."id" = audit."configId"
+			WHERE config."userId" = ${userId}
+		`;
+		const total = Number(countRow?.total ?? 0);
+		const latestActions = await app.prisma.libraryCleanupAuditEvent.groupBy({
+			by: ["actionId"],
+			where: { config: { userId } },
+			_max: { id: true },
+			_min: { createdAt: true },
+			_count: { _all: true },
+			orderBy: { _max: { id: "desc" } },
+			skip: offset,
+			take: pageSize,
+		});
+		const actionIds = latestActions.map((row) => row.actionId);
+		const eventPages = await Promise.all(
+			actionIds.map(async (actionId) => ({
+				actionId,
+				events: await app.prisma.libraryCleanupAuditEvent.findMany({
+					where: { config: { userId }, actionId },
+					orderBy: { id: "desc" },
+					take: CLEANUP_ACTIVITY_EVENTS_PER_TIMELINE,
+				}),
+			})),
+		);
+		const grouped = new Map(
+			eventPages.map(({ actionId, events }) => [actionId, [...events].reverse()] as const),
+		);
+		const eventCounts = new Map(
+			latestActions.map((row) => [row.actionId, row._count._all] as const),
+		);
+		const actionStartedAt = new Map(
+			latestActions.map((row) => [row.actionId, row._min.createdAt] as const),
+		);
+
+		const timelines = actionIds.flatMap((actionId) => {
+			const chronological = grouped.get(actionId);
+			if (!chronological || chronological.length === 0) return [];
+			const first = chronological[0]!;
+			const latest = chronological[chronological.length - 1]!;
+			const eventCount = eventCounts.get(actionId) ?? chronological.length;
+			return [
+				{
+					actionId,
+					instanceId: first.instanceId,
+					arrItemId: first.arrItemId,
+					itemType: first.itemType,
+					targetScope: first.targetScope === "episode" ? "episode" : "series",
+					arrEpisodeId: first.arrEpisodeId,
+					title: first.title,
+					ruleId: first.ruleId,
+					ruleName: first.ruleName,
+					action: first.action,
+					trigger: latest.trigger,
+					latestOutcome: latest.outcome,
+					actionableReason: latest.reason,
+					startedAt: (actionStartedAt.get(actionId) ?? first.createdAt).toISOString(),
+					updatedAt: latest.createdAt.toISOString(),
+					eventCount,
+					eventsTruncated: eventCount > chronological.length,
+					olderEventsCursor:
+						eventCount > chronological.length ? chronological[0]!.id.toString() : null,
+					events: chronological.map((event) => ({
+						id: event.id.toString(),
+						actionId: event.actionId,
+						correlationId: event.correlationId,
+						sequence: event.sequence,
+						eventType: event.eventType,
+						outcome: event.outcome,
+						trigger: event.trigger,
+						actorType: event.actorType,
+						actorId: event.actorId,
+						approvalId: event.approvalId,
+						runLogId: event.runLogId,
+						reason: event.reason,
+						evidence: utilSafeJsonParse(event.evidence) ?? null,
+						details: utilSafeJsonParse(event.details) ?? null,
+						createdAt: event.createdAt.toISOString(),
+					})),
+				},
+			];
+		});
+		return reply.send({
+			items: timelines,
+			total,
+			page,
+			pageSize,
+		});
+	});
+
+	/** GET /api/library-cleanup/activity/:actionId/events
+	 *  Loads one bounded page immediately older than the supplied durable event
+	 *  id. Event ids are unique and monotonically increasing, so the exclusive
+	 *  cursor remains stable even when newer audit events are appended.
+	 */
+	app.get<{
+		Params: { actionId: string };
+		Querystring: { cursor: string; pageSize?: string };
+	}>("/library-cleanup/activity/:actionId/events", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { actionId } = validateRequest(cleanupActivityEventParamsSchema, request.params);
+		const { cursor, pageSize } = validateRequest(cleanupActivityEventQuerySchema, request.query);
+		const events = await app.prisma.libraryCleanupAuditEvent.findMany({
+			where: {
+				config: { userId },
+				actionId,
+				id: { lt: cursor },
+			},
+			orderBy: { id: "desc" },
+			take: pageSize + 1,
+		});
+		const hasMore = events.length > pageSize;
+		const page = hasMore ? events.slice(0, pageSize) : events;
+		const chronological = [...page].reverse();
+
+		return reply.send({
+			items: chronological.map((event) => ({
+				id: event.id.toString(),
+				actionId: event.actionId,
+				correlationId: event.correlationId,
+				sequence: event.sequence,
+				eventType: event.eventType,
+				outcome: event.outcome,
+				trigger: event.trigger,
+				actorType: event.actorType,
+				actorId: event.actorId,
+				approvalId: event.approvalId,
+				runLogId: event.runLogId,
+				reason: event.reason,
+				evidence: utilSafeJsonParse(event.evidence) ?? null,
+				details: utilSafeJsonParse(event.details) ?? null,
+				createdAt: event.createdAt.toISOString(),
+			})),
+			olderEventsCursor: hasMore ? (page[page.length - 1]?.id.toString() ?? null) : null,
+		});
+	});
 
 	/** GET /api/library-cleanup/logs */
 	app.get("/library-cleanup/logs", async (request, reply) => {
@@ -1458,7 +2040,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		// Load config + rules
 		const config = await app.prisma.libraryCleanupConfig.findUnique({
 			where: { userId },
-			include: { rules: { orderBy: { priority: "asc" } } },
+			include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 		});
 		if (!config || config.rules.length === 0) {
 			return reply.send({
@@ -1470,7 +2052,13 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 		// Build a fully-populated eval context with prefetched external data
 		const { ctx, failedSources } = await buildEvalContextWithHealth(
-			{ prisma: app.prisma, arrClientFactory: app.arrClientFactory, log: request.log },
+			{
+				prisma: app.prisma,
+				arrClientFactory: app.arrClientFactory,
+				encryptor: app.encryptor,
+				traktClientId: process.env.TRAKT_CLIENT_ID ?? null,
+				log: request.log,
+			},
 			userId,
 			config.rules.filter((rule) => rule.targetScope !== "episode"),
 		);
@@ -1487,8 +2075,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		// Determine if any retention rule matched
 		const retentionProtected = results.some(
 			(result) =>
-				result.retentionMode &&
-				(result.matched || result.filteredBy === "evidence_unavailable"),
+				result.retentionMode && (result.matched || result.filteredBy === "evidence_unavailable"),
 		);
 
 		return reply.send({
@@ -1626,16 +2213,72 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 // Helpers
 // ============================================================================
 
+function applyRuleParameterDefaults(
+	ruleType: string,
+	parameters: Record<string, unknown>,
+): Record<string, unknown> {
+	const schema = ruleParamSchemaMap[ruleType];
+	if (!schema) return parameters;
+	const parsed = schema.safeParse(parameters);
+	return parsed.success ? (parsed.data as Record<string, unknown>) : parameters;
+}
+
+function applyExpressionParameterDefaults(
+	expression: VersionedCleanupRuleExpression,
+): VersionedCleanupRuleExpression {
+	const cloneNode = (node: CleanupRuleExpression): CleanupRuleExpression => {
+		if (node.type === "condition") {
+			return {
+				...node,
+				parameters: applyRuleParameterDefaults(node.ruleType, node.parameters),
+			};
+		}
+		if (node.type === "group") {
+			return { ...node, children: node.children.map(cloneNode) };
+		}
+		return { ...node, child: cloneNode(node.child) };
+	};
+	return { ...expression, root: cloneNode(expression.root) };
+}
+
 /**
  * Validate rule parameters against the type-specific Zod schema.
  * Also validates parameters within composite rule conditions.
  * Returns an error message string if invalid, or null if valid.
  */
-function validateRuleParameters(
+export function validateRuleParameters(
 	ruleType: string,
 	parameters: Record<string, unknown>,
 	conditions: Array<{ ruleType: string; parameters: Record<string, unknown> }> | null,
+	expression: VersionedCleanupRuleExpression | null,
 ): string | null {
+	if (expression) {
+		const stack: Array<{ node: CleanupRuleExpression; path: string }> = [
+			{ node: expression.root, path: "root" },
+		];
+		while (stack.length > 0) {
+			const { node, path } = stack.pop()!;
+			if (node.type === "condition") {
+				const schema = ruleParamSchemaMap[node.ruleType];
+				if (!schema) continue;
+				const result = schema.safeParse(node.parameters);
+				if (!result.success) {
+					const flat = result.error.flatten();
+					const msgs =
+						Object.values(flat.fieldErrors).flat().join(", ") || flat.formErrors.join(", ");
+					return `Invalid parameters for expression.${path} (${node.ruleType}): ${msgs}`;
+				}
+			} else if (node.type === "group") {
+				for (let i = node.children.length - 1; i >= 0; i--) {
+					stack.push({ node: node.children[i]!, path: `${path}.children[${i}]` });
+				}
+			} else {
+				stack.push({ node: node.child, path: `${path}.child` });
+			}
+		}
+		return null;
+	}
+
 	// For composite rules, validate each condition's parameters
 	if (ruleType === "composite" && conditions) {
 		for (let i = 0; i < conditions.length; i++) {

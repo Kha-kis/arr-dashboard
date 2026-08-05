@@ -48,7 +48,7 @@ for the full rationale.
 | `/api/manual-import` | stable | Manual import candidates and submission |
 | `/api/hunting` | internal | Auto-search configuration and execution |
 | `/api/queue-cleaner` | internal | Queue cleanup rules, strikes, dry-run preview |
-| `/api/library-cleanup` | internal | Library cleanup rules, approvals, execution |
+| `/api/library-cleanup` | internal | Library cleanup rules, approvals, execution, and retention-capped action activity |
 | `/api/plex` | stable | Now playing, on-deck, history, analytics, forecasts |
 | `/api/jellyfin` | stable | Jellyfin activity and library data |
 | `/api/tautulli` | stable | Activity, watch history enrichment, statistics |
@@ -172,7 +172,7 @@ Per-row sleep is 100ms regardless of phase — that's the politeness budget agai
 | `/api/discover` | TMDB/Seerr discovery |
 | `/api/hunting` | Auto-search configuration and execution |
 | `/api/queue-cleaner` | Queue cleanup rules, strikes, dry-run preview |
-| `/api/library-cleanup` | Library cleanup rules, approvals, execution |
+| `/api/library-cleanup` | Library cleanup rules, approvals, execution, and retention-capped action activity |
 | `/api/manual-import` | Manual import candidates and submission |
 | `/api/backup` | Backup create, download, restore, scheduled backups |
 | `/api/system` | System settings, info, restart |

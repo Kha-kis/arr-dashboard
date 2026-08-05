@@ -139,6 +139,17 @@ beforeEach(async () => {
 		},
 		plexEpisodeCache: {
 			findMany: plexEpisodeCacheFindMany,
+			groupBy: vi.fn().mockResolvedValue([{ instanceId: PLEX_INSTANCE_ID, _count: { id: 1 } }]),
+		},
+		cacheRefreshStatus: {
+			findMany: vi.fn().mockResolvedValue([
+				{
+					instanceId: PLEX_INSTANCE_ID,
+					lastRefreshedAt: NOW,
+					lastResult: "success",
+					itemCount: 1,
+				},
+			]),
 		},
 		plexCache: { findMany: plexCacheFindMany },
 	} as never);

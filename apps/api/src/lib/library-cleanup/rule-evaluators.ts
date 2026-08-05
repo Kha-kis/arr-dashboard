@@ -12,6 +12,7 @@ import type {
 	AgeRuleParams,
 	AudioChannelsRuleParams,
 	AudioCodecRuleParams,
+	CleanupRuleExpression,
 	Condition,
 	CustomFormatScoreRuleParams,
 	FilePathRuleParams,
@@ -57,16 +58,20 @@ import type {
 	TautulliWatchCountParams,
 	TautulliWatchedByParams,
 	UserRetentionParams,
+	VersionedCleanupRuleExpression,
 	VideoCodecRuleParams,
 	YearRangeRuleParams,
 } from "@arr/shared";
-import { type DataSourceDependency, isRegexSafe, ruleDataSourceMap } from "@arr/shared";
+import {
+	type DataSourceDependency,
+	isRegexSafe,
+	isVersionedCleanupRuleExpression,
+	normalizeCleanupRuleExpression,
+	ruleDataSourceMap,
+} from "@arr/shared";
 import type { LibraryCleanupRule } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
-import {
-	evaluateEpisodeWatchCountRule,
-	isSupportedEpisodeCleanupRule,
-} from "./episode-scope.js";
+import { evaluateEpisodeWatchCountRule, isSupportedEpisodeCleanupRule } from "./episode-scope.js";
 import type {
 	CacheItemForEval,
 	EvalContext,
@@ -80,6 +85,7 @@ import type {
 	SeerrRequestMap,
 	TautulliWatchMap,
 } from "./types.js";
+import { listMembershipKey } from "./types.js";
 
 export interface EpisodeExplainEvidence {
 	arrEpisodeId: number;
@@ -128,7 +134,7 @@ function evaluateSizeRule(item: CacheItemForEval, params: SizeRuleParams): strin
 
 interface ExtractedRating {
 	value: number;
-	label: "TMDB rating" | "Sonarr rating" | "Rating";
+	label: "TMDB rating" | "Sonarr rating";
 }
 
 /**
@@ -169,14 +175,9 @@ function evaluateStatusRule(item: CacheItemForEval, params: StatusRuleParams): s
 	return null;
 }
 
-/**
- * Unmonitored rule: flag items that are not monitored.
- */
-function evaluateUnmonitoredRule(item: CacheItemForEval): string | null {
-	if (!item.monitored) {
-		return "Item is unmonitored";
-	}
-	return null;
+function evaluateMonitoringStateRule(item: CacheItemForEval, expected: boolean): string | null {
+	if (item.monitored !== expected) return null;
+	return expected ? "Item is monitored" : "Item is unmonitored";
 }
 
 /**
@@ -190,8 +191,6 @@ function evaluateGenreRule(item: CacheItemForEval, params: GenreRuleParams): str
 	const genres = Array.isArray(data.genres)
 		? (data.genres as string[]).map((g) => g.toLowerCase())
 		: [];
-
-	if (genres.length === 0) return null;
 
 	const targetGenres = params.genres.map((g) => g.toLowerCase());
 
@@ -299,8 +298,6 @@ function evaluateLanguageRule(item: CacheItemForEval, params: LanguageRuleParams
 			}
 		}
 	}
-
-	if (languages.length === 0) return null;
 
 	const targetLangs = params.languages.map((l) => l.toLowerCase());
 
@@ -557,7 +554,7 @@ function lookupSeerrRequests(
 	item: CacheItemForEval,
 	seerrMap: SeerrRequestMap | undefined,
 ): SeerrRequestInfo[] | null {
-	if (!seerrMap || seerrMap.size === 0) return null;
+	if (!seerrMap) return null;
 
 	const parsed = safeJsonParse(item.data);
 	if (!parsed) return null;
@@ -572,7 +569,11 @@ function lookupSeerrRequests(
 	const mediaType = item.itemType === "movie" ? "movie" : "tv";
 	const key = `${mediaType}:${tmdbId}`;
 
-	return seerrMap.get(key) ?? null;
+	// A defined map represents a successfully completed Seerr inventory.
+	// Absence from that complete inventory is therefore known zero requests,
+	// including when the entire map is empty. Keep null reserved for missing
+	// source or identity evidence so UNKNOWN survives explicit NOT.
+	return seerrMap.get(key) ?? [];
 }
 
 /**
@@ -784,11 +785,12 @@ function evaluateSeerrRequesterWatched(
 	seerrMap: SeerrRequestMap | undefined,
 	plexMap: PlexWatchMap | undefined,
 	plexLibraryFilter?: string[] | null,
+	plexSectionTitles?: Set<string>,
 ): string | null {
 	const requests = lookupSeerrRequests(item, seerrMap);
 	if (!requests || requests.length === 0) return null;
 
-	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter, plexSectionTitles);
 	if (!watch) return null;
 
 	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
@@ -814,12 +816,13 @@ function evaluateSeerrRequesterNotWatched(
 	seerrMap: SeerrRequestMap | undefined,
 	plexMap: PlexWatchMap | undefined,
 	plexLibraryFilter?: string[] | null,
+	plexSectionTitles?: Set<string>,
 ): string | null {
 	const requests = lookupSeerrRequests(item, seerrMap);
 	if (!requests || requests.length === 0) return null;
 
 	// Require Plex data — without it we can't distinguish "not watched" from "unknown"
-	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter, plexSectionTitles);
 	if (!watch) return null;
 
 	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
@@ -849,7 +852,7 @@ function lookupTautulliWatch(
 	item: CacheItemForEval,
 	tautulliMap: TautulliWatchMap | undefined,
 ): { lastWatchedAt: Date | null; watchCount: number; watchedByUsers: string[] } | null {
-	if (!tautulliMap || tautulliMap.size === 0) return null;
+	if (!tautulliMap) return null;
 
 	const parsed = safeJsonParse(item.data);
 	if (!parsed) return null;
@@ -862,7 +865,7 @@ function lookupTautulliWatch(
 	const mediaType = item.itemType === "movie" ? "movie" : "series";
 	const key = `${mediaType}:${tmdbId}`;
 
-	return tautulliMap.get(key) ?? null;
+	return tautulliMap.get(key) ?? { lastWatchedAt: null, watchCount: 0, watchedByUsers: [] };
 }
 
 /**
@@ -959,7 +962,7 @@ function evaluateTautulliWatchedBy(
 	ctx: EvalContext,
 ): string | null {
 	const watch = lookupTautulliWatch(item, ctx.tautulliMap);
-	if (!watch || watch.watchedByUsers.length === 0) return null;
+	if (!watch) return null;
 
 	const users = watch.watchedByUsers.map((u) => u.toLowerCase());
 	const targetNames = params.userNames.map((n) => n.toLowerCase());
@@ -990,8 +993,9 @@ function lookupPlexWatch(
 	item: CacheItemForEval,
 	plexMap: PlexWatchMap | undefined,
 	plexLibraryFilter?: string[] | null,
+	plexSectionTitles?: Set<string>,
 ): PlexWatchInfo | null {
-	if (!plexMap || plexMap.size === 0) return null;
+	if (!plexMap) return null;
 
 	const parsed = safeJsonParse(item.data);
 	if (!parsed) return null;
@@ -1004,15 +1008,34 @@ function lookupPlexWatch(
 	const mediaType = item.itemType === "movie" ? "movie" : "series";
 	const key = `${mediaType}:${tmdbId}`;
 
-	const entry = plexMap.get(key);
-	if (!entry) return null;
+	const emptyEntry: PlexWatchInfo = {
+		lastWatchedAt: null,
+		watchCount: 0,
+		watchedByUsers: [],
+		onDeck: false,
+		userRating: null,
+		collections: [],
+		labels: [],
+		addedAt: null,
+		sections: [],
+	};
+	const entry = plexMap.get(key) ?? emptyEntry;
 
 	// If no filter, return the pre-computed aggregates (existing behavior)
 	if (!plexLibraryFilter || plexLibraryFilter.length === 0) return entry;
+	// A filtered negative is authoritative only when every configured selector
+	// exists in a complete current section inventory. Missing selector evidence
+	// is UNKNOWN, never a synthetic zero-watch record.
+	if (
+		!plexSectionTitles ||
+		plexLibraryFilter.some((sectionTitle) => !plexSectionTitles.has(sectionTitle))
+	) {
+		return null;
+	}
 
 	// Filter to matching sections only
 	const matchingSections = entry.sections.filter((s) => plexLibraryFilter.includes(s.sectionTitle));
-	if (matchingSections.length === 0) return null;
+	if (matchingSections.length === 0) return emptyEntry;
 
 	// Re-aggregate from filtered sections
 	return {
@@ -1049,7 +1072,7 @@ function evaluatePlexLastWatched(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 
 	if (params.operator === "never") {
 		if (!watch || watch.lastWatchedAt === null) {
@@ -1092,7 +1115,7 @@ function evaluatePlexWatchCount(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch) {
 		// Not in Plex — infer 0 plays when Plex is configured and item has a file
 		if (
@@ -1136,7 +1159,7 @@ function evaluatePlexOnDeck(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch) return null;
 	const isOnDeck = watch.onDeck;
 
@@ -1159,7 +1182,7 @@ function evaluatePlexUserRating(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 
 	if (params.operator === "unrated") {
 		if (!watch || watch.userRating === null) {
@@ -1196,7 +1219,7 @@ function evaluatePlexWatchedBy(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch) return null;
 	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
 	const targetNames = params.userNames.map((n) => n.toLowerCase());
@@ -1225,7 +1248,7 @@ function evaluatePlexCollection(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch) return null;
 	const collections = watch.collections;
 
@@ -1255,7 +1278,7 @@ function evaluatePlexLabel(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch) return null;
 	const labels = watch.labels;
 
@@ -1287,7 +1310,7 @@ function evaluatePlexAddedAt(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch?.addedAt) return null;
 
 	const ageDays = (ctx.now.getTime() - watch.addedAt.getTime()) / (1000 * 60 * 60 * 24);
@@ -1309,7 +1332,7 @@ function lookupJellyfinWatch(
 	item: CacheItemForEval,
 	jellyfinMap: JellyfinWatchMap | undefined,
 ): JellyfinWatchInfo | null {
-	if (!jellyfinMap || jellyfinMap.size === 0) return null;
+	if (!jellyfinMap) return null;
 	const parsed = safeJsonParse(item.data);
 	if (!parsed) return null;
 	const data = parsed as Record<string, unknown>;
@@ -1317,7 +1340,16 @@ function lookupJellyfinWatch(
 	const tmdbId = remoteIds?.tmdbId;
 	if (!tmdbId) return null;
 	const mediaType = item.itemType === "movie" ? "movie" : "series";
-	return jellyfinMap.get(`${mediaType}:${tmdbId}`) ?? null;
+	return (
+		jellyfinMap.get(`${mediaType}:${tmdbId}`) ?? {
+			lastWatchedAt: null,
+			watchCount: 0,
+			watchedByUsers: [],
+			onDeck: false,
+			userRating: null,
+			addedAt: null,
+		}
+	);
 }
 
 function evaluateJellyfinLastWatched(
@@ -1509,6 +1541,7 @@ function evaluateImdbRatingRule(
 	const parsed = safeJsonParse(item.data);
 	if (!parsed) return null;
 	const data = parsed as Record<string, unknown>;
+	if (data.service !== "radarr") return null;
 
 	// Extract IMDb rating: ratings.imdb.value
 	if (typeof data.ratings !== "object" || data.ratings === null) {
@@ -1516,9 +1549,10 @@ function evaluateImdbRatingRule(
 	}
 	const ratings = data.ratings as Record<string, unknown>;
 	const imdb = ratings.imdb as Record<string, unknown> | undefined;
-	if (!imdb || typeof imdb.value !== "number") {
+	if (!imdb || typeof imdb.value !== "number" || imdb.value === 0) {
 		return params.operator === "unrated" ? "No IMDb rating" : null;
 	}
+	if (!Number.isFinite(imdb.value) || imdb.value < 0 || imdb.value > 10) return null;
 
 	if (params.operator === "unrated") return null; // Has a rating, doesn't match unrated
 
@@ -1790,20 +1824,28 @@ function evaluateUserRetention(
  * Staleness score: weighted 0-100 score combining multiple signals.
  * Higher = more stale. Uses Plex and item data.
  */
+const DEFAULT_STALENESS_WEIGHTS = {
+	daysSinceLastWatch: 0.3,
+	inverseWatchCount: 0.2,
+	notOnDeck: 0.1,
+	lowUserRating: 0.15,
+	lowTmdbRating: 0.15,
+	sizeOnDisk: 0.1,
+};
+
+function stalenessRequiresArrRating(parameters: Record<string, unknown>): boolean {
+	const weights = parameters.weights;
+	if (typeof weights !== "object" || weights === null || Array.isArray(weights)) return true;
+	const lowTmdbRating = (weights as Record<string, unknown>).lowTmdbRating;
+	return typeof lowTmdbRating === "number" ? lowTmdbRating > 0 : true;
+}
+
 function evaluateStalenessScore(
 	item: CacheItemForEval,
 	params: StalenessScoreParams,
 	ctx: EvalContext,
 ): string | null {
-	const defaults = {
-		daysSinceLastWatch: 0.3,
-		inverseWatchCount: 0.2,
-		notOnDeck: 0.1,
-		lowUserRating: 0.15,
-		lowTmdbRating: 0.15,
-		sizeOnDisk: 0.1,
-	};
-	const w = params.weights ?? defaults;
+	const w = params.weights ?? DEFAULT_STALENESS_WEIGHTS;
 
 	const parsed = safeJsonParse(item.data);
 	if (!parsed) return null;
@@ -1913,9 +1955,8 @@ function evaluateRecentlyActive(
 // ============================================================================
 
 /**
- * Extract the preferred available rating from a serialized Sonarr/Radarr item.
- * Radarr exposes source-keyed ratings and Sonarr exposes a flat `{ value, votes }`
- * object populated from SkyHook. Prefer Radarr's TMDB value when it is present.
+ * Extract the one service-specific comparable rating without crossing source
+ * provenance. Radarr uses TMDb; Sonarr uses its flat SkyHook score.
  */
 function extractRatingDetails(item: CacheItemForEval): ExtractedRating | null {
 	const parsed = safeJsonParse(item.data);
@@ -1923,30 +1964,29 @@ function extractRatingDetails(item: CacheItemForEval): ExtractedRating | null {
 
 	const data = parsed as Record<string, unknown>;
 
-	if (typeof data.ratings === "object" && data.ratings !== null) {
-		const ratings = data.ratings as Record<string, unknown>;
+	if (typeof data.ratings !== "object" || data.ratings === null) return null;
+	const ratings = data.ratings as Record<string, unknown>;
+
+	if (data.service === "radarr") {
 		const tmdb = ratings.tmdb as Record<string, unknown> | undefined;
-		if (tmdb && typeof tmdb.value === "number") {
+		if (tmdb && isComparableRating(tmdb.value)) {
 			return { value: tmdb.value, label: "TMDB rating" };
 		}
+		return null;
+	}
 
-		// Sonarr stores its SkyHook rating directly as { value, votes }.
-		if (typeof ratings.value === "number") {
+	if (data.service === "sonarr") {
+		if (isComparableRating(ratings.value)) {
 			return { value: ratings.value, label: "Sonarr rating" };
 		}
-
-		// Fallback to any available rating
-		for (const source of Object.values(ratings)) {
-			if (typeof source === "object" && source !== null) {
-				const val = (source as Record<string, unknown>).value;
-				if (typeof val === "number" && val > 0) {
-					return { value: val, label: "Rating" };
-				}
-			}
-		}
+		return null;
 	}
 
 	return null;
+}
+
+function isComparableRating(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 10;
 }
 
 export function extractRating(item: CacheItemForEval): number | null {
@@ -2065,8 +2105,10 @@ export function evaluateSingleCondition(
 			return evaluateRatingRule(item, params as RatingRuleParams);
 		case "status":
 			return evaluateStatusRule(item, params as StatusRuleParams);
+		case "monitored":
+			return evaluateMonitoringStateRule(item, true);
 		case "unmonitored":
-			return evaluateUnmonitoredRule(item);
+			return evaluateMonitoringStateRule(item, false);
 		case "genre":
 			return evaluateGenreRule(item, params as GenreRuleParams);
 		case "year_range":
@@ -2185,9 +2227,21 @@ export function evaluateSingleCondition(
 
 		// ── Phase 4: Requester-aware cross-service rules ─────────────
 		case "seerr_requester_watched":
-			return evaluateSeerrRequesterWatched(item, ctx.seerrMap, ctx.plexMap, plexLibFilter);
+			return evaluateSeerrRequesterWatched(
+				item,
+				ctx.seerrMap,
+				ctx.plexMap,
+				plexLibFilter,
+				ctx.plexSectionTitles,
+			);
 		case "seerr_requester_not_watched":
-			return evaluateSeerrRequesterNotWatched(item, ctx.seerrMap, ctx.plexMap, plexLibFilter);
+			return evaluateSeerrRequesterNotWatched(
+				item,
+				ctx.seerrMap,
+				ctx.plexMap,
+				plexLibFilter,
+				ctx.plexSectionTitles,
+			);
 
 		case "tmdb_list_member":
 			return evaluateListMembership(item, params, ctx.tmdbListMemberships, "listId", "TMDb list");
@@ -2221,7 +2275,7 @@ export function evaluateSingleCondition(
 function evaluateListMembership(
 	item: CacheItemForEval,
 	params: Record<string, unknown>,
-	memberships: Map<string, Set<number>> | undefined,
+	memberships: EvalContext["tmdbListMemberships"],
 	identifierKey: "listId" | "listSlug",
 	displayLabel: string,
 ): string | null {
@@ -2234,7 +2288,10 @@ function evaluateListMembership(
 	const tmdbId = extractTmdbId(item.data);
 	if (tmdbId === null) return null; // item has no tmdbId — can't match against a tmdb-keyed list
 
-	const inList = memberships.get(id)?.has(tmdbId) ?? false;
+	const mediaType =
+		item.itemType === "movie" ? "movie" : item.itemType === "series" ? "series" : null;
+	if (!mediaType) return null;
+	const inList = memberships.get(id)?.has(listMembershipKey(mediaType, tmdbId)) ?? false;
 	if (op === "is_in" && inList) return `In ${displayLabel} ${id}`;
 	if (op === "not_in" && !inList) return `Not in ${displayLabel} ${id}`;
 	return null;
@@ -2263,7 +2320,7 @@ function extractTmdbId(data: string): number | null {
  * 3. Composite AND/OR logic (when operator is set)
  * 4. Legacy single-condition dispatch (when operator is null)
  */
-export function evaluateRule(
+function evaluateRuleLegacy(
 	item: CacheItemForEval,
 	rule: LibraryCleanupRule,
 	instanceService: string,
@@ -2280,6 +2337,7 @@ export function evaluateRule(
 	// Parse Plex library filter once for all Plex evaluators
 	const plexLibFilter = safeJsonParse(rule.plexLibraryFilter) as string[] | null;
 	const action = (rule.action ?? "delete") as RuleAction;
+	const scanMediaServerAfterDelete = rule.scanMediaServerAfterDelete === true;
 
 	// ── Composite rule path ────────────────────────────────────────
 	if (rule.operator && rule.conditions) {
@@ -2299,7 +2357,13 @@ export function evaluateRule(
 				if (!reason) return null; // ALL must match
 				reasons.push(reason);
 			}
-			return { ruleId: rule.id, ruleName: rule.name, reason: reasons.join(" AND "), action };
+			return {
+				ruleId: rule.id,
+				ruleName: rule.name,
+				reason: reasons.join(" AND "),
+				action,
+				...(scanMediaServerAfterDelete ? { scanMediaServerAfterDelete: true } : {}),
+			};
 		}
 
 		if (rule.operator === "OR") {
@@ -2312,7 +2376,13 @@ export function evaluateRule(
 					plexLibFilter,
 				);
 				if (reason) {
-					return { ruleId: rule.id, ruleName: rule.name, reason, action };
+					return {
+						ruleId: rule.id,
+						ruleName: rule.name,
+						reason,
+						action,
+						...(scanMediaServerAfterDelete ? { scanMediaServerAfterDelete: true } : {}),
+					};
 				}
 			}
 			return null; // AT LEAST ONE must match
@@ -2324,7 +2394,447 @@ export function evaluateRule(
 	if (!params) return null;
 
 	const reason = evaluateSingleCondition(item, rule.ruleType, params, ctx, plexLibFilter);
-	return reason ? { ruleId: rule.id, ruleName: rule.name, reason, action } : null;
+	return reason
+		? {
+				ruleId: rule.id,
+				ruleName: rule.name,
+				reason,
+				action,
+				...(scanMediaServerAfterDelete ? { scanMediaServerAfterDelete: true } : {}),
+			}
+		: null;
+}
+
+export type RuleEvaluationState = "true" | "false" | "unknown";
+
+export interface RuleEvaluation {
+	state: RuleEvaluationState;
+	match: RuleMatch | null;
+}
+
+export type ConditionEvidenceAvailability = (
+	ruleType: string,
+	parameters: Record<string, unknown>,
+) => boolean;
+
+/**
+ * Parse legacy single/flat rules and versioned recursive rules at one boundary.
+ * A stored expression combined with a legacy operator is ambiguous and fails closed.
+ */
+export function normalizeStoredCleanupRuleExpression(
+	rule: Pick<LibraryCleanupRule, "ruleType" | "parameters" | "operator" | "conditions">,
+): VersionedCleanupRuleExpression | null {
+	const parameters = (safeJsonParse(rule.parameters) as Record<string, unknown> | null) ?? {};
+	const stored = safeJsonParse(rule.conditions) as unknown;
+	if (isVersionedCleanupRuleExpression(stored)) {
+		if (rule.operator !== null || rule.ruleType !== "composite") return null;
+		return normalizeCleanupRuleExpression({
+			ruleType: rule.ruleType,
+			parameters,
+			expression: stored,
+		});
+	}
+	if (stored !== null && !Array.isArray(stored)) return null;
+	if (Array.isArray(stored) && stored.length > 0 && rule.operator === null) return null;
+	return normalizeCleanupRuleExpression({
+		ruleType: rule.ruleType,
+		parameters,
+		operator: rule.operator,
+		conditions: Array.isArray(stored) ? stored : null,
+	});
+}
+
+function parsedItemData(item: CacheItemForEval): Record<string, unknown> | null {
+	const parsed = safeJsonParse(item.data);
+	return typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
+}
+
+function itemProviderKey(item: CacheItemForEval): string | null {
+	const tmdbId = extractTmdbId(item.data);
+	if (tmdbId === null) return null;
+	return `${item.itemType}:${tmdbId}`;
+}
+
+function seerrProviderKey(item: CacheItemForEval): string | null {
+	const tmdbId = extractTmdbId(item.data);
+	if (tmdbId === null) return null;
+	return `${item.itemType === "movie" ? "movie" : "tv"}:${tmdbId}`;
+}
+
+function hasPathEvidence(item: CacheItemForEval, parameters: Record<string, unknown>): boolean {
+	const data = parsedItemData(item);
+	if (!data) return false;
+	if ((parameters.field ?? "path") === "rootFolderPath") {
+		return typeof data.rootFolderPath === "string" && data.rootFolderPath.length > 0;
+	}
+	const movieFile = data.movieFile as Record<string, unknown> | undefined;
+	return (
+		(typeof data.path === "string" && data.path.length > 0) ||
+		(typeof movieFile?.path === "string" && movieFile.path.length > 0) ||
+		(typeof data.folderName === "string" && data.folderName.length > 0)
+	);
+}
+
+/**
+ * Establish whether a condition has enough evidence to produce a real boolean.
+ * Evaluator `null` remains a definitive false only after this boundary succeeds.
+ */
+function conditionEvidenceAvailable(
+	ruleType: string,
+	parameters: Record<string, unknown>,
+	item: CacheItemForEval,
+	ctx: EvalContext,
+	plexLibFilter: string[] | null,
+	failedSources?: Set<DataSourceDependency>,
+	evidenceAvailability?: ConditionEvidenceAvailability,
+): boolean {
+	if (evidenceAvailability && !evidenceAvailability(ruleType, parameters)) return false;
+	if (failedSources && shouldSkipRuleType(ruleType, JSON.stringify(parameters), failedSources)) {
+		return false;
+	}
+
+	const data = parsedItemData(item);
+	const arrEvidence =
+		typeof data?._arrDashboardEvidence === "object" &&
+		data._arrDashboardEvidence !== null &&
+		!Array.isArray(data._arrDashboardEvidence)
+			? (data._arrDashboardEvidence as Record<string, unknown>)
+			: null;
+	const metadata = extractFileMetadata(item);
+	const providerKey = itemProviderKey(item);
+	const seerrKey = seerrProviderKey(item);
+	const tmdbId = extractTmdbId(item.data);
+	const plexWatch = lookupPlexWatch(item, ctx.plexMap, plexLibFilter, ctx.plexSectionTitles);
+	const tautulliWatch = lookupTautulliWatch(item, ctx.tautulliMap);
+	const jellyfinWatch = lookupJellyfinWatch(item, ctx.jellyfinMap);
+
+	switch (ruleType) {
+		case "size":
+			return arrEvidence?.sizeOnDisk === true;
+		case "monitored":
+		case "unmonitored":
+			return arrEvidence?.monitored === true;
+		case "no_file":
+			return arrEvidence?.hasFile === true;
+		case "age":
+		case "recently_active":
+			if (!item.arrAddedAt) return false;
+			return (
+				ruleType !== "recently_active" || parameters.requireActivity !== true || plexWatch !== null
+			);
+		case "rating":
+			return arrEvidence?.rating === true;
+		case "status":
+			return item.status !== null;
+		case "genre":
+			return Array.isArray(data?.genres);
+		case "year_range":
+			return item.year !== null;
+		case "quality_profile":
+			return item.qualityProfileName !== null;
+		case "language":
+			return (
+				data !== null && (Object.hasOwn(data, "originalLanguage") || Array.isArray(data.languages))
+			);
+		case "video_codec":
+			return metadata?.videoCodec !== null && metadata?.videoCodec !== undefined;
+		case "audio_codec":
+			return metadata?.audioCodec !== null && metadata?.audioCodec !== undefined;
+		case "resolution":
+			return metadata?.resolution !== null && metadata?.resolution !== undefined;
+		case "hdr_type":
+			return (
+				metadata !== null && (parameters.operator === "none" || metadata.videoDynamicRange !== null)
+			);
+		case "custom_format_score":
+			return metadata?.customFormatScore !== null && metadata?.customFormatScore !== undefined;
+		case "runtime": {
+			const statistics = data?.statistics as Record<string, unknown> | undefined;
+			return (
+				typeof data?.runtime === "number" ||
+				(typeof statistics === "object" && typeof statistics.runtime === "number")
+			);
+		}
+		case "release_group":
+			return metadata?.releaseGroup !== null && metadata?.releaseGroup !== undefined;
+		case "imdb_rating": {
+			return data?.service === "radarr" && arrEvidence?.imdbRating === true;
+		}
+		case "file_path":
+			return hasPathEvidence(item, parameters);
+		case "audio_channels":
+			return metadata?.audioCodec ? parseAudioChannels(metadata.audioCodec) !== null : false;
+		case "tag_match":
+			return Array.isArray(data?.tags);
+
+		case "seerr_requested_by":
+		case "seerr_request_age":
+		case "seerr_request_status":
+		case "seerr_is_4k":
+		case "seerr_request_modified_age":
+		case "seerr_modified_by":
+		case "seerr_is_requested":
+		case "seerr_request_count":
+			return ctx.seerrMap !== undefined && seerrKey !== null;
+
+		case "tautulli_watch_count":
+		case "tautulli_watched_by":
+			return providerKey !== null && tautulliWatch !== null;
+		case "tautulli_last_watched":
+			return (
+				providerKey !== null &&
+				tautulliWatch !== null &&
+				(parameters.operator === "never" ||
+					tautulliWatch.lastWatchedAt !== null ||
+					lookupPlexWatch(item, ctx.plexMap)?.addedAt != null ||
+					item.arrAddedAt !== null)
+			);
+
+		case "plex_watch_count":
+		case "plex_on_deck":
+		case "plex_watched_by":
+		case "plex_collection":
+		case "plex_label":
+			return providerKey !== null && plexWatch !== null;
+		case "plex_last_watched":
+			return (
+				providerKey !== null &&
+				plexWatch !== null &&
+				(parameters.operator === "never" ||
+					plexWatch.lastWatchedAt !== null ||
+					plexWatch.addedAt !== null ||
+					item.arrAddedAt !== null)
+			);
+		case "plex_user_rating":
+			return (
+				providerKey !== null &&
+				plexWatch !== null &&
+				(parameters.operator === "unrated" || plexWatch.userRating !== null)
+			);
+		case "plex_added_at":
+			return providerKey !== null && plexWatch?.addedAt != null;
+
+		case "jellyfin_watch_count":
+		case "jellyfin_on_deck":
+		case "jellyfin_watched_by":
+			return providerKey !== null && jellyfinWatch !== null;
+		case "jellyfin_last_watched":
+			return (
+				providerKey !== null &&
+				jellyfinWatch !== null &&
+				(parameters.operator === "never" ||
+					jellyfinWatch.lastWatchedAt !== null ||
+					jellyfinWatch.addedAt !== null ||
+					item.arrAddedAt !== null)
+			);
+		case "jellyfin_user_rating":
+			return (
+				providerKey !== null &&
+				jellyfinWatch !== null &&
+				(parameters.operator === "unrated" || jellyfinWatch.userRating !== null)
+			);
+		case "jellyfin_added_at":
+			return providerKey !== null && jellyfinWatch?.addedAt != null;
+
+		case "plex_episode_completion": {
+			if (item.itemType !== "series" || tmdbId === null) return false;
+			const stats = ctx.plexEpisodeMap?.get(tmdbId);
+			if (!stats || stats.total === 0) return false;
+			if (parameters.minSeason == null) return true;
+			if (stats.seasons.size === 0) return false;
+			return [...stats.seasons].some(
+				([season, seasonStats]) =>
+					season >= (parameters.minSeason as number) && seasonStats.total > 0,
+			);
+		}
+		case "jellyfin_episode_completion": {
+			if (item.itemType !== "series" || tmdbId === null) return false;
+			const stats = ctx.jellyfinEpisodeMap?.get(tmdbId);
+			if (!stats || stats.total === 0) return false;
+			if (parameters.minSeason == null) return true;
+			if (stats.seasons.size === 0) return false;
+			return [...stats.seasons].some(
+				([season, seasonStats]) =>
+					season >= (parameters.minSeason as number) && seasonStats.total > 0,
+			);
+		}
+		case "user_retention": {
+			if (providerKey === null) return false;
+			const source = (parameters.source as string | undefined) ?? "plex";
+			if (source === "plex") return plexWatch !== null;
+			if (source === "tautulli") return tautulliWatch !== null;
+			return plexWatch !== null && tautulliWatch !== null;
+		}
+		case "staleness_score":
+			return (
+				data !== null &&
+				providerKey !== null &&
+				plexWatch !== null &&
+				(!stalenessRequiresArrRating(parameters) || arrEvidence?.rating === true)
+			);
+		case "seerr_requester_watched":
+		case "seerr_requester_not_watched": {
+			if (!ctx.seerrMap || seerrKey === null) return false;
+			const requests = ctx.seerrMap.get(seerrKey) ?? [];
+			return requests.length === 0 || plexWatch !== null;
+		}
+		case "tmdb_list_member": {
+			const listId = parameters.listId;
+			return (
+				tmdbId !== null &&
+				typeof listId === "string" &&
+				ctx.tmdbListMemberships?.has(listId) === true
+			);
+		}
+		case "trakt_list_member": {
+			const listSlug = parameters.listSlug;
+			return (
+				tmdbId !== null &&
+				typeof listSlug === "string" &&
+				ctx.traktListMemberships?.has(listSlug) === true
+			);
+		}
+		default:
+			return false;
+	}
+}
+
+/** Shared leaf-level three-valued boundary for cleanup and auto-tag rules. */
+export function evaluateSingleConditionState(
+	item: CacheItemForEval,
+	ruleType: string,
+	parameters: Record<string, unknown>,
+	ctx: EvalContext,
+	plexLibFilter?: string[] | null,
+	failedSources?: Set<DataSourceDependency>,
+): { state: RuleEvaluationState; reason: string | null } {
+	const filter = plexLibFilter ?? null;
+	if (!conditionEvidenceAvailable(ruleType, parameters, item, ctx, filter, failedSources)) {
+		return { state: "unknown", reason: null };
+	}
+	const reason = evaluateSingleCondition(item, ruleType, parameters, ctx, filter);
+	return reason ? { state: "true", reason } : { state: "false", reason: null };
+}
+
+function evaluateExpressionNode(
+	node: CleanupRuleExpression,
+	item: CacheItemForEval,
+	ctx: EvalContext,
+	plexLibFilter: string[] | null,
+	failedSources?: Set<DataSourceDependency>,
+	evidenceAvailability?: ConditionEvidenceAvailability,
+): { state: RuleEvaluationState; reasons: string[] } {
+	if (node.type === "condition") {
+		if (
+			!conditionEvidenceAvailable(
+				node.ruleType,
+				node.parameters,
+				item,
+				ctx,
+				plexLibFilter,
+				failedSources,
+				evidenceAvailability,
+			)
+		) {
+			return { state: "unknown", reasons: [] };
+		}
+		const reason = evaluateSingleCondition(
+			item,
+			node.ruleType,
+			node.parameters,
+			ctx,
+			plexLibFilter,
+		);
+		return reason ? { state: "true", reasons: [reason] } : { state: "false", reasons: [] };
+	}
+	if (node.type === "not") {
+		const child = evaluateExpressionNode(
+			node.child,
+			item,
+			ctx,
+			plexLibFilter,
+			failedSources,
+			evidenceAvailability,
+		);
+		if (child.state === "unknown") return child;
+		if (child.state === "true") return { state: "false", reasons: [] };
+		return { state: "true", reasons: ["NOT condition matched"] };
+	}
+	const children = node.children.map((child) =>
+		evaluateExpressionNode(child, item, ctx, plexLibFilter, failedSources, evidenceAvailability),
+	);
+	if (node.operator === "AND") {
+		if (children.some((child) => child.state === "false")) {
+			return { state: "false", reasons: [] };
+		}
+		if (children.some((child) => child.state === "unknown")) {
+			return { state: "unknown", reasons: [] };
+		}
+		return { state: "true", reasons: children.flatMap((child) => child.reasons) };
+	}
+	const matched = children.find((child) => child.state === "true");
+	if (matched) return matched;
+	if (children.some((child) => child.state === "unknown")) {
+		return { state: "unknown", reasons: [] };
+	}
+	return { state: "false", reasons: [] };
+}
+
+/** Canonical three-valued evaluator used by execution, preview, and explain. */
+export function evaluateRuleState(
+	item: CacheItemForEval,
+	rule: LibraryCleanupRule,
+	instanceService: string,
+	ctx: EvalContext,
+	failedSources?: Set<DataSourceDependency>,
+	evidenceAvailability?: ConditionEvidenceAvailability,
+): RuleEvaluation {
+	if (!rule.enabled) return { state: "false", match: null };
+	if (!passesServiceFilter(instanceService, rule.serviceFilter))
+		return { state: "false", match: null };
+	if (!passesInstanceFilter(item.instanceId, rule.instanceFilter))
+		return { state: "false", match: null };
+	if (!passesTagExclusion(item, rule.excludeTags)) return { state: "false", match: null };
+	if (!passesTitleExclusion(item.title, rule.excludeTitles)) return { state: "false", match: null };
+
+	const expression = normalizeStoredCleanupRuleExpression(rule);
+	if (!expression) return { state: "unknown", match: null };
+	const plexLibFilter = safeJsonParse(rule.plexLibraryFilter) as string[] | null;
+	const result = evaluateExpressionNode(
+		expression.root,
+		item,
+		ctx,
+		plexLibFilter,
+		failedSources,
+		evidenceAvailability,
+	);
+	if (result.state !== "true") return { state: result.state, match: null };
+	// Preserve the established reason wording for legacy rows while the
+	// recursive evaluator remains the sole authority for truth/unknown state.
+	const legacyMatch = evaluateRuleLegacy(item, rule, instanceService, ctx);
+	return {
+		state: "true",
+		match: {
+			ruleId: rule.id,
+			ruleName: rule.name,
+			reason: legacyMatch?.reason ?? (result.reasons.join(" AND ") || "Rule expression matched"),
+			action: (rule.action ?? "delete") as RuleAction,
+			...(rule.scanMediaServerAfterDelete === true ? { scanMediaServerAfterDelete: true } : {}),
+		},
+	};
+}
+
+/** Compatibility wrapper for callers that only need match/no-match. */
+export function evaluateRule(
+	item: CacheItemForEval,
+	rule: LibraryCleanupRule,
+	instanceService: string,
+	ctx: EvalContext,
+	failedSources?: Set<DataSourceDependency>,
+	evidenceAvailability?: ConditionEvidenceAvailability,
+): RuleMatch | null {
+	return evaluateRuleState(item, rule, instanceService, ctx, failedSources, evidenceAvailability)
+		.match;
 }
 
 /**
@@ -2345,23 +2855,48 @@ export function evaluateItemAgainstRules(
 	ctx: EvalContext,
 	failedSources?: Set<DataSourceDependency>,
 ): RuleMatch | null {
+	const policy = evaluateItemPolicyState(item, rules, instanceService, ctx, failedSources);
+	return policy.kind === "cleanup" ? policy.match : null;
+}
+
+export type ItemPolicyState =
+	| { kind: "cleanup"; match: RuleMatch }
+	| { kind: "retained"; ruleId: string; evidence: "true" | "unknown" }
+	| { kind: "no_match" };
+
+/**
+ * Canonical policy decision shared by preview, direct execution, and queued
+ * execution. Retention is fail-closed, while cleanup requires a proven TRUE.
+ * Cleanup precedence is deterministic even when persisted priorities tie.
+ */
+export function evaluateItemPolicyState(
+	item: CacheItemForEval,
+	rules: LibraryCleanupRule[],
+	instanceService: string,
+	ctx: EvalContext,
+	failedSources?: Set<DataSourceDependency>,
+): ItemPolicyState {
+	const orderedRules = [...rules].sort(
+		(left, right) => left.priority - right.priority || left.id.localeCompare(right.id),
+	);
+
 	// Phase 1: Check retention rules first — any match = protected
-	for (const rule of rules) {
+	for (const rule of orderedRules) {
 		if (!rule.retentionMode) continue;
 		if (!passesCleanupRuleFilters(item, rule, instanceService)) continue;
-		if (ruleUsesUnavailableData(rule, failedSources)) return null;
-		const match = evaluateRule(item, rule, instanceService, ctx);
-		if (match) return null; // Item is protected by retention rule
+		const evaluation = evaluateRuleState(item, rule, instanceService, ctx, failedSources);
+		if (evaluation.state !== "false") {
+			return { kind: "retained", ruleId: rule.id, evidence: evaluation.state };
+		}
 	}
 
 	// Phase 2: Check cleanup rules — first match wins
-	for (const rule of rules) {
+	for (const rule of orderedRules) {
 		if (rule.retentionMode) continue;
-		if (ruleUsesUnavailableData(rule, failedSources)) continue;
-		const match = evaluateRule(item, rule, instanceService, ctx);
-		if (match) return match;
+		const match = evaluateRule(item, rule, instanceService, ctx, failedSources);
+		if (match) return { kind: "cleanup", match };
 	}
-	return null;
+	return { kind: "no_match" };
 }
 
 /**
@@ -2476,30 +3011,27 @@ export function explainItemAgainstRules(
 			continue;
 		}
 
-		if (!targetsEpisode && ruleUsesUnavailableData(rule, failedSources)) {
-			results.push({
-				ruleId: rule.id,
-				ruleName: rule.name,
-				matched: false,
-				reason: null,
-				filteredBy: "evidence_unavailable",
-				retentionMode: rule.retentionMode,
-			});
-			continue;
-		}
-
 		// Evaluate the rule
-		const match = targetsEpisode
-			? episodeEvidence?.watchCount === null || episodeEvidence?.watchCount === undefined
-				? null
-				: evaluateEpisodeWatchCountRule({ watchCount: episodeEvidence.watchCount }, rule)
-			: evaluateRule(item, rule, instanceService, ctx);
+		let evaluation: RuleEvaluation;
+		if (targetsEpisode) {
+			if (episodeEvidence?.watchCount === null || episodeEvidence?.watchCount === undefined) {
+				evaluation = { state: "unknown", match: null };
+			} else {
+				const match = evaluateEpisodeWatchCountRule(
+					{ watchCount: episodeEvidence.watchCount },
+					rule,
+				);
+				evaluation = { state: match ? "true" : "false", match };
+			}
+		} else {
+			evaluation = evaluateRuleState(item, rule, instanceService, ctx, failedSources);
+		}
 		results.push({
 			ruleId: rule.id,
 			ruleName: rule.name,
-			matched: match !== null,
-			reason: match?.reason ?? null,
-			filteredBy: null,
+			matched: evaluation.match !== null,
+			reason: evaluation.match?.reason ?? null,
+			filteredBy: evaluation.state === "unknown" ? "evidence_unavailable" : null,
 			retentionMode: rule.retentionMode,
 		});
 	}
@@ -2516,28 +3048,19 @@ export function ruleUsesUnavailableData(
 	failedSources?: Set<DataSourceDependency>,
 ): boolean {
 	if (!failedSources || failedSources.size === 0) return false;
-
-	// Check top-level rule type
-	if (shouldSkipRuleType(rule.ruleType, rule.parameters, failedSources)) return true;
-
-	// Check composite sub-conditions
-	if (rule.conditions) {
-		const conds = safeJsonParse(rule.conditions) as Array<{
-			ruleType?: string;
-			parameters?: Record<string, unknown>;
-		}> | null;
-		if (Array.isArray(conds)) {
-			for (const c of conds) {
-				if (
-					c.ruleType &&
-					shouldSkipRuleType(
-						c.ruleType,
-						c.parameters ? JSON.stringify(c.parameters) : null,
-						failedSources,
-					)
-				)
-					return true;
+	const expression = normalizeStoredCleanupRuleExpression(rule);
+	if (!expression) return true;
+	const stack: CleanupRuleExpression[] = [expression.root];
+	while (stack.length > 0) {
+		const node = stack.pop()!;
+		if (node.type === "condition") {
+			if (shouldSkipRuleType(node.ruleType, JSON.stringify(node.parameters), failedSources)) {
+				return true;
 			}
+		} else if (node.type === "group") {
+			stack.push(...node.children);
+		} else {
+			stack.push(node.child);
 		}
 	}
 	return false;
@@ -2563,11 +3086,14 @@ function shouldSkipRuleType(
 		if (source === "either") return failedSources.has("plex") || failedSources.has("tautulli");
 		return false;
 	}
-	if (
-		ruleType === "seerr_requester_watched" ||
-		ruleType === "seerr_requester_not_watched"
-	) {
+	if (ruleType === "seerr_requester_watched" || ruleType === "seerr_requester_not_watched") {
 		return failedSources.has("seerr") || failedSources.has("plex");
+	}
+	if (ruleType === "recently_active") {
+		const params = parametersJson
+			? (safeJsonParse(parametersJson) as Record<string, unknown> | null)
+			: null;
+		return params?.requireActivity === true && failedSources.has("plex");
 	}
 
 	const dep = ruleDataSourceMap[ruleType];

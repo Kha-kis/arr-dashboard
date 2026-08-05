@@ -12,7 +12,6 @@ import type { Encryptor } from "../auth/encryption.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
-	jellyfinEpisodesResponseSchema,
 	jellyfinItemDetailSchema,
 	jellyfinItemsResponseSchema,
 	jellyfinLibrariesResponseSchema,
@@ -95,6 +94,8 @@ export interface JellyfinSession {
 const DEFAULT_TIMEOUT = 15_000;
 const DEVICE_ID = "arr-dashboard-server";
 const CLIENT_NAME = "Arr Control Center";
+const COMPLETE_ITEMS_PAGE_SIZE = 1000;
+const COMPLETE_ITEMS_MAX = 100_000;
 
 export class JellyfinClient {
 	private readonly baseUrl: string;
@@ -165,6 +166,9 @@ export class JellyfinClient {
 		const data = await this.request(`/Users/${encodeURIComponent(userId)}/Views`, {
 			schema: jellyfinLibrariesResponseSchema,
 		});
+		if (data.Items.length !== data.TotalRecordCount) {
+			throw new Error("Jellyfin library inventory was not returned completely");
+		}
 		return data.Items.map((lib) => ({
 			id: lib.Id,
 			name: lib.Name,
@@ -184,45 +188,35 @@ export class JellyfinClient {
 			ParentId: libraryId,
 			Fields: "ProviderIds,DateCreated,ImageTags",
 			Recursive: "true",
-			Limit: "10000",
 		});
 		if (options?.includeItemTypes) {
 			params.set("IncludeItemTypes", options.includeItemTypes);
 		}
 
-		const data = await this.request(
+		const items = await this.getCompleteItems(
 			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
-			{
-				schema: jellyfinItemsResponseSchema,
-			},
 		);
-		return data.Items.map(mapItem);
+		return items.map(mapItem);
 	}
 
 	/**
 	 * Get resume items (continue watching) for a user.
 	 */
 	async getResumeItems(userId: string): Promise<JellyfinItem[]> {
-		const data = await this.request(
+		const items = await this.getCompleteItems(
 			`/Users/${encodeURIComponent(userId)}/Items/Resume?Fields=ProviderIds`,
-			{
-				schema: jellyfinItemsResponseSchema,
-			},
 		);
-		return data.Items.map(mapItem);
+		return items.map(mapItem);
 	}
 
 	/**
 	 * Get next up episodes for a user (TV shows).
 	 */
 	async getNextUp(userId: string): Promise<JellyfinItem[]> {
-		const data = await this.request(
+		const items = await this.getCompleteItems(
 			`/Shows/NextUp?userId=${encodeURIComponent(userId)}&Fields=ProviderIds`,
-			{
-				schema: jellyfinItemsResponseSchema,
-			},
 		);
-		return data.Items.map(mapItem);
+		return items.map(mapItem);
 	}
 
 	/**
@@ -266,11 +260,10 @@ export class JellyfinClient {
 	 * Get episodes for a series with watch status.
 	 */
 	async getEpisodes(userId: string, seriesId: string): Promise<JellyfinItem[]> {
-		const data = await this.request(
+		const items = await this.getCompleteItems(
 			`/Shows/${encodeURIComponent(seriesId)}/Episodes?userId=${encodeURIComponent(userId)}&Fields=ProviderIds`,
-			{ schema: jellyfinEpisodesResponseSchema },
 		);
-		return data.Items.map(mapItem);
+		return items.map(mapItem);
 	}
 
 	/**
@@ -299,11 +292,10 @@ export class JellyfinClient {
 		// parsers can reject `+` in query values (see issue #470 for the Seerr
 		// equivalent). Jellyfin's parser usually accepts both, but normalising
 		// removes a class of latent failure.
-		const data = await this.request(
+		const items = await this.getCompleteItems(
 			`/Users/${encodeURIComponent(userId)}/Items?${params.toString().replace(/\+/g, "%20")}`,
-			{ schema: jellyfinItemsResponseSchema },
 		);
-		return data.Items.map(mapItem);
+		return items.map(mapItem);
 	}
 
 	/**
@@ -357,6 +349,55 @@ export class JellyfinClient {
 	// ========================================================================
 	// Internal helpers
 	// ========================================================================
+
+	private async getCompleteItems(
+		path: string,
+	): Promise<Array<z.infer<typeof jellyfinItemsResponseSchema>["Items"][number]>> {
+		const items: Array<z.infer<typeof jellyfinItemsResponseSchema>["Items"][number]> = [];
+		const seenIds = new Set<string>();
+		let expectedTotal: number | undefined;
+		let startIndex = 0;
+
+		while (expectedTotal === undefined || startIndex < expectedTotal) {
+			const pageUrl = new URL(path, "http://jellyfin.invalid");
+			pageUrl.searchParams.set("StartIndex", String(startIndex));
+			pageUrl.searchParams.set("Limit", String(COMPLETE_ITEMS_PAGE_SIZE));
+			const data = await this.request(`${pageUrl.pathname}${pageUrl.search}`, {
+				schema: jellyfinItemsResponseSchema,
+			});
+
+			if (expectedTotal === undefined) {
+				expectedTotal = data.TotalRecordCount;
+				if (expectedTotal > COMPLETE_ITEMS_MAX) {
+					throw new Error(
+						`Jellyfin item inventory contains ${expectedTotal} rows, exceeding the safe ${COMPLETE_ITEMS_MAX}-row limit`,
+					);
+				}
+			} else if (data.TotalRecordCount !== expectedTotal) {
+				throw new Error("Jellyfin item inventory changed while it was being paged");
+			}
+			if (startIndex + data.Items.length > expectedTotal) {
+				throw new Error("Jellyfin item pagination exceeded its declared total");
+			}
+			if (data.Items.length === 0 && startIndex < expectedTotal) {
+				throw new Error("Jellyfin item pagination stopped before the declared total");
+			}
+
+			for (const item of data.Items) {
+				if (seenIds.has(item.Id)) {
+					throw new Error("Jellyfin item pagination returned a duplicate item");
+				}
+				seenIds.add(item.Id);
+				items.push(item);
+			}
+			startIndex += data.Items.length;
+		}
+
+		if (expectedTotal === undefined || items.length !== expectedTotal) {
+			throw new Error("Jellyfin item inventory could not be verified as complete");
+		}
+		return items;
+	}
 
 	private authHeaders(): Record<string, string> {
 		if (Object.keys(this.httpAuthHeaders).length === 0) {
