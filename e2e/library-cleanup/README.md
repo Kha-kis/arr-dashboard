@@ -154,6 +154,7 @@ scenario before testing the opposite direction:
 sh ./run-live-scenario.sh policy-gate
 sh ./run-live-scenario.sh policy-core
 sh ./run-browser-policy.sh
+LC_E2E_DASHBOARD_SERVICE=dashboard-postgres sh ./run-browser-policy.sh
 sh ./run-live-scenario.sh delete:radarr-uhd
 
 sh ./bootstrap-arr.sh
