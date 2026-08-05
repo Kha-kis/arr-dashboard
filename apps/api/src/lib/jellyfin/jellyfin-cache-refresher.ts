@@ -18,6 +18,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
+import { jellyfinConnectionFingerprint } from "./service-instance-fingerprint.js";
 
 export const JELLYFIN_STALE_EVICTION_CHUNK_SIZE = 500;
 
@@ -51,12 +52,14 @@ export async function refreshJellyfinCache(
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
+	expectedConnectionFingerprint?: string,
 ): Promise<{
 	upserted: number;
 	errors: number;
 	errorMessages: string[];
 	complete: boolean;
 	completedAt?: Date;
+	superseded?: boolean;
 }> {
 	let upserted = 0;
 	let errors = 0;
@@ -234,6 +237,27 @@ export async function refreshJellyfinCache(
 			completedAt = new Date();
 			try {
 				await prisma.$transaction(async (tx) => {
+					if (expectedConnectionFingerprint) {
+						const currentInstance = await tx.serviceInstance.findUnique({
+							where: { id: instanceId },
+							select: {
+								service: true,
+								baseUrl: true,
+								encryptedApiKey: true,
+								encryptionIv: true,
+								encryptedHttpAuthCredentials: true,
+								httpAuthEncryptionIv: true,
+								enabled: true,
+							},
+						});
+						if (
+							!currentInstance?.enabled ||
+							(currentInstance.service !== "JELLYFIN" && currentInstance.service !== "EMBY") ||
+							jellyfinConnectionFingerprint(currentInstance) !== expectedConnectionFingerprint
+						) {
+							throw new JellyfinRefreshSupersededError();
+						}
+					}
 					await tx.jellyfinCache.deleteMany({ where: { instanceId } });
 					if (items.length > 0) {
 						await tx.jellyfinCache.createMany({
@@ -282,6 +306,19 @@ export async function refreshJellyfinCache(
 			} catch (err) {
 				complete = false;
 				completedAt = undefined;
+				if (err instanceof JellyfinRefreshSupersededError) {
+					log.warn(
+						{ instanceId },
+						"Discarding Jellyfin cache refresh from a superseded connection",
+					);
+					return {
+						upserted: 0,
+						errors: 0,
+						errorMessages: ["Jellyfin service connection changed during refresh"],
+						complete: false,
+						superseded: true,
+					};
+				}
 				errors++;
 				const msg = `Atomic cache publication failed: ${getErrorMessage(err, "unknown")}`;
 				errorMessages.push(msg);
@@ -300,4 +337,11 @@ export async function refreshJellyfinCache(
 	}
 
 	return { upserted, errors, errorMessages, complete: false };
+}
+
+class JellyfinRefreshSupersededError extends Error {
+	constructor() {
+		super("Jellyfin service connection changed during refresh");
+		this.name = "JellyfinRefreshSupersededError";
+	}
 }

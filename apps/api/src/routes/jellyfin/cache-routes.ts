@@ -11,6 +11,7 @@ import { z } from "zod";
 import { refreshJellyfinCache } from "../../lib/jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../../lib/jellyfin/jellyfin-cache-singleflight.js";
 import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
+import { jellyfinConnectionFingerprint } from "../../lib/jellyfin/service-instance-fingerprint.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { buildCacheHealthItems } from "../plex/lib/cache-health-helpers.js";
 
@@ -65,11 +66,19 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
 
-			const { client } = await requireJellyfinClient(app, userId, instanceId);
+			const { client, instance } = await requireJellyfinClient(app, userId, instanceId);
 
 			const result = await runJellyfinCacheRefreshSingleFlight(
 				instanceId,
-				() => refreshJellyfinCache(client, app.prisma, instanceId, request.log),
+				jellyfinConnectionFingerprint(instance),
+				(expectedConnectionFingerprint) =>
+					refreshJellyfinCache(
+						client,
+						app.prisma,
+						instanceId,
+						request.log,
+						expectedConnectionFingerprint,
+					),
 				{ prisma: app.prisma, log: request.log },
 			);
 

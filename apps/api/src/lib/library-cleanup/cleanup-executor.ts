@@ -19,6 +19,7 @@ import { refreshJellyfinCache } from "../jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-refresher.js";
+import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
 import { createPlexClient } from "../plex/plex-client.js";
@@ -8664,7 +8665,15 @@ async function refreshJellyfinMutationEvidence(
 				if (!client) throw new Error("Jellyfin credentials were unavailable");
 				const refreshed = await runJellyfinCacheRefreshSingleFlight(
 					instance.id,
-					() => refreshJellyfinCache(client, deps.prisma, instance.id, deps.log),
+					jellyfinConnectionFingerprint(instance),
+					(expectedConnectionFingerprint) =>
+						refreshJellyfinCache(
+							client,
+							deps.prisma,
+							instance.id,
+							deps.log,
+							expectedConnectionFingerprint,
+						),
 					{ prisma: deps.prisma, log: deps.log },
 				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {

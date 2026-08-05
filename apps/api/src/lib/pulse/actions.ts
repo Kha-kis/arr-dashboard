@@ -31,6 +31,7 @@ import { getHuntingScheduler } from "../hunting/scheduler.js";
 import { refreshJellyfinCache } from "../jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
 import { requireJellyfinClient } from "../jellyfin/jellyfin-helpers.js";
+import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
 import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../plex/plex-helpers.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
@@ -171,7 +172,7 @@ async function dispatchCacheRefresh(
 	}
 
 	if (cacheType === "jellyfin") {
-		const { client } = await requireJellyfinClient(app, userId, instanceId);
+		const { client, instance } = await requireJellyfinClient(app, userId, instanceId);
 		const backgroundTask = runBackgroundCacheRefresh({
 			app,
 			log,
@@ -180,7 +181,15 @@ async function dispatchCacheRefresh(
 			refresh: () =>
 				runJellyfinCacheRefreshSingleFlight(
 					instanceId,
-					() => refreshJellyfinCache(client, app.prisma, instanceId, log),
+					jellyfinConnectionFingerprint(instance),
+					(expectedConnectionFingerprint) =>
+						refreshJellyfinCache(
+							client,
+							app.prisma,
+							instanceId,
+							log,
+							expectedConnectionFingerprint,
+						),
 					{ prisma: app.prisma, log },
 				),
 			failureRecordedByRefresh: true,

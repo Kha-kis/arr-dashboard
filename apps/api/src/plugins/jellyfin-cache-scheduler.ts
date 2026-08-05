@@ -10,6 +10,7 @@ import fastifyPlugin from "fastify-plugin";
 import { refreshJellyfinCache } from "../lib/jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-cache-singleflight.js";
 import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
+import { jellyfinConnectionFingerprint } from "../lib/jellyfin/service-instance-fingerprint.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -48,7 +49,15 @@ const jellyfinCacheSchedulerPlugin = fastifyPlugin(
 							const client = createJellyfinClient(app.encryptor, instance, app.log);
 							const result = await runJellyfinCacheRefreshSingleFlight(
 								instance.id,
-								() => refreshJellyfinCache(client, app.prisma, instance.id, app.log),
+								jellyfinConnectionFingerprint(instance),
+								(expectedConnectionFingerprint) =>
+									refreshJellyfinCache(
+										client,
+										app.prisma,
+										instance.id,
+										app.log,
+										expectedConnectionFingerprint,
+									),
 								{ prisma: app.prisma, log: app.log },
 							);
 							app.log.info(

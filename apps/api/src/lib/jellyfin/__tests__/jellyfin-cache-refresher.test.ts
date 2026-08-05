@@ -15,6 +15,7 @@ import type {
 	JellyfinUser,
 } from "../jellyfin-client.js";
 import type { FastifyBaseLogger } from "fastify";
+import { jellyfinConnectionFingerprint } from "../service-instance-fingerprint.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,6 +70,17 @@ function makeMockClient(items: JellyfinItem[]): JellyfinClient {
 function makeMockPrisma() {
 	const upserts: unknown[] = [];
 	const tx = {
+		serviceInstance: {
+			findUnique: vi.fn().mockResolvedValue({
+				service: "JELLYFIN",
+				baseUrl: "https://jellyfin-current.example.com",
+				encryptedApiKey: "current-key",
+				encryptionIv: "current-iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				enabled: true,
+			}),
+		},
 		jellyfinCache: {
 			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
@@ -339,5 +351,30 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(tx.jellyfinCache.deleteMany).toHaveBeenCalledOnce();
 		expect(tx.jellyfinCache.createMany).not.toHaveBeenCalled();
 		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
+	});
+
+	it("discards a completed scan when the service connection changed before publication", async () => {
+		const client = makeMockClient([]);
+		const { stub, tx } = makeMockPrisma();
+		const expectedConnectionFingerprint = jellyfinConnectionFingerprint({
+			service: "JELLYFIN",
+			baseUrl: "https://jellyfin-old.example.com",
+			encryptedApiKey: "old-key",
+			encryptionIv: "old-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+		} as never);
+
+		const result = await refreshJellyfinCache(
+			client,
+			stub as never,
+			"inst-1",
+			silentLog,
+			expectedConnectionFingerprint,
+		);
+
+		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
+		expect(tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 });

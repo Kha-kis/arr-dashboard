@@ -18,6 +18,7 @@ type CacheRefreshResult = {
 	errorMessages: string[];
 	complete: boolean;
 	completedAt?: Date;
+	superseded?: boolean;
 };
 
 const completeResult: CacheRefreshResult = {
@@ -51,8 +52,18 @@ describe("runJellyfinCacheRefreshSingleFlight", () => {
 		const refresh = vi.fn(() => gate.promise);
 		const { observer } = makeObserver();
 
-		const first = runJellyfinCacheRefreshSingleFlight("instance-1", refresh, observer);
-		const second = runJellyfinCacheRefreshSingleFlight("instance-1", refresh, observer);
+		const first = runJellyfinCacheRefreshSingleFlight(
+			"instance-1",
+			"fingerprint-1",
+			refresh,
+			observer,
+		);
+		const second = runJellyfinCacheRefreshSingleFlight(
+			"instance-1",
+			"fingerprint-1",
+			refresh,
+			observer,
+		);
 
 		expect(first).toBe(second);
 		await Promise.resolve();
@@ -65,9 +76,9 @@ describe("runJellyfinCacheRefreshSingleFlight", () => {
 		const refresh = vi.fn().mockResolvedValue(completeResult);
 		const { observer } = makeObserver();
 
-		await runJellyfinCacheRefreshSingleFlight("instance-1", refresh, observer);
+		await runJellyfinCacheRefreshSingleFlight("instance-1", "fingerprint-1", refresh, observer);
 		await Promise.resolve();
-		await runJellyfinCacheRefreshSingleFlight("instance-1", refresh, observer);
+		await runJellyfinCacheRefreshSingleFlight("instance-1", "fingerprint-1", refresh, observer);
 
 		expect(refresh).toHaveBeenCalledTimes(2);
 	});
@@ -78,8 +89,8 @@ describe("runJellyfinCacheRefreshSingleFlight", () => {
 		const { observer } = makeObserver();
 
 		await Promise.all([
-			runJellyfinCacheRefreshSingleFlight("instance-1", refreshOne, observer),
-			runJellyfinCacheRefreshSingleFlight("instance-2", refreshTwo, observer),
+			runJellyfinCacheRefreshSingleFlight("instance-1", "fingerprint-1", refreshOne, observer),
+			runJellyfinCacheRefreshSingleFlight("instance-2", "fingerprint-2", refreshTwo, observer),
 		]);
 
 		expect(refreshOne).toHaveBeenCalledOnce();
@@ -98,8 +109,18 @@ describe("runJellyfinCacheRefreshSingleFlight", () => {
 			completedAt: undefined,
 		};
 
-		const first = runJellyfinCacheRefreshSingleFlight("instance-1", refresh, observer);
-		const second = runJellyfinCacheRefreshSingleFlight("instance-1", refresh, observer);
+		const first = runJellyfinCacheRefreshSingleFlight(
+			"instance-1",
+			"fingerprint-1",
+			refresh,
+			observer,
+		);
+		const second = runJellyfinCacheRefreshSingleFlight(
+			"instance-1",
+			"fingerprint-1",
+			refresh,
+			observer,
+		);
 		gate.resolve(incomplete);
 		await Promise.all([first, second]);
 
@@ -119,14 +140,57 @@ describe("runJellyfinCacheRefreshSingleFlight", () => {
 		const refresh = vi.fn().mockRejectedValue(failure);
 		const { observer, upsert } = makeObserver();
 
-		await expect(runJellyfinCacheRefreshSingleFlight("instance-1", refresh, observer)).rejects.toBe(
-			failure,
-		);
+		await expect(
+			runJellyfinCacheRefreshSingleFlight("instance-1", "fingerprint-1", refresh, observer),
+		).rejects.toBe(failure);
 
 		expect(upsert).toHaveBeenCalledWith(
 			expect.objectContaining({
 				update: expect.not.objectContaining({ lastRefreshedAt: expect.anything() }),
 			}),
 		);
+	});
+
+	it("does not join an in-flight refresh from an older connection identity", async () => {
+		const firstGate = deferred<CacheRefreshResult>();
+		const secondGate = deferred<CacheRefreshResult>();
+		const firstRefresh = vi.fn(() => firstGate.promise);
+		const secondRefresh = vi.fn(() => secondGate.promise);
+		const { observer } = makeObserver();
+
+		const first = runJellyfinCacheRefreshSingleFlight(
+			"instance-1",
+			"old-fingerprint",
+			firstRefresh,
+			observer,
+		);
+		const second = runJellyfinCacheRefreshSingleFlight(
+			"instance-1",
+			"new-fingerprint",
+			secondRefresh,
+			observer,
+		);
+
+		expect(first).not.toBe(second);
+		await Promise.resolve();
+		expect(firstRefresh).toHaveBeenCalledWith("old-fingerprint");
+		expect(secondRefresh).toHaveBeenCalledWith("new-fingerprint");
+		firstGate.resolve(completeResult);
+		secondGate.resolve(completeResult);
+		await Promise.all([first, second]);
+	});
+
+	it("does not mark a superseded connection as a failure on the current instance", async () => {
+		const refresh = vi.fn().mockResolvedValue({
+			...completeResult,
+			complete: false,
+			completedAt: undefined,
+			superseded: true,
+		});
+		const { observer, upsert } = makeObserver();
+
+		await runJellyfinCacheRefreshSingleFlight("instance-1", "old-fingerprint", refresh, observer);
+
+		expect(upsert).not.toHaveBeenCalled();
 	});
 });

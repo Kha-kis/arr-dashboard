@@ -8,6 +8,10 @@ type JellyfinCacheRefreshResult = Awaited<ReturnType<typeof refreshJellyfinCache
 
 const inFlightRefreshes = new Map<string, Promise<JellyfinCacheRefreshResult>>();
 
+function refreshKey(instanceId: string, connectionFingerprint: string): string {
+	return `${instanceId}:${connectionFingerprint}`;
+}
+
 type JellyfinCacheRefreshObserver = {
 	prisma: Pick<PrismaClient, "cacheRefreshStatus">;
 	log: Pick<FastifyBaseLogger, "warn">;
@@ -35,7 +39,7 @@ async function runObservedRefresh(
 ): Promise<JellyfinCacheRefreshResult> {
 	try {
 		const result = await refresh();
-		if (!result.complete || !result.completedAt) {
+		if ((!result.complete || !result.completedAt) && !result.superseded) {
 			await recordRefreshFailure(
 				instanceId,
 				result.errorMessages.slice(0, 3).join("; ") ||
@@ -63,18 +67,22 @@ async function runObservedRefresh(
  */
 export function runJellyfinCacheRefreshSingleFlight(
 	instanceId: string,
-	refresh: () => Promise<JellyfinCacheRefreshResult>,
+	connectionFingerprint: string,
+	refresh: (expectedConnectionFingerprint: string) => Promise<JellyfinCacheRefreshResult>,
 	observer: JellyfinCacheRefreshObserver,
 ): Promise<JellyfinCacheRefreshResult> {
-	const existing = inFlightRefreshes.get(instanceId);
+	const key = refreshKey(instanceId, connectionFingerprint);
+	const existing = inFlightRefreshes.get(key);
 	if (existing) return existing;
 
-	const pending = Promise.resolve().then(() => runObservedRefresh(instanceId, refresh, observer));
-	inFlightRefreshes.set(instanceId, pending);
+	const pending = Promise.resolve().then(() =>
+		runObservedRefresh(instanceId, () => refresh(connectionFingerprint), observer),
+	);
+	inFlightRefreshes.set(key, pending);
 	void pending
 		.finally(() => {
-			if (inFlightRefreshes.get(instanceId) === pending) {
-				inFlightRefreshes.delete(instanceId);
+			if (inFlightRefreshes.get(key) === pending) {
+				inFlightRefreshes.delete(key);
 			}
 		})
 		.catch(() => undefined);
