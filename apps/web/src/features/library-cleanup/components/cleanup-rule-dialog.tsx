@@ -2,10 +2,12 @@
 
 import type {
 	CleanupFieldOptionsResponse,
+	CleanupRuleExpression,
 	CleanupRuleResponse,
 	CleanupRuleType,
 	CreateCleanupRule,
 } from "@arr/shared";
+import { CLEANUP_RULE_EXPRESSION_MAX_DEPTH, CLEANUP_RULE_EXPRESSION_MAX_NODES } from "@arr/shared";
 import type { LucideIcon } from "lucide-react";
 import {
 	BarChart3,
@@ -15,6 +17,7 @@ import {
 	HardDrive,
 	Loader2,
 	MessageSquare,
+	RefreshCw,
 	Save,
 	ShieldOff,
 	SlidersHorizontal,
@@ -60,6 +63,7 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 		desc: "Flag items by the available Radarr or Sonarr rating",
 	},
 	{ value: "status", label: "Status", desc: "Flag items with specific statuses" },
+	{ value: "monitored", label: "Monitored", desc: "Flag monitored items" },
 	{ value: "unmonitored", label: "Unmonitored", desc: "Flag unmonitored items" },
 	{ value: "genre", label: "Genre", desc: "Flag items by genre" },
 	{ value: "year_range", label: "Year Range", desc: "Flag items by release year" },
@@ -274,6 +278,16 @@ const RULE_TYPES: Array<{ value: CleanupRuleType; label: string; desc: string }>
 		label: "Requester Not Watched",
 		desc: "Matches when the Seerr requester has not watched the item (Plex, Emby, or Jellyfin)",
 	},
+	{
+		value: "tmdb_list_member",
+		label: "TMDb List Membership",
+		desc: "Match whether an item is present in a TMDb list",
+	},
+	{
+		value: "trakt_list_member",
+		label: "Trakt List Membership",
+		desc: "Match whether an item is present in a Trakt list",
+	},
 ];
 
 const RULE_CATEGORIES: Array<{
@@ -292,6 +306,7 @@ const RULE_CATEGORIES: Array<{
 			"rating",
 			"imdb_rating",
 			"status",
+			"monitored",
 			"unmonitored",
 			"genre",
 			"year_range",
@@ -389,6 +404,12 @@ const RULE_CATEGORIES: Array<{
 		types: ["seerr_requester_watched", "seerr_requester_not_watched"],
 		requires: "plex+seerr" as const,
 	},
+	{
+		id: "lists",
+		label: "Curated Lists",
+		icon: Target,
+		types: ["tmdb_list_member", "trakt_list_member"],
+	},
 ];
 
 const RULE_TYPE_MAP = new Map(RULE_TYPES.map((t) => [t.value, t]));
@@ -408,6 +429,349 @@ interface CleanupRuleDialogProps {
 	isSaving: boolean;
 }
 
+type EditableExpressionNode =
+	| {
+			id: string;
+			type: "condition";
+			ruleType: Exclude<CleanupRuleType, "composite">;
+			params: Record<string, unknown>;
+	  }
+	| {
+			id: string;
+			type: "group";
+			operator: "AND" | "OR";
+			children: EditableExpressionNode[];
+	  }
+	| { id: string; type: "not"; child: EditableExpressionNode };
+
+let expressionNodeSequence = 0;
+function expressionNodeId() {
+	expressionNodeSequence += 1;
+	return `expression-${expressionNodeSequence}`;
+}
+
+function createConditionNode(
+	ruleType: Exclude<CleanupRuleType, "composite"> = "age",
+): EditableExpressionNode {
+	return {
+		id: expressionNodeId(),
+		type: "condition",
+		ruleType,
+		params: getDefaultConditionParams(ruleType),
+	};
+}
+
+function toEditableExpression(node: CleanupRuleExpression): EditableExpressionNode {
+	if (node.type === "condition") {
+		return {
+			id: expressionNodeId(),
+			type: "condition",
+			ruleType: node.ruleType,
+			params: node.parameters,
+		};
+	}
+	if (node.type === "not") {
+		return { id: expressionNodeId(), type: "not", child: toEditableExpression(node.child) };
+	}
+	return {
+		id: expressionNodeId(),
+		type: "group",
+		operator: node.operator,
+		children: node.children.map(toEditableExpression),
+	};
+}
+
+function toCleanupExpression(node: EditableExpressionNode): CleanupRuleExpression {
+	if (node.type === "condition") {
+		return { type: "condition", ruleType: node.ruleType, parameters: node.params };
+	}
+	if (node.type === "not") return { type: "not", child: toCleanupExpression(node.child) };
+	return {
+		type: "group",
+		operator: node.operator,
+		children: node.children.map(toCleanupExpression),
+	};
+}
+
+function expressionConditions(
+	nodes: EditableExpressionNode[],
+): Extract<EditableExpressionNode, { type: "condition" }>[] {
+	const result: Extract<EditableExpressionNode, { type: "condition" }>[] = [];
+	const stack = [...nodes];
+	while (stack.length > 0) {
+		const node = stack.pop()!;
+		if (node.type === "condition") result.push(node);
+		else if (node.type === "group") stack.push(...node.children);
+		else stack.push(node.child);
+	}
+	return result;
+}
+
+function getEditableExpressionError(
+	nodes: EditableExpressionNode[],
+	preserveSingleRoot: boolean,
+): string | null {
+	const hasImplicitRoot = !preserveSingleRoot || nodes.length !== 1;
+	const stack = nodes.map((node) => ({ node, depth: hasImplicitRoot ? 2 : 1 }));
+	let count = hasImplicitRoot ? 1 : 0;
+	while (stack.length > 0) {
+		const { node, depth } = stack.pop()!;
+		count += 1;
+		if (count > CLEANUP_RULE_EXPRESSION_MAX_NODES) {
+			return `Rule expressions can contain at most ${CLEANUP_RULE_EXPRESSION_MAX_NODES} nodes.`;
+		}
+		if (depth > CLEANUP_RULE_EXPRESSION_MAX_DEPTH) {
+			return `Rule expressions can be at most ${CLEANUP_RULE_EXPRESSION_MAX_DEPTH} levels deep.`;
+		}
+		if (node.type === "group") {
+			if (node.children.length === 0) return "Every group must contain at least one condition.";
+			stack.push(...node.children.map((child) => ({ node: child, depth: depth + 1 })));
+		} else if (node.type === "not") {
+			stack.push({ node: node.child, depth: depth + 1 });
+		}
+	}
+	return null;
+}
+
+interface ExpressionNodeEditorProps {
+	node: EditableExpressionNode;
+	depth: number;
+	onChange: (node: EditableExpressionNode) => void;
+	onRemove: () => void;
+	fieldOptions: CleanupFieldOptionsResponse | undefined;
+	fieldOptionsLoading: boolean;
+	inputClass: string;
+	labelClass: string;
+	displayLabel?: string;
+}
+
+function ExpressionNodeEditor({
+	node,
+	depth,
+	onChange,
+	onRemove,
+	fieldOptions,
+	fieldOptionsLoading,
+	inputClass,
+	labelClass,
+	displayLabel,
+}: ExpressionNodeEditorProps) {
+	if (node.type === "condition") {
+		return (
+			<div className="rounded-lg border border-border/50 bg-card/20 p-3 space-y-2">
+				<div className="flex items-center justify-between">
+					<span className="text-xs font-medium text-muted-foreground">
+						{displayLabel ?? "Condition"}
+					</span>
+					<button
+						type="button"
+						onClick={onRemove}
+						className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+					>
+						Remove
+					</button>
+				</div>
+				<select
+					aria-label="Condition type"
+					value={node.ruleType}
+					onChange={(event) => {
+						const ruleType = event.target.value as Exclude<CleanupRuleType, "composite">;
+						onChange({
+							...node,
+							ruleType,
+							params: getDefaultConditionParams(ruleType),
+						});
+					}}
+					className={inputClass}
+				>
+					{RULE_TYPES.filter((ruleType) => ruleType.value !== "composite").map((ruleType) => (
+						<option key={ruleType.value} value={ruleType.value}>
+							{ruleType.label}
+						</option>
+					))}
+				</select>
+				<p className="text-xs text-muted-foreground">
+					{RULE_TYPE_MAP.get(node.ruleType)?.desc ?? ""}
+				</p>
+				<ConditionParamsFields
+					ruleType={node.ruleType}
+					params={node.params}
+					onParamsChange={(params) => onChange({ ...node, params })}
+					fieldOptions={fieldOptions}
+					fieldOptionsLoading={fieldOptionsLoading}
+					inputClass={inputClass}
+					labelClass={labelClass}
+				/>
+			</div>
+		);
+	}
+
+	if (node.type === "not") {
+		return (
+			<div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-2">
+				<div className="flex flex-wrap items-center justify-between gap-2">
+					<span className="text-xs font-semibold text-amber-500">NOT</span>
+					<div className="flex items-center gap-2">
+						{node.child.type === "group" ? (
+							<button
+								type="button"
+								onClick={() => onChange({ ...node, child: createConditionNode() })}
+								className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+							>
+								Use condition
+							</button>
+						) : (
+							depth < CLEANUP_RULE_EXPRESSION_MAX_DEPTH - 1 && (
+								<button
+									type="button"
+									onClick={() =>
+										onChange({
+											...node,
+											child: {
+												id: expressionNodeId(),
+												type: "group",
+												operator: "AND",
+												children: [createConditionNode()],
+											},
+										})
+									}
+									className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+								>
+									Use group
+								</button>
+							)
+						)}
+						<button
+							type="button"
+							onClick={onRemove}
+							className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+						>
+							Remove
+						</button>
+					</div>
+				</div>
+				<ExpressionNodeEditor
+					node={node.child}
+					depth={depth + 1}
+					onChange={(child) => onChange({ ...node, child })}
+					onRemove={() => onChange({ ...node, child: createConditionNode() })}
+					fieldOptions={fieldOptions}
+					fieldOptionsLoading={fieldOptionsLoading}
+					inputClass={inputClass}
+					labelClass={labelClass}
+				/>
+			</div>
+		);
+	}
+
+	return (
+		<div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-3 space-y-3">
+			<div className="flex flex-wrap items-center justify-between gap-2">
+				<div className="flex items-center gap-2">
+					<span className="text-xs font-semibold">Group</span>
+					{(["AND", "OR"] as const).map((operator) => (
+						<button
+							key={operator}
+							type="button"
+							aria-pressed={node.operator === operator}
+							onClick={() => onChange({ ...node, operator })}
+							className={`rounded border px-2 py-1 text-xs ${
+								node.operator === operator
+									? "border-blue-500 bg-blue-500/15 text-blue-400"
+									: "border-border text-muted-foreground"
+							}`}
+						>
+							{operator}
+						</button>
+					))}
+				</div>
+				<button
+					type="button"
+					onClick={onRemove}
+					className="text-xs text-muted-foreground hover:text-destructive transition-colors"
+				>
+					Remove group
+				</button>
+			</div>
+			<div className="space-y-2 border-l border-blue-500/30 pl-3">
+				{node.children.map((child) => (
+					<ExpressionNodeEditor
+						key={child.id}
+						node={child}
+						depth={depth + 1}
+						onChange={(nextChild) =>
+							onChange({
+								...node,
+								children: node.children.map((current) =>
+									current.id === child.id ? nextChild : current,
+								),
+							})
+						}
+						onRemove={() =>
+							onChange({
+								...node,
+								children: node.children.filter((current) => current.id !== child.id),
+							})
+						}
+						fieldOptions={fieldOptions}
+						fieldOptionsLoading={fieldOptionsLoading}
+						inputClass={inputClass}
+						labelClass={labelClass}
+					/>
+				))}
+			</div>
+			<div className="flex flex-wrap gap-2">
+				<button
+					type="button"
+					onClick={() => onChange({ ...node, children: [...node.children, createConditionNode()] })}
+					className="rounded border border-dashed border-border px-2 py-1 text-xs text-muted-foreground"
+				>
+					+ Condition
+				</button>
+				{depth < CLEANUP_RULE_EXPRESSION_MAX_DEPTH - 1 && (
+					<>
+						<button
+							type="button"
+							onClick={() =>
+								onChange({
+									...node,
+									children: [
+										...node.children,
+										{
+											id: expressionNodeId(),
+											type: "group",
+											operator: "AND",
+											children: [createConditionNode()],
+										},
+									],
+								})
+							}
+							className="rounded border border-dashed border-border px-2 py-1 text-xs text-muted-foreground"
+						>
+							+ Group
+						</button>
+						<button
+							type="button"
+							onClick={() =>
+								onChange({
+									...node,
+									children: [
+										...node.children,
+										{ id: expressionNodeId(), type: "not", child: createConditionNode() },
+									],
+								})
+							}
+							className="rounded border border-dashed border-border px-2 py-1 text-xs text-muted-foreground"
+						>
+							+ NOT
+						</button>
+					</>
+				)}
+			</div>
+		</div>
+	);
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -423,9 +787,19 @@ export function CleanupRuleDialog({
 	const { gradient } = useThemeGradient();
 	const isEdit = !!editRule;
 	const { data: fieldOptions, isLoading: fieldOptionsLoading } = useCleanupFieldOptions();
-	const { data: allServices } = useServicesQuery();
+	const {
+		data: allServices,
+		isLoading: servicesLoading,
+		isFetching: servicesFetching,
+		isError: servicesError,
+	} = useServicesQuery();
+	const servicesAuthoritative =
+		allServices !== undefined && !servicesLoading && !servicesFetching && !servicesError;
 	const arrInstances = useMemo(
-		() => (allServices ?? []).filter((s) => s.service === "sonarr" || s.service === "radarr"),
+		() =>
+			(allServices ?? []).filter(
+				(s) => s.enabled && (s.service === "sonarr" || s.service === "radarr"),
+			),
 		[allServices],
 	);
 	const hasSeerr = useMemo(
@@ -518,13 +892,13 @@ export function CleanupRuleDialog({
 
 	// ── Action (Phase A) ────────────────────────────────────────────
 	const [action, setAction] = useState<"delete" | "unmonitor" | "delete_files">("delete");
+	const [scanMediaServerAfterDelete, setScanMediaServerAfterDelete] = useState(false);
 
 	// ── Composite mode (Phase B) ────────────────────────────────────
 	const [isComposite, setIsComposite] = useState(false);
 	const [compositeOperator, setCompositeOperator] = useState<"AND" | "OR">("AND");
-	const [conditions, setConditions] = useState<
-		Array<{ id: string; ruleType: CleanupRuleType; params: Record<string, unknown> }>
-	>([]);
+	const [conditions, setConditions] = useState<EditableExpressionNode[]>([]);
+	const [preserveExpressionRoot, setPreserveExpressionRoot] = useState(false);
 
 	// ── New rule params (Phase C) ───────────────────────────────────
 	const [imdbRatingOp, setImdbRatingOp] = useState("less_than");
@@ -568,19 +942,64 @@ export function CleanupRuleDialog({
 	// ── Scope / Exclusions ──────────────────────────────────────────
 	const [serviceFilter, setServiceFilter] = useState<string[]>([]);
 	const [instanceFilter, setInstanceFilter] = useState<string[]>([]);
+	const [imdbScopeEmptiedByPruning, setImdbScopeEmptiedByPruning] = useState(false);
 	const [selectedPlexLibraries, setSelectedPlexLibraries] = useState<string[]>([]);
 	const [excludeTags, setExcludeTags] = useState<number[]>([]);
 	const [excludeTitles, setExcludeTitles] = useState("");
+	const requiresRadarrRatings =
+		targetScope === "series" &&
+		(isComposite
+			? expressionConditions(conditions).some((condition) => condition.ruleType === "imdb_rating")
+			: ruleType === "imdb_rating");
+	const imdbInstanceScopeError = !requiresRadarrRatings
+		? null
+		: imdbScopeEmptiedByPruning && instanceFilter.length === 0
+			? "The saved IMDb instance scope contained only Sonarr instances. Select an enabled Radarr instance before saving."
+			: instanceFilter.length > 0 && !servicesAuthoritative
+				? "Service instances must finish loading successfully before this IMDb scope can be saved."
+				: instanceFilter.length > 0
+					? (() => {
+							const invalidIds = instanceFilter.filter((id) => {
+								const instance = allServices?.find((candidate) => candidate.id === id);
+								return !instance || instance.service !== "radarr" || !instance.enabled;
+							});
+							return invalidIds.length > 0
+								? "Every selected IMDb instance must be an enabled Radarr instance. Unknown and disabled selections are preserved until they can be corrected."
+								: null;
+						})()
+					: null;
+
+	useEffect(() => {
+		if (!open || !requiresRadarrRatings) return;
+		setServiceFilter((current) =>
+			current.length === 1 && current[0] === "radarr" ? current : ["radarr"],
+		);
+		if (!servicesAuthoritative || !allServices) return;
+		setInstanceFilter((current) => {
+			const next = current.filter((id) => {
+				const instance = allServices.find((candidate) => candidate.id === id);
+				return instance?.service !== "sonarr";
+			});
+			if (current.length > 0 && next.length === 0 && next.length !== current.length) {
+				setImdbScopeEmptiedByPruning(true);
+			}
+			return next.length === current.length && next.every((id, index) => id === current[index])
+				? current
+				: next;
+		});
+	}, [allServices, open, requiresRadarrRatings, servicesAuthoritative]);
 
 	// ── Pre-populate on edit ────────────────────────────────────────
 	useEffect(() => {
 		if (!open) return;
+		setImdbScopeEmptiedByPruning(false);
 		if (editRule) {
 			setName(editRule.name);
 			setRuleType(editRule.ruleType);
 			setTargetScope(editRule.targetScope ?? "series");
 			setEnabled(editRule.enabled);
 			setAction((editRule.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
+			setScanMediaServerAfterDelete(editRule.scanMediaServerAfterDelete ?? false);
 			setRetentionMode(editRule.retentionMode ?? false);
 			setUseGlobalRejectionMemory(editRule.useGlobalRejectionMemory ?? true);
 			setRejectionMode(
@@ -594,8 +1013,20 @@ export function CleanupRuleDialog({
 				setRejectionDays(String(editRule.rejectionMemoryDays));
 			}
 			// Composite mode
-			if (editRule.operator && editRule.conditions) {
+			if (editRule.expression) {
 				setIsComposite(true);
+				if (editRule.expression.root.type === "group") {
+					setPreserveExpressionRoot(false);
+					setCompositeOperator(editRule.expression.root.operator);
+					setConditions(editRule.expression.root.children.map(toEditableExpression));
+				} else {
+					setPreserveExpressionRoot(true);
+					setCompositeOperator("AND");
+					setConditions([toEditableExpression(editRule.expression.root)]);
+				}
+			} else if (editRule.operator && editRule.conditions) {
+				setIsComposite(true);
+				setPreserveExpressionRoot(false);
 				setCompositeOperator(editRule.operator as "AND" | "OR");
 				setConditions(
 					(
@@ -603,10 +1034,16 @@ export function CleanupRuleDialog({
 							ruleType: CleanupRuleType;
 							parameters: Record<string, unknown>;
 						}>
-					).map((c, i) => ({ id: `cond-${i}`, ruleType: c.ruleType, params: c.parameters ?? {} })),
+					).map((c) => ({
+						id: expressionNodeId(),
+						type: "condition" as const,
+						ruleType: c.ruleType as Exclude<CleanupRuleType, "composite">,
+						params: c.parameters ?? {},
+					})),
 				);
 			} else {
 				setIsComposite(false);
+				setPreserveExpressionRoot(false);
 				setCompositeOperator("AND");
 				setConditions([]);
 			}
@@ -808,6 +1245,8 @@ export function CleanupRuleDialog({
 				case "user_retention":
 				case "staleness_score":
 				case "recently_active":
+				case "tmdb_list_member":
+				case "trakt_list_member":
 					setBehaviorParams(p);
 					break;
 			}
@@ -824,6 +1263,7 @@ export function CleanupRuleDialog({
 				setInstanceFilter(editRule.instanceFilter ?? []);
 				setSelectedPlexLibraries([]);
 				setIsComposite(false);
+				setPreserveExpressionRoot(false);
 				setConditions([]);
 				setRetentionMode(false);
 			}
@@ -905,8 +1345,10 @@ export function CleanupRuleDialog({
 			setJellyfinAddedAtDays(90);
 			// Phase A/B
 			setAction("delete");
+			setScanMediaServerAfterDelete(false);
 			setRetentionMode(false);
 			setIsComposite(false);
+			setPreserveExpressionRoot(false);
 			setCompositeOperator("AND");
 			setConditions([]);
 			// Phase C
@@ -942,19 +1384,34 @@ export function CleanupRuleDialog({
 				setName(templateData.name);
 				setTargetScope(templateData.targetScope ?? "series");
 				setAction((templateData.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
+				setScanMediaServerAfterDelete(templateData.scanMediaServerAfterDelete ?? false);
 				setRetentionMode(templateData.retentionMode ?? false);
 				if (templateData.serviceFilter) {
 					setServiceFilter(templateData.serviceFilter);
 				}
-				if (templateData.operator && templateData.conditions) {
+				if (templateData.expression) {
+					setIsComposite(true);
+					setRuleType("composite");
+					if (templateData.expression.root.type === "group") {
+						setPreserveExpressionRoot(false);
+						setCompositeOperator(templateData.expression.root.operator);
+						setConditions(templateData.expression.root.children.map(toEditableExpression));
+					} else {
+						setPreserveExpressionRoot(true);
+						setCompositeOperator("AND");
+						setConditions([toEditableExpression(templateData.expression.root)]);
+					}
+				} else if (templateData.operator && templateData.conditions) {
 					// Composite template
 					setIsComposite(true);
+					setPreserveExpressionRoot(false);
 					setCompositeOperator(templateData.operator as "AND" | "OR");
 					setRuleType("composite");
 					setConditions(
-						templateData.conditions.map((c, i) => ({
-							id: `tpl-${i}`,
-							ruleType: c.ruleType,
+						templateData.conditions.map((c) => ({
+							id: expressionNodeId(),
+							type: "condition" as const,
+							ruleType: c.ruleType as Exclude<CleanupRuleType, "composite">,
 							params: c.parameters ?? {},
 						})),
 					);
@@ -972,6 +1429,8 @@ export function CleanupRuleDialog({
 						case "jellyfin_episode_completion":
 						case "user_retention":
 						case "recently_active":
+						case "tmdb_list_member":
+						case "trakt_list_member":
 							setBehaviorParams(p);
 							break;
 					}
@@ -983,6 +1442,7 @@ export function CleanupRuleDialog({
 					setInstanceFilter([]);
 					setSelectedPlexLibraries([]);
 					setIsComposite(false);
+					setPreserveExpressionRoot(false);
 					setConditions([]);
 					setRetentionMode(false);
 				}
@@ -1097,6 +1557,7 @@ export function CleanupRuleDialog({
 			);
 			setSelectedPlexLibraries([]);
 			setIsComposite(false);
+			setPreserveExpressionRoot(false);
 			setConditions([]);
 			setCompositeError(null);
 			setRetentionMode(false);
@@ -1106,14 +1567,22 @@ export function CleanupRuleDialog({
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
+		if (imdbInstanceScopeError) return;
 		const isEpisodeScope = targetScope === "episode";
 		if (!isEpisodeScope && isComposite && conditions.length === 0) {
 			setCompositeError("Composite rules must have at least one condition");
 			return;
 		}
+		if (!isEpisodeScope && isComposite) {
+			const expressionError = getEditableExpressionError(conditions, preserveExpressionRoot);
+			if (expressionError) {
+				setCompositeError(expressionError);
+				return;
+			}
+		}
 		// Validate composite conditions have required fields filled in
 		if (!isEpisodeScope && isComposite) {
-			for (const cond of conditions) {
+			for (const cond of expressionConditions(conditions)) {
 				const p = cond.params;
 				if (
 					(cond.ruleType === "seerr_requested_by" ||
@@ -1140,6 +1609,14 @@ export function CleanupRuleDialog({
 				: rejectionMode === "days"
 					? Math.max(1, Math.min(36500, Number(rejectionDays) || 30))
 					: 0;
+		const isLegacyFlatComposite =
+			!isEpisodeScope &&
+			isComposite &&
+			!preserveExpressionRoot &&
+			conditions.every(
+				(node): node is Extract<EditableExpressionNode, { type: "condition" }> =>
+					node.type === "condition",
+			);
 		const base = {
 			name,
 			targetScope,
@@ -1156,6 +1633,10 @@ export function CleanupRuleDialog({
 					? {}
 					: buildParams(),
 			action,
+			scanMediaServerAfterDelete:
+				!retentionMode && (action === "delete" || action === "delete_files")
+					? scanMediaServerAfterDelete
+					: false,
 			retentionMode: isEpisodeScope ? false : retentionMode,
 			useGlobalRejectionMemory,
 			// When override is off, omit `rejectionMemoryDays` from the payload
@@ -1165,21 +1646,38 @@ export function CleanupRuleDialog({
 			// the route defaults `undefined` to `0`, which is the right
 			// pre-#474 behavior when override is off.
 			...(useGlobalRejectionMemory ? {} : { rejectionMemoryDays: ruleRejectionDays }),
-			serviceFilter: isEpisodeScope ? ["sonarr"] : serviceFilter.length > 0 ? serviceFilter : null,
+			serviceFilter: isEpisodeScope
+				? ["sonarr"]
+				: requiresRadarrRatings
+					? ["radarr"]
+					: serviceFilter.length > 0
+						? serviceFilter
+						: null,
 			instanceFilter: instanceFilter.length > 0 ? instanceFilter : null,
 			excludeTags: excludeTags.length > 0 ? excludeTags : null,
 			excludeTitles: excludeTitles.trim() ? splitCsv(excludeTitles) : null,
 			plexLibraryFilter:
 				!isEpisodeScope && selectedPlexLibraries.length > 0 ? selectedPlexLibraries : null,
-			operator: !isEpisodeScope && isComposite ? compositeOperator : null,
-			conditions:
-				!isEpisodeScope && isComposite
-					? conditions
-							.filter((c) => c.ruleType !== "composite")
-							.map((c) => ({
-								ruleType: c.ruleType as Exclude<CleanupRuleType, "composite">,
-								parameters: c.params,
-							}))
+			operator: isLegacyFlatComposite ? compositeOperator : null,
+			conditions: isLegacyFlatComposite
+				? conditions.map((condition) => ({
+						ruleType: condition.ruleType,
+						parameters: condition.params,
+					}))
+				: null,
+			expression:
+				!isEpisodeScope && isComposite && !isLegacyFlatComposite
+					? {
+							version: 1 as const,
+							root:
+								preserveExpressionRoot && conditions.length === 1
+									? toCleanupExpression(conditions[0]!)
+									: {
+											type: "group" as const,
+											operator: compositeOperator,
+											children: conditions.map(toCleanupExpression),
+										},
+						}
 					: null,
 		};
 		onSave(base as CreateCleanupRule);
@@ -1281,9 +1779,7 @@ export function CleanupRuleDialog({
 										disabled={isEdit}
 										aria-pressed={targetScope === scope}
 										title={
-											isEdit
-												? "Target scope cannot be changed while editing a rule"
-												: undefined
+											isEdit ? "Target scope cannot be changed while editing a rule" : undefined
 										}
 										className="rounded-lg border px-3 py-2 text-left transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60"
 										style={
@@ -1309,8 +1805,8 @@ export function CleanupRuleDialog({
 							</div>
 							{isEdit && (
 								<p className="mt-2 text-xs text-muted-foreground">
-									Target scope cannot be changed while editing. Create a new rule to use a
-									different scope.
+									Target scope cannot be changed while editing. Create a new rule to use a different
+									scope.
 								</p>
 							)}
 							{targetScope === "series" ? (
@@ -1434,8 +1930,33 @@ export function CleanupRuleDialog({
 							</p>
 						</div>
 
+						{!retentionMode && (action === "delete" || action === "delete_files") && (
+							<div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+								<div className="flex items-start gap-2">
+									<RefreshCw className="mt-0.5 h-4 w-4 text-muted-foreground" />
+									<div>
+										<span className="text-sm font-medium">Scan media servers after deletion</span>
+										<p className="text-xs text-muted-foreground">
+											After verified files are deleted, ask enabled Plex, Jellyfin, and Emby
+											libraries to refresh. Duplicate scans in the same cleanup run are combined.
+										</p>
+									</div>
+								</div>
+								<Switch
+									aria-label="Scan media servers after deletion"
+									checked={scanMediaServerAfterDelete}
+									onCheckedChange={setScanMediaServerAfterDelete}
+								/>
+							</div>
+						)}
+
 						{/* ── Rule Mode toggle ──────────────────────── */}
-						{targetScope === "series" && (
+						{targetScope === "series" && isEdit ? (
+							<p className="text-xs text-muted-foreground">
+								Rule mode and type cannot be changed while editing. Create a new rule to use a
+								different mode or condition type.
+							</p>
+						) : targetScope === "series" ? (
 							<div>
 								<span className={labelClass}>Rule Mode</span>
 								<div className="flex gap-2 mt-1.5">
@@ -1443,6 +1964,7 @@ export function CleanupRuleDialog({
 										type="button"
 										onClick={() => {
 											setIsComposite(false);
+											setPreserveExpressionRoot(false);
 											setConditions([]);
 											setCompositeError(null);
 										}}
@@ -1477,7 +1999,7 @@ export function CleanupRuleDialog({
 									</button>
 								</div>
 							</div>
-						)}
+						) : null}
 
 						{/* ── Rule Type Picker / Composite Builder ─── */}
 						{targetScope === "series" && isComposite ? (
@@ -1511,89 +2033,76 @@ export function CleanupRuleDialog({
 											: "Any condition matching will trigger the rule."}
 									</p>
 								</div>
-								{conditions.map((cond, idx) => (
-									<div
-										key={cond.id}
-										className="rounded-lg border border-border/50 bg-card/20 p-3 space-y-2"
-									>
-										<div className="flex items-center justify-between">
-											<span className="text-xs font-medium text-muted-foreground">
-												Condition {idx + 1}
-											</span>
-											<button
-												type="button"
-												onClick={() =>
-													setConditions((prev) => prev.filter((c) => c.id !== cond.id))
-												}
-												className="text-xs text-muted-foreground hover:text-destructive transition-colors"
-											>
-												Remove
-											</button>
-										</div>
-										<select
-											value={cond.ruleType}
-											onChange={(e) => {
-												const newType = e.target.value as CleanupRuleType;
-												setConditions((prev) =>
-													prev.map((c) =>
-														c.id === cond.id
-															? {
-																	...c,
-																	ruleType: newType,
-																	params: getDefaultConditionParams(newType),
-																}
-															: c,
-													),
-												);
-											}}
-											className={inputClass}
-										>
-											{RULE_TYPES.filter((rt) => rt.value !== "composite").map((rt) => (
-												<option key={rt.value} value={rt.value}>
-													{rt.label}
-												</option>
-											))}
-										</select>
-										<p className="text-xs text-muted-foreground">
-											{RULE_TYPE_MAP.get(cond.ruleType)?.desc ?? ""}
-										</p>
-										<ConditionParamsFields
-											ruleType={cond.ruleType}
-											params={cond.params}
-											onParamsChange={(newParams) =>
-												setConditions((prev) =>
-													prev.map((c) => (c.id === cond.id ? { ...c, params: newParams } : c)),
-												)
-											}
-											fieldOptions={fieldOptions}
-											fieldOptionsLoading={fieldOptionsLoading}
-											inputClass={inputClass}
-											labelClass={labelClass}
-										/>
-									</div>
+								{conditions.map((node, index) => (
+									<ExpressionNodeEditor
+										key={node.id}
+										node={node}
+										depth={preserveExpressionRoot && conditions.length === 1 ? 1 : 2}
+										onChange={(nextNode) =>
+											setConditions((current) =>
+												current.map((candidate) =>
+													candidate.id === node.id ? nextNode : candidate,
+												),
+											)
+										}
+										onRemove={() =>
+											setConditions((current) =>
+												current.filter((candidate) => candidate.id !== node.id),
+											)
+										}
+										fieldOptions={fieldOptions}
+										fieldOptionsLoading={fieldOptionsLoading}
+										inputClass={inputClass}
+										labelClass={labelClass}
+										displayLabel={node.type === "condition" ? `Condition ${index + 1}` : undefined}
+									/>
 								))}
 								{compositeError && (
 									<div className="rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 text-xs text-red-400">
 										{compositeError}
 									</div>
 								)}
-								<button
-									type="button"
-									onClick={() => {
-										setConditions((prev) => [
-											...prev,
-											{
-												id: `cond-${Date.now()}`,
-												ruleType: "age" as CleanupRuleType,
-												params: getDefaultConditionParams("age"),
-											},
-										]);
-										setCompositeError(null);
-									}}
-									className="w-full rounded-lg border border-dashed border-border/50 px-3 py-2 text-sm text-muted-foreground hover:text-foreground hover:border-border transition-colors"
-								>
-									+ Add Condition
-								</button>
+								<div className="grid grid-cols-3 gap-2">
+									<button
+										type="button"
+										onClick={() => {
+											setConditions((current) => [...current, createConditionNode()]);
+											setCompositeError(null);
+										}}
+										className="rounded-lg border border-dashed border-border/50 px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+									>
+										+ Add Condition
+									</button>
+									<button
+										type="button"
+										onClick={() =>
+											setConditions((current) => [
+												...current,
+												{
+													id: expressionNodeId(),
+													type: "group",
+													operator: "AND",
+													children: [createConditionNode()],
+												},
+											])
+										}
+										className="rounded-lg border border-dashed border-border/50 px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+									>
+										+ Group
+									</button>
+									<button
+										type="button"
+										onClick={() =>
+											setConditions((current) => [
+												...current,
+												{ id: expressionNodeId(), type: "not", child: createConditionNode() },
+											])
+										}
+										className="rounded-lg border border-dashed border-border/50 px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
+									>
+										+ NOT
+									</button>
+								</div>
 							</div>
 						) : isEdit || targetScope === "episode" ? (
 							<div className="flex items-center gap-2">
@@ -1663,7 +2172,15 @@ export function CleanupRuleDialog({
 																<button
 																	key={typeValue}
 																	type="button"
-																	onClick={() => setRuleType(typeValue as CleanupRuleType)}
+																	onClick={() => {
+																		const nextType = typeValue as CleanupRuleType;
+																		setRuleType(nextType);
+																		setBehaviorParams(
+																			getDefaultConditionParams(
+																				nextType as Exclude<CleanupRuleType, "composite">,
+																			),
+																		);
+																	}}
 																	className={`text-left rounded-lg border px-2.5 py-2 transition-all duration-200 ${
 																		isSelected ? "" : "border-border/30 hover:border-border/60"
 																	}`}
@@ -1896,7 +2413,9 @@ export function CleanupRuleDialog({
 							<div className="flex gap-2 mt-1.5">
 								{(targetScope === "episode"
 									? (["sonarr"] as const)
-									: (["sonarr", "radarr"] as const)
+									: requiresRadarrRatings
+										? (["radarr"] as const)
+										: (["sonarr", "radarr"] as const)
 								).map((svc) => {
 									const svcGradient = getServiceGradient(svc);
 									const isActive = serviceFilter.includes(svc);
@@ -1931,8 +2450,15 @@ export function CleanupRuleDialog({
 							<p className="text-xs text-muted-foreground mt-1.5">
 								{targetScope === "episode"
 									? "Episode targets always apply to Sonarr."
-									: "Leave unselected to apply to all services."}
+									: requiresRadarrRatings
+										? "IMDb ratings are provided by Radarr, so this rule always targets Radarr only."
+										: "Leave unselected to apply to all services."}
 							</p>
+							{imdbInstanceScopeError && (
+								<p role="alert" className="text-xs text-destructive mt-1.5">
+									{imdbInstanceScopeError}
+								</p>
+							)}
 						</div>
 
 						<div>
@@ -1943,7 +2469,12 @@ export function CleanupRuleDialog({
 								</p>
 							) : (
 								<div className="mt-1.5 space-y-1.5">
-									{(targetScope === "episode" ? ["sonarr"] : ["sonarr", "radarr"]).map((svc) => {
+									{(targetScope === "episode"
+										? ["sonarr"]
+										: requiresRadarrRatings
+											? ["radarr"]
+											: ["sonarr", "radarr"]
+									).map((svc) => {
 										const instances = arrInstances.filter((i) => i.service === svc);
 										if (instances.length === 0) return null;
 										return (
@@ -1964,6 +2495,7 @@ export function CleanupRuleDialog({
 																			? prev.filter((id) => id !== inst.id)
 																			: [...prev, inst.id],
 																	);
+																	setImdbScopeEmptiedByPruning(false);
 																}}
 																className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors border ${
 																	selected
@@ -2525,6 +3057,12 @@ function ParamsFields(props: ParamsFieldsProps) {
 						className={inputClass}
 					/>
 				</label>
+			);
+		case "monitored":
+			return (
+				<p className="text-xs text-muted-foreground">
+					Matches all monitored items. No additional parameters.
+				</p>
 			);
 		case "unmonitored":
 			return (
@@ -3626,6 +4164,8 @@ function ParamsFields(props: ParamsFieldsProps) {
 		case "user_retention":
 		case "staleness_score":
 		case "recently_active":
+		case "tmdb_list_member":
+		case "trakt_list_member":
 			return (
 				<ConditionParamsFields
 					ruleType={ruleType}

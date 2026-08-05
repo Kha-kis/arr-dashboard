@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { evaluateSingleCondition } from "./rule-evaluators.js";
 import type {
 	CacheItemForEval,
 	EvalContext,
@@ -15,7 +16,6 @@ import type {
 	SeerrRequestInfo,
 	TautulliWatchInfo,
 } from "./types.js";
-import { evaluateSingleCondition } from "./rule-evaluators.js";
 
 // ---------------------------------------------------------------------------
 // Factories (same pattern as rule-evaluators.test.ts)
@@ -28,6 +28,7 @@ const NOW = new Date("2026-03-01T12:00:00Z");
  * extractFileMetadata() reads movieFile.videoCodec, movieFile.audioCodec, etc.
  */
 const DEFAULT_DATA = {
+	service: "radarr",
 	genres: ["Action", "Sci-Fi"],
 	ratings: { tmdb: { value: 7.5 }, imdb: { value: 7.2 } },
 	remoteIds: { tmdbId: 12345 },
@@ -1008,8 +1009,19 @@ describe("seerr_request_count rule", () => {
 		expect(result).toContain("2");
 	});
 
-	it("returns null for items not found in seerr (avoids false zero-count matches)", () => {
+	it("treats an item absent from a complete Seerr inventory as zero requests", () => {
 		const data = { ...DEFAULT_DATA, remoteIds: { tmdbId: 99999 } };
+		const result = evaluateSingleCondition(
+			makeCacheItem({ data: JSON.stringify(data) }),
+			"seerr_request_count",
+			{ operator: "less_than", count: 1 },
+			ctx,
+		);
+		expect(result).toContain("Seerr request count: 0");
+	});
+
+	it("returns unknown when the item has no Seerr-compatible identity", () => {
+		const data = { ...DEFAULT_DATA, remoteIds: {} };
 		const result = evaluateSingleCondition(
 			makeCacheItem({ data: JSON.stringify(data) }),
 			"seerr_request_count",

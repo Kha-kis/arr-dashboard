@@ -7,6 +7,12 @@
 
 import { z } from "zod";
 
+const plexPaginationFields = {
+	offset: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
+	size: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
+	totalSize: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
+};
+
 /** /identity endpoint */
 export const plexIdentityResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
@@ -28,6 +34,9 @@ export const plexServerInfoResponseSchema = z.looseObject({
 /** /library/sections endpoint */
 export const plexSectionsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
+		offset: plexPaginationFields.offset.optional(),
+		size: plexPaginationFields.size.optional(),
+		totalSize: plexPaginationFields.totalSize.optional(),
 		Directory: z
 			.array(
 				z.looseObject({
@@ -43,6 +52,7 @@ export const plexSectionsResponseSchema = z.looseObject({
 /** /library/sections/{id}/all endpoint */
 export const plexLibraryItemsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
+		...plexPaginationFields,
 		Metadata: z
 			.array(
 				z.looseObject({
@@ -71,16 +81,10 @@ const plexMediaSchema = z.looseObject({
 	Part: z.array(plexMediaPartSchema).min(1),
 });
 
-const plexSafetyPaginationFields = {
-	offset: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
-	size: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
-	totalSize: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
-};
-
 /** /library/sections/{id}/all with includeMedia=1 */
 export const plexLibraryMediaItemsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
-		...plexSafetyPaginationFields,
+		...plexPaginationFields,
 		Metadata: z
 			.array(
 				z.looseObject({
@@ -96,7 +100,7 @@ export const plexLibraryMediaItemsResponseSchema = z.looseObject({
 /** Targeted /library/all show lookup used by deletion-safety checks. */
 export const plexLibraryGuidItemsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
-		...plexSafetyPaginationFields,
+		...plexPaginationFields,
 		Metadata: z
 			.array(
 				z.looseObject({
@@ -112,7 +116,7 @@ export const plexLibraryGuidItemsResponseSchema = z.looseObject({
 /** /library/metadata/{showId}/allLeaves with includeMedia=1 */
 export const plexEpisodeMediaItemsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
-		...plexSafetyPaginationFields,
+		...plexPaginationFields,
 		Metadata: z
 			.array(
 				z.looseObject({
@@ -129,7 +133,7 @@ export const plexEpisodeMediaItemsResponseSchema = z.looseObject({
 /** /status/sessions/history/all endpoint (paginated) */
 export const plexHistoryResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
-		size: z.number().optional(),
+		...plexPaginationFields,
 		Metadata: z
 			.array(
 				z.looseObject({
@@ -152,6 +156,7 @@ export const plexHistoryResponseSchema = z.looseObject({
 /** /library/onDeck endpoint */
 export const plexOnDeckResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
+		...plexPaginationFields,
 		Metadata: z
 			.array(
 				z.looseObject({
@@ -241,9 +246,31 @@ export const plexEpisodesResponseSchema = z.looseObject({
 	}),
 });
 
+/** Paginated /library/metadata/{id}/allLeaves response used as cleanup authority. */
+export const plexAllLeavesResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		...plexPaginationFields,
+		Metadata: z
+			.array(
+				z.looseObject({
+					ratingKey: z.string(),
+					title: z.string().optional().default(""),
+					parentIndex: z.number().int().nonnegative().optional(),
+					index: z.number().int().positive().optional(),
+					viewCount: z.number().int().nonnegative().optional(),
+					lastViewedAt: z.number().optional(),
+				}),
+			)
+			.optional(),
+	}),
+});
+
 /** /accounts endpoint */
 export const plexAccountsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
+		offset: plexPaginationFields.offset.optional(),
+		size: plexPaginationFields.size.optional(),
+		totalSize: plexPaginationFields.totalSize.optional(),
 		Account: z
 			.array(
 				z.looseObject({

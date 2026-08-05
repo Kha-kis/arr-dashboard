@@ -198,6 +198,13 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     fi
     echo "  - Schema updated successfully"
 
+    # sed -i replaces the schema with a root-owned file. Prisma 7 opens that
+    # schema with write access while loading prisma.config.ts, so hand the
+    # single file back to the remapped runtime user before generation.
+    if [ "$ROOTLESS" = false ]; then
+        chown "${PUID}:${PGID}" /app/api/prisma/schema.prisma
+    fi
+
     # Regenerate Prisma client for new provider
     echo "  - Regenerating Prisma client (this may take a moment)..."
 
@@ -267,6 +274,16 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     echo "  - Provider switched successfully"
 else
     echo "  - Prisma provider already set to $DB_PROVIDER (no change needed)"
+fi
+
+# Prisma 7 opens the schema with write access while loading prisma.config.ts
+# for `db push`, even when the datasource provider did not change. The image
+# files are owned by the build-time abc UID (911), but LinuxServer-style
+# PUID/PGID remapping changes abc to the operator's IDs at startup. Hand off
+# only the schema file instead of recursively chowning /app/api, which would
+# reintroduce the severe Unraid startup cost documented above.
+if [ "$ROOTLESS" = false ]; then
+    chown "${PUID}:${PGID}" /app/api/prisma/schema.prisma
 fi
 
 # ============================================

@@ -4,7 +4,7 @@ import type {
 	UpdateCleanupConfig,
 	UpdateCleanupRule,
 } from "@arr/shared";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	type ApprovalExecuteResult,
 	type ExecuteResult,
@@ -63,6 +63,27 @@ export function useCleanupLogs(
 	return useQuery({
 		queryKey: libraryCleanupKeys.logs(page, filters as Record<string, string> | undefined),
 		queryFn: () => libraryCleanupApi.getLogs(page, pageSize, filters),
+	});
+}
+
+export function useCleanupActivity(page = 1, pageSize = 20) {
+	return useQuery({
+		queryKey: libraryCleanupKeys.activity(page),
+		queryFn: () => libraryCleanupApi.getActivity(page, pageSize),
+	});
+}
+
+export function useCleanupActivityEvents(
+	actionId: string,
+	initialCursor: string | null,
+	pageSize = 200,
+) {
+	return useInfiniteQuery({
+		queryKey: libraryCleanupKeys.activityEvents(actionId, initialCursor ?? "complete", pageSize),
+		queryFn: ({ pageParam }) => libraryCleanupApi.getActivityEvents(actionId, pageParam, pageSize),
+		initialPageParam: initialCursor ?? "",
+		getNextPageParam: (lastPage) => lastPage.olderEventsCursor ?? undefined,
+		enabled: false,
 	});
 }
 
@@ -151,6 +172,7 @@ export function useCleanupExecute() {
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.activityAll });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
@@ -170,6 +192,7 @@ export function useApproveCleanupItem() {
 		onSettled: () => {
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.activityAll });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
@@ -188,6 +211,7 @@ export function useRetryCleanupItem() {
 		onSettled: () => {
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.activityAll });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
@@ -200,6 +224,7 @@ export function useRejectCleanupItem() {
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.activityAll });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});
@@ -218,6 +243,7 @@ export function useBulkCleanupAction() {
 		onSettled: () => {
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.activityAll });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.statisticsAll });
 		},
 	});

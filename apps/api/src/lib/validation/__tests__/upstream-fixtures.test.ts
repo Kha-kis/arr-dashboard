@@ -138,7 +138,9 @@ const PLEX_SESSIONS_RESPONSE = {
 
 const PLEX_HISTORY_RESPONSE = {
 	MediaContainer: {
+		offset: 0,
 		size: 2,
+		totalSize: 2,
 		Metadata: [
 			{
 				ratingKey: "100",
@@ -169,6 +171,9 @@ const PLEX_HISTORY_RESPONSE = {
 
 const PLEX_LIBRARY_ITEMS_RESPONSE = {
 	MediaContainer: {
+		offset: 0,
+		size: 1,
+		totalSize: 1,
 		Metadata: [
 			{
 				ratingKey: "500",

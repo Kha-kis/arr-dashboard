@@ -5,12 +5,15 @@
  * Enables users to see when data was last synced and trigger a refresh.
  */
 
+import type { CacheHealthResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { recordCacheRefreshFailure } from "../../lib/cache-refresh-status.js";
 import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
 import { refreshJellyfinCache } from "../../lib/jellyfin/jellyfin-cache-refresher.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { buildCacheHealthItems } from "../plex/lib/cache-health-helpers.js";
 
 const instanceParams = z.object({
 	instanceId: z.string().min(1),
@@ -31,7 +34,8 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		});
 
 		if (instances.length === 0) {
-			return reply.send({ items: [] });
+			const response: CacheHealthResponse = { items: [] };
+			return reply.send(response);
 		}
 
 		const instanceIds = instances.map((i) => i.id);
@@ -44,21 +48,9 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			},
 		});
 
-		const now = Date.now();
-		const STALE_THRESHOLD_MS = 12 * 60 * 60 * 1000; // 12 hours
-
-		const items = statuses.map((s) => ({
-			instanceId: s.instanceId,
-			instanceName: instanceMap.get(s.instanceId) ?? s.instanceId,
-			cacheType: s.cacheType,
-			lastRefreshedAt: s.lastRefreshedAt?.toISOString() ?? null,
-			lastResult: s.lastResult,
-			lastErrorMessage: s.lastErrorMessage,
-			itemCount: s.itemCount,
-			isStale: s.lastRefreshedAt ? now - s.lastRefreshedAt.getTime() > STALE_THRESHOLD_MS : true,
-		}));
-
-		return reply.send({ items });
+		const items = buildCacheHealthItems(statuses, instanceMap);
+		const response: CacheHealthResponse = { items };
+		return reply.send(response);
 	});
 
 	/**
@@ -79,61 +71,28 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			try {
 				const result = await refreshJellyfinCache(client, app.prisma, instanceId, request.log);
 
-				await app.prisma.cacheRefreshStatus
-					.upsert({
-						where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
-						create: {
-							instanceId,
-							cacheType: "jellyfin",
-							lastRefreshedAt: new Date(),
-							lastResult: result.errors > 0 ? "error" : "success",
-							lastErrorMessage:
-								result.errorMessages.length > 0
-									? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-									: null,
-							itemCount: result.upserted,
-						},
-						update: {
-							lastRefreshedAt: new Date(),
-							lastResult: result.errors > 0 ? "error" : "success",
-							lastErrorMessage:
-								result.errorMessages.length > 0
-									? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-									: null,
-							itemCount: result.upserted,
-						},
-					})
-					.catch((trackErr) => {
-						request.log.warn(
-							{ err: trackErr, instanceId },
-							"Cache refreshed but failed to record status",
-						);
-					});
+				if (!result.complete || !result.completedAt) {
+					await recordCacheRefreshFailure(
+						app.prisma,
+						instanceId,
+						"jellyfin",
+						result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
+							"Jellyfin refresh did not publish a complete generation",
+					);
+				}
 
 				return reply.send({
-					success: true,
+					success: result.complete && Boolean(result.completedAt),
 					upserted: result.upserted,
 					errors: result.errors,
 				});
 			} catch (err) {
-				await app.prisma.cacheRefreshStatus
-					.upsert({
-						where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
-						create: {
-							instanceId,
-							cacheType: "jellyfin",
-							lastRefreshedAt: new Date(),
-							lastResult: "error",
-							lastErrorMessage: getErrorMessage(err, "Unknown error"),
-							itemCount: 0,
-						},
-						update: {
-							lastRefreshedAt: new Date(),
-							lastResult: "error",
-							lastErrorMessage: getErrorMessage(err, "Unknown error"),
-						},
-					})
-					.catch(() => {});
+				await recordCacheRefreshFailure(
+					app.prisma,
+					instanceId,
+					"jellyfin",
+					getErrorMessage(err, "Unknown error"),
+				).catch(() => {});
 
 				throw err;
 			}

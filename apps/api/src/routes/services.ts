@@ -5,6 +5,7 @@ import { requireInstance } from "../lib/arr/instance-helpers.js";
 import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
 import type { ServiceType } from "../lib/prisma.js";
+import { withQuiObservationTopologyGuard } from "../lib/qui/observation-topology-guard.js";
 import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
 import {
@@ -49,15 +50,13 @@ const servicePayloadSchema = z.object({
 });
 
 const serviceUpdateSchema = servicePayloadSchema
-	.partial({
-		label: true,
-		baseUrl: true,
-		apiKey: true,
-		httpAuth: true,
-		service: true,
-		enabled: true,
-		isDefault: true,
-		tags: true,
+	.partial()
+	.extend({
+		// Override create-time defaults so omitted update fields remain omitted.
+		enabled: z.boolean().optional(),
+		isDefault: z.boolean().optional(),
+		tags: z.array(z.string().min(1).max(64)).optional(),
+		hasLocalFilesystemAccess: z.boolean().optional(),
 	})
 	.refine((data) => Object.keys(data).length > 0, {
 		message: "At least one field must be provided",
@@ -66,6 +65,60 @@ const serviceUpdateSchema = servicePayloadSchema
 const tagCreateSchema = z.object({
 	name: z.string().min(1).max(64),
 });
+
+const QUI_TOPOLOGY_UPDATE_FIELDS = [
+	"service",
+	"enabled",
+	"baseUrl",
+	"apiKey",
+	"httpAuth",
+	"hasLocalFilesystemAccess",
+	"pathPrefix",
+] as const;
+
+function changesQuiTopology(
+	existingService: ServiceType,
+	payload: z.infer<typeof serviceUpdateSchema>,
+): boolean {
+	const targetService = (payload.service ?? existingService.toLowerCase()).toUpperCase();
+	if (existingService !== "QUI" && targetService !== "QUI") return false;
+	return QUI_TOPOLOGY_UPDATE_FIELDS.some((field) => Object.hasOwn(payload, field));
+}
+
+async function clearDurableQuiObservations(
+	prisma: {
+		libraryCache: {
+			updateMany(args: {
+				where: { instance: { userId: string } };
+				data: {
+					torrentState: null;
+					torrentRatio: null;
+					torrentSyncedAt: null;
+				};
+			}): Promise<unknown>;
+		};
+		episodeFileCache: {
+			updateMany(args: {
+				where: { instance: { userId: string } };
+				data: {
+					torrentState: null;
+					torrentRatio: null;
+					torrentSyncedAt: null;
+				};
+			}): Promise<unknown>;
+		};
+	},
+	userId: string,
+): Promise<void> {
+	const where = { instance: { userId } };
+	const data = {
+		torrentState: null,
+		torrentRatio: null,
+		torrentSyncedAt: null,
+	} as const;
+	await prisma.libraryCache.updateMany({ where, data });
+	await prisma.episodeFileCache.updateMany({ where, data });
+}
 
 const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/services", async (request, reply) => {
@@ -117,27 +170,38 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 				const tagRecords = await upsertTags(app.prisma, tags);
 
-				const created = await app.prisma.serviceInstance.create({
-					data: {
-						userId, // preHandler guarantees auth
-						service: serviceEnum,
-						encryptedApiKey: encrypted.value,
-						encryptionIv: encrypted.iv,
-						...encryptedHttpAuth,
-						isDefault,
-						...rest,
-						tags: {
-							create: tagRecords,
-						},
-					},
-					include: {
-						tags: {
-							include: {
-								tag: true,
+				const createInstance = (prisma: Pick<typeof app.prisma, "serviceInstance">) =>
+					prisma.serviceInstance.create({
+						data: {
+							userId, // preHandler guarantees auth
+							service: serviceEnum,
+							encryptedApiKey: encrypted.value,
+							encryptionIv: encrypted.iv,
+							...encryptedHttpAuth,
+							isDefault,
+							...rest,
+							tags: {
+								create: tagRecords,
 							},
 						},
-					},
-				});
+						include: {
+							tags: {
+								include: {
+									tag: true,
+								},
+							},
+						},
+					});
+				const created =
+					serviceEnum === "QUI"
+						? await withQuiObservationTopologyGuard(userId, () =>
+								app.prisma.$transaction(async (tx) => {
+									const instance = await createInstance(tx);
+									await clearDurableQuiObservations(tx, userId);
+									return instance;
+								}),
+							)
+						: await createInstance(app.prisma);
 
 				request.log.info({ service, label: rest.label }, "Service instance added");
 
@@ -158,57 +222,87 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			userId,
 			async () => {
 				const existing = await requireInstance(app, userId, id);
-				const targetService = payload.service ?? existing.service.toLowerCase();
+				const targetServiceName = payload.service ?? existing.service.toLowerCase();
 				const keepsExistingHttpAuth =
 					payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
 				const httpAuthConflict =
-					payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetService) : null;
+					payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetServiceName) : null;
 				if (httpAuthConflict) {
 					return reply.status(400).send({
-						error: `HTTP Basic Auth is not supported for ${targetService}`,
+						error: `HTTP Basic Auth is not supported for ${targetServiceName}`,
 						details: `${httpAuthConflict} Remove HTTP Basic Auth or configure a proxy bypass.`,
 					});
 				}
 
 				const updateData = buildUpdateData(payload, app.encryptor);
 
-				if (payload.isDefault === true || payload.service) {
-					const targetService = (
-						payload.service ?? existing.service.toLowerCase()
-					).toUpperCase() as ServiceType;
-					await app.prisma.serviceInstance.updateMany({
-						where: { service: targetService, userId, NOT: { id } },
-						data: { isDefault: false },
+				const targetService = (
+					payload.service ?? existing.service.toLowerCase()
+				).toUpperCase() as ServiceType;
+				const resetOtherDefaults = async (
+					prisma: Pick<typeof app.prisma, "serviceInstance">,
+				): Promise<void> => {
+					if (payload.isDefault === true || payload.service) {
+						await prisma.serviceInstance.updateMany({
+							where: { service: targetService, userId, NOT: { id } },
+							data: { isDefault: false },
+						});
+					}
+				};
+
+				const quiTopologyChanged = changesQuiTopology(existing.service, payload);
+				if (quiTopologyChanged) {
+					await withQuiObservationTopologyGuard(userId, async () => {
+						await app.prisma.$transaction(async (tx) => {
+							await resetOtherDefaults(tx);
+							await tx.serviceInstance.updateMany({
+								where: { id, userId },
+								data: updateData,
+							});
+							if (payload.tags !== undefined) {
+								await updateInstanceTags(tx, id, payload.tags);
+							}
+							await clearDurableQuiObservations(tx, userId);
+						});
+						// Keep process-local evidence in the same guarded topology
+						// transition. Releasing the guard first would allow another
+						// observer to reuse the previous endpoint's inode inventory.
+						invalidateTorrentListCache(id);
+						clearFileIdIndexCache(id);
 					});
+				} else {
+					await resetOtherDefaults(app.prisma);
+					await app.prisma.serviceInstance.updateMany({
+						where: { id, userId },
+						data: updateData,
+					});
+					if (payload.tags !== undefined) {
+						await updateInstanceTags(app.prisma, id, payload.tags);
+					}
 				}
 
-				await app.prisma.serviceInstance.updateMany({
-					where: { id, userId },
-					data: updateData,
-				});
-
-				if (payload.tags) {
-					await updateInstanceTags(app.prisma, id, payload.tags);
-				}
-
-				// Drop process-local qui caches when a qui instance becomes
-				// unreachable from this app's perspective — either disabled
-				// (enabled: true → false) or its service type changed away from
-				// QUI. Mirrors the DELETE handler's invalidation but for the
-				// "kept but inert" case. Without this, a disabled instance's
-				// inode index + torrent list would sit in memory for the rest
-				// of the process lifetime (TTL is read-only; nothing reads a
-				// disabled instance, so no self-healing). No-op for non-qui
-				// services because the keys won't be in those caches.
+				// A qUI topology change invalidates both durable observations
+				// (inside the transaction above) and process-local data keyed
+				// by this instance. Connection, credential, enabled-state, and
+				// filesystem/path-mapping changes participate in one conservative
+				// topology generation so no observer can reuse evidence produced
+				// before a concurrent physical-evidence mutation.
 				const wasQui = existing.service === "QUI";
 				const nowDisabled = payload.enabled === false && existing.enabled === true;
 				const switchedAwayFromQui =
 					payload.service !== undefined && payload.service.toLowerCase() !== "qui";
-				if (wasQui && (nowDisabled || switchedAwayFromQui)) {
-					invalidateTorrentListCache(id);
-					clearFileIdIndexCache(id);
+				if (quiTopologyChanged) {
 					request.log.info(
-						{ instanceId: id, reason: nowDisabled ? "disabled" : "service-changed" },
+						{
+							instanceId: id,
+							reason: nowDisabled
+								? "disabled"
+								: switchedAwayFromQui
+									? "service-changed"
+									: wasQui
+										? "connection-changed"
+										: "qui-enabled",
+						},
 						"qui caches dropped after instance update",
 					);
 				}
@@ -246,17 +340,21 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			{ prisma: app.prisma, log: request.log },
 			userId,
 			async () => {
-				await requireInstance(app, userId, id);
-				await app.prisma.serviceInstance.delete({ where: { id, userId } });
-
-				// Free any process-local qui caches keyed to this instance. Both
-				// the torrent-list cache and the inode index retain heavy entries
-				// (TTL-checked on read only — a stale entry self-heals, but a
-				// deleted instance is never read again, so its entry would linger
-				// for the whole process life). No-op for non-qui services: the id
-				// simply isn't a key in those caches.
-				invalidateTorrentListCache(id);
-				clearFileIdIndexCache(id);
+				const existing = await requireInstance(app, userId, id);
+				if (existing.service === "QUI") {
+					await withQuiObservationTopologyGuard(userId, async () => {
+						await app.prisma.$transaction(async (tx) => {
+							await tx.serviceInstance.delete({ where: { id, userId } });
+							await clearDurableQuiObservations(tx, userId);
+						});
+						invalidateTorrentListCache(id);
+						clearFileIdIndexCache(id);
+					});
+				} else {
+					await app.prisma.serviceInstance.delete({ where: { id, userId } });
+					invalidateTorrentListCache(id);
+					clearFileIdIndexCache(id);
+				}
 
 				request.log.info({ instanceId: id }, "Service instance deleted");
 				return reply.status(204).send();

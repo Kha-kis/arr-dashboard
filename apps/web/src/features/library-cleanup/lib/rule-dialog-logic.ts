@@ -143,7 +143,7 @@ export interface BuildParamsState {
 	// jellyfin_added_at
 	jellyfinAddedAtOp: string;
 	jellyfinAddedAtDays: number;
-	// behavior analysis (plex_episode_completion, user_retention, staleness_score, recently_active)
+	// shared parameter fields (behavior analysis and curated-list membership)
 	behaviorParams: Record<string, unknown>;
 }
 
@@ -163,6 +163,7 @@ export function buildParams(state: BuildParamsState): Record<string, unknown> {
 				: { source: "tmdb", operator: state.scoreOp, score: state.score };
 		case "status":
 			return { statuses: splitCsv(state.statuses) };
+		case "monitored":
 		case "unmonitored":
 		case "no_file":
 			return {};
@@ -272,6 +273,8 @@ export function buildParams(state: BuildParamsState): Record<string, unknown> {
 		case "user_retention":
 		case "staleness_score":
 		case "recently_active":
+		case "tmdb_list_member":
+		case "trakt_list_member":
 			return state.behaviorParams;
 		default:
 			return {};

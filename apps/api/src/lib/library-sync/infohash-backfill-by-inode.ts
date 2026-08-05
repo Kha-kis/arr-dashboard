@@ -501,11 +501,13 @@ async function doBuildFileIdIndex(
 	// if needed. Centralized so the single-file and directory branches
 	// stay consistent.
 	const addHash = (key: string, hash: string, info: StatInfo): void => {
+		const normalizedHash = hash.trim().toLowerCase();
+		if (!normalizedHash) return;
 		const existing = byFileId.get(key);
 		if (existing) {
-			existing.add(hash);
+			existing.add(normalizedHash);
 		} else {
-			byFileId.set(key, new Set([hash]));
+			byFileId.set(key, new Set([normalizedHash]));
 		}
 		if (!inodeMarkers.has(key)) {
 			inodeMarkers.set(key, toFileSystemMarker(info));

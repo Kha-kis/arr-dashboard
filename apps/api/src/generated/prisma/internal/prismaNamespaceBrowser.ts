@@ -86,7 +86,10 @@ export const ModelName = {
   LibraryCleanupConfig: 'LibraryCleanupConfig',
   LibraryCleanupRule: 'LibraryCleanupRule',
   LibraryCleanupApproval: 'LibraryCleanupApproval',
+  LibraryCleanupMediaServerScan: 'LibraryCleanupMediaServerScan',
+  LibraryCleanupMediaServerScanLease: 'LibraryCleanupMediaServerScanLease',
   LibraryCleanupLog: 'LibraryCleanupLog',
+  LibraryCleanupAuditEvent: 'LibraryCleanupAuditEvent',
   NotificationChannel: 'NotificationChannel',
   NotificationSubscription: 'NotificationSubscription',
   NotificationLog: 'NotificationLog',
@@ -107,6 +110,7 @@ export const ModelName = {
   AutoTagRule: 'AutoTagRule',
   TmdbListCache: 'TmdbListCache',
   TraktListCache: 'TraktListCache',
+  ListCacheRefreshStatus: 'ListCacheRefreshStatus',
   QuiActivityLog: 'QuiActivityLog',
   QuiActionLog: 'QuiActionLog',
   QuiEventLog: 'QuiEventLog'
@@ -790,6 +794,7 @@ export const LibraryCleanupRuleScalarFieldEnum = {
   plexLibraryFilter: 'plexLibraryFilter',
   targetScope: 'targetScope',
   action: 'action',
+  scanMediaServerAfterDelete: 'scanMediaServerAfterDelete',
   operator: 'operator',
   conditions: 'conditions',
   retentionMode: 'retentionMode',
@@ -810,6 +815,7 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
   itemType: 'itemType',
   targetScope: 'targetScope',
   arrEpisodeId: 'arrEpisodeId',
+  episodeFileId: 'episodeFileId',
   seasonNumber: 'seasonNumber',
   episodeNumber: 'episodeNumber',
   episodeTitle: 'episodeTitle',
@@ -818,11 +824,15 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
   matchedRuleName: 'matchedRuleName',
   reason: 'reason',
   action: 'action',
+  scanMediaServerAfterDelete: 'scanMediaServerAfterDelete',
   sizeOnDisk: 'sizeOnDisk',
   year: 'year',
   rating: 'rating',
   status: 'status',
   executionToken: 'executionToken',
+  executionAuditCorrelationId: 'executionAuditCorrelationId',
+  reconciledWithoutMutation: 'reconciledWithoutMutation',
+  terminalAuditRecordedAt: 'terminalAuditRecordedAt',
   safetySnapshot: 'safetySnapshot',
   lastExecutionError: 'lastExecutionError',
   reviewedAt: 'reviewedAt',
@@ -832,6 +842,41 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
 } as const
 
 export type LibraryCleanupApprovalScalarFieldEnum = (typeof LibraryCleanupApprovalScalarFieldEnum)[keyof typeof LibraryCleanupApprovalScalarFieldEnum]
+
+
+export const LibraryCleanupMediaServerScanScalarFieldEnum = {
+  id: 'id',
+  approvalId: 'approvalId',
+  instanceId: 'instanceId',
+  service: 'service',
+  serverIdentity: 'serverIdentity',
+  mediaType: 'mediaType',
+  plannedSectionIds: 'plannedSectionIds',
+  targetKey: 'targetKey',
+  status: 'status',
+  executionToken: 'executionToken',
+  attemptCount: 'attemptCount',
+  completedSectionIds: 'completedSectionIds',
+  lastError: 'lastError',
+  nextAttemptAt: 'nextAttemptAt',
+  requestStartedAt: 'requestStartedAt',
+  triggeredAt: 'triggeredAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LibraryCleanupMediaServerScanScalarFieldEnum = (typeof LibraryCleanupMediaServerScanScalarFieldEnum)[keyof typeof LibraryCleanupMediaServerScanScalarFieldEnum]
+
+
+export const LibraryCleanupMediaServerScanLeaseScalarFieldEnum = {
+  operationKey: 'operationKey',
+  userId: 'userId',
+  executionToken: 'executionToken',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LibraryCleanupMediaServerScanLeaseScalarFieldEnum = (typeof LibraryCleanupMediaServerScanLeaseScalarFieldEnum)[keyof typeof LibraryCleanupMediaServerScanLeaseScalarFieldEnum]
 
 
 export const LibraryCleanupLogScalarFieldEnum = {
@@ -855,6 +900,38 @@ export const LibraryCleanupLogScalarFieldEnum = {
 } as const
 
 export type LibraryCleanupLogScalarFieldEnum = (typeof LibraryCleanupLogScalarFieldEnum)[keyof typeof LibraryCleanupLogScalarFieldEnum]
+
+
+export const LibraryCleanupAuditEventScalarFieldEnum = {
+  id: 'id',
+  configId: 'configId',
+  actionId: 'actionId',
+  correlationId: 'correlationId',
+  eventKey: 'eventKey',
+  sequence: 'sequence',
+  eventType: 'eventType',
+  outcome: 'outcome',
+  trigger: 'trigger',
+  actorType: 'actorType',
+  actorId: 'actorId',
+  approvalId: 'approvalId',
+  runLogId: 'runLogId',
+  instanceId: 'instanceId',
+  arrItemId: 'arrItemId',
+  itemType: 'itemType',
+  targetScope: 'targetScope',
+  arrEpisodeId: 'arrEpisodeId',
+  title: 'title',
+  ruleId: 'ruleId',
+  ruleName: 'ruleName',
+  action: 'action',
+  reason: 'reason',
+  evidence: 'evidence',
+  details: 'details',
+  createdAt: 'createdAt'
+} as const
+
+export type LibraryCleanupAuditEventScalarFieldEnum = (typeof LibraryCleanupAuditEventScalarFieldEnum)[keyof typeof LibraryCleanupAuditEventScalarFieldEnum]
 
 
 export const NotificationChannelScalarFieldEnum = {
@@ -1042,7 +1119,12 @@ export const CacheRefreshStatusScalarFieldEnum = {
   lastRefreshedAt: 'lastRefreshedAt',
   lastResult: 'lastResult',
   lastErrorMessage: 'lastErrorMessage',
-  itemCount: 'itemCount'
+  itemCount: 'itemCount',
+  generationId: 'generationId',
+  generationMetadata: 'generationMetadata',
+  lastAttemptAt: 'lastAttemptAt',
+  lastAttemptResult: 'lastAttemptResult',
+  lastAttemptErrorMessage: 'lastAttemptErrorMessage'
 } as const
 
 export type CacheRefreshStatusScalarFieldEnum = (typeof CacheRefreshStatusScalarFieldEnum)[keyof typeof CacheRefreshStatusScalarFieldEnum]
@@ -1171,6 +1253,7 @@ export const TmdbListCacheScalarFieldEnum = {
   tmdbId: 'tmdbId',
   mediaType: 'mediaType',
   title: 'title',
+  generation: 'generation',
   refreshedAt: 'refreshedAt'
 } as const
 
@@ -1184,10 +1267,29 @@ export const TraktListCacheScalarFieldEnum = {
   tmdbId: 'tmdbId',
   mediaType: 'mediaType',
   title: 'title',
+  generation: 'generation',
   refreshedAt: 'refreshedAt'
 } as const
 
 export type TraktListCacheScalarFieldEnum = (typeof TraktListCacheScalarFieldEnum)[keyof typeof TraktListCacheScalarFieldEnum]
+
+
+export const ListCacheRefreshStatusScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  provider: 'provider',
+  listKey: 'listKey',
+  generationId: 'generationId',
+  lastRefreshedAt: 'lastRefreshedAt',
+  lastResult: 'lastResult',
+  lastErrorMessage: 'lastErrorMessage',
+  itemCount: 'itemCount',
+  lastAttemptAt: 'lastAttemptAt',
+  lastAttemptResult: 'lastAttemptResult',
+  lastAttemptErrorMessage: 'lastAttemptErrorMessage'
+} as const
+
+export type ListCacheRefreshStatusScalarFieldEnum = (typeof ListCacheRefreshStatusScalarFieldEnum)[keyof typeof ListCacheRefreshStatusScalarFieldEnum]
 
 
 export const QuiActivityLogScalarFieldEnum = {

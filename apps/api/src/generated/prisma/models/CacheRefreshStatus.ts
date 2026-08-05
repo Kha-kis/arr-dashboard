@@ -42,6 +42,11 @@ export type CacheRefreshStatusMinAggregateOutputType = {
   lastResult: string | null
   lastErrorMessage: string | null
   itemCount: number | null
+  generationId: string | null
+  generationMetadata: string | null
+  lastAttemptAt: Date | null
+  lastAttemptResult: string | null
+  lastAttemptErrorMessage: string | null
 }
 
 export type CacheRefreshStatusMaxAggregateOutputType = {
@@ -52,6 +57,11 @@ export type CacheRefreshStatusMaxAggregateOutputType = {
   lastResult: string | null
   lastErrorMessage: string | null
   itemCount: number | null
+  generationId: string | null
+  generationMetadata: string | null
+  lastAttemptAt: Date | null
+  lastAttemptResult: string | null
+  lastAttemptErrorMessage: string | null
 }
 
 export type CacheRefreshStatusCountAggregateOutputType = {
@@ -62,6 +72,11 @@ export type CacheRefreshStatusCountAggregateOutputType = {
   lastResult: number
   lastErrorMessage: number
   itemCount: number
+  generationId: number
+  generationMetadata: number
+  lastAttemptAt: number
+  lastAttemptResult: number
+  lastAttemptErrorMessage: number
   _all: number
 }
 
@@ -82,6 +97,11 @@ export type CacheRefreshStatusMinAggregateInputType = {
   lastResult?: true
   lastErrorMessage?: true
   itemCount?: true
+  generationId?: true
+  generationMetadata?: true
+  lastAttemptAt?: true
+  lastAttemptResult?: true
+  lastAttemptErrorMessage?: true
 }
 
 export type CacheRefreshStatusMaxAggregateInputType = {
@@ -92,6 +112,11 @@ export type CacheRefreshStatusMaxAggregateInputType = {
   lastResult?: true
   lastErrorMessage?: true
   itemCount?: true
+  generationId?: true
+  generationMetadata?: true
+  lastAttemptAt?: true
+  lastAttemptResult?: true
+  lastAttemptErrorMessage?: true
 }
 
 export type CacheRefreshStatusCountAggregateInputType = {
@@ -102,6 +127,11 @@ export type CacheRefreshStatusCountAggregateInputType = {
   lastResult?: true
   lastErrorMessage?: true
   itemCount?: true
+  generationId?: true
+  generationMetadata?: true
+  lastAttemptAt?: true
+  lastAttemptResult?: true
+  lastAttemptErrorMessage?: true
   _all?: true
 }
 
@@ -199,6 +229,11 @@ export type CacheRefreshStatusGroupByOutputType = {
   lastResult: string
   lastErrorMessage: string | null
   itemCount: number
+  generationId: string | null
+  generationMetadata: string | null
+  lastAttemptAt: Date | null
+  lastAttemptResult: string | null
+  lastAttemptErrorMessage: string | null
   _count: CacheRefreshStatusCountAggregateOutputType | null
   _avg: CacheRefreshStatusAvgAggregateOutputType | null
   _sum: CacheRefreshStatusSumAggregateOutputType | null
@@ -232,6 +267,11 @@ export type CacheRefreshStatusWhereInput = {
   lastResult?: Prisma.StringFilter<"CacheRefreshStatus"> | string
   lastErrorMessage?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
   itemCount?: Prisma.IntFilter<"CacheRefreshStatus"> | number
+  generationId?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  generationMetadata?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  lastAttemptAt?: Prisma.DateTimeNullableFilter<"CacheRefreshStatus"> | Date | string | null
+  lastAttemptResult?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  lastAttemptErrorMessage?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }
 
@@ -243,6 +283,11 @@ export type CacheRefreshStatusOrderByWithRelationInput = {
   lastResult?: Prisma.SortOrder
   lastErrorMessage?: Prisma.SortOrderInput | Prisma.SortOrder
   itemCount?: Prisma.SortOrder
+  generationId?: Prisma.SortOrderInput | Prisma.SortOrder
+  generationMetadata?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastAttemptAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastAttemptResult?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastAttemptErrorMessage?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
 }
 
@@ -258,6 +303,11 @@ export type CacheRefreshStatusWhereUniqueInput = Prisma.AtLeast<{
   lastResult?: Prisma.StringFilter<"CacheRefreshStatus"> | string
   lastErrorMessage?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
   itemCount?: Prisma.IntFilter<"CacheRefreshStatus"> | number
+  generationId?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  generationMetadata?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  lastAttemptAt?: Prisma.DateTimeNullableFilter<"CacheRefreshStatus"> | Date | string | null
+  lastAttemptResult?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  lastAttemptErrorMessage?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }, "id" | "instanceId_cacheType">
 
@@ -269,6 +319,11 @@ export type CacheRefreshStatusOrderByWithAggregationInput = {
   lastResult?: Prisma.SortOrder
   lastErrorMessage?: Prisma.SortOrderInput | Prisma.SortOrder
   itemCount?: Prisma.SortOrder
+  generationId?: Prisma.SortOrderInput | Prisma.SortOrder
+  generationMetadata?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastAttemptAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastAttemptResult?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastAttemptErrorMessage?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.CacheRefreshStatusCountOrderByAggregateInput
   _avg?: Prisma.CacheRefreshStatusAvgOrderByAggregateInput
   _max?: Prisma.CacheRefreshStatusMaxOrderByAggregateInput
@@ -287,6 +342,11 @@ export type CacheRefreshStatusScalarWhereWithAggregatesInput = {
   lastResult?: Prisma.StringWithAggregatesFilter<"CacheRefreshStatus"> | string
   lastErrorMessage?: Prisma.StringNullableWithAggregatesFilter<"CacheRefreshStatus"> | string | null
   itemCount?: Prisma.IntWithAggregatesFilter<"CacheRefreshStatus"> | number
+  generationId?: Prisma.StringNullableWithAggregatesFilter<"CacheRefreshStatus"> | string | null
+  generationMetadata?: Prisma.StringNullableWithAggregatesFilter<"CacheRefreshStatus"> | string | null
+  lastAttemptAt?: Prisma.DateTimeNullableWithAggregatesFilter<"CacheRefreshStatus"> | Date | string | null
+  lastAttemptResult?: Prisma.StringNullableWithAggregatesFilter<"CacheRefreshStatus"> | string | null
+  lastAttemptErrorMessage?: Prisma.StringNullableWithAggregatesFilter<"CacheRefreshStatus"> | string | null
 }
 
 export type CacheRefreshStatusCreateInput = {
@@ -296,6 +356,11 @@ export type CacheRefreshStatusCreateInput = {
   lastResult: string
   lastErrorMessage?: string | null
   itemCount?: number
+  generationId?: string | null
+  generationMetadata?: string | null
+  lastAttemptAt?: Date | string | null
+  lastAttemptResult?: string | null
+  lastAttemptErrorMessage?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutCacheRefreshStatusesInput
 }
 
@@ -307,6 +372,11 @@ export type CacheRefreshStatusUncheckedCreateInput = {
   lastResult: string
   lastErrorMessage?: string | null
   itemCount?: number
+  generationId?: string | null
+  generationMetadata?: string | null
+  lastAttemptAt?: Date | string | null
+  lastAttemptResult?: string | null
+  lastAttemptErrorMessage?: string | null
 }
 
 export type CacheRefreshStatusUpdateInput = {
@@ -316,6 +386,11 @@ export type CacheRefreshStatusUpdateInput = {
   lastResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   itemCount?: Prisma.IntFieldUpdateOperationsInput | number
+  generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  generationMetadata?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutCacheRefreshStatusesNestedInput
 }
 
@@ -327,6 +402,11 @@ export type CacheRefreshStatusUncheckedUpdateInput = {
   lastResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   itemCount?: Prisma.IntFieldUpdateOperationsInput | number
+  generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  generationMetadata?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type CacheRefreshStatusCreateManyInput = {
@@ -337,6 +417,11 @@ export type CacheRefreshStatusCreateManyInput = {
   lastResult: string
   lastErrorMessage?: string | null
   itemCount?: number
+  generationId?: string | null
+  generationMetadata?: string | null
+  lastAttemptAt?: Date | string | null
+  lastAttemptResult?: string | null
+  lastAttemptErrorMessage?: string | null
 }
 
 export type CacheRefreshStatusUpdateManyMutationInput = {
@@ -346,6 +431,11 @@ export type CacheRefreshStatusUpdateManyMutationInput = {
   lastResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   itemCount?: Prisma.IntFieldUpdateOperationsInput | number
+  generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  generationMetadata?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type CacheRefreshStatusUncheckedUpdateManyInput = {
@@ -356,6 +446,11 @@ export type CacheRefreshStatusUncheckedUpdateManyInput = {
   lastResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   itemCount?: Prisma.IntFieldUpdateOperationsInput | number
+  generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  generationMetadata?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type CacheRefreshStatusListRelationFilter = {
@@ -381,6 +476,11 @@ export type CacheRefreshStatusCountOrderByAggregateInput = {
   lastResult?: Prisma.SortOrder
   lastErrorMessage?: Prisma.SortOrder
   itemCount?: Prisma.SortOrder
+  generationId?: Prisma.SortOrder
+  generationMetadata?: Prisma.SortOrder
+  lastAttemptAt?: Prisma.SortOrder
+  lastAttemptResult?: Prisma.SortOrder
+  lastAttemptErrorMessage?: Prisma.SortOrder
 }
 
 export type CacheRefreshStatusAvgOrderByAggregateInput = {
@@ -395,6 +495,11 @@ export type CacheRefreshStatusMaxOrderByAggregateInput = {
   lastResult?: Prisma.SortOrder
   lastErrorMessage?: Prisma.SortOrder
   itemCount?: Prisma.SortOrder
+  generationId?: Prisma.SortOrder
+  generationMetadata?: Prisma.SortOrder
+  lastAttemptAt?: Prisma.SortOrder
+  lastAttemptResult?: Prisma.SortOrder
+  lastAttemptErrorMessage?: Prisma.SortOrder
 }
 
 export type CacheRefreshStatusMinOrderByAggregateInput = {
@@ -405,6 +510,11 @@ export type CacheRefreshStatusMinOrderByAggregateInput = {
   lastResult?: Prisma.SortOrder
   lastErrorMessage?: Prisma.SortOrder
   itemCount?: Prisma.SortOrder
+  generationId?: Prisma.SortOrder
+  generationMetadata?: Prisma.SortOrder
+  lastAttemptAt?: Prisma.SortOrder
+  lastAttemptResult?: Prisma.SortOrder
+  lastAttemptErrorMessage?: Prisma.SortOrder
 }
 
 export type CacheRefreshStatusSumOrderByAggregateInput = {
@@ -460,6 +570,11 @@ export type CacheRefreshStatusCreateWithoutInstanceInput = {
   lastResult: string
   lastErrorMessage?: string | null
   itemCount?: number
+  generationId?: string | null
+  generationMetadata?: string | null
+  lastAttemptAt?: Date | string | null
+  lastAttemptResult?: string | null
+  lastAttemptErrorMessage?: string | null
 }
 
 export type CacheRefreshStatusUncheckedCreateWithoutInstanceInput = {
@@ -469,6 +584,11 @@ export type CacheRefreshStatusUncheckedCreateWithoutInstanceInput = {
   lastResult: string
   lastErrorMessage?: string | null
   itemCount?: number
+  generationId?: string | null
+  generationMetadata?: string | null
+  lastAttemptAt?: Date | string | null
+  lastAttemptResult?: string | null
+  lastAttemptErrorMessage?: string | null
 }
 
 export type CacheRefreshStatusCreateOrConnectWithoutInstanceInput = {
@@ -507,6 +627,11 @@ export type CacheRefreshStatusScalarWhereInput = {
   lastResult?: Prisma.StringFilter<"CacheRefreshStatus"> | string
   lastErrorMessage?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
   itemCount?: Prisma.IntFilter<"CacheRefreshStatus"> | number
+  generationId?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  generationMetadata?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  lastAttemptAt?: Prisma.DateTimeNullableFilter<"CacheRefreshStatus"> | Date | string | null
+  lastAttemptResult?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  lastAttemptErrorMessage?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
 }
 
 export type CacheRefreshStatusCreateManyInstanceInput = {
@@ -516,6 +641,11 @@ export type CacheRefreshStatusCreateManyInstanceInput = {
   lastResult: string
   lastErrorMessage?: string | null
   itemCount?: number
+  generationId?: string | null
+  generationMetadata?: string | null
+  lastAttemptAt?: Date | string | null
+  lastAttemptResult?: string | null
+  lastAttemptErrorMessage?: string | null
 }
 
 export type CacheRefreshStatusUpdateWithoutInstanceInput = {
@@ -525,6 +655,11 @@ export type CacheRefreshStatusUpdateWithoutInstanceInput = {
   lastResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   itemCount?: Prisma.IntFieldUpdateOperationsInput | number
+  generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  generationMetadata?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type CacheRefreshStatusUncheckedUpdateWithoutInstanceInput = {
@@ -534,6 +669,11 @@ export type CacheRefreshStatusUncheckedUpdateWithoutInstanceInput = {
   lastResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   itemCount?: Prisma.IntFieldUpdateOperationsInput | number
+  generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  generationMetadata?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type CacheRefreshStatusUncheckedUpdateManyWithoutInstanceInput = {
@@ -543,6 +683,11 @@ export type CacheRefreshStatusUncheckedUpdateManyWithoutInstanceInput = {
   lastResult?: Prisma.StringFieldUpdateOperationsInput | string
   lastErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   itemCount?: Prisma.IntFieldUpdateOperationsInput | number
+  generationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  generationMetadata?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 
@@ -555,6 +700,11 @@ export type CacheRefreshStatusSelect<ExtArgs extends runtime.Types.Extensions.In
   lastResult?: boolean
   lastErrorMessage?: boolean
   itemCount?: boolean
+  generationId?: boolean
+  generationMetadata?: boolean
+  lastAttemptAt?: boolean
+  lastAttemptResult?: boolean
+  lastAttemptErrorMessage?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["cacheRefreshStatus"]>
 
@@ -566,6 +716,11 @@ export type CacheRefreshStatusSelectCreateManyAndReturn<ExtArgs extends runtime.
   lastResult?: boolean
   lastErrorMessage?: boolean
   itemCount?: boolean
+  generationId?: boolean
+  generationMetadata?: boolean
+  lastAttemptAt?: boolean
+  lastAttemptResult?: boolean
+  lastAttemptErrorMessage?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["cacheRefreshStatus"]>
 
@@ -577,6 +732,11 @@ export type CacheRefreshStatusSelectUpdateManyAndReturn<ExtArgs extends runtime.
   lastResult?: boolean
   lastErrorMessage?: boolean
   itemCount?: boolean
+  generationId?: boolean
+  generationMetadata?: boolean
+  lastAttemptAt?: boolean
+  lastAttemptResult?: boolean
+  lastAttemptErrorMessage?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["cacheRefreshStatus"]>
 
@@ -588,9 +748,14 @@ export type CacheRefreshStatusSelectScalar = {
   lastResult?: boolean
   lastErrorMessage?: boolean
   itemCount?: boolean
+  generationId?: boolean
+  generationMetadata?: boolean
+  lastAttemptAt?: boolean
+  lastAttemptResult?: boolean
+  lastAttemptErrorMessage?: boolean
 }
 
-export type CacheRefreshStatusOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "cacheType" | "lastRefreshedAt" | "lastResult" | "lastErrorMessage" | "itemCount", ExtArgs["result"]["cacheRefreshStatus"]>
+export type CacheRefreshStatusOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "cacheType" | "lastRefreshedAt" | "lastResult" | "lastErrorMessage" | "itemCount" | "generationId" | "generationMetadata" | "lastAttemptAt" | "lastAttemptResult" | "lastAttemptErrorMessage", ExtArgs["result"]["cacheRefreshStatus"]>
 export type CacheRefreshStatusInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -614,6 +779,11 @@ export type $CacheRefreshStatusPayload<ExtArgs extends runtime.Types.Extensions.
     lastResult: string
     lastErrorMessage: string | null
     itemCount: number
+    generationId: string | null
+    generationMetadata: string | null
+    lastAttemptAt: Date | null
+    lastAttemptResult: string | null
+    lastAttemptErrorMessage: string | null
   }, ExtArgs["result"]["cacheRefreshStatus"]>
   composites: {}
 }
@@ -1045,6 +1215,11 @@ export interface CacheRefreshStatusFieldRefs {
   readonly lastResult: Prisma.FieldRef<"CacheRefreshStatus", 'String'>
   readonly lastErrorMessage: Prisma.FieldRef<"CacheRefreshStatus", 'String'>
   readonly itemCount: Prisma.FieldRef<"CacheRefreshStatus", 'Int'>
+  readonly generationId: Prisma.FieldRef<"CacheRefreshStatus", 'String'>
+  readonly generationMetadata: Prisma.FieldRef<"CacheRefreshStatus", 'String'>
+  readonly lastAttemptAt: Prisma.FieldRef<"CacheRefreshStatus", 'DateTime'>
+  readonly lastAttemptResult: Prisma.FieldRef<"CacheRefreshStatus", 'String'>
+  readonly lastAttemptErrorMessage: Prisma.FieldRef<"CacheRefreshStatus", 'String'>
 }
     
 

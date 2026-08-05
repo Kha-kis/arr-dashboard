@@ -11,16 +11,22 @@
  * Label Sync optionally propagates them. See `memory/auto-tagger-arc.md`.
  */
 
+import type { DataSourceDependency } from "@arr/shared";
 import { ArrError } from "arr-sdk";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClient, ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { triggerLabelSyncForItem } from "../label-sync/trigger-for-item.js";
-import { buildEvalContext } from "../library-cleanup/cleanup-executor.js";
-import { evaluateSingleCondition } from "../library-cleanup/rule-evaluators.js";
+import { buildEvalContextWithHealth } from "../library-cleanup/cleanup-executor.js";
+import {
+	evaluateSingleConditionState,
+	type RuleEvaluationState,
+} from "../library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval, EvalContext } from "../library-cleanup/types.js";
 import type { PrismaClient, ServiceInstance } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
+import { loadCompleteListEvidence } from "./list-evidence-loader.js";
+import { adaptLiveArrItemForAutoTag } from "./live-arr-evidence.js";
 
 export interface AutoTagRuleInput {
 	id: string;
@@ -108,37 +114,13 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 	// `buildEvalContext` reads the rule shape (ruleType + conditions JSON
 	// string) to decide which prefetches are needed. We synthesize the
 	// shape it expects from our rule.
-	let evalCtx: EvalContext;
-	try {
-		evalCtx = await buildEvalContext({ prisma, arrClientFactory, log: childLog }, rule.userId, [
-			{
-				enabled: true,
-				ruleType: rule.ruleType,
-				conditions: rule.conditions ? JSON.stringify(rule.conditions) : null,
-			},
-		]);
-	} catch (err) {
-		childLog.warn({ err }, "Failed to build evaluation context — proceeding with empty maps");
-		evalCtx = { now: new Date() };
-	}
-
-	// Layer in TMDb/Trakt list-membership prefetch — these aren't part of
-	// `buildEvalContext` (which is owned by library-cleanup) so we add
-	// them here for any rule that uses tmdb_list_member / trakt_list_member.
-	evalCtx.tmdbListMemberships = await prefetchListMemberships(
-		prisma,
+	const { ctx: evalCtx, failedSources } = await buildRuleEvalContext({
 		rule,
-		"tmdb_list_member",
-		"listId",
-		"tmdb",
-	);
-	evalCtx.traktListMemberships = await prefetchListMemberships(
 		prisma,
-		rule,
-		"trakt_list_member",
-		"listSlug",
-		"trakt",
-	);
+		arrClientFactory,
+		encryptor,
+		log: childLog,
+	});
 
 	const compiledTitleRegexes = compileTitlePatterns(rule.excludeTitles, childLog);
 
@@ -155,6 +137,7 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 			arrClientFactory,
 			encryptor,
 			evalCtx,
+			failedSources,
 			compiledTitleRegexes,
 			log: childLog.child({ instanceId: instance.id }),
 		});
@@ -210,6 +193,7 @@ interface ProcessInstanceArgs {
 	arrClientFactory: ArrClientFactory;
 	encryptor: Encryptor;
 	evalCtx: EvalContext;
+	failedSources: Set<DataSourceDependency>;
 	compiledTitleRegexes: RegExp[];
 	log: FastifyBaseLogger;
 }
@@ -229,6 +213,7 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 		arrClientFactory,
 		encryptor,
 		evalCtx,
+		failedSources,
 		compiledTitleRegexes,
 		log,
 	} = args;
@@ -268,19 +253,16 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 		totalScanned += batch.length;
 
 		for (const item of batch) {
-			if (compiledTitleRegexes.some((re) => re.test(item.title))) continue;
-
 			// Parse the data blob once per item — needed for excludeTags + tag merge.
 			const dataParsed = safeJsonParse(item.data);
 			const existingTags = extractTagIds(dataParsed);
-
-			if (rule.excludeTags && rule.excludeTags.length > 0) {
-				if (existingTags.some((t) => rule.excludeTags?.includes(t))) continue;
+			if (isExcludedByRule(item.title, existingTags, rule.excludeTags, compiledTitleRegexes)) {
+				continue;
 			}
 
 			const cacheItem = item as CacheItemForEval;
-			const matches = evaluateAgainstRule(cacheItem, rule, instance.service, evalCtx);
-			if (matches) matched.push({ item: cacheItem, existingTags });
+			const state = evaluateAgainstRule(cacheItem, rule, instance.service, evalCtx, failedSources);
+			if (state === "true") matched.push({ item: cacheItem, existingTags });
 		}
 
 		cursor = batch[batch.length - 1]!.id;
@@ -330,13 +312,11 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 
 	let applied = 0;
 	let failures = 0;
-	for (const { item, existingTags } of matched) {
-		if (existingTags.includes(tagId)) {
-			applied++; // idempotent — already tagged
-			continue;
-		}
-		const merged = [...existingTags, tagId];
+	for (const { item } of matched) {
 		try {
+			if (item.itemType !== "movie" && item.itemType !== "series") {
+				throw new Error("Auto-tag target is not a Radarr movie or Sonarr series");
+			}
 			const accessor = item.itemType === "series" ? "series" : "movie";
 			// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
 			const resource = (arrClient as any)[accessor];
@@ -344,11 +324,42 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 			// reject partial bodies with errors like "'Quality Profile Id' must
 			// be greater than '0'". Fetch the current item so the update preserves
 			// every field the *arr expects.
-			const fullItem = await resource.getById(item.arrItemId);
+			const fullItem = (await resource.getById(item.arrItemId)) as Record<string, unknown>;
+			const latestItem = adaptLiveArrItemForAutoTag(fullItem, {
+				instanceId: instance.id,
+				arrItemId: item.arrItemId,
+				itemType: item.itemType,
+			});
+			const latestTags = extractTagIds(fullItem);
+			if (isExcludedByRule(latestItem.title, latestTags, rule.excludeTags, compiledTitleRegexes)) {
+				continue;
+			}
+			const latestEvidence = await buildRuleEvalContext({
+				rule,
+				prisma,
+				arrClientFactory,
+				encryptor,
+				log,
+			});
+			if (
+				evaluateAgainstRule(
+					latestItem,
+					rule,
+					instance.service,
+					latestEvidence.ctx,
+					latestEvidence.failedSources,
+				) !== "true"
+			) {
+				continue;
+			}
+			if (latestTags.includes(tagId)) {
+				applied++;
+				continue;
+			}
 			await resource.update(item.arrItemId, {
 				...fullItem,
 				id: item.arrItemId,
-				tags: merged,
+				tags: [...latestTags, tagId],
 			});
 			applied++;
 
@@ -400,41 +411,55 @@ function evaluateAgainstRule(
 	rule: AutoTagRuleInput,
 	instanceService: string,
 	ctx: EvalContext,
-): boolean {
+	failedSources: Set<DataSourceDependency>,
+): RuleEvaluationState {
 	const plexLibFilter = rule.plexLibraryFilter ?? null;
 
 	if (rule.operator && rule.conditions && rule.conditions.length > 0) {
 		if (rule.operator === "AND") {
+			let unknown = false;
 			for (const cond of rule.conditions) {
-				const reason = evaluateSingleCondition(
+				const evaluation = evaluateSingleConditionState(
 					item,
 					cond.ruleType,
 					cond.parameters,
 					ctx,
 					plexLibFilter,
+					failedSources,
 				);
-				if (reason === null) return false;
+				if (evaluation.state === "false") return "false";
+				if (evaluation.state === "unknown") unknown = true;
 			}
-			return true;
+			return unknown ? "unknown" : "true";
 		}
 		// OR
+		let unknown = false;
 		for (const cond of rule.conditions) {
-			const reason = evaluateSingleCondition(
+			const evaluation = evaluateSingleConditionState(
 				item,
 				cond.ruleType,
 				cond.parameters,
 				ctx,
 				plexLibFilter,
+				failedSources,
 			);
-			if (reason !== null) return true;
+			if (evaluation.state === "true") return "true";
+			if (evaluation.state === "unknown") unknown = true;
 		}
-		return false;
+		return unknown ? "unknown" : "false";
 	}
 
 	// Single-condition rule
-	const reason = evaluateSingleCondition(item, rule.ruleType, rule.parameters, ctx, plexLibFilter);
+	const evaluation = evaluateSingleConditionState(
+		item,
+		rule.ruleType,
+		rule.parameters,
+		ctx,
+		plexLibFilter,
+		failedSources,
+	);
 	void instanceService; // reserved for future per-service rule-routing
-	return reason !== null;
+	return evaluation.state;
 }
 
 function compileTitlePatterns(patterns: string[] | null, log: FastifyBaseLogger): RegExp[] {
@@ -448,6 +473,16 @@ function compileTitlePatterns(patterns: string[] | null, log: FastifyBaseLogger)
 		}
 	}
 	return compiled;
+}
+
+function isExcludedByRule(
+	title: string,
+	tags: number[],
+	excludeTags: number[] | null,
+	excludeTitlePatterns: RegExp[],
+): boolean {
+	if (excludeTitlePatterns.some((pattern) => pattern.test(title))) return true;
+	return excludeTags?.some((tagId) => tags.includes(tagId)) ?? false;
 }
 
 function extractTagIds(parsed: unknown): number[] {
@@ -464,58 +499,6 @@ async function ensureTag(client: ArrClient, label: string): Promise<number> {
 	// biome-ignore lint/suspicious/noExplicitAny: SDK Tag union typing requires the cast
 	const created = (await (client.tag as any).create({ label })) as { id: number; label: string };
 	return created.id;
-}
-
-/**
- * Read the cached membership of every TMDb / Trakt list this rule
- * references and return a Map<listIdentifier, Set<tmdbId>> for the
- * evaluator to consult. Returns an empty map (not null) so the
- * evaluator can distinguish "no rule wants this" from "the prefetch
- * failed and we're in degraded mode."
- *
- * The cache itself is refreshed by the dedicated tmdb-list-cache /
- * trakt-list-cache schedulers every 4 hours; this read is just the
- * lookup half of that flow.
- */
-async function prefetchListMemberships(
-	prisma: PrismaClient,
-	rule: AutoTagRuleInput,
-	targetRuleType: "tmdb_list_member" | "trakt_list_member",
-	identifierKey: "listId" | "listSlug",
-	cacheKind: "tmdb" | "trakt",
-): Promise<Map<string, Set<number>>> {
-	const identifiers = collectListIdentifiersFromRule(rule, targetRuleType, identifierKey);
-	if (identifiers.length === 0) return new Map();
-
-	const out = new Map<string, Set<number>>();
-	if (cacheKind === "tmdb") {
-		const rows = await prisma.tmdbListCache.findMany({
-			where: { userId: rule.userId, listId: { in: identifiers } },
-			select: { listId: true, tmdbId: true },
-		});
-		for (const row of rows) {
-			let bucket = out.get(row.listId);
-			if (!bucket) {
-				bucket = new Set();
-				out.set(row.listId, bucket);
-			}
-			bucket.add(row.tmdbId);
-		}
-	} else {
-		const rows = await prisma.traktListCache.findMany({
-			where: { userId: rule.userId, listSlug: { in: identifiers } },
-			select: { listSlug: true, tmdbId: true },
-		});
-		for (const row of rows) {
-			let bucket = out.get(row.listSlug);
-			if (!bucket) {
-				bucket = new Set();
-				out.set(row.listSlug, bucket);
-			}
-			bucket.add(row.tmdbId);
-		}
-	}
-	return out;
 }
 
 function collectListIdentifiersFromRule(
@@ -537,6 +520,64 @@ function collectListIdentifiersFromRule(
 		}
 	}
 	return identifiers;
+}
+
+async function buildRuleEvalContext(args: {
+	rule: AutoTagRuleInput;
+	prisma: PrismaClient;
+	arrClientFactory: ArrClientFactory;
+	encryptor: Encryptor;
+	log: FastifyBaseLogger;
+}): Promise<{ ctx: EvalContext; failedSources: Set<DataSourceDependency> }> {
+	const { rule, prisma, arrClientFactory, encryptor, log } = args;
+	let ctx: EvalContext;
+	let failedSources = new Set<DataSourceDependency>();
+	try {
+		const evidence = await buildEvalContextWithHealth(
+			{ prisma, arrClientFactory, encryptor, log },
+			rule.userId,
+			[
+				{
+					enabled: true,
+					ruleType: rule.ruleType,
+					parameters: JSON.stringify(rule.parameters),
+					operator: rule.operator,
+					conditions: rule.conditions ? JSON.stringify(rule.conditions) : null,
+					plexLibraryFilter: rule.plexLibraryFilter ? JSON.stringify(rule.plexLibraryFilter) : null,
+				},
+			],
+		);
+		ctx = evidence.ctx;
+		failedSources = evidence.failedSources;
+	} catch (err) {
+		log.warn({ err }, "Failed to build evaluation context — provider rules remain unknown");
+		ctx = { now: new Date() };
+		failedSources = new Set(["seerr", "tautulli", "plex", "jellyfin", "tmdb", "trakt"]);
+	}
+
+	const tmdbListIds = collectListIdentifiersFromRule(rule, "tmdb_list_member", "listId");
+	if (tmdbListIds.length > 0) {
+		const evidence = await loadCompleteListEvidence(prisma, rule.userId, "tmdb", tmdbListIds);
+		if (evidence) {
+			ctx.tmdbListMemberships = evidence.memberships;
+			failedSources.delete("tmdb");
+		} else {
+			ctx.tmdbListMemberships = undefined;
+			failedSources.add("tmdb");
+		}
+	}
+	const traktListSlugs = collectListIdentifiersFromRule(rule, "trakt_list_member", "listSlug");
+	if (traktListSlugs.length > 0) {
+		const evidence = await loadCompleteListEvidence(prisma, rule.userId, "trakt", traktListSlugs);
+		if (evidence) {
+			ctx.traktListMemberships = evidence.memberships;
+			failedSources.delete("trakt");
+		} else {
+			ctx.traktListMemberships = undefined;
+			failedSources.add("trakt");
+		}
+	}
+	return { ctx, failedSources };
 }
 
 function failure(message: string): AutoTagRunResult {

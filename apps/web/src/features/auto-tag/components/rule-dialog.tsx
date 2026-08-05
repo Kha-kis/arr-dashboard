@@ -106,6 +106,7 @@ const RULE_TYPE_OPTIONS: Array<{ value: SingleRuleType; label: string; group: st
 	{ value: "file_path", label: "File path (regex)", group: "File" },
 
 	{ value: "age", label: "Age (since added)", group: "Lifecycle" },
+	{ value: "monitored", label: "Monitored", group: "Lifecycle" },
 	{ value: "unmonitored", label: "Unmonitored", group: "Lifecycle" },
 	{ value: "quality_profile", label: "Quality profile", group: "Lifecycle" },
 

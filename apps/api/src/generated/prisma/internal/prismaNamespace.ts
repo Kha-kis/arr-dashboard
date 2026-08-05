@@ -432,7 +432,10 @@ export const ModelName = {
   LibraryCleanupConfig: 'LibraryCleanupConfig',
   LibraryCleanupRule: 'LibraryCleanupRule',
   LibraryCleanupApproval: 'LibraryCleanupApproval',
+  LibraryCleanupMediaServerScan: 'LibraryCleanupMediaServerScan',
+  LibraryCleanupMediaServerScanLease: 'LibraryCleanupMediaServerScanLease',
   LibraryCleanupLog: 'LibraryCleanupLog',
+  LibraryCleanupAuditEvent: 'LibraryCleanupAuditEvent',
   NotificationChannel: 'NotificationChannel',
   NotificationSubscription: 'NotificationSubscription',
   NotificationLog: 'NotificationLog',
@@ -453,6 +456,7 @@ export const ModelName = {
   AutoTagRule: 'AutoTagRule',
   TmdbListCache: 'TmdbListCache',
   TraktListCache: 'TraktListCache',
+  ListCacheRefreshStatus: 'ListCacheRefreshStatus',
   QuiActivityLog: 'QuiActivityLog',
   QuiActionLog: 'QuiActionLog',
   QuiEventLog: 'QuiEventLog'
@@ -471,7 +475,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3065,6 +3069,154 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    LibraryCleanupMediaServerScan: {
+      payload: Prisma.$LibraryCleanupMediaServerScanPayload<ExtArgs>
+      fields: Prisma.LibraryCleanupMediaServerScanFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.LibraryCleanupMediaServerScanFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.LibraryCleanupMediaServerScanFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload>
+        }
+        findFirst: {
+          args: Prisma.LibraryCleanupMediaServerScanFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.LibraryCleanupMediaServerScanFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload>
+        }
+        findMany: {
+          args: Prisma.LibraryCleanupMediaServerScanFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload>[]
+        }
+        create: {
+          args: Prisma.LibraryCleanupMediaServerScanCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload>
+        }
+        createMany: {
+          args: Prisma.LibraryCleanupMediaServerScanCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.LibraryCleanupMediaServerScanCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload>[]
+        }
+        delete: {
+          args: Prisma.LibraryCleanupMediaServerScanDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload>
+        }
+        update: {
+          args: Prisma.LibraryCleanupMediaServerScanUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload>
+        }
+        deleteMany: {
+          args: Prisma.LibraryCleanupMediaServerScanDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.LibraryCleanupMediaServerScanUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.LibraryCleanupMediaServerScanUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload>[]
+        }
+        upsert: {
+          args: Prisma.LibraryCleanupMediaServerScanUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanPayload>
+        }
+        aggregate: {
+          args: Prisma.LibraryCleanupMediaServerScanAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateLibraryCleanupMediaServerScan>
+        }
+        groupBy: {
+          args: Prisma.LibraryCleanupMediaServerScanGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LibraryCleanupMediaServerScanGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.LibraryCleanupMediaServerScanCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LibraryCleanupMediaServerScanCountAggregateOutputType> | number
+        }
+      }
+    }
+    LibraryCleanupMediaServerScanLease: {
+      payload: Prisma.$LibraryCleanupMediaServerScanLeasePayload<ExtArgs>
+      fields: Prisma.LibraryCleanupMediaServerScanLeaseFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload>
+        }
+        findFirst: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload>
+        }
+        findMany: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload>[]
+        }
+        create: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload>
+        }
+        createMany: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload>[]
+        }
+        delete: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload>
+        }
+        update: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload>
+        }
+        deleteMany: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload>[]
+        }
+        upsert: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupMediaServerScanLeasePayload>
+        }
+        aggregate: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateLibraryCleanupMediaServerScanLease>
+        }
+        groupBy: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LibraryCleanupMediaServerScanLeaseGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.LibraryCleanupMediaServerScanLeaseCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LibraryCleanupMediaServerScanLeaseCountAggregateOutputType> | number
+        }
+      }
+    }
     LibraryCleanupLog: {
       payload: Prisma.$LibraryCleanupLogPayload<ExtArgs>
       fields: Prisma.LibraryCleanupLogFieldRefs
@@ -3136,6 +3288,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.LibraryCleanupLogCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.LibraryCleanupLogCountAggregateOutputType> | number
+        }
+      }
+    }
+    LibraryCleanupAuditEvent: {
+      payload: Prisma.$LibraryCleanupAuditEventPayload<ExtArgs>
+      fields: Prisma.LibraryCleanupAuditEventFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.LibraryCleanupAuditEventFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.LibraryCleanupAuditEventFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload>
+        }
+        findFirst: {
+          args: Prisma.LibraryCleanupAuditEventFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.LibraryCleanupAuditEventFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload>
+        }
+        findMany: {
+          args: Prisma.LibraryCleanupAuditEventFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload>[]
+        }
+        create: {
+          args: Prisma.LibraryCleanupAuditEventCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload>
+        }
+        createMany: {
+          args: Prisma.LibraryCleanupAuditEventCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.LibraryCleanupAuditEventCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload>[]
+        }
+        delete: {
+          args: Prisma.LibraryCleanupAuditEventDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload>
+        }
+        update: {
+          args: Prisma.LibraryCleanupAuditEventUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload>
+        }
+        deleteMany: {
+          args: Prisma.LibraryCleanupAuditEventDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.LibraryCleanupAuditEventUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.LibraryCleanupAuditEventUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload>[]
+        }
+        upsert: {
+          args: Prisma.LibraryCleanupAuditEventUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$LibraryCleanupAuditEventPayload>
+        }
+        aggregate: {
+          args: Prisma.LibraryCleanupAuditEventAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateLibraryCleanupAuditEvent>
+        }
+        groupBy: {
+          args: Prisma.LibraryCleanupAuditEventGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LibraryCleanupAuditEventGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.LibraryCleanupAuditEventCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.LibraryCleanupAuditEventCountAggregateOutputType> | number
         }
       }
     }
@@ -4619,6 +4845,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    ListCacheRefreshStatus: {
+      payload: Prisma.$ListCacheRefreshStatusPayload<ExtArgs>
+      fields: Prisma.ListCacheRefreshStatusFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ListCacheRefreshStatusFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ListCacheRefreshStatusFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload>
+        }
+        findFirst: {
+          args: Prisma.ListCacheRefreshStatusFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ListCacheRefreshStatusFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload>
+        }
+        findMany: {
+          args: Prisma.ListCacheRefreshStatusFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload>[]
+        }
+        create: {
+          args: Prisma.ListCacheRefreshStatusCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload>
+        }
+        createMany: {
+          args: Prisma.ListCacheRefreshStatusCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.ListCacheRefreshStatusCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload>[]
+        }
+        delete: {
+          args: Prisma.ListCacheRefreshStatusDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload>
+        }
+        update: {
+          args: Prisma.ListCacheRefreshStatusUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload>
+        }
+        deleteMany: {
+          args: Prisma.ListCacheRefreshStatusDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ListCacheRefreshStatusUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.ListCacheRefreshStatusUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload>[]
+        }
+        upsert: {
+          args: Prisma.ListCacheRefreshStatusUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ListCacheRefreshStatusPayload>
+        }
+        aggregate: {
+          args: Prisma.ListCacheRefreshStatusAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateListCacheRefreshStatus>
+        }
+        groupBy: {
+          args: Prisma.ListCacheRefreshStatusGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ListCacheRefreshStatusGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ListCacheRefreshStatusCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ListCacheRefreshStatusCountAggregateOutputType> | number
+        }
+      }
+    }
     QuiActivityLog: {
       payload: Prisma.$QuiActivityLogPayload<ExtArgs>
       fields: Prisma.QuiActivityLogFieldRefs
@@ -5542,6 +5842,7 @@ export const LibraryCleanupRuleScalarFieldEnum = {
   plexLibraryFilter: 'plexLibraryFilter',
   targetScope: 'targetScope',
   action: 'action',
+  scanMediaServerAfterDelete: 'scanMediaServerAfterDelete',
   operator: 'operator',
   conditions: 'conditions',
   retentionMode: 'retentionMode',
@@ -5562,6 +5863,7 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
   itemType: 'itemType',
   targetScope: 'targetScope',
   arrEpisodeId: 'arrEpisodeId',
+  episodeFileId: 'episodeFileId',
   seasonNumber: 'seasonNumber',
   episodeNumber: 'episodeNumber',
   episodeTitle: 'episodeTitle',
@@ -5570,11 +5872,15 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
   matchedRuleName: 'matchedRuleName',
   reason: 'reason',
   action: 'action',
+  scanMediaServerAfterDelete: 'scanMediaServerAfterDelete',
   sizeOnDisk: 'sizeOnDisk',
   year: 'year',
   rating: 'rating',
   status: 'status',
   executionToken: 'executionToken',
+  executionAuditCorrelationId: 'executionAuditCorrelationId',
+  reconciledWithoutMutation: 'reconciledWithoutMutation',
+  terminalAuditRecordedAt: 'terminalAuditRecordedAt',
   safetySnapshot: 'safetySnapshot',
   lastExecutionError: 'lastExecutionError',
   reviewedAt: 'reviewedAt',
@@ -5584,6 +5890,41 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
 } as const
 
 export type LibraryCleanupApprovalScalarFieldEnum = (typeof LibraryCleanupApprovalScalarFieldEnum)[keyof typeof LibraryCleanupApprovalScalarFieldEnum]
+
+
+export const LibraryCleanupMediaServerScanScalarFieldEnum = {
+  id: 'id',
+  approvalId: 'approvalId',
+  instanceId: 'instanceId',
+  service: 'service',
+  serverIdentity: 'serverIdentity',
+  mediaType: 'mediaType',
+  plannedSectionIds: 'plannedSectionIds',
+  targetKey: 'targetKey',
+  status: 'status',
+  executionToken: 'executionToken',
+  attemptCount: 'attemptCount',
+  completedSectionIds: 'completedSectionIds',
+  lastError: 'lastError',
+  nextAttemptAt: 'nextAttemptAt',
+  requestStartedAt: 'requestStartedAt',
+  triggeredAt: 'triggeredAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LibraryCleanupMediaServerScanScalarFieldEnum = (typeof LibraryCleanupMediaServerScanScalarFieldEnum)[keyof typeof LibraryCleanupMediaServerScanScalarFieldEnum]
+
+
+export const LibraryCleanupMediaServerScanLeaseScalarFieldEnum = {
+  operationKey: 'operationKey',
+  userId: 'userId',
+  executionToken: 'executionToken',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LibraryCleanupMediaServerScanLeaseScalarFieldEnum = (typeof LibraryCleanupMediaServerScanLeaseScalarFieldEnum)[keyof typeof LibraryCleanupMediaServerScanLeaseScalarFieldEnum]
 
 
 export const LibraryCleanupLogScalarFieldEnum = {
@@ -5607,6 +5948,38 @@ export const LibraryCleanupLogScalarFieldEnum = {
 } as const
 
 export type LibraryCleanupLogScalarFieldEnum = (typeof LibraryCleanupLogScalarFieldEnum)[keyof typeof LibraryCleanupLogScalarFieldEnum]
+
+
+export const LibraryCleanupAuditEventScalarFieldEnum = {
+  id: 'id',
+  configId: 'configId',
+  actionId: 'actionId',
+  correlationId: 'correlationId',
+  eventKey: 'eventKey',
+  sequence: 'sequence',
+  eventType: 'eventType',
+  outcome: 'outcome',
+  trigger: 'trigger',
+  actorType: 'actorType',
+  actorId: 'actorId',
+  approvalId: 'approvalId',
+  runLogId: 'runLogId',
+  instanceId: 'instanceId',
+  arrItemId: 'arrItemId',
+  itemType: 'itemType',
+  targetScope: 'targetScope',
+  arrEpisodeId: 'arrEpisodeId',
+  title: 'title',
+  ruleId: 'ruleId',
+  ruleName: 'ruleName',
+  action: 'action',
+  reason: 'reason',
+  evidence: 'evidence',
+  details: 'details',
+  createdAt: 'createdAt'
+} as const
+
+export type LibraryCleanupAuditEventScalarFieldEnum = (typeof LibraryCleanupAuditEventScalarFieldEnum)[keyof typeof LibraryCleanupAuditEventScalarFieldEnum]
 
 
 export const NotificationChannelScalarFieldEnum = {
@@ -5794,7 +6167,12 @@ export const CacheRefreshStatusScalarFieldEnum = {
   lastRefreshedAt: 'lastRefreshedAt',
   lastResult: 'lastResult',
   lastErrorMessage: 'lastErrorMessage',
-  itemCount: 'itemCount'
+  itemCount: 'itemCount',
+  generationId: 'generationId',
+  generationMetadata: 'generationMetadata',
+  lastAttemptAt: 'lastAttemptAt',
+  lastAttemptResult: 'lastAttemptResult',
+  lastAttemptErrorMessage: 'lastAttemptErrorMessage'
 } as const
 
 export type CacheRefreshStatusScalarFieldEnum = (typeof CacheRefreshStatusScalarFieldEnum)[keyof typeof CacheRefreshStatusScalarFieldEnum]
@@ -5923,6 +6301,7 @@ export const TmdbListCacheScalarFieldEnum = {
   tmdbId: 'tmdbId',
   mediaType: 'mediaType',
   title: 'title',
+  generation: 'generation',
   refreshedAt: 'refreshedAt'
 } as const
 
@@ -5936,10 +6315,29 @@ export const TraktListCacheScalarFieldEnum = {
   tmdbId: 'tmdbId',
   mediaType: 'mediaType',
   title: 'title',
+  generation: 'generation',
   refreshedAt: 'refreshedAt'
 } as const
 
 export type TraktListCacheScalarFieldEnum = (typeof TraktListCacheScalarFieldEnum)[keyof typeof TraktListCacheScalarFieldEnum]
+
+
+export const ListCacheRefreshStatusScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  provider: 'provider',
+  listKey: 'listKey',
+  generationId: 'generationId',
+  lastRefreshedAt: 'lastRefreshedAt',
+  lastResult: 'lastResult',
+  lastErrorMessage: 'lastErrorMessage',
+  itemCount: 'itemCount',
+  lastAttemptAt: 'lastAttemptAt',
+  lastAttemptResult: 'lastAttemptResult',
+  lastAttemptErrorMessage: 'lastAttemptErrorMessage'
+} as const
+
+export type ListCacheRefreshStatusScalarFieldEnum = (typeof ListCacheRefreshStatusScalarFieldEnum)[keyof typeof ListCacheRefreshStatusScalarFieldEnum]
 
 
 export const QuiActivityLogScalarFieldEnum = {
@@ -6261,7 +6659,10 @@ export type GlobalOmitConfig = {
   libraryCleanupConfig?: Prisma.LibraryCleanupConfigOmit
   libraryCleanupRule?: Prisma.LibraryCleanupRuleOmit
   libraryCleanupApproval?: Prisma.LibraryCleanupApprovalOmit
+  libraryCleanupMediaServerScan?: Prisma.LibraryCleanupMediaServerScanOmit
+  libraryCleanupMediaServerScanLease?: Prisma.LibraryCleanupMediaServerScanLeaseOmit
   libraryCleanupLog?: Prisma.LibraryCleanupLogOmit
+  libraryCleanupAuditEvent?: Prisma.LibraryCleanupAuditEventOmit
   notificationChannel?: Prisma.NotificationChannelOmit
   notificationSubscription?: Prisma.NotificationSubscriptionOmit
   notificationLog?: Prisma.NotificationLogOmit
@@ -6282,6 +6683,7 @@ export type GlobalOmitConfig = {
   autoTagRule?: Prisma.AutoTagRuleOmit
   tmdbListCache?: Prisma.TmdbListCacheOmit
   traktListCache?: Prisma.TraktListCacheOmit
+  listCacheRefreshStatus?: Prisma.ListCacheRefreshStatusOmit
   quiActivityLog?: Prisma.QuiActivityLogOmit
   quiActionLog?: Prisma.QuiActionLogOmit
   quiEventLog?: Prisma.QuiEventLogOmit

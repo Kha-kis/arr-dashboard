@@ -1,31 +1,213 @@
-import { normalizeTorrentState } from "@arr/shared";
+import { normalizeTorrentState, type NormalizedTorrentState, type QuiTorrent } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import type { Prisma } from "../prisma.js";
 import { logQuiActivity, type QuiSyncCompleteDetails } from "./activity-log.js";
 import { createQuiClient } from "./client-factory.js";
 import { listQuiInstances } from "./instance-helpers.js";
+import { withQuiObservationTopologyGuard } from "./observation-topology-guard.js";
 import {
 	buildNotificationPayloads,
 	classifyTransition,
 	type ProblemTransition,
 } from "./torrent-state-notifier.js";
 
+const UPDATE_CHUNK_SIZE = 500;
+const CLEAR_OBSERVATION_DATA = {
+	torrentState: null,
+	torrentRatio: null,
+	torrentSyncedAt: null,
+} as const;
+
 /**
- * Periodic snapshot of qui torrent state into LibraryCache (Phase 2.1).
+ * Conservative deterministic ordering for one durable state per infoHash.
  *
- * Walks every user with at least one enabled qui instance, fetches all
- * torrents from each instance, then bulk-updates `LibraryCache` rows that
- * match by `infoHash`. State is normalized via @arr/shared's
- * `normalizeTorrentState` so the schema stores operator-vocabulary, not
- * qBit-native strings.
+ * Any state that execution treats as active, transitional, or unknown outranks
+ * paused/error. The exact order among protected states is only for stable
+ * persistence and notifications; every one of them remains non-reassuring.
+ */
+const AGGREGATE_STATE_PRIORITY: Record<NormalizedTorrentState, number> = {
+	seeding: 90,
+	downloading: 80,
+	stalled_dl: 70,
+	queued: 60,
+	checking: 50,
+	moving: 40,
+	unknown: 30,
+	error: 20,
+	paused: 10,
+};
+
+interface CompleteQuiInventory {
+	instanceId: string;
+	instanceLabel: string;
+	torrents: QuiTorrent[];
+}
+
+interface AggregatedTorrentObservation {
+	state: NormalizedTorrentState;
+	ratio: number | null;
+	instanceLabel: string;
+}
+
+function aggregateCompleteInventories(
+	inventories: CompleteQuiInventory[],
+): Map<string, AggregatedTorrentObservation> {
+	const observations = new Map<
+		string,
+		Array<{
+			state: NormalizedTorrentState;
+			ratio: number | null;
+			instanceLabel: string;
+			sourceKey: string;
+		}>
+	>();
+
+	for (const inventory of inventories) {
+		for (const torrent of inventory.torrents) {
+			const hash = torrent.hash.trim().toLowerCase();
+			if (!hash) continue;
+			const state = normalizeTorrentState(torrent.state);
+			const current = observations.get(hash) ?? [];
+			current.push({
+				state,
+				ratio: Number.isFinite(torrent.ratio) ? torrent.ratio : null,
+				instanceLabel: inventory.instanceLabel,
+				sourceKey: `${inventory.instanceId}\0${torrent.instanceId ?? 0}\0${state}`,
+			});
+			observations.set(hash, current);
+		}
+	}
+
+	const aggregate = new Map<string, AggregatedTorrentObservation>();
+	for (const [hash, candidates] of [...observations.entries()].sort(([left], [right]) =>
+		left.localeCompare(right),
+	)) {
+		candidates.sort(
+			(left, right) =>
+				AGGREGATE_STATE_PRIORITY[right.state] - AGGREGATE_STATE_PRIORITY[left.state] ||
+				left.sourceKey.localeCompare(right.sourceKey),
+		);
+		const selected = candidates[0]!;
+		aggregate.set(hash, {
+			state: selected.state,
+			// Cross-seeds and duplicate qUI views can have different ratios. A
+			// single scalar would imply false precision, so only retain it when
+			// exactly one torrent contributed to this hash.
+			ratio: candidates.length === 1 ? selected.ratio : null,
+			instanceLabel: selected.instanceLabel,
+		});
+	}
+	return aggregate;
+}
+
+async function clearUserQuiObservations(app: FastifyInstance, userId: string): Promise<number> {
+	return await app.prisma.$transaction(async (tx) => {
+		const where = { instance: { userId } };
+		const libraryRows = await tx.libraryCache.updateMany({
+			where,
+			data: CLEAR_OBSERVATION_DATA,
+		});
+		const episodeRows = await tx.episodeFileCache.updateMany({
+			where,
+			data: CLEAR_OBSERVATION_DATA,
+		});
+		return libraryRows.count + episodeRows.count;
+	});
+}
+
+async function clearUserQuiFreshness(app: FastifyInstance, userId: string): Promise<void> {
+	await app.prisma.$transaction(async (tx) => {
+		const where = { instance: { userId } };
+		await tx.libraryCache.updateMany({
+			where,
+			data: { torrentSyncedAt: null },
+		});
+		await tx.episodeFileCache.updateMany({
+			where,
+			data: { torrentSyncedAt: null },
+		});
+	});
+}
+
+async function publishUserQuiFreshness(
+	app: FastifyInstance,
+	userId: string,
+	observedAt: Date,
+): Promise<void> {
+	await app.prisma.$transaction(async (tx) => {
+		const where = { instance: { userId }, infoHash: { not: null } };
+		await tx.libraryCache.updateMany({
+			where,
+			data: { torrentSyncedAt: observedAt },
+		});
+		await tx.episodeFileCache.updateMany({
+			where,
+			data: { torrentSyncedAt: observedAt },
+		});
+	});
+}
+
+async function persistCompleteAbsence(
+	prisma: Pick<Prisma.TransactionClient, "libraryCache" | "episodeFileCache">,
+	userId: string,
+	seenHashes: ReadonlySet<string>,
+): Promise<number> {
+	const [libraryCandidates, episodeCandidates] = await Promise.all([
+		prisma.libraryCache.findMany({
+			where: { instance: { userId }, infoHash: { not: null } },
+			select: { id: true, infoHash: true },
+		}),
+		prisma.episodeFileCache.findMany({
+			where: { instance: { userId }, infoHash: { not: null } },
+			select: { id: true, infoHash: true },
+		}),
+	]);
+	const libraryIds = libraryCandidates
+		.filter((row) => row.infoHash && !seenHashes.has(row.infoHash.toLowerCase()))
+		.map((row) => row.id);
+	const episodeIds = episodeCandidates
+		.filter((row) => row.infoHash && !seenHashes.has(row.infoHash.toLowerCase()))
+		.map((row) => row.id);
+
+	let rowsCleared = 0;
+	for (let offset = 0; offset < libraryIds.length; offset += UPDATE_CHUNK_SIZE) {
+		const updated = await prisma.libraryCache.updateMany({
+			where: {
+				id: { in: libraryIds.slice(offset, offset + UPDATE_CHUNK_SIZE) },
+				instance: { userId },
+			},
+			data: {
+				torrentState: null,
+				torrentRatio: null,
+				torrentSyncedAt: null,
+			},
+		});
+		rowsCleared += updated.count;
+	}
+	for (let offset = 0; offset < episodeIds.length; offset += UPDATE_CHUNK_SIZE) {
+		const updated = await prisma.episodeFileCache.updateMany({
+			where: {
+				id: { in: episodeIds.slice(offset, offset + UPDATE_CHUNK_SIZE) },
+				instance: { userId },
+			},
+			data: {
+				torrentState: null,
+				torrentRatio: null,
+				torrentSyncedAt: null,
+			},
+		});
+		rowsCleared += updated.count;
+	}
+	return rowsCleared;
+}
+
+/**
+ * Periodic complete snapshot of qUI torrent state into LibraryCache.
  *
- * Designed to be safe to run while users are interacting:
- *   - per-row updates instead of a wrapping transaction (no long-held locks)
- *   - Promise.all bounded by user count, not torrent count
- *   - failures are logged per-instance and do NOT abort the rest of the run
- *
- * The on-demand `/qui/library-item/torrent-state` endpoint also writes
- * through to LibraryCache, so recently-viewed items stay fresher than the
- * sync interval — this job is the floor for staleness, not the ceiling.
+ * No qUI-derived observation is published until every enabled qUI instance
+ * returned a complete inventory. A partial or failed topology is invalidated
+ * user-wide under the same writer/topology guard, so preview can never present
+ * a fresh reassuring value from only part of the configured qUI topology.
  */
 export interface TorrentStateSyncResult {
 	usersScanned: number;
@@ -33,11 +215,8 @@ export interface TorrentStateSyncResult {
 	torrentsSeen: number;
 	rowsUpdated: number;
 	/**
-	 * Rows whose `torrentState` was nulled because their infoHash is no longer
-	 * in qui's response — most often because the user deleted the torrent in
-	 * qui. Without this cleanup the badge would keep showing the last-known
-	 * state forever, which actively misleads (user thinks the torrent is
-	 * healthy when it's gone).
+	 * Rows published as a fresh complete absence or invalidated because the
+	 * configured qUI topology could not be observed completely.
 	 */
 	rowsCleared: number;
 	errors: number;
@@ -59,8 +238,6 @@ export async function runQuiTorrentStateSync(
 		durationMs: 0,
 	};
 
-	// Find every user that has at least one enabled qui instance. Users without
-	// qui pay zero cost from this job.
 	const usersWithQui = await app.prisma.serviceInstance.findMany({
 		where: { service: "QUI", enabled: true },
 		select: { userId: true },
@@ -74,290 +251,200 @@ export async function runQuiTorrentStateSync(
 
 	for (const { userId } of usersWithQui) {
 		result.usersScanned++;
-		const userStartedAt = Date.now();
-		// Per-user slice of the run's totals — used for the activity log emit
-		// at the end of the user's loop. Each user gets one row per run.
-		let userInstancesScanned = 0;
-		let userTorrentsSeen = 0;
-		let userRowsUpdated = 0;
-		let userRowsCleared = 0;
-		let successfulInstanceScans = 0;
-		let completeInstanceScans = 0;
-		const instances = await listQuiInstances(app, userId);
+		await withQuiObservationTopologyGuard(userId, async () => {
+			const userStartedAt = Date.now();
+			let userInstancesScanned = 0;
+			let userTorrentsSeen = 0;
+			let userRowsUpdated = 0;
+			let userRowsCleared = 0;
+			let userErrors = 0;
+			const instances = [...(await listQuiInstances(app, userId))].sort((left, right) =>
+				left.id.localeCompare(right.id),
+			);
+			const inventories: CompleteQuiInventory[] = [];
 
-		// Track every hash this user's qui instances reported across all of them
-		// THIS sync run — used at the end of the user's loop for stale-state
-		// cleanup. Per-user scoping is critical: one user's qui won't have
-		// torrents from another user's qui, so cross-user diff would be wrong.
-		const seenHashesThisRun = new Set<string>();
-		// `runStartedAt` is the cleanup cutoff: only rows last synced BEFORE this
-		// run are candidates for nulling. Rows updated by THIS run, or by the
-		// on-demand write-through path mid-run, are off-limits.
-		const runStartedAt = new Date();
-
-		// Prior-state snapshot for transition detection (Phase 2.5). Captured
-		// BEFORE any updateMany so it reflects the state at the start of this
-		// run. Keyed by lowercase hash → { state, title }. Only *arr-correlated
-		// torrents (those with a LibraryCache row) get an entry, so only
-		// library content can trigger a notification. One findMany per user.
-		const priorStates = new Map<string, { state: string | null; title: string }>();
-		try {
-			const priorRows = await app.prisma.libraryCache.findMany({
-				where: { instance: { userId }, infoHash: { not: null } },
-				select: { infoHash: true, torrentState: true, title: true },
-			});
-			for (const row of priorRows) {
-				if (row.infoHash) {
-					priorStates.set(row.infoHash, { state: row.torrentState, title: row.title });
+			// Phase 1: fetch every participating inventory before any durable qUI
+			// observation write. Continue after individual failures so the activity
+			// record accurately reflects every configured instance attempted.
+			for (const instance of instances) {
+				result.instancesScanned++;
+				userInstancesScanned++;
+				try {
+					const client = createQuiClient(app, instance);
+					const inventory =
+						typeof client.listTorrentInventory === "function"
+							? await client.listTorrentInventory()
+							: {
+									torrents: await client.listAllTorrents({ requireComplete: true }),
+									complete: true,
+								};
+					result.torrentsSeen += inventory.torrents.length;
+					userTorrentsSeen += inventory.torrents.length;
+					if (inventory.complete !== true) {
+						throw new Error("qUI inventory was incomplete");
+					}
+					inventories.push({
+						instanceId: instance.id,
+						instanceLabel: instance.label,
+						torrents: inventory.torrents,
+					});
+				} catch (error) {
+					userErrors++;
+					result.errors++;
+					log.warn(
+						{ err: error, userId, instanceId: instance.id, instanceLabel: instance.label },
+						"qUI torrent-state sync failed to prove a complete instance inventory",
+					);
 				}
 			}
-		} catch (error) {
-			// Non-fatal: without priors we just don't emit notifications this
-			// run. State sync itself proceeds normally.
-			log.warn(
-				{ err: error, userId },
-				"qui torrent-state sync: prior-state snapshot failed; notifications skipped this run",
-			);
-		}
-		// Transitions detected this run, across all of the user's instances.
-		const transitions: ProblemTransition[] = [];
-		// Per-user error count — DRIVES THE CLEANUP DECISION. If we used the
-		// global `result.errors` instead, one user's failed sync would suppress
-		// stale-state cleanup for every user that runs after them in this tick,
-		// leaving deleted torrents showing as still-seeding indefinitely.
-		let userErrors = 0;
 
-		for (const instance of instances) {
-			result.instancesScanned++;
-			userInstancesScanned++;
-			try {
-				const client = createQuiClient(app, instance);
-				// Single qui call returns torrents across every qBit instance behind
-				// this qui — exactly what we need for hash-based correlation.
-				const inventory =
-					typeof client.listTorrentInventory === "function"
-						? await client.listTorrentInventory()
-						: { torrents: await client.listAllTorrents(), complete: true };
-				const torrents = inventory.torrents;
-				successfulInstanceScans++;
-				if (inventory.complete) completeInstanceScans++;
-				result.torrentsSeen += torrents.length;
-				userTorrentsSeen += torrents.length;
-
-				if (torrents.length === 0) continue;
-
-				const updates = torrents.map(async (torrent) => {
-					const normalizedState = normalizeTorrentState(torrent.state);
-					const hashLower = torrent.hash.toLowerCase();
-					seenHashesThisRun.add(hashLower);
-
-					// Transition detection (Phase 2.5): if this torrent has a
-					// prior LibraryCache entry and just crossed into a problem
-					// state, queue a notification. `classifyTransition` returns
-					// null for non-problem and same-state cases, so a torrent
-					// that STAYS errored across runs only notifies once.
-					const prior = priorStates.get(hashLower);
-					if (prior) {
-						const kind = classifyTransition(prior.state, normalizedState);
-						if (kind) {
-							transitions.push({
-								kind,
-								infoHash: hashLower,
-								title: prior.title,
-								instanceLabel: instance.label,
-								oldState: prior.state,
-								newState: normalizedState,
+			if (instances.length === 0 || inventories.length !== instances.length) {
+				try {
+					const cleared = await clearUserQuiObservations(app, userId);
+					result.rowsCleared += cleared;
+					userRowsCleared += cleared;
+				} catch (error) {
+					userErrors++;
+					result.errors++;
+					log.error(
+						{ err: error, userId },
+						"qUI torrent-state sync could not invalidate observations after an incomplete topology scan",
+					);
+				}
+			} else {
+				const aggregate = aggregateCompleteInventories(inventories);
+				const observedAt = new Date();
+				const priorStates = new Map<string, { state: string | null; title: string }>();
+				try {
+					const priorRows = await app.prisma.libraryCache.findMany({
+						where: { instance: { userId }, infoHash: { not: null } },
+						select: { infoHash: true, torrentState: true, title: true },
+					});
+					for (const row of priorRows) {
+						if (row.infoHash) {
+							priorStates.set(row.infoHash.toLowerCase(), {
+								state: row.torrentState,
+								title: row.title,
 							});
 						}
 					}
-					// SECURITY: scope by userId via the instance relation. When two
-					// users own the same infoHash (legitimate when they downloaded
-					// the same public torrent), one user's sync would otherwise
-					// write into the other user's row. updateMany returns count
-					// without throwing on no-match — fine for "update if exists".
-					const updated = await app.prisma.libraryCache.updateMany({
-						where: { infoHash: hashLower, instance: { userId } },
-						data: {
-							torrentState: normalizedState,
-							torrentRatio: Number.isFinite(torrent.ratio) ? torrent.ratio : null,
-							torrentSyncedAt: new Date(),
-						},
-					});
-					const episodeFilesUpdated = await app.prisma.episodeFileCache.updateMany({
-						where: { infoHash: hashLower, instance: { userId } },
-						data: {
-							torrentState: normalizedState,
-							torrentRatio: Number.isFinite(torrent.ratio) ? torrent.ratio : null,
-							torrentSyncedAt: new Date(),
-						},
-					});
-					const updatedCount = updated.count + episodeFilesUpdated.count;
-					result.rowsUpdated += updatedCount;
-					userRowsUpdated += updatedCount;
-				});
-
-				await Promise.all(updates);
-			} catch (error) {
-				userErrors++;
-				result.errors++;
-				log.warn(
-					{ err: error, userId, instanceId: instance.id, instanceLabel: instance.label },
-					"qui torrent-state sync failed for instance",
-				);
-			}
-		}
-
-		// Stale-state cleanup: any row this user owns whose infoHash was NOT in
-		// any of their qui instances' responses this run, AND was last synced
-		// BEFORE this run, gets its torrent state nulled. The user deleted the
-		// torrent in qui (or it was never there), so the badge would otherwise
-		// show last-known state forever. Skipped if THIS USER had errors —
-		// failed instance might mean we have an incomplete view of qui's
-		// torrents and would over-clear. Use per-user `userErrors`, not the
-		// global `result.errors`, otherwise one user's failure would suppress
-		// every other user's cleanup.
-		if (userErrors > 0) {
-			log.info(
-				{ userId, userErrors, seenHashes: seenHashesThisRun.size },
-				"qui torrent-state sync: skipping stale-state cleanup for user (instance errors → incomplete view, over-clearing risk)",
-			);
-		} else if (
-			instances.length === 0 ||
-			successfulInstanceScans !== instances.length ||
-			completeInstanceScans !== instances.length
-		) {
-			log.debug(
-				{
-					userId,
-					instances: instances.length,
-					successfulInstanceScans,
-					completeInstanceScans,
-				},
-				"qui torrent-state sync: skipping stale-state cleanup for user (no complete instance inventory)",
-			);
-		} else {
-			try {
-				// Two-step diff-and-batch-update to avoid SQLite's
-				// IN/NOT-IN parameter cap (P2029). The naive
-				// `updateMany({ where: { infoHash: { notIn: [...10k hashes] } } })`
-				// crashed in production every scheduler tick (silently
-				// suppressed via try/catch, so stale state drifted
-				// indefinitely). Same shape as the fix in
-				// episode-file-backfill.ts.
-				const staleCandidates = await app.prisma.libraryCache.findMany({
-					where: {
-						instance: { userId },
-						torrentState: { not: null },
-						torrentSyncedAt: { lt: runStartedAt },
-					},
-					select: { id: true, infoHash: true },
-				});
-				const staleIds = staleCandidates
-					.filter((r) => r.infoHash && !seenHashesThisRun.has(r.infoHash))
-					.map((r) => r.id);
-
-				// Chunk size matches the episode-file-backfill fix —
-				// well below SQLite's 32K cap and any Prisma quirks.
-				const CHUNK = 500;
-				let userCleared = 0;
-				for (let i = 0; i < staleIds.length; i += CHUNK) {
-					const batch = staleIds.slice(i, i + CHUNK);
-					const cleared = await app.prisma.libraryCache.updateMany({
-						where: {
-							id: { in: batch },
-							instance: { userId },
-							torrentSyncedAt: { lt: runStartedAt },
-						},
-						data: {
-							torrentState: null,
-							torrentRatio: null,
-							torrentSyncedAt: null,
-						},
-					});
-					userCleared += cleared.count;
-				}
-				const staleEpisodeCandidates = await app.prisma.episodeFileCache.findMany({
-					where: {
-						instance: { userId },
-						torrentState: { not: null },
-						torrentSyncedAt: { lt: runStartedAt },
-					},
-					select: { id: true, infoHash: true },
-				});
-				const staleEpisodeIds = staleEpisodeCandidates
-					.filter((row) => row.infoHash && !seenHashesThisRun.has(row.infoHash))
-					.map((row) => row.id);
-				for (let i = 0; i < staleEpisodeIds.length; i += CHUNK) {
-					const batch = staleEpisodeIds.slice(i, i + CHUNK);
-					const cleared = await app.prisma.episodeFileCache.updateMany({
-						where: {
-							id: { in: batch },
-							instance: { userId },
-							torrentSyncedAt: { lt: runStartedAt },
-						},
-						data: {
-							torrentState: null,
-							torrentRatio: null,
-							torrentSyncedAt: null,
-						},
-					});
-					userCleared += cleared.count;
-				}
-				result.rowsCleared += userCleared;
-				userRowsCleared += userCleared;
-			} catch (error) {
-				userErrors++;
-				result.errors++;
-				log.warn({ err: error, userId }, "qui torrent-state sync: stale-state cleanup failed");
-			}
-		}
-
-		// Emit qui torrent-state notifications (Phase 2.5). Dedup by
-		// (infoHash, kind) first — a cross-seeded hash can surface on more
-		// than one qui instance, but the operator only needs one alert per
-		// content-problem. Fire-and-forget: notification failures must not
-		// abort or slow the sync.
-		if (transitions.length > 0 && app.notificationService) {
-			const seenTransitionKeys = new Set<string>();
-			const deduped = transitions.filter((t) => {
-				const key = `${t.infoHash}:${t.kind}`;
-				if (seenTransitionKeys.has(key)) return false;
-				seenTransitionKeys.add(key);
-				return true;
-			});
-			const payloads = buildNotificationPayloads(deduped);
-			for (const payload of payloads) {
-				app.notificationService.notify(payload).catch((err) => {
+				} catch (error) {
 					log.warn(
-						{ err, userId, eventType: payload.eventType },
-						"qui torrent-state notification dispatch failed",
+						{ err: error, userId },
+						"qUI torrent-state sync: prior-state snapshot failed; notifications skipped this run",
 					);
-				});
-			}
-			log.info(
-				{ userId, transitions: deduped.length, payloads: payloads.length },
-				"qui torrent-state sync emitted torrent-state notifications",
-			);
-		}
+				}
 
-		// Activity log: one row per user per run. Status reflects this user's
-		// success — global errors from OTHER users shouldn't taint this user's
-		// timeline. Fire-and-forget; logQuiActivity swallows failures.
-		const userDetails: QuiSyncCompleteDetails = {
-			instancesScanned: userInstancesScanned,
-			torrentsSeen: userTorrentsSeen,
-			rowsUpdated: userRowsUpdated,
-			rowsCleared: userRowsCleared,
-			errors: userErrors,
-			durationMs: Date.now() - userStartedAt,
-		};
-		await logQuiActivity({
-			app,
-			userId,
-			eventType: "qui_sync_complete",
-			details: userDetails,
-			status: userErrors > 0 ? "error" : "ok",
-			log,
+				const transitions: ProblemTransition[] = [];
+				let publishedRowsUpdated = 0;
+				let publishedRowsCleared = 0;
+				try {
+					// Phase 2 uses freshness as a publication marker. Two short
+					// transactions bookend the potentially large staging loop, avoiding
+					// a long SQLite write lock while ensuring preview sees either the
+					// previous complete generation, no signal, or the new complete
+					// generation. It can never see a partially fresh generation.
+					await clearUserQuiFreshness(app, userId);
+					for (const [hash, observation] of aggregate) {
+						// qBittorrent hashes are hexadecimal and may be returned in
+						// either case. New writes are normalized, while this two-value
+						// predicate also heals observations on legacy uppercase rows.
+						const persistedHashVariants = [hash, hash.toUpperCase()];
+						const data = {
+							torrentState: observation.state,
+							torrentRatio: observation.ratio,
+							torrentSyncedAt: null,
+						};
+						const libraryRows = await app.prisma.libraryCache.updateMany({
+							where: { infoHash: { in: persistedHashVariants }, instance: { userId } },
+							data,
+						});
+						const episodeRows = await app.prisma.episodeFileCache.updateMany({
+							where: { infoHash: { in: persistedHashVariants }, instance: { userId } },
+							data,
+						});
+						publishedRowsUpdated += libraryRows.count + episodeRows.count;
+					}
+					publishedRowsCleared = await persistCompleteAbsence(
+						app.prisma,
+						userId,
+						new Set(aggregate.keys()),
+					);
+					await publishUserQuiFreshness(app, userId, observedAt);
+					for (const [hash, observation] of aggregate) {
+						const prior = priorStates.get(hash);
+						if (prior) {
+							const kind = classifyTransition(prior.state, observation.state);
+							if (kind) {
+								transitions.push({
+									kind,
+									infoHash: hash,
+									title: prior.title,
+									instanceLabel: observation.instanceLabel,
+									oldState: prior.state,
+									newState: observation.state,
+								});
+							}
+						}
+					}
+					result.rowsUpdated += publishedRowsUpdated;
+					userRowsUpdated += publishedRowsUpdated;
+					result.rowsCleared += publishedRowsCleared;
+					userRowsCleared += publishedRowsCleared;
+				} catch (error) {
+					userErrors++;
+					result.errors++;
+					log.error(
+						{ err: error, userId },
+						"qUI torrent-state sync publish failed; invalidating partial observations",
+					);
+					try {
+						const cleared = await clearUserQuiObservations(app, userId);
+						result.rowsCleared += cleared;
+						userRowsCleared += cleared;
+					} catch (clearError) {
+						userErrors++;
+						result.errors++;
+						log.error(
+							{ err: clearError, userId },
+							"qUI torrent-state sync could not invalidate a partial publish",
+						);
+					}
+				}
+
+				if (userErrors === 0 && transitions.length > 0 && app.notificationService) {
+					const payloads = buildNotificationPayloads(transitions);
+					for (const payload of payloads) {
+						app.notificationService.notify(payload).catch((error) => {
+							log.warn(
+								{ err: error, userId, eventType: payload.eventType },
+								"qUI torrent-state notification dispatch failed",
+							);
+						});
+					}
+					log.info(
+						{ userId, transitions: transitions.length, payloads: payloads.length },
+						"qUI torrent-state sync emitted torrent-state notifications",
+					);
+				}
+			}
+
+			const userDetails: QuiSyncCompleteDetails = {
+				instancesScanned: userInstancesScanned,
+				torrentsSeen: userTorrentsSeen,
+				rowsUpdated: userRowsUpdated,
+				rowsCleared: userRowsCleared,
+				errors: userErrors,
+				durationMs: Date.now() - userStartedAt,
+			};
+			await logQuiActivity({
+				app,
+				userId,
+				eventType: "qui_sync_complete",
+				details: userDetails,
+				status: userErrors > 0 ? "error" : "ok",
+				log,
+			});
 		});
 	}
 
@@ -372,7 +459,7 @@ export async function runQuiTorrentStateSync(
 			errors: result.errors,
 			durationMs: result.durationMs,
 		},
-		"qui torrent-state sync completed",
+		"qUI torrent-state sync completed",
 	);
 	return result;
 }

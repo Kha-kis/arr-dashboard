@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
 	Movie,
 	MovieFile,
@@ -10,7 +11,6 @@ import type {
 	SonarrClient,
 	Notification as SonarrNotification,
 } from "arr-sdk/sonarr";
-import { normalizeTorrentState } from "@arr/shared";
 import {
 	createPlexClient,
 	type PlexClient,
@@ -92,9 +92,50 @@ export function createSharedPlexSafetyContext(): SharedPlexSafetyContext {
 
 class FileMatchVerificationError extends Error {}
 class EpisodeWatchProofError extends FileMatchVerificationError {}
+class QuiProtectedTorrentStateError extends FileMatchVerificationError {}
+class AmbiguousPlexOwnershipError extends FileMatchVerificationError {}
 
-function isQuiSeedingTorrentState(state: string | null | undefined): boolean {
-	return state === "seeding" || state === "downloading";
+type VerifiedQuiInactiveTorrentState = "pausedUP" | "pausedDL" | "error" | "missingFiles";
+
+const QUI_INACTIVE_TORRENT_STATES = new Set<string>([
+	"pausedUP",
+	"pausedDL",
+	"error",
+	"missingFiles",
+]);
+
+const QUI_PROTECTED_TORRENT_STATES = new Set([
+	"downloading",
+	"uploading",
+	"stalledUP",
+	"stalledDL",
+	"queuedUP",
+	"queuedDL",
+	"checkingUP",
+	"checkingDL",
+	"metaDL",
+	"moving",
+	"forcedUP",
+	"forcedDL",
+]);
+
+function isQuiInactiveTorrentState(state: string): state is VerifiedQuiInactiveTorrentState {
+	return QUI_INACTIVE_TORRENT_STATES.has(state);
+}
+
+function assertQuiTorrentStateAllowsDeletion(
+	state: string,
+): asserts state is VerifiedQuiInactiveTorrentState {
+	if (QUI_PROTECTED_TORRENT_STATES.has(state)) {
+		throw new QuiProtectedTorrentStateError(
+			"Target physical file has an active or transitional torrent in qUI",
+		);
+	}
+	if (!isQuiInactiveTorrentState(state)) {
+		throw new FileMatchVerificationError(
+			"Target physical-file qUI state is unknown or unsupported",
+		);
+	}
 }
 
 interface NormalizedMediaPath {
@@ -156,6 +197,23 @@ export interface VerifiedEpisodeQuiIdentity {
 	enabled: boolean;
 	infoHash: string | null;
 	torrentState: string | null;
+}
+
+export interface VerifiedQuiPhysicalFileEvidence {
+	enabled: boolean;
+	instances: Array<{
+		instanceId: string;
+		serviceFingerprint: string;
+		files: Array<{
+			fullPath: NormalizedMediaPath;
+			hashes: string[];
+		}>;
+		torrents: Array<{
+			hash: string;
+			qbitInstanceId: number;
+			state: VerifiedQuiInactiveTorrentState;
+		}>;
+	}>;
 }
 
 export interface VerifiedSonarrPeerIdentity {
@@ -224,6 +282,7 @@ export interface VerifiedRadarrPlexOwnership {
 
 export interface VerifiedRadarrTargetDeleteNotification {
 	plexServerUrl: string;
+	onMovieDelete: boolean;
 	onMovieFileDelete: boolean;
 	mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
 }
@@ -241,6 +300,7 @@ export type SharedMediaSafetyPlan =
 			kind: "verified_radarr";
 			target: VerifiedArrTargetIdentity;
 			file: VerifiedRadarrFileIdentity;
+			quiEvidence?: VerifiedQuiPhysicalFileEvidence;
 			peers: VerifiedRadarrPeerIdentity[];
 			ownership: VerifiedRadarrPlexOwnership[];
 			targetDeleteNotifications: VerifiedRadarrTargetDeleteNotification[];
@@ -249,6 +309,7 @@ export type SharedMediaSafetyPlan =
 			kind: "verified_sonarr";
 			target: VerifiedArrTargetIdentity;
 			files: VerifiedSonarrFileIdentity;
+			quiEvidence?: VerifiedQuiPhysicalFileEvidence;
 			peers: VerifiedSonarrPeerIdentity[];
 			ownership: VerifiedSonarrPlexOwnership[];
 			targetDeleteNotifications: VerifiedSonarrTargetDeleteNotification[];
@@ -261,6 +322,7 @@ export type SharedMediaSafetyPlan =
 			retainedTargetFiles: VerifiedSonarrEpisodeFileIdentity[];
 			watchProof: VerifiedEpisodePlexWatchProof;
 			quiIdentity: VerifiedEpisodeQuiIdentity;
+			quiEvidence?: VerifiedQuiPhysicalFileEvidence;
 			peers: VerifiedSonarrPeerIdentity[];
 			ownership: VerifiedSonarrPlexOwnership[];
 			targetDeleteNotifications: VerifiedSonarrTargetDeleteNotification[];
@@ -474,6 +536,111 @@ function canonicalRetainedSonarrEpisodeFiles(
 		throw new FileMatchVerificationError("Sonarr retained file inventory is ambiguous");
 	}
 	return files;
+}
+
+function canonicalQuiPhysicalFileEvidence(value: unknown): VerifiedQuiPhysicalFileEvidence {
+	if (!value || typeof value !== "object") {
+		throw new FileMatchVerificationError("qUI physical-file evidence is unavailable");
+	}
+	const evidence = value as Record<string, unknown>;
+	if (typeof evidence.enabled !== "boolean" || !Array.isArray(evidence.instances)) {
+		throw new FileMatchVerificationError("qUI physical-file evidence is invalid");
+	}
+	if (!evidence.enabled) {
+		if (evidence.instances.length !== 0) {
+			throw new FileMatchVerificationError("Disabled qUI evidence must not contain instances");
+		}
+		return { enabled: false, instances: [] };
+	}
+	if (evidence.instances.length === 0) {
+		throw new FileMatchVerificationError("Enabled qUI evidence has no service instances");
+	}
+	const seenInstances = new Set<string>();
+	const instances = evidence.instances.map((rawInstance) => {
+		if (!rawInstance || typeof rawInstance !== "object") {
+			throw new FileMatchVerificationError("qUI evidence instance is invalid");
+		}
+		const instance = rawInstance as Record<string, unknown>;
+		const instanceId = requiredNonEmptyString(instance.instanceId, "qUI instance ID");
+		if (seenInstances.has(instanceId)) {
+			throw new FileMatchVerificationError("qUI evidence contains a duplicate service instance");
+		}
+		seenInstances.add(instanceId);
+		const serviceFingerprint = requiredNonEmptyString(
+			instance.serviceFingerprint,
+			"qUI service fingerprint",
+		);
+		if (!Array.isArray(instance.files) || !Array.isArray(instance.torrents)) {
+			throw new FileMatchVerificationError("qUI evidence file inventory is invalid");
+		}
+		const seenPaths = new Set<string>();
+		const files = instance.files.map((rawFile) => {
+			if (!rawFile || typeof rawFile !== "object") {
+				throw new FileMatchVerificationError("qUI evidence file is invalid");
+			}
+			const file = rawFile as Record<string, unknown>;
+			if (!file.fullPath || typeof file.fullPath !== "object") {
+				throw new FileMatchVerificationError("qUI target file path is invalid");
+			}
+			const fullPath = normalizeMediaPath((file.fullPath as Record<string, unknown>).value);
+			const pathKey = JSON.stringify(fullPath);
+			if (seenPaths.has(pathKey)) {
+				throw new FileMatchVerificationError("qUI evidence contains a duplicate file path");
+			}
+			seenPaths.add(pathKey);
+			if (!Array.isArray(file.hashes)) {
+				throw new FileMatchVerificationError("qUI evidence hashes are invalid");
+			}
+			const hashes = file.hashes.map((hash) =>
+				requiredNonEmptyString(hash, "qUI torrent hash").toLowerCase(),
+			);
+			if (new Set(hashes).size !== hashes.length) {
+				throw new FileMatchVerificationError("qUI evidence contains duplicate file hashes");
+			}
+			return { fullPath, hashes: hashes.sort() };
+		});
+		const seenTorrents = new Set<string>();
+		const torrents = instance.torrents.map((rawTorrent) => {
+			if (!rawTorrent || typeof rawTorrent !== "object") {
+				throw new FileMatchVerificationError("qUI torrent evidence is invalid");
+			}
+			const torrent = rawTorrent as Record<string, unknown>;
+			const hash = requiredNonEmptyString(torrent.hash, "qUI torrent hash").toLowerCase();
+			const qbitInstanceId = requiredPositiveSafeInteger(
+				torrent.qbitInstanceId,
+				"qUI qBittorrent instance ID",
+			);
+			const state = requiredNonEmptyString(torrent.state, "qUI torrent state");
+			if (!isQuiInactiveTorrentState(state)) {
+				throw new FileMatchVerificationError(
+					"qUI evidence contains a non-authorizing torrent state",
+				);
+			}
+			const torrentKey = `${qbitInstanceId}\0${hash}`;
+			if (seenTorrents.has(torrentKey)) {
+				throw new FileMatchVerificationError("qUI evidence contains an ambiguous torrent");
+			}
+			seenTorrents.add(torrentKey);
+			return { hash, qbitInstanceId, state };
+		});
+		return {
+			instanceId,
+			serviceFingerprint,
+			files: files.sort((left, right) =>
+				JSON.stringify(left.fullPath).localeCompare(JSON.stringify(right.fullPath)),
+			),
+			torrents: torrents.sort(
+				(left, right) =>
+					left.hash.localeCompare(right.hash) ||
+					left.qbitInstanceId - right.qbitInstanceId ||
+					left.state.localeCompare(right.state),
+			),
+		};
+	});
+	return {
+		enabled: true,
+		instances: instances.sort((left, right) => left.instanceId.localeCompare(right.instanceId)),
+	};
 }
 
 function canonicalSonarrPeers(value: unknown): VerifiedSonarrPeerIdentity[] {
@@ -766,6 +933,8 @@ function canonicalRadarrTargetDeleteNotifications(
 		const mapping = notification.mapping as Record<string, unknown> | null | undefined;
 		return {
 			plexServerUrl: normalizedUrl,
+			onMovieDelete:
+				notification.onMovieDelete === undefined ? true : notification.onMovieDelete === true,
 			onMovieFileDelete: notification.onMovieFileDelete === true,
 			mapping:
 				mapping === null
@@ -818,6 +987,10 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 			kind: "verified_radarr",
 			target: canonicalTargetIdentity(candidate.target),
 			file: canonicalRadarrFileIdentity(candidate.file),
+			quiEvidence:
+				candidate.quiEvidence === undefined
+					? undefined
+					: canonicalQuiPhysicalFileEvidence(candidate.quiEvidence),
 			peers: canonicalRadarrPeers(candidate.peers),
 			ownership: canonicalRadarrOwnership(candidate.ownership),
 			targetDeleteNotifications: canonicalRadarrTargetDeleteNotifications(
@@ -830,6 +1003,10 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 			kind: "verified_sonarr",
 			target: canonicalTargetIdentity(candidate.target),
 			files: canonicalSonarrFiles(candidate.files),
+			quiEvidence:
+				candidate.quiEvidence === undefined
+					? undefined
+					: canonicalQuiPhysicalFileEvidence(candidate.quiEvidence),
 			peers: canonicalSonarrPeers(candidate.peers),
 			ownership: canonicalSonarrOwnership(candidate.ownership),
 			targetDeleteNotifications: canonicalSonarrTargetDeleteNotifications(
@@ -857,6 +1034,10 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 			),
 			watchProof: canonicalEpisodeWatchProof(candidate.watchProof),
 			quiIdentity: canonicalEpisodeQuiIdentity(candidate.quiIdentity),
+			quiEvidence:
+				candidate.quiEvidence === undefined
+					? undefined
+					: canonicalQuiPhysicalFileEvidence(candidate.quiEvidence),
 			peers: canonicalSonarrPeers(candidate.peers),
 			ownership: canonicalSonarrOwnership(candidate.ownership),
 			targetDeleteNotifications: canonicalSonarrTargetDeleteNotifications(
@@ -1313,8 +1494,7 @@ export async function assertVerifiedSonarrEpisodeUnchanged(
 		includeEpisodeFile: true,
 	})) as unknown as Array<Record<string, unknown>>;
 	const selected = episodes.find((episode) => episode.id === plan.episode.arrEpisodeId);
-	const currentMonitored =
-		typeof selected?.monitored === "boolean" ? selected.monitored : null;
+	const currentMonitored = typeof selected?.monitored === "boolean" ? selected.monitored : null;
 	const monitoredMatches =
 		currentMonitored !== null &&
 		(options.monitoredMode === "require_unmonitored"
@@ -1431,7 +1611,7 @@ function matchingPlexItems(
 				.map((part) => ({ item, part })),
 		);
 		if (matches.length !== 1) {
-			throw new FileMatchVerificationError(
+			throw new (matches.length > 1 ? AmbiguousPlexOwnershipError : FileMatchVerificationError)(
 				matches.length === 0
 					? `No Plex media part matched the ${serviceLabel(service)} file path and size`
 					: `Multiple Plex media parts matched the ${serviceLabel(service)} file path and size`,
@@ -1493,12 +1673,28 @@ function matchingPlexSeriesParts(
 
 export function cleanupDeleteTargetKey(
 	target: Pick<CleanupDeleteTarget, "instanceId" | "arrItemId" | "itemType"> &
-		Partial<Pick<CleanupDeleteTarget, "targetScope" | "arrEpisodeId">>,
+		Partial<Pick<CleanupDeleteTarget, "targetScope" | "arrEpisodeId" | "episodeFileId" | "action">>,
 ): string {
 	const seriesKey = `${target.instanceId}:${target.arrItemId}:${target.itemType}`;
-	return target.targetScope === "episode" && typeof target.arrEpisodeId === "number"
-		? `${seriesKey}:episode:${target.arrEpisodeId}`
-		: seriesKey;
+	if (target.targetScope !== "episode") return seriesKey;
+	if (target.action === "unmonitor") {
+		if (
+			typeof target.arrEpisodeId !== "number" ||
+			!Number.isSafeInteger(target.arrEpisodeId) ||
+			target.arrEpisodeId <= 0
+		) {
+			throw new Error("Episode-scoped unmonitor target is missing its episode ID");
+		}
+		return `${seriesKey}:episode:${target.arrEpisodeId}`;
+	}
+	if (
+		typeof target.episodeFileId !== "number" ||
+		!Number.isSafeInteger(target.episodeFileId) ||
+		target.episodeFileId <= 0
+	) {
+		throw new Error("File-changing episode target is missing its episode file ID");
+	}
+	return `${seriesKey}:episode-file:${target.episodeFileId}`;
 }
 
 function isDestructiveTarget(target: CleanupDeleteTarget): boolean {
@@ -1581,6 +1777,24 @@ function radarrNotificationApplies(
 			? notification.onMovieFileDelete === true
 			: notification.onMovieDelete === true || notification.onMovieFileDelete === true;
 	return handlesAction && notificationTagsApply(notification, movie.tags);
+}
+
+/**
+ * A Plex connection can prove how Radarr's path maps into Plex even when that
+ * connection is not configured to fire for the cleanup action. Keep this
+ * ownership role separate from action notifications so path evidence cannot
+ * accidentally grant authority to send a Plex-affecting delete event.
+ */
+function radarrPlexOwnershipNotificationApplies(
+	notification: RadarrNotification,
+	movie: Movie,
+): boolean {
+	return (
+		(notification as NotificationLike).enable !== false &&
+		mediaServerNotificationKind(notification) === "plex" &&
+		notificationMutatesLibrary(notification) &&
+		notificationTagsApply(notification, movie.tags)
+	);
 }
 
 function sonarrNotificationApplies(
@@ -1678,20 +1892,16 @@ function notificationPathMapping(
 		: null;
 }
 
-function radarrTargetDeleteNotificationWitnesses(
+function radarrTargetActionNotificationWitnesses(
 	notifications: RadarrNotification[],
 	movie: Movie,
 ): VerifiedRadarrTargetDeleteNotification[] {
 	const witnesses = notifications
-		.filter(
-			(notification) =>
-				radarrNotificationApplies(notification, movie, "delete") &&
-				notification.onMovieDelete === true,
-		)
+		.filter((notification) => radarrNotificationApplies(notification, movie, "delete"))
 		.map((notification) => {
 			if (mediaServerNotificationKind(notification) !== "plex") {
 				throw new FileMatchVerificationError(
-					"Radarr target has an unsupported movie-delete notification",
+					"Radarr target has an unsupported delete notification",
 				);
 			}
 			const plexServerUrl = normalizedServerUrl(plexConnectionBaseUrl(notification));
@@ -1700,6 +1910,7 @@ function radarrTargetDeleteNotificationWitnesses(
 			}
 			return {
 				plexServerUrl,
+				onMovieDelete: notification.onMovieDelete === true,
 				onMovieFileDelete: notification.onMovieFileDelete === true,
 				mapping: notificationPathMapping(notification, "Radarr target"),
 			};
@@ -1878,7 +2089,7 @@ function matchingPeerPlexPart(
 		pathCandidates.set(JSON.stringify([fullPath, mapping]), { fullPath, mapping });
 	}
 	if (pathCandidates.size !== 1) {
-		throw new FileMatchVerificationError("Radarr peer Plex path mappings conflict");
+		throw new AmbiguousPlexOwnershipError("Radarr peer Plex path mappings conflict");
 	}
 	const pathCandidate = [...pathCandidates.values()][0]!;
 	const matches = new Map<
@@ -1902,7 +2113,7 @@ function matchingPeerPlexPart(
 		}
 	}
 	if (matches.size !== 1) {
-		throw new FileMatchVerificationError(
+		throw new (matches.size > 1 ? AmbiguousPlexOwnershipError : FileMatchVerificationError)(
 			matches.size === 0
 				? "No Plex media part matched the retained Radarr peer file"
 				: "Multiple Plex media parts matched the retained Radarr peer file",
@@ -2518,6 +2729,91 @@ async function verifyPlexMediaState(
 	return { ownership, sonarrOwnership };
 }
 
+async function verifyRadarrPlexMediaState(
+	deps: CleanupExecutorDeps,
+	context: SharedPlexSafetyContext,
+	ownerChecks: Map<string, Promise<void>>,
+	plexInstances: ServiceInstance[],
+	movieLookups: Map<SafetyPlexClient, Map<number, Promise<PlexMovieMediaItem[]>>>,
+	seriesLookups: Map<SafetyPlexClient, Map<number, Promise<PlexSeriesMediaItem[]>>>,
+	input: Omit<PlexVerificationInput, "notifications">,
+	actionNotifications: RadarrNotification[],
+	ownershipNotifications: RadarrNotification[],
+): Promise<PlexVerificationResult> {
+	// A connection that can fire for this mutation is part of the mutation
+	// boundary, so every such Plex connection remains a mandatory witness.
+	if (actionNotifications.length > 0) {
+		return verifyPlexMediaState(
+			deps,
+			context,
+			ownerChecks,
+			plexInstances,
+			movieLookups,
+			seriesLookups,
+			{ ...input, notifications: actionNotifications },
+		);
+	}
+
+	// Ownership-only connections cannot fire for this action. Treat them as
+	// alternate path-mapping witnesses: one stale optional mapping must not hide
+	// another exact proof, but any valid unsafe view or conflicting proof still
+	// fails closed.
+	const successfulOwnership: VerifiedRadarrPlexOwnership[] = [];
+	let successfulCandidateCount = 0;
+	let unsafeBlock: string | undefined;
+	let lastFailure: unknown;
+	for (const notification of ownershipNotifications) {
+		try {
+			const candidate = await verifyPlexMediaState(
+				deps,
+				context,
+				ownerChecks,
+				plexInstances,
+				movieLookups,
+				seriesLookups,
+				{ ...input, notifications: [notification] },
+			);
+			if (candidate.block) {
+				unsafeBlock ??= candidate.block;
+				continue;
+			}
+			successfulCandidateCount++;
+			successfulOwnership.push(...candidate.ownership);
+		} catch (error) {
+			if (error instanceof AmbiguousPlexOwnershipError) throw error;
+			lastFailure = error;
+			deps.log.warn(
+				{ err: getErrorMessage(error), arrItemId: input.target.arrItemId },
+				"Optional Radarr Plex ownership mapping could not verify media state",
+			);
+		}
+	}
+	if (unsafeBlock) {
+		return { block: unsafeBlock, ownership: [], sonarrOwnership: [] };
+	}
+	if (successfulCandidateCount === 0) {
+		throw (
+			lastFailure ??
+			new FileMatchVerificationError("No usable Radarr Plex ownership mapping was found")
+		);
+	}
+
+	const ownership = canonicalRadarrOwnership(successfulOwnership);
+	const witnessesByServer = new Map<string, number>();
+	for (const witness of ownership) {
+		witnessesByServer.set(
+			witness.plexServerUrl,
+			(witnessesByServer.get(witness.plexServerUrl) ?? 0) + 1,
+		);
+	}
+	if ([...witnessesByServer.values()].some((count) => count > 1)) {
+		throw new FileMatchVerificationError(
+			"Radarr Plex ownership-only path mappings produced conflicting proofs",
+		);
+	}
+	return { ownership, sonarrOwnership: [] };
+}
+
 async function verifyEpisodePlexWatchProof(
 	deps: CleanupExecutorDeps,
 	context: SharedPlexSafetyContext,
@@ -2582,9 +2878,7 @@ async function verifyEpisodePlexWatchProof(
 	>();
 	for (const row of policyRows) {
 		const plexInstance = enabledPlexInstances.find((instance) => instance.id === row.instanceId);
-		const sourceFingerprint = plexInstance
-			? plexEvidenceSourceFingerprint(plexInstance)
-			: null;
+		const sourceFingerprint = plexInstance ? plexEvidenceSourceFingerprint(plexInstance) : null;
 		const sourceUpdatedAt = plexInstance?.updatedAt.getTime();
 		if (
 			!plexInstance ||
@@ -2652,15 +2946,13 @@ async function verifyEpisodePlexWatchProof(
 		}
 		const allMediaEpisodes = mediaItems.flatMap((show) => show.episodes);
 		const hasEpisodeCoordinates = allMediaEpisodes.some(
-			(episode) =>
-				episode.seasonNumber !== undefined || episode.episodeNumber !== undefined,
+			(episode) => episode.seasonNumber !== undefined || episode.episodeNumber !== undefined,
 		);
 		const sourceEpisodes = allMediaEpisodes.filter(
 			(episode) =>
 				episode.ratingKey === row.ratingKey &&
 				(!hasEpisodeCoordinates ||
-					(episode.seasonNumber === seasonNumber &&
-						episode.episodeNumber === exactEpisodeNumber)),
+					(episode.seasonNumber === seasonNumber && episode.episodeNumber === exactEpisodeNumber)),
 		);
 		if (sourceEpisodes.length === 0) {
 			continue;
@@ -2670,13 +2962,10 @@ async function verifyEpisodePlexWatchProof(
 				"Plex episode policy media identity was ambiguous at the mutation boundary",
 			);
 		}
-		const pathEpisodes = hasEpisodeCoordinates
-			? allMediaEpisodes.filter(
-					(episode) =>
-						episode.seasonNumber === seasonNumber &&
-						episode.episodeNumber === exactEpisodeNumber,
-				)
-			: sourceEpisodes;
+		// Watch evidence is scoped to one exact Plex episode rating key.  A
+		// second HD/4K copy can legitimately have the same episode coordinates,
+		// but its media parts must never satisfy the watched copy's proof.
+		const pathEpisodes = sourceEpisodes;
 		if (pathEpisodes.length === 0) {
 			continue;
 		}
@@ -2791,9 +3080,7 @@ async function verifyEpisodePlexWatchProof(
 		) {
 			continue;
 		}
-		const verifiedSource = verifiedPolicySources.get(
-			`${plexInstance.id}:${evidence.ratingKey}`,
-		);
+		const verifiedSource = verifiedPolicySources.get(`${plexInstance.id}:${evidence.ratingKey}`);
 		if (
 			!verifiedSource ||
 			verifiedSource.sourceFingerprint !== currentPlexFingerprint ||
@@ -2809,10 +3096,7 @@ async function verifyEpisodePlexWatchProof(
 				sourceFingerprint: currentPlexFingerprint,
 				plexServerUrl: verifiedSource.serverUrl,
 				ratingKey: evidence.ratingKey,
-				watchCount: Math.min(
-					currentEvidence.watchCount,
-					verifiedSource.source.liveWatchCount,
-				),
+				watchCount: Math.min(currentEvidence.watchCount, verifiedSource.source.liveWatchCount),
 				refreshedAt: currentEvidence.refreshedAt.toISOString(),
 				fullPath: normalizeMediaPath(match.part.file),
 				size: match.part.size,
@@ -2826,29 +3110,62 @@ async function verifyEpisodePlexWatchProof(
 	);
 }
 
-async function verifyFreshEpisodeQuiState(
+function createQuiSafetyFingerprint(instance: ServiceInstance): string {
+	return createHash("sha256")
+		.update(
+			JSON.stringify([
+				createArrServiceFingerprint(instance),
+				instance.hasLocalFilesystemAccess,
+				instance.pathPrefix,
+			]),
+		)
+		.digest("hex");
+}
+
+/**
+ * Build a fresh, complete qUI proof for every physical file a cleanup action
+ * may delete. The proof is serialized into the executable safety plan so a
+ * queued approval and the final mutation boundary can detect qUI topology,
+ * inode ownership, torrent identity, or state changes.
+ */
+export async function verifyFreshQuiPhysicalFileSafety(
 	deps: CleanupExecutorDeps,
 	context: SharedPlexSafetyContext,
 	userId: string,
-	filePath: string,
-): Promise<void> {
+	filePaths: string[],
+	respectQuiSeeding: boolean,
+): Promise<VerifiedQuiPhysicalFileEvidence> {
+	if (!respectQuiSeeding || filePaths.length === 0) {
+		return { enabled: false, instances: [] };
+	}
 	context.quiInstances ??= deps.prisma.serviceInstance.findMany({
 		where: { userId, service: "QUI", enabled: true },
 	});
-	const quiInstances = await context.quiInstances;
+	const quiInstances = [...(await context.quiInstances)].sort((left, right) =>
+		left.id.localeCompare(right.id),
+	);
 	if (quiInstances.length === 0) {
-		return;
+		return { enabled: false, instances: [] };
 	}
 	if (!deps.quiClientFactory || !deps.quiFileHashIndexFactory) {
 		throw new FileMatchVerificationError(
-			"Target Sonarr episode qUI state could not be verified live",
+			"Target physical-file qUI state could not be verified live",
 		);
 	}
+	const normalizedPaths = [
+		...new Map(
+			filePaths.map((filePath) => {
+				const normalized = normalizeMediaPath(filePath);
+				return [JSON.stringify(normalized), normalized] as const;
+			}),
+		).values(),
+	].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
 	const hashes = new Set<string>();
+	const evidenceInstances: VerifiedQuiPhysicalFileEvidence["instances"] = [];
 	for (const instance of quiInstances) {
 		if (instance.hasLocalFilesystemAccess !== true) {
 			throw new FileMatchVerificationError(
-				"Target Sonarr episode qUI state could not be verified live",
+				"Target physical-file qUI state could not be verified live",
 			);
 		}
 		let index = context.quiFileIndexes.get(instance.id);
@@ -2856,21 +3173,38 @@ async function verifyFreshEpisodeQuiState(
 			index = deps.quiFileHashIndexFactory(instance);
 			context.quiFileIndexes.set(instance.id, index);
 		}
-		try {
-			const resolution = await (await index).resolve(filePath);
-			if (resolution.complete !== true) {
-				throw new Error("Incomplete qUI inode resolution");
+		const files: VerifiedQuiPhysicalFileEvidence["instances"][number]["files"] = [];
+		for (const fullPath of normalizedPaths) {
+			try {
+				const resolution = await (await index).resolve(fullPath.value);
+				if (resolution.complete !== true) {
+					throw new Error("Incomplete qUI inode resolution");
+				}
+				const fileHashes = [...new Set(resolution.hashes.map((hash) => hash.toLowerCase()))].sort();
+				for (const hash of fileHashes) {
+					if (hash.trim() === "") throw new Error("Empty qUI torrent hash");
+					hashes.add(hash);
+				}
+				files.push({ fullPath, hashes: fileHashes });
+			} catch {
+				throw new FileMatchVerificationError(
+					"Target physical-file qUI state could not be verified live",
+				);
 			}
-			for (const hash of resolution.hashes) hashes.add(hash.toLowerCase());
-		} catch {
-			throw new FileMatchVerificationError(
-				"Target Sonarr episode qUI state could not be verified live",
-			);
 		}
+		evidenceInstances.push({
+			instanceId: instance.id,
+			serviceFingerprint: createQuiSafetyFingerprint(instance),
+			files,
+			torrents: [],
+		});
 	}
-	if (hashes.size === 0) return;
-	for (const hash of hashes) {
-		for (const instance of quiInstances) {
+	for (const instanceEvidence of evidenceInstances) {
+		const instance = quiInstances.find(
+			(candidate) => candidate.id === instanceEvidence.instanceId,
+		)!;
+		const ownedHashes = new Set(instanceEvidence.files.flatMap((file) => file.hashes));
+		for (const hash of [...hashes].sort()) {
 			const cacheKey = `${instance.id}\0${hash}`;
 			let torrents = context.quiHashTorrents.get(cacheKey);
 			if (!torrents) {
@@ -2882,20 +3216,47 @@ async function verifyFreshEpisodeQuiState(
 				exactResults = await torrents;
 			} catch {
 				throw new FileMatchVerificationError(
-					"Target Sonarr episode qUI state could not be verified live",
+					"Target physical-file qUI state could not be verified live",
 				);
 			}
-			if (
-				exactResults.some((torrent) =>
-					isQuiSeedingTorrentState(normalizeTorrentState(torrent.state)),
-				)
-			) {
+			if (ownedHashes.has(hash) && exactResults.length === 0) {
 				throw new FileMatchVerificationError(
-					"Target Sonarr episode is actively seeding or downloading in qUI",
+					"qUI inode ownership did not match its exact-hash inventory",
 				);
+			}
+			const seenExact = new Set<string>();
+			for (const torrent of exactResults) {
+				if (torrent.hash.toLowerCase() !== hash) {
+					throw new FileMatchVerificationError("qUI returned a mismatched torrent identity");
+				}
+				if (
+					typeof torrent.instanceId !== "number" ||
+					!Number.isSafeInteger(torrent.instanceId) ||
+					torrent.instanceId <= 0
+				) {
+					throw new FileMatchVerificationError(
+						"qUI did not identify the owning qBittorrent instance",
+					);
+				}
+				const state = requiredNonEmptyString(torrent.state, "qUI torrent state");
+				const exactKey = `${torrent.instanceId}\0${hash}`;
+				if (seenExact.has(exactKey)) {
+					throw new FileMatchVerificationError("qUI returned an ambiguous torrent identity");
+				}
+				seenExact.add(exactKey);
+				assertQuiTorrentStateAllowsDeletion(state);
+				instanceEvidence.torrents.push({
+					hash,
+					qbitInstanceId: torrent.instanceId,
+					state,
+				});
 			}
 		}
 	}
+	return canonicalQuiPhysicalFileEvidence({
+		enabled: true,
+		instances: evidenceInstances,
+	});
 }
 
 /**
@@ -3138,10 +3499,14 @@ export async function findSharedPlexDeleteBlocks(
 						targetDeleteNotifications: [],
 					};
 				}
-				const notifications = (await getRadarrNotifications(targetInstance, radarr)).filter(
-					(notification) => radarrNotificationApplies(notification, movie, action),
+				const allNotifications = await getRadarrNotifications(targetInstance, radarr);
+				const actionNotifications = allNotifications.filter((notification) =>
+					radarrNotificationApplies(notification, movie, action),
 				);
-				if (notifications.length === 0) {
+				const plexOwnershipNotifications = allNotifications.filter((notification) =>
+					radarrPlexOwnershipNotificationApplies(notification, movie),
+				);
+				if (actionNotifications.length === 0 && plexOwnershipNotifications.length === 0) {
 					if (
 						verifiedPlan.kind === "verified_radarr" &&
 						otherInstanceMayOwnFile(targetInstance, service, 1)
@@ -3157,7 +3522,7 @@ export async function findSharedPlexDeleteBlocks(
 					context.plans.set(targetKey, verifiedPlan);
 					continue;
 				}
-				const unsupported = notifications.find(
+				const unsupported = actionNotifications.find(
 					(notification) => mediaServerNotificationKind(notification) !== "plex",
 				);
 				if (unsupported) {
@@ -3166,7 +3531,7 @@ export async function findSharedPlexDeleteBlocks(
 					context.plans.set(targetKey, { kind: "blocked", reason });
 					continue;
 				}
-				const plexNotifications = notifications.filter(
+				const plexNotifications = actionNotifications.filter(
 					(notification) => mediaServerNotificationKind(notification) === "plex",
 				);
 				if (
@@ -3254,7 +3619,7 @@ export async function findSharedPlexDeleteBlocks(
 					});
 				}
 				const targetFile = verifiedPlan.file;
-				const verification = await verifyPlexMediaState(
+				const verification = await verifyRadarrPlexMediaState(
 					deps,
 					context,
 					plexOwnerChecks,
@@ -3264,11 +3629,12 @@ export async function findSharedPlexDeleteBlocks(
 					{
 						service,
 						target,
-						notifications: plexNotifications,
 						externalId: tmdbId,
 						files: [comparableFile(targetFile)],
 						radarrPeers,
 					},
+					plexNotifications,
+					plexOwnershipNotifications,
 				);
 				if (verification.block) {
 					blocks.set(targetKey, verification.block);
@@ -3281,7 +3647,7 @@ export async function findSharedPlexDeleteBlocks(
 						file: targetFile,
 						peers: radarrPeers.map((peer) => peer.identity),
 						ownership: verification.ownership,
-						targetDeleteNotifications: radarrTargetDeleteNotificationWitnesses(
+						targetDeleteNotifications: radarrTargetActionNotificationWitnesses(
 							plexNotifications,
 							movie,
 						),
@@ -3401,17 +3767,7 @@ export async function findSharedPlexDeleteBlocks(
 					(target.episodeFileInfoHash !== quiIdentity.infoHash ||
 						target.episodeFileTorrentState !== quiIdentity.torrentState)
 				) {
-					throw new FileMatchVerificationError(
-						"Target Sonarr episode qUI state changed",
-					);
-				}
-				if (quiIdentity.enabled) {
-					await verifyFreshEpisodeQuiState(
-						deps,
-						context,
-						userId,
-						selectedFile.fullPath.value,
-					);
+					throw new FileMatchVerificationError("Target Sonarr episode qUI state changed");
 				}
 				const verifiedWatch = await verifyEpisodePlexWatchProof(
 					deps,
@@ -3732,6 +4088,57 @@ export async function findSharedPlexDeleteBlocks(
 		}
 	}
 
+	for (const target of deleteTargets) {
+		if (target.respectQuiSeeding !== true || !isDestructiveTarget(target)) continue;
+		const targetKey = cleanupDeleteTargetKey(target);
+		if (blocks.has(targetKey)) continue;
+		const plan = context.plans.get(targetKey);
+		if (!plan || plan.kind === "blocked" || plan.kind === "not_required") continue;
+		let filePaths: string[];
+		if (plan.kind === "verified_radarr") {
+			filePaths = [plan.file.fullPath.value];
+		} else if (plan.kind === "verified_sonarr") {
+			filePaths = plan.files.episodeFiles.map((file) => file.fullPath.value);
+		} else if (plan.kind === "verified_sonarr_episode") {
+			filePaths = [plan.selectedFile.fullPath.value];
+		} else {
+			continue;
+		}
+		if (filePaths.length === 0) continue;
+		try {
+			const quiEvidence = await verifyFreshQuiPhysicalFileSafety(
+				deps,
+				context,
+				userId,
+				filePaths,
+				true,
+			);
+			// With no enabled qUI, respectQuiSeeding is intentionally a no-op.
+			// Do not manufacture a physical-topology witness until at least one
+			// qUI actually participates in the proof.
+			context.plans.set(targetKey, quiEvidence.enabled ? { ...plan, quiEvidence } : plan);
+		} catch (error) {
+			const active = error instanceof QuiProtectedTorrentStateError;
+			const targetDescription =
+				target.targetScope === "episode"
+					? "the exact Sonarr episode files"
+					: "every target physical file";
+			const reason = active
+				? `Skipped for safety: qUI reports that at least one of ${targetDescription} has an active or transitional torrent.`
+				: `Skipped for safety: complete fresh qUI evidence for ${targetDescription} could not be established.`;
+			blocks.set(targetKey, reason);
+			context.plans.set(targetKey, { kind: "blocked", reason });
+			deps.log.warn(
+				{
+					err: getErrorMessage(error),
+					instanceId: target.instanceId,
+					arrItemId: target.arrItemId,
+				},
+				"Cleanup qUI physical-file safety check failed closed",
+			);
+		}
+	}
+
 	return blocks;
 }
 
@@ -3778,7 +4185,7 @@ export async function assertVerifiedRadarrPeerOwnershipRetained(
 	>;
 	await assertVerifiedRadarrEmptyUnchanged(targetClient, targetArrItemId, plan.target);
 	const currentTargetMovie = await targetClient.movie.getById(targetArrItemId);
-	const currentTargetDeleteNotifications = radarrTargetDeleteNotificationWitnesses(
+	const currentTargetDeleteNotifications = radarrTargetActionNotificationWitnesses(
 		await targetClient.notification.getAll(),
 		currentTargetMovie,
 	);

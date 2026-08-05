@@ -19,25 +19,64 @@ const mockState: {
 	evaluateReason: string | null;
 	evaluateCalls: number;
 	buildContextThrows: boolean;
+	failedSources: Set<string>;
 } = {
 	evaluateReason: "matched",
 	evaluateCalls: 0,
 	buildContextThrows: false,
+	failedSources: new Set(),
 };
 
+function mockEvaluateCondition(...args: unknown[]) {
+	mockState.evaluateCalls++;
+	const item = args[0] as { monitored: boolean; data: string };
+	const ruleType = args[1];
+	const parameters = args[2] as { operator?: string; score?: number };
+	const failedSources = args[5] as Set<string> | undefined;
+	const parsed = JSON.parse(item.data) as {
+		service?: string;
+		ratings?: { value?: unknown; tmdb?: { value?: unknown }; imdb?: { value?: unknown } };
+		_arrDashboardEvidence?: { monitored?: unknown; rating?: unknown; imdbRating?: unknown };
+	};
+	if (ruleType === "monitored" || ruleType === "unmonitored") {
+		if (parsed._arrDashboardEvidence?.monitored !== true) return { state: "unknown" };
+		const matches = ruleType === "monitored" ? item.monitored : !item.monitored;
+		return matches ? { state: "true", reason: "matched" } : { state: "false" };
+	}
+	if (ruleType === "rating" || ruleType === "imdb_rating") {
+		const evidenceKey = ruleType === "rating" ? "rating" : "imdbRating";
+		if (parsed._arrDashboardEvidence?.[evidenceKey] !== true) return { state: "unknown" };
+		const value =
+			ruleType === "imdb_rating"
+				? parsed.ratings?.imdb?.value
+				: parsed.service === "sonarr"
+					? parsed.ratings?.value
+					: parsed.ratings?.tmdb?.value;
+		if (typeof value !== "number" || value <= 0 || value > 10) return { state: "unknown" };
+		const matches =
+			parameters.operator === "less_than"
+				? value < (parameters.score ?? 0)
+				: value > (parameters.score ?? 10);
+		return matches ? { state: "true", reason: "matched" } : { state: "false" };
+	}
+	if (typeof ruleType === "string" && ruleType.startsWith("plex_") && failedSources?.has("plex")) {
+		return { state: "unknown" };
+	}
+	return mockState.evaluateReason
+		? { state: "true", reason: mockState.evaluateReason }
+		: { state: "false" };
+}
+
 vi.mock("../../library-cleanup/rule-evaluators.js", () => ({
-	evaluateSingleCondition: vi.fn(() => {
-		mockState.evaluateCalls++;
-		return mockState.evaluateReason;
-	}),
+	evaluateSingleConditionState: vi.fn(mockEvaluateCondition),
 }));
 
 vi.mock("../../library-cleanup/cleanup-executor.js", () => ({
-	buildEvalContext: vi.fn(async () => {
+	buildEvalContextWithHealth: vi.fn(async () => {
 		if (mockState.buildContextThrows) {
 			throw new Error("prefetch failed");
 		}
-		return { now: new Date() };
+		return { ctx: { now: new Date() }, failedSources: new Set(mockState.failedSources) };
 	}),
 }));
 
@@ -77,8 +116,21 @@ function makeCacheItem(over: {
 	arrItemId: number;
 	itemType: "movie" | "series";
 	existingTags?: number[];
+	monitored?: boolean | "missing";
+	ratings?: Record<string, unknown>;
 }) {
-	const data = JSON.stringify({ tags: over.existingTags ?? [] });
+	const monitored = over.monitored === "missing" ? true : (over.monitored ?? true);
+	const data = JSON.stringify({
+		service: over.itemType === "movie" ? "radarr" : "sonarr",
+		tags: over.existingTags ?? [],
+		...(over.monitored === "missing" ? {} : { monitored }),
+		...(over.ratings ? { ratings: over.ratings } : {}),
+		_arrDashboardEvidence: {
+			monitored: over.monitored !== "missing",
+			rating: over.ratings !== undefined,
+			imdbRating: over.ratings !== undefined,
+		},
+	});
 	return {
 		id: over.id,
 		instanceId: "inst-1",
@@ -86,7 +138,7 @@ function makeCacheItem(over: {
 		itemType: over.itemType,
 		title: `Title ${over.arrItemId}`,
 		year: 2020,
-		monitored: true,
+		monitored,
 		hasFile: true,
 		status: "available",
 		qualityProfileId: 1,
@@ -134,7 +186,7 @@ interface MockArrClient {
 // Minimal full-resource shapes for getById mocks. Fields chosen to mirror
 // what Radarr/Sonarr's strict PUT validators check — qualityProfileId>0
 // is the field that broke production (see issue #384).
-const fullMovie = (id: number, tags: number[] = []) => ({
+const fullMovie = (id: number, tags: number[] = [], overrides: Record<string, unknown> = {}) => ({
 	id,
 	title: `Movie ${id}`,
 	tmdbId: id,
@@ -144,9 +196,10 @@ const fullMovie = (id: number, tags: number[] = []) => ({
 	tags,
 	rootFolderPath: "/movies",
 	minimumAvailability: "released",
+	...overrides,
 });
 
-const fullSeries = (id: number, tags: number[] = []) => ({
+const fullSeries = (id: number, tags: number[] = [], overrides: Record<string, unknown> = {}) => ({
 	id,
 	title: `Series ${id}`,
 	tvdbId: id,
@@ -156,6 +209,7 @@ const fullSeries = (id: number, tags: number[] = []) => ({
 	rootFolderPath: "/tv",
 	seasonFolder: true,
 	languageProfileId: 1,
+	...overrides,
 });
 
 function makeArrClient(): MockArrClient {
@@ -180,15 +234,15 @@ describe("executeAutoTagRule (orchestration)", () => {
 		mockState.evaluateReason = "matched";
 		mockState.evaluateCalls = 0;
 		mockState.buildContextThrows = false;
+		mockState.failedSources = new Set();
 
 		// Restore the default mock implementation — individual tests sometimes
 		// override `evaluateSingleCondition.mockImplementation(...)` and the
 		// override would otherwise leak into subsequent tests.
 		const evalMod = await import("../../library-cleanup/rule-evaluators.js");
-		(evalMod.evaluateSingleCondition as ReturnType<typeof vi.fn>).mockImplementation(() => {
-			mockState.evaluateCalls++;
-			return mockState.evaluateReason;
-		});
+		(evalMod.evaluateSingleConditionState as ReturnType<typeof vi.fn>).mockImplementation(
+			mockEvaluateCondition,
+		);
 	});
 
 	it("happy path: matched item gets the tag applied via series/movie.update", async () => {
@@ -229,8 +283,43 @@ describe("executeAutoTagRule (orchestration)", () => {
 		);
 	});
 
+	it.each([
+		["monitored", true, true],
+		["monitored", false, false],
+		["monitored", "missing", false],
+		["unmonitored", false, true],
+		["unmonitored", true, false],
+		["unmonitored", "missing", false],
+	] as const)("%s with state %s applies=%s", async (ruleType, monitored, shouldApply) => {
+		const arrClient = makeArrClient();
+		const latestMovie = fullMovie(100) as Record<string, unknown>;
+		if (monitored === "missing") delete latestMovie.monitored;
+		else latestMovie.monitored = monitored;
+		arrClient.movie.getById.mockResolvedValue(latestMovie);
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makeCacheItem({ id: "li-monitor", arrItemId: 100, itemType: "movie", monitored }),
+					]),
+			},
+		};
+		const result = await executeAutoTagRule({
+			rule: makeRule({ ruleType, parameters: {} }),
+			prisma: prisma as never,
+			arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+			encryptor: {} as never,
+			log,
+		});
+		expect(result.totals.tagsApplied).toBe(shouldApply ? 1 : 0);
+		expect(arrClient.movie.update).toHaveBeenCalledTimes(shouldApply ? 1 : 0);
+	});
+
 	it("idempotent: item that already has the tag counts as applied without re-update", async () => {
 		const arrClient = makeArrClient();
+		arrClient.movie.getById.mockResolvedValue(fullMovie(100, [7]));
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
 			libraryCache: {
@@ -258,6 +347,7 @@ describe("executeAutoTagRule (orchestration)", () => {
 
 	it("merges new tag id with existing tags rather than replacing", async () => {
 		const arrClient = makeArrClient();
+		arrClient.movie.getById.mockResolvedValue(fullMovie(100, [3, 5]));
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
 			libraryCache: {
@@ -291,6 +381,175 @@ describe("executeAutoTagRule (orchestration)", () => {
 		);
 	});
 
+	it("revalidates monitoring immediately before PUT and skips a stale match", async () => {
+		const arrClient = makeArrClient();
+		arrClient.movie.getById.mockResolvedValue(fullMovie(100, [], { monitored: false }));
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makeCacheItem({ id: "li-race", arrItemId: 100, itemType: "movie", monitored: true }),
+					]),
+			},
+		};
+
+		const result = await executeAutoTagRule({
+			rule: makeRule({ ruleType: "monitored", parameters: {} }),
+			prisma: prisma as never,
+			arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		expect(result.totals.itemsMatched).toBe(1);
+		expect(result.totals.tagsApplied).toBe(0);
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("revalidates rating immediately before PUT and skips a stale match", async () => {
+		const arrClient = makeArrClient();
+		arrClient.movie.getById.mockResolvedValue(
+			fullMovie(100, [], { ratings: { tmdb: { value: 8.2 } } }),
+		);
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: {
+				findMany: vi.fn().mockResolvedValue([
+					makeCacheItem({
+						id: "li-rating-race",
+						arrItemId: 100,
+						itemType: "movie",
+						ratings: { tmdb: { value: 4.2 } },
+					}),
+				]),
+			},
+		};
+
+		const result = await executeAutoTagRule({
+			rule: makeRule({ ruleType: "rating", parameters: { operator: "less_than", score: 5 } }),
+			prisma: prisma as never,
+			arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		expect(result.totals.itemsMatched).toBe(1);
+		expect(result.totals.tagsApplied).toBe(0);
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("merges a concurrent tag from the same live resource used for PUT", async () => {
+		const arrClient = makeArrClient();
+		arrClient.movie.getById.mockResolvedValue(fullMovie(100, [3, 5]));
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: {
+				findMany: vi.fn().mockResolvedValue([
+					makeCacheItem({
+						id: "li-tag-race",
+						arrItemId: 100,
+						itemType: "movie",
+						existingTags: [3],
+					}),
+				]),
+			},
+		};
+
+		await executeAutoTagRule({
+			rule: makeRule(),
+			prisma: prisma as never,
+			arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		expect(arrClient.movie.update).toHaveBeenCalledWith(
+			100,
+			expect.objectContaining({ tags: [3, 5, 7], monitored: true }),
+		);
+	});
+
+	it.each([
+		["movie", "RADARR"],
+		["series", "SONARR"],
+	] as const)(
+		"skips a %s PUT when an excluded tag is added after the cache match",
+		async (itemType, service) => {
+			const arrClient = makeArrClient();
+			const resource = itemType === "movie" ? arrClient.movie : arrClient.series;
+			resource.getById.mockResolvedValue(
+				itemType === "movie" ? fullMovie(100, [99]) : fullSeries(100, [99]),
+			);
+			const prisma = {
+				serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance({ service })]) },
+				libraryCache: {
+					findMany: vi.fn().mockResolvedValue([
+						makeCacheItem({
+							id: `li-live-excluded-tag-${itemType}`,
+							arrItemId: 100,
+							itemType,
+							existingTags: [],
+						}),
+					]),
+				},
+			};
+
+			const result = await executeAutoTagRule({
+				rule: makeRule({ excludeTags: [99] }),
+				prisma: prisma as never,
+				arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+				encryptor: {} as never,
+				log,
+			});
+
+			expect(result.totals.itemsMatched).toBe(1);
+			expect(result.totals.tagsApplied).toBe(0);
+			expect(resource.update).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		["movie", "RADARR"],
+		["series", "SONARR"],
+	] as const)(
+		"skips a %s PUT when its live title changes into an exclusion",
+		async (itemType, service) => {
+			const arrClient = makeArrClient();
+			const resource = itemType === "movie" ? arrClient.movie : arrClient.series;
+			resource.getById.mockResolvedValue(
+				itemType === "movie"
+					? fullMovie(100, [], { title: "Blocked Movie" })
+					: fullSeries(100, [], { title: "Blocked Series" }),
+			);
+			const prisma = {
+				serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance({ service })]) },
+				libraryCache: {
+					findMany: vi.fn().mockResolvedValue([
+						makeCacheItem({
+							id: `li-live-excluded-title-${itemType}`,
+							arrItemId: 100,
+							itemType,
+						}),
+					]),
+				},
+			};
+
+			const result = await executeAutoTagRule({
+				rule: makeRule({ excludeTitles: ["^Blocked"] }),
+				prisma: prisma as never,
+				arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+				encryptor: {} as never,
+				log,
+			});
+
+			expect(result.totals.itemsMatched).toBe(1);
+			expect(result.totals.tagsApplied).toBe(0);
+			expect(resource.update).not.toHaveBeenCalled();
+		},
+	);
+
 	it("non-matching item: no write, status success with 'no items matched' message", async () => {
 		mockState.evaluateReason = null;
 		const arrClient = makeArrClient();
@@ -313,6 +572,48 @@ describe("executeAutoTagRule (orchestration)", () => {
 		});
 
 		expect(result.status).toBe("success");
+		expect(result.totals.itemsMatched).toBe(0);
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("does not apply a tag for a negative Plex predicate when section evidence is missing", async () => {
+		mockState.failedSources = new Set(["plex"]);
+		const evalMod = await import("../../library-cleanup/rule-evaluators.js");
+		(evalMod.evaluateSingleConditionState as ReturnType<typeof vi.fn>).mockImplementation(
+			(
+				_item: unknown,
+				ruleType: string,
+				_params: unknown,
+				_ctx: unknown,
+				_filter: unknown,
+				failed,
+			) =>
+				ruleType.startsWith("plex_") && (failed as Set<string>).has("plex")
+					? { state: "unknown" }
+					: { state: "true", reason: "matched" },
+		);
+		const arrClient = makeArrClient();
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([makeCacheItem({ id: "li-1", arrItemId: 100, itemType: "movie" })]),
+			},
+		};
+
+		const result = await executeAutoTagRule({
+			rule: makeRule({
+				ruleType: "plex_watch_count",
+				parameters: { operator: "less_than", count: 1 },
+				plexLibraryFilter: ["Missing Library"],
+			}),
+			prisma: prisma as never,
+			arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+			encryptor: {} as never,
+			log,
+		});
+
 		expect(result.totals.itemsMatched).toBe(0);
 		expect(arrClient.movie.update).not.toHaveBeenCalled();
 	});
@@ -362,8 +663,9 @@ describe("executeAutoTagRule (orchestration)", () => {
 		const reasons: Array<string | null> = ["matched", null];
 		mockState.evaluateReason = "matched"; // overridden per-call below
 		const evalMod = await import("../../library-cleanup/rule-evaluators.js");
-		(evalMod.evaluateSingleCondition as ReturnType<typeof vi.fn>).mockImplementation(() => {
-			return reasons[callCount++] ?? null;
+		(evalMod.evaluateSingleConditionState as ReturnType<typeof vi.fn>).mockImplementation(() => {
+			const reason = reasons[callCount++] ?? null;
+			return reason ? { state: "true", reason } : { state: "false" };
 		});
 
 		const result = await executeAutoTagRule({
@@ -432,7 +734,7 @@ describe("executeAutoTagRule (orchestration)", () => {
 		expect(result.totals.failures).toBe(1);
 	});
 
-	it("buildEvalContext throwing falls back to empty context (rule still runs)", async () => {
+	it("buildEvalContextWithHealth throwing falls back to empty context (rule still runs)", async () => {
 		mockState.buildContextThrows = true;
 		const arrClient = makeArrClient();
 		const prisma = {
@@ -613,11 +915,14 @@ describe("executeAutoTagRule (cursor pagination — v2.18.4 OOM fix)", () => {
 		mockState.evaluateReason = "matched";
 		mockState.evaluateCalls = 0;
 		mockState.buildContextThrows = false;
+		mockState.failedSources = new Set();
 
 		const evalMod = await import("../../library-cleanup/rule-evaluators.js");
-		(evalMod.evaluateSingleCondition as ReturnType<typeof vi.fn>).mockImplementation(() => {
+		(evalMod.evaluateSingleConditionState as ReturnType<typeof vi.fn>).mockImplementation(() => {
 			mockState.evaluateCalls++;
-			return mockState.evaluateReason;
+			return mockState.evaluateReason
+				? { state: "true", reason: mockState.evaluateReason }
+				: { state: "false" };
 		});
 	});
 

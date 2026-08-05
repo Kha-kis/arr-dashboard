@@ -1,7 +1,10 @@
 "use client";
 
 import type {
+	CleanupAuditEventResponse,
+	CleanupAuditTimelineResponse,
 	CleanupExplainResponse,
+	CleanupPreviewItem,
 	CleanupPreviewResponse,
 	CleanupRuleResponse,
 	CreateCleanupRule,
@@ -66,6 +69,8 @@ import { INPUT_BASE_CLASSES } from "@/lib/theme-input-styles";
 import {
 	useApproveCleanupItem,
 	useBulkCleanupAction,
+	useCleanupActivity,
+	useCleanupActivityEvents,
 	useCleanupApprovalQueue,
 	useCleanupConfig,
 	useCleanupExecute,
@@ -245,6 +250,36 @@ function stalenessVariant(score: number): "success" | "warning" | "danger" {
 	return "danger";
 }
 
+function isPreviewRetryAttempt(item: CleanupPreviewItem): boolean {
+	return (
+		item.isRetryAttempt === true ||
+		(item.selectionStatus === "selected" &&
+			item.action === "skipped" &&
+			Boolean(item.plannedAction))
+	);
+}
+
+function previewItemBadgeLabel(item: CleanupPreviewItem): string {
+	if (item.selectionStatus === "blocked") return "Safety-blocked";
+	if (item.selectionStatus === "deferred") return "Deferred";
+	if (item.selectionStatus === "in_flight") return "In flight";
+	if (isPreviewRetryAttempt(item)) return "Retry attempt";
+	if (item.action === "unmonitor") return "Unmonitor";
+	if (item.action === "skipped") return "Deferred";
+	return "Delete Files";
+}
+
+function previewItemBadgeStatus(item: CleanupPreviewItem): "warning" | "info" {
+	if (
+		item.selectionStatus === "blocked" ||
+		item.selectionStatus === "deferred" ||
+		item.action === "unmonitor"
+	) {
+		return "warning";
+	}
+	return "info";
+}
+
 // ============================================================================
 // Config Tab
 // ============================================================================
@@ -345,16 +380,41 @@ function ConfigTab({
 
 	const actionCounts = useMemo(() => {
 		if (!previewData?.items) return null;
-		const counts = { delete: 0, unmonitor: 0, delete_files: 0, skipped: 0 };
+		const counts = {
+			delete: 0,
+			unmonitor: 0,
+			delete_files: 0,
+			blocked: 0,
+			deferred: 0,
+			inFlight: 0,
+			retryAttempts: 0,
+		};
 		for (const item of previewData.items) {
+			if (item.selectionStatus === "blocked") {
+				counts.blocked++;
+				continue;
+			}
+			if (item.selectionStatus === "deferred") {
+				counts.deferred++;
+				continue;
+			}
+			if (item.selectionStatus === "in_flight") {
+				counts.inFlight++;
+				continue;
+			}
+			if (item.selectionStatus === "selected" && isPreviewRetryAttempt(item)) {
+				counts.retryAttempts++;
+				continue;
+			}
 			const action = item.action ?? "delete";
 			if (action === "unmonitor") counts.unmonitor++;
 			else if (action === "delete_files") counts.delete_files++;
-			else if (action === "skipped") counts.skipped++;
+			else if (action === "skipped") counts.deferred++;
 			else counts.delete++;
 		}
 		return counts;
 	}, [previewData]);
+	const actionBadgeQualifier = previewData?.display?.hidden ? " (shown items)" : "";
 
 	const handleCreate = () => {
 		setEditingRule(null);
@@ -657,15 +717,58 @@ function ConfigTab({
 					/>
 					<div className="relative p-5">
 						<h4 className="text-h4 mb-3">
-							Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} items
-							flagged
-							{previewData.pendingRetryCount
-								? ` · ${previewData.pendingRetryCount} ${
-										previewData.pendingRetryCount === 1 ? "retry" : "retries"
-									} pending`
-								: ""}
+							Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} rule
+							matches
+							{previewData.pendingRetryCount === null
+								? " · retry count unavailable"
+								: previewData.pendingRetryCount
+									? ` · ${previewData.pendingRetryCount} ${
+											previewData.pendingRetryCount === 1 ? "retry" : "retries"
+										} pending`
+									: ""}
 							)
 						</h4>
+						<p className="mb-3 text-sm text-muted-foreground">Based on current rules and state.</p>
+						{previewData.selectionCountsComplete === false ||
+						previewData.selection?.retryState === "unavailable" ? (
+							<p className="mb-3 text-sm text-muted-foreground">
+								Next run cannot be determined: durable retry state is unavailable.{" "}
+								<span className="font-medium text-foreground">
+									{previewData.selection?.retryStateUnavailable ?? previewData.totalFlagged} fresh{" "}
+									{(previewData.selection?.retryStateUnavailable ?? previewData.totalFlagged) === 1
+										? "match is"
+										: "matches are"}{" "}
+									deferred for safety.
+								</span>
+							</p>
+						) : previewData.selection ? (
+							<p className="mb-3 text-sm text-muted-foreground">
+								Next run reserves{" "}
+								<span className="font-medium text-foreground">
+									{previewData.selection.selectedFresh} fresh{" "}
+									{previewData.selection.selectedFresh === 1 ? "slot" : "slots"}
+								</span>
+								{previewData.selection.selectedRetries > 0
+									? ` + ${previewData.selection.selectedRetries} retry ${
+											previewData.selection.selectedRetries === 1 ? "attempt" : "attempts"
+										}`
+									: ""}
+								.{" "}
+								{previewData.selection.deferredBudget +
+									previewData.selection.deferredApproval +
+									previewData.selection.deferredRetryFairness +
+									(previewData.selection.deferredInFlightTarget ?? 0) +
+									(previewData.selection.deferredDuplicateTarget ?? 0) +
+									previewData.selection.inFlight +
+									previewData.selection.retryStateUnavailable}{" "}
+								deferred.
+								{previewData.selection.blocked > 0
+									? ` Selected fresh slots include ${previewData.selection.blocked} currently safety-blocked ${
+											previewData.selection.blocked === 1 ? "item" : "items"
+										}.`
+									: ""}
+							</p>
+						) : null}
 						{previewData.prefetchHealth &&
 							Object.entries(previewData.prefetchHealth).some(([, s]) => s === "failed") && (
 								<div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
@@ -692,16 +795,41 @@ function ConfigTab({
 						{actionCounts && previewData.items.length > 0 && (
 							<div className="flex flex-wrap gap-2 mb-3">
 								{actionCounts.delete > 0 && (
-									<StatusBadge status="error">{actionCounts.delete} Delete</StatusBadge>
+									<StatusBadge status="error">
+										{actionCounts.delete} Delete{actionBadgeQualifier}
+									</StatusBadge>
 								)}
 								{actionCounts.unmonitor > 0 && (
-									<StatusBadge status="warning">{actionCounts.unmonitor} Unmonitor</StatusBadge>
+									<StatusBadge status="warning">
+										{actionCounts.unmonitor} Unmonitor{actionBadgeQualifier}
+									</StatusBadge>
 								)}
 								{actionCounts.delete_files > 0 && (
-									<StatusBadge status="info">{actionCounts.delete_files} Delete Files</StatusBadge>
+									<StatusBadge status="info">
+										{actionCounts.delete_files} Delete Files{actionBadgeQualifier}
+									</StatusBadge>
 								)}
-								{actionCounts.skipped > 0 && (
-									<StatusBadge status="warning">{actionCounts.skipped} Safety-blocked</StatusBadge>
+								{actionCounts.blocked > 0 && (
+									<StatusBadge status="warning">
+										{actionCounts.blocked} Safety-blocked{actionBadgeQualifier}
+									</StatusBadge>
+								)}
+								{actionCounts.deferred > 0 && (
+									<StatusBadge status="default">
+										{actionCounts.deferred} Deferred{actionBadgeQualifier}
+									</StatusBadge>
+								)}
+								{actionCounts.inFlight > 0 && (
+									<StatusBadge status="info">
+										{actionCounts.inFlight} In flight{actionBadgeQualifier}
+									</StatusBadge>
+								)}
+								{actionCounts.retryAttempts > 0 && (
+									<StatusBadge status="info">
+										{actionCounts.retryAttempts} Retry{" "}
+										{actionCounts.retryAttempts === 1 ? "attempt" : "attempts"}
+										{actionBadgeQualifier}
+									</StatusBadge>
 								)}
 							</div>
 						)}
@@ -713,6 +841,7 @@ function ConfigTab({
 							<div className="max-h-80 overflow-y-auto space-y-2">
 								{previewData.items.map((item, i) => {
 									const score = extractStalenessScore(item.reason);
+									const retryAttempt = isPreviewRetryAttempt(item);
 									const episodeItem = item as typeof item & EpisodeDisplayFields;
 									const ruleSummary = incognitoMode
 										? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
@@ -727,10 +856,17 @@ function ConfigTab({
 													<span className="truncate">
 														{incognitoMode ? getLinuxIsoName(item.title) : item.title}
 													</span>
-													<QuiStatusBadge status={item.quiStatus} />
+													<QuiStatusBadge
+														status={item.quiStatus}
+														observedAt={item.quiStatusObservedAt}
+													/>
 												</div>
 												<EpisodeIdentity item={episodeItem} incognitoMode={incognitoMode} />
-												{item.action === "skipped" && (
+												{(item.action === "skipped" ||
+													retryAttempt ||
+													item.selectionStatus === "deferred" ||
+													item.selectionStatus === "in_flight" ||
+													item.selectionStatus === "blocked") && (
 													<p className="mt-1 text-xs text-muted-foreground">{ruleSummary}</p>
 												)}
 											</div>
@@ -754,19 +890,12 @@ function ConfigTab({
 												>
 													<HelpCircle className="h-3.5 w-3.5" />
 												</button>
-												{item.action !== "delete" && (
-													<StatusBadge
-														status={
-															item.action === "unmonitor" || item.action === "skipped"
-																? "warning"
-																: "info"
-														}
-													>
-														{item.action === "unmonitor"
-															? "Unmonitor"
-															: item.action === "skipped"
-																? "Safety-blocked"
-																: "Delete Files"}
+												{(item.action !== "delete" ||
+													retryAttempt ||
+													(item.selectionStatus !== undefined &&
+														item.selectionStatus !== "selected")) && (
+													<StatusBadge status={previewItemBadgeStatus(item)}>
+														{previewItemBadgeLabel(item)}
 													</StatusBadge>
 												)}
 												{score != null ? (
@@ -871,9 +1000,11 @@ function ConfigTab({
 									<div className="flex-1 min-w-0">
 										<span className="font-medium text-sm">{rule.name}</span>
 										<span className="text-xs text-muted-foreground ml-2">
-											{rule.operator
-												? `${rule.operator} (${(rule.conditions as unknown[])?.length ?? 0} conditions)`
-												: rule.ruleType}
+											{rule.expression
+												? "Nested expression"
+												: rule.operator
+													? `${rule.operator} (${(rule.conditions as unknown[])?.length ?? 0} conditions)`
+													: rule.ruleType}
 										</span>
 										{rule.serviceFilter && rule.serviceFilter.length > 0 && (
 											<span className="text-xs text-muted-foreground ml-2">
@@ -895,6 +1026,11 @@ function ConfigTab({
 											{rule.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
 										</StatusBadge>
 									)}
+									{rule.scanMediaServerAfterDelete &&
+										!rule.retentionMode &&
+										(rule.action === "delete" || rule.action === "delete_files") && (
+											<StatusBadge status="info">Media scan</StatusBadge>
+										)}
 									<StatusBadge status={rule.enabled ? "success" : "default"}>
 										{rule.enabled ? "Active" : "Off"}
 									</StatusBadge>
@@ -973,6 +1109,11 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 	const reject = useRejectCleanupItem();
 	const bulkAction = useBulkCleanupAction();
 	const actionError = approve.error ?? retry.error ?? bulkAction.error;
+	const actionWarnings = [
+		...(approve.data?.warnings ?? []),
+		...(retry.data?.warnings ?? []),
+		...(bulkAction.data && "warnings" in bulkAction.data ? (bulkAction.data.warnings ?? []) : []),
+	].filter((warning, index, warnings) => warnings.indexOf(warning) === index);
 
 	const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
 
@@ -1088,6 +1229,16 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 					className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400 whitespace-pre-line"
 				>
 					{getErrorMessage(actionError)}
+				</div>
+			)}
+			{actionWarnings.length > 0 && (
+				<div
+					role="status"
+					className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400 space-y-1"
+				>
+					{actionWarnings.map((warning) => (
+						<p key={warning}>{incognitoMode ? anonymizeCleanupError(warning) : warning}</p>
+					))}
 				</div>
 			)}
 
@@ -1330,13 +1481,160 @@ interface LogDetail {
 	status?: string;
 }
 
+function mergeCleanupAuditEvents(
+	timelineEvents: CleanupAuditEventResponse[],
+	olderPages: CleanupAuditEventResponse[][],
+): CleanupAuditEventResponse[] {
+	const byId = new Map<string, CleanupAuditEventResponse>();
+	for (const event of [...olderPages].reverse().flat().concat(timelineEvents)) {
+		byId.set(event.id, event);
+	}
+	return [...byId.values()].sort((left, right) => {
+		const leftId = BigInt(left.id);
+		const rightId = BigInt(right.id);
+		return leftId < rightId ? -1 : leftId > rightId ? 1 : 0;
+	});
+}
+
+function CleanupActionTimeline({
+	timeline,
+	expanded,
+	incognitoMode,
+	onToggle,
+}: {
+	timeline: CleanupAuditTimelineResponse;
+	expanded: boolean;
+	incognitoMode: boolean;
+	onToggle: () => void;
+}) {
+	const olderEvents = useCleanupActivityEvents(timeline.actionId, timeline.olderEventsCursor);
+	const displayedEvents = useMemo(
+		() =>
+			mergeCleanupAuditEvents(
+				timeline.events,
+				olderEvents.data?.pages.map((page) => page.items) ?? [],
+			),
+		[timeline.events, olderEvents.data?.pages],
+	);
+	const canLoadEarlier =
+		timeline.eventsTruncated &&
+		timeline.olderEventsCursor !== null &&
+		(olderEvents.data == null || olderEvents.hasNextPage === true);
+	const earlierLoadFailed = olderEvents.isError || olderEvents.isFetchNextPageError;
+	const loadingEarlier = olderEvents.isFetching || olderEvents.isFetchingNextPage;
+	const outcomeStatus =
+		timeline.latestOutcome === "success"
+			? "success"
+			: timeline.latestOutcome === "failed"
+				? "error"
+				: timeline.latestOutcome === "blocked"
+					? "warning"
+					: "info";
+
+	return (
+		<div className="overflow-hidden rounded-xl border border-border/20 bg-card/5">
+			<button
+				type="button"
+				aria-expanded={expanded}
+				onClick={onToggle}
+				className="flex w-full items-start gap-3 p-3 text-left hover:bg-card/20"
+			>
+				{expanded ? (
+					<ChevronUp className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+				) : (
+					<ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+				)}
+				<div className="min-w-0 flex-1">
+					<div className="flex flex-wrap items-center gap-2">
+						<span className="truncate text-sm font-medium">
+							{incognitoMode ? getLinuxIsoName(timeline.title) : timeline.title}
+						</span>
+						<StatusBadge status={outcomeStatus}>{timeline.latestOutcome}</StatusBadge>
+						<StatusBadge status="info">{timeline.action}</StatusBadge>
+					</div>
+					<div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-muted-foreground">
+						<span>
+							{timeline.targetScope} · {timeline.itemType}
+						</span>
+						<span>
+							{incognitoMode
+								? getIncognitoCleanupRuleName()
+								: (timeline.ruleName ?? "Unknown rule")}
+						</span>
+						<span>{timeline.trigger}</span>
+						<span>{new Date(timeline.updatedAt).toLocaleString()}</span>
+					</div>
+					<p className="mt-1 text-xs text-muted-foreground">
+						{incognitoMode ? getIncognitoCleanupReason() : timeline.actionableReason}
+					</p>
+				</div>
+			</button>
+			{expanded && (
+				<ol className="border-t border-border/20 px-4 py-3">
+					{timeline.eventsTruncated && (
+						<li className="pb-3 text-xs text-muted-foreground">
+							Showing {displayedEvents.length.toLocaleString()} of{" "}
+							{timeline.eventCount.toLocaleString()} audit events.
+						</li>
+					)}
+					{displayedEvents.map((event) => (
+						<li key={event.id} className="relative border-l border-border/40 pb-3 pl-4 last:pb-0">
+							<span className="absolute -left-1 top-1 h-2 w-2 rounded-full bg-primary" />
+							<div className="flex flex-wrap items-center gap-2 text-xs">
+								<span className="font-medium">{event.eventType.replace(/_/g, " ")}</span>
+								<span className="text-[10px] uppercase text-muted-foreground">
+									{event.actorType} · {event.trigger}
+								</span>
+								<span className="text-[10px] text-muted-foreground">
+									{new Date(event.createdAt).toLocaleString()}
+								</span>
+							</div>
+							<p className="mt-0.5 text-xs text-muted-foreground">
+								{incognitoMode ? getIncognitoCleanupReason() : event.reason}
+							</p>
+						</li>
+					))}
+					{earlierLoadFailed && (
+						<li role="alert" className="pb-2 text-xs text-destructive">
+							Earlier audit events could not be loaded. The events shown above are still valid.
+						</li>
+					)}
+					{canLoadEarlier && (
+						<li className="pt-1">
+							<button
+								type="button"
+								onClick={() =>
+									void (olderEvents.data == null
+										? olderEvents.refetch()
+										: olderEvents.fetchNextPage())
+								}
+								disabled={loadingEarlier}
+								className="inline-flex items-center gap-1 rounded-md border border-border/30 px-2.5 py-1.5 text-xs text-primary disabled:opacity-50"
+							>
+								{loadingEarlier ? (
+									<Loader2 className="h-3 w-3 animate-spin" />
+								) : (
+									<ChevronDown className="h-3 w-3" />
+								)}
+								{earlierLoadFailed ? "Retry earlier events" : "Load earlier events"}
+							</button>
+						</li>
+					)}
+				</ol>
+			)}
+		</div>
+	);
+}
+
 function LogsTab() {
 	const [incognitoMode] = useIncognitoMode();
 	const [page, setPage] = useState(1);
+	const [activityPage, setActivityPage] = useState(1);
 	const [logStatusFilter, setLogStatusFilter] = useState<string | undefined>(undefined);
 	const [sinceFilter, setSinceFilter] = useState("");
 	const [untilFilter, setUntilFilter] = useState("");
 	const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+	const [expandedActionId, setExpandedActionId] = useState<string | null>(null);
 
 	const logFilters = useMemo(() => {
 		const f: { status?: string; since?: string; until?: string } = {};
@@ -1347,10 +1645,100 @@ function LogsTab() {
 	}, [logStatusFilter, sinceFilter, untilFilter]);
 
 	const { data, isLoading, isError, refetch } = useCleanupLogs(page, 20, logFilters);
+	const {
+		data: activity,
+		isLoading: activityLoading,
+		isError: activityError,
+		refetch: refetchActivity,
+	} = useCleanupActivity(activityPage, 20);
 	const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
+	const activityPages = activity ? Math.ceil(activity.total / activity.pageSize) : 0;
 
 	return (
 		<div className="space-y-4">
+			<div className="space-y-3">
+				<div>
+					<h3 className="text-sm font-semibold">Action history</h3>
+					<p className="text-xs text-muted-foreground">
+						Retained cleanup evidence from selection through completion. History is capped at 10,000
+						events, so the oldest timelines may be truncated or absent; approval and retry state
+						remain authoritative.
+					</p>
+				</div>
+				{activityLoading ? (
+					<div className="flex items-center justify-center rounded-xl border border-border/20 py-8">
+						<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+					</div>
+				) : activityError ? (
+					<div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4 text-sm">
+						<p className="text-muted-foreground">Action history could not be loaded.</p>
+						<button
+							type="button"
+							onClick={() => refetchActivity()}
+							className="mt-2 inline-flex items-center gap-1 text-xs text-primary"
+						>
+							<RefreshCw className="h-3 w-3" />
+							Retry
+						</button>
+					</div>
+				) : !activity || activity.items.length === 0 ? (
+					<div className="rounded-xl border border-border/20 bg-card/5 p-5 text-center text-sm text-muted-foreground">
+						No per-action history yet. Interactive previews are intentionally not recorded.
+					</div>
+				) : (
+					<>
+						<div className="space-y-2">
+							{activity.items.map((timeline) => (
+								<CleanupActionTimeline
+									key={timeline.actionId}
+									timeline={timeline}
+									expanded={expandedActionId === timeline.actionId}
+									incognitoMode={incognitoMode}
+									onToggle={() =>
+										setExpandedActionId((current) =>
+											current === timeline.actionId ? null : timeline.actionId,
+										)
+									}
+								/>
+							))}
+						</div>
+						{activityPages > 1 && (
+							<div className="flex items-center justify-between">
+								<span className="text-xs text-muted-foreground">
+									Action page {activityPage} of {activityPages}
+								</span>
+								<div className="flex gap-2">
+									<button
+										type="button"
+										aria-label="Previous action page"
+										onClick={() => setActivityPage((value) => Math.max(1, value - 1))}
+										disabled={activityPage <= 1}
+										className="rounded-md border border-border/30 p-1.5 disabled:opacity-40"
+									>
+										<ChevronLeft className="h-4 w-4" />
+									</button>
+									<button
+										type="button"
+										aria-label="Next action page"
+										onClick={() => setActivityPage((value) => Math.min(activityPages, value + 1))}
+										disabled={activityPage >= activityPages}
+										className="rounded-md border border-border/30 p-1.5 disabled:opacity-40"
+									>
+										<ChevronRight className="h-4 w-4" />
+									</button>
+								</div>
+							</div>
+						)}
+					</>
+				)}
+			</div>
+
+			<div className="border-t border-border/20 pt-4">
+				<h3 className="text-sm font-semibold">Run summaries</h3>
+				<p className="text-xs text-muted-foreground">
+					Aggregate configured-run totals retained for operational reporting.
+				</p>
+			</div>
 			{/* Log status filter + date range — always visible */}
 			<div className="flex flex-wrap items-end gap-3">
 				<div className="flex items-center gap-2">
@@ -1874,8 +2262,7 @@ function ExplainDialog({
 	const [incognitoMode] = useIncognitoMode();
 	const retentionEvidenceUnavailable =
 		data?.results.some(
-			(result) =>
-				result.retentionMode && result.filteredBy === "evidence_unavailable",
+			(result) => result.retentionMode && result.filteredBy === "evidence_unavailable",
 		) ?? false;
 	return (
 		<Dialog

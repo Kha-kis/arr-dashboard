@@ -3,8 +3,8 @@
  *
  * Mocks `fetch` to verify request shape (URL + auth headers + slug
  * parsing) and response parsing without hitting Trakt's API. The
- * tmdbId-required filtering is pinned — items without TMDb mapping
- * are silently dropped because our cache + evaluator are tmdbId-keyed.
+ * TMDb correlation is required: a movie/show without it makes the inventory
+ * incomplete, so negative membership must remain unavailable.
  */
 
 import type { FastifyBaseLogger } from "fastify";
@@ -60,11 +60,10 @@ describe("createTraktClient", () => {
 		await expect(client.getListItems("not-a-slug")).rejects.toThrow(/username\/list-slug/);
 	});
 
-	it("parses movie + show entries; drops anything without TMDb id", async () => {
+	it("parses movie + show entries and ignores unrelated list entity types", async () => {
 		mockFetch([
 			{ type: "movie", movie: { title: "Has tmdb", ids: { tmdb: 100 } } },
 			{ type: "show", show: { title: "TV with tmdb", ids: { tmdb: 200 } } },
-			{ type: "movie", movie: { title: "No tmdb", ids: { imdb: "tt9999" } } }, // dropped
 			{ type: "season", season: { ids: { tmdb: 300 } } }, // unsupported type → dropped
 			{ type: "person", person: { name: "Director" } }, // unsupported type → dropped
 		]);
@@ -76,6 +75,16 @@ describe("createTraktClient", () => {
 			{ tmdbId: 100, mediaType: "movie", title: "Has tmdb" },
 			{ tmdbId: 200, mediaType: "series", title: "TV with tmdb" },
 		]);
+	});
+
+	it("rejects a movie or show entry without usable TMDb correlation", async () => {
+		mockFetch([
+			{ type: "movie", movie: { title: "Mapped", ids: { tmdb: 100 } } },
+			{ type: "show", show: { title: "No TMDb", ids: { imdb: "tt9999" } } },
+		]);
+		const client = createTraktClient("token", "client-id", log);
+
+		await expect(client.getListItems("user/list")).rejects.toThrow(/lacked a usable TMDb/i);
 	});
 
 	it("throws + warns on schema-validation failure", async () => {

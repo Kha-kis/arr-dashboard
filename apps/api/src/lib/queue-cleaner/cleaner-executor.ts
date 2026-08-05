@@ -35,7 +35,7 @@ import {
 	type RawQueueItem,
 	rawQueueItemSchema,
 } from "./queue-item-utils.js";
-import { normalizeDownloadId, resolveGatedItemIds } from "./qui-gate.js";
+import { normalizeDownloadId, resolveQuiAwareGateReasons } from "./qui-gate.js";
 import {
 	evaluateQueueItem,
 	shouldSkipByProfileFilter,
@@ -129,15 +129,27 @@ async function resolvePreviewGateReasons(
 
 	if (config.quiAwareMode) {
 		try {
-			const gatedIds = await resolveGatedItemIds(app.prisma, instance.userId, hashByItemId);
-			for (const id of gatedIds) {
-				reasons.set(id, "qui-aware: torrent is paused or errored in qui");
+			const gateReasons = await resolveQuiAwareGateReasons(
+				app.prisma,
+				instance.userId,
+				hashByItemId,
+			);
+			for (const [id, reason] of gateReasons) {
+				reasons.set(
+					id,
+					reason === "evidence_unavailable"
+						? "qui-aware: qUI evidence is unavailable or stale"
+						: "qui-aware: torrent is paused or errored in qui",
+				);
 			}
 		} catch (error) {
 			log.warn(
 				{ err: error, instanceId: instance.id },
-				"qui-aware preview lookup failed; preview is proceeding without that gate",
+				"qui-aware preview lookup failed; preview is failing closed for correlated torrents",
 			);
+			for (const id of hashByItemId.keys()) {
+				reasons.set(id, "qui-aware: qUI evidence is unavailable or stale");
+			}
 		}
 	}
 
@@ -420,20 +432,25 @@ export async function executeQueueCleaner(
 	// state is mutated for gated items.
 	if (config.quiAwareMode && matched.length > 0 && matchedHashByItemId.size > 0) {
 		try {
-			const gatedItemIds = await resolveGatedItemIds(
+			const gateReasons = await resolveQuiAwareGateReasons(
 				app.prisma,
 				instance.userId,
 				matchedHashByItemId,
 			);
 
-			if (gatedItemIds.size > 0) {
+			if (gateReasons.size > 0) {
 				const remaining: CleanerResultItem[] = [];
 				for (const item of matched) {
-					if (gatedItemIds.has(String(item.id))) {
+					const gateReason = gateReasons.get(String(item.id));
+					if (gateReason) {
 						skipped.push({
 							id: item.id,
 							title: item.title,
-							reason: `${item.reason} — skipped (qui-aware: torrent is paused or errored in qui)`,
+							reason: `${item.reason} — skipped (${
+								gateReason === "evidence_unavailable"
+									? "qui-aware: qUI evidence is unavailable or stale"
+									: "qui-aware: torrent is paused or errored in qui"
+							})`,
 							rule: item.rule,
 						});
 					} else {
@@ -446,20 +463,32 @@ export async function executeQueueCleaner(
 				log.info(
 					{
 						instanceId: instance.id,
-						gatedCount: gatedItemIds.size,
+						gatedCount: gateReasons.size,
 						remainingMatched: matched.length,
 					},
-					"qui-aware gate skipped strikes for torrents qui is already acting on",
+					"qui-aware gate skipped strikes for protected or unavailable qUI evidence",
 				);
 			}
 		} catch (error) {
-			// Gate failure is non-fatal — fall through to normal strike behavior
-			// so a transient Prisma blip doesn't paralyze queue cleaning. Log
-			// loudly so operators can correlate.
 			log.warn(
 				{ err: error, instanceId: instance.id },
-				"qui-aware gate lookup failed; proceeding without gating",
+				"qui-aware gate lookup failed; failing closed for correlated torrents",
 			);
+			const remaining: CleanerResultItem[] = [];
+			for (const item of matched) {
+				if (matchedHashByItemId.has(String(item.id))) {
+					skipped.push({
+						id: item.id,
+						title: item.title,
+						reason: `${item.reason} — skipped (qui-aware: qUI evidence is unavailable or stale)`,
+						rule: item.rule,
+					});
+				} else {
+					remaining.push(item);
+				}
+			}
+			matched.length = 0;
+			matched.push(...remaining);
 		}
 	}
 

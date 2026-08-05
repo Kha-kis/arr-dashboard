@@ -65,10 +65,7 @@ const wireTorrent = (over: Record<string, unknown> = {}) => ({
 	...over,
 });
 
-const wireTorrentPage = (
-	torrents: unknown[] | null,
-	over: Record<string, unknown> = {},
-) => ({
+const wireTorrentPage = (torrents: unknown[] | null, over: Record<string, unknown> = {}) => ({
 	cross_instance_torrents: torrents,
 	total: torrents?.length ?? 0,
 	hasMore: false,
@@ -192,9 +189,7 @@ describe("createQuiClient", () => {
 	it("normalizes completion_on=0 to completedOn=null (incomplete torrents)", async () => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(
-				JSON.stringify(
-					wireTorrentPage([wireTorrent({ completion_on: 0, progress: 0.5 })]),
-				),
+				JSON.stringify(wireTorrentPage([wireTorrent({ completion_on: 0, progress: 0.5 })])),
 				{ status: 200, headers: { "content-type": "application/json" } },
 			),
 		);
@@ -262,8 +257,8 @@ describe("createQuiClient", () => {
 					JSON.stringify(
 						wireTorrentPage(
 							[
-							wireTorrent({ hash: "ABC123", instance_id: 1 }),
-							wireTorrent({ hash: "abc123-near-match", instance_id: 9 }),
+								wireTorrent({ hash: "ABC123", instance_id: 1 }),
+								wireTorrent({ hash: "abc123-near-match", instance_id: 9 }),
 							],
 							{ total: 3, hasMore: true },
 						),
@@ -305,9 +300,7 @@ describe("createQuiClient", () => {
 		});
 
 		const client = createQuiClient(buildApp(), buildInstance());
-		await expect(client.getTorrentsByHash("abc123")).rejects.toThrow(
-			"exact-hash lookup exceeded",
-		);
+		await expect(client.getTorrentsByHash("abc123")).rejects.toThrow("exact-hash lookup exceeded");
 		expect(fetchSpy).toHaveBeenCalledTimes(50);
 	});
 
@@ -333,7 +326,10 @@ describe("createQuiClient", () => {
 	});
 
 	it.each([
-		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"exact-hash lookup",
+			(client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123"),
+		],
 		[
 			"torrent inventory",
 			(client: ReturnType<typeof createQuiClient>) =>
@@ -341,10 +337,10 @@ describe("createQuiClient", () => {
 		],
 	] as const)("fails closed when qUI marks the %s response partial", async (_label, invoke) => {
 		fetchSpy.mockResolvedValueOnce(
-			new Response(
-				JSON.stringify(wireTorrentPage([], { partialResults: true })),
-				{ status: 200, headers: { "content-type": "application/json" } },
-			),
+			new Response(JSON.stringify(wireTorrentPage([], { partialResults: true })), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
 		);
 
 		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
@@ -353,27 +349,36 @@ describe("createQuiClient", () => {
 	});
 
 	it.each([
-		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"exact-hash lookup",
+			(client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123"),
+		],
 		[
 			"torrent inventory",
 			(client: ReturnType<typeof createQuiClient>) =>
 				client.listAllTorrents({ requireComplete: true }),
 		],
-	] as const)("fails closed when the %s returns an empty page with hasMore", async (_label, invoke) => {
-		fetchSpy.mockResolvedValueOnce(
-			new Response(
-				JSON.stringify(wireTorrentPage([], { total: 1, hasMore: true })),
-				{ status: 200, headers: { "content-type": "application/json" } },
-			),
-		);
+	] as const)(
+		"fails closed when the %s returns an empty page with hasMore",
+		async (_label, invoke) => {
+			fetchSpy.mockResolvedValueOnce(
+				new Response(JSON.stringify(wireTorrentPage([], { total: 1, hasMore: true })), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
+			);
 
-		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
-			"empty page with more results",
-		);
-	});
+			await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
+				"empty page with more results",
+			);
+		},
+	);
 
 	it.each([
-		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"exact-hash lookup",
+			(client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123"),
+		],
 		[
 			"torrent inventory",
 			(client: ReturnType<typeof createQuiClient>) =>
@@ -391,7 +396,10 @@ describe("createQuiClient", () => {
 	});
 
 	it.each([
-		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"exact-hash lookup",
+			(client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123"),
+		],
 		[
 			"torrent inventory",
 			(client: ReturnType<typeof createQuiClient>) =>
@@ -399,10 +407,10 @@ describe("createQuiClient", () => {
 		],
 	] as const)("rejects an early total for the %s", async (_label, invoke) => {
 		fetchSpy.mockResolvedValueOnce(
-			new Response(
-				JSON.stringify(wireTorrentPage([wireTorrent()], { total: 2 })),
-				{ status: 200, headers: { "content-type": "application/json" } },
-			),
+			new Response(JSON.stringify(wireTorrentPage([wireTorrent()], { total: 2 })), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
 		);
 
 		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
@@ -411,7 +419,10 @@ describe("createQuiClient", () => {
 	});
 
 	it.each([
-		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"exact-hash lookup",
+			(client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123"),
+		],
 		[
 			"torrent inventory",
 			(client: ReturnType<typeof createQuiClient>) =>
@@ -426,10 +437,10 @@ describe("createQuiClient", () => {
 				),
 			)
 			.mockResolvedValueOnce(
-				new Response(
-					JSON.stringify(wireTorrentPage([wireTorrent()], { total: 3 })),
-					{ status: 200, headers: { "content-type": "application/json" } },
-				),
+				new Response(JSON.stringify(wireTorrentPage([wireTorrent()], { total: 3 })), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
 			);
 
 		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
@@ -438,7 +449,10 @@ describe("createQuiClient", () => {
 	});
 
 	it.each([
-		["exact-hash lookup", (client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123")],
+		[
+			"exact-hash lookup",
+			(client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc123"),
+		],
 		[
 			"torrent inventory",
 			(client: ReturnType<typeof createQuiClient>) =>
@@ -453,10 +467,10 @@ describe("createQuiClient", () => {
 				),
 			)
 			.mockResolvedValueOnce(
-				new Response(
-					JSON.stringify(wireTorrentPage([wireTorrent()], { total: 2 })),
-					{ status: 200, headers: { "content-type": "application/json" } },
-				),
+				new Response(JSON.stringify(wireTorrentPage([wireTorrent()], { total: 2 })), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
 			);
 
 		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
@@ -494,9 +508,7 @@ describe("createQuiClient", () => {
 			)
 			.mockResolvedValueOnce(
 				new Response(
-					JSON.stringify(
-						wireTorrentPage([wireTorrent({ hash: "current", instance_id: 3 })]),
-					),
+					JSON.stringify(wireTorrentPage([wireTorrent({ hash: "current", instance_id: 3 })])),
 					{ status: 200, headers: { "content-type": "application/json" } },
 				),
 			);

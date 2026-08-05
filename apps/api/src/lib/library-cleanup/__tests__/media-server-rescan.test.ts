@@ -1,0 +1,1376 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	prepareMediaServerRescans,
+	triggerCoalescedMediaServerRescans,
+	triggerMediaServerRescansForApproval,
+} from "../media-server-rescan.js";
+
+function approval(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "approval-1",
+		configId: "config-1",
+		instanceId: "radarr-1",
+		arrItemId: 42,
+		itemType: "movie",
+		targetScope: "series",
+		arrEpisodeId: null,
+		episodeFileId: null,
+		seasonNumber: null,
+		episodeNumber: null,
+		episodeTitle: null,
+		title: "Movie",
+		matchedRuleId: "rule-1",
+		matchedRuleName: "Old media",
+		reason: "Matched",
+		action: "delete",
+		scanMediaServerAfterDelete: true,
+		sizeOnDisk: 1n,
+		year: 2020,
+		rating: null,
+		status: "executed",
+		executionToken: null,
+		safetySnapshot: null,
+		lastExecutionError: null,
+		reviewedAt: null,
+		executedAt: new Date(),
+		executionAuditCorrelationId: "execution-1",
+		reconciledWithoutMutation: false,
+		terminalAuditRecordedAt: new Date(),
+		expiresAt: new Date(Date.now() + 60_000),
+		createdAt: new Date(),
+		...overrides,
+	};
+}
+
+function instance(id: string, service: "PLEX" | "JELLYFIN" | "EMBY", enabled = true) {
+	return {
+		id,
+		userId: "user-1",
+		service,
+		label: id,
+		baseUrl: `http://${id}`,
+		externalUrl: null,
+		encryptedApiKey: "encrypted",
+		encryptionIv: "iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
+		isDefault: false,
+		enabled,
+		storageGroupId: null,
+		hasLocalFilesystemAccess: false,
+		pathPrefix: null,
+		createdAt: new Date(),
+		updatedAt: new Date(),
+	};
+}
+
+function scan(
+	id: string,
+	instanceId: string,
+	service: "PLEX" | "JELLYFIN" | "EMBY",
+	overrides: Record<string, unknown> = {},
+) {
+	return {
+		id,
+		approvalId: "approval-1",
+		instanceId,
+		service,
+		serverIdentity: service === "PLEX" ? "PLEX:plex-machine" : `${service}:media-server-id`,
+		mediaType: "movie",
+		plannedSectionIds: service === "PLEX" ? '["movies"]' : null,
+		targetKey: `${service}:${instanceId}:movie`,
+		status: "pending",
+		executionToken: null,
+		attemptCount: 0,
+		completedSectionIds: "[]",
+		lastError: null,
+		nextAttemptAt: null,
+		requestStartedAt: null,
+		triggeredAt: null,
+		createdAt: new Date(),
+		updatedAt: new Date(),
+		...overrides,
+	};
+}
+
+function deps(
+	options: {
+		instances?: ReturnType<typeof instance>[];
+		scans?: ReturnType<typeof scan>[];
+		approval?: ReturnType<typeof approval>;
+	} = {},
+) {
+	const instances = options.instances ?? [];
+	const scans = options.scans ?? [];
+	const plexClient = {
+		getIdentity: vi.fn().mockResolvedValue({
+			machineIdentifier: "plex-machine",
+			version: "1.0",
+			friendlyName: "Plex",
+			platform: "Linux",
+		}),
+		getLibrarySections: vi.fn().mockResolvedValue([
+			{ key: "movies", title: "Movies", type: "movie" },
+			{ key: "shows", title: "Shows", type: "show" },
+		]),
+		refreshSection: vi.fn().mockResolvedValue(undefined),
+	};
+	const jellyfinClient = {
+		getPublicInfo: vi.fn().mockResolvedValue({
+			id: "media-server-id",
+			serverName: "Media Server",
+			version: "1.0",
+			operatingSystem: "Linux",
+		}),
+		refreshLibrary: vi.fn().mockResolvedValue(undefined),
+	};
+	const prisma = {
+		serviceInstance: {
+			findMany: vi.fn().mockResolvedValue(instances),
+			findFirst: vi.fn(({ where }: { where: { id: string } }) =>
+				Promise.resolve(instances.find((candidate) => candidate.id === where.id) ?? null),
+			),
+		},
+		libraryCleanupApproval: {
+			findFirst: vi.fn().mockResolvedValue(options.approval ?? approval()),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		},
+		libraryCleanupMediaServerScan: {
+			create: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+				const row = scan(
+					`created-${scans.length + 1}`,
+					data.instanceId as string,
+					data.service as "PLEX" | "JELLYFIN" | "EMBY",
+					data,
+				);
+				scans.push(row);
+				return row;
+			}),
+			count: vi.fn().mockImplementation(async () => scans.length),
+			findMany: vi.fn().mockResolvedValue(scans),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+		},
+	};
+	const fixture = {
+		deps: {
+			prisma,
+			arrClientFactory: {},
+			plexCacheClientFactory: vi.fn(() => plexClient),
+			jellyfinCacheClientFactory: vi.fn(() => jellyfinClient),
+			log: {
+				warn: vi.fn(),
+				error: vi.fn(),
+				info: vi.fn(),
+				debug: vi.fn(),
+				trace: vi.fn(),
+				fatal: vi.fn(),
+				child: vi.fn(),
+				silent: vi.fn(),
+				level: "info",
+			},
+		} as never,
+		prisma,
+		plexClient,
+		jellyfinClient,
+	};
+	installStatefulScanStore(fixture, scans, [options.approval ?? approval()]);
+	return fixture;
+}
+
+function installStatefulScanStore(
+	fixture: ReturnType<typeof deps>,
+	rows: ReturnType<typeof scan>[],
+	approvals: ReturnType<typeof approval>[],
+) {
+	fixture.prisma.libraryCleanupApproval.findFirst.mockImplementation(
+		async ({ where }: { where: { id: string } }) =>
+			approvals.find((candidate) => candidate.id === where.id) ?? null,
+	);
+	Object.assign(fixture.prisma.libraryCleanupApproval, {
+		findMany: vi
+			.fn()
+			.mockImplementation(async ({ where }: { where: { id?: { in: string[] } } }) =>
+				approvals.filter((candidate) => !where.id || where.id.in.includes(candidate.id)),
+			),
+	});
+	fixture.prisma.libraryCleanupMediaServerScan.findMany.mockImplementation(
+		async ({ where }: { where: Record<string, unknown> }) => {
+			const approvalId = where.approvalId as string | { in: string[] } | undefined;
+			let matches = rows.filter((row) =>
+				typeof approvalId === "string"
+					? row.approvalId === approvalId
+					: !approvalId || approvalId.in.includes(row.approvalId),
+			);
+			const id = where.id as string | { in: string[] } | undefined;
+			if (typeof id === "string") matches = matches.filter((row) => row.id === id);
+			else if (id?.in) matches = matches.filter((row) => id.in.includes(row.id));
+			for (const field of [
+				"service",
+				"serverIdentity",
+				"mediaType",
+				"plannedSectionIds",
+				"executionToken",
+			] as const) {
+				if (field in where) matches = matches.filter((row) => row[field] === where[field]);
+			}
+			const status = where.status as string | { in?: string[] } | undefined;
+			if (typeof status === "string") matches = matches.filter((row) => row.status === status);
+			else if (status?.in) matches = matches.filter((row) => status.in?.includes(row.status));
+			const covered = (where.AND as Array<{ OR?: Array<Record<string, string>> }> | undefined)?.[0]
+				?.OR;
+			if (covered) {
+				matches = matches.filter((row) =>
+					covered.some(
+						(operation) =>
+							operation.service === row.service &&
+							operation.serverIdentity === row.serverIdentity &&
+							(operation.mediaType === undefined || operation.mediaType === row.mediaType) &&
+							(operation.plannedSectionIds === undefined ||
+								operation.plannedSectionIds === row.plannedSectionIds),
+					),
+				);
+			}
+			if (where.OR || where.AND) {
+				matches = matches.filter((row) => {
+					if (row.status === "pending") return true;
+					if (row.status === "failed") {
+						const nextAttemptAt = row.nextAttemptAt as Date | null;
+						return nextAttemptAt === null || nextAttemptAt <= new Date();
+					}
+					return (
+						row.status === "triggering" && row.updatedAt < new Date(Date.now() - 10 * 60 * 1000)
+					);
+				});
+			}
+			return matches;
+		},
+	);
+	fixture.prisma.libraryCleanupMediaServerScan.updateMany.mockImplementation(
+		async ({ where, data }: { where: Record<string, unknown>; data: Record<string, unknown> }) => {
+			const id = where.id as string | { in: string[] } | undefined;
+			let matches = rows.filter((row) =>
+				typeof id === "string" ? row.id === id : !id || id.in.includes(row.id),
+			);
+			if (typeof where.status === "string") {
+				matches = matches.filter((row) => row.status === where.status);
+			}
+			if ("executionToken" in where) {
+				matches = matches.filter((row) => row.executionToken === where.executionToken);
+			}
+			if (where.OR) {
+				matches = matches.filter((row) => ["pending", "failed", "triggering"].includes(row.status));
+			}
+			for (const row of matches) {
+				const { attemptCount, ...persistedData } = data;
+				if (typeof attemptCount === "object") row.attemptCount++;
+				Object.assign(row, persistedData, { updatedAt: new Date() });
+			}
+			return { count: matches.length };
+		},
+	);
+	Object.assign(fixture.prisma.libraryCleanupMediaServerScan, {
+		findUnique: vi.fn(async ({ where }: { where: { id?: string } }) =>
+			where.id ? (rows.find((row) => row.id === where.id) ?? null) : null,
+		),
+		findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
+			const matches = rows.filter(
+				(row) =>
+					row.service === where.service &&
+					row.serverIdentity === where.serverIdentity &&
+					(!("mediaType" in where) || row.mediaType === where.mediaType) &&
+					(!("plannedSectionIds" in where) || row.plannedSectionIds === where.plannedSectionIds) &&
+					(row.status === "triggered" || row.status === "skipped") &&
+					row.requestStartedAt !== null,
+			);
+			return (
+				matches.sort(
+					(left, right) =>
+						(right.requestStartedAt as unknown as Date).getTime() -
+						(left.requestStartedAt as unknown as Date).getTime(),
+				)[0] ?? null
+			);
+		}),
+		deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+	});
+}
+
+describe("durable media-server rescans", () => {
+	beforeEach(() => vi.clearAllMocks());
+
+	it("persists one owned enabled media-server target before deletion", async () => {
+		const targets = [
+			instance("plex-1", "PLEX"),
+			instance("jellyfin-1", "JELLYFIN"),
+			instance("emby-1", "EMBY"),
+		];
+		const fixture = deps({ instances: targets });
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie"),
+		).resolves.toBe(3);
+		expect(fixture.prisma.serviceInstance.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ userId: "user-1", enabled: true }),
+			}),
+		);
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).toHaveBeenCalledTimes(3);
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				instanceId: "plex-1",
+				serverIdentity: "PLEX:plex-machine",
+				plannedSectionIds: '["movies"]',
+			}),
+		});
+	});
+
+	it("does not persist scan work when the rule snapshot disabled it", async () => {
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		await expect(
+			prepareMediaServerRescans(
+				fixture.deps,
+				"user-1",
+				approval({ scanMediaServerAfterDelete: false }) as never,
+				"movie",
+			),
+		).resolves.toBe(0);
+		expect(fixture.prisma.serviceInstance.findMany).not.toHaveBeenCalled();
+	});
+
+	it("blocks deletion preparation when the requested scan has no media-server target", async () => {
+		const fixture = deps();
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie"),
+		).rejects.toThrow("no enabled Plex, Jellyfin, or Emby");
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).not.toHaveBeenCalled();
+	});
+
+	it("blocks deletion when Plex returns an empty section inventory", async () => {
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		fixture.plexClient.getLibrarySections.mockResolvedValue([]);
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie"),
+		).rejects.toThrow("could not be verified");
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).not.toHaveBeenCalled();
+	});
+
+	it("persists an explicit Plex no-op when only another library type exists", async () => {
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		fixture.plexClient.getLibrarySections.mockResolvedValue([
+			{ key: "shows", title: "Shows", type: "show" },
+		]);
+
+		await prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie");
+
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({ plannedSectionIds: "[]" }),
+		});
+	});
+
+	it("blocks a pre-deletion retry when its Plex section plan changed", async () => {
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		await prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie");
+		fixture.plexClient.getLibrarySections.mockResolvedValue([
+			{ key: "movies", title: "Movies", type: "movie" },
+			{ key: "anime", title: "Anime", type: "movie" },
+		]);
+		fixture.prisma.libraryCleanupMediaServerScan.create.mockRejectedValue(
+			Object.assign(new Error("duplicate"), { code: "P2002" }),
+		);
+		Object.assign(fixture.prisma.libraryCleanupMediaServerScan, {
+			findUnique: vi.fn().mockResolvedValue({
+				serverIdentity: "PLEX:plex-machine",
+				plannedSectionIds: '["movies"]',
+			}),
+		});
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie"),
+		).rejects.toThrow("section plan changed");
+	});
+
+	it("blocks a pre-deletion retry when an earlier media-server target was removed", async () => {
+		const plex = instance("plex-1", "PLEX");
+		const jellyfin = instance("jellyfin-1", "JELLYFIN");
+		const fixture = deps({ instances: [plex, jellyfin] });
+		await prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie");
+		fixture.prisma.serviceInstance.findMany.mockResolvedValue([plex]);
+		fixture.prisma.libraryCleanupMediaServerScan.create.mockRejectedValue(
+			Object.assign(new Error("duplicate"), { code: "P2002" }),
+		);
+		Object.assign(fixture.prisma.libraryCleanupMediaServerScan, {
+			findUnique: vi.fn().mockResolvedValue({
+				serverIdentity: "PLEX:plex-machine",
+				plannedSectionIds: '["movies"]',
+			}),
+		});
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie"),
+		).rejects.toThrow("target set changed");
+	});
+
+	it("triggers matching Plex sections and one global Jellyfin/Emby refresh", async () => {
+		const targets = [
+			instance("plex-1", "PLEX"),
+			instance("jellyfin-1", "JELLYFIN"),
+			instance("emby-1", "EMBY"),
+		];
+		const fixture = deps({
+			instances: targets,
+			scans: [
+				scan("scan-plex", "plex-1", "PLEX"),
+				scan("scan-jellyfin", "jellyfin-1", "JELLYFIN"),
+				scan("scan-emby", "emby-1", "EMBY"),
+			],
+		});
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+		expect(result).toMatchObject({ targets: 3, triggered: 3, failed: 0, warnings: [] });
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledOnce();
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledWith("movies");
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledTimes(2);
+	});
+
+	it("reissues the full Plex plan after a partial attempt", async () => {
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX")],
+			scans: [
+				scan("scan-plex", "plex-1", "PLEX", {
+					plannedSectionIds: '["movies","movies-2"]',
+					completedSectionIds: '["movies"]',
+				}),
+			],
+		});
+		fixture.plexClient.getLibrarySections.mockResolvedValue([
+			{ key: "movies", title: "Movies", type: "movie" },
+			{ key: "movies-2", title: "More Movies", type: "movie" },
+		]);
+
+		await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledTimes(2);
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledWith("movies");
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledWith("movies-2");
+	});
+
+	it("records an explicit no-op when no matching Plex section existed before deletion", async () => {
+		const noSectionScan = scan("scan-plex", "plex-1", "PLEX", {
+			plannedSectionIds: "[]",
+		});
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX")],
+			scans: [noSectionScan],
+		});
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(result).toMatchObject({ targets: 1, triggered: 0, skipped: 1, failed: 0 });
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+		expect(fixture.prisma.libraryCleanupMediaServerScan.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: "skipped" }) }),
+		);
+	});
+
+	it("audits mixed triggered and skipped targets without losing either count", async () => {
+		const rows = [
+			scan("scan-plex", "plex-1", "PLEX", { plannedSectionIds: "[]" }),
+			scan("scan-jellyfin", "jellyfin-1", "JELLYFIN"),
+		];
+		const storedApproval = approval();
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX"), instance("jellyfin-1", "JELLYFIN")],
+		});
+		installStatefulScanStore(fixture, rows, [storedApproval]);
+		const auditCreate = vi.fn().mockResolvedValue({});
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: auditCreate },
+		});
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(result).toMatchObject({ targets: 2, triggered: 1, skipped: 1, failed: 0 });
+		const completed = auditCreate.mock.calls
+			.map(([call]) => call.data)
+			.find((event) => event.eventType === "media_rescan_completed");
+		expect(completed).toBeDefined();
+		expect(JSON.parse(completed.evidence)).toMatchObject({
+			targetCount: 2,
+			triggeredCount: 1,
+			skippedCount: 1,
+			failedCount: 0,
+		});
+	});
+
+	it("keeps a planned Plex scan retryable when its section disappears", async () => {
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX")],
+			scans: [scan("scan-plex", "plex-1", "PLEX")],
+		});
+		fixture.plexClient.getLibrarySections.mockResolvedValue([]);
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(result).toMatchObject({ targets: 1, triggered: 0, skipped: 0, failed: 1 });
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+	});
+
+	it("keeps scan failure independent from the executed cleanup approval", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-08-04T12:00:00.000Z"));
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX")],
+			scans: [scan("scan-plex", "plex-1", "PLEX")],
+		});
+		fixture.plexClient.refreshSection.mockRejectedValue(new Error("offline"));
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+		expect(result).toMatchObject({ targets: 1, triggered: 0, failed: 1 });
+		expect(result.warnings[0]).toContain("retry it without repeating the cleanup deletion");
+		expect(fixture.prisma.libraryCleanupApproval.findFirst).toHaveBeenCalledWith(
+			expect.objectContaining({ where: expect.objectContaining({ status: "executed" }) }),
+		);
+		expect(fixture.prisma.libraryCleanupMediaServerScan.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "failed",
+					nextAttemptAt: new Date("2026-08-04T12:01:00.000Z"),
+				}),
+			}),
+		);
+		vi.useRealTimers();
+	});
+
+	it("only selects failed scan jobs whose retry backoff is due", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-08-04T12:00:00.000Z"));
+		try {
+			const future = deps({
+				instances: [instance("plex-1", "PLEX")],
+				scans: [
+					scan("scan-future", "plex-1", "PLEX", {
+						status: "failed",
+						nextAttemptAt: new Date("2026-08-04T12:01:00.000Z"),
+					}),
+				],
+			});
+			const futureResult = await triggerMediaServerRescansForApproval(
+				future.deps,
+				"user-1",
+				"approval-1",
+			);
+			expect(futureResult).toMatchObject({ targets: 0, triggered: 0, failed: 0 });
+			expect(future.plexClient.refreshSection).not.toHaveBeenCalled();
+
+			const due = deps({
+				instances: [instance("plex-1", "PLEX")],
+				scans: [
+					scan("scan-due", "plex-1", "PLEX", {
+						status: "failed",
+						nextAttemptAt: new Date("2026-08-04T11:59:00.000Z"),
+					}),
+				],
+			});
+			const dueResult = await triggerMediaServerRescansForApproval(
+				due.deps,
+				"user-1",
+				"approval-1",
+			);
+			expect(dueResult).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
+			expect(due.plexClient.refreshSection).toHaveBeenCalledOnce();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("prunes successful scan jobs only after their audit is durable", async () => {
+		const pendingScan = scan("scan-plex", "plex-1", "PLEX");
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX")],
+			scans: [pendingScan],
+		});
+		const auditCreate = vi.fn().mockResolvedValue({});
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: auditCreate },
+		});
+
+		await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(auditCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ eventType: "media_rescan_triggered" }),
+			}),
+		);
+		expect(fixture.prisma.libraryCleanupMediaServerScan.deleteMany).toHaveBeenCalledWith({
+			where: { approvalId: "approval-1", status: { in: ["triggered", "skipped"] } },
+		});
+	});
+
+	it("restart-reconciles a terminal scan row that was not yet audited or pruned", async () => {
+		const terminalScan = scan("scan-jellyfin", "jellyfin-1", "JELLYFIN", {
+			status: "triggered",
+			attemptCount: 1,
+		});
+		const fixture = deps({ instances: [instance("jellyfin-1", "JELLYFIN")] });
+		installStatefulScanStore(fixture, [terminalScan], [approval()]);
+		const auditCreate = vi.fn().mockResolvedValue({});
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: auditCreate },
+		});
+
+		await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(fixture.jellyfinClient.refreshLibrary).not.toHaveBeenCalled();
+		expect(auditCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ eventType: "media_rescan_triggered" }),
+			}),
+		);
+		expect(fixture.prisma.libraryCleanupMediaServerScan.deleteMany).toHaveBeenCalledOnce();
+	});
+
+	it("retries pruning after a terminal scan audit survives a process interruption", async () => {
+		const terminalScan = scan("scan-jellyfin", "jellyfin-1", "JELLYFIN", {
+			status: "triggered",
+			attemptCount: 1,
+		});
+		const fixture = deps({ instances: [instance("jellyfin-1", "JELLYFIN")] });
+		installStatefulScanStore(fixture, [terminalScan], [approval()]);
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: vi.fn().mockResolvedValue({}) },
+		});
+		fixture.prisma.libraryCleanupMediaServerScan.deleteMany
+			.mockRejectedValueOnce(new Error("process interrupted"))
+			.mockResolvedValueOnce({ count: 1 });
+
+		await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+		await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(fixture.jellyfinClient.refreshLibrary).not.toHaveBeenCalled();
+		expect(fixture.prisma.libraryCleanupMediaServerScan.deleteMany).toHaveBeenCalledTimes(2);
+	});
+
+	it("retains failed scan jobs after recording their failure audit", async () => {
+		const pendingScan = scan("scan-plex", "plex-1", "PLEX");
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX")],
+			scans: [pendingScan],
+		});
+		fixture.plexClient.refreshSection.mockRejectedValue(new Error("offline"));
+		fixture.prisma.libraryCleanupMediaServerScan.findMany
+			.mockResolvedValueOnce([pendingScan])
+			.mockResolvedValueOnce([{ status: "failed", attemptCount: 1 }]);
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: vi.fn().mockResolvedValue({}) },
+		});
+
+		await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(fixture.prisma.libraryCleanupMediaServerScan.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("does not record scan success when another worker wins every claim", async () => {
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX")],
+			scans: [scan("scan-plex", "plex-1", "PLEX")],
+		});
+		fixture.prisma.libraryCleanupMediaServerScan.updateMany.mockResolvedValue({ count: 0 });
+		const auditCreate = vi.fn().mockResolvedValue({});
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: auditCreate },
+		});
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(result).toMatchObject({ targets: 1, triggered: 0, failed: 0 });
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+		expect(auditCreate).not.toHaveBeenCalled();
+	});
+
+	it("does not start an operation while another worker holds its physical lease", async () => {
+		const fixture = deps({
+			instances: [instance("jellyfin-1", "JELLYFIN")],
+			scans: [scan("scan-jellyfin", "jellyfin-1", "JELLYFIN")],
+		});
+		Object.assign(fixture.prisma, {
+			libraryCleanupMediaServerScanLease: {
+				create: vi.fn().mockRejectedValue(Object.assign(new Error("leased"), { code: "P2002" })),
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+		});
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(result).toMatchObject({ targets: 1, triggered: 0, failed: 0, warnings: [] });
+		expect(fixture.jellyfinClient.refreshLibrary).not.toHaveBeenCalled();
+	});
+
+	it("repairs a missing terminal deletion audit before triggering a scan", async () => {
+		const storedApproval = approval({ terminalAuditRecordedAt: null });
+		const rows = [scan("scan-jellyfin", "jellyfin-1", "JELLYFIN")];
+		const fixture = deps({ instances: [instance("jellyfin-1", "JELLYFIN")] });
+		installStatefulScanStore(fixture, rows, [storedApproval]);
+		const auditEvents: Array<Record<string, unknown>> = [];
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: {
+				create: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
+					auditEvents.push(data);
+					return data;
+				}),
+			},
+		});
+
+		await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		const terminalIndex = auditEvents.findIndex(
+			(event) => event.eventType === "terminal_succeeded",
+		);
+		const scanIndex = auditEvents.findIndex(
+			(event) => event.eventType === "media_rescan_triggered",
+		);
+		expect(terminalIndex).toBeGreaterThanOrEqual(0);
+		expect(scanIndex).toBeGreaterThan(terminalIndex);
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+	});
+
+	it("keeps a scan pending while terminal audit recovery is unavailable", async () => {
+		const storedApproval = approval({ terminalAuditRecordedAt: null });
+		const rows = [scan("scan-jellyfin", "jellyfin-1", "JELLYFIN")];
+		const fixture = deps({ instances: [instance("jellyfin-1", "JELLYFIN")] });
+		installStatefulScanStore(fixture, rows, [storedApproval]);
+		const auditCreate = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("audit unavailable"))
+			.mockResolvedValue({});
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: auditCreate },
+		});
+
+		const first = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+		expect(first.warnings).toContainEqual(expect.stringContaining("terminal cleanup audit"));
+		expect(rows[0]?.status).toBe("pending");
+		expect(fixture.jellyfinClient.refreshLibrary).not.toHaveBeenCalled();
+
+		await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+	});
+
+	it("fails a retry closed when its physical media-server identity changed", async () => {
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX")],
+			scans: [scan("scan-plex", "plex-1", "PLEX")],
+		});
+		fixture.plexClient.getIdentity.mockResolvedValue({
+			machineIdentifier: "different-machine",
+			version: "1.0",
+			friendlyName: "Different Plex",
+			platform: "Linux",
+		});
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(result).toMatchObject({ targets: 1, triggered: 0, failed: 1 });
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+	});
+
+	it("coalesces movie and show cleanup into one Jellyfin-compatible global refresh", async () => {
+		const rows = [
+			scan("scan-movie", "jellyfin-1", "JELLYFIN"),
+			scan("scan-show", "jellyfin-1", "JELLYFIN", {
+				approvalId: "approval-2",
+				mediaType: "show",
+				targetKey: "JELLYFIN:jellyfin-1:show",
+			}),
+		];
+		const approvals = [approval(), approval({ id: "approval-2", itemType: "series" })];
+		const fixture = deps({ instances: [instance("jellyfin-1", "JELLYFIN")] });
+		fixture.prisma.libraryCleanupApproval.findFirst.mockImplementation(
+			async ({ where }: { where: { id: string } }) =>
+				approvals.find((candidate) => candidate.id === where.id) ?? null,
+		);
+		Object.assign(fixture.prisma.libraryCleanupApproval, {
+			findMany: vi.fn().mockResolvedValue(approvals),
+		});
+		fixture.prisma.libraryCleanupMediaServerScan.findMany.mockImplementation(
+			async ({ where }: { where: Record<string, unknown> }) => {
+				const approvalId = where.approvalId as string | { in: string[] } | undefined;
+				let matches = rows.filter((row) =>
+					typeof approvalId === "string"
+						? row.approvalId === approvalId
+						: !approvalId || approvalId.in.includes(row.approvalId),
+				);
+				if (where.OR || where.AND) {
+					matches = matches.filter(
+						(row) =>
+							row.status === "pending" || row.status === "failed" || row.status === "triggering",
+					);
+				}
+				return matches;
+			},
+		);
+		fixture.prisma.libraryCleanupMediaServerScan.updateMany.mockImplementation(
+			async ({
+				where,
+				data,
+			}: {
+				where: { id?: string | { in: string[] } };
+				data: Record<string, unknown>;
+			}) => {
+				const ids =
+					typeof where.id === "string"
+						? [where.id]
+						: where.id && typeof where.id === "object"
+							? where.id.in
+							: [];
+				for (const row of rows.filter((candidate) => ids.includes(candidate.id))) {
+					if (typeof data.attemptCount === "object") row.attemptCount++;
+					Object.assign(row, data, { updatedAt: new Date() });
+				}
+				return { count: ids.length };
+			},
+		);
+
+		const result = await triggerCoalescedMediaServerRescans(fixture.deps, "user-1", [
+			"approval-1",
+			"approval-2",
+		]);
+
+		expect(result).toMatchObject({ targets: 2, triggered: 2, failed: 0 });
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+		expect(rows.map((row) => row.status)).toEqual(["triggered", "triggered"]);
+	});
+
+	it("deduplicates duplicate instance records for one physical server within an approval", async () => {
+		const rows = [
+			scan("scan-primary", "jellyfin-1", "JELLYFIN"),
+			scan("scan-duplicate", "jellyfin-2", "JELLYFIN", {
+				targetKey: "JELLYFIN:jellyfin-2:movie",
+			}),
+		];
+		const fixture = deps({
+			instances: [instance("jellyfin-1", "JELLYFIN"), instance("jellyfin-2", "JELLYFIN")],
+		});
+		installStatefulScanStore(fixture, rows, [approval()]);
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(result).toMatchObject({ targets: 2, triggered: 2, failed: 0 });
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+		expect(rows.map((row) => row.status)).toEqual(["triggered", "triggered"]);
+	});
+
+	it("uses a healthy equivalent instance when the first physical-server record is broken", async () => {
+		const rows = [
+			scan("scan-broken", "jellyfin-1", "JELLYFIN"),
+			scan("scan-healthy", "jellyfin-2", "JELLYFIN", {
+				targetKey: "JELLYFIN:jellyfin-2:movie",
+			}),
+		];
+		const fixture = deps({
+			instances: [instance("jellyfin-1", "JELLYFIN"), instance("jellyfin-2", "JELLYFIN")],
+		});
+		installStatefulScanStore(fixture, rows, [approval()]);
+		const brokenClient = {
+			getPublicInfo: vi.fn().mockRejectedValue(new Error("instance unavailable")),
+			refreshLibrary: vi.fn(),
+		};
+		(
+			fixture.deps as unknown as {
+				jellyfinCacheClientFactory: (serviceInstance: ReturnType<typeof instance>) => unknown;
+			}
+		).jellyfinCacheClientFactory = vi.fn((serviceInstance) =>
+			serviceInstance.id === "jellyfin-1" ? brokenClient : fixture.jellyfinClient,
+		);
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(result).toMatchObject({ targets: 2, triggered: 2, failed: 0 });
+		expect(brokenClient.refreshLibrary).not.toHaveBeenCalled();
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+		expect(rows.map((row) => row.status)).toEqual(["triggered", "triggered"]);
+	});
+
+	it("atomically claims equivalent rows so concurrent callers issue one physical refresh", async () => {
+		const rows = [
+			scan("scan-1", "jellyfin-1", "JELLYFIN"),
+			scan("scan-2", "jellyfin-2", "JELLYFIN", {
+				approvalId: "approval-2",
+				targetKey: "JELLYFIN:jellyfin-2:movie",
+			}),
+		];
+		const approvals = [approval(), approval({ id: "approval-2" })];
+		const fixture = deps({
+			instances: [instance("jellyfin-1", "JELLYFIN"), instance("jellyfin-2", "JELLYFIN")],
+		});
+		installStatefulScanStore(fixture, rows, approvals);
+		let heldToken: string | null = null;
+		Object.assign(fixture.prisma, {
+			libraryCleanupMediaServerScanLease: {
+				create: vi.fn(async ({ data }: { data: { executionToken: string } }) => {
+					if (heldToken) throw Object.assign(new Error("leased"), { code: "P2002" });
+					heldToken = data.executionToken;
+				}),
+				updateMany: vi.fn(async ({ where }: { where: { executionToken?: string } }) => ({
+					count: where.executionToken === heldToken ? 1 : 0,
+				})),
+				deleteMany: vi.fn(async ({ where }: { where: { executionToken: string } }) => {
+					if (where.executionToken === heldToken) heldToken = null;
+					return { count: 1 };
+				}),
+			},
+		});
+		let releaseRefresh!: () => void;
+		let refreshStarted!: () => void;
+		const started = new Promise<void>((resolve) => {
+			refreshStarted = resolve;
+		});
+		const release = new Promise<void>((resolve) => {
+			releaseRefresh = resolve;
+		});
+		fixture.jellyfinClient.refreshLibrary.mockImplementationOnce(async () => {
+			refreshStarted();
+			await release;
+		});
+
+		const first = triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+		await started;
+		const second = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-2");
+		releaseRefresh();
+		const firstResult = await first;
+
+		expect(second).toMatchObject({ triggered: 0, failed: 0 });
+		expect(firstResult).toMatchObject({ triggered: 2, failed: 0 });
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+		expect(rows.map((row) => row.status)).toEqual(["triggered", "triggered"]);
+	});
+
+	it("defers aggregate audit while another physical operation is still in flight", async () => {
+		const rows = [
+			scan("scan-jellyfin", "jellyfin-1", "JELLYFIN"),
+			scan("scan-plex", "plex-1", "PLEX"),
+		];
+		const fixture = deps({
+			instances: [instance("jellyfin-1", "JELLYFIN"), instance("plex-1", "PLEX")],
+		});
+		installStatefulScanStore(fixture, rows, [approval()]);
+		const leases = new Map<string, string>();
+		Object.assign(fixture.prisma, {
+			libraryCleanupMediaServerScanLease: {
+				create: vi.fn(
+					async ({ data }: { data: { operationKey: string; executionToken: string } }) => {
+						if (leases.has(data.operationKey)) {
+							throw Object.assign(new Error("leased"), { code: "P2002" });
+						}
+						leases.set(data.operationKey, data.executionToken);
+					},
+				),
+				updateMany: vi.fn(
+					async ({ where }: { where: { operationKey: string; executionToken?: string } }) => ({
+						count: leases.get(where.operationKey) === where.executionToken ? 1 : 0,
+					}),
+				),
+				deleteMany: vi.fn(
+					async ({ where }: { where: { operationKey: string; executionToken: string } }) => {
+						if (leases.get(where.operationKey) === where.executionToken) {
+							leases.delete(where.operationKey);
+						}
+						return { count: 1 };
+					},
+				),
+			},
+		});
+		const auditCreate = vi.fn().mockResolvedValue({});
+		Object.assign(fixture.prisma, {
+			libraryCleanupAuditEvent: { create: auditCreate },
+		});
+		let releaseRefresh!: () => void;
+		let refreshStarted!: () => void;
+		const started = new Promise<void>((resolve) => {
+			refreshStarted = resolve;
+		});
+		const release = new Promise<void>((resolve) => {
+			releaseRefresh = resolve;
+		});
+		fixture.jellyfinClient.refreshLibrary.mockImplementationOnce(async () => {
+			refreshStarted();
+			await release;
+		});
+
+		const first = triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+		await started;
+		const second = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+		expect(second).toMatchObject({ triggered: 1, failed: 0 });
+		expect(
+			auditCreate.mock.calls.some(([call]) => call.data.eventType === "media_rescan_failed"),
+		).toBe(false);
+		releaseRefresh();
+		await first;
+
+		expect(
+			auditCreate.mock.calls.some(([call]) => call.data.eventType === "media_rescan_failed"),
+		).toBe(false);
+		expect(auditCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ eventType: "media_rescan_triggered" }),
+			}),
+		);
+	});
+
+	it("reissues a refresh after restart instead of trusting worker-local scan ordering", async () => {
+		const deletionTime = new Date("2026-08-04T12:00:00.000Z");
+		const scanTime = new Date("2026-08-04T12:01:00.000Z");
+		const rows = [
+			scan("scan-terminal", "jellyfin-1", "JELLYFIN", {
+				status: "triggered",
+				requestStartedAt: scanTime,
+				triggeredAt: scanTime,
+			}),
+			scan("scan-pending", "jellyfin-2", "JELLYFIN", {
+				approvalId: "approval-2",
+				targetKey: "JELLYFIN:jellyfin-2:movie",
+			}),
+		];
+		const approvals = [
+			approval({ executedAt: deletionTime }),
+			approval({ id: "approval-2", executedAt: deletionTime }),
+		];
+		const fixture = deps({
+			instances: [instance("jellyfin-1", "JELLYFIN"), instance("jellyfin-2", "JELLYFIN")],
+		});
+		installStatefulScanStore(fixture, rows, approvals);
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-2");
+
+		expect(result).toMatchObject({ triggered: 1, failed: 0 });
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+		expect(rows[1]?.status).toBe("triggered");
+		expect(rows[1]?.triggeredAt).not.toEqual(scanTime);
+	});
+
+	it("reissues a refresh when the pending sibling deletion followed the prior terminal scan", async () => {
+		const scanTime = new Date("2026-08-04T12:00:00.000Z");
+		const laterDeletion = new Date("2026-08-04T12:01:00.000Z");
+		const rows = [
+			scan("scan-terminal", "jellyfin-1", "JELLYFIN", {
+				status: "triggered",
+				requestStartedAt: scanTime,
+				triggeredAt: scanTime,
+			}),
+			scan("scan-pending", "jellyfin-2", "JELLYFIN", {
+				approvalId: "approval-2",
+				targetKey: "JELLYFIN:jellyfin-2:movie",
+			}),
+		];
+		const approvals = [
+			approval({ executedAt: new Date("2026-08-04T11:59:00.000Z") }),
+			approval({ id: "approval-2", executedAt: laterDeletion }),
+		];
+		const fixture = deps({
+			instances: [instance("jellyfin-1", "JELLYFIN"), instance("jellyfin-2", "JELLYFIN")],
+		});
+		installStatefulScanStore(fixture, rows, approvals);
+
+		await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-2");
+
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+		expect(rows[1]?.status).toBe("triggered");
+		expect(rows[1]?.triggeredAt).not.toEqual(scanTime);
+	});
+
+	it("coalesces an empty Plex section plan as one explicit no-op", async () => {
+		const rows = [
+			scan("scan-empty-1", "plex-1", "PLEX", { plannedSectionIds: "[]" }),
+			scan("scan-empty-2", "plex-1", "PLEX", {
+				approvalId: "approval-2",
+				plannedSectionIds: "[]",
+			}),
+		];
+		const approvals = [approval(), approval({ id: "approval-2" })];
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		installStatefulScanStore(fixture, rows, approvals);
+
+		const result = await triggerCoalescedMediaServerRescans(fixture.deps, "user-1", [
+			"approval-1",
+			"approval-2",
+		]);
+
+		expect(result).toMatchObject({ targets: 2, triggered: 0, skipped: 2, failed: 0 });
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+		expect(rows.map((row) => row.status)).toEqual(["skipped", "skipped"]);
+	});
+
+	it("never coalesces pending work across different physical server identities", async () => {
+		const rows = [
+			scan("scan-old", "jellyfin-1", "JELLYFIN", {
+				approvalId: "approval-old",
+				serverIdentity: "JELLYFIN:old-server",
+			}),
+			scan("scan-new", "jellyfin-1", "JELLYFIN", {
+				approvalId: "approval-new",
+				serverIdentity: "JELLYFIN:media-server-id",
+			}),
+		];
+		const approvals = [approval({ id: "approval-old" }), approval({ id: "approval-new" })];
+		const fixture = deps({ instances: [instance("jellyfin-1", "JELLYFIN")] });
+		installStatefulScanStore(fixture, rows, approvals);
+
+		const result = await triggerCoalescedMediaServerRescans(fixture.deps, "user-1", [
+			"approval-old",
+			"approval-new",
+		]);
+
+		expect(result).toMatchObject({ targets: 2, triggered: 1, failed: 1 });
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+		expect(rows.find((row) => row.id === "scan-old")?.status).toBe("failed");
+		expect(rows.find((row) => row.id === "scan-new")?.status).toBe("triggered");
+	});
+
+	it("does not let a narrower Plex section plan cover a broader plan", async () => {
+		const rows = [
+			scan("scan-movies", "plex-1", "PLEX"),
+			scan("scan-movies-anime", "plex-1", "PLEX", {
+				approvalId: "approval-2",
+				plannedSectionIds: '["anime","movies"]',
+			}),
+		];
+		const approvals = [approval(), approval({ id: "approval-2" })];
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		fixture.plexClient.getLibrarySections.mockResolvedValue([
+			{ key: "movies", title: "Movies", type: "movie" },
+			{ key: "anime", title: "Anime", type: "movie" },
+		]);
+		installStatefulScanStore(fixture, rows, approvals);
+
+		const result = await triggerCoalescedMediaServerRescans(fixture.deps, "user-1", [
+			"approval-1",
+			"approval-2",
+		]);
+
+		expect(result).toMatchObject({ targets: 2, triggered: 2, failed: 0 });
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledWith("anime");
+		expect(rows.map((row) => row.status)).toEqual(["triggered", "triggered"]);
+	});
+
+	it("does not coalesce over a physical operation leased by another worker", async () => {
+		const rows = [
+			scan("scan-representative", "jellyfin-1", "JELLYFIN"),
+			scan("scan-sibling", "jellyfin-1", "JELLYFIN", { approvalId: "approval-2" }),
+		];
+		const approvals = [approval(), approval({ id: "approval-2" })];
+		const fixture = deps({ instances: [instance("jellyfin-1", "JELLYFIN")] });
+		installStatefulScanStore(fixture, rows, approvals);
+		Object.assign(fixture.prisma, {
+			libraryCleanupMediaServerScanLease: {
+				create: vi.fn().mockRejectedValue(Object.assign(new Error("leased"), { code: "P2002" })),
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+		});
+
+		const result = await triggerCoalescedMediaServerRescans(fixture.deps, "user-1", [
+			"approval-1",
+			"approval-2",
+		]);
+
+		expect(result).toMatchObject({ targets: 2, triggered: 0, failed: 0 });
+		expect(rows.map((row) => row.status)).toEqual(["pending", "pending"]);
+	});
+
+	it("never lets an old successful scan cover a newer deletion", async () => {
+		const rows = [
+			scan("scan-old-plex", "plex-1", "PLEX", {
+				approvalId: "approval-old",
+				status: "triggered",
+			}),
+			scan("scan-old-jellyfin", "jellyfin-1", "JELLYFIN", {
+				approvalId: "approval-old",
+				status: "failed",
+			}),
+			scan("scan-new-plex", "plex-1", "PLEX", { approvalId: "approval-new" }),
+		];
+		const approvals = [approval({ id: "approval-old" }), approval({ id: "approval-new" })];
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX"), instance("jellyfin-1", "JELLYFIN")],
+		});
+		fixture.jellyfinClient.refreshLibrary.mockRejectedValue(new Error("offline"));
+		installStatefulScanStore(fixture, rows, approvals);
+
+		await triggerCoalescedMediaServerRescans(fixture.deps, "user-1", [
+			"approval-old",
+			"approval-new",
+		]);
+
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledOnce();
+		expect(rows.find((row) => row.id === "scan-new-plex")?.status).toBe("triggered");
+		expect(rows.find((row) => row.id === "scan-old-jellyfin")?.status).toBe("failed");
+	});
+
+	it("attempts each failed target only once in a coalesced batch", async () => {
+		const rows = [
+			scan("scan-plex", "plex-1", "PLEX"),
+			scan("scan-jellyfin", "jellyfin-1", "JELLYFIN"),
+		];
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX"), instance("jellyfin-1", "JELLYFIN")],
+		});
+		fixture.jellyfinClient.refreshLibrary.mockRejectedValue(new Error("offline"));
+		installStatefulScanStore(fixture, rows, [approval()]);
+
+		const result = await triggerCoalescedMediaServerRescans(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ targets: 2, triggered: 1, failed: 1 });
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledOnce();
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+	});
+
+	it("reclaims a stale triggering scan without repeating the ARR deletion", async () => {
+		const staleScan = scan("scan-stale", "plex-1", "PLEX", {
+			status: "triggering",
+			executionToken: "abandoned",
+			updatedAt: new Date(Date.now() - 11 * 60 * 1000),
+		});
+		const fixture = deps({
+			instances: [instance("plex-1", "PLEX")],
+			scans: [staleScan],
+		});
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(result).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledWith("movies");
+	});
+
+	it("reclaims a fast-worker crash using only database eligibility and lease clocks", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-08-05T00:00:00.000Z"));
+		try {
+			const abandoned = scan("scan-jellyfin", "jellyfin-1", "JELLYFIN", {
+				status: "triggering",
+				executionToken: "fast-worker",
+				requestStartedAt: new Date("2099-01-01T00:00:00.000Z"),
+				updatedAt: new Date("2099-01-01T00:00:00.000Z"),
+			});
+			const fixture = deps({
+				instances: [instance("jellyfin-1", "JELLYFIN")],
+				scans: [abandoned],
+			});
+			const executeRaw = vi.fn(async (query: string) => {
+				if (query.startsWith("INSERT")) return 0;
+				return 1;
+			});
+			Object.assign(fixture.prisma, {
+				$executeRawUnsafe: executeRaw,
+				$queryRawUnsafe: vi.fn().mockResolvedValue([{ id: abandoned.id }]),
+				libraryCleanupMediaServerScanLease: {
+					create: vi.fn(),
+					updateMany: vi.fn(),
+					deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
+				},
+			});
+
+			const result = await triggerMediaServerRescansForApproval(
+				fixture.deps,
+				"user-1",
+				"approval-1",
+			);
+
+			expect(result).toMatchObject({ triggered: 1, failed: 0 });
+			expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+			const reclaimCall = executeRaw.mock.calls.find(
+				([query]) => String(query).startsWith("UPDATE") && String(query).includes("-10 minutes"),
+			);
+			expect(reclaimCall?.[0]).toContain("julianday('now', '-10 minutes')");
+			expect(reclaimCall?.slice(1).some((value) => (value as unknown) instanceof Date)).toBe(false);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("retains the lease without an ownership read after upstream-success persistence failure", async () => {
+		const rows = [scan("scan-jellyfin", "jellyfin-1", "JELLYFIN")];
+		const fixture = deps({ instances: [instance("jellyfin-1", "JELLYFIN")] });
+		installStatefulScanStore(fixture, rows, [approval()]);
+		const statefulUpdate =
+			fixture.prisma.libraryCleanupMediaServerScan.updateMany.getMockImplementation();
+		fixture.prisma.libraryCleanupMediaServerScan.updateMany.mockImplementation(
+			async (args: { data: Record<string, unknown> }) => {
+				if (args.data.status === "triggered") {
+					throw new Error("terminal persistence unavailable");
+				}
+				return await statefulUpdate!(args as never);
+			},
+		);
+		const statefulFind =
+			fixture.prisma.libraryCleanupMediaServerScan.findMany.getMockImplementation();
+		const ambiguousOwnershipRead = vi
+			.fn()
+			.mockRejectedValue(new Error("ownership read unavailable"));
+		fixture.prisma.libraryCleanupMediaServerScan.findMany.mockImplementation(
+			async (args: { where: Record<string, unknown>; select?: Record<string, unknown> }) => {
+				if (
+					args.where.status === "triggering" &&
+					args.where.executionToken &&
+					args.select?.attemptCount === true
+				) {
+					return await ambiguousOwnershipRead();
+				}
+				return await statefulFind!(args as never);
+			},
+		);
+		const releaseLease = vi.fn().mockResolvedValue({ count: 1 });
+		Object.assign(fixture.prisma, {
+			libraryCleanupMediaServerScanLease: {
+				create: vi.fn().mockResolvedValue({}),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				deleteMany: releaseLease,
+			},
+		});
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
+		expect(result).toMatchObject({ triggered: 0, failed: 0 });
+		expect(result.warnings).toEqual([expect.stringContaining("may have completed")]);
+		expect(rows[0]).toMatchObject({ status: "triggering", lastError: null });
+		expect(ambiguousOwnershipRead).not.toHaveBeenCalled();
+		expect(releaseLease).not.toHaveBeenCalled();
+	});
+
+	it("keeps a verified no-op persistence failure out of scan-failure state", async () => {
+		const rows = [
+			scan("scan-empty-plex", "plex-1", "PLEX", {
+				plannedSectionIds: "[]",
+			}),
+		];
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		installStatefulScanStore(fixture, rows, [approval()]);
+		const statefulUpdate =
+			fixture.prisma.libraryCleanupMediaServerScan.updateMany.getMockImplementation();
+		fixture.prisma.libraryCleanupMediaServerScan.updateMany.mockImplementation(
+			async (args: { data: Record<string, unknown> }) => {
+				if (args.data.status === "skipped") {
+					throw new Error("terminal persistence unavailable");
+				}
+				return await statefulUpdate!(args as never);
+			},
+		);
+		const releaseLease = vi.fn().mockResolvedValue({ count: 1 });
+		Object.assign(fixture.prisma, {
+			libraryCleanupMediaServerScanLease: {
+				create: vi.fn().mockResolvedValue({}),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				deleteMany: releaseLease,
+			},
+		});
+
+		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
+
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+		expect(result).toMatchObject({ triggered: 0, skipped: 0, failed: 0 });
+		expect(result.warnings).toEqual([expect.stringContaining("verified as unnecessary")]);
+		expect(rows[0]).toMatchObject({ status: "triggering", lastError: null });
+		expect(releaseLease).not.toHaveBeenCalled();
+	});
+});

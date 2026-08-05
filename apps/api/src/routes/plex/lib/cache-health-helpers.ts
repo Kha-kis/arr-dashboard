@@ -23,6 +23,9 @@ export interface CacheRefreshStatusRow {
 	lastResult: string;
 	lastErrorMessage: string | null;
 	itemCount: number;
+	lastAttemptAt?: Date | null;
+	lastAttemptResult?: string | null;
+	lastAttemptErrorMessage?: string | null;
 }
 
 const STALE_THRESHOLD_MS = 12 * 60 * 60 * 1000; // 12 hours
@@ -37,14 +40,26 @@ export function buildCacheHealthItems(
 	nowMs?: number,
 ): CacheHealthItem[] {
 	const now = nowMs ?? Date.now();
-	return statuses.map((status) => ({
-		instanceId: status.instanceId,
-		instanceName: instanceNameMap.get(status.instanceId) ?? "Unknown",
-		cacheType: status.cacheType as CacheHealthItem["cacheType"],
-		lastRefreshedAt: status.lastRefreshedAt.toISOString(),
-		lastResult: status.lastResult as CacheHealthItem["lastResult"],
-		lastErrorMessage: sanitizeErrorMessage(status.lastErrorMessage),
-		itemCount: status.itemCount,
-		isStale: now - status.lastRefreshedAt.getTime() > STALE_THRESHOLD_MS,
-	}));
+	return statuses.map((status) => {
+		const newerFailedAttempt =
+			status.lastAttemptResult === "error" &&
+			status.lastAttemptAt != null &&
+			status.lastAttemptAt.getTime() > status.lastRefreshedAt.getTime();
+		const degradedPublishedGeneration =
+			status.lastResult === "success" && (newerFailedAttempt || status.lastErrorMessage !== null);
+		return {
+			instanceId: status.instanceId,
+			instanceName: instanceNameMap.get(status.instanceId) ?? "Unknown",
+			cacheType: status.cacheType as CacheHealthItem["cacheType"],
+			lastRefreshedAt: status.lastRefreshedAt.toISOString(),
+			lastResult: (degradedPublishedGeneration
+				? "partial"
+				: status.lastResult) as CacheHealthItem["lastResult"],
+			lastErrorMessage: sanitizeErrorMessage(
+				status.lastAttemptErrorMessage ?? status.lastErrorMessage,
+			),
+			itemCount: status.itemCount,
+			isStale: now - status.lastRefreshedAt.getTime() > STALE_THRESHOLD_MS,
+		};
+	});
 }

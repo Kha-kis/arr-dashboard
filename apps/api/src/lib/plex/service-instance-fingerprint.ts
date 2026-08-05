@@ -5,9 +5,7 @@ type PlexConnectionIdentity = Pick<
 	ServiceInstance,
 	"baseUrl" | "encryptedApiKey" | "encryptionIv"
 > &
-	Partial<
-		Pick<ServiceInstance, "encryptedHttpAuthCredentials" | "httpAuthEncryptionIv">
-	>;
+	Partial<Pick<ServiceInstance, "encryptedHttpAuthCredentials" | "httpAuthEncryptionIv">>;
 
 /**
  * Bind cached Plex evidence to the exact connection snapshot that produced it.

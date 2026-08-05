@@ -1,0 +1,13 @@
+.env
+.env.*
+!.env.example
+secrets/*
+!secrets/.gitignore
+!secrets/README.md
+.artifacts/
+fixtures/generated/
+logs/
+*.rendered.json
+*.runtime.json
+__pycache__/
+*.pyc

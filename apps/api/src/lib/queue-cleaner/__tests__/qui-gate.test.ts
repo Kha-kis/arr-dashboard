@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
-import { normalizeDownloadId, partitionByGatedHashes, resolveGatedItemIds } from "../qui-gate.js";
+import {
+	normalizeDownloadId,
+	partitionByGatedHashes,
+	resolveQuiAwareGateReasons,
+} from "../qui-gate.js";
 
 describe("normalizeDownloadId", () => {
 	it("lowercases a valid 40-hex SHA-1 hash", () => {
@@ -67,9 +71,22 @@ describe("partitionByGatedHashes", () => {
 	});
 });
 
-describe("resolveGatedItemIds", () => {
-	function mockPrisma(rows: Array<{ infoHash: string | null }>): PrismaClient {
+describe("resolveQuiAwareGateReasons", () => {
+	const NOW = new Date("2026-08-03T16:00:00.000Z");
+	const FRESH = new Date("2026-08-03T15:50:00.000Z");
+
+	function mockPrisma(
+		rows: Array<{
+			infoHash: string | null;
+			torrentState: string | null;
+			torrentSyncedAt: Date | null;
+		}>,
+		enabledQui = true,
+	): PrismaClient {
 		return {
+			serviceInstance: {
+				findFirst: vi.fn().mockResolvedValue(enabledQui ? { id: "qui-1" } : null),
+			},
 			libraryCache: {
 				findMany: vi.fn().mockResolvedValue(rows),
 			},
@@ -78,30 +95,54 @@ describe("resolveGatedItemIds", () => {
 
 	it("returns empty set when no items have hashes (no qui correlation possible)", async () => {
 		const prisma = mockPrisma([]);
-		const result = await resolveGatedItemIds(prisma, "user-1", new Map());
+		const result = await resolveQuiAwareGateReasons(prisma, "user-1", new Map(), NOW);
 		expect(result.size).toBe(0);
 		// Should not even hit the DB for an empty map.
 		expect((prisma.libraryCache.findMany as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0);
 	});
 
 	it("returns gated item ids when their hashes match gated rows", async () => {
-		const prisma = mockPrisma([{ infoHash: "aaaa" }, { infoHash: "cccc" }]);
+		const prisma = mockPrisma([
+			{ infoHash: "aaaa", torrentState: "paused", torrentSyncedAt: FRESH },
+			{ infoHash: "cccc", torrentState: "error", torrentSyncedAt: FRESH },
+		]);
 		const map = new Map([
 			["item-1", "aaaa"],
 			["item-2", "bbbb"],
 			["item-3", "cccc"],
 		]);
-		const result = await resolveGatedItemIds(prisma, "user-1", map);
-		expect(Array.from(result).sort()).toEqual(["item-1", "item-3"]);
+		const result = await resolveQuiAwareGateReasons(prisma, "user-1", map, NOW);
+		expect([...result.entries()].sort()).toEqual([
+			["item-1", "paused_or_error"],
+			["item-2", "evidence_unavailable"],
+			["item-3", "paused_or_error"],
+		]);
 	});
 
-	it("filters by userId (via instance relation) and the gated states (paused/error)", async () => {
+	it("fails closed when qUI has no cache row for any requested hash", async () => {
+		const result = await resolveQuiAwareGateReasons(
+			mockPrisma([]),
+			"user-1",
+			new Map([
+				["item-1", "aaaa"],
+				["item-2", "bbbb"],
+			]),
+			NOW,
+		);
+		expect([...result.entries()].sort()).toEqual([
+			["item-1", "evidence_unavailable"],
+			["item-2", "evidence_unavailable"],
+		]);
+	});
+
+	it("filters cache rows by userId through the instance relation", async () => {
 		const findMany = vi.fn().mockResolvedValue([]);
 		const prisma = {
+			serviceInstance: { findFirst: vi.fn().mockResolvedValue({ id: "qui-1" }) },
 			libraryCache: { findMany },
 		} as unknown as PrismaClient;
 
-		await resolveGatedItemIds(prisma, "user-1", new Map([["item-1", "aaaa"]]));
+		await resolveQuiAwareGateReasons(prisma, "user-1", new Map([["item-1", "aaaa"]]), NOW);
 		const callArgs = findMany.mock.calls[0]?.[0];
 		// Ownership flows through `instance.userId` — `LibraryCache` has no
 		// direct `userId` column. An earlier version of this gate used
@@ -111,31 +152,103 @@ describe("resolveGatedItemIds", () => {
 		// relation-traversal shape so a regression can't silently re-emerge.
 		expect(callArgs.where.instance).toEqual({ userId: "user-1" });
 		expect(callArgs.where).not.toHaveProperty("userId");
-		expect(callArgs.where.torrentState.in).toEqual(["paused", "error"]);
 		expect(callArgs.where.infoHash.in).toEqual(["aaaa"]);
+		expect(callArgs.select).toEqual({
+			infoHash: true,
+			torrentState: true,
+			torrentSyncedAt: true,
+		});
 	});
 
-	it("returns empty set when qui has the hash but state is not gated", async () => {
-		// LibraryCache row exists for the hash but its state isn't paused/error,
-		// so the WHERE clause excludes it — findMany returns empty.
-		const prisma = mockPrisma([]);
-		const result = await resolveGatedItemIds(prisma, "user-1", new Map([["item-1", "aaaa"]]));
+	it("returns no reason for a fresh active state or an explicit fresh null state", async () => {
+		const prisma = mockPrisma([
+			{ infoHash: "aaaa", torrentState: "seeding", torrentSyncedAt: FRESH },
+			{ infoHash: "bbbb", torrentState: null, torrentSyncedAt: FRESH },
+		]);
+		const result = await resolveQuiAwareGateReasons(
+			prisma,
+			"user-1",
+			new Map([
+				["item-1", "aaaa"],
+				["item-2", "bbbb"],
+			]),
+			NOW,
+		);
 		expect(result.size).toBe(0);
 	});
 
+	it.each([
+		["invalidated", null],
+		["stale", new Date("2026-08-03T15:20:00.000Z")],
+	] as const)("fails closed when correlated qUI evidence is %s", async (_label, observedAt) => {
+		const prisma = mockPrisma([
+			{ infoHash: "aaaa", torrentState: null, torrentSyncedAt: observedAt },
+		]);
+		const result = await resolveQuiAwareGateReasons(
+			prisma,
+			"user-1",
+			new Map([["item-1", "aaaa"]]),
+			NOW,
+		);
+		expect(result.get("item-1")).toBe("evidence_unavailable");
+	});
+
+	it.each(["stale-first", "fresh-first"] as const)(
+		"keeps duplicate mixed-age evidence unavailable regardless of row order (%s)",
+		async (order) => {
+			const stale = {
+				infoHash: "aaaa",
+				torrentState: "seeding",
+				torrentSyncedAt: new Date("2026-08-03T15:20:00.000Z"),
+			};
+			const fresh = {
+				infoHash: "aaaa",
+				torrentState: null,
+				torrentSyncedAt: FRESH,
+			};
+			const rows = order === "stale-first" ? [stale, fresh] : [fresh, stale];
+			const result = await resolveQuiAwareGateReasons(
+				mockPrisma(rows),
+				"user-1",
+				new Map([["item-1", "aaaa"]]),
+				NOW,
+			);
+			expect(result.get("item-1")).toBe("evidence_unavailable");
+		},
+	);
+
+	it("preserves original strike behavior when no qUI is enabled", async () => {
+		const prisma = mockPrisma(
+			[{ infoHash: "aaaa", torrentState: null, torrentSyncedAt: null }],
+			false,
+		);
+		const result = await resolveQuiAwareGateReasons(
+			prisma,
+			"user-1",
+			new Map([["item-1", "aaaa"]]),
+			NOW,
+		);
+		expect(result.size).toBe(0);
+		expect(prisma.libraryCache.findMany).not.toHaveBeenCalled();
+	});
+
 	it("deduplicates hashes before the DB query (multiple queue items, one torrent)", async () => {
-		const findMany = vi.fn().mockResolvedValue([{ infoHash: "aaaa" }]);
+		const findMany = vi
+			.fn()
+			.mockResolvedValue([{ infoHash: "aaaa", torrentState: "paused", torrentSyncedAt: FRESH }]);
 		const prisma = {
+			serviceInstance: { findFirst: vi.fn().mockResolvedValue({ id: "qui-1" }) },
 			libraryCache: { findMany },
 		} as unknown as PrismaClient;
 
-		await resolveGatedItemIds(
+		await resolveQuiAwareGateReasons(
 			prisma,
 			"user-1",
 			new Map([
 				["item-1", "aaaa"],
 				["item-2", "aaaa"],
 			]),
+			NOW,
 		);
 		expect(findMany.mock.calls[0]?.[0].where.infoHash.in).toEqual(["aaaa"]);
 	});

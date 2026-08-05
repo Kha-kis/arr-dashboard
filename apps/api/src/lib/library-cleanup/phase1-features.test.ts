@@ -18,6 +18,8 @@ import type { LibraryCleanupRule } from "../prisma.js";
 import {
 	buildEvalContextWithHealth,
 	buildUnavailableRuleWarning,
+	episodeSeriesPolicyMutationVerifiability,
+	liveSonarrRetentionRuleTypes,
 	seriesRetentionProtectsEpisode,
 } from "./cleanup-executor.js";
 import {
@@ -60,6 +62,14 @@ interface TestRule {
 const NOW = new Date("2026-03-01T12:00:00Z");
 
 const DEFAULT_DATA = {
+	service: "radarr",
+	_arrDashboardEvidence: {
+		monitored: true,
+		hasFile: true,
+		sizeOnDisk: true,
+		rating: true,
+		imdbRating: true,
+	},
 	genres: ["Action", "Sci-Fi"],
 	ratings: { tmdb: { value: 7.5 }, imdb: { value: 7.2 } },
 	remoteIds: { tmdbId: 12345 },
@@ -388,14 +398,13 @@ describe("prefetch failure handling", () => {
 		expect(result?.ruleId).toBe("cleanup-age");
 	});
 
-	it("no failedSources = normal evaluation", () => {
+	it("treats a missing provider map as unknown even without health metadata", () => {
 		const plexRule = makeRule({
 			id: "plex-rule",
 			ruleType: "plex_last_watched",
 			parameters: JSON.stringify({ operator: "never" }),
 		});
-		// No plexMap in context, so plex_last_watched with "never" and no watch data
-		// should match (watch is null → "never" matches)
+		// The absence of a health failure does not manufacture item-level Plex evidence.
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
 			[plexRule] as LibraryCleanupRule[],
@@ -403,7 +412,7 @@ describe("prefetch failure handling", () => {
 			ctx,
 			undefined,
 		);
-		expect(result).not.toBeNull();
+		expect(result).toBeNull();
 	});
 });
 
@@ -651,6 +660,151 @@ describe("explainItemAgainstRules", () => {
 });
 
 describe("buildEvalContextWithHealth", () => {
+	it("loads user-scoped TMDb and Trakt evidence for flat and nested cleanup/retention evaluation", async () => {
+		const tmdbItems = [{ tmdbId: 12345, mediaType: "movie" as const }];
+		const traktItems = [{ tmdbId: 12345, mediaType: "movie" as const }];
+		const flatCleanup = makeRule({
+			id: "flat-tmdb-cleanup",
+			ruleType: "tmdb_list_member",
+			parameters: JSON.stringify({ listId: "8068", operator: "is_in" }),
+		});
+		const flatRetention = makeRule({
+			id: "flat-tmdb-retention",
+			ruleType: "tmdb_list_member",
+			parameters: JSON.stringify({ listId: "8068", operator: "is_in" }),
+			retentionMode: true,
+		});
+		const nestedConditions = JSON.stringify({
+			version: 1,
+			root: {
+				type: "not",
+				child: {
+					type: "condition",
+					ruleType: "trakt_list_member",
+					parameters: { listSlug: "owner/list", operator: "not_in" },
+				},
+			},
+		});
+		const nestedCleanup = makeRule({
+			id: "nested-trakt-cleanup",
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: nestedConditions,
+		});
+		const nestedRetention = makeRule({
+			...nestedCleanup,
+			id: "nested-trakt-retention",
+			retentionMode: true,
+		});
+		const rules = [flatCleanup, flatRetention, nestedCleanup, nestedRetention];
+		const userFindUnique = vi.fn().mockResolvedValue({
+			encryptedTmdbApiKey: "encrypted-tmdb",
+			tmdbEncryptionIv: "tmdb-iv",
+			encryptedTraktAccessToken: "encrypted-trakt",
+			traktTokenIv: "trakt-iv",
+		});
+		const { ctx, failedSources } = await buildEvalContextWithHealth(
+			{
+				prisma: { user: { findUnique: userFindUnique } },
+				encryptor: { decrypt: vi.fn().mockReturnValue("decrypted") },
+				tmdbListClientFactory: vi.fn().mockReturnValue({
+					getListItems: vi.fn().mockResolvedValue(tmdbItems),
+				}),
+				traktClientId: "trakt-client-id",
+				traktListClientFactory: vi.fn().mockReturnValue({
+					getListItems: vi.fn().mockResolvedValue(traktItems),
+				}),
+				arrClientFactory: {},
+				log: { warn: vi.fn() },
+			} as never,
+			"user-1",
+			rules,
+		);
+
+		expect(userFindUnique).toHaveBeenCalledWith({
+			where: { id: "user-1" },
+			select: {
+				encryptedTmdbApiKey: true,
+				tmdbEncryptionIv: true,
+				encryptedTraktAccessToken: true,
+				traktTokenIv: true,
+			},
+		});
+		expect(failedSources).toEqual(new Set());
+		expect(
+			evaluateItemAgainstRules(makeCacheItem(), [flatCleanup as LibraryCleanupRule], "RADARR", ctx),
+		).toMatchObject({ ruleId: "flat-tmdb-cleanup" });
+		expect(
+			evaluateItemAgainstRules(
+				makeCacheItem(),
+				[flatRetention as LibraryCleanupRule, makeRule({ id: "fallback" }) as LibraryCleanupRule],
+				"RADARR",
+				ctx,
+			),
+		).toBeNull();
+		expect(
+			evaluateItemAgainstRules(
+				makeCacheItem(),
+				[nestedCleanup as LibraryCleanupRule],
+				"RADARR",
+				ctx,
+			),
+		).toMatchObject({ ruleId: "nested-trakt-cleanup" });
+		expect(
+			explainItemAgainstRules(
+				makeCacheItem(),
+				[nestedRetention as LibraryCleanupRule],
+				"RADARR",
+				ctx,
+			),
+		).toEqual([expect.objectContaining({ matched: true, retentionMode: true })]);
+	});
+
+	it("marks changing list evidence unavailable instead of certifying membership", async () => {
+		const rule = makeRule({
+			ruleType: "tmdb_list_member",
+			parameters: JSON.stringify({ listId: "8068", operator: "not_in" }),
+		});
+		const getListItems = vi
+			.fn()
+			.mockResolvedValueOnce([{ tmdbId: 1, mediaType: "movie" }])
+			.mockResolvedValueOnce([{ tmdbId: 2, mediaType: "movie" }]);
+		const { ctx, failedSources } = await buildEvalContextWithHealth(
+			{
+				prisma: {
+					user: {
+						findUnique: vi.fn().mockResolvedValue({
+							encryptedTmdbApiKey: "encrypted",
+							tmdbEncryptionIv: "iv",
+							encryptedTraktAccessToken: null,
+							traktTokenIv: null,
+						}),
+					},
+				},
+				encryptor: { decrypt: vi.fn().mockReturnValue("decrypted") },
+				tmdbListClientFactory: vi.fn().mockReturnValue({ getListItems }),
+				arrClientFactory: {},
+				log: { warn: vi.fn() },
+			} as never,
+			"user-1",
+			[rule],
+		);
+
+		expect(ctx.tmdbListMemberships).toBeUndefined();
+		expect(failedSources).toEqual(new Set(["tmdb"]));
+		expect(
+			explainItemAgainstRules(
+				makeCacheItem(),
+				[rule as LibraryCleanupRule],
+				"RADARR",
+				ctx,
+				undefined,
+				failedSources,
+			),
+		).toEqual([expect.objectContaining({ matched: false, filteredBy: "evidence_unavailable" })]);
+	});
+
 	it("tracks an unavailable Jellyfin or Emby dependency", async () => {
 		const serviceInstanceFindMany = vi.fn().mockResolvedValue([]);
 		const { ctx, failedSources } = await buildEvalContextWithHealth(
@@ -666,11 +820,56 @@ describe("buildEvalContextWithHealth", () => {
 		);
 
 		expect(serviceInstanceFindMany).toHaveBeenCalledWith({
-			where: { userId: "user-1", service: { in: ["JELLYFIN", "EMBY"] } },
-			select: { id: true },
+			where: { userId: "user-1", service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+			orderBy: { id: "asc" },
+			select: { id: true, updatedAt: true },
 		});
 		expect(ctx.jellyfinMap).toBeUndefined();
 		expect(failedSources).toEqual(new Set(["jellyfin"]));
+	});
+
+	it("fails Plex-filtered evidence when a configured section selector is unresolved", async () => {
+		const plexInstance = {
+			id: "plex-1",
+			userId: "user-1",
+			service: "PLEX",
+			label: "Plex",
+			baseUrl: "http://plex.test",
+			encryptedApiKey: "encrypted",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			enabled: true,
+			updatedAt: new Date("2026-08-03T12:00:00.000Z"),
+		};
+		const { ctx, failedSources } = await buildEvalContextWithHealth(
+			{
+				prisma: {
+					serviceInstance: { findMany: vi.fn().mockResolvedValue([plexInstance]) },
+				},
+				plexCacheClientFactory: vi.fn().mockReturnValue({
+					getLibrarySections: vi
+						.fn()
+						.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+				}),
+				arrClientFactory: {},
+				log: { warn: vi.fn() },
+			} as never,
+			"user-1",
+			[
+				{
+					enabled: true,
+					ruleType: "plex_on_deck",
+					parameters: JSON.stringify({ isDeck: false }),
+					operator: null,
+					conditions: null,
+					plexLibraryFilter: JSON.stringify(["Movies 4K"]),
+				},
+			],
+		);
+
+		expect(ctx.plexSectionTitles).toBeUndefined();
+		expect(failedSources).toContain("plex");
 	});
 
 	it("tracks an unavailable Jellyfin or Emby episode-completion dependency", async () => {
@@ -690,9 +889,230 @@ describe("buildEvalContextWithHealth", () => {
 		expect(ctx.jellyfinEpisodeMap).toBeUndefined();
 		expect(failedSources).toEqual(new Set(["jellyfin"]));
 	});
+
+	it("prefetches provider evidence referenced beneath nested groups and NOT", async () => {
+		const serviceInstanceFindMany = vi.fn().mockResolvedValue([]);
+		const { failedSources } = await buildEvalContextWithHealth(
+			{
+				prisma: {
+					serviceInstance: { findMany: serviceInstanceFindMany },
+				},
+				arrClientFactory: {},
+				log: {},
+			} as never,
+			"user-1",
+			[
+				{
+					enabled: true,
+					ruleType: "composite",
+					parameters: "{}",
+					operator: null,
+					conditions: JSON.stringify({
+						version: 1,
+						root: {
+							type: "not",
+							child: {
+								type: "group",
+								operator: "OR",
+								children: [
+									{
+										type: "condition",
+										ruleType: "jellyfin_episode_completion",
+										parameters: { operator: "greater_than", percent: 50 },
+									},
+								],
+							},
+						},
+					}),
+				},
+			],
+		);
+
+		expect(serviceInstanceFindMany).toHaveBeenCalledWith({
+			where: { userId: "user-1", service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+			orderBy: { id: "asc" },
+			select: { id: true, updatedAt: true },
+		});
+		expect(failedSources).toEqual(new Set(["jellyfin"]));
+	});
+});
+
+describe("live mutation expression parity", () => {
+	it("collects every condition through the canonical nested expression boundary", () => {
+		const rule = makeRule({
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: JSON.stringify({
+				version: 1,
+				root: {
+					type: "group",
+					operator: "AND",
+					children: [
+						{
+							type: "condition",
+							ruleType: "age",
+							parameters: { operator: "older_than", days: 30 },
+						},
+						{
+							type: "not",
+							child: {
+								type: "condition",
+								ruleType: "plex_episode_completion",
+								parameters: { operator: "greater_than", percent: 50 },
+							},
+						},
+					],
+				},
+			}),
+		}) as unknown as LibraryCleanupRule;
+
+		expect(liveSonarrRetentionRuleTypes(rule)).toEqual(
+			expect.arrayContaining(["age", "plex_episode_completion"]),
+		);
+	});
+});
+
+describe("episode proposal and mutation policy parity", () => {
+	const providerCondition = {
+		type: "condition",
+		ruleType: "plex_collection",
+		parameters: { operator: "includes_any", collections: ["Keep"] },
+	};
+	const ageCondition = {
+		type: "condition",
+		ruleType: "age",
+		parameters: { operator: "older_than", days: 30 },
+	};
+	const expressionRule = (
+		id: string,
+		root: Record<string, unknown>,
+		overrides: Partial<TestRule> = {},
+	) =>
+		makeRule({
+			id,
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: JSON.stringify({ version: 1, root }),
+			...overrides,
+		}) as unknown as LibraryCleanupRule;
+	const seriesItem = (added: string) =>
+		makeCacheItem({
+			itemType: "series",
+			title: "Test Series",
+			arrAddedAt: new Date(added),
+			data: JSON.stringify({ ...DEFAULT_DATA, added }),
+		});
+
+	it("blocks an applicable provider-backed cleanup rule that is UNKNOWN at mutation scope", () => {
+		const rule = makeRule({
+			id: "provider-cleanup",
+			ruleType: "plex_collection",
+			parameters: JSON.stringify({
+				operator: "includes_any",
+				collections: ["Keep"],
+			}),
+		}) as unknown as LibraryCleanupRule;
+
+		expect(episodeSeriesPolicyMutationVerifiability(seriesItem("2026-02-25"), [rule], NOW)).toEqual(
+			{
+				verifiable: false,
+				blockingRuleIds: ["provider-cleanup"],
+			},
+		);
+	});
+
+	it("allows FALSE AND UNKNOWN because the series rule is provably false", () => {
+		const rule = expressionRule("false-and-unknown", {
+			type: "group",
+			operator: "AND",
+			children: [ageCondition, providerCondition],
+		});
+
+		expect(episodeSeriesPolicyMutationVerifiability(seriesItem("2026-02-25"), [rule], NOW)).toEqual(
+			{
+				verifiable: true,
+				blockingRuleIds: [],
+			},
+		);
+	});
+
+	it.each([
+		[
+			"FALSE OR UNKNOWN",
+			{
+				type: "group",
+				operator: "OR",
+				children: [ageCondition, providerCondition],
+			},
+		],
+		["NOT UNKNOWN", { type: "not", child: providerCondition }],
+	])("blocks %s because UNKNOWN can affect series precedence", (_name, root) => {
+		const rule = expressionRule("unknown-series-rule", root);
+
+		expect(episodeSeriesPolicyMutationVerifiability(seriesItem("2026-02-25"), [rule], NOW)).toEqual(
+			{
+				verifiable: false,
+				blockingRuleIds: ["unknown-series-rule"],
+			},
+		);
+	});
+
+	it("blocks TRUE OR UNKNOWN as a proven series match", () => {
+		const rule = expressionRule("true-or-unknown", {
+			type: "group",
+			operator: "OR",
+			children: [ageCondition, providerCondition],
+		});
+
+		expect(episodeSeriesPolicyMutationVerifiability(seriesItem("2020-01-01"), [rule], NOW)).toEqual(
+			{
+				verifiable: false,
+				blockingRuleIds: ["true-or-unknown"],
+			},
+		);
+	});
+
+	it("applies service filters before UNKNOWN evidence can block", () => {
+		const rule = expressionRule(
+			"radarr-only",
+			{ type: "not", child: providerCondition },
+			{ serviceFilter: JSON.stringify(["RADARR"]) },
+		);
+
+		expect(episodeSeriesPolicyMutationVerifiability(seriesItem("2026-02-25"), [rule], NOW)).toEqual(
+			{
+				verifiable: true,
+				blockingRuleIds: [],
+			},
+		);
+	});
 });
 
 describe("episode series-retention dependency safety", () => {
+	const liveAgeOnly = (ruleType: string) => ruleType === "age";
+	const providerCondition = {
+		type: "condition",
+		ruleType: "plex_collection",
+		parameters: { operator: "includes_any", collections: ["Keep"] },
+	};
+	const ageCondition = {
+		type: "condition",
+		ruleType: "age",
+		parameters: { operator: "older_than", days: 30 },
+	};
+	const nestedRetentionRule = (root: Record<string, unknown>, overrides: Partial<TestRule> = {}) =>
+		makeRule({
+			id: "nested-retention",
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: JSON.stringify({ version: 1, root }),
+			retentionMode: true,
+			...overrides,
+		}) as unknown as LibraryCleanupRule;
+
 	it("does not report episode-scoped rules as skipped by a series prefetch failure", () => {
 		const episodeRule = makeRule({
 			id: "episode-watch-count",
@@ -718,7 +1138,7 @@ describe("episode series-retention dependency safety", () => {
 
 		expect(ruleUsesUnavailableData(retentionRule, new Set(["tautulli"]))).toBe(true);
 		expect(buildUnavailableRuleWarning([retentionRule], new Set(["tautulli"]))).toContain(
-			"1 retention rule defaults to protection for safety",
+			"1 retention rule may default to protection for safety",
 		);
 		expect(
 			seriesRetentionProtectsEpisode(
@@ -744,7 +1164,7 @@ describe("episode series-retention dependency safety", () => {
 
 		expect(ruleUsesUnavailableData(retentionRule, new Set(["plex"]))).toBe(true);
 		expect(buildUnavailableRuleWarning([retentionRule], new Set(["plex"]))).toContain(
-			"1 retention rule defaults to protection for safety",
+			"1 retention rule may default to protection for safety",
 		);
 		expect(
 			seriesRetentionProtectsEpisode(
@@ -773,6 +1193,93 @@ describe("episode series-retention dependency safety", () => {
 				new Set(["plex"]),
 			),
 		).toBe(true);
+	});
+
+	it("suppresses preview when live TRUE AND provider UNKNOWN cannot be proven false", () => {
+		const rule = nestedRetentionRule({
+			type: "group",
+			operator: "AND",
+			children: [ageCondition, providerCondition],
+		});
+		const item = makeCacheItem({ itemType: "series" });
+		const knownProviderFalse = baseCtx({
+			plexMap: new Map([
+				[
+					"series:12345",
+					{
+						watchCount: 0,
+						lastWatchedAt: null,
+						addedAt: null,
+						onDeck: false,
+						userRating: null,
+						collections: [],
+						labels: [],
+						watchedByUsers: [],
+						sections: [],
+					},
+				],
+			]),
+		});
+
+		expect(seriesRetentionProtectsEpisode(item, [rule], knownProviderFalse, new Set())).toBe(false);
+		expect(seriesRetentionProtectsEpisode(item, [rule], { now: NOW }, new Set(), liveAgeOnly)).toBe(
+			true,
+		);
+	});
+
+	it("allows preview when live FALSE dominates provider UNKNOWN in AND", () => {
+		const rule = nestedRetentionRule({
+			type: "group",
+			operator: "AND",
+			children: [ageCondition, providerCondition],
+		});
+		const recentlyAdded = makeCacheItem({
+			itemType: "series",
+			arrAddedAt: new Date("2026-02-25T00:00:00Z"),
+		});
+
+		expect(
+			seriesRetentionProtectsEpisode(recentlyAdded, [rule], { now: NOW }, new Set(), liveAgeOnly),
+		).toBe(false);
+	});
+
+	it.each([
+		[
+			"FALSE OR UNKNOWN",
+			{
+				type: "group",
+				operator: "OR",
+				children: [ageCondition, providerCondition],
+			},
+		],
+		["NOT UNKNOWN", { type: "not", child: providerCondition }],
+	])("suppresses preview when %s remains unknown", (_name, root) => {
+		const rule = nestedRetentionRule(root);
+		const recentlyAdded = makeCacheItem({
+			itemType: "series",
+			arrAddedAt: new Date("2026-02-25T00:00:00Z"),
+		});
+
+		expect(
+			seriesRetentionProtectsEpisode(recentlyAdded, [rule], { now: NOW }, new Set(), liveAgeOnly),
+		).toBe(true);
+	});
+
+	it("applies filters before unknown nested retention evidence", () => {
+		const rule = nestedRetentionRule(
+			{ type: "not", child: providerCondition },
+			{ serviceFilter: JSON.stringify(["RADARR"]) },
+		);
+
+		expect(
+			seriesRetentionProtectsEpisode(
+				makeCacheItem({ itemType: "series" }),
+				[rule],
+				{ now: NOW },
+				new Set(),
+				liveAgeOnly,
+			),
+		).toBe(false);
 	});
 });
 

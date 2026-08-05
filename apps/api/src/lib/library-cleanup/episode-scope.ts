@@ -65,6 +65,7 @@ interface EpisodeWatchCountRule {
 	name: string;
 	parameters: string;
 	action: string | null;
+	scanMediaServerAfterDelete?: boolean;
 }
 
 interface PlexWatchCountParameters {
@@ -94,9 +95,7 @@ export function isSupportedEpisodeCleanupRule(rule: EpisodeCleanupRuleShape): bo
 		!rule.enabled ||
 		rule.targetScope !== "episode" ||
 		rule.retentionMode ||
-		(rule.action !== "delete" &&
-			rule.action !== "delete_files" &&
-			rule.action !== "unmonitor") ||
+		(rule.action !== "delete" && rule.action !== "delete_files" && rule.action !== "unmonitor") ||
 		rule.ruleType !== "plex_watch_count" ||
 		rule.operator !== null ||
 		(rule.conditions !== null &&
@@ -114,9 +113,7 @@ export function isSupportedEpisodeCleanupRule(rule: EpisodeCleanupRuleShape): bo
 	);
 }
 
-export function toEpisodeTargetMetadata(
-	candidate: EpisodeCleanupCandidate,
-): EpisodeTargetMetadata {
+export function toEpisodeTargetMetadata(candidate: EpisodeCleanupCandidate): EpisodeTargetMetadata {
 	return {
 		targetScope: "episode",
 		arrEpisodeId: candidate.arrEpisodeId,
@@ -161,11 +158,7 @@ export function evaluateEpisodeWatchCountRule(
 	}
 	if (candidate.watchCount <= params.count) return null;
 
-	if (
-		rule.action !== "delete" &&
-		rule.action !== "delete_files" &&
-		rule.action !== "unmonitor"
-	) {
+	if (rule.action !== "delete" && rule.action !== "delete_files" && rule.action !== "unmonitor") {
 		return null;
 	}
 	const action = rule.action as RuleAction;
@@ -174,5 +167,6 @@ export function evaluateEpisodeWatchCountRule(
 		ruleName: rule.name,
 		reason: `Plex watch count ${candidate.watchCount} > ${params.count}`,
 		action,
+		...(rule.scanMediaServerAfterDelete === true ? { scanMediaServerAfterDelete: true } : {}),
 	};
 }

@@ -439,11 +439,15 @@ export const libraryCleanupKeys = {
 	config: ["library-cleanup-config"] as const,
 	status: ["library-cleanup-status"] as const,
 	approvals: ["library-cleanup-approvals"] as const,
+	activityAll: ["library-cleanup-activity"] as const,
 	logsAll: ["library-cleanup-logs"] as const,
 	statisticsAll: ["library-cleanup-statistics"] as const,
 	statistics: (days: number) => ["library-cleanup-statistics", days] as const,
 	approvalQueue: (page: number, status?: string) =>
 		["library-cleanup-approvals", page, status] as const,
+	activity: (page: number) => ["library-cleanup-activity", page] as const,
+	activityEvents: (actionId: string, initialCursor: string, pageSize: number) =>
+		["library-cleanup-activity", "events", actionId, initialCursor, pageSize] as const,
 	logs: (page: number, filters?: Record<string, string>) =>
 		["library-cleanup-logs", page, filters] as const,
 };

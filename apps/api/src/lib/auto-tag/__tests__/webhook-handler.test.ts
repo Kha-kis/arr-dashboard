@@ -12,14 +12,57 @@ import type { AutoTagRule, ServiceInstance, User } from "../../prisma.js";
 
 // Mock the evaluator + prefetch context builder. The evaluator returns a
 // reason string (truthy = match) by default; tests can override per-call.
-const evalState: { reason: string | null } = { reason: "matched" };
+const evalState: { reason: string | null; failedSources: Set<string> } = {
+	reason: "matched",
+	failedSources: new Set(),
+};
+
+function mockWebhookEvaluation(...args: unknown[]) {
+	const item = args[0] as { monitored: boolean; data: string };
+	const ruleType = args[1];
+	const parameters = args[2] as { operator?: string; score?: number };
+	const failedSources = args[5] as Set<string> | undefined;
+	const parsed = JSON.parse(item.data) as {
+		service?: string;
+		ratings?: { value?: unknown; tmdb?: { value?: unknown }; imdb?: { value?: unknown } };
+		_arrDashboardEvidence?: { monitored?: unknown; rating?: unknown; imdbRating?: unknown };
+	};
+	if (ruleType === "monitored" || ruleType === "unmonitored") {
+		if (parsed._arrDashboardEvidence?.monitored !== true) return { state: "unknown" };
+		const matches = ruleType === "monitored" ? item.monitored : !item.monitored;
+		return matches ? { state: "true", reason: "matched" } : { state: "false" };
+	}
+	if (ruleType === "rating" || ruleType === "imdb_rating") {
+		const evidenceKey = ruleType === "rating" ? "rating" : "imdbRating";
+		if (parsed._arrDashboardEvidence?.[evidenceKey] !== true) return { state: "unknown" };
+		const value =
+			ruleType === "imdb_rating"
+				? parsed.ratings?.imdb?.value
+				: parsed.service === "sonarr"
+					? parsed.ratings?.value
+					: parsed.ratings?.tmdb?.value;
+		if (typeof value !== "number" || value <= 0 || value > 10) return { state: "unknown" };
+		const matches =
+			parameters.operator === "less_than"
+				? value < (parameters.score ?? 0)
+				: value > (parameters.score ?? 10);
+		return matches ? { state: "true", reason: "matched" } : { state: "false" };
+	}
+	if (typeof ruleType === "string" && ruleType.startsWith("plex_") && failedSources?.has("plex")) {
+		return { state: "unknown" };
+	}
+	return evalState.reason ? { state: "true", reason: evalState.reason } : { state: "false" };
+}
 
 vi.mock("../../library-cleanup/rule-evaluators.js", () => ({
-	evaluateSingleCondition: vi.fn(() => evalState.reason),
+	evaluateSingleConditionState: vi.fn(mockWebhookEvaluation),
 }));
 
 vi.mock("../../library-cleanup/cleanup-executor.js", () => ({
-	buildEvalContext: vi.fn(async () => ({ now: new Date() })),
+	buildEvalContextWithHealth: vi.fn(async () => ({
+		ctx: { now: new Date() },
+		failedSources: new Set(evalState.failedSources),
+	})),
 }));
 
 import { processWebhook, resolveUserFromBearer } from "../webhook-handler.js";
@@ -119,19 +162,33 @@ interface MockArrClient {
 	};
 }
 
-function makeArrClient(itemOverride: Partial<{ id: number; tags: number[] }> = {}): MockArrClient {
-	const movie = {
+type ArrItemOverride = Partial<{
+	id: number;
+	tags: number[];
+	monitored: boolean | "missing";
+	ratings: Record<string, unknown>;
+}>;
+
+function makeArrItem(itemOverride: ArrItemOverride = {}) {
+	const monitoringState =
+		itemOverride.monitored === "missing" ? {} : { monitored: itemOverride.monitored ?? true };
+	return {
 		id: itemOverride.id ?? 100,
 		title: "The Movie",
 		year: 2023,
-		monitored: true,
+		...monitoringState,
 		hasFile: true,
 		status: "available",
 		qualityProfileId: 1,
 		sizeOnDisk: 5_000_000,
 		added: new Date().toISOString(),
 		tags: itemOverride.tags ?? [],
+		...(itemOverride.ratings ? { ratings: itemOverride.ratings } : {}),
 	};
+}
+
+function makeArrClient(itemOverride: ArrItemOverride = {}): MockArrClient {
+	const movie = makeArrItem(itemOverride);
 	const series = { ...movie, statistics: { episodeFileCount: 10 } };
 	return {
 		tag: {
@@ -192,6 +249,7 @@ describe("resolveUserFromBearer", () => {
 describe("processWebhook", () => {
 	beforeEach(() => {
 		evalState.reason = "matched";
+		evalState.failedSources = new Set();
 	});
 
 	it("test event returns status 'test' without invoking *arr API", async () => {
@@ -259,7 +317,10 @@ describe("processWebhook", () => {
 
 		expect(result.status).toBe("ok");
 		expect(result.tagsApplied).toBe(1);
-		expect(arrClient.movie.update).toHaveBeenCalledWith(100, { id: 100, tags: [7] });
+		expect(arrClient.movie.update).toHaveBeenCalledWith(
+			100,
+			expect.objectContaining({ id: 100, tags: [7], qualityProfileId: 1 }),
+		);
 	});
 
 	it("idempotent: item already has the tag → no update call, still status ok", async () => {
@@ -304,10 +365,99 @@ describe("processWebhook", () => {
 			payload: { eventType: "Download", movie: { id: 100 } },
 		});
 
-		expect(arrClient.movie.update).toHaveBeenCalledWith(100, {
-			id: 100,
-			tags: [3, 5, 7],
+		expect(arrClient.movie.update).toHaveBeenCalledWith(
+			100,
+			expect.objectContaining({ id: 100, tags: [3, 5, 7], qualityProfileId: 1 }),
+		);
+	});
+
+	it("revalidates monitoring immediately before PUT and skips a webhook-time match", async () => {
+		const arrClient = makeArrClient({ monitored: true });
+		arrClient.movie.getById
+			.mockResolvedValueOnce(makeArrItem({ monitored: true }))
+			.mockResolvedValueOnce(makeArrItem({ monitored: false }));
+		const prisma = {
+			autoTagRule: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([makeRule({ ruleType: "monitored", parameters: "{}" })]),
+			},
+		};
+
+		const result = await processWebhook({
+			deps: {
+				prisma: prisma as never,
+				arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+				encryptor: {} as never,
+				log,
+			},
+			user: makeUser(),
+			instance: makeInstance(),
+			payload: { eventType: "Download", movie: { id: 100 } },
 		});
+
+		expect(result.tagsApplied).toBe(0);
+		expect(arrClient.movie.getById).toHaveBeenCalledTimes(2);
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("revalidates rating immediately before PUT and skips a webhook-time match", async () => {
+		const arrClient = makeArrClient();
+		arrClient.movie.getById
+			.mockResolvedValueOnce(makeArrItem({ ratings: { tmdb: { value: 4.2 } } }))
+			.mockResolvedValueOnce(makeArrItem({ ratings: { tmdb: { value: 8.2 } } }));
+		const prisma = {
+			autoTagRule: {
+				findMany: vi.fn().mockResolvedValue([
+					makeRule({
+						ruleType: "rating",
+						parameters: JSON.stringify({ operator: "less_than", score: 5 }),
+					}),
+				]),
+			},
+		};
+
+		const result = await processWebhook({
+			deps: {
+				prisma: prisma as never,
+				arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+				encryptor: {} as never,
+				log,
+			},
+			user: makeUser(),
+			instance: makeInstance(),
+			payload: { eventType: "Download", movie: { id: 100 } },
+		});
+
+		expect(result.tagsApplied).toBe(0);
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("merges a concurrently added tag from the final live ARR resource", async () => {
+		const arrClient = makeArrClient({ tags: [3] });
+		arrClient.movie.getById
+			.mockResolvedValueOnce(makeArrItem({ tags: [3] }))
+			.mockResolvedValueOnce(makeArrItem({ tags: [3, 5] }));
+		const prisma = {
+			autoTagRule: { findMany: vi.fn().mockResolvedValue([makeRule()]) },
+		};
+
+		await processWebhook({
+			deps: {
+				prisma: prisma as never,
+				arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+				encryptor: {} as never,
+				log,
+			},
+			user: makeUser(),
+			instance: makeInstance(),
+			payload: { eventType: "Download", movie: { id: 100 } },
+		});
+
+		expect(arrClient.movie.update).toHaveBeenCalledWith(
+			100,
+			expect.objectContaining({ tags: [3, 5, 7], monitored: true }),
+		);
 	});
 
 	it("non-matching rule → status ok, no update", async () => {
@@ -331,6 +481,66 @@ describe("processWebhook", () => {
 		});
 
 		expect(result.status).toBe("ok");
+		expect(result.message).toMatch(/no rules matched/i);
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["monitored", true, true],
+		["monitored", false, false],
+		["monitored", "missing", false],
+		["unmonitored", false, true],
+		["unmonitored", true, false],
+		["unmonitored", "missing", false],
+	] as const)("%s webhook with state %s applies=%s", async (ruleType, monitored, shouldApply) => {
+		const arrClient = makeArrClient({ monitored });
+		const prisma = {
+			autoTagRule: {
+				findMany: vi.fn().mockResolvedValue([makeRule({ ruleType, parameters: "{}" })]),
+			},
+		};
+		const result = await processWebhook({
+			deps: {
+				prisma: prisma as never,
+				arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+				encryptor: {} as never,
+				log,
+			},
+			user: makeUser(),
+			instance: makeInstance(),
+			payload: { eventType: "Download", movie: { id: 100 } },
+		});
+		expect(result.status).toBe("ok");
+		expect(arrClient.movie.update).toHaveBeenCalledTimes(shouldApply ? 1 : 0);
+	});
+
+	it("does not write an ARR tag for a negative Plex rule with missing section evidence", async () => {
+		evalState.failedSources = new Set(["plex"]);
+		const arrClient = makeArrClient();
+		const prisma = {
+			autoTagRule: {
+				findMany: vi.fn().mockResolvedValue([
+					makeRule({
+						ruleType: "plex_watch_count",
+						parameters: JSON.stringify({ operator: "less_than", count: 1 }),
+						plexLibraryFilter: JSON.stringify(["Missing Library"]),
+					}),
+				]),
+			},
+		};
+
+		const result = await processWebhook({
+			deps: {
+				prisma: prisma as never,
+				arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+				encryptor: {} as never,
+				log,
+			},
+			user: makeUser(),
+			instance: makeInstance(),
+			payload: { eventType: "Download", movie: { id: 100 } },
+		});
+
 		expect(result.message).toMatch(/no rules matched/i);
 		expect(arrClient.movie.update).not.toHaveBeenCalled();
 	});
@@ -455,13 +665,12 @@ describe("processWebhook", () => {
 
 		expect(arrClient.movie.update).toHaveBeenCalledTimes(1);
 		// Critical: existing tags (3, 5, 7) preserved, only the missing one (8) added
-		expect(arrClient.movie.update).toHaveBeenCalledWith(100, {
-			id: 100,
-			tags: [3, 5, 7, 8],
-		});
-		// And we must NOT have done a second getById (the prior bug fetched
-		// the item twice with a silent fallback that erased existing tags on
-		// transient failures).
-		expect(arrClient.movie.getById).toHaveBeenCalledTimes(1);
+		expect(arrClient.movie.update).toHaveBeenCalledWith(
+			100,
+			expect.objectContaining({ id: 100, tags: [3, 5, 7, 8], qualityProfileId: 1 }),
+		);
+		// The second read is the intentional write-boundary revalidation; it
+		// supplies both the policy evidence and the tags used by the PUT.
+		expect(arrClient.movie.getById).toHaveBeenCalledTimes(2);
 	});
 });

@@ -33,6 +33,9 @@ export function getDefaultConditionParams(ruleType: CleanupRuleType): Record<str
 			return { source: "tmdb", operator: "less_than", score: 5 };
 		case "status":
 			return { statuses: [] };
+		case "monitored":
+		case "unmonitored":
+			return {};
 		case "genre":
 			return { operator: "includes_any", genres: [] };
 		case "year_range":
@@ -245,6 +248,13 @@ export function ConditionParamsFields({
 						className={inputClass}
 					/>
 				</label>
+			);
+
+		case "monitored":
+			return (
+				<p className="text-xs text-muted-foreground">
+					Matches all monitored items. No additional parameters.
+				</p>
 			);
 
 		case "unmonitored":

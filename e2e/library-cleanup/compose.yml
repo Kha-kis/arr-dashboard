@@ -1,0 +1,457 @@
+name: ${COMPOSE_PROJECT_NAME:?Set a unique lc-e2e-* project name}
+
+x-linuxserver-environment: &linuxserver-environment
+  PUID: ${PUID:-1000}
+  PGID: ${PGID:-1000}
+  TZ: ${TZ:-Etc/UTC}
+  UMASK: "002"
+
+x-arr-healthcheck: &arr-healthcheck
+  interval: 10s
+  timeout: 5s
+  retries: 30
+  start_period: 30s
+
+x-dashboard-healthcheck: &dashboard-healthcheck
+  test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/health"]
+  interval: 10s
+  timeout: 5s
+  retries: 30
+  start_period: 60s
+
+x-dashboard-dependencies: &dashboard-dependencies
+  radarr-a:
+    condition: service_healthy
+  radarr-b:
+    condition: service_healthy
+  sonarr-a:
+    condition: service_healthy
+  sonarr-b:
+    condition: service_healthy
+  plex:
+    condition: service_healthy
+  qbittorrent-a:
+    condition: service_healthy
+  qbittorrent-b:
+    condition: service_healthy
+  qui-a:
+    condition: service_healthy
+  qui-b:
+    condition: service_healthy
+  toxiproxy:
+    condition: service_healthy
+
+services:
+  radarr-a:
+    image: ${RADARR_IMAGE:-lscr.io/linuxserver/radarr:latest}
+    environment: *linuxserver-environment
+    volumes:
+      - radarr-a-config:/config
+      - shared-media:/radarr-a/data
+    expose:
+      - "7878"
+    networks:
+      cleanup-internal:
+      metadata-egress:
+    healthcheck:
+      <<: *arr-healthcheck
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7878/ping"]
+
+  radarr-b:
+    image: ${RADARR_IMAGE:-lscr.io/linuxserver/radarr:latest}
+    environment: *linuxserver-environment
+    volumes:
+      - radarr-b-config:/config
+      - shared-media:/radarr-b/data
+    expose:
+      - "7878"
+    networks:
+      cleanup-internal:
+      metadata-egress:
+    healthcheck:
+      <<: *arr-healthcheck
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7878/ping"]
+
+  sonarr-a:
+    image: ${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:latest}
+    environment: *linuxserver-environment
+    volumes:
+      - sonarr-a-config:/config
+      - shared-media:/sonarr-a/data
+    expose:
+      - "8989"
+    networks:
+      cleanup-internal:
+      metadata-egress:
+    healthcheck:
+      <<: *arr-healthcheck
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8989/ping"]
+
+  sonarr-b:
+    image: ${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:latest}
+    environment: *linuxserver-environment
+    volumes:
+      - sonarr-b-config:/config
+      - shared-media:/sonarr-b/data
+    expose:
+      - "8989"
+    networks:
+      cleanup-internal:
+      metadata-egress:
+    healthcheck:
+      <<: *arr-healthcheck
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8989/ping"]
+
+  plex:
+    image: ${PLEX_IMAGE:-lscr.io/linuxserver/plex:latest}
+    environment:
+      <<: *linuxserver-environment
+      VERSION: docker
+      FILE__PLEX_CLAIM: /run/secrets/plex_claim
+    secrets:
+      - plex_claim
+    volumes:
+      - plex-config:/config
+      - shared-media:/plex/data
+    expose:
+      - "32400"
+    networks:
+      cleanup-internal:
+      metadata-egress:
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:32400/identity"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 45s
+
+  plex-loopback-proxy:
+    image: ${CANDIDATE_DASHBOARD_IMAGE:-arr-dashboard-library-cleanup:local}
+    entrypoint: ["node", "-e"]
+    command:
+      - |
+        const http = require("node:http");
+        const server = http.createServer((request, response) => {
+          const requestUrl = new URL(request.url, "http://plex.invalid");
+          if (requestUrl.pathname === "/status/sessions/history/all") {
+            const offset = Number(requestUrl.searchParams.get("X-Plex-Container-Start") ?? "0");
+            const metadata = offset === 0 ? [{
+              ratingKey: "17",
+              parentRatingKey: "16",
+              grandparentRatingKey: "15",
+              title: "Pilot",
+              grandparentTitle: "Breaking Bad",
+              type: "episode",
+              viewedAt: 1785876613,
+              accountID: 1,
+            }] : [];
+            const body = JSON.stringify({
+              MediaContainer: { size: metadata.length, totalSize: 1, offset, Metadata: metadata },
+            });
+            response.writeHead(200, { "content-type": "application/json", "content-length": Buffer.byteLength(body) });
+            response.end(body);
+            return;
+          }
+          const { "x-plex-token": _discardedToken, ...forwardedHeaders } = request.headers;
+          const upstream = http.request({
+            host: "127.0.0.1",
+            port: 32400,
+            method: request.method,
+            path: request.url,
+            headers: { ...forwardedHeaders, host: "127.0.0.1:32400" },
+          }, (upstreamResponse) => {
+            response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+            upstreamResponse.pipe(response);
+          });
+          upstream.on("error", () => {
+            if (!response.headersSent) response.writeHead(502);
+            response.end();
+          });
+          request.pipe(upstream);
+        });
+        server.listen(33240, "0.0.0.0");
+    network_mode: service:plex
+    depends_on:
+      plex:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:33240/identity').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  qbittorrent-a:
+    image: ${QBITTORRENT_IMAGE:-lscr.io/linuxserver/qbittorrent:latest}
+    environment:
+      <<: *linuxserver-environment
+      WEBUI_PORT: "8080"
+      TORRENTING_PORT: "6881"
+    volumes:
+      - qbittorrent-a-config:/config
+      - shared-media:/data
+    expose:
+      - "8080"
+    networks:
+      - cleanup-internal
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  qbittorrent-b:
+    image: ${QBITTORRENT_IMAGE:-lscr.io/linuxserver/qbittorrent:latest}
+    environment:
+      <<: *linuxserver-environment
+      WEBUI_PORT: "8080"
+      TORRENTING_PORT: "6881"
+    volumes:
+      - qbittorrent-b-config:/config
+      - shared-media:/data
+    expose:
+      - "8080"
+    networks:
+      - cleanup-internal
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  qui-a:
+    image: ${QUI_IMAGE:-ghcr.io/autobrr/qui:v1.16.1}
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      QUI__AUTH_DISABLED: "true"
+      QUI__I_ACKNOWLEDGE_THIS_IS_A_BAD_IDEA: "true"
+      QUI__AUTH_DISABLED_ALLOWED_CIDRS: ${HARNESS_SUBNET:-172.31.250.0/24}
+    volumes:
+      - qui-a-config:/config
+      - shared-media:/data
+    expose:
+      - "7476"
+    networks:
+      - cleanup-internal
+    depends_on:
+      qbittorrent-a:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:7476/healthz/readiness",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  qui-b:
+    image: ${QUI_IMAGE:-ghcr.io/autobrr/qui:v1.16.1}
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      QUI__AUTH_DISABLED: "true"
+      QUI__I_ACKNOWLEDGE_THIS_IS_A_BAD_IDEA: "true"
+      QUI__AUTH_DISABLED_ALLOWED_CIDRS: ${HARNESS_SUBNET:-172.31.250.0/24}
+    volumes:
+      - qui-b-config:/config
+      - shared-media:/data
+    expose:
+      - "7476"
+    networks:
+      - cleanup-internal
+    depends_on:
+      qbittorrent-b:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:7476/healthz/readiness",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    environment:
+      POSTGRES_USER: arr_dashboard
+      POSTGRES_DB: arr_dashboard
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    networks:
+      - cleanup-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arr_dashboard -d arr_dashboard"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+
+  toxiproxy:
+    image: ${TOXIPROXY_IMAGE:-ghcr.io/shopify/toxiproxy:2.12.0}
+    expose:
+      - "8474"
+      - "18081-18090"
+    networks:
+      - cleanup-internal
+    healthcheck:
+      test: ["CMD", "/toxiproxy-cli", "-host=127.0.0.1:8474", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  dashboard-sqlite:
+    image: ${CANDIDATE_DASHBOARD_IMAGE:-arr-dashboard-library-cleanup:local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        VERSION: library-cleanup-e2e
+        COMMIT_SHA: local
+    profiles: ["candidate-sqlite"]
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+      PORT: "3000"
+      API_PORT: "3001"
+      DATABASE_URL: file:/config/prod.db
+      API_RATE_LIMIT_MAX: "10000"
+    volumes:
+      - dashboard-sqlite-config:/config
+      - shared-media:/data:ro
+      - shared-media:/radarr-a/data:ro
+      - shared-media:/radarr-b/data:ro
+      - shared-media:/sonarr-a/data:ro
+      - shared-media:/sonarr-b/data:ro
+      - shared-media:/plex/data:ro
+    ports:
+      - "127.0.0.1:${DASHBOARD_SQLITE_PORT:-33030}:3000"
+    networks:
+      - cleanup-internal
+    depends_on: *dashboard-dependencies
+    healthcheck: *dashboard-healthcheck
+
+  dashboard-postgres:
+    image: ${CANDIDATE_DASHBOARD_IMAGE:-arr-dashboard-library-cleanup:local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        VERSION: library-cleanup-e2e
+        COMMIT_SHA: local
+    profiles: ["candidate-postgres"]
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        export DATABASE_URL="postgresql://arr_dashboard:$$(cat /run/secrets/postgres_password)@postgres:5432/arr_dashboard"
+        exec /sbin/tini -- /app/start.sh
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+      PORT: "3000"
+      API_PORT: "3001"
+      API_RATE_LIMIT_MAX: "10000"
+    secrets:
+      - postgres_password
+    volumes:
+      - dashboard-postgres-config:/config
+      - shared-media:/data:ro
+      - shared-media:/radarr-a/data:ro
+      - shared-media:/radarr-b/data:ro
+      - shared-media:/sonarr-a/data:ro
+      - shared-media:/sonarr-b/data:ro
+      - shared-media:/plex/data:ro
+    ports:
+      - "127.0.0.1:${DASHBOARD_POSTGRES_PORT:-33031}:3000"
+    networks:
+      - cleanup-internal
+    depends_on:
+      <<: *dashboard-dependencies
+      postgres:
+        condition: service_healthy
+    healthcheck: *dashboard-healthcheck
+
+  dashboard-baseline:
+    image: ${BASELINE_DASHBOARD_IMAGE:-khak1s/arr-dashboard:2.23.0}
+    profiles: ["baseline"]
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+      PORT: "3000"
+      API_PORT: "3001"
+      DATABASE_URL: file:/config/prod.db
+      API_RATE_LIMIT_MAX: "10000"
+    volumes:
+      - dashboard-baseline-config:/config
+      - shared-media:/data:ro
+      - shared-media:/radarr-a/data:ro
+      - shared-media:/radarr-b/data:ro
+      - shared-media:/sonarr-a/data:ro
+      - shared-media:/sonarr-b/data:ro
+      - shared-media:/plex/data:ro
+    ports:
+      - "127.0.0.1:${DASHBOARD_BASELINE_PORT:-33032}:3000"
+    networks:
+      - cleanup-internal
+    depends_on: *dashboard-dependencies
+    healthcheck: *dashboard-healthcheck
+
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:?Set POSTGRES_PASSWORD_FILE to an ignored local file}
+  plex_claim:
+    file: ${PLEX_CLAIM_FILE:?Set PLEX_CLAIM_FILE to an ignored local file (it may be empty)}
+
+volumes:
+  shared-media:
+  radarr-a-config:
+  radarr-b-config:
+  sonarr-a-config:
+  sonarr-b-config:
+  plex-config:
+  qbittorrent-a-config:
+  qbittorrent-b-config:
+  qui-a-config:
+  qui-b-config:
+  postgres-data:
+  dashboard-sqlite-config:
+  dashboard-postgres-config:
+  dashboard-baseline-config:
+
+networks:
+  cleanup-internal:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${HARNESS_SUBNET:-172.31.250.0/24}
+  metadata-egress:
+    driver: bridge

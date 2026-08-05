@@ -1,11 +1,12 @@
 "use client";
 
 import type { CleanupQuiStatus } from "@arr/shared";
-import { AlertOctagon, CheckCheck, Pause, Upload } from "lucide-react";
+import { CircleOff, Pause, Upload } from "lucide-react";
 import { cn } from "../../../lib/utils";
 
 interface QuiStatusBadgeProps {
 	status: CleanupQuiStatus;
+	observedAt?: string | null;
 	className?: string;
 }
 
@@ -14,41 +15,43 @@ const COPY: Record<
 	{ label: string; tone: string; icon: typeof Upload; tooltip: string }
 > = {
 	not_in_qui: {
-		label: "qui: safe",
-		tone: "text-emerald-300 border-emerald-500/30 bg-emerald-500/5",
-		icon: CheckCheck,
+		label: "qUI cache: no match",
+		tone: "text-slate-300 border-slate-500/30 bg-slate-500/5",
+		icon: CircleOff,
 		tooltip:
-			"qui has no torrent for this item's infoHash — the file isn't seeding anywhere arr-dashboard can see. Highest-trust safe-to-delete signal.",
+			"No current qUI match is recorded for this infoHash. This cache status is informational only; protected deletion checks every enabled qUI again immediately before deleting files.",
 	},
 	seeding: {
-		label: "qui: seeding",
+		label: "qUI cache: active",
 		tone: "text-amber-300 border-amber-500/30 bg-amber-500/5",
 		icon: Upload,
 		tooltip:
-			"qui reports this torrent is actively seeding. Deleting will break the seed — consider letting it finish first.",
+			"The last qUI cache sync found an active torrent. This snapshot is informational only; protected deletion checks every enabled qUI again immediately before deleting files.",
 	},
 	paused_or_error: {
-		label: "qui: paused",
+		label: "qUI cache: inactive",
 		tone: "text-sky-300 border-sky-500/30 bg-sky-500/5",
 		icon: Pause,
 		tooltip:
-			"qui reports this torrent is paused or errored. The upload is already stopped, so deletion has less impact than for a seeding torrent.",
+			"The last qUI cache sync found a paused or errored torrent. This snapshot is informational only; protected deletion checks every enabled qUI again immediately before deleting files.",
 	},
 };
 
 /**
- * qui-derived deletion-safety badge for cleanup preview items (Phase 3.3).
+ * Cached qUI observation badge for cleanup preview items (Phase 3.3).
  *
  * Renders nothing when `status === "no_signal"` so items without qui data
  * don't get visual chrome. The badge is informational — it doesn't change
  * cleanup behavior (Phase 2.2's `respectQuiSeeding` gate handles the
  * enforcement side).
  */
-export const QuiStatusBadge = ({ status, className }: QuiStatusBadgeProps) => {
+export const QuiStatusBadge = ({ status, observedAt, className }: QuiStatusBadgeProps) => {
 	if (status === "no_signal") return null;
 	const entry = COPY[status];
 	if (!entry) return null;
 	const { label, tone, icon: Icon, tooltip } = entry;
+	const observedAtSuffix = observedAt ? ` Cached at ${new Date(observedAt).toLocaleString()}.` : "";
+	const accessibleDescription = `${tooltip}${observedAtSuffix}`;
 
 	return (
 		<span
@@ -57,16 +60,11 @@ export const QuiStatusBadge = ({ status, className }: QuiStatusBadgeProps) => {
 				tone,
 				className,
 			)}
-			title={tooltip}
-			aria-label={`${label} — ${tooltip}`}
+			title={accessibleDescription}
+			aria-label={`${label} — ${accessibleDescription}`}
 		>
 			<Icon className="h-3 w-3" aria-hidden />
 			{label}
 		</span>
 	);
 };
-
-// Suppress unused-import warning for `AlertOctagon` — reserved for a
-// future "qui: tracker unregistered" state when we add tracker-health
-// surfacing to LibraryCache.
-void AlertOctagon;

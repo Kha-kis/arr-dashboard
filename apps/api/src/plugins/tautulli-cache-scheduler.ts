@@ -11,6 +11,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import { recordCacheRefreshFailure } from "../lib/cache-refresh-status.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { refreshTautulliCache } from "../lib/tautulli/tautulli-cache-refresher.js";
 import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
@@ -56,34 +57,16 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 								"Tautulli cache refresh completed for instance",
 							);
 
-							// Track refresh status — separate try so a DB failure
-							// doesn't masquerade as a refresh failure in the outer catch
 							try {
-								await app.prisma.cacheRefreshStatus.upsert({
-									where: {
-										instanceId_cacheType: { instanceId: instance.id, cacheType: "tautulli" },
-									},
-									create: {
-										instanceId: instance.id,
-										cacheType: "tautulli",
-										lastRefreshedAt: new Date(),
-										lastResult: result.errors > 0 ? "error" : "success",
-										lastErrorMessage:
-											result.errorMessages.length > 0
-												? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-												: null,
-										itemCount: result.upserted,
-									},
-									update: {
-										lastRefreshedAt: new Date(),
-										lastResult: result.errors > 0 ? "error" : "success",
-										lastErrorMessage:
-											result.errorMessages.length > 0
-												? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-												: null,
-										itemCount: result.upserted,
-									},
-								});
+								if (!result.complete || !result.completedAt) {
+									await recordCacheRefreshFailure(
+										app.prisma,
+										instance.id,
+										"tautulli",
+										result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
+											"Tautulli refresh did not produce a complete generation",
+									);
+								}
 							} catch (trackErr) {
 								app.log.warn(
 									{ err: trackErr, instanceId: instance.id },
@@ -97,35 +80,21 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 							);
 
 							// Track failure
-							await app.prisma.cacheRefreshStatus
-								.upsert({
-									where: {
-										instanceId_cacheType: { instanceId: instance.id, cacheType: "tautulli" },
-									},
-									create: {
+							await recordCacheRefreshFailure(
+								app.prisma,
+								instance.id,
+								"tautulli",
+								getErrorMessage(err, "Unknown error"),
+							).catch((trackErr) => {
+								app.log.warn(
+									{
+										err: trackErr,
+										originalErr: getErrorMessage(err, "Unknown error"),
 										instanceId: instance.id,
-										cacheType: "tautulli",
-										lastRefreshedAt: new Date(),
-										lastResult: "error",
-										lastErrorMessage: getErrorMessage(err, "Unknown error"),
-										itemCount: 0,
 									},
-									update: {
-										lastRefreshedAt: new Date(),
-										lastResult: "error",
-										lastErrorMessage: getErrorMessage(err, "Unknown error"),
-									},
-								})
-								.catch((trackErr) => {
-									app.log.warn(
-										{
-											err: trackErr,
-											originalErr: getErrorMessage(err, "Unknown error"),
-											instanceId: instance.id,
-										},
-										"Failed to record cache refresh failure status",
-									);
-								});
+									"Failed to record cache refresh failure status",
+								);
+							});
 						}
 					}
 

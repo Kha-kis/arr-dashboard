@@ -4,6 +4,7 @@ import {
 	getAllHashesForFileId,
 } from "../../lib/library-sync/infohash-backfill-by-inode.js";
 import { createQuiClient } from "../../lib/qui/client-factory.js";
+import { withQuiObservationTopologyGuard } from "../../lib/qui/observation-topology-guard.js";
 import { enrichTorrentHashes } from "./qui-shared.js";
 
 export function registerPanelRoutes(app: FastifyInstance): void {
@@ -164,12 +165,20 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 			);
 			let healedEpisodes = 0;
 			if (healCandidates.length > 0) {
-				await Promise.all(
-					healCandidates.map(({ ep, inodeHashes }) =>
-						app.prisma.episodeFileCache.update({
-							where: { id: ep.id },
-							data: { infoHash: inodeHashes[0], infoHashSource: "inode" },
-						}),
+				await withQuiObservationTopologyGuard(userId, () =>
+					Promise.all(
+						healCandidates.map(({ ep, inodeHashes }) =>
+							app.prisma.episodeFileCache.update({
+								where: { id: ep.id },
+								data: {
+									infoHash: inodeHashes[0],
+									infoHashSource: "inode",
+									torrentState: null,
+									torrentRatio: null,
+									torrentSyncedAt: null,
+								},
+							}),
+						),
 					),
 				);
 				healedEpisodes = healCandidates.length;
@@ -765,10 +774,18 @@ export function registerPanelRoutes(app: FastifyInstance): void {
 
 			let healedEpisodes = 0;
 			if (cachedHashIsStale && inodeHashes.length > 0) {
-				await app.prisma.libraryCache.update({
-					where: { id: movieRow.id },
-					data: { infoHash: inodeHashes[0], infoHashSource: "inode" },
-				});
+				await withQuiObservationTopologyGuard(userId, () =>
+					app.prisma.libraryCache.update({
+						where: { id: movieRow.id },
+						data: {
+							infoHash: inodeHashes[0],
+							infoHashSource: "inode",
+							torrentState: null,
+							torrentRatio: null,
+							torrentSyncedAt: null,
+						},
+					}),
+				);
 				healedEpisodes = 1;
 				request.log.info(
 					{ userId, arrInstanceId, arrMovieId: arrItemId },

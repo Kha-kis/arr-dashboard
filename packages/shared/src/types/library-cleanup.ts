@@ -40,6 +40,241 @@ export type CleanupAction = z.infer<typeof cleanupActionSchema>;
 export const cleanupTargetScopeSchema = z.enum(["series", "episode"]);
 export type CleanupTargetScope = z.infer<typeof cleanupTargetScopeSchema>;
 
+export const CLEANUP_RULE_EXPRESSION_VERSION = 1 as const;
+export const CLEANUP_RULE_EXPRESSION_MAX_DEPTH = 8;
+export const CLEANUP_RULE_EXPRESSION_MAX_NODES = 100;
+
+export interface CleanupRuleConditionExpression {
+	type: "condition";
+	ruleType: Exclude<RuleType, "composite">;
+	parameters: Record<string, unknown>;
+}
+
+export interface CleanupRuleGroupExpression {
+	type: "group";
+	operator: CompositeOperator;
+	children: CleanupRuleExpression[];
+}
+
+export interface CleanupRuleNotExpression {
+	type: "not";
+	child: CleanupRuleExpression;
+}
+
+export type CleanupRuleExpression =
+	| CleanupRuleConditionExpression
+	| CleanupRuleGroupExpression
+	| CleanupRuleNotExpression;
+
+export interface VersionedCleanupRuleExpression {
+	version: typeof CLEANUP_RULE_EXPRESSION_VERSION;
+	root: CleanupRuleExpression;
+}
+
+interface ExpressionValidationFailure {
+	path: PropertyKey[];
+	message: string;
+}
+
+/**
+ * Iterative validation rejects cyclic programmatic inputs and over-deep JSON
+ * deterministically instead of risking a recursive parser stack overflow.
+ */
+function getExpressionValidationFailure(value: unknown): ExpressionValidationFailure | null {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		return { path: [], message: "Expression must be an object" };
+	}
+	const envelope = value as Record<string, unknown>;
+	if (envelope.version !== CLEANUP_RULE_EXPRESSION_VERSION) {
+		return {
+			path: ["version"],
+			message: `Unsupported cleanup rule expression version (expected ${CLEANUP_RULE_EXPRESSION_VERSION})`,
+		};
+	}
+	const envelopeExtra = Object.keys(envelope).find((key) => key !== "version" && key !== "root");
+	if (envelopeExtra) {
+		return { path: [envelopeExtra], message: `Unexpected expression field "${envelopeExtra}"` };
+	}
+
+	const stack: Array<{
+		node: unknown;
+		path: PropertyKey[];
+		depth: number;
+		exiting?: boolean;
+	}> = [{ node: envelope.root, path: ["root"], depth: 1 }];
+	const activePath = new WeakSet<object>();
+	let nodeCount = 0;
+	while (stack.length > 0) {
+		const current = stack.pop()!;
+		if (current.exiting) {
+			if (typeof current.node === "object" && current.node !== null) {
+				activePath.delete(current.node);
+			}
+			continue;
+		}
+		if (current.depth > CLEANUP_RULE_EXPRESSION_MAX_DEPTH) {
+			return {
+				path: current.path,
+				message: `Expression exceeds maximum depth of ${CLEANUP_RULE_EXPRESSION_MAX_DEPTH}`,
+			};
+		}
+		if (typeof current.node !== "object" || current.node === null || Array.isArray(current.node)) {
+			return { path: current.path, message: "Expression node must be an object" };
+		}
+		if (activePath.has(current.node)) {
+			return { path: current.path, message: "Expression cannot contain a cycle" };
+		}
+		activePath.add(current.node);
+		stack.push({ ...current, exiting: true });
+		nodeCount++;
+		if (nodeCount > CLEANUP_RULE_EXPRESSION_MAX_NODES) {
+			return {
+				path: current.path,
+				message: `Expression exceeds maximum node count of ${CLEANUP_RULE_EXPRESSION_MAX_NODES}`,
+			};
+		}
+
+		const node = current.node as Record<string, unknown>;
+		if (node.type === "condition") {
+			const extra = Object.keys(node).find(
+				(key) => key !== "type" && key !== "ruleType" && key !== "parameters",
+			);
+			if (extra) {
+				return {
+					path: [...current.path, extra],
+					message: `Unexpected condition field "${extra}"`,
+				};
+			}
+			if (!ruleTypeSchema.exclude(["composite"]).safeParse(node.ruleType).success) {
+				return { path: [...current.path, "ruleType"], message: "Invalid condition rule type" };
+			}
+			if (
+				typeof node.parameters !== "object" ||
+				node.parameters === null ||
+				Array.isArray(node.parameters)
+			) {
+				return {
+					path: [...current.path, "parameters"],
+					message: "Condition parameters must be an object",
+				};
+			}
+			continue;
+		}
+		if (node.type === "group") {
+			const extra = Object.keys(node).find(
+				(key) => key !== "type" && key !== "operator" && key !== "children",
+			);
+			if (extra) {
+				return { path: [...current.path, extra], message: `Unexpected group field "${extra}"` };
+			}
+			if (node.operator !== "AND" && node.operator !== "OR") {
+				return {
+					path: [...current.path, "operator"],
+					message: "Group operator must be AND or OR",
+				};
+			}
+			if (!Array.isArray(node.children) || node.children.length === 0) {
+				return {
+					path: [...current.path, "children"],
+					message: "Groups must contain at least one child",
+				};
+			}
+			for (let i = node.children.length - 1; i >= 0; i--) {
+				stack.push({
+					node: node.children[i],
+					path: [...current.path, "children", i],
+					depth: current.depth + 1,
+				});
+			}
+			continue;
+		}
+		if (node.type === "not") {
+			const extra = Object.keys(node).find((key) => key !== "type" && key !== "child");
+			if (extra) {
+				return { path: [...current.path, extra], message: `Unexpected NOT field "${extra}"` };
+			}
+			if (!("child" in node)) {
+				return { path: [...current.path, "child"], message: "NOT must contain one child" };
+			}
+			stack.push({
+				node: node.child,
+				path: [...current.path, "child"],
+				depth: current.depth + 1,
+			});
+			continue;
+		}
+		return {
+			path: [...current.path, "type"],
+			message: "Expression node type must be condition, group, or not",
+		};
+	}
+	return null;
+}
+
+export const cleanupRuleExpressionSchema = z
+	.unknown()
+	.superRefine((value, ctx) => {
+		const failure = getExpressionValidationFailure(value);
+		if (failure) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: failure.message,
+				path: failure.path,
+			});
+		}
+	})
+	.transform((value) => value as VersionedCleanupRuleExpression);
+
+export function isVersionedCleanupRuleExpression(
+	value: unknown,
+): value is VersionedCleanupRuleExpression {
+	return cleanupRuleExpressionSchema.safeParse(value).success;
+}
+
+/** Convert every supported rule representation to the evaluator language. */
+export function normalizeCleanupRuleExpression(input: {
+	ruleType: RuleType | string;
+	parameters: Record<string, unknown>;
+	operator?: CompositeOperator | string | null;
+	conditions?: readonly Condition[] | null;
+	expression?: VersionedCleanupRuleExpression | null;
+}): VersionedCleanupRuleExpression | null {
+	if (input.expression) {
+		const parsed = cleanupRuleExpressionSchema.safeParse(input.expression);
+		return parsed.success ? parsed.data : null;
+	}
+	if (input.operator === "AND" || input.operator === "OR") {
+		if (!input.conditions?.length) return null;
+		const normalized = {
+			version: CLEANUP_RULE_EXPRESSION_VERSION,
+			root: {
+				type: "group",
+				operator: input.operator,
+				children: input.conditions.map((condition) => ({
+					type: "condition",
+					ruleType: condition.ruleType,
+					parameters: condition.parameters,
+				})),
+			},
+		} satisfies VersionedCleanupRuleExpression;
+		const parsed = cleanupRuleExpressionSchema.safeParse(normalized);
+		return parsed.success ? parsed.data : null;
+	}
+	if (input.ruleType === "composite") return null;
+	const parsedType = ruleTypeSchema.exclude(["composite"]).safeParse(input.ruleType);
+	if (!parsedType.success) return null;
+	const normalized = {
+		version: CLEANUP_RULE_EXPRESSION_VERSION,
+		root: {
+			type: "condition",
+			ruleType: parsedType.data,
+			parameters: input.parameters,
+		},
+	} satisfies VersionedCleanupRuleExpression;
+	const parsed = cleanupRuleExpressionSchema.safeParse(normalized);
+	return parsed.success ? parsed.data : null;
+}
+
 // ============================================================================
 // Cleanup Rule Schema — generic criteria + cleanup-specific filters/action
 // ============================================================================
@@ -67,8 +302,20 @@ const baseCleanupRuleSchema = z.object({
 	plexLibraryFilter: z.array(z.string()).nullable().optional(),
 	targetScope: cleanupTargetScopeSchema.optional().default("series"),
 	action: cleanupActionSchema.optional().default("delete"),
+	scanMediaServerAfterDelete: z.boolean().optional().default(false),
 	operator: compositeOperatorSchema.nullable().optional(),
-	conditions: z.array(conditionSchema).nullable().optional(),
+	// Legacy composites normalize to one implicit group node plus one node per
+	// condition, so 99 children is the largest representation within the
+	// shared 100-node AST budget.
+	conditions: z
+		.array(conditionSchema)
+		.max(
+			CLEANUP_RULE_EXPRESSION_MAX_NODES - 1,
+			`Legacy composite rules can contain at most ${CLEANUP_RULE_EXPRESSION_MAX_NODES - 1} conditions`,
+		)
+		.nullable()
+		.optional(),
+	expression: cleanupRuleExpressionSchema.nullable().optional(),
 	retentionMode: z.boolean().optional().default(false),
 	/**
 	 * When true, this rule inherits the config-level `rejectionMemoryDays`.
@@ -91,10 +338,53 @@ interface CleanupRuleScopeInput {
 	serviceFilter?: string[] | null;
 	plexLibraryFilter?: string[] | null;
 	retentionMode?: boolean | null;
+	action?: CleanupAction | string | null;
+	scanMediaServerAfterDelete?: boolean | null;
 	ruleType?: RuleType | string | null;
 	parameters?: Record<string, unknown> | null;
 	operator?: CompositeOperator | string | null;
 	conditions?: readonly unknown[] | null;
+	expression?: VersionedCleanupRuleExpression | null;
+}
+
+/** True when any supported rule representation contains an IMDb condition. */
+export function cleanupRuleRequiresRadarrRatings(rule: CleanupRuleScopeInput): boolean {
+	if (rule.ruleType === "imdb_rating") return true;
+
+	if (rule.expression) {
+		const parsed = cleanupRuleExpressionSchema.safeParse(rule.expression);
+		if (!parsed.success) return false;
+		const stack: CleanupRuleExpression[] = [parsed.data.root];
+		while (stack.length > 0) {
+			const node = stack.pop()!;
+			if (node.type === "condition") {
+				if (node.ruleType === "imdb_rating") return true;
+			} else if (node.type === "group") {
+				stack.push(...node.children);
+			} else {
+				stack.push(node.child);
+			}
+		}
+	}
+
+	return (
+		rule.conditions?.some(
+			(condition) =>
+				typeof condition === "object" &&
+				condition !== null &&
+				"ruleType" in condition &&
+				condition.ruleType === "imdb_rating",
+		) ?? false
+	);
+}
+
+function getImdbRatingServiceValidationError(rule: CleanupRuleScopeInput): string | null {
+	if (!cleanupRuleRequiresRadarrRatings(rule)) return null;
+	if (!rule.serviceFilter || rule.serviceFilter.length === 0) return null;
+	if (rule.serviceFilter.length === 1 && rule.serviceFilter[0]?.toUpperCase() === "RADARR") {
+		return null;
+	}
+	return "IMDb rating cleanup rules can target Radarr only";
 }
 
 /**
@@ -103,6 +393,15 @@ interface CleanupRuleScopeInput {
  * unwatched/absent state from an incomplete cache.
  */
 export function getCleanupRuleScopeValidationError(rule: CleanupRuleScopeInput): string | null {
+	const imdbServiceError = getImdbRatingServiceValidationError(rule);
+	if (imdbServiceError) return imdbServiceError;
+	if (
+		rule.scanMediaServerAfterDelete === true &&
+		(rule.retentionMode === true || rule.action === "unmonitor")
+	) {
+		return "Media-server scans can only follow delete or delete-files cleanup rules";
+	}
+
 	if ((rule.targetScope ?? "series") !== "episode") return null;
 
 	if (rule.serviceFilter?.length !== 1 || rule.serviceFilter[0]?.toUpperCase() !== "SONARR") {
@@ -117,7 +416,8 @@ export function getCleanupRuleScopeValidationError(rule: CleanupRuleScopeInput):
 	if (
 		rule.ruleType === "composite" ||
 		rule.operator != null ||
-		(rule.conditions?.length ?? 0) > 0
+		(rule.conditions?.length ?? 0) > 0 ||
+		rule.expression != null
 	) {
 		return "Episode-scoped cleanup rules cannot be composite";
 	}
@@ -132,11 +432,46 @@ export function getCleanupRuleScopeValidationError(rule: CleanupRuleScopeInput):
 }
 
 export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine((data, ctx) => {
+	if (
+		data.ruleType === "composite" &&
+		data.expression == null &&
+		(data.operator == null || !data.conditions?.length)
+	) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: "Composite rules require an expression or an operator with conditions",
+			path: ["ruleType"],
+		});
+	}
+	if (
+		data.ruleType !== "composite" &&
+		(data.operator != null || data.conditions != null || data.expression != null)
+	) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: "Only composite rules can contain conditions or expressions",
+			path: ["ruleType"],
+		});
+	}
 	if (data.operator != null && (!data.conditions || data.conditions.length === 0)) {
 		ctx.addIssue({
 			code: z.ZodIssueCode.custom,
 			message: "Composite rules must have at least one condition",
 			path: ["conditions"],
+		});
+	}
+	if (data.expression != null && (data.operator != null || data.conditions != null)) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: "Use either expression or legacy operator/conditions fields, not both",
+			path: ["expression"],
+		});
+	}
+	if (data.expression != null && data.ruleType !== "composite") {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: 'Recursive expressions require ruleType "composite"',
+			path: ["ruleType"],
 		});
 	}
 	const scopeError = getCleanupRuleScopeValidationError(data);
@@ -151,16 +486,38 @@ export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine((data, 
 
 export const updateCleanupRuleSchema = baseCleanupRuleSchema
 	.partial()
-	// Zod 4 preserves inner defaults through `partial()`. A PATCH/PUT body
-	// that omits targetScope must not silently rewrite an existing episode
-	// rule back to series scope.
-	.extend({ targetScope: cleanupTargetScopeSchema.optional() })
+	// Zod 4 preserves inner defaults through `partial()`. Every default-bearing
+	// create field must therefore be replaced with a plain optional schema here
+	// so an omitted PUT field preserves the stored value.
+	.extend({
+		enabled: z.boolean().optional(),
+		priority: z.number().int().optional(),
+		targetScope: cleanupTargetScopeSchema.optional(),
+		action: cleanupActionSchema.optional(),
+		scanMediaServerAfterDelete: z.boolean().optional(),
+		retentionMode: z.boolean().optional(),
+		useGlobalRejectionMemory: z.boolean().optional(),
+	})
 	.superRefine((data, ctx) => {
 		if (data.operator != null && (!data.conditions || data.conditions.length === 0)) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
 				message: "Composite rules must have at least one condition",
 				path: ["conditions"],
+			});
+		}
+		if (data.expression != null && (data.operator != null || data.conditions != null)) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "Use either expression or legacy operator/conditions fields, not both",
+				path: ["expression"],
+			});
+		}
+		if (data.expression != null && data.ruleType !== undefined && data.ruleType !== "composite") {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: 'Recursive expressions require ruleType "composite"',
+				path: ["ruleType"],
 			});
 		}
 	});
@@ -231,8 +588,10 @@ export interface CleanupRuleResponse {
 	plexLibraryFilter: string[] | null;
 	targetScope: CleanupTargetScope;
 	action: string;
+	scanMediaServerAfterDelete: boolean;
 	operator: CompositeOperator | null;
 	conditions: Condition[] | null;
+	expression?: VersionedCleanupRuleExpression | null;
 	retentionMode: boolean;
 	/** Issue #474: when true, rule inherits config's rejectionMemoryDays. */
 	useGlobalRejectionMemory: boolean;
@@ -275,6 +634,7 @@ export interface CleanupApprovalResponse {
 	matchedRuleName: string;
 	reason: string;
 	action: string;
+	scanMediaServerAfterDelete: boolean;
 	sizeOnDisk: string; // BigInt serialized as string
 	year: number | null;
 	rating: number | null;
@@ -303,6 +663,53 @@ export interface CleanupLogResponse {
 	completedAt: string | null;
 }
 
+export interface CleanupAuditEventResponse {
+	id: string;
+	actionId: string;
+	correlationId: string;
+	sequence: number;
+	eventType: string;
+	outcome: "info" | "success" | "blocked" | "failed";
+	trigger: "scheduled" | "manual" | "approval" | "retry" | "recovery";
+	actorType: "operator" | "scheduler" | "system";
+	actorId: string | null;
+	approvalId: string | null;
+	runLogId: string | null;
+	reason: string;
+	evidence: Record<string, unknown> | null;
+	details: Record<string, unknown> | null;
+	createdAt: string;
+}
+
+export interface CleanupAuditTimelineResponse {
+	actionId: string;
+	instanceId: string;
+	arrItemId: number;
+	itemType: string;
+	targetScope: "series" | "episode";
+	arrEpisodeId: number | null;
+	title: string;
+	ruleId: string | null;
+	ruleName: string | null;
+	action: string;
+	trigger: string;
+	latestOutcome: string;
+	actionableReason: string;
+	startedAt: string;
+	updatedAt: string;
+	eventCount: number;
+	eventsTruncated: boolean;
+	olderEventsCursor: string | null;
+	events: CleanupAuditEventResponse[];
+}
+
+export interface PaginatedCleanupAuditTimelines {
+	items: CleanupAuditTimelineResponse[];
+	total: number;
+	page: number;
+	pageSize: number;
+}
+
 /** Distinct field values extracted from the user's library cache */
 export interface CleanupFieldOptionsResponse {
 	videoCodecs: string[];
@@ -325,19 +732,16 @@ export interface CleanupFieldOptionsResponse {
 
 /** Preview result: items that would be flagged by current rules */
 /**
- * qui-derived deletion-safety hint (Phase 3.3). Surfaces in the cleanup
- * preview so operators can see "qui says this is safe to delete" alongside
- * arr-dashboard's own staleness reasons. Three states:
- *  - `seeding`         — torrent is currently uploading; deletion will
- *                        break the seed. Highest "do not delete" weight.
- *  - `paused_or_error` — torrent state is paused/errored; deletion ends
- *                        an already-stopped session. Lower priority signal.
- *  - `not_in_qui`      — qui has no torrent matching this item's infoHash
- *                        (user removed it from qBit, or it never existed).
- *                        HIGHEST-trust "safe to delete" signal: the file
- *                        on disk is not tracked by any active torrent.
- *  - `no_signal`       — no infoHash backfilled for this item yet, or
- *                        no qui configured. Render nothing.
+ * Cached qUI observation shown in cleanup previews. These values are
+ * informational snapshots from the last cache sync, never deletion
+ * authorization. Destructive cleanup with qUI protection enabled obtains a
+ * complete, fresh qUI view again at the physical-file mutation boundary.
+ *
+ *  - `seeding`         — the cached torrent state was active.
+ *  - `paused_or_error` — the cached torrent state was paused or errored.
+ *  - `not_in_qui`      — a complete sync across every enabled qUI found no
+ *                        matching torrent for this infoHash.
+ *  - `no_signal`       — no complete, fresh qUI observation is available.
  */
 export type CleanupQuiStatus = "seeding" | "paused_or_error" | "not_in_qui" | "no_signal";
 
@@ -360,16 +764,50 @@ export interface CleanupPreviewItem {
 	sizeOnDisk: string;
 	year: number | null;
 	rating: number | null;
-	/** qui-derived safety hint (Phase 3.3). See CleanupQuiStatus comment. */
+	/** Cached qUI observation (Phase 3.3). See CleanupQuiStatus comment. */
 	quiStatus: CleanupQuiStatus;
+	/** Identifies qUI preview evidence as a non-authoritative cache snapshot. */
+	quiStatusSource?: "cached" | null;
+	/** ISO timestamp for the cache row that supplied `quiStatus`, when available. */
+	quiStatusObservedAt?: string | null;
+	/** Whether this target belongs to the exact next run or is being held back. */
+	selectionStatus?: "selected" | "deferred" | "blocked" | "in_flight";
+	/** The configured mutation; preview does not claim the mutation will succeed. */
+	plannedAction?: "delete" | "unmonitor" | "delete_files";
+	/** True when this row is a durable retry attempt rather than a fresh rule match. */
+	isRetryAttempt?: boolean;
 }
 
 export interface CleanupPreviewResponse {
 	totalEvaluated: number;
 	totalFlagged: number;
-	/** Durable mutation retries displayed separately from current rule matches. */
-	pendingRetryCount?: number;
+	/** Null means durable retry storage was unavailable and the count is unknown. */
+	pendingRetryCount?: number | null;
+	/** True only when durable retry ownership and all selection counts are trustworthy. */
+	selectionCountsComplete: boolean;
 	items: CleanupPreviewItem[];
+	selection?: {
+		selectedFresh: number;
+		selectedRetries: number;
+		deferredBudget: number;
+		deferredApproval: number;
+		deferredRetryFairness: number;
+		deferredInFlightTarget?: number;
+		deferredDuplicateTarget?: number;
+		inFlight: number;
+		/** Overlapping subset of selectedFresh, not an additional candidate count. */
+		blocked: number;
+		retryStateUnavailable: number;
+		retryState?: "complete" | "unavailable";
+		total: number;
+	};
+	display?: {
+		shown: number;
+		hidden: number;
+		limit: number;
+		/** True only when every result row is included in this response. */
+		complete: boolean;
+	};
 	prefetchHealth?: PrefetchHealthStatus;
 	warnings?: string[];
 }

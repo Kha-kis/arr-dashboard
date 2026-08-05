@@ -1,5 +1,6 @@
 import type {
 	CleanupApprovalResponse,
+	CleanupAuditEventResponse,
 	CleanupConfigResponse,
 	CleanupExplainResponse,
 	CleanupFieldOptionsResponse,
@@ -9,6 +10,7 @@ import type {
 	CleanupStatisticsResponse,
 	CleanupStatusResponse,
 	CreateCleanupRule,
+	PaginatedCleanupAuditTimelines,
 	UpdateCleanupConfig,
 	UpdateCleanupRule,
 } from "@arr/shared";
@@ -32,6 +34,11 @@ export interface PaginatedLogs {
 	pageSize: number;
 }
 
+export interface CleanupAuditEventPage {
+	items: CleanupAuditEventResponse[];
+	olderEventsCursor: string | null;
+}
+
 export interface ExecuteResult {
 	isDryRun: boolean;
 	status: string;
@@ -49,6 +56,7 @@ export interface ApprovalExecuteResult {
 	reconciled?: number;
 	failed: number;
 	errors: string[];
+	warnings?: string[];
 }
 
 // ============================================================================
@@ -148,6 +156,23 @@ export const libraryCleanupApi = {
 	},
 
 	// Logs
+	async getActivity(page = 1, pageSize = 20): Promise<PaginatedCleanupAuditTimelines> {
+		return apiRequest<PaginatedCleanupAuditTimelines>(
+			`/api/library-cleanup/activity?page=${page}&pageSize=${pageSize}`,
+		);
+	},
+
+	async getActivityEvents(
+		actionId: string,
+		cursor: string,
+		pageSize = 200,
+	): Promise<CleanupAuditEventPage> {
+		const params = new URLSearchParams({ cursor, pageSize: String(pageSize) });
+		return apiRequest<CleanupAuditEventPage>(
+			`/api/library-cleanup/activity/${encodeURIComponent(actionId)}/events?${params.toString()}`,
+		);
+	},
+
 	async getLogs(
 		page = 1,
 		pageSize = 20,

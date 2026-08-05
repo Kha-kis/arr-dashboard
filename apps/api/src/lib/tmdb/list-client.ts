@@ -81,10 +81,21 @@ export function createTmdbV3Client(
 				);
 				throw new Error(`TMDb v3 list ${listId}: malformed response`);
 			}
+			if (
+				parsed.data.item_count !== undefined &&
+				parsed.data.item_count !== parsed.data.items.length
+			) {
+				throw new Error(
+					`TMDb v3 list ${listId}: incomplete response (${parsed.data.items.length} of ${parsed.data.item_count})`,
+				);
+			}
 
 			const items: TmdbListItem[] = [];
 			for (const r of parsed.data.items) {
 				if (r.media_type === "person") continue;
+				if (r.media_type !== "movie" && r.media_type !== "tv") {
+					throw new Error(`TMDb v3 list ${listId}: item ${r.id} lacked a usable media_type`);
+				}
 				const mediaType: "movie" | "series" = r.media_type === "tv" ? "series" : "movie";
 				const title = r.title ?? r.name ?? "(untitled)";
 				items.push({ tmdbId: r.id, mediaType, title });

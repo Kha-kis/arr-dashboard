@@ -143,6 +143,22 @@ describe("buildSearchIndex + findMatch", () => {
 		expect(findMatch(fp!, index)).toEqual({ hash: "deadbeef".repeat(5), source: "path-exact" });
 	});
 
+	it("normalizes qUI hashes before returning path evidence", () => {
+		const index = buildSearchIndex([
+			makeQuiTorrent({
+				hash: ` ${"ABCDEF".repeat(6)}ABCD `,
+				name: "After.Life.mkv",
+				savePath: "/data/media/movies/After.Life (2009)",
+				size: 24_518_693_624,
+			}),
+		]);
+
+		expect(findMatch(fp!, index)).toEqual({
+			hash: `${"abcdef".repeat(6)}abcd`,
+			source: "path-exact",
+		});
+	});
+
 	it("matches via (name, size) fingerprint when paths differ (HARDLINK CASE)", () => {
 		// qui sees the download path (/data/torrents/...), *arr sees the
 		// library path (/data/media/...). Different strings, same inode.

@@ -24,6 +24,7 @@ import {
 	isSonarrClient,
 } from "../arr/client-helpers.js";
 import { requireEnabledInstance } from "../arr/instance-helpers.js";
+import { recordCacheRefreshFailure } from "../cache-refresh-status.js";
 import { parseQueueId } from "../dashboard/queue-utils.js";
 import { AppValidationError, ConflictError } from "../errors.js";
 import { getHuntingScheduler } from "../hunting/scheduler.js";
@@ -134,14 +135,13 @@ async function dispatchSchedulerEnable(
 //   2. Next.js dev-server's proxy (and most reverse proxies) time out
 //      around 30s, returning a misleading 500 to the client even though
 //      the backend work is succeeding.
-//   3. The user-visible contract is already eventually-consistent:
-//      "row drops on next poll" depends on recordCacheRefreshSuccess
-//      bumping lastRefreshedAt, which happens when the background task
-//      resolves — no need to block the HTTP response on that.
+//   3. The user-visible contract is already eventually-consistent: the
+//      atomic refresher publishes the successful generation when it resolves,
+//      so the request does not need to remain open.
 //
-// Errors during background refresh are logged but **do not** write
-// through to CacheRefreshStatus, so the stale row correctly re-emits
-// on the next poll (trust invariant: failure → row stays).
+// Failed or incomplete attempts preserve the prior successful generation and
+// record degraded health so consumers cannot mistake old evidence for a fresh,
+// unqualified success.
 //
 // The optional `backgroundTask` on the return is unused by the route
 // handler (fire-and-forget) but awaited by tests that want to verify
@@ -191,15 +191,28 @@ function runBackgroundCacheRefresh(opts: {
 	return (async () => {
 		try {
 			const result = await refresh();
-			await recordCacheRefreshSuccess(app, instanceId, cacheType, result, log);
+			if (!result.complete || !result.completedAt) {
+				await recordCacheRefreshFailure(
+					app.prisma,
+					instanceId,
+					cacheType,
+					result.errorMessages?.slice(0, 3).join("; ").slice(0, 200) ||
+						`${cacheType} refresh did not publish a complete generation`,
+				);
+			}
 			log.info(
 				{ instanceId, cacheType, upserted: result.upserted, errors: result.errors },
 				"pulse-action: cache refresh completed (background)",
 			);
 		} catch (err) {
-			// Do NOT write through on failure — the stale row must keep
-			// emitting so the operator sees the problem persists. The
-			// caller has already received 200; this error is logged only.
+			await recordCacheRefreshFailure(
+				app.prisma,
+				instanceId,
+				cacheType,
+				err instanceof Error ? err.message : String(err),
+			).catch((statusError) => {
+				log.warn({ err: statusError, instanceId, cacheType }, "Failed to record cache failure");
+			});
 			log.error({ err, instanceId, cacheType }, "pulse-action: cache refresh failed (background)");
 		}
 	})();
@@ -292,43 +305,6 @@ interface CacheRefreshResult {
 	upserted: number;
 	errors: number;
 	errorMessages?: readonly string[];
-}
-
-async function recordCacheRefreshSuccess(
-	app: FastifyInstance,
-	instanceId: string,
-	cacheType: "plex" | "tautulli",
-	result: CacheRefreshResult,
-	log: FastifyBaseLogger,
-): Promise<void> {
-	const now = new Date();
-	const errorMessages = result.errorMessages ?? [];
-	const lastErrorMessage =
-		errorMessages.length > 0 ? errorMessages.slice(0, 3).join("; ").slice(0, 200) : null;
-	const lastResult = result.errors > 0 ? "error" : "success";
-
-	await app.prisma.cacheRefreshStatus
-		.upsert({
-			where: { instanceId_cacheType: { instanceId, cacheType } },
-			create: {
-				instanceId,
-				cacheType,
-				lastRefreshedAt: now,
-				lastResult,
-				lastErrorMessage,
-				itemCount: result.upserted,
-			},
-			update: {
-				lastRefreshedAt: now,
-				lastResult,
-				lastErrorMessage,
-				itemCount: result.upserted,
-			},
-		})
-		.catch((err: unknown) => {
-			log.warn(
-				{ err, instanceId, cacheType },
-				"pulse-action: cache refreshed but failed to record status",
-			);
-		});
+	complete: boolean;
+	completedAt?: Date;
 }
