@@ -14,6 +14,7 @@ import {
 	type TrashCustomFormatGroup,
 	type TrashQualityProfile,
 } from "@arr/shared";
+import { AppValidationError, ConflictError } from "../errors.js";
 import { findCutoffQualityName } from "../utils/quality-utils.js";
 import type { TrashCFWithScores } from "./template-score-utils.js";
 
@@ -225,45 +226,75 @@ export function buildCustomFormatsConfig(
 	cfLookup: Map<number, { id: number; name: string; specifications?: unknown[] }>,
 	trashCFLookup: Map<string, TrashCustomFormat>,
 	sourceInstanceId: string,
+	sourceProfileScores: ReadonlyMap<number, number>,
 ): TemplateConfig["customFormats"] {
 	const customFormatsConfig: TemplateConfig["customFormats"] = [];
+	const resolvedInstanceCFIds = new Set<number>();
 
 	for (const [cfKey, selection] of Object.entries(customFormatSelections)) {
 		if (!selection.selected) continue;
 
-		const trashCF = trashCFLookup.get(cfKey);
-
-		if (trashCF) {
-			// TRaSH-linked CF
-			customFormatsConfig.push({
-				trashId: cfKey,
-				name: trashCF.name,
-				scoreOverride: selection.scoreOverride,
-				conditionsEnabled: selection.conditionsEnabled || {},
-				originalConfig: trashCF,
-			});
-		} else if (cfKey.startsWith("instance-")) {
+		if (cfKey.startsWith("instance-")) {
 			// Instance-only CF (not linked to TRaSH)
-			const instanceCFId = Number.parseInt(cfKey.replace("instance-", ""), 10);
+			const match = /^instance-([1-9]\d*)$/.exec(cfKey);
+			if (!match) {
+				throw new AppValidationError(
+					`Invalid instance custom format key (${cfKey}). Refresh the cloned profile and try again.`,
+				);
+			}
+			const instanceCFId = Number(match[1]);
+			if (!Number.isSafeInteger(instanceCFId) || resolvedInstanceCFIds.has(instanceCFId)) {
+				throw new AppValidationError(
+					`Duplicate or invalid instance custom format key (${cfKey}). Refresh the cloned profile and try again.`,
+				);
+			}
+			resolvedInstanceCFIds.add(instanceCFId);
 			const instanceCF = cfLookup.get(instanceCFId);
 
-			if (instanceCF) {
-				customFormatsConfig.push({
-					trashId: cfKey,
-					name: instanceCF.name,
-					scoreOverride: selection.scoreOverride,
-					conditionsEnabled: selection.conditionsEnabled || {},
-					originalConfig: {
-						trash_id: cfKey,
-						name: instanceCF.name,
-						specifications: (instanceCF.specifications ?? []) as CustomFormatSpecification[],
-						_source: "instance",
-						_instanceId: sourceInstanceId,
-						_instanceCFId: instanceCFId,
-					},
-				});
+			if (!instanceCF) {
+				throw new ConflictError(
+					`The selected instance custom format (${cfKey}) no longer exists. Refresh the cloned profile and try again.`,
+				);
 			}
+
+			const sourceScore = sourceProfileScores.get(instanceCFId);
+			if (sourceScore === undefined) {
+				throw new ConflictError(
+					`Custom format "${instanceCF.name}" no longer has a score in the source quality profile. Refresh the cloned profile and try again.`,
+				);
+			}
+
+			customFormatsConfig.push({
+				trashId: cfKey,
+				name: instanceCF.name,
+				scoreOverride: selection.scoreOverride ?? sourceScore,
+				conditionsEnabled: selection.conditionsEnabled || {},
+				originalConfig: {
+					trash_id: cfKey,
+					name: instanceCF.name,
+					specifications: (instanceCF.specifications ?? []) as CustomFormatSpecification[],
+					_source: "instance",
+					_instanceId: sourceInstanceId,
+					_instanceCFId: instanceCFId,
+				},
+			});
+			continue;
 		}
+
+		const trashCF = trashCFLookup.get(cfKey);
+		if (!trashCF) {
+			throw new ConflictError(
+				`The selected TRaSH custom format (${cfKey}) no longer exists in the current cache. Refresh the cloned profile and try again.`,
+			);
+		}
+
+		customFormatsConfig.push({
+			trashId: cfKey,
+			name: trashCF.name,
+			scoreOverride: selection.scoreOverride,
+			conditionsEnabled: selection.conditionsEnabled || {},
+			originalConfig: trashCF,
+		});
 	}
 
 	return customFormatsConfig;

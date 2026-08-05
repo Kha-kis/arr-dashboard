@@ -27,6 +27,7 @@ export interface ValidationResult {
 	conflicts: ConflictInfo[];
 	errors: string[];
 	warnings: string[];
+	executionToken?: string;
 }
 
 export interface SyncExecuteRequest {
@@ -34,6 +35,7 @@ export interface SyncExecuteRequest {
 	instanceId: string;
 	syncType: "MANUAL" | "SCHEDULED";
 	conflictResolutions?: Record<string, "REPLACE" | "SKIP">;
+	executionToken?: string;
 }
 
 export interface SyncError {

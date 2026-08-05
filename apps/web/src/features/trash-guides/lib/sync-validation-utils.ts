@@ -4,6 +4,8 @@
  * Types, error detection patterns, and helpers for the sync validation modal.
  */
 
+import { ApiError } from "../../../lib/api-client/base";
+
 export interface ValidationTiming {
 	startTime: number;
 	endTime: number | null;
@@ -39,4 +41,9 @@ export function detectErrorTypes(errors: string[]): Set<ErrorType> {
 		}
 	}
 	return detected;
+}
+
+/** A 409 means the reviewed upstream state changed and its token must be replaced. */
+export function isSyncExecutionConflict(error: unknown): boolean {
+	return error instanceof ApiError && error.status === 409;
 }

@@ -4,9 +4,11 @@
  * Tests extractTrashId function and ID-based vs name-based matching behavior
  */
 
-import { describe, it, expect } from "vitest";
 import type { SonarrClient } from "arr-sdk";
+import { describe, expect, it, vi } from "vitest";
+import { ConflictError } from "../../errors.js";
 import { extractTrashId } from "../cf-field-utils.js";
+import { DeploymentExecutorService } from "../deployment-executor.js";
 
 // SDK CustomFormat type alias
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -340,5 +342,260 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 		expect(existingCF).toBeUndefined();
 		existingCF = existingCFByName.get(templateCFWithoutId.name);
 		expect(existingCF).toBe(cfWithoutId);
+	});
+});
+
+describe("DeploymentExecutorService - preview state authorization", () => {
+	it("fails before backup or upstream mutation when the preview token is stale", async () => {
+		const customFormatUpdate = vi.fn();
+		const customFormatCreate = vi.fn();
+		const qualityProfileUpdate = vi.fn();
+		const prisma = {
+			trashTemplate: {
+				findUnique: vi.fn().mockResolvedValue({
+					id: "template-1",
+					name: "Radarr - Any",
+					serviceType: "RADARR",
+					configData: '{"customFormats":[]}',
+					instanceOverrides: null,
+					sourceQualityProfileName: "Any",
+				}),
+			},
+			serviceInstance: {
+				findFirst: vi.fn().mockResolvedValue({
+					id: "instance-1",
+					label: "Radarr",
+					service: "RADARR",
+					baseUrl: "http://radarr",
+					encryptedApiKey: "encrypted",
+					encryptionIv: "iv",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
+				}),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([{ id: "instance-1", service: "RADARR", baseUrl: "http://radarr" }]),
+			},
+			templateQualityProfileMapping: { findMany: vi.fn().mockResolvedValue([]) },
+			trashSettings: { findUnique: vi.fn() },
+			$transaction: vi.fn(),
+		};
+		const client = {
+			system: { get: vi.fn().mockResolvedValue({ version: "5.0.0" }) },
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([]),
+				update: customFormatUpdate,
+				create: customFormatCreate,
+			},
+			qualityProfile: {
+				getAll: vi
+					.fn()
+					.mockResolvedValue([{ id: 1, name: "Any", formatItems: [{ format: 42, score: 0 }] }]),
+				update: qualityProfileUpdate,
+			},
+		};
+		const executor = new DeploymentExecutorService(
+			prisma as never,
+			{
+				create: vi.fn(() => client),
+			} as never,
+		);
+
+		await expect(
+			executor.deploySingleInstance(
+				"template-1",
+				"instance-1",
+				"user-1",
+				"notify",
+				undefined,
+				"stale-preview-token",
+			),
+		).rejects.toThrow(
+			"The template or instance changed after this preview. Refresh the preview and review the deployment again.",
+		);
+		expect(prisma.trashSettings.findUnique).not.toHaveBeenCalled();
+		expect(prisma.$transaction).not.toHaveBeenCalled();
+		expect(customFormatUpdate).not.toHaveBeenCalled();
+		expect(customFormatCreate).not.toHaveBeenCalled();
+		expect(qualityProfileUpdate).not.toHaveBeenCalled();
+	});
+
+	it("rejects ownership held through a duplicate record of the same ARR endpoint", async () => {
+		const customFormatUpdate = vi.fn();
+		const qualityProfileUpdate = vi.fn();
+		const prisma = {
+			trashTemplate: {
+				findUnique: vi.fn().mockResolvedValue({
+					id: "template-1",
+					name: "Radarr - Any",
+					serviceType: "RADARR",
+					configData: '{"customFormats":[]}',
+					instanceOverrides: null,
+					sourceQualityProfileName: "Any",
+				}),
+			},
+			serviceInstance: {
+				findFirst: vi.fn().mockResolvedValue({
+					id: "instance-1",
+					label: "Radarr",
+					service: "RADARR",
+					baseUrl: "http://radarr/",
+					encryptedApiKey: "encrypted",
+					encryptionIv: "iv",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
+				}),
+				findMany: vi.fn().mockResolvedValue([
+					{ id: "instance-1", service: "RADARR", baseUrl: "http://radarr/" },
+					{ id: "instance-alias", service: "RADARR", baseUrl: "http://radarr" },
+				]),
+			},
+			templateQualityProfileMapping: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						templateId: "template-2",
+						instanceId: "instance-alias",
+						qualityProfileId: 1,
+						qualityProfileName: "Any",
+					},
+				]),
+			},
+			trashSettings: { findUnique: vi.fn() },
+			$transaction: vi.fn(),
+		};
+		const client = {
+			system: { get: vi.fn().mockResolvedValue({ version: "5.0.0" }) },
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([]),
+				update: customFormatUpdate,
+			},
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([{ id: 1, name: "Any", formatItems: [] }]),
+				update: qualityProfileUpdate,
+			},
+		};
+		const executor = new DeploymentExecutorService(
+			prisma as never,
+			{ create: vi.fn(() => client) } as never,
+		);
+
+		await expect(
+			executor.deploySingleInstance("template-1", "instance-1", "user-1"),
+		).rejects.toThrow("already managed by another template");
+		expect(prisma.templateQualityProfileMapping.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { instanceId: { in: ["instance-1", "instance-alias"] } },
+			}),
+		);
+		expect(prisma.trashSettings.findUnique).not.toHaveBeenCalled();
+		expect(prisma.$transaction).not.toHaveBeenCalled();
+		expect(customFormatUpdate).not.toHaveBeenCalled();
+		expect(qualityProfileUpdate).not.toHaveBeenCalled();
+	});
+
+	it("fails before upstream access when the service connection drifts after lock acquisition", async () => {
+		const lockSnapshot = {
+			id: "instance-1",
+			label: "Radarr",
+			service: "RADARR",
+			baseUrl: "http://radarr-old",
+			encryptedApiKey: "encrypted",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+		};
+		const prisma = {
+			trashTemplate: {
+				findUnique: vi.fn().mockResolvedValue({
+					id: "template-1",
+					name: "Radarr - Any",
+					serviceType: "RADARR",
+					configData: '{"customFormats":[]}',
+					instanceOverrides: null,
+					sourceQualityProfileName: "Any",
+				}),
+			},
+			serviceInstance: {
+				findFirst: vi
+					.fn()
+					.mockResolvedValueOnce(lockSnapshot)
+					.mockResolvedValueOnce({ ...lockSnapshot, baseUrl: "http://radarr-new" }),
+			},
+		};
+		const createClient = vi.fn();
+		const executor = new DeploymentExecutorService(
+			prisma as never,
+			{ create: createClient } as never,
+		);
+
+		await expect(
+			executor.deploySingleInstance("template-1", "instance-1", "user-1"),
+		).rejects.toThrow("service connection changed while deployment was starting");
+		expect(createClient).not.toHaveBeenCalled();
+	});
+});
+
+describe("DeploymentExecutorService - bulk partial failures", () => {
+	it("preserves applied custom-format counts and details when a deployment conflicts", async () => {
+		const prisma = {
+			trashTemplate: {
+				findUnique: vi.fn().mockResolvedValue({ id: "template-1", name: "Radarr - Any" }),
+			},
+			serviceInstance: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([{ id: "instance-1", service: "RADARR", baseUrl: "http://radarr" }]),
+			},
+		};
+		const executor = new DeploymentExecutorService(prisma as never, {} as never);
+		const partialDetails = {
+			created: ["Created CF"],
+			updated: ["Updated CF"],
+			failed: ["Failed CF"],
+			orphaned: [],
+		};
+		const conflict = Object.assign(new ConflictError("The reviewed profile changed"), {
+			partialDeployment: {
+				created: 1,
+				updated: 1,
+				skipped: 2,
+				details: partialDetails,
+			},
+		});
+		vi.spyOn(executor, "deploySingleInstance").mockRejectedValue(conflict);
+
+		const result = await executor.deployBulkInstances("template-1", ["instance-1"], "user-1");
+
+		expect(result.failedInstances).toBe(1);
+		expect(result.results[0]).toMatchObject({
+			instanceId: "instance-1",
+			success: false,
+			customFormatsCreated: 1,
+			customFormatsUpdated: 1,
+			customFormatsSkipped: 2,
+			errors: ["The reviewed profile changed"],
+			details: partialDetails,
+		});
+	});
+
+	it("rejects duplicate records for one endpoint before starting a bulk deployment", async () => {
+		const prisma = {
+			trashTemplate: {
+				findUnique: vi.fn().mockResolvedValue({ id: "template-1", name: "Radarr - Any" }),
+			},
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([
+					{ id: "instance-1", service: "RADARR", baseUrl: "http://radarr/" },
+					{ id: "instance-alias", service: "radarr", baseUrl: "HTTP://RADARR:80" },
+				]),
+			},
+		};
+		const executor = new DeploymentExecutorService(prisma as never, {} as never);
+		const singleDeployment = vi.spyOn(executor, "deploySingleInstance");
+
+		await expect(
+			executor.deployBulkInstances("template-1", ["instance-1", "instance-alias"], "user-1"),
+		).rejects.toThrow("multiple service records for the same ARR endpoint");
+		expect(singleDeployment).not.toHaveBeenCalled();
 	});
 });

@@ -13,16 +13,21 @@
  */
 
 import {
-	TRASH_CONFIG_TYPES,
 	type CustomQualityConfig,
 	type NamingSelectedPresets,
+	TRASH_CONFIG_TYPES,
 	type TrashConflictGroup,
 	type TrashNamingData,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient, ServiceType } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import { AppValidationError, InstanceNotFoundError, TemplateNotFoundError } from "../errors.js";
+import {
+	AppValidationError,
+	ConflictError,
+	InstanceNotFoundError,
+	TemplateNotFoundError,
+} from "../errors.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
@@ -31,7 +36,16 @@ import { checkMutualExclusions } from "./conflict-checker.js";
 import {
 	finalizeDeploymentHistory,
 	finalizeDeploymentHistoryWithFailure,
+	finalizeDeploymentHistoryWithPartialFailure,
 } from "./deployment-history-manager.js";
+import {
+	assertDeploymentTargetOwnership,
+	createDeploymentEndpointKey,
+	createDeploymentStateToken,
+	createQualityProfileStateToken,
+	getEquivalentServiceInstanceIds,
+	resolveDeploymentTarget,
+} from "./deployment-target.js";
 import { resolvePayload } from "./naming-deployer.js";
 import { createQualityProfileFromSchema } from "./profile-creation-strategies.js";
 import {
@@ -46,6 +60,9 @@ const log = loggers.deployment;
 
 // SDK CustomFormat type for internal use
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
+type SdkQualityProfile =
+	| Awaited<ReturnType<SonarrClient["qualityProfile"]["getAll"]>>[number]
+	| Awaited<ReturnType<RadarrClient["qualityProfile"]["getAll"]>>[number];
 
 // ============================================================================
 // Types
@@ -77,6 +94,38 @@ export interface BulkDeploymentResult {
 	results: DeploymentResult[];
 }
 
+interface PartialDeploymentResult {
+	created: number;
+	updated: number;
+	skipped: number;
+	details: NonNullable<DeploymentResult["details"]>;
+}
+
+function getPartialDeploymentResult(error: unknown): PartialDeploymentResult | undefined {
+	if (!(error instanceof Error) || !("partialDeployment" in error)) {
+		return undefined;
+	}
+
+	const partial = error.partialDeployment;
+	if (
+		!partial ||
+		typeof partial !== "object" ||
+		!("created" in partial) ||
+		typeof partial.created !== "number" ||
+		!("updated" in partial) ||
+		typeof partial.updated !== "number" ||
+		!("skipped" in partial) ||
+		typeof partial.skipped !== "number" ||
+		!("details" in partial) ||
+		!partial.details ||
+		typeof partial.details !== "object"
+	) {
+		return undefined;
+	}
+
+	return partial as PartialDeploymentResult;
+}
+
 interface ValidatedDeploymentData {
 	template: {
 		id: string;
@@ -84,6 +133,7 @@ interface ValidatedDeploymentData {
 		serviceType: string;
 		configData: string;
 		instanceOverrides: string | null;
+		sourceQualityProfileName: string | null;
 	};
 	instance: {
 		id: string;
@@ -246,6 +296,7 @@ export class DeploymentExecutorService {
 				serviceType: template.serviceType,
 				configData: template.configData,
 				instanceOverrides: template.instanceOverrides,
+				sourceQualityProfileName: template.sourceQualityProfileName,
 			},
 			instance: {
 				id: instance.id,
@@ -412,6 +463,8 @@ export class DeploymentExecutorService {
 		syncStrategy: "auto" | "manual" | "notify" | undefined,
 		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
 		profileName: string,
+		resolvedTargetProfile: SdkQualityProfile | undefined,
+		reviewedTargetProfileToken: string | undefined,
 		previouslyDeployedCFs: PreviousDeploymentCF[],
 		effectiveQualityConfig?: CustomQualityConfig,
 	): Promise<SyncQualityProfileResult> {
@@ -419,9 +472,26 @@ export class DeploymentExecutorService {
 		const orphanedCFs: string[] = [];
 
 		try {
-			const qualityProfiles = await client.qualityProfile.getAll();
-
-			let targetProfile = qualityProfiles.find((p) => p.name === profileName);
+			let targetProfile = resolvedTargetProfile;
+			if (targetProfile?.id !== undefined) {
+				const freshTargetProfile = (await client.qualityProfile.getById(
+					targetProfile.id,
+				)) as SdkQualityProfile;
+				if (freshTargetProfile.id !== targetProfile.id) {
+					throw new ConflictError(
+						"The target quality profile identity changed during deployment. Refresh the preview and try again.",
+					);
+				}
+				if (
+					reviewedTargetProfileToken &&
+					createQualityProfileStateToken(freshTargetProfile) !== reviewedTargetProfileToken
+				) {
+					throw new ConflictError(
+						"The target quality profile changed during deployment. Refresh the preview and review the deployment again.",
+					);
+				}
+				targetProfile = freshTargetProfile;
+			}
 
 			if (!targetProfile) {
 				targetProfile = await createQualityProfileFromSchema(
@@ -772,6 +842,9 @@ export class DeploymentExecutorService {
 				});
 			}
 		} catch (error) {
+			if (error instanceof ConflictError) {
+				throw error;
+			}
 			log.error({ err: error }, "Failed to update quality profile");
 			errors.push(`Failed to update quality profile: ${getErrorMessage(error, "Unknown error")}`);
 		}
@@ -789,10 +862,20 @@ export class DeploymentExecutorService {
 		userId: string,
 		syncStrategy?: "auto" | "manual" | "notify",
 		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
+		executionToken?: string,
 	): Promise<DeploymentResult> {
-		if (this.activeDeployments.has(instanceId)) {
+		const lockInstance = await this.prisma.serviceInstance.findFirst({
+			where: { id: instanceId, userId },
+			select: { service: true, baseUrl: true },
+		});
+		if (!lockInstance) {
+			throw new InstanceNotFoundError(instanceId);
+		}
+		const endpointKey = createDeploymentEndpointKey(userId, lockInstance);
+
+		if (this.activeDeployments.has(endpointKey)) {
 			throw new AppValidationError(
-				"Deployment already in progress for this instance. Please wait for it to complete.",
+				"Deployment already in progress for this ARR endpoint. Please wait for it to complete.",
 			);
 		}
 
@@ -802,12 +885,14 @@ export class DeploymentExecutorService {
 			userId,
 			syncStrategy,
 			conflictResolutions,
+			executionToken,
+			endpointKey,
 		);
-		this.activeDeployments.set(instanceId, deploymentPromise);
+		this.activeDeployments.set(endpointKey, deploymentPromise);
 		try {
 			return await deploymentPromise;
 		} finally {
-			this.activeDeployments.delete(instanceId);
+			this.activeDeployments.delete(endpointKey);
 		}
 	}
 
@@ -892,10 +977,13 @@ export class DeploymentExecutorService {
 		userId: string,
 		syncStrategy?: "auto" | "manual" | "notify",
 		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
+		executionToken?: string,
+		expectedEndpointKey?: string,
 	): Promise<DeploymentResult> {
 		const startTime = new Date();
 		let historyId: string | null = null;
 		let deploymentHistoryId: string | null = null;
+		let partialCFResult: DeployCustomFormatsResult | null = null;
 
 		const metrics = getSyncMetrics();
 		const completeMetrics = metrics.startOperation("deployment");
@@ -903,6 +991,14 @@ export class DeploymentExecutorService {
 		try {
 			const { template, instance, templateConfig, templateCFs, effectiveQualityConfig } =
 				await this.validateAndPrepareDeployment(templateId, instanceId, userId);
+			if (
+				expectedEndpointKey &&
+				createDeploymentEndpointKey(userId, instance) !== expectedEndpointKey
+			) {
+				throw new ConflictError(
+					"The ARR service connection changed while deployment was starting. Refresh the preview and try again.",
+				);
+			}
 
 			const client = this.clientFactory.create(instance) as SonarrClient | RadarrClient;
 			try {
@@ -911,11 +1007,91 @@ export class DeploymentExecutorService {
 				throw new Error(`Instance unreachable: ${getErrorMessage(error, "Unknown error")}`);
 			}
 
-			// Fetch pre-deployment state for backup (both CFs and quality profile)
-			const existingCFs = await client.customFormat.getAll();
-			const profileName = template.name || "TRaSH Guides HD/UHD";
-			const allProfiles = await client.qualityProfile.getAll();
-			const preDeploymentQP = allProfiles.find((p) => p.name === profileName) ?? null;
+			// Resolve and authorize the exact upstream target before any write or history mutation.
+			const serviceAliases = await this.prisma.serviceInstance.findMany({
+				where: { userId, service: instance.service },
+				select: { id: true, service: true, baseUrl: true },
+			});
+			const equivalentInstanceIds = getEquivalentServiceInstanceIds(serviceAliases, instance);
+			if (!equivalentInstanceIds.includes(instanceId)) {
+				equivalentInstanceIds.push(instanceId);
+			}
+
+			const [existingCFs, fetchedProfiles, qualityProfileMappings] = await Promise.all([
+				client.customFormat.getAll(),
+				client.qualityProfile.getAll(),
+				this.prisma.templateQualityProfileMapping.findMany({
+					where: { instanceId: { in: equivalentInstanceIds } },
+					orderBy: { updatedAt: "desc" },
+				}),
+			]);
+			const allProfiles = fetchedProfiles as SdkQualityProfile[];
+			const templateMappings = qualityProfileMappings.filter(
+				(mapping) => mapping.templateId === templateId,
+			);
+			if (new Set(templateMappings.map((mapping) => mapping.qualityProfileId)).size > 1) {
+				throw new ConflictError(
+					"This template has conflicting quality-profile mappings for duplicate records of the same ARR instance. Unlink the stale deployment before continuing.",
+				);
+			}
+			const qualityProfileMapping =
+				templateMappings.find((mapping) => mapping.instanceId === instanceId) ??
+				templateMappings[0];
+			const resolvedTarget = resolveDeploymentTarget({
+				profiles: allProfiles,
+				mapping: qualityProfileMapping,
+				sourceProfileId: templateConfig.completeQualityProfile?.sourceProfileId,
+				isSourceInstance: equivalentInstanceIds.includes(
+					templateConfig.completeQualityProfile?.sourceInstanceId ?? "",
+				),
+				sourceProfileName: template.sourceQualityProfileName,
+				templateName: template.name,
+			});
+			if (resolvedTarget.matchedBy === "mapping_name" && !executionToken) {
+				throw new ConflictError(
+					"The mapped quality profile was recreated. Review a fresh deployment preview before relinking it.",
+				);
+			}
+			assertDeploymentTargetOwnership({
+				target: resolvedTarget,
+				templateId,
+				existingMappings: qualityProfileMappings,
+			});
+			const profileName = resolvedTarget.profileName;
+			const preDeploymentQP = resolvedTarget.profile ?? null;
+			const reviewedTargetProfileToken = executionToken
+				? createQualityProfileStateToken(resolvedTarget.profile ?? null)
+				: undefined;
+
+			if (executionToken) {
+				const currentToken = createDeploymentStateToken({
+					template: {
+						id: template.id,
+						name: template.name,
+						configData: template.configData,
+						instanceOverrides: template.instanceOverrides,
+						sourceQualityProfileName: template.sourceQualityProfileName,
+					},
+					instanceId,
+					connection: {
+						service: instance.service,
+						baseUrl: instance.baseUrl,
+						credentialIdentity: [
+							instance.encryptedApiKey,
+							instance.encryptionIv,
+							instance.encryptedHttpAuthCredentials,
+							instance.httpAuthEncryptionIv,
+						].join(":"),
+					},
+					target: resolvedTarget,
+					customFormats: existingCFs,
+				});
+				if (currentToken !== executionToken) {
+					throw new ConflictError(
+						"The template or instance changed after this preview. Refresh the preview and review the deployment again.",
+					);
+				}
+			}
 
 			const { backup, historyId: syncHistoryId } = await this.createBackupAndHistory(
 				instance,
@@ -991,6 +1167,7 @@ export class DeploymentExecutorService {
 				existingCFByName,
 				conflictResolutions,
 			);
+			partialCFResult = cfResult;
 
 			const profileResult = await this.syncQualityProfile(
 				client,
@@ -1002,6 +1179,8 @@ export class DeploymentExecutorService {
 				syncStrategy,
 				conflictResolutions,
 				profileName,
+				resolvedTarget.profile,
+				reviewedTargetProfileToken,
 				previouslyDeployedCFs,
 				effectiveQualityConfig,
 			);
@@ -1085,20 +1264,51 @@ export class DeploymentExecutorService {
 			const errorMessage = getErrorMessage(error, "Unknown error");
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
+			const partialCounts = partialCFResult
+				? {
+						created: partialCFResult.created,
+						updated: partialCFResult.updated,
+						skipped: Math.max(0, partialCFResult.skipped - partialCFResult.details.failed.length),
+					}
+				: undefined;
 
 			try {
-				await finalizeDeploymentHistoryWithFailure(
-					this.prisma,
-					historyId,
-					deploymentHistoryId,
-					startTime,
-					error,
-				);
+				if (partialCFResult && partialCounts && partialCounts.created + partialCounts.updated > 0) {
+					await finalizeDeploymentHistoryWithPartialFailure(
+						this.prisma,
+						historyId,
+						deploymentHistoryId,
+						startTime,
+						partialCFResult.details,
+						partialCounts,
+						error,
+					);
+				} else {
+					await finalizeDeploymentHistoryWithFailure(
+						this.prisma,
+						historyId,
+						deploymentHistoryId,
+						startTime,
+						error,
+					);
+				}
 			} catch (historyError) {
 				log.error(
 					{ err: historyError, originalError: errorMessage },
 					"Failed to record deployment failure in history",
 				);
+			}
+
+			if (error instanceof ConflictError) {
+				if (partialCFResult && partialCounts) {
+					Object.assign(error, {
+						partialDeployment: {
+							...partialCounts,
+							details: partialCFResult.details,
+						},
+					});
+				}
+				throw error;
 			}
 
 			return {
@@ -1119,6 +1329,7 @@ export class DeploymentExecutorService {
 		userId: string,
 		syncStrategy?: "auto" | "manual" | "notify",
 		instanceSyncStrategies?: Record<string, "auto" | "manual" | "notify">,
+		executionTokens?: Record<string, string>,
 	): Promise<BulkDeploymentResult> {
 		const template = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId, userId },
@@ -1126,6 +1337,22 @@ export class DeploymentExecutorService {
 
 		if (!template) {
 			throw new TemplateNotFoundError(templateId);
+		}
+
+		const selectedInstances = await this.prisma.serviceInstance.findMany({
+			where: { id: { in: instanceIds }, userId },
+			select: { id: true, service: true, baseUrl: true },
+		});
+		const endpointOwners = new Map<string, string>();
+		for (const instance of selectedInstances) {
+			const endpointKey = createDeploymentEndpointKey(userId, instance);
+			const existingInstanceId = endpointOwners.get(endpointKey);
+			if (existingInstanceId && existingInstanceId !== instance.id) {
+				throw new AppValidationError(
+					"Bulk deployment includes multiple service records for the same ARR endpoint. Select only one record for each endpoint.",
+				);
+			}
+			endpointOwners.set(endpointKey, instance.id);
 		}
 
 		// Deploy in chunks to avoid overwhelming ARR instances with concurrent API calls.
@@ -1137,7 +1364,14 @@ export class DeploymentExecutorService {
 			const chunk = instanceIds.slice(i, i + MAX_CONCURRENT);
 			const chunkPromises = chunk.map((instanceId) => {
 				const strategy = instanceSyncStrategies?.[instanceId] ?? syncStrategy;
-				return this.deploySingleInstance(templateId, instanceId, userId, strategy);
+				return this.deploySingleInstance(
+					templateId,
+					instanceId,
+					userId,
+					strategy,
+					undefined,
+					executionTokens?.[instanceId],
+				);
 			});
 
 			const settledResults = await Promise.allSettled(chunkPromises);
@@ -1148,14 +1382,16 @@ export class DeploymentExecutorService {
 					results.push(settled.value);
 				} else {
 					const globalIndex = i + j;
+					const partialDeployment = getPartialDeploymentResult(settled.reason);
 					results.push({
 						instanceId: instanceIds[globalIndex] ?? `unknown-${globalIndex}`,
 						instanceLabel: `Instance ${globalIndex + 1}`,
 						success: false,
-						customFormatsCreated: 0,
-						customFormatsUpdated: 0,
-						customFormatsSkipped: 0,
+						customFormatsCreated: partialDeployment?.created ?? 0,
+						customFormatsUpdated: partialDeployment?.updated ?? 0,
+						customFormatsSkipped: partialDeployment?.skipped ?? 0,
 						errors: [getErrorMessage(settled.reason, "Deployment failed")],
+						details: partialDeployment?.details,
 					});
 				}
 			}

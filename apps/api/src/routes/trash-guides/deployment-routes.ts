@@ -70,9 +70,11 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			instanceId: string;
 			syncStrategy?: "auto" | "manual" | "notify";
 			conflictResolutions?: Record<string, "use_template" | "keep_existing">; // Map of trashId → resolution
+			executionToken?: string;
 		};
 	}>("/execute", async (request, reply) => {
-		const { templateId, instanceId, syncStrategy, conflictResolutions } = request.body;
+		const { templateId, instanceId, syncStrategy, conflictResolutions, executionToken } =
+			request.body;
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		if (!templateId || !instanceId) {
@@ -89,6 +91,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			userId,
 			syncStrategy,
 			conflictResolutions,
+			executionToken,
 		);
 
 		request.log.info({ templateId, instanceId, success: result.success }, "Deployment executed");
@@ -375,9 +378,11 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			instanceIds: string[];
 			syncStrategy?: "auto" | "manual" | "notify";
 			instanceSyncStrategies?: Record<string, "auto" | "manual" | "notify">;
+			executionTokens?: Record<string, string>;
 		};
 	}>("/execute-bulk", async (request, reply) => {
-		const { templateId, instanceIds, syncStrategy, instanceSyncStrategies } = request.body;
+		const { templateId, instanceIds, syncStrategy, instanceSyncStrategies, executionTokens } =
+			request.body;
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		if (!templateId || !instanceIds || instanceIds.length === 0) {
@@ -394,6 +399,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			userId,
 			syncStrategy,
 			instanceSyncStrategies,
+			executionTokens,
 		);
 
 		request.log.info({ templateId, instanceCount: instanceIds.length }, "Bulk deployment executed");

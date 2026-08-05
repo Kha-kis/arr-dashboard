@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fast
 import { z } from "zod";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
+import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
@@ -34,6 +35,7 @@ const executeSyncSchema = z.object({
 	instanceId: z.string().cuid(),
 	syncType: z.enum(["MANUAL", "SCHEDULED"]),
 	conflictResolutions: z.record(z.string(), z.enum(["REPLACE", "SKIP"])).optional(),
+	executionToken: z.string().length(64).optional(),
 });
 
 const syncHistoryQuerySchema = z.object({
@@ -135,7 +137,18 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			syncType: "MANUAL",
 		});
 
-		return reply.send(validation);
+		if (!validation.valid) {
+			return reply.send(validation);
+		}
+
+		const previewService = createDeploymentPreviewService(
+			app.prisma,
+			app.arrClientFactory,
+			app.log,
+		);
+		const preview = await previewService.generatePreview(body.templateId, body.instanceId, userId);
+
+		return reply.send({ ...validation, executionToken: preview.executionToken });
 	});
 
 	/**
@@ -145,6 +158,11 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.post("/execute", async (request: FastifyRequest, reply) => {
 		const body = validateRequest(executeSyncSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
+		if (body.syncType === "MANUAL" && !body.executionToken) {
+			return reply.status(400).send({
+				error: "Manual sync requires a fresh validation token",
+			});
+		}
 
 		// Convert conflictResolutions object to Map
 		const resolutionsMap = body.conflictResolutions
@@ -161,6 +179,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 				syncType: body.syncType,
 			},
 			resolutionsMap,
+			body.executionToken,
 		);
 
 		// By the time we get here, sync is complete. Store final state in progress store
