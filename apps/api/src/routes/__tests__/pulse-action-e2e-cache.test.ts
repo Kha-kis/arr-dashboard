@@ -251,7 +251,15 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 		];
 		requireJellyfinClient.mockResolvedValue({
 			client: { id: "jellyfin-client" },
-			instance: {},
+			instance: {
+				service: "JELLYFIN",
+				baseUrl: "https://jellyfin.example.com",
+				encryptedApiKey: "encrypted-key",
+				encryptionIv: "key-iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+			},
 		});
 		const refreshGate = deferred<{
 			upserted: number;
