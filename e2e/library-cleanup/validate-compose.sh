@@ -38,6 +38,8 @@ if ! command -v python3 >/dev/null 2>&1; then
   exit 2
 fi
 
+sh "$SCRIPT_DIR/provenance-helpers.test.sh"
+
 TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lc-e2e-compose.XXXXXX")
 trap 'rm -rf "$TEMP_DIR"' EXIT HUP INT TERM
 umask 077

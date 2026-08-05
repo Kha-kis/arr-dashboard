@@ -96,16 +96,22 @@ Run exactly one dashboard profile at a time:
 ```sh
 PROJECT_NAME=lc-e2e-616-20260803-153000
 
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Candidate builds require a clean checkout." >&2
+  exit 1
+fi
+CANDIDATE_IMAGE=$(sh ./build-candidate-image.sh)
+
 # Required immediately before a live command.
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
 
 # Candidate built from this checkout, SQLite
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose \
-  --profile candidate-sqlite up --build --wait dashboard-sqlite
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
+  docker compose --profile candidate-sqlite up --no-build --wait dashboard-sqlite
 
 # Candidate built from this checkout, PostgreSQL
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose \
-  --profile candidate-postgres up --build --wait dashboard-postgres
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
+  docker compose --profile candidate-postgres up --no-build --wait dashboard-postgres
 
 # Published 2.23.0 baseline reproduction
 COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose \
@@ -157,15 +163,17 @@ sh ./run-browser-policy.sh
 
 COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
   stop dashboard-sqlite
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
-  --profile candidate-postgres up --build --wait dashboard-postgres
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
+  docker compose -f compose.yml -f compose.debug.yml --profile candidate-postgres \
+  up --no-build --wait dashboard-postgres
 LC_E2E_DASHBOARD_SERVICE=dashboard-postgres sh ./bootstrap-dashboard.sh
 LC_E2E_DASHBOARD_SERVICE=dashboard-postgres sh ./run-browser-policy.sh
 
 COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
   stop dashboard-postgres
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
-  --profile candidate-sqlite up --wait dashboard-sqlite
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
+  docker compose -f compose.yml -f compose.debug.yml --profile candidate-sqlite \
+  up --no-build --wait dashboard-sqlite
 sh ./bootstrap-dashboard.sh
 
 sh ./run-live-scenario.sh delete:radarr-uhd
@@ -196,9 +204,14 @@ project/service container and its Compose-labeled isolated network. In WSL
 environments where the container's loopback binding is unreachable, it falls
 back to that selected container's private address. Timestamped,
 candidate-labeled JSON evidence under `.artifacts/playwright/` records the exact
-container/image identity and OCI revision, the test-suite hash, the invoking
-checkout and dirty state, and the UTC start time. The standalone Playwright
-config fails closed when any runner identity field is absent. Set
+container/image identity, OCI revision, and source-archive hash; the test-suite
+hash; the invoking checkout and dirty state; and the UTC start time. The
+standalone Playwright config fails closed when any runner identity field is
+absent, and the runner
+rejects a container unless its image ID, image ref, OCI revision, and immutable
+source-archive hash match the clean checkout's build receipt. The test files are
+extracted from that immutable checkout, concurrent browser runs are locked per
+project, and checkout/container identity is checked again after the tests. Set
 `LC_E2E_DASHBOARD_SERVICE=dashboard-postgres` to run the same flow against the
 PostgreSQL candidate.
 
