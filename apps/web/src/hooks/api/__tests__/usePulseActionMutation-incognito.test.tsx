@@ -17,6 +17,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../contexts/IncognitoContext";
+import { jellyfinKeys, plexKeys, tautulliKeys } from "../../../lib/query-keys";
 
 const INCOGNITO_STORAGE_KEY = "arr-dashboard-incognito-mode";
 
@@ -29,12 +30,15 @@ vi.mock("../../../lib/api-client/pulse", () => ({
 
 // Capture toast calls so we can assert exact text without a real DOM toast.
 const toastErrorCalls: string[] = [];
+const toastSuccessCalls: string[] = [];
 vi.mock("sonner", () => ({
 	toast: {
 		error: (msg: string) => {
 			toastErrorCalls.push(msg);
 		},
-		success: vi.fn(),
+		success: (msg: string) => {
+			toastSuccessCalls.push(msg);
+		},
 	},
 }));
 
@@ -51,6 +55,16 @@ function wrapper({ children }: { children: ReactNode }) {
 	);
 }
 
+function wrapperWithClient(queryClient: QueryClient) {
+	return function TestWrapper({ children }: { children: ReactNode }) {
+		return (
+			<QueryClientProvider client={queryClient}>
+				<IncognitoProvider>{children}</IncognitoProvider>
+			</QueryClientProvider>
+		);
+	};
+}
+
 const SAMPLE_ACTION = {
 	signalId: "scheduler-disabled-hunting",
 	action: {
@@ -64,6 +78,7 @@ const SAMPLE_ACTION = {
 beforeEach(() => {
 	mockDispatchPulseAction.mockReset();
 	toastErrorCalls.length = 0;
+	toastSuccessCalls.length = 0;
 	localStorage.removeItem(INCOGNITO_STORAGE_KEY);
 });
 
@@ -160,5 +175,36 @@ describe("usePulseActionMutation — incognito-mode error toast sanitization", (
 		// just assert no PII shape sneaks in.
 		expect(toastErrorCalls[0]).not.toMatch(/\d{1,3}(\.\d{1,3}){3}/);
 		expect(toastErrorCalls[0]).not.toMatch(/https?:\/\//);
+	});
+});
+
+describe("usePulseActionMutation — Jellyfin cache refresh", () => {
+	it("invalidates Jellyfin keys and reports Jellyfin in the success toast", async () => {
+		mockDispatchPulseAction.mockResolvedValue({ status: "ok" });
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+		});
+		const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+		const { result } = renderHook(() => usePulseActionMutation(), {
+			wrapper: wrapperWithClient(queryClient),
+		});
+
+		await act(async () => {
+			result.current.mutate({
+				signalId: "cache-error-jellyfin-row",
+				action: {
+					kind: "cache.refresh",
+					target: { instanceId: "inst-jellyfin", cacheType: "jellyfin" },
+					label: "Retry refresh",
+					destructive: false,
+				},
+			});
+		});
+		await waitFor(() => expect(toastSuccessCalls).toEqual(["Media cache refresh triggered"]));
+
+		expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: jellyfinKeys.cacheHealth() });
+		expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: jellyfinKeys.all });
+		expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: plexKeys.cacheHealth() });
+		expect(invalidateSpy).not.toHaveBeenCalledWith({ queryKey: tautulliKeys.all });
 	});
 });

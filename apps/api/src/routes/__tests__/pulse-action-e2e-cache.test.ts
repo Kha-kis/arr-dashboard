@@ -24,6 +24,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // Dispatcher collaborators — must be mocked before the route module imports.
 const refreshPlexCache = vi.fn();
 const requirePlexClient = vi.fn();
+const refreshJellyfinCache = vi.fn();
+const requireJellyfinClient = vi.fn();
 vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
@@ -37,6 +39,12 @@ vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
 }));
 vi.mock("../../lib/tautulli/tautulli-helpers.js", () => ({
 	requireTautulliClient: vi.fn(),
+}));
+vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
+	refreshJellyfinCache: (...args: unknown[]) => refreshJellyfinCache(...args),
+}));
+vi.mock("../../lib/jellyfin/jellyfin-helpers.js", () => ({
+	requireJellyfinClient: (...args: unknown[]) => requireJellyfinClient(...args),
 }));
 
 // Run only the staleness collector — keeps other collectors (ARR health,
@@ -60,7 +68,7 @@ type CacheStatusRow = {
 	lastResult: "success" | "error";
 	lastErrorMessage: string | null;
 	itemCount: number;
-	instance: { label: string };
+	instance: { label: string; service: string; enabled: boolean };
 };
 
 const HOURS = 60 * 60 * 1000;
@@ -74,7 +82,7 @@ function makeStaleRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
 		lastResult: "success",
 		lastErrorMessage: null,
 		itemCount: 0,
-		instance: { label: "Home Plex" },
+		instance: { label: "Home Plex", service: "PLEX", enabled: true },
 		...overrides,
 	};
 }
@@ -109,10 +117,20 @@ async function injectPost(url: string, body: unknown) {
 	});
 }
 
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+
 beforeEach(async () => {
 	userCounter += 1;
 	refreshPlexCache.mockReset();
 	requirePlexClient.mockReset();
+	refreshJellyfinCache.mockReset();
+	requireJellyfinClient.mockReset();
 
 	app = Fastify({ logger: false });
 	setupAuthGate(app, `e2e-cache-user-${userCounter}`);
@@ -158,7 +176,21 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 	it("stale Plex cache → action item → POST 200 → cache invalidation drops the row on next poll", async () => {
 		cacheStatuses = [makeStaleRow()];
 		requirePlexClient.mockResolvedValue({ client: { id: "plex-client" }, instance: {} });
-		refreshPlexCache.mockResolvedValue({ upserted: 42, errors: 0, errorMessages: [] });
+		refreshPlexCache.mockImplementation(async () => {
+			cacheStatuses[0] = {
+				...cacheStatuses[0]!,
+				lastRefreshedAt: new Date(),
+				lastResult: "success",
+				lastErrorMessage: null,
+			};
+			return {
+				upserted: 42,
+				errors: 0,
+				errorMessages: [],
+				complete: true,
+				completedAt: new Date(),
+			};
+		});
 
 		// 1. Collector surfaces the item with an action envelope.
 		const first = await injectGet("/pulse");
@@ -204,6 +236,89 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 			(i: { id: string }) => i.id === "cache-stale-plex-row",
 		);
 		expect(stillStale).toBeUndefined();
+	});
+
+	it("clears a warning cached while the Jellyfin retry is still running (#663)", async () => {
+		cacheStatuses = [
+			makeStaleRow({
+				id: "jellyfin-row",
+				instanceId: "inst-jellyfin",
+				cacheType: "jellyfin",
+				lastResult: "error",
+				lastErrorMessage: "fetch failed",
+				instance: { label: "Home Jellyfin", service: "JELLYFIN", enabled: true },
+			}),
+		];
+		requireJellyfinClient.mockResolvedValue({
+			client: { id: "jellyfin-client" },
+			instance: {},
+		});
+		const refreshGate = deferred<{
+			upserted: number;
+			errors: number;
+			errorMessages: string[];
+			complete: boolean;
+			completedAt: Date;
+		}>();
+		refreshJellyfinCache.mockReturnValue(refreshGate.promise);
+
+		const first = await injectGet("/pulse");
+		const failedItem = JSON.parse(first.payload).items.find(
+			(i: { id: string }) => i.id === "cache-error-jellyfin-row",
+		);
+		expect(failedItem).toMatchObject({
+			title: "Home Jellyfin: Jellyfin cache refresh failed",
+			action: {
+				kind: "cache.refresh",
+				target: { instanceId: "inst-jellyfin", cacheType: "jellyfin" },
+				label: "Retry refresh",
+				destructive: false,
+			},
+		});
+
+		const actionRes = await injectPost(
+			`/pulse/${encodeURIComponent(failedItem.id)}/action`,
+			failedItem.action,
+		);
+		expect(actionRes.statusCode).toBe(200);
+		expect(requireJellyfinClient).toHaveBeenCalledTimes(1);
+		expect(requireJellyfinClient.mock.calls[0]?.slice(1)).toEqual([
+			`e2e-cache-user-${userCounter}`,
+			"inst-jellyfin",
+		]);
+		expect(refreshJellyfinCache).toHaveBeenCalledTimes(1);
+
+		// The route returns before a populated cache refresh completes. This
+		// immediate GET legitimately sees and re-caches the old warning.
+		const whilePending = await injectGet("/pulse");
+		expect(
+			JSON.parse(whilePending.payload).items.some(
+				(item: { id: string }) => item.id === "cache-error-jellyfin-row",
+			),
+		).toBe(true);
+
+		cacheStatuses[0] = {
+			...cacheStatuses[0]!,
+			lastRefreshedAt: new Date(),
+			lastResult: "success",
+			lastErrorMessage: null,
+		};
+		refreshGate.resolve({
+			upserted: 12,
+			errors: 0,
+			errorMessages: [],
+			complete: true,
+			completedAt: new Date(),
+		});
+		await refreshGate.promise;
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		// Completion invalidation must evict the warning cached above.
+		const afterCompletion = await injectGet("/pulse");
+		const cacheWarnings = JSON.parse(afterCompletion.payload).items.filter((item: { id: string }) =>
+			item.id.endsWith("jellyfin-row"),
+		);
+		expect(cacheWarnings).toEqual([]);
 	});
 
 	it("ownership failure returns 404 (InstanceNotFoundError convention)", async () => {

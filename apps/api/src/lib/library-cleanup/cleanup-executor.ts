@@ -16,6 +16,7 @@ import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
 import { refreshJellyfinCache } from "../jellyfin/jellyfin-cache-refresher.js";
+import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-refresher.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
@@ -49,18 +50,18 @@ import {
 } from "./cleanup-audit.js";
 import { withCleanupOperationGuard } from "./cleanup-maintenance-gate.js";
 import {
-	prepareMediaServerRescans,
-	rescanMediaType,
-	retryPendingMediaServerRescans,
-	triggerCoalescedMediaServerRescans,
-} from "./media-server-rescan.js";
-import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
 	evaluateEpisodeWatchCountRule,
 	isSupportedEpisodeCleanupRule,
 	toEpisodeTargetMetadata,
 } from "./episode-scope.js";
+import {
+	prepareMediaServerRescans,
+	rescanMediaType,
+	retryPendingMediaServerRescans,
+	triggerCoalescedMediaServerRescans,
+} from "./media-server-rescan.js";
 import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
 import {
 	type ConditionEvidenceAvailability,
@@ -8661,7 +8662,9 @@ async function refreshJellyfinMutationEvidence(
 					deps.jellyfinCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createJellyfinClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Jellyfin credentials were unavailable");
-				const refreshed = await refreshJellyfinCache(client, deps.prisma, instance.id, deps.log);
+				const refreshed = await runJellyfinCacheRefreshSingleFlight(instance.id, () =>
+					refreshJellyfinCache(client, deps.prisma, instance.id, deps.log),
+				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Jellyfin cache refresh was incomplete");
 				}

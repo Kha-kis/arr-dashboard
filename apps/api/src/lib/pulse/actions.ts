@@ -28,6 +28,9 @@ import { recordCacheRefreshFailure } from "../cache-refresh-status.js";
 import { parseQueueId } from "../dashboard/queue-utils.js";
 import { AppValidationError, ConflictError } from "../errors.js";
 import { getHuntingScheduler } from "../hunting/scheduler.js";
+import { refreshJellyfinCache } from "../jellyfin/jellyfin-cache-refresher.js";
+import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
+import { requireJellyfinClient } from "../jellyfin/jellyfin-helpers.js";
 import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../plex/plex-helpers.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
@@ -167,6 +170,22 @@ async function dispatchCacheRefresh(
 		return { status: "ok", backgroundTask };
 	}
 
+	if (cacheType === "jellyfin") {
+		const { client } = await requireJellyfinClient(app, userId, instanceId);
+		const backgroundTask = runBackgroundCacheRefresh({
+			app,
+			log,
+			instanceId,
+			cacheType: "jellyfin",
+			refresh: () =>
+				runJellyfinCacheRefreshSingleFlight(instanceId, () =>
+					refreshJellyfinCache(client, app.prisma, instanceId, log),
+				),
+		});
+		log.info({ instanceId, cacheType }, "pulse-action: jellyfin cache refresh dispatched");
+		return { status: "ok", backgroundTask };
+	}
+
 	// tautulli
 	const { client } = await requireTautulliClient(app, userId, instanceId);
 	const backgroundTask = runBackgroundCacheRefresh({
@@ -184,7 +203,7 @@ function runBackgroundCacheRefresh(opts: {
 	app: FastifyInstance;
 	log: FastifyBaseLogger;
 	instanceId: string;
-	cacheType: "plex" | "tautulli";
+	cacheType: PulseCacheType;
 	refresh: () => Promise<CacheRefreshResult>;
 }): Promise<void> {
 	const { app, log, instanceId, cacheType, refresh } = opts;

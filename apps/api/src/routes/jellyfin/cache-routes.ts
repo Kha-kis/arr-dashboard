@@ -9,8 +9,9 @@ import type { CacheHealthResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { recordCacheRefreshFailure } from "../../lib/cache-refresh-status.js";
-import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
 import { refreshJellyfinCache } from "../../lib/jellyfin/jellyfin-cache-refresher.js";
+import { runJellyfinCacheRefreshSingleFlight } from "../../lib/jellyfin/jellyfin-cache-singleflight.js";
+import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { buildCacheHealthItems } from "../plex/lib/cache-health-helpers.js";
@@ -69,7 +70,9 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { client } = await requireJellyfinClient(app, userId, instanceId);
 
 			try {
-				const result = await refreshJellyfinCache(client, app.prisma, instanceId, request.log);
+				const result = await runJellyfinCacheRefreshSingleFlight(instanceId, () =>
+					refreshJellyfinCache(client, app.prisma, instanceId, request.log),
+				);
 
 				if (!result.complete || !result.completedAt) {
 					await recordCacheRefreshFailure(

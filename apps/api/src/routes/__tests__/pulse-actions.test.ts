@@ -42,19 +42,27 @@ vi.mock("../../lib/queue-cleaner/scheduler.js", () => ({
 
 const refreshPlexCache = vi.fn();
 const refreshTautulliCache = vi.fn();
+const refreshJellyfinCache = vi.fn();
 const requirePlexClient = vi.fn();
 const requireTautulliClient = vi.fn();
+const requireJellyfinClient = vi.fn();
 vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
 	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
 }));
+vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
+	refreshJellyfinCache: (...args: unknown[]) => refreshJellyfinCache(...args),
+}));
 vi.mock("../../lib/plex/plex-helpers.js", () => ({
 	requirePlexClient: (...args: unknown[]) => requirePlexClient(...args),
 }));
 vi.mock("../../lib/tautulli/tautulli-helpers.js", () => ({
 	requireTautulliClient: (...args: unknown[]) => requireTautulliClient(...args),
+}));
+vi.mock("../../lib/jellyfin/jellyfin-helpers.js", () => ({
+	requireJellyfinClient: (...args: unknown[]) => requireJellyfinClient(...args),
 }));
 
 // Neutralize the collectors so GET /pulse (not under test here) never
@@ -121,8 +129,10 @@ beforeEach(async () => {
 	queueCleanerScheduler.start.mockReset();
 	refreshPlexCache.mockReset();
 	refreshTautulliCache.mockReset();
+	refreshJellyfinCache.mockReset();
 	requirePlexClient.mockReset();
 	requireTautulliClient.mockReset();
+	requireJellyfinClient.mockReset();
 
 	app = Fastify({ logger: false });
 	setupAuthGate(app);
@@ -235,5 +245,46 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 		expect(res.statusCode).toBe(404);
 		expect(JSON.parse(res.payload).error).toBe("InstanceNotFoundError");
 		expect(refreshPlexCache).not.toHaveBeenCalled();
+	});
+
+	it("dispatches a Jellyfin retry through the owned-instance helper", async () => {
+		requireJellyfinClient.mockResolvedValue({ client: {}, instance: {} });
+		refreshJellyfinCache.mockResolvedValue({
+			upserted: 7,
+			errors: 0,
+			errorMessages: [],
+			complete: true,
+			completedAt: new Date(),
+		});
+
+		const res = await inject("POST", "/pulse/signal-1/action", {
+			body: {
+				...body,
+				target: { instanceId: "inst-jellyfin-1", cacheType: "jellyfin" },
+				label: "Retry refresh",
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		expect(requireJellyfinClient).toHaveBeenCalledTimes(1);
+		expect(requireJellyfinClient.mock.calls[0]?.slice(1)).toEqual(["user-1", "inst-jellyfin-1"]);
+		expect(refreshJellyfinCache).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not refresh Jellyfin when the target is missing or not owned", async () => {
+		requireJellyfinClient.mockRejectedValue(new InstanceNotFoundError("inst-jellyfin-1"));
+
+		const res = await inject("POST", "/pulse/signal-1/action", {
+			body: {
+				...body,
+				target: { instanceId: "inst-jellyfin-1", cacheType: "jellyfin" },
+				label: "Retry refresh",
+			},
+		});
+
+		expect(res.statusCode).toBe(404);
+		expect(JSON.parse(res.payload).error).toBe("InstanceNotFoundError");
+		expect(refreshJellyfinCache).not.toHaveBeenCalled();
 	});
 });
