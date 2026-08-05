@@ -258,7 +258,7 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 				encryptionIv: "key-iv",
 				encryptedHttpAuthCredentials: null,
 				httpAuthEncryptionIv: null,
-				updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+				connectionGeneration: 7,
 			},
 		});
 		const refreshGate = deferred<{

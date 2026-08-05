@@ -80,7 +80,7 @@ function makeMockPrisma() {
 				encryptedHttpAuthCredentials: null,
 				httpAuthEncryptionIv: null,
 				enabled: true,
-				updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+				connectionGeneration: 7,
 			}),
 		},
 		jellyfinCache: {
@@ -372,7 +372,7 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 			encryptionIv: "old-iv",
 			encryptedHttpAuthCredentials: null,
 			httpAuthEncryptionIv: null,
-			updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+			connectionGeneration: 6,
 		} as never);
 
 		const result = await refreshJellyfinCache(
@@ -407,7 +407,7 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 				encryptedHttpAuthCredentials: null,
 				httpAuthEncryptionIv: null,
 				enabled: true,
-				updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+				connectionGeneration: 7,
 			};
 		});
 		tx.jellyfinCache.deleteMany.mockImplementation(async () => {
@@ -421,7 +421,7 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 			encryptionIv: "current-iv",
 			encryptedHttpAuthCredentials: null,
 			httpAuthEncryptionIv: null,
-			updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+			connectionGeneration: 7,
 		} as never);
 
 		const result = await refreshJellyfinCache(

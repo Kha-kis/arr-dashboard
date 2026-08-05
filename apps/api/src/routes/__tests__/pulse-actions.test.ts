@@ -257,7 +257,7 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 				encryptionIv: "key-iv",
 				encryptedHttpAuthCredentials: null,
 				httpAuthEncryptionIv: null,
-				updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+				connectionGeneration: 7,
 			},
 		});
 		refreshJellyfinCache.mockResolvedValue({

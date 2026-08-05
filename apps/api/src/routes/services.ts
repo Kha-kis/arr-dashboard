@@ -127,6 +127,27 @@ async function clearDurableJellyfinCache(
 	});
 }
 
+async function clearDurableProviderCacheState(
+	prisma: {
+		plexCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		plexEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		tautulliCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		jellyfinCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		jellyfinEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		cacheRefreshStatus: {
+			deleteMany(args: { where: { instanceId: string } }): Promise<unknown>;
+		};
+	},
+	instanceId: string,
+): Promise<void> {
+	await prisma.plexCache.deleteMany({ where: { instanceId } });
+	await prisma.plexEpisodeCache.deleteMany({ where: { instanceId } });
+	await prisma.tautulliCache.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinCache.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
+	await prisma.cacheRefreshStatus.deleteMany({ where: { instanceId } });
+}
+
 async function clearDurableQuiObservations(
 	prisma: {
 		libraryCache: {
@@ -294,12 +315,11 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 				const quiTopologyChanged = changesQuiTopology(existing.service, payload);
 				const jellyfinConnectionChanged = changesJellyfinConnection(existing, payload);
+				const serviceTypeChanged = targetService !== existing.service;
 				const serviceUpdateData = jellyfinConnectionChanged
 					? {
 							...updateData,
-							// Make the connection generation strictly newer even when two
-							// updates land within the database timestamp's clock resolution.
-							updatedAt: new Date(Math.max(Date.now(), existing.updatedAt.getTime() + 1)),
+							connectionGeneration: { increment: 1 },
 						}
 					: updateData;
 				if (quiTopologyChanged) {
@@ -313,7 +333,9 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							if (payload.tags !== undefined) {
 								await updateInstanceTags(tx, id, payload.tags);
 							}
-							if (jellyfinConnectionChanged) {
+							if (serviceTypeChanged) {
+								await clearDurableProviderCacheState(tx, id);
+							} else if (jellyfinConnectionChanged) {
 								await clearDurableJellyfinCache(tx, id);
 							}
 							await clearDurableQuiObservations(tx, userId);
@@ -324,7 +346,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						invalidateTorrentListCache(id);
 						clearFileIdIndexCache(id);
 					});
-				} else if (jellyfinConnectionChanged) {
+				} else if (jellyfinConnectionChanged || serviceTypeChanged) {
 					await app.prisma.$transaction(async (tx) => {
 						await resetOtherDefaults(tx);
 						await tx.serviceInstance.updateMany({
@@ -334,7 +356,11 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						if (payload.tags !== undefined) {
 							await updateInstanceTags(tx, id, payload.tags);
 						}
-						await clearDurableJellyfinCache(tx, id);
+						if (serviceTypeChanged) {
+							await clearDurableProviderCacheState(tx, id);
+						} else {
+							await clearDurableJellyfinCache(tx, id);
+						}
 					});
 				} else {
 					await resetOtherDefaults(app.prisma);
@@ -346,7 +372,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						await updateInstanceTags(app.prisma, id, payload.tags);
 					}
 				}
-				if (jellyfinConnectionChanged) {
+				if (jellyfinConnectionChanged || serviceTypeChanged) {
 					invalidatePulseCache(userId);
 				}
 

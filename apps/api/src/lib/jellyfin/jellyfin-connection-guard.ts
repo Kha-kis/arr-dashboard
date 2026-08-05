@@ -38,7 +38,7 @@ export async function withCurrentJellyfinConnection<T>(
 						encryptedHttpAuthCredentials: true,
 						httpAuthEncryptionIv: true,
 						enabled: true,
-						updatedAt: true,
+						connectionGeneration: true,
 					},
 				});
 				if (

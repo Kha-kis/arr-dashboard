@@ -38,7 +38,7 @@ describe("refreshScheduledJellyfinCacheInstance", () => {
 			encryptionIv: "key-iv",
 			encryptedHttpAuthCredentials: null,
 			httpAuthEncryptionIv: null,
-			updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+			connectionGeneration: 7,
 		};
 
 		await refreshScheduledJellyfinCacheInstance(app as never, instance as never);
@@ -69,7 +69,7 @@ describe("refreshScheduledJellyfinCacheInstance", () => {
 			encryptionIv: "key-iv",
 			encryptedHttpAuthCredentials: null,
 			httpAuthEncryptionIv: null,
-			updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+			connectionGeneration: 7,
 		};
 
 		await refreshScheduledJellyfinCacheInstance(app as never, instance as never);

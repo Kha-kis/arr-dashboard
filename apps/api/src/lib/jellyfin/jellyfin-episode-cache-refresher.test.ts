@@ -22,7 +22,7 @@ type TestConnection = {
 	encryptedHttpAuthCredentials: string | null;
 	httpAuthEncryptionIv: string | null;
 	enabled: boolean;
-	updatedAt: Date;
+	connectionGeneration: number;
 };
 
 const connectionOne: TestConnection = {
@@ -33,11 +33,11 @@ const connectionOne: TestConnection = {
 	encryptedHttpAuthCredentials: null,
 	httpAuthEncryptionIv: null,
 	enabled: true,
-	updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+	connectionGeneration: 7,
 };
 const connectionTwo: TestConnection = {
 	...connectionOne,
-	updatedAt: new Date("2026-08-05T00:00:00.001Z"),
+	connectionGeneration: 8,
 };
 const fingerprintOne = jellyfinConnectionFingerprint(connectionOne as never);
 

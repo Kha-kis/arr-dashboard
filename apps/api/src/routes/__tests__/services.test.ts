@@ -89,6 +89,7 @@ function makeInstance(overrides: Record<string, unknown> = {}) {
 		isDefault: false,
 		createdAt: new Date("2024-01-01T00:00:00Z"),
 		updatedAt: new Date("2024-01-01T00:00:00Z"),
+		connectionGeneration: 0,
 		storageGroupId: null,
 		tags: [],
 		...overrides,
@@ -131,6 +132,9 @@ function createMockPrisma() {
 		},
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 	};
 	return Object.assign(prisma, {
@@ -348,10 +352,7 @@ describe("PUT /services/:id", () => {
 		const connectionUpdate = mockPrisma.serviceInstance.updateMany.mock.calls.find(
 			([args]) => args.where.id === "inst-1",
 		)?.[0];
-		expect(connectionUpdate?.data.updatedAt).toBeInstanceOf(Date);
-		expect(connectionUpdate?.data.updatedAt.getTime()).toBeGreaterThan(
-			new Date("2024-01-01T00:00:00Z").getTime(),
-		);
+		expect(connectionUpdate?.data.connectionGeneration).toEqual({ increment: 1 });
 		expect(mockPrisma.cacheRefreshStatus.deleteMany).toHaveBeenCalledWith({
 			where: {
 				instanceId: "inst-1",
@@ -389,7 +390,52 @@ describe("PUT /services/:id", () => {
 		expect(mockPrisma.jellyfinEpisodeCache.deleteMany).not.toHaveBeenCalled();
 		expect(mockPrisma.cacheRefreshStatus.deleteMany).not.toHaveBeenCalled();
 		expect(mockInvalidatePulseCache).not.toHaveBeenCalled();
+		expect(
+			mockPrisma.serviceInstance.updateMany.mock.calls.some(
+				([args]) => args.data.connectionGeneration !== undefined,
+			),
+		).toBe(false);
 	});
+
+	it.each([
+		["PLEX", "jellyfin"],
+		["TAUTULLI", "emby"],
+	] as const)(
+		"atomically clears outgoing provider state when changing %s to %s",
+		async (existingService, targetService) => {
+			mockRequireInstance.mockResolvedValue(makeInstance({ service: existingService }));
+			mockBuildUpdateData.mockReturnValue({ service: targetService.toUpperCase() });
+			mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+				makeInstance({ service: targetService.toUpperCase() }),
+			);
+
+			const res = await injectAuthenticated("PUT", "/services/inst-1", {
+				body: { service: targetService },
+			});
+
+			expect(res.statusCode).toBe(200);
+			expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+			expect(mockPrisma.plexCache.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
+			expect(mockPrisma.plexEpisodeCache.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
+			expect(mockPrisma.tautulliCache.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
+			expect(mockPrisma.jellyfinCache.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
+			expect(mockPrisma.jellyfinEpisodeCache.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
+			expect(mockPrisma.cacheRefreshStatus.deleteMany).toHaveBeenCalledWith({
+				where: { instanceId: "inst-1" },
+			});
+			expect(mockInvalidatePulseCache).toHaveBeenCalledWith("user-1");
+		},
+	);
 
 	it("keeps Jellyfin cache state for a label-only update", async () => {
 		mockRequireInstance.mockResolvedValue(makeInstance({ service: "JELLYFIN" }));
