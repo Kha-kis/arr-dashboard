@@ -62,6 +62,7 @@ function createMockInstance(service: ServiceType) {
 		encryptedHttpAuthCredentials: null,
 		httpAuthEncryptionIv: null,
 		enabled: true,
+		connectionGeneration: 0,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 	};

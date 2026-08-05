@@ -6,6 +6,10 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClientInstance } from "../prisma.js";
+import {
+	type ProviderConnectionIdentity,
+	withCurrentProviderConnection,
+} from "../services/provider-connection-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PlexClient, PlexEpisodeItem } from "./plex-client.js";
 
@@ -24,6 +28,7 @@ export interface PlexEpisodeRefreshResult {
 	capacityDegraded: boolean;
 	complete: boolean;
 	completedAt?: Date;
+	superseded?: boolean;
 }
 
 function failedResult(
@@ -50,6 +55,7 @@ export async function refreshPlexEpisodeCache(
 	instanceId: string,
 	log: FastifyBaseLogger,
 	sourceFingerprint: string,
+	expectedConnection: ProviderConnectionIdentity | undefined,
 ): Promise<PlexEpisodeRefreshResult> {
 	const recentlyWatchedShows = await prisma.plexCache.findMany({
 		where: {
@@ -213,31 +219,49 @@ export async function refreshPlexEpisodeCache(
 	}
 
 	try {
-		await prisma.$transaction(async (tx) => {
-			await tx.plexEpisodeCache.deleteMany({ where: { instanceId } });
-			if (rows.length > 0) await tx.plexEpisodeCache.createMany({ data: rows });
-			await tx.cacheRefreshStatus.upsert({
-				where: { instanceId_cacheType: { instanceId, cacheType: "plex_episode" } },
-				create: {
-					instanceId,
-					cacheType: "plex_episode",
-					lastRefreshedAt: completedAt,
-					lastResult: "success",
-					itemCount: rows.length,
-					lastAttemptAt: completedAt,
-					lastAttemptResult: "success",
-				},
-				update: {
-					lastRefreshedAt: completedAt,
-					lastResult: "success",
-					lastErrorMessage: null,
-					itemCount: rows.length,
-					lastAttemptAt: completedAt,
-					lastAttemptResult: "success",
-					lastAttemptErrorMessage: null,
-				},
-			});
-		});
+		const publication = await withCurrentProviderConnection(
+			prisma,
+			instanceId,
+			expectedConnection,
+			async (tx) => {
+				await tx.plexEpisodeCache.deleteMany({ where: { instanceId } });
+				if (rows.length > 0) await tx.plexEpisodeCache.createMany({ data: rows });
+				await tx.cacheRefreshStatus.upsert({
+					where: { instanceId_cacheType: { instanceId, cacheType: "plex_episode" } },
+					create: {
+						instanceId,
+						cacheType: "plex_episode",
+						lastRefreshedAt: completedAt,
+						lastResult: "success",
+						itemCount: rows.length,
+						lastAttemptAt: completedAt,
+						lastAttemptResult: "success",
+					},
+					update: {
+						lastRefreshedAt: completedAt,
+						lastResult: "success",
+						lastErrorMessage: null,
+						itemCount: rows.length,
+						lastAttemptAt: completedAt,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
+					},
+				});
+			},
+		);
+		if (!publication.matched) {
+			return {
+				upserted: 0,
+				errors: 0,
+				errorMessages: [],
+				eligibleShows,
+				refreshedShows,
+				coverageIncomplete: true,
+				capacityDegraded: false,
+				complete: false,
+				superseded: true,
+			};
+		}
 	} catch (error) {
 		const message = `Atomic Plex episode publication failed: ${getErrorMessage(error)}`;
 		log.error({ err: error, instanceId }, message);

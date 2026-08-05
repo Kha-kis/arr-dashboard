@@ -1,4 +1,4 @@
-import type { PulseAction, PulseResponse } from "@arr/shared";
+import type { PulseAction, PulseCacheType, PulseResponse } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -12,6 +12,7 @@ import { POLLING_STATS } from "../../lib/polling-intervals";
 import {
 	dashboardKeys,
 	huntingKeys,
+	jellyfinKeys,
 	plexKeys,
 	pulseKeys,
 	queueCleanerKeys,
@@ -66,16 +67,18 @@ export const usePulseActionMutation = () => {
 					toast.success(successCopyForAction(action));
 					break;
 				case "cache.refresh":
-					// The cache health banner (/api/plex/cache/health) is
-					// shared across plex + tautulli, so plexKeys.cacheHealth
-					// is the right key for both branches. Also drop the
-					// domain root key so downstream Plex/Tautulli widgets
-					// that depend on the refreshed cache repaint on next
-					// mount without waiting for their own stale window.
-					queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });
-					if (action.target.cacheType === "plex") {
+					// Jellyfin has its own cache-health endpoint and query
+					// namespace. Plex and Tautulli share the Plex cache-health
+					// endpoint, while their downstream widgets use separate
+					// domain roots.
+					if (action.target.cacheType === "jellyfin") {
+						queryClient.invalidateQueries({ queryKey: jellyfinKeys.cacheHealth() });
+						queryClient.invalidateQueries({ queryKey: jellyfinKeys.all });
+					} else if (action.target.cacheType === "plex") {
+						queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });
 						queryClient.invalidateQueries({ queryKey: plexKeys.all });
 					} else {
+						queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });
 						queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
 					}
 					toast.success(successCopyForAction(action));
@@ -112,10 +115,14 @@ function successCopyForAction(action: PulseAction): string {
 			return action.target.jobId === "hunting"
 				? "Hunt scheduler enabled"
 				: "Queue cleaner scheduler enabled";
-		case "cache.refresh":
-			return action.target.cacheType === "plex"
-				? "Plex cache refresh triggered"
-				: "Tautulli cache refresh triggered";
+		case "cache.refresh": {
+			const copy: Record<PulseCacheType, string> = {
+				plex: "Plex cache refresh triggered",
+				tautulli: "Tautulli cache refresh triggered",
+				jellyfin: "Media cache refresh triggered",
+			};
+			return copy[action.target.cacheType];
+		}
 		case "queue.retry":
 			return "Retry queued";
 	}

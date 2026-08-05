@@ -258,8 +258,14 @@ export const registerPulseRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			// Strip `backgroundTask` — it's a Promise (not JSON-serializable)
 			// used only by the dispatcher's internal fire-and-forget contract.
 			// The client cares about `{ status, detail? }` only.
-			const { backgroundTask: _bg, ...wireResult } = result;
-			void _bg; // silence no-unused-vars; we deliberately don't await
+			const { backgroundTask, ...wireResult } = result;
+			if (backgroundTask) {
+				// The immediate invalidation below lets the UI show in-progress
+				// state, but that GET can legitimately re-cache the old failure
+				// while a large refresh is still running. Invalidate again at the
+				// actual completion boundary so the next poll observes the result.
+				void backgroundTask.finally(() => invalidatePulseCache(userId)).catch(() => undefined);
+			}
 			return reply.send(wireResult);
 		},
 	);

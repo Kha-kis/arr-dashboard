@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
 import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
-import type { ServiceType } from "../lib/prisma.js";
+import type { ServiceInstance, ServiceType } from "../lib/prisma.js";
 import { withQuiObservationTopologyGuard } from "../lib/qui/observation-topology-guard.js";
 import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
@@ -21,6 +21,7 @@ import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
 import { validateRequest } from "../lib/utils/validate.js";
+import { invalidatePulseCache } from "./pulse.js";
 
 const idParams = z.object({ id: z.string().min(1) });
 
@@ -75,6 +76,7 @@ const QUI_TOPOLOGY_UPDATE_FIELDS = [
 	"hasLocalFilesystemAccess",
 	"pathPrefix",
 ] as const;
+const CACHE_PROVIDER_SERVICES = new Set<ServiceType>(["PLEX", "TAUTULLI", "JELLYFIN", "EMBY"]);
 
 function changesQuiTopology(
 	existingService: ServiceType,
@@ -83,6 +85,49 @@ function changesQuiTopology(
 	const targetService = (payload.service ?? existingService.toLowerCase()).toUpperCase();
 	if (existingService !== "QUI" && targetService !== "QUI") return false;
 	return QUI_TOPOLOGY_UPDATE_FIELDS.some((field) => Object.hasOwn(payload, field));
+}
+
+function changesCacheProviderConnection(
+	existing: Pick<ServiceInstance, "service" | "baseUrl" | "enabled">,
+	payload: z.infer<typeof serviceUpdateSchema>,
+): boolean {
+	const targetService = (payload.service ?? existing.service.toLowerCase()).toUpperCase();
+	if (
+		!CACHE_PROVIDER_SERVICES.has(existing.service) &&
+		!CACHE_PROVIDER_SERVICES.has(targetService as ServiceType)
+	) {
+		return false;
+	}
+
+	if (payload.service !== undefined && targetService !== existing.service) return true;
+	if (payload.enabled !== undefined && payload.enabled !== existing.enabled) return true;
+	if (payload.baseUrl !== undefined && payload.baseUrl !== existing.baseUrl) return true;
+	// Secrets are intentionally not returned to the browser. Their presence in
+	// an update therefore means the operator supplied a replacement value.
+	if (Object.hasOwn(payload, "apiKey") || Object.hasOwn(payload, "httpAuth")) return true;
+
+	return false;
+}
+
+async function clearDurableProviderCacheState(
+	prisma: {
+		plexCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		plexEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		tautulliCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		jellyfinCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		jellyfinEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		cacheRefreshStatus: {
+			deleteMany(args: { where: { instanceId: string } }): Promise<unknown>;
+		};
+	},
+	instanceId: string,
+): Promise<void> {
+	await prisma.plexCache.deleteMany({ where: { instanceId } });
+	await prisma.plexEpisodeCache.deleteMany({ where: { instanceId } });
+	await prisma.tautulliCache.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinCache.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
+	await prisma.cacheRefreshStatus.deleteMany({ where: { instanceId } });
 }
 
 async function clearDurableQuiObservations(
@@ -251,16 +296,27 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				};
 
 				const quiTopologyChanged = changesQuiTopology(existing.service, payload);
+				const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
+				const serviceTypeChanged = targetService !== existing.service;
+				const serviceUpdateData = providerConnectionChanged
+					? {
+							...updateData,
+							connectionGeneration: { increment: 1 },
+						}
+					: updateData;
 				if (quiTopologyChanged) {
 					await withQuiObservationTopologyGuard(userId, async () => {
 						await app.prisma.$transaction(async (tx) => {
 							await resetOtherDefaults(tx);
 							await tx.serviceInstance.updateMany({
 								where: { id, userId },
-								data: updateData,
+								data: serviceUpdateData,
 							});
 							if (payload.tags !== undefined) {
 								await updateInstanceTags(tx, id, payload.tags);
+							}
+							if (serviceTypeChanged || providerConnectionChanged) {
+								await clearDurableProviderCacheState(tx, id);
 							}
 							await clearDurableQuiObservations(tx, userId);
 						});
@@ -270,15 +326,30 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						invalidateTorrentListCache(id);
 						clearFileIdIndexCache(id);
 					});
+				} else if (providerConnectionChanged || serviceTypeChanged) {
+					await app.prisma.$transaction(async (tx) => {
+						await resetOtherDefaults(tx);
+						await tx.serviceInstance.updateMany({
+							where: { id, userId },
+							data: serviceUpdateData,
+						});
+						if (payload.tags !== undefined) {
+							await updateInstanceTags(tx, id, payload.tags);
+						}
+						await clearDurableProviderCacheState(tx, id);
+					});
 				} else {
 					await resetOtherDefaults(app.prisma);
 					await app.prisma.serviceInstance.updateMany({
 						where: { id, userId },
-						data: updateData,
+						data: serviceUpdateData,
 					});
 					if (payload.tags !== undefined) {
 						await updateInstanceTags(app.prisma, id, payload.tags);
 					}
+				}
+				if (providerConnectionChanged || serviceTypeChanged) {
+					invalidatePulseCache(userId);
 				}
 
 				// A qUI topology change invalidates both durable observations

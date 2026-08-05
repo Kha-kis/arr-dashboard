@@ -8,10 +8,10 @@
 import type { CacheHealthResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { recordCacheRefreshFailure } from "../../lib/cache-refresh-status.js";
-import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
 import { refreshJellyfinCache } from "../../lib/jellyfin/jellyfin-cache-refresher.js";
-import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { runJellyfinCacheRefreshSingleFlight } from "../../lib/jellyfin/jellyfin-cache-singleflight.js";
+import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
+import { jellyfinConnectionFingerprint } from "../../lib/jellyfin/service-instance-fingerprint.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { buildCacheHealthItems } from "../plex/lib/cache-health-helpers.js";
 
@@ -66,36 +66,27 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
 
-			const { client } = await requireJellyfinClient(app, userId, instanceId);
+			const { client, instance } = await requireJellyfinClient(app, userId, instanceId);
 
-			try {
-				const result = await refreshJellyfinCache(client, app.prisma, instanceId, request.log);
-
-				if (!result.complete || !result.completedAt) {
-					await recordCacheRefreshFailure(
+			const result = await runJellyfinCacheRefreshSingleFlight(
+				instanceId,
+				jellyfinConnectionFingerprint(instance),
+				(expectedConnectionFingerprint) =>
+					refreshJellyfinCache(
+						client,
 						app.prisma,
 						instanceId,
-						"jellyfin",
-						result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
-							"Jellyfin refresh did not publish a complete generation",
-					);
-				}
+						request.log,
+						expectedConnectionFingerprint,
+					),
+				{ prisma: app.prisma, log: request.log },
+			);
 
-				return reply.send({
-					success: result.complete && Boolean(result.completedAt),
-					upserted: result.upserted,
-					errors: result.errors,
-				});
-			} catch (err) {
-				await recordCacheRefreshFailure(
-					app.prisma,
-					instanceId,
-					"jellyfin",
-					getErrorMessage(err, "Unknown error"),
-				).catch(() => {});
-
-				throw err;
-			}
+			return reply.send({
+				success: result.complete && Boolean(result.completedAt),
+				upserted: result.upserted,
+				errors: result.errors,
+			});
 		},
 	);
 }

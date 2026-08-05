@@ -7,9 +7,8 @@
  *
  * The emission rule under test:
  *   emit action iff
- *     status.lastResult !== "error"
- *     AND status.lastRefreshedAt < now - STALE_CACHE_HOURS
- *     AND status.cacheType ∈ {"plex", "tautulli"}
+ *     status.cacheType is refreshable, with stale successes offering
+ *     "Refresh now" and failed/degraded attempts offering "Retry refresh".
  */
 
 import Fastify from "fastify";
@@ -28,6 +27,7 @@ import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js
 let app: ReturnType<typeof Fastify>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 let cacheStatuses: CacheStatusRow[];
+let findCacheStatuses: ReturnType<typeof vi.fn>;
 let userCounter = 0;
 
 type CacheStatusRow = {
@@ -41,7 +41,7 @@ type CacheStatusRow = {
 	lastAttemptResult?: string | null;
 	lastAttemptErrorMessage?: string | null;
 	itemCount: number;
-	instance: { label: string };
+	instance: { label: string; service: string; enabled: boolean };
 };
 
 const HOURS = 60 * 60 * 1000;
@@ -55,7 +55,7 @@ function makeRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
 		lastResult: "success",
 		lastErrorMessage: null,
 		itemCount: 0,
-		instance: { label: "Home Plex" },
+		instance: { label: "Home Plex", service: "PLEX", enabled: true },
 		...overrides,
 	};
 }
@@ -64,9 +64,10 @@ beforeEach(async () => {
 	userCounter += 1;
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: `user-cache-${userCounter}`, username: "admin" });
+	findCacheStatuses = vi.fn(async () => cacheStatuses.filter((row) => row.instance.enabled));
 	app.decorate("prisma", {
 		cacheRefreshStatus: {
-			findMany: async () => cacheStatuses,
+			findMany: findCacheStatuses,
 		},
 	} as unknown as never);
 	await app.register(registerPulseRoutes);
@@ -148,10 +149,7 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		expect(item.action).toBeUndefined();
 	});
 
-	it("does NOT emit an action on a cache-error row (even if cacheType is supported)", async () => {
-		// A refresh that just errored likely errors again on the same
-		// network/config issue — the inline "Refresh now" button would feel
-		// like a false promise. "Check settings" stays the right affordance.
+	it("emits a retry action on a cache-error row when the cache type is supported", async () => {
 		cacheStatuses = [
 			makeRow({
 				id: "error-row",
@@ -166,7 +164,91 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		const item = body.items.find((i: { id: string }) => i.id === "cache-error-error-row");
 
 		expect(item).toBeDefined();
-		expect(item.action).toBeUndefined();
+		expect(item.action).toEqual({
+			kind: "cache.refresh",
+			target: { instanceId: "inst-1", cacheType: "plex" },
+			label: "Retry refresh",
+			destructive: false,
+		});
+	});
+
+	it("renders a failed Jellyfin cache with correct branding and a retry action (#663)", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "jellyfin-error",
+				instanceId: "inst-jellyfin",
+				cacheType: "jellyfin",
+				lastResult: "error",
+				lastErrorMessage: "fetch failed",
+				instance: { label: "Home Jellyfin", service: "JELLYFIN", enabled: true },
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const body = JSON.parse(res.payload);
+		const item = body.items.find(
+			(candidate: { id: string }) => candidate.id === "cache-error-jellyfin-error",
+		);
+
+		expect(item).toMatchObject({
+			title: "Home Jellyfin: Jellyfin cache refresh failed",
+			source: "jellyfin",
+			action: {
+				kind: "cache.refresh",
+				target: { instanceId: "inst-jellyfin", cacheType: "jellyfin" },
+				label: "Retry refresh",
+				destructive: false,
+			},
+		});
+	});
+
+	it("uses Emby branding for an Emby instance backed by the shared cache", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "emby-error",
+				instanceId: "inst-emby",
+				cacheType: "jellyfin",
+				lastResult: "error",
+				lastErrorMessage: "fetch failed",
+				instance: { label: "Home Emby", service: "EMBY", enabled: true },
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const item = JSON.parse(res.payload).items.find(
+			(candidate: { id: string }) => candidate.id === "cache-error-emby-error",
+		);
+
+		expect(item).toMatchObject({
+			title: "Home Emby: Emby cache refresh failed",
+			source: "emby",
+			action: {
+				target: { instanceId: "inst-emby", cacheType: "jellyfin" },
+			},
+		});
+	});
+
+	it("does not surface persisted cache rows for disabled instances", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "disabled-jellyfin",
+				cacheType: "jellyfin",
+				lastResult: "error",
+				lastErrorMessage: "fetch failed",
+				instance: {
+					label: "Disabled Jellyfin",
+					service: "JELLYFIN",
+					enabled: false,
+				},
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		expect(JSON.parse(res.payload).items).toEqual([]);
+		expect(findCacheStatuses).toHaveBeenCalledWith({
+			where: { instance: { userId: `user-cache-${userCounter}`, enabled: true } },
+			include: { instance: { select: { label: true, service: true } } },
+		});
 	});
 
 	it("surfaces a first-class partial Plex episode capacity result", async () => {

@@ -88,30 +88,44 @@ function makeDeps(
 		},
 	);
 	const publishedAt = new Date();
+	const cacheStatusUpsert = vi.fn().mockResolvedValue({});
+	const findInstance = vi.fn(async ({ where }: { where: { id: string } }) =>
+		instances.find((entry) => entry.id === where.id),
+	);
+	const cacheRefreshStatus = {
+		upsert: cacheStatusUpsert,
+		findMany: vi.fn(async ({ where }: { where: { instanceId: { in: string[] } } }) =>
+			where.instanceId.in.map((instanceId) => ({
+				instanceId,
+				lastRefreshedAt: publishedAt,
+				lastResult: "success",
+				itemCount: 0,
+				generationId: `generation-${instanceId}`,
+				generationMetadata: JSON.stringify({
+					sections: [{ key: "1", title: "Movies", type: "movie" }],
+				}),
+				lastErrorMessage: null,
+				lastAttemptResult: "success",
+				lastAttemptErrorMessage: null,
+			})),
+		),
+	};
+	const refreshTransaction = {
+		$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+		serviceInstance: { findUnique: findInstance },
+		cacheRefreshStatus,
+	};
 	const deps = {
 		prisma: {
+			$transaction: vi.fn(async (callback: (tx: typeof refreshTransaction) => Promise<unknown>) =>
+				callback(refreshTransaction),
+			),
 			libraryCleanupConfig: { findUnique: findConfig },
 			serviceInstance: { findMany: findInstances },
 			plexCache: { findMany: vi.fn().mockResolvedValue([]), count: vi.fn().mockResolvedValue(0) },
 			tautulliCache: { findMany: vi.fn().mockResolvedValue([]) },
 			jellyfinCache: { findMany: vi.fn().mockResolvedValue([]) },
-			cacheRefreshStatus: {
-				findMany: vi.fn(async ({ where }: { where: { instanceId: { in: string[] } } }) =>
-					where.instanceId.in.map((instanceId) => ({
-						instanceId,
-						lastRefreshedAt: publishedAt,
-						lastResult: "success",
-						itemCount: 0,
-						generationId: `generation-${instanceId}`,
-						generationMetadata: JSON.stringify({
-							sections: [{ key: "1", title: "Movies", type: "movie" }],
-						}),
-						lastErrorMessage: null,
-						lastAttemptResult: "success",
-						lastAttemptErrorMessage: null,
-					})),
-				),
-			},
+			cacheRefreshStatus,
 			plexEpisodeCache: {
 				findMany: vi.fn().mockResolvedValue([]),
 				groupBy: vi.fn().mockResolvedValue([]),
@@ -124,7 +138,7 @@ function makeDeps(
 		jellyfinCacheClientFactory: vi.fn(() => ({}) as never),
 		log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 	} as unknown as CleanupExecutorDeps;
-	return { deps, findConfig, findInstances };
+	return { deps, findConfig, findInstances, cacheStatusUpsert };
 }
 
 describe("authoritative mutation policy snapshots", () => {
@@ -202,6 +216,32 @@ describe("authoritative mutation policy snapshots", () => {
 			expect(refreshMock).toHaveBeenCalledOnce();
 		},
 	);
+
+	it("records an incomplete cleanup-triggered Jellyfin refresh without advancing freshness", async () => {
+		refreshMocks.jellyfin.mockResolvedValue({
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["Jellyfin request timed out"],
+			complete: false,
+		});
+		const { deps, cacheStatusUpsert } = makeDeps(
+			[rule("jellyfin_watch_count")],
+			[instance("JELLYFIN")],
+		);
+
+		const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+
+		expect(snapshot.failedSources).toEqual(new Set(["jellyfin"]));
+		expect(cacheStatusUpsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.objectContaining({
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: "Jellyfin request timed out",
+				}),
+			}),
+		);
+		expect(cacheStatusUpsert.mock.calls[0]?.[0].update).not.toHaveProperty("lastRefreshedAt");
+	});
 
 	it("requires explicit complete episode coverage before accepting Plex episode evidence", async () => {
 		refreshMocks.plexEpisodes.mockResolvedValue({

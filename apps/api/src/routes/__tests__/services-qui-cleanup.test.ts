@@ -81,8 +81,8 @@ vi.mock("../../lib/library-sync/infohash-backfill-by-inode.js", () => ({
 // Imports — must come after vi.mock declarations
 // ----------------------------------------------------------------------
 
-import { registerServiceRoutes } from "../services.js";
 import { withQuiObservationTopologyGuard } from "../../lib/qui/observation-topology-guard.js";
+import { registerServiceRoutes } from "../services.js";
 import {
 	createInjectAuthenticated,
 	createMockEncryptor,
@@ -149,6 +149,12 @@ function createMockPrisma() {
 		episodeFileCache: {
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
+		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		serviceTag: {
 			findMany: vi.fn().mockResolvedValue([]),
 			upsert: vi.fn(),

@@ -7,9 +7,11 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { recordCacheRefreshFailure } from "../../lib/cache-refresh-status.js";
-import { requireTautulliClient } from "../../lib/tautulli/tautulli-helpers.js";
+import { recordProviderCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
+import { providerConnectionIdentity } from "../../lib/services/provider-connection-guard.js";
 import { refreshTautulliCache } from "../../lib/tautulli/tautulli-cache-refresher.js";
+import { requireTautulliClient } from "../../lib/tautulli/tautulli-helpers.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceParams = z.object({
@@ -52,24 +54,45 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
 
-			const { client } = await requireTautulliClient(app, userId, instanceId);
+			const { client, instance } = await requireTautulliClient(app, userId, instanceId);
+			const expectedConnection = providerConnectionIdentity(instance);
 
-			const result = await refreshTautulliCache(client, app.prisma, instanceId, request.log);
-			if (!result.complete || !result.completedAt) {
-				await recordCacheRefreshFailure(
+			try {
+				const result = await refreshTautulliCache(
+					client,
+					app.prisma,
+					instanceId,
+					request.log,
+					expectedConnection,
+				);
+				if ((!result.complete || !result.completedAt) && !result.superseded) {
+					await recordProviderCacheRefreshFailure(
+						app.prisma,
+						instanceId,
+						"tautulli",
+						result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
+							"Tautulli refresh did not publish a complete generation",
+						expectedConnection,
+						request.log,
+					);
+				}
+
+				return reply.send({
+					success: result.complete && Boolean(result.completedAt),
+					upserted: result.upserted,
+					errors: result.errors,
+				});
+			} catch (err) {
+				await recordProviderCacheRefreshFailure(
 					app.prisma,
 					instanceId,
 					"tautulli",
-					result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
-						"Tautulli refresh did not publish a complete generation",
+					getErrorMessage(err, "Unknown error"),
+					expectedConnection,
+					request.log,
 				);
+				throw err;
 			}
-
-			return reply.send({
-				success: result.complete && Boolean(result.completedAt),
-				upserted: result.upserted,
-				errors: result.errors,
-			});
 		},
 	);
 }

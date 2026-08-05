@@ -17,6 +17,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
+import { withCurrentJellyfinConnection } from "./jellyfin-connection-guard.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
 
 export const JELLYFIN_STALE_EVICTION_CHUNK_SIZE = 500;
@@ -51,12 +52,14 @@ export async function refreshJellyfinCache(
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
+	expectedConnectionFingerprint?: string,
 ): Promise<{
 	upserted: number;
 	errors: number;
 	errorMessages: string[];
 	complete: boolean;
 	completedAt?: Date;
+	superseded?: boolean;
 }> {
 	let upserted = 0;
 	let errors = 0;
@@ -233,55 +236,74 @@ export async function refreshJellyfinCache(
 		if (errors === 0 && complete) {
 			completedAt = new Date();
 			try {
-				await prisma.$transaction(async (tx) => {
-					await tx.jellyfinCache.deleteMany({ where: { instanceId } });
-					if (items.length > 0) {
-						await tx.jellyfinCache.createMany({
-							data: items.map((agg) => ({
+				const publication = await withCurrentJellyfinConnection(
+					prisma,
+					instanceId,
+					expectedConnectionFingerprint,
+					async (tx) => {
+						await tx.jellyfinCache.deleteMany({ where: { instanceId } });
+						if (items.length > 0) {
+							await tx.jellyfinCache.createMany({
+								data: items.map((agg) => ({
+									instanceId,
+									tmdbId: agg.tmdbId,
+									mediaType: agg.mediaType,
+									libraryId: agg.libraryId,
+									libraryName: agg.libraryName,
+									title: agg.title,
+									jellyfinId: agg.jellyfinId,
+									lastWatchedAt: agg.lastWatchedAt,
+									watchCount: agg.watchCount,
+									watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
+									onDeck: agg.onDeck,
+									userRating: agg.userRating,
+									collections: JSON.stringify(agg.collections),
+									addedAt: agg.addedAt,
+									thumb: agg.thumb,
+								})),
+							});
+						}
+						await tx.cacheRefreshStatus.upsert({
+							where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
+							create: {
 								instanceId,
-								tmdbId: agg.tmdbId,
-								mediaType: agg.mediaType,
-								libraryId: agg.libraryId,
-								libraryName: agg.libraryName,
-								title: agg.title,
-								jellyfinId: agg.jellyfinId,
-								lastWatchedAt: agg.lastWatchedAt,
-								watchCount: agg.watchCount,
-								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-								onDeck: agg.onDeck,
-								userRating: agg.userRating,
-								collections: JSON.stringify(agg.collections),
-								addedAt: agg.addedAt,
-								thumb: agg.thumb,
-							})),
+								cacheType: "jellyfin",
+								lastRefreshedAt: completedAt!,
+								lastResult: "success",
+								itemCount: items.length,
+								lastAttemptAt: completedAt!,
+								lastAttemptResult: "success",
+							},
+							update: {
+								lastRefreshedAt: completedAt!,
+								lastResult: "success",
+								lastErrorMessage: null,
+								itemCount: items.length,
+								lastAttemptAt: completedAt!,
+								lastAttemptResult: "success",
+								lastAttemptErrorMessage: null,
+							},
 						});
-					}
-					await tx.cacheRefreshStatus.upsert({
-						where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
-						create: {
-							instanceId,
-							cacheType: "jellyfin",
-							lastRefreshedAt: completedAt!,
-							lastResult: "success",
-							itemCount: items.length,
-							lastAttemptAt: completedAt!,
-							lastAttemptResult: "success",
-						},
-						update: {
-							lastRefreshedAt: completedAt!,
-							lastResult: "success",
-							lastErrorMessage: null,
-							itemCount: items.length,
-							lastAttemptAt: completedAt!,
-							lastAttemptResult: "success",
-							lastAttemptErrorMessage: null,
-						},
-					});
-				});
+					},
+				);
+				if (!publication.matched) throw new JellyfinRefreshSupersededError();
 				upserted = items.length;
 			} catch (err) {
 				complete = false;
 				completedAt = undefined;
+				if (err instanceof JellyfinRefreshSupersededError) {
+					log.warn(
+						{ instanceId },
+						"Discarding Jellyfin cache refresh from a superseded connection",
+					);
+					return {
+						upserted: 0,
+						errors: 0,
+						errorMessages: ["Jellyfin service connection changed during refresh"],
+						complete: false,
+						superseded: true,
+					};
+				}
 				errors++;
 				const msg = `Atomic cache publication failed: ${getErrorMessage(err, "unknown")}`;
 				errorMessages.push(msg);
@@ -300,4 +322,11 @@ export async function refreshJellyfinCache(
 	}
 
 	return { upserted, errors, errorMessages, complete: false };
+}
+
+class JellyfinRefreshSupersededError extends Error {
+	constructor() {
+		super("Jellyfin service connection changed during refresh");
+		this.name = "JellyfinRefreshSupersededError";
+	}
 }

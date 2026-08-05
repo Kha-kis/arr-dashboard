@@ -60,6 +60,7 @@ const createMockInstance = (
 	storageGroupId: null,
 	hasLocalFilesystemAccess: false,
 	pathPrefix: null,
+	connectionGeneration: 0,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 });

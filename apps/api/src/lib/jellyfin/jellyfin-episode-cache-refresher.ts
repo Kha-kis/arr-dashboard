@@ -1,18 +1,83 @@
 /** Publishes a complete per-instance Jellyfin episode snapshot atomically. */
 
 import type { FastifyBaseLogger } from "fastify";
+import { recordCacheRefreshFailure } from "../cache-refresh-status.js";
 import type { PrismaClient } from "../prisma.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import { withCurrentJellyfinConnection } from "./jellyfin-connection-guard.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
 
 export const JELLYFIN_EPISODE_MAX_SERIES = 50;
+
+type JellyfinEpisodeRefreshResult = {
+	upserted: number;
+	errors: number;
+	complete: boolean;
+	completedAt?: Date;
+	superseded?: boolean;
+};
 
 export async function refreshJellyfinEpisodeCache(
 	client: JellyfinClient,
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-): Promise<{ upserted: number; errors: number; complete: boolean; completedAt?: Date }> {
+	expectedConnectionFingerprint: string,
+): Promise<JellyfinEpisodeRefreshResult> {
+	const result = await refreshJellyfinEpisodeCacheInternal(
+		client,
+		prisma,
+		instanceId,
+		log,
+		expectedConnectionFingerprint,
+	);
+	if (!result.complete && !result.superseded) {
+		const failureStatus = await recordJellyfinEpisodeCacheRefreshFailure(
+			prisma,
+			instanceId,
+			expectedConnectionFingerprint,
+			"Jellyfin episode refresh did not produce a complete generation",
+			log,
+		);
+		if (failureStatus === "superseded") {
+			return { ...result, errors: 0, superseded: true };
+		}
+	}
+	return result;
+}
+
+export async function recordJellyfinEpisodeCacheRefreshFailure(
+	prisma: PrismaClient,
+	instanceId: string,
+	expectedConnectionFingerprint: string,
+	message: string,
+	log: FastifyBaseLogger,
+): Promise<"recorded" | "superseded" | "failed"> {
+	try {
+		const guarded = await withCurrentJellyfinConnection(
+			prisma,
+			instanceId,
+			expectedConnectionFingerprint,
+			async (tx) =>
+				await recordCacheRefreshFailure(tx, instanceId, "jellyfin_episode", message.slice(0, 500)),
+		);
+		return guarded.matched ? "recorded" : "superseded";
+	} catch (statusError) {
+		log.warn(
+			{ err: statusError, instanceId },
+			"Failed to record Jellyfin episode cache refresh failure status",
+		);
+		return "failed";
+	}
+}
+
+async function refreshJellyfinEpisodeCacheInternal(
+	client: JellyfinClient,
+	prisma: PrismaClient,
+	instanceId: string,
+	log: FastifyBaseLogger,
+	expectedConnectionFingerprint: string,
+): Promise<JellyfinEpisodeRefreshResult> {
 	try {
 		const users = await client.getUsers();
 		if (users.length === 0) {
@@ -147,31 +212,39 @@ export async function refreshJellyfinEpisodeCache(
 		}
 
 		const completedAt = new Date();
-		await prisma.$transaction(async (tx) => {
-			await tx.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
-			if (rows.length > 0) await tx.jellyfinEpisodeCache.createMany({ data: rows });
-			await tx.cacheRefreshStatus.upsert({
-				where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin_episode" } },
-				create: {
-					instanceId,
-					cacheType: "jellyfin_episode",
-					lastRefreshedAt: completedAt,
-					lastResult: "success",
-					itemCount: rows.length,
-					lastAttemptAt: completedAt,
-					lastAttemptResult: "success",
-				},
-				update: {
-					lastRefreshedAt: completedAt,
-					lastResult: "success",
-					lastErrorMessage: null,
-					itemCount: rows.length,
-					lastAttemptAt: completedAt,
-					lastAttemptResult: "success",
-					lastAttemptErrorMessage: null,
-				},
-			});
-		});
+		const publication = await withCurrentJellyfinConnection(
+			prisma,
+			instanceId,
+			expectedConnectionFingerprint,
+			async (tx) => {
+				await tx.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
+				if (rows.length > 0) await tx.jellyfinEpisodeCache.createMany({ data: rows });
+				await tx.cacheRefreshStatus.upsert({
+					where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin_episode" } },
+					create: {
+						instanceId,
+						cacheType: "jellyfin_episode",
+						lastRefreshedAt: completedAt,
+						lastResult: "success",
+						itemCount: rows.length,
+						lastAttemptAt: completedAt,
+						lastAttemptResult: "success",
+					},
+					update: {
+						lastRefreshedAt: completedAt,
+						lastResult: "success",
+						lastErrorMessage: null,
+						itemCount: rows.length,
+						lastAttemptAt: completedAt,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
+					},
+				});
+			},
+		);
+		if (!publication.matched) {
+			return { upserted: 0, errors: 0, complete: false, superseded: true };
+		}
 		return { upserted: rows.length, errors: 0, complete: true, completedAt };
 	} catch (error) {
 		log.error(

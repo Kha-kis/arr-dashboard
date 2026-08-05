@@ -8,9 +8,10 @@
 import type { CacheHealthResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { recordCacheRefreshFailure } from "../../lib/cache-refresh-status.js";
-import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
 import { refreshPlexCache } from "../../lib/plex/plex-cache-refresher.js";
+import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
+import { recordProviderCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
+import { providerConnectionIdentity } from "../../lib/services/provider-connection-guard.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { buildCacheHealthItems } from "./lib/cache-health-helpers.js";
@@ -56,18 +57,27 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
 
-			const { client } = await requirePlexClient(app, userId, instanceId);
+			const { client, instance } = await requirePlexClient(app, userId, instanceId);
+			const expectedConnection = providerConnectionIdentity(instance);
 
 			try {
-				const result = await refreshPlexCache(client, app.prisma, instanceId, request.log);
+				const result = await refreshPlexCache(
+					client,
+					app.prisma,
+					instanceId,
+					request.log,
+					expectedConnection,
+				);
 
-				if (!result.complete || !result.completedAt) {
-					await recordCacheRefreshFailure(
+				if ((!result.complete || !result.completedAt) && !result.superseded) {
+					await recordProviderCacheRefreshFailure(
 						app.prisma,
 						instanceId,
 						"plex",
 						result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
 							"Plex refresh did not publish a complete generation",
+						expectedConnection,
+						request.log,
 					);
 				}
 
@@ -78,12 +88,14 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 				});
 			} catch (err) {
 				// Track failure in status table
-				await recordCacheRefreshFailure(
+				await recordProviderCacheRefreshFailure(
 					app.prisma,
 					instanceId,
 					"plex",
 					getErrorMessage(err, "Unknown error"),
-				).catch(() => {});
+					expectedConnection,
+					request.log,
+				);
 
 				throw err;
 			}

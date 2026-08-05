@@ -7,10 +7,11 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { recordCacheRefreshFailure } from "../lib/cache-refresh-status.js";
 import { refreshPlexCache } from "../lib/plex/plex-cache-refresher.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import { recordProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
+import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -48,9 +49,16 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
+						const expectedConnection = providerConnectionIdentity(instance);
 						try {
 							const client = createPlexClient(app.encryptor, instance, app.log);
-							const result = await refreshPlexCache(client, app.prisma, instance.id, app.log);
+							const result = await refreshPlexCache(
+								client,
+								app.prisma,
+								instance.id,
+								app.log,
+								expectedConnection,
+							);
 							app.log.info(
 								{ instanceId: instance.id, label: instance.label, ...result },
 								"Plex cache refresh completed for instance",
@@ -58,12 +66,14 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 
 							try {
 								if (!result.complete || !result.completedAt) {
-									await recordCacheRefreshFailure(
+									await recordProviderCacheRefreshFailure(
 										app.prisma,
 										instance.id,
 										"plex",
 										result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
 											"Plex refresh did not produce a complete generation",
+										expectedConnection,
+										app.log,
 									);
 								}
 							} catch (trackErr) {
@@ -79,21 +89,14 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 							);
 
 							// Track failure
-							await recordCacheRefreshFailure(
+							await recordProviderCacheRefreshFailure(
 								app.prisma,
 								instance.id,
 								"plex",
 								getErrorMessage(err, "Unknown error"),
-							).catch((trackErr) => {
-								app.log.warn(
-									{
-										err: trackErr,
-										originalErr: getErrorMessage(err, "Unknown error"),
-										instanceId: instance.id,
-									},
-									"Failed to record cache refresh failure status",
-								);
-							});
+								expectedConnection,
+								app.log,
+							);
 						}
 					}
 

@@ -15,6 +15,10 @@
 import type { TautulliHistoryItem } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../prisma.js";
+import {
+	type ProviderConnectionIdentity,
+	withCurrentProviderConnection,
+} from "../services/provider-connection-guard.js";
 import { delay } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { TautulliClient } from "./tautulli-client.js";
@@ -44,17 +48,20 @@ export async function refreshTautulliCache(
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
+	expectedConnection: ProviderConnectionIdentity | undefined,
 ): Promise<{
 	upserted: number;
 	errors: number;
 	errorMessages: string[];
 	complete: boolean;
 	completedAt?: Date;
+	superseded?: boolean;
 }> {
 	let upserted = 0;
 	let errors = 0;
 	let complete = true;
 	const errorMessages: string[] = [];
+	let superseded = false;
 
 	try {
 		// 1. Get libraries to iterate over
@@ -404,32 +411,43 @@ export async function refreshTautulliCache(
 			await verifyCompleteHistorySnapshot();
 			completedAt = new Date();
 			try {
-				await prisma.$transaction(async (tx) => {
-					await tx.tautulliCache.deleteMany({ where: { instanceId } });
-					if (rows.length > 0) await tx.tautulliCache.createMany({ data: rows });
-					await tx.cacheRefreshStatus.upsert({
-						where: { instanceId_cacheType: { instanceId, cacheType: "tautulli" } },
-						create: {
-							instanceId,
-							cacheType: "tautulli",
-							lastRefreshedAt: completedAt!,
-							lastResult: "success",
-							itemCount: rows.length,
-							lastAttemptAt: completedAt!,
-							lastAttemptResult: "success",
-						},
-						update: {
-							lastRefreshedAt: completedAt!,
-							lastResult: "success",
-							lastErrorMessage: null,
-							itemCount: rows.length,
-							lastAttemptAt: completedAt!,
-							lastAttemptResult: "success",
-							lastAttemptErrorMessage: null,
-						},
-					});
-				});
-				upserted = rows.length;
+				const publication = await withCurrentProviderConnection(
+					prisma,
+					instanceId,
+					expectedConnection,
+					async (tx) => {
+						await tx.tautulliCache.deleteMany({ where: { instanceId } });
+						if (rows.length > 0) await tx.tautulliCache.createMany({ data: rows });
+						await tx.cacheRefreshStatus.upsert({
+							where: { instanceId_cacheType: { instanceId, cacheType: "tautulli" } },
+							create: {
+								instanceId,
+								cacheType: "tautulli",
+								lastRefreshedAt: completedAt!,
+								lastResult: "success",
+								itemCount: rows.length,
+								lastAttemptAt: completedAt!,
+								lastAttemptResult: "success",
+							},
+							update: {
+								lastRefreshedAt: completedAt!,
+								lastResult: "success",
+								lastErrorMessage: null,
+								itemCount: rows.length,
+								lastAttemptAt: completedAt!,
+								lastAttemptResult: "success",
+								lastAttemptErrorMessage: null,
+							},
+						});
+					},
+				);
+				if (publication.matched) {
+					upserted = rows.length;
+				} else {
+					superseded = true;
+					completedAt = undefined;
+					complete = false;
+				}
 			} catch (error) {
 				completedAt = undefined;
 				complete = false;
@@ -451,7 +469,14 @@ export async function refreshTautulliCache(
 			},
 			"Tautulli cache refresh complete",
 		);
-		return { upserted, errors, errorMessages, complete: complete && errors === 0, completedAt };
+		return {
+			upserted,
+			errors,
+			errorMessages,
+			complete: complete && errors === 0,
+			completedAt,
+			superseded: superseded || undefined,
+		};
 	} catch (error) {
 		complete = false;
 		log.error({ err: error, instanceId }, "Tautulli cache refresh failed");

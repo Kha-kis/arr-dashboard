@@ -136,6 +136,9 @@ model ServiceInstance {
   // arr-dashboard sees at a different mount point. Empty/null = no rewrite.
   // Format: "qui-prefix>local-prefix" (e.g. "/downloads>/qbit-data").
   pathPrefix                   String?
+  // Monotonic generation for Jellyfin/Emby connection identity. Unlike
+  // updatedAt, unrelated label/default/tag edits must not supersede refreshes.
+  connectionGeneration         Int         @default(0)
   createdAt                    DateTime    @default(now())
   updatedAt                    DateTime    @updatedAt
 

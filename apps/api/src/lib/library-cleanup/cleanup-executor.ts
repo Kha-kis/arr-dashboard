@@ -16,8 +16,10 @@ import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
 import { refreshJellyfinCache } from "../jellyfin/jellyfin-cache-refresher.js";
+import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-refresher.js";
+import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
 import { createPlexClient } from "../plex/plex-client.js";
@@ -31,6 +33,7 @@ import type {
 } from "../prisma.js";
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
+import { providerConnectionIdentity } from "../services/provider-connection-guard.js";
 import { refreshTautulliCache } from "../tautulli/tautulli-cache-refresher.js";
 import { createTautulliClient } from "../tautulli/tautulli-client.js";
 import { createTmdbV3Client } from "../tmdb/list-client.js";
@@ -49,18 +52,18 @@ import {
 } from "./cleanup-audit.js";
 import { withCleanupOperationGuard } from "./cleanup-maintenance-gate.js";
 import {
-	prepareMediaServerRescans,
-	rescanMediaType,
-	retryPendingMediaServerRescans,
-	triggerCoalescedMediaServerRescans,
-} from "./media-server-rescan.js";
-import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
 	evaluateEpisodeWatchCountRule,
 	isSupportedEpisodeCleanupRule,
 	toEpisodeTargetMetadata,
 } from "./episode-scope.js";
+import {
+	prepareMediaServerRescans,
+	rescanMediaType,
+	retryPendingMediaServerRescans,
+	triggerCoalescedMediaServerRescans,
+} from "./media-server-rescan.js";
 import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
 import {
 	type ConditionEvidenceAvailability,
@@ -8520,7 +8523,14 @@ async function refreshPlexMutationEvidence(
 					deps.plexCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createPlexClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Plex credentials were unavailable");
-				const refreshed = await refreshPlexCache(client, deps.prisma, instance.id, deps.log);
+				const expectedConnection = providerConnectionIdentity(instance);
+				const refreshed = await refreshPlexCache(
+					client,
+					deps.prisma,
+					instance.id,
+					deps.log,
+					expectedConnection,
+				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Plex cache refresh was incomplete");
 				}
@@ -8533,6 +8543,7 @@ async function refreshPlexMutationEvidence(
 						instance.id,
 						deps.log,
 						plexConnectionFingerprint(instance),
+						expectedConnection,
 					);
 					if (episodes.errors > 0 || episodes.complete !== true) {
 						throw new Error("Plex episode evidence refresh was incomplete");
@@ -8600,7 +8611,13 @@ async function refreshTautulliMutationEvidence(
 					deps.tautulliCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createTautulliClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Tautulli credentials were unavailable");
-				const refreshed = await refreshTautulliCache(client, deps.prisma, instance.id, deps.log);
+				const refreshed = await refreshTautulliCache(
+					client,
+					deps.prisma,
+					instance.id,
+					deps.log,
+					providerConnectionIdentity(instance),
+				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Tautulli cache refresh was incomplete");
 				}
@@ -8661,7 +8678,19 @@ async function refreshJellyfinMutationEvidence(
 					deps.jellyfinCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createJellyfinClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Jellyfin credentials were unavailable");
-				const refreshed = await refreshJellyfinCache(client, deps.prisma, instance.id, deps.log);
+				const refreshed = await runJellyfinCacheRefreshSingleFlight(
+					instance.id,
+					jellyfinConnectionFingerprint(instance),
+					(expectedConnectionFingerprint) =>
+						refreshJellyfinCache(
+							client,
+							deps.prisma,
+							instance.id,
+							deps.log,
+							expectedConnectionFingerprint,
+						),
+					{ prisma: deps.prisma, log: deps.log },
+				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Jellyfin cache refresh was incomplete");
 				}
@@ -8671,6 +8700,7 @@ async function refreshJellyfinMutationEvidence(
 						deps.prisma,
 						instance.id,
 						deps.log,
+						jellyfinConnectionFingerprint(instance),
 					);
 					if (episodes.errors > 0 || episodes.complete !== true) {
 						throw new Error("Jellyfin episode refresh was incomplete");

@@ -6,6 +6,7 @@ import {
 	JELLYFIN_EPISODE_MAX_SERIES,
 	refreshJellyfinEpisodeCache,
 } from "./jellyfin-episode-cache-refresher.js";
+import { jellyfinConnectionFingerprint } from "./service-instance-fingerprint.js";
 
 const log = {
 	warn: vi.fn(),
@@ -13,9 +14,41 @@ const log = {
 	error: vi.fn(),
 } as unknown as FastifyBaseLogger;
 
-function fixture(series: unknown[] = [{ tmdbId: 42, jellyfinId: "series-1", title: "Show" }]) {
+type TestConnection = {
+	service: "JELLYFIN" | "EMBY";
+	baseUrl: string;
+	encryptedApiKey: string;
+	encryptionIv: string;
+	encryptedHttpAuthCredentials: string | null;
+	httpAuthEncryptionIv: string | null;
+	enabled: boolean;
+	connectionGeneration: number;
+};
+
+const connectionOne: TestConnection = {
+	service: "JELLYFIN",
+	baseUrl: "https://jellyfin-one.example.com",
+	encryptedApiKey: "key-one",
+	encryptionIv: "iv-one",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	enabled: true,
+	connectionGeneration: 7,
+};
+const connectionTwo: TestConnection = {
+	...connectionOne,
+	connectionGeneration: 8,
+};
+const fingerprintOne = jellyfinConnectionFingerprint(connectionOne as never);
+
+function fixture(
+	series: unknown[] = [{ tmdbId: 42, jellyfinId: "series-1", title: "Show" }],
+	currentConnection = connectionOne,
+) {
 	const published: unknown[] = [];
 	const tx = {
+		$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+		serviceInstance: { findUnique: vi.fn().mockResolvedValue(currentConnection) },
 		jellyfinEpisodeCache: {
 			deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
 			createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
@@ -50,7 +83,13 @@ function fixture(series: unknown[] = [{ tmdbId: 42, jellyfinId: "series-1", titl
 describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 	it("atomically replaces stale rows only after a complete cross-user scan", async () => {
 		const state = fixture();
-		const result = await refreshJellyfinEpisodeCache(state.client, state.prisma, "jellyfin-1", log);
+		const result = await refreshJellyfinEpisodeCache(
+			state.client,
+			state.prisma,
+			"jellyfin-1",
+			log,
+			fingerprintOne,
+		);
 
 		expect(result).toMatchObject({ upserted: 1, errors: 0, complete: true });
 		expect(state.tx.jellyfinEpisodeCache.deleteMany).toHaveBeenCalledWith({
@@ -77,20 +116,34 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 			.mockResolvedValueOnce([])
 			.mockRejectedValueOnce(new Error("partial"));
 
-		const result = await refreshJellyfinEpisodeCache(state.client, state.prisma, "jellyfin-1", log);
+		const result = await refreshJellyfinEpisodeCache(
+			state.client,
+			state.prisma,
+			"jellyfin-1",
+			log,
+			fingerprintOne,
+		);
 
 		expect(result).toEqual({ upserted: 0, errors: 1, complete: false });
-		expect(state.prisma.$transaction).not.toHaveBeenCalled();
+		expect(state.tx.jellyfinEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 	});
 
 	it("does not evict prior evidence when user discovery is empty", async () => {
 		const state = fixture();
 		(state.client.getUsers as ReturnType<typeof vi.fn>).mockResolvedValue([]);
 
-		const result = await refreshJellyfinEpisodeCache(state.client, state.prisma, "jellyfin-1", log);
+		const result = await refreshJellyfinEpisodeCache(
+			state.client,
+			state.prisma,
+			"jellyfin-1",
+			log,
+			fingerprintOne,
+		);
 
 		expect(result).toEqual({ upserted: 0, errors: 1, complete: false });
-		expect(state.prisma.$transaction).not.toHaveBeenCalled();
+		expect(state.tx.jellyfinEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 	});
 
 	it("rejects a truncated series inventory without publishing any rows", async () => {
@@ -101,19 +154,74 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 		}));
 		const state = fixture(series);
 
-		const result = await refreshJellyfinEpisodeCache(state.client, state.prisma, "jellyfin-1", log);
+		const result = await refreshJellyfinEpisodeCache(
+			state.client,
+			state.prisma,
+			"jellyfin-1",
+			log,
+			fingerprintOne,
+		);
 
 		expect(result).toEqual({ upserted: 0, errors: 1, complete: false });
-		expect(state.prisma.$transaction).not.toHaveBeenCalled();
+		expect(state.tx.jellyfinEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 	});
 
 	it("publishes an empty complete inventory to evict stale rows", async () => {
 		const state = fixture([]);
-		const result = await refreshJellyfinEpisodeCache(state.client, state.prisma, "jellyfin-1", log);
+		const result = await refreshJellyfinEpisodeCache(
+			state.client,
+			state.prisma,
+			"jellyfin-1",
+			log,
+			fingerprintOne,
+		);
 
 		expect(result).toMatchObject({ upserted: 0, errors: 0, complete: true });
 		expect(state.tx.jellyfinEpisodeCache.deleteMany).toHaveBeenCalledOnce();
 		expect(state.tx.jellyfinEpisodeCache.createMany).not.toHaveBeenCalled();
 		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 	});
+
+	it("does not publish a complete snapshot from a superseded connection", async () => {
+		const state = fixture(undefined, connectionTwo);
+
+		const result = await refreshJellyfinEpisodeCache(
+			state.client,
+			state.prisma,
+			"jellyfin-1",
+			log,
+			fingerprintOne,
+		);
+
+		expect(result).toMatchObject({ complete: false, errors: 0, superseded: true });
+		expect(state.tx.jellyfinEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it.each(["incomplete", "rejected"] as const)(
+		"does not record an old-connection %s attempt against the current connection",
+		async (outcome) => {
+			const state = fixture(undefined, connectionTwo);
+			if (outcome === "incomplete") {
+				(state.client.getUsers as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+			} else {
+				(state.client.getUsers as ReturnType<typeof vi.fn>).mockRejectedValue(
+					new Error("old endpoint unavailable"),
+				);
+			}
+
+			const result = await refreshJellyfinEpisodeCache(
+				state.client,
+				state.prisma,
+				"jellyfin-1",
+				log,
+				fingerprintOne,
+			);
+
+			expect(result).toMatchObject({ complete: false, errors: 0, superseded: true });
+			expect(state.tx.jellyfinEpisodeCache.deleteMany).not.toHaveBeenCalled();
+			expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		},
+	);
 });
