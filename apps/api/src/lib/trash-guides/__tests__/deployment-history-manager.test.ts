@@ -36,6 +36,10 @@ describe("finalizeDeploymentHistoryWithPartialFailure", () => {
 						{ name: "Created CF", action: "created" },
 						{ name: "Updated CF", action: "updated" },
 					]),
+					failedConfigs: JSON.stringify([
+						{ name: "Failed CF", error: "Custom Format deployment failed" },
+						{ name: "Quality profile", error: "Profile changed during deployment" },
+					]),
 				}),
 			}),
 		);
@@ -45,6 +49,10 @@ describe("finalizeDeploymentHistoryWithPartialFailure", () => {
 					status: "PARTIAL_SUCCESS",
 					appliedCFs: 2,
 					failedCFs: 2,
+					failedConfigs: JSON.stringify([
+						{ name: "Failed CF", error: "Custom Format deployment failed" },
+						{ name: "Quality profile", error: "Profile changed during deployment" },
+					]),
 				}),
 			}),
 		);

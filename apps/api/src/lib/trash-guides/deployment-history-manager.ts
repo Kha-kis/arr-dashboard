@@ -128,6 +128,10 @@ export async function finalizeDeploymentHistoryWithPartialFailure(
 	const endTime = new Date();
 	const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
 	const errorMessage = getErrorMessage(error, "Unknown error");
+	const failedConfigs = [
+		...details.failed.map((name) => ({ name, error: "Custom Format deployment failed" })),
+		{ name: "Quality profile", error: errorMessage },
+	];
 	if (historyId) {
 		await prisma.trashSyncHistory.update({
 			where: { id: historyId },
@@ -143,6 +147,7 @@ export async function finalizeDeploymentHistoryWithPartialFailure(
 						.map((name) => ({ name, action: "created" }))
 						.concat(details.updated.map((name) => ({ name, action: "updated" }))),
 				),
+				failedConfigs: JSON.stringify(failedConfigs),
 				errorLog: errorMessage,
 			},
 		});
@@ -161,10 +166,7 @@ export async function finalizeDeploymentHistoryWithPartialFailure(
 						.map((name) => ({ name, action: "created" }))
 						.concat(details.updated.map((name) => ({ name, action: "updated" }))),
 				),
-				failedConfigs: JSON.stringify([
-					...details.failed.map((name) => ({ name, error: "Custom Format deployment failed" })),
-					{ name: "Quality profile", error: errorMessage },
-				]),
+				failedConfigs: JSON.stringify(failedConfigs),
 				errors: JSON.stringify([errorMessage]),
 			},
 		});
