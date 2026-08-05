@@ -80,13 +80,16 @@ async function parseResponse(response, label) {
 	}
 }
 
+function fetchHarness(url, init) {
+	// The disposable Compose harness only exposes HTTP endpoints on loopback or its private network.
+	return fetch(url, init); // nosemgrep
+}
+
 async function authenticate() {
-	// This disposable Compose harness exposes the dashboard API on loopback only.
-	// nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request
-	const setup = await fetch(`${API_BASE}/auth/setup-required`).then((response) =>
+	const setup = await fetchHarness(`${API_BASE}/auth/setup-required`).then((response) =>
 		parseResponse(response, "setup-required"),
 	);
-	const response = await fetch(`${API_BASE}/auth/${setup.required ? "register" : "login"}`, {
+	const response = await fetchHarness(`${API_BASE}/auth/${setup.required ? "register" : "login"}`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify({ username: USERNAME, password: PASSWORD, rememberMe: false }),
@@ -100,7 +103,7 @@ async function authenticate() {
 function makeApi(cookie) {
 	return async (path, options = {}) => {
 		const body = options.body === undefined ? undefined : JSON.stringify(options.body);
-		return await fetch(`${API_BASE}${path}`, {
+		return await fetchHarness(`${API_BASE}${path}`, {
 			...options,
 			body,
 			headers: {
@@ -116,7 +119,7 @@ function makeArrRequest(spec) {
 	const key = env(spec.apiKeyEnv);
 	return async (path, options = {}) => {
 		const body = options.body === undefined ? undefined : JSON.stringify(options.body);
-		return await fetch(`${spec.baseUrl}${path}`, {
+		return await fetchHarness(`${spec.baseUrl}${path}`, {
 			...options,
 			body,
 			headers: {
@@ -245,7 +248,7 @@ async function waitForLibrarySync(api, instanceId) {
 }
 
 async function requestPlex(path, options = {}) {
-	return await fetch(`${PLEX_BASE}${path}`, {
+	return await fetchHarness(`${PLEX_BASE}${path}`, {
 		...options,
 		headers: { accept: "application/json", "X-Plex-Token": "lc-e2e-local" },
 	}).then((response) => parseResponse(response, `Plex ${options.method ?? "GET"} ${path}`));
