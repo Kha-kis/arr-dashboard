@@ -86,6 +86,145 @@ describe("PlexClient authoritative inventory completeness", () => {
 		);
 	});
 
+	it("rejects a repeated history page instead of exposing an incomplete watch inventory", async () => {
+		const firstPage = Array.from({ length: 200 }, (_, index) => ({
+			historyKey: `/status/sessions/history/${index}`,
+			ratingKey: `movie-${index}`,
+			title: `Movie ${index}`,
+			type: "movie",
+			viewedAt: 1_700_000_000 + index,
+			accountID: 1,
+		}));
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response({ offset: 0, size: 200, totalSize: 400, Metadata: firstPage }),
+			)
+			.mockResolvedValueOnce(
+				response({ offset: 200, size: 200, totalSize: 400, Metadata: firstPage }),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getHistory({ maxResults: 100_000, requireComplete: true })).rejects.toThrow(
+			/duplicate row while paging/i,
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("accepts distinct same-second plays and verifies the newest page before publishing", async () => {
+		const history = Array.from({ length: 201 }, (_, index) => ({
+			historyKey: `/status/sessions/history/${index}`,
+			ratingKey: "movie-1",
+			title: "Movie",
+			type: "movie",
+			viewedAt: 1_700_000_000,
+			accountID: 1,
+		}));
+		const reordered = [...history].reverse();
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response({ offset: 0, size: 200, totalSize: 201, Metadata: history.slice(0, 200) }),
+			)
+			.mockResolvedValueOnce(
+				response({ offset: 200, size: 1, totalSize: 201, Metadata: history.slice(200) }),
+			)
+			.mockResolvedValueOnce(
+				response({ offset: 0, size: 200, totalSize: 201, Metadata: reordered.slice(0, 200) }),
+			)
+			.mockResolvedValueOnce(
+				response({ offset: 200, size: 1, totalSize: 201, Metadata: reordered.slice(200) }),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		const snapshot = await client.getHistory({ maxResults: 100_000, requireComplete: true });
+		expect(snapshot).toHaveLength(201);
+		await expect(client.verifyHistorySnapshot(snapshot)).resolves.toBeUndefined();
+		expect(fetchMock).toHaveBeenCalledTimes(4);
+	});
+
+	it("rejects equal-count history churn detected by the newest-page verification", async () => {
+		const initial = Array.from({ length: 200 }, (_, index) => ({
+			historyKey: `/status/sessions/history/${index}`,
+			ratingKey: `movie-${index}`,
+			title: `Movie ${index}`,
+			type: "movie",
+			viewedAt: 1_700_000_000 + index,
+			accountID: 1,
+		}));
+		const changed = [
+			{
+				historyKey: "/status/sessions/history/new",
+				ratingKey: "movie-new",
+				title: "New Movie",
+				type: "movie",
+				viewedAt: 1_800_000_000,
+				accountID: 1,
+			},
+			...initial.slice(0, 199),
+		];
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn()
+				.mockResolvedValueOnce(
+					response({ offset: 0, size: 200, totalSize: 200, Metadata: initial }),
+				)
+				.mockResolvedValueOnce(
+					response({ offset: 0, size: 200, totalSize: 200, Metadata: changed }),
+				),
+		);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		const snapshot = await client.getHistory({ maxResults: 100_000, requireComplete: true });
+		await expect(client.verifyHistorySnapshot(snapshot)).rejects.toThrow(
+			/changed before.*snapshot/i,
+		);
+	});
+
+	it("rejects equal-count churn in a middle page during complete verification", async () => {
+		const history = Array.from({ length: 401 }, (_, index) => ({
+			historyKey: `/status/sessions/history/${index}`,
+			ratingKey: `movie-${index}`,
+			title: `Movie ${index}`,
+			type: "movie",
+			viewedAt: 1_700_000_000 + index,
+			accountID: 1,
+		}));
+		const changedMiddle = history.slice(200, 400).map((item) => ({ ...item }));
+		changedMiddle[50] = { ...changedMiddle[50]!, accountID: 2 };
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response({ offset: 0, size: 200, totalSize: 401, Metadata: history.slice(0, 200) }),
+			)
+			.mockResolvedValueOnce(
+				response({ offset: 200, size: 200, totalSize: 401, Metadata: history.slice(200, 400) }),
+			)
+			.mockResolvedValueOnce(
+				response({ offset: 400, size: 1, totalSize: 401, Metadata: history.slice(400) }),
+			)
+			.mockResolvedValueOnce(
+				response({ offset: 0, size: 200, totalSize: 401, Metadata: history.slice(0, 200) }),
+			)
+			.mockResolvedValueOnce(
+				response({ offset: 200, size: 200, totalSize: 401, Metadata: changedMiddle }),
+			)
+			.mockResolvedValueOnce(
+				response({ offset: 400, size: 1, totalSize: 401, Metadata: history.slice(400) }),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		const snapshot = await client.getHistory({ maxResults: 100_000, requireComplete: true });
+		await expect(client.verifyHistorySnapshot(snapshot)).rejects.toThrow(
+			/changed before.*snapshot/i,
+		);
+		expect(fetchMock).toHaveBeenCalledTimes(6);
+	});
+
 	it("accepts endpoint-specific account and section inventories that publish size only", async () => {
 		const fetchMock = vi
 			.fn()

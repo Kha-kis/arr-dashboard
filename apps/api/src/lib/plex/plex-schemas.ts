@@ -137,6 +137,7 @@ export const plexHistoryResponseSchema = z.looseObject({
 		Metadata: z
 			.array(
 				z.looseObject({
+					historyKey: z.string().min(1).optional(),
 					ratingKey: z.string().optional().default(""),
 					parentRatingKey: z.string().optional(),
 					parentKey: z.string().optional(),

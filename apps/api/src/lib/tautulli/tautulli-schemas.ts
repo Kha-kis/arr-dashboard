@@ -34,6 +34,7 @@ export const tautulliLibrarySchema = z.looseObject({
 export const tautulliHistoryDataSchema = z.looseObject({
 	data: z.array(
 		z.looseObject({
+			row_id: z.coerce.number().int().nonnegative().optional(),
 			rating_key: z.coerce.string(),
 			parent_rating_key: z.coerce.string(),
 			grandparent_rating_key: z.coerce.string(),
@@ -43,6 +44,7 @@ export const tautulliHistoryDataSchema = z.looseObject({
 			user: z.string(),
 			date: z.number(),
 			play_count: z.number().optional(),
+			group_count: z.coerce.number().int().positive().optional(),
 		}),
 	),
 	recordsFiltered: z.number(),

@@ -153,7 +153,37 @@ export class TautulliClient {
 		length?: number;
 		start?: number;
 		section_id?: string;
+		order_column?: "date" | "row_id";
+		order_dir?: "asc" | "desc";
+		grouping?: 0;
+		include_activity?: 0;
 	}): Promise<TautulliHistoryData> {
+		if (params?.order_column === "row_id") {
+			const {
+				length = 25,
+				start = 0,
+				order_dir: orderDir = "desc",
+				order_column: _orderColumn,
+				...filters
+			} = params;
+			// Tautulli's shorthand order_column allowlist omits row_id. Supplying
+			// DataTables json_data declares the selected row_id alias so its query
+			// builder emits a real, unique ORDER BY for safe offset pagination.
+			const jsonData = JSON.stringify({
+				draw: 1,
+				columns: [{ data: "row_id", orderable: true, searchable: false }],
+				order: [{ column: 0, dir: orderDir }],
+				start,
+				length,
+				search: { value: "" },
+			});
+			return this.command(
+				"get_history",
+				{ ...filters, json_data: jsonData },
+				tautulliHistoryDataSchema,
+			);
+		}
+
 		return this.command("get_history", params, tautulliHistoryDataSchema);
 	}
 

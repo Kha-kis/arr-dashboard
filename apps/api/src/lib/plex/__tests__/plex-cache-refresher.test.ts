@@ -141,6 +141,7 @@ describe("evictStaleRows", () => {
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockResolvedValue(libraryItems),
 			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
 
@@ -199,6 +200,7 @@ describe("evictStaleRows", () => {
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockResolvedValue([]),
 			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
 		const deleteMany = vi.fn().mockResolvedValue({ count: 2 });
@@ -217,6 +219,49 @@ describe("evictStaleRows", () => {
 		expect(result).toMatchObject({ errors: 0, complete: true, upserted: 0 });
 		expect(deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
 		expect(tx.plexCache.createMany).not.toHaveBeenCalled();
+	});
+
+	it("keeps the previous generation when history changes after enrichment", async () => {
+		const verifyHistorySnapshot = vi.fn().mockRejectedValue(new Error("history changed"));
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([]),
+			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot,
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/history changed/i);
+		expect(verifyHistorySnapshot).toHaveBeenCalledOnce();
+		expect(prisma.$transaction).not.toHaveBeenCalled();
+	});
+
+	it("keeps the previous generation when playback starts during history verification", async () => {
+		const getOnDeck = vi
+			.fn()
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([{ ratingKey: "rk-1", type: "movie" }]);
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([]),
+			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck,
+		} as unknown as PlexClient;
+		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/on-deck state changed/i);
+		expect(getOnDeck).toHaveBeenCalledTimes(2);
+		expect(prisma.$transaction).not.toHaveBeenCalled();
 	});
 
 	it("marks an on-deck failure incomplete and never evicts from that snapshot", async () => {

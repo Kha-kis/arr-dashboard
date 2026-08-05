@@ -63,6 +63,19 @@ interface ItemAggregation {
 	thumb: string | null;
 }
 
+function onDeckSignature(items: Awaited<ReturnType<PlexClient["getOnDeck"]>>): string[] {
+	return items
+		.map((item) =>
+			JSON.stringify([
+				item.type,
+				item.ratingKey,
+				item.parentRatingKey ?? null,
+				item.grandparentRatingKey ?? null,
+			]),
+		)
+		.sort();
+}
+
 // ============================================================================
 // Refresher
 // ============================================================================
@@ -165,8 +178,7 @@ export async function refreshPlexCache(
 		}
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
-		let history: Awaited<ReturnType<typeof client.getHistory>> | undefined =
-			await client.getHistory({ maxResults: 100_000, requireComplete: true });
+		const history = await client.getHistory({ maxResults: 100_000, requireComplete: true });
 		const historyCount = history.length;
 		const aggregations = new Map<string, ItemAggregation>();
 
@@ -219,9 +231,6 @@ export async function refreshPlexCache(
 			}
 		}
 
-		// Release history array — only historyCount is needed from here (#239)
-		history = undefined;
-
 		// Ensure all library items are in aggregations (even if unwatched)
 		for (const [_ratingKey, itemData] of ratingKeyMap) {
 			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
@@ -247,8 +256,10 @@ export async function refreshPlexCache(
 		}
 
 		// 5. Get on-deck items and mark
+		let verifiedOnDeckSignature: string[] = [];
 		try {
 			const onDeckItems = await client.getOnDeck();
+			verifiedOnDeckSignature = onDeckSignature(onDeckItems);
 			for (const deckItem of onDeckItems) {
 				// For episodes, use the show's ratingKey
 				const itemRatingKey =
@@ -287,6 +298,11 @@ export async function refreshPlexCache(
 		aggregations.clear();
 
 		if (errors === 0 && complete) {
+			await client.verifyHistorySnapshot(history);
+			const latestOnDeckSignature = onDeckSignature(await client.getOnDeck());
+			if (JSON.stringify(latestOnDeckSignature) !== JSON.stringify(verifiedOnDeckSignature)) {
+				throw new Error("Plex on-deck state changed before cache publication");
+			}
 			completedAt = new Date();
 			const generationId = randomUUID();
 			const generationMetadata = JSON.stringify({

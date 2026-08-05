@@ -89,6 +89,7 @@ export class PlexSeriesNotFoundError extends Error {
 }
 
 export interface PlexHistoryItem {
+	historyKey?: string;
 	ratingKey: string;
 	parentRatingKey?: string;
 	grandparentRatingKey?: string;
@@ -407,10 +408,18 @@ export class PlexClient {
 		maxResults?: number;
 		requireComplete?: boolean;
 	}): Promise<PlexHistoryItem[]> {
+		return this.getHistoryPass(options);
+	}
+
+	private async getHistoryPass(options?: {
+		maxResults?: number;
+		requireComplete?: boolean;
+	}): Promise<PlexHistoryItem[]> {
 		const allItems: PlexHistoryItem[] = [];
 		const pageSize = 200;
 		const maxResults = options?.maxResults ?? 5000;
 		const requireComplete = options?.requireComplete ?? false;
+		const seenHistoryRows = new Set<string>();
 		let expectedTotal: number | undefined;
 		let offset = 0;
 
@@ -425,7 +434,7 @@ export class PlexClient {
 			const take = Math.min(pageSize, remaining);
 
 			const data = await this.request(
-				`/status/sessions/history/all?sort=viewedAt:desc&X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${take}`,
+				`/status/sessions/history/all?sort=viewedAt:desc,historyKey:desc&X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${take}`,
 				{ schema: plexHistoryResponseSchema },
 			);
 
@@ -451,7 +460,15 @@ export class PlexClient {
 				throw new Error("Plex history pagination stopped before the declared total");
 			}
 			for (const item of items) {
+				if (requireComplete && !item.historyKey) {
+					throw new Error("Plex history did not provide a stable row identity");
+				}
+				if (item.historyKey && seenHistoryRows.has(item.historyKey)) {
+					throw new Error("Plex history returned a duplicate row while paging");
+				}
+				if (item.historyKey) seenHistoryRows.add(item.historyKey);
 				allItems.push({
+					historyKey: item.historyKey,
 					ratingKey: item.ratingKey,
 					parentRatingKey: item.parentRatingKey ?? extractRatingKey(item.parentKey),
 					grandparentRatingKey: item.grandparentRatingKey ?? extractRatingKey(item.grandparentKey),
@@ -462,7 +479,6 @@ export class PlexClient {
 					accountID: item.accountID,
 				});
 			}
-
 			offset += items.length;
 		}
 
@@ -470,6 +486,34 @@ export class PlexClient {
 			throw new Error("Plex history inventory could not be verified as complete");
 		}
 		return allItems;
+	}
+
+	/** Re-read and compare every watch-relevant field before publication. */
+	async verifyHistorySnapshot(history: readonly PlexHistoryItem[]): Promise<void> {
+		const verification = await this.getHistoryPass({
+			maxResults: SAFETY_MAX_ITEMS,
+			requireComplete: true,
+		});
+		const signatures = (items: readonly PlexHistoryItem[]) =>
+			items
+				.map((item) =>
+					JSON.stringify([
+						item.historyKey,
+						item.ratingKey,
+						item.parentRatingKey ?? null,
+						item.grandparentRatingKey ?? null,
+						item.type,
+						item.viewedAt,
+						item.accountID,
+					]),
+				)
+				.sort();
+		if (
+			verification.length !== history.length ||
+			JSON.stringify(signatures(verification)) !== JSON.stringify(signatures(history))
+		) {
+			throw new Error("Plex history changed before its complete snapshot could be verified");
+		}
 	}
 
 	/**

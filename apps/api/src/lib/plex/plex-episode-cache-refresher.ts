@@ -205,6 +205,14 @@ export async function refreshPlexEpisodeCache(
 	}
 
 	try {
+		await client.verifyHistorySnapshot(history);
+	} catch (error) {
+		const message = `Failed to revalidate Plex history before publication: ${getErrorMessage(error)}`;
+		log.warn({ err: error, instanceId }, message);
+		return failedResult([message], eligibleShows, refreshedShows);
+	}
+
+	try {
 		await prisma.$transaction(async (tx) => {
 			await tx.plexEpisodeCache.deleteMany({ where: { instanceId } });
 			if (rows.length > 0) await tx.plexEpisodeCache.createMany({ data: rows });

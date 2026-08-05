@@ -20,10 +20,11 @@ import { getErrorMessage } from "../utils/error-message.js";
 import type { TautulliClient } from "./tautulli-client.js";
 
 // Tautulli exposes offset/length pagination without a documented page-count
-// ceiling. Keep pages conservative for compatibility, but allow a
-// production-sized complete inventory before failing closed.
+// ceiling. Bound both the aggregate inventory and requests for the whole
+// refresh so multiple libraries cannot multiply the safety limit.
 const MAX_HISTORY_RESULTS = 100_000;
-const HISTORY_PAGE_SIZE = 50;
+const HISTORY_PAGE_SIZE = 200;
+const MAX_HISTORY_REQUESTS = 1_000;
 
 // Rate limit: max metadata lookups per refresh cycle
 const MAX_METADATA_LOOKUPS = 500;
@@ -68,18 +69,113 @@ export async function refreshTautulliCache(
 			log.warn({ instanceId }, "Tautulli cache refresh: no movie or show libraries discovered");
 		}
 
-		// 2. Collect all history items across libraries
+		// 2. Probe every library first and freeze an oldest-first snapshot. New
+		// plays append after that snapshot, so they cannot shift later pages.
 		const allHistory: TautulliHistoryItem[] = [];
+		const historyPlans: Array<{
+			sectionId: string;
+			expectedRows: number;
+			firstPage: TautulliHistoryItem[];
+			rowSignatures: string[];
+		}> = [];
+		let expectedHistoryRows = 0;
+		let historyRequests = 0;
 		for (const lib of movieAndShowLibs) {
-			let expectedRows: number | undefined;
+			historyRequests++;
+			if (historyRequests > MAX_HISTORY_REQUESTS) {
+				throw new Error(
+					`Tautulli history exceeded the safe ${MAX_HISTORY_REQUESTS}-request refresh limit`,
+				);
+			}
+			const firstResult = await client.getHistory({
+				section_id: lib.section_id,
+				length: HISTORY_PAGE_SIZE,
+				start: 0,
+				order_column: "row_id",
+				order_dir: "asc",
+				grouping: 0,
+				include_activity: 0,
+			});
+			if (
+				!Number.isSafeInteger(firstResult.recordsFiltered) ||
+				firstResult.recordsFiltered < 0 ||
+				!Number.isSafeInteger(firstResult.recordsTotal) ||
+				firstResult.recordsTotal < firstResult.recordsFiltered
+			) {
+				throw new Error(`Tautulli history returned invalid totals for library ${lib.section_id}`);
+			}
+			if (
+				firstResult.data.length > HISTORY_PAGE_SIZE ||
+				firstResult.data.length > firstResult.recordsFiltered
+			) {
+				throw new Error(
+					`Tautulli history exceeded the requested page or declared total for library ${lib.section_id}`,
+				);
+			}
+			expectedHistoryRows += firstResult.recordsFiltered;
+			if (expectedHistoryRows > MAX_HISTORY_RESULTS) {
+				throw new Error(
+					`Tautulli history contains ${expectedHistoryRows} aggregate rows, exceeding the safe ${MAX_HISTORY_RESULTS}-row refresh limit`,
+				);
+			}
+			historyPlans.push({
+				sectionId: lib.section_id,
+				expectedRows: firstResult.recordsFiltered,
+				firstPage: firstResult.data,
+				rowSignatures: [],
+			});
+		}
+
+		const historySignature = (item: TautulliHistoryItem): string =>
+			JSON.stringify([
+				item.row_id,
+				item.rating_key,
+				item.parent_rating_key,
+				item.grandparent_rating_key,
+				item.media_type,
+				item.user,
+				item.date,
+				item.play_count ?? null,
+			]);
+		const assertUngroupedHistoryRow = (item: TautulliHistoryItem, sectionId: string): void => {
+			if (!Number.isSafeInteger(item.row_id) || item.row_id === undefined || item.row_id < 0) {
+				throw new Error(
+					`Tautulli history did not provide a stable row identity for library ${sectionId}`,
+				);
+			}
+			if ((item.group_count !== undefined && item.group_count > 1) || (item.play_count ?? 1) > 1) {
+				throw new Error(`Tautulli history returned grouped play rows for library ${sectionId}`);
+			}
+		};
+
+		for (const plan of historyPlans) {
 			let fetchedRows = 0;
+			let previousRowId = -1;
 			const seenHistoryRows = new Set<string>();
-			while (true) {
-				const result = await client.getHistory({
-					section_id: lib.section_id,
-					length: HISTORY_PAGE_SIZE,
-					start: fetchedRows,
-				});
+			let result = {
+				data: plan.firstPage,
+				recordsFiltered: plan.expectedRows,
+				recordsTotal: plan.expectedRows,
+			};
+			while (fetchedRows < plan.expectedRows) {
+				const requestedRows = Math.min(HISTORY_PAGE_SIZE, plan.expectedRows - fetchedRows);
+				if (fetchedRows > 0) {
+					historyRequests++;
+					if (historyRequests > MAX_HISTORY_REQUESTS) {
+						throw new Error(
+							`Tautulli history exceeded the safe ${MAX_HISTORY_REQUESTS}-request refresh limit`,
+						);
+					}
+					result = await client.getHistory({
+						section_id: plan.sectionId,
+						length: requestedRows,
+						start: fetchedRows,
+						order_column: "row_id",
+						order_dir: "asc",
+						grouping: 0,
+						include_activity: 0,
+					});
+				}
 
 				if (
 					!Number.isSafeInteger(result.recordsFiltered) ||
@@ -87,55 +183,111 @@ export async function refreshTautulliCache(
 					!Number.isSafeInteger(result.recordsTotal) ||
 					result.recordsTotal < result.recordsFiltered
 				) {
-					throw new Error(`Tautulli history returned invalid totals for library ${lib.section_id}`);
+					throw new Error(`Tautulli history returned invalid totals for library ${plan.sectionId}`);
 				}
-				if (result.data.length > HISTORY_PAGE_SIZE) {
+				if (result.data.length > requestedRows) {
 					throw new Error(
-						`Tautulli history exceeded the requested page size for library ${lib.section_id}`,
+						`Tautulli history exceeded the requested page size for library ${plan.sectionId}`,
 					);
 				}
-				if (expectedRows === undefined) {
-					expectedRows = result.recordsFiltered;
-					if (expectedRows > MAX_HISTORY_RESULTS) {
-						throw new Error(
-							`Tautulli history contains ${expectedRows} rows for library ${lib.section_id}, exceeding the safe ${MAX_HISTORY_RESULTS}-row limit`,
-						);
-					}
-				} else if (result.recordsFiltered !== expectedRows) {
-					throw new Error(`Tautulli history changed while paging library ${lib.section_id}`);
+				if (result.recordsFiltered < plan.expectedRows) {
+					throw new Error(`Tautulli history shrank while paging library ${plan.sectionId}`);
 				}
-				if (fetchedRows + result.data.length > expectedRows) {
+				if (fetchedRows + result.data.length > plan.expectedRows) {
 					throw new Error(
-						`Tautulli history exceeded its declared total for library ${lib.section_id}`,
+						`Tautulli history exceeded its frozen total for library ${plan.sectionId}`,
 					);
 				}
 				for (const item of result.data) {
-					const rowFingerprint = JSON.stringify([
-						item.rating_key,
-						item.parent_rating_key,
-						item.grandparent_rating_key,
-						item.media_type,
-						item.user,
-						item.date,
-						item.play_count ?? null,
-					]);
-					if (seenHistoryRows.has(rowFingerprint)) {
+					assertUngroupedHistoryRow(item, plan.sectionId);
+					if (item.row_id! <= previousRowId) {
 						throw new Error(
-							`Tautulli history returned a duplicate row while paging library ${lib.section_id}`,
+							`Tautulli history did not honor stable row ordering for library ${plan.sectionId}`,
 						);
 					}
-					seenHistoryRows.add(rowFingerprint);
+					previousRowId = item.row_id!;
+					const rowIdentity = String(item.row_id);
+					if (seenHistoryRows.has(rowIdentity)) {
+						throw new Error(
+							`Tautulli history returned a duplicate row while paging library ${plan.sectionId}`,
+						);
+					}
+					seenHistoryRows.add(rowIdentity);
+					plan.rowSignatures.push(historySignature(item));
 					allHistory.push(item);
 				}
 				fetchedRows += result.data.length;
-				if (fetchedRows === expectedRows) break;
-				if (result.data.length === 0 || result.data.length < HISTORY_PAGE_SIZE) {
+				if (fetchedRows === plan.expectedRows) break;
+				if (result.data.length < requestedRows) {
 					throw new Error(
-						`Tautulli history stopped before its declared total for library ${lib.section_id}`,
+						`Tautulli history stopped before its frozen total for library ${plan.sectionId}`,
 					);
 				}
 			}
 		}
+
+		const verifyCompleteHistorySnapshot = async (): Promise<void> => {
+			for (const plan of historyPlans) {
+				let fetchedRows = 0;
+				let previousRowId = -1;
+				const seenRows = new Set<string>();
+				const signatures: string[] = [];
+				do {
+					historyRequests++;
+					if (historyRequests > MAX_HISTORY_REQUESTS) {
+						throw new Error(
+							`Tautulli history exceeded the safe ${MAX_HISTORY_REQUESTS}-request refresh limit`,
+						);
+					}
+					const expectedPageRows = Math.min(HISTORY_PAGE_SIZE, plan.expectedRows - fetchedRows);
+					const result = await client.getHistory({
+						section_id: plan.sectionId,
+						length: Math.max(1, expectedPageRows),
+						start: fetchedRows,
+						order_column: "row_id",
+						order_dir: "asc",
+						grouping: 0,
+						include_activity: 0,
+					});
+					if (
+						result.recordsFiltered !== plan.expectedRows ||
+						!Number.isSafeInteger(result.recordsTotal) ||
+						result.recordsTotal < result.recordsFiltered ||
+						result.data.length !== expectedPageRows
+					) {
+						throw new Error(
+							`Tautulli history changed before the snapshot for library ${plan.sectionId} could be verified`,
+						);
+					}
+					for (const item of result.data) {
+						assertUngroupedHistoryRow(item, plan.sectionId);
+						if (item.row_id! <= previousRowId) {
+							throw new Error(
+								`Tautulli history did not honor stable row ordering for library ${plan.sectionId}`,
+							);
+						}
+						previousRowId = item.row_id!;
+						const rowIdentity = String(item.row_id);
+						if (seenRows.has(rowIdentity)) {
+							throw new Error(
+								`Tautulli history returned a duplicate row while verifying library ${plan.sectionId}`,
+							);
+						}
+						seenRows.add(rowIdentity);
+						signatures.push(historySignature(item));
+					}
+					fetchedRows += result.data.length;
+				} while (fetchedRows < plan.expectedRows);
+
+				if (
+					JSON.stringify([...signatures].sort()) !== JSON.stringify([...plan.rowSignatures].sort())
+				) {
+					throw new Error(
+						`Tautulli history changed before the snapshot for library ${plan.sectionId} could be verified`,
+					);
+				}
+			}
+		};
 
 		// 3. Group history by rating_key (for movies) or grandparent_rating_key (for shows)
 		const itemMap = new Map<
@@ -247,6 +399,9 @@ export async function refreshTautulliCache(
 
 		let completedAt: Date | undefined;
 		if (errors === 0 && complete) {
+			// Metadata lookups can take long enough for watch history to change.
+			// Re-read the entire snapshot immediately before publication.
+			await verifyCompleteHistorySnapshot();
 			completedAt = new Date();
 			try {
 				await prisma.$transaction(async (tx) => {

@@ -34,6 +34,7 @@ function client(overrides: Partial<PlexClient> = {}): PlexClient {
 		]),
 		getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 		getEpisodes: vi.fn().mockResolvedValue([episode()]),
+		verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 		...overrides,
 	} as unknown as PlexClient;
 }
@@ -168,6 +169,44 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/exceeding the safe 100000-row limit/i);
+		expect(fixture.db.$transaction).not.toHaveBeenCalled();
+	});
+
+	it("keeps the previous episode generation when complete history contains a repeated page", async () => {
+		const fixture = prisma();
+		const result = await refreshPlexEpisodeCache(
+			client({
+				getHistory: vi
+					.fn()
+					.mockRejectedValue(new Error("Plex history returned a duplicate row while paging")),
+			} as Partial<PlexClient>),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+		);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/duplicate row while paging/i);
+		expect(fixture.db.$transaction).not.toHaveBeenCalled();
+	});
+
+	it("keeps the previous episode generation when history changes during episode enrichment", async () => {
+		const fixture = prisma();
+		const verifyHistorySnapshot = vi
+			.fn()
+			.mockRejectedValue(new Error("Plex history changed before publication"));
+		const result = await refreshPlexEpisodeCache(
+			client({ verifyHistorySnapshot } as Partial<PlexClient>),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+		);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/revalidate Plex history/i);
+		expect(verifyHistorySnapshot).toHaveBeenCalledOnce();
 		expect(fixture.db.$transaction).not.toHaveBeenCalled();
 	});
 
