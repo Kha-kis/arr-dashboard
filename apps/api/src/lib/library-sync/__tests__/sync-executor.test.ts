@@ -16,7 +16,7 @@ import type { PrismaClient, ServiceType } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
 import { createArrServiceFingerprint } from "../../arr/service-fingerprint.js";
 import type { Encryptor } from "../../auth/encryption.js";
-import { extractRating } from "../../library-cleanup/rule-evaluators.js";
+import { evaluateSingleCondition, extractRating } from "../../library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval } from "../../library-cleanup/types.js";
 import { type LibraryStreamFn, type SyncExecutorDeps, syncInstance } from "../sync-executor.js";
 
@@ -379,7 +379,7 @@ describe("syncInstance", () => {
 			};
 		}
 
-		it("preserves Radarr source provenance without arbitrary fallback", async () => {
+		it("preserves Radarr source provenance and matches IMDb cleanup from cached data", async () => {
 			const { data, cacheItem } = await syncRating("RADARR", {
 				imdb: { value: 7.4, votes: 100 },
 				tmdb: { value: 8.6, votes: 200 },
@@ -391,6 +391,14 @@ describe("syncInstance", () => {
 				metacritic: { value: 84, votes: 20 },
 			});
 			expect(extractRating(cacheItem)).toBe(8.6);
+			expect(
+				evaluateSingleCondition(
+					cacheItem,
+					"imdb_rating",
+					{ operator: "less_than", score: 10 },
+					{ now: new Date("2026-07-30T00:00:00Z") },
+				),
+			).toBe("IMDb rating: 7.4 (threshold: < 10)");
 		});
 
 		it("keeps Sonarr's flat score separate from IMDb", async () => {
