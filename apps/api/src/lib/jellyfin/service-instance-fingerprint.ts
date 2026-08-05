@@ -3,7 +3,7 @@ import type { ServiceInstance } from "../prisma.js";
 
 type JellyfinConnectionIdentity = Pick<
 	ServiceInstance,
-	"service" | "baseUrl" | "encryptedApiKey" | "encryptionIv"
+	"service" | "baseUrl" | "encryptedApiKey" | "encryptionIv" | "updatedAt"
 > &
 	Partial<Pick<ServiceInstance, "encryptedHttpAuthCredentials" | "httpAuthEncryptionIv">>;
 
@@ -18,6 +18,7 @@ export function jellyfinConnectionFingerprint(instance: JellyfinConnectionIdenti
 				instance.encryptionIv,
 				instance.encryptedHttpAuthCredentials,
 				instance.httpAuthEncryptionIv,
+				instance.updatedAt.toISOString(),
 			]),
 		)
 		.digest("hex");

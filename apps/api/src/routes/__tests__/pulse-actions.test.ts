@@ -248,7 +248,18 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 	});
 
 	it("dispatches a Jellyfin retry through the owned-instance helper", async () => {
-		requireJellyfinClient.mockResolvedValue({ client: {}, instance: {} });
+		requireJellyfinClient.mockResolvedValue({
+			client: {},
+			instance: {
+				service: "JELLYFIN",
+				baseUrl: "https://jellyfin.example.com",
+				encryptedApiKey: "encrypted-key",
+				encryptionIv: "key-iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+			},
+		});
 		refreshJellyfinCache.mockResolvedValue({
 			upserted: 7,
 			errors: 0,

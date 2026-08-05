@@ -11,6 +11,7 @@ const {
 	mockUpsertTags,
 	mockUpdateInstanceTags,
 	mockFormatServiceInstance,
+	mockInvalidatePulseCache,
 } = vi.hoisted(() => ({
 	mockRequireInstance: vi.fn(),
 	mockTestConnection: vi.fn().mockResolvedValue({ success: true, version: "4.0.0" }),
@@ -28,6 +29,11 @@ const {
 		tags: [],
 		storageGroupId: instance.storageGroupId ?? null,
 	})),
+	mockInvalidatePulseCache: vi.fn(),
+}));
+
+vi.mock("../pulse.js", () => ({
+	invalidatePulseCache: (...args: unknown[]) => mockInvalidatePulseCache(...args),
 }));
 
 vi.mock("../../lib/arr/instance-helpers.js", () => ({
@@ -339,12 +345,50 @@ describe("PUT /services/:id", () => {
 		expect(res.statusCode).toBe(200);
 		expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
 		expect(order).toEqual(["update", "cache", "episode-cache", "status"]);
+		const connectionUpdate = mockPrisma.serviceInstance.updateMany.mock.calls.find(
+			([args]) => args.where.id === "inst-1",
+		)?.[0];
+		expect(connectionUpdate?.data.updatedAt).toBeInstanceOf(Date);
+		expect(connectionUpdate?.data.updatedAt.getTime()).toBeGreaterThan(
+			new Date("2024-01-01T00:00:00Z").getTime(),
+		);
 		expect(mockPrisma.cacheRefreshStatus.deleteMany).toHaveBeenCalledWith({
 			where: {
 				instanceId: "inst-1",
 				cacheType: { in: ["jellyfin", "jellyfin_episode"] },
 			},
 		});
+		expect(mockInvalidatePulseCache).toHaveBeenCalledWith("user-1");
+	});
+
+	it("keeps Jellyfin cache state when the form resubmits unchanged connection fields", async () => {
+		mockRequireInstance.mockResolvedValue(
+			makeInstance({ service: "JELLYFIN", baseUrl: "http://jellyfin:8096", enabled: true }),
+		);
+		mockBuildUpdateData.mockReturnValue({
+			label: "Renamed Jellyfin",
+			service: "JELLYFIN",
+			baseUrl: "http://jellyfin:8096",
+			enabled: true,
+		});
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+			makeInstance({ service: "JELLYFIN", label: "Renamed Jellyfin" }),
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: {
+				label: "Renamed Jellyfin",
+				service: "jellyfin",
+				baseUrl: "http://jellyfin:8096",
+				enabled: true,
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+		expect(mockPrisma.jellyfinEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(mockPrisma.cacheRefreshStatus.deleteMany).not.toHaveBeenCalled();
+		expect(mockInvalidatePulseCache).not.toHaveBeenCalled();
 	});
 
 	it("keeps Jellyfin cache state for a label-only update", async () => {

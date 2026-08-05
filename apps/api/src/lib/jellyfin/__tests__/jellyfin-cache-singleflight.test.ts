@@ -40,6 +40,7 @@ type TestConnection = {
 	encryptedHttpAuthCredentials: string | null;
 	httpAuthEncryptionIv: string | null;
 	enabled: boolean;
+	updatedAt: Date;
 };
 
 const connectionOne: TestConnection = {
@@ -50,11 +51,11 @@ const connectionOne: TestConnection = {
 	encryptedHttpAuthCredentials: null,
 	httpAuthEncryptionIv: null,
 	enabled: true,
+	updatedAt: new Date("2026-08-05T00:00:00.000Z"),
 };
 const connectionTwo: TestConnection = {
 	...connectionOne,
-	baseUrl: "https://jellyfin-two.example.com",
-	encryptedApiKey: "key-two",
+	updatedAt: new Date("2026-08-05T00:00:00.001Z"),
 };
 const fingerprintOne = jellyfinConnectionFingerprint(connectionOne as never);
 const fingerprintTwo = jellyfinConnectionFingerprint(connectionTwo as never);

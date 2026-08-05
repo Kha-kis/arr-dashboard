@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
 import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
-import type { ServiceType } from "../lib/prisma.js";
+import type { ServiceInstance, ServiceType } from "../lib/prisma.js";
 import { withQuiObservationTopologyGuard } from "../lib/qui/observation-topology-guard.js";
 import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
@@ -21,6 +21,7 @@ import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
 import { validateRequest } from "../lib/utils/validate.js";
+import { invalidatePulseCache } from "./pulse.js";
 
 const idParams = z.object({ id: z.string().min(1) });
 
@@ -76,14 +77,6 @@ const QUI_TOPOLOGY_UPDATE_FIELDS = [
 	"pathPrefix",
 ] as const;
 
-const JELLYFIN_CONNECTION_UPDATE_FIELDS = [
-	"service",
-	"enabled",
-	"baseUrl",
-	"apiKey",
-	"httpAuth",
-] as const;
-
 function changesQuiTopology(
 	existingService: ServiceType,
 	payload: z.infer<typeof serviceUpdateSchema>,
@@ -94,19 +87,25 @@ function changesQuiTopology(
 }
 
 function changesJellyfinConnection(
-	existingService: ServiceType,
+	existing: Pick<ServiceInstance, "service" | "baseUrl" | "enabled">,
 	payload: z.infer<typeof serviceUpdateSchema>,
 ): boolean {
-	const targetService = (payload.service ?? existingService.toLowerCase()).toUpperCase();
+	const targetService = (payload.service ?? existing.service.toLowerCase()).toUpperCase();
 	const touchesJellyfin =
-		existingService === "JELLYFIN" ||
-		existingService === "EMBY" ||
+		existing.service === "JELLYFIN" ||
+		existing.service === "EMBY" ||
 		targetService === "JELLYFIN" ||
 		targetService === "EMBY";
-	return (
-		touchesJellyfin &&
-		JELLYFIN_CONNECTION_UPDATE_FIELDS.some((field) => Object.hasOwn(payload, field))
-	);
+	if (!touchesJellyfin) return false;
+
+	if (payload.service !== undefined && targetService !== existing.service) return true;
+	if (payload.enabled !== undefined && payload.enabled !== existing.enabled) return true;
+	if (payload.baseUrl !== undefined && payload.baseUrl !== existing.baseUrl) return true;
+	// Secrets are intentionally not returned to the browser. Their presence in
+	// an update therefore means the operator supplied a replacement value.
+	if (Object.hasOwn(payload, "apiKey") || Object.hasOwn(payload, "httpAuth")) return true;
+
+	return false;
 }
 
 async function clearDurableJellyfinCache(
@@ -294,14 +293,22 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				};
 
 				const quiTopologyChanged = changesQuiTopology(existing.service, payload);
-				const jellyfinConnectionChanged = changesJellyfinConnection(existing.service, payload);
+				const jellyfinConnectionChanged = changesJellyfinConnection(existing, payload);
+				const serviceUpdateData = jellyfinConnectionChanged
+					? {
+							...updateData,
+							// Make the connection generation strictly newer even when two
+							// updates land within the database timestamp's clock resolution.
+							updatedAt: new Date(Math.max(Date.now(), existing.updatedAt.getTime() + 1)),
+						}
+					: updateData;
 				if (quiTopologyChanged) {
 					await withQuiObservationTopologyGuard(userId, async () => {
 						await app.prisma.$transaction(async (tx) => {
 							await resetOtherDefaults(tx);
 							await tx.serviceInstance.updateMany({
 								where: { id, userId },
-								data: updateData,
+								data: serviceUpdateData,
 							});
 							if (payload.tags !== undefined) {
 								await updateInstanceTags(tx, id, payload.tags);
@@ -322,7 +329,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						await resetOtherDefaults(tx);
 						await tx.serviceInstance.updateMany({
 							where: { id, userId },
-							data: updateData,
+							data: serviceUpdateData,
 						});
 						if (payload.tags !== undefined) {
 							await updateInstanceTags(tx, id, payload.tags);
@@ -333,11 +340,14 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					await resetOtherDefaults(app.prisma);
 					await app.prisma.serviceInstance.updateMany({
 						where: { id, userId },
-						data: updateData,
+						data: serviceUpdateData,
 					});
 					if (payload.tags !== undefined) {
 						await updateInstanceTags(app.prisma, id, payload.tags);
 					}
+				}
+				if (jellyfinConnectionChanged) {
+					invalidatePulseCache(userId);
 				}
 
 				// A qUI topology change invalidates both durable observations

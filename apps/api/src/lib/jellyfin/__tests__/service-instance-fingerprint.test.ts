@@ -8,6 +8,7 @@ const connection = {
 	encryptionIv: "key-iv",
 	encryptedHttpAuthCredentials: null,
 	httpAuthEncryptionIv: null,
+	updatedAt: new Date("2026-08-05T00:00:00.000Z"),
 } as const;
 
 describe("jellyfinConnectionFingerprint", () => {
@@ -24,6 +25,7 @@ describe("jellyfinConnectionFingerprint", () => {
 		["encryptionIv", "different-iv"],
 		["encryptedHttpAuthCredentials", "proxy-auth"],
 		["httpAuthEncryptionIv", "proxy-iv"],
+		["updatedAt", new Date("2026-08-05T00:00:01.000Z")],
 	] as const)("changes when %s changes", (field, value) => {
 		expect(jellyfinConnectionFingerprint({ ...connection, [field]: value } as never)).not.toBe(
 			jellyfinConnectionFingerprint(connection as never),
