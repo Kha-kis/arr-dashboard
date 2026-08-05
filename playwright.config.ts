@@ -81,6 +81,11 @@ export default defineConfig({
 
   /* Exclude tests that require external services (Docker Compose stacks) */
   testIgnore: isCI
-    ? ['**/pocket-id-test/**', '**/authentik-test/**', '**/integration/**']
-    : ['**/integration/**'],
+    ? [
+        '**/pocket-id-test/**',
+        '**/authentik-test/**',
+        '**/integration/**',
+        '**/library-cleanup/**',
+      ]
+    : ['**/integration/**', '**/library-cleanup/**'],
 });
