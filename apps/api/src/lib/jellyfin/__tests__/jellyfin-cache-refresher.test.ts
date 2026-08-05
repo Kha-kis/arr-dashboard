@@ -356,6 +356,9 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(tx.jellyfinCache.deleteMany).toHaveBeenCalledOnce();
 		expect(tx.jellyfinCache.createMany).not.toHaveBeenCalled();
 		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
+		expect(stub.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+			isolationLevel: "Serializable",
+		});
 	});
 
 	it("discards a completed scan when the service connection changed before publication", async () => {
@@ -431,8 +434,6 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 			'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
 			"inst-1",
 		);
-		expect(stub.$transaction).toHaveBeenCalledWith(expect.any(Function), {
-			isolationLevel: "Serializable",
-		});
+		expect(stub.$transaction).toHaveBeenCalledWith(expect.any(Function), undefined);
 	});
 });

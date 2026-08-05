@@ -309,7 +309,7 @@ export async function refreshJellyfinCache(
 							},
 						});
 					},
-					{ isolationLevel: "Serializable" },
+					isPostgresqlDatabase() ? undefined : { isolationLevel: "Serializable" },
 				);
 				upserted = items.length;
 			} catch (err) {
