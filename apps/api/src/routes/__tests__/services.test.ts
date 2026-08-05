@@ -94,7 +94,7 @@ function makeInstance(overrides: Record<string, unknown> = {}) {
 // ---------------------------------------------------------------------------
 
 function createMockPrisma() {
-	return {
+	const prisma = {
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -123,7 +123,15 @@ function createMockPrisma() {
 		serviceInstanceTag: {
 			findFirst: vi.fn().mockResolvedValue(null),
 		},
+		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 	};
+	return Object.assign(prisma, {
+		$transaction: vi.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+			callback(prisma),
+		),
+	});
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +304,63 @@ describe("PUT /services/:id", () => {
 
 		expect(res.statusCode).toBe(404);
 		expect(JSON.parse(res.payload).message).toContain("not found");
+	});
+
+	it("atomically clears Jellyfin cache state after a connection update", async () => {
+		const order: string[] = [];
+		mockRequireInstance.mockResolvedValue(
+			makeInstance({ service: "JELLYFIN", baseUrl: "http://jellyfin-old:8096" }),
+		);
+		mockBuildUpdateData.mockReturnValue({ baseUrl: "http://jellyfin-new:8096" });
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+			makeInstance({ service: "JELLYFIN", baseUrl: "http://jellyfin-new:8096" }),
+		);
+		mockPrisma.serviceInstance.updateMany.mockImplementation(async () => {
+			order.push("update");
+			return { count: 1 };
+		});
+		mockPrisma.jellyfinCache.deleteMany.mockImplementation(async () => {
+			order.push("cache");
+			return { count: 1 };
+		});
+		mockPrisma.jellyfinEpisodeCache.deleteMany.mockImplementation(async () => {
+			order.push("episode-cache");
+			return { count: 1 };
+		});
+		mockPrisma.cacheRefreshStatus.deleteMany.mockImplementation(async () => {
+			order.push("status");
+			return { count: 2 };
+		});
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { baseUrl: "http://jellyfin-new:8096" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+		expect(order).toEqual(["update", "cache", "episode-cache", "status"]);
+		expect(mockPrisma.cacheRefreshStatus.deleteMany).toHaveBeenCalledWith({
+			where: {
+				instanceId: "inst-1",
+				cacheType: { in: ["jellyfin", "jellyfin_episode"] },
+			},
+		});
+	});
+
+	it("keeps Jellyfin cache state for a label-only update", async () => {
+		mockRequireInstance.mockResolvedValue(makeInstance({ service: "JELLYFIN" }));
+		mockBuildUpdateData.mockReturnValue({ label: "Renamed Jellyfin" });
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+			makeInstance({ service: "JELLYFIN", label: "Renamed Jellyfin" }),
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { label: "Renamed Jellyfin" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+		expect(mockPrisma.cacheRefreshStatus.deleteMany).not.toHaveBeenCalled();
 	});
 });
 

@@ -76,6 +76,14 @@ const QUI_TOPOLOGY_UPDATE_FIELDS = [
 	"pathPrefix",
 ] as const;
 
+const JELLYFIN_CONNECTION_UPDATE_FIELDS = [
+	"service",
+	"enabled",
+	"baseUrl",
+	"apiKey",
+	"httpAuth",
+] as const;
+
 function changesQuiTopology(
 	existingService: ServiceType,
 	payload: z.infer<typeof serviceUpdateSchema>,
@@ -83,6 +91,41 @@ function changesQuiTopology(
 	const targetService = (payload.service ?? existingService.toLowerCase()).toUpperCase();
 	if (existingService !== "QUI" && targetService !== "QUI") return false;
 	return QUI_TOPOLOGY_UPDATE_FIELDS.some((field) => Object.hasOwn(payload, field));
+}
+
+function changesJellyfinConnection(
+	existingService: ServiceType,
+	payload: z.infer<typeof serviceUpdateSchema>,
+): boolean {
+	const targetService = (payload.service ?? existingService.toLowerCase()).toUpperCase();
+	const touchesJellyfin =
+		existingService === "JELLYFIN" ||
+		existingService === "EMBY" ||
+		targetService === "JELLYFIN" ||
+		targetService === "EMBY";
+	return (
+		touchesJellyfin &&
+		JELLYFIN_CONNECTION_UPDATE_FIELDS.some((field) => Object.hasOwn(payload, field))
+	);
+}
+
+async function clearDurableJellyfinCache(
+	prisma: {
+		jellyfinCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		jellyfinEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		cacheRefreshStatus: {
+			deleteMany(args: {
+				where: { instanceId: string; cacheType: { in: string[] } };
+			}): Promise<unknown>;
+		};
+	},
+	instanceId: string,
+): Promise<void> {
+	await prisma.jellyfinCache.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
+	await prisma.cacheRefreshStatus.deleteMany({
+		where: { instanceId, cacheType: { in: ["jellyfin", "jellyfin_episode"] } },
+	});
 }
 
 async function clearDurableQuiObservations(
@@ -251,6 +294,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				};
 
 				const quiTopologyChanged = changesQuiTopology(existing.service, payload);
+				const jellyfinConnectionChanged = changesJellyfinConnection(existing.service, payload);
 				if (quiTopologyChanged) {
 					await withQuiObservationTopologyGuard(userId, async () => {
 						await app.prisma.$transaction(async (tx) => {
@@ -262,6 +306,9 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							if (payload.tags !== undefined) {
 								await updateInstanceTags(tx, id, payload.tags);
 							}
+							if (jellyfinConnectionChanged) {
+								await clearDurableJellyfinCache(tx, id);
+							}
 							await clearDurableQuiObservations(tx, userId);
 						});
 						// Keep process-local evidence in the same guarded topology
@@ -269,6 +316,18 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						// observer to reuse the previous endpoint's inode inventory.
 						invalidateTorrentListCache(id);
 						clearFileIdIndexCache(id);
+					});
+				} else if (jellyfinConnectionChanged) {
+					await app.prisma.$transaction(async (tx) => {
+						await resetOtherDefaults(tx);
+						await tx.serviceInstance.updateMany({
+							where: { id, userId },
+							data: updateData,
+						});
+						if (payload.tags !== undefined) {
+							await updateInstanceTags(tx, id, payload.tags);
+						}
+						await clearDurableJellyfinCache(tx, id);
 					});
 				} else {
 					await resetOtherDefaults(app.prisma);
