@@ -7,9 +7,12 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { recordCacheRefreshFailure } from "../lib/cache-refresh-status.js";
 import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
-import { refreshJellyfinEpisodeCache } from "../lib/jellyfin/jellyfin-episode-cache-refresher.js";
+import {
+	recordJellyfinEpisodeCacheRefreshFailure,
+	refreshJellyfinEpisodeCache,
+} from "../lib/jellyfin/jellyfin-episode-cache-refresher.js";
+import { jellyfinConnectionFingerprint } from "../lib/jellyfin/service-instance-fingerprint.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
@@ -37,6 +40,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					if (instances.length === 0) return;
 
 					for (const instance of instances) {
+						const connectionFingerprint = jellyfinConnectionFingerprint(instance);
 						try {
 							const client = createJellyfinClient(app.encryptor, instance, app.log);
 							const result = await refreshJellyfinEpisodeCache(
@@ -44,43 +48,24 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 								app.prisma,
 								instance.id,
 								app.log,
+								connectionFingerprint,
 							);
 							app.log.info(
 								{ instanceId: instance.id, label: instance.label, ...result },
 								"Jellyfin episode cache refresh completed",
 							);
-
-							try {
-								if (!result.complete || !result.completedAt) {
-									await recordCacheRefreshFailure(
-										app.prisma,
-										instance.id,
-										"jellyfin_episode",
-										"Jellyfin episode refresh did not produce a complete generation",
-									);
-								}
-							} catch (statusErr) {
-								app.log.warn(
-									{ err: statusErr, instanceId: instance.id },
-									"Failed to update Jellyfin episode cache refresh status",
-								);
-							}
 						} catch (err) {
 							app.log.error(
 								{ err, instanceId: instance.id, label: instance.label },
 								"Jellyfin episode cache refresh failed for instance",
 							);
-							await recordCacheRefreshFailure(
+							await recordJellyfinEpisodeCacheRefreshFailure(
 								app.prisma,
 								instance.id,
-								"jellyfin_episode",
-								getErrorMessage(err, "Unknown error"),
-							).catch((statusErr) => {
-								app.log.warn(
-									{ err: statusErr, instanceId: instance.id },
-									"Failed to record Jellyfin episode cache refresh failure status",
-								);
-							});
+								connectionFingerprint,
+								getErrorMessage(err, "Unknown Jellyfin episode refresh error"),
+								app.log,
+							);
 						}
 					}
 				});

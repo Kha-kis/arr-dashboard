@@ -8685,6 +8685,7 @@ async function refreshJellyfinMutationEvidence(
 						deps.prisma,
 						instance.id,
 						deps.log,
+						jellyfinConnectionFingerprint(instance),
 					);
 					if (episodes.errors > 0 || episodes.complete !== true) {
 						throw new Error("Jellyfin episode refresh was incomplete");
