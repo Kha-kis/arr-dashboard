@@ -18,7 +18,7 @@ type JellyfinCacheRefreshObserver = {
 	log: Pick<FastifyBaseLogger, "warn">;
 };
 
-async function recordRefreshFailure(
+export async function recordJellyfinCacheRefreshFailure(
 	instanceId: string,
 	connectionFingerprint: string,
 	message: string,
@@ -49,7 +49,7 @@ async function runObservedRefresh(
 	try {
 		const result = await refresh();
 		if ((!result.complete || !result.completedAt) && !result.superseded) {
-			await recordRefreshFailure(
+			await recordJellyfinCacheRefreshFailure(
 				instanceId,
 				connectionFingerprint,
 				result.errorMessages.slice(0, 3).join("; ") ||
@@ -59,7 +59,7 @@ async function runObservedRefresh(
 		}
 		return result;
 	} catch (error) {
-		await recordRefreshFailure(
+		await recordJellyfinCacheRefreshFailure(
 			instanceId,
 			connectionFingerprint,
 			getErrorMessage(error, "Unknown Jellyfin cache refresh error"),

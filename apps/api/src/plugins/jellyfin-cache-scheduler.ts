@@ -8,13 +8,66 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { refreshJellyfinCache } from "../lib/jellyfin/jellyfin-cache-refresher.js";
-import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-cache-singleflight.js";
+import {
+	recordJellyfinCacheRefreshFailure,
+	runJellyfinCacheRefreshSingleFlight,
+} from "../lib/jellyfin/jellyfin-cache-singleflight.js";
 import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
 import { jellyfinConnectionFingerprint } from "../lib/jellyfin/service-instance-fingerprint.js";
+import type { ServiceInstance } from "../lib/prisma.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 45_000; // 45 seconds
+
+export async function refreshScheduledJellyfinCacheInstance(
+	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
+	instance: ServiceInstance,
+): Promise<void> {
+	const connectionFingerprint = jellyfinConnectionFingerprint(instance);
+	let client: ReturnType<typeof createJellyfinClient>;
+	try {
+		client = createJellyfinClient(app.encryptor, instance, app.log);
+	} catch (err) {
+		app.log.error(
+			{ err, instanceId: instance.id, label: instance.label },
+			"Jellyfin cache refresh failed for instance",
+		);
+		await recordJellyfinCacheRefreshFailure(
+			instance.id,
+			connectionFingerprint,
+			getErrorMessage(err, "Unknown Jellyfin cache refresh error"),
+			{ prisma: app.prisma, log: app.log },
+		);
+		return;
+	}
+
+	try {
+		const result = await runJellyfinCacheRefreshSingleFlight(
+			instance.id,
+			connectionFingerprint,
+			(expectedConnectionFingerprint) =>
+				refreshJellyfinCache(
+					client,
+					app.prisma,
+					instance.id,
+					app.log,
+					expectedConnectionFingerprint,
+				),
+			{ prisma: app.prisma, log: app.log },
+		);
+		app.log.info(
+			{ instanceId: instance.id, label: instance.label, ...result },
+			"Jellyfin cache refresh completed for instance",
+		);
+	} catch (err) {
+		app.log.error(
+			{ err, instanceId: instance.id, label: instance.label },
+			"Jellyfin cache refresh failed for instance",
+		);
+	}
+}
 
 const jellyfinCacheSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
@@ -45,31 +98,7 @@ const jellyfinCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
-						try {
-							const client = createJellyfinClient(app.encryptor, instance, app.log);
-							const result = await runJellyfinCacheRefreshSingleFlight(
-								instance.id,
-								jellyfinConnectionFingerprint(instance),
-								(expectedConnectionFingerprint) =>
-									refreshJellyfinCache(
-										client,
-										app.prisma,
-										instance.id,
-										app.log,
-										expectedConnectionFingerprint,
-									),
-								{ prisma: app.prisma, log: app.log },
-							);
-							app.log.info(
-								{ instanceId: instance.id, label: instance.label, ...result },
-								"Jellyfin cache refresh completed for instance",
-							);
-						} catch (err) {
-							app.log.error(
-								{ err, instanceId: instance.id, label: instance.label },
-								"Jellyfin cache refresh failed for instance",
-							);
-						}
+						await refreshScheduledJellyfinCacheInstance(app, instance);
 					}
 				});
 			} finally {
