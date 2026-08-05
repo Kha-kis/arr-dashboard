@@ -12,7 +12,7 @@ import type { PlexClient, PlexEpisodeItem } from "./plex-client.js";
 const MAX_SHOWS_PER_REFRESH = 50;
 const REFRESHES_PER_FRESHNESS_WINDOW = 4;
 const MAX_COMPLETE_SHOWS = MAX_SHOWS_PER_REFRESH * REFRESHES_PER_FRESHNESS_WINDOW;
-const MAX_HISTORY_RESULTS = 5000;
+const MAX_HISTORY_RESULTS = 100_000;
 
 export interface PlexEpisodeRefreshResult {
 	upserted: number;
@@ -79,10 +79,10 @@ export async function refreshPlexEpisodeCache(
 	const errorMessages: string[] = [];
 	let history: Awaited<ReturnType<PlexClient["getHistory"]>>;
 	try {
-		history = await client.getHistory({ maxResults: MAX_HISTORY_RESULTS });
-		if (history.length >= MAX_HISTORY_RESULTS) {
-			throw new Error(`Plex history reached its ${MAX_HISTORY_RESULTS}-row safety limit`);
-		}
+		history = await client.getHistory({
+			maxResults: MAX_HISTORY_RESULTS,
+			requireComplete: true,
+		});
 	} catch (error) {
 		const message = `Failed to prove complete Plex history: ${getErrorMessage(error)}`;
 		log.warn({ err: error, instanceId }, message);

@@ -128,16 +128,38 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		expect(fixture.db.$transaction).not.toHaveBeenCalled();
 	});
 
-	it("rejects capped history without publishing partial evidence", async () => {
+	it("publishes complete episode evidence beyond the legacy 5,000-row cap", async () => {
 		const fixture = prisma();
 		const history = Array.from({ length: 5000 }, (_, index) => ({
 			type: "episode",
-			ratingKey: `episode-${index}`,
+			ratingKey: "episode-1",
 			accountID: 1,
 			viewedAt: 1_700_000_000 + index,
 		}));
+		const getHistory = vi.fn().mockResolvedValue(history);
 		const result = await refreshPlexEpisodeCache(
-			client({ getHistory: vi.fn().mockResolvedValue(history) } as Partial<PlexClient>),
+			client({ getHistory } as Partial<PlexClient>),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+		);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		expect(getHistory).toHaveBeenCalledWith({ maxResults: 100_000, requireComplete: true });
+		expect(fixture.db.$transaction).toHaveBeenCalledOnce();
+	});
+
+	it("keeps the previous episode generation when complete history exceeds the safety bound", async () => {
+		const fixture = prisma();
+		const result = await refreshPlexEpisodeCache(
+			client({
+				getHistory: vi
+					.fn()
+					.mockRejectedValue(
+						new Error("Plex history contains 100001 rows, exceeding the safe 100000-row limit"),
+					),
+			} as Partial<PlexClient>),
 			fixture.db,
 			"plex-1",
 			log,
@@ -145,6 +167,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/exceeding the safe 100000-row limit/i);
 		expect(fixture.db.$transaction).not.toHaveBeenCalled();
 	});
 

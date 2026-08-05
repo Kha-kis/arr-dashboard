@@ -421,6 +421,88 @@ describe("refreshTautulliCache — sparse metadata handling (#497)", () => {
 });
 
 describe("refreshTautulliCache — authoritative completeness", () => {
+	it("publishes complete history beyond the legacy 1,000-row page cap", async () => {
+		const history = Array.from({ length: 1_001 }, (_, index) => ({
+			rating_key: "rk-established",
+			parent_rating_key: "",
+			grandparent_rating_key: "",
+			title: "Established Movie",
+			grandparent_title: "",
+			media_type: "movie",
+			user: "alice",
+			date: 1_700_000_000 + index,
+			play_count: 1,
+		}));
+		const getHistory = vi.fn(async ({ start, length }: { start: number; length: number }) => ({
+			data: history.slice(start, start + length),
+			recordsFiltered: history.length,
+			recordsTotal: history.length,
+		}));
+		const mockClient = {
+			getLibraries: vi
+				.fn()
+				.mockResolvedValue([
+					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
+				]),
+			getHistory,
+			getMetadata: vi.fn().mockResolvedValue({
+				guids: ["tmdb://12345"],
+				media_type: "movie",
+				title: "Established Movie",
+				rating_key: "rk-established",
+			}),
+		} as unknown as TautulliClient;
+		const publishedRows: Array<{ watchCount: number }> = [];
+		const tx = {
+			tautulliCache: {
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+				createMany: vi.fn(async ({ data }: { data: Array<{ watchCount: number }> }) => {
+					publishedRows.push(...data);
+					return { count: data.length };
+				}),
+			},
+			cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+		};
+		const prisma = {
+			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+				callback(tx),
+			),
+		} as unknown as PrismaClient;
+
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		expect(getHistory).toHaveBeenCalledTimes(21);
+		expect(getHistory).toHaveBeenLastCalledWith({ section_id: "1", length: 50, start: 1_000 });
+		expect(publishedRows).toEqual([expect.objectContaining({ watchCount: 1_001 })]);
+	});
+
+	it("fails closed before paging history beyond the production safety bound", async () => {
+		const getHistory = vi.fn().mockResolvedValue({
+			data: [],
+			recordsFiltered: 100_001,
+			recordsTotal: 100_001,
+		});
+		const mockClient = {
+			getLibraries: vi
+				.fn()
+				.mockResolvedValue([
+					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
+				]),
+			getHistory,
+			getMetadata: vi.fn(),
+		} as unknown as TautulliClient;
+		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/exceeding the safe 100000-row limit/i);
+		expect(getHistory).toHaveBeenCalledOnce();
+		expect(mockClient.getMetadata).not.toHaveBeenCalled();
+		expect(prisma.$transaction).not.toHaveBeenCalled();
+	});
+
 	it("fails closed when pagination repeats a row across pages", async () => {
 		const rows = Array.from({ length: 50 }, (_, index) => ({
 			rating_key: `rk-${index}`,

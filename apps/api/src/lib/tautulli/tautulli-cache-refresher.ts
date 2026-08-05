@@ -19,8 +19,10 @@ import { delay } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { TautulliClient } from "./tautulli-client.js";
 
-// Maximum pages of history to fetch per library (50 items per page)
-const MAX_HISTORY_PAGES = 20;
+// Tautulli exposes offset/length pagination without a documented page-count
+// ceiling. Keep pages conservative for compatibility, but allow a
+// production-sized complete inventory before failing closed.
+const MAX_HISTORY_RESULTS = 100_000;
 const HISTORY_PAGE_SIZE = 50;
 
 // Rate limit: max metadata lookups per refresh cycle
@@ -72,11 +74,11 @@ export async function refreshTautulliCache(
 			let expectedRows: number | undefined;
 			let fetchedRows = 0;
 			const seenHistoryRows = new Set<string>();
-			for (let page = 0; page < MAX_HISTORY_PAGES; page++) {
+			while (true) {
 				const result = await client.getHistory({
 					section_id: lib.section_id,
 					length: HISTORY_PAGE_SIZE,
-					start: page * HISTORY_PAGE_SIZE,
+					start: fetchedRows,
 				});
 
 				if (
@@ -94,15 +96,9 @@ export async function refreshTautulliCache(
 				}
 				if (expectedRows === undefined) {
 					expectedRows = result.recordsFiltered;
-					if (expectedRows > MAX_HISTORY_PAGES * HISTORY_PAGE_SIZE) {
-						complete = false;
-						errors++;
-						errorMessages.push(
-							`Tautulli history exceeded ${MAX_HISTORY_PAGES * HISTORY_PAGE_SIZE} rows for library ${lib.section_id}`,
-						);
-						log.warn(
-							{ sectionId: lib.section_id, limit: MAX_HISTORY_PAGES * HISTORY_PAGE_SIZE },
-							"Tautulli history page cap reached — watch data may be incomplete for this library",
+					if (expectedRows > MAX_HISTORY_RESULTS) {
+						throw new Error(
+							`Tautulli history contains ${expectedRows} rows for library ${lib.section_id}, exceeding the safe ${MAX_HISTORY_RESULTS}-row limit`,
 						);
 					}
 				} else if (result.recordsFiltered !== expectedRows) {
@@ -138,9 +134,6 @@ export async function refreshTautulliCache(
 						`Tautulli history stopped before its declared total for library ${lib.section_id}`,
 					);
 				}
-			}
-			if (expectedRows === undefined || fetchedRows !== expectedRows) {
-				complete = false;
 			}
 		}
 
