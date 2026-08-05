@@ -81,6 +81,8 @@ async function parseResponse(response, label) {
 }
 
 async function authenticate() {
+	// nosemgrep: typescript.react.security.react-insecure-request.react-insecure-request --
+	// This disposable Compose harness exposes the dashboard API on loopback only.
 	const setup = await fetch(`${API_BASE}/auth/setup-required`).then((response) =>
 		parseResponse(response, "setup-required"),
 	);
