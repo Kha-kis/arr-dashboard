@@ -183,7 +183,8 @@ environments where the container's loopback binding is unreachable, it falls
 back to that selected container's private address. Timestamped,
 candidate-labeled JSON evidence under `.artifacts/playwright/` records the exact
 container/image identity and OCI revision, the test-suite hash, the invoking
-checkout and dirty state, and the UTC start time. Set
+checkout and dirty state, and the UTC start time. The standalone Playwright
+config fails closed when any runner identity field is absent. Set
 `LC_E2E_DASHBOARD_SERVICE=dashboard-postgres` to run the same flow against the
 PostgreSQL candidate.
 
