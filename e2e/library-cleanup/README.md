@@ -154,7 +154,20 @@ scenario before testing the opposite direction:
 sh ./run-live-scenario.sh policy-gate
 sh ./run-live-scenario.sh policy-core
 sh ./run-browser-policy.sh
+
+COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
+  stop dashboard-sqlite
+COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
+  --profile candidate-postgres up --build --wait dashboard-postgres
+LC_E2E_DASHBOARD_SERVICE=dashboard-postgres sh ./bootstrap-dashboard.sh
 LC_E2E_DASHBOARD_SERVICE=dashboard-postgres sh ./run-browser-policy.sh
+
+COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
+  stop dashboard-postgres
+COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
+  --profile candidate-sqlite up --wait dashboard-sqlite
+sh ./bootstrap-dashboard.sh
+
 sh ./run-live-scenario.sh delete:radarr-uhd
 
 sh ./bootstrap-arr.sh
