@@ -2,8 +2,8 @@ import {
 	createCipheriv,
 	createDecipheriv,
 	createHash,
-	createHmac,
 	randomBytes,
+	scryptSync,
 	timingSafeEqual,
 } from "node:crypto";
 
@@ -88,6 +88,6 @@ export class Encryptor {
 
 	/** Create a deterministic, non-reversible identity without exposing plaintext. */
 	fingerprint(value: string): string {
-		return createHmac("sha256", this.key).update(value).digest("hex");
+		return scryptSync(value, this.key, 32).toString("hex");
 	}
 }
