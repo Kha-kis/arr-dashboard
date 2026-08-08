@@ -17,6 +17,7 @@ import {
 	Upload,
 	XCircle,
 } from "lucide-react";
+import type { DeploymentAction, DeploymentPreview } from "@arr/shared";
 import { Button } from "../../../components/ui";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import type { ErrorType } from "../lib/sync-validation-utils";
@@ -271,6 +272,85 @@ export const ValidationSuccessPanel = () => (
 				</p>
 			</div>
 		</div>
+	</div>
+);
+
+function describeDeploymentAction(action: DeploymentAction, score: number): string {
+	switch (action) {
+		case "create":
+			return `Create with score ${score}`;
+		case "update":
+			return `Update to score ${score}`;
+		case "delete":
+			return "Delete";
+		case "skip":
+			return `No change (score ${score})`;
+	}
+}
+
+/** The complete mutation plan authorized by the validation execution token. */
+export const SyncDeploymentPlanPanel = ({ preview }: { preview: DeploymentPreview }) => (
+	<div className="rounded-xl border border-border/50 bg-card/30 p-4 backdrop-blur-xs">
+		<h3 className="font-medium text-foreground">Deployment plan</h3>
+		<p className="mt-1 text-xs text-muted-foreground">
+			{preview.summary.newCustomFormats} create, {preview.summary.updatedCustomFormats} update,{" "}
+			{preview.summary.orphanedCustomFormats} score reset, {preview.summary.skippedCustomFormats}{" "}
+			unchanged
+		</p>
+
+		{preview.customFormats.length > 0 && (
+			<ul className="mt-3 space-y-2 text-sm">
+				{preview.customFormats.map((item) => (
+					<li key={item.trashId} className="flex items-start justify-between gap-4">
+						<span className="font-medium text-foreground">{item.name}</span>
+						<span className="text-right text-muted-foreground">
+							{describeDeploymentAction(item.action, item.scoreOverride)}
+						</span>
+					</li>
+				))}
+			</ul>
+		)}
+
+		{preview.orphanedCustomFormats.length > 0 && (
+			<ul className="mt-3 space-y-2 border-t border-border/50 pt-3 text-sm">
+				{preview.orphanedCustomFormats.map((item) => (
+					<li key={item.instanceId} className="flex items-start justify-between gap-4">
+						<span className="font-medium text-foreground">{item.name}</span>
+						<span className="text-right text-muted-foreground">
+							Reset score from {item.score} to 0
+						</span>
+					</li>
+				))}
+			</ul>
+		)}
+
+		{preview.namingChanges?.map((field) => (
+			<p key={field} className="mt-3 border-t border-border/50 pt-3 text-sm text-muted-foreground">
+				Update naming: {field}
+			</p>
+		))}
+
+		{preview.unmatchedCustomFormats.length > 0 && (
+			<ul className="mt-3 space-y-1 border-t border-border/50 pt-3 text-sm text-muted-foreground">
+				{preview.unmatchedCustomFormats.map((item) => (
+					<li key={item.instanceId}>Leave unmanaged: {item.name}</li>
+				))}
+			</ul>
+		)}
+
+		{preview.warnings.length > 0 && (
+			<ul
+				className="mt-3 space-y-1 rounded-lg p-3 text-sm"
+				style={{
+					backgroundColor: SEMANTIC_COLORS.warning.bg,
+					color: SEMANTIC_COLORS.warning.text,
+				}}
+			>
+				{preview.warnings.map((warning) => (
+					<li key={warning}>• {warning}</li>
+				))}
+			</ul>
+		)}
 	</div>
 );
 

@@ -121,6 +121,22 @@ export class ArrClientFactory {
 	}
 
 	/**
+	 * Return an installation-keyed identity for the plaintext credentials.
+	 * Separately encrypted copies of the same credentials produce the same
+	 * identity, while no API key or HTTP password is exposed or persisted.
+	 */
+	createConnectionCredentialIdentity(instance: ClientInstanceData): string {
+		const apiKey = this.encryptor.decrypt({
+			value: instance.encryptedApiKey,
+			iv: instance.encryptionIv,
+		});
+		const httpAuthHeaders = getStoredHttpAuthHeaders(this.encryptor, instance);
+		return this.encryptor.fingerprint(
+			JSON.stringify({ apiKey, authorization: httpAuthHeaders.Authorization ?? null }),
+		);
+	}
+
+	/**
 	 * Create a type-safe client for the given service instance.
 	 * Automatically returns the correct client type based on service type.
 	 */

@@ -87,6 +87,13 @@ export type DeploymentResult = {
 	customFormatsUpdated: number;
 	customFormatsSkipped: number;
 	errors: string[];
+	warnings?: string[];
+	qualityProfileApplied?: {
+		action: "created" | "updated";
+		profileId: number;
+		profileName: string;
+	};
+	namingFieldsApplied?: number;
 	details?: {
 		created: string[];
 		updated: string[];
@@ -213,6 +220,9 @@ export type DeploymentHistoryEntry = {
 	rolledBack: boolean;
 	rolledBackAt: string | null;
 	rolledBackBy: string | null;
+	undeployStatus: "IN_PROGRESS" | "PARTIAL" | "COMPLETED" | null;
+	undeployAttemptedAt: string | null;
+	undeployProgress: UndeployProgressStep[] | null;
 	deploymentNotes: string | null;
 	templateSnapshot: string | null;
 	instance?: {
@@ -232,6 +242,14 @@ export type DeploymentHistoryEntry = {
 	};
 };
 
+export type UndeployProgressStep = {
+	key: string;
+	kind: "quality_profile" | "custom_format" | "naming";
+	name: string;
+	outcome: "restored" | "deleted" | "already_reversed" | "skipped_shared" | "failed";
+	error?: string;
+};
+
 export type DeploymentHistoryResponse = {
 	success: boolean;
 	data: {
@@ -248,7 +266,7 @@ export type DeploymentHistoryResponse = {
 export type DeploymentHistoryDetailResponse = {
 	success: boolean;
 	data: DeploymentHistoryEntry & {
-		appliedConfigs: Array<{ name: string; action: string }>;
+		appliedConfigs: Array<{ name: string; action: string; type?: string; fields?: number }>;
 		failedConfigs: Array<{ name: string; error?: string }>;
 	};
 };
@@ -258,12 +276,10 @@ export type UndeployResponse = {
 	message: string;
 	data: {
 		deleted: number;
+		deletedCFs: string[];
+		restoredCFs: string[];
 		skippedShared: string[];
-		skippedSharedCount: number;
-		notFound: string[];
-		notFoundCount: number;
 		errors: string[];
-		totalInTemplate: number;
 	};
 };
 

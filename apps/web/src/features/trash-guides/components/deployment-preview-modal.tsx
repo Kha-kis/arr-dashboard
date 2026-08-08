@@ -36,6 +36,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { ConflictResolution, DeploymentAction } from "../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { getPartialDeploymentConflict } from "../lib/sync-validation-utils";
 import { InstanceOverrideEditor } from "./instance-override-editor";
 
 interface DeploymentPreviewModalProps {
@@ -207,22 +208,34 @@ export const DeploymentPreviewModal = ({
 				onSuccess: (response) => {
 					if (response.success) {
 						onDeploySuccess?.();
-						onClose();
+						if (!response.result.warnings?.length) {
+							onClose();
+						}
 					}
 				},
 			},
 		);
 	};
 
+	const partialDeployment = getPartialDeploymentConflict(deploymentMutation.error);
+	const partialAppliedCount = partialDeployment
+		? partialDeployment.created +
+			partialDeployment.updated +
+			(partialDeployment.qualityProfile ? 1 : 0)
+		: 0;
+
 	// Derive error message from mutation state
 	const deploymentError = deploymentMutation.isError
-		? getErrorMessage(deploymentMutation.error, "Failed to execute deployment")
+		? partialDeployment
+			? `${getErrorMessage(deploymentMutation.error, "Deployment changed during execution")} ${partialAppliedCount} deployment change${partialAppliedCount === 1 ? "" : "s"} had already been applied. Refresh the preview before taking another action.`
+			: getErrorMessage(deploymentMutation.error, "Failed to execute deployment")
 		: deploymentMutation.data && !deploymentMutation.data.success
 			? Array.isArray(deploymentMutation.data.result?.errors) &&
 				deploymentMutation.data.result.errors.length > 0
 				? deploymentMutation.data.result.errors.join(", ")
 				: "Deployment failed"
 			: null;
+	const deploymentWarnings = deploymentMutation.data?.result?.warnings ?? [];
 
 	return (
 		<LegacyDialog open={open} onOpenChange={onClose} size="xl">
@@ -462,7 +475,7 @@ export const DeploymentPreviewModal = ({
 						{/* Summary Statistics */}
 						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							<h3 className="text-sm font-medium text-foreground mb-3">Deployment Summary</h3>
-							<div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+							<div className="grid grid-cols-2 md:grid-cols-6 gap-4">
 								<div className="space-y-1">
 									<p className="text-xs text-muted-foreground">Total Items</p>
 									<p className="text-2xl font-semibold text-foreground">
@@ -497,6 +510,17 @@ export const DeploymentPreviewModal = ({
 										style={{ color: SEMANTIC_COLORS.warning.from }}
 									>
 										{data.data.summary.totalConflicts}
+									</p>
+								</div>
+								<div className="space-y-1">
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>
+										Score resets
+									</p>
+									<p
+										className="text-2xl font-semibold"
+										style={{ color: SEMANTIC_COLORS.warning.from }}
+									>
+										{data.data.summary.orphanedCustomFormats ?? 0}
 									</p>
 								</div>
 								<div className="space-y-1">
@@ -656,6 +680,37 @@ export const DeploymentPreviewModal = ({
 							</div>
 						)}
 
+						{/* Scores removed from the template */}
+						{data.data.orphanedCustomFormats?.length > 0 && (
+							<div className="space-y-3">
+								<h3 className="text-sm font-medium text-foreground">
+									Custom Format Score Resets ({data.data.orphanedCustomFormats.length})
+								</h3>
+								<p className="text-xs text-muted-foreground">
+									These formats were managed by the previous template version but are no longer
+									included. Their score in this quality profile will be reset to 0; the Custom
+									Format itself will remain in Radarr or Sonarr.
+								</p>
+								<div className="space-y-2 max-h-48 overflow-y-auto">
+									{data.data.orphanedCustomFormats.map((item) => (
+										<div
+											key={item.instanceId}
+											className="flex items-center justify-between rounded-xl border p-3"
+											style={{
+												backgroundColor: SEMANTIC_COLORS.warning.bg,
+												borderColor: SEMANTIC_COLORS.warning.border,
+											}}
+										>
+											<span className="text-sm font-medium">{item.name}</span>
+											<span className="text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>
+												{item.score} → 0
+											</span>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+
 						{/* Unmatched Custom Formats */}
 						{data.data.unmatchedCustomFormats && data.data.unmatchedCustomFormats.length > 0 && (
 							<div className="space-y-3">
@@ -713,6 +768,34 @@ export const DeploymentPreviewModal = ({
 			</LegacyDialogContent>
 
 			<LegacyDialogFooter>
+				{deploymentWarnings.length > 0 && (
+					<div
+						className="flex items-start gap-2 rounded-xl p-3 mr-auto"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.warning.bg,
+							border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+						}}
+					>
+						<AlertTriangle
+							className="h-5 w-5 mt-0.5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.warning.from }}
+						/>
+						<div>
+							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
+								Deployment completed with warnings
+							</p>
+							{deploymentWarnings.map((warning, index) => (
+								<p
+									key={`${index}-${warning}`}
+									className="text-sm mt-1"
+									style={{ color: SEMANTIC_COLORS.warning.text }}
+								>
+									{warning}
+								</p>
+							))}
+						</div>
+					</div>
+				)}
 				{deploymentError && (
 					<div
 						className="flex items-start gap-2 rounded-xl p-3 mr-auto"

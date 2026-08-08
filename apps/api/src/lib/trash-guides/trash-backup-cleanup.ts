@@ -18,6 +18,7 @@ import {
 	passthroughTickWrapper,
 	type TickWrapper,
 } from "../scheduler-registry/scheduler-registry.js";
+import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
 
 // Run cleanup every hour
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
@@ -124,12 +125,23 @@ export class TrashBackupCleanupService {
 	 * Delete backups that have passed their expiration date
 	 */
 	private async cleanupExpiredBackups(): Promise<number> {
+		const now = new Date();
+		const expired = await this.prisma.trashBackup.findMany({
+			where: {
+				expiresAt: { not: null, lte: now },
+				// The backup remains durable ownership and rollback evidence until
+				// every referencing history has been explicitly resolved.
+				syncHistory: { none: { rolledBack: false } },
+				deploymentHistory: { none: { rolledBack: false } },
+			},
+			select: { id: true, backupData: true },
+		});
+		const deletable = expired.filter((backup) => !shouldRetainDeploymentBackup(backup.backupData));
+		if (deletable.length === 0) return 0;
 		const result = await this.prisma.trashBackup.deleteMany({
 			where: {
-				expiresAt: {
-					not: null,
-					lte: new Date(),
-				},
+				expiresAt: { not: null, lte: now },
+				OR: deletable.map((backup) => ({ id: backup.id, backupData: backup.backupData })),
 			},
 		});
 
@@ -163,6 +175,7 @@ export class TrashBackupCleanupService {
 			},
 			select: {
 				id: true,
+				backupData: true,
 				_count: {
 					select: {
 						syncHistory: true,
@@ -173,9 +186,12 @@ export class TrashBackupCleanupService {
 		});
 
 		// Filter to only those with no references
-		const orphanIds = potentialOrphans
-			.filter((backup) => backup._count.syncHistory === 0 && backup._count.deploymentHistory === 0)
-			.map((backup) => backup.id);
+		const orphanIds = potentialOrphans.filter(
+			(backup) =>
+				backup._count.syncHistory === 0 &&
+				backup._count.deploymentHistory === 0 &&
+				!shouldRetainDeploymentBackup(backup.backupData),
+		);
 
 		if (orphanIds.length === 0) {
 			return 0;
@@ -183,7 +199,7 @@ export class TrashBackupCleanupService {
 
 		const result = await this.prisma.trashBackup.deleteMany({
 			where: {
-				id: { in: orphanIds },
+				OR: orphanIds.map((backup) => ({ id: backup.id, backupData: backup.backupData })),
 			},
 		});
 

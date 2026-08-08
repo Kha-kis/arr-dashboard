@@ -1475,6 +1475,12 @@ export interface UnmatchedCustomFormat {
 	reason: string; // Why it couldn't be matched (e.g., "No trash_id found in specifications or name pattern")
 }
 
+export interface OrphanedCustomFormatScoreChange {
+	instanceId: number;
+	name: string;
+	score: number;
+}
+
 /**
  * Deployment preview result
  */
@@ -1495,6 +1501,7 @@ export interface DeploymentPreview {
 		totalConflicts: number;
 		unresolvedConflicts: number;
 		unmatchedCustomFormats: number; // CFs in instance that couldn't be matched to a trash_id
+		orphanedCustomFormats: number; // Previously managed CF scores that will be reset
 	};
 
 	// Deployment items
@@ -1502,6 +1509,7 @@ export interface DeploymentPreview {
 
 	// Unmatched CFs in instance (couldn't extract trash_id)
 	unmatchedCustomFormats: UnmatchedCustomFormat[];
+	orphanedCustomFormats: OrphanedCustomFormatScoreChange[];
 
 	// Instance state
 	canDeploy: boolean; // False if instance unreachable or conflicts unresolved
@@ -1510,6 +1518,8 @@ export interface DeploymentPreview {
 	instanceVersion?: string;
 	/** Binds execution to the exact template and upstream state shown in this preview. */
 	executionToken: string;
+	/** Naming configuration fields that will change when this template is deployed. */
+	namingChanges?: string[];
 
 	// Existing deployment settings (if previously deployed)
 	existingSyncStrategy?: "auto" | "manual" | "notify";

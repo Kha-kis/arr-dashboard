@@ -58,7 +58,10 @@ const EnhancedTemplateImportModal = lazy(() =>
 
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
-import { isSyncExecutionConflict } from "../lib/sync-validation-utils";
+import {
+	getPartialDeploymentConflict,
+	isSyncExecutionConflict,
+} from "../lib/sync-validation-utils";
 
 interface TemplateListProps {
 	serviceType?: "RADARR" | "SONARR";
@@ -163,6 +166,11 @@ export const TemplateList = ({
 				conflictResolutions: resolutions,
 				executionToken,
 			});
+			if (result.warnings?.length) {
+				toast.warning("Sync completed with warnings", {
+					description: result.warnings.join(" "),
+				});
+			}
 
 			dispatch({
 				type: "VALIDATION_TO_PROGRESS",
@@ -175,10 +183,18 @@ export const TemplateList = ({
 		} catch (error) {
 			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			if (isSyncExecutionConflict(error)) {
+				const partialDeployment = getPartialDeploymentConflict(error);
 				setValidationRevision((revision) => revision + 1);
-				toast.warning("The instance changed after validation", {
-					description: "Validation has been refreshed. Review the latest changes and try again.",
-				});
+				toast.warning(
+					partialDeployment
+						? "The instance changed after a partial deployment"
+						: "The instance changed after validation",
+					{
+						description: partialDeployment
+							? `${partialDeployment.created + partialDeployment.updated} Custom Format change${partialDeployment.created + partialDeployment.updated === 1 ? "" : "s"} had already been applied. Validation has been refreshed; review the latest state before taking another action.`
+							: "Validation has been refreshed. Review the latest changes and try again.",
+					},
+				);
 				return;
 			}
 			toast.error("Failed to start sync operation", { description: errorMessage });

@@ -40,6 +40,7 @@ import {
 } from "../../../hooks/api/useQualityProfileScores";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import type { ScoreRecoveryIntent } from "../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
@@ -105,6 +106,8 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 	const [allOverrides, setAllOverrides] = useState<
 		Map<string, { customFormatId: number; score: number }>
 	>(new Map());
+	const [recoveryIntents, setRecoveryIntents] = useState<ScoreRecoveryIntent[]>([]);
+	const [isRetryingRecovery, setIsRetryingRecovery] = useState(false);
 
 	// Create override map for quick lookups: `${profileId}-${cfId}` → has override
 	const overrideMap = useMemo(() => {
@@ -114,6 +117,28 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		}
 		return map;
 	}, [allOverrides]);
+	const recoveryPlan = useMemo(() => {
+		const byProfile = new Map<number, ScoreRecoveryIntent[]>();
+		let retryable = recoveryIntents.length > 0;
+		for (const intent of recoveryIntents) {
+			if (
+				intent.qualityProfileId === undefined ||
+				intent.intendedScore === null ||
+				(intent.operation !== "SET_SCORE" && intent.operation !== "RESET_SCORE") ||
+				intent.retryable === false
+			) {
+				retryable = false;
+				continue;
+			}
+			const group = byProfile.get(intent.qualityProfileId) ?? [];
+			group.push(intent);
+			byProfile.set(intent.qualityProfileId, group);
+		}
+		for (const group of byProfile.values()) {
+			if (new Set(group.map((intent) => intent.operation)).size !== 1) retryable = false;
+		}
+		return { groups: [...byProfile.entries()], retryable };
+	}, [recoveryIntents]);
 
 	// Fetch overrides for multiple quality profiles using bulk API
 	const fetchOverridesForProfiles = useCallback(
@@ -153,6 +178,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 				}
 
 				setAllOverrides(newOverrides);
+				setRecoveryIntents(Array.isArray(data?.recoveryIntents) ? data.recoveryIntents : []);
 			} catch (error) {
 				if (error instanceof Error && error.name === "AbortError") {
 					return;
@@ -196,6 +222,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		setScores([]);
 		setModifiedScores(new Map());
 		setSelectedCFs(new Set());
+		setRecoveryIntents([]);
 	}, [instanceId]);
 
 	// Handle score change in table
@@ -395,6 +422,42 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		}
 	};
 
+	const handleRetryRecoveryIntents = async () => {
+		if (!instanceId || !recoveryPlan.retryable) return;
+		setIsRetryingRecovery(true);
+		try {
+			for (const [profileId, intents] of recoveryPlan.groups) {
+				const operation = intents[0]!.operation;
+				if (operation === "RESET_SCORE") {
+					await bulkDeleteOverrides.mutateAsync({
+						instanceId,
+						qualityProfileId: profileId,
+						payload: { customFormatIds: intents.map((intent) => intent.customFormatId) },
+					});
+				} else {
+					await bulkUpdateScores.mutateAsync([
+						{
+							profileId,
+							instanceId,
+							changes: intents.map((intent) => ({
+								cfTrashId: `cf-${intent.customFormatId}`,
+								score: intent.intendedScore!,
+							})),
+						},
+					]);
+				}
+			}
+			await fetchOverridesForProfiles(qualityProfileIds);
+			toast.success("Recovered the pending score change and verified it with ARR");
+		} catch (error) {
+			toast.error("The pending score change still could not be verified", {
+				description: getErrorMessage(error, "Retry failed"),
+			});
+		} finally {
+			setIsRetryingRecovery(false);
+		}
+	};
+
 	// Toggle CF selection
 	const toggleCFSelection = (cfTrashId: string) => {
 		setSelectedCFs((prev) => {
@@ -524,6 +587,46 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 					)}
 				</div>
 			</div>
+
+			{recoveryIntents.length > 0 && (
+				<div
+					className="rounded-2xl border p-4"
+					style={{
+						backgroundColor: SEMANTIC_COLORS.warning.bg,
+						borderColor: SEMANTIC_COLORS.warning.border,
+					}}
+				>
+					<div className="flex flex-wrap items-center justify-between gap-3">
+						<div className="flex items-start gap-3">
+							<AlertCircle
+								className="mt-0.5 h-5 w-5 shrink-0"
+								style={{ color: SEMANTIC_COLORS.warning.from }}
+							/>
+							<div>
+								<p className="font-medium text-foreground">Score change needs verification</p>
+								<p className="text-sm text-muted-foreground">
+									ARR may have accepted {recoveryIntents.length} score change
+									{recoveryIntents.length === 1 ? "" : "s"}, but the result was not confirmed.
+								</p>
+							</div>
+						</div>
+						<button
+							type="button"
+							onClick={handleRetryRecoveryIntents}
+							disabled={!recoveryPlan.retryable || isRetryingRecovery}
+							className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+							style={{ backgroundColor: SEMANTIC_COLORS.warning.from }}
+						>
+							{isRetryingRecovery ? (
+								<Loader2 className="h-4 w-4 animate-spin" />
+							) : (
+								<RotateCcw className="h-4 w-4" />
+							)}
+							{recoveryPlan.retryable ? "Retry exact change" : "Manual recovery required"}
+						</button>
+					</div>
+				</div>
+			)}
 
 			{/* Save/Discard Changes Bar */}
 			{modifiedScores.size > 0 && (

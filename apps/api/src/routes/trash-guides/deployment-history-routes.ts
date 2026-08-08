@@ -7,7 +7,55 @@
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginAsync } from "fastify";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
+import {
+	assertSharedDeploymentRestorationAllowed,
+	assertSharedDeploymentState,
+	getExpectedSharedDeploymentStateToken,
+	resolveActiveDeploymentOwnership,
+} from "../../lib/trash-guides/deployment-active-ownership.js";
+import {
+	type DeploymentBackupState,
+	parseDeploymentBackupState,
+} from "../../lib/trash-guides/deployment-backup-state.js";
+import { rollbackCustomFormatDeployment } from "../../lib/trash-guides/deployment-custom-format-state.js";
+import { restoreNamingDeployment } from "../../lib/trash-guides/deployment-naming-state.js";
+import { rollbackQualityProfileDeployment } from "../../lib/trash-guides/deployment-profile-state.js";
+import {
+	createDeploymentConnectionStateToken,
+	createDeploymentEndpointKey,
+	createQualityProfileStateToken,
+	createUpstreamResourceStateToken,
+	getEquivalentServiceInstanceIds,
+} from "../../lib/trash-guides/deployment-target.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+
+interface UndeployStep {
+	key: string;
+	kind: "quality_profile" | "custom_format" | "naming";
+	name: string;
+	outcome: "restored" | "deleted" | "already_reversed" | "skipped_shared" | "failed";
+	error?: string;
+}
+
+function parseUndeployProgress(value: string | null): UndeployStep[] {
+	if (!value) return [];
+	const parsed: unknown = JSON.parse(value);
+	if (!Array.isArray(parsed)) throw new Error("Undeploy progress is not an array.");
+	return parsed.map((item) => {
+		if (
+			typeof item !== "object" ||
+			item === null ||
+			typeof Reflect.get(item, "key") !== "string" ||
+			typeof Reflect.get(item, "kind") !== "string" ||
+			typeof Reflect.get(item, "name") !== "string" ||
+			typeof Reflect.get(item, "outcome") !== "string"
+		) {
+			throw new Error("Undeploy progress contains an invalid step.");
+		}
+		return item as UndeployStep;
+	});
+}
 
 // ============================================================================
 // Route Handlers
@@ -254,6 +302,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		// Parse JSON fields for detailed information
 		let appliedConfigs: unknown[] = [];
 		let failedConfigs: unknown[] = [];
+		let undeployProgress: UndeployStep[] | null = null;
 		try {
 			appliedConfigs = history.appliedConfigs ? JSON.parse(history.appliedConfigs) : [];
 		} catch {
@@ -264,6 +313,13 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		} catch {
 			app.log.warn({ historyId: history.id }, "Failed to parse failedConfigs JSON");
 		}
+		try {
+			undeployProgress = history.undeployProgress
+				? parseUndeployProgress(history.undeployProgress)
+				: null;
+		} catch {
+			app.log.warn({ historyId: history.id }, "Failed to parse undeployProgress JSON");
+		}
 
 		return reply.send({
 			success: true,
@@ -271,6 +327,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				...history,
 				appliedConfigs,
 				failedConfigs,
+				undeployProgress,
 			},
 		});
 	});
@@ -325,8 +382,8 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 
 	/**
 	 * POST /api/trash-guides/deployment/history/:historyId/undeploy
-	 * Undeploy (remove) Custom Formats that were deployed by this specific deployment.
-	 * Only removes CFs that are unique to this template (not shared with other templates).
+	 * Reverse the exact profile, Custom Format, and naming mutations made by this deployment.
+	 * Shared resources are retained, and durable progress makes partial retries safe.
 	 */
 	app.post<{
 		Params: { historyId: string };
@@ -344,6 +401,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			},
 			include: {
 				instance: true,
+				backup: true,
 				template: {
 					select: {
 						id: true,
@@ -372,222 +430,491 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			});
 		}
 
-		// Get the CFs that were deployed by this template
-		// Use templateSnapshot if available, otherwise use current template config
-		let deployedCFNames: string[] = [];
-		const configSource = history.templateSnapshot || history.template?.configData;
-
-		if (configSource) {
-			try {
-				const templateConfig = JSON.parse(configSource);
-				deployedCFNames = Array.isArray(templateConfig.customFormats)
-					? templateConfig.customFormats.map((cf: { name: string }) => cf.name)
-					: [];
-			} catch {
-				// If we can't parse the config, we can't undeploy
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message: "Cannot determine which Custom Formats to remove - template config is invalid",
-				});
-			}
-		} else {
-			return reply.status(400).send({
-				statusCode: 400,
-				error: "BadRequest",
-				message: "Cannot undeploy - template no longer exists and no snapshot was saved",
+		if (!history.backup) {
+			return reply.status(409).send({
+				success: false,
+				message:
+					"This legacy deployment has no identity-bound backup and cannot be undeployed safely.",
 			});
 		}
+		const deploymentBackup = history.backup;
 
-		if (deployedCFNames.length === 0) {
-			return reply.status(400).send({
-				statusCode: 400,
-				error: "BadRequest",
-				message: "No Custom Formats found in this deployment",
-			});
-		}
+		return withCleanupTopologyMutationLease({ prisma: app.prisma, log: request.log }, userId, () =>
+			app.deploymentExecutor.runWithEndpointMutation(
+				userId,
+				history.instance,
+				"Undeploy",
+				async (endpointKey) => {
+					const currentInstance = await app.prisma.serviceInstance.findFirst({
+						where: { id: history.instanceId, userId },
+					});
+					if (
+						!currentInstance ||
+						createDeploymentEndpointKey(userId, currentInstance) !== endpointKey
+					) {
+						return reply.status(409).send({
+							success: false,
+							message: "The ARR service connection changed while undeploy was starting.",
+						});
+					}
 
-		// Get all OTHER templates deployed to this instance to find shared CFs
-		const otherDeployments = await app.prisma.templateDeploymentHistory.findMany({
-			where: {
-				instanceId: history.instanceId,
-				id: { not: historyId },
-				rolledBack: false, // Only consider active deployments
-			},
-			include: {
-				template: {
-					select: {
-						configData: true,
-					},
-				},
-			},
-		});
+					let backupState: DeploymentBackupState;
+					try {
+						backupState = parseDeploymentBackupState(deploymentBackup.backupData);
+					} catch (error) {
+						request.log.warn({ err: error, historyId }, "Unsafe undeploy backup rejected");
+						return reply.status(409).send({
+							success: false,
+							message:
+								"This deployment backup is legacy or incomplete and cannot be undeployed safely.",
+						});
+					}
+					if (
+						backupState.endpointKey !== endpointKey ||
+						backupState.connectionStateToken !==
+							createDeploymentConnectionStateToken(currentInstance)
+					) {
+						return reply.status(409).send({
+							success: false,
+							message: "The deployment backup is not bound to this ARR service connection.",
+						});
+					}
 
-		// Build a set of CF names used by other templates on this instance
-		const sharedCFNames = new Set<string>();
-		for (const deployment of otherDeployments) {
-			const configData = deployment.templateSnapshot || deployment.template?.configData;
-			if (configData) {
-				try {
-					const config = JSON.parse(configData);
-					for (const cf of config.customFormats || []) {
-						if (deployedCFNames.includes(cf.name)) {
-							sharedCFNames.add(cf.name);
+					const aliases = await app.prisma.serviceInstance.findMany({
+						where: { userId, service: currentInstance.service },
+					});
+					const credentialIdentity =
+						app.arrClientFactory.createConnectionCredentialIdentity(currentInstance);
+					const equivalentInstanceIds = getEquivalentServiceInstanceIds(
+						aliases.map((alias) => ({
+							...alias,
+							credentialIdentity: app.arrClientFactory.createConnectionCredentialIdentity(alias),
+						})),
+						{ ...currentInstance, credentialIdentity },
+					);
+					const ownership = await resolveActiveDeploymentOwnership(
+						app.prisma,
+						userId,
+						equivalentInstanceIds,
+						{ backupId: deploymentBackup.id, templateId: history.templateId },
+					);
+
+					const client = app.arrClientFactory.create(currentInstance) as
+						| SonarrClient
+						| RadarrClient;
+					await client.system.get();
+					let existingProgress: UndeployStep[];
+					try {
+						existingProgress = parseUndeployProgress(history.undeployProgress);
+					} catch (error) {
+						request.log.warn({ err: error, historyId }, "Invalid undeploy progress rejected");
+						return reply.status(409).send({
+							success: false,
+							message: "The saved undeploy progress is invalid, so no upstream changes were made.",
+						});
+					}
+					const stepByKey = new Map(existingProgress.map((step) => [step.key, step]));
+					const attemptedAt = new Date();
+					const setStep = (step: UndeployStep): void => {
+						stepByKey.set(step.key, step);
+					};
+					const persistProgress = async (undeployStatus: "IN_PROGRESS" | "PARTIAL") => {
+						const progress = [...stepByKey.values()];
+						const progressJson = JSON.stringify(progress);
+						await app.prisma.$transaction(async (tx) => {
+							await tx.templateDeploymentHistory.update({
+								where: { id: historyId },
+								data: {
+									undeployStatus,
+									undeployAttemptedAt: attemptedAt,
+									undeployProgress: progressJson,
+									errors: JSON.stringify(
+										progress.flatMap((step) =>
+											step.outcome === "failed" && step.error ? [step.error] : [],
+										),
+									),
+								},
+							});
+							if (history.backupId) {
+								await tx.trashSyncHistory.updateMany({
+									where: { backupId: history.backupId, userId },
+									data: {
+										rollbackStatus: undeployStatus,
+										rollbackAttemptedAt: attemptedAt,
+										rollbackProgress: progressJson,
+									},
+								});
+							}
+						});
+					};
+					const isFinished = (key: string): boolean => {
+						const outcome = stepByKey.get(key)?.outcome;
+						return (
+							outcome === "restored" ||
+							outcome === "deleted" ||
+							outcome === "already_reversed" ||
+							outcome === "skipped_shared"
+						);
+					};
+
+					// Write intent before the first upstream mutation. An interrupted attempt is
+					// reconciled to PARTIAL on startup and blocks competing mutations.
+					await persistProgress("IN_PROGRESS");
+					let stopAfterProfileFailure = false;
+					const profileState = backupState.qualityProfileDeployment;
+					const profileStatus = profileState.status;
+					if (profileStatus !== "not_started") {
+						const key = `quality_profile:${profileState.profileId ?? profileState.profileName ?? "unknown"}`;
+						if (!isFinished(key)) {
+							if (
+								profileState.profileId !== null &&
+								ownership.sharedQualityProfileIds.has(profileState.profileId)
+							) {
+								try {
+									const currentProfile = await client.qualityProfile.getById(
+										profileState.profileId,
+									);
+									const resourceLabel = `quality profile "${profileState.profileName ?? profileState.profileId}"`;
+									const expectedSurvivorToken = getExpectedSharedDeploymentStateToken(
+										ownership.sharedQualityProfileStateTokens.get(profileState.profileId),
+										resourceLabel,
+									);
+									if (createQualityProfileStateToken(currentProfile) === expectedSurvivorToken) {
+										setStep({
+											key,
+											kind: "quality_profile",
+											name: profileState.profileName ?? "Quality profile",
+											outcome: "skipped_shared",
+										});
+									} else {
+										assertSharedDeploymentRestorationAllowed(
+											ownership.restorableSharedQualityProfileIds.has(profileState.profileId),
+											resourceLabel,
+										);
+										if (profileState.action === "created") {
+											throw new Error(
+												`${resourceLabel} is shared, but this deployment has no prior state from which to restore the surviving deployment state.`,
+											);
+										}
+										await rollbackQualityProfileDeployment(client, {
+											...profileState,
+											status: profileStatus,
+										});
+										const restoredProfile = await client.qualityProfile.getById(
+											profileState.profileId,
+										);
+										assertSharedDeploymentState(
+											new Set([expectedSurvivorToken]),
+											createQualityProfileStateToken(restoredProfile),
+											resourceLabel,
+										);
+										setStep({
+											key,
+											kind: "quality_profile",
+											name: profileState.profileName ?? "Quality profile",
+											outcome: "restored",
+										});
+									}
+								} catch (error) {
+									const message = `Failed to verify shared quality profile: ${getErrorMessage(error)}`;
+									setStep({
+										key,
+										kind: "quality_profile",
+										name: profileState.profileName ?? "Quality profile",
+										outcome: "failed",
+										error: message,
+									});
+									stopAfterProfileFailure = true;
+								}
+							} else {
+								try {
+									await rollbackQualityProfileDeployment(client, {
+										...profileState,
+										status: profileStatus,
+									});
+									setStep({
+										key,
+										kind: "quality_profile",
+										name: profileState.profileName ?? "Quality profile",
+										outcome: "restored",
+									});
+								} catch (error) {
+									const message = `Failed to restore quality profile: ${getErrorMessage(error)}`;
+									setStep({
+										key,
+										kind: "quality_profile",
+										name: profileState.profileName ?? "Quality profile",
+										outcome: "failed",
+										error: message,
+									});
+									stopAfterProfileFailure = true;
+								}
+							}
+							await persistProgress("IN_PROGRESS");
 						}
 					}
-				} catch {
-					// Skip deployments with invalid config
-				}
-			}
-		}
 
-		// Create SDK client using factory
-		const client = app.arrClientFactory.create(history.instance) as SonarrClient | RadarrClient;
+					for (const state of stopAfterProfileFailure ? [] : backupState.customFormatDeployments) {
+						const key = `custom_format:${state.resourceId ?? state.name}`;
+						if (isFinished(key)) continue;
+						if (
+							state.resourceId !== null &&
+							ownership.sharedCustomFormatIds.has(state.resourceId)
+						) {
+							try {
+								const currentFormat = await client.customFormat.getById(state.resourceId);
+								const resourceLabel = `Custom Format "${state.name}"`;
+								const expectedSurvivorToken = getExpectedSharedDeploymentStateToken(
+									ownership.sharedCustomFormatStateTokens.get(state.resourceId),
+									resourceLabel,
+								);
+								if (createUpstreamResourceStateToken(currentFormat) === expectedSurvivorToken) {
+									setStep({
+										key,
+										kind: "custom_format",
+										name: state.name,
+										outcome: "skipped_shared",
+									});
+								} else {
+									assertSharedDeploymentRestorationAllowed(
+										ownership.restorableSharedCustomFormatIds.has(state.resourceId),
+										resourceLabel,
+									);
+									if (state.action === "created") {
+										throw new Error(
+											`${resourceLabel} is shared, but this deployment has no prior state from which to restore the surviving deployment state.`,
+										);
+									}
+									await rollbackCustomFormatDeployment(client, state);
+									const restoredFormat = await client.customFormat.getById(state.resourceId);
+									assertSharedDeploymentState(
+										new Set([expectedSurvivorToken]),
+										createUpstreamResourceStateToken(restoredFormat),
+										resourceLabel,
+									);
+									setStep({
+										key,
+										kind: "custom_format",
+										name: state.name,
+										outcome: "restored",
+									});
+								}
+							} catch (error) {
+								const message = `Failed to verify shared Custom Format "${state.name}": ${getErrorMessage(error)}`;
+								setStep({
+									key,
+									kind: "custom_format",
+									name: state.name,
+									outcome: "failed",
+									error: message,
+								});
+							}
+							await persistProgress("IN_PROGRESS");
+							continue;
+						}
+						try {
+							const result = await rollbackCustomFormatDeployment(client, state);
+							setStep({
+								key,
+								kind: "custom_format",
+								name: state.name,
+								outcome: result === "noop" ? "already_reversed" : result,
+							});
+						} catch (error) {
+							const message = `Failed to undeploy "${state.name}": ${getErrorMessage(error)}`;
+							setStep({
+								key,
+								kind: "custom_format",
+								name: state.name,
+								outcome: "failed",
+								error: message,
+							});
+						}
+						await persistProgress("IN_PROGRESS");
+					}
 
-		// Test connection
-		try {
-			await client.system.get();
-		} catch (error) {
-			return reply.status(503).send({
-				statusCode: 503,
-				error: "ServiceUnavailable",
-				message: `Instance unreachable: ${getErrorMessage(error, "Unknown error")}`,
-			});
-		}
+					const namingState = backupState.namingDeployment;
+					if (namingState && namingState.status !== "not_started" && !stopAfterProfileFailure) {
+						const key = "naming:configuration";
+						if (!isFinished(key)) {
+							if (ownership.namingOwnedByAnotherDeployment) {
+								try {
+									const currentResponse = await app.arrClientFactory.rawRequest(
+										currentInstance,
+										"/api/v3/config/naming",
+									);
+									if (!currentResponse.ok) {
+										throw new Error(`HTTP ${currentResponse.status}`);
+									}
+									const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
+									const expectedSurvivorToken = getExpectedSharedDeploymentStateToken(
+										ownership.sharedNamingStateTokens,
+										"naming configuration",
+									);
+									if (createUpstreamResourceStateToken(currentConfig) === expectedSurvivorToken) {
+										setStep({
+											key,
+											kind: "naming",
+											name: "Naming configuration",
+											outcome: "skipped_shared",
+										});
+									} else {
+										assertSharedDeploymentRestorationAllowed(
+											ownership.sharedNamingRestorationAllowed,
+											"naming configuration",
+										);
+										if (!namingState.postStateToken) {
+											throw new Error("The deployment has no verified naming post-state.");
+										}
+										await restoreNamingDeployment(
+											app.arrClientFactory,
+											currentInstance,
+											namingState.beforeConfig,
+											namingState.postStateToken,
+										);
+										const restoredResponse = await app.arrClientFactory.rawRequest(
+											currentInstance,
+											"/api/v3/config/naming",
+										);
+										if (!restoredResponse.ok) {
+											throw new Error(`HTTP ${restoredResponse.status}`);
+										}
+										const restoredConfig = (await restoredResponse.json()) as Record<
+											string,
+											unknown
+										>;
+										assertSharedDeploymentState(
+											new Set([expectedSurvivorToken]),
+											createUpstreamResourceStateToken(restoredConfig),
+											"naming configuration",
+										);
+										setStep({
+											key,
+											kind: "naming",
+											name: "Naming configuration",
+											outcome: "restored",
+										});
+									}
+								} catch (error) {
+									const message = `Failed to verify shared naming configuration: ${getErrorMessage(error)}`;
+									setStep({
+										key,
+										kind: "naming",
+										name: "Naming configuration",
+										outcome: "failed",
+										error: message,
+									});
+								}
+							} else if (!namingState.postStateToken) {
+								const message =
+									"Naming may have changed, but its post-deployment state was not verified.";
+								setStep({
+									key,
+									kind: "naming",
+									name: "Naming configuration",
+									outcome: "failed",
+									error: message,
+								});
+							} else {
+								try {
+									await restoreNamingDeployment(
+										app.arrClientFactory,
+										currentInstance,
+										namingState.beforeConfig,
+										namingState.postStateToken,
+									);
+									setStep({
+										key,
+										kind: "naming",
+										name: "Naming configuration",
+										outcome: "restored",
+									});
+								} catch (error) {
+									const message = `Failed to restore naming configuration: ${getErrorMessage(error)}`;
+									setStep({
+										key,
+										kind: "naming",
+										name: "Naming configuration",
+										outcome: "failed",
+										error: message,
+									});
+								}
+							}
+							await persistProgress("IN_PROGRESS");
+						}
+					}
 
-		// Get current Custom Formats from instance
-		const currentCFs = await client.customFormat.getAll();
-		const currentCFMap = new Map(currentCFs.map((cf) => [cf.name, cf]));
+					const progress = [...stepByKey.values()];
+					const errors = progress.flatMap((step) =>
+						step.outcome === "failed" && step.error ? [step.error] : [],
+					);
+					const deletedCFs = progress
+						.filter((step) => step.kind === "custom_format" && step.outcome === "deleted")
+						.map((step) => step.name);
+					const restoredCFs = progress
+						.filter((step) => step.kind === "custom_format" && step.outcome === "restored")
+						.map((step) => step.name);
+					const skippedShared = progress
+						.filter((step) => step.outcome === "skipped_shared")
+						.map((step) => step.name);
 
-		// Delete only CFs that:
-		// 1. Were part of this deployment
-		// 2. Are NOT shared with other templates
-		// 3. Currently exist on the instance
-		const deletedCFs: string[] = [];
-		const skippedShared: string[] = [];
-		const notFound: string[] = [];
-		const deletionErrors: string[] = [];
-
-		for (const cfName of deployedCFNames) {
-			if (sharedCFNames.has(cfName)) {
-				skippedShared.push(cfName);
-				continue;
-			}
-
-			const currentCF = currentCFMap.get(cfName);
-			if (!currentCF?.id) {
-				notFound.push(cfName);
-				continue;
-			}
-
-			try {
-				await client.customFormat.delete(currentCF.id);
-				deletedCFs.push(cfName);
-			} catch (error) {
-				deletionErrors.push(
-					`Failed to delete CF "${cfName}": ${getErrorMessage(error, "Unknown error")}`,
-				);
-			}
-		}
-
-		// Update deployment status based on undeploy result
-		const isFullSuccess = deletionErrors.length === 0;
-		const now = new Date();
-
-		// Attempt to update the database to reflect the current state
-		let dbUpdateSucceeded = false;
-		let dbUpdateError: string | null = null;
-
-		try {
-			if (isFullSuccess) {
-				// Full success: mark as rolled back
-				await app.prisma.templateDeploymentHistory.update({
-					where: { id: historyId },
-					data: {
-						rolledBack: true,
-						rolledBackAt: now,
-						rolledBackBy: request.currentUser!.id,
-						errors: JSON.stringify({
-							undeploySucceeded: true,
+					if (errors.length === 0) {
+						const now = new Date();
+						await app.prisma.$transaction(async (tx) => {
+							await tx.templateDeploymentHistory.update({
+								where: { id: historyId },
+								data: {
+									rolledBack: true,
+									rolledBackAt: now,
+									rolledBackBy: userId,
+									undeployStatus: "COMPLETED",
+									undeployAttemptedAt: attemptedAt,
+									undeployProgress: JSON.stringify(progress),
+									errors: null,
+								},
+							});
+							if (history.backupId) {
+								await tx.trashSyncHistory.updateMany({
+									where: { backupId: history.backupId, userId },
+									data: {
+										rolledBack: true,
+										rolledBackAt: now,
+										rollbackStatus: "COMPLETED",
+										rollbackAttemptedAt: attemptedAt,
+										rollbackProgress: JSON.stringify(progress),
+									},
+								});
+							}
+						});
+					} else {
+						await persistProgress("PARTIAL");
+						if (history.backupId) {
+							await app.prisma.trashSyncHistory.updateMany({
+								where: { backupId: history.backupId, userId },
+								data: {
+									rollbackStatus: "PARTIAL",
+									rollbackAttemptedAt: attemptedAt,
+									rollbackProgress: JSON.stringify(progress),
+								},
+							});
+						}
+					}
+					return reply.send({
+						success: errors.length === 0,
+						message:
+							errors.length === 0
+								? "Deployment changes were reversed using exact upstream identities."
+								: "Undeploy completed with errors; it remains retryable.",
+						data: {
+							deleted: deletedCFs.length,
 							deletedCFs,
+							restoredCFs,
 							skippedShared,
-							notFound,
-							completedAt: now.toISOString(),
-						}),
-					},
-				});
-			} else {
-				// Partial failure: update status and store errors for investigation/retry
-				await app.prisma.templateDeploymentHistory.update({
-					where: { id: historyId },
-					data: {
-						status: "PARTIAL_UNDEPLOY",
-						errors: JSON.stringify({
-							undeployErrors: deletionErrors,
-							undeployAttemptedAt: now.toISOString(),
-							deletedCFs,
-							deletedCount: deletedCFs.length,
-							failedCount: deletionErrors.length,
-							skippedShared,
-							notFound,
-						}),
-					},
-				});
-			}
-			dbUpdateSucceeded = true;
-		} catch (error) {
-			dbUpdateError = getErrorMessage(error, "Database update failed");
-			app.log.error(
-				{
-					err: error,
-					historyId,
-					deletedCFs,
-					deletionErrors,
+							errors,
+						},
+					});
 				},
-				"Failed to update deployment history after undeploy - database state may be inconsistent",
-			);
-		}
-
-		// Build response based on actual outcome
-		const responseData = {
-			deleted: deletedCFs.length,
-			deletedCFs,
-			skippedShared,
-			skippedSharedCount: skippedShared.length,
-			notFound,
-			notFoundCount: notFound.length,
-			errors: deletionErrors,
-			totalInTemplate: deployedCFNames.length,
-			dbUpdateSucceeded,
-			...(dbUpdateError && { dbUpdateError }),
-		};
-
-		// If DB update failed but deletions occurred, return partial success with warning
-		if (!dbUpdateSucceeded && deletedCFs.length > 0) {
-			return reply.status(207).send({
-				success: false,
-				message: `Deleted ${deletedCFs.length} Custom Format(s) but failed to update database. Manual cleanup may be required.`,
-				warning:
-					"Database state may not reflect actual changes. Please verify and retry if needed.",
-				data: responseData,
-			});
-		}
-
-		// If DB update failed and no deletions occurred (or only errors), return error
-		if (!dbUpdateSucceeded) {
-			return reply.status(500).send({
-				success: false,
-				message: `Undeploy operation encountered errors: ${dbUpdateError}`,
-				data: responseData,
-			});
-		}
-
-		return reply.send({
-			success: isFullSuccess,
-			message: isFullSuccess
-				? `Successfully undeployed ${deletedCFs.length} Custom Format(s)`
-				: `Undeploy completed with ${deletionErrors.length} error(s)`,
-			data: responseData,
-		});
+			),
+		);
 	});
 };

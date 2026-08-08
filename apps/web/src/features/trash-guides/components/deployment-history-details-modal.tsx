@@ -14,6 +14,7 @@ import {
 } from "../../../components/ui";
 import { useDeploymentHistoryDetail } from "../../../hooks/api/useDeploymentHistory";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxInstanceName, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface DeploymentHistoryDetailsModalProps {
@@ -28,6 +29,7 @@ export function DeploymentHistoryDetailsModal({
 	onUndeploy,
 }: DeploymentHistoryDetailsModalProps) {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const { data, isLoading, error } = useDeploymentHistoryDetail(historyId);
 
 	return (
@@ -96,7 +98,12 @@ export function DeploymentHistoryDetailsModal({
 									value={data.data.duration ? `${data.data.duration} seconds` : "N/A"}
 								/>
 								<InfoField label="Status" value={data.data.status} />
-								<InfoField label="Deployed By" value={data.data.deployedBy} />
+								<InfoField
+									label="Deployed By"
+									value={
+										incognitoMode ? getLinuxUsername(data.data.deployedBy) : data.data.deployedBy
+									}
+								/>
 								{data.data.rolledBack && (
 									<InfoField
 										label="Rolled Back"
@@ -116,17 +123,34 @@ export function DeploymentHistoryDetailsModal({
 							<div className="grid grid-cols-2 gap-4">
 								{data.data.instance && (
 									<>
-										<InfoField label="Instance" value={data.data.instance.label} />
+										<InfoField
+											label="Instance"
+											value={
+												incognitoMode
+													? getLinuxInstanceName(data.data.instance.id)
+													: data.data.instance.label
+											}
+										/>
 										<InfoField label="Instance Service" value={data.data.instance.service} />
 									</>
 								)}
 								{data.data.template && (
 									<>
-										<InfoField label="Template" value={data.data.template.name} />
+										<InfoField
+											label="Template"
+											value={incognitoMode ? "TRaSH template" : data.data.template.name}
+										/>
 										<InfoField label="Template Type" value={data.data.template.serviceType} />
 										{data.data.template.description && (
 											<div className="col-span-2">
-												<InfoField label="Description" value={data.data.template.description} />
+												<InfoField
+													label="Description"
+													value={
+														incognitoMode
+															? "Template description hidden in incognito mode"
+															: data.data.template.description
+													}
+												/>
 											</div>
 										)}
 									</>
@@ -175,7 +199,7 @@ export function DeploymentHistoryDetailsModal({
 						{data.data.appliedConfigs && data.data.appliedConfigs.length > 0 && (
 							<div className="space-y-3">
 								<h3 className="text-sm font-medium text-foreground">
-									Applied Custom Formats ({data.data.appliedConfigs.length})
+									Applied Changes ({data.data.appliedConfigs.length})
 								</h3>
 								<div
 									className="rounded-xl divide-y max-h-48 overflow-y-auto"
@@ -197,7 +221,9 @@ export function DeploymentHistoryDetailsModal({
 													className="h-3.5 w-3.5"
 													style={{ color: SEMANTIC_COLORS.success.from }}
 												/>
-												<span className="text-foreground">{config.name}</span>
+												<span className="text-foreground">
+													{incognitoMode ? `Custom Format ${index + 1}` : config.name}
+												</span>
 											</div>
 											<span
 												className="px-2 py-0.5 rounded-full text-xs font-medium capitalize"
@@ -241,7 +267,7 @@ export function DeploymentHistoryDetailsModal({
 													style={{ color: SEMANTIC_COLORS.error.from }}
 												/>
 												<span className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
-													{config.name}
+													{incognitoMode ? `Custom Format ${index + 1}` : config.name}
 												</span>
 											</div>
 											{config.error && (
@@ -249,7 +275,9 @@ export function DeploymentHistoryDetailsModal({
 													className="text-xs mt-1 ml-5.5"
 													style={{ color: SEMANTIC_COLORS.error.from }}
 												>
-													{config.error}
+													{incognitoMode
+														? "Custom Format deployment failed; details hidden in incognito mode."
+														: config.error}
 												</div>
 											)}
 										</div>
@@ -278,7 +306,9 @@ export function DeploymentHistoryDetailsModal({
 											className="text-xs whitespace-pre-wrap font-mono mt-2"
 											style={{ color: SEMANTIC_COLORS.error.from }}
 										>
-											{data.data.errors}
+											{incognitoMode
+												? "Deployment errors hidden in incognito mode."
+												: data.data.errors}
 										</pre>
 									</div>
 								</div>
@@ -305,10 +335,67 @@ export function DeploymentHistoryDetailsModal({
 											className="text-xs whitespace-pre-wrap font-mono mt-2"
 											style={{ color: SEMANTIC_COLORS.warning.from }}
 										>
-											{data.data.warnings}
+											{incognitoMode
+												? "Deployment warnings hidden in incognito mode."
+												: data.data.warnings}
 										</pre>
 									</div>
 								</div>
+							</div>
+						)}
+
+						{/* Backup Info Section */}
+						{data.data.undeployStatus && (
+							<div
+								className="rounded-xl p-4"
+								style={{
+									backgroundColor:
+										data.data.undeployStatus === "PARTIAL"
+											? SEMANTIC_COLORS.warning.bg
+											: SEMANTIC_COLORS.info.bg,
+									border: `1px solid ${
+										data.data.undeployStatus === "PARTIAL"
+											? SEMANTIC_COLORS.warning.border
+											: SEMANTIC_COLORS.info.border
+									}`,
+								}}
+							>
+								<h3 className="text-sm font-medium text-foreground">
+									{data.data.undeployStatus === "PARTIAL"
+										? "Partial undeploy"
+										: data.data.undeployStatus === "IN_PROGRESS"
+											? "Undeploy in progress"
+											: "Undeploy completed"}
+								</h3>
+								{data.data.undeployAttemptedAt && (
+									<p className="mt-1 text-xs text-muted-foreground">
+										Last attempt:{" "}
+										{format(new Date(data.data.undeployAttemptedAt), "MMM d, yyyy 'at' h:mm a")}
+									</p>
+								)}
+								{data.data.undeployProgress && data.data.undeployProgress.length > 0 && (
+									<ul className="mt-3 space-y-2">
+										{data.data.undeployProgress.map((step, index) => (
+											<li key={step.key} className="text-sm">
+												<div className="flex items-center justify-between gap-3">
+													<span className="font-medium text-foreground">
+														{incognitoMode ? `Rollback step ${index + 1}` : step.name}
+													</span>
+													<span className="text-xs capitalize text-muted-foreground">
+														{step.outcome.replace("_", " ")}
+													</span>
+												</div>
+												{step.error && (
+													<p className="mt-1 text-xs" style={{ color: SEMANTIC_COLORS.error.from }}>
+														{incognitoMode
+															? "Rollback failure details hidden in incognito mode."
+															: step.error}
+													</p>
+												)}
+											</li>
+										))}
+									</ul>
+								)}
 							</div>
 						)}
 

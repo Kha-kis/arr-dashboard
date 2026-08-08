@@ -5,6 +5,7 @@
  */
 
 import { apiRequest } from "../base";
+import type { DeploymentPreview } from "@arr/shared";
 
 // ============================================================================
 // Types
@@ -28,6 +29,8 @@ export interface ValidationResult {
 	errors: string[];
 	warnings: string[];
 	executionToken?: string;
+	/** Exact, side-effect-free plan bound to executionToken. */
+	preview?: DeploymentPreview;
 }
 
 export interface SyncExecuteRequest {
@@ -53,6 +56,7 @@ export interface SyncResult {
 	configsFailed: number;
 	configsSkipped: number;
 	errors: SyncError[];
+	warnings?: string[];
 	backupId?: string;
 }
 
@@ -88,11 +92,22 @@ export interface SyncHistoryItem {
 	configsFailed: number;
 	configsSkipped: number;
 	backupId: string | null;
+	rollbackStatus: "IN_PROGRESS" | "PARTIAL" | "COMPLETED" | null;
+	rollbackAttemptedAt: string | null;
+	rollbackCapable: boolean;
+	rollbackUnavailableReason: string | null;
 }
 
 export interface SyncHistoryResponse {
 	syncs: SyncHistoryItem[];
 	total: number;
+}
+
+export interface RollbackProgressStep {
+	kind: "quality_profile" | "custom_format" | "naming" | "legacy";
+	name: string;
+	outcome: "restored" | "deleted" | "failed" | "skipped_shared";
+	error?: string;
 }
 
 export interface SyncDetail {
@@ -113,13 +128,18 @@ export interface SyncDetail {
 	failedConfigs: Array<{ name: string; error?: string }> | null;
 	errorLog: string | null;
 	backupId: string | null;
+	rollbackStatus: "IN_PROGRESS" | "PARTIAL" | "COMPLETED" | null;
+	rollbackAttemptedAt: string | null;
+	rollbackProgress: RollbackProgressStep[] | null;
+	rollbackCapable: boolean;
+	rollbackUnavailableReason: string | null;
 }
 
 export interface RollbackResult {
 	success: boolean;
 	restoredCount: number;
 	failedCount: number;
-	errors: string[];
+	errors?: string[];
 }
 
 // ============================================================================

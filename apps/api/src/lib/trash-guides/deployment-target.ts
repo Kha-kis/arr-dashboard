@@ -10,12 +10,37 @@ export interface DeploymentProfileMapping {
 	templateId?: string;
 	qualityProfileId: number;
 	qualityProfileName: string;
+	connectionGeneration?: number | null;
+	connectionStateToken?: string | null;
 }
 
 export interface DeploymentServiceInstance {
 	id: string;
 	service: string;
 	baseUrl: string;
+	credentialIdentity?: string;
+}
+
+export interface DeploymentConnectionBinding {
+	instanceId: string;
+	connectionGeneration: number;
+	connectionStateToken: string | null;
+}
+
+interface DeploymentConnectionMapping {
+	connectionGeneration?: number | null;
+	connectionStateToken?: string | null;
+}
+
+interface DeploymentConnectionInstance {
+	id: string;
+	service: string;
+	baseUrl: string;
+	encryptedApiKey: string;
+	encryptionIv: string;
+	encryptedHttpAuthCredentials?: string | null;
+	httpAuthEncryptionIv?: string | null;
+	connectionGeneration?: number | null;
 }
 
 export interface ResolvedDeploymentTarget<TProfile extends DeploymentQualityProfile> {
@@ -58,6 +83,19 @@ export function resolveDeploymentTarget<TProfile extends DeploymentQualityProfil
 
 	if (mapping) {
 		const mappedProfile = profiles.find((profile) => profile.id === mapping.qualityProfileId);
+		if (isLegacyDeploymentConnectionMapping(mapping)) {
+			const namedProfile = findUniqueProfileByName(profiles, mapping.qualityProfileName);
+			if (!namedProfile) {
+				throw new ConflictError(
+					`The legacy quality profile mapping for "${mapping.qualityProfileName}" cannot be verified because that name no longer exists. Unlink the legacy deployment and review a fresh preview.`,
+				);
+			}
+			if (mappedProfile && mappedProfile !== namedProfile) {
+				throw new ConflictError(
+					`The legacy quality profile mapping identity no longer matches "${mapping.qualityProfileName}". The recorded numeric ID now belongs to "${mappedProfile.name ?? "Unknown"}". Unlink the legacy deployment and review a fresh preview.`,
+				);
+			}
+		}
 		if (mappedProfile) {
 			return {
 				profile: mappedProfile,
@@ -138,13 +176,11 @@ export function assertDeploymentTargetOwnership(args: {
 	existingMappings: DeploymentProfileMapping[];
 }): void {
 	const targetProfileId = args.target.profile?.id;
-	if (targetProfileId === undefined) return;
-
 	const owner = args.existingMappings
 		.filter((mapping) => mapping.templateId !== args.templateId)
 		.find(
 			(mapping) =>
-				mapping.qualityProfileId === targetProfileId ||
+				(targetProfileId !== undefined && mapping.qualityProfileId === targetProfileId) ||
 				mapping.qualityProfileName === args.target.profileName,
 		);
 	if (owner?.templateId && owner.templateId !== args.templateId) {
@@ -191,7 +227,10 @@ export function getEquivalentServiceInstanceIds(
 		.filter(
 			(instance) =>
 				instance.service.toUpperCase() === targetService &&
-				normalizeDeploymentBaseUrl(instance.baseUrl) === targetBaseUrl,
+				normalizeDeploymentBaseUrl(instance.baseUrl) === targetBaseUrl &&
+				(target.credentialIdentity
+					? instance.credentialIdentity === target.credentialIdentity
+					: instance.id === target.id),
 		)
 		.map((instance) => instance.id);
 }
@@ -202,6 +241,73 @@ export function createDeploymentEndpointKey(
 	instance: Pick<DeploymentServiceInstance, "service" | "baseUrl">,
 ): string {
 	return `${userId}:${instance.service.toUpperCase()}:${normalizeDeploymentBaseUrl(instance.baseUrl)}`;
+}
+
+/** Bind rollback metadata to both the normalized endpoint and configured credentials. */
+export function createDeploymentConnectionStateToken(instance: {
+	service: string;
+	baseUrl: string;
+	encryptedApiKey: string;
+	encryptionIv: string;
+	encryptedHttpAuthCredentials?: string | null;
+	httpAuthEncryptionIv?: string | null;
+	connectionGeneration?: number | null;
+}): string {
+	return createUpstreamResourceStateToken({
+		service: instance.service.toUpperCase(),
+		baseUrl: normalizeDeploymentBaseUrl(instance.baseUrl),
+		credentials: [
+			instance.encryptedApiKey,
+			instance.encryptionIv,
+			instance.encryptedHttpAuthCredentials ?? null,
+			instance.httpAuthEncryptionIv ?? null,
+		],
+		connectionGeneration: instance.connectionGeneration ?? 0,
+	});
+}
+
+/** Bind database ownership records to the exact configured ARR connection. */
+export function createDeploymentConnectionBinding(
+	instance: DeploymentConnectionInstance,
+): DeploymentConnectionBinding {
+	return {
+		instanceId: instance.id,
+		connectionGeneration: instance.connectionGeneration ?? 0,
+		connectionStateToken: createDeploymentConnectionStateToken(instance),
+	};
+}
+
+/** Resolve mappings bound to the exact configured ARR connection. */
+export function createDeploymentConnectionBindingCandidates(
+	instance: DeploymentConnectionInstance,
+): DeploymentConnectionBinding[] {
+	return [createDeploymentConnectionBinding(instance)];
+}
+
+/** Locate pre-binding mappings so callers can reject them without trusting them as ownership. */
+export function createLegacyDeploymentConnectionBindings(
+	instanceIds: string[],
+): DeploymentConnectionBinding[] {
+	return instanceIds.map((instanceId) => ({
+		instanceId,
+		connectionGeneration: 0,
+		connectionStateToken: null,
+	}));
+}
+
+/** Never use an unbound 2.x mapping to authorize a mutation after a connection may have changed. */
+export function isLegacyDeploymentConnectionMapping(mapping: DeploymentConnectionMapping): boolean {
+	return (mapping.connectionGeneration ?? 0) === 0 && mapping.connectionStateToken === null;
+}
+
+export function assertNoLegacyDeploymentConnectionMappings(
+	mappings: DeploymentConnectionMapping[],
+): void {
+	if (mappings.some(isLegacyDeploymentConnectionMapping)) {
+		throw new ConflictError(
+			"This deployment mapping predates connection identity verification. Unlink the legacy deployment and review a fresh preview before continuing.",
+		);
+	}
 }
 
 /** Create an opaque fingerprint for the exact upstream state shown in preview. */
@@ -221,6 +327,10 @@ export function createDeploymentStateToken(args: {
 	};
 	target: ResolvedDeploymentTarget<DeploymentQualityProfile>;
 	customFormats: unknown[];
+	namingConfig?: unknown;
+	namingPayload?: unknown;
+	savedScoreOverrides?: unknown;
+	orphanedFormatScoreChanges?: unknown;
 }): string {
 	const state = stableValue({
 		template: args.template,
@@ -235,9 +345,20 @@ export function createDeploymentStateToken(args: {
 			profile: args.target.profile ?? null,
 		},
 		customFormats: args.customFormats,
+		namingConfig: args.namingConfig ?? null,
+		namingPayload: args.namingPayload ?? null,
+		savedScoreOverrides: args.savedScoreOverrides ?? null,
+		orphanedFormatScoreChanges: args.orphanedFormatScoreChanges ?? null,
 	});
 
 	return createHash("sha256").update(JSON.stringify(state)).digest("hex");
+}
+
+/** Fingerprint one upstream resource using stable object-key ordering. */
+export function createUpstreamResourceStateToken(resource: unknown): string {
+	return createHash("sha256")
+		.update(JSON.stringify(stableValue(resource)))
+		.digest("hex");
 }
 
 /** Fingerprint a full upstream profile for a last-moment concurrency check. */

@@ -19,6 +19,7 @@ import {
 	unlinkTemplateFromInstance,
 	updateSyncStrategy,
 } from "../../lib/api-client/trash-guides";
+import { ApiError } from "../../lib/api-client/base";
 import { deploymentHistoryKeys, TEMPLATES_QUERY_KEY, trashGuidesKeys } from "../../lib/query-keys";
 
 export type InstancePreviewResult = {
@@ -47,28 +48,25 @@ export function useDeploymentPreview(templateId: string | null, instanceId: stri
  */
 export function useExecuteDeployment() {
 	const queryClient = useQueryClient();
+	const invalidateDeploymentConsumers = () => {
+		queryClient.invalidateQueries({ queryKey: trashGuidesKeys.deployment.all });
+		queryClient.invalidateQueries({ queryKey: deploymentHistoryKeys.all });
+		queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
+		queryClient.invalidateQueries({ queryKey: ["template-stats"] as const });
+	};
 
 	return useMutation<ExecuteDeploymentResponse, Error, ExecuteDeploymentPayload>({
 		mutationFn: (payload) => executeDeployment(payload),
-		onError: (_error, variables) => {
+		onError: (error, variables) => {
 			queryClient.invalidateQueries({
 				queryKey: trashGuidesKeys.deployment.preview(variables.templateId, variables.instanceId),
 			});
+			if (error instanceof ApiError && error.status === 409) {
+				invalidateDeploymentConsumers();
+			}
 		},
 		onSuccess: () => {
-			// Invalidate relevant queries
-			queryClient.invalidateQueries({
-				queryKey: trashGuidesKeys.deployment.all,
-			});
-			queryClient.invalidateQueries({
-				queryKey: deploymentHistoryKeys.all,
-			});
-			queryClient.invalidateQueries({
-				queryKey: TEMPLATES_QUERY_KEY,
-			});
-			queryClient.invalidateQueries({
-				queryKey: ["template-stats"] as const,
-			});
+			invalidateDeploymentConsumers();
 		},
 	});
 }

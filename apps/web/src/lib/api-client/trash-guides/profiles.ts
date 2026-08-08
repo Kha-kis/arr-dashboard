@@ -77,9 +77,20 @@ export type InstanceOverride = {
 	updatedAt: string;
 };
 
+export type ScoreRecoveryIntent = {
+	qualityProfileId?: number;
+	customFormatId: number;
+	operation: "SET_SCORE" | "RESET_SCORE" | null;
+	intendedScore: number | null;
+	status: "PENDING" | "UNCERTAIN";
+	retryable?: boolean;
+	retryAction?: { method: "DELETE" } | { method: "PATCH"; score: number } | null;
+};
+
 export type GetOverridesResponse = {
 	success: boolean;
 	overrides: InstanceOverride[];
+	recoveryIntents: ScoreRecoveryIntent[];
 };
 
 export type PromoteOverridePayload = {

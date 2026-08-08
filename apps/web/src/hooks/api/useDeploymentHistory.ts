@@ -77,8 +77,16 @@ export function useUndeployDeployment() {
 	const queryClient = useQueryClient();
 
 	return useMutation<UndeployResponse, Error, string>({
-		mutationFn: (historyId: string) => undeployDeployment(historyId),
-		onSuccess: (data, historyId) => {
+		mutationFn: async (historyId: string) => {
+			const result = await undeployDeployment(historyId);
+			if (!result.success) {
+				const details =
+					result.data.errors.length > 0 ? result.data.errors.join("; ") : result.message;
+				throw new Error(details);
+			}
+			return result;
+		},
+		onSettled: (_data, _error, historyId) => {
 			// Invalidate deployment history queries to refetch updated data
 			queryClient.invalidateQueries({
 				queryKey: deploymentHistoryKeys.all,
@@ -86,7 +94,7 @@ export function useUndeployDeployment() {
 
 			// Invalidate the specific history detail
 			queryClient.invalidateQueries({
-				queryKey: deploymentHistoryKeys.detail(historyId!),
+				queryKey: deploymentHistoryKeys.detail(historyId),
 			});
 		},
 	});

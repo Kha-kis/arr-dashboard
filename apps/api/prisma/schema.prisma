@@ -437,6 +437,9 @@ model TrashSyncHistory {
   backupId     String?
   rolledBack   Boolean   @default(false)
   rolledBackAt DateTime?
+  rollbackStatus String? // IN_PROGRESS, PARTIAL, COMPLETED
+  rollbackAttemptedAt DateTime?
+  rollbackProgress    String? // JSON per-step outcomes for retry/audit
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   template TrashTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
@@ -537,6 +540,10 @@ model TemplateQualityProfileMapping {
   instanceId         String // The Radarr/Sonarr instance
   qualityProfileId   Int // The quality profile ID in Radarr/Sonarr
   qualityProfileName String // The quality profile name for reference
+  connectionGeneration Int    @default(0) // Service connection generation that authorized this mapping
+  connectionStateToken String? // Exact connection state that authorized this mapping
+  managedCustomFormats String? // Durable exact identities from the last verified profile deployment
+  managedCustomFormatsCaptured Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   lastSyncedAt       DateTime @default(now())
@@ -566,7 +573,12 @@ model InstanceQualityProfileOverride {
   qualityProfileId Int // The Radarr/Sonarr quality profile ID
   customFormatId   Int // The Radarr/Sonarr custom format ID
   score            Int // The overridden score
+  status           String   @default("APPLIED") // PENDING, APPLIED, UNCERTAIN
+  intentOperation  String? // SET_SCORE or RESET_SCORE while PENDING/UNCERTAIN
+  intendedScore    Int? // Exact upstream score intended by the pending operation
   userId           String // User who made the override
+  connectionGeneration Int      @default(0) // Service connection generation that authorized this override
+  connectionStateToken String? // Exact connection state that authorized this override
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -612,6 +624,9 @@ model TemplateDeploymentHistory {
   rolledBack   Boolean   @default(false)
   rolledBackAt DateTime?
   rolledBackBy String?
+  undeployStatus      String? // IN_PROGRESS, PARTIAL, COMPLETED
+  undeployAttemptedAt DateTime?
+  undeployProgress    String? // JSON array of durable step outcomes
 
   // Additional metadata
   deploymentNotes  String? // User or system notes about deployment

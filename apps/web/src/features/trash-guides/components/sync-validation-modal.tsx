@@ -29,6 +29,7 @@ import { SyncDebugPanel } from "./sync-debug-panel";
 import {
 	MutationErrorPanel,
 	SilentFailurePanel,
+	SyncDeploymentPlanPanel,
 	ValidationErrorPanel,
 	ValidationSuccessPanel,
 	ValidationWarningsPanel,
@@ -513,6 +514,9 @@ export const SyncValidationModal = ({
 							)}
 
 							{canProceed && !hasConflicts && <ValidationSuccessPanel />}
+							{canProceed && validation.preview && (
+								<SyncDeploymentPlanPanel preview={validation.preview} />
+							)}
 						</div>
 					)}
 

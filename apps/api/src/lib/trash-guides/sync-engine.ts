@@ -11,6 +11,7 @@ import { AppValidationError, ConflictError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
+import { createDeploymentConnectionBindingCandidates } from "./deployment-target.js";
 import { getSyncMetrics } from "./sync-metrics.js";
 import type { TemplateUpdater } from "./template-updater.js";
 import { USER_CF_PREFIX } from "./user-cf-resolver.js";
@@ -54,6 +55,7 @@ export interface SyncResult {
 	configsFailed: number;
 	configsSkipped: number;
 	errors: SyncError[];
+	warnings?: string[];
 	backupId?: string;
 }
 
@@ -180,7 +182,7 @@ export class SyncEngine {
 		const qualityProfileMappings = await this.prisma.templateQualityProfileMapping.findMany({
 			where: {
 				templateId: options.templateId,
-				instanceId: options.instanceId,
+				OR: createDeploymentConnectionBindingCandidates(instance),
 			},
 		});
 
@@ -422,7 +424,7 @@ export class SyncEngine {
 		const startTime = Date.now();
 		const metrics = getSyncMetrics();
 		const completeMetrics = metrics.startOperation("sync");
-		let templateRefreshSucceeded = false;
+		let deploymentAttempted = false;
 
 		// Create sync history record
 		const syncHistory = await this.prisma.trashSyncHistory.create({
@@ -452,20 +454,25 @@ export class SyncEngine {
 				errors: [],
 			});
 
-			if (!this.templateUpdater) {
-				throw new Error(
-					"Template sync cannot proceed: templateUpdater dependency is not configured. " +
-						"Ensure SyncEngine is instantiated with a TemplateUpdater instance.",
-				);
-			}
+			if (options.syncType === "SCHEDULED") {
+				if (!this.templateUpdater) {
+					throw new Error(
+						"Template sync cannot proceed: templateUpdater dependency is not configured. " +
+							"Ensure SyncEngine is instantiated with a TemplateUpdater instance.",
+					);
+				}
 
-			const syncResult = await this.templateUpdater.syncTemplate(options.templateId);
-			if (!syncResult.success) {
-				throw new Error(
-					`Template sync failed: ${syncResult.errors?.join(", ") || "Unknown error"}`,
+				const syncResult = await this.templateUpdater.syncTemplate(
+					options.templateId,
+					undefined,
+					options.userId,
 				);
+				if (!syncResult.success) {
+					throw new Error(
+						`Template sync failed: ${syncResult.errors?.join(", ") || "Unknown error"}`,
+					);
+				}
 			}
-			templateRefreshSucceeded = true;
 
 			// Step 2: Deploy to instance using deployment executor
 			this.emitProgress({
@@ -496,61 +503,99 @@ export class SyncEngine {
 					)
 				: undefined;
 
-			const deployResult = await this.deploymentExecutor.deploySingleInstance(
-				options.templateId,
-				options.instanceId,
-				options.userId,
-				undefined, // syncStrategy - not used in sync engine
-				deploymentConflictResolutions,
-				executionToken,
-			);
+			deploymentAttempted = true;
+			const deployResult =
+				options.syncType === "SCHEDULED"
+					? await this.deploymentExecutor.deploySingleInstanceFromAutomation(
+							options.templateId,
+							options.instanceId,
+							options.userId,
+							undefined,
+							deploymentConflictResolutions,
+						)
+					: await this.deploymentExecutor.deploySingleInstance(
+							options.templateId,
+							options.instanceId,
+							options.userId,
+							undefined,
+							deploymentConflictResolutions,
+							executionToken,
+						);
 
 			// Calculate duration and status
 			const duration = Math.floor((Date.now() - startTime) / 1000);
-			const status = deployResult.success
-				? "SUCCESS"
-				: deployResult.customFormatsCreated > 0 || deployResult.customFormatsUpdated > 0
-					? "PARTIAL_SUCCESS"
-					: "FAILED";
-
 			const errors: SyncError[] = deployResult.errors.map((err) => ({
 				configName: err.split(":")[0] || "Unknown",
 				error: err,
 				retryable: false,
 			}));
+			const warnings = [...(deployResult.warnings ?? [])];
+			const appliedConfigEntries = [
+				...(deployResult.details?.created || []).map((name) => ({ name, action: "created" })),
+				...(deployResult.details?.updated || []).map((name) => ({ name, action: "updated" })),
+				...(deployResult.qualityProfileApplied
+					? [
+							{
+								name: deployResult.qualityProfileApplied.profileName,
+								action: deployResult.qualityProfileApplied.action,
+								type: "quality_profile",
+								id: deployResult.qualityProfileApplied.profileId,
+							},
+						]
+					: []),
+				...(deployResult.namingFieldsApplied && deployResult.namingFieldsApplied > 0
+					? [
+							{
+								name: "Naming configuration",
+								action: "updated",
+								fields: deployResult.namingFieldsApplied,
+							},
+						]
+					: []),
+			];
+			const configsApplied = appliedConfigEntries.length;
+			const configsFailed = errors.length;
+			const status = deployResult.success
+				? "SUCCESS"
+				: configsApplied > 0
+					? "PARTIAL_SUCCESS"
+					: "FAILED";
 
 			// Update sync history
-			await this.prisma.trashSyncHistory.update({
-				where: { id: syncId },
-				data: {
-					status,
-					completedAt: new Date(),
-					duration,
-					configsApplied: deployResult.customFormatsCreated + deployResult.customFormatsUpdated,
-					configsFailed: deployResult.details?.failed?.length ?? 0,
-					configsSkipped: deployResult.customFormatsSkipped,
-					appliedConfigs: JSON.stringify([
-						...(deployResult.details?.created || []).map((name) => ({ name })),
-						...(deployResult.details?.updated || []).map((name) => ({ name })),
-					]),
-					failedConfigs: errors.length > 0 ? JSON.stringify(errors) : null,
-				},
-			});
+			try {
+				await this.prisma.trashSyncHistory.update({
+					where: { id: syncId },
+					data: {
+						status,
+						completedAt: new Date(),
+						duration,
+						configsApplied,
+						configsFailed,
+						configsSkipped: deployResult.customFormatsSkipped,
+						appliedConfigs: JSON.stringify(appliedConfigEntries),
+						failedConfigs: errors.length > 0 ? JSON.stringify(errors) : null,
+					},
+				});
+			} catch (historyError) {
+				log.error({ err: historyError, syncId }, "Sync completed but history finalization failed");
+				warnings.push(
+					"Sync completed, but its history record could not be finalized. Check the server logs.",
+				);
+			}
 
 			// Emit completion
 			this.emitProgress({
 				syncId,
 				status: "COMPLETED",
 				currentStep: deployResult.success
-					? "Sync completed successfully"
+					? warnings.length
+						? "Sync completed with warnings"
+						: "Sync completed successfully"
 					: "Sync completed with errors",
 				progress: 100,
-				totalConfigs:
-					deployResult.customFormatsCreated +
-					deployResult.customFormatsUpdated +
-					deployResult.customFormatsSkipped,
-				appliedConfigs: deployResult.customFormatsCreated + deployResult.customFormatsUpdated,
-				failedConfigs: deployResult.details?.failed?.length ?? 0,
+				totalConfigs: configsApplied + configsFailed + deployResult.customFormatsSkipped,
+				appliedConfigs: configsApplied,
+				failedConfigs: configsFailed,
 				errors,
 			});
 
@@ -567,10 +612,11 @@ export class SyncEngine {
 				success: deployResult.success,
 				status,
 				duration,
-				configsApplied: deployResult.customFormatsCreated + deployResult.customFormatsUpdated,
-				configsFailed: deployResult.details?.failed?.length ?? 0,
+				configsApplied,
+				configsFailed,
 				configsSkipped: deployResult.customFormatsSkipped,
 				errors,
+				warnings: warnings.length > 0 ? warnings : undefined,
 			};
 		} catch (error) {
 			const duration = Math.floor((Date.now() - startTime) / 1000);
@@ -598,16 +644,33 @@ export class SyncEngine {
 							updated: number;
 							skipped: number;
 							details: { created: string[]; updated: string[]; failed?: string[] };
+							qualityProfile?: {
+								action: "created" | "updated";
+								profileId: number;
+								profileName: string;
+							};
 						})
 					: undefined;
-			const reviewedDeploymentBlocked = templateRefreshSucceeded && error instanceof ConflictError;
+			const reviewedDeploymentBlocked = deploymentAttempted && error instanceof ConflictError;
 			const appliedDeploymentCount = partialDeployment
-				? partialDeployment.created + partialDeployment.updated
+				? partialDeployment.created +
+					partialDeployment.updated +
+					(partialDeployment.qualityProfile ? 1 : 0)
 				: 0;
 			const appliedConfigEntries = partialDeployment
 				? [
 						...partialDeployment.details.created.map((name) => ({ name, action: "created" })),
 						...partialDeployment.details.updated.map((name) => ({ name, action: "updated" })),
+						...(partialDeployment.qualityProfile
+							? [
+									{
+										name: partialDeployment.qualityProfile.profileName,
+										action: partialDeployment.qualityProfile.action,
+										type: "quality_profile",
+										id: partialDeployment.qualityProfile.profileId,
+									},
+								]
+							: []),
 					]
 				: [];
 			const deploymentFailureCount = reviewedDeploymentBlocked
@@ -619,31 +682,45 @@ export class SyncEngine {
 							name,
 							error: "Custom Format deployment failed",
 						})),
-						{ name: "Quality profile deployment", error: errorMessage },
+						{ name: "Deployment phase", error: errorMessage },
 					]
 				: [];
 
-			// Preserve an honest partial state when the local template refresh succeeded
-			// but the reviewed upstream deployment was blocked before mutation.
-			await this.prisma.trashSyncHistory.update({
-				where: { id: syncId },
-				data: {
-					status: reviewedDeploymentBlocked ? "PARTIAL_SUCCESS" : "FAILED",
-					completedAt: new Date(),
-					duration,
-					configsApplied: reviewedDeploymentBlocked ? 1 + appliedDeploymentCount : 0,
-					configsFailed: deploymentFailureCount,
-					configsSkipped: partialDeployment?.skipped ?? 0,
-					appliedConfigs: reviewedDeploymentBlocked
-						? JSON.stringify([
-								{ name: "Template refreshed from TRaSH Guides", action: "updated" },
-								...appliedConfigEntries,
-							])
-						: "[]",
-					failedConfigs: JSON.stringify(failedConfigEntries),
-					errorLog: errorMessage,
-				},
-			});
+			// Preserve an honest partial state when the reviewed upstream deployment
+			// was blocked after one or more writes.
+			try {
+				await this.prisma.trashSyncHistory.update({
+					where: { id: syncId },
+					data: {
+						status:
+							reviewedDeploymentBlocked && appliedDeploymentCount > 0
+								? "PARTIAL_SUCCESS"
+								: "FAILED",
+						completedAt: new Date(),
+						duration,
+						configsApplied: reviewedDeploymentBlocked ? appliedDeploymentCount : 0,
+						configsFailed: deploymentFailureCount,
+						configsSkipped: partialDeployment?.skipped ?? 0,
+						appliedConfigs: reviewedDeploymentBlocked ? JSON.stringify(appliedConfigEntries) : "[]",
+						failedConfigs: JSON.stringify(failedConfigEntries),
+						errorLog: errorMessage,
+					},
+				});
+			} catch (historyError) {
+				const warning =
+					"The deployment result could not be written to sync history. Check the server logs before retrying.";
+				log.error(
+					{ err: historyError, syncId, originalError: errorMessage },
+					"Failed to finalize failed sync history",
+				);
+				if (error instanceof ConflictError) {
+					const existingDetails =
+						error.details && typeof error.details === "object" ? error.details : {};
+					Object.assign(error, {
+						details: { ...existingDetails, warnings: [warning] },
+					});
+				}
+			}
 
 			// Emit failure
 			this.emitProgress({
@@ -654,9 +731,9 @@ export class SyncEngine {
 					: errorMessage,
 				progress: 0,
 				totalConfigs: reviewedDeploymentBlocked
-					? 1 + appliedDeploymentCount + deploymentFailureCount + (partialDeployment?.skipped ?? 0)
+					? appliedDeploymentCount + deploymentFailureCount + (partialDeployment?.skipped ?? 0)
 					: 0,
-				appliedConfigs: reviewedDeploymentBlocked ? 1 + appliedDeploymentCount : 0,
+				appliedConfigs: reviewedDeploymentBlocked ? appliedDeploymentCount : 0,
 				failedConfigs: deploymentFailureCount,
 				errors: [{ configName: "Sync", error: errorMessage, retryable: false }],
 			});

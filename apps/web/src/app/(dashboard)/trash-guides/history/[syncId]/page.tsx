@@ -14,6 +14,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useRollbackSync, useSyncDetail } from "../../../../../hooks/api/useSync";
+import { getErrorMessage } from "../../../../../lib/error-utils";
 
 const STATUS_ICONS = {
 	SUCCESS: CheckCircle2,
@@ -59,7 +60,7 @@ export default function SyncDetailPage() {
 			toast.success("Rollback completed successfully");
 		} catch (error) {
 			console.error("Rollback failed:", error);
-			toast.error("Rollback failed. Please try again.");
+			toast.error(getErrorMessage(error, "Rollback failed. Please try again."));
 		}
 	};
 
@@ -194,6 +195,8 @@ export default function SyncDetailPage() {
 
 	const StatusIcon = STATUS_ICONS[sync.status as keyof typeof STATUS_ICONS] || AlertCircle;
 	const statusColor = STATUS_COLORS[sync.status as keyof typeof STATUS_COLORS] || "";
+	const failedRollbackSteps =
+		sync.rollbackProgress?.filter((step) => step.outcome === "failed") ?? [];
 
 	return (
 		<div className="space-y-6 p-6">
@@ -219,10 +222,12 @@ export default function SyncDetailPage() {
 					<button
 						type="button"
 						onClick={() => setShowRollbackConfirm(true)}
+						disabled={!sync.rollbackCapable}
+						title={sync.rollbackUnavailableReason ?? undefined}
 						className="flex items-center gap-2 rounded-lg bg-yellow-500/10 px-4 py-2 text-sm font-medium text-yellow-400 transition hover:bg-yellow-500/20"
 					>
 						<RotateCcw className="h-4 w-4" />
-						Rollback
+						{sync.rollbackCapable ? "Rollback" : "Legacy backup"}
 					</button>
 				)}
 			</div>
@@ -261,6 +266,38 @@ export default function SyncDetailPage() {
 					<p className="mt-2 text-sm text-foreground">{sync.backupId ? "Available" : "N/A"}</p>
 				</div>
 			</div>
+
+			{sync.rollbackStatus && (
+				<div
+					className={`rounded-xl border p-4 ${
+						sync.rollbackStatus === "PARTIAL"
+							? "border-destructive/40 bg-destructive/10"
+							: "border-border bg-card"
+					}`}
+				>
+					<div className="flex items-center gap-2">
+						<RotateCcw className="h-5 w-5 text-muted-foreground" />
+						<h2 className="font-semibold text-foreground">
+							Rollback {sync.rollbackStatus.toLowerCase().replace("_", " ")}
+						</h2>
+					</div>
+					{sync.rollbackAttemptedAt && (
+						<p className="mt-2 text-sm text-muted-foreground">
+							Last attempted {formatDate(sync.rollbackAttemptedAt)}
+						</p>
+					)}
+					{failedRollbackSteps.length > 0 && (
+						<ul className="mt-3 space-y-2 text-sm text-destructive">
+							{failedRollbackSteps.map((step, index) => (
+								<li key={`${step.kind}-${step.name}-${index}`}>
+									<span className="font-medium">{step.name}:</span>{" "}
+									{step.error ?? "Rollback failed"}
+								</li>
+							))}
+						</ul>
+					)}
+				</div>
+			)}
 
 			{/* Results Summary */}
 			<div className="grid grid-cols-3 gap-4">

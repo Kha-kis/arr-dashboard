@@ -91,6 +91,7 @@ export type {
 	PromoteOverrideResponse,
 	// Profile matching types
 	RecommendedCF,
+	ScoreRecoveryIntent,
 	// Score update types
 	ScoreUpdate,
 	UpdateProfileScoresPayload,

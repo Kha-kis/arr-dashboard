@@ -118,6 +118,7 @@ const createMockEncryptor = () =>
 		})),
 		decrypt: vi.fn((_: { value: string; iv: string }) => `decrypted-api-key`),
 		safeCompare: vi.fn((a: string, b: string) => a === b),
+		fingerprint: vi.fn((value: string) => `fingerprint:${value}`),
 	}) as unknown as Encryptor;
 
 // Create mock instance data
@@ -157,6 +158,22 @@ describe("ArrClientFactory - Client Creation", () => {
 		const client = factory.create(instance);
 
 		expect(client).toBeInstanceOf(RadarrClient);
+	});
+
+	it("uses decrypted credentials for alias identity", () => {
+		const first = createMockInstance("RADARR", {
+			encryptedApiKey: "ciphertext-one",
+			encryptionIv: "iv-one",
+		});
+		const second = createMockInstance("RADARR", {
+			id: "instance-456",
+			encryptedApiKey: "ciphertext-two",
+			encryptionIv: "iv-two",
+		});
+
+		expect(factory.createConnectionCredentialIdentity(first)).toBe(
+			factory.createConnectionCredentialIdentity(second),
+		);
 	});
 
 	it("should create ProwlarrClient for PROWLARR service type", () => {

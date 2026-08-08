@@ -23,6 +23,7 @@ import type {
 } from "@arr/shared";
 import { z } from "zod";
 import type { PrismaClient } from "../../lib/prisma.js";
+import { createDeploymentConnectionBindingCandidates } from "./deployment-target.js";
 import { TemplateNotFoundError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js";
@@ -825,7 +826,7 @@ export class TemplateUpdater {
 			return;
 		}
 
-		const mappings = await this.prisma.templateQualityProfileMapping.findMany({
+		const candidateMappings = await this.prisma.templateQualityProfileMapping.findMany({
 			where: {
 				templateId,
 				syncStrategy: "auto",
@@ -834,6 +835,14 @@ export class TemplateUpdater {
 				instance: true,
 			},
 		});
+		const mappings = candidateMappings.filter((mapping) =>
+			createDeploymentConnectionBindingCandidates(mapping.instance).some(
+				(binding) =>
+					binding.instanceId === mapping.instanceId &&
+					binding.connectionGeneration === mapping.connectionGeneration &&
+					binding.connectionStateToken === mapping.connectionStateToken,
+			),
+		);
 
 		if (mappings.length === 0) {
 			return;
@@ -841,7 +850,7 @@ export class TemplateUpdater {
 
 		for (const mapping of mappings) {
 			try {
-				const result = await this.deploymentExecutor.deploySingleInstance(
+				const result = await this.deploymentExecutor.deploySingleInstanceFromAutomation(
 					templateId,
 					mapping.instanceId,
 					template.userId,

@@ -22,6 +22,7 @@ import type { ArrClientFactory } from "../arr/client-factory.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
+import { createDeploymentConnectionBindingCandidates } from "./deployment-target.js";
 
 const log = loggers.trashGuides;
 
@@ -71,6 +72,7 @@ export class BulkScoreManager {
 				encryptionIv: true,
 				encryptedHttpAuthCredentials: true,
 				httpAuthEncryptionIv: true,
+				connectionGeneration: true,
 			},
 		});
 
@@ -125,7 +127,7 @@ export class BulkScoreManager {
 		// Fetch template mappings for all quality profiles in this instance
 		const templateMappings = await this.prisma.templateQualityProfileMapping.findMany({
 			where: {
-				instanceId: filters.instanceId,
+				OR: createDeploymentConnectionBindingCandidates(instance),
 			},
 			select: {
 				qualityProfileId: true,

@@ -7,7 +7,47 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+
+const executeDeploymentSchema = z.object({
+	templateId: z.string().min(1),
+	instanceId: z.string().min(1),
+	syncStrategy: z.enum(["auto", "manual", "notify"]).optional(),
+	conflictResolutions: z.record(z.string(), z.enum(["use_template", "keep_existing"])).optional(),
+	executionToken: z.string().length(64),
+});
+
+const executeBulkDeploymentSchema = z
+	.object({
+		templateId: z.string().min(1),
+		instanceIds: z.array(z.string().min(1)).min(1),
+		syncStrategy: z.enum(["auto", "manual", "notify"]).optional(),
+		instanceSyncStrategies: z.record(z.string(), z.enum(["auto", "manual", "notify"])).optional(),
+		executionTokens: z.record(z.string(), z.string().length(64)),
+	})
+	.superRefine((body, context) => {
+		const selectedInstanceIds = new Set(body.instanceIds);
+		for (const instanceId of body.instanceIds) {
+			if (!body.executionTokens[instanceId]) {
+				context.addIssue({
+					code: "custom",
+					path: ["executionTokens", instanceId],
+					message: "A fresh execution token is required for every selected instance",
+				});
+			}
+		}
+		for (const instanceId of Object.keys(body.executionTokens)) {
+			if (!selectedInstanceIds.has(instanceId)) {
+				context.addIssue({
+					code: "custom",
+					path: ["executionTokens", instanceId],
+					message: "Execution tokens may only be provided for selected instances",
+				});
+			}
+		}
+	});
 
 export async function deploymentRoutes(app: FastifyInstance) {
 	const { prisma, deploymentExecutor } = app;
@@ -35,28 +75,9 @@ export async function deploymentRoutes(app: FastifyInstance) {
 
 		const preview = await deploymentPreview.generatePreview(templateId, instanceId, userId);
 
-		// Check for existing deployment to get current sync strategy
-		// Find the mapping by templateId and instanceId
-		const existingMapping = await prisma.templateQualityProfileMapping.findFirst({
-			where: {
-				templateId,
-				instanceId,
-			},
-			orderBy: { updatedAt: "desc" },
-			select: { syncStrategy: true },
-		});
-
 		return reply.send({
 			success: true,
-			data: {
-				...preview,
-				// Include existing sync strategy if this instance was previously deployed
-				existingSyncStrategy: existingMapping?.syncStrategy as
-					| "auto"
-					| "manual"
-					| "notify"
-					| undefined,
-			},
+			data: preview,
 		});
 	});
 
@@ -70,19 +91,12 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			instanceId: string;
 			syncStrategy?: "auto" | "manual" | "notify";
 			conflictResolutions?: Record<string, "use_template" | "keep_existing">; // Map of trashId → resolution
-			executionToken?: string;
+			executionToken: string;
 		};
 	}>("/execute", async (request, reply) => {
 		const { templateId, instanceId, syncStrategy, conflictResolutions, executionToken } =
-			request.body;
+			validateRequest(executeDeploymentSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceId) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceId are required",
-			});
-		}
 
 		// Execute deployment with conflict resolutions
 		const result = await deploymentExecutor.deploySingleInstance(
@@ -118,7 +132,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				request.log.warn({ err }, "Deployment failed notification dispatch failed");
 			});
 
-		return reply.status(400).send({
+		return reply.send({
 			success: false,
 			error: "Deployment failed",
 			result: result,
@@ -342,16 +356,13 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			where: { id: mapping.id },
 		});
 
-		// Also delete any instance-level overrides for this template+instance
-		await prisma.instanceQualityProfileOverride.deleteMany({
-			where: {
-				instanceId,
-				qualityProfileId: mapping.qualityProfileId,
-			},
-		});
-
 		request.log.info(
-			{ templateId, instanceId, mappingId: mapping.id },
+			{
+				templateId,
+				instanceId,
+				mappingId: mapping.id,
+				preservedQualityProfileOverrides: true,
+			},
 			"Template unlinked from instance",
 		);
 
@@ -378,19 +389,12 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			instanceIds: string[];
 			syncStrategy?: "auto" | "manual" | "notify";
 			instanceSyncStrategies?: Record<string, "auto" | "manual" | "notify">;
-			executionTokens?: Record<string, string>;
+			executionTokens: Record<string, string>;
 		};
 	}>("/execute-bulk", async (request, reply) => {
 		const { templateId, instanceIds, syncStrategy, instanceSyncStrategies, executionTokens } =
-			request.body;
+			validateRequest(executeBulkDeploymentSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceIds || instanceIds.length === 0) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceIds are required",
-			});
-		}
 
 		// Execute bulk deployment with per-instance strategies support
 		const result = await deploymentExecutor.deployBulkInstances(

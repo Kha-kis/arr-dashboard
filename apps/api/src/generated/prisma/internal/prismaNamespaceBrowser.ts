@@ -355,7 +355,10 @@ export const TrashSyncHistoryScalarFieldEnum = {
   errorLog: 'errorLog',
   backupId: 'backupId',
   rolledBack: 'rolledBack',
-  rolledBackAt: 'rolledBackAt'
+  rolledBackAt: 'rolledBackAt',
+  rollbackStatus: 'rollbackStatus',
+  rollbackAttemptedAt: 'rollbackAttemptedAt',
+  rollbackProgress: 'rollbackProgress'
 } as const
 
 export type TrashSyncHistoryScalarFieldEnum = (typeof TrashSyncHistoryScalarFieldEnum)[keyof typeof TrashSyncHistoryScalarFieldEnum]
@@ -417,6 +420,10 @@ export const TemplateQualityProfileMappingScalarFieldEnum = {
   instanceId: 'instanceId',
   qualityProfileId: 'qualityProfileId',
   qualityProfileName: 'qualityProfileName',
+  connectionGeneration: 'connectionGeneration',
+  connectionStateToken: 'connectionStateToken',
+  managedCustomFormats: 'managedCustomFormats',
+  managedCustomFormatsCaptured: 'managedCustomFormatsCaptured',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   lastSyncedAt: 'lastSyncedAt',
@@ -432,7 +439,12 @@ export const InstanceQualityProfileOverrideScalarFieldEnum = {
   qualityProfileId: 'qualityProfileId',
   customFormatId: 'customFormatId',
   score: 'score',
+  status: 'status',
+  intentOperation: 'intentOperation',
+  intendedScore: 'intendedScore',
   userId: 'userId',
+  connectionGeneration: 'connectionGeneration',
+  connectionStateToken: 'connectionStateToken',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -463,6 +475,9 @@ export const TemplateDeploymentHistoryScalarFieldEnum = {
   rolledBack: 'rolledBack',
   rolledBackAt: 'rolledBackAt',
   rolledBackBy: 'rolledBackBy',
+  undeployStatus: 'undeployStatus',
+  undeployAttemptedAt: 'undeployAttemptedAt',
+  undeployProgress: 'undeployProgress',
   deploymentNotes: 'deploymentNotes',
   templateSnapshot: 'templateSnapshot'
 } as const

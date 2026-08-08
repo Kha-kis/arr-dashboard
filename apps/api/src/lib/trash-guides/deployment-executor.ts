@@ -12,13 +12,7 @@
  * - template-score-utils.ts: score calculation
  */
 
-import {
-	type CustomQualityConfig,
-	type NamingSelectedPresets,
-	TRASH_CONFIG_TYPES,
-	type TrashConflictGroup,
-	type TrashNamingData,
-} from "@arr/shared";
+import type { CustomQualityConfig, NamingSelectedPresets, TrashConflictGroup } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient, ServiceType } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
@@ -31,22 +25,43 @@ import {
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
+import { withCleanupTopologyMutationLease } from "../library-cleanup/cleanup-executor.js";
 import { extractTrashId, transformFieldsToArray } from "./cf-field-utils.js";
 import { checkMutualExclusions } from "./conflict-checker.js";
+import type { CustomFormatRollbackState } from "./deployment-custom-format-state.js";
+import {
+	captureManagedCustomFormatIdentities,
+	type ManagedCustomFormatIdentity,
+	type OrphanedManagedCustomFormat,
+	readPersistedManagedCustomFormatIdentities,
+	resolveOrphanedManagedCustomFormats,
+} from "./deployment-managed-format-state.js";
 import {
 	finalizeDeploymentHistory,
 	finalizeDeploymentHistoryWithFailure,
 	finalizeDeploymentHistoryWithPartialFailure,
 } from "./deployment-history-manager.js";
 import {
+	type PreparedNamingDeployment,
+	prepareNamingDeployment,
+} from "./deployment-naming-state.js";
+import { assertNoPendingDeploymentOperation } from "./deployment-operation-gate.js";
+import { rebindLegacyDeploymentConnectionState } from "./deployment-legacy-rebind.js";
+import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
+import {
+	assertNoLegacyDeploymentConnectionMappings,
 	assertDeploymentTargetOwnership,
+	createDeploymentConnectionBindingCandidates,
+	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
 	createDeploymentStateToken,
+	createLegacyDeploymentConnectionBindings,
 	createQualityProfileStateToken,
+	createUpstreamResourceStateToken,
 	getEquivalentServiceInstanceIds,
+	isLegacyDeploymentConnectionMapping,
 	resolveDeploymentTarget,
 } from "./deployment-target.js";
-import { resolvePayload } from "./naming-deployer.js";
 import { createQualityProfileFromSchema } from "./profile-creation-strategies.js";
 import {
 	extractQualitiesFromSchema,
@@ -77,6 +92,12 @@ export interface DeploymentResult {
 	customFormatsSkipped: number;
 	errors: string[];
 	warnings?: string[];
+	qualityProfileApplied?: {
+		action: "created" | "updated";
+		profileId: number;
+		profileName: string;
+	};
+	namingFieldsApplied?: number;
 	details?: {
 		created: string[];
 		updated: string[];
@@ -99,6 +120,7 @@ interface PartialDeploymentResult {
 	updated: number;
 	skipped: number;
 	details: NonNullable<DeploymentResult["details"]>;
+	qualityProfile?: QualityProfileMutation;
 }
 
 function getPartialDeploymentResult(error: unknown): PartialDeploymentResult | undefined {
@@ -144,6 +166,7 @@ interface ValidatedDeploymentData {
 		encryptionIv: string;
 		encryptedHttpAuthCredentials: string | null;
 		httpAuthEncryptionIv: string | null;
+		connectionGeneration: number;
 	};
 	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR API config structure
 	templateConfig: Record<string, any>;
@@ -154,8 +177,55 @@ interface ValidatedDeploymentData {
 	usingQualityOverride: boolean;
 }
 
+interface NamingBackupState {
+	beforeConfig: Record<string, unknown>;
+	status: "not_started" | "pending" | "applied";
+	postStateToken: string | null;
+	intendedPostStateToken: string | null;
+}
+
+interface QualityProfileMutation {
+	action: "created" | "updated";
+	profileId: number;
+	profileName: string;
+	postStateToken: string | null;
+}
+
+function toPublicQualityProfileMutation(
+	mutation: QualityProfileMutation | undefined,
+): DeploymentResult["qualityProfileApplied"] {
+	if (!mutation) return undefined;
+	return {
+		action: mutation.action,
+		profileId: mutation.profileId,
+		profileName: mutation.profileName,
+	};
+}
+
+interface QualityProfileBackupState {
+	beforeProfile: SdkQualityProfile | null;
+	status: "not_started" | "pending" | "applied";
+	action: "created" | "updated";
+	profileId: number | null;
+	profileName: string;
+	postStateToken: string | null;
+	intendedPostStateToken: string | null;
+}
+
+interface DeploymentBackupData {
+	schemaVersion: 2;
+	endpointKey: string;
+	connectionStateToken: string;
+	customFormats: SdkCustomFormat[];
+	customFormatDeployments: CustomFormatRollbackState[];
+	managedCustomFormats: ManagedCustomFormatIdentity[];
+	managedCustomFormatsCaptured: boolean;
+	qualityProfileDeployment: QualityProfileBackupState;
+	namingDeployment: NamingBackupState | null;
+}
+
 interface BackupAndHistoryResult {
-	backup: { id: string };
+	backup: { id: string; data: DeploymentBackupData; retentionExpiresAt: Date | null };
 	historyId: string;
 }
 
@@ -177,11 +247,19 @@ interface DeployCustomFormatsResult {
 interface SyncQualityProfileResult {
 	errors: string[];
 	orphanedCFs: string[];
+	mutation?: QualityProfileMutation;
 }
 
-interface PreviousDeploymentCF {
-	trashId: string;
-	name: string;
+interface DeploymentConnectionBinding {
+	instanceId: string;
+	connectionGeneration: number;
+	connectionStateToken: string;
+}
+
+interface DeploymentConnectionReadBinding {
+	instanceId: string;
+	connectionGeneration: number;
+	connectionStateToken: string | null;
 }
 
 // ============================================================================
@@ -191,11 +269,19 @@ interface PreviousDeploymentCF {
 export class DeploymentExecutorService {
 	private prisma: PrismaClient;
 	private clientFactory: ArrClientFactory;
-	private activeDeployments = new Map<string, Promise<DeploymentResult>>();
+	private activeMutationEndpoints = new Set<string>();
 
 	constructor(prisma: PrismaClient, clientFactory: ArrClientFactory) {
 		this.prisma = prisma;
 		this.clientFactory = clientFactory;
+	}
+
+	private createCredentialIdentity(
+		instance: Parameters<ArrClientFactory["createConnectionCredentialIdentity"]>[0],
+	): string {
+		return typeof this.clientFactory.createConnectionCredentialIdentity === "function"
+			? this.clientFactory.createConnectionCredentialIdentity(instance)
+			: createDeploymentConnectionStateToken(instance);
 	}
 
 	// ============================================================================
@@ -307,6 +393,7 @@ export class DeploymentExecutorService {
 				encryptionIv: instance.encryptionIv,
 				encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
 				httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
+				connectionGeneration: instance.connectionGeneration,
 			},
 			templateConfig,
 			templateCFs,
@@ -317,12 +404,21 @@ export class DeploymentExecutorService {
 	}
 
 	private async createBackupAndHistory(
-		instance: { id: string },
+		instance: {
+			id: string;
+			service: string;
+			baseUrl: string;
+			encryptedApiKey: string;
+			encryptionIv: string;
+			encryptedHttpAuthCredentials?: string | null;
+			httpAuthEncryptionIv?: string | null;
+		},
 		userId: string,
 		preDeploymentCFs: SdkCustomFormat[],
 		templateId: string,
 		// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile snapshot
 		preDeploymentQP?: any,
+		preDeploymentNaming?: PreparedNamingDeployment,
 	): Promise<BackupAndHistoryResult> {
 		const userSettings = await this.prisma.trashSettings.findUnique({
 			where: { userId },
@@ -336,15 +432,42 @@ export class DeploymentExecutorService {
 			expiresAt.setDate(expiresAt.getDate() + retentionDays);
 		}
 
+		const backupData: DeploymentBackupData = {
+			schemaVersion: 2,
+			endpointKey: createDeploymentEndpointKey(userId, instance),
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			customFormats: preDeploymentCFs,
+			customFormatDeployments: [],
+			managedCustomFormats: [],
+			managedCustomFormatsCaptured: false,
+			qualityProfileDeployment: {
+				beforeProfile: preDeploymentQP ?? null,
+				status: "not_started",
+				action: preDeploymentQP ? "updated" : "created",
+				profileId: preDeploymentQP?.id ?? null,
+				profileName: preDeploymentQP?.name ?? "Pending quality profile",
+				postStateToken: null,
+				intendedPostStateToken: null,
+			},
+			namingDeployment:
+				preDeploymentNaming && preDeploymentNaming.changedFields.length > 0
+					? {
+							beforeConfig: preDeploymentNaming.currentConfig,
+							status: "not_started",
+							postStateToken: null,
+							intendedPostStateToken: createUpstreamResourceStateToken(
+								preDeploymentNaming.mergedConfig,
+							),
+						}
+					: null,
+		};
+
 		const { backup, history } = await this.prisma.$transaction(async (tx) => {
 			const backupRecord = await tx.trashBackup.create({
 				data: {
 					instanceId: instance.id,
 					userId,
-					backupData: JSON.stringify({
-						customFormats: preDeploymentCFs,
-						qualityProfile: preDeploymentQP ?? null,
-					}),
+					backupData: JSON.stringify(backupData),
 					expiresAt,
 				},
 			});
@@ -367,7 +490,10 @@ export class DeploymentExecutorService {
 			return { backup: backupRecord, history: historyRecord };
 		});
 
-		return { backup: { id: backup.id }, historyId: history.id };
+		return {
+			backup: { id: backup.id, data: backupData, retentionExpiresAt: expiresAt },
+			historyId: history.id,
+		};
 	}
 
 	private async deployCustomFormats(
@@ -376,6 +502,10 @@ export class DeploymentExecutorService {
 		existingCFMap: Map<string, SdkCustomFormat>,
 		existingCFByName: Map<string, SdkCustomFormat>,
 		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
+		persistMutationState: (
+			state: CustomFormatRollbackState,
+			append: boolean,
+		) => Promise<void> = async () => {},
 	): Promise<DeployCustomFormatsResult> {
 		const errors: string[] = [];
 		const details: DeploymentDetails = {
@@ -387,8 +517,20 @@ export class DeploymentExecutorService {
 		let created = 0;
 		let updated = 0;
 		let skipped = 0;
+		const throwWithPartialDeployment = (error: ConflictError): never => {
+			Object.assign(error, {
+				partialDeployment: {
+					created,
+					updated,
+					skipped,
+					details,
+				},
+			});
+			throw error;
+		};
 
 		for (const templateCF of templateCFs) {
+			let upstreamMutationStarted = false;
 			try {
 				let existingCF = existingCFMap.get(templateCF.trashId);
 				if (!existingCF) {
@@ -403,24 +545,58 @@ export class DeploymentExecutorService {
 				}
 
 				if (existingCF?.id) {
+					const freshExistingCF = await client.customFormat.getById(existingCF.id);
+					if (
+						createUpstreamResourceStateToken(freshExistingCF) !==
+						createUpstreamResourceStateToken(existingCF)
+					) {
+						throw new ConflictError(
+							`Custom Format "${templateCF.name}" changed during deployment. Refresh the preview and try again.`,
+						);
+					}
 					const specifications = (templateCF.originalConfig?.specifications || []).map((spec) => ({
 						...spec,
 						fields: transformFieldsToArray(spec.fields),
 					}));
 
 					const updatedCF = {
-						...existingCF,
+						...freshExistingCF,
 						name: templateCF.name,
 						specifications,
 					};
+					const mutationState: CustomFormatRollbackState = {
+						beforeFormat: freshExistingCF as unknown as Record<string, unknown>,
+						action: "updated",
+						resourceId: existingCF.id,
+						name: templateCF.name,
+						status: "pending",
+						postStateToken: null,
+						intendedPostStateToken: createUpstreamResourceStateToken(updatedCF),
+					};
+					await persistMutationState(mutationState, true);
 
+					upstreamMutationStarted = true;
 					await client.customFormat.update(
 						existingCF.id,
 						updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
 					);
+					const postWriteFormat = await client.customFormat.getById(existingCF.id);
+					mutationState.status = "applied";
+					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
+					await persistMutationState(mutationState, false);
 					updated++;
 					details.updated.push(templateCF.name);
 				} else {
+					const freshFormats = await client.customFormat.getAll();
+					const appearedDuringDeployment = freshFormats.find(
+						(format) =>
+							extractTrashId(format) === templateCF.trashId || format.name === templateCF.name,
+					);
+					if (appearedDuringDeployment) {
+						throw new ConflictError(
+							`Custom Format "${templateCF.name}" appeared during deployment. Refresh the preview and try again.`,
+						);
+					}
 					const specifications = (templateCF.originalConfig?.specifications || []).map((spec) => ({
 						...spec,
 						fields: transformFieldsToArray(spec.fields),
@@ -432,20 +608,53 @@ export class DeploymentExecutorService {
 							templateCF.originalConfig?.includeCustomFormatWhenRenaming ?? false,
 						specifications,
 					};
+					const mutationState: CustomFormatRollbackState = {
+						beforeFormat: null,
+						action: "created",
+						resourceId: null,
+						name: templateCF.name,
+						status: "pending",
+						postStateToken: null,
+						intendedPostStateToken: null,
+					};
+					await persistMutationState(mutationState, true);
 
-					await client.customFormat.create(
+					upstreamMutationStarted = true;
+					const createdFormat = await client.customFormat.create(
 						newCF as unknown as Parameters<typeof client.customFormat.create>[0],
 					);
+					if (createdFormat.id === undefined) {
+						throw new Error("ARR created the Custom Format without returning its ID");
+					}
+					mutationState.resourceId = createdFormat.id;
+					await persistMutationState(mutationState, false);
+					const postWriteFormat = await client.customFormat.getById(createdFormat.id);
+					mutationState.status = "applied";
+					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
+					await persistMutationState(mutationState, false);
 					created++;
 					details.created.push(templateCF.name);
 				}
 			} catch (error) {
+				if (upstreamMutationStarted) {
+					log.error(
+						{ err: error, cfName: templateCF.name },
+						"Custom Format mutation could not be verified",
+					);
+					throwWithPartialDeployment(
+						new ConflictError(
+							`Custom Format "${templateCF.name}" may have changed, but its post-write state could not be verified. Resolve or roll back the interrupted deployment before retrying.`,
+						),
+					);
+				}
+				if (error instanceof ConflictError) {
+					throwWithPartialDeployment(error);
+				}
 				log.error({ err: error, cfName: templateCF.name }, "Failed to deploy custom format");
 				errors.push(
 					`Failed to deploy "${templateCF.name}": ${getErrorMessage(error, "Unknown error")}`,
 				);
 				details.failed.push(templateCF.name);
-				skipped++;
 			}
 		}
 
@@ -459,20 +668,39 @@ export class DeploymentExecutorService {
 		templateCFs: TemplateCF[],
 		templateId: string,
 		instanceId: string,
-		_userId: string,
+		userId: string,
 		syncStrategy: "auto" | "manual" | "notify" | undefined,
 		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
 		profileName: string,
 		resolvedTargetProfile: SdkQualityProfile | undefined,
 		reviewedTargetProfileToken: string | undefined,
-		previouslyDeployedCFs: PreviousDeploymentCF[],
+		orphanedManagedFormats: OrphanedManagedCustomFormat[],
+		instanceOverrideScores: ReadonlyMap<number, number>,
+		equivalentInstanceIds: string[],
 		effectiveQualityConfig?: CustomQualityConfig,
+		persistProfileState: (state: QualityProfileBackupState) => Promise<void> = async () => {},
+		connectionBindings: DeploymentConnectionBinding[] = equivalentInstanceIds.map((id) => ({
+			instanceId: id,
+			connectionGeneration: 0,
+			connectionStateToken: "",
+		})),
+		connectionReadBindings: DeploymentConnectionReadBinding[] = connectionBindings,
+		previousManagedFormats: ManagedCustomFormatIdentity[] = [],
 	): Promise<SyncQualityProfileResult> {
 		const errors: string[] = [];
 		const orphanedCFs: string[] = [];
+		let mutation: QualityProfileMutation | undefined;
+		const connectionBinding = connectionBindings.find(
+			(binding) => binding.instanceId === instanceId,
+		) ?? {
+			instanceId,
+			connectionGeneration: 0,
+			connectionStateToken: "",
+		};
 
 		try {
 			let targetProfile = resolvedTargetProfile;
+			let createdProfile = false;
 			if (targetProfile?.id !== undefined) {
 				const freshTargetProfile = (await client.qualityProfile.getById(
 					targetProfile.id,
@@ -494,6 +722,22 @@ export class DeploymentExecutorService {
 			}
 
 			if (!targetProfile) {
+				const currentProfiles = await client.qualityProfile.getAll();
+				if (currentProfiles.some((profile) => profile.name === profileName)) {
+					throw new ConflictError(
+						`Quality profile "${profileName}" appeared during deployment. Refresh the preview and try again.`,
+					);
+				}
+				createdProfile = true;
+				await persistProfileState({
+					beforeProfile: null,
+					status: "pending",
+					action: "created",
+					profileId: null,
+					profileName,
+					postStateToken: null,
+					intendedPostStateToken: null,
+				});
 				targetProfile = await createQualityProfileFromSchema(
 					client,
 					templateConfig,
@@ -501,18 +745,29 @@ export class DeploymentExecutorService {
 					profileName,
 					effectiveQualityConfig,
 				);
+				if (targetProfile?.id === undefined) {
+					throw new Error("ARR created the quality profile without returning its ID");
+				}
+				mutation = {
+					action: "created",
+					profileId: targetProfile.id,
+					profileName: targetProfile.name ?? profileName,
+					postStateToken: null,
+				};
+				await persistProfileState({
+					beforeProfile: null,
+					status: "pending",
+					action: "created",
+					profileId: targetProfile.id,
+					profileName: targetProfile.name ?? profileName,
+					postStateToken: null,
+					intendedPostStateToken: null,
+				});
 			}
 
 			if (targetProfile) {
 				const allCFs = await client.customFormat.getAll();
 				const cfMap = new Map(allCFs.map((cf) => [cf.name, cf]));
-
-				const instanceOverrides = await this.prisma.instanceQualityProfileOverride.findMany({
-					where: { instanceId, qualityProfileId: targetProfile.id },
-				});
-				const overrideMap = new Map(
-					instanceOverrides.map((override) => [override.customFormatId, override.score]),
-				);
 
 				const formatItems: Array<{ format: number; score: number }> = [];
 				const scoreSet = templateConfig.qualityProfile?.trash_score_set;
@@ -527,7 +782,8 @@ export class DeploymentExecutorService {
 				for (const templateCF of templateCFs) {
 					const cf = cfMap.get(templateCF.name);
 					if (cf?.id) {
-						if (conflictResolutions?.[templateCF.trashId] === "keep_existing") {
+						const conflictResolution = conflictResolutions?.[templateCF.trashId];
+						if (conflictResolution === "keep_existing") {
 							const existingScore = existingScoreMap.get(cf.id);
 							if (existingScore !== undefined) {
 								formatItems.push({ format: cf.id, score: existingScore });
@@ -535,7 +791,7 @@ export class DeploymentExecutorService {
 							}
 						}
 
-						const instanceOverrideScore = overrideMap.get(cf.id);
+						const instanceOverrideScore = instanceOverrideScores.get(cf.id);
 						const { score: templateScore } = calculateScoreAndSource(
 							templateCF,
 							scoreSet,
@@ -543,13 +799,25 @@ export class DeploymentExecutorService {
 						);
 
 						const existingScore = existingScoreMap.get(cf.id);
+						const previousManagedFormat = previousManagedFormats.find(
+							(previous) =>
+								previous.trashId === templateCF.trashId &&
+								previous.resourceId === cf.id &&
+								previous.profileId === targetProfile.id,
+						);
+						const manuallyDriftedAfterDeployment =
+							previousManagedFormat !== undefined &&
+							existingScore !== previousManagedFormat.appliedScore;
 						if (
 							existingScore !== undefined &&
 							existingScore !== templateScore &&
-							!overrideMap.has(cf.id) &&
-							templateCF.scoreOverride === undefined
+							!instanceOverrideScores.has(cf.id) &&
+							templateCF.scoreOverride === undefined &&
+							conflictResolution !== "use_template" &&
+							(previousManagedFormat === undefined || manuallyDriftedAfterDeployment)
 						) {
-							// Preserve manual Radarr/Sonarr tweaks only when no explicit override is set
+							// Preserve genuine manual Radarr/Sonarr drift, but do not mistake
+							// the score applied by the previous deployment for user intent.
 							formatItems.push({ format: cf.id, score: existingScore });
 						} else {
 							formatItems.push({ format: cf.id, score: templateScore });
@@ -558,22 +826,16 @@ export class DeploymentExecutorService {
 				}
 
 				// Handle orphaned CFs
-				const currentTemplateCFNames = new Set(templateCFs.map((cf) => cf.name));
-				const cfByName = new Map(allCFs.map((cf) => [cf.name, cf]));
 				const addedFormatIds = new Set(formatItems.map((item) => item.format));
 
-				for (const prevCF of previouslyDeployedCFs) {
-					if (!currentTemplateCFNames.has(prevCF.name)) {
-						const instanceCF = cfByName.get(prevCF.name);
-						if (instanceCF?.id && !addedFormatIds.has(instanceCF.id)) {
-							formatItems.push({
-								format: instanceCF.id,
-								score: overrideMap.get(instanceCF.id) ?? 0,
-							});
-							addedFormatIds.add(instanceCF.id);
-							orphanedCFs.push(prevCF.name);
-						}
-					}
+				for (const orphaned of orphanedManagedFormats) {
+					if (addedFormatIds.has(orphaned.resourceId)) continue;
+					formatItems.push({
+						format: orphaned.resourceId,
+						score: 0,
+					});
+					addedFormatIds.add(orphaned.resourceId);
+					orphanedCFs.push(orphaned.name);
 				}
 
 				// Merge with existing formatItems
@@ -804,42 +1066,109 @@ export class DeploymentExecutorService {
 				if (targetProfile.id === undefined) {
 					throw new Error("Quality profile ID is missing");
 				}
+				const [latestTargetProfile, latestOverrideScores] = await Promise.all([
+					client.qualityProfile.getById(targetProfile.id) as Promise<SdkQualityProfile>,
+					this.loadEquivalentInstanceOverrideScores(
+						userId,
+						connectionReadBindings,
+						targetProfile.id,
+					),
+				]);
+				if (
+					createQualityProfileStateToken(latestTargetProfile) !==
+						createQualityProfileStateToken(targetProfile) ||
+					createUpstreamResourceStateToken([...latestOverrideScores.entries()]) !==
+						createUpstreamResourceStateToken([...instanceOverrideScores.entries()])
+				) {
+					throw new ConflictError(
+						"The target quality profile or its saved score overrides changed during deployment. Refresh the preview and try again.",
+					);
+				}
+
+				await persistProfileState({
+					beforeProfile: createdProfile ? null : targetProfile,
+					status: "pending",
+					action: createdProfile ? "created" : "updated",
+					profileId: targetProfile.id,
+					profileName: targetProfile.name ?? profileName,
+					postStateToken: null,
+					intendedPostStateToken: createQualityProfileStateToken(updatedProfile),
+				});
 				// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr profile types differ but are runtime-compatible
 				await client.qualityProfile.update(targetProfile.id, updatedProfile as any);
-
-				// Clean up stale mappings for this template+instance that reference
-				// an old profile ID (e.g., profile was recreated with a new ID)
-				await this.prisma.templateQualityProfileMapping.deleteMany({
-					where: {
-						templateId,
-						instanceId,
-						qualityProfileId: { not: targetProfile.id },
-					},
+				mutation = {
+					action: createdProfile ? "created" : "updated",
+					profileId: targetProfile.id,
+					profileName: targetProfile.name ?? profileName,
+					postStateToken: null,
+				};
+				const postWriteProfile = (await client.qualityProfile.getById(
+					targetProfile.id,
+				)) as SdkQualityProfile;
+				mutation.postStateToken = createQualityProfileStateToken(postWriteProfile);
+				await persistProfileState({
+					beforeProfile: createdProfile ? null : targetProfile,
+					// Keep the ledger non-terminal until mapping and complete managed
+					// identity capture are committed with the backup.
+					status: "pending",
+					action: mutation.action,
+					profileId: mutation.profileId,
+					profileName: mutation.profileName,
+					postStateToken: mutation.postStateToken,
+					intendedPostStateToken: createQualityProfileStateToken(updatedProfile),
 				});
+				if (orphanedManagedFormats.length > 0) {
+					await this.prisma.instanceQualityProfileOverride.deleteMany({
+						where: {
+							userId,
+							qualityProfileId: targetProfile.id,
+							customFormatId: {
+								in: orphanedManagedFormats.map((format) => format.resourceId),
+							},
+							OR: connectionReadBindings,
+						},
+					});
+				}
 
-				await this.prisma.templateQualityProfileMapping.upsert({
-					where: {
-						instanceId_qualityProfileId: {
+				// Clean up stale mappings for this template across every equivalent
+				// service record. A recovered mapping may belong to an alias rather
+				// than the record used for this deployment.
+				await this.prisma.$transaction([
+					this.prisma.templateQualityProfileMapping.deleteMany({
+						where: {
+							templateId,
+							instanceId: { in: equivalentInstanceIds },
+							qualityProfileId: { not: targetProfile.id },
+						},
+					}),
+					this.prisma.templateQualityProfileMapping.upsert({
+						where: {
+							instanceId_qualityProfileId: {
+								instanceId,
+								qualityProfileId: targetProfile.id,
+							},
+						},
+						create: {
+							templateId,
 							instanceId,
 							qualityProfileId: targetProfile.id,
+							qualityProfileName: targetProfile.name ?? profileName,
+							connectionGeneration: connectionBinding.connectionGeneration,
+							connectionStateToken: connectionBinding.connectionStateToken,
+							syncStrategy: syncStrategy || "notify",
+							lastSyncedAt: new Date(),
 						},
-					},
-					create: {
-						templateId,
-						instanceId,
-						qualityProfileId: targetProfile.id,
-						qualityProfileName: targetProfile.name ?? profileName,
-						syncStrategy: syncStrategy || "notify",
-						lastSyncedAt: new Date(),
-					},
-					update: {
-						templateId,
-						qualityProfileName: targetProfile.name ?? profileName,
-						...(syncStrategy && { syncStrategy }),
-						lastSyncedAt: new Date(),
-						updatedAt: new Date(),
-					},
-				});
+						update: {
+							templateId,
+							qualityProfileName: targetProfile.name ?? profileName,
+							connectionGeneration: connectionBinding.connectionGeneration,
+							connectionStateToken: connectionBinding.connectionStateToken,
+							...(syncStrategy && { syncStrategy }),
+							lastSyncedAt: new Date(),
+							updatedAt: new Date(),
+						},
+					}),
+				]);
 			}
 		} catch (error) {
 			if (error instanceof ConflictError) {
@@ -849,12 +1178,59 @@ export class DeploymentExecutorService {
 			errors.push(`Failed to update quality profile: ${getErrorMessage(error, "Unknown error")}`);
 		}
 
-		return { errors, orphanedCFs };
+		return { errors, orphanedCFs, mutation };
+	}
+
+	private async loadEquivalentInstanceOverrideScores(
+		userId: string,
+		connectionBindings: DeploymentConnectionReadBinding[],
+		qualityProfileId: number,
+	): Promise<Map<number, number>> {
+		const overrides = await this.prisma.instanceQualityProfileOverride.findMany({
+			where: {
+				userId,
+				status: "APPLIED",
+				qualityProfileId,
+				OR: connectionBindings,
+			},
+		});
+		const scores = new Map<number, number>();
+		for (const override of overrides) {
+			const existingScore = scores.get(override.customFormatId);
+			if (existingScore !== undefined && existingScore !== override.score) {
+				throw new ConflictError(
+					"Duplicate records for this ARR instance have conflicting saved Custom Format score overrides. Resolve the duplicate instance settings before deploying.",
+				);
+			}
+			scores.set(override.customFormatId, override.score);
+		}
+		return scores;
 	}
 
 	// ============================================================================
 	// Public Methods
 	// ============================================================================
+
+	async runWithEndpointMutation<T>(
+		userId: string,
+		instance: Parameters<typeof createDeploymentEndpointKey>[1],
+		operation: string,
+		action: (endpointKey: string) => Promise<T>,
+	): Promise<T> {
+		const endpointKey = createDeploymentEndpointKey(userId, instance);
+		if (this.activeMutationEndpoints.has(endpointKey)) {
+			throw new AppValidationError(
+				`${operation} cannot start while another deployment or rollback is active for this ARR endpoint.`,
+			);
+		}
+
+		this.activeMutationEndpoints.add(endpointKey);
+		try {
+			return await action(endpointKey);
+		} finally {
+			this.activeMutationEndpoints.delete(endpointKey);
+		}
+	}
 
 	async deploySingleInstance(
 		templateId: string,
@@ -864,6 +1240,47 @@ export class DeploymentExecutorService {
 		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
 		executionToken?: string,
 	): Promise<DeploymentResult> {
+		if (!executionToken) {
+			throw new AppValidationError(
+				"A fresh deployment preview token is required for user-triggered execution.",
+			);
+		}
+		return this.deploySingleInstanceWithCapability(
+			templateId,
+			instanceId,
+			userId,
+			syncStrategy,
+			conflictResolutions,
+			executionToken,
+		);
+	}
+
+	/** Explicit tokenless capability reserved for trusted schedulers. */
+	async deploySingleInstanceFromAutomation(
+		templateId: string,
+		instanceId: string,
+		userId: string,
+		syncStrategy?: "auto" | "manual" | "notify",
+		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
+	): Promise<DeploymentResult> {
+		return this.deploySingleInstanceWithCapability(
+			templateId,
+			instanceId,
+			userId,
+			syncStrategy,
+			conflictResolutions,
+			undefined,
+		);
+	}
+
+	private async deploySingleInstanceWithCapability(
+		templateId: string,
+		instanceId: string,
+		userId: string,
+		syncStrategy: "auto" | "manual" | "notify" | undefined,
+		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
+		executionToken: string | undefined,
+	): Promise<DeploymentResult> {
 		const lockInstance = await this.prisma.serviceInstance.findFirst({
 			where: { id: instanceId, userId },
 			select: { service: true, baseUrl: true },
@@ -871,29 +1288,19 @@ export class DeploymentExecutorService {
 		if (!lockInstance) {
 			throw new InstanceNotFoundError(instanceId);
 		}
-		const endpointKey = createDeploymentEndpointKey(userId, lockInstance);
-
-		if (this.activeDeployments.has(endpointKey)) {
-			throw new AppValidationError(
-				"Deployment already in progress for this ARR endpoint. Please wait for it to complete.",
-			);
-		}
-
-		const deploymentPromise = this.executeSingleDeployment(
-			templateId,
-			instanceId,
-			userId,
-			syncStrategy,
-			conflictResolutions,
-			executionToken,
-			endpointKey,
+		return withCleanupTopologyMutationLease({ prisma: this.prisma, log }, userId, () =>
+			this.runWithEndpointMutation(userId, lockInstance, "Deployment", (endpointKey) =>
+				this.executeSingleDeployment(
+					templateId,
+					instanceId,
+					userId,
+					syncStrategy,
+					conflictResolutions,
+					executionToken,
+					endpointKey,
+				),
+			),
 		);
-		this.activeDeployments.set(endpointKey, deploymentPromise);
-		try {
-			return await deploymentPromise;
-		} finally {
-			this.activeDeployments.delete(endpointKey);
-		}
 	}
 
 	/**
@@ -901,39 +1308,16 @@ export class DeploymentExecutorService {
 	 * Resolves preset names to format strings, then PUTs the merged config.
 	 */
 	private async deployNamingPresets(
-		namingSelection: NamingSelectedPresets,
+		namingState: PreparedNamingDeployment,
 		instance: ValidatedDeploymentData["instance"],
-	): Promise<{ fieldsApplied: number; error?: string }> {
+		beforeWrite?: () => Promise<void>,
+	): Promise<{ fieldsApplied: number; error?: string; postStateToken?: string }> {
+		let fieldsApplied = 0;
 		try {
-			const upperService = instance.service.toUpperCase() as "RADARR" | "SONARR";
-			if (namingSelection.serviceType !== upperService) {
-				return {
-					fieldsApplied: 0,
-					error: `Naming selection service type mismatch: expected ${upperService}`,
-				};
-			}
-
-			const cacheManager = createCacheManager(this.prisma);
-			const namingData = (await cacheManager.get<TrashNamingData[]>(
-				upperService,
-				TRASH_CONFIG_TYPES.NAMING_PRESETS,
-			)) as TrashNamingData[] | null;
-
-			if (!namingData || namingData.length === 0) {
-				return { fieldsApplied: 0, error: "Naming data not cached — skipping naming deployment" };
-			}
-
-			const naming = namingData[0]!;
-			const patch = resolvePayload(naming, namingSelection);
-			const fieldCount = Object.keys(patch).filter(
-				(k) => k !== "renameMovies" && k !== "renameEpisodes",
-			).length;
-
-			if (fieldCount === 0) {
+			if (namingState.changedFields.length === 0) {
 				return { fieldsApplied: 0 };
 			}
 
-			// GET current config, merge, PUT back
 			const currentResponse = await this.clientFactory.rawRequest(
 				instance,
 				"/api/v3/config/naming",
@@ -945,11 +1329,19 @@ export class DeploymentExecutorService {
 				};
 			}
 			const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
-			const merged = { ...currentConfig, ...patch };
+			if (
+				createUpstreamResourceStateToken(currentConfig) !==
+				createUpstreamResourceStateToken(namingState.currentConfig)
+			) {
+				throw new ConflictError(
+					"Naming configuration changed during deployment. Refresh the preview and try again.",
+				);
+			}
+			await beforeWrite?.();
 
 			const putResponse = await this.clientFactory.rawRequest(instance, "/api/v3/config/naming", {
 				method: "PUT",
-				body: merged,
+				body: namingState.mergedConfig,
 			});
 			if (!putResponse.ok) {
 				return {
@@ -957,15 +1349,32 @@ export class DeploymentExecutorService {
 					error: `Failed to apply naming config: HTTP ${putResponse.status}`,
 				};
 			}
+			fieldsApplied = namingState.changedFields.length;
+
+			const postWriteResponse = await this.clientFactory.rawRequest(
+				instance,
+				"/api/v3/config/naming",
+			);
+			if (!postWriteResponse.ok) {
+				return {
+					fieldsApplied,
+					error: `Naming config was applied, but its post-write state could not be verified: HTTP ${postWriteResponse.status}`,
+				};
+			}
+			const postWriteConfig = (await postWriteResponse.json()) as Record<string, unknown>;
 
 			log.info(
-				{ instanceId: instance.id, fieldsApplied: fieldCount },
+				{ instanceId: instance.id, fieldsApplied: namingState.changedFields.length },
 				"Naming presets deployed via template",
 			);
-			return { fieldsApplied: fieldCount };
-		} catch (error) {
 			return {
-				fieldsApplied: 0,
+				fieldsApplied,
+				postStateToken: createUpstreamResourceStateToken(postWriteConfig),
+			};
+		} catch (error) {
+			if (error instanceof ConflictError) throw error;
+			return {
+				fieldsApplied,
 				error: `Naming deployment failed: ${getErrorMessage(error, "Unknown error")}`,
 			};
 		}
@@ -984,6 +1393,10 @@ export class DeploymentExecutorService {
 		let historyId: string | null = null;
 		let deploymentHistoryId: string | null = null;
 		let partialCFResult: DeployCustomFormatsResult | null = null;
+		const warnings: string[] = [];
+		let appliedProfileMutation: QualityProfileMutation | undefined;
+		let deploymentPhase: "before_cf" | "custom_formats" | "quality_profile" | "post_profile" =
+			"before_cf";
 
 		const metrics = getSyncMetrics();
 		const completeMetrics = metrics.startOperation("deployment");
@@ -1010,21 +1423,57 @@ export class DeploymentExecutorService {
 			// Resolve and authorize the exact upstream target before any write or history mutation.
 			const serviceAliases = await this.prisma.serviceInstance.findMany({
 				where: { userId, service: instance.service },
-				select: { id: true, service: true, baseUrl: true },
+				select: {
+					id: true,
+					service: true,
+					baseUrl: true,
+					encryptedApiKey: true,
+					encryptionIv: true,
+					encryptedHttpAuthCredentials: true,
+					httpAuthEncryptionIv: true,
+					connectionGeneration: true,
+				},
 			});
-			const equivalentInstanceIds = getEquivalentServiceInstanceIds(serviceAliases, instance);
+			const credentialIdentity = this.createCredentialIdentity(instance);
+			const equivalentInstanceIds = getEquivalentServiceInstanceIds(
+				serviceAliases.map((alias) => ({
+					...alias,
+					credentialIdentity: this.createCredentialIdentity(alias),
+				})),
+				{ ...instance, credentialIdentity },
+			);
 			if (!equivalentInstanceIds.includes(instanceId)) {
 				equivalentInstanceIds.push(instanceId);
 			}
+			const connectionBindings = serviceAliases
+				.filter((alias) => equivalentInstanceIds.includes(alias.id))
+				.map((alias) => ({
+					instanceId: alias.id,
+					connectionGeneration: alias.connectionGeneration,
+					connectionStateToken: createDeploymentConnectionStateToken(alias),
+				}));
+			const connectionReadBindings = serviceAliases
+				.filter((alias) => equivalentInstanceIds.includes(alias.id))
+				.flatMap(createDeploymentConnectionBindingCandidates);
+			await assertNoPendingDeploymentOperation(this.prisma, userId, equivalentInstanceIds);
 
 			const [existingCFs, fetchedProfiles, qualityProfileMappings] = await Promise.all([
 				client.customFormat.getAll(),
 				client.qualityProfile.getAll(),
 				this.prisma.templateQualityProfileMapping.findMany({
-					where: { instanceId: { in: equivalentInstanceIds } },
+					where: {
+						OR: [
+							...connectionReadBindings,
+							...createLegacyDeploymentConnectionBindings(equivalentInstanceIds),
+						],
+					},
 					orderBy: { updatedAt: "desc" },
 				}),
 			]);
+			const legacyMappings = qualityProfileMappings.filter(isLegacyDeploymentConnectionMapping);
+			if (legacyMappings.length > 0 && !executionToken) {
+				assertNoLegacyDeploymentConnectionMappings(legacyMappings);
+			}
 			const allProfiles = fetchedProfiles as SdkQualityProfile[];
 			const templateMappings = qualityProfileMappings.filter(
 				(mapping) => mapping.templateId === templateId,
@@ -1037,6 +1486,9 @@ export class DeploymentExecutorService {
 			const qualityProfileMapping =
 				templateMappings.find((mapping) => mapping.instanceId === instanceId) ??
 				templateMappings[0];
+			const selectedMappingIsLegacy = Boolean(
+				qualityProfileMapping && isLegacyDeploymentConnectionMapping(qualityProfileMapping),
+			);
 			const resolvedTarget = resolveDeploymentTarget({
 				profiles: allProfiles,
 				mapping: qualityProfileMapping,
@@ -1057,11 +1509,67 @@ export class DeploymentExecutorService {
 				templateId,
 				existingMappings: qualityProfileMappings,
 			});
+			const preDeploymentQP =
+				resolvedTarget.profile?.id !== undefined
+					? ((await client.qualityProfile.getById(resolvedTarget.profile.id)) as SdkQualityProfile)
+					: null;
+			if (preDeploymentQP?.id !== resolvedTarget.profile?.id) {
+				throw new ConflictError(
+					"The target quality profile identity changed before its full rollback snapshot was captured.",
+				);
+			}
+			const authorizedTarget = { ...resolvedTarget, profile: preDeploymentQP ?? undefined };
 			const profileName = resolvedTarget.profileName;
-			const preDeploymentQP = resolvedTarget.profile ?? null;
 			const reviewedTargetProfileToken = executionToken
-				? createQualityProfileStateToken(resolvedTarget.profile ?? null)
+				? createQualityProfileStateToken(authorizedTarget.profile ?? null)
 				: undefined;
+			const namingSelection = templateConfig.namingSelection as NamingSelectedPresets | undefined;
+			const namingState = namingSelection
+				? await prepareNamingDeployment(this.prisma, this.clientFactory, instance, namingSelection)
+				: undefined;
+			const overrideReadBindings = selectedMappingIsLegacy
+				? [
+						...connectionReadBindings,
+						...createLegacyDeploymentConnectionBindings(equivalentInstanceIds),
+					]
+				: connectionReadBindings;
+			const instanceOverrideScores =
+				authorizedTarget.profile?.id !== undefined
+					? await this.loadEquivalentInstanceOverrideScores(
+							userId,
+							overrideReadBindings,
+							authorizedTarget.profile.id,
+						)
+					: new Map<number, number>();
+			let previousManagedFormats: ManagedCustomFormatIdentity[] = [];
+			try {
+				previousManagedFormats =
+					selectedMappingIsLegacy && !qualityProfileMapping?.managedCustomFormatsCaptured
+						? []
+						: readPersistedManagedCustomFormatIdentities(qualityProfileMapping);
+			} catch (parseError) {
+				throw new ConflictError(
+					`The previous deployment's Custom Format identity metadata is unavailable or invalid: ${getErrorMessage(parseError)}`,
+				);
+			}
+			const orphanResolution = await resolveOrphanedManagedCustomFormats(
+				client,
+				templateCFs,
+				previousManagedFormats,
+				authorizedTarget.profile,
+			);
+			warnings.push(...orphanResolution.warnings);
+			const currentProfileScores = new Map(
+				(authorizedTarget.profile?.formatItems ?? []).map((item) => [item.format, item.score]),
+			);
+			const orphanedFormatScoreChanges = orphanResolution.formats.map((format) => ({
+				instanceId: format.resourceId,
+				name: format.name,
+				score:
+					currentProfileScores.get(format.resourceId) ??
+					instanceOverrideScores.get(format.resourceId) ??
+					0,
+			}));
 
 			if (executionToken) {
 				const currentToken = createDeploymentStateToken({
@@ -1083,23 +1591,50 @@ export class DeploymentExecutorService {
 							instance.httpAuthEncryptionIv,
 						].join(":"),
 					},
-					target: resolvedTarget,
+					target: authorizedTarget,
 					customFormats: existingCFs,
+					namingConfig: namingState?.currentConfig,
+					namingPayload: namingState?.mergedConfig,
+					savedScoreOverrides: [...instanceOverrideScores.entries()].sort(
+						([left], [right]) => left - right,
+					),
+					orphanedFormatScoreChanges,
 				});
 				if (currentToken !== executionToken) {
 					throw new ConflictError(
 						"The template or instance changed after this preview. Refresh the preview and review the deployment again.",
 					);
 				}
-			}
 
+				if (selectedMappingIsLegacy && qualityProfileMapping) {
+					const mappingsToRebind = templateMappings.filter(isLegacyDeploymentConnectionMapping);
+					await rebindLegacyDeploymentConnectionState(
+						this.prisma,
+						userId,
+						mappingsToRebind,
+						qualityProfileMapping.qualityProfileId,
+						connectionBindings,
+					);
+				}
+			}
 			const { backup, historyId: syncHistoryId } = await this.createBackupAndHistory(
 				instance,
 				userId,
 				existingCFs,
 				templateId,
 				preDeploymentQP,
+				namingState,
 			);
+			const persistBackupLedger = async (): Promise<void> => {
+				const backupData = JSON.stringify(backup.data);
+				await this.prisma.trashBackup.update({
+					where: { id: backup.id },
+					data: {
+						backupData,
+						expiresAt: shouldRetainDeploymentBackup(backupData) ? null : backup.retentionExpiresAt,
+					},
+				});
+			};
 			historyId = syncHistoryId;
 			const existingCFMap = new Map<string, SdkCustomFormat>();
 			const existingCFByName = new Map<string, SdkCustomFormat>();
@@ -1110,35 +1645,6 @@ export class DeploymentExecutorService {
 				}
 				if (cf.name) {
 					existingCFByName.set(cf.name, cf);
-				}
-			}
-
-			const previousDeployment = await this.prisma.templateDeploymentHistory.findFirst({
-				where: {
-					templateId,
-					instanceId,
-					status: "SUCCESS",
-					templateSnapshot: { not: null },
-				},
-				orderBy: { deployedAt: "desc" },
-				select: { templateSnapshot: true },
-			});
-
-			let previouslyDeployedCFs: PreviousDeploymentCF[] = [];
-			if (previousDeployment?.templateSnapshot) {
-				try {
-					const prevConfig = JSON.parse(previousDeployment.templateSnapshot);
-					previouslyDeployedCFs = (prevConfig.customFormats || []).map(
-						(cf: { trashId: string; name: string }) => ({
-							trashId: cf.trashId,
-							name: cf.name,
-						}),
-					);
-				} catch (parseError) {
-					log.warn(
-						{ err: parseError },
-						"Failed to parse previous deployment snapshot for orphan detection",
-					);
 				}
 			}
 
@@ -1160,14 +1666,29 @@ export class DeploymentExecutorService {
 			});
 			deploymentHistoryId = deploymentHistory.id;
 
+			deploymentPhase = "custom_formats";
 			const cfResult = await this.deployCustomFormats(
 				client,
 				templateCFs,
 				existingCFMap,
 				existingCFByName,
 				conflictResolutions,
+				async (state, append) => {
+					if (append) backup.data.customFormatDeployments.push(state);
+					try {
+						await persistBackupLedger();
+					} catch (error) {
+						if (append) {
+							backup.data.customFormatDeployments = backup.data.customFormatDeployments.filter(
+								(entry) => entry !== state,
+							);
+						}
+						throw error;
+					}
+				},
 			);
 			partialCFResult = cfResult;
+			deploymentPhase = "quality_profile";
 
 			const profileResult = await this.syncQualityProfile(
 				client,
@@ -1179,27 +1700,105 @@ export class DeploymentExecutorService {
 				syncStrategy,
 				conflictResolutions,
 				profileName,
-				resolvedTarget.profile,
+				preDeploymentQP ?? undefined,
 				reviewedTargetProfileToken,
-				previouslyDeployedCFs,
+				orphanResolution.formats,
+				instanceOverrideScores,
+				equivalentInstanceIds,
 				effectiveQualityConfig,
+				async (state) => {
+					backup.data.qualityProfileDeployment = state;
+					await persistBackupLedger();
+				},
+				connectionBindings,
+				connectionReadBindings,
+				previousManagedFormats,
 			);
+			appliedProfileMutation = profileResult.mutation;
+			if (profileResult.errors.length === 0) {
+				const managedProfileId = appliedProfileMutation?.profileId ?? preDeploymentQP?.id;
+				if (managedProfileId === undefined) {
+					throw new ConflictError(
+						"The managed quality profile identity could not be captured after deployment.",
+					);
+				}
+				const managedProfile = (await client.qualityProfile.getById(
+					managedProfileId,
+				)) as SdkQualityProfile;
+				const managedCustomFormats = await captureManagedCustomFormatIdentities(
+					client,
+					templateCFs,
+					managedProfile,
+				);
+				backup.data.managedCustomFormats = managedCustomFormats;
+				backup.data.managedCustomFormatsCaptured = true;
+				if (backup.data.qualityProfileDeployment.status === "pending") {
+					backup.data.qualityProfileDeployment.status = "applied";
+				}
+				const capturedBackupData = JSON.stringify(backup.data);
+				await this.prisma.$transaction([
+					this.prisma.templateQualityProfileMapping.updateMany({
+						where: {
+							templateId,
+							qualityProfileId: managedProfileId,
+							OR: connectionBindings,
+						},
+						data: {
+							managedCustomFormats: JSON.stringify(managedCustomFormats),
+							managedCustomFormatsCaptured: true,
+						},
+					}),
+					this.prisma.trashBackup.update({
+						where: { id: backup.id },
+						data: {
+							backupData: capturedBackupData,
+							expiresAt: shouldRetainDeploymentBackup(capturedBackupData)
+								? null
+								: backup.retentionExpiresAt,
+						},
+					}),
+				]);
+			}
+			deploymentPhase = "post_profile";
 
 			// Deploy naming presets if the template includes them
-			const namingSelection = templateConfig.namingSelection as NamingSelectedPresets | undefined;
 			let namingWarning: string | undefined;
-			if (namingSelection) {
-				const namingResult = await this.deployNamingPresets(namingSelection, instance);
+			let namingFieldsApplied = 0;
+			if (namingState && profileResult.errors.length === 0) {
+				const namingResult = await this.deployNamingPresets(namingState, instance, async () => {
+					if (!backup.data.namingDeployment) {
+						throw new Error("Naming rollback metadata is unavailable");
+					}
+					backup.data.namingDeployment.status = "pending";
+					await persistBackupLedger();
+				});
+				namingFieldsApplied = namingResult.fieldsApplied;
 				if (namingResult.error) {
 					profileResult.errors.push(namingResult.error);
-				} else if (namingResult.fieldsApplied > 0) {
-					namingWarning = `Naming presets applied (${namingResult.fieldsApplied} field(s) updated)`;
+				} else if (
+					namingResult.fieldsApplied > 0 &&
+					namingResult.postStateToken &&
+					backup.data.namingDeployment
+				) {
+					backup.data.namingDeployment.status = "applied";
+					backup.data.namingDeployment.postStateToken = namingResult.postStateToken;
+					try {
+						await persistBackupLedger();
+						namingWarning = `Naming presets applied (${namingResult.fieldsApplied} field(s) updated)`;
+					} catch (backupError) {
+						log.error(
+							{ err: backupError, backupId: backup.id, instanceId },
+							"Naming presets applied but rollback metadata could not be finalized",
+						);
+						profileResult.errors.push(
+							"Naming presets were applied, but rollback metadata could not be finalized. Check the server logs before attempting a rollback.",
+						);
+					}
 				}
 			}
 
 			const allErrors = [...cfResult.errors, ...profileResult.errors];
 
-			const warnings: string[] = [];
 			if (namingWarning) {
 				warnings.push(namingWarning);
 			}
@@ -1232,15 +1831,27 @@ export class DeploymentExecutorService {
 
 			cfResult.details.orphaned = profileResult.orphanedCFs;
 
-			await finalizeDeploymentHistory(
-				this.prisma,
-				historyId,
-				deploymentHistoryId,
-				startTime,
-				cfResult.details,
-				{ created: cfResult.created, updated: cfResult.updated, skipped: cfResult.skipped },
-				allErrors,
-			);
+			try {
+				await finalizeDeploymentHistory(
+					this.prisma,
+					historyId,
+					deploymentHistoryId,
+					startTime,
+					cfResult.details,
+					{ created: cfResult.created, updated: cfResult.updated, skipped: cfResult.skipped },
+					allErrors,
+					appliedProfileMutation,
+					namingFieldsApplied,
+				);
+			} catch (historyError) {
+				log.error(
+					{ err: historyError, templateId, instanceId },
+					"Deployment succeeded but history finalization failed",
+				);
+				warnings.push(
+					"Deployment completed, but its history record could not be finalized. Check the server logs.",
+				);
+			}
 
 			const metricsResult = completeMetrics();
 			if (allErrors.length === 0) {
@@ -1258,30 +1869,42 @@ export class DeploymentExecutorService {
 				customFormatsSkipped: cfResult.skipped,
 				errors: allErrors,
 				warnings: warnings.length > 0 ? warnings : undefined,
+				qualityProfileApplied: toPublicQualityProfileMutation(appliedProfileMutation),
+				namingFieldsApplied,
 				details: cfResult.details,
 			};
 		} catch (error) {
 			const errorMessage = getErrorMessage(error, "Unknown error");
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
+			const thrownPartialResult = getPartialDeploymentResult(error);
+			const partialDetails = partialCFResult?.details ?? thrownPartialResult?.details;
+			const partialProfile = appliedProfileMutation ?? thrownPartialResult?.qualityProfile;
 			const partialCounts = partialCFResult
 				? {
 						created: partialCFResult.created,
 						updated: partialCFResult.updated,
-						skipped: Math.max(0, partialCFResult.skipped - partialCFResult.details.failed.length),
+						skipped: partialCFResult.skipped,
 					}
-				: undefined;
+				: thrownPartialResult
+					? {
+							created: thrownPartialResult.created,
+							updated: thrownPartialResult.updated,
+							skipped: thrownPartialResult.skipped,
+						}
+					: undefined;
 
 			try {
-				if (partialCFResult && partialCounts && partialCounts.created + partialCounts.updated > 0) {
+				if (partialDetails && partialCounts && deploymentPhase !== "before_cf") {
 					await finalizeDeploymentHistoryWithPartialFailure(
 						this.prisma,
 						historyId,
 						deploymentHistoryId,
 						startTime,
-						partialCFResult.details,
+						partialDetails,
 						partialCounts,
 						error,
+						partialProfile,
 					);
 				} else {
 					await finalizeDeploymentHistoryWithFailure(
@@ -1300,12 +1923,22 @@ export class DeploymentExecutorService {
 			}
 
 			if (error instanceof ConflictError) {
-				if (partialCFResult && partialCounts) {
+				if (partialDetails && partialCounts) {
+					const partialDeployment = {
+						...partialCounts,
+						details: partialDetails,
+						...(partialProfile && { qualityProfile: partialProfile }),
+					};
+					const publicPartialDeployment = {
+						...partialCounts,
+						details: partialDetails,
+						...(partialProfile && {
+							qualityProfile: toPublicQualityProfileMutation(partialProfile),
+						}),
+					};
 					Object.assign(error, {
-						partialDeployment: {
-							...partialCounts,
-							details: partialCFResult.details,
-						},
+						partialDeployment,
+						details: { partialDeployment: publicPartialDeployment },
 					});
 				}
 				throw error;
@@ -1327,10 +1960,22 @@ export class DeploymentExecutorService {
 		templateId: string,
 		instanceIds: string[],
 		userId: string,
-		syncStrategy?: "auto" | "manual" | "notify",
-		instanceSyncStrategies?: Record<string, "auto" | "manual" | "notify">,
-		executionTokens?: Record<string, string>,
+		syncStrategy: "auto" | "manual" | "notify" | undefined,
+		instanceSyncStrategies: Record<string, "auto" | "manual" | "notify"> | undefined,
+		executionTokens: Record<string, string>,
 	): Promise<BulkDeploymentResult> {
+		if (new Set(instanceIds).size !== instanceIds.length) {
+			throw new AppValidationError(
+				"Bulk deployment contains the same service instance more than once.",
+			);
+		}
+		for (const instanceId of instanceIds) {
+			if (!executionTokens[instanceId]) {
+				throw new AppValidationError(
+					"A fresh deployment preview token is required for every user-triggered bulk target.",
+				);
+			}
+		}
 		const template = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId, userId },
 		});
@@ -1355,45 +2000,36 @@ export class DeploymentExecutorService {
 			endpointOwners.set(endpointKey, instance.id);
 		}
 
-		// Deploy in chunks to avoid overwhelming ARR instances with concurrent API calls.
-		// Each deployment makes 10-50+ API calls, so unbounded parallelism can cause timeouts.
-		const MAX_CONCURRENT = 3;
+		// The cleanup topology lease is per user. Run bulk targets sequentially so
+		// individual deployments do not contend with one another for that lease.
 		const results: DeploymentResult[] = [];
-
-		for (let i = 0; i < instanceIds.length; i += MAX_CONCURRENT) {
-			const chunk = instanceIds.slice(i, i + MAX_CONCURRENT);
-			const chunkPromises = chunk.map((instanceId) => {
+		for (let i = 0; i < instanceIds.length; i++) {
+			const instanceId = instanceIds[i]!;
+			try {
 				const strategy = instanceSyncStrategies?.[instanceId] ?? syncStrategy;
-				return this.deploySingleInstance(
-					templateId,
-					instanceId,
-					userId,
-					strategy,
-					undefined,
-					executionTokens?.[instanceId],
+				results.push(
+					await this.deploySingleInstance(
+						templateId,
+						instanceId,
+						userId,
+						strategy,
+						undefined,
+						executionTokens[instanceId],
+					),
 				);
-			});
-
-			const settledResults = await Promise.allSettled(chunkPromises);
-
-			for (let j = 0; j < settledResults.length; j++) {
-				const settled = settledResults[j]!;
-				if (settled.status === "fulfilled") {
-					results.push(settled.value);
-				} else {
-					const globalIndex = i + j;
-					const partialDeployment = getPartialDeploymentResult(settled.reason);
-					results.push({
-						instanceId: instanceIds[globalIndex] ?? `unknown-${globalIndex}`,
-						instanceLabel: `Instance ${globalIndex + 1}`,
-						success: false,
-						customFormatsCreated: partialDeployment?.created ?? 0,
-						customFormatsUpdated: partialDeployment?.updated ?? 0,
-						customFormatsSkipped: partialDeployment?.skipped ?? 0,
-						errors: [getErrorMessage(settled.reason, "Deployment failed")],
-						details: partialDeployment?.details,
-					});
-				}
+			} catch (error) {
+				const partialDeployment = getPartialDeploymentResult(error);
+				results.push({
+					instanceId,
+					instanceLabel: `Instance ${i + 1}`,
+					success: false,
+					customFormatsCreated: partialDeployment?.created ?? 0,
+					customFormatsUpdated: partialDeployment?.updated ?? 0,
+					customFormatsSkipped: partialDeployment?.skipped ?? 0,
+					errors: [getErrorMessage(error, "Deployment failed")],
+					qualityProfileApplied: toPublicQualityProfileMutation(partialDeployment?.qualityProfile),
+					details: partialDeployment?.details,
+				});
 			}
 		}
 

@@ -21,6 +21,16 @@ import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
 import { validateRequest } from "../lib/utils/validate.js";
+import { ConflictError } from "../lib/errors.js";
+import {
+	assertNoActiveDeploymentOwnership,
+	assertNoPendingDeploymentOperation,
+} from "../lib/trash-guides/deployment-operation-gate.js";
+import {
+	createDeploymentEndpointKey,
+	getEquivalentServiceInstanceIds,
+	normalizeDeploymentBaseUrl,
+} from "../lib/trash-guides/deployment-target.js";
 import { invalidatePulseCache } from "./pulse.js";
 
 const idParams = z.object({ id: z.string().min(1) });
@@ -77,6 +87,17 @@ const QUI_TOPOLOGY_UPDATE_FIELDS = [
 	"pathPrefix",
 ] as const;
 const CACHE_PROVIDER_SERVICES = new Set<ServiceType>(["PLEX", "TAUTULLI", "JELLYFIN", "EMBY"]);
+const TRASH_DEPLOYMENT_SERVICES = new Set<ServiceType>(["RADARR", "SONARR"]);
+
+function changesServiceConnection(
+	existing: Pick<ServiceInstance, "service" | "baseUrl">,
+	payload: z.infer<typeof serviceUpdateSchema>,
+): boolean {
+	const targetService = (payload.service ?? existing.service.toLowerCase()).toUpperCase();
+	if (payload.service !== undefined && targetService !== existing.service) return true;
+	if (payload.baseUrl !== undefined && payload.baseUrl !== existing.baseUrl) return true;
+	return Object.hasOwn(payload, "apiKey") || Object.hasOwn(payload, "httpAuth");
+}
 
 function changesQuiTopology(
 	existingService: ServiceType,
@@ -297,15 +318,91 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 				const quiTopologyChanged = changesQuiTopology(existing.service, payload);
 				const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
+				const submittedServiceConnectionChange = changesServiceConnection(existing, payload);
 				const serviceTypeChanged = targetService !== existing.service;
-				const serviceUpdateData = providerConnectionChanged
-					? {
-							...updateData,
-							connectionGeneration: { increment: 1 },
+				const proposedConnection = {
+					...existing,
+					...updateData,
+					service: targetService,
+					baseUrl: payload.baseUrl ?? existing.baseUrl,
+				};
+				const serviceConnectionChanged =
+					submittedServiceConnectionChange &&
+					(serviceTypeChanged ||
+						normalizeDeploymentBaseUrl(proposedConnection.baseUrl) !==
+							normalizeDeploymentBaseUrl(existing.baseUrl) ||
+						app.arrClientFactory.createConnectionCredentialIdentity(proposedConnection) !==
+							app.arrClientFactory.createConnectionCredentialIdentity(existing));
+				if (submittedServiceConnectionChange && !serviceConnectionChanged) {
+					const noOpData = updateData as Record<string, unknown>;
+					delete noOpData.baseUrl;
+					delete noOpData.service;
+					delete noOpData.encryptedApiKey;
+					delete noOpData.encryptionIv;
+					delete noOpData.encryptedHttpAuthCredentials;
+					delete noOpData.httpAuthEncryptionIv;
+				}
+				const trashConnectionChanged =
+					serviceConnectionChanged &&
+					(TRASH_DEPLOYMENT_SERVICES.has(existing.service) ||
+						TRASH_DEPLOYMENT_SERVICES.has(targetService));
+				const getGuardedTrashInstanceIds = async (current: typeof existing): Promise<string[]> => {
+					let guardedInstanceIds = [current.id];
+					if (TRASH_DEPLOYMENT_SERVICES.has(current.service)) {
+						const aliases = await app.prisma.serviceInstance.findMany({
+							where: { userId, service: current.service },
+							select: {
+								id: true,
+								service: true,
+								baseUrl: true,
+								encryptedApiKey: true,
+								encryptionIv: true,
+								encryptedHttpAuthCredentials: true,
+								httpAuthEncryptionIv: true,
+							},
+						});
+						const withCredentialIdentity = aliases.map((alias) => ({
+							...alias,
+							credentialIdentity: app.arrClientFactory.createConnectionCredentialIdentity(alias),
+						}));
+						const target = withCredentialIdentity.find((alias) => alias.id === current.id);
+						if (target) {
+							guardedInstanceIds = getEquivalentServiceInstanceIds(withCredentialIdentity, target);
+							if (!guardedInstanceIds.includes(current.id)) {
+								guardedInstanceIds.push(current.id);
+							}
 						}
-					: updateData;
-				if (quiTopologyChanged) {
-					await withQuiObservationTopologyGuard(userId, async () => {
+					}
+					return guardedInstanceIds;
+				};
+				const serviceUpdateData =
+					providerConnectionChanged || serviceConnectionChanged
+						? {
+								...updateData,
+								connectionGeneration: { increment: 1 },
+							}
+						: updateData;
+				const applyServiceUpdate = async () => {
+					if (quiTopologyChanged) {
+						await withQuiObservationTopologyGuard(userId, async () => {
+							await app.prisma.$transaction(async (tx) => {
+								await resetOtherDefaults(tx);
+								await tx.serviceInstance.updateMany({
+									where: { id, userId },
+									data: serviceUpdateData,
+								});
+								if (payload.tags !== undefined) {
+									await updateInstanceTags(tx, id, payload.tags);
+								}
+								if (serviceTypeChanged || providerConnectionChanged) {
+									await clearDurableProviderCacheState(tx, id);
+								}
+								await clearDurableQuiObservations(tx, userId);
+							});
+							invalidateTorrentListCache(id);
+							clearFileIdIndexCache(id);
+						});
+					} else if (providerConnectionChanged || serviceTypeChanged || trashConnectionChanged) {
 						await app.prisma.$transaction(async (tx) => {
 							await resetOtherDefaults(tx);
 							await tx.serviceInstance.updateMany({
@@ -315,38 +412,41 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							if (payload.tags !== undefined) {
 								await updateInstanceTags(tx, id, payload.tags);
 							}
-							if (serviceTypeChanged || providerConnectionChanged) {
+							if (providerConnectionChanged || serviceTypeChanged) {
 								await clearDurableProviderCacheState(tx, id);
 							}
-							await clearDurableQuiObservations(tx, userId);
 						});
-						// Keep process-local evidence in the same guarded topology
-						// transition. Releasing the guard first would allow another
-						// observer to reuse the previous endpoint's inode inventory.
-						invalidateTorrentListCache(id);
-						clearFileIdIndexCache(id);
-					});
-				} else if (providerConnectionChanged || serviceTypeChanged) {
-					await app.prisma.$transaction(async (tx) => {
-						await resetOtherDefaults(tx);
-						await tx.serviceInstance.updateMany({
+					} else {
+						await resetOtherDefaults(app.prisma);
+						await app.prisma.serviceInstance.updateMany({
 							where: { id, userId },
 							data: serviceUpdateData,
 						});
 						if (payload.tags !== undefined) {
-							await updateInstanceTags(tx, id, payload.tags);
+							await updateInstanceTags(app.prisma, id, payload.tags);
 						}
-						await clearDurableProviderCacheState(tx, id);
-					});
-				} else {
-					await resetOtherDefaults(app.prisma);
-					await app.prisma.serviceInstance.updateMany({
-						where: { id, userId },
-						data: serviceUpdateData,
-					});
-					if (payload.tags !== undefined) {
-						await updateInstanceTags(app.prisma, id, payload.tags);
 					}
+				};
+				if (trashConnectionChanged) {
+					await app.deploymentExecutor.runWithEndpointMutation(
+						userId,
+						existing,
+						"Service connection update",
+						async (endpointKey) => {
+							const current = await requireInstance(app, userId, id);
+							if (createDeploymentEndpointKey(userId, current) !== endpointKey) {
+								throw new ConflictError(
+									"The ARR service connection changed while the update was starting.",
+								);
+							}
+							const guardedInstanceIds = await getGuardedTrashInstanceIds(current);
+							await assertNoPendingDeploymentOperation(app.prisma, userId, guardedInstanceIds);
+							await assertNoActiveDeploymentOwnership(app.prisma, userId, guardedInstanceIds);
+							await applyServiceUpdate();
+						},
+					);
+				} else {
+					await applyServiceUpdate();
 				}
 				if (providerConnectionChanged || serviceTypeChanged) {
 					invalidatePulseCache(userId);
@@ -412,19 +512,89 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			userId,
 			async () => {
 				const existing = await requireInstance(app, userId, id);
-				if (existing.service === "QUI") {
-					await withQuiObservationTopologyGuard(userId, async () => {
-						await app.prisma.$transaction(async (tx) => {
-							await tx.serviceInstance.delete({ where: { id, userId } });
-							await clearDurableQuiObservations(tx, userId);
+				const deleteExisting = async () => {
+					if (existing.service === "QUI") {
+						await withQuiObservationTopologyGuard(userId, async () => {
+							await app.prisma.$transaction(async (tx) => {
+								await tx.serviceInstance.delete({ where: { id, userId } });
+								await clearDurableQuiObservations(tx, userId);
+							});
+							invalidateTorrentListCache(id);
+							clearFileIdIndexCache(id);
 						});
+					} else {
+						await app.prisma.serviceInstance.delete({ where: { id, userId } });
 						invalidateTorrentListCache(id);
 						clearFileIdIndexCache(id);
-					});
+					}
+				};
+
+				if (TRASH_DEPLOYMENT_SERVICES.has(existing.service)) {
+					await app.deploymentExecutor.runWithEndpointMutation(
+						userId,
+						existing,
+						"Service connection deletion",
+						async (endpointKey) => {
+							const current = await requireInstance(app, userId, id);
+							if (createDeploymentEndpointKey(userId, current) !== endpointKey) {
+								throw new ConflictError(
+									"The ARR service connection changed while deletion was starting.",
+								);
+							}
+							const aliases = await app.prisma.serviceInstance.findMany({
+								where: { userId, service: current.service },
+								select: {
+									id: true,
+									service: true,
+									baseUrl: true,
+									encryptedApiKey: true,
+									encryptionIv: true,
+									encryptedHttpAuthCredentials: true,
+									httpAuthEncryptionIv: true,
+								},
+							});
+							const withCredentialIdentity = aliases.map((alias) => ({
+								...alias,
+								credentialIdentity: app.arrClientFactory.createConnectionCredentialIdentity(alias),
+							}));
+							const target = withCredentialIdentity.find((alias) => alias.id === id);
+							const guardedInstanceIds = target
+								? getEquivalentServiceInstanceIds(withCredentialIdentity, target)
+								: [id];
+							if (!guardedInstanceIds.includes(id)) guardedInstanceIds.push(id);
+							await assertNoPendingDeploymentOperation(app.prisma, userId, guardedInstanceIds);
+							const [activeSyncs, activeDeployments] = await Promise.all([
+								app.prisma.trashSyncHistory.count({
+									where: {
+										instanceId: id,
+										userId,
+										rolledBack: false,
+										backupId: { not: null },
+										status: { in: ["SUCCESS", "PARTIAL_SUCCESS", "IN_PROGRESS", "RUNNING"] },
+									},
+								}),
+								app.prisma.templateDeploymentHistory.count({
+									where: {
+										instanceId: id,
+										userId,
+										rolledBack: false,
+										backupId: { not: null },
+										status: {
+											in: ["SUCCESS", "PARTIAL_SUCCESS", "PARTIAL_UNDEPLOY", "IN_PROGRESS"],
+										},
+									},
+								}),
+							]);
+							if (activeSyncs > 0 || activeDeployments > 0) {
+								throw new ConflictError(
+									"This ARR connection has active deployment ownership or rollback history. Roll back or undeploy those operations before deleting it.",
+								);
+							}
+							await deleteExisting();
+						},
+					);
 				} else {
-					await app.prisma.serviceInstance.delete({ where: { id, userId } });
-					invalidateTorrentListCache(id);
-					clearFileIdIndexCache(id);
+					await deleteExisting();
 				}
 
 				request.log.info({ instanceId: id }, "Service instance deleted");

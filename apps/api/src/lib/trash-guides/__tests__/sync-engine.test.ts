@@ -5,7 +5,7 @@
  * are properly configured before sync operations.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
 import { ConflictError } from "../../errors.js";
@@ -168,7 +168,7 @@ describe("SyncEngine - execute()", () => {
 		);
 	});
 
-	it("records an honest partial result when refresh succeeds but reviewed deployment is stale", async () => {
+	it("does not refresh a manually reviewed template before consuming its token", async () => {
 		const historyUpdate = vi.fn().mockResolvedValue({});
 		const prisma = {
 			trashSyncHistory: {
@@ -193,19 +193,18 @@ describe("SyncEngine - execute()", () => {
 		await expect(engine.execute(createSyncOptions(), undefined, "a".repeat(64))).rejects.toThrow(
 			"Template changed after validation",
 		);
+		expect(templateUpdater.syncTemplate).not.toHaveBeenCalled();
 		expect(historyUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: { id: "sync-1" },
 				data: expect.objectContaining({
-					status: "PARTIAL_SUCCESS",
-					configsApplied: 1,
+					status: "FAILED",
+					configsApplied: 0,
 					configsFailed: 1,
-					appliedConfigs: JSON.stringify([
-						{ name: "Template refreshed from TRaSH Guides", action: "updated" },
-					]),
+					appliedConfigs: JSON.stringify([]),
 					failedConfigs: JSON.stringify([
 						{
-							name: "Quality profile deployment",
+							name: "Deployment phase",
 							error: "Template changed after validation",
 						},
 					]),
@@ -245,11 +244,10 @@ describe("SyncEngine - execute()", () => {
 			expect.objectContaining({
 				data: expect.objectContaining({
 					status: "PARTIAL_SUCCESS",
-					configsApplied: 3,
+					configsApplied: 2,
 					configsFailed: 1,
 					configsSkipped: 2,
 					appliedConfigs: JSON.stringify([
-						{ name: "Template refreshed from TRaSH Guides", action: "updated" },
 						{ name: "Created CF", action: "created" },
 						{ name: "Updated CF", action: "updated" },
 					]),
@@ -258,11 +256,197 @@ describe("SyncEngine - execute()", () => {
 		);
 		expect(progress).toHaveBeenLastCalledWith(
 			expect.objectContaining({
-				totalConfigs: 6,
-				appliedConfigs: 3,
+				totalConfigs: 5,
+				appliedConfigs: 2,
 				failedConfigs: 1,
 			}),
 		);
+	});
+
+	it("preserves the original partial-success conflict when history persistence fails", async () => {
+		const historyUpdate = vi.fn().mockRejectedValue(new Error("database unavailable"));
+		const prisma = {
+			trashSyncHistory: {
+				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
+				update: historyUpdate,
+			},
+		};
+		const conflict = Object.assign(new ConflictError("Profile changed during deployment"), {
+			partialDeployment: {
+				created: 1,
+				updated: 0,
+				skipped: 0,
+				details: { created: ["Created CF"], updated: [] },
+			},
+			details: {
+				partialDeployment: {
+					created: 1,
+					updated: 0,
+					skipped: 0,
+					details: { created: ["Created CF"], updated: [] },
+				},
+			},
+		});
+		const engine = new SyncEngine(
+			prisma as never,
+			{ syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }) } as never,
+			{ deploySingleInstance: vi.fn().mockRejectedValue(conflict) } as never,
+		);
+
+		let thrown: unknown;
+		try {
+			await engine.execute(createSyncOptions(), undefined, "a".repeat(64));
+		} catch (error) {
+			thrown = error;
+		}
+
+		expect(thrown).toBe(conflict);
+		expect(conflict.details).toMatchObject({
+			partialDeployment: { created: 1 },
+			warnings: [expect.stringContaining("could not be written to sync history")],
+		});
+	});
+
+	it("surfaces deployment audit warnings through manual sync", async () => {
+		const prisma = {
+			trashSyncHistory: {
+				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
+				update: vi.fn().mockResolvedValue({}),
+			},
+		};
+		const deploymentWarning =
+			"Deployment completed, but its history record could not be finalized. Check the server logs.";
+		const engine = new SyncEngine(
+			prisma as never,
+			{ syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }) } as never,
+			{
+				deploySingleInstance: vi.fn().mockResolvedValue({
+					instanceId: "instance-123",
+					instanceLabel: "Test Radarr",
+					success: true,
+					customFormatsCreated: 1,
+					customFormatsUpdated: 0,
+					customFormatsSkipped: 0,
+					errors: [],
+					warnings: [deploymentWarning],
+					details: { created: ["Created CF"], updated: [], failed: [] },
+				}),
+			} as never,
+		);
+		const progress = vi.fn();
+		engine.onProgress("sync-1", progress);
+
+		const result = await engine.execute(createSyncOptions(), undefined, "a".repeat(64));
+
+		expect(result).toMatchObject({
+			success: true,
+			status: "SUCCESS",
+			warnings: [deploymentWarning],
+		});
+		expect(progress).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				status: "COMPLETED",
+				currentStep: "Sync completed with warnings",
+			}),
+		);
+	});
+
+	it("counts quality profile and naming mutations in completed sync history", async () => {
+		const historyUpdate = vi.fn().mockResolvedValue({});
+		const prisma = {
+			trashSyncHistory: {
+				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
+				update: historyUpdate,
+			},
+		};
+		const engine = new SyncEngine(
+			prisma as never,
+			{ syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }) } as never,
+			{
+				deploySingleInstance: vi.fn().mockResolvedValue({
+					instanceId: "instance-123",
+					instanceLabel: "Test Radarr",
+					success: true,
+					customFormatsCreated: 1,
+					customFormatsUpdated: 0,
+					customFormatsSkipped: 1,
+					errors: [],
+					qualityProfileApplied: {
+						profileId: 7,
+						profileName: "HD-1080p",
+						action: "updated",
+					},
+					namingFieldsApplied: 2,
+					details: { created: ["Created CF"], updated: [], failed: [] },
+				}),
+			} as never,
+		);
+
+		const result = await engine.execute(createSyncOptions(), undefined, "a".repeat(64));
+
+		expect(result).toMatchObject({
+			success: true,
+			status: "SUCCESS",
+			configsApplied: 3,
+			configsFailed: 0,
+			configsSkipped: 1,
+		});
+		expect(historyUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					configsApplied: 3,
+					configsSkipped: 1,
+					appliedConfigs: JSON.stringify([
+						{ name: "Created CF", action: "created" },
+						{
+							name: "HD-1080p",
+							action: "updated",
+							type: "quality_profile",
+							id: 7,
+						},
+						{ name: "Naming configuration", action: "updated", fields: 2 },
+					]),
+				}),
+			}),
+		);
+	});
+
+	it("preserves successful deployment counts when sync history finalization fails", async () => {
+		const prisma = {
+			trashSyncHistory: {
+				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
+				update: vi.fn().mockRejectedValue(new Error("database unavailable")),
+			},
+		};
+		const engine = new SyncEngine(
+			prisma as never,
+			{ syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }) } as never,
+			{
+				deploySingleInstance: vi.fn().mockResolvedValue({
+					instanceId: "instance-123",
+					instanceLabel: "Test Radarr",
+					success: true,
+					customFormatsCreated: 1,
+					customFormatsUpdated: 1,
+					customFormatsSkipped: 0,
+					errors: [],
+					details: { created: ["Created CF"], updated: ["Updated CF"], failed: [] },
+				}),
+			} as never,
+		);
+
+		const result = await engine.execute(createSyncOptions(), undefined, "a".repeat(64));
+
+		expect(result).toMatchObject({
+			success: true,
+			status: "SUCCESS",
+			configsApplied: 2,
+			configsFailed: 0,
+		});
+		expect(result.warnings).toEqual([
+			"Sync completed, but its history record could not be finalized. Check the server logs.",
+		]);
+		expect(prisma.trashSyncHistory.update).toHaveBeenCalledTimes(1);
 	});
 });
 

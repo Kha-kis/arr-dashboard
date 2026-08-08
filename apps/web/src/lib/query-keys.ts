@@ -164,6 +164,7 @@ export const trashCacheKeys = {
 
 export const syncKeys = {
 	progress: (syncId: string) => ["sync-progress", syncId] as const,
+	historyAll: (instanceId: string) => ["sync-history", instanceId] as const,
 	history: (instanceId: string, params?: Record<string, unknown>) =>
 		["sync-history", instanceId, params] as const,
 	detail: (syncId: string) => ["sync-detail", syncId] as const,

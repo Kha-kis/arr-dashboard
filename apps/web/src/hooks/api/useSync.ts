@@ -230,7 +230,7 @@ export function useValidateSync(options?: UseValidateSyncOptions) {
 export function useExecuteSync() {
 	const queryClient = useQueryClient();
 	const invalidateSyncConsumers = (variables: SyncExecuteRequest) => {
-		queryClient.invalidateQueries({ queryKey: syncKeys.history(variables.instanceId) });
+		queryClient.invalidateQueries({ queryKey: syncKeys.historyAll(variables.instanceId) });
 		queryClient.invalidateQueries({
 			queryKey: trashGuidesKeys.templates.stats(variables.templateId),
 		});
@@ -364,8 +364,16 @@ export function useRollbackSync() {
 	const queryClient = useQueryClient();
 
 	return useMutation<RollbackResult, Error, RollbackVariables>({
-		mutationFn: ({ syncId }) => rollbackSync(syncId),
-		onSuccess: (data, variables) => {
+		mutationFn: async ({ syncId }) => {
+			const result = await rollbackSync(syncId);
+			if (!result.success) {
+				const summary = `Rollback partially failed: ${result.restoredCount} restored, ${result.failedCount} failed`;
+				const details = result.errors?.filter(Boolean).join("; ");
+				throw new Error(details ? `${summary}. ${details}` : summary);
+			}
+			return result;
+		},
+		onSettled: (_data, _error, variables) => {
 			// Invalidate sync detail
 			queryClient.invalidateQueries({
 				queryKey: syncKeys.detail(variables.syncId),

@@ -26,6 +26,7 @@
  */
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createDeploymentEndpointKey } from "../../lib/trash-guides/deployment-target.js";
 
 const { mockTestConnection } = vi.hoisted(() => ({
 	mockTestConnection: vi.fn(),
@@ -114,7 +115,7 @@ function createPrismaStub() {
 		}),
 	};
 
-	return {
+	const prisma = {
 		_instances: instances,
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
@@ -131,7 +132,22 @@ function createPrismaStub() {
 			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			createMany: vi.fn().mockResolvedValue({ count: 0 }),
 		},
+		templateQualityProfileMapping: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		instanceQualityProfileOverride: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		trashSyncHistory: {
+			findMany: vi.fn().mockResolvedValue([]),
+			count: vi.fn().mockResolvedValue(0),
+		},
+		templateDeploymentHistory: {
+			findMany: vi.fn().mockResolvedValue([]),
+			count: vi.fn().mockResolvedValue(0),
+		},
 	};
+	return Object.assign(prisma, {
+		$transaction: vi.fn(async (operation: (tx: typeof prisma) => Promise<unknown>) =>
+			operation(prisma),
+		),
+	});
 }
 
 /**
@@ -202,6 +218,16 @@ describe("Service instance lifecycle", () => {
 		app = Fastify();
 		app.decorate("prisma", prisma as any);
 		app.decorate("encryptor", encryptor as any);
+		app.decorate("arrClientFactory", {
+			createConnectionCredentialIdentity: vi.fn((instance) =>
+				JSON.stringify([instance.encryptedApiKey, instance.encryptedHttpAuthCredentials ?? null]),
+			),
+		} as never);
+		app.decorate("deploymentExecutor", {
+			runWithEndpointMutation: vi.fn(async (userId, target, _operation, callback) =>
+				callback(createDeploymentEndpointKey(userId, target)),
+			),
+		} as never);
 		app.decorate("notificationService", {
 			notify: vi.fn().mockResolvedValue(undefined),
 		} as never);

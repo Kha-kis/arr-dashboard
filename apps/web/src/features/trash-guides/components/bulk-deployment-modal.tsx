@@ -47,6 +47,7 @@ import {
 	useExecuteBulkDeployment,
 } from "../../../hooks/api/useDeploymentPreview";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 import { InstanceQualityOverrideModal } from "./instance-quality-override-modal";
@@ -171,6 +172,7 @@ export const BulkDeploymentModal = ({
 	onDeploySuccess,
 }: BulkDeploymentModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const queryClient = useQueryClient();
 	// Track selection state and sync strategies per instance
 	const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
@@ -178,8 +180,9 @@ export const BulkDeploymentModal = ({
 	// Quality override editor state
 	const [editingQualityOverride, setEditingQualityOverride] = useState<{
 		instanceId: string;
-		instanceLabel: string;
 	} | null>(null);
+	const displayInstanceLabel = (instanceId: string, instanceLabel: string) =>
+		incognitoMode ? getLinuxInstanceName(instanceId) : instanceLabel;
 
 	// Get all instance IDs for the bulk preview query
 	const allInstanceIds = useMemo(() => instances.map((i) => i.instanceId), [instances]);
@@ -285,16 +288,18 @@ export const BulkDeploymentModal = ({
 	const handleDeploy = () => {
 		if (!templateId) return;
 
-		const deployableInstances = instancePreviews.filter(
-			(inst) => inst.selected && inst.preview?.canDeploy,
-		);
-
-		if (deployableInstances.length === 0) return;
+		const selectedInstancesForDeployment = instancePreviews.filter((inst) => inst.selected);
+		if (
+			selectedInstancesForDeployment.length === 0 ||
+			selectedInstancesForDeployment.some((inst) => !inst.preview?.canDeploy)
+		) {
+			return;
+		}
 
 		// Build per-instance sync strategies map
 		const instanceSyncStrategies: Record<string, SyncStrategy> = {};
 		const executionTokens: Record<string, string> = {};
-		for (const inst of deployableInstances) {
+		for (const inst of selectedInstancesForDeployment) {
 			instanceSyncStrategies[inst.instanceId] = inst.syncStrategy;
 			executionTokens[inst.instanceId] = inst.preview!.executionToken;
 		}
@@ -302,19 +307,23 @@ export const BulkDeploymentModal = ({
 		bulkDeployMutation.mutate(
 			{
 				templateId,
-				instanceIds: deployableInstances.map((inst) => inst.instanceId),
+				instanceIds: selectedInstancesForDeployment.map((inst) => inst.instanceId),
 				instanceSyncStrategies,
 				executionTokens,
 			},
 			{
 				onSuccess: (response) => {
 					if (response.success) {
-						// Notify parent component of success
-						onDeploySuccess?.();
-						// Close after showing success message for 2 seconds
-						setTimeout(() => {
-							onClose();
-						}, 2000);
+						const hasWarnings = response.result.results.some(
+							(result) => (result.warnings?.length ?? 0) > 0,
+						);
+						if (!hasWarnings) {
+							// Close after showing success message for 2 seconds
+							setTimeout(() => {
+								onDeploySuccess?.();
+								onClose();
+							}, 2000);
+						}
 					}
 				},
 			},
@@ -329,13 +338,27 @@ export const BulkDeploymentModal = ({
 	const deployableCount = instancePreviews.filter(
 		(inst) => inst.selected && inst.preview?.canDeploy,
 	).length;
+	const bulkDeploymentWarnings =
+		bulkDeployMutation.data?.result.results.flatMap((result) =>
+			(result.warnings ?? []).map((warning) => ({
+				instanceId: result.instanceId,
+				instanceLabel: result.instanceLabel,
+				warning,
+			})),
+		) ?? [];
+	const failedDeploymentResults =
+		bulkDeployMutation.data?.result.results.filter((result) => !result.success) ?? [];
+	const editingInstance = editingQualityOverride
+		? instances.find((instance) => instance.instanceId === editingQualityOverride.instanceId)
+		: undefined;
 
 	const totalChanges = instancePreviews
 		.filter((inst) => inst.selected && inst.preview)
 		.reduce((sum, inst) => sum + (inst.preview?.totalItems || 0), 0);
 
-	// Can deploy if at least one selected instance can be deployed
-	const canDeploy = deployableCount > 0 && !previewsLoading;
+	// A bulk request must represent every selected instance; never silently omit one.
+	const canDeploy =
+		selectedCount > 0 && allPreviewsLoaded && deployableCount === selectedCount && !previewsLoading;
 
 	return (
 		<LegacyDialog open={open} onOpenChange={onClose} size="xl">
@@ -424,7 +447,7 @@ export const BulkDeploymentModal = ({
 								{/* Instance info */}
 								<Server className="h-4 w-4 text-muted-foreground shrink-0" />
 								<span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
-									{inst.instanceLabel}
+									{displayInstanceLabel(inst.instanceId, inst.instanceLabel)}
 								</span>
 
 								{/* Quality config override indicator/button */}
@@ -434,7 +457,6 @@ export const BulkDeploymentModal = ({
 										onClick={() =>
 											setEditingQualityOverride({
 												instanceId: inst.instanceId,
-												instanceLabel: inst.instanceLabel,
 											})
 										}
 										className={cn(
@@ -599,34 +621,82 @@ export const BulkDeploymentModal = ({
 								{bulkDeployMutation.data?.result.failedInstances} of{" "}
 								{bulkDeployMutation.data?.result.totalInstances} deployments failed
 							</p>
+							{failedDeploymentResults.map((result) => {
+								const applied =
+									result.customFormatsCreated +
+									result.customFormatsUpdated +
+									(result.qualityProfileApplied ? 1 : 0) +
+									(result.namingFieldsApplied && result.namingFieldsApplied > 0 ? 1 : 0);
+								return (
+									<p
+										key={result.instanceId}
+										className="text-sm mt-1"
+										style={{ color: SEMANTIC_COLORS.error.text }}
+									>
+										{displayInstanceLabel(result.instanceId, result.instanceLabel)}: {applied}{" "}
+										change
+										{applied === 1 ? "" : "s"} applied before failure
+									</p>
+								);
+							})}
 						</div>
 					</div>
 				)}
-				{bulkDeployMutation.isSuccess && bulkDeployMutation.data?.success && (
+				{bulkDeployMutation.isSuccess && bulkDeploymentWarnings.length > 0 && (
 					<div
 						className="flex items-start gap-2 rounded-xl p-3 mr-auto"
 						style={{
-							backgroundColor: SEMANTIC_COLORS.success.bg,
-							border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+							backgroundColor: SEMANTIC_COLORS.warning.bg,
+							border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
 						}}
 					>
-						<CheckCircle2
+						<AlertTriangle
 							className="h-5 w-5 mt-0.5 shrink-0"
-							style={{ color: SEMANTIC_COLORS.success.from }}
+							style={{ color: SEMANTIC_COLORS.warning.from }}
 						/>
 						<div>
-							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>
-								Deployment Successful
+							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
+								Deployment completed with warnings
 							</p>
-							<p
-								className="text-sm mt-1 opacity-80"
-								style={{ color: SEMANTIC_COLORS.success.text }}
-							>
-								Custom Formats deployed to all selected instances
-							</p>
+							{bulkDeploymentWarnings.map((item, index) => (
+								<p
+									key={`${item.instanceId}-${index}-${item.warning}`}
+									className="text-sm mt-1"
+									style={{ color: SEMANTIC_COLORS.warning.text }}
+								>
+									{displayInstanceLabel(item.instanceId, item.instanceLabel)}: {item.warning}
+								</p>
+							))}
 						</div>
 					</div>
 				)}
+				{bulkDeployMutation.isSuccess &&
+					bulkDeployMutation.data?.success &&
+					bulkDeploymentWarnings.length === 0 && (
+						<div
+							className="flex items-start gap-2 rounded-xl p-3 mr-auto"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.success.bg,
+								border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+							}}
+						>
+							<CheckCircle2
+								className="h-5 w-5 mt-0.5 shrink-0"
+								style={{ color: SEMANTIC_COLORS.success.from }}
+							/>
+							<div>
+								<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>
+									Deployment Successful
+								</p>
+								<p
+									className="text-sm mt-1 opacity-80"
+									style={{ color: SEMANTIC_COLORS.success.text }}
+								>
+									Custom Formats deployed to all selected instances
+								</p>
+							</div>
+						</div>
+					)}
 				<Button
 					variant="outline"
 					onClick={onClose}
@@ -656,26 +726,29 @@ export const BulkDeploymentModal = ({
 					) : bulkDeployMutation.isPending ? (
 						<>
 							<Loader2 className="h-4 w-4 animate-spin" />
-							Deploying to {deployableCount} Instance{deployableCount !== 1 ? "s" : ""}...
+							Deploying to {selectedCount} Instance{selectedCount !== 1 ? "s" : ""}...
 						</>
 					) : (
 						<>
 							<Rocket className="h-4 w-4" />
-							Deploy to {deployableCount} Instance{deployableCount !== 1 ? "s" : ""}
+							Deploy to {selectedCount} Instance{selectedCount !== 1 ? "s" : ""}
 						</>
 					)}
 				</Button>
 			</LegacyDialogFooter>
 
 			{/* Instance Quality Override Modal */}
-			{editingQualityOverride && templateId && serviceType && (
+			{editingQualityOverride && editingInstance && templateId && serviceType && (
 				<InstanceQualityOverrideModal
 					open={true}
 					onClose={() => setEditingQualityOverride(null)}
 					templateId={templateId}
 					templateName={templateName ?? "Template"}
 					instanceId={editingQualityOverride.instanceId}
-					instanceLabel={editingQualityOverride.instanceLabel}
+					instanceLabel={displayInstanceLabel(
+						editingInstance.instanceId,
+						editingInstance.instanceLabel,
+					)}
 					serviceType={serviceType}
 					templateDefaultConfig={templateDefaultQualityConfig}
 					onSaved={() => {
