@@ -136,6 +136,31 @@ describe("shouldRetainDeploymentBackup", () => {
 	it.each([
 		["raw Custom Format array", JSON.stringify([])],
 		["object snapshot", JSON.stringify({ customFormats: [], qualityProfile: null })],
+		[
+			"object snapshot with Unknown quality",
+			JSON.stringify({
+				customFormats: [],
+				qualityProfile: {
+					id: 4,
+					name: "Legacy",
+					upgradeAllowed: true,
+					cutoff: 0,
+					items: [
+						{
+							id: 0,
+							name: "Unknown",
+							allowed: false,
+							quality: { id: 0, name: "Unknown" },
+							items: [],
+						},
+					],
+					minFormatScore: 0,
+					cutoffFormatScore: 0,
+					minUpgradeFormatScore: 0,
+					formatItems: [],
+				},
+			}),
+		],
 	] as const)("allows positively identified legacy %s cleanup", (_label, backupData) => {
 		expect(shouldRetainDeploymentBackup(backupData)).toBe(false);
 	});

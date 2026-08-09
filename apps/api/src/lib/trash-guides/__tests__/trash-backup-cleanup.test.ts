@@ -35,6 +35,31 @@ function ledger(status: "pending" | "applied") {
 	});
 }
 
+function legacyUnknownQualityBackup() {
+	return JSON.stringify({
+		customFormats: [],
+		qualityProfile: {
+			id: 4,
+			name: "Legacy",
+			upgradeAllowed: true,
+			cutoff: 0,
+			items: [
+				{
+					id: 0,
+					name: "Unknown",
+					allowed: false,
+					quality: { id: 0, name: "Unknown" },
+					items: [],
+				},
+			],
+			minFormatScore: 0,
+			cutoffFormatScore: 0,
+			minUpgradeFormatScore: 0,
+			formatItems: [],
+		},
+	});
+}
+
 describe("TrashBackupCleanupService", () => {
 	it.each(["expired", "orphaned"] as const)(
 		"retains uncertain and current ledgers during %s cleanup while deleting known legacy backups",
@@ -59,11 +84,12 @@ describe("TrashBackupCleanupService", () => {
 					id: "legacy-object",
 					backupData: JSON.stringify({ customFormats: [], qualityProfile: null }),
 				},
+				{ id: "legacy-unknown-quality", backupData: legacyUnknownQualityBackup() },
 			].map((candidate) => ({
 				...candidate,
 				_count: { syncHistory: 0, deploymentHistory: 0 },
 			}));
-			const deleteMany = vi.fn().mockResolvedValue({ count: 2 });
+			const deleteMany = vi.fn().mockResolvedValue({ count: 3 });
 			const prisma = {
 				trashBackup: {
 					findMany: vi
@@ -77,9 +103,9 @@ describe("TrashBackupCleanupService", () => {
 			const service = new TrashBackupCleanupService(prisma as never, logger as never);
 
 			await expect(service.runCleanup()).resolves.toEqual({
-				expiredCount: phase === "expired" ? 2 : 0,
-				orphanedCount: phase === "orphaned" ? 2 : 0,
-				totalCleaned: 2,
+				expiredCount: phase === "expired" ? 3 : 0,
+				orphanedCount: phase === "orphaned" ? 3 : 0,
+				totalCleaned: 3,
 			});
 			expect(deleteMany).toHaveBeenCalledTimes(1);
 			expect(deleteMany).toHaveBeenCalledWith({
@@ -91,6 +117,10 @@ describe("TrashBackupCleanupService", () => {
 						{
 							id: "legacy-object",
 							backupData: JSON.stringify({ customFormats: [], qualityProfile: null }),
+						},
+						{
+							id: "legacy-unknown-quality",
+							backupData: legacyUnknownQualityBackup(),
 						},
 					],
 				}),

@@ -117,9 +117,72 @@ describe("rollbackQualityProfileDeployment", () => {
 		expect(update).toHaveBeenCalledWith(4, before);
 	});
 
+	it("restores a valid profile containing ARR's Unknown quality ID zero", async () => {
+		const before = completeProfile({
+			cutoff: 0,
+			items: [
+				{
+					id: 0,
+					name: "Unknown",
+					allowed: false,
+					quality: { id: 0, name: "Unknown" },
+					items: [],
+				},
+			],
+		});
+		const deployed = { ...before, formatItems: [{ format: 7, score: 100 }] };
+		const update = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([deployed]),
+				getById: vi.fn().mockResolvedValue(deployed),
+				update,
+			},
+		};
+
+		await expect(
+			rollbackQualityProfileDeployment(client as never, {
+				beforeProfile: before,
+				action: "updated",
+				status: "applied",
+				profileId: 4,
+				postStateToken: createQualityProfileStateToken(deployed),
+				intendedPostStateToken: null,
+			}),
+		).resolves.toBeUndefined();
+		expect(update).toHaveBeenCalledWith(4, before);
+	});
+
 	it.each([
 		["incomplete", { id: 4, name: "Existing" }],
 		["malformed nested item", completeProfile({ items: [{}] })],
+		[
+			"nested item with null children",
+			completeProfile({
+				items: [
+					{
+						id: 1,
+						name: "HD",
+						allowed: true,
+						quality: { id: 1, name: "HD" },
+						items: null,
+					},
+				],
+			}),
+		],
+		[
+			"nested item with omitted children",
+			completeProfile({
+				items: [
+					{
+						id: 1,
+						name: "HD",
+						allowed: true,
+						quality: { id: 1, name: "HD" },
+					},
+				],
+			}),
+		],
 		["same-title cross-wired", completeProfile({ id: 9 })],
 	] as const)("rejects a %s persisted quality-profile snapshot", async (_label, beforeProfile) => {
 		const deployed = { id: 4, name: "Existing", formatItems: [{ format: 7, score: 100 }] };

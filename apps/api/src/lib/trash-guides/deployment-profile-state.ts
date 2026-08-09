@@ -4,23 +4,23 @@ import { createQualityProfileStateToken } from "./deployment-target.js";
 
 type ArrProfileClient = SonarrClient | RadarrClient;
 const restorableQualitySchema = z.looseObject({
-	id: z.number().int().positive().safe(),
+	id: z.number().int().nonnegative().safe(),
 	name: z.string().min(1),
 });
 const restorableQualityProfileItemSchema: z.ZodType = z.lazy(() =>
 	z
 		.looseObject({
-			id: z.number().int().positive().safe(),
+			id: z.number().int().nonnegative().safe(),
 			name: z.string().min(1),
 			allowed: z.boolean(),
 			quality: restorableQualitySchema.optional(),
-			items: z.array(restorableQualityProfileItemSchema).nullable().optional(),
+			items: z.array(restorableQualityProfileItemSchema),
 		})
 		.superRefine((item, ctx) => {
-			if (!item.quality && !Array.isArray(item.items)) {
+			if (!item.quality && item.items.length === 0) {
 				ctx.addIssue({
 					code: "custom",
-					message: "Quality profile item requires a quality or nested items",
+					message: "Quality profile item requires a quality or non-empty nested items",
 				});
 			}
 		}),
@@ -29,7 +29,7 @@ export const restorableQualityProfileSchema = z.looseObject({
 	id: z.number().int().positive().safe(),
 	name: z.string().min(1),
 	upgradeAllowed: z.boolean(),
-	cutoff: z.number().int().positive().safe(),
+	cutoff: z.number().int().nonnegative().safe(),
 	items: z.array(restorableQualityProfileItemSchema),
 	minFormatScore: z.number().int().safe(),
 	cutoffFormatScore: z.number().int().safe(),
