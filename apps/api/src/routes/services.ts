@@ -221,15 +221,29 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					const endpointInstanceIds = endpointAliases.map((alias) => alias.id);
 					const [mappings, overrides] = await Promise.all([
 						tx.templateQualityProfileMapping.findMany({
-							where: {
-								instanceId: { in: endpointInstanceIds },
-								template: { userId },
+							where: { instanceId: { in: endpointInstanceIds } },
+							include: {
+								template: { select: { userId: true } },
+								instance: { select: { userId: true } },
 							},
 						}),
 						tx.instanceQualityProfileOverride.findMany({
-							where: { userId, instanceId: { in: endpointInstanceIds } },
+							where: { instanceId: { in: endpointInstanceIds } },
+							include: { instance: { select: { userId: true } } },
 						}),
 					]);
+					if (
+						mappings.some(
+							(mapping) => mapping.template.userId !== userId || mapping.instance.userId !== userId,
+						) ||
+						overrides.some(
+							(override) => override.userId !== userId || override.instance.userId !== userId,
+						)
+					) {
+						throw new ConflictError(
+							"Saved ARR profile state has inconsistent ownership and cannot be migrated or deleted.",
+						);
+					}
 					if (overrides.some((override) => override.status !== "APPLIED")) {
 						throw new ConflictError(
 							"This ARR endpoint has unresolved score intent. Reconcile it before deleting an alias.",
@@ -523,19 +537,33 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					...updateData,
 					service: targetService,
 				};
+				const arrConnectionInvolved = isArrService(existing.service) || isArrService(targetService);
+				const arrCredentialFieldsSubmitted =
+					payload.apiKey !== undefined || payload.httpAuth !== undefined;
+				const arrCredentialsChanged =
+					arrConnectionInvolved &&
+					arrCredentialFieldsSubmitted &&
+					app.arrClientFactory.createConnectionCredentialIdentity(existing) !==
+						app.arrClientFactory.createConnectionCredentialIdentity(targetConnection);
+				if (arrConnectionInvolved && arrCredentialFieldsSubmitted && !arrCredentialsChanged) {
+					if (payload.apiKey !== undefined) {
+						delete updateData.encryptedApiKey;
+						delete updateData.encryptionIv;
+					}
+					if (payload.httpAuth !== undefined) {
+						delete updateData.encryptedHttpAuthCredentials;
+						delete updateData.httpAuthEncryptionIv;
+					}
+				}
 				const arrConnectionFieldsSubmitted =
-					serviceTypeChanged ||
-					payload.baseUrl !== undefined ||
-					payload.apiKey !== undefined ||
-					payload.httpAuth !== undefined;
+					serviceTypeChanged || payload.baseUrl !== undefined || arrCredentialFieldsSubmitted;
 				const arrConnectionChanged =
-					(isArrService(existing.service) || isArrService(targetService)) &&
+					arrConnectionInvolved &&
 					arrConnectionFieldsSubmitted &&
 					(serviceTypeChanged ||
 						normalizeDeploymentBaseUrl(existing.baseUrl) !==
 							normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
-						app.arrClientFactory.createConnectionCredentialIdentity(existing) !==
-							app.arrClientFactory.createConnectionCredentialIdentity(targetConnection));
+						arrCredentialsChanged);
 				if (arrConnectionChanged && isArrService(existing.service)) {
 					const aliases = await app.prisma.serviceInstance.findMany({
 						where: { userId, service: existing.service },

@@ -454,27 +454,28 @@ describe("PUT /services/:id", () => {
 		).toBe(false);
 	});
 
-	it("blocks a real ARR connection change while an equivalent alias has unresolved intent", async () => {
+	it("blocks a real ARR credential change while an equivalent alias has unresolved intent", async () => {
 		const primary = makeInstance({
 			id: "inst-1",
 			service: "RADARR",
 			baseUrl: "http://radarr:7878",
+			encryptedApiKey: "old-encrypted-key",
 		});
 		const alias = makeInstance({
 			id: "inst-alias",
 			service: "RADARR",
 			baseUrl: "http://radarr:7878/",
+			encryptedApiKey: "old-encrypted-key",
 		});
 		mockRequireInstance.mockResolvedValue(primary);
-		mockBuildUpdateData.mockReturnValue({ baseUrl: "http://radarr-new:7878" });
-		mockPrisma.serviceInstance.findMany.mockResolvedValue([primary, alias]);
-		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
-			makeInstance({
-				id: "inst-1",
-				service: "RADARR",
-				baseUrl: "http://radarr-new:7878",
-			}),
+		mockBuildUpdateData.mockReturnValue({
+			encryptedApiKey: "new-encrypted-key",
+			encryptionIv: "new-iv",
+		});
+		vi.mocked((app as any).arrClientFactory.createConnectionCredentialIdentity).mockImplementation(
+			(candidate: { encryptedApiKey: string }) => candidate.encryptedApiKey,
 		);
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([primary, alias]);
 		mockPrisma.instanceQualityProfileOverride.findMany.mockResolvedValue([
 			{
 				id: "pending-alias-intent",
@@ -487,7 +488,7 @@ describe("PUT /services/:id", () => {
 		]);
 
 		const res = await injectAuthenticated("PUT", "/services/inst-1", {
-			body: { baseUrl: "http://radarr-new:7878" },
+			body: { apiKey: "different-api-key" },
 		});
 
 		expect(res.statusCode).toBe(409);
@@ -762,6 +763,8 @@ describe("DELETE /services/:id", () => {
 				qualityProfileName: "Any",
 				connectionGeneration: source.connectionGeneration,
 				connectionStateToken: createDeploymentConnectionStateToken(source),
+				template: { userId: "user-1" },
+				instance: { userId: "user-1" },
 			},
 		]);
 		mockPrisma.instanceQualityProfileOverride.findMany.mockResolvedValue([
@@ -772,8 +775,10 @@ describe("DELETE /services/:id", () => {
 				customFormatId: 7,
 				score: -10_000,
 				status: "APPLIED",
+				userId: "user-1",
 				connectionGeneration: source.connectionGeneration,
 				connectionStateToken: createDeploymentConnectionStateToken(source),
+				instance: { userId: "user-1" },
 			},
 		]);
 
@@ -827,6 +832,8 @@ describe("DELETE /services/:id", () => {
 					qualityProfileId: 4,
 					customFormatId: 7,
 					status,
+					userId: "user-1",
+					instance: { userId: "user-1" },
 				},
 			]);
 
@@ -857,6 +864,8 @@ describe("DELETE /services/:id", () => {
 				qualityProfileName: "Any",
 				connectionGeneration: source.connectionGeneration,
 				connectionStateToken: createDeploymentConnectionStateToken(source),
+				template: { userId: "user-1" },
+				instance: { userId: "user-1" },
 			},
 		]);
 

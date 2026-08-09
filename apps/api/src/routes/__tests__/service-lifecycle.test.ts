@@ -35,7 +35,12 @@ vi.mock("../../lib/services/connection-tester.js", () => ({
 	testServiceConnection: (...args: unknown[]) => mockTestConnection(...args),
 }));
 
-import { createDeploymentEndpointKey } from "../../lib/trash-guides/deployment-target.js";
+import {
+	createDeploymentConnectionBinding,
+	createDeploymentConnectionStateToken,
+	createDeploymentEndpointKey,
+	isCurrentDeploymentConnectionMapping,
+} from "../../lib/trash-guides/deployment-target.js";
 import { registerServiceRoutes } from "../services.js";
 import {
 	createInjectAuthenticated,
@@ -60,12 +65,18 @@ const IV_V2 = "iv-v2";
  */
 function createPrismaStub() {
 	const instances = new Map<string, any>();
+	const mappings = new Map<string, any>();
+	const overrides = new Map<string, any>();
 	let nextId = 1;
 
 	const serviceInstance = {
 		findMany: vi.fn(async ({ where }: any) => {
 			return [...instances.values()]
-				.filter((row) => row.userId === where.userId)
+				.filter(
+					(row) =>
+						(!where.userId || row.userId === where.userId) &&
+						(!where.service || row.service === where.service),
+				)
 				.map((row) => ({ ...row, tags: [] }));
 		}),
 		findFirst: vi.fn(async ({ where }: any) => {
@@ -99,7 +110,18 @@ function createPrismaStub() {
 				if (where.userId && row.userId !== where.userId) continue;
 				if (where.NOT?.id && row.id === where.NOT.id) continue;
 				if (where.service && row.service !== where.service) continue;
-				Object.assign(row, data);
+				for (const [key, value] of Object.entries(data)) {
+					if (
+						value &&
+						typeof value === "object" &&
+						"increment" in value &&
+						typeof value.increment === "number"
+					) {
+						row[key] = (row[key] ?? 0) + value.increment;
+					} else {
+						row[key] = value;
+					}
+				}
 				count++;
 			}
 			return { count };
@@ -118,6 +140,8 @@ function createPrismaStub() {
 
 	const prisma = {
 		_instances: instances,
+		_mappings: mappings,
+		_overrides: overrides,
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -136,10 +160,55 @@ function createPrismaStub() {
 		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		templateQualityProfileMapping: {
-			findMany: vi.fn().mockResolvedValue([]),
+			findMany: vi.fn(async ({ where }: any) =>
+				[...mappings.values()].filter((row) => {
+					if (where.instanceId?.in && !where.instanceId.in.includes(row.instanceId)) return false;
+					if (where.instanceId && typeof where.instanceId === "string") {
+						if (row.instanceId !== where.instanceId) return false;
+					}
+					if (where.template?.userId && row.template.userId !== where.template.userId) {
+						return false;
+					}
+					return true;
+				}),
+			),
+			updateMany: vi.fn(async ({ where, data }: any) => {
+				const row = mappings.get(where.id);
+				if (!row || row.instanceId !== where.instanceId) return { count: 0 };
+				Object.assign(row, data);
+				return { count: 1 };
+			}),
+			deleteMany: vi.fn(async ({ where }: any) => {
+				const row = mappings.get(where.id);
+				if (!row || row.instanceId !== where.instanceId) return { count: 0 };
+				mappings.delete(where.id);
+				return { count: 1 };
+			}),
 		},
 		instanceQualityProfileOverride: {
-			findMany: vi.fn().mockResolvedValue([]),
+			findMany: vi.fn(async ({ where }: any) =>
+				[...overrides.values()].filter((row) => {
+					if (where.instanceId?.in && !where.instanceId.in.includes(row.instanceId)) return false;
+					if (where.instanceId && typeof where.instanceId === "string") {
+						if (row.instanceId !== where.instanceId) return false;
+					}
+					if (where.userId && row.userId !== where.userId) return false;
+					if (where.status?.in && !where.status.in.includes(row.status)) return false;
+					return true;
+				}),
+			),
+			updateMany: vi.fn(async ({ where, data }: any) => {
+				const row = overrides.get(where.id);
+				if (!row || row.instanceId !== where.instanceId) return { count: 0 };
+				Object.assign(row, data);
+				return { count: 1 };
+			}),
+			deleteMany: vi.fn(async ({ where }: any) => {
+				const row = overrides.get(where.id);
+				if (!row || row.instanceId !== where.instanceId) return { count: 0 };
+				overrides.delete(where.id);
+				return { count: 1 };
+			}),
 		},
 	};
 	return Object.assign(prisma, {
@@ -154,17 +223,33 @@ function createPrismaStub() {
  * plaintexts, so we can tell whether a rotation actually persisted.
  */
 function createEncryptorStub() {
+	const encryptedValues = new Map<string, string>();
+	const encryptionCounts = new Map<string, number>();
 	return {
 		encrypt: vi.fn((plain: string) => {
-			if (plain === PLAINTEXT_KEY_V1) return { value: ENCRYPTED_V1, iv: IV_V1 };
-			if (plain === PLAINTEXT_KEY_V2) return { value: ENCRYPTED_V2, iv: IV_V2 };
-			return { value: `enc:${plain}`, iv: "iv" };
+			const count = (encryptionCounts.get(plain) ?? 0) + 1;
+			encryptionCounts.set(plain, count);
+			const encrypted =
+				plain === PLAINTEXT_KEY_V1
+					? {
+							value: count === 1 ? ENCRYPTED_V1 : `${ENCRYPTED_V1}-fresh-${count}`,
+							iv: count === 1 ? IV_V1 : `${IV_V1}-fresh-${count}`,
+						}
+					: plain === PLAINTEXT_KEY_V2
+						? {
+								value: count === 1 ? ENCRYPTED_V2 : `${ENCRYPTED_V2}-fresh-${count}`,
+								iv: count === 1 ? IV_V2 : `${IV_V2}-fresh-${count}`,
+							}
+						: {
+								value: count === 1 ? `enc:${plain}` : `enc:${count}:${plain}`,
+								iv: count === 1 ? "iv" : `iv-${count}`,
+							};
+			encryptedValues.set(`${encrypted.value}:${encrypted.iv}`, plain);
+			return encrypted;
 		}),
-		decrypt: vi.fn(({ value }: { value: string }) => {
-			if (value === ENCRYPTED_V1) return PLAINTEXT_KEY_V1;
-			if (value === ENCRYPTED_V2) return PLAINTEXT_KEY_V2;
-			return "unknown";
-		}),
+		decrypt: vi.fn(({ value, iv }: { value: string; iv: string }) =>
+			encryptedValues.get(`${value}:${iv}`),
+		),
 	};
 }
 
@@ -221,14 +306,19 @@ describe("Service instance lifecycle", () => {
 			notify: vi.fn().mockResolvedValue(undefined),
 		} as never);
 		app.decorate("arrClientFactory", {
-			createConnectionCredentialIdentity: vi.fn((instance: any) =>
-				JSON.stringify([
-					instance.encryptedApiKey,
-					instance.encryptionIv,
-					instance.encryptedHttpAuthCredentials ?? null,
-					instance.httpAuthEncryptionIv ?? null,
-				]),
-			),
+			createConnectionCredentialIdentity: vi.fn((instance: any) => {
+				const apiKey = encryptor.decrypt({
+					value: instance.encryptedApiKey,
+					iv: instance.encryptionIv,
+				});
+				const httpAuth = instance.encryptedHttpAuthCredentials
+					? encryptor.decrypt({
+							value: instance.encryptedHttpAuthCredentials,
+							iv: instance.httpAuthEncryptionIv,
+						})
+					: null;
+				return JSON.stringify({ apiKey, httpAuth });
+			}),
 		} as never);
 		app.decorate("deploymentExecutor", {
 			runWithEndpointMutation: vi.fn(async (lockedUserId, target, _operation, callback) =>
@@ -302,6 +392,118 @@ describe("Service instance lifecycle", () => {
 		expect(prisma._instances.get(id).encryptedHttpAuthCredentials).toBeNull();
 		expect(prisma._instances.get(id).httpAuthEncryptionIv).toBeNull();
 	});
+
+	it("keeps ARR ciphertext and saved bindings current when identical credentials are resubmitted", async () => {
+		const httpAuth = { username: "proxy-user", password: "proxy-pass" };
+		const create = await inject("POST", "/services", {
+			body: {
+				label: "Protected Sonarr",
+				baseUrl: "https://sonarr.example.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "sonarr",
+				httpAuth,
+			},
+		});
+		const id = JSON.parse(create.payload).service.id;
+		const storedBefore = { ...prisma._instances.get(id) };
+		const binding = createDeploymentConnectionBinding(storedBefore);
+		const mapping = {
+			id: "mapping-1",
+			templateId: "template-1",
+			instanceId: id,
+			qualityProfileId: 4,
+			qualityProfileName: "Any",
+			connectionGeneration: binding.connectionGeneration,
+			connectionStateToken: binding.connectionStateToken,
+			template: { userId: USER_ID },
+			instance: { userId: USER_ID },
+		};
+		prisma._mappings.set(mapping.id, mapping);
+		for (const [index, status] of ["APPLIED", "PENDING", "UNCERTAIN"].entries()) {
+			prisma._overrides.set(`override-${status}`, {
+				id: `override-${status}`,
+				instanceId: id,
+				qualityProfileId: 4,
+				customFormatId: index + 1,
+				score: index,
+				status,
+				intentOperation: status === "APPLIED" ? null : "SET_SCORE",
+				intendedScore: status === "APPLIED" ? null : index,
+				userId: USER_ID,
+				connectionGeneration: binding.connectionGeneration,
+				connectionStateToken: binding.connectionStateToken,
+				instance: { userId: USER_ID },
+			});
+		}
+
+		const response = await inject("PUT", `/services/${id}`, {
+			body: { apiKey: PLAINTEXT_KEY_V1, httpAuth },
+		});
+
+		expect(response.statusCode).toBe(200);
+		const storedAfter = prisma._instances.get(id);
+		expect(storedAfter).toMatchObject({
+			encryptedApiKey: storedBefore.encryptedApiKey,
+			encryptionIv: storedBefore.encryptionIv,
+			encryptedHttpAuthCredentials: storedBefore.encryptedHttpAuthCredentials,
+			httpAuthEncryptionIv: storedBefore.httpAuthEncryptionIv,
+			connectionGeneration: 0,
+		});
+		expect(createDeploymentConnectionStateToken(storedAfter)).toBe(binding.connectionStateToken);
+		expect(prisma.instanceQualityProfileOverride.findMany).not.toHaveBeenCalled();
+
+		const currentBinding = createDeploymentConnectionBinding(storedAfter);
+		expect(isCurrentDeploymentConnectionMapping(mapping, [currentBinding])).toBe(true);
+		for (const status of ["APPLIED", "PENDING", "UNCERTAIN"]) {
+			const row = prisma._overrides.get(`override-${status}`);
+			expect(row.status).toBe(status);
+			expect(isCurrentDeploymentConnectionMapping(row, [currentBinding])).toBe(true);
+		}
+	});
+
+	it.each(["PENDING", "UNCERTAIN"])(
+		"blocks a real credential change while %s score intent is unresolved",
+		async (status) => {
+			const create = await inject("POST", "/services", {
+				body: {
+					label: "Sonarr",
+					baseUrl: "http://sonarr:8989",
+					apiKey: PLAINTEXT_KEY_V1,
+					service: "sonarr",
+				},
+			});
+			const id = JSON.parse(create.payload).service.id;
+			const storedBefore = { ...prisma._instances.get(id) };
+			const binding = createDeploymentConnectionBinding(storedBefore);
+			prisma._overrides.set("override-unresolved", {
+				id: "override-unresolved",
+				instanceId: id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: 0,
+				status,
+				intentOperation: "SET_SCORE",
+				intendedScore: 5,
+				userId: USER_ID,
+				connectionGeneration: binding.connectionGeneration,
+				connectionStateToken: binding.connectionStateToken,
+				instance: { userId: USER_ID },
+			});
+
+			const response = await inject("PUT", `/services/${id}`, {
+				body: { apiKey: PLAINTEXT_KEY_V2 },
+			});
+
+			expect(response.statusCode).toBe(409);
+			expect(prisma._instances.get(id)).toMatchObject({
+				encryptedApiKey: storedBefore.encryptedApiKey,
+				encryptionIv: storedBefore.encryptionIv,
+				connectionGeneration: 0,
+			});
+			expect(prisma._overrides.get("override-unresolved").status).toBe(status);
+			expect(prisma.serviceInstance.updateMany).not.toHaveBeenCalled();
+		},
+	);
 
 	it("tests staged HTTP auth with the stored API key without persisting it", async () => {
 		const create = await inject("POST", "/services", {
@@ -441,6 +643,7 @@ describe("Service instance lifecycle", () => {
 		expect(storedAfterUpdate.label).toBe("Sonarr Renamed");
 		expect(storedAfterUpdate.encryptedApiKey).toBe(ENCRYPTED_V2);
 		expect(storedAfterUpdate.encryptionIv).toBe(IV_V2);
+		expect(storedAfterUpdate.connectionGeneration).toBe(1);
 		expect(encryptor.encrypt).toHaveBeenCalledWith(PLAINTEXT_KEY_V2);
 
 		// --- 6. DELETE --------------------------------------------------------
@@ -472,6 +675,75 @@ describe("Service instance lifecycle", () => {
 		// requireInstance must have short-circuited before the raw delete call.
 		expect(prisma.serviceInstance.delete).not.toHaveBeenCalled();
 	});
+
+	it.each(["mapping", "override"] as const)(
+		"fails closed before deleting an ARR alias with mismatched %s ownership",
+		async (stateKind) => {
+			const createSource = await inject("POST", "/services", {
+				body: {
+					label: "Sonarr source",
+					baseUrl: "http://sonarr:8989",
+					apiKey: PLAINTEXT_KEY_V1,
+					service: "sonarr",
+				},
+			});
+			const createSurvivor = await inject("POST", "/services", {
+				body: {
+					label: "Sonarr survivor",
+					baseUrl: "http://sonarr:8989/",
+					apiKey: PLAINTEXT_KEY_V1,
+					service: "sonarr",
+				},
+			});
+			const sourceId = JSON.parse(createSource.payload).service.id;
+			const survivorId = JSON.parse(createSurvivor.payload).service.id;
+			const source = prisma._instances.get(sourceId);
+			const binding = createDeploymentConnectionBinding(source);
+
+			if (stateKind === "mapping") {
+				prisma._mappings.set("mapping-mismatched-owner", {
+					id: "mapping-mismatched-owner",
+					templateId: "other-user-template",
+					instanceId: sourceId,
+					qualityProfileId: 4,
+					qualityProfileName: "Any",
+					connectionGeneration: binding.connectionGeneration,
+					connectionStateToken: binding.connectionStateToken,
+					template: { userId: "user-2" },
+					instance: { userId: USER_ID },
+				});
+			} else {
+				prisma._overrides.set("override-mismatched-owner", {
+					id: "override-mismatched-owner",
+					instanceId: sourceId,
+					qualityProfileId: 4,
+					customFormatId: 7,
+					score: 5,
+					status: "APPLIED",
+					userId: "user-2",
+					connectionGeneration: binding.connectionGeneration,
+					connectionStateToken: binding.connectionStateToken,
+					instance: { userId: USER_ID },
+				});
+			}
+
+			const response = await inject("DELETE", `/services/${sourceId}`);
+
+			expect(response.statusCode).toBe(409);
+			expect(prisma._instances.has(sourceId)).toBe(true);
+			expect(prisma._instances.has(survivorId)).toBe(true);
+			if (stateKind === "mapping") {
+				expect(prisma._mappings.get("mapping-mismatched-owner")?.instanceId).toBe(sourceId);
+			} else {
+				expect(prisma._overrides.get("override-mismatched-owner")?.instanceId).toBe(sourceId);
+			}
+			expect(prisma.templateQualityProfileMapping.updateMany).not.toHaveBeenCalled();
+			expect(prisma.templateQualityProfileMapping.deleteMany).not.toHaveBeenCalled();
+			expect(prisma.instanceQualityProfileOverride.updateMany).not.toHaveBeenCalled();
+			expect(prisma.instanceQualityProfileOverride.deleteMany).not.toHaveBeenCalled();
+			expect(prisma.serviceInstance.delete).not.toHaveBeenCalled();
+		},
+	);
 
 	it("POST /services/:id/test against a non-existent instance returns 404 and never calls the tester", async () => {
 		const res = await inject("POST", "/services/inst-nope/test");
