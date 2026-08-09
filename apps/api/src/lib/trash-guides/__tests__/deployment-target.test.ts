@@ -268,13 +268,20 @@ describe("legacy deployment connection mappings", () => {
 		{ connectionGeneration: 4, connectionStateToken: null },
 		{ connectionGeneration: 4, connectionStateToken: "" },
 		{ connectionGeneration: 4, connectionStateToken: "   " },
-		{ connectionGeneration: 0, connectionStateToken: "bound-token" },
 		{ connectionGeneration: -1, connectionStateToken: "bound-token" },
 		{ connectionGeneration: 1.5, connectionStateToken: "bound-token" },
 	])("fails closed for malformed persisted connection identity %#", (mapping) => {
 		expect(() => assertNoLegacyDeploymentConnectionMappings([mapping])).toThrow(
 			"predates connection identity verification",
 		);
+	});
+
+	it("accepts a generation-zero mapping with an exact connection token", () => {
+		expect(() =>
+			assertNoLegacyDeploymentConnectionMappings([
+				{ connectionGeneration: 0, connectionStateToken: "exact-token" },
+			]),
+		).not.toThrow();
 	});
 
 	it("accepts mappings bound to an exact connection state", () => {

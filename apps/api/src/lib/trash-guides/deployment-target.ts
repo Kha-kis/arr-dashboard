@@ -309,7 +309,7 @@ export function isLegacyDeploymentConnectionMapping(mapping: DeploymentConnectio
 	return !(
 		typeof mapping.connectionGeneration === "number" &&
 		Number.isSafeInteger(mapping.connectionGeneration) &&
-		mapping.connectionGeneration > 0 &&
+		mapping.connectionGeneration >= 0 &&
 		typeof mapping.connectionStateToken === "string" &&
 		mapping.connectionStateToken.trim().length > 0
 	);
