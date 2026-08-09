@@ -19,6 +19,7 @@ import {
 	passthroughTickWrapper,
 	type TickWrapper,
 } from "../scheduler-registry/scheduler-registry.js";
+import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
 
 // Run cleanup every hour
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
@@ -129,39 +130,27 @@ export class TrashBackupCleanupService {
 	 * Delete backups that have passed their expiration date
 	 */
 	private async cleanupExpiredBackups(): Promise<number> {
+		const now = new Date();
+		const expired = await this.prisma.trashBackup.findMany({
+			where: {
+				expiresAt: { not: null, lte: now },
+				// The backup remains durable ownership and rollback evidence until
+				// every referencing history has been explicitly resolved.
+				syncHistory: { none: { rolledBack: false } },
+				deploymentHistory: { none: { rolledBack: false } },
+			},
+			select: { id: true, backupData: true },
+		});
+		const deletable = expired.filter((backup) => !shouldRetainDeploymentBackup(backup.backupData));
+		if (deletable.length === 0) return 0;
 		const result = await this.prisma.trashBackup.deleteMany({
 			where: {
-				expiresAt: {
-					not: null,
-					lte: new Date(),
-				},
-				// Legacy snapshots may still have an expiry timestamp even while a
-				// rollback or undeploy is retryable. Keep them until coordination is terminal.
-				syncHistory: {
-					none: {
-						rolledBack: false,
-						OR: [
-							{
-								rollbackStatus: { not: null },
-								NOT: { rollbackStatus: "COMPLETED" },
-							},
-							{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
-						],
-					},
-				},
-				deploymentHistory: {
-					none: {
-						rolledBack: false,
-						OR: [
-							{
-								undeployStatus: { not: null },
-								NOT: { undeployStatus: "COMPLETED" },
-							},
-							{ status: "PARTIAL_UNDEPLOY", undeployStatus: null },
-							{ status: "IN_PROGRESS" },
-						],
-					},
-				},
+				expiresAt: { not: null, lte: now },
+				// Re-check ownership in the mutation itself. A history may have
+				// linked this backup after selection but before deleteMany executes.
+				syncHistory: { none: { rolledBack: false } },
+				deploymentHistory: { none: { rolledBack: false } },
+				OR: deletable.map((backup) => ({ id: backup.id, backupData: backup.backupData })),
 			},
 		});
 
@@ -192,9 +181,12 @@ export class TrashBackupCleanupService {
 				createdAt: {
 					lte: orphanThreshold,
 				},
+				syncHistory: { none: { rolledBack: false } },
+				deploymentHistory: { none: { rolledBack: false } },
 			},
 			select: {
 				id: true,
+				backupData: true,
 				_count: {
 					select: {
 						syncHistory: true,
@@ -205,9 +197,12 @@ export class TrashBackupCleanupService {
 		});
 
 		// Filter to only those with no references
-		const orphanIds = potentialOrphans
-			.filter((backup) => backup._count.syncHistory === 0 && backup._count.deploymentHistory === 0)
-			.map((backup) => backup.id);
+		const orphanIds = potentialOrphans.filter(
+			(backup) =>
+				backup._count.syncHistory === 0 &&
+				backup._count.deploymentHistory === 0 &&
+				!shouldRetainDeploymentBackup(backup.backupData),
+		);
 
 		if (orphanIds.length === 0) {
 			return 0;
@@ -215,7 +210,9 @@ export class TrashBackupCleanupService {
 
 		const result = await this.prisma.trashBackup.deleteMany({
 			where: {
-				id: { in: orphanIds },
+				syncHistory: { none: { rolledBack: false } },
+				deploymentHistory: { none: { rolledBack: false } },
+				OR: orphanIds.map((backup) => ({ id: backup.id, backupData: backup.backupData })),
 			},
 		});
 
