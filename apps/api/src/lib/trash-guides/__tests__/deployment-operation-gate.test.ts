@@ -518,6 +518,128 @@ describe("assertNoPendingDeploymentOperation", () => {
 	});
 });
 
+describe("reconcileInterruptedDeploymentHistories created profile recovery", () => {
+	it("counts a durably identified pending profile creation and stays retryable on restart", async () => {
+		const createdProfileBackup = {
+			id: "backup-created-profile",
+			backupData: JSON.stringify({
+				schemaVersion: 2,
+				endpointKey: "user-1:RADARR:http://radarr:7878/",
+				connectionStateToken: "connection",
+				customFormats: [],
+				customFormatDeployments: [],
+				managedCustomFormats: [],
+				managedCustomFormatsCaptured: false,
+				qualityProfileDeployment: {
+					beforeProfile: null,
+					status: "pending",
+					action: "created",
+					profileId: 42,
+					profileName: "HD-1080p",
+					postStateToken: "exact-created-profile-token",
+					intendedPostStateToken: "different-intended-token",
+				},
+				namingDeployment: null,
+			}),
+		};
+		const deploymentRecord = {
+			id: "deployment-created-profile",
+			backupId: createdProfileBackup.id,
+			status: "IN_PROGRESS",
+			undeployStatus: null,
+			backup: createdProfileBackup,
+		};
+		const syncRecord = {
+			id: "sync-created-profile",
+			backupId: createdProfileBackup.id,
+			status: "RUNNING",
+			rollbackStatus: null,
+			backup: createdProfileBackup,
+		};
+		const deploymentUpdateMany = vi.fn(
+			async (args: { where: { status: string }; data: { status: string } }) => {
+				if (args.where.status !== deploymentRecord.status) return { count: 0 };
+				deploymentRecord.status = args.data.status;
+				return { count: 1 };
+			},
+		);
+		const syncUpdateMany = vi.fn(
+			async (args: { where: { status: { in: string[] } | string }; data: { status: string } }) => {
+				const expectedStatuses =
+					typeof args.where.status === "string" ? [args.where.status] : args.where.status.in;
+				if (!expectedStatuses.includes(syncRecord.status)) return { count: 0 };
+				syncRecord.status = args.data.status;
+				return { count: 1 };
+			},
+		);
+		const prisma = {
+			templateDeploymentHistory: {
+				findMany: vi.fn().mockImplementation(async () => [deploymentRecord]),
+			},
+			trashSyncHistory: {
+				findMany: vi.fn().mockImplementation(async () => [syncRecord]),
+			},
+			$transaction: vi.fn(async (callback) =>
+				callback({
+					templateDeploymentHistory: { updateMany: deploymentUpdateMany },
+					trashSyncHistory: { updateMany: syncUpdateMany },
+				}),
+			),
+		};
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
+		const appliedProfile = {
+			name: "HD-1080p",
+			action: "created",
+			type: "quality_profile",
+			id: 42,
+		};
+		expect(deploymentUpdateMany).toHaveBeenCalledWith({
+			where: { id: "deployment-created-profile", status: "IN_PROGRESS" },
+			data: expect.objectContaining({
+				status: "PARTIAL_SUCCESS",
+				appliedCFs: 0,
+				appliedConfigs: JSON.stringify([appliedProfile]),
+			}),
+		});
+		expect(syncUpdateMany).toHaveBeenCalledWith({
+			where: {
+				backupId: createdProfileBackup.id,
+				status: { in: ["IN_PROGRESS", "RUNNING"] },
+			},
+			data: expect.objectContaining({
+				status: "PARTIAL_SUCCESS",
+				configsApplied: 1,
+				configsFailed: 1,
+				appliedConfigs: JSON.stringify([appliedProfile]),
+			}),
+		});
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(0);
+		expect(deploymentUpdateMany).toHaveBeenCalledTimes(2);
+		expect(syncUpdateMany).toHaveBeenCalledOnce();
+
+		await expect(
+			assertNoPendingDeploymentOperation(
+				{
+					trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+					templateDeploymentHistory: {
+						findMany: vi.fn().mockResolvedValue([
+							{
+								status: "PARTIAL_SUCCESS",
+								backup: createdProfileBackup,
+							},
+						]),
+					},
+					instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+				} as never,
+				"user-1",
+				["instance-1"],
+			),
+		).rejects.toThrow("uncertain upstream result");
+	});
+});
+
 describe("assertNoActiveDeploymentOwnership", () => {
 	it("blocks a connection change that would strand an applied deployment", async () => {
 		const prisma = {
@@ -852,7 +974,9 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 					status: "PARTIAL_SUCCESS",
 					configsApplied: 1,
 					configsFailed: 1,
-					appliedConfigs: JSON.stringify([{ name: "Foo", action: "updated" }]),
+					appliedConfigs: JSON.stringify([
+						{ name: "Foo", action: "updated", type: "custom_format" },
+					]),
 				}),
 			}),
 		);
@@ -882,15 +1006,15 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 			$transaction: transaction,
 		};
 		const appliedConfigs = [
-			{ name: "Created CF", action: "created" },
-			{ name: "Updated CF", action: "updated" },
+			{ name: "Created CF", action: "created", type: "custom_format" },
+			{ name: "Updated CF", action: "updated", type: "custom_format" },
 			{
 				name: "HD-1080p",
 				action: "updated",
 				type: "quality_profile",
 				id: 9,
 			},
-			{ name: "Naming configuration", action: "updated" },
+			{ name: "Naming configuration", action: "updated", type: "naming" },
 		];
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);

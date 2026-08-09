@@ -131,4 +131,11 @@ export async function rollbackQualityProfileDeployment(
 	throw new Error(
 		"The quality profile cannot be restored safely because the upstream API has no conditional update. Its current state still matches this deployment; restore the recorded pre-deployment configuration manually.",
 	);
+	const restoredProfile = await client.qualityProfile.getById(state.profileId);
+	if (
+		createQualityProfileStateToken(restoredProfile) !==
+		createQualityProfileStateToken(beforeProfile)
+	) {
+		throw new Error("The quality profile did not match its pre-deployment state after restore.");
+	}
 }

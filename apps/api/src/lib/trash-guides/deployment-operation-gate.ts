@@ -317,9 +317,16 @@ export async function reconcileInterruptedDeploymentHistories(
 		const appliedConfigs: Array<Record<string, unknown>> = appliedCustomFormats.map((item) => ({
 			name: item.name,
 			action: item.action,
+			type: "custom_format",
 		}));
 		const profile = state.qualityProfileDeployment;
-		if (profile.status === "applied") {
+		const hasDurablyProvenCreatedProfile =
+			profile.status === "pending" &&
+			profile.action === "created" &&
+			profile.profileId !== null &&
+			profile.profileName !== null &&
+			profile.postStateToken !== null;
+		if (profile.status === "applied" || hasDurablyProvenCreatedProfile) {
 			if (profile.profileId === null || profile.profileName === null) {
 				if (!pending) {
 					return {
@@ -338,7 +345,11 @@ export async function reconcileInterruptedDeploymentHistories(
 			}
 		}
 		if (state.namingDeployment?.status === "applied") {
-			appliedConfigs.push({ name: "Naming configuration", action: "updated" });
+			appliedConfigs.push({
+				name: "Naming configuration",
+				action: "updated",
+				type: "naming",
+			});
 		}
 		if (pending) {
 			return {
