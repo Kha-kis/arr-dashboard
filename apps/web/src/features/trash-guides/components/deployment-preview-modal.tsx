@@ -35,6 +35,7 @@ import {
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { ConflictResolution, DeploymentAction } from "../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { getPartialDeploymentConflict } from "../lib/sync-validation-utils";
 import { InstanceOverrideEditor } from "./instance-override-editor";
@@ -59,6 +60,7 @@ export const DeploymentPreviewModal = ({
 	onDeploySuccess,
 }: DeploymentPreviewModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const { data, isLoading, error } = useDeploymentPreview(templateId, instanceId);
 	const [expandedConflicts, setExpandedConflicts] = useState<Set<string>>(new Set());
 	const [showOverrideEditor, setShowOverrideEditor] = useState(false);
@@ -236,6 +238,27 @@ export const DeploymentPreviewModal = ({
 				: "Deployment failed"
 			: null;
 	const deploymentWarnings = deploymentMutation.data?.result?.warnings ?? [];
+	const visibleDeploymentWarnings =
+		incognitoMode && deploymentWarnings.length > 0
+			? ["Deployment warnings hidden in incognito mode."]
+			: deploymentWarnings;
+	const previewWarnings = data?.data?.warnings ?? [];
+	const visiblePreviewWarnings =
+		incognitoMode && previewWarnings.length > 0
+			? ["Preview warnings hidden in incognito mode."]
+			: previewWarnings;
+	const visibleDeploymentError =
+		incognitoMode && deploymentError
+			? partialDeployment
+				? `Deployment changed during execution; details hidden in incognito mode. ${partialAppliedCount} deployment change${partialAppliedCount === 1 ? "" : "s"} had already been applied. Refresh the preview before taking another action.`
+				: "Deployment failed; details hidden in incognito mode."
+			: deploymentError;
+	const visibleTemplateName = incognitoMode && templateName ? "TRaSH template" : templateName;
+	const visibleInstanceLabel = data?.data
+		? incognitoMode
+			? getLinuxInstanceName(instanceId ?? data.data.instanceLabel)
+			: data.data.instanceLabel
+		: undefined;
 
 	return (
 		<LegacyDialog open={open} onOpenChange={onClose} size="xl">
@@ -246,7 +269,7 @@ export const DeploymentPreviewModal = ({
 					<LegacyDialogTitle>Deployment Preview</LegacyDialogTitle>
 					<LegacyDialogDescription>
 						Review changes before deploying template to instance
-						{templateName && ` - "${templateName}"`}
+						{visibleTemplateName && ` - "${visibleTemplateName}"`}
 					</LegacyDialogDescription>
 				</div>
 			</LegacyDialogHeader>
@@ -281,7 +304,9 @@ export const DeploymentPreviewModal = ({
 									Failed to load deployment preview
 								</p>
 								<p className="text-sm text-muted-foreground mt-1">
-									{getErrorMessage(error, "Please try again")}
+									{incognitoMode
+										? "Preview request failed; details hidden in incognito mode."
+										: getErrorMessage(error, "Please try again")}
 								</p>
 							</div>
 						</div>
@@ -297,7 +322,7 @@ export const DeploymentPreviewModal = ({
 								<div className="flex-1">
 									<h3 className="text-sm font-medium text-foreground">Target Instance</h3>
 									<p className="text-xs text-muted-foreground">
-										{data.data.instanceLabel} ({data.data.instanceServiceType})
+										{visibleInstanceLabel} ({data.data.instanceServiceType})
 									</p>
 								</div>
 								<div className="flex items-center gap-2">
@@ -321,7 +346,7 @@ export const DeploymentPreviewModal = ({
 								</div>
 							</div>
 							<div className="flex items-center justify-between">
-								{data.data.instanceVersion && (
+								{data.data.instanceVersion && !incognitoMode && (
 									<p className="text-xs text-muted-foreground">
 										Version: {data.data.instanceVersion}
 									</p>
@@ -444,7 +469,7 @@ export const DeploymentPreviewModal = ({
 						</div>
 
 						{/* Warnings */}
-						{data.data.warnings && data.data.warnings.length > 0 && (
+						{visiblePreviewWarnings.length > 0 && (
 							<div
 								className="rounded-xl p-4"
 								style={{
@@ -458,7 +483,7 @@ export const DeploymentPreviewModal = ({
 										style={{ color: SEMANTIC_COLORS.warning.from }}
 									/>
 									<div className="space-y-2">
-										{data.data.warnings.map((warning, idx) => (
+										{visiblePreviewWarnings.map((warning, idx) => (
 											<p
 												key={idx}
 												className="text-sm"
@@ -559,7 +584,7 @@ export const DeploymentPreviewModal = ({
 									Custom Format Changes ({data.data.customFormats.length})
 								</h3>
 								<div className="space-y-2 max-h-64 overflow-y-auto">
-									{data.data.customFormats.map((item) => (
+									{data.data.customFormats.map((item, itemIndex) => (
 										<div
 											key={item.trashId}
 											className="rounded-xl border p-3"
@@ -570,7 +595,9 @@ export const DeploymentPreviewModal = ({
 													{getActionIcon(item.action)}
 													<div className="flex-1 min-w-0">
 														<div className="flex items-center gap-2">
-															<p className="text-sm font-medium truncate">{item.name}</p>
+															<p className="text-sm font-medium truncate">
+																{incognitoMode ? `Custom Format ${itemIndex + 1}` : item.name}
+															</p>
 															<span className="px-2 py-0.5 rounded-full text-xs font-medium bg-current/10">
 																{getActionLabel(item.action)}
 															</span>
@@ -643,9 +670,11 @@ export const DeploymentPreviewModal = ({
 																				Template:
 																			</p>
 																			<pre className="overflow-auto max-h-48 whitespace-pre-wrap wrap-break-word text-muted-foreground font-mono text-[10px]">
-																				{typeof conflict.templateValue === "object"
-																					? JSON.stringify(conflict.templateValue, null, 2)
-																					: String(conflict.templateValue)}
+																				{incognitoMode
+																					? "Conflict details hidden in incognito mode."
+																					: typeof conflict.templateValue === "object"
+																						? JSON.stringify(conflict.templateValue, null, 2)
+																						: String(conflict.templateValue)}
 																			</pre>
 																		</div>
 																		<div
@@ -662,9 +691,11 @@ export const DeploymentPreviewModal = ({
 																				Instance:
 																			</p>
 																			<pre className="overflow-auto max-h-48 whitespace-pre-wrap wrap-break-word text-muted-foreground font-mono text-[10px]">
-																				{typeof conflict.instanceValue === "object"
-																					? JSON.stringify(conflict.instanceValue, null, 2)
-																					: String(conflict.instanceValue)}
+																				{incognitoMode
+																					? "Conflict details hidden in incognito mode."
+																					: typeof conflict.instanceValue === "object"
+																						? JSON.stringify(conflict.instanceValue, null, 2)
+																						: String(conflict.instanceValue)}
 																			</pre>
 																		</div>
 																	</div>
@@ -692,7 +723,7 @@ export const DeploymentPreviewModal = ({
 									Format itself will remain in Radarr or Sonarr.
 								</p>
 								<div className="space-y-2 max-h-48 overflow-y-auto">
-									{data.data.orphanedCustomFormats.map((item) => (
+									{data.data.orphanedCustomFormats.map((item, index) => (
 										<div
 											key={item.instanceId}
 											className="flex items-center justify-between rounded-xl border p-3"
@@ -701,7 +732,9 @@ export const DeploymentPreviewModal = ({
 												borderColor: SEMANTIC_COLORS.warning.border,
 											}}
 										>
-											<span className="text-sm font-medium">{item.name}</span>
+											<span className="text-sm font-medium">
+												{incognitoMode ? `Custom Format score reset ${index + 1}` : item.name}
+											</span>
 											<span className="text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>
 												{item.score} → 0
 											</span>
@@ -718,7 +751,7 @@ export const DeploymentPreviewModal = ({
 									Unmatched Custom Formats ({data.data.unmatchedCustomFormats.length})
 								</h3>
 								<div className="space-y-2 max-h-48 overflow-y-auto">
-									{data.data.unmatchedCustomFormats.map((item) => (
+									{data.data.unmatchedCustomFormats.map((item, index) => (
 										<div
 											key={item.instanceId}
 											className="rounded-xl border p-3"
@@ -737,10 +770,12 @@ export const DeploymentPreviewModal = ({
 														className="text-sm font-medium truncate"
 														style={{ color: SEMANTIC_COLORS.info.text }}
 													>
-														{item.name}
+														{incognitoMode ? `Unmatched Custom Format ${index + 1}` : item.name}
 													</p>
 													<p className="text-xs mt-1" style={{ color: SEMANTIC_COLORS.info.from }}>
-														{item.reason}
+														{incognitoMode
+															? "Match details hidden in incognito mode."
+															: item.reason}
 													</p>
 												</div>
 											</div>
@@ -768,7 +803,7 @@ export const DeploymentPreviewModal = ({
 			</LegacyDialogContent>
 
 			<LegacyDialogFooter>
-				{deploymentWarnings.length > 0 && (
+				{visibleDeploymentWarnings.length > 0 && (
 					<div
 						className="flex items-start gap-2 rounded-xl p-3 mr-auto"
 						style={{
@@ -784,7 +819,7 @@ export const DeploymentPreviewModal = ({
 							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
 								Deployment completed with warnings
 							</p>
-							{deploymentWarnings.map((warning, index) => (
+							{visibleDeploymentWarnings.map((warning, index) => (
 								<p
 									key={`${index}-${warning}`}
 									className="text-sm mt-1"
@@ -796,7 +831,7 @@ export const DeploymentPreviewModal = ({
 						</div>
 					</div>
 				)}
-				{deploymentError && (
+				{visibleDeploymentError && (
 					<div
 						className="flex items-start gap-2 rounded-xl p-3 mr-auto"
 						style={{
@@ -810,7 +845,7 @@ export const DeploymentPreviewModal = ({
 						/>
 						<div>
 							<p className="text-sm font-medium text-foreground">Deployment Failed</p>
-							<p className="text-sm text-muted-foreground mt-1">{deploymentError}</p>
+							<p className="text-sm text-muted-foreground mt-1">{visibleDeploymentError}</p>
 						</div>
 					</div>
 				)}
@@ -853,12 +888,14 @@ export const DeploymentPreviewModal = ({
 					open={showOverrideEditor}
 					onClose={() => setShowOverrideEditor(false)}
 					templateId={templateId}
-					templateName={templateName}
+					templateName={visibleTemplateName}
 					instanceId={instanceId}
-					instanceLabel={instanceLabel}
-					customFormats={data.data.customFormats.map((cf) => ({
+					instanceLabel={
+						incognitoMode ? getLinuxInstanceName(instanceId ?? instanceLabel ?? "") : instanceLabel
+					}
+					customFormats={data.data.customFormats.map((cf, index) => ({
 						trashId: cf.trashId,
-						name: cf.name,
+						name: incognitoMode ? `Custom Format ${index + 1}` : cf.name,
 						defaultScore: cf.defaultScore ?? 0,
 						instanceOverrideScore: cf.instanceOverrideScore,
 					}))}
