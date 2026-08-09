@@ -12,6 +12,8 @@ function radarrConfig(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 1,
 		renameMovies: false,
+		replaceIllegalCharacters: true,
+		colonReplacementFormat: "smart",
 		standardMovieFormat: "Original movie format",
 		movieFolderFormat: "Original movie folder",
 		...overrides,
@@ -22,11 +24,16 @@ function sonarrConfig(overrides: Record<string, unknown> = {}) {
 	return {
 		id: 1,
 		renameEpisodes: false,
+		replaceIllegalCharacters: true,
+		colonReplacementFormat: 4,
+		customColonReplacementFormat: null,
+		multiEpisodeStyle: 5,
 		standardEpisodeFormat: "Original standard format",
 		dailyEpisodeFormat: "Original daily format",
 		animeEpisodeFormat: "Original anime format",
 		seriesFolderFormat: "Original series folder",
 		seasonFolderFormat: "Original season folder",
+		specialsFolderFormat: "Original specials folder",
 		...overrides,
 	};
 }
@@ -83,7 +90,25 @@ describe("prepareNamingDeployment", () => {
 				{ service: "RADARR" } as never,
 				{ serviceType: "RADARR", filePreset: "Recommended", folderPreset: "Recommended" },
 			),
-		).rejects.toThrow("invalid naming configuration");
+		).rejects.toThrow("invalid RADARR naming configuration");
+	});
+
+	it("rejects an incomplete service-specific naming response", async () => {
+		const { replaceIllegalCharacters: _missing, ...incomplete } = radarrConfig();
+		const rawRequest = vi.fn().mockResolvedValue({
+			ok: true,
+			status: 200,
+			json: vi.fn().mockResolvedValue(incomplete),
+		});
+
+		await expect(
+			prepareNamingDeployment(
+				{} as never,
+				{ rawRequest } as never,
+				{ service: "RADARR" } as never,
+				{ serviceType: "RADARR", filePreset: "Recommended", folderPreset: "Recommended" },
+			),
+		).rejects.toThrow("invalid RADARR naming configuration");
 	});
 });
 
@@ -152,6 +177,21 @@ describe("restoreNamingDeployment", () => {
 				{ service: "RADARR" } as never,
 				{ id: 1, standardMovieFormat: "Original" },
 				createUpstreamResourceStateToken(deployedConfig),
+			),
+		).rejects.toThrow("snapshot is incomplete");
+		expect(rawRequest).not.toHaveBeenCalled();
+	});
+
+	it("rejects a Sonarr snapshot missing a complete restore field", async () => {
+		const { specialsFolderFormat: _missing, ...incomplete } = sonarrConfig();
+		const rawRequest = vi.fn();
+
+		await expect(
+			restoreNamingDeployment(
+				{ rawRequest } as never,
+				{ service: "SONARR" } as never,
+				incomplete,
+				createUpstreamResourceStateToken(sonarrConfig({ standardEpisodeFormat: "Deployed" })),
 			),
 		).rejects.toThrow("snapshot is incomplete");
 		expect(rawRequest).not.toHaveBeenCalled();

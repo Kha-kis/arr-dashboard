@@ -22,6 +22,16 @@ const appliedState = (
 	...overrides,
 });
 
+function completeSpecification(name: string) {
+	return {
+		name,
+		implementation: "ReleaseTitleSpecification",
+		negate: false,
+		required: false,
+		fields: [{ name: "value", type: "textbox", value: name }],
+	};
+}
+
 describe("rollbackCustomFormatDeployment", () => {
 	it("retains an unchanged created Custom Format when deletion has no conditional boundary", async () => {
 		const deployed = { id: 7, name: "Created CF", specifications: [] };
@@ -153,7 +163,7 @@ describe("rollbackCustomFormatDeployment", () => {
 		const before = {
 			id: 4,
 			name: "Existing CF",
-			specifications: [{ name: "old" }],
+			specifications: [completeSpecification("old")],
 			includeCustomFormatWhenRenaming: false,
 		};
 		const deployed = { id: 4, name: "Existing CF", specifications: [{ name: "new" }] };
@@ -183,6 +193,15 @@ describe("rollbackCustomFormatDeployment", () => {
 
 	it.each([
 		["incomplete", { id: 4, name: "Existing CF" }],
+		[
+			"malformed nested specification",
+			{
+				id: 4,
+				name: "Existing CF",
+				specifications: [{}],
+				includeCustomFormatWhenRenaming: false,
+			},
+		],
 		[
 			"cross-wired",
 			{
@@ -281,7 +300,7 @@ describe("rollbackCustomFormatDeployment", () => {
 		const before = {
 			id: 4,
 			name: "Existing CF",
-			specifications: [{ name: "old" }],
+			specifications: [completeSpecification("old")],
 			includeCustomFormatWhenRenaming: false,
 		};
 		const intended = { id: 4, name: "Existing CF", specifications: [{ name: "new" }] };

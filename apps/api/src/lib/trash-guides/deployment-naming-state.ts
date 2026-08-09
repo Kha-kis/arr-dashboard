@@ -13,17 +13,24 @@ const positiveConfigId = z.number().int().positive().safe();
 const radarrNamingSnapshotSchema = arrNamingConfigSchema.extend({
 	id: positiveConfigId,
 	renameMovies: z.boolean(),
-	standardMovieFormat: z.string(),
-	movieFolderFormat: z.string(),
+	replaceIllegalCharacters: z.boolean(),
+	colonReplacementFormat: z.enum(["delete", "dash", "spaceDash", "spaceDashSpace", "smart"]),
+	standardMovieFormat: z.string().nullable(),
+	movieFolderFormat: z.string().nullable(),
 });
 const sonarrNamingSnapshotSchema = arrNamingConfigSchema.extend({
 	id: positiveConfigId,
 	renameEpisodes: z.boolean(),
-	standardEpisodeFormat: z.string(),
-	dailyEpisodeFormat: z.string(),
-	animeEpisodeFormat: z.string(),
-	seriesFolderFormat: z.string(),
-	seasonFolderFormat: z.string(),
+	replaceIllegalCharacters: z.boolean(),
+	colonReplacementFormat: z.number().int().nonnegative().safe(),
+	customColonReplacementFormat: z.string().nullable(),
+	multiEpisodeStyle: z.number().int().nonnegative().safe(),
+	standardEpisodeFormat: z.string().nullable(),
+	dailyEpisodeFormat: z.string().nullable(),
+	animeEpisodeFormat: z.string().nullable(),
+	seriesFolderFormat: z.string().nullable(),
+	seasonFolderFormat: z.string().nullable(),
+	specialsFolderFormat: z.string().nullable(),
 });
 
 function getNamingServiceType(instance: NamingInstance): "RADARR" | "SONARR" {
@@ -34,10 +41,19 @@ function getNamingServiceType(instance: NamingInstance): "RADARR" | "SONARR" {
 	return serviceType;
 }
 
-function parseNamingResponse(value: unknown): Record<string, unknown> {
-	const parsed = arrNamingConfigSchema.safeParse(value);
+function getNamingSnapshotSchema(serviceType: "RADARR" | "SONARR") {
+	return serviceType === "RADARR" ? radarrNamingSnapshotSchema : sonarrNamingSnapshotSchema;
+}
+
+function parseNamingResponse(
+	value: unknown,
+	serviceType: "RADARR" | "SONARR",
+): Record<string, unknown> {
+	const parsed = getNamingSnapshotSchema(serviceType).safeParse(value);
 	if (!parsed.success) {
-		throw new AppValidationError("The instance returned an invalid naming configuration.");
+		throw new AppValidationError(
+			`The instance returned an invalid ${serviceType} naming configuration.`,
+		);
 	}
 	return parsed.data as Record<string, unknown>;
 }
@@ -76,7 +92,7 @@ export async function prepareNamingDeployment(
 			`The current naming configuration could not be read (HTTP ${currentResponse.status}).`,
 		);
 	}
-	const currentConfig = parseNamingResponse(await currentResponse.json());
+	const currentConfig = parseNamingResponse(await currentResponse.json(), serviceType);
 	const patch = resolvePayload(namingData[0]!, selection);
 	const changedFields = Object.keys(patch).filter(
 		(field) => !Object.is(currentConfig[field], patch[field]),
@@ -97,9 +113,7 @@ export async function restoreNamingDeployment(
 	expectedCurrentStateToken: string,
 ): Promise<void> {
 	const serviceType = getNamingServiceType(instance);
-	const snapshotResult = (
-		serviceType === "RADARR" ? radarrNamingSnapshotSchema : sonarrNamingSnapshotSchema
-	).safeParse(config);
+	const snapshotResult = getNamingSnapshotSchema(serviceType).safeParse(config);
 	if (!snapshotResult.success) {
 		throw new Error(`Naming snapshot is incomplete or does not match ${serviceType}.`);
 	}
@@ -108,7 +122,7 @@ export async function restoreNamingDeployment(
 	if (!currentResponse.ok) {
 		throw new Error(`Failed to read current naming configuration: HTTP ${currentResponse.status}`);
 	}
-	const currentConfig = parseNamingResponse(await currentResponse.json());
+	const currentConfig = parseNamingResponse(await currentResponse.json(), serviceType);
 	const currentStateToken = createUpstreamResourceStateToken(currentConfig);
 	if (currentStateToken === createUpstreamResourceStateToken(snapshot)) {
 		return;

@@ -119,6 +119,7 @@ describe("rollbackQualityProfileDeployment", () => {
 
 	it.each([
 		["incomplete", { id: 4, name: "Existing" }],
+		["malformed nested item", completeProfile({ items: [{}] })],
 		["same-title cross-wired", completeProfile({ id: 9 })],
 	] as const)("rejects a %s persisted quality-profile snapshot", async (_label, beforeProfile) => {
 		const deployed = { id: 4, name: "Existing", formatItems: [{ format: 7, score: 100 }] };

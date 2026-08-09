@@ -127,6 +127,8 @@ describe("shouldRetainDeploymentBackup", () => {
 		["string schema version", JSON.stringify({ schemaVersion: "2" })],
 		["malformed current schema", JSON.stringify({ schemaVersion: 2 })],
 		["future schema version", JSON.stringify({ schemaVersion: 3 })],
+		["malformed legacy profile", JSON.stringify({ customFormats: [], qualityProfile: {} })],
+		["malformed legacy Custom Format", JSON.stringify([{ id: 7, name: "Incomplete" }])],
 	] as const)("retains %s", (_label, backupData) => {
 		expect(shouldRetainDeploymentBackup(backupData)).toBe(true);
 	});

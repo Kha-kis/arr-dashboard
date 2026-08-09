@@ -1,17 +1,13 @@
 import { z } from "zod";
+import { restorableCustomFormatSchema } from "./deployment-custom-format-state.js";
+import { restorableQualityProfileSchema } from "./deployment-profile-state.js";
 
 const positiveResourceId = z.number().int().positive().safe();
 const stateToken = z.string().min(1);
 const recordState = z.record(z.string(), z.unknown());
-const legacyCustomFormatSchema = z.looseObject({
-	id: positiveResourceId.optional(),
-	name: z.string().min(1),
-	specifications: z.array(z.unknown()).optional(),
-	includeCustomFormatWhenRenaming: z.boolean().optional(),
-});
 const legacyBackupSchema = z.looseObject({
-	customFormats: z.array(legacyCustomFormatSchema),
-	qualityProfile: recordState.nullable(),
+	customFormats: z.array(restorableCustomFormatSchema),
+	qualityProfile: restorableQualityProfileSchema.nullable(),
 });
 
 const customFormatStateSchema = z
@@ -115,7 +111,7 @@ export function shouldRetainDeploymentBackup(value: string): boolean {
 		return true;
 	}
 	if (Array.isArray(parsed)) {
-		return !z.array(legacyCustomFormatSchema).safeParse(parsed).success;
+		return !z.array(restorableCustomFormatSchema).safeParse(parsed).success;
 	}
 	if (
 		typeof parsed === "object" &&

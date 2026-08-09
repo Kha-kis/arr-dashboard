@@ -3,10 +3,27 @@ import { z } from "zod";
 import { createUpstreamResourceStateToken } from "./deployment-target.js";
 
 type ArrClient = SonarrClient | RadarrClient;
-const restorableCustomFormatSchema = z.looseObject({
+const restorableCustomFormatFieldSchema = z.looseObject({
+	name: z.string().min(1),
+	type: z.string().min(1),
+});
+const restorableCustomFormatSpecificationSchema: z.ZodType = z.lazy(() =>
+	z.looseObject({
+		id: z.number().int().positive().safe().optional(),
+		name: z.string().min(1),
+		implementation: z.string().min(1),
+		implementationName: z.string().min(1).nullable().optional(),
+		infoLink: z.string().nullable().optional(),
+		negate: z.boolean(),
+		required: z.boolean(),
+		fields: z.array(restorableCustomFormatFieldSchema),
+		presets: z.array(restorableCustomFormatSpecificationSchema).nullable().optional(),
+	}),
+);
+export const restorableCustomFormatSchema = z.looseObject({
 	id: z.number().int().positive().safe(),
 	name: z.string().min(1),
-	specifications: z.array(z.unknown()),
+	specifications: z.array(restorableCustomFormatSpecificationSchema),
 	includeCustomFormatWhenRenaming: z.boolean().nullable(),
 });
 

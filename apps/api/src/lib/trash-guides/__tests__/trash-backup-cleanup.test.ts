@@ -46,6 +46,14 @@ describe("TrashBackupCleanupService", () => {
 				{ id: "future", backupData: JSON.stringify({ schemaVersion: 3 }) },
 				{ id: "missing-version", backupData: JSON.stringify({ endpointKey: "current-like" }) },
 				{ id: "string-version", backupData: JSON.stringify({ schemaVersion: "2" }) },
+				{
+					id: "malformed-legacy-profile",
+					backupData: JSON.stringify({ customFormats: [], qualityProfile: {} }),
+				},
+				{
+					id: "malformed-legacy-cf",
+					backupData: JSON.stringify([{ id: 7, name: "Incomplete" }]),
+				},
 				{ id: "legacy-array", backupData: JSON.stringify([]) },
 				{
 					id: "legacy-object",
