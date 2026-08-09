@@ -325,6 +325,7 @@ export function buildCompleteQualityProfile(
 	sourceInfo: {
 		sourceInstanceId: string;
 		sourceInstanceLabel: string;
+		sourceConnectionStateToken?: string;
 		sourceProfileId: number;
 		sourceProfileName: string;
 	},
@@ -338,6 +339,7 @@ export function buildCompleteQualityProfile(
 		// Source information
 		sourceInstanceId: sourceInfo.sourceInstanceId,
 		sourceInstanceLabel: sourceInfo.sourceInstanceLabel,
+		sourceConnectionStateToken: sourceInfo.sourceConnectionStateToken,
 		sourceProfileId: sourceInfo.sourceProfileId,
 		sourceProfileName: sourceInfo.sourceProfileName,
 		importedAt: new Date().toISOString(),

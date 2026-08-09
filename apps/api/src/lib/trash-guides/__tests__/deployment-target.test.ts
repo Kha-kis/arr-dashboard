@@ -12,6 +12,7 @@ import {
 	createQualityProfileStateToken,
 	getEquivalentServiceInstanceIds,
 	isDeploymentBackupEndpointIdentityCurrent,
+	isVerifiedClonedProfileSourceConnection,
 	resolveDeploymentTarget,
 	type DeploymentProfileMapping,
 } from "../deployment-target.js";
@@ -22,6 +23,51 @@ const profiles = [
 ];
 
 describe("resolveDeploymentTarget", () => {
+	it("uses a cloned source ID only while its reviewed ARR connection still matches", () => {
+		const sourceInstance = {
+			id: "instance-1",
+			service: "RADARR",
+			baseUrl: "http://radarr:7878",
+			encryptedApiKey: "encrypted-key",
+			encryptionIv: "iv",
+			connectionGeneration: 2,
+		};
+		const sourceConnectionStateToken = createDeploymentConnectionStateToken(sourceInstance);
+
+		expect(
+			isVerifiedClonedProfileSourceConnection({
+				sourceInstanceId: "instance-1",
+				sourceConnectionStateToken,
+				equivalentInstanceIds: ["instance-1"],
+				instance: sourceInstance,
+			}),
+		).toBe(true);
+		expect(
+			isVerifiedClonedProfileSourceConnection({
+				sourceInstanceId: "instance-1",
+				sourceConnectionStateToken: undefined,
+				equivalentInstanceIds: ["instance-1"],
+				instance: sourceInstance,
+			}),
+		).toBe(false);
+		expect(
+			isVerifiedClonedProfileSourceConnection({
+				sourceInstanceId: "other-instance",
+				sourceConnectionStateToken,
+				equivalentInstanceIds: ["instance-1"],
+				instance: sourceInstance,
+			}),
+		).toBe(false);
+		expect(() =>
+			isVerifiedClonedProfileSourceConnection({
+				sourceInstanceId: "instance-1",
+				sourceConnectionStateToken,
+				equivalentInstanceIds: ["instance-1"],
+				instance: { ...sourceInstance, encryptedApiKey: "changed-key" },
+			}),
+		).toThrow("source ARR connection changed");
+	});
+
 	it("uses a stored mapping as the authoritative identity", () => {
 		const result = resolveDeploymentTarget({
 			profiles,

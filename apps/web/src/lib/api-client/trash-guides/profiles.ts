@@ -149,6 +149,7 @@ export type CreateClonedTemplatePayload = {
 	>;
 	sourceInstanceId: string;
 	sourceProfileId: number;
+	sourceStateToken: string;
 	sourceProfileName: string;
 	sourceInstanceLabel: string;
 	profileConfig: {

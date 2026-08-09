@@ -308,6 +308,42 @@ export function createDeploymentConnectionStateToken(instance: {
 	});
 }
 
+/** Bind cloned-profile creation to the exact reviewed owner, connection, and ARR profile state. */
+export function createClonedProfileSourceStateToken(args: {
+	userId: string;
+	instance: DeploymentConnectionInstance;
+	profile: unknown;
+}): string {
+	return createUpstreamResourceStateToken({
+		userId: args.userId,
+		instanceId: args.instance.id,
+		connectionGeneration: args.instance.connectionGeneration ?? 0,
+		connectionStateToken: createDeploymentConnectionStateToken(args.instance),
+		profileStateToken: createQualityProfileStateToken(args.profile),
+	});
+}
+
+/** Authorize numeric cloned-profile targeting only on the reviewed source ARR connection. */
+export function isVerifiedClonedProfileSourceConnection(args: {
+	sourceInstanceId?: string | null;
+	sourceConnectionStateToken?: string | null;
+	equivalentInstanceIds: string[];
+	instance: DeploymentConnectionInstance;
+}): boolean {
+	if (!args.sourceInstanceId || !args.equivalentInstanceIds.includes(args.sourceInstanceId)) {
+		return false;
+	}
+	if (!args.sourceConnectionStateToken) {
+		return false;
+	}
+	if (createDeploymentConnectionStateToken(args.instance) !== args.sourceConnectionStateToken) {
+		throw new ConflictError(
+			"The cloned profile's source ARR connection changed after the template was created. Recreate the template from the current connection before deploying it back to that source instance.",
+		);
+	}
+	return true;
+}
+
 /** Bind database ownership records to the exact configured ARR connection. */
 export function createDeploymentConnectionBinding(
 	instance: DeploymentConnectionInstance,

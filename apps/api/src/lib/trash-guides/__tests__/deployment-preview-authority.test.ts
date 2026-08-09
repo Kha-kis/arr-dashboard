@@ -18,9 +18,14 @@ const instance = {
 const template = {
 	id: "template-1",
 	userId: "user-1",
-	name: "Any",
+	name: "Radarr - Any",
 	serviceType: "RADARR",
 	configData: JSON.stringify({
+		completeQualityProfile: {
+			sourceInstanceId: "instance-1",
+			sourceConnectionStateToken: createDeploymentConnectionStateToken(instance),
+			sourceProfileId: 4,
+		},
 		customFormats: [
 			{
 				trashId,
@@ -38,10 +43,12 @@ function createService(
 		unreachable?: boolean;
 		customFormats?: Array<{ id: number; name: string; specifications: unknown[] }>;
 		mappings?: Array<Record<string, unknown>>;
+		instance?: typeof instance;
 		instances?: (typeof instance)[];
 		savedOverrides?: Array<Record<string, unknown>>;
 	} = {},
 ) {
+	const selectedInstance = options.instance ?? instance;
 	const existingFormat = {
 		id: 42,
 		name: `Different ARR name [${trashId.toUpperCase()}]`,
@@ -51,8 +58,8 @@ function createService(
 	const prisma = {
 		trashTemplate: { findUnique: vi.fn().mockResolvedValue(template) },
 		serviceInstance: {
-			findFirst: vi.fn().mockResolvedValue(instance),
-			findMany: vi.fn().mockResolvedValue(options.instances ?? [instance]),
+			findFirst: vi.fn().mockResolvedValue(selectedInstance),
+			findMany: vi.fn().mockResolvedValue(options.instances ?? [selectedInstance]),
 		},
 		templateQualityProfileMapping: {
 			findMany: vi.fn().mockResolvedValue(options.mappings ?? []),
@@ -85,6 +92,25 @@ function createService(
 }
 
 describe("deployment preview authority", () => {
+	it("targets the cloned source profile when the template was renamed", async () => {
+		const preview = await createService().generatePreview("template-1", "instance-1", "user-1");
+
+		expect(preview.warnings).toContain(
+			'Quality profile matched by cloned source ID ("Any", ID: 4) rather than a stored deployment mapping.',
+		);
+		expect(preview.warnings).not.toContain(
+			'Quality profile "Radarr - Any" not found in instance. Deploying will create it with the template\'s quality settings and Custom Format scores.',
+		);
+	});
+
+	it("blocks a cloned source deployment after the ARR connection changes", async () => {
+		await expect(
+			createService({
+				instance: { ...instance, encryptedApiKey: "changed-key" },
+			}).generatePreview("template-1", "instance-1", "user-1"),
+		).rejects.toThrow("source ARR connection changed");
+	});
+
 	it("matches a differently named ARR Custom Format by the shared trailing UUID", async () => {
 		const preview = await createService().generatePreview("template-1", "instance-1", "user-1");
 

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api-client/base";
 import type { QualityProfileSummary } from "../../lib/api-client/trash-guides";
+import { qualityProfileKeys } from "../../lib/query-keys";
 import type {
 	WizardAvailableFormat,
 	WizardCFConfigurationResult,
@@ -116,7 +117,7 @@ export function useCFConfiguration({
 		queryKey: isEditMode
 			? ["template-edit-data", editingTemplate?.id]
 			: isCloned
-				? ["cloned-profile-details", qualityProfile.trashId]
+				? qualityProfileKeys.clone.configuration(qualityProfile.trashId ?? "")
 				: ["quality-profile-details", serviceType, qualityProfile.trashId],
 		queryFn: async () => {
 			if (isEditMode && editingTemplate) {

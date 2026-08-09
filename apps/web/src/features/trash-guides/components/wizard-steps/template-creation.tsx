@@ -25,6 +25,7 @@ import {
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { apiRequest } from "../../../../lib/api-client/base";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
+import { qualityProfileKeys } from "../../../../lib/query-keys";
 import type { WizardCFGroup } from "../../types/wizard-types";
 
 /** Response from profile details endpoints */
@@ -32,6 +33,7 @@ interface ProfileDetailsResponse {
 	success?: boolean;
 	error?: string;
 	data?: {
+		sourceStateToken?: string;
 		profile?: {
 			upgradeAllowed?: boolean;
 			cutoff?: number;
@@ -212,7 +214,7 @@ export const TemplateCreation = ({
 	const hasTrashId = !!wizardState.selectedProfile.trashId;
 	const { data, isLoading } = useQuery({
 		queryKey: isCloned
-			? ["cloned-profile-details", wizardState.selectedProfile.trashId]
+			? qualityProfileKeys.clone.sourceReview(wizardState.selectedProfile.trashId ?? "")
 			: ["quality-profile-details", serviceType, wizardState.selectedProfile.trashId],
 		queryFn: async () => {
 			if (isCloned && clonedProfileInfo) {
@@ -320,6 +322,12 @@ export const TemplateCreation = ({
 
 				// Extract profile config from the data we fetched
 				const profileData = data?.data?.profile || data?.profile;
+				const sourceStateToken = data?.data?.sourceStateToken;
+				if (!sourceStateToken) {
+					throw new Error(
+						"Cannot create template: the cloned profile review expired. Refresh the profile and try again.",
+					);
+				}
 				const instanceLabel =
 					wizardState.selectedProfile.description?.replace("Cloned from ", "") ||
 					"Unknown Instance";
@@ -332,6 +340,7 @@ export const TemplateCreation = ({
 					customFormatSelections: wizardState.customFormatSelections,
 					sourceInstanceId: clonedProfileInfo.instanceId,
 					sourceProfileId: clonedProfileInfo.profileId,
+					sourceStateToken,
 					sourceProfileName: wizardState.selectedProfile.name,
 					sourceInstanceLabel: instanceLabel,
 					profileConfig: {
