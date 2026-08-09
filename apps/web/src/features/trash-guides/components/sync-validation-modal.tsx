@@ -69,6 +69,7 @@ export const SyncValidationModal = ({
 }: SyncValidationModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
+	const displayTemplateName = incognitoMode ? "TRaSH template" : templateName;
 	const displayInstanceName = incognitoMode ? getLinuxInstanceName(instanceName) : instanceName;
 	const [resolutions, setResolutions] = useState<Record<string, "REPLACE" | "SKIP">>({});
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
@@ -287,10 +288,23 @@ export const SyncValidationModal = ({
 		(w) => !w.includes("is reachable") && !w.includes("Validation passed"),
 	);
 	const hasActualWarnings = actualWarnings.length > 0;
+	const displayedValidationErrors = incognitoMode
+		? ["Validation errors hidden in incognito mode."]
+		: (validation?.errors ?? []);
+	const displayedActualWarnings = incognitoMode
+		? ["Validation warnings hidden in incognito mode."]
+		: actualWarnings;
+	const displayedInformationalWarnings = incognitoMode
+		? ["Validation information hidden in incognito mode."]
+		: informationalWarnings;
 
 	const _isAutoRetrying = retryProgress !== null && retryProgress.isWaiting;
 
 	const displayError = localError ?? validateMutation.error ?? null;
+	const displayedMutationError =
+		incognitoMode && displayError
+			? new Error("Validation request failed; details hidden in incognito mode.")
+			: displayError;
 
 	// Shared retry props for extracted panels
 	const retryProps = {
@@ -352,8 +366,9 @@ export const SyncValidationModal = ({
 								Validate Sync
 							</h2>
 							<p className="mt-1 text-sm text-muted-foreground">
-								Template: <span className="font-medium text-foreground">{templateName}</span> →
-								Instance: <span className="font-medium text-foreground">{displayInstanceName}</span>
+								Template: <span className="font-medium text-foreground">{displayTemplateName}</span>{" "}
+								→ Instance:{" "}
+								<span className="font-medium text-foreground">{displayInstanceName}</span>
 							</p>
 						</div>
 					</div>
@@ -396,7 +411,7 @@ export const SyncValidationModal = ({
 
 							{hasErrors && (
 								<ValidationErrorPanel
-									errors={validation.errors}
+									errors={displayedValidationErrors}
 									errorTypes={errorTypes}
 									themeGradient={themeGradient}
 									onCancel={onCancel}
@@ -408,7 +423,7 @@ export const SyncValidationModal = ({
 								/>
 							)}
 
-							{hasActualWarnings && <ValidationWarningsPanel warnings={actualWarnings} />}
+							{hasActualWarnings && <ValidationWarningsPanel warnings={displayedActualWarnings} />}
 
 							{/* Informational messages */}
 							{informationalWarnings.length > 0 && canProceed && (
@@ -423,7 +438,7 @@ export const SyncValidationModal = ({
 										<Info className="h-5 w-5 shrink-0" style={{ color: themeGradient.from }} />
 										<div className="flex-1">
 											<ul className="space-y-1 text-sm text-muted-foreground">
-												{informationalWarnings.map((info, index) => (
+												{displayedInformationalWarnings.map((info, index) => (
 													<li key={index}>• {info}</li>
 												))}
 											</ul>
@@ -447,16 +462,22 @@ export const SyncValidationModal = ({
 											</p>
 
 											<div className="mt-4 space-y-3">
-												{validation.conflicts.map((conflict) => (
+												{validation.conflicts.map((conflict, index) => (
 													<div
 														key={conflict.configName}
 														className="rounded-xl border border-border/50 bg-card/30 p-3"
 													>
 														<div className="flex items-center justify-between">
 															<div className="flex-1">
-																<p className="font-medium text-foreground">{conflict.configName}</p>
+																<p className="font-medium text-foreground">
+																	{incognitoMode
+																		? `Custom Format conflict ${index + 1}`
+																		: conflict.configName}
+																</p>
 																<p className="mt-0.5 text-xs text-muted-foreground">
-																	{conflict.reason}
+																	{incognitoMode
+																		? "Conflict details hidden in incognito mode."
+																		: conflict.reason}
 																</p>
 															</div>
 
@@ -515,16 +536,21 @@ export const SyncValidationModal = ({
 
 							{canProceed && !hasConflicts && <ValidationSuccessPanel />}
 							{canProceed && validation.preview && (
-								<SyncDeploymentPlanPanel preview={validation.preview} />
+								<SyncDeploymentPlanPanel
+									preview={validation.preview}
+									incognitoMode={incognitoMode}
+								/>
 							)}
 						</div>
 					)}
 
 					{/* Mutation Error */}
-					{displayError && <MutationErrorPanel error={displayError} {...retryProps} />}
+					{displayedMutationError && (
+						<MutationErrorPanel error={displayedMutationError} {...retryProps} />
+					)}
 
 					{/* Development Debug Panel */}
-					{isDevelopment && (
+					{isDevelopment && !incognitoMode && (
 						<SyncDebugPanel
 							templateId={templateId}
 							instanceId={instanceId}

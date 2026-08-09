@@ -289,7 +289,13 @@ function describeDeploymentAction(action: DeploymentAction, score: number): stri
 }
 
 /** The complete mutation plan authorized by the validation execution token. */
-export const SyncDeploymentPlanPanel = ({ preview }: { preview: DeploymentPreview }) => (
+export const SyncDeploymentPlanPanel = ({
+	preview,
+	incognitoMode,
+}: {
+	preview: DeploymentPreview;
+	incognitoMode: boolean;
+}) => (
 	<div className="rounded-xl border border-border/50 bg-card/30 p-4 backdrop-blur-xs">
 		<h3 className="font-medium text-foreground">Deployment plan</h3>
 		<p className="mt-1 text-xs text-muted-foreground">
@@ -300,9 +306,11 @@ export const SyncDeploymentPlanPanel = ({ preview }: { preview: DeploymentPrevie
 
 		{preview.customFormats.length > 0 && (
 			<ul className="mt-3 space-y-2 text-sm">
-				{preview.customFormats.map((item) => (
+				{preview.customFormats.map((item, index) => (
 					<li key={item.trashId} className="flex items-start justify-between gap-4">
-						<span className="font-medium text-foreground">{item.name}</span>
+						<span className="font-medium text-foreground">
+							{incognitoMode ? `Custom Format ${index + 1}` : item.name}
+						</span>
 						<span className="text-right text-muted-foreground">
 							{describeDeploymentAction(item.action, item.scoreOverride)}
 						</span>
@@ -313,9 +321,11 @@ export const SyncDeploymentPlanPanel = ({ preview }: { preview: DeploymentPrevie
 
 		{preview.orphanedCustomFormats.length > 0 && (
 			<ul className="mt-3 space-y-2 border-t border-border/50 pt-3 text-sm">
-				{preview.orphanedCustomFormats.map((item) => (
+				{preview.orphanedCustomFormats.map((item, index) => (
 					<li key={item.instanceId} className="flex items-start justify-between gap-4">
-						<span className="font-medium text-foreground">{item.name}</span>
+						<span className="font-medium text-foreground">
+							{incognitoMode ? `Orphaned Custom Format ${index + 1}` : item.name}
+						</span>
 						<span className="text-right text-muted-foreground">
 							Reset score from {item.score} to 0
 						</span>
@@ -324,16 +334,18 @@ export const SyncDeploymentPlanPanel = ({ preview }: { preview: DeploymentPrevie
 			</ul>
 		)}
 
-		{preview.namingChanges?.map((field) => (
+		{preview.namingChanges?.map((field, index) => (
 			<p key={field} className="mt-3 border-t border-border/50 pt-3 text-sm text-muted-foreground">
-				Update naming: {field}
+				{incognitoMode ? `Update naming setting ${index + 1}` : `Update naming: ${field}`}
 			</p>
 		))}
 
 		{preview.unmatchedCustomFormats.length > 0 && (
 			<ul className="mt-3 space-y-1 border-t border-border/50 pt-3 text-sm text-muted-foreground">
-				{preview.unmatchedCustomFormats.map((item) => (
-					<li key={item.instanceId}>Leave unmanaged: {item.name}</li>
+				{preview.unmatchedCustomFormats.map((item, index) => (
+					<li key={item.instanceId}>
+						Leave unmanaged: {incognitoMode ? `Custom Format ${index + 1}` : item.name}
+					</li>
 				))}
 			</ul>
 		)}
@@ -346,9 +358,11 @@ export const SyncDeploymentPlanPanel = ({ preview }: { preview: DeploymentPrevie
 					color: SEMANTIC_COLORS.warning.text,
 				}}
 			>
-				{preview.warnings.map((warning) => (
-					<li key={warning}>• {warning}</li>
-				))}
+				{incognitoMode ? (
+					<li>• Deployment warnings hidden in incognito mode.</li>
+				) : (
+					preview.warnings.map((warning) => <li key={warning}>• {warning}</li>)
+				)}
 			</ul>
 		)}
 	</div>

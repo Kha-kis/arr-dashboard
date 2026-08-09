@@ -106,6 +106,7 @@ const createMockPrisma = (
 		},
 		serviceInstance: {
 			findFirst: vi.fn().mockResolvedValue(instance),
+			findMany: vi.fn().mockResolvedValue(instance ? [instance] : []),
 		},
 		templateQualityProfileMapping: {
 			findMany: vi.fn().mockResolvedValue(mappings),
@@ -579,6 +580,75 @@ describe("SyncEngine - validate()", () => {
 			const result = await engine.validate(createSyncOptions());
 
 			expect(result.errors.filter((e) => e.includes("mappings"))).toHaveLength(0);
+		});
+
+		it("includes a legacy mapping as a read-only validation candidate", async () => {
+			const prisma = createMockPrisma({
+				mappings: [createMockMapping({ qualityProfileId: 1 })],
+			});
+			const factory = createMockClientFactory({
+				profiles: [{ id: 1, name: "HD-1080p" }],
+			});
+			const engine = new SyncEngine(prisma, undefined, undefined, factory);
+
+			const result = await engine.validate(createSyncOptions());
+
+			expect(result.errors.filter((error) => error.includes("mappings"))).toHaveLength(0);
+			expect(prisma.templateQualityProfileMapping.findMany).toHaveBeenCalledWith({
+				where: {
+					OR: expect.arrayContaining([
+						{
+							instanceId: "instance-123",
+							connectionGeneration: 0,
+							connectionStateToken: null,
+						},
+					]),
+				},
+			});
+		});
+
+		it("does not accept a legacy mapping for scheduled validation", async () => {
+			const legacyMapping = {
+				...createMockMapping({ qualityProfileId: 1 }),
+				connectionGeneration: 0,
+				connectionStateToken: null,
+			};
+			const prisma = createMockPrisma({ mappings: [legacyMapping] });
+			const engine = new SyncEngine(prisma);
+
+			const result = await engine.validate(createSyncOptions({ syncType: "SCHEDULED" }));
+
+			expect(result.valid).toBe(false);
+			expect(result.errors[0]).toContain("legacy deployment mapping");
+		});
+
+		it("rejects scheduled validation when a current mapping has a legacy equivalent alias", async () => {
+			const currentMapping = {
+				...createMockMapping({ qualityProfileId: 1 }),
+				connectionGeneration: 0,
+				connectionStateToken: "current-connection-token",
+			};
+			const legacyAliasMapping = {
+				...createMockMapping({
+					templateId: "template-other",
+					instanceId: "instance-alias",
+					qualityProfileId: 1,
+				}),
+				id: "mapping-alias",
+				connectionGeneration: 0,
+				connectionStateToken: null,
+			};
+			const prisma = createMockPrisma({ mappings: [currentMapping, legacyAliasMapping] });
+			vi.mocked(prisma.serviceInstance.findMany).mockResolvedValue([
+				createMockInstance() as never,
+				createMockInstance({ id: "instance-alias", baseUrl: "http://localhost:7878/" }) as never,
+			]);
+			const engine = new SyncEngine(prisma);
+
+			const result = await engine.validate(createSyncOptions({ syncType: "SCHEDULED" }));
+
+			expect(result.valid).toBe(false);
+			expect(result.errors[0]).toContain("legacy deployment mapping");
 		});
 
 		it("should warn when mapped quality profiles no longer exist in instance", async () => {

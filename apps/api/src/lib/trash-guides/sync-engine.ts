@@ -11,7 +11,12 @@ import { AppValidationError, ConflictError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
-import { createDeploymentConnectionBindingCandidates } from "./deployment-target.js";
+import {
+	createDeploymentConnectionBindingCandidates,
+	createLegacyDeploymentConnectionBindings,
+	getEquivalentServiceInstanceIds,
+	isLegacyDeploymentConnectionMapping,
+} from "./deployment-target.js";
 import { getSyncMetrics } from "./sync-metrics.js";
 import type { TemplateUpdater } from "./template-updater.js";
 import { USER_CF_PREFIX } from "./user-cf-resolver.js";
@@ -178,13 +183,52 @@ export class SyncEngine {
 			return { valid: false, conflicts, errors, warnings };
 		}
 
-		// Check for quality profile mappings
-		const qualityProfileMappings = await this.prisma.templateQualityProfileMapping.findMany({
-			where: {
-				templateId: options.templateId,
-				OR: createDeploymentConnectionBindingCandidates(instance),
+		// Check the same physical ARR endpoint scope used by preview and execution.
+		const serviceAliases = await this.prisma.serviceInstance.findMany({
+			where: { userId: options.userId, service: instance.service },
+			select: {
+				id: true,
+				service: true,
+				baseUrl: true,
+				encryptedApiKey: true,
+				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
+				connectionGeneration: true,
 			},
 		});
+		const aliases = serviceAliases.some((alias) => alias.id === instance.id)
+			? serviceAliases
+			: [...serviceAliases, instance];
+		const equivalentInstanceIds = getEquivalentServiceInstanceIds(aliases, instance);
+		if (!equivalentInstanceIds.includes(instance.id)) equivalentInstanceIds.push(instance.id);
+		const connectionBindings = aliases
+			.filter((alias) => equivalentInstanceIds.includes(alias.id))
+			.flatMap(createDeploymentConnectionBindingCandidates);
+		const allQualityProfileMappings = await this.prisma.templateQualityProfileMapping.findMany({
+			where: {
+				OR: [
+					...connectionBindings,
+					...createLegacyDeploymentConnectionBindings(equivalentInstanceIds),
+				],
+			},
+		});
+		const legacyMappings = allQualityProfileMappings.filter(isLegacyDeploymentConnectionMapping);
+		if (options.syncType === "SCHEDULED" && legacyMappings.length > 0) {
+			errors.push(
+				"Auto-sync is blocked because this ARR endpoint has a legacy deployment mapping. Run a manual sync to review and rebind it before enabling scheduled sync.",
+			);
+			return { valid: false, conflicts, errors, warnings };
+		}
+		const templateQualityProfileMappings = allQualityProfileMappings.filter(
+			(mapping) => mapping.templateId === options.templateId,
+		);
+		const qualityProfileMappings =
+			options.syncType === "MANUAL"
+				? templateQualityProfileMappings
+				: templateQualityProfileMappings.filter(
+						(mapping) => !isLegacyDeploymentConnectionMapping(mapping),
+					);
 
 		if (qualityProfileMappings.length === 0) {
 			errors.push(

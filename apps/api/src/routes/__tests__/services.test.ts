@@ -672,7 +672,22 @@ describe("DELETE /services/:id", () => {
 	});
 
 	it("preserves active deployment ownership instead of cascading it on ARR deletion", async () => {
+		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValue([
+			{ backup: makeAppliedDeploymentBackup() },
+		]);
 		mockPrisma.templateDeploymentHistory.count.mockResolvedValue(1);
+
+		const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain("active deployment ownership");
+		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
+	it("preserves a failed deployment ledger instead of cascading it on ARR deletion", async () => {
+		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValue([
+			{ backup: makeAppliedDeploymentBackup() },
+		]);
 
 		const res = await injectAuthenticated("DELETE", "/services/inst-1");
 

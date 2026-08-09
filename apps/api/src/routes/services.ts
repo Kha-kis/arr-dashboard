@@ -21,7 +21,7 @@ import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
 import { validateRequest } from "../lib/utils/validate.js";
-import { ConflictError } from "../lib/errors.js";
+import { AppValidationError, ConflictError } from "../lib/errors.js";
 import {
 	assertNoActiveDeploymentOwnership,
 	assertNoPendingDeploymentOperation,
@@ -563,6 +563,14 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 								: [id];
 							if (!guardedInstanceIds.includes(id)) guardedInstanceIds.push(id);
 							await assertNoPendingDeploymentOperation(app.prisma, userId, guardedInstanceIds);
+							try {
+								await assertNoActiveDeploymentOwnership(app.prisma, userId, guardedInstanceIds);
+							} catch (error) {
+								if (error instanceof AppValidationError) {
+									throw new ConflictError(error.message);
+								}
+								throw error;
+							}
 							const [activeSyncs, activeDeployments] = await Promise.all([
 								app.prisma.trashSyncHistory.count({
 									where: {
