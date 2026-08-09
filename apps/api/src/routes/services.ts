@@ -2,6 +2,7 @@ import { ALL_SERVICES, arrServiceTypeSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
+import { ConflictError } from "../lib/errors.js";
 import {
 	withCleanupTopologyMutationLease,
 	withExclusiveCleanupTopologyMutationLease,
@@ -24,6 +25,13 @@ import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
 import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
+import {
+	createDeploymentConnectionBinding,
+	createDeploymentConnectionStateToken,
+	createDeploymentEndpointKey,
+	isCurrentDeploymentConnectionMapping,
+	normalizeDeploymentBaseUrl,
+} from "../lib/trash-guides/deployment-target.js";
 import { validateRequest } from "../lib/utils/validate.js";
 import { invalidatePulseCache } from "./pulse.js";
 
@@ -82,14 +90,8 @@ const QUI_TOPOLOGY_UPDATE_FIELDS = [
 ] as const;
 const CACHE_PROVIDER_SERVICES = new Set<ServiceType>(["PLEX", "TAUTULLI", "JELLYFIN", "EMBY"]);
 
-function changesServiceConnection(
-	existing: Pick<ServiceInstance, "service" | "baseUrl">,
-	payload: z.infer<typeof serviceUpdateSchema>,
-): boolean {
-	const targetService = (payload.service ?? existing.service.toLowerCase()).toUpperCase();
-	if (payload.service !== undefined && targetService !== existing.service) return true;
-	if (payload.baseUrl !== undefined && payload.baseUrl !== existing.baseUrl) return true;
-	return Object.hasOwn(payload, "apiKey") || Object.hasOwn(payload, "httpAuth");
+function isArrService(service: ServiceType): boolean {
+	return service === "RADARR" || service === "SONARR";
 }
 
 function changesQuiTopology(
@@ -180,6 +182,210 @@ async function clearDurableQuiObservations(
 }
 
 const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
+	async function deleteArrAliasWithStateMigration(
+		userId: string,
+		existing: ServiceInstance,
+	): Promise<void> {
+		await app.deploymentExecutor.runWithEndpointMutation(
+			userId,
+			existing,
+			"ARR service alias deletion",
+			async (endpointKey) => {
+				const current = await requireInstance(app, userId, existing.id);
+				if (
+					createDeploymentEndpointKey(userId, current) !== endpointKey ||
+					createDeploymentConnectionStateToken(current) !==
+						createDeploymentConnectionStateToken(existing)
+				) {
+					throw new ConflictError(
+						"The ARR service connection changed while alias deletion was starting.",
+					);
+				}
+
+				await app.prisma.$transaction(async (tx) => {
+					const aliases = await tx.serviceInstance.findMany({
+						where: { userId, service: current.service },
+					});
+					const normalizedBaseUrl = normalizeDeploymentBaseUrl(current.baseUrl);
+					const endpointAliases = aliases.filter(
+						(alias) =>
+							alias.userId === userId &&
+							alias.service === current.service &&
+							normalizeDeploymentBaseUrl(alias.baseUrl) === normalizedBaseUrl,
+					);
+					if (!endpointAliases.some((alias) => alias.id === current.id)) {
+						throw new ConflictError(
+							"The ARR alias topology changed before deletion could be authorized.",
+						);
+					}
+					const endpointInstanceIds = endpointAliases.map((alias) => alias.id);
+					const [mappings, overrides] = await Promise.all([
+						tx.templateQualityProfileMapping.findMany({
+							where: {
+								instanceId: { in: endpointInstanceIds },
+								template: { userId },
+							},
+						}),
+						tx.instanceQualityProfileOverride.findMany({
+							where: { userId, instanceId: { in: endpointInstanceIds } },
+						}),
+					]);
+					if (overrides.some((override) => override.status !== "APPLIED")) {
+						throw new ConflictError(
+							"This ARR endpoint has unresolved score intent. Reconcile it before deleting an alias.",
+						);
+					}
+
+					const sourceMappings = mappings.filter((mapping) => mapping.instanceId === current.id);
+					const sourceOverrides = overrides.filter(
+						(override) => override.instanceId === current.id,
+					);
+					const hasMigratableState = sourceMappings.length > 0 || sourceOverrides.length > 0;
+					const currentCredentialIdentity =
+						app.arrClientFactory.createConnectionCredentialIdentity(current);
+					const exactSurvivors = endpointAliases.filter(
+						(alias) =>
+							alias.id !== current.id &&
+							app.arrClientFactory.createConnectionCredentialIdentity(alias) ===
+								currentCredentialIdentity,
+					);
+					if (hasMigratableState && exactSurvivors.length !== 1) {
+						throw new ConflictError(
+							"Saved profile state cannot be migrated because no single exact surviving ARR alias exists.",
+						);
+					}
+
+					const survivor = exactSurvivors[0];
+					if (survivor && hasMigratableState) {
+						const sourceBindings = [createDeploymentConnectionBinding(current)];
+						const survivorBindings = [createDeploymentConnectionBinding(survivor)];
+						if (
+							sourceMappings.some(
+								(mapping) => !isCurrentDeploymentConnectionMapping(mapping, sourceBindings),
+							) ||
+							sourceOverrides.some(
+								(override) => !isCurrentDeploymentConnectionMapping(override, sourceBindings),
+							)
+						) {
+							throw new ConflictError(
+								"The deleting ARR alias has stale saved profile state that requires manual reconciliation.",
+							);
+						}
+						const survivorMappings = mappings.filter(
+							(mapping) => mapping.instanceId === survivor.id,
+						);
+						const survivorOverrides = overrides.filter(
+							(override) => override.instanceId === survivor.id,
+						);
+						if (
+							survivorMappings.some(
+								(mapping) => !isCurrentDeploymentConnectionMapping(mapping, survivorBindings),
+							) ||
+							survivorOverrides.some(
+								(override) => !isCurrentDeploymentConnectionMapping(override, survivorBindings),
+							)
+						) {
+							throw new ConflictError(
+								"The surviving ARR alias has stale saved profile state that requires manual reconciliation.",
+							);
+						}
+
+						for (const mapping of sourceMappings) {
+							const target = survivorMappings.find(
+								(candidate) => candidate.qualityProfileId === mapping.qualityProfileId,
+							);
+							if (target) {
+								if (
+									target.templateId !== mapping.templateId ||
+									target.qualityProfileName !== mapping.qualityProfileName
+								) {
+									throw new ConflictError(
+										"Equivalent ARR aliases have conflicting template mappings.",
+									);
+								}
+								const deleted = await tx.templateQualityProfileMapping.deleteMany({
+									where: {
+										id: mapping.id,
+										instanceId: current.id,
+										connectionGeneration: mapping.connectionGeneration,
+										connectionStateToken: mapping.connectionStateToken,
+									},
+								});
+								if (deleted.count !== 1) {
+									throw new ConflictError("The ARR alias mapping changed during deletion.");
+								}
+								continue;
+							}
+							const migrated = await tx.templateQualityProfileMapping.updateMany({
+								where: {
+									id: mapping.id,
+									instanceId: current.id,
+									connectionGeneration: mapping.connectionGeneration,
+									connectionStateToken: mapping.connectionStateToken,
+								},
+								data: {
+									instanceId: survivor.id,
+									connectionGeneration: survivor.connectionGeneration,
+									connectionStateToken: createDeploymentConnectionStateToken(survivor),
+								},
+							});
+							if (migrated.count !== 1) {
+								throw new ConflictError("The ARR alias mapping changed during migration.");
+							}
+						}
+
+						for (const override of sourceOverrides) {
+							const target = survivorOverrides.find(
+								(candidate) =>
+									candidate.qualityProfileId === override.qualityProfileId &&
+									candidate.customFormatId === override.customFormatId,
+							);
+							if (target) {
+								if (target.status !== "APPLIED" || target.score !== override.score) {
+									throw new ConflictError(
+										"Equivalent ARR aliases have conflicting saved score overrides.",
+									);
+								}
+								const deleted = await tx.instanceQualityProfileOverride.deleteMany({
+									where: {
+										id: override.id,
+										instanceId: current.id,
+										status: "APPLIED",
+										userId,
+									},
+								});
+								if (deleted.count !== 1) {
+									throw new ConflictError("The ARR alias override changed during deletion.");
+								}
+								continue;
+							}
+							const migrated = await tx.instanceQualityProfileOverride.updateMany({
+								where: {
+									id: override.id,
+									instanceId: current.id,
+									status: "APPLIED",
+									userId,
+									connectionGeneration: override.connectionGeneration,
+									connectionStateToken: override.connectionStateToken,
+								},
+								data: {
+									instanceId: survivor.id,
+									connectionGeneration: survivor.connectionGeneration,
+									connectionStateToken: createDeploymentConnectionStateToken(survivor),
+								},
+							});
+							if (migrated.count !== 1) {
+								throw new ConflictError("The ARR alias override changed during migration.");
+							}
+						}
+					}
+
+					await tx.serviceInstance.delete({ where: { id: current.id, userId } });
+				});
+			},
+		);
+	}
+
 	app.get("/services", async (request, reply) => {
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: { userId: request.currentUser!.id },
@@ -311,15 +517,58 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 				const quiTopologyChanged = changesQuiTopology(existing.service, payload);
 				const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
-				const serviceConnectionChanged = changesServiceConnection(existing, payload);
 				const serviceTypeChanged = targetService !== existing.service;
-				const serviceUpdateData =
-					providerConnectionChanged || serviceConnectionChanged
-						? {
-								...updateData,
-								connectionGeneration: { increment: 1 },
-							}
-						: updateData;
+				const targetConnection = {
+					...existing,
+					...updateData,
+					service: targetService,
+				};
+				const arrConnectionFieldsSubmitted =
+					serviceTypeChanged ||
+					payload.baseUrl !== undefined ||
+					payload.apiKey !== undefined ||
+					payload.httpAuth !== undefined;
+				const arrConnectionChanged =
+					(isArrService(existing.service) || isArrService(targetService)) &&
+					arrConnectionFieldsSubmitted &&
+					(serviceTypeChanged ||
+						normalizeDeploymentBaseUrl(existing.baseUrl) !==
+							normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
+						app.arrClientFactory.createConnectionCredentialIdentity(existing) !==
+							app.arrClientFactory.createConnectionCredentialIdentity(targetConnection));
+				if (arrConnectionChanged && isArrService(existing.service)) {
+					const aliases = await app.prisma.serviceInstance.findMany({
+						where: { userId, service: existing.service },
+					});
+					const currentEndpoint = normalizeDeploymentBaseUrl(existing.baseUrl);
+					const equivalentInstanceIds = aliases
+						.filter(
+							(alias) =>
+								alias.userId === userId &&
+								alias.service === existing.service &&
+								normalizeDeploymentBaseUrl(alias.baseUrl) === currentEndpoint,
+						)
+						.map((alias) => alias.id);
+					if (!equivalentInstanceIds.includes(id)) equivalentInstanceIds.push(id);
+					const unresolvedIntents = await app.prisma.instanceQualityProfileOverride.findMany({
+						where: {
+							userId,
+							instanceId: { in: equivalentInstanceIds },
+							status: { in: ["PENDING", "UNCERTAIN"] },
+						},
+					});
+					if (unresolvedIntents.length > 0) {
+						throw new ConflictError(
+							"This ARR endpoint has unresolved score intent. Reconcile it before changing the connection.",
+						);
+					}
+				}
+				const serviceUpdateData = arrConnectionChanged
+					? {
+							...updateData,
+							connectionGeneration: { increment: 1 },
+						}
+					: updateData;
 				if (quiTopologyChanged) {
 					await withQuiObservationTopologyGuard(userId, async () => {
 						await app.prisma.$transaction(async (tx) => {
@@ -427,13 +676,13 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			{ prisma: app.prisma, log: request.log },
 			userId,
 			async () => {
-				const current = await requireInstance(app, userId, id);
-				if (current.service === "RADARR" || current.service === "SONARR") {
+				const existing = await requireInstance(app, userId, id);
+				if (existing.service === "RADARR" || existing.service === "SONARR") {
 					// Re-check after exclusive ownership is established. This is the
 					// execution-time authority check before the cascading delete.
 					await assertNoActiveTrashRecoveryForInstance(app.prisma, userId, id);
-				}
-				if (current.service === "QUI") {
+					await deleteArrAliasWithStateMigration(userId, existing);
+				} else if (existing.service === "QUI") {
 					await withQuiObservationTopologyGuard(userId, async () => {
 						await app.prisma.$transaction(async (tx) => {
 							await tx.serviceInstance.delete({ where: { id, userId } });

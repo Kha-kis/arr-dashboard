@@ -238,7 +238,10 @@ describe("instance quality profile score persistence", () => {
 				instanceId: alias.id,
 				qualityProfileId: 4,
 				customFormatId: 7,
+				score: 100,
 				status: "APPLIED",
+				connectionGeneration: alias.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(alias),
 			},
 		]);
 		deleteAliasOverrides.mockResolvedValueOnce({ count: 1 });
@@ -276,6 +279,8 @@ describe("instance quality profile score persistence", () => {
 				qualityProfileId: 4,
 				customFormatId: 7,
 				status: "UNCERTAIN",
+				connectionGeneration: alias.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(alias),
 			},
 		]);
 
@@ -301,6 +306,8 @@ describe("instance quality profile score persistence", () => {
 				customFormatId: 7,
 				score: 100,
 				status: "APPLIED",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
 			},
 			{
 				id: "alias-applied",
@@ -309,6 +316,8 @@ describe("instance quality profile score persistence", () => {
 				customFormatId: 7,
 				score: 200,
 				status: "APPLIED",
+				connectionGeneration: alias.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(alias),
 			},
 		]);
 
@@ -320,6 +329,133 @@ describe("instance quality profile score persistence", () => {
 
 		expect(response.statusCode).toBe(409);
 		expect(deleteAliasOverrides).not.toHaveBeenCalled();
+		expect(updateProfile).not.toHaveBeenCalled();
+	});
+
+	it("rejects a stale mapping row from an equivalent alias before saving intent", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		findServiceInstances.mockResolvedValueOnce([instance, alias]);
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-current",
+				templateId: "template-1",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+			},
+			{
+				id: "mapping-stale",
+				templateId: "template-1",
+				instanceId: alias.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				connectionGeneration: 1,
+				connectionStateToken: "stale-token",
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{ body: { scoreUpdates: [{ customFormatId: 7, score: -10_000 }] } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(upsertOverride).not.toHaveBeenCalled();
+		expect(updateProfile).not.toHaveBeenCalled();
+	});
+
+	it("rejects a stale applied override row from an equivalent alias before saving intent", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		findServiceInstances.mockResolvedValueOnce([instance, alias]);
+		findTransactionOverrides.mockResolvedValueOnce([
+			{
+				id: "alias-applied-stale",
+				instanceId: alias.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: 100,
+				status: "APPLIED",
+				connectionGeneration: 1,
+				connectionStateToken: "stale-token",
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{ body: { scoreUpdates: [{ customFormatId: 7, score: -10_000 }] } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(deleteAliasOverrides).not.toHaveBeenCalled();
+		expect(upsertOverride).not.toHaveBeenCalled();
+		expect(updateProfile).not.toHaveBeenCalled();
+	});
+
+	it.each(["4junk", "4.5", "0", "-4", "9007199254740992"])(
+		"rejects non-canonical PATCH profile identity %s before lookup",
+		async (profileId) => {
+			const response = await createInjectAuthenticated(app)(
+				"PATCH",
+				`/instance-1/quality-profiles/${profileId}/scores`,
+				{ body: { scoreUpdates: [{ customFormatId: 7, score: -10_000 }] } },
+			);
+
+			expect(response.statusCode).toBe(400);
+			expect(getProfile).not.toHaveBeenCalled();
+			expect(upsertOverride).not.toHaveBeenCalled();
+			expect(updateProfile).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["4junk", "4.5", "0", "-4", "9007199254740992"])(
+		"rejects non-canonical GET profile identity %s before lookup",
+		async (profileId) => {
+			const response = await createInjectAuthenticated(app)(
+				"GET",
+				`/instance-1/quality-profiles/${profileId}/overrides`,
+			);
+
+			expect(response.statusCode).toBe(400);
+			expect(findOverrides).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([4.5, 0, -4, Number.MAX_SAFE_INTEGER + 1])(
+		"rejects non-positive-safe bulk profile identity %s before lookup",
+		async (profileId) => {
+			const response = await createInjectAuthenticated(app)(
+				"POST",
+				"/instance-1/quality-profiles/bulk-overrides",
+				{ body: { profileIds: [profileId] } },
+			);
+
+			expect(response.statusCode).toBe(400);
+			expect(findOverrides).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each([
+		{ id: 5, name: "Any", mismatch: "id" },
+		{ id: 4, name: "Renamed upstream", mismatch: "name" },
+	])("rejects a live profile with mismatched $mismatch authority", async (liveProfile) => {
+		getProfile.mockReset().mockResolvedValue({
+			id: liveProfile.id,
+			name: liveProfile.name,
+			formatItems: [{ format: 7, score: 100 }],
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{ body: { scoreUpdates: [{ customFormatId: 7, score: -10_000 }] } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(upsertOverride).not.toHaveBeenCalled();
 		expect(updateProfile).not.toHaveBeenCalled();
 	});
 
@@ -357,6 +493,72 @@ describe("instance quality profile score persistence", () => {
 			expect.any(Function),
 		);
 	});
+
+	it.each(["RADARR", "SONARR"] as const)(
+		"uses the stateful %s SDK getById/full-resource PUT contract with exact target IDs",
+		async (service) => {
+			const targetInstance = { ...instance, service };
+			findServiceInstance.mockResolvedValue(targetInstance);
+			findServiceInstances.mockResolvedValue([targetInstance]);
+			findMappings.mockResolvedValue([
+				{
+					id: "mapping-1",
+					templateId: "template-1",
+					instanceId: targetInstance.id,
+					qualityProfileId: 4,
+					qualityProfileName: "Any",
+					connectionGeneration: targetInstance.connectionGeneration,
+					connectionStateToken: createDeploymentConnectionStateToken(targetInstance),
+				},
+			]);
+			let liveProfile = {
+				id: 4,
+				name: "Any",
+				upgradeAllowed: true,
+				cutoff: 1,
+				minFormatScore: 0,
+				cutoffFormatScore: 100,
+				items: [{ quality: { id: 1, name: "HD" }, allowed: true }],
+				language: { id: 1, name: "English" },
+				formatItems: [
+					{ format: 7, score: 100, name: "Reject" },
+					{ format: 8, score: 50, name: "Keep" },
+				],
+			};
+			getProfile.mockReset().mockImplementation(async (profileId: number) => {
+				expect(profileId).toBe(4);
+				return structuredClone(liveProfile);
+			});
+			updateProfile.mockImplementation(async (profileId: number, payload: typeof liveProfile) => {
+				expect(profileId).toBe(4);
+				liveProfile = structuredClone(payload);
+			});
+
+			const response = await createInjectAuthenticated(app)(
+				"PATCH",
+				"/instance-1/quality-profiles/4/scores",
+				{ body: { scoreUpdates: [{ customFormatId: 7, score: -10_000 }] } },
+			);
+
+			expect(response.statusCode, response.body).toBe(200);
+			expect(getProfile).toHaveBeenCalledTimes(4);
+			expect(getProfile.mock.calls.every(([profileId]) => profileId === 4)).toBe(true);
+			expect(updateProfile).toHaveBeenCalledWith(4, {
+				id: 4,
+				name: "Any",
+				upgradeAllowed: true,
+				cutoff: 1,
+				minFormatScore: 0,
+				cutoffFormatScore: 100,
+				items: [{ quality: { id: 1, name: "HD" }, allowed: true }],
+				language: { id: 1, name: "English" },
+				formatItems: [
+					{ format: 7, score: -10_000, name: "Reject" },
+					{ format: 8, score: 50, name: "Keep" },
+				],
+			});
+		},
+	);
 
 	it("serializes concurrent saves for equivalent endpoint aliases", async () => {
 		let activeMutation = false;
@@ -522,6 +724,83 @@ describe("instance quality profile score persistence", () => {
 				},
 			],
 		});
+	});
+
+	it.each([
+		{
+			label: "stale SET",
+			intentOperation: "SET_SCORE",
+			connectionGeneration: 1,
+			connectionStateToken: "stale-token",
+		},
+		{
+			label: "legacy RESET",
+			intentOperation: "RESET_SCORE",
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+		},
+	])("reports $label intent as manual-only on single reads", async (intent) => {
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "manual-intent",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10_000,
+				status: "UNCERTAIN",
+				intentOperation: intent.intentOperation,
+				intendedScore: -10_000,
+				connectionGeneration: intent.connectionGeneration,
+				connectionStateToken: intent.connectionStateToken,
+				updatedAt: new Date("2026-08-09T00:00:00Z"),
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/instance-1/quality-profiles/4/overrides",
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().recoveryIntents).toEqual([
+			expect.objectContaining({
+				retryable: false,
+				requiresManualReconciliation: true,
+				retryAction: null,
+			}),
+		]);
+	});
+
+	it("reports stale intent consistently as manual-only on bulk reads", async () => {
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "stale-intent",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10_000,
+				status: "PENDING",
+				intentOperation: "SET_SCORE",
+				intendedScore: -10_000,
+				connectionGeneration: 1,
+				connectionStateToken: "stale-token",
+				updatedAt: new Date("2026-08-09T00:00:00Z"),
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/bulk-overrides",
+			{ body: { profileIds: [4] } },
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().recoveryIntents).toEqual([
+			expect.objectContaining({
+				retryable: false,
+				requiresManualReconciliation: true,
+			}),
+		]);
 	});
 
 	it("fails closed when equivalent aliases expose conflicting applied scores", async () => {
