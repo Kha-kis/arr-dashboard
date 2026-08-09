@@ -532,6 +532,75 @@ describe("assertNoActiveDeploymentOwnership", () => {
 });
 
 describe("reconcileInterruptedDeploymentHistories", () => {
+	it.each([
+		{ label: "missing", backup: null },
+		{ label: "invalid", backup: { id: "backup-invalid", backupData: "not-json" } },
+	])(
+		"keeps a restarted $label-ledger operation blocked after reconciliation",
+		async ({ backup: interruptedBackup }) => {
+			const deploymentRow = {
+				id: "deployment-uncertain",
+				status: "IN_PROGRESS",
+				undeployStatus: null,
+				backupId: interruptedBackup?.id ?? null,
+				backup: interruptedBackup,
+			};
+			const syncRow = {
+				id: "sync-uncertain",
+				status: "RUNNING",
+				rollbackStatus: null,
+				backupId: interruptedBackup?.id ?? null,
+				backup: interruptedBackup,
+			};
+			const updateDeployment = vi.fn(async ({ where, data }) => {
+				if (deploymentRow.id !== where.id || deploymentRow.status !== where.status) {
+					return { count: 0 };
+				}
+				Object.assign(deploymentRow, data);
+				return { count: 1 };
+			});
+			const updateSync = vi.fn(async ({ where, data }) => {
+				const statusMatches = Array.isArray(where.status?.in)
+					? where.status.in.includes(syncRow.status)
+					: syncRow.status === where.status;
+				if (
+					(where.id !== undefined && syncRow.id !== where.id) ||
+					(where.backupId !== undefined && syncRow.backupId !== where.backupId) ||
+					!statusMatches
+				) {
+					return { count: 0 };
+				}
+				Object.assign(syncRow, data);
+				return { count: 1 };
+			});
+			const prisma = {
+				templateDeploymentHistory: {
+					findMany: vi.fn().mockResolvedValue([deploymentRow]),
+					updateMany: updateDeployment,
+				},
+				trashSyncHistory: {
+					findMany: vi.fn().mockResolvedValue([syncRow]),
+					updateMany: updateSync,
+				},
+				$transaction: vi.fn(async (callback) =>
+					callback({
+						templateDeploymentHistory: { updateMany: updateDeployment },
+						trashSyncHistory: { updateMany: updateSync },
+					}),
+				),
+			};
+
+			await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(
+				interruptedBackup ? 1 : 2,
+			);
+			expect(deploymentRow.status).toBe("UNCERTAIN");
+			expect(syncRow.status).toBe("UNCERTAIN");
+			await expect(
+				assertNoPendingDeploymentOperation(prisma as never, "user-1", ["instance-1"]),
+			).rejects.toThrow("uncertain upstream result");
+		},
+	);
+
 	it("marks an interrupted undeploy partial without rewriting deployment status", async () => {
 		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const findMany = vi.fn().mockResolvedValue([
@@ -741,9 +810,9 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		expect(syncUpdateMany).toHaveBeenCalledWith({
 			where: { id: "sync-running", status: { in: ["IN_PROGRESS", "RUNNING"] } },
 			data: expect.objectContaining({
-				status: "FAILED",
+				status: "UNCERTAIN",
 				completedAt: expect.any(Date),
-				errorLog: expect.stringContaining("restarted"),
+				errorLog: expect.stringContaining("uncertain"),
 			}),
 		});
 	});

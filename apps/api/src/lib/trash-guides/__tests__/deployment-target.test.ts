@@ -12,6 +12,7 @@ import {
 	createQualityProfileStateToken,
 	getEquivalentServiceInstanceIds,
 	resolveDeploymentTarget,
+	type DeploymentProfileMapping,
 } from "../deployment-target.js";
 
 const profiles = [
@@ -98,7 +99,12 @@ describe("resolveDeploymentTarget", () => {
 		expect(() =>
 			resolveDeploymentTarget({
 				profiles,
-				mapping: { qualityProfileId: 99, qualityProfileName: "Deleted profile" },
+				mapping: {
+					qualityProfileId: 99,
+					qualityProfileName: "Deleted profile",
+					connectionGeneration: 0,
+					connectionStateToken: null,
+				},
 				sourceProfileName: "Any",
 				templateName: "Radarr - Any",
 			}),
@@ -140,6 +146,8 @@ describe("resolveDeploymentTarget", () => {
 						templateId: "template-2",
 						qualityProfileId: 1,
 						qualityProfileName: "Any",
+						connectionGeneration: 0,
+						connectionStateToken: null,
 					},
 				],
 			}),
@@ -161,6 +169,8 @@ describe("resolveDeploymentTarget", () => {
 						templateId: "template-1",
 						qualityProfileId: 1,
 						qualityProfileName: "Any",
+						connectionGeneration: 0,
+						connectionStateToken: null,
 					},
 				],
 			}),
@@ -175,8 +185,20 @@ describe("resolveDeploymentTarget", () => {
 				target,
 				templateId: "template-1",
 				existingMappings: [
-					{ templateId: "template-1", qualityProfileId: 1, qualityProfileName: "Any" },
-					{ templateId: "template-2", qualityProfileId: 99, qualityProfileName: "Any" },
+					{
+						templateId: "template-1",
+						qualityProfileId: 1,
+						qualityProfileName: "Any",
+						connectionGeneration: 0,
+						connectionStateToken: null,
+					},
+					{
+						templateId: "template-2",
+						qualityProfileId: 99,
+						qualityProfileName: "Any",
+						connectionGeneration: 0,
+						connectionStateToken: null,
+					},
 				],
 			}),
 		).toThrow(ConflictError);
@@ -188,7 +210,13 @@ describe("resolveDeploymentTarget", () => {
 				target: { profile: undefined, profileName: "Any", matchedBy: "new" },
 				templateId: "template-1",
 				existingMappings: [
-					{ templateId: "template-2", qualityProfileId: 99, qualityProfileName: "Any" },
+					{
+						templateId: "template-2",
+						qualityProfileId: 99,
+						qualityProfileName: "Any",
+						connectionGeneration: 0,
+						connectionStateToken: null,
+					},
 				],
 			}),
 		).toThrow(ConflictError);
@@ -225,10 +253,34 @@ describe("legacy deployment connection mappings", () => {
 		).toThrow("predates connection identity verification");
 	});
 
+	it("fails closed when persisted connection fields are omitted", () => {
+		const mapping = {
+			qualityProfileId: 1,
+			qualityProfileName: "Any",
+		} as unknown as DeploymentProfileMapping;
+
+		expect(() => assertNoLegacyDeploymentConnectionMappings([mapping])).toThrow(
+			"predates connection identity verification",
+		);
+	});
+
+	it.each([
+		{ connectionGeneration: 4, connectionStateToken: null },
+		{ connectionGeneration: 4, connectionStateToken: "" },
+		{ connectionGeneration: 4, connectionStateToken: "   " },
+		{ connectionGeneration: 0, connectionStateToken: "bound-token" },
+		{ connectionGeneration: -1, connectionStateToken: "bound-token" },
+		{ connectionGeneration: 1.5, connectionStateToken: "bound-token" },
+	])("fails closed for malformed persisted connection identity %#", (mapping) => {
+		expect(() => assertNoLegacyDeploymentConnectionMappings([mapping])).toThrow(
+			"predates connection identity verification",
+		);
+	});
+
 	it("accepts mappings bound to an exact connection state", () => {
 		expect(() =>
 			assertNoLegacyDeploymentConnectionMappings([
-				{ connectionGeneration: 0, connectionStateToken: "exact-token" },
+				{ connectionGeneration: 1, connectionStateToken: "exact-token" },
 			]),
 		).not.toThrow();
 	});

@@ -10,8 +10,8 @@ export interface DeploymentProfileMapping {
 	templateId?: string;
 	qualityProfileId: number;
 	qualityProfileName: string;
-	connectionGeneration?: number | null;
-	connectionStateToken?: string | null;
+	connectionGeneration: number;
+	connectionStateToken: string | null;
 }
 
 export interface DeploymentServiceInstance {
@@ -306,7 +306,13 @@ export function createLegacyDeploymentConnectionBindings(
 
 /** Never use an unbound 2.x mapping to authorize a mutation after a connection may have changed. */
 export function isLegacyDeploymentConnectionMapping(mapping: DeploymentConnectionMapping): boolean {
-	return (mapping.connectionGeneration ?? 0) === 0 && mapping.connectionStateToken === null;
+	return !(
+		typeof mapping.connectionGeneration === "number" &&
+		Number.isSafeInteger(mapping.connectionGeneration) &&
+		mapping.connectionGeneration > 0 &&
+		typeof mapping.connectionStateToken === "string" &&
+		mapping.connectionStateToken.trim().length > 0
+	);
 }
 
 export function assertNoLegacyDeploymentConnectionMappings(

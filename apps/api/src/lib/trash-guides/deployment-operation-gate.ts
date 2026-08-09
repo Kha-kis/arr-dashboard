@@ -127,6 +127,14 @@ export async function assertNoPendingDeploymentOperation(
 		);
 	}
 	if (
+		syncRows.some((row) => row.status === "UNCERTAIN") ||
+		deploymentRows.some((row) => row.status === "UNCERTAIN")
+	) {
+		throw new AppValidationError(
+			"A previous TRaSH deployment has an uncertain upstream result. Resolve that history before changing this ARR endpoint.",
+		);
+	}
+	if (
 		syncRows.some(
 			(row) =>
 				!row.backup &&
@@ -273,7 +281,7 @@ export async function reconcileInterruptedDeploymentHistories(
 			: [];
 
 	type Reconciliation =
-		| { status: "FAILED"; message: string }
+		| { status: "FAILED" | "UNCERTAIN"; message: string }
 		| {
 				status: "PARTIAL_SUCCESS";
 				message: string;
@@ -284,9 +292,9 @@ export async function reconcileInterruptedDeploymentHistories(
 		let pending = false;
 		if (!backup) {
 			return {
-				status: "FAILED",
+				status: "UNCERTAIN",
 				message:
-					"The application restarted before deployment history could be finalized. Review the upstream ARR state before retrying.",
+					"The application restarted before deployment history could be finalized, so the upstream result is uncertain. Resolve the upstream ARR state before retrying.",
 			};
 		}
 
@@ -296,9 +304,9 @@ export async function reconcileInterruptedDeploymentHistories(
 			pending = hasPendingDeploymentMutation(state);
 		} catch {
 			return {
-				status: "FAILED",
+				status: "UNCERTAIN",
 				message:
-					"The application restarted with deployment history that could not be reconstructed exactly. Review the upstream ARR state before retrying.",
+					"The application restarted with deployment history that could not be reconstructed exactly, so the upstream result is uncertain. Resolve the upstream ARR state before retrying.",
 			};
 		}
 
