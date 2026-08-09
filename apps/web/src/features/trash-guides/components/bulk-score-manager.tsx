@@ -27,7 +27,7 @@ import {
 	Square,
 	X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useBulkScores } from "../../../hooks/api/useBulkScores";
 import {
@@ -36,6 +36,8 @@ import {
 } from "../../../hooks/api/useQualityProfileOverrides";
 import {
 	type BulkScoreUpdateEntry,
+	BulkUpdateScoresError,
+	type BulkUpdateScoresResult,
 	useBulkUpdateScores,
 } from "../../../hooks/api/useQualityProfileScores";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
@@ -51,6 +53,69 @@ const SERVICE_COLORS = {
 	radarr: SERVICE_GRADIENTS.radarr,
 	sonarr: SERVICE_GRADIENTS.sonarr,
 };
+
+function createScoreEditKey(cfTrashId: string, entryKey: string) {
+	return JSON.stringify([entryKey, cfTrashId]);
+}
+
+type ModifiedScores = Map<string, Map<string, number>>;
+
+function mergeModifiedScoresIntoQuery(
+	queryScores: CustomFormatScoreEntry[],
+	previousScores: CustomFormatScoreEntry[],
+	modifiedScores: ModifiedScores,
+): CustomFormatScoreEntry[] {
+	const previousByTrashId = new Map(previousScores.map((score) => [score.trashId, score]));
+	const mergedScores = [...queryScores];
+	const includedTrashIds = new Set(queryScores.map((score) => score.trashId));
+
+	for (const cfTrashId of modifiedScores.keys()) {
+		const previousScore = previousByTrashId.get(cfTrashId);
+		if (!includedTrashIds.has(cfTrashId) && previousScore) {
+			mergedScores.push(previousScore);
+			includedTrashIds.add(cfTrashId);
+		}
+	}
+
+	return mergedScores.map((score) => {
+		const edits = modifiedScores.get(score.trashId);
+		if (!edits || edits.size === 0) return score;
+
+		const previousTemplateScores = new Map(
+			(previousByTrashId.get(score.trashId)?.templateScores ?? []).map((templateScore) => [
+				templateScore.templateId,
+				templateScore,
+			]),
+		);
+		const templateScores = [...score.templateScores];
+		const templateIndexes = new Map(
+			templateScores.map((templateScore, index) => [templateScore.templateId, index]),
+		);
+
+		for (const [entryKey, currentScore] of edits) {
+			const existingIndex = templateIndexes.get(entryKey);
+			const existingTemplateScore =
+				existingIndex === undefined
+					? previousTemplateScores.get(entryKey)
+					: templateScores[existingIndex];
+			if (!existingTemplateScore) continue;
+
+			const mergedTemplateScore = {
+				...existingTemplateScore,
+				currentScore,
+				isModified: currentScore !== existingTemplateScore.defaultScore,
+			};
+			if (existingIndex === undefined) {
+				templateIndexes.set(entryKey, templateScores.length);
+				templateScores.push(mergedTemplateScore);
+			} else {
+				templateScores[existingIndex] = mergedTemplateScore;
+			}
+		}
+
+		return { ...score, templateScores, hasAnyModifications: true };
+	});
+}
 
 interface BulkScoreManagerProps {
 	/** User ID for data fetching */
@@ -88,7 +153,10 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 	const [scores, setScores] = useState<CustomFormatScoreEntry[]>([]);
 
 	// Track modified scores for saving
-	const [modifiedScores, setModifiedScores] = useState<Map<string, Map<string, number>>>(new Map());
+	const [modifiedScores, setModifiedScores] = useState<ModifiedScores>(new Map());
+	const modifiedScoresRef = useRef<ModifiedScores>(modifiedScores);
+	const previousInstanceIdRef = useRef(instanceId);
+	const [pendingScoreEditKeys, setPendingScoreEditKeys] = useState<Set<string>>(new Set());
 
 	// Track selected CFs for bulk operations
 	const [selectedCFs, setSelectedCFs] = useState<Set<string>>(new Set());
@@ -99,6 +167,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 
 	// Bulk update scores hook
 	const bulkUpdateScores = useBulkUpdateScores();
+	const isScoreSavePending = bulkUpdateScores.isPending || pendingScoreEditKeys.size > 0;
 
 	// Track quality profile IDs and their overrides
 	const [qualityProfileIds, setQualityProfileIds] = useState<number[]>([]);
@@ -114,6 +183,10 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		}
 		return map;
 	}, [allOverrides]);
+
+	useEffect(() => {
+		modifiedScoresRef.current = modifiedScores;
+	}, [modifiedScores]);
 
 	// Fetch overrides for multiple quality profiles using bulk API
 	const fetchOverridesForProfiles = useCallback(
@@ -141,7 +214,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 
 				if (data?.success && data.overridesByProfile) {
 					for (const [profileIdStr, overrides] of Object.entries(data.overridesByProfile)) {
-						const profileId = parseInt(profileIdStr);
+						const profileId = parseInt(profileIdStr, 10);
 						for (const override of overrides as Array<{ customFormatId: number; score: number }>) {
 							const key = `${profileId}-${override.customFormatId}`;
 							newOverrides.set(key, {
@@ -163,11 +236,27 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		[instanceId],
 	);
 
-	// Sync scores from query data and fetch overrides
+	// Clear instance-specific local state before applying data for another instance.
+	useEffect(() => {
+		if (previousInstanceIdRef.current === instanceId) return;
+		previousInstanceIdRef.current = instanceId;
+		const emptyModifiedScores: ModifiedScores = new Map();
+		modifiedScoresRef.current = emptyModifiedScores;
+		setScores([]);
+		setModifiedScores(emptyModifiedScores);
+		setPendingScoreEditKeys(new Set());
+		setSelectedCFs(new Set());
+		setQualityProfileIds([]);
+		setAllOverrides(new Map());
+	}, [instanceId]);
+
+	// Sync scores from query data and reapply retained local edits.
 	useEffect(() => {
 		if (bulkScoresData?.data?.scores) {
 			const queryScores = bulkScoresData.data.scores;
-			setScores(queryScores);
+			setScores((previousScores) =>
+				mergeModifiedScoresIntoQuery(queryScores, previousScores, modifiedScoresRef.current),
+			);
 
 			const profileIds = new Set<number>();
 			for (const score of queryScores) {
@@ -190,13 +279,6 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 			};
 		}
 	}, [bulkScoresData, fetchOverridesForProfiles]);
-
-	// Clear local state when instance changes
-	useEffect(() => {
-		setScores([]);
-		setModifiedScores(new Map());
-		setSelectedCFs(new Set());
-	}, [instanceId]);
 
 	// Handle score change in table
 	const handleScoreChange = (cfTrashId: string, templateId: string, newScore: number) => {
@@ -234,6 +316,8 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 
 	// Save all modified scores
 	const handleSaveChanges = async () => {
+		if (isScoreSavePending) return;
+
 		if (modifiedScores.size === 0) {
 			toast.error("No changes to save");
 			return;
@@ -243,10 +327,23 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 			toast.error("No instance selected");
 			return;
 		}
+		const submittedScores = new Map(
+			Array.from(modifiedScores, ([cfTrashId, templateScores]) => [
+				cfTrashId,
+				new Map(templateScores),
+			]),
+		);
+		setPendingScoreEditKeys(
+			new Set(
+				Array.from(submittedScores).flatMap(([cfTrashId, templateScores]) =>
+					Array.from(templateScores.keys(), (entryKey) => createScoreEditKey(cfTrashId, entryKey)),
+				),
+			),
+		);
 
 		const profileUpdates = new Map<string, Array<{ cfTrashId: string; score: number }>>();
 
-		for (const [cfTrashId, templateScores] of modifiedScores.entries()) {
+		for (const [cfTrashId, templateScores] of submittedScores.entries()) {
 			for (const [templateId, newScore] of templateScores.entries()) {
 				if (!profileUpdates.has(templateId)) {
 					profileUpdates.set(templateId, []);
@@ -257,8 +354,9 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 
 		const entries: BulkScoreUpdateEntry[] = Array.from(profileUpdates.entries()).map(
 			([templateId, changes]) => {
-				const profileId = parseInt(templateId.split("-").pop() || "0");
+				const profileId = parseInt(templateId.split("-").pop() || "0", 10);
 				return {
+					entryKey: templateId,
 					profileId,
 					instanceId,
 					changes,
@@ -266,17 +364,50 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 			},
 		);
 
+		let result: BulkUpdateScoresResult;
 		try {
-			await bulkUpdateScores.mutateAsync(entries);
-			setModifiedScores(new Map());
+			result = await bulkUpdateScores.mutateAsync(entries);
+		} catch (error) {
+			if (!(error instanceof BulkUpdateScoresError)) {
+				return;
+			}
+			result = error.result;
+		} finally {
+			setPendingScoreEditKeys(new Set());
+		}
+
+		const successfulEntryKeys = new Set(
+			result.results
+				.filter((profileResult) => profileResult.success)
+				.map(({ entryKey }) => entryKey),
+		);
+		setModifiedScores((current) => {
+			const retained = new Map<string, Map<string, number>>();
+			for (const [cfTrashId, templateScores] of current) {
+				const retainedTemplateScores = new Map(templateScores);
+				for (const entryKey of successfulEntryKeys) {
+					const submittedScore = submittedScores.get(cfTrashId)?.get(entryKey);
+					if (
+						submittedScore !== undefined &&
+						retainedTemplateScores.get(entryKey) === submittedScore
+					) {
+						retainedTemplateScores.delete(entryKey);
+					}
+				}
+				if (retainedTemplateScores.size > 0) {
+					retained.set(cfTrashId, retainedTemplateScores);
+				}
+			}
+			return retained;
+		});
+		if (result.successCount > 0) {
 			onOperationComplete?.();
-		} catch (_error) {
-			// error surfaced through mutation state
 		}
 	};
 
 	// Discard unsaved changes
 	const handleDiscardChanges = () => {
+		if (isScoreSavePending) return;
 		if (modifiedScores.size === 0) return;
 
 		if (confirm("Are you sure you want to discard all unsaved changes?")) {
@@ -291,12 +422,13 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		customFormatId: number,
 		customFormatName: string,
 	) => {
+		if (isScoreSavePending) return;
 		if (!instanceId) {
 			toast.error("No instance selected");
 			return;
 		}
 
-		const profileId = parseInt(templateId.split("-").pop() || "0");
+		const profileId = parseInt(templateId.split("-").pop() || "0", 10);
 		if (profileId === 0) {
 			toast.error("Invalid quality profile ID");
 			return;
@@ -323,6 +455,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 
 	// Handle bulk reset to template
 	const handleBulkResetToTemplate = async () => {
+		if (isScoreSavePending) return;
 		if (!instanceId) {
 			toast.error("Please select an instance first");
 			return;
@@ -336,8 +469,8 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		const profileToCFs = new Map<number, Set<number>>();
 
 		for (const trashId of selectedCFs) {
-			const cfId = parseInt(trashId.replace("cf-", ""));
-			if (isNaN(cfId)) continue;
+			const cfId = parseInt(trashId.replace("cf-", ""), 10);
+			if (Number.isNaN(cfId)) continue;
 
 			for (const profileId of qualityProfileIds) {
 				const overrideKey = `${profileId}-${cfId}`;
@@ -467,7 +600,10 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 					<div className="relative min-w-[200px]">
 						<select
 							value={instanceId}
-							onChange={(e) => setInstanceId(e.target.value)}
+							onChange={(e) => {
+								if (!isScoreSavePending) setInstanceId(e.target.value);
+							}}
+							disabled={isScoreSavePending}
 							className="w-full appearance-none rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pr-10 text-sm font-medium text-foreground focus:outline-hidden focus:ring-2 transition-all"
 							style={{ ["--tw-ring-color" as string]: themeGradient.from }}
 						>
@@ -557,7 +693,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 							<button
 								type="button"
 								onClick={handleDiscardChanges}
-								disabled={bulkUpdateScores.isPending}
+								disabled={isScoreSavePending}
 								className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors border border-border/50 bg-card/50 hover:bg-card/80 text-foreground disabled:opacity-50"
 							>
 								<X className="h-4 w-4" />
@@ -566,14 +702,14 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 							<button
 								type="button"
 								onClick={handleSaveChanges}
-								disabled={bulkUpdateScores.isPending}
+								disabled={isScoreSavePending}
 								className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-medium text-white transition-all duration-200 disabled:opacity-50"
 								style={{
 									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
 									boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
 								}}
 							>
-								{bulkUpdateScores.isPending ? (
+								{isScoreSavePending ? (
 									<>
 										<Loader2 className="h-4 w-4 animate-spin" />
 										Saving...
@@ -621,6 +757,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 						<button
 							type="button"
 							onClick={handleBulkResetToTemplate}
+							disabled={isScoreSavePending}
 							className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-medium text-white transition-all duration-200"
 							style={{
 								background: `linear-gradient(135deg, ${SEMANTIC_COLORS.warning.from}, #d97706)`,
@@ -764,10 +901,10 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 										</td>
 										{/* Editable score cells for each template */}
 										{score.templateScores.map((templateScore) => {
-											const cfId = parseInt(score.trashId.replace("cf-", ""));
+											const cfId = parseInt(score.trashId.replace("cf-", ""), 10);
 											const parts = templateScore.templateId.split("-");
 											const lastPart = parts[parts.length - 1];
-											const profileId = parseInt(lastPart || "0");
+											const profileId = parseInt(lastPart || "0", 10);
 
 											const overrideKey = `${profileId}-${cfId}`;
 											const hasOverride = overrideMap.has(overrideKey);
@@ -779,8 +916,11 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 														<input
 															type="number"
 															value={templateScore.currentScore}
+															disabled={pendingScoreEditKeys.has(
+																createScoreEditKey(score.trashId, templateScore.templateId),
+															)}
 															onChange={(e) => {
-																const newScore = parseInt(e.target.value) || 0;
+																const newScore = parseInt(e.target.value, 10) || 0;
 																handleScoreChange(
 																	score.trashId,
 																	templateScore.templateId,
@@ -822,6 +962,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 																onClick={() =>
 																	handleDeleteOverride(templateScore.templateId, cfId, score.name)
 																}
+																disabled={isScoreSavePending}
 																className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white transition-all duration-200 hover:scale-110"
 																style={{
 																	background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
