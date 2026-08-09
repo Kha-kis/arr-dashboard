@@ -124,7 +124,9 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			{ deploySingleInstance: vi.fn().mockRejectedValue(partialConflict) } as never,
 		);
 
-		await expect(engine.execute(createSyncOptions(), undefined)).resolves.toMatchObject({
+		await expect(
+			engine.execute(createSyncOptions(), undefined, "review-token"),
+		).resolves.toMatchObject({
 			success: false,
 			status: "PARTIAL_SUCCESS",
 			configsApplied: 1,
@@ -171,7 +173,9 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 		const progress = vi.fn();
 		engine.onProgress("sync-1", progress);
 
-		await expect(engine.execute(createSyncOptions(), undefined)).resolves.toMatchObject({
+		await expect(
+			engine.execute(createSyncOptions(), undefined, "review-token"),
+		).resolves.toMatchObject({
 			success: false,
 			status: "PARTIAL_SUCCESS",
 			configsApplied: 2,
@@ -229,7 +233,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			{ deploySingleInstance: vi.fn().mockRejectedValue(conflict) } as never,
 		);
 
-		const result = await engine.execute(createSyncOptions(), undefined);
+		const result = await engine.execute(createSyncOptions(), undefined, "review-token");
 
 		expect(result).toMatchObject({
 			success: false,
@@ -268,7 +272,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 		const progress = vi.fn();
 		engine.onProgress("sync-1", progress);
 
-		const result = await engine.execute(createSyncOptions(), undefined);
+		const result = await engine.execute(createSyncOptions(), undefined, "review-token");
 
 		expect(result).toMatchObject({
 			success: true,
@@ -314,7 +318,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			} as never,
 		);
 
-		const result = await engine.execute(createSyncOptions(), undefined);
+		const result = await engine.execute(createSyncOptions(), undefined, "review-token");
 
 		expect(result).toMatchObject({
 			success: true,
@@ -366,7 +370,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			{ deploySingleInstance } as never,
 		);
 
-		const result = await engine.execute(createSyncOptions(), undefined);
+		const result = await engine.execute(createSyncOptions(), undefined, "review-token");
 
 		expect(result).toMatchObject({
 			success: false,

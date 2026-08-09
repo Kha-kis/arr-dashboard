@@ -19,6 +19,7 @@ import { Button } from "../../../components/ui";
 import { useValidateSync } from "../../../hooks/api/useSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { ValidationResult } from "../../../lib/api-client/trash-guides";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import {
 	detectErrorTypes,
 	type ErrorType,
@@ -42,7 +43,7 @@ interface SyncValidationModalProps {
 	templateName: string;
 	instanceId: string;
 	instanceName: string;
-	onConfirm: (resolutions: Record<string, "REPLACE" | "SKIP">) => void;
+	onConfirm: (executionToken: string, resolutions: Record<string, "REPLACE" | "SKIP">) => void;
 	onCancel: () => void;
 	/** Optional callback to navigate to deployment workflow */
 	onNavigateToDeploy?: () => void;
@@ -264,14 +265,16 @@ export const SyncValidationModal = ({
 	};
 
 	const handleConfirm = () => {
-		onConfirm(resolutions);
+		if (!validation?.executionToken) return;
+		onConfirm(validation.executionToken, resolutions);
 	};
 
 	const isValidating = validateMutation.isPending;
 	const hasErrors = Array.isArray(validation?.errors) && validation.errors.length > 0;
 	const _hasWarnings = Array.isArray(validation?.warnings) && validation.warnings.length > 0;
 	const hasConflicts = Array.isArray(validation?.conflicts) && validation.conflicts.length > 0;
-	const canProceed = validation && validation.valid && !hasErrors;
+	const canProceed = !!validation?.executionToken && validation.valid && !hasErrors;
+	const orphanedCustomFormats = validation?.preview?.orphanedCustomFormats ?? [];
 
 	const hasSilentFailure = validation && !validation.valid && !hasErrors;
 
@@ -424,6 +427,50 @@ export const SyncValidationModal = ({
 													<li key={index}>• {info}</li>
 												))}
 											</ul>
+										</div>
+									</div>
+								</div>
+							)}
+
+							{orphanedCustomFormats.length > 0 && (
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.warning.bg,
+										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+									}}
+								>
+									<div className="flex items-start gap-3">
+										<Info
+											className="h-5 w-5 shrink-0"
+											style={{ color: SEMANTIC_COLORS.warning.from }}
+										/>
+										<div className="min-w-0 flex-1">
+											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
+												Managed Custom Formats Reset to Zero ({orphanedCustomFormats.length})
+											</h3>
+											<p className="mt-1 text-sm text-muted-foreground">
+												These formats are no longer in the template. Sync will reset their scores to
+												0.
+											</p>
+											<div className="mt-3 space-y-2">
+												{orphanedCustomFormats.map((orphan) => (
+													<div
+														key={orphan.instanceId}
+														className="flex items-center justify-between gap-4 rounded-lg border border-border/50 bg-card/30 px-3 py-2"
+													>
+														<span className="min-w-0 truncate text-sm font-medium text-foreground">
+															{orphan.name}
+														</span>
+														<span
+															className="shrink-0 font-mono text-sm"
+															style={{ color: SEMANTIC_COLORS.warning.text }}
+														>
+															{orphan.score} → 0
+														</span>
+													</div>
+												))}
+											</div>
 										</div>
 									</div>
 								</div>

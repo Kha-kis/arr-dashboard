@@ -1485,6 +1485,8 @@ export interface DeploymentPreview {
 	instanceId: string;
 	instanceLabel: string;
 	instanceServiceType: "RADARR" | "SONARR";
+	/** Opaque 64-character token binding execution to this exact preview state. */
+	executionToken: string;
 
 	// Deployment statistics
 	summary: {
@@ -1496,6 +1498,7 @@ export interface DeploymentPreview {
 		totalConflicts: number;
 		unresolvedConflicts: number;
 		unmatchedCustomFormats: number; // CFs in instance that couldn't be matched to a trash_id
+		orphanedCustomFormats: number;
 	};
 
 	// Deployment items
@@ -1503,6 +1506,16 @@ export interface DeploymentPreview {
 
 	// Unmatched CFs in instance (couldn't extract trash_id)
 	unmatchedCustomFormats: UnmatchedCustomFormat[];
+
+	// Previously managed CFs no longer present in the template
+	orphanedCustomFormats: Array<{
+		instanceId: number;
+		name: string;
+		score: number;
+	}>;
+
+	// Naming fields whose deployed values differ from the instance
+	namingChanges?: string[];
 
 	// Instance state
 	canDeploy: boolean; // False if instance unreachable or conflicts unresolved

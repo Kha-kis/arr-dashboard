@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConflictError } from "../../errors.js";
 import { DeploymentExecutorService } from "../deployment-executor.js";
-import { createQualityProfileStateToken } from "../deployment-target.js";
+import {
+	createDeploymentStateToken,
+	createQualityProfileStateToken,
+} from "../deployment-target.js";
 
 describe("DeploymentExecutorService Task 4A result propagation", () => {
 	it("returns an explicit uncertain result when a conflict follows a possible upstream write", async () => {
@@ -110,7 +113,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		const createBackup = vi.spyOn(privateExecutor, "createBackupAndHistory");
 
 		await expect(
-			executor.deploySingleInstance("template-1", "instance-1", "user-1"),
+			executor.deploySingleInstanceFromAutomation("template-1", "instance-1", "user-1"),
 		).resolves.toMatchObject({
 			success: false,
 			errors: [expect.stringContaining("uncertain upstream result")],
@@ -207,6 +210,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			validateAndPrepareDeployment: (...args: unknown[]) => Promise<unknown>;
 			createBackupAndHistory: (...args: unknown[]) => Promise<unknown>;
 			deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			executeSingleDeployment: (...args: unknown[]) => Promise<unknown>;
 		};
 		vi.spyOn(privateExecutor, "validateAndPrepareDeployment").mockResolvedValue({
 			template: {
@@ -275,7 +279,34 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			errors: [],
 		} as never);
 
-		const result = await executor.deploySingleInstance("template-1", "instance-1", "user-1");
+		const executionToken = createDeploymentStateToken({
+			template: {
+				id: "template-1",
+				name: "Any",
+				configData: "{}",
+				instanceOverrides: null,
+				sourceQualityProfileName: null,
+			},
+			instanceId: "instance-1",
+			connection: {
+				service: "RADARR",
+				baseUrl: "http://radarr:7878",
+				credentialIdentity: "encrypted-key:iv::",
+			},
+			target: { profile: undefined, profileName: "Any", matchedBy: "new" },
+			customFormats: [{ id: 42, name: "Managed CF" }],
+			savedScoreOverrides: [],
+			orphanedFormatScoreChanges: [],
+		});
+		const result = await privateExecutor.executeSingleDeployment(
+			"template-1",
+			"instance-1",
+			"user-1",
+			undefined,
+			undefined,
+			executionToken,
+			"user-1:RADARR:http://radarr:7878/",
+		);
 
 		const appliedProfile = {
 			name: "Any",
@@ -325,8 +356,19 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 
 	it("preserves applied details and profile evidence when a bulk target conflicts", async () => {
 		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			},
 			trashTemplate: {
 				findUnique: vi.fn().mockResolvedValue({ id: "template-1", name: "Radarr - Any" }),
+			},
+			serviceInstance: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ id: "instance-1", service: "RADARR", baseUrl: "http://radarr:7878" },
+					]),
 			},
 		};
 		const executor = new DeploymentExecutorService(prisma as never, {} as never);
@@ -350,9 +392,19 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 				},
 			},
 		});
-		vi.spyOn(executor, "deploySingleInstance").mockRejectedValue(conflict);
+		const privateExecutor = executor as unknown as {
+			executeSingleDeployment: (...args: unknown[]) => Promise<unknown>;
+		};
+		vi.spyOn(privateExecutor, "executeSingleDeployment").mockRejectedValue(conflict);
 
-		const result = await executor.deployBulkInstances("template-1", ["instance-1"], "user-1");
+		const result = await executor.deployBulkInstances(
+			"template-1",
+			["instance-1"],
+			"user-1",
+			undefined,
+			undefined,
+			{ "instance-1": "review-token" },
+		);
 
 		expect(result.results[0]).toMatchObject({
 			instanceId: "instance-1",

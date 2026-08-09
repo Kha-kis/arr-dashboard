@@ -320,6 +320,19 @@ export function isLegacyDeploymentConnectionMapping(mapping: DeploymentConnectio
 	);
 }
 
+/** True only when a persisted mapping matches one freshly resolved connection binding. */
+export function isCurrentDeploymentConnectionMapping(
+	mapping: DeploymentConnectionMapping & { instanceId: string },
+	bindings: DeploymentConnectionBinding[],
+): boolean {
+	return bindings.some(
+		(binding) =>
+			binding.instanceId === mapping.instanceId &&
+			binding.connectionGeneration === mapping.connectionGeneration &&
+			binding.connectionStateToken === mapping.connectionStateToken,
+	);
+}
+
 export function assertNoLegacyDeploymentConnectionMappings(
 	mappings: DeploymentConnectionMapping[],
 ): void {
