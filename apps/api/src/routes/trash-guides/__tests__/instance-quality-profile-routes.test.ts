@@ -37,7 +37,12 @@ describe("instance quality profile score writes", () => {
 	const getCustomFormats = vi.fn();
 	const findTransactionOverrides = vi.fn();
 	const deleteAliasOverrides = vi.fn();
+	const countTransactionOverrides = vi.fn();
+	const updateTemplate = vi.fn();
+	const findTransactionInstance = vi.fn();
+	const findTransactionMappings = vi.fn();
 	const runTransaction = vi.fn();
+	const runWithEndpointMutation = vi.fn();
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
@@ -57,14 +62,66 @@ describe("instance quality profile score writes", () => {
 			.mockResolvedValueOnce(beforeProfile)
 			.mockResolvedValueOnce(afterProfile);
 		const transactionClient = {
+			serviceInstance: {
+				findFirst: findTransactionInstance,
+			},
+			templateQualityProfileMapping: {
+				findMany: findTransactionMappings,
+			},
 			instanceQualityProfileOverride: {
 				findMany: findTransactionOverrides.mockResolvedValue([]),
 				deleteMany: deleteAliasOverrides.mockResolvedValue({ count: 0 }),
+				count: countTransactionOverrides.mockResolvedValue(0),
 				updateMany: updateOverrides,
 				upsert: upsertOverride,
 			},
+			trashTemplate: {
+				updateMany: updateTemplate.mockResolvedValue({ count: 1 }),
+			},
 		};
+		const template = {
+			id: "template-1",
+			userId,
+			updatedAt: new Date("2026-01-01"),
+			configData: JSON.stringify({
+				customFormats: [
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						scoreOverride: 100,
+						originalConfig: { _instanceCFId: 7 },
+					},
+				],
+			}),
+		};
+		const mapping = {
+			id: "mapping-1",
+			updatedAt: new Date("2026-01-01"),
+			templateId: template.id,
+			instanceId: instance.id,
+			qualityProfileId: 4,
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			managedCustomFormatsCaptured: true,
+			managedCustomFormats: JSON.stringify([
+				{
+					trashId: "trash-7",
+					name: "Reject",
+					resourceId: 7,
+					stateToken: "state-token",
+					profileId: 4,
+					appliedScore: 100,
+				},
+			]),
+			template,
+		};
+		findTransactionInstance.mockResolvedValue(instance);
+		findTransactionMappings.mockResolvedValue([mapping]);
 		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			},
 			serviceInstance: {
 				findFirst: vi.fn().mockResolvedValue(instance),
 				findMany: findServiceInstances.mockResolvedValue([instance]),
@@ -72,32 +129,7 @@ describe("instance quality profile score writes", () => {
 			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 			templateQualityProfileMapping: {
-				findFirst: vi.fn().mockResolvedValue({ templateId: "template-1" }),
-				findMany: findMappings.mockResolvedValue([
-					{
-						templateId: "template-1",
-						instanceId: instance.id,
-						qualityProfileId: 4,
-						connectionGeneration: instance.connectionGeneration,
-						connectionStateToken: createDeploymentConnectionStateToken(instance),
-						managedCustomFormatsCaptured: true,
-						managedCustomFormats: JSON.stringify([
-							{
-								trashId: "trash-7",
-								name: "Reject",
-								resourceId: 7,
-								stateToken: "state-token",
-								profileId: 4,
-								appliedScore: 100,
-							},
-						]),
-						template: {
-							configData: JSON.stringify({
-								customFormats: [{ trashId: "trash-7", scoreOverride: 100 }],
-							}),
-						},
-					},
-				]),
+				findMany: findMappings.mockResolvedValue([mapping]),
 			},
 			instanceQualityProfileOverride: {
 				upsert: upsertOverride.mockResolvedValue({}),
@@ -141,8 +173,9 @@ describe("instance quality profile score writes", () => {
 			createConnectionCredentialIdentity: vi.fn().mockReturnValue("credentials"),
 		} as never);
 		app.decorate("deploymentExecutor", {
-			runWithEndpointMutation: vi.fn(async (_userId, target, _operation, callback) =>
-				callback(createDeploymentEndpointKey(userId, target)),
+			runWithEndpointMutation: runWithEndpointMutation.mockImplementation(
+				async (_userId, target, _operation, callback) =>
+					callback(createDeploymentEndpointKey(userId, target)),
 			),
 		} as never);
 		await app.register(registerInstanceQualityProfileRoutes);
@@ -181,6 +214,68 @@ describe("instance quality profile score writes", () => {
 				data: expect.objectContaining({ status: "APPLIED" }),
 			}),
 		);
+	});
+
+	it("removes the recovery intent after a verified unmanaged profile update", async () => {
+		findMappings.mockResolvedValueOnce([]);
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{ body: { scoreUpdates: [{ customFormatId: 7, score: -10000 }] } },
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(deleteOverrides).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					qualityProfileId: 4,
+					status: "PENDING",
+					OR: [
+						expect.objectContaining({
+							customFormatId: 7,
+							intentOperation: "SET_SCORE",
+							intendedScore: -10000,
+						}),
+					],
+				}),
+			}),
+		);
+		expect(updateOverrides).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: "APPLIED" }) }),
+		);
+	});
+
+	it("keeps a durable override when the current template mapping belongs to an equivalent alias", async () => {
+		const mappedAlias = {
+			...instance,
+			id: "instance-alias",
+			encryptedApiKey: "other-encrypted-key",
+			encryptionIv: "other-iv",
+		};
+		findServiceInstances.mockResolvedValueOnce([instance, mappedAlias]);
+		findMappings.mockResolvedValueOnce([
+			{
+				templateId: "template-1",
+				instanceId: mappedAlias.id,
+				qualityProfileId: 4,
+				connectionGeneration: mappedAlias.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(mappedAlias),
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{ body: { scoreUpdates: [{ customFormatId: 7, score: -10000 }] } },
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().isTemplateManaged).toBe(true);
+		expect(updateOverrides).toHaveBeenLastCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: "APPLIED" }) }),
+		);
+		expect(deleteOverrides).not.toHaveBeenCalled();
 	});
 
 	it("rejects duplicate Custom Format score updates before any mutation", async () => {
@@ -498,6 +593,70 @@ describe("instance quality profile score writes", () => {
 		});
 	});
 
+	it("includes and deduplicates applied overrides from equivalent aliases in bulk reloads", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		findServiceInstances.mockResolvedValueOnce([instance, alias]);
+		findOverrides.mockResolvedValueOnce([
+			{
+				instanceId: alias.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10000,
+				status: "APPLIED",
+				updatedAt: new Date("2026-01-02"),
+			},
+			{
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10000,
+				status: "APPLIED",
+				updatedAt: new Date("2026-01-01"),
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/bulk-overrides",
+			{ body: { profileIds: [4] } },
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json()).toMatchObject({
+			totalOverrides: 1,
+			overridesByProfile: { 4: [{ customFormatId: 7, score: -10000 }] },
+		});
+	});
+
+	it("fails closed when equivalent aliases have conflicting applied scores", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		findServiceInstances.mockResolvedValueOnce([instance, alias]);
+		findOverrides.mockResolvedValueOnce([
+			{
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: 100,
+				status: "APPLIED",
+			},
+			{
+				instanceId: alias.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10000,
+				status: "APPLIED",
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/instance-1/quality-profiles/4/overrides",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("conflicting saved score overrides");
+	});
+
 	it("shows an uncertain intent saved through an equivalent service alias", async () => {
 		const alias = { ...instance, id: "instance-alias" };
 		findServiceInstances.mockResolvedValueOnce([instance, alias]);
@@ -527,11 +686,294 @@ describe("instance quality profile score writes", () => {
 			expect.objectContaining({
 				where: expect.objectContaining({
 					OR: expect.arrayContaining([
-						expect.objectContaining({ instanceId: { in: [instance.id, alias.id] } }),
+						expect.objectContaining({
+							status: { in: ["PENDING", "UNCERTAIN"] },
+							instanceId: { in: [instance.id, alias.id] },
+						}),
 					]),
 				}),
 			}),
 		);
+	});
+
+	it("shows an applied override saved through an equivalent service alias", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		findServiceInstances.mockResolvedValueOnce([instance, alias]);
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "alias-override",
+				instanceId: alias.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10000,
+				status: "APPLIED",
+				intentOperation: null,
+				intendedScore: null,
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/instance-1/quality-profiles/4/overrides",
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().overrides).toEqual([
+			expect.objectContaining({ id: "alias-override", score: -10000 }),
+		]);
+		expect(findOverrides).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: expect.arrayContaining([
+						expect.objectContaining({
+							status: "APPLIED",
+							OR: expect.arrayContaining([
+								expect.objectContaining({
+									instanceId: alias.id,
+									connectionGeneration: alias.connectionGeneration,
+									connectionStateToken: createDeploymentConnectionStateToken(alias),
+								}),
+							]),
+						}),
+					]),
+				}),
+			}),
+		);
+	});
+
+	it("reads applied alias overrides only through the alias's current connection binding", async () => {
+		const staleAlias = {
+			...instance,
+			id: "instance-alias",
+			encryptedApiKey: "stale-encrypted-key",
+			connectionGeneration: 1,
+		};
+		const currentAlias = {
+			...staleAlias,
+			encryptedApiKey: "current-encrypted-key",
+			connectionGeneration: 2,
+		};
+		findServiceInstances.mockResolvedValueOnce([instance, currentAlias]);
+		findOverrides.mockResolvedValueOnce([]);
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/instance-1/quality-profiles/4/overrides",
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		const query = findOverrides.mock.calls[0]![0];
+		expect(query).toEqual(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: expect.arrayContaining([
+						expect.objectContaining({
+							status: "APPLIED",
+							OR: expect.arrayContaining([
+								expect.objectContaining({
+									instanceId: currentAlias.id,
+									connectionGeneration: currentAlias.connectionGeneration,
+									connectionStateToken: createDeploymentConnectionStateToken(currentAlias),
+								}),
+							]),
+						}),
+					]),
+				}),
+			}),
+		);
+		expect(JSON.stringify(query)).not.toContain(createDeploymentConnectionStateToken(staleAlias));
+	});
+
+	it("promotes the exact reviewed override while holding the endpoint mutation lock", async () => {
+		const updatedAt = new Date("2026-01-02");
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "override-1",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10000,
+				status: "APPLIED",
+				updatedAt,
+			},
+		]);
+		deleteAliasOverrides.mockResolvedValueOnce({ count: 1 });
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/4/promote-override",
+			{ body: { customFormatId: 7, templateId: "template-1" } },
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(runWithEndpointMutation).toHaveBeenCalledWith(
+			userId,
+			expect.objectContaining({ id: instance.id }),
+			"Score override promotion",
+			expect.any(Function),
+		);
+		expect(deleteAliasOverrides).toHaveBeenCalledWith({
+			where: {
+				userId,
+				status: "APPLIED",
+				OR: [{ id: "override-1", updatedAt }],
+			},
+		});
+		expect(updateTemplate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: "template-1", userId }),
+				data: expect.objectContaining({
+					configData: expect.stringContaining('"scoreOverride":-10000'),
+				}),
+			}),
+		);
+	});
+
+	it("does not promote when the reviewed override changes before the transaction", async () => {
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "override-1",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10000,
+				status: "APPLIED",
+				updatedAt: new Date("2026-01-02"),
+			},
+		]);
+		deleteAliasOverrides.mockResolvedValueOnce({ count: 0 });
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/4/promote-override",
+			{ body: { customFormatId: 7, templateId: "template-1" } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("changed while it was being promoted");
+		expect(updateTemplate).not.toHaveBeenCalled();
+	});
+
+	it("does not promote an applied score while an equivalent alias has unresolved intent", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		findServiceInstances.mockResolvedValueOnce([instance, alias]);
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "override-applied",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: 100,
+				status: "APPLIED",
+				intentOperation: null,
+				intendedScore: null,
+				updatedAt: new Date("2026-01-01"),
+			},
+			{
+				id: "override-uncertain",
+				instanceId: alias.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: 100,
+				status: "UNCERTAIN",
+				intentOperation: "SET_SCORE",
+				intendedScore: -10000,
+				updatedAt: new Date("2026-01-02"),
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/4/promote-override",
+			{ body: { customFormatId: 7, templateId: "template-1" } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("unresolved upstream result");
+		expect(runTransaction).not.toHaveBeenCalled();
+		expect(updateTemplate).not.toHaveBeenCalled();
+	});
+
+	it("rolls back promotion when the equivalent override set changes in the transaction", async () => {
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "override-1",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10000,
+				status: "APPLIED",
+				updatedAt: new Date("2026-01-02"),
+			},
+		]);
+		deleteAliasOverrides.mockResolvedValueOnce({ count: 1 });
+		countTransactionOverrides.mockResolvedValueOnce(1);
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/4/promote-override",
+			{ body: { customFormatId: 7, templateId: "template-1" } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("override set changed");
+		expect(updateTemplate).not.toHaveBeenCalled();
+	});
+
+	it("rolls back promotion when the ARR connection rotates inside the transaction", async () => {
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "override-1",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10000,
+				status: "APPLIED",
+				updatedAt: new Date("2026-01-02"),
+			},
+		]);
+		findTransactionInstance.mockResolvedValueOnce({
+			...instance,
+			encryptedApiKey: "rotated-key",
+			connectionGeneration: instance.connectionGeneration + 1,
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/4/promote-override",
+			{ body: { customFormatId: 7, templateId: "template-1" } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("service connection changed");
+		expect(deleteAliasOverrides).not.toHaveBeenCalled();
+		expect(updateTemplate).not.toHaveBeenCalled();
+	});
+
+	it("rolls back promotion when its template mapping is unlinked in the transaction", async () => {
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "override-1",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10000,
+				status: "APPLIED",
+				updatedAt: new Date("2026-01-02"),
+			},
+		]);
+		findTransactionMappings.mockResolvedValueOnce([]);
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/4/promote-override",
+			{ body: { customFormatId: 7, templateId: "template-1" } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("template mapping changed");
+		expect(deleteAliasOverrides).not.toHaveBeenCalled();
+		expect(updateTemplate).not.toHaveBeenCalled();
 	});
 
 	it("completes the original uncertain intent when retried through an equivalent alias", async () => {
@@ -663,6 +1105,10 @@ describe("instance quality profile score writes", () => {
 			select
 				? [
 						{
+							id: "override-1",
+							instanceId: instance.id,
+							connectionGeneration: instance.connectionGeneration,
+							connectionStateToken: createDeploymentConnectionStateToken(instance),
 							qualityProfileId: 4,
 							customFormatId: 7,
 							intentOperation: "RESET_SCORE",
@@ -721,6 +1167,10 @@ describe("instance quality profile score writes", () => {
 			select
 				? [
 						{
+							id: "override-1",
+							instanceId: instance.id,
+							connectionGeneration: instance.connectionGeneration,
+							connectionStateToken: createDeploymentConnectionStateToken(instance),
 							qualityProfileId: 4,
 							customFormatId: 7,
 							intentOperation: "RESET_SCORE",
@@ -750,6 +1200,56 @@ describe("instance quality profile score writes", () => {
 			expect.objectContaining({ formatItems: [{ format: 7, score: 100 }] }),
 		);
 		expect(deleteOverrides).toHaveBeenCalledOnce();
+	});
+
+	it("rejects a reset intent saved under a stale equivalent-alias connection", async () => {
+		const staleAlias = {
+			...instance,
+			id: "instance-alias",
+			encryptedApiKey: "stale-key",
+			connectionGeneration: 1,
+		};
+		const currentAlias = {
+			...staleAlias,
+			encryptedApiKey: "current-key",
+			connectionGeneration: 2,
+		};
+		findServiceInstances.mockResolvedValueOnce([instance, currentAlias]);
+		findOverrides.mockImplementation(async ({ select }) =>
+			select
+				? [
+						{
+							id: "stale-reset",
+							instanceId: staleAlias.id,
+							connectionGeneration: staleAlias.connectionGeneration,
+							connectionStateToken: createDeploymentConnectionStateToken(staleAlias),
+							qualityProfileId: 4,
+							customFormatId: 7,
+							intentOperation: "RESET_SCORE",
+							intendedScore: 100,
+						},
+					]
+				: [
+						{
+							id: "current-override",
+							instanceId: instance.id,
+							connectionGeneration: instance.connectionGeneration,
+							connectionStateToken: createDeploymentConnectionStateToken(instance),
+							updatedAt: new Date("2026-01-01"),
+							customFormatId: 7,
+							status: "APPLIED",
+						},
+					],
+		);
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("older ARR connection");
+		expect(updateProfile).not.toHaveBeenCalled();
 	});
 
 	it("rolls back the reset intent batch when one override changes concurrently", async () => {

@@ -1786,6 +1786,138 @@ describe("DeploymentExecutorService - bulk partial failures", () => {
 		expect(result.results[0]?.qualityProfileApplied).not.toHaveProperty("postStateToken");
 	});
 
+	it("returns applied custom-format details when a later ordinary error stops deployment", async () => {
+		const updateSyncHistory = vi.fn().mockResolvedValue({});
+		const updateDeploymentHistory = vi.fn().mockResolvedValue({});
+		const transactionClient = {
+			trashSyncHistory: { update: updateSyncHistory },
+			templateDeploymentHistory: { update: updateDeploymentHistory },
+		};
+		const prisma = {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						id: "instance-1",
+						service: "RADARR",
+						baseUrl: "http://radarr",
+						encryptedApiKey: "encrypted",
+						encryptionIv: "iv",
+						encryptedHttpAuthCredentials: null,
+						httpAuthEncryptionIv: null,
+						connectionGeneration: 1,
+					},
+				]),
+			},
+			templateQualityProfileMapping: { findMany: vi.fn().mockResolvedValue([]) },
+			templateDeploymentHistory: {
+				findMany: vi.fn().mockResolvedValue([]),
+				create: vi.fn().mockResolvedValue({ id: "deployment-history-1" }),
+			},
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+			$transaction: vi.fn(
+				async (callback: (client: typeof transactionClient) => Promise<unknown>) =>
+					callback(transactionClient),
+			),
+		};
+		const profile = { id: 4, name: "Any", formatItems: [] };
+		const client = {
+			system: { get: vi.fn().mockResolvedValue({ version: "5.0.0" }) },
+			customFormat: { getAll: vi.fn().mockResolvedValue([]) },
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([profile]),
+				getById: vi.fn().mockResolvedValue(profile),
+			},
+		};
+		const executor = new DeploymentExecutorService(
+			prisma as never,
+			{
+				create: vi.fn().mockReturnValue(client),
+				createConnectionCredentialIdentity: vi.fn().mockReturnValue("credentials"),
+			} as never,
+		);
+		const internals = executor as unknown as {
+			validateAndPrepareDeployment: (...args: unknown[]) => Promise<unknown>;
+			createBackupAndHistory: (...args: unknown[]) => Promise<unknown>;
+			deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			syncQualityProfile: (...args: unknown[]) => Promise<unknown>;
+			executeSingleDeployment: (...args: unknown[]) => Promise<{
+				instanceLabel: string;
+				success: boolean;
+				customFormatsCreated: number;
+				details?: { created: string[] };
+				errors: string[];
+			}>;
+		};
+		vi.spyOn(internals, "validateAndPrepareDeployment").mockResolvedValue({
+			template: {
+				id: "template-1",
+				name: "Radarr - Any",
+				serviceType: "RADARR",
+				configData: '{"customFormats":[]}',
+				instanceOverrides: null,
+				sourceQualityProfileName: "Any",
+			},
+			instance: {
+				id: "instance-1",
+				label: "Production Radarr",
+				service: "RADARR",
+				baseUrl: "http://radarr",
+				encryptedApiKey: "encrypted",
+				encryptionIv: "iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				connectionGeneration: 1,
+			},
+			templateConfig: {},
+			templateCFs: [],
+			effectiveQualityConfig: undefined,
+		});
+		vi.spyOn(internals, "createBackupAndHistory").mockResolvedValue({
+			backup: {
+				id: "backup-1",
+				retentionExpiresAt: new Date("2026-09-01"),
+				data: {
+					customFormatDeployments: [],
+					qualityProfileDeployment: { status: "not_started" },
+				},
+			},
+			historyId: "sync-history-1",
+		});
+		const partialDetails = {
+			created: ["Created CF"],
+			updated: [],
+			failed: [],
+			orphaned: [],
+		};
+		vi.spyOn(internals, "deployCustomFormats").mockResolvedValue({
+			created: 1,
+			updated: 0,
+			skipped: 0,
+			errors: [],
+			details: partialDetails,
+		});
+		vi.spyOn(internals, "syncQualityProfile").mockRejectedValue(
+			new Error("quality profile read failed"),
+		);
+
+		const result = await internals.executeSingleDeployment("template-1", "instance-1", "user-1");
+
+		expect(result).toMatchObject({
+			instanceLabel: "Production Radarr",
+			success: false,
+			customFormatsCreated: 1,
+			details: partialDetails,
+			errors: ["quality profile read failed"],
+		});
+		expect(updateSyncHistory).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: "PARTIAL_SUCCESS" }) }),
+		);
+		expect(updateDeploymentHistory).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ appliedCFs: 1 }) }),
+		);
+	});
+
 	it("rejects duplicate records for one endpoint before starting a bulk deployment", async () => {
 		const prisma = {
 			trashTemplate: {

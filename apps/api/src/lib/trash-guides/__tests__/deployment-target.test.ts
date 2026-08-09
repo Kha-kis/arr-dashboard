@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { ConflictError } from "../../errors.js";
 import {
-	assertNoLegacyDeploymentConnectionMappings,
 	assertDeploymentTargetOwnership,
+	assertNoLegacyDeploymentConnectionMappings,
 	createDeploymentConnectionBinding,
 	createDeploymentConnectionBindingCandidates,
-	createLegacyDeploymentConnectionBindings,
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
 	createDeploymentStateToken,
+	createLegacyDeploymentConnectionBindings,
 	createQualityProfileStateToken,
 	getEquivalentServiceInstanceIds,
 	resolveDeploymentTarget,
@@ -343,7 +343,7 @@ describe("createDeploymentStateToken", () => {
 });
 
 describe("getEquivalentServiceInstanceIds", () => {
-	it("groups duplicate local records for the same normalized ARR endpoint", () => {
+	it("groups duplicate local records for the same normalized ARR endpoint across credentials", () => {
 		const target = {
 			id: "radarr-1",
 			service: "RADARR",
@@ -372,7 +372,7 @@ describe("getEquivalentServiceInstanceIds", () => {
 				],
 				target,
 			),
-		).toEqual(["radarr-1", "radarr-2"]);
+		).toEqual(["radarr-1", "radarr-2", "radarr-other-credentials"]);
 	});
 
 	it("uses the same lock identity for normalized duplicate records", () => {

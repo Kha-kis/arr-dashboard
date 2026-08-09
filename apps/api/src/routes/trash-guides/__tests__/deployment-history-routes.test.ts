@@ -383,6 +383,74 @@ describe("deployment history undeploy", () => {
 		expect(updateFormat).toHaveBeenCalledWith(7, survivorFormat);
 	});
 
+	it("does not write a shared Custom Format when its rollback snapshot is not the survivor state", async () => {
+		const staleBeforeFormat = {
+			id: 7,
+			name: "Shared CF",
+			specifications: [{ name: "V0" }],
+		};
+		const survivorFormat = {
+			id: 7,
+			name: "Shared CF",
+			specifications: [{ name: "V1" }],
+		};
+		const targetFormat = {
+			id: 7,
+			name: "Shared CF",
+			specifications: [{ name: "V2" }],
+		};
+		const target = currentHistory(
+			backupData({
+				customFormatDeployments: [
+					{
+						beforeFormat: staleBeforeFormat,
+						action: "updated",
+						resourceId: 7,
+						name: "Shared CF",
+						status: "applied",
+						postStateToken: createUpstreamResourceStateToken(targetFormat),
+						intendedPostStateToken: createUpstreamResourceStateToken(targetFormat),
+					},
+				],
+			}),
+		);
+		const survivor = {
+			...target,
+			id: "history-survivor",
+			templateId: "template-survivor",
+			backupId: "backup-survivor",
+			deployedAt: new Date("2025-12-31"),
+			backup: {
+				id: "backup-survivor",
+				backupData: backupData({
+					managedCustomFormats: [
+						{
+							trashId: "shared-trash-id",
+							name: "Shared CF",
+							resourceId: 7,
+							stateToken: createUpstreamResourceStateToken(survivorFormat),
+							profileId: 4,
+							appliedScore: 100,
+						},
+					],
+				}),
+			},
+		};
+		historyFindFirst.mockResolvedValue(target);
+		historyFindMany.mockResolvedValue([target, survivor]);
+		getAllFormats.mockResolvedValue([targetFormat]);
+		getFormatById.mockResolvedValue(targetFormat);
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().success).toBe(false);
+		expect(response.json().data.errors[0]).toContain(
+			"does not match the surviving deployment state",
+		);
+		expect(updateFormat).not.toHaveBeenCalled();
+	});
+
 	it("unwinds the latest shared quality-profile write before preserving the survivor state", async () => {
 		const survivorProfile = { id: 4, name: "Profile", formatItems: [{ format: 7, score: 100 }] };
 		const targetProfile = { id: 4, name: "Profile", formatItems: [{ format: 7, score: 500 }] };
@@ -444,6 +512,71 @@ describe("deployment history undeploy", () => {
 		);
 	});
 
+	it("does not write a shared quality profile from a stale rollback snapshot", async () => {
+		const staleBeforeProfile = {
+			id: 4,
+			name: "Profile",
+			formatItems: [{ format: 7, score: 0 }],
+		};
+		const survivorProfile = {
+			id: 4,
+			name: "Profile",
+			formatItems: [{ format: 7, score: 100 }],
+		};
+		const targetProfile = {
+			id: 4,
+			name: "Profile",
+			formatItems: [{ format: 7, score: 500 }],
+		};
+		const target = currentHistory(
+			backupData({
+				qualityProfileDeployment: {
+					beforeProfile: staleBeforeProfile,
+					status: "applied",
+					action: "updated",
+					profileId: 4,
+					profileName: "Profile",
+					postStateToken: createQualityProfileStateToken(targetProfile),
+					intendedPostStateToken: createQualityProfileStateToken(targetProfile),
+				},
+			}),
+		);
+		const survivor = {
+			...target,
+			id: "history-survivor",
+			templateId: "template-survivor",
+			backupId: "backup-survivor",
+			deployedAt: new Date("2025-12-31"),
+			backup: {
+				id: "backup-survivor",
+				backupData: backupData({
+					qualityProfileDeployment: {
+						beforeProfile: survivorProfile,
+						status: "applied",
+						action: "updated",
+						profileId: 4,
+						profileName: "Profile",
+						postStateToken: createQualityProfileStateToken(survivorProfile),
+						intendedPostStateToken: createQualityProfileStateToken(survivorProfile),
+					},
+				}),
+			},
+		};
+		historyFindFirst.mockResolvedValue(target);
+		historyFindMany.mockResolvedValue([target, survivor]);
+		getAllProfiles.mockResolvedValue([targetProfile]);
+		getProfileById.mockResolvedValue(targetProfile);
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().success).toBe(false);
+		expect(response.json().data.errors[0]).toContain(
+			"does not match the surviving deployment state",
+		);
+		expect(updateProfile).not.toHaveBeenCalled();
+	});
+
 	it("unwinds the latest shared naming write before preserving the survivor state", async () => {
 		const survivorNaming = { id: 1, standardMovieFormat: "V1" };
 		const targetNaming = { id: 1, standardMovieFormat: "V2" };
@@ -498,6 +631,60 @@ describe("deployment history undeploy", () => {
 					),
 				}),
 			}),
+		);
+	});
+
+	it("does not write shared naming configuration from a stale rollback snapshot", async () => {
+		const staleBeforeNaming = { id: 1, standardMovieFormat: "V0" };
+		const survivorNaming = { id: 1, standardMovieFormat: "V1" };
+		const targetNaming = { id: 1, standardMovieFormat: "V2" };
+		const target = currentHistory(
+			backupData({
+				namingDeployment: {
+					beforeConfig: staleBeforeNaming,
+					status: "applied",
+					postStateToken: createUpstreamResourceStateToken(targetNaming),
+					intendedPostStateToken: createUpstreamResourceStateToken(targetNaming),
+				},
+			}),
+		);
+		const survivor = {
+			...target,
+			id: "history-survivor",
+			templateId: "template-survivor",
+			backupId: "backup-survivor",
+			deployedAt: new Date("2025-12-31"),
+			backup: {
+				id: "backup-survivor",
+				backupData: backupData({
+					namingDeployment: {
+						beforeConfig: {},
+						status: "applied",
+						postStateToken: createUpstreamResourceStateToken(survivorNaming),
+						intendedPostStateToken: createUpstreamResourceStateToken(survivorNaming),
+					},
+				}),
+			},
+		};
+		historyFindFirst.mockResolvedValue(target);
+		historyFindMany.mockResolvedValue([target, survivor]);
+		rawRequest.mockResolvedValue({
+			ok: true,
+			status: 200,
+			json: async () => targetNaming,
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().success).toBe(false);
+		expect(response.json().data.errors[0]).toContain(
+			"does not match the surviving deployment state",
+		);
+		expect(rawRequest).not.toHaveBeenCalledWith(
+			instance,
+			"/api/v3/config/naming",
+			expect.objectContaining({ method: "PUT" }),
 		);
 	});
 

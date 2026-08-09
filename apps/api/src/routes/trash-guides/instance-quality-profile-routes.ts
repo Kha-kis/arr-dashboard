@@ -8,6 +8,7 @@ import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { AppValidationError, ConflictError } from "../../lib/errors.js";
+import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
 import { readPersistedManagedCustomFormatIdentities } from "../../lib/trash-guides/deployment-managed-format-state.js";
 import { assertNoPendingDeploymentOperation } from "../../lib/trash-guides/deployment-operation-gate.js";
 import {
@@ -77,6 +78,11 @@ const bulkDeleteOverridesSchema = z.object({
 	customFormatIds: z.array(z.number().int().positive().safe()).min(1).max(500),
 });
 
+const promoteOverrideSchema = z.object({
+	customFormatId: z.number().int().positive().safe(),
+	templateId: z.string().min(1),
+});
+
 function getTemplateScore(
 	config: ParsedTemplateConfig,
 	customFormatId: number,
@@ -118,6 +124,17 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		connectionGeneration: true,
 	} as const;
 
+	function runWithCoordinatedEndpointMutation<T>(
+		userId: string,
+		instance: Parameters<typeof createDeploymentEndpointKey>[1],
+		operation: string,
+		action: (endpointKey: string) => Promise<T>,
+	): Promise<T> {
+		return withCleanupTopologyMutationLease({ prisma: app.prisma, log: app.log }, userId, () =>
+			app.deploymentExecutor.runWithEndpointMutation(userId, instance, operation, action),
+		);
+	}
+
 	async function getEquivalentConnectionContext(userId: string, instanceId: string) {
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: { id: instanceId, userId, service: { in: ["RADARR", "SONARR"] } },
@@ -137,7 +154,10 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			{ ...instance, credentialIdentity },
 		);
 		if (!equivalentInstanceIds.includes(instanceId)) equivalentInstanceIds.push(instanceId);
-		return { instance, aliases, equivalentInstanceIds };
+		const connectionReadBindings = aliases
+			.filter((alias) => equivalentInstanceIds.includes(alias.id))
+			.flatMap(createDeploymentConnectionBindingCandidates);
+		return { instance, aliases, equivalentInstanceIds, connectionReadBindings };
 	}
 
 	async function resetScoreOverrides(
@@ -166,7 +186,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		});
 		if (!instance) throw new AppValidationError("Instance not found or access denied");
 
-		return app.deploymentExecutor.runWithEndpointMutation(
+		return runWithCoordinatedEndpointMutation(
 			userId,
 			instance,
 			"Quality profile override reset",
@@ -239,11 +259,33 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 						status: { in: ["PENDING", "UNCERTAIN"] },
 					},
 					select: {
+						id: true,
+						instanceId: true,
+						connectionGeneration: true,
+						connectionStateToken: true,
 						customFormatId: true,
 						intentOperation: true,
 						intendedScore: true,
 					},
 				});
+				const currentBindingKeys = new Set(
+					connectionBindings.map(
+						(binding) =>
+							`${binding.instanceId}:${binding.connectionGeneration}:${binding.connectionStateToken}`,
+					),
+				);
+				if (
+					pendingResetIntents.some(
+						(intent) =>
+							!currentBindingKeys.has(
+								`${intent.instanceId}:${intent.connectionGeneration}:${intent.connectionStateToken}`,
+							),
+					)
+				) {
+					throw new ConflictError(
+						"A saved score reset belongs to an older ARR connection. Retry or resolve it before resetting current overrides.",
+					);
+				}
 				const persistedResetScores = new Map(
 					pendingResetIntents.flatMap((intent) =>
 						intent.intentOperation === "RESET_SCORE" && intent.intendedScore !== null
@@ -433,7 +475,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			});
 		}
 
-		return request.server.deploymentExecutor.runWithEndpointMutation(
+		return runWithCoordinatedEndpointMutation(
 			userId,
 			instance,
 			"Quality profile score update",
@@ -545,14 +587,26 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				}
 				const updatedProfile = { ...profile, formatItems: updatedFormatItems };
 				const connectionStateToken = createDeploymentConnectionStateToken(currentInstance);
-				const templateMapping = await request.server.prisma.templateQualityProfileMapping.findFirst(
+				const connectionBindings = aliases
+					.filter((alias) => equivalentInstanceIds.includes(alias.id))
+					.flatMap(createDeploymentConnectionBindingCandidates);
+				const templateMappings = await request.server.prisma.templateQualityProfileMapping.findMany(
 					{
 						where: {
 							qualityProfileId: profileIdNum,
-							OR: createDeploymentConnectionBindingCandidates(currentInstance),
+							OR: connectionBindings,
+							template: { userId },
 						},
+						orderBy: { updatedAt: "desc" },
 					},
 				);
+				assertNoLegacyDeploymentConnectionMappings(templateMappings);
+				if (new Set(templateMappings.map((mapping) => mapping.templateId)).size > 1) {
+					throw new ConflictError(
+						"Equivalent records for this ARR instance have conflicting template mappings.",
+					);
+				}
+				const templateMapping = templateMappings[0];
 
 				const freshProfile = await client.qualityProfile.getById(profileIdNum);
 				if (
@@ -724,10 +778,14 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 							);
 						}
 					}
-					const completed = await request.server.prisma.instanceQualityProfileOverride.updateMany({
-						where: overrideWhere,
-						data: { status: "APPLIED", intentOperation: null, intendedScore: null },
-					});
+					const completed = templateMapping
+						? await request.server.prisma.instanceQualityProfileOverride.updateMany({
+								where: overrideWhere,
+								data: { status: "APPLIED", intentOperation: null, intendedScore: null },
+							})
+						: await request.server.prisma.instanceQualityProfileOverride.deleteMany({
+								where: overrideWhere,
+							});
 					if (completed.count !== scoreUpdates.length) {
 						throw new ConflictError(
 							"ARR accepted the score update, but the saved retry state changed before completion.",
@@ -748,7 +806,9 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 						scoreUpdates: scoreUpdates.length,
 						templateId: templateMapping?.templateId,
 					},
-					"Applied durable instance-level score overrides",
+					templateMapping
+						? "Applied durable instance-level score overrides"
+						: "Applied quality profile scores without persistent overrides",
 				);
 
 				const message = templateMapping
@@ -802,10 +862,10 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				userId,
 				qualityProfileId: profileIdNum,
 				OR: [
-					{ instanceId, status: "APPLIED" },
+					{ status: "APPLIED", OR: connectionContext.connectionReadBindings },
 					{
-						instanceId: { in: connectionContext.equivalentInstanceIds },
 						status: { in: ["PENDING", "UNCERTAIN"] },
+						instanceId: { in: connectionContext.equivalentInstanceIds },
 					},
 				],
 			},
@@ -813,7 +873,17 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				updatedAt: "desc",
 			},
 		});
-		const appliedOverrides = overrides.filter((override) => override.status === "APPLIED");
+		const appliedOverridesByFormat = new Map<number, (typeof overrides)[number]>();
+		for (const override of overrides.filter((row) => row.status === "APPLIED")) {
+			const existing = appliedOverridesByFormat.get(override.customFormatId);
+			if (existing && existing.score !== override.score) {
+				throw new ConflictError(
+					"Equivalent records for this ARR instance have conflicting saved score overrides.",
+				);
+			}
+			if (!existing) appliedOverridesByFormat.set(override.customFormatId, override);
+		}
+		const appliedOverrides = [...appliedOverridesByFormat.values()];
 		const recoveryIntents = overrides
 			.filter((override) => override.status !== "APPLIED")
 			.map((override) => ({
@@ -848,7 +918,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId, 10);
-		const { customFormatId, templateId } = request.body;
+		const { customFormatId, templateId } = validateRequest(promoteOverrideSchema, request.body);
 
 		if (Number.isNaN(profileIdNum)) {
 			return reply.status(400).send({
@@ -858,13 +928,13 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			});
 		}
 
-		// Verify the user owns this instance first
+		// Verify the user owns this instance before acquiring its endpoint lock.
 		const instance = await request.server.prisma.serviceInstance.findFirst({
 			where: {
 				id: instanceId,
 				userId,
 			},
-			select: { id: true },
+			select: arrConnectionSelect,
 		});
 
 		if (!instance) {
@@ -875,122 +945,227 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			});
 		}
 
-		// Get the instance override
-		const override = await request.server.prisma.instanceQualityProfileOverride.findFirst({
-			where: {
-				instanceId,
-				qualityProfileId: profileIdNum,
-				customFormatId,
-				userId,
-				status: "APPLIED",
-			},
-		});
+		return runWithCoordinatedEndpointMutation(
+			userId,
+			instance,
+			"Score override promotion",
+			async (endpointKey) => {
+				const connectionContext = await getEquivalentConnectionContext(userId, instanceId);
+				if (
+					!connectionContext ||
+					createDeploymentEndpointKey(userId, connectionContext.instance) !== endpointKey
+				) {
+					throw new ConflictError(
+						"The ARR service connection changed while the override promotion was starting.",
+					);
+				}
 
-		if (!override) {
-			return reply.status(404).send({
-				statusCode: 404,
-				error: "NotFound",
-				message: "Override not found",
-			});
-		}
+				const overrides = await request.server.prisma.instanceQualityProfileOverride.findMany({
+					where: {
+						qualityProfileId: profileIdNum,
+						customFormatId,
+						userId,
+						OR: [
+							{ status: "APPLIED", OR: connectionContext.connectionReadBindings },
+							{
+								status: { in: ["PENDING", "UNCERTAIN"] },
+								instanceId: { in: connectionContext.equivalentInstanceIds },
+							},
+						],
+					},
+					orderBy: { updatedAt: "desc" },
+				});
+				const override = overrides[0];
+				if (!override) {
+					return reply.status(404).send({
+						statusCode: 404,
+						error: "NotFound",
+						message: "Override not found",
+					});
+				}
+				if (overrides.some((candidate) => candidate.status !== "APPLIED")) {
+					throw new ConflictError(
+						"This score has an unresolved upstream result. Retry or resolve it before promoting the override.",
+					);
+				}
+				if (overrides.some((candidate) => candidate.score !== override.score)) {
+					throw new ConflictError(
+						"Equivalent records for this ARR instance have conflicting saved score overrides.",
+					);
+				}
 
-		// Ensure this profile is actually mapped to the requested template
-		const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
-			where: {
-				instanceId_qualityProfileId: {
-					instanceId,
-					qualityProfileId: profileIdNum,
-				},
-			},
-			include: { template: true },
-		});
-
-		if (!templateMapping || templateMapping.templateId !== templateId) {
-			return reply.status(400).send({
-				statusCode: 400,
-				error: "BadRequest",
-				message: "Quality profile is not mapped to the specified template",
-			});
-		}
-
-		// Verify the user owns this template
-		if (templateMapping.template.userId !== userId) {
-			return reply.status(403).send({
-				statusCode: 403,
-				error: "Forbidden",
-				message: "You do not have access to this template",
-			});
-		}
-
-		const template = templateMapping.template;
-
-		// Parse template config
-		let configData: ParsedTemplateConfig;
-		try {
-			configData = JSON.parse(template.configData);
-		} catch (parseError) {
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: `Template configData is invalid JSON: ${getErrorMessage(parseError)}`,
-			});
-		}
-
-		// Find and update the CF's scoreOverride in the template
-		const customFormats = configData.customFormats || [];
-		let cfUpdated = false;
-
-		for (const cf of customFormats) {
-			// Match by instance custom format ID (stored in originalConfig._instanceCFId)
-			if (cf.originalConfig?._instanceCFId === customFormatId) {
-				cf.scoreOverride = override.score;
-				cfUpdated = true;
-				request.server.log.info(
-					{ cfName: cf.name, instanceCFId: customFormatId, newScore: override.score },
-					"Updated CF scoreOverride in template",
+				const connectionBindings = connectionContext.aliases
+					.filter((alias) => connectionContext.equivalentInstanceIds.includes(alias.id))
+					.flatMap(createDeploymentConnectionBindingCandidates);
+				const templateMappings = await request.server.prisma.templateQualityProfileMapping.findMany(
+					{
+						where: {
+							qualityProfileId: profileIdNum,
+							OR: connectionBindings,
+							template: { userId },
+						},
+						include: { template: true },
+						orderBy: { updatedAt: "desc" },
+					},
 				);
-				break;
-			}
-		}
+				assertNoLegacyDeploymentConnectionMappings(templateMappings);
+				if (new Set(templateMappings.map((mapping) => mapping.templateId)).size > 1) {
+					throw new ConflictError(
+						"Equivalent records for this ARR instance have conflicting template mappings.",
+					);
+				}
+				const matchingMappings = templateMappings.filter(
+					(mapping) => mapping.templateId === templateId,
+				);
+				if (matchingMappings.length === 0) {
+					return reply.status(400).send({
+						statusCode: 400,
+						error: "BadRequest",
+						message: "Quality profile is not mapped to the specified template",
+					});
+				}
+				const template = matchingMappings[0]!.template;
+				const reviewedMappingState = templateMappings
+					.map((mapping) => ({
+						id: mapping.id,
+						templateId: mapping.templateId,
+						updatedAt: mapping.updatedAt,
+						connectionGeneration: mapping.connectionGeneration,
+						connectionStateToken: mapping.connectionStateToken,
+					}))
+					.sort((left, right) => left.id.localeCompare(right.id));
 
-		if (!cfUpdated) {
-			return reply.status(400).send({
-				statusCode: 400,
-				error: "BadRequest",
-				message: "Custom Format not found in template",
-			});
-		}
+				let configData: ParsedTemplateConfig;
+				try {
+					configData = JSON.parse(template.configData);
+				} catch (parseError) {
+					return reply.status(500).send({
+						statusCode: 500,
+						error: "InternalServerError",
+						message: `Template configData is invalid JSON: ${getErrorMessage(parseError)}`,
+					});
+				}
 
-		// Update template with new scoreOverride
-		await request.server.prisma.trashTemplate.update({
-			where: { id: templateId },
-			data: {
-				configData: JSON.stringify(configData),
-				hasUserModifications: true,
-				lastModifiedAt: new Date(),
-				lastModifiedBy: userId,
-			},
-		});
+				const customFormats = configData.customFormats || [];
+				const customFormat = customFormats.find(
+					(cf) => cf.originalConfig?._instanceCFId === customFormatId,
+				);
+				if (!customFormat) {
+					return reply.status(400).send({
+						statusCode: 400,
+						error: "BadRequest",
+						message: "Custom Format not found in template",
+					});
+				}
+				customFormat.scoreOverride = override.score;
 
-		// Delete the instance override (now it's in the template)
-		await request.server.prisma.instanceQualityProfileOverride.delete({
-			where: {
-				instanceId_qualityProfileId_customFormatId: {
-					instanceId,
-					qualityProfileId: profileIdNum,
+				await request.server.prisma.$transaction(async (transaction) => {
+					const transactionInstance = await transaction.serviceInstance.findFirst({
+						where: { id: instanceId, userId },
+						select: arrConnectionSelect,
+					});
+					if (
+						!transactionInstance ||
+						createDeploymentConnectionStateToken(transactionInstance) !==
+							createDeploymentConnectionStateToken(connectionContext.instance)
+					) {
+						throw new ConflictError(
+							"The ARR service connection changed while the override was being promoted. Refresh and try again.",
+						);
+					}
+					const transactionMappings = await transaction.templateQualityProfileMapping.findMany({
+						where: {
+							qualityProfileId: profileIdNum,
+							OR: connectionBindings,
+							template: { userId },
+						},
+						select: {
+							id: true,
+							templateId: true,
+							updatedAt: true,
+							connectionGeneration: true,
+							connectionStateToken: true,
+						},
+					});
+					const transactionMappingState = transactionMappings
+						.map((mapping) => ({
+							id: mapping.id,
+							templateId: mapping.templateId,
+							updatedAt: mapping.updatedAt,
+							connectionGeneration: mapping.connectionGeneration,
+							connectionStateToken: mapping.connectionStateToken,
+						}))
+						.sort((left, right) => left.id.localeCompare(right.id));
+					if (JSON.stringify(transactionMappingState) !== JSON.stringify(reviewedMappingState)) {
+						throw new ConflictError(
+							"The template mapping changed while the override was being promoted. Refresh and try again.",
+						);
+					}
+					const removed = await transaction.instanceQualityProfileOverride.deleteMany({
+						where: {
+							userId,
+							status: "APPLIED",
+							OR: overrides.map((candidate) => ({
+								id: candidate.id,
+								updatedAt: candidate.updatedAt,
+							})),
+						},
+					});
+					if (removed.count !== overrides.length) {
+						throw new ConflictError(
+							"The saved score override changed while it was being promoted. Refresh and try again.",
+						);
+					}
+					const remaining = await transaction.instanceQualityProfileOverride.count({
+						where: {
+							qualityProfileId: profileIdNum,
+							customFormatId,
+							userId,
+							OR: [
+								{ status: "APPLIED", OR: connectionContext.connectionReadBindings },
+								{
+									status: { in: ["PENDING", "UNCERTAIN"] },
+									instanceId: { in: connectionContext.equivalentInstanceIds },
+								},
+							],
+						},
+					});
+					if (remaining !== 0) {
+						throw new ConflictError(
+							"The saved score override set changed while it was being promoted. Refresh and try again.",
+						);
+					}
+
+					const updated = await transaction.trashTemplate.updateMany({
+						where: { id: templateId, userId, updatedAt: template.updatedAt },
+						data: {
+							configData: JSON.stringify(configData),
+							hasUserModifications: true,
+							lastModifiedAt: new Date(),
+							lastModifiedBy: userId,
+						},
+					});
+					if (updated.count !== 1) {
+						throw new ConflictError(
+							"The template changed while the score override was being promoted. Refresh and try again.",
+						);
+					}
+				});
+
+				request.server.log.info(
+					{ cfName: customFormat.name, instanceCFId: customFormatId, newScore: override.score },
+					"Promoted CF score override to template",
+				);
+				return reply.status(200).send({
+					success: true,
+					message:
+						"Override promoted to template. All instances using this template will receive the updated score on next sync.",
+					templateId,
 					customFormatId,
-				},
+					newScore: override.score,
+				});
 			},
-		});
-
-		return reply.status(200).send({
-			success: true,
-			message:
-				"Override promoted to template. All instances using this template will receive the updated score on next sync.",
-			templateId,
-			customFormatId,
-			newScore: override.score,
-		});
+		);
 	});
 
 	/**
@@ -1043,10 +1218,10 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					in: profileIds,
 				},
 				OR: [
-					{ instanceId, status: "APPLIED" },
+					{ status: "APPLIED", OR: connectionContext.connectionReadBindings },
 					{
-						instanceId: { in: connectionContext.equivalentInstanceIds },
 						status: { in: ["PENDING", "UNCERTAIN"] },
+						instanceId: { in: connectionContext.equivalentInstanceIds },
 					},
 				],
 			},
@@ -1065,9 +1240,21 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			}>
 		> = {};
 
+		const appliedScores = new Map<string, number>();
 		for (const override of overrides) {
 			if (override.status !== "APPLIED") continue;
 			const profileId = override.qualityProfileId;
+			const key = `${profileId}:${override.customFormatId}`;
+			const existingScore = appliedScores.get(key);
+			if (existingScore !== undefined) {
+				if (existingScore !== override.score) {
+					throw new ConflictError(
+						"Equivalent records for this ARR instance have conflicting saved score overrides.",
+					);
+				}
+				continue;
+			}
+			appliedScores.set(key, override.score);
 			if (!overridesByProfile[profileId]) {
 				overridesByProfile[profileId] = [];
 			}
@@ -1090,7 +1277,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 						override.intentOperation === "SET_SCORE") &&
 					override.intendedScore !== null,
 			}));
-		const appliedOverrideCount = overrides.length - recoveryIntents.length;
+		const appliedOverrideCount = appliedScores.size;
 
 		return reply.status(200).send({
 			success: true,

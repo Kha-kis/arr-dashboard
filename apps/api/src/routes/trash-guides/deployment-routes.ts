@@ -8,6 +8,8 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { ConflictError } from "../../lib/errors.js";
+import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
 import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -17,6 +19,11 @@ const executeDeploymentSchema = z.object({
 	syncStrategy: z.enum(["auto", "manual", "notify"]).optional(),
 	conflictResolutions: z.record(z.string(), z.enum(["use_template", "keep_existing"])).optional(),
 	executionToken: z.string().length(64),
+});
+
+const unlinkDeploymentSchema = z.object({
+	templateId: z.string().min(1),
+	instanceId: z.string().min(1),
 });
 
 const executeBulkDeploymentSchema = z
@@ -299,20 +306,10 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	 * This removes the TemplateQualityProfileMapping but keeps Custom Formats on the instance
 	 */
 	app.delete<{
-		Body: {
-			templateId: string;
-			instanceId: string;
-		};
+		Body: z.infer<typeof unlinkDeploymentSchema>;
 	}>("/unlink", async (request, reply) => {
-		const { templateId, instanceId } = request.body;
+		const { templateId, instanceId } = validateRequest(unlinkDeploymentSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceId) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceId are required",
-			});
-		}
 
 		// Find the mapping
 		const mapping = await prisma.templateQualityProfileMapping.findFirst({
@@ -351,10 +348,26 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			});
 		}
 
-		// Delete the mapping
-		await prisma.templateQualityProfileMapping.delete({
-			where: { id: mapping.id },
-		});
+		// Coordinate the exact compare-and-delete with score-override promotion.
+		const deleted = await withCleanupTopologyMutationLease(
+			{ prisma, log: request.log },
+			userId,
+			() =>
+				prisma.templateQualityProfileMapping.deleteMany({
+					where: {
+						id: mapping.id,
+						templateId,
+						instanceId,
+						updatedAt: mapping.updatedAt,
+						template: { userId },
+					},
+				}),
+		);
+		if (deleted.count !== 1) {
+			throw new ConflictError(
+				"The template mapping changed while it was being unlinked. Refresh and try again.",
+			);
+		}
 
 		request.log.info(
 			{

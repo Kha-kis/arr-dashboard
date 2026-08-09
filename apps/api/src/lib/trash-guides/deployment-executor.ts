@@ -1400,6 +1400,7 @@ export class DeploymentExecutorService {
 		let partialCFResult: DeployCustomFormatsResult | null = null;
 		const warnings: string[] = [];
 		let appliedProfileMutation: QualityProfileMutation | undefined;
+		let instanceLabel = "Unknown";
 		let deploymentPhase: "before_cf" | "custom_formats" | "quality_profile" | "post_profile" =
 			"before_cf";
 
@@ -1409,6 +1410,7 @@ export class DeploymentExecutorService {
 		try {
 			const { template, instance, templateConfig, templateCFs, effectiveQualityConfig } =
 				await this.validateAndPrepareDeployment(templateId, instanceId, userId);
+			instanceLabel = instance.label;
 			if (
 				expectedEndpointKey &&
 				createDeploymentEndpointKey(userId, instance) !== expectedEndpointKey
@@ -2002,12 +2004,16 @@ export class DeploymentExecutorService {
 
 			return {
 				instanceId,
-				instanceLabel: "Unknown",
+				instanceLabel,
 				success: false,
-				customFormatsCreated: 0,
-				customFormatsUpdated: 0,
-				customFormatsSkipped: 0,
+				customFormatsCreated: partialCounts?.created ?? 0,
+				customFormatsUpdated: partialCounts?.updated ?? 0,
+				customFormatsSkipped: partialCounts?.skipped ?? 0,
 				errors: [errorMessage],
+				...(partialProfile && {
+					qualityProfileApplied: toPublicQualityProfileMutation(partialProfile),
+				}),
+				...(partialDetails && { details: partialDetails }),
 			};
 		}
 	}

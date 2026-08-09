@@ -596,6 +596,14 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 												`${resourceLabel} is shared, but this deployment has no prior state from which to restore the surviving deployment state.`,
 											);
 										}
+										if (!profileState.beforeProfile) {
+											throw new Error(`${resourceLabel} has no prior state to verify.`);
+										}
+										assertSharedDeploymentState(
+											new Set([expectedSurvivorToken]),
+											createQualityProfileStateToken(profileState.beforeProfile),
+											resourceLabel,
+										);
 										await rollbackQualityProfileDeployment(client, {
 											...profileState,
 											status: profileStatus,
@@ -685,6 +693,14 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 											`${resourceLabel} is shared, but this deployment has no prior state from which to restore the surviving deployment state.`,
 										);
 									}
+									if (!state.beforeFormat) {
+										throw new Error(`${resourceLabel} has no prior state to verify.`);
+									}
+									assertSharedDeploymentState(
+										new Set([expectedSurvivorToken]),
+										createUpstreamResourceStateToken(state.beforeFormat),
+										resourceLabel,
+									);
 									await rollbackCustomFormatDeployment(client, state);
 									const restoredFormat = await client.customFormat.getById(state.resourceId);
 									assertSharedDeploymentState(
@@ -769,6 +785,11 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 										if (!rollbackNamingStateToken) {
 											throw new Error("The deployment has no verifiable naming post-state.");
 										}
+										assertSharedDeploymentState(
+											new Set([expectedSurvivorToken]),
+											createUpstreamResourceStateToken(namingState.beforeConfig),
+											"naming configuration",
+										);
 										await restoreNamingDeployment(
 											app.arrClientFactory,
 											currentInstance,

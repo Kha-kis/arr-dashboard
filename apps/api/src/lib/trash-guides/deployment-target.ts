@@ -227,10 +227,7 @@ export function getEquivalentServiceInstanceIds(
 		.filter(
 			(instance) =>
 				instance.service.toUpperCase() === targetService &&
-				normalizeDeploymentBaseUrl(instance.baseUrl) === targetBaseUrl &&
-				(target.credentialIdentity
-					? instance.credentialIdentity === target.credentialIdentity
-					: instance.id === target.id),
+				normalizeDeploymentBaseUrl(instance.baseUrl) === targetBaseUrl,
 		)
 		.map((instance) => instance.id);
 }

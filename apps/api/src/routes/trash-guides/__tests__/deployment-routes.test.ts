@@ -159,17 +159,23 @@ describe("deployment unlink route", () => {
 		const app = Fastify({ logger: false });
 		setupAuthInjection(app);
 		registerTestErrorHandler(app);
-		const deleteMapping = vi.fn().mockResolvedValue({});
+		const updatedAt = new Date("2026-08-08T00:00:00.000Z");
+		const deleteMapping = vi.fn().mockResolvedValue({ count: 1 });
 		const deleteOverrides = vi.fn();
 		app.decorate("prisma", {
+			libraryCleanupConfig: {
+				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			},
 			templateQualityProfileMapping: {
 				findFirst: vi.fn().mockResolvedValue({
 					id: "mapping-1",
+					updatedAt,
 					qualityProfileId: 4,
 					instance: { label: "Radarr" },
 					template: { name: "Template", userId: "user-1" },
 				}),
-				delete: deleteMapping,
+				deleteMany: deleteMapping,
 			},
 			instanceQualityProfileOverride: { deleteMany: deleteOverrides },
 		} as never);
@@ -184,8 +190,54 @@ describe("deployment unlink route", () => {
 			});
 
 			expect(response.statusCode).toBe(200);
-			expect(deleteMapping).toHaveBeenCalledWith({ where: { id: "mapping-1" } });
+			expect(deleteMapping).toHaveBeenCalledWith({
+				where: {
+					id: "mapping-1",
+					templateId: "template-1",
+					instanceId: "instance-1",
+					updatedAt,
+					template: { userId: "user-1" },
+				},
+			});
 			expect(deleteOverrides).not.toHaveBeenCalled();
+		} finally {
+			await app.close();
+		}
+	});
+
+	it("rejects unlink when the mapping changes before the coordinated delete", async () => {
+		const app = Fastify({ logger: false });
+		setupAuthInjection(app);
+		registerTestErrorHandler(app);
+		app.decorate("prisma", {
+			libraryCleanupConfig: {
+				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			},
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue({
+					id: "mapping-1",
+					updatedAt: new Date("2026-08-08T00:00:00.000Z"),
+					instance: { label: "Radarr" },
+					template: { name: "Template", userId: "user-1" },
+				}),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+		} as never);
+		app.decorate("arrClientFactory", {} as never);
+		app.decorate("deploymentExecutor", {} as never);
+		await app.register(deploymentRoutes);
+		await app.ready();
+
+		try {
+			const response = await createInjectAuthenticated(app)("DELETE", "/unlink", {
+				body: { templateId: "template-1", instanceId: "instance-1" },
+			});
+
+			expect(response.statusCode).toBe(409);
+			expect(response.json()).toMatchObject({
+				message: "The template mapping changed while it was being unlinked. Refresh and try again.",
+			});
 		} finally {
 			await app.close();
 		}
