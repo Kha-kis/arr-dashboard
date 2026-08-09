@@ -35,6 +35,8 @@ describe("instance quality profile score writes", () => {
 	const findOverrides = vi.fn();
 	const deleteOverrides = vi.fn();
 	const getCustomFormats = vi.fn();
+	const findTransactionOverrides = vi.fn();
+	const deleteAliasOverrides = vi.fn();
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
@@ -54,7 +56,12 @@ describe("instance quality profile score writes", () => {
 			.mockResolvedValueOnce(beforeProfile)
 			.mockResolvedValueOnce(afterProfile);
 		const transactionClient = {
-			instanceQualityProfileOverride: { updateMany: updateOverrides },
+			instanceQualityProfileOverride: {
+				findMany: findTransactionOverrides.mockResolvedValue([]),
+				deleteMany: deleteAliasOverrides.mockResolvedValue({ count: 0 }),
+				updateMany: updateOverrides,
+				upsert: upsertOverride,
+			},
 		};
 		const prisma = {
 			serviceInstance: {
@@ -192,6 +199,103 @@ describe("instance quality profile score writes", () => {
 		expect(updateOverrides).toHaveBeenLastCalledWith(
 			expect.objectContaining({ data: { status: "UNCERTAIN" } }),
 		);
+	});
+
+	it("atomically replaces an applied override from an equivalent alias", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		findServiceInstances.mockResolvedValueOnce([instance, alias]);
+		findTransactionOverrides.mockResolvedValueOnce([
+			{
+				id: "alias-applied",
+				instanceId: alias.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				status: "APPLIED",
+			},
+		]);
+		deleteAliasOverrides.mockResolvedValueOnce({ count: 1 });
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{ body: { scoreUpdates: [{ customFormatId: 7, score: -10000 }] } },
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(deleteAliasOverrides).toHaveBeenCalledWith({
+			where: {
+				id: { in: ["alias-applied"] },
+				status: "APPLIED",
+				userId,
+			},
+		});
+		expect(upsertOverride).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					instanceId_qualityProfileId_customFormatId: {
+						instanceId: instance.id,
+						qualityProfileId: 4,
+						customFormatId: 7,
+					},
+				},
+				update: expect.objectContaining({ status: "PENDING", score: -10000 }),
+			}),
+		);
+		expect(deleteAliasOverrides.mock.invocationCallOrder[0]).toBeLessThan(
+			updateProfile.mock.invocationCallOrder[0]!,
+		);
+	});
+
+	it("fails closed if an equivalent override becomes uncertain during replacement", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		findServiceInstances.mockResolvedValueOnce([instance, alias]);
+		findTransactionOverrides.mockResolvedValueOnce([
+			{
+				id: "alias-uncertain",
+				instanceId: alias.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				status: "UNCERTAIN",
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{ body: { scoreUpdates: [{ customFormatId: 7, score: -10000 }] } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("changed while the score intent was being saved");
+		expect(deleteAliasOverrides).not.toHaveBeenCalled();
+		expect(upsertOverride).not.toHaveBeenCalled();
+		expect(updateProfile).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when an applied alias changes before its transactional delete", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		findServiceInstances.mockResolvedValueOnce([instance, alias]);
+		findTransactionOverrides.mockResolvedValueOnce([
+			{
+				id: "alias-applied",
+				instanceId: alias.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				status: "APPLIED",
+			},
+		]);
+		deleteAliasOverrides.mockResolvedValueOnce({ count: 0 });
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{ body: { scoreUpdates: [{ customFormatId: 7, score: -10000 }] } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("changed before it could be replaced");
+		expect(upsertOverride).not.toHaveBeenCalled();
+		expect(updateProfile).not.toHaveBeenCalled();
 	});
 
 	it("verifies the reset upstream before deleting the saved override", async () => {

@@ -559,42 +559,86 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 						);
 					}
 				} else {
-					await request.server.prisma.$transaction(
-						scoreUpdates.map((update) =>
-							request.server.prisma.instanceQualityProfileOverride.upsert({
+					try {
+						await request.server.prisma.$transaction(async (transaction) => {
+							const existingOverrides = await transaction.instanceQualityProfileOverride.findMany({
 								where: {
-									instanceId_qualityProfileId_customFormatId: {
+									userId,
+									instanceId: { in: equivalentInstanceIds },
+									qualityProfileId: profileIdNum,
+									customFormatId: {
+										in: scoreUpdates.map((update) => update.customFormatId),
+									},
+								},
+								select: {
+									id: true,
+									instanceId: true,
+									status: true,
+								},
+							});
+							if (existingOverrides.some((override) => override.status !== "APPLIED")) {
+								throw new ConflictError(
+									"An equivalent score override changed while the score intent was being saved. Refresh and retry the exact pending change.",
+								);
+							}
+							const aliasOverrideIds = existingOverrides
+								.filter((override) => override.instanceId !== instanceId)
+								.map((override) => override.id);
+							if (aliasOverrideIds.length > 0) {
+								const deleted = await transaction.instanceQualityProfileOverride.deleteMany({
+									where: {
+										id: { in: aliasOverrideIds },
+										status: "APPLIED",
+										userId,
+									},
+								});
+								if (deleted.count !== aliasOverrideIds.length) {
+									throw new ConflictError(
+										"An equivalent score override changed before it could be replaced. Refresh and try again.",
+									);
+								}
+							}
+							for (const update of scoreUpdates) {
+								await transaction.instanceQualityProfileOverride.upsert({
+									where: {
+										instanceId_qualityProfileId_customFormatId: {
+											instanceId,
+											qualityProfileId: profileIdNum,
+											customFormatId: update.customFormatId,
+										},
+									},
+									create: {
 										instanceId,
 										qualityProfileId: profileIdNum,
 										customFormatId: update.customFormatId,
+										score: update.score,
+										status: "PENDING",
+										intentOperation: "SET_SCORE",
+										intendedScore: update.score,
+										userId,
+										connectionGeneration: currentInstance.connectionGeneration,
+										connectionStateToken,
+										updatedAt: intentAt,
 									},
-								},
-								create: {
-									instanceId,
-									qualityProfileId: profileIdNum,
-									customFormatId: update.customFormatId,
-									score: update.score,
-									status: "PENDING",
-									intentOperation: "SET_SCORE",
-									intendedScore: update.score,
-									userId,
-									connectionGeneration: currentInstance.connectionGeneration,
-									connectionStateToken,
-									updatedAt: intentAt,
-								},
-								update: {
-									score: update.score,
-									status: "PENDING",
-									intentOperation: "SET_SCORE",
-									intendedScore: update.score,
-									userId,
-									connectionGeneration: currentInstance.connectionGeneration,
-									connectionStateToken,
-									updatedAt: intentAt,
-								},
-							}),
-						),
-					);
+									update: {
+										score: update.score,
+										status: "PENDING",
+										intentOperation: "SET_SCORE",
+										intendedScore: update.score,
+										userId,
+										connectionGeneration: currentInstance.connectionGeneration,
+										connectionStateToken,
+										updatedAt: intentAt,
+									},
+								});
+							}
+						});
+					} catch (error) {
+						if (error instanceof ConflictError) throw error;
+						throw new ConflictError(
+							"Equivalent score overrides could not be consolidated safely. Refresh and try again.",
+						);
+					}
 				}
 
 				const [writeInstance, writeProfile] = await Promise.all([
