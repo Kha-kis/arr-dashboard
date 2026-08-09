@@ -22,13 +22,20 @@ import {
 	InstanceNotFoundError,
 	TemplateNotFoundError,
 } from "../errors.js";
+import { withCleanupTopologyMutationLease } from "../library-cleanup/cleanup-executor.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
-import { withCleanupTopologyMutationLease } from "../library-cleanup/cleanup-executor.js";
 import { extractTrashId, transformFieldsToArray } from "./cf-field-utils.js";
 import { checkMutualExclusions } from "./conflict-checker.js";
+import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
 import type { CustomFormatRollbackState } from "./deployment-custom-format-state.js";
+import {
+	finalizeDeploymentHistory,
+	finalizeDeploymentHistoryWithFailure,
+	finalizeDeploymentHistoryWithPartialFailure,
+} from "./deployment-history-manager.js";
+import { rebindLegacyDeploymentConnectionState } from "./deployment-legacy-rebind.js";
 import {
 	captureManagedCustomFormatIdentities,
 	type ManagedCustomFormatIdentity,
@@ -37,20 +44,13 @@ import {
 	resolveOrphanedManagedCustomFormats,
 } from "./deployment-managed-format-state.js";
 import {
-	finalizeDeploymentHistory,
-	finalizeDeploymentHistoryWithFailure,
-	finalizeDeploymentHistoryWithPartialFailure,
-} from "./deployment-history-manager.js";
-import {
 	type PreparedNamingDeployment,
 	prepareNamingDeployment,
 } from "./deployment-naming-state.js";
 import { assertNoPendingDeploymentOperation } from "./deployment-operation-gate.js";
-import { rebindLegacyDeploymentConnectionState } from "./deployment-legacy-rebind.js";
-import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
 import {
-	assertNoLegacyDeploymentConnectionMappings,
 	assertDeploymentTargetOwnership,
+	assertNoLegacyDeploymentConnectionMappings,
 	createDeploymentConnectionBindingCandidates,
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
@@ -748,11 +748,12 @@ export class DeploymentExecutorService {
 				if (targetProfile?.id === undefined) {
 					throw new Error("ARR created the quality profile without returning its ID");
 				}
+				const createdProfileStateToken = createQualityProfileStateToken(targetProfile);
 				mutation = {
 					action: "created",
 					profileId: targetProfile.id,
 					profileName: targetProfile.name ?? profileName,
-					postStateToken: null,
+					postStateToken: createdProfileStateToken,
 				};
 				await persistProfileState({
 					beforeProfile: null,
@@ -760,7 +761,7 @@ export class DeploymentExecutorService {
 					action: "created",
 					profileId: targetProfile.id,
 					profileName: targetProfile.name ?? profileName,
-					postStateToken: null,
+					postStateToken: createdProfileStateToken,
 					intendedPostStateToken: null,
 				});
 			}
@@ -1091,7 +1092,7 @@ export class DeploymentExecutorService {
 					action: createdProfile ? "created" : "updated",
 					profileId: targetProfile.id,
 					profileName: targetProfile.name ?? profileName,
-					postStateToken: null,
+					postStateToken: createdProfile ? createQualityProfileStateToken(targetProfile) : null,
 					intendedPostStateToken: createQualityProfileStateToken(updatedProfile),
 				});
 				// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr profile types differ but are runtime-compatible

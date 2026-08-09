@@ -736,6 +736,9 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					const namingState = backupState.namingDeployment;
 					if (namingState && namingState.status !== "not_started" && !stopAfterProfileFailure) {
 						const key = "naming:configuration";
+						const rollbackNamingStateToken =
+							namingState.postStateToken ??
+							(namingState.status === "pending" ? namingState.intendedPostStateToken : null);
 						if (!isFinished(key)) {
 							if (ownership.namingOwnedByAnotherDeployment) {
 								try {
@@ -763,14 +766,14 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 											ownership.sharedNamingRestorationAllowed,
 											"naming configuration",
 										);
-										if (!namingState.postStateToken) {
-											throw new Error("The deployment has no verified naming post-state.");
+										if (!rollbackNamingStateToken) {
+											throw new Error("The deployment has no verifiable naming post-state.");
 										}
 										await restoreNamingDeployment(
 											app.arrClientFactory,
 											currentInstance,
 											namingState.beforeConfig,
-											namingState.postStateToken,
+											rollbackNamingStateToken,
 										);
 										const restoredResponse = await app.arrClientFactory.rawRequest(
 											currentInstance,
@@ -805,7 +808,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 										error: message,
 									});
 								}
-							} else if (!namingState.postStateToken) {
+							} else if (!rollbackNamingStateToken) {
 								const message =
 									"Naming may have changed, but its post-deployment state was not verified.";
 								setStep({
@@ -821,7 +824,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 										app.arrClientFactory,
 										currentInstance,
 										namingState.beforeConfig,
-										namingState.postStateToken,
+										rollbackNamingStateToken,
 									);
 									setStep({
 										key,

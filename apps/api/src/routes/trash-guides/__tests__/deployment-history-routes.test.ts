@@ -501,6 +501,68 @@ describe("deployment history undeploy", () => {
 		);
 	});
 
+	it("restores a pending naming write when ARR matches its persisted intent", async () => {
+		const beforeNaming = { id: 1, standardMovieFormat: "Before" };
+		const intendedNaming = { id: 1, standardMovieFormat: "Intended" };
+		const history = currentHistory(
+			backupData({
+				namingDeployment: {
+					beforeConfig: beforeNaming,
+					status: "pending",
+					postStateToken: null,
+					intendedPostStateToken: createUpstreamResourceStateToken(intendedNaming),
+				},
+			}),
+		);
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+		rawRequest
+			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => intendedNaming })
+			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) });
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().success).toBe(true);
+		expect(rawRequest).toHaveBeenCalledWith(instance, "/api/v3/config/naming", {
+			method: "PUT",
+			body: beforeNaming,
+		});
+	});
+
+	it("fails closed without a naming PUT when a pending write matches neither known state", async () => {
+		const beforeNaming = { id: 1, standardMovieFormat: "Before" };
+		const intendedNaming = { id: 1, standardMovieFormat: "Intended" };
+		const unknownNaming = { id: 1, standardMovieFormat: "Unknown" };
+		const history = currentHistory(
+			backupData({
+				namingDeployment: {
+					beforeConfig: beforeNaming,
+					status: "pending",
+					postStateToken: null,
+					intendedPostStateToken: createUpstreamResourceStateToken(intendedNaming),
+				},
+			}),
+		);
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+		rawRequest.mockResolvedValueOnce({
+			ok: true,
+			status: 200,
+			json: async () => unknownNaming,
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json()).toMatchObject({ success: false });
+		expect(rawRequest).not.toHaveBeenCalledWith(
+			instance,
+			"/api/v3/config/naming",
+			expect.objectContaining({ method: "PUT" }),
+		);
+	});
+
 	it("restores a profile before deleting a created Custom Format it referenced", async () => {
 		const callOrder: string[] = [];
 		const beforeProfile = { id: 4, name: "Profile", formatItems: [] };

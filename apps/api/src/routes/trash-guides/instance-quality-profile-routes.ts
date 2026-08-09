@@ -41,7 +41,7 @@ interface ParsedTemplateCustomFormat {
 /** Parsed template configuration data structure */
 interface ParsedTemplateConfig {
 	customFormats?: ParsedTemplateCustomFormat[];
-	scoreSet?: string;
+	qualityProfile?: { trash_score_set?: string };
 	[key: string]: unknown;
 }
 
@@ -78,9 +78,8 @@ function getTemplateScore(
 	if (templateCf.scoreOverride !== undefined) {
 		return { score: templateCf.scoreOverride, inTemplate: true };
 	}
-	const scoreSetValue = config.scoreSet
-		? templateCf.originalConfig?.trash_scores?.[config.scoreSet]
-		: undefined;
+	const scoreSet = config.qualityProfile?.trash_score_set;
+	const scoreSetValue = scoreSet ? templateCf.originalConfig?.trash_scores?.[scoreSet] : undefined;
 	if (scoreSetValue !== undefined) {
 		return { score: scoreSetValue, inTemplate: true };
 	}
@@ -218,14 +217,37 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 						`Template configuration is invalid: ${getErrorMessage(error)}`,
 					);
 				}
+				const pendingResetIntents = await app.prisma.instanceQualityProfileOverride.findMany({
+					where: {
+						userId,
+						instanceId: { in: equivalentInstanceIds },
+						qualityProfileId: profileId,
+						customFormatId: { in: customFormatIds },
+						status: { in: ["PENDING", "UNCERTAIN"] },
+					},
+					select: {
+						customFormatId: true,
+						intentOperation: true,
+						intendedScore: true,
+					},
+				});
+				const persistedResetScores = new Map(
+					pendingResetIntents.flatMap((intent) =>
+						intent.intentOperation === "RESET_SCORE" && intent.intendedScore !== null
+							? [[intent.customFormatId, intent.intendedScore] as const]
+							: [],
+					),
+				);
 				const templateScores = new Map(
 					customFormatIds.map((customFormatId) => [
 						customFormatId,
-						getTemplateScore(
-							templateConfig,
-							customFormatId,
-							trashIdByResourceId.get(customFormatId),
-						),
+						persistedResetScores.has(customFormatId)
+							? { score: persistedResetScores.get(customFormatId)!, inTemplate: true }
+							: getTemplateScore(
+									templateConfig,
+									customFormatId,
+									trashIdByResourceId.get(customFormatId),
+								),
 					]),
 				);
 				await assertNoPendingDeploymentOperation(app.prisma, userId, equivalentInstanceIds, {
@@ -251,26 +273,33 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					);
 				}
 				const intentAt = new Date();
-				const intentWrites = await app.prisma.$transaction(
-					overrides.map((override) =>
-						app.prisma.instanceQualityProfileOverride.updateMany({
-							where: {
-								id: override.id,
-								updatedAt: override.updatedAt,
-								status: { in: ["APPLIED", "PENDING", "UNCERTAIN"] },
-							},
-							data: {
-								status: "PENDING",
-								intentOperation: "RESET_SCORE",
-								intendedScore: templateScores.get(override.customFormatId)!.score,
-								updatedAt: intentAt,
-							},
-						}),
-					),
-				);
-				if (intentWrites.some((write) => write.count !== 1)) {
+				try {
+					await app.prisma.$transaction(async (transaction) => {
+						for (const override of overrides) {
+							const write = await transaction.instanceQualityProfileOverride.updateMany({
+								where: {
+									id: override.id,
+									updatedAt: override.updatedAt,
+									status: { in: ["APPLIED", "PENDING", "UNCERTAIN"] },
+								},
+								data: {
+									status: "PENDING",
+									intentOperation: "RESET_SCORE",
+									intendedScore: templateScores.get(override.customFormatId)!.score,
+									updatedAt: intentAt,
+								},
+							});
+							if (write.count !== 1) {
+								throw new ConflictError(
+									"One or more overrides changed while the reset intent was being saved. Refresh and try again.",
+								);
+							}
+						}
+					});
+				} catch (error) {
+					if (error instanceof ConflictError) throw error;
 					throw new ConflictError(
-						"One or more overrides changed while the reset intent was being saved. Refresh and try again.",
+						"The score reset intents could not be saved atomically. Refresh and try again.",
 					);
 				}
 

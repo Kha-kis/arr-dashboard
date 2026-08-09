@@ -9,6 +9,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ConflictError } from "../../errors.js";
 import { extractTrashId } from "../cf-field-utils.js";
 import { DeploymentExecutorService } from "../deployment-executor.js";
+import { createQualityProfileStateToken } from "../deployment-target.js";
 
 // SDK CustomFormat type alias
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -744,6 +745,150 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 				["instance-1"],
 			),
 		).rejects.toThrow("appeared during deployment");
+	});
+
+	it("persists the exact created profile state before later preparation can fail", async () => {
+		const createdProfile = {
+			id: 9,
+			name: "Any",
+			formatItems: [],
+			items: [],
+			cutoff: 1,
+		};
+		const persistProfileState = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([]),
+				getSchema: vi.fn().mockResolvedValue({ items: [], formatItems: [] }),
+				create: vi.fn().mockResolvedValue(createdProfile),
+			},
+			customFormat: {
+				getAll: vi
+					.fn()
+					.mockResolvedValueOnce([])
+					.mockRejectedValueOnce(new Error("later custom format read failed")),
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const syncQualityProfile = (
+			executor as unknown as {
+				syncQualityProfile: (...args: unknown[]) => Promise<{ errors: string[] }>;
+			}
+		).syncQualityProfile.bind(executor);
+
+		const result = await syncQualityProfile(
+			client,
+			{},
+			[],
+			"template-1",
+			"instance-1",
+			"user-1",
+			undefined,
+			undefined,
+			"Any",
+			undefined,
+			undefined,
+			[],
+			new Map(),
+			["instance-1"],
+			undefined,
+			persistProfileState,
+		);
+
+		expect(result.errors).toEqual(
+			expect.arrayContaining([expect.stringContaining("later custom format read failed")]),
+		);
+		expect(persistProfileState).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				status: "pending",
+				action: "created",
+				profileId: 9,
+				postStateToken: createQualityProfileStateToken(createdProfile),
+			}),
+		);
+	});
+
+	it("retains the created-state token while a later profile update is pending", async () => {
+		const createdProfile = {
+			id: 9,
+			name: "Any",
+			formatItems: [],
+			items: [],
+			cutoff: 1,
+		};
+		const intendedProfile = {
+			...createdProfile,
+			formatItems: [{ format: 7, score: 100 }],
+		};
+		const persistProfileState = vi
+			.fn()
+			.mockResolvedValueOnce(undefined)
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(new Error("ledger persistence stopped execution"));
+		const update = vi.fn();
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([]),
+				getSchema: vi.fn().mockResolvedValue({ items: [], formatItems: [] }),
+				create: vi.fn().mockResolvedValue(createdProfile),
+				getById: vi.fn().mockResolvedValue(createdProfile),
+				update,
+			},
+			customFormat: { getAll: vi.fn().mockResolvedValue([{ id: 7, name: "Managed CF" }]) },
+		};
+		const prisma = {
+			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+		const executor = new DeploymentExecutorService(prisma as never, {} as never);
+		const syncQualityProfile = (
+			executor as unknown as {
+				syncQualityProfile: (...args: unknown[]) => Promise<{ errors: string[] }>;
+			}
+		).syncQualityProfile.bind(executor);
+
+		const result = await syncQualityProfile(
+			client,
+			{ qualityProfile: { trash_score_set: "default" } },
+			[
+				{
+					trashId: "managed-cf",
+					name: "Managed CF",
+					originalConfig: { trash_scores: { default: 100 } },
+				},
+			],
+			"template-1",
+			"instance-1",
+			"user-1",
+			undefined,
+			undefined,
+			"Any",
+			undefined,
+			undefined,
+			[],
+			new Map(),
+			["instance-1"],
+			undefined,
+			persistProfileState,
+		);
+
+		expect(result.errors).toEqual(
+			expect.arrayContaining([expect.stringContaining("ledger persistence stopped execution")]),
+		);
+		expect(persistProfileState).toHaveBeenNthCalledWith(
+			3,
+			expect.objectContaining({
+				status: "pending",
+				action: "created",
+				profileId: 9,
+				postStateToken: createQualityProfileStateToken(createdProfile),
+				intendedPostStateToken: createQualityProfileStateToken(intendedProfile),
+			}),
+		);
+		expect(createQualityProfileStateToken(intendedProfile)).not.toBe(
+			createQualityProfileStateToken(createdProfile),
+		);
+		expect(update).not.toHaveBeenCalled();
 	});
 
 	it("records the exact post-write quality-profile state", async () => {

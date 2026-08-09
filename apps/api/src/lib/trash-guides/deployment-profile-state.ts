@@ -37,18 +37,17 @@ export async function rollbackQualityProfileDeployment(
 			throw new Error("The quality profile to restore no longer exists.");
 		}
 		const fullCurrent = await client.qualityProfile.getById(state.profileId);
+		const currentStateToken = createQualityProfileStateToken(fullCurrent);
 		if (
 			state.action === "updated" &&
 			state.beforeProfile &&
-			createQualityProfileStateToken(fullCurrent) ===
-				createQualityProfileStateToken(state.beforeProfile)
+			currentStateToken === createQualityProfileStateToken(state.beforeProfile)
 		) {
 			return;
 		}
-		if (
-			state.intendedPostStateToken &&
-			createQualityProfileStateToken(fullCurrent) === state.intendedPostStateToken
-		) {
+		if (state.postStateToken && currentStateToken === state.postStateToken) {
+			verifiedPostStateToken = state.postStateToken;
+		} else if (state.intendedPostStateToken && currentStateToken === state.intendedPostStateToken) {
 			verifiedPostStateToken = state.intendedPostStateToken;
 		} else {
 			throw new Error(

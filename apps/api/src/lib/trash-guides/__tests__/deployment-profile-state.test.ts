@@ -25,6 +25,29 @@ describe("rollbackQualityProfileDeployment", () => {
 		expect(remove).toHaveBeenCalledWith(7);
 	});
 
+	it("deletes an unchanged pending create from its verified created-state token", async () => {
+		const created = { id: 7, name: "Created profile", formatItems: [] };
+		const remove = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([created]),
+				getById: vi.fn().mockResolvedValue(created),
+				delete: remove,
+			},
+		};
+
+		await rollbackQualityProfileDeployment(client as never, {
+			beforeProfile: null,
+			action: "created",
+			status: "pending",
+			profileId: 7,
+			postStateToken: createQualityProfileStateToken(created),
+			intendedPostStateToken: null,
+		});
+
+		expect(remove).toHaveBeenCalledWith(7);
+	});
+
 	it("refuses to delete a created profile changed after deployment", async () => {
 		const remove = vi.fn();
 		const client = {
@@ -168,6 +191,35 @@ describe("rollbackQualityProfileDeployment", () => {
 		};
 
 		await rollbackQualityProfileDeployment(client as never, state);
+		expect(update).toHaveBeenCalledWith(4, before);
+	});
+
+	it("restores a pending update from its verified normalized post-write state", async () => {
+		const before = { id: 4, name: "Existing", formatItems: [{ format: 7, score: 0 }] };
+		const intended = { id: 4, name: "Existing", formatItems: [{ format: 7, score: 100 }] };
+		const normalized = {
+			id: 4,
+			name: "Existing",
+			formatItems: [{ format: 7, score: 100, name: "Normalized by ARR" }],
+		};
+		const update = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([normalized]),
+				getById: vi.fn().mockResolvedValue(normalized),
+				update,
+			},
+		};
+
+		await rollbackQualityProfileDeployment(client as never, {
+			beforeProfile: before,
+			action: "updated",
+			status: "pending",
+			profileId: 4,
+			postStateToken: createQualityProfileStateToken(normalized),
+			intendedPostStateToken: createQualityProfileStateToken(intended),
+		});
+
 		expect(update).toHaveBeenCalledWith(4, before);
 	});
 

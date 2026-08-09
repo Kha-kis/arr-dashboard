@@ -752,18 +752,49 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 							await persistRollbackProgress("IN_PROGRESS");
 							if (
 								hasUnknownNamingDeployment &&
-								!ownership.namingOwnedByAnotherDeployment &&
 								!isFinished("naming:configuration", "naming", "Naming configuration")
 							) {
-								const error =
+								const unknownStateError =
 									"Naming may have been changed, but its post-deployment state was not verified. It was not restored automatically.";
-								setStep({
-									key: "naming:configuration",
-									kind: "naming",
-									name: "Naming configuration",
-									outcome: "failed",
-									error,
-								});
+								if (ownership.namingOwnedByAnotherDeployment) {
+									try {
+										const currentResponse = await app.arrClientFactory.rawRequest(
+											currentInstance,
+											"/api/v3/config/naming",
+										);
+										if (!currentResponse.ok) throw new Error(`HTTP ${currentResponse.status}`);
+										const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
+										const expectedSurvivorToken = getExpectedSharedDeploymentStateToken(
+											ownership.sharedNamingStateTokens,
+											"naming configuration",
+										);
+										if (createUpstreamResourceStateToken(currentConfig) !== expectedSurvivorToken) {
+											throw new Error(unknownStateError);
+										}
+										setStep({
+											key: "naming:configuration",
+											kind: "naming",
+											name: "Naming configuration",
+											outcome: "skipped_shared",
+										});
+									} catch (error) {
+										setStep({
+											key: "naming:configuration",
+											kind: "naming",
+											name: "Naming configuration",
+											outcome: "failed",
+											error: `${unknownStateError} ${getErrorMessage(error, "Unknown error")}`,
+										});
+									}
+								} else {
+									setStep({
+										key: "naming:configuration",
+										kind: "naming",
+										name: "Naming configuration",
+										outcome: "failed",
+										error: unknownStateError,
+									});
+								}
 								await persistRollbackProgress("IN_PROGRESS");
 							}
 

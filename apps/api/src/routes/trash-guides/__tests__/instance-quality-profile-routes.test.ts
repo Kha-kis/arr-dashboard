@@ -37,6 +37,7 @@ describe("instance quality profile score writes", () => {
 	const getCustomFormats = vi.fn();
 	const findTransactionOverrides = vi.fn();
 	const deleteAliasOverrides = vi.fn();
+	const runTransaction = vi.fn();
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
@@ -116,7 +117,7 @@ describe("instance quality profile score writes", () => {
 				),
 				deleteMany: deleteOverrides.mockResolvedValue({ count: 1 }),
 			},
-			$transaction: vi.fn(
+			$transaction: runTransaction.mockImplementation(
 				async (work: Array<Promise<unknown>> | ((client: typeof transactionClient) => unknown)) =>
 					typeof work === "function" ? work(transactionClient) : Promise.all(work),
 			),
@@ -332,6 +333,61 @@ describe("instance quality profile score writes", () => {
 		);
 		expect(updateProfile.mock.invocationCallOrder[0]).toBeLessThan(
 			deleteOverrides.mock.invocationCallOrder[0]!,
+		);
+	});
+
+	it("resets to the template quality profile score set", async () => {
+		const before = { id: 4, name: "Any", formatItems: [{ format: 7, score: -10000 }] };
+		const after = { ...before, formatItems: [{ format: 7, score: 50 }] };
+		getProfile
+			.mockReset()
+			.mockResolvedValueOnce(before)
+			.mockResolvedValueOnce(before)
+			.mockResolvedValue(after);
+		findMappings.mockResolvedValueOnce([
+			{
+				templateId: "template-1",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify([
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						resourceId: 7,
+						stateToken: "state-token",
+						profileId: 4,
+						appliedScore: 100,
+					},
+				]),
+				template: {
+					configData: JSON.stringify({
+						qualityProfile: { trash_score_set: "sqp-1-1080p" },
+						customFormats: [
+							{
+								trashId: "trash-7",
+								originalConfig: {
+									trash_scores: { default: 100, "sqp-1-1080p": 50 },
+								},
+							},
+						],
+					}),
+				},
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({ revertedScore: 50 });
+		expect(updateProfile).toHaveBeenCalledWith(
+			4,
+			expect.objectContaining({ formatItems: [{ format: 7, score: 50 }] }),
 		);
 	});
 
@@ -577,6 +633,7 @@ describe("instance quality profile score writes", () => {
 		expect(response.statusCode).toBe(409);
 		expect(response.json().message).toContain("changed while it was being resumed");
 		expect(updateOverrides).toHaveBeenCalledTimes(2);
+		expect(runTransaction.mock.calls.some(([work]) => typeof work === "function")).toBe(true);
 		expect(updateProfile).not.toHaveBeenCalled();
 	});
 
@@ -611,6 +668,104 @@ describe("instance quality profile score writes", () => {
 		expect(response.statusCode).toBe(200);
 		expect(updateProfile).toHaveBeenCalledOnce();
 		expect(deleteOverrides).toHaveBeenCalledOnce();
+	});
+
+	it("retries an uncertain reset from its persisted score after the template changes", async () => {
+		const resetProfile = { id: 4, name: "Any", formatItems: [{ format: 7, score: 100 }] };
+		getProfile.mockReset().mockResolvedValue(resetProfile);
+		findMappings.mockResolvedValueOnce([
+			{
+				templateId: "template-1",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify([
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						resourceId: 7,
+						stateToken: "state-token",
+						profileId: 4,
+						appliedScore: 100,
+					},
+				]),
+				template: {
+					configData: JSON.stringify({
+						customFormats: [{ trashId: "trash-7", scoreOverride: 200 }],
+					}),
+				},
+			},
+		]);
+		findOverrides.mockImplementation(async ({ select }) =>
+			select
+				? [
+						{
+							qualityProfileId: 4,
+							customFormatId: 7,
+							intentOperation: "RESET_SCORE",
+							intendedScore: 100,
+						},
+					]
+				: [
+						{
+							id: "override-1",
+							updatedAt: new Date("2026-01-01"),
+							customFormatId: 7,
+							status: "UNCERTAIN",
+							intentOperation: "RESET_SCORE",
+							intendedScore: 100,
+						},
+					],
+		);
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(updateProfile).toHaveBeenCalledWith(
+			4,
+			expect.objectContaining({ formatItems: [{ format: 7, score: 100 }] }),
+		);
+		expect(deleteOverrides).toHaveBeenCalledOnce();
+	});
+
+	it("rolls back the reset intent batch when one override changes concurrently", async () => {
+		findOverrides.mockImplementation(async ({ select }) =>
+			select
+				? []
+				: [
+						{
+							id: "override-7",
+							updatedAt: new Date("2026-01-01"),
+							qualityProfileId: 4,
+							customFormatId: 7,
+							status: "APPLIED",
+						},
+						{
+							id: "override-8",
+							updatedAt: new Date("2026-01-01"),
+							qualityProfileId: 4,
+							customFormatId: 8,
+							status: "APPLIED",
+						},
+					],
+		);
+		updateOverrides.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/4/overrides/bulk-delete",
+			{ body: { customFormatIds: [7, 8] } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("changed while the reset intent was being saved");
+		expect(updateOverrides).toHaveBeenCalledTimes(2);
+		expect(updateProfile).not.toHaveBeenCalled();
 	});
 
 	it("leaves the reset intent pending when database cleanup fails after ARR succeeds", async () => {

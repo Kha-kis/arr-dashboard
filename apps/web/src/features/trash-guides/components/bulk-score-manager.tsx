@@ -43,6 +43,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { ScoreRecoveryIntent } from "../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { runProfileOverrideResetsSequentially } from "../lib/sequential-profile-reset";
 
 /**
  * Service-specific colors for Radarr/Sonarr identification
@@ -399,15 +400,19 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		}
 
 		try {
-			const resetPromises = Array.from(profileToCFs.entries()).map(([profileId, cfIds]) =>
-				bulkDeleteOverrides.mutateAsync({
-					instanceId,
-					qualityProfileId: profileId,
-					payload: { customFormatIds: Array.from(cfIds) },
-				}),
+			const results = await runProfileOverrideResetsSequentially(
+				Array.from(profileToCFs, ([profileId, cfIds]) => ({
+					profileId,
+					customFormatIds: Array.from(cfIds),
+				})),
+				({ profileId, customFormatIds }) =>
+					bulkDeleteOverrides.mutateAsync({
+						instanceId,
+						qualityProfileId: profileId,
+						payload: { customFormatIds },
+					}),
 			);
 
-			const results = await Promise.all(resetPromises);
 			const totalDeleted = results.reduce((sum, r) => sum + (r.deletedCount || 0), 0);
 
 			setSelectedCFs(new Set());

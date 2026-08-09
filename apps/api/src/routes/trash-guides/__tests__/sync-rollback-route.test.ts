@@ -38,6 +38,7 @@ describe("sync rollback route", () => {
 	const formatGetAll = vi.fn();
 	const formatGetById = vi.fn();
 	const formatUpdate = vi.fn();
+	const rawRequest = vi.fn();
 	let syncRecord: Record<string, unknown>;
 
 	beforeEach(async () => {
@@ -149,6 +150,7 @@ describe("sync rollback route", () => {
 		app.decorate("arrClientFactory", {
 			create: vi.fn().mockReturnValue(client),
 			createConnectionCredentialIdentity: vi.fn().mockReturnValue("credential-1"),
+			rawRequest,
 		} as never);
 		app.decorate("deploymentExecutor", {
 			runWithEndpointMutation: vi.fn(async (_userId, target, _operation, callback) =>
@@ -217,6 +219,148 @@ describe("sync rollback route", () => {
 				rollbackStatus: "COMPLETED",
 				rollbackProgress: expect.stringContaining('"key":"custom_format:7"'),
 			}),
+		});
+	});
+
+	it("fails closed when an unknown naming write may have overwritten a surviving deployment", async () => {
+		const targetNaming = { id: 1, standardMovieFormat: "Possibly overwritten" };
+		const survivorNaming = { id: 1, standardMovieFormat: "Survivor" };
+		const targetBackup = JSON.parse(
+			(syncRecord.backup as { backupData: string }).backupData,
+		) as Record<string, unknown>;
+		targetBackup.customFormatDeployments = [];
+		targetBackup.managedCustomFormats = [];
+		targetBackup.qualityProfileDeployment = {
+			beforeProfile: null,
+			status: "not_started",
+			action: "created",
+			profileId: null,
+			profileName: null,
+			postStateToken: null,
+			intendedPostStateToken: null,
+		};
+		targetBackup.namingDeployment = {
+			beforeConfig: { id: 1, standardMovieFormat: "Before" },
+			status: "pending",
+			postStateToken: null,
+			intendedPostStateToken: null,
+		};
+		const targetBackupRecord = { id: "backup-1", backupData: JSON.stringify(targetBackup) };
+		syncRecord.backup = targetBackupRecord;
+		const survivorBackup = {
+			...targetBackup,
+			namingDeployment: {
+				beforeConfig: { id: 1, standardMovieFormat: "Older" },
+				status: "applied",
+				postStateToken: createUpstreamResourceStateToken(survivorNaming),
+				intendedPostStateToken: createUpstreamResourceStateToken(survivorNaming),
+			},
+		};
+		deploymentFindMany.mockResolvedValue([
+			{
+				templateId: "template-1",
+				backupId: "backup-1",
+				status: "SUCCESS",
+				deployedAt: new Date("2026-01-02"),
+				backup: targetBackupRecord,
+			},
+			{
+				templateId: "template-survivor",
+				backupId: "backup-survivor",
+				status: "SUCCESS",
+				deployedAt: new Date("2026-01-01"),
+				backup: { id: "backup-survivor", backupData: JSON.stringify(survivorBackup) },
+			},
+		]);
+		rawRequest.mockResolvedValue({
+			ok: true,
+			status: 200,
+			json: vi.fn().mockResolvedValue(targetNaming),
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({ success: false, failedCount: 1 });
+		expect(response.json().errors[0]).toContain("post-deployment state was not verified");
+		expect(rawRequest).toHaveBeenCalledWith(instance, "/api/v3/config/naming");
+		expect(syncUpdate).toHaveBeenCalledWith({
+			where: { id: "sync-1" },
+			data: expect.objectContaining({ rollbackStatus: "PARTIAL" }),
+		});
+	});
+
+	it("accepts an unknown naming write only when current ARR state matches the survivor", async () => {
+		const survivorNaming = { id: 1, standardMovieFormat: "Survivor" };
+		const targetBackup = JSON.parse(
+			(syncRecord.backup as { backupData: string }).backupData,
+		) as Record<string, unknown>;
+		targetBackup.customFormatDeployments = [];
+		targetBackup.managedCustomFormats = [];
+		targetBackup.qualityProfileDeployment = {
+			beforeProfile: null,
+			status: "not_started",
+			action: "created",
+			profileId: null,
+			profileName: null,
+			postStateToken: null,
+			intendedPostStateToken: null,
+		};
+		targetBackup.namingDeployment = {
+			beforeConfig: { id: 1, standardMovieFormat: "Before" },
+			status: "pending",
+			postStateToken: null,
+			intendedPostStateToken: null,
+		};
+		const targetBackupRecord = { id: "backup-1", backupData: JSON.stringify(targetBackup) };
+		syncRecord.backup = targetBackupRecord;
+		const survivorBackup = {
+			...targetBackup,
+			namingDeployment: {
+				beforeConfig: { id: 1, standardMovieFormat: "Older" },
+				status: "applied",
+				postStateToken: createUpstreamResourceStateToken(survivorNaming),
+				intendedPostStateToken: createUpstreamResourceStateToken(survivorNaming),
+			},
+		};
+		deploymentFindMany.mockResolvedValue([
+			{
+				templateId: "template-1",
+				backupId: "backup-1",
+				status: "SUCCESS",
+				deployedAt: new Date("2026-01-02"),
+				backup: targetBackupRecord,
+			},
+			{
+				templateId: "template-survivor",
+				backupId: "backup-survivor",
+				status: "SUCCESS",
+				deployedAt: new Date("2026-01-01"),
+				backup: { id: "backup-survivor", backupData: JSON.stringify(survivorBackup) },
+			},
+		]);
+		rawRequest.mockResolvedValue({
+			ok: true,
+			status: 200,
+			json: vi.fn().mockResolvedValue(survivorNaming),
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			success: true,
+			failedCount: 0,
+			skippedSharedCount: 1,
+		});
+		expect(rawRequest).not.toHaveBeenCalledWith(
+			instance,
+			"/api/v3/config/naming",
+			expect.objectContaining({ method: "PUT" }),
+		);
+		expect(syncUpdate).toHaveBeenCalledWith({
+			where: { id: "sync-1" },
+			data: expect.objectContaining({ rollbackStatus: "COMPLETED" }),
 		});
 	});
 
