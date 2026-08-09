@@ -1,12 +1,46 @@
 import { type NamingSelectedPresets, TRASH_CONFIG_TYPES, type TrashNamingData } from "@arr/shared";
+import { z } from "zod";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { AppValidationError } from "../errors.js";
 import type { PrismaClient } from "../prisma.js";
 import { createCacheManager } from "./cache-manager.js";
 import { createUpstreamResourceStateToken } from "./deployment-target.js";
+import { arrNamingConfigSchema } from "./github-schemas.js";
 import { resolvePayload } from "./naming-deployer.js";
 
 type NamingInstance = Parameters<ArrClientFactory["rawRequest"]>[0];
+const positiveConfigId = z.number().int().positive().safe();
+const radarrNamingSnapshotSchema = arrNamingConfigSchema.extend({
+	id: positiveConfigId,
+	renameMovies: z.boolean(),
+	standardMovieFormat: z.string(),
+	movieFolderFormat: z.string(),
+});
+const sonarrNamingSnapshotSchema = arrNamingConfigSchema.extend({
+	id: positiveConfigId,
+	renameEpisodes: z.boolean(),
+	standardEpisodeFormat: z.string(),
+	dailyEpisodeFormat: z.string(),
+	animeEpisodeFormat: z.string(),
+	seriesFolderFormat: z.string(),
+	seasonFolderFormat: z.string(),
+});
+
+function getNamingServiceType(instance: NamingInstance): "RADARR" | "SONARR" {
+	const serviceType = instance.service.toUpperCase();
+	if (serviceType !== "RADARR" && serviceType !== "SONARR") {
+		throw new AppValidationError(`Naming deployment is unsupported for ${instance.service}`);
+	}
+	return serviceType;
+}
+
+function parseNamingResponse(value: unknown): Record<string, unknown> {
+	const parsed = arrNamingConfigSchema.safeParse(value);
+	if (!parsed.success) {
+		throw new AppValidationError("The instance returned an invalid naming configuration.");
+	}
+	return parsed.data as Record<string, unknown>;
+}
 
 export interface PreparedNamingDeployment {
 	currentConfig: Record<string, unknown>;
@@ -21,7 +55,7 @@ export async function prepareNamingDeployment(
 	instance: NamingInstance,
 	selection: NamingSelectedPresets,
 ): Promise<PreparedNamingDeployment> {
-	const serviceType = instance.service.toUpperCase() as "RADARR" | "SONARR";
+	const serviceType = getNamingServiceType(instance);
 	if (selection.serviceType !== serviceType) {
 		throw new AppValidationError(`Naming selection service type mismatch: expected ${serviceType}`);
 	}
@@ -42,7 +76,7 @@ export async function prepareNamingDeployment(
 			`The current naming configuration could not be read (HTTP ${currentResponse.status}).`,
 		);
 	}
-	const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
+	const currentConfig = parseNamingResponse(await currentResponse.json());
 	const patch = resolvePayload(namingData[0]!, selection);
 	const changedFields = Object.keys(patch).filter(
 		(field) => !Object.is(currentConfig[field], patch[field]),
@@ -62,13 +96,21 @@ export async function restoreNamingDeployment(
 	config: Record<string, unknown>,
 	expectedCurrentStateToken: string,
 ): Promise<void> {
+	const serviceType = getNamingServiceType(instance);
+	const snapshotResult = (
+		serviceType === "RADARR" ? radarrNamingSnapshotSchema : sonarrNamingSnapshotSchema
+	).safeParse(config);
+	if (!snapshotResult.success) {
+		throw new Error(`Naming snapshot is incomplete or does not match ${serviceType}.`);
+	}
+	const snapshot = snapshotResult.data as Record<string, unknown>;
 	const currentResponse = await clientFactory.rawRequest(instance, "/api/v3/config/naming");
 	if (!currentResponse.ok) {
 		throw new Error(`Failed to read current naming configuration: HTTP ${currentResponse.status}`);
 	}
-	const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
+	const currentConfig = parseNamingResponse(await currentResponse.json());
 	const currentStateToken = createUpstreamResourceStateToken(currentConfig);
-	if (currentStateToken === createUpstreamResourceStateToken(config)) {
+	if (currentStateToken === createUpstreamResourceStateToken(snapshot)) {
 		return;
 	}
 	if (currentStateToken !== expectedCurrentStateToken) {
@@ -78,7 +120,7 @@ export async function restoreNamingDeployment(
 	}
 	const response = await clientFactory.rawRequest(instance, "/api/v3/config/naming", {
 		method: "PUT",
-		body: config,
+		body: snapshot,
 	});
 	if (!response.ok) {
 		throw new Error(`HTTP ${response.status}`);

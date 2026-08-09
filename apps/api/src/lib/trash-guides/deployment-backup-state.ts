@@ -3,6 +3,16 @@ import { z } from "zod";
 const positiveResourceId = z.number().int().positive().safe();
 const stateToken = z.string().min(1);
 const recordState = z.record(z.string(), z.unknown());
+const legacyCustomFormatSchema = z.looseObject({
+	id: positiveResourceId.optional(),
+	name: z.string().min(1),
+	specifications: z.array(z.unknown()).optional(),
+	includeCustomFormatWhenRenaming: z.boolean().optional(),
+});
+const legacyBackupSchema = z.looseObject({
+	customFormats: z.array(legacyCustomFormatSchema),
+	qualityProfile: recordState.nullable(),
+});
 
 const customFormatStateSchema = z
 	.object({
@@ -104,18 +114,16 @@ export function shouldRetainDeploymentBackup(value: string): boolean {
 	} catch {
 		return true;
 	}
+	if (Array.isArray(parsed)) {
+		return !z.array(legacyCustomFormatSchema).safeParse(parsed).success;
+	}
 	if (
-		typeof parsed !== "object" ||
-		parsed === null ||
-		Array.isArray(parsed) ||
-		!("schemaVersion" in parsed) ||
-		parsed.schemaVersion !== 2
+		typeof parsed === "object" &&
+		parsed !== null &&
+		!("schemaVersion" in parsed) &&
+		legacyBackupSchema.safeParse(parsed).success
 	) {
 		return false;
 	}
-	try {
-		return hasPendingDeploymentMutation(deploymentBackupStateSchema.parse(parsed));
-	} catch {
-		return true;
-	}
+	return true;
 }

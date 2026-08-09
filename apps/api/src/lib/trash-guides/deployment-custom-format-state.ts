@@ -1,7 +1,14 @@
 import type { RadarrClient, SonarrClient } from "arr-sdk";
+import { z } from "zod";
 import { createUpstreamResourceStateToken } from "./deployment-target.js";
 
 type ArrClient = SonarrClient | RadarrClient;
+const restorableCustomFormatSchema = z.looseObject({
+	id: z.number().int().positive().safe(),
+	name: z.string().min(1),
+	specifications: z.array(z.unknown()),
+	includeCustomFormatWhenRenaming: z.boolean().nullable(),
+});
 
 export interface CustomFormatRollbackState {
 	beforeFormat: Record<string, unknown> | null;
@@ -22,11 +29,17 @@ export async function rollbackCustomFormatDeployment(
 	state: CustomFormatRollbackState,
 ): Promise<"noop" | "restored" | "deleted"> {
 	if (state.resourceId === null) {
-		if (state.action === "created" && state.status === "pending") {
-			const listed = await client.customFormat.getAll();
-			if (!listed.some((format) => format.name === state.name)) return "noop";
-		}
 		throw new Error(`Custom Format "${state.name}" may have been created, but its ID is unknown.`);
+	}
+	let beforeFormat: Record<string, unknown> | null = null;
+	if (state.action === "updated") {
+		const parsed = restorableCustomFormatSchema.safeParse(state.beforeFormat);
+		if (!parsed.success || parsed.data.id !== state.resourceId) {
+			throw new Error(
+				`Custom Format "${state.name}" has an incomplete or mismatched pre-deployment state and was not restored.`,
+			);
+		}
+		beforeFormat = parsed.data;
 	}
 
 	const listed = await client.customFormat.getAll();
@@ -42,8 +55,8 @@ export async function rollbackCustomFormatDeployment(
 	if (state.status === "pending") {
 		if (
 			state.action === "updated" &&
-			state.beforeFormat &&
-			currentToken === createUpstreamResourceStateToken(state.beforeFormat)
+			beforeFormat &&
+			currentToken === createUpstreamResourceStateToken(beforeFormat)
 		) {
 			return "noop";
 		}
@@ -68,9 +81,27 @@ export async function rollbackCustomFormatDeployment(
 			);
 		}
 		const profiles = await client.qualityProfile.getAll();
-		const referencingProfiles = profiles.filter((profile) =>
-			profile.formatItems?.some((item) => item.format === state.resourceId),
-		);
+		const referencingProfiles: Array<{ id?: number; name?: string | null }> = [];
+		for (const profile of profiles) {
+			let formatItems = profile.formatItems;
+			if (!Array.isArray(formatItems)) {
+				if (!Number.isSafeInteger(profile.id) || (profile.id ?? 0) <= 0) {
+					throw new Error(
+						`Custom Format "${state.name}" profile references could not be established because a quality profile has no valid ID.`,
+					);
+				}
+				const fullProfile = await client.qualityProfile.getById(profile.id!);
+				formatItems = fullProfile.formatItems;
+				if (!Array.isArray(formatItems)) {
+					throw new Error(
+						`Custom Format "${state.name}" profile reference list could not be established for "${profile.name ?? profile.id}".`,
+					);
+				}
+			}
+			if (formatItems.some((item) => item.format === state.resourceId)) {
+				referencingProfiles.push(profile);
+			}
+		}
 		if (referencingProfiles.length > 0) {
 			throw new Error(
 				`Custom Format "${state.name}" is referenced by quality profile(s) ${referencingProfiles
@@ -78,14 +109,21 @@ export async function rollbackCustomFormatDeployment(
 					.join(", ")} and was not deleted.`,
 			);
 		}
-		await client.customFormat.delete(state.resourceId);
-		return "deleted";
+		const rechecked = await client.customFormat.getById(state.resourceId);
+		if (createUpstreamResourceStateToken(rechecked) !== verifiedPostStateToken) {
+			throw new Error(
+				`Custom Format "${state.name}" changed after deployment and was not deleted.`,
+			);
+		}
+		throw new Error(
+			`Custom Format "${state.name}" cannot be deleted safely because the upstream API has no conditional delete. Verify that it is unused, then remove it manually.`,
+		);
 	}
 
-	if (!state.beforeFormat) {
+	if (!beforeFormat) {
 		throw new Error(`Custom Format "${state.name}" is missing its pre-deployment state.`);
 	}
-	if (currentToken === createUpstreamResourceStateToken(state.beforeFormat)) return "noop";
+	if (currentToken === createUpstreamResourceStateToken(beforeFormat)) return "noop";
 	if (currentToken !== verifiedPostStateToken) {
 		throw new Error(
 			`Custom Format "${state.name}" changed after deployment and was not overwritten.`,
@@ -94,7 +132,7 @@ export async function rollbackCustomFormatDeployment(
 	await client.customFormat.update(
 		state.resourceId,
 		// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr Custom Format types are runtime-compatible
-		state.beforeFormat as any,
+		beforeFormat as any,
 	);
 	return "restored";
 }

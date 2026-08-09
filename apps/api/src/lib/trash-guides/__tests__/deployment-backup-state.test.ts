@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseDeploymentBackupState } from "../deployment-backup-state.js";
+import {
+	parseDeploymentBackupState,
+	shouldRetainDeploymentBackup,
+} from "../deployment-backup-state.js";
 
 function validBackup() {
 	return {
@@ -98,5 +101,40 @@ describe("parseDeploymentBackupState", () => {
 		expect(() => parseDeploymentBackupState(JSON.stringify(backup))).toThrow(
 			"Applied profile state requires a profile ID",
 		);
+	});
+});
+
+describe("shouldRetainDeploymentBackup", () => {
+	it("retains a relationless applied v2 deployment ledger", () => {
+		const backup = validBackup();
+		backup.customFormatDeployments = [
+			{
+				beforeFormat: { id: 7, name: "Foo", specifications: [] },
+				action: "updated",
+				resourceId: 7,
+				name: "Foo",
+				status: "applied",
+				postStateToken: "post-token",
+			},
+		] as never;
+
+		expect(shouldRetainDeploymentBackup(JSON.stringify(backup))).toBe(true);
+	});
+
+	it.each([
+		["invalid JSON", "not-json"],
+		["missing schema version", JSON.stringify({ endpointKey: "current-like" })],
+		["string schema version", JSON.stringify({ schemaVersion: "2" })],
+		["malformed current schema", JSON.stringify({ schemaVersion: 2 })],
+		["future schema version", JSON.stringify({ schemaVersion: 3 })],
+	] as const)("retains %s", (_label, backupData) => {
+		expect(shouldRetainDeploymentBackup(backupData)).toBe(true);
+	});
+
+	it.each([
+		["raw Custom Format array", JSON.stringify([])],
+		["object snapshot", JSON.stringify({ customFormats: [], qualityProfile: null })],
+	] as const)("allows positively identified legacy %s cleanup", (_label, backupData) => {
+		expect(shouldRetainDeploymentBackup(backupData)).toBe(false);
 	});
 });

@@ -2,6 +2,21 @@ import { describe, expect, it, vi } from "vitest";
 import { rollbackQualityProfileDeployment } from "../deployment-profile-state.js";
 import { createQualityProfileStateToken } from "../deployment-target.js";
 
+function completeProfile(overrides: Record<string, unknown> = {}) {
+	return {
+		id: 4,
+		name: "Existing",
+		upgradeAllowed: true,
+		cutoff: 1,
+		items: [],
+		minFormatScore: 0,
+		cutoffFormatScore: 0,
+		minUpgradeFormatScore: 0,
+		formatItems: [],
+		...overrides,
+	};
+}
+
 describe("rollbackQualityProfileDeployment", () => {
 	it("deletes a profile created by the deployment only while it is unchanged", async () => {
 		const deployed = { id: 7, name: "Created profile", formatItems: [] };
@@ -80,8 +95,8 @@ describe("rollbackQualityProfileDeployment", () => {
 	});
 
 	it("restores an updated profile only from the recorded post-write state", async () => {
-		const before = { id: 4, name: "Existing", formatItems: [{ score: 0 }] };
-		const deployed = { id: 4, name: "Existing", formatItems: [{ score: 100 }] };
+		const before = completeProfile({ formatItems: [{ format: 7, score: 0 }] });
+		const deployed = completeProfile({ formatItems: [{ format: 7, score: 100 }] });
 		const update = vi.fn().mockResolvedValue(undefined);
 		const client = {
 			qualityProfile: {
@@ -102,8 +117,35 @@ describe("rollbackQualityProfileDeployment", () => {
 		expect(update).toHaveBeenCalledWith(4, before);
 	});
 
+	it.each([
+		["incomplete", { id: 4, name: "Existing" }],
+		["same-title cross-wired", completeProfile({ id: 9 })],
+	] as const)("rejects a %s persisted quality-profile snapshot", async (_label, beforeProfile) => {
+		const deployed = { id: 4, name: "Existing", formatItems: [{ format: 7, score: 100 }] };
+		const update = vi.fn();
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([deployed]),
+				getById: vi.fn().mockResolvedValue(deployed),
+				update,
+			},
+		};
+
+		await expect(
+			rollbackQualityProfileDeployment(client as never, {
+				beforeProfile,
+				action: "updated",
+				status: "applied",
+				profileId: 4,
+				postStateToken: createQualityProfileStateToken(deployed),
+				intendedPostStateToken: null,
+			}),
+		).rejects.toThrow("pre-deployment state");
+		expect(update).not.toHaveBeenCalled();
+	});
+
 	it("treats an already-restored profile as an idempotent retry", async () => {
-		const before = { id: 4, name: "Existing", formatItems: [{ score: 0 }] };
+		const before = completeProfile({ formatItems: [{ format: 7, score: 0 }] });
 		const update = vi.fn();
 		const client = {
 			qualityProfile: {
@@ -120,7 +162,7 @@ describe("rollbackQualityProfileDeployment", () => {
 			profileId: 4,
 			postStateToken: createQualityProfileStateToken({
 				...before,
-				formatItems: [{ score: 100 }],
+				formatItems: [{ format: 7, score: 100 }],
 			}),
 			intendedPostStateToken: null,
 		});
@@ -128,7 +170,7 @@ describe("rollbackQualityProfileDeployment", () => {
 	});
 
 	it("treats a pending update still at its before-state as an idempotent retry", async () => {
-		const before = { id: 4, name: "Existing", formatItems: [{ score: 0 }] };
+		const before = completeProfile({ formatItems: [{ format: 7, score: 0 }] });
 		const client = {
 			qualityProfile: {
 				getAll: vi.fn().mockResolvedValue([before]),
@@ -149,7 +191,7 @@ describe("rollbackQualityProfileDeployment", () => {
 	});
 
 	it("fails closed when a pending update left an unknown current state", async () => {
-		const before = { id: 4, name: "Existing", formatItems: [{ score: 0 }] };
+		const before = completeProfile({ formatItems: [{ format: 7, score: 0 }] });
 		const changed = { ...before, formatItems: [{ score: 50 }] };
 		const client = {
 			qualityProfile: {
@@ -171,8 +213,8 @@ describe("rollbackQualityProfileDeployment", () => {
 	});
 
 	it("restores a pending update when the upstream state matches the recorded intent", async () => {
-		const before = { id: 4, name: "Existing", formatItems: [{ format: 7, score: 0 }] };
-		const intended = { id: 4, name: "Existing", formatItems: [{ format: 7, score: 100 }] };
+		const before = completeProfile({ formatItems: [{ format: 7, score: 0 }] });
+		const intended = completeProfile({ formatItems: [{ format: 7, score: 100 }] });
 		const update = vi.fn().mockResolvedValue(undefined);
 		const client = {
 			qualityProfile: {
@@ -195,13 +237,11 @@ describe("rollbackQualityProfileDeployment", () => {
 	});
 
 	it("restores a pending update from its verified normalized post-write state", async () => {
-		const before = { id: 4, name: "Existing", formatItems: [{ format: 7, score: 0 }] };
-		const intended = { id: 4, name: "Existing", formatItems: [{ format: 7, score: 100 }] };
-		const normalized = {
-			id: 4,
-			name: "Existing",
+		const before = completeProfile({ formatItems: [{ format: 7, score: 0 }] });
+		const intended = completeProfile({ formatItems: [{ format: 7, score: 100 }] });
+		const normalized = completeProfile({
 			formatItems: [{ format: 7, score: 100, name: "Normalized by ARR" }],
-		};
+		});
 		const update = vi.fn().mockResolvedValue(undefined);
 		const client = {
 			qualityProfile: {
@@ -223,8 +263,12 @@ describe("rollbackQualityProfileDeployment", () => {
 		expect(update).toHaveBeenCalledWith(4, before);
 	});
 
-	it("reconciles a pending create after the unknown profile is manually removed", async () => {
-		const client = { qualityProfile: { getAll: vi.fn().mockResolvedValue([]) } };
+	it("keeps an unknown-ID create unresolved when the profile may have been renamed", async () => {
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([{ id: 12, name: "Renamed after create" }]),
+			},
+		};
 
 		await expect(
 			rollbackQualityProfileDeployment(client as never, {
@@ -236,6 +280,6 @@ describe("rollbackQualityProfileDeployment", () => {
 				postStateToken: null,
 				intendedPostStateToken: null,
 			}),
-		).resolves.toBeUndefined();
+		).rejects.toThrow("ID is unknown");
 	});
 });

@@ -1,4 +1,8 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { TrashBackupCleanupService } from "../trash-backup-cleanup.js";
 
 function ledger(status: "pending" | "applied") {
@@ -32,6 +36,60 @@ function ledger(status: "pending" | "applied") {
 }
 
 describe("TrashBackupCleanupService", () => {
+	it.each(["expired", "orphaned"] as const)(
+		"retains uncertain and current ledgers during %s cleanup while deleting known legacy backups",
+		async (phase) => {
+			const candidates = [
+				{ id: "applied-v2", backupData: ledger("applied") },
+				{ id: "pending-v2", backupData: ledger("pending") },
+				{ id: "malformed-v2", backupData: JSON.stringify({ schemaVersion: 2 }) },
+				{ id: "future", backupData: JSON.stringify({ schemaVersion: 3 }) },
+				{ id: "missing-version", backupData: JSON.stringify({ endpointKey: "current-like" }) },
+				{ id: "string-version", backupData: JSON.stringify({ schemaVersion: "2" }) },
+				{ id: "legacy-array", backupData: JSON.stringify([]) },
+				{
+					id: "legacy-object",
+					backupData: JSON.stringify({ customFormats: [], qualityProfile: null }),
+				},
+			].map((candidate) => ({
+				...candidate,
+				_count: { syncHistory: 0, deploymentHistory: 0 },
+			}));
+			const deleteMany = vi.fn().mockResolvedValue({ count: 2 });
+			const prisma = {
+				trashBackup: {
+					findMany: vi
+						.fn()
+						.mockResolvedValueOnce(phase === "expired" ? candidates : [])
+						.mockResolvedValueOnce(phase === "orphaned" ? candidates : []),
+					deleteMany,
+				},
+			};
+			const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+			const service = new TrashBackupCleanupService(prisma as never, logger as never);
+
+			await expect(service.runCleanup()).resolves.toEqual({
+				expiredCount: phase === "expired" ? 2 : 0,
+				orphanedCount: phase === "orphaned" ? 2 : 0,
+				totalCleaned: 2,
+			});
+			expect(deleteMany).toHaveBeenCalledTimes(1);
+			expect(deleteMany).toHaveBeenCalledWith({
+				where: expect.objectContaining({
+					syncHistory: { none: { rolledBack: false } },
+					deploymentHistory: { none: { rolledBack: false } },
+					OR: [
+						{ id: "legacy-array", backupData: JSON.stringify([]) },
+						{
+							id: "legacy-object",
+							backupData: JSON.stringify({ customFormats: [], qualityProfile: null }),
+						},
+					],
+				}),
+			});
+		},
+	);
+
 	it("never deletes an expired pending or malformed current deployment ledger", async () => {
 		const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
 		const prisma = {
@@ -50,8 +108,8 @@ describe("TrashBackupCleanupService", () => {
 							_count: { syncHistory: 1, deploymentHistory: 0 },
 						},
 						{
-							id: "terminal",
-							backupData: ledger("applied"),
+							id: "legacy",
+							backupData: JSON.stringify([]),
 							_count: { syncHistory: 1, deploymentHistory: 0 },
 						},
 					])
@@ -81,7 +139,7 @@ describe("TrashBackupCleanupService", () => {
 				expiresAt: { not: null, lte: expect.any(Date) },
 				syncHistory: { none: { rolledBack: false } },
 				deploymentHistory: { none: { rolledBack: false } },
-				OR: [{ id: "terminal", backupData: ledger("applied") }],
+				OR: [{ id: "legacy", backupData: JSON.stringify([]) }],
 			},
 		});
 	});
@@ -98,7 +156,7 @@ describe("TrashBackupCleanupService", () => {
 			trashBackup: {
 				findMany: vi
 					.fn()
-					.mockResolvedValueOnce([{ id: "race", backupData: ledger("applied") }])
+					.mockResolvedValueOnce([{ id: "race", backupData: JSON.stringify([]) }])
 					.mockResolvedValueOnce([]),
 				deleteMany,
 			},
@@ -120,4 +178,66 @@ describe("TrashBackupCleanupService", () => {
 			}),
 		);
 	});
+
+	it.each([499, 500])(
+		"deletes %i legacy candidates through bounded real SQLite batches",
+		async (candidateCount) => {
+			const directory = await mkdtemp(join(tmpdir(), "trash-backup-cleanup-"));
+			const databasePath = join(directory, "cleanup.db");
+			const prisma = createTestPrismaClient(databasePath);
+			try {
+				await prisma.$executeRawUnsafe(`
+					CREATE TABLE "trash_backups" (
+						"id" TEXT NOT NULL PRIMARY KEY,
+						"instanceId" TEXT NOT NULL,
+						"userId" TEXT NOT NULL,
+						"backupData" TEXT NOT NULL,
+						"createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+						"expiresAt" DATETIME
+					)
+				`);
+				await prisma.$executeRawUnsafe(`
+					CREATE TABLE "trash_sync_history" (
+						"id" TEXT NOT NULL PRIMARY KEY,
+						"backupId" TEXT,
+						"rolledBack" BOOLEAN NOT NULL DEFAULT false
+					)
+				`);
+				await prisma.$executeRawUnsafe(`
+					CREATE TABLE "template_deployment_history" (
+						"id" TEXT NOT NULL PRIMARY KEY,
+						"backupId" TEXT,
+						"rolledBack" BOOLEAN NOT NULL DEFAULT false
+					)
+				`);
+
+				const records = Array.from({ length: candidateCount }, (_, index) => ({
+					id: `backup-${index}`,
+					instanceId: "instance",
+					userId: "user",
+					backupData: JSON.stringify([]),
+					createdAt: new Date("2026-01-01T00:00:00.000Z"),
+					expiresAt: new Date("2026-01-02T00:00:00.000Z"),
+				}));
+				for (let index = 0; index < records.length; index += 100) {
+					await prisma.trashBackup.createMany({ data: records.slice(index, index + 100) });
+				}
+
+				const deleteMany = vi.spyOn(prisma.trashBackup, "deleteMany");
+				const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+				const service = new TrashBackupCleanupService(prisma, logger as never);
+
+				await expect(service.runCleanup()).resolves.toEqual({
+					expiredCount: candidateCount,
+					orphanedCount: 0,
+					totalCleaned: candidateCount,
+				});
+				expect(deleteMany).toHaveBeenCalledTimes(2);
+				await expect(prisma.trashBackup.count()).resolves.toBe(0);
+			} finally {
+				await prisma.$disconnect();
+				await rm(directory, { recursive: true, force: true });
+			}
+		},
+	);
 });

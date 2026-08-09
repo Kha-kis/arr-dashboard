@@ -1,7 +1,24 @@
 import type { RadarrClient, SonarrClient } from "arr-sdk";
+import { z } from "zod";
 import { createQualityProfileStateToken } from "./deployment-target.js";
 
 type ArrProfileClient = SonarrClient | RadarrClient;
+const restorableQualityProfileSchema = z.looseObject({
+	id: z.number().int().positive().safe(),
+	name: z.string().min(1),
+	upgradeAllowed: z.boolean(),
+	cutoff: z.number().int().positive().safe(),
+	items: z.array(z.unknown()),
+	minFormatScore: z.number().int().safe(),
+	cutoffFormatScore: z.number().int().safe(),
+	minUpgradeFormatScore: z.number().int().safe(),
+	formatItems: z.array(
+		z.looseObject({
+			format: z.number().int().positive().safe(),
+			score: z.number().int().safe(),
+		}),
+	),
+});
 
 export interface QualityProfileRollbackState {
 	beforeProfile: Record<string, unknown> | null;
@@ -22,11 +39,17 @@ export async function rollbackQualityProfileDeployment(
 	state: QualityProfileRollbackState,
 ): Promise<void> {
 	if (state.profileId === null) {
-		if (state.action === "created" && state.status === "pending" && state.profileName) {
-			const currentProfiles = await client.qualityProfile.getAll();
-			if (!currentProfiles.some((profile) => profile.name === state.profileName)) return;
-		}
 		throw new Error("A quality profile may have been created, but its ID is unknown.");
+	}
+	let beforeProfile: Record<string, unknown> | null = null;
+	if (state.action === "updated") {
+		const parsed = restorableQualityProfileSchema.safeParse(state.beforeProfile);
+		if (!parsed.success || parsed.data.id !== state.profileId) {
+			throw new Error(
+				"The quality profile has an incomplete or mismatched pre-deployment state and was not restored.",
+			);
+		}
+		beforeProfile = parsed.data;
 	}
 	const currentProfiles = await client.qualityProfile.getAll();
 	const currentProfile = currentProfiles.find((profile) => profile.id === state.profileId);
@@ -40,8 +63,8 @@ export async function rollbackQualityProfileDeployment(
 		const currentStateToken = createQualityProfileStateToken(fullCurrent);
 		if (
 			state.action === "updated" &&
-			state.beforeProfile &&
-			currentStateToken === createQualityProfileStateToken(state.beforeProfile)
+			beforeProfile &&
+			currentStateToken === createQualityProfileStateToken(beforeProfile)
 		) {
 			return;
 		}
@@ -71,12 +94,12 @@ export async function rollbackQualityProfileDeployment(
 		return;
 	}
 
-	if (!currentProfile || !state.beforeProfile) {
+	if (!currentProfile || !beforeProfile) {
 		throw new Error("The quality profile to restore no longer exists.");
 	}
 	const fullCurrent = await client.qualityProfile.getById(state.profileId);
 	const currentStateToken = createQualityProfileStateToken(fullCurrent);
-	if (currentStateToken === createQualityProfileStateToken(state.beforeProfile)) {
+	if (currentStateToken === createQualityProfileStateToken(beforeProfile)) {
 		return;
 	}
 	if (currentStateToken !== verifiedPostStateToken) {
@@ -85,6 +108,6 @@ export async function rollbackQualityProfileDeployment(
 	await client.qualityProfile.update(
 		state.profileId,
 		// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr profile types are runtime-compatible
-		state.beforeProfile as any,
+		beforeProfile as any,
 	);
 }
