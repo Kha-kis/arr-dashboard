@@ -26,7 +26,7 @@ import {
 	TimeoutError,
 	NetworkError,
 } from "arr-sdk";
-import type { Encryptor } from "../../auth/encryption.js";
+import { Encryptor } from "../../auth/encryption.js";
 
 // Mock the arr-sdk module to match actual SDK signatures
 vi.mock("arr-sdk", () => {
@@ -157,6 +157,27 @@ describe("ArrClientFactory - Client Creation", () => {
 		const client = factory.create(instance);
 
 		expect(client).toBeInstanceOf(RadarrClient);
+	});
+
+	it("uses decrypted credentials for a stable connection identity", () => {
+		const encryptor = new Encryptor("a".repeat(64));
+		const identityFactory = new ArrClientFactory(encryptor);
+		const firstApiKey = encryptor.encrypt("api-key");
+		const secondApiKey = encryptor.encrypt("api-key");
+
+		const first = createMockInstance("RADARR", {
+			encryptedApiKey: firstApiKey.value,
+			encryptionIv: firstApiKey.iv,
+		});
+		const second = createMockInstance("RADARR", {
+			id: "instance-456",
+			encryptedApiKey: secondApiKey.value,
+			encryptionIv: secondApiKey.iv,
+		});
+
+		expect(identityFactory.createConnectionCredentialIdentity(first)).toBe(
+			identityFactory.createConnectionCredentialIdentity(second),
+		);
 	});
 
 	it("should create ProwlarrClient for PROWLARR service type", () => {

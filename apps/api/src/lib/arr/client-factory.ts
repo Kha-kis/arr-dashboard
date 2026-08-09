@@ -114,10 +114,46 @@ export interface ClientInstanceData {
 export class ArrClientFactory {
 	private readonly encryptor: Encryptor;
 	private readonly defaultTimeout: number;
+	private readonly credentialIdentityCache = new Map<string, string>();
+	private static readonly credentialIdentityCacheLimit = 1024;
 
 	constructor(encryptor: Encryptor, defaultTimeout = 30_000) {
 		this.encryptor = encryptor;
 		this.defaultTimeout = defaultTimeout;
+	}
+
+	/**
+	 * Return an installation-keyed identity for the plaintext credentials.
+	 * Separately encrypted copies of the same credentials produce the same
+	 * identity, while no API key or HTTP password is exposed or persisted.
+	 */
+	createConnectionCredentialIdentity(instance: ClientInstanceData): string {
+		const cacheKey = JSON.stringify([
+			instance.encryptedApiKey,
+			instance.encryptionIv,
+			instance.encryptedHttpAuthCredentials ?? null,
+			instance.httpAuthEncryptionIv ?? null,
+		]);
+		const cachedIdentity = this.credentialIdentityCache.get(cacheKey);
+		if (cachedIdentity !== undefined) {
+			this.credentialIdentityCache.delete(cacheKey);
+			this.credentialIdentityCache.set(cacheKey, cachedIdentity);
+			return cachedIdentity;
+		}
+		const apiKey = this.encryptor.decrypt({
+			value: instance.encryptedApiKey,
+			iv: instance.encryptionIv,
+		});
+		const httpAuthHeaders = getStoredHttpAuthHeaders(this.encryptor, instance);
+		const identity = this.encryptor.fingerprint(
+			JSON.stringify({ apiKey, authorization: httpAuthHeaders.Authorization ?? null }),
+		);
+		this.credentialIdentityCache.set(cacheKey, identity);
+		if (this.credentialIdentityCache.size > ArrClientFactory.credentialIdentityCacheLimit) {
+			const oldestKey = this.credentialIdentityCache.keys().next().value;
+			if (oldestKey !== undefined) this.credentialIdentityCache.delete(oldestKey);
+		}
+		return identity;
 	}
 
 	/**

@@ -59,6 +59,9 @@ export type TrashSyncHistoryMinAggregateOutputType = {
   backupId: string | null
   rolledBack: boolean | null
   rolledBackAt: Date | null
+  rollbackStatus: string | null
+  rollbackAttemptedAt: Date | null
+  rollbackProgress: string | null
 }
 
 export type TrashSyncHistoryMaxAggregateOutputType = {
@@ -80,6 +83,9 @@ export type TrashSyncHistoryMaxAggregateOutputType = {
   backupId: string | null
   rolledBack: boolean | null
   rolledBackAt: Date | null
+  rollbackStatus: string | null
+  rollbackAttemptedAt: Date | null
+  rollbackProgress: string | null
 }
 
 export type TrashSyncHistoryCountAggregateOutputType = {
@@ -101,6 +107,9 @@ export type TrashSyncHistoryCountAggregateOutputType = {
   backupId: number
   rolledBack: number
   rolledBackAt: number
+  rollbackStatus: number
+  rollbackAttemptedAt: number
+  rollbackProgress: number
   _all: number
 }
 
@@ -138,6 +147,9 @@ export type TrashSyncHistoryMinAggregateInputType = {
   backupId?: true
   rolledBack?: true
   rolledBackAt?: true
+  rollbackStatus?: true
+  rollbackAttemptedAt?: true
+  rollbackProgress?: true
 }
 
 export type TrashSyncHistoryMaxAggregateInputType = {
@@ -159,6 +171,9 @@ export type TrashSyncHistoryMaxAggregateInputType = {
   backupId?: true
   rolledBack?: true
   rolledBackAt?: true
+  rollbackStatus?: true
+  rollbackAttemptedAt?: true
+  rollbackProgress?: true
 }
 
 export type TrashSyncHistoryCountAggregateInputType = {
@@ -180,6 +195,9 @@ export type TrashSyncHistoryCountAggregateInputType = {
   backupId?: true
   rolledBack?: true
   rolledBackAt?: true
+  rollbackStatus?: true
+  rollbackAttemptedAt?: true
+  rollbackProgress?: true
   _all?: true
 }
 
@@ -288,6 +306,9 @@ export type TrashSyncHistoryGroupByOutputType = {
   backupId: string | null
   rolledBack: boolean
   rolledBackAt: Date | null
+  rollbackStatus: string | null
+  rollbackAttemptedAt: Date | null
+  rollbackProgress: string | null
   _count: TrashSyncHistoryCountAggregateOutputType | null
   _avg: TrashSyncHistoryAvgAggregateOutputType | null
   _sum: TrashSyncHistorySumAggregateOutputType | null
@@ -332,6 +353,9 @@ export type TrashSyncHistoryWhereInput = {
   backupId?: Prisma.StringNullableFilter<"TrashSyncHistory"> | string | null
   rolledBack?: Prisma.BoolFilter<"TrashSyncHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableFilter<"TrashSyncHistory"> | Date | string | null
+  rollbackStatus?: Prisma.StringNullableFilter<"TrashSyncHistory"> | string | null
+  rollbackAttemptedAt?: Prisma.DateTimeNullableFilter<"TrashSyncHistory"> | Date | string | null
+  rollbackProgress?: Prisma.StringNullableFilter<"TrashSyncHistory"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
   template?: Prisma.XOR<Prisma.TrashTemplateNullableScalarRelationFilter, Prisma.TrashTemplateWhereInput> | null
   backup?: Prisma.XOR<Prisma.TrashBackupNullableScalarRelationFilter, Prisma.TrashBackupWhereInput> | null
@@ -356,6 +380,9 @@ export type TrashSyncHistoryOrderByWithRelationInput = {
   backupId?: Prisma.SortOrderInput | Prisma.SortOrder
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  rollbackStatus?: Prisma.SortOrderInput | Prisma.SortOrder
+  rollbackAttemptedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  rollbackProgress?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
   template?: Prisma.TrashTemplateOrderByWithRelationInput
   backup?: Prisma.TrashBackupOrderByWithRelationInput
@@ -383,6 +410,9 @@ export type TrashSyncHistoryWhereUniqueInput = Prisma.AtLeast<{
   backupId?: Prisma.StringNullableFilter<"TrashSyncHistory"> | string | null
   rolledBack?: Prisma.BoolFilter<"TrashSyncHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableFilter<"TrashSyncHistory"> | Date | string | null
+  rollbackStatus?: Prisma.StringNullableFilter<"TrashSyncHistory"> | string | null
+  rollbackAttemptedAt?: Prisma.DateTimeNullableFilter<"TrashSyncHistory"> | Date | string | null
+  rollbackProgress?: Prisma.StringNullableFilter<"TrashSyncHistory"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
   template?: Prisma.XOR<Prisma.TrashTemplateNullableScalarRelationFilter, Prisma.TrashTemplateWhereInput> | null
   backup?: Prisma.XOR<Prisma.TrashBackupNullableScalarRelationFilter, Prisma.TrashBackupWhereInput> | null
@@ -407,6 +437,9 @@ export type TrashSyncHistoryOrderByWithAggregationInput = {
   backupId?: Prisma.SortOrderInput | Prisma.SortOrder
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  rollbackStatus?: Prisma.SortOrderInput | Prisma.SortOrder
+  rollbackAttemptedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  rollbackProgress?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.TrashSyncHistoryCountOrderByAggregateInput
   _avg?: Prisma.TrashSyncHistoryAvgOrderByAggregateInput
   _max?: Prisma.TrashSyncHistoryMaxOrderByAggregateInput
@@ -436,6 +469,9 @@ export type TrashSyncHistoryScalarWhereWithAggregatesInput = {
   backupId?: Prisma.StringNullableWithAggregatesFilter<"TrashSyncHistory"> | string | null
   rolledBack?: Prisma.BoolWithAggregatesFilter<"TrashSyncHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableWithAggregatesFilter<"TrashSyncHistory"> | Date | string | null
+  rollbackStatus?: Prisma.StringNullableWithAggregatesFilter<"TrashSyncHistory"> | string | null
+  rollbackAttemptedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"TrashSyncHistory"> | Date | string | null
+  rollbackProgress?: Prisma.StringNullableWithAggregatesFilter<"TrashSyncHistory"> | string | null
 }
 
 export type TrashSyncHistoryCreateInput = {
@@ -454,6 +490,9 @@ export type TrashSyncHistoryCreateInput = {
   errorLog?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutTrashSyncHistoryInput
   template?: Prisma.TrashTemplateCreateNestedOneWithoutSyncHistoryInput
   backup?: Prisma.TrashBackupCreateNestedOneWithoutSyncHistoryInput
@@ -478,6 +517,9 @@ export type TrashSyncHistoryUncheckedCreateInput = {
   backupId?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
 }
 
 export type TrashSyncHistoryUpdateInput = {
@@ -496,6 +538,9 @@ export type TrashSyncHistoryUpdateInput = {
   errorLog?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutTrashSyncHistoryNestedInput
   template?: Prisma.TrashTemplateUpdateOneWithoutSyncHistoryNestedInput
   backup?: Prisma.TrashBackupUpdateOneWithoutSyncHistoryNestedInput
@@ -520,6 +565,9 @@ export type TrashSyncHistoryUncheckedUpdateInput = {
   backupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type TrashSyncHistoryCreateManyInput = {
@@ -541,6 +589,9 @@ export type TrashSyncHistoryCreateManyInput = {
   backupId?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
 }
 
 export type TrashSyncHistoryUpdateManyMutationInput = {
@@ -559,6 +610,9 @@ export type TrashSyncHistoryUpdateManyMutationInput = {
   errorLog?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type TrashSyncHistoryUncheckedUpdateManyInput = {
@@ -580,6 +634,9 @@ export type TrashSyncHistoryUncheckedUpdateManyInput = {
   backupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type TrashSyncHistoryListRelationFilter = {
@@ -611,6 +668,9 @@ export type TrashSyncHistoryCountOrderByAggregateInput = {
   backupId?: Prisma.SortOrder
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrder
+  rollbackStatus?: Prisma.SortOrder
+  rollbackAttemptedAt?: Prisma.SortOrder
+  rollbackProgress?: Prisma.SortOrder
 }
 
 export type TrashSyncHistoryAvgOrderByAggregateInput = {
@@ -639,6 +699,9 @@ export type TrashSyncHistoryMaxOrderByAggregateInput = {
   backupId?: Prisma.SortOrder
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrder
+  rollbackStatus?: Prisma.SortOrder
+  rollbackAttemptedAt?: Prisma.SortOrder
+  rollbackProgress?: Prisma.SortOrder
 }
 
 export type TrashSyncHistoryMinOrderByAggregateInput = {
@@ -660,6 +723,9 @@ export type TrashSyncHistoryMinOrderByAggregateInput = {
   backupId?: Prisma.SortOrder
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrder
+  rollbackStatus?: Prisma.SortOrder
+  rollbackAttemptedAt?: Prisma.SortOrder
+  rollbackProgress?: Prisma.SortOrder
 }
 
 export type TrashSyncHistorySumOrderByAggregateInput = {
@@ -819,6 +885,9 @@ export type TrashSyncHistoryCreateWithoutInstanceInput = {
   errorLog?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
   template?: Prisma.TrashTemplateCreateNestedOneWithoutSyncHistoryInput
   backup?: Prisma.TrashBackupCreateNestedOneWithoutSyncHistoryInput
 }
@@ -841,6 +910,9 @@ export type TrashSyncHistoryUncheckedCreateWithoutInstanceInput = {
   backupId?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
 }
 
 export type TrashSyncHistoryCreateOrConnectWithoutInstanceInput = {
@@ -890,6 +962,9 @@ export type TrashSyncHistoryScalarWhereInput = {
   backupId?: Prisma.StringNullableFilter<"TrashSyncHistory"> | string | null
   rolledBack?: Prisma.BoolFilter<"TrashSyncHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableFilter<"TrashSyncHistory"> | Date | string | null
+  rollbackStatus?: Prisma.StringNullableFilter<"TrashSyncHistory"> | string | null
+  rollbackAttemptedAt?: Prisma.DateTimeNullableFilter<"TrashSyncHistory"> | Date | string | null
+  rollbackProgress?: Prisma.StringNullableFilter<"TrashSyncHistory"> | string | null
 }
 
 export type TrashSyncHistoryCreateWithoutTemplateInput = {
@@ -908,6 +983,9 @@ export type TrashSyncHistoryCreateWithoutTemplateInput = {
   errorLog?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutTrashSyncHistoryInput
   backup?: Prisma.TrashBackupCreateNestedOneWithoutSyncHistoryInput
 }
@@ -930,6 +1008,9 @@ export type TrashSyncHistoryUncheckedCreateWithoutTemplateInput = {
   backupId?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
 }
 
 export type TrashSyncHistoryCreateOrConnectWithoutTemplateInput = {
@@ -973,6 +1054,9 @@ export type TrashSyncHistoryCreateWithoutBackupInput = {
   errorLog?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutTrashSyncHistoryInput
   template?: Prisma.TrashTemplateCreateNestedOneWithoutSyncHistoryInput
 }
@@ -995,6 +1079,9 @@ export type TrashSyncHistoryUncheckedCreateWithoutBackupInput = {
   errorLog?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
 }
 
 export type TrashSyncHistoryCreateOrConnectWithoutBackupInput = {
@@ -1040,6 +1127,9 @@ export type TrashSyncHistoryCreateManyInstanceInput = {
   backupId?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
 }
 
 export type TrashSyncHistoryUpdateWithoutInstanceInput = {
@@ -1058,6 +1148,9 @@ export type TrashSyncHistoryUpdateWithoutInstanceInput = {
   errorLog?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   template?: Prisma.TrashTemplateUpdateOneWithoutSyncHistoryNestedInput
   backup?: Prisma.TrashBackupUpdateOneWithoutSyncHistoryNestedInput
 }
@@ -1080,6 +1173,9 @@ export type TrashSyncHistoryUncheckedUpdateWithoutInstanceInput = {
   backupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type TrashSyncHistoryUncheckedUpdateManyWithoutInstanceInput = {
@@ -1100,6 +1196,9 @@ export type TrashSyncHistoryUncheckedUpdateManyWithoutInstanceInput = {
   backupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type TrashSyncHistoryCreateManyTemplateInput = {
@@ -1120,6 +1219,9 @@ export type TrashSyncHistoryCreateManyTemplateInput = {
   backupId?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
 }
 
 export type TrashSyncHistoryUpdateWithoutTemplateInput = {
@@ -1138,6 +1240,9 @@ export type TrashSyncHistoryUpdateWithoutTemplateInput = {
   errorLog?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutTrashSyncHistoryNestedInput
   backup?: Prisma.TrashBackupUpdateOneWithoutSyncHistoryNestedInput
 }
@@ -1160,6 +1265,9 @@ export type TrashSyncHistoryUncheckedUpdateWithoutTemplateInput = {
   backupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type TrashSyncHistoryUncheckedUpdateManyWithoutTemplateInput = {
@@ -1180,6 +1288,9 @@ export type TrashSyncHistoryUncheckedUpdateManyWithoutTemplateInput = {
   backupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type TrashSyncHistoryCreateManyBackupInput = {
@@ -1200,6 +1311,9 @@ export type TrashSyncHistoryCreateManyBackupInput = {
   errorLog?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  rollbackStatus?: string | null
+  rollbackAttemptedAt?: Date | string | null
+  rollbackProgress?: string | null
 }
 
 export type TrashSyncHistoryUpdateWithoutBackupInput = {
@@ -1218,6 +1332,9 @@ export type TrashSyncHistoryUpdateWithoutBackupInput = {
   errorLog?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutTrashSyncHistoryNestedInput
   template?: Prisma.TrashTemplateUpdateOneWithoutSyncHistoryNestedInput
 }
@@ -1240,6 +1357,9 @@ export type TrashSyncHistoryUncheckedUpdateWithoutBackupInput = {
   errorLog?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type TrashSyncHistoryUncheckedUpdateManyWithoutBackupInput = {
@@ -1260,6 +1380,9 @@ export type TrashSyncHistoryUncheckedUpdateManyWithoutBackupInput = {
   errorLog?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  rollbackAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  rollbackProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 
@@ -1283,6 +1406,9 @@ export type TrashSyncHistorySelect<ExtArgs extends runtime.Types.Extensions.Inte
   backupId?: boolean
   rolledBack?: boolean
   rolledBackAt?: boolean
+  rollbackStatus?: boolean
+  rollbackAttemptedAt?: boolean
+  rollbackProgress?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   template?: boolean | Prisma.TrashSyncHistory$templateArgs<ExtArgs>
   backup?: boolean | Prisma.TrashSyncHistory$backupArgs<ExtArgs>
@@ -1307,6 +1433,9 @@ export type TrashSyncHistorySelectCreateManyAndReturn<ExtArgs extends runtime.Ty
   backupId?: boolean
   rolledBack?: boolean
   rolledBackAt?: boolean
+  rollbackStatus?: boolean
+  rollbackAttemptedAt?: boolean
+  rollbackProgress?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   template?: boolean | Prisma.TrashSyncHistory$templateArgs<ExtArgs>
   backup?: boolean | Prisma.TrashSyncHistory$backupArgs<ExtArgs>
@@ -1331,6 +1460,9 @@ export type TrashSyncHistorySelectUpdateManyAndReturn<ExtArgs extends runtime.Ty
   backupId?: boolean
   rolledBack?: boolean
   rolledBackAt?: boolean
+  rollbackStatus?: boolean
+  rollbackAttemptedAt?: boolean
+  rollbackProgress?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   template?: boolean | Prisma.TrashSyncHistory$templateArgs<ExtArgs>
   backup?: boolean | Prisma.TrashSyncHistory$backupArgs<ExtArgs>
@@ -1355,9 +1487,12 @@ export type TrashSyncHistorySelectScalar = {
   backupId?: boolean
   rolledBack?: boolean
   rolledBackAt?: boolean
+  rollbackStatus?: boolean
+  rollbackAttemptedAt?: boolean
+  rollbackProgress?: boolean
 }
 
-export type TrashSyncHistoryOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "templateId" | "userId" | "syncType" | "status" | "startedAt" | "completedAt" | "duration" | "configsApplied" | "configsFailed" | "configsSkipped" | "appliedConfigs" | "failedConfigs" | "errorLog" | "backupId" | "rolledBack" | "rolledBackAt", ExtArgs["result"]["trashSyncHistory"]>
+export type TrashSyncHistoryOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "templateId" | "userId" | "syncType" | "status" | "startedAt" | "completedAt" | "duration" | "configsApplied" | "configsFailed" | "configsSkipped" | "appliedConfigs" | "failedConfigs" | "errorLog" | "backupId" | "rolledBack" | "rolledBackAt" | "rollbackStatus" | "rollbackAttemptedAt" | "rollbackProgress", ExtArgs["result"]["trashSyncHistory"]>
 export type TrashSyncHistoryInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   template?: boolean | Prisma.TrashSyncHistory$templateArgs<ExtArgs>
@@ -1400,6 +1535,9 @@ export type $TrashSyncHistoryPayload<ExtArgs extends runtime.Types.Extensions.In
     backupId: string | null
     rolledBack: boolean
     rolledBackAt: Date | null
+    rollbackStatus: string | null
+    rollbackAttemptedAt: Date | null
+    rollbackProgress: string | null
   }, ExtArgs["result"]["trashSyncHistory"]>
   composites: {}
 }
@@ -1844,6 +1982,9 @@ export interface TrashSyncHistoryFieldRefs {
   readonly backupId: Prisma.FieldRef<"TrashSyncHistory", 'String'>
   readonly rolledBack: Prisma.FieldRef<"TrashSyncHistory", 'Boolean'>
   readonly rolledBackAt: Prisma.FieldRef<"TrashSyncHistory", 'DateTime'>
+  readonly rollbackStatus: Prisma.FieldRef<"TrashSyncHistory", 'String'>
+  readonly rollbackAttemptedAt: Prisma.FieldRef<"TrashSyncHistory", 'DateTime'>
+  readonly rollbackProgress: Prisma.FieldRef<"TrashSyncHistory", 'String'>
 }
     
 
