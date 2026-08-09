@@ -183,6 +183,30 @@ describe("rollbackCustomFormatDeployment", () => {
 		expect(update).toHaveBeenCalledWith(4, before);
 	});
 
+	it("deletes a pending create when its exact returned state was durably recorded", async () => {
+		const created = { id: 7, name: "Created CF", specifications: [] };
+		const remove = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([created]),
+				getById: vi.fn().mockResolvedValue(created),
+				delete: remove,
+			},
+			qualityProfile: { getAll: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			rollbackCustomFormatDeployment(
+				client as never,
+				appliedState({
+					status: "pending",
+					postStateToken: createUpstreamResourceStateToken(created),
+				}),
+			),
+		).resolves.toBe("deleted");
+		expect(remove).toHaveBeenCalledWith(7);
+	});
+
 	it("reconciles a pending create after the unknown resource is manually removed", async () => {
 		const client = { customFormat: { getAll: vi.fn().mockResolvedValue([]) } };
 

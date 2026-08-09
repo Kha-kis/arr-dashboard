@@ -27,7 +27,7 @@ import type { Encryptor } from "../auth/encryption.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 
 // Re-export error types for convenience
-export { ArrError, NotFoundError, UnauthorizedError, ValidationError, TimeoutError, NetworkError };
+export { ArrError, NetworkError, NotFoundError, TimeoutError, UnauthorizedError, ValidationError };
 
 // ============================================================================
 // Types
@@ -114,6 +114,8 @@ export interface ClientInstanceData {
 export class ArrClientFactory {
 	private readonly encryptor: Encryptor;
 	private readonly defaultTimeout: number;
+	private readonly credentialIdentityCache = new Map<string, string>();
+	private static readonly credentialIdentityCacheLimit = 1024;
 
 	constructor(encryptor: Encryptor, defaultTimeout = 30_000) {
 		this.encryptor = encryptor;
@@ -126,14 +128,32 @@ export class ArrClientFactory {
 	 * identity, while no API key or HTTP password is exposed or persisted.
 	 */
 	createConnectionCredentialIdentity(instance: ClientInstanceData): string {
+		const cacheKey = JSON.stringify([
+			instance.encryptedApiKey,
+			instance.encryptionIv,
+			instance.encryptedHttpAuthCredentials ?? null,
+			instance.httpAuthEncryptionIv ?? null,
+		]);
+		const cachedIdentity = this.credentialIdentityCache.get(cacheKey);
+		if (cachedIdentity !== undefined) {
+			this.credentialIdentityCache.delete(cacheKey);
+			this.credentialIdentityCache.set(cacheKey, cachedIdentity);
+			return cachedIdentity;
+		}
 		const apiKey = this.encryptor.decrypt({
 			value: instance.encryptedApiKey,
 			iv: instance.encryptionIv,
 		});
 		const httpAuthHeaders = getStoredHttpAuthHeaders(this.encryptor, instance);
-		return this.encryptor.fingerprint(
+		const identity = this.encryptor.fingerprint(
 			JSON.stringify({ apiKey, authorization: httpAuthHeaders.Authorization ?? null }),
 		);
+		this.credentialIdentityCache.set(cacheKey, identity);
+		if (this.credentialIdentityCache.size > ArrClientFactory.credentialIdentityCacheLimit) {
+			const oldestKey = this.credentialIdentityCache.keys().next().value;
+			if (oldestKey !== undefined) this.credentialIdentityCache.delete(oldestKey);
+		}
+		return identity;
 	}
 
 	/**

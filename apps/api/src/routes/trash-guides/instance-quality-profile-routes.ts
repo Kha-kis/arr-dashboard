@@ -57,7 +57,20 @@ const updateScoresSchema = z.object({
 				score: z.number().int().safe(),
 			}),
 		)
-		.min(1),
+		.min(1)
+		.superRefine((updates, context) => {
+			const seen = new Set<number>();
+			for (const [index, update] of updates.entries()) {
+				if (seen.has(update.customFormatId)) {
+					context.addIssue({
+						code: "custom",
+						message: "Each Custom Format can only be updated once per request",
+						path: [index, "customFormatId"],
+					});
+				}
+				seen.add(update.customFormatId);
+			}
+		}),
 });
 
 const bulkDeleteOverridesSchema = z.object({

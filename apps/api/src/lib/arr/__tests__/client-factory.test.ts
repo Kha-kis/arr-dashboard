@@ -5,28 +5,28 @@
  * API key decryption, and error handling.
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+	NetworkError,
+	NotFoundError,
+	ProwlarrClient,
+	RadarrClient,
+	SonarrClient,
+	TimeoutError,
+	UnauthorizedError,
+	ValidationError,
+} from "arr-sdk";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ServiceType } from "../../../lib/prisma.js";
+import type { Encryptor } from "../../auth/encryption.js";
 import {
 	ArrClientFactory,
 	ArrError,
 	arrErrorToHttpStatus,
 	arrErrorToResponse,
+	type ClientInstanceData,
 	isArrError,
 	isNotFoundError,
-	type ClientInstanceData,
 } from "../client-factory.js";
-import {
-	SonarrClient,
-	RadarrClient,
-	ProwlarrClient,
-	NotFoundError,
-	UnauthorizedError,
-	ValidationError,
-	TimeoutError,
-	NetworkError,
-} from "arr-sdk";
-import type { Encryptor } from "../../auth/encryption.js";
 
 // Mock the arr-sdk module to match actual SDK signatures
 vi.mock("arr-sdk", () => {
@@ -174,6 +174,16 @@ describe("ArrClientFactory - Client Creation", () => {
 		expect(factory.createConnectionCredentialIdentity(first)).toBe(
 			factory.createConnectionCredentialIdentity(second),
 		);
+	});
+
+	it("reuses a credential identity without repeating the expensive fingerprint", () => {
+		const instance = createMockInstance("RADARR");
+
+		const first = factory.createConnectionCredentialIdentity(instance);
+		const second = factory.createConnectionCredentialIdentity(instance);
+
+		expect(second).toBe(first);
+		expect(mockEncryptor.fingerprint).toHaveBeenCalledOnce();
 	});
 
 	it("should create ProwlarrClient for PROWLARR service type", () => {

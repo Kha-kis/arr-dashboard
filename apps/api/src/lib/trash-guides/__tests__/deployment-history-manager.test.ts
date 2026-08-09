@@ -41,6 +41,77 @@ describe("finalizeDeploymentHistory", () => {
 			}),
 		);
 	});
+
+	it("finalizes deferred cleanup in the same database transaction as history", async () => {
+		const transactionCleanup = vi.fn().mockResolvedValue({ count: 1 });
+		const transactionMappingUpdate = vi.fn().mockResolvedValue({ count: 1 });
+		const transactionClient = {
+			trashSyncHistory: { update: vi.fn().mockResolvedValue({}) },
+			templateDeploymentHistory: { update: vi.fn().mockResolvedValue({}) },
+			templateQualityProfileMapping: { updateMany: transactionMappingUpdate },
+			instanceQualityProfileOverride: { deleteMany: transactionCleanup },
+		};
+		const prisma = {
+			$transaction: vi.fn(async (work: (database: typeof transactionClient) => Promise<void>) =>
+				work(transactionClient),
+			),
+		};
+
+		await finalizeDeploymentHistory(
+			prisma as never,
+			"sync-1",
+			"deployment-1",
+			new Date(),
+			{ created: [], updated: [], failed: [], orphaned: ["Removed CF"] },
+			{ created: 0, updated: 0, skipped: 0 },
+			[],
+			undefined,
+			0,
+			async (database) => {
+				await database.templateQualityProfileMapping.updateMany({
+					where: { id: "mapping-1" },
+					data: { managedCustomFormats: "[]" },
+				});
+				await database.instanceQualityProfileOverride.deleteMany({ where: { id: "override-1" } });
+			},
+		);
+
+		expect(prisma.$transaction).toHaveBeenCalledOnce();
+		expect(transactionMappingUpdate).toHaveBeenCalledWith({
+			where: { id: "mapping-1" },
+			data: { managedCustomFormats: "[]" },
+		});
+		expect(transactionCleanup).toHaveBeenCalledWith({ where: { id: "override-1" } });
+	});
+
+	it("propagates deferred-finalization failure so the deployment cannot report success", async () => {
+		const transactionClient = {
+			trashSyncHistory: { update: vi.fn().mockResolvedValue({}) },
+			templateDeploymentHistory: { update: vi.fn().mockResolvedValue({}) },
+		};
+		const prisma = {
+			$transaction: vi.fn(async (work: (database: typeof transactionClient) => Promise<void>) =>
+				work(transactionClient),
+			),
+		};
+
+		await expect(
+			finalizeDeploymentHistory(
+				prisma as never,
+				"sync-1",
+				"deployment-1",
+				new Date(),
+				{ created: [], updated: [], failed: [], orphaned: ["Removed CF"] },
+				{ created: 0, updated: 0, skipped: 0 },
+				[],
+				undefined,
+				0,
+				async () => {
+					throw new Error("managed finalization failed");
+				},
+			),
+		).rejects.toThrow("managed finalization failed");
+	});
 });
 
 describe("finalizeDeploymentHistoryWithPartialFailure", () => {

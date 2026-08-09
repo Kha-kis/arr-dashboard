@@ -9,7 +9,10 @@ import { describe, expect, it, vi } from "vitest";
 import { ConflictError } from "../../errors.js";
 import { extractTrashId } from "../cf-field-utils.js";
 import { DeploymentExecutorService } from "../deployment-executor.js";
-import { createQualityProfileStateToken } from "../deployment-target.js";
+import {
+	createQualityProfileStateToken,
+	createUpstreamResourceStateToken,
+} from "../deployment-target.js";
 
 // SDK CustomFormat type alias
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -247,6 +250,44 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 			"appeared during deployment",
 		);
 		expect(create).not.toHaveBeenCalled();
+	});
+
+	it("records the exact created Custom Format state before the follow-up read", async () => {
+		const created = { id: 7, name: "Test CF", specifications: [] };
+		const persistMutationState = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([]),
+				create: vi.fn().mockResolvedValue(created),
+				getById: vi.fn().mockRejectedValue(new Error("follow-up read failed")),
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployCustomFormats.bind(executor);
+
+		await expect(
+			run(
+				client,
+				[{ trashId: "cf-1", name: "Test CF", originalConfig: { specifications: [] } }],
+				new Map(),
+				new Map(),
+				undefined,
+				persistMutationState,
+			),
+		).rejects.toThrow("post-write state could not be verified");
+		expect(persistMutationState).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				resourceId: 7,
+				status: "pending",
+				postStateToken: createUpstreamResourceStateToken(created),
+			}),
+			false,
+		);
 	});
 
 	it("attaches earlier successful writes when a later format drifts", async () => {
@@ -1036,7 +1077,7 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		expect(upsert).toHaveBeenCalledOnce();
 	});
 
-	it("resets an orphaned managed score to zero and retires its saved override", async () => {
+	it("resets an orphaned managed score and defers override cleanup until finalization", async () => {
 		const profile = { id: 1, name: "Any", formatItems: [{ format: 42, score: -10_000 }] };
 		const postWriteProfile = { ...profile, formatItems: [{ format: 42, score: 0 }] };
 		const update = vi.fn().mockResolvedValue(postWriteProfile);
@@ -1089,20 +1130,21 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 				new Map([[42, -10_000]]),
 				["instance-1"],
 			),
-		).resolves.toMatchObject({ errors: [], orphanedCFs: ["Removed CF"] });
+		).resolves.toMatchObject({
+			errors: [],
+			orphanedCFs: ["Removed CF"],
+			orphanedOverrideCleanup: {
+				userId: "user-1",
+				qualityProfileId: 1,
+				customFormatIds: [42],
+			},
+		});
 
 		expect(update).toHaveBeenCalledWith(
 			1,
 			expect.objectContaining({ formatItems: [{ format: 42, score: 0 }] }),
 		);
-		expect(deleteManyOverrides).toHaveBeenCalledWith({
-			where: {
-				userId: "user-1",
-				qualityProfileId: 1,
-				customFormatId: { in: [42] },
-				OR: [{ instanceId: "instance-1", connectionGeneration: 0, connectionStateToken: "" }],
-			},
-		});
+		expect(deleteManyOverrides).not.toHaveBeenCalled();
 	});
 
 	it("blocks a scheduled profile PUT when saved overrides change during execution", async () => {

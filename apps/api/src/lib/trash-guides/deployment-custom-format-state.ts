@@ -47,7 +47,9 @@ export async function rollbackCustomFormatDeployment(
 		) {
 			return "noop";
 		}
-		if (state.intendedPostStateToken && currentToken === state.intendedPostStateToken) {
+		if (state.postStateToken && currentToken === state.postStateToken) {
+			verifiedPostStateToken = state.postStateToken;
+		} else if (state.intendedPostStateToken && currentToken === state.intendedPostStateToken) {
 			verifiedPostStateToken = state.intendedPostStateToken;
 		} else {
 			throw new Error(

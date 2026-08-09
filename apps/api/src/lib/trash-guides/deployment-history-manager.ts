@@ -62,8 +62,9 @@ export async function finalizeDeploymentHistory(
 	errors: string[],
 	qualityProfile?: QualityProfileMutation,
 	namingFieldsApplied = 0,
+	onFinalize?: (database: PrismaClient) => Promise<void>,
 ): Promise<void> {
-	if (!historyId && !deploymentHistoryId) return;
+	if (!historyId && !deploymentHistoryId && !onFinalize) return;
 	const endTime = new Date();
 	const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
 
@@ -120,6 +121,7 @@ export async function finalizeDeploymentHistory(
 				},
 			});
 		}
+		await onFinalize?.(database);
 	});
 }
 

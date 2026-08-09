@@ -183,6 +183,25 @@ describe("instance quality profile score writes", () => {
 		);
 	});
 
+	it("rejects duplicate Custom Format score updates before any mutation", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{
+				body: {
+					scoreUpdates: [
+						{ customFormatId: 7, score: 100 },
+						{ customFormatId: 7, score: -10_000 },
+					],
+				},
+			},
+		);
+
+		expect(response.statusCode).toBe(400);
+		expect(updateProfile).not.toHaveBeenCalled();
+		expect(upsertOverride).not.toHaveBeenCalled();
+	});
+
 	it("retains the durable intent when the upstream PUT result is uncertain", async () => {
 		updateProfile.mockRejectedValueOnce(new Error("request timed out"));
 

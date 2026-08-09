@@ -248,6 +248,12 @@ interface SyncQualityProfileResult {
 	errors: string[];
 	orphanedCFs: string[];
 	mutation?: QualityProfileMutation;
+	orphanedOverrideCleanup?: {
+		userId: string;
+		qualityProfileId: number;
+		customFormatIds: number[];
+		connectionReadBindings: DeploymentConnectionReadBinding[];
+	};
 }
 
 interface DeploymentConnectionBinding {
@@ -627,6 +633,7 @@ export class DeploymentExecutorService {
 						throw new Error("ARR created the Custom Format without returning its ID");
 					}
 					mutationState.resourceId = createdFormat.id;
+					mutationState.postStateToken = createUpstreamResourceStateToken(createdFormat);
 					await persistMutationState(mutationState, false);
 					const postWriteFormat = await client.customFormat.getById(createdFormat.id);
 					mutationState.status = "applied";
@@ -690,6 +697,7 @@ export class DeploymentExecutorService {
 		const errors: string[] = [];
 		const orphanedCFs: string[] = [];
 		let mutation: QualityProfileMutation | undefined;
+		let orphanedOverrideCleanup: SyncQualityProfileResult["orphanedOverrideCleanup"];
 		const connectionBinding = connectionBindings.find(
 			(binding) => binding.instanceId === instanceId,
 		) ?? {
@@ -1119,16 +1127,12 @@ export class DeploymentExecutorService {
 					intendedPostStateToken: createQualityProfileStateToken(updatedProfile),
 				});
 				if (orphanedManagedFormats.length > 0) {
-					await this.prisma.instanceQualityProfileOverride.deleteMany({
-						where: {
-							userId,
-							qualityProfileId: targetProfile.id,
-							customFormatId: {
-								in: orphanedManagedFormats.map((format) => format.resourceId),
-							},
-							OR: connectionReadBindings,
-						},
-					});
+					orphanedOverrideCleanup = {
+						userId,
+						qualityProfileId: targetProfile.id,
+						customFormatIds: orphanedManagedFormats.map((format) => format.resourceId),
+						connectionReadBindings,
+					};
 				}
 
 				// Clean up stale mappings for this template across every equivalent
@@ -1179,7 +1183,7 @@ export class DeploymentExecutorService {
 			errors.push(`Failed to update quality profile: ${getErrorMessage(error, "Unknown error")}`);
 		}
 
-		return { errors, orphanedCFs, mutation };
+		return { errors, orphanedCFs, mutation, orphanedOverrideCleanup };
 	}
 
 	private async loadEquivalentInstanceOverrideScores(
@@ -1716,6 +1720,12 @@ export class DeploymentExecutorService {
 				previousManagedFormats,
 			);
 			appliedProfileMutation = profileResult.mutation;
+			let deferredManagedMappingUpdate:
+				| {
+						managedProfileId: number;
+						managedCustomFormats: ManagedCustomFormatIdentity[];
+				  }
+				| undefined;
 			if (profileResult.errors.length === 0) {
 				const managedProfileId = appliedProfileMutation?.profileId ?? preDeploymentQP?.id;
 				if (managedProfileId === undefined) {
@@ -1737,28 +1747,34 @@ export class DeploymentExecutorService {
 					backup.data.qualityProfileDeployment.status = "applied";
 				}
 				const capturedBackupData = JSON.stringify(backup.data);
-				await this.prisma.$transaction([
-					this.prisma.templateQualityProfileMapping.updateMany({
-						where: {
-							templateId,
-							qualityProfileId: managedProfileId,
-							OR: connectionBindings,
-						},
-						data: {
-							managedCustomFormats: JSON.stringify(managedCustomFormats),
-							managedCustomFormatsCaptured: true,
-						},
-					}),
-					this.prisma.trashBackup.update({
-						where: { id: backup.id },
-						data: {
-							backupData: capturedBackupData,
-							expiresAt: shouldRetainDeploymentBackup(capturedBackupData)
-								? null
-								: backup.retentionExpiresAt,
-						},
-					}),
-				]);
+				const backupUpdate = this.prisma.trashBackup.update({
+					where: { id: backup.id },
+					data: {
+						backupData: capturedBackupData,
+						expiresAt: shouldRetainDeploymentBackup(capturedBackupData)
+							? null
+							: backup.retentionExpiresAt,
+					},
+				});
+				if (profileResult.orphanedOverrideCleanup) {
+					await backupUpdate;
+					deferredManagedMappingUpdate = { managedProfileId, managedCustomFormats };
+				} else {
+					await this.prisma.$transaction([
+						this.prisma.templateQualityProfileMapping.updateMany({
+							where: {
+								templateId,
+								qualityProfileId: managedProfileId,
+								OR: connectionBindings,
+							},
+							data: {
+								managedCustomFormats: JSON.stringify(managedCustomFormats),
+								managedCustomFormatsCaptured: true,
+							},
+						}),
+						backupUpdate,
+					]);
+				}
 			}
 			deploymentPhase = "post_profile";
 
@@ -1832,6 +1848,11 @@ export class DeploymentExecutorService {
 
 			cfResult.details.orphaned = profileResult.orphanedCFs;
 
+			const orphanedOverrideCleanup =
+				allErrors.length === 0 ? profileResult.orphanedOverrideCleanup : undefined;
+			const managedMappingUpdate =
+				allErrors.length === 0 ? deferredManagedMappingUpdate : undefined;
+			const requiresManagedFinalization = Boolean(orphanedOverrideCleanup || managedMappingUpdate);
 			try {
 				await finalizeDeploymentHistory(
 					this.prisma,
@@ -1843,15 +1864,49 @@ export class DeploymentExecutorService {
 					allErrors,
 					appliedProfileMutation,
 					namingFieldsApplied,
+					orphanedOverrideCleanup || managedMappingUpdate
+						? async (database) => {
+								if (managedMappingUpdate) {
+									await database.templateQualityProfileMapping.updateMany({
+										where: {
+											templateId,
+											qualityProfileId: managedMappingUpdate.managedProfileId,
+											OR: connectionBindings,
+										},
+										data: {
+											managedCustomFormats: JSON.stringify(
+												managedMappingUpdate.managedCustomFormats,
+											),
+											managedCustomFormatsCaptured: true,
+										},
+									});
+								}
+								if (!orphanedOverrideCleanup) return;
+								await database.instanceQualityProfileOverride.deleteMany({
+									where: {
+										userId: orphanedOverrideCleanup.userId,
+										qualityProfileId: orphanedOverrideCleanup.qualityProfileId,
+										customFormatId: { in: orphanedOverrideCleanup.customFormatIds },
+										OR: orphanedOverrideCleanup.connectionReadBindings,
+									},
+								});
+							}
+						: undefined,
 				);
 			} catch (historyError) {
 				log.error(
 					{ err: historyError, templateId, instanceId },
 					"Deployment succeeded but history finalization failed",
 				);
-				warnings.push(
-					"Deployment completed, but its history record could not be finalized. Check the server logs.",
-				);
+				if (requiresManagedFinalization) {
+					allErrors.push(
+						"ARR changes were applied, but managed deployment state could not be finalized. The prior mapping and saved score overrides were preserved; retry this deployment or roll it back before making further changes.",
+					);
+				} else {
+					warnings.push(
+						"Deployment completed, but its history record could not be finalized. Check the server logs.",
+					);
+				}
 			}
 
 			const metricsResult = completeMetrics();
