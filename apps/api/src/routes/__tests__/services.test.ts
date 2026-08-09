@@ -139,6 +139,7 @@ function createMockPrisma() {
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		instanceQualityProfileOverride: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 	};
 	return Object.assign(prisma, {
 		$transaction: vi.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) =>
@@ -317,6 +318,31 @@ describe("PUT /services/:id", () => {
 
 		expect(res.statusCode).toBe(404);
 		expect(JSON.parse(res.payload).message).toContain("not found");
+	});
+
+	it("advances an ARR connection generation without erasing saved score intent", async () => {
+		mockRequireInstance.mockResolvedValue(
+			makeInstance({ service: "RADARR", baseUrl: "http://radarr-old:7878" }),
+		);
+		mockBuildUpdateData.mockReturnValue({ baseUrl: "http://radarr-new:7878" });
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+			makeInstance({
+				service: "RADARR",
+				baseUrl: "http://radarr-new:7878",
+				connectionGeneration: 1,
+			}),
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { baseUrl: "http://radarr-new:7878" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		const connectionUpdate = mockPrisma.serviceInstance.updateMany.mock.calls.find(
+			([args]) => args.where.id === "inst-1",
+		)?.[0];
+		expect(connectionUpdate?.data.connectionGeneration).toEqual({ increment: 1 });
+		expect(mockPrisma.instanceQualityProfileOverride.deleteMany).not.toHaveBeenCalled();
 	});
 
 	it("atomically clears Jellyfin cache state after a connection update", async () => {

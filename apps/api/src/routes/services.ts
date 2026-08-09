@@ -82,6 +82,16 @@ const QUI_TOPOLOGY_UPDATE_FIELDS = [
 ] as const;
 const CACHE_PROVIDER_SERVICES = new Set<ServiceType>(["PLEX", "TAUTULLI", "JELLYFIN", "EMBY"]);
 
+function changesServiceConnection(
+	existing: Pick<ServiceInstance, "service" | "baseUrl">,
+	payload: z.infer<typeof serviceUpdateSchema>,
+): boolean {
+	const targetService = (payload.service ?? existing.service.toLowerCase()).toUpperCase();
+	if (payload.service !== undefined && targetService !== existing.service) return true;
+	if (payload.baseUrl !== undefined && payload.baseUrl !== existing.baseUrl) return true;
+	return Object.hasOwn(payload, "apiKey") || Object.hasOwn(payload, "httpAuth");
+}
+
 function changesQuiTopology(
 	existingService: ServiceType,
 	payload: z.infer<typeof serviceUpdateSchema>,
@@ -301,13 +311,15 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 				const quiTopologyChanged = changesQuiTopology(existing.service, payload);
 				const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
+				const serviceConnectionChanged = changesServiceConnection(existing, payload);
 				const serviceTypeChanged = targetService !== existing.service;
-				const serviceUpdateData = providerConnectionChanged
-					? {
-							...updateData,
-							connectionGeneration: { increment: 1 },
-						}
-					: updateData;
+				const serviceUpdateData =
+					providerConnectionChanged || serviceConnectionChanged
+						? {
+								...updateData,
+								connectionGeneration: { increment: 1 },
+							}
+						: updateData;
 				if (quiTopologyChanged) {
 					await withQuiObservationTopologyGuard(userId, async () => {
 						await app.prisma.$transaction(async (tx) => {

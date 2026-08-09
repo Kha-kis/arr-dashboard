@@ -22,6 +22,11 @@ import type { ArrClientFactory } from "../arr/client-factory.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
+import {
+	assertNoLegacyDeploymentConnectionMappings,
+	createDeploymentConnectionBindingCandidates,
+	getEquivalentServiceInstanceIds,
+} from "./deployment-target.js";
 
 const log = loggers.trashGuides;
 
@@ -71,6 +76,7 @@ export class BulkScoreManager {
 				encryptionIv: true,
 				encryptedHttpAuthCredentials: true,
 				httpAuthEncryptionIv: true,
+				connectionGeneration: true,
 			},
 		});
 
@@ -122,16 +128,54 @@ export class BulkScoreManager {
 			}
 		}
 
-		// Fetch template mappings for all quality profiles in this instance
-		const templateMappings = await this.prisma.templateQualityProfileMapping.findMany({
-			where: {
-				instanceId: filters.instanceId,
-			},
+		const aliases = await this.prisma.serviceInstance.findMany({
+			where: { userId, service: instance.service },
 			select: {
-				qualityProfileId: true,
-				templateId: true,
+				id: true,
+				service: true,
+				baseUrl: true,
+				encryptedApiKey: true,
+				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
+				connectionGeneration: true,
 			},
 		});
+		const equivalentInstanceIds = new Set(getEquivalentServiceInstanceIds(aliases, instance));
+		equivalentInstanceIds.add(instance.id);
+		const connectionBindings = aliases
+			.filter((alias) => equivalentInstanceIds.has(alias.id))
+			.flatMap(createDeploymentConnectionBindingCandidates);
+		if (!connectionBindings.some((binding) => binding.instanceId === instance.id)) {
+			connectionBindings.push(...createDeploymentConnectionBindingCandidates(instance));
+		}
+
+		// Resolve management through every current alias for the physical ARR endpoint.
+		const templateMappings = await this.prisma.templateQualityProfileMapping.findMany({
+			where: {
+				OR: connectionBindings,
+				template: { userId },
+			},
+			select: {
+				instanceId: true,
+				qualityProfileId: true,
+				templateId: true,
+				connectionGeneration: true,
+				connectionStateToken: true,
+			},
+		});
+		assertNoLegacyDeploymentConnectionMappings(templateMappings);
+		const templateIdsByProfile = new Map<number, Set<string>>();
+		for (const mapping of templateMappings) {
+			const ids = templateIdsByProfile.get(mapping.qualityProfileId) ?? new Set<string>();
+			ids.add(mapping.templateId);
+			templateIdsByProfile.set(mapping.qualityProfileId, ids);
+		}
+		if ([...templateIdsByProfile.values()].some((templateIds) => templateIds.size > 1)) {
+			throw new Error(
+				"Equivalent ARR service records have conflicting template mappings for one quality profile",
+			);
+		}
 		const templateMappingMap = new Map(
 			templateMappings.map((mapping) => [mapping.qualityProfileId, mapping.templateId]),
 		);

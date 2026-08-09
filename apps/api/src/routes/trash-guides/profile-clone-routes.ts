@@ -649,6 +649,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				trashCFLookup.set(cf.trash_id, cf);
 			}
 		}
+		const sourceProfileScores = new Map<number, number>();
+		for (const item of fullProfile.formatItems ?? []) {
+			if (Number.isInteger(item.format) && Number.isFinite(item.score)) {
+				sourceProfileScores.set(item.format, item.score);
+			}
+		}
 
 		// Build template config from selections using extracted helpers
 		const customFormatsConfig = buildCustomFormatsConfig(
@@ -656,6 +662,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			cfLookup,
 			trashCFLookup,
 			sourceInstanceId,
+			sourceProfileScores,
 		);
 
 		const completeQualityProfile = buildCompleteQualityProfile(fullProfile, profileConfig, {

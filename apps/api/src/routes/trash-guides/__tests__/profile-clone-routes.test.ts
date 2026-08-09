@@ -42,6 +42,14 @@ let instanceService: "RADARR" | "SONARR" = "RADARR";
 let instanceEncryptedApiKey = "encrypted-key-a";
 let upstreamCustomFormatName = "Reviewed CF";
 let upstreamCustomFormatSpecifications: unknown[] = [{ name: "Source", value: "WEB-DL" }];
+let upstreamFormatItems: Array<{ format: number; score: number }> = [
+	{ format: 42, score: 100 },
+];
+let upstreamCustomFormats: Array<{
+	id: number;
+	name: string;
+	specifications: unknown[];
+}> | null = null;
 
 function createClient() {
 	const Client = instanceService === "RADARR" ? clients.MockRadarrClient : clients.MockSonarrClient;
@@ -54,19 +62,21 @@ function createClient() {
 				cutoff: 1,
 				minFormatScore: 0,
 				cutoffFormatScore: 0,
-				formatItems: [{ format: 42, score: 100 }],
+				formatItems: upstreamFormatItems,
 				items: [],
 			}),
 		},
 		customFormat: {
-			getAll: vi.fn().mockImplementation(async () => [
-				{
-					id: 42,
-					name: upstreamCustomFormatName,
-					specifications: upstreamCustomFormatSpecifications,
-					includeCustomFormatWhenRenaming: false,
-				},
-			]),
+			getAll: vi.fn().mockImplementation(async () =>
+				upstreamCustomFormats ?? [
+					{
+						id: 42,
+						name: upstreamCustomFormatName,
+						specifications: upstreamCustomFormatSpecifications,
+						includeCustomFormatWhenRenaming: false,
+					},
+				],
+			),
 		},
 	});
 }
@@ -102,6 +112,8 @@ describe("profile clone source authority", () => {
 		instanceEncryptedApiKey = "encrypted-key-a";
 		upstreamCustomFormatName = "Reviewed CF";
 		upstreamCustomFormatSpecifications = [{ name: "Source", value: "WEB-DL" }];
+		upstreamFormatItems = [{ format: 42, score: 100 }];
+		upstreamCustomFormats = null;
 		mocks.cacheGet.mockResolvedValue([]);
 		mocks.getCommitHash.mockResolvedValue("commit-1");
 		mocks.createTemplate.mockResolvedValue({ id: "template-1" });
@@ -168,6 +180,42 @@ describe("profile clone source authority", () => {
 							sourceProfileId: 7,
 							sourceProfileName: "Any",
 						}),
+					}),
+				}),
+			);
+		},
+	);
+
+	it.each(["RADARR", "SONARR"] as const)(
+		"preserves the %s source score for Keep Instance",
+		async (serviceType) => {
+			instanceService = serviceType;
+			upstreamFormatItems = [{ format: 42, score: -10_000 }];
+			upstreamCustomFormats = [
+				{ id: 42, name: "Language: Not English", specifications: [] },
+			];
+			const sourceStateToken = await getSourceStateToken();
+
+			const response = await createInjectAuthenticated(app)("POST", "/create-template", {
+				body: {
+					...requestBody(serviceType, sourceStateToken),
+					customFormatSelections: {
+						"instance-42": { selected: true, conditionsEnabled: {} },
+					},
+				},
+			});
+
+			expect(response.statusCode).toBe(201);
+			expect(mocks.createTemplate).toHaveBeenCalledWith(
+				"user-1",
+				expect.objectContaining({
+					config: expect.objectContaining({
+						customFormats: [
+							expect.objectContaining({
+								trashId: "instance-42",
+								scoreOverride: -10_000,
+							}),
+						],
 					}),
 				}),
 			);
