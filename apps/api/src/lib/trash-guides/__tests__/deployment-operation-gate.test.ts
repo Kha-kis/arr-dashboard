@@ -165,6 +165,83 @@ describe("assertNoPendingDeploymentOperation", () => {
 		).resolves.toBeUndefined();
 	});
 
+	it("allows a terminal legacy history with no pending marker to start a reviewed deployment", async () => {
+		const prisma = {
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ status: "FAILED", rollbackStatus: null, backupId: null, backup: null },
+					]),
+			},
+			templateDeploymentHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ status: "SUCCESS", undeployStatus: null, backupId: null, backup: null },
+					]),
+			},
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(prisma as never, "user-1", ["instance-1"]),
+		).resolves.toBeUndefined();
+	});
+
+	it("blocks a transient sync whose backup relation is missing", async () => {
+		const prisma = {
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ status: "RUNNING", rollbackStatus: null, backupId: null, backup: null },
+					]),
+			},
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(prisma as never, "user-1", ["instance-1"]),
+		).rejects.toThrow("uncertain upstream result");
+	});
+
+	it("blocks a transient deployment whose backup relation is missing", async () => {
+		const prisma = {
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			templateDeploymentHistory: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						status: "IN_PROGRESS",
+						undeployStatus: null,
+						backupId: null,
+						backup: null,
+					},
+				]),
+			},
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(prisma as never, "user-1", ["instance-1"]),
+		).rejects.toThrow("uncertain upstream result");
+	});
+
+	it("blocks a partial history whose backup relation disappeared", async () => {
+		const prisma = {
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ status: "PARTIAL_SUCCESS", rollbackStatus: null, backupId: "missing", backup: null },
+					]),
+			},
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(prisma as never, "user-1", ["instance-1"]),
+		).rejects.toThrow("uncertain upstream result");
+	});
+
 	it("blocks unrelated mutations while a score write is uncertain", async () => {
 		const prisma = {
 			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
@@ -186,10 +263,13 @@ describe("assertNoPendingDeploymentOperation", () => {
 			instanceQualityProfileOverride: {
 				findMany: vi.fn().mockResolvedValue([
 					{
+						instanceId: "instance-1",
 						qualityProfileId: 4,
 						customFormatId: 7,
 						intentOperation: "RESET_SCORE",
 						intendedScore: 100,
+						connectionGeneration: 3,
+						connectionStateToken: "connection-1",
 					},
 				]),
 			},
@@ -200,8 +280,143 @@ describe("assertNoPendingDeploymentOperation", () => {
 				qualityProfileId: 4,
 				operation: "RESET_SCORE",
 				scoreUpdates: [{ customFormatId: 7, score: 100 }],
+				connectionBindings: [
+					{
+						instanceId: "instance-1",
+						connectionGeneration: 3,
+						connectionStateToken: "connection-1",
+					},
+				],
 			}),
 		).resolves.toBeUndefined();
+	});
+
+	it("does not let an exact retry for one profile bypass another uncertain profile", async () => {
+		const prisma = {
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "instance-1",
+						qualityProfileId: 4,
+						customFormatId: 7,
+						intentOperation: "RESET_SCORE",
+						intendedScore: 100,
+						connectionGeneration: 3,
+						connectionStateToken: "connection-1",
+					},
+					{
+						instanceId: "instance-1",
+						qualityProfileId: 5,
+						customFormatId: 8,
+						intentOperation: "SET_SCORE",
+						intendedScore: 200,
+						connectionGeneration: 3,
+						connectionStateToken: "connection-1",
+					},
+				]),
+			},
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(prisma as never, "user-1", ["instance-1"], {
+				qualityProfileId: 4,
+				operation: "RESET_SCORE",
+				scoreUpdates: [{ customFormatId: 7, score: 100 }],
+				connectionBindings: [
+					{
+						instanceId: "instance-1",
+						connectionGeneration: 3,
+						connectionStateToken: "connection-1",
+					},
+				],
+			}),
+		).rejects.toThrow("exact score update");
+	});
+
+	it("allows one exact retry across duplicate records for the same physical endpoint", async () => {
+		const uncertain = (instanceId: string, token: string) => ({
+			instanceId,
+			qualityProfileId: 4,
+			customFormatId: 7,
+			intentOperation: "RESET_SCORE",
+			intendedScore: 100,
+			connectionGeneration: 3,
+			connectionStateToken: token,
+		});
+		const prisma = {
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			instanceQualityProfileOverride: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						uncertain("instance-1", "connection-1"),
+						uncertain("instance-alias", "connection-alias"),
+					]),
+			},
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(
+				prisma as never,
+				"user-1",
+				["instance-1", "instance-alias"],
+				{
+					qualityProfileId: 4,
+					operation: "RESET_SCORE",
+					scoreUpdates: [{ customFormatId: 7, score: 100 }],
+					connectionBindings: [
+						{
+							instanceId: "instance-1",
+							connectionGeneration: 3,
+							connectionStateToken: "connection-1",
+						},
+						{
+							instanceId: "instance-alias",
+							connectionGeneration: 3,
+							connectionStateToken: "connection-alias",
+						},
+					],
+				},
+			),
+		).resolves.toBeUndefined();
+	});
+
+	it("blocks a retry bound to stale connection state", async () => {
+		const prisma = {
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "instance-1",
+						qualityProfileId: 4,
+						customFormatId: 7,
+						intentOperation: "RESET_SCORE",
+						intendedScore: 100,
+						connectionGeneration: 2,
+						connectionStateToken: "stale-connection",
+					},
+				]),
+			},
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(prisma as never, "user-1", ["instance-1"], {
+				qualityProfileId: 4,
+				operation: "RESET_SCORE",
+				scoreUpdates: [{ customFormatId: 7, score: 100 }],
+				connectionBindings: [
+					{
+						instanceId: "instance-1",
+						connectionGeneration: 3,
+						connectionStateToken: "current-connection",
+					},
+				],
+			}),
+		).rejects.toThrow("exact score update");
 	});
 
 	it.each([
@@ -211,6 +426,13 @@ describe("assertNoPendingDeploymentOperation", () => {
 				qualityProfileId: 4,
 				operation: "SET_SCORE" as const,
 				scoreUpdates: [{ customFormatId: 7, score: 100 }],
+				connectionBindings: [
+					{
+						instanceId: "instance-1",
+						connectionGeneration: 3,
+						connectionStateToken: "connection-1",
+					},
+				],
 			},
 		},
 		{
@@ -219,6 +441,13 @@ describe("assertNoPendingDeploymentOperation", () => {
 				qualityProfileId: 4,
 				operation: "RESET_SCORE" as const,
 				scoreUpdates: [{ customFormatId: 7, score: 200 }],
+				connectionBindings: [
+					{
+						instanceId: "instance-1",
+						connectionGeneration: 3,
+						connectionStateToken: "connection-1",
+					},
+				],
 			},
 		},
 		{
@@ -227,6 +456,13 @@ describe("assertNoPendingDeploymentOperation", () => {
 				qualityProfileId: 4,
 				operation: "RESET_SCORE" as const,
 				scoreUpdates: [{ customFormatId: 8, score: 100 }],
+				connectionBindings: [
+					{
+						instanceId: "instance-1",
+						connectionGeneration: 3,
+						connectionStateToken: "connection-1",
+					},
+				],
 			},
 		},
 	])("blocks a retry whose $name does not match the durable intent", async ({ retry }) => {
@@ -240,6 +476,9 @@ describe("assertNoPendingDeploymentOperation", () => {
 						customFormatId: 7,
 						intentOperation: "RESET_SCORE",
 						intendedScore: 100,
+						instanceId: "instance-1",
+						connectionGeneration: 3,
+						connectionStateToken: "connection-1",
 					},
 				]),
 			},
@@ -275,11 +514,26 @@ describe("assertNoActiveDeploymentOwnership", () => {
 			assertNoActiveDeploymentOwnership(prisma as never, "user-1", ["instance-1"]),
 		).resolves.toBeUndefined();
 	});
+
+	it("blocks connection replacement when an unrolled history lost its backup relation", async () => {
+		const prisma = {
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([{ status: "SUCCESS", backupId: "missing", backup: null }]),
+			},
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			assertNoActiveDeploymentOwnership(prisma as never, "user-1", ["instance-1"]),
+		).rejects.toThrow("active deployment ownership");
+	});
 });
 
 describe("reconcileInterruptedDeploymentHistories", () => {
 	it("marks an interrupted undeploy partial without rewriting deployment status", async () => {
-		const deploymentUpdate = vi.fn().mockResolvedValue({});
+		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const findMany = vi.fn().mockResolvedValue([
 			{
 				id: "deployment-undeploy",
@@ -290,7 +544,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 			},
 		]);
 		const prisma = {
-			templateDeploymentHistory: { findMany, update: deploymentUpdate },
+			templateDeploymentHistory: { findMany, updateMany: deploymentUpdateMany },
 			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 			$transaction: vi.fn(),
 		};
@@ -301,14 +555,14 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				where: { OR: [{ status: "IN_PROGRESS" }, { undeployStatus: "IN_PROGRESS" }] },
 			}),
 		);
-		expect(deploymentUpdate).toHaveBeenCalledWith({
-			where: { id: "deployment-undeploy" },
+		expect(deploymentUpdateMany).toHaveBeenCalledWith({
+			where: { id: "deployment-undeploy", undeployStatus: "IN_PROGRESS" },
 			data: { undeployStatus: "PARTIAL" },
 		});
 	});
 
 	it("marks an interrupted rollback partial without rewriting deployment status", async () => {
-		const syncUpdate = vi.fn().mockResolvedValue({});
+		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const findMany = vi.fn().mockResolvedValue([
 			{
 				id: "sync-rollback",
@@ -319,7 +573,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		]);
 		const prisma = {
 			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
-			trashSyncHistory: { findMany, update: syncUpdate },
+			trashSyncHistory: { findMany, updateMany: syncUpdateMany },
 			$transaction: vi.fn(),
 		};
 
@@ -331,18 +585,18 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				},
 			}),
 		);
-		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { id: "sync-rollback" },
+		expect(syncUpdateMany).toHaveBeenCalledWith({
+			where: { id: "sync-rollback", rollbackStatus: "IN_PROGRESS" },
 			data: { rollbackStatus: "PARTIAL" },
 		});
 	});
 
 	it("atomically marks paired histories failed while preserving a pending safety gate", async () => {
-		const deploymentUpdate = vi.fn().mockResolvedValue({});
+		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const transaction = vi.fn(async (callback) =>
 			callback({
-				templateDeploymentHistory: { update: deploymentUpdate },
+				templateDeploymentHistory: { updateMany: deploymentUpdateMany },
 				trashSyncHistory: { updateMany: syncUpdateMany },
 			}),
 		);
@@ -364,8 +618,11 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
 		expect(transaction).toHaveBeenCalledTimes(1);
-		expect(deploymentUpdate).toHaveBeenCalledWith(
-			expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) }),
+		expect(deploymentUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "deployment-1", status: "IN_PROGRESS" },
+				data: expect.objectContaining({ status: "FAILED" }),
+			}),
 		);
 		expect(syncUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -378,22 +635,22 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 	});
 
 	it("reconciles an orphan sync history even when no template history was created", async () => {
-		const syncUpdate = vi.fn().mockResolvedValue({});
+		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const prisma = {
 			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 			trashSyncHistory: {
 				findMany: vi
 					.fn()
 					.mockResolvedValue([{ id: "sync-1", backupId: "backup-1", backup: backup("applied") }]),
-				update: syncUpdate,
+				updateMany: syncUpdateMany,
 			},
 			$transaction: vi.fn(),
 		};
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
-		expect(syncUpdate).toHaveBeenCalledWith(
+		expect(syncUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: "sync-1" },
+				where: { id: "sync-1", status: { in: ["IN_PROGRESS", "RUNNING"] } },
 				data: expect.objectContaining({
 					status: "PARTIAL_SUCCESS",
 					configsApplied: 1,
@@ -405,11 +662,11 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 	});
 
 	it("reconstructs applied counters and details from a durable ledger", async () => {
-		const deploymentUpdate = vi.fn().mockResolvedValue({});
+		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const transaction = vi.fn(async (callback) =>
 			callback({
-				templateDeploymentHistory: { update: deploymentUpdate },
+				templateDeploymentHistory: { updateMany: deploymentUpdateMany },
 				trashSyncHistory: { updateMany: syncUpdateMany },
 			}),
 		);
@@ -440,8 +697,8 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		];
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
-		expect(deploymentUpdate).toHaveBeenCalledWith({
-			where: { id: "deployment-1" },
+		expect(deploymentUpdateMany).toHaveBeenCalledWith({
+			where: { id: "deployment-1", status: "IN_PROGRESS" },
 			data: expect.objectContaining({
 				status: "PARTIAL_SUCCESS",
 				appliedCFs: 2,
@@ -463,13 +720,13 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 	});
 
 	it("reconciles a RUNNING sync without a deployment backup", async () => {
-		const syncUpdate = vi.fn().mockResolvedValue({});
+		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const findMany = vi
 			.fn()
 			.mockResolvedValue([{ id: "sync-running", backupId: null, backup: null }]);
 		const prisma = {
 			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
-			trashSyncHistory: { findMany, update: syncUpdate },
+			trashSyncHistory: { findMany, updateMany: syncUpdateMany },
 			$transaction: vi.fn(),
 		};
 
@@ -481,8 +738,8 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				},
 			}),
 		);
-		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { id: "sync-running" },
+		expect(syncUpdateMany).toHaveBeenCalledWith({
+			where: { id: "sync-running", status: { in: ["IN_PROGRESS", "RUNNING"] } },
 			data: expect.objectContaining({
 				status: "FAILED",
 				completedAt: expect.any(Date),
@@ -492,7 +749,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 	});
 
 	it("uses a non-claiming failure when applied profile details are incomplete", async () => {
-		const syncUpdate = vi.fn().mockResolvedValue({});
+		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const incomplete = fullyAppliedBackup();
 		const backupData = JSON.parse(incomplete.backupData);
 		backupData.customFormatDeployments = [];
@@ -505,21 +762,132 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				findMany: vi
 					.fn()
 					.mockResolvedValue([{ id: "sync-1", backupId: "backup-1", backup: incomplete }]),
-				update: syncUpdate,
+				updateMany: syncUpdateMany,
 			},
 			$transaction: vi.fn(),
 		};
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
-		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { id: "sync-1" },
+		expect(syncUpdateMany).toHaveBeenCalledWith({
+			where: { id: "sync-1", status: { in: ["IN_PROGRESS", "RUNNING"] } },
 			data: expect.not.objectContaining({
 				configsApplied: expect.anything(),
 				appliedConfigs: expect.anything(),
 			}),
 		});
-		expect(syncUpdate).toHaveBeenCalledWith(
+		expect(syncUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) }),
+		);
+	});
+
+	it("does not overwrite a deployment that became terminal before reconciliation", async () => {
+		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+		const pairedSyncUpdateMany = vi.fn();
+		const transaction = vi.fn(async (callback) =>
+			callback({
+				templateDeploymentHistory: { updateMany: deploymentUpdateMany },
+				trashSyncHistory: { updateMany: pairedSyncUpdateMany },
+			}),
+		);
+		const prisma = {
+			templateDeploymentHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ id: "deployment-race", backupId: "backup-1", backup: backup("pending") },
+					]),
+			},
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ id: "sync-pair", backupId: "backup-1", backup: backup("pending") },
+					]),
+				updateMany: pairedSyncUpdateMany,
+			},
+			$transaction: transaction,
+		};
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(0);
+		expect(deploymentUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "deployment-race", status: "IN_PROGRESS" },
+			}),
+		);
+		expect(pairedSyncUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it("does not overwrite an undeploy that became terminal before reconciliation", async () => {
+		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+		const prisma = {
+			templateDeploymentHistory: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						id: "undeploy-race",
+						backupId: "backup-1",
+						status: "SUCCESS",
+						undeployStatus: "IN_PROGRESS",
+						backup: fullyAppliedBackup(),
+					},
+				]),
+				updateMany: deploymentUpdateMany,
+			},
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			$transaction: vi.fn(),
+		};
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(0);
+		expect(deploymentUpdateMany).toHaveBeenCalledWith({
+			where: { id: "undeploy-race", undeployStatus: "IN_PROGRESS" },
+			data: { undeployStatus: "PARTIAL" },
+		});
+	});
+
+	it("does not overwrite a rollback that became terminal before reconciliation", async () => {
+		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+		const prisma = {
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			trashSyncHistory: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						id: "rollback-race",
+						backupId: "backup-1",
+						rollbackStatus: "IN_PROGRESS",
+						backup: fullyAppliedBackup(),
+					},
+				]),
+				updateMany: syncUpdateMany,
+			},
+			$transaction: vi.fn(),
+		};
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(0);
+		expect(syncUpdateMany).toHaveBeenCalledWith({
+			where: { id: "rollback-race", rollbackStatus: "IN_PROGRESS" },
+			data: { rollbackStatus: "PARTIAL" },
+		});
+	});
+
+	it("does not overwrite an orphan sync that became terminal before reconciliation", async () => {
+		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+		const prisma = {
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ id: "sync-race", backupId: "backup-1", backup: backup("applied") },
+					]),
+				updateMany: syncUpdateMany,
+			},
+			$transaction: vi.fn(),
+		};
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(0);
+		expect(syncUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "sync-race", status: { in: ["IN_PROGRESS", "RUNNING"] } },
+			}),
 		);
 	});
 });

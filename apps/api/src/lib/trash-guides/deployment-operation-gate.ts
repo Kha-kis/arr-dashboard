@@ -5,6 +5,7 @@ import {
 	hasPendingDeploymentMutation,
 	parseDeploymentBackupState,
 } from "./deployment-backup-state.js";
+import type { DeploymentConnectionBinding } from "./deployment-target.js";
 
 export type ScoreIntentOperation = "SET_SCORE" | "RESET_SCORE";
 
@@ -12,6 +13,7 @@ export interface ScoreIntentRetry {
 	qualityProfileId: number;
 	operation: ScoreIntentOperation;
 	scoreUpdates: Array<{ customFormatId: number; score: number }>;
+	connectionBindings: DeploymentConnectionBinding[];
 }
 
 /** Block new writes while a previous upstream result remains uncertain. */
@@ -27,10 +29,11 @@ export async function assertNoPendingDeploymentOperation(
 				userId,
 				instanceId: { in: instanceIds },
 				rolledBack: false,
-				backupId: { not: null },
 			},
 			select: {
+				status: true,
 				rollbackStatus: true,
+				backupId: true,
 				backup: { select: { id: true, backupData: true } },
 			},
 		}),
@@ -39,11 +42,11 @@ export async function assertNoPendingDeploymentOperation(
 				userId,
 				instanceId: { in: instanceIds },
 				rolledBack: false,
-				backupId: { not: null },
 			},
 			select: {
 				status: true,
 				undeployStatus: true,
+				backupId: true,
 				backup: { select: { id: true, backupData: true } },
 			},
 		}),
@@ -55,10 +58,13 @@ export async function assertNoPendingDeploymentOperation(
 						status: { in: ["PENDING", "UNCERTAIN"] },
 					},
 					select: {
+						instanceId: true,
 						qualityProfileId: true,
 						customFormatId: true,
 						intentOperation: true,
 						intendedScore: true,
+						connectionGeneration: true,
+						connectionStateToken: true,
 					},
 				})
 			: [],
@@ -66,21 +72,34 @@ export async function assertNoPendingDeploymentOperation(
 	const retryScores = new Map(
 		overrideRetry?.scoreUpdates.map((update) => [update.customFormatId, update.score]) ?? [],
 	);
-	const retryRows = overrideRetry
-		? uncertainOverrides.filter(
-				(override) => override.qualityProfileId === overrideRetry.qualityProfileId,
-			)
-		: [];
+	const retryBindingByInstanceId = new Map(
+		overrideRetry?.connectionBindings.map((binding) => [binding.instanceId, binding]) ?? [],
+	);
+	const requestedInstanceIds = new Set(instanceIds);
 	const isExactRetry = Boolean(
 		overrideRetry &&
-			retryRows.length > 0 &&
-			retryRows.length === overrideRetry.scoreUpdates.length &&
+			uncertainOverrides.length > 0 &&
 			retryScores.size === overrideRetry.scoreUpdates.length &&
-			retryRows.every(
+			retryBindingByInstanceId.size === overrideRetry.connectionBindings.length &&
+			retryBindingByInstanceId.size === requestedInstanceIds.size &&
+			[...requestedInstanceIds].every((instanceId) => retryBindingByInstanceId.has(instanceId)) &&
+			overrideRetry.scoreUpdates.every((update) =>
+				uncertainOverrides.some(
+					(override) =>
+						override.qualityProfileId === overrideRetry.qualityProfileId &&
+						override.customFormatId === update.customFormatId,
+				),
+			) &&
+			uncertainOverrides.every(
 				(override) =>
+					override.qualityProfileId === overrideRetry.qualityProfileId &&
 					override.intentOperation === overrideRetry.operation &&
 					override.intendedScore !== null &&
-					retryScores.get(override.customFormatId) === override.intendedScore,
+					retryScores.get(override.customFormatId) === override.intendedScore &&
+					retryBindingByInstanceId.get(override.instanceId)?.connectionGeneration ===
+						override.connectionGeneration &&
+					retryBindingByInstanceId.get(override.instanceId)?.connectionStateToken ===
+						override.connectionStateToken,
 			),
 	);
 	if (uncertainOverrides.length > 0 && !isExactRetry) {
@@ -105,6 +124,22 @@ export async function assertNoPendingDeploymentOperation(
 	) {
 		throw new AppValidationError(
 			"A previous TRaSH deployment has an unfinished undeploy. Retry or resolve that undeploy before changing this ARR endpoint.",
+		);
+	}
+	if (
+		syncRows.some(
+			(row) =>
+				!row.backup &&
+				(row.status === "IN_PROGRESS" ||
+					row.status === "RUNNING" ||
+					row.status === "PARTIAL_SUCCESS"),
+		) ||
+		deploymentRows.some(
+			(row) => !row.backup && (row.status === "IN_PROGRESS" || row.status === "PARTIAL_SUCCESS"),
+		)
+	) {
+		throw new AppValidationError(
+			"A previous TRaSH deployment has an uncertain upstream result and no verifiable deployment ledger. Resolve that history before changing this ARR endpoint.",
 		);
 	}
 	const seen = new Set<string>();
@@ -157,23 +192,34 @@ export async function assertNoActiveDeploymentOwnership(
 				userId,
 				instanceId: { in: instanceIds },
 				rolledBack: false,
-				backupId: { not: null },
 			},
-			select: { backup: { select: { id: true, backupData: true } } },
+			select: {
+				status: true,
+				backupId: true,
+				backup: { select: { id: true, backupData: true } },
+			},
 		}),
 		prisma.templateDeploymentHistory.findMany({
 			where: {
 				userId,
 				instanceId: { in: instanceIds },
 				rolledBack: false,
-				backupId: { not: null },
 			},
-			select: { backup: { select: { id: true, backupData: true } } },
+			select: {
+				status: true,
+				backupId: true,
+				backup: { select: { id: true, backupData: true } },
+			},
 		}),
 	]);
 	const seen = new Set<string>();
 	for (const row of [...syncRows, ...deploymentRows]) {
-		if (!row.backup || seen.has(row.backup.id)) continue;
+		if (!row.backup) {
+			throw new AppValidationError(
+				"This ARR connection has active deployment ownership without verifiable rollback data. Resolve that history before changing the connection.",
+			);
+		}
+		if (seen.has(row.backup.id)) continue;
 		seen.add(row.backup.id);
 		let state: DeploymentBackupState;
 		try {
@@ -300,11 +346,11 @@ export async function reconcileInterruptedDeploymentHistories(
 	const reconciledBackupIds = new Set<string>();
 	for (const history of interruptedDeployments) {
 		if (history.undeployStatus === "IN_PROGRESS") {
-			await prisma.templateDeploymentHistory.update({
-				where: { id: history.id },
+			const result = await prisma.templateDeploymentHistory.updateMany({
+				where: { id: history.id, undeployStatus: "IN_PROGRESS" },
 				data: { undeployStatus: "PARTIAL" },
 			});
-			reconciled++;
+			if (result.count === 1) reconciled++;
 			continue;
 		}
 		const reconciliation = classify(history.backup);
@@ -324,11 +370,12 @@ export async function reconcileInterruptedDeploymentHistories(
 						appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
 					}
 				: {};
-		await prisma.$transaction(async (tx) => {
-			await tx.templateDeploymentHistory.update({
-				where: { id: history.id },
+		const primaryReconciled = await prisma.$transaction(async (tx) => {
+			const primary = await tx.templateDeploymentHistory.updateMany({
+				where: { id: history.id, status: "IN_PROGRESS" },
 				data: { status, errors: JSON.stringify([message]), ...appliedAudit },
 			});
+			if (primary.count !== 1) return false;
 			if (history.backupId) {
 				await tx.trashSyncHistory.updateMany({
 					where: {
@@ -343,19 +390,22 @@ export async function reconcileInterruptedDeploymentHistories(
 					},
 				});
 			}
+			return true;
 		});
 		if (history.backupId) reconciledBackupIds.add(history.backupId);
-		reconciled++;
+		if (primaryReconciled) {
+			reconciled++;
+		}
 	}
 
 	for (const history of interruptedSyncs) {
 		if (history.backupId && reconciledBackupIds.has(history.backupId)) continue;
 		if (history.rollbackStatus === "IN_PROGRESS") {
-			await prisma.trashSyncHistory.update({
-				where: { id: history.id },
+			const result = await prisma.trashSyncHistory.updateMany({
+				where: { id: history.id, rollbackStatus: "IN_PROGRESS" },
 				data: { rollbackStatus: "PARTIAL" },
 			});
-			reconciled++;
+			if (result.count === 1) reconciled++;
 			continue;
 		}
 		const reconciliation = classify(history.backup);
@@ -368,11 +418,11 @@ export async function reconcileInterruptedDeploymentHistories(
 						appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
 					}
 				: {};
-		await prisma.trashSyncHistory.update({
-			where: { id: history.id },
+		const result = await prisma.trashSyncHistory.updateMany({
+			where: { id: history.id, status: { in: ["IN_PROGRESS", "RUNNING"] } },
 			data: { status, completedAt: new Date(), errorLog: message, ...appliedAudit },
 		});
-		reconciled++;
+		if (result.count === 1) reconciled++;
 	}
 	return reconciled;
 }

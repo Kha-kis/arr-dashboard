@@ -4,6 +4,10 @@ import {
 	type DeploymentBackupState,
 	parseDeploymentBackupState,
 } from "./deployment-backup-state.js";
+import {
+	createQualityProfileStateToken,
+	createUpstreamResourceStateToken,
+} from "./deployment-target.js";
 
 const ACTIVE_STATUSES = new Set([
 	"SUCCESS",
@@ -42,6 +46,7 @@ interface ResourceStateOwner {
 function targetCanRestoreSharedResource(
 	target: OwnershipCandidate,
 	survivor: ResourceStateOwner | undefined,
+	targetBeforeStateToken: string | undefined,
 	resourceLabel: string,
 ): boolean {
 	if (!survivor) return false;
@@ -51,7 +56,7 @@ function targetCanRestoreSharedResource(
 			`The target and a surviving deployment changed ${resourceLabel} at the same deployment time, so it was not changed.`,
 		);
 	}
-	return timeDifference > 0;
+	return timeDifference > 0 && targetBeforeStateToken === survivor.token;
 }
 
 /** Prevent an older deployment snapshot from overwriting a newer survivor. */
@@ -165,7 +170,6 @@ export async function resolveActiveDeploymentOwnership(
 				userId,
 				instanceId: { in: instanceIds },
 				rolledBack: false,
-				backupId: { not: null },
 			},
 			select: {
 				templateId: true,
@@ -180,8 +184,6 @@ export async function resolveActiveDeploymentOwnership(
 				userId,
 				instanceId: { in: instanceIds },
 				rolledBack: false,
-				backupId: { not: null },
-				templateId: { not: null },
 			},
 			select: {
 				templateId: true,
@@ -198,7 +200,11 @@ export async function resolveActiveDeploymentOwnership(
 		...deploymentRows.map((item) => ({ ...item, startedAt: item.deployedAt })),
 		...syncRows,
 	]) {
-		if (!row.backupId || !row.templateId || !row.backup) continue;
+		if (!row.backupId || !row.templateId || !row.backup) {
+			throw new ConflictError(
+				"An unrolled deployment ownership relation is missing, so this operation was stopped.",
+			);
+		}
 		const existing = byBackup.get(row.backupId);
 		if (existing && existing.templateId !== row.templateId) {
 			throw new ConflictError(
@@ -210,7 +216,9 @@ export async function resolveActiveDeploymentOwnership(
 			try {
 				state = parseDeploymentBackupState(row.backup.backupData);
 			} catch {
-				state = null;
+				throw new ConflictError(
+					"An unrolled deployment has legacy or invalid ownership metadata, so this operation was stopped.",
+				);
 			}
 		}
 		const active =
@@ -364,10 +372,17 @@ export async function resolveActiveDeploymentOwnership(
 	]);
 	const restorableSharedCustomFormatIds = new Set<number>();
 	for (const resourceId of targetCustomFormatIds) {
+		const targetMutation = latestTarget.state.customFormatDeployments.find(
+			(mutation) => mutation.resourceId === resourceId,
+		);
+		const targetBeforeStateToken = targetMutation?.beforeFormat
+			? createUpstreamResourceStateToken(targetMutation.beforeFormat)
+			: undefined;
 		if (
 			targetCanRestoreSharedResource(
 				latestTarget,
 				customFormatOwners.get(resourceId),
+				targetBeforeStateToken,
 				`Custom Format ${resourceId}`,
 			)
 		) {
@@ -377,10 +392,14 @@ export async function resolveActiveDeploymentOwnership(
 	const targetProfile = latestTarget.state.qualityProfileDeployment;
 	const restorableSharedQualityProfileIds = new Set<number>();
 	if (targetProfile.status !== "not_started" && targetProfile.profileId !== null) {
+		const targetBeforeStateToken = targetProfile.beforeProfile
+			? createQualityProfileStateToken(targetProfile.beforeProfile)
+			: undefined;
 		if (
 			targetCanRestoreSharedResource(
 				latestTarget,
 				qualityProfileOwners.get(targetProfile.profileId),
+				targetBeforeStateToken,
 				`quality profile ${targetProfile.profileId}`,
 			)
 		) {
@@ -392,9 +411,13 @@ export async function resolveActiveDeploymentOwnership(
 		latestTarget.state.namingDeployment &&
 		latestTarget.state.namingDeployment.status !== "not_started"
 	) {
+		const targetBeforeStateToken = createUpstreamResourceStateToken(
+			latestTarget.state.namingDeployment.beforeConfig,
+		);
 		sharedNamingRestorationAllowed = targetCanRestoreSharedResource(
 			latestTarget,
 			namingOwners.get("naming"),
+			targetBeforeStateToken,
 			"naming configuration",
 		);
 	}

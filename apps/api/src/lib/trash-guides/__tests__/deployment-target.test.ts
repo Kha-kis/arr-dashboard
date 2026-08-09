@@ -23,7 +23,12 @@ describe("resolveDeploymentTarget", () => {
 	it("uses a stored mapping as the authoritative identity", () => {
 		const result = resolveDeploymentTarget({
 			profiles,
-			mapping: { qualityProfileId: 2, qualityProfileName: "Old name" },
+			mapping: {
+				qualityProfileId: 2,
+				qualityProfileName: "Unrelated",
+				connectionGeneration: 3,
+				connectionStateToken: "bound-connection",
+			},
 			sourceProfileName: "Any",
 			templateName: "Renamed template",
 		});
@@ -47,13 +52,46 @@ describe("resolveDeploymentTarget", () => {
 	it("recovers a stale mapping only by its last known name", () => {
 		const result = resolveDeploymentTarget({
 			profiles,
-			mapping: { qualityProfileId: 99, qualityProfileName: "Unrelated" },
+			mapping: {
+				qualityProfileId: 99,
+				qualityProfileName: "Unrelated",
+				connectionGeneration: 0,
+				connectionStateToken: null,
+			},
 			sourceProfileName: "Any",
 			templateName: "Renamed template",
 		});
 
 		expect(result.profile?.id).toBe(2);
 		expect(result.matchedBy).toBe("mapping_name");
+	});
+
+	it("fails closed when a bound mapping ID is reused by a differently named profile", () => {
+		expect(() =>
+			resolveDeploymentTarget({
+				profiles,
+				mapping: {
+					qualityProfileId: 2,
+					qualityProfileName: "Any",
+					connectionGeneration: 3,
+					connectionStateToken: "bound-connection",
+				},
+			}),
+		).toThrow("identity no longer matches");
+	});
+
+	it("fails closed when a bound mapping ID was deleted and its name was recreated", () => {
+		expect(() =>
+			resolveDeploymentTarget({
+				profiles: [{ id: 99, name: "Any", formatItems: [] }],
+				mapping: {
+					qualityProfileId: 1,
+					qualityProfileName: "Any",
+					connectionGeneration: 3,
+					connectionStateToken: "bound-connection",
+				},
+			}),
+		).toThrow(ConflictError);
 	});
 
 	it("fails closed when neither a stale mapping ID nor its recorded name exists", () => {

@@ -83,7 +83,8 @@ export function resolveDeploymentTarget<TProfile extends DeploymentQualityProfil
 
 	if (mapping) {
 		const mappedProfile = profiles.find((profile) => profile.id === mapping.qualityProfileId);
-		if (isLegacyDeploymentConnectionMapping(mapping)) {
+		const isLegacyMapping = isLegacyDeploymentConnectionMapping(mapping);
+		if (isLegacyMapping) {
 			const namedProfile = findUniqueProfileByName(profiles, mapping.qualityProfileName);
 			if (!namedProfile) {
 				throw new ConflictError(
@@ -93,6 +94,17 @@ export function resolveDeploymentTarget<TProfile extends DeploymentQualityProfil
 			if (mappedProfile && mappedProfile !== namedProfile) {
 				throw new ConflictError(
 					`The legacy quality profile mapping identity no longer matches "${mapping.qualityProfileName}". The recorded numeric ID now belongs to "${mappedProfile.name ?? "Unknown"}". Unlink the legacy deployment and review a fresh preview.`,
+				);
+			}
+		} else {
+			if (!mappedProfile) {
+				throw new ConflictError(
+					`The bound quality profile "${mapping.qualityProfileName}" no longer exists at its recorded ID. Review a fresh preview before continuing.`,
+				);
+			}
+			if (mappedProfile.name !== mapping.qualityProfileName) {
+				throw new ConflictError(
+					`The bound quality profile identity no longer matches "${mapping.qualityProfileName}". The recorded numeric ID now belongs to "${mappedProfile.name ?? "Unknown"}". Review a fresh preview before continuing.`,
 				);
 			}
 		}
