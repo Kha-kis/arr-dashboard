@@ -35,6 +35,7 @@ vi.mock("../../lib/services/connection-tester.js", () => ({
 	testServiceConnection: (...args: unknown[]) => mockTestConnection(...args),
 }));
 
+import { createDeploymentEndpointKey } from "../../lib/trash-guides/deployment-target.js";
 import { registerServiceRoutes } from "../services.js";
 import {
 	createInjectAuthenticated,
@@ -81,6 +82,7 @@ function createPrismaStub() {
 			const { tags: _tags, ...rest } = data;
 			const row = {
 				id,
+				connectionGeneration: 0,
 				createdAt: new Date("2026-04-13T00:00:00Z"),
 				updatedAt: new Date("2026-04-13T00:00:00Z"),
 				storageGroupId: null,
@@ -114,7 +116,7 @@ function createPrismaStub() {
 		}),
 	};
 
-	return {
+	const prisma = {
 		_instances: instances,
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
@@ -133,7 +135,18 @@ function createPrismaStub() {
 		},
 		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		templateQualityProfileMapping: {
+			findMany: vi.fn().mockResolvedValue([]),
+		},
+		instanceQualityProfileOverride: {
+			findMany: vi.fn().mockResolvedValue([]),
+		},
 	};
+	return Object.assign(prisma, {
+		$transaction: vi.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+			callback(prisma),
+		),
+	});
 }
 
 /**
@@ -206,6 +219,21 @@ describe("Service instance lifecycle", () => {
 		app.decorate("encryptor", encryptor as any);
 		app.decorate("notificationService", {
 			notify: vi.fn().mockResolvedValue(undefined),
+		} as never);
+		app.decorate("arrClientFactory", {
+			createConnectionCredentialIdentity: vi.fn((instance: any) =>
+				JSON.stringify([
+					instance.encryptedApiKey,
+					instance.encryptionIv,
+					instance.encryptedHttpAuthCredentials ?? null,
+					instance.httpAuthEncryptionIv ?? null,
+				]),
+			),
+		} as never);
+		app.decorate("deploymentExecutor", {
+			runWithEndpointMutation: vi.fn(async (lockedUserId, target, _operation, callback) =>
+				callback(createDeploymentEndpointKey(lockedUserId, target)),
+			),
 		} as never);
 
 		setupAuthInjection(app, { id: USER_ID, username: "admin" });

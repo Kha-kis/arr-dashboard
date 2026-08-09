@@ -130,6 +130,16 @@ function makeSonarrInstance(overrides: Record<string, unknown> = {}) {
 	});
 }
 
+function makeJellyfinInstance(overrides: Record<string, unknown> = {}) {
+	return makeQuiInstance({
+		id: "jellyfin-instance-1",
+		service: "JELLYFIN",
+		label: "My Jellyfin",
+		baseUrl: "http://jellyfin:8096",
+		...overrides,
+	});
+}
+
 function createMockPrisma() {
 	const prisma = {
 		libraryCleanupConfig: {
@@ -268,7 +278,7 @@ describe("DELETE /services/:id — qui-cache cleanup", () => {
 		// (extra Prisma lookup at delete time), we let the cache functions
 		// no-op when the id isn't a known key. The route stays uniform
 		// across service types; the cache functions handle the no-op.
-		mockRequireInstance.mockResolvedValue(makeSonarrInstance());
+		mockRequireInstance.mockResolvedValue(makeJellyfinInstance());
 		mockPrisma.serviceInstance.delete.mockResolvedValue(undefined);
 
 		const res = await injectAuthenticated("DELETE", "/services/sonarr-instance-1");

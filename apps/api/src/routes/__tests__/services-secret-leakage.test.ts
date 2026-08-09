@@ -126,6 +126,9 @@ beforeEach(async () => {
 			delete: vi.fn(),
 		},
 		serviceInstanceTag: { findFirst: vi.fn().mockResolvedValue(null) },
+		instanceQualityProfileOverride: {
+			findMany: vi.fn().mockResolvedValue([]),
+		},
 	};
 
 	mockRequireInstance.mockResolvedValue(makeInstanceRow());
@@ -139,6 +142,16 @@ beforeEach(async () => {
 		decrypt: vi.fn().mockReturnValue(SECRET_KEY),
 	});
 	app.decorate("notificationService", { notify: vi.fn().mockResolvedValue(undefined) } as never);
+	app.decorate("arrClientFactory", {
+		createConnectionCredentialIdentity: vi.fn((instance: any) =>
+			JSON.stringify([
+				instance.encryptedApiKey,
+				instance.encryptionIv,
+				instance.encryptedHttpAuthCredentials ?? null,
+				instance.httpAuthEncryptionIv ?? null,
+			]),
+		),
+	});
 
 	setupAuthInjection(app);
 	registerTestErrorHandler(app);
