@@ -39,6 +39,7 @@ describe("instance quality profile score persistence", () => {
 	const findTransactionInstance = vi.fn();
 	const findTransactionMappings = vi.fn();
 	const updateTemplates = vi.fn();
+	const countTemplates = vi.fn();
 	const deleteAliasOverrides = vi.fn();
 	const upsertOverride = vi.fn();
 	const updateOverrides = vi.fn();
@@ -101,6 +102,7 @@ describe("instance quality profile score persistence", () => {
 		findTransactionInstance.mockResolvedValue(instance);
 		findTransactionMappings.mockResolvedValue([]);
 		updateTemplates.mockResolvedValue({ count: 1 });
+		countTemplates.mockResolvedValue(1);
 		deleteAliasOverrides.mockResolvedValue({ count: 0 });
 		upsertOverride.mockResolvedValue({});
 		updateOverrides.mockResolvedValue({ count: 1 });
@@ -132,6 +134,7 @@ describe("instance quality profile score persistence", () => {
 			},
 			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			trashTemplate: { count: countTemplates },
 			templateQualityProfileMapping: {
 				findMany: findMappings,
 				findUnique: vi.fn().mockResolvedValue(mapping),
@@ -1349,6 +1352,76 @@ describe("instance quality profile score persistence", () => {
 		expect(updateProfile).toHaveBeenCalledOnce();
 		expect(updateOverrides).toHaveBeenCalledWith(
 			expect.objectContaining({ data: { status: "UNCERTAIN" } }),
+		);
+		expect(deleteOverrides).not.toHaveBeenCalled();
+	});
+
+	it("restores the override when the template score changes before the ARR write", async () => {
+		const template = {
+			id: "template-1",
+			userId,
+			updatedAt: new Date("2026-08-09T00:00:00Z"),
+			configData: JSON.stringify({
+				customFormats: [{ trashId: "trash-7", scoreOverride: -10_000 }],
+			}),
+		};
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-1",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify([
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						resourceId: 7,
+						stateToken: liveManagedCustomFormatStateToken,
+						profileId: 4,
+						appliedScore: 100,
+					},
+				]),
+				template,
+			},
+		]);
+		const override = {
+			id: "override-1",
+			userId,
+			instanceId: instance.id,
+			qualityProfileId: 4,
+			customFormatId: 7,
+			score: 100,
+			status: "APPLIED",
+			intentOperation: null,
+			intendedScore: null,
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			updatedAt: new Date("2026-08-09T00:00:00Z"),
+		};
+		findOverrides
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([override]);
+		countTemplates.mockResolvedValueOnce(0);
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("template changed");
+		expect(updateProfile).not.toHaveBeenCalled();
+		expect(updateOverrides).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: override.id, status: "PENDING" }),
+				data: expect.objectContaining({ status: "APPLIED" }),
+			}),
 		);
 		expect(deleteOverrides).not.toHaveBeenCalled();
 	});

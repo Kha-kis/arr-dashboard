@@ -719,6 +719,18 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					for (const [customFormatId, identity] of customFormatIdentities) {
 						await assertCurrentCustomFormatIdentity(client, customFormatId, identity);
 					}
+					const currentTemplateCount = await app.prisma.trashTemplate.count({
+						where: {
+							id: mapping.templateId,
+							userId,
+							updatedAt: mapping.template.updatedAt,
+						},
+					});
+					if (currentTemplateCount !== 1) {
+						throw new ConflictError(
+							"The template changed while the override reset was being prepared. Refresh and try again.",
+						);
+					}
 					writeAttempted = true;
 					// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr profile types are runtime-compatible
 					await client.qualityProfile.update(profileId, updatedProfile as any);
