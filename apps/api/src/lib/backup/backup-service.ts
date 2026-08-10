@@ -44,6 +44,7 @@ import {
 	BACKUP_VERSION,
 	isEncryptedBackupEnvelope,
 	isPlaintextBackup,
+	normalizeBackupForRestore,
 	validateBackup,
 } from "./backup-validation.js";
 
@@ -56,6 +57,12 @@ const WARNING_BACKUP_SIZE_MB = 50; // Log warning when backup exceeds this size
 const MAX_RESTORE_SIZE_MB = 200; // Maximum size for restore operations (defense against malicious files)
 
 type BackupType = "manual" | "scheduled" | "update";
+
+type CreateBackupOptions = {
+	includeTrashBackups?: boolean;
+	excludeOperationalHistory?: boolean;
+	historyRetentionLimit?: number;
+};
 
 /**
  * Estimate the byte size of a backup payload by sampling rows per table.
@@ -349,11 +356,15 @@ export class BackupService {
 	async createBackup(
 		appVersion: string,
 		type: BackupType = "manual",
-		options: {
-			includeTrashBackups?: boolean;
-			excludeOperationalHistory?: boolean;
-			historyRetentionLimit?: number;
-		} = {},
+		options: CreateBackupOptions = {},
+	): Promise<BackupFileInfo> {
+		return withCleanupMaintenanceGuard(() => this.createBackupExclusive(appVersion, type, options));
+	}
+
+	private async createBackupExclusive(
+		appVersion: string,
+		type: BackupType,
+		options: CreateBackupOptions,
 	): Promise<BackupFileInfo> {
 		if (!this.secretsSynchronized) {
 			throw new Error(
@@ -712,10 +723,11 @@ export class BackupService {
 		// 1. Validate backup structure (parsed now contains the backup object)
 		const backup = parsed as BackupData;
 		validateBackup(backup);
+		const normalizedBackup = normalizeBackupForRestore(backup);
 		// A successful restore replaces credentials and scheduler state that are
 		// only reloaded on process start. Keep cleanup-sensitive mutations
 		// blocked until the required restart; failures release the guard.
-		return await withCleanupMaintenanceGuard(() => this.restoreValidatedBackup(backup), {
+		return await withCleanupMaintenanceGuard(() => this.restoreValidatedBackup(normalizedBackup), {
 			holdAfterSuccess: true,
 		});
 	}

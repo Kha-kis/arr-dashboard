@@ -516,15 +516,13 @@ describe("DELETE /services/:id", () => {
 		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
 	});
 
-	it("revalidates ownership after acquiring deletion authority", async () => {
-		mockRequireInstance
-			.mockResolvedValueOnce(makeInstance())
-			.mockRejectedValueOnce(new InstanceNotFoundError("inst-1"));
+	it("validates ownership after acquiring deletion authority", async () => {
+		mockRequireInstance.mockRejectedValueOnce(new InstanceNotFoundError("inst-1"));
 
 		const res = await injectAuthenticated("DELETE", "/services/inst-1");
 
 		expect(res.statusCode).toBe(404);
-		expect(mockRequireInstance).toHaveBeenCalledTimes(2);
+		expect(mockRequireInstance).toHaveBeenCalledTimes(1);
 		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
 	});
 

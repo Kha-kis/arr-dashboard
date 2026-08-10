@@ -410,37 +410,36 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	app.delete("/services/:id", async (request, reply) => {
 		const { id } = validateRequest(idParams, request.params);
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
-		const existing = await requireInstance(app, userId, id);
-		const withTopologyLease =
-			existing.service === "RADARR" || existing.service === "SONARR"
-				? withExclusiveCleanupTopologyMutationLease
-				: withCleanupTopologyMutationLease;
 
-		return await withTopologyLease({ prisma: app.prisma, log: request.log }, userId, async () => {
-			const current = await requireInstance(app, userId, id);
-			if (current.service === "RADARR" || current.service === "SONARR") {
-				// Re-check after exclusive ownership is established. This is the
-				// execution-time authority check before the cascading delete.
-				await assertNoActiveTrashRecoveryForInstance(app.prisma, userId, id);
-			}
-			if (current.service === "QUI") {
-				await withQuiObservationTopologyGuard(userId, async () => {
-					await app.prisma.$transaction(async (tx) => {
-						await tx.serviceInstance.delete({ where: { id, userId } });
-						await clearDurableQuiObservations(tx, userId);
+		return await withExclusiveCleanupTopologyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				const current = await requireInstance(app, userId, id);
+				if (current.service === "RADARR" || current.service === "SONARR") {
+					// Re-check after exclusive ownership is established. This is the
+					// execution-time authority check before the cascading delete.
+					await assertNoActiveTrashRecoveryForInstance(app.prisma, userId, id);
+				}
+				if (current.service === "QUI") {
+					await withQuiObservationTopologyGuard(userId, async () => {
+						await app.prisma.$transaction(async (tx) => {
+							await tx.serviceInstance.delete({ where: { id, userId } });
+							await clearDurableQuiObservations(tx, userId);
+						});
+						invalidateTorrentListCache(id);
+						clearFileIdIndexCache(id);
 					});
+				} else {
+					await app.prisma.serviceInstance.delete({ where: { id, userId } });
 					invalidateTorrentListCache(id);
 					clearFileIdIndexCache(id);
-				});
-			} else {
-				await app.prisma.serviceInstance.delete({ where: { id, userId } });
-				invalidateTorrentListCache(id);
-				clearFileIdIndexCache(id);
-			}
+				}
 
-			request.log.info({ instanceId: id }, "Service instance deleted");
-			return reply.status(204).send();
-		});
+				request.log.info({ instanceId: id }, "Service instance deleted");
+				return reply.status(204).send();
+			},
+		);
 	});
 
 	app.get("/tags", async (_request, reply) => {

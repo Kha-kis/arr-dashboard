@@ -775,6 +775,77 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		expect(() => validateBackup(completedBackup)).not.toThrow();
 	});
 
+	it.each(["IN_PROGRESS", "RUNNING"])(
+		"requires recovery evidence for ordinary sync status %s",
+		(status) => {
+			const backup = {
+				version: "1.1",
+				appVersion: "3.0.0-beta",
+				timestamp: new Date().toISOString(),
+				data: {
+					users: [],
+					sessions: [],
+					serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+					serviceTags: [],
+					serviceInstanceTags: [],
+					oidcAccounts: [],
+					webAuthnCredentials: [],
+					trashSyncHistory: [
+						{
+							id: `sync-${status.toLowerCase()}`,
+							instanceId: "instance-1",
+							userId: "user-1",
+							status,
+							backupId: null,
+						},
+					],
+					trashBackups: [],
+				},
+				secrets: {
+					encryptionKey: "test-encryption-key-32-bytes-hex",
+					sessionCookieSecret: "test-session-cookie-secret",
+				},
+			};
+
+			expect(() => validateBackup(backup)).toThrow("missing backup snapshot reference");
+		},
+	);
+
+	it("requires recovery evidence for an ordinary in-progress template deployment", () => {
+		const backup = {
+			version: "1.1",
+			appVersion: "3.0.0-beta",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashTemplates: [{ id: "template-1", userId: "user-1" }],
+				templateDeploymentHistory: [
+					{
+						id: "deployment-in-progress",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						status: "IN_PROGRESS",
+						backupId: null,
+					},
+				],
+				trashBackups: [],
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(backup)).toThrow("missing backup snapshot reference");
+	});
+
 	it("should reject invalid backup version", () => {
 		const invalidBackup = {
 			version: "999.0",
@@ -811,6 +882,86 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		expect(() => validateBackup(invalidBackup)).toThrow(
 			"Invalid backup format: missing or invalid version",
 		);
+	});
+});
+
+describe("BackupService - legacy restore normalization", () => {
+	it("restores a v1.0 snapshotless partial undeploy as snapshot-free uncertain audit history", async () => {
+		const restoreSpy = vi.fn().mockResolvedValue(undefined);
+		vi.doMock("../backup-database.js", () => ({
+			exportDatabase: vi.fn(),
+			restoreDatabase: restoreSpy,
+		}));
+		vi.resetModules();
+		const { BackupService: IsolatedBackupService } = await import("../backup-service.js");
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "legacy-restore-normalize-"));
+		const secretsPath = path.join(tempDir, "secrets.json");
+		await fs.writeFile(
+			secretsPath,
+			JSON.stringify({
+				encryptionKey: "current-encryption-key",
+				sessionCookieSecret: "current-session-secret",
+			}),
+		);
+		const legacyBackup = {
+			version: "1.0",
+			appVersion: "2.23.0",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashTemplates: [{ id: "template-1", userId: "user-1" }],
+				templateDeploymentHistory: [
+					{
+						id: "legacy-partial-undeploy",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						status: "PARTIAL_UNDEPLOY",
+						undeployStatus: "PARTIAL",
+						backupId: "missing-snapshot",
+						canRollback: true,
+					},
+				],
+				trashBackups: [],
+			},
+			secrets: {
+				encryptionKey: "restored-encryption-key",
+				sessionCookieSecret: "restored-session-secret",
+			},
+		};
+
+		try {
+			const service = new IsolatedBackupService({} as PrismaClient, secretsPath);
+			await service.restoreBackup(JSON.stringify(legacyBackup));
+
+			const restoredData = restoreSpy.mock.calls[0]?.[1];
+			expect(restoredData.templateDeploymentHistory).toEqual([
+				expect.objectContaining({
+					id: "legacy-partial-undeploy",
+					status: "UNCERTAIN",
+					undeployStatus: null,
+					backupId: null,
+					canRollback: false,
+				}),
+			]);
+			expect(() =>
+				validateBackup({
+					...legacyBackup,
+					version: "1.1",
+					data: restoredData,
+				}),
+			).not.toThrow();
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+			vi.doUnmock("../backup-database.js");
+			vi.resetModules();
+		}
 	});
 });
 

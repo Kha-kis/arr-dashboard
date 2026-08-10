@@ -9,7 +9,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
-import { exportDatabase } from "../backup-database.js";
+import { exportDatabase, restoreDatabase } from "../backup-database.js";
 
 const TABLE_NAMES = [
 	"user",
@@ -115,15 +115,84 @@ describe("exportDatabase — operational history exclusion", () => {
 		expect(result.templateDeploymentHistory).toEqual([undeploy]);
 		expect(result.trashBackups).toEqual(snapshots);
 		expect(mock.trashSyncHistory.findMany).toHaveBeenCalledWith({
-			where: { rollbackStatus: { not: "COMPLETED" } },
+			where: {
+				OR: [
+					{ rollbackStatus: { not: "COMPLETED" } },
+					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+				],
+			},
 		});
 		expect(mock.templateDeploymentHistory.findMany).toHaveBeenCalledWith({
 			where: {
-				OR: [{ undeployStatus: { not: "COMPLETED" } }, { status: "PARTIAL_UNDEPLOY" }],
+				OR: [
+					{ undeployStatus: { not: "COMPLETED" } },
+					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
+				],
 			},
 		});
 		expect(mock.trashBackup.findMany).toHaveBeenCalledWith({
 			where: { id: { in: ["snapshot-rollback", "snapshot-undeploy"] } },
+		});
+	});
+
+	it("preserves ordinary in-progress sync and deployment rows with their snapshots", async () => {
+		const { prisma, mock } = makeMockPrisma({
+			serviceInstance: [{ id: "instance-1", userId: "user-1" }],
+			trashTemplate: [{ id: "template-1", userId: "user-1" }],
+		});
+		const runningSync = {
+			id: "sync-running",
+			instanceId: "instance-1",
+			userId: "user-1",
+			backupId: "snapshot-sync",
+			status: "RUNNING",
+		};
+		const inProgressDeployment = {
+			id: "deployment-in-progress",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			backupId: "snapshot-deployment",
+			status: "IN_PROGRESS",
+		};
+		const snapshots = [
+			{
+				id: "snapshot-sync",
+				instanceId: "instance-1",
+				userId: "user-1",
+				backupData: "sync-evidence",
+			},
+			{
+				id: "snapshot-deployment",
+				instanceId: "instance-1",
+				userId: "user-1",
+				backupData: "deployment-evidence",
+			},
+		];
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce([runningSync]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([inProgressDeployment]);
+		mock.trashBackup.findMany.mockResolvedValueOnce(snapshots);
+
+		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
+
+		expect(result.trashSyncHistory).toEqual([runningSync]);
+		expect(result.templateDeploymentHistory).toEqual([inProgressDeployment]);
+		expect(result.trashBackups).toEqual(snapshots);
+		expect(mock.trashSyncHistory.findMany).toHaveBeenCalledWith({
+			where: {
+				OR: [
+					{ rollbackStatus: { not: "COMPLETED" } },
+					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+				],
+			},
+		});
+		expect(mock.templateDeploymentHistory.findMany).toHaveBeenCalledWith({
+			where: {
+				OR: [
+					{ undeployStatus: { not: "COMPLETED" } },
+					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
+				],
+			},
 		});
 	});
 
@@ -348,5 +417,248 @@ describe("exportDatabase — operational history exclusion", () => {
 
 		// count() is still called (it's part of the contract), but nothing is dropped.
 		expect(mock.huntLog.count).toHaveBeenCalled();
+	});
+});
+
+describe("restoreDatabase — current coordination preservation", () => {
+	function makeRestorePrisma(options: {
+		currentSync?: Array<Record<string, unknown>>;
+		currentDeployments?: Array<Record<string, unknown>>;
+		currentSnapshots?: Array<Record<string, unknown>>;
+	}) {
+		const firstDelete = vi.fn().mockResolvedValue({ count: 0 });
+		const tx = {
+			trashSyncHistory: {
+				findMany: vi.fn().mockResolvedValue(options.currentSync ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			templateDeploymentHistory: {
+				findMany: vi.fn().mockResolvedValue(options.currentDeployments ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			trashBackup: {
+				findMany: vi.fn().mockResolvedValue(options.currentSnapshots ?? []),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			huntSearchHistory: { deleteMany: firstDelete },
+		};
+		const prisma = {
+			$transaction: vi.fn(async (operation: (transaction: typeof tx) => Promise<void>) =>
+				operation(tx),
+			),
+		} as unknown as PrismaClient;
+
+		return { prisma, firstDelete };
+	}
+
+	function incomingData(overrides: Record<string, unknown> = {}) {
+		return {
+			users: [],
+			sessions: [],
+			serviceInstances: [],
+			serviceTags: [],
+			serviceInstanceTags: [],
+			oidcAccounts: [],
+			webAuthnCredentials: [],
+			trashSyncHistory: [],
+			templateDeploymentHistory: [],
+			trashBackups: [],
+			...overrides,
+		} as never;
+	}
+
+	it("rejects a restore that omits a current nonterminal sync row before deleting tables", async () => {
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentSync: [
+				{
+					id: "current-sync",
+					instanceId: "instance-1",
+					userId: "user-1",
+					status: "RUNNING",
+					backupId: "snapshot-sync",
+				},
+			],
+			currentSnapshots: [
+				{
+					id: "snapshot-sync",
+					instanceId: "instance-1",
+					userId: "user-1",
+					backupData: "current-sync-evidence",
+				},
+			],
+		});
+
+		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+			"current nonterminal coordination row current-sync",
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a restore that omits a current deployment snapshot before deleting tables", async () => {
+		const currentDeployment = {
+			id: "current-deployment",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "IN_PROGRESS",
+			backupId: "snapshot-deployment",
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentDeployments: [currentDeployment],
+			currentSnapshots: [
+				{
+					id: "snapshot-deployment",
+					instanceId: "instance-1",
+					userId: "user-1",
+					backupData: "current-deployment-evidence",
+				},
+			],
+		});
+
+		await expect(
+			restoreDatabase(prisma, incomingData({ templateDeploymentHistory: [currentDeployment] })),
+		).rejects.toThrow("current recovery snapshot snapshot-deployment");
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a same-ID incoming row whose current recovery claim content changed", async () => {
+		const currentSync = {
+			id: "current-sync",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "FAILED",
+			rolledBack: false,
+			rollbackStatus: "IN_PROGRESS",
+			rollbackAttemptedAt: new Date("2026-08-10T10:00:00.000Z"),
+			rollbackProgress: '[{"step":"rollback","status":"IN_PROGRESS"}]',
+			backupId: "snapshot-sync",
+		};
+		const currentSnapshot = {
+			id: "snapshot-sync",
+			instanceId: "instance-1",
+			userId: "user-1",
+			backupData: "current-sync-evidence",
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentSync: [currentSync],
+			currentSnapshots: [currentSnapshot],
+		});
+
+		await expect(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					trashSyncHistory: [{ ...currentSync, userId: "user-2" }],
+					trashBackups: [currentSnapshot],
+				}),
+			),
+		).rejects.toThrow("current nonterminal coordination row current-sync changed userId");
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a same-ID incoming snapshot whose current evidence payload changed", async () => {
+		const currentSync = {
+			id: "current-sync",
+			instanceId: "instance-1",
+			userId: "user-1",
+			status: "RUNNING",
+			backupId: "snapshot-sync",
+		};
+		const currentSnapshot = {
+			id: "snapshot-sync",
+			instanceId: "instance-1",
+			userId: "user-1",
+			backupData: "current-sync-evidence",
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentSync: [currentSync],
+			currentSnapshots: [currentSnapshot],
+		});
+
+		await expect(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					trashSyncHistory: [currentSync],
+					trashBackups: [{ ...currentSnapshot, backupData: "stale-sync-evidence" }],
+				}),
+			),
+		).rejects.toThrow("current recovery snapshot snapshot-sync changed backupData");
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a same-ID deployment whose applied recovery configuration changed", async () => {
+		const currentDeployment = {
+			id: "current-deployment",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "IN_PROGRESS",
+			rolledBack: false,
+			canRollback: true,
+			appliedConfigs: '[{"name":"current-config"}]',
+			backupId: "snapshot-deployment",
+		};
+		const currentSnapshot = {
+			id: "snapshot-deployment",
+			instanceId: "instance-1",
+			userId: "user-1",
+			backupData: "current-deployment-evidence",
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentDeployments: [currentDeployment],
+			currentSnapshots: [currentSnapshot],
+		});
+
+		await expect(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					templateDeploymentHistory: [
+						{ ...currentDeployment, appliedConfigs: '[{"name":"stale-config"}]' },
+					],
+					trashBackups: [currentSnapshot],
+				}),
+			),
+		).rejects.toThrow(
+			"current nonterminal coordination row current-deployment changed appliedConfigs",
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a same-ID sync whose applied recovery configuration changed", async () => {
+		const currentSync = {
+			id: "current-sync",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "FAILED",
+			rolledBack: false,
+			appliedConfigs: '[{"name":"current-config"}]',
+			rollbackStatus: "PARTIAL",
+			backupId: "snapshot-sync",
+		};
+		const currentSnapshot = {
+			id: "snapshot-sync",
+			instanceId: "instance-1",
+			userId: "user-1",
+			backupData: "current-sync-evidence",
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentSync: [currentSync],
+			currentSnapshots: [currentSnapshot],
+		});
+
+		await expect(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					trashSyncHistory: [{ ...currentSync, appliedConfigs: '[{"name":"stale-config"}]' }],
+					trashBackups: [currentSnapshot],
+				}),
+			),
+		).rejects.toThrow("current nonterminal coordination row current-sync changed appliedConfigs");
+		expect(firstDelete).not.toHaveBeenCalled();
 	});
 });

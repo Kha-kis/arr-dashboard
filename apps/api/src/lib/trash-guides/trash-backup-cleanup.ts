@@ -140,8 +140,13 @@ export class TrashBackupCleanupService {
 				syncHistory: {
 					none: {
 						rolledBack: false,
-						rollbackStatus: { not: null },
-						NOT: { rollbackStatus: "COMPLETED" },
+						OR: [
+							{
+								rollbackStatus: { not: null },
+								NOT: { rollbackStatus: "COMPLETED" },
+							},
+							{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+						],
 					},
 				},
 				deploymentHistory: {
@@ -153,6 +158,7 @@ export class TrashBackupCleanupService {
 								NOT: { undeployStatus: "COMPLETED" },
 							},
 							{ status: "PARTIAL_UNDEPLOY", undeployStatus: null },
+							{ status: "IN_PROGRESS" },
 						],
 					},
 				},

@@ -35,6 +35,152 @@ export interface ExportDatabaseOptions {
 	historyRetentionLimit?: number;
 }
 
+type CoordinationKind = "rollback" | "undeploy";
+type CoordinationRow = Record<string, unknown> & { id: string };
+
+const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
+	rollback: [
+		"userId",
+		"instanceId",
+		"templateId",
+		"status",
+		"rolledBack",
+		"appliedConfigs",
+		"rollbackStatus",
+		"rollbackAttemptedAt",
+		"rollbackProgress",
+		"backupId",
+	],
+	undeploy: [
+		"userId",
+		"instanceId",
+		"templateId",
+		"status",
+		"rolledBack",
+		"canRollback",
+		"appliedConfigs",
+		"undeployStatus",
+		"undeployAttemptedAt",
+		"undeployProgress",
+		"backupId",
+	],
+};
+
+function recordsById(value: unknown): Map<string, CoordinationRow> {
+	const records = new Map<string, CoordinationRow>();
+	if (!Array.isArray(value)) return records;
+	for (const row of value) {
+		if (
+			typeof row === "object" &&
+			row !== null &&
+			"id" in row &&
+			typeof row.id === "string" &&
+			row.id.length > 0
+		) {
+			records.set(row.id, row as CoordinationRow);
+		}
+	}
+	return records;
+}
+
+function comparableCoordinationValue(value: unknown): unknown {
+	return value instanceof Date ? value.toISOString() : value;
+}
+
+function assertCurrentRowPreserved(
+	kind: CoordinationKind,
+	current: CoordinationRow,
+	incomingRows: Map<string, CoordinationRow>,
+): void {
+	const incoming = incomingRows.get(current.id);
+	if (!incoming) {
+		throw new Error(
+			`Cannot restore backup: current nonterminal coordination row ${current.id} is missing from incoming data`,
+		);
+	}
+
+	for (const field of COORDINATION_FIELDS[kind]) {
+		if (
+			comparableCoordinationValue(incoming[field]) !== comparableCoordinationValue(current[field])
+		) {
+			throw new Error(
+				`Cannot restore backup: current nonterminal coordination row ${current.id} changed ${field}`,
+			);
+		}
+	}
+}
+
+async function validateCurrentCoordinationPreserved(
+	tx: Prisma.TransactionClient,
+	data: BackupData["data"],
+): Promise<void> {
+	const currentRollbackRows = (
+		await tx.trashSyncHistory.findMany({
+			where: {
+				OR: [
+					{ rollbackStatus: { not: "COMPLETED" } },
+					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+				],
+			},
+		})
+	).filter(isNonterminalRollback) as CoordinationRow[];
+	const currentUndeployRows = (
+		await tx.templateDeploymentHistory.findMany({
+			where: {
+				OR: [
+					{ undeployStatus: { not: "COMPLETED" } },
+					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
+				],
+			},
+		})
+	).filter(isNonterminalUndeploy) as CoordinationRow[];
+	const incomingRollbackRows = recordsById(data.trashSyncHistory);
+	const incomingUndeployRows = recordsById(data.templateDeploymentHistory);
+
+	for (const row of currentRollbackRows) {
+		assertCurrentRowPreserved("rollback", row, incomingRollbackRows);
+	}
+	for (const row of currentUndeployRows) {
+		assertCurrentRowPreserved("undeploy", row, incomingUndeployRows);
+	}
+
+	const requiredSnapshotIds = [...currentRollbackRows, ...currentUndeployRows].map((row) => {
+		if (typeof row.backupId !== "string" || row.backupId.length === 0) {
+			throw new Error(
+				`Cannot restore backup: current nonterminal coordination row ${row.id} has no required recovery snapshot reference`,
+			);
+		}
+		return row.backupId;
+	});
+	if (requiredSnapshotIds.length === 0) return;
+
+	const currentSnapshots = recordsById(
+		await tx.trashBackup.findMany({ where: { id: { in: [...new Set(requiredSnapshotIds)] } } }),
+	);
+	const incomingSnapshots = recordsById(data.trashBackups);
+	for (const snapshotId of new Set(requiredSnapshotIds)) {
+		const current = currentSnapshots.get(snapshotId);
+		if (!current) {
+			throw new Error(
+				`Cannot restore backup: current recovery snapshot ${snapshotId} is missing from the database`,
+			);
+		}
+		const incoming = incomingSnapshots.get(snapshotId);
+		if (!incoming) {
+			throw new Error(
+				`Cannot restore backup: current recovery snapshot ${snapshotId} is missing from incoming data`,
+			);
+		}
+		for (const field of ["userId", "instanceId", "backupData"] as const) {
+			if (incoming[field] !== current[field]) {
+				throw new Error(
+					`Cannot restore backup: current recovery snapshot ${snapshotId} changed ${field}`,
+				);
+			}
+		}
+	}
+}
+
 function mergeRowsById<T extends { id: string }>(rows: T[], preservedRows: T[]): T[] {
 	const merged = [...rows];
 	const seen = new Set(rows.map((row) => row.id));
@@ -105,13 +251,21 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 	// can discard terminal audit rows without stranding resumable operations.
 	const nonterminalRollbackHistory = (
 		await prisma.trashSyncHistory.findMany({
-			where: { rollbackStatus: { not: "COMPLETED" } },
+			where: {
+				OR: [
+					{ rollbackStatus: { not: "COMPLETED" } },
+					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+				],
+			},
 		})
 	).filter(isNonterminalRollback);
 	const nonterminalUndeployHistory = (
 		await prisma.templateDeploymentHistory.findMany({
 			where: {
-				OR: [{ undeployStatus: { not: "COMPLETED" } }, { status: "PARTIAL_UNDEPLOY" }],
+				OR: [
+					{ undeployStatus: { not: "COMPLETED" } },
+					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
+				],
 			},
 		})
 	).filter(isNonterminalUndeploy);
@@ -241,6 +395,8 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 export async function restoreDatabase(prisma: PrismaClient, data: BackupData["data"]) {
 	// Use a transaction to ensure atomicity
 	await prisma.$transaction(async (tx) => {
+		await validateCurrentCoordinationPreserved(tx, data);
+
 		// =================================================================
 		// DELETE all existing data (in reverse order of dependencies)
 		// =================================================================

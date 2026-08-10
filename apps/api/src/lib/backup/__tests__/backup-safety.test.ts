@@ -4,6 +4,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loggers } from "../../logger.js";
 import type { PrismaClient } from "../../prisma.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "../../library-cleanup/cleanup-maintenance-gate.js";
 import { decryptBackupData, type EncryptedBackupEnvelope } from "../backup-crypto.js";
 import { BackupService } from "../backup-service.js";
 
@@ -73,6 +77,48 @@ afterEach(() => {
 });
 
 describe("BackupService coordination safety", () => {
+	it("holds an exclusive maintenance boundary for the database export", async () => {
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-exclusive-"));
+		const secretsPath = path.join(tempDir, "secrets.json");
+		await fs.writeFile(
+			secretsPath,
+			JSON.stringify({
+				encryptionKey: "test-encryption-key",
+				sessionCookieSecret: "test-session-secret",
+				backupPassword: "backup-exclusive-password",
+			}),
+		);
+		const prisma = makePrismaWithCoordinationEvidence() as unknown as Record<string, unknown>;
+		let releaseExport!: () => void;
+		const exportBlocked = new Promise<void>((resolve) => {
+			releaseExport = resolve;
+		});
+		let markExportStarted!: () => void;
+		const exportStarted = new Promise<void>((resolve) => {
+			markExportStarted = resolve;
+		});
+		(prisma.user as { findMany: ReturnType<typeof vi.fn> }).findMany.mockImplementationOnce(
+			async () => {
+				markExportStarted();
+				await exportBlocked;
+				return [];
+			},
+		);
+		const service = new BackupService(prisma as unknown as PrismaClient, secretsPath);
+		const creatingBackup = service.createBackup("3.0.0-beta", "scheduled");
+		await exportStarted;
+
+		try {
+			await expect(withCleanupOperationGuard(async () => "mutation")).rejects.toBeInstanceOf(
+				CleanupMaintenanceConflictError,
+			);
+		} finally {
+			releaseExport();
+			await creatingBackup;
+			await fs.rm(tempDir, { recursive: true, force: true });
+		}
+	});
+
 	it("emits a new payload version while preserving active coordination evidence", async () => {
 		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "backup-safety-"));
 		const secretsPath = path.join(tempDir, "secrets.json");

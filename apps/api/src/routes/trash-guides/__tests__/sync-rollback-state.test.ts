@@ -223,6 +223,25 @@ describe("POST /sync/:syncId/rollback state coordination", () => {
 		]);
 	});
 
+	it("never completes when created-format ownership evidence is malformed", async () => {
+		findFirst.mockResolvedValueOnce(syncHistory({ appliedConfigs: "not-json" }));
+
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/trash-guides/sync/${SYNC_ID}/rollback`,
+		});
+
+		expect(response.statusCode).toBe(500);
+		expect(response.json().message).toContain("ownership evidence is invalid");
+		expect(getAll).not.toHaveBeenCalled();
+		expect(updateMany.mock.calls.some(([args]) => args.data.rollbackStatus === "COMPLETED")).toBe(
+			false,
+		);
+		expect(updateMany.mock.calls.some(([args]) => args.data.rollbackStatus === "PARTIAL")).toBe(
+			true,
+		);
+	});
+
 	it("persists COMPLETED only after all upstream work succeeds", async () => {
 		findFirst.mockResolvedValueOnce(
 			syncHistory({

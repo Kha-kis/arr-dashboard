@@ -30,12 +30,18 @@ function isNonterminalStatus(value: unknown): boolean {
 	return typeof value === "string" && value !== "COMPLETED";
 }
 
+const NONTERMINAL_SYNC_STATUSES = new Set(["IN_PROGRESS", "RUNNING"]);
+const NONTERMINAL_DEPLOYMENT_STATUSES = new Set(["PARTIAL_UNDEPLOY", "IN_PROGRESS"]);
+
 export function isNonterminalRollback(record: CoordinationState): boolean {
 	if (record.rolledBack === true || record.rollbackStatus === "COMPLETED") {
 		return false;
 	}
 
-	return isNonterminalStatus(record.rollbackStatus);
+	return (
+		isNonterminalStatus(record.rollbackStatus) ||
+		(typeof record.status === "string" && NONTERMINAL_SYNC_STATUSES.has(record.status))
+	);
 }
 
 export function isNonterminalUndeploy(record: CoordinationState): boolean {
@@ -43,7 +49,65 @@ export function isNonterminalUndeploy(record: CoordinationState): boolean {
 		return false;
 	}
 
-	return isNonterminalStatus(record.undeployStatus) || record.status === "PARTIAL_UNDEPLOY";
+	return (
+		isNonterminalStatus(record.undeployStatus) ||
+		(typeof record.status === "string" && NONTERMINAL_DEPLOYMENT_STATUSES.has(record.status))
+	);
+}
+
+/**
+ * Convert snapshotless v1.0 partial undeploy rows into honest audit-only state.
+ * These legacy payloads predate v1.1's recovery-evidence contract and cannot
+ * safely claim that undeploy or rollback remains resumable without a snapshot.
+ */
+export function normalizeBackupForRestore(backup: BackupData): BackupData {
+	if (backup.version !== LEGACY_BACKUP_VERSION) {
+		return backup;
+	}
+
+	const snapshots = Array.isArray(backup.data.trashBackups) ? backup.data.trashBackups : [];
+	const snapshotIds = new Set<string>();
+	for (const snapshot of snapshots) {
+		if (isRecord(snapshot) && typeof snapshot.id === "string" && snapshot.id.length > 0) {
+			snapshotIds.add(snapshot.id);
+		}
+	}
+	const deploymentHistory = Array.isArray(backup.data.templateDeploymentHistory)
+		? backup.data.templateDeploymentHistory
+		: [];
+	let changed = false;
+	const normalizedDeploymentHistory = deploymentHistory.map((row) => {
+		if (!isRecord(row)) {
+			return row;
+		}
+		if (
+			row.status !== "PARTIAL_UNDEPLOY" ||
+			(typeof row.backupId === "string" && snapshotIds.has(row.backupId))
+		) {
+			return row;
+		}
+
+		changed = true;
+		return {
+			...row,
+			status: "UNCERTAIN",
+			undeployStatus: null,
+			backupId: null,
+			canRollback: false,
+		};
+	});
+
+	if (!changed) {
+		return backup;
+	}
+
+	return {
+		...backup,
+		data: {
+			...backup.data,
+			templateDeploymentHistory: normalizedDeploymentHistory,
+		},
+	};
 }
 
 function coordinationId(record: CoordinationRecord): string {

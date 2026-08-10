@@ -534,9 +534,11 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 				if (sync.appliedConfigs) {
 					appliedConfigs = JSON.parse(sync.appliedConfigs) as AppliedConfig[];
 				}
-			} catch {
-				// If we can't parse appliedConfigs, we'll skip the deletion step for safety
-				request.log.warn({ syncId }, "Could not parse appliedConfigs, skipping CF deletion");
+			} catch (error) {
+				request.log.warn({ syncId, err: error }, "Could not parse rollback ownership evidence");
+				throw new Error(
+					"Rollback ownership evidence is invalid; no created Custom Formats were deleted",
+				);
 			}
 
 			// Build set of CF names that were CREATED (not updated) by the sync
