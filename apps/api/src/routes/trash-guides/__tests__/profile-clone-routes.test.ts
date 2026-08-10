@@ -42,9 +42,7 @@ let instanceService: "RADARR" | "SONARR" = "RADARR";
 let instanceEncryptedApiKey = "encrypted-key-a";
 let upstreamCustomFormatName = "Reviewed CF";
 let upstreamCustomFormatSpecifications: unknown[] = [{ name: "Source", value: "WEB-DL" }];
-let upstreamFormatItems: Array<{ format: number; score: number }> = [
-	{ format: 42, score: 100 },
-];
+let upstreamFormatItems: Array<{ format: number; score: number }> = [{ format: 42, score: 100 }];
 let upstreamCustomFormats: Array<{
 	id: number;
 	name: string;
@@ -67,15 +65,16 @@ function createClient() {
 			}),
 		},
 		customFormat: {
-			getAll: vi.fn().mockImplementation(async () =>
-				upstreamCustomFormats ?? [
-					{
-						id: 42,
-						name: upstreamCustomFormatName,
-						specifications: upstreamCustomFormatSpecifications,
-						includeCustomFormatWhenRenaming: false,
-					},
-				],
+			getAll: vi.fn().mockImplementation(
+				async () =>
+					upstreamCustomFormats ?? [
+						{
+							id: 42,
+							name: upstreamCustomFormatName,
+							specifications: upstreamCustomFormatSpecifications,
+							includeCustomFormatWhenRenaming: false,
+						},
+					],
 			),
 		},
 	});
