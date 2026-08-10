@@ -128,9 +128,7 @@ export async function rollbackQualityProfileDeployment(
 	if (currentStateToken !== verifiedPostStateToken) {
 		throw new Error("The quality profile changed after deployment and was not overwritten.");
 	}
-	await client.qualityProfile.update(
-		state.profileId,
-		// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr profile types are runtime-compatible
-		beforeProfile as any,
+	throw new Error(
+		"The quality profile cannot be restored safely because the upstream API has no conditional update. Its current state still matches this deployment; restore the recorded pre-deployment configuration manually.",
 	);
 }

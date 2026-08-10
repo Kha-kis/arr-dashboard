@@ -128,6 +128,94 @@ describe("TrashBackupCleanupService", () => {
 		},
 	);
 
+	it.each(["expired", "orphaned"] as const)(
+		"uses bounded keyset pages and advances past retained %s ledgers",
+		async (phase) => {
+			type CandidateQuery = {
+				where: {
+					expiresAt?: unknown;
+					createdAt?: unknown;
+					id?: { gt: string };
+				};
+				orderBy?: { id: string };
+				take?: number;
+			};
+
+			const retainedPrefix = `${phase}-retained`;
+			let retainedPageLastId = "";
+			let initialPageReads = 0;
+			const findMany = vi.fn(async (query: CandidateQuery) => {
+				const isTargetQuery =
+					phase === "expired"
+						? query.where.expiresAt !== undefined
+						: query.where.createdAt !== undefined;
+				if (!isTargetQuery) return [];
+
+				if (!query.where.id) {
+					initialPageReads++;
+					if (initialPageReads > 1) {
+						throw new Error(`${phase} cleanup did not advance past the retained page`);
+					}
+					const pageSize = query.take ?? 2;
+					const page = Array.from({ length: pageSize }, (_, index) => ({
+						id: `${retainedPrefix}-${String(index).padStart(4, "0")}`,
+						backupData: ledger("pending"),
+						_count: { syncHistory: 0, deploymentHistory: 0 },
+					}));
+					retainedPageLastId = page.at(-1)!.id;
+					return page;
+				}
+
+				if (query.where.id.gt === retainedPageLastId) {
+					return [
+						{
+							id: `${phase}-zz-legacy`,
+							backupData: JSON.stringify([]),
+							_count: { syncHistory: 0, deploymentHistory: 0 },
+						},
+					];
+				}
+
+				throw new Error(`Unexpected ${phase} cleanup cursor: ${query.where.id.gt}`);
+			});
+			const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
+			const prisma = { trashBackup: { findMany, deleteMany } };
+			const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+			const service = new TrashBackupCleanupService(prisma as never, logger as never);
+
+			await expect(service.runCleanup()).resolves.toEqual({
+				expiredCount: phase === "expired" ? 1 : 0,
+				orphanedCount: phase === "orphaned" ? 1 : 0,
+				totalCleaned: 1,
+			});
+
+			const targetQueries = findMany.mock.calls
+				.map(([query]) => query)
+				.filter((query) =>
+					phase === "expired"
+						? query.where.expiresAt !== undefined
+						: query.where.createdAt !== undefined,
+				);
+			expect(targetQueries).toHaveLength(2);
+			expect(targetQueries[0]).toEqual(
+				expect.objectContaining({
+					orderBy: { id: "asc" },
+					take: expect.any(Number),
+				}),
+			);
+			expect(targetQueries[0]!.take).toBeGreaterThan(0);
+			expect(targetQueries[0]!.take).toBeLessThanOrEqual(400);
+			expect(targetQueries[1]).toEqual(
+				expect.objectContaining({
+					where: expect.objectContaining({ id: { gt: retainedPageLastId } }),
+					orderBy: { id: "asc" },
+					take: targetQueries[0]!.take,
+				}),
+			);
+			expect(deleteMany).toHaveBeenCalledTimes(1);
+		},
+	);
+
 	it("never deletes an expired pending or malformed current deployment ledger", async () => {
 		const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
 		const prisma = {
@@ -170,6 +258,8 @@ describe("TrashBackupCleanupService", () => {
 				deploymentHistory: { none: { rolledBack: false } },
 			},
 			select: { id: true, backupData: true },
+			orderBy: { id: "asc" },
+			take: 400,
 		});
 		expect(deleteMany).toHaveBeenCalledTimes(1);
 		expect(deleteMany).toHaveBeenCalledWith({

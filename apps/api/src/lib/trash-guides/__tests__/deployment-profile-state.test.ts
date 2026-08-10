@@ -98,7 +98,7 @@ describe("rollbackQualityProfileDeployment", () => {
 		expect(remove).not.toHaveBeenCalled();
 	});
 
-	it("restores an updated profile only from the recorded post-write state", async () => {
+	it("retains an updated profile when restoration has no conditional boundary", async () => {
 		const before = completeProfile({ formatItems: [{ format: 7, score: 0 }] });
 		const deployed = completeProfile({ formatItems: [{ format: 7, score: 100 }] });
 		const update = vi.fn().mockResolvedValue(undefined);
@@ -110,18 +110,20 @@ describe("rollbackQualityProfileDeployment", () => {
 			},
 		};
 
-		await rollbackQualityProfileDeployment(client as never, {
-			beforeProfile: before,
-			action: "updated",
-			status: "applied",
-			profileId: 4,
-			postStateToken: createQualityProfileStateToken(deployed),
-			intendedPostStateToken: null,
-		});
-		expect(update).toHaveBeenCalledWith(4, before);
+		await expect(
+			rollbackQualityProfileDeployment(client as never, {
+				beforeProfile: before,
+				action: "updated",
+				status: "applied",
+				profileId: 4,
+				postStateToken: createQualityProfileStateToken(deployed),
+				intendedPostStateToken: null,
+			}),
+		).rejects.toThrow("cannot be restored safely");
+		expect(update).not.toHaveBeenCalled();
 	});
 
-	it("restores a valid profile containing ARR's Unknown quality ID zero", async () => {
+	it("retains a valid profile containing ARR's Unknown quality ID zero", async () => {
 		const before = completeProfile({
 			cutoff: 0,
 			items: [
@@ -153,8 +155,8 @@ describe("rollbackQualityProfileDeployment", () => {
 				postStateToken: createQualityProfileStateToken(deployed),
 				intendedPostStateToken: null,
 			}),
-		).resolves.toBeUndefined();
-		expect(update).toHaveBeenCalledWith(4, before);
+		).rejects.toThrow("cannot be restored safely");
+		expect(update).not.toHaveBeenCalled();
 	});
 
 	it.each([
@@ -280,7 +282,7 @@ describe("rollbackQualityProfileDeployment", () => {
 		).rejects.toThrow("unverified deployment state");
 	});
 
-	it("restores a pending update when the upstream state matches the recorded intent", async () => {
+	it("retains a pending update when restoration has no conditional boundary", async () => {
 		const before = completeProfile({ formatItems: [{ format: 7, score: 0 }] });
 		const intended = completeProfile({ formatItems: [{ format: 7, score: 100 }] });
 		const update = vi.fn().mockResolvedValue(undefined);
@@ -300,11 +302,13 @@ describe("rollbackQualityProfileDeployment", () => {
 			intendedPostStateToken: createQualityProfileStateToken(intended),
 		};
 
-		await rollbackQualityProfileDeployment(client as never, state);
-		expect(update).toHaveBeenCalledWith(4, before);
+		await expect(rollbackQualityProfileDeployment(client as never, state)).rejects.toThrow(
+			"cannot be restored safely",
+		);
+		expect(update).not.toHaveBeenCalled();
 	});
 
-	it("restores a pending update from its verified normalized post-write state", async () => {
+	it("retains a pending normalized update when restoration has no conditional boundary", async () => {
 		const before = completeProfile({ formatItems: [{ format: 7, score: 0 }] });
 		const intended = completeProfile({ formatItems: [{ format: 7, score: 100 }] });
 		const normalized = completeProfile({
@@ -319,16 +323,18 @@ describe("rollbackQualityProfileDeployment", () => {
 			},
 		};
 
-		await rollbackQualityProfileDeployment(client as never, {
-			beforeProfile: before,
-			action: "updated",
-			status: "pending",
-			profileId: 4,
-			postStateToken: createQualityProfileStateToken(normalized),
-			intendedPostStateToken: createQualityProfileStateToken(intended),
-		});
+		await expect(
+			rollbackQualityProfileDeployment(client as never, {
+				beforeProfile: before,
+				action: "updated",
+				status: "pending",
+				profileId: 4,
+				postStateToken: createQualityProfileStateToken(normalized),
+				intendedPostStateToken: createQualityProfileStateToken(intended),
+			}),
+		).rejects.toThrow("cannot be restored safely");
 
-		expect(update).toHaveBeenCalledWith(4, before);
+		expect(update).not.toHaveBeenCalled();
 	});
 
 	it("keeps an unknown-ID create unresolved when the profile may have been renamed", async () => {

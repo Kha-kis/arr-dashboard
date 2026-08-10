@@ -146,10 +146,7 @@ export async function rollbackCustomFormatDeployment(
 			`Custom Format "${state.name}" changed after deployment and was not overwritten.`,
 		);
 	}
-	await client.customFormat.update(
-		state.resourceId,
-		// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr Custom Format types are runtime-compatible
-		beforeFormat as any,
+	throw new Error(
+		`Custom Format "${state.name}" cannot be restored safely because the upstream API has no conditional update. Its current state still matches this deployment; restore the recorded pre-deployment configuration manually.`,
 	);
-	return "restored";
 }

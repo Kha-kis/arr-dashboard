@@ -113,7 +113,7 @@ describe("prepareNamingDeployment", () => {
 });
 
 describe("restoreNamingDeployment", () => {
-	it("restores the exact backed-up naming payload", async () => {
+	it("retains exact deployed naming when restoration has no conditional boundary", async () => {
 		const snapshot = radarrConfig();
 		const deployedConfig = radarrConfig({ standardMovieFormat: "Deployed" });
 		const rawRequest = vi
@@ -125,18 +125,20 @@ describe("restoreNamingDeployment", () => {
 			})
 			.mockResolvedValueOnce({ ok: true, status: 202 });
 
-		await restoreNamingDeployment(
-			{ rawRequest } as never,
-			{ service: "RADARR" } as never,
-			snapshot,
-			createUpstreamResourceStateToken(deployedConfig),
-		);
+		await expect(
+			restoreNamingDeployment(
+				{ rawRequest } as never,
+				{ service: "RADARR" } as never,
+				snapshot,
+				createUpstreamResourceStateToken(deployedConfig),
+			),
+		).rejects.toThrow("cannot be restored safely");
 
-		expect(rawRequest).toHaveBeenNthCalledWith(
-			2,
-			expect.objectContaining({ service: "RADARR" }),
+		expect(rawRequest).toHaveBeenCalledTimes(1);
+		expect(rawRequest).not.toHaveBeenCalledWith(
+			expect.anything(),
 			"/api/v3/config/naming",
-			{ method: "PUT", body: snapshot },
+			expect.objectContaining({ method: "PUT" }),
 		);
 	});
 

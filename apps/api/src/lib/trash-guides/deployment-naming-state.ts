@@ -132,11 +132,7 @@ export async function restoreNamingDeployment(
 			"Naming configuration changed after this deployment. Restore it manually or create a fresh backup before retrying.",
 		);
 	}
-	const response = await clientFactory.rawRequest(instance, "/api/v3/config/naming", {
-		method: "PUT",
-		body: snapshot,
-	});
-	if (!response.ok) {
-		throw new Error(`HTTP ${response.status}`);
-	}
+	throw new Error(
+		"Naming configuration cannot be restored safely because the upstream API has no conditional update. Its current state still matches this deployment; restore the recorded pre-deployment configuration manually.",
+	);
 }

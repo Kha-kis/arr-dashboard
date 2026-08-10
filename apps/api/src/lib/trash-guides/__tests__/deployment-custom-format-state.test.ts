@@ -159,7 +159,7 @@ describe("rollbackCustomFormatDeployment", () => {
 		expect(remove).not.toHaveBeenCalled();
 	});
 
-	it("restores an updated Custom Format only from its exact post-write state", async () => {
+	it("retains an updated Custom Format when restoration has no conditional boundary", async () => {
 		const before = {
 			id: 4,
 			name: "Existing CF",
@@ -187,8 +187,8 @@ describe("rollbackCustomFormatDeployment", () => {
 					postStateToken: createUpstreamResourceStateToken(deployed),
 				}),
 			),
-		).resolves.toBe("restored");
-		expect(update).toHaveBeenCalledWith(4, before);
+		).rejects.toThrow("cannot be restored safely");
+		expect(update).not.toHaveBeenCalled();
 	});
 
 	it.each([
@@ -296,7 +296,7 @@ describe("rollbackCustomFormatDeployment", () => {
 		).rejects.toThrow("unverified deployment state");
 	});
 
-	it("restores a pending update when the upstream state matches the recorded intent", async () => {
+	it("retains a pending update when restoration has no conditional boundary", async () => {
 		const before = {
 			id: 4,
 			name: "Existing CF",
@@ -324,8 +324,10 @@ describe("rollbackCustomFormatDeployment", () => {
 			intendedPostStateToken: createUpstreamResourceStateToken(intended),
 		};
 
-		await expect(rollbackCustomFormatDeployment(client as never, state)).resolves.toBe("restored");
-		expect(update).toHaveBeenCalledWith(4, before);
+		await expect(rollbackCustomFormatDeployment(client as never, state)).rejects.toThrow(
+			"cannot be restored safely",
+		);
+		expect(update).not.toHaveBeenCalled();
 	});
 
 	it("retains a pending create when its exact returned state cannot be conditionally deleted", async () => {
