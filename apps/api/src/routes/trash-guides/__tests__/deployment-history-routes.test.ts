@@ -347,7 +347,7 @@ describe("deployment history undeploy", () => {
 		);
 	});
 
-	it("unwinds the latest shared Custom Format write before preserving the survivor state", async () => {
+	it("requires manual shared Custom Format restore while preserving the survivor state", async () => {
 		const olderSurvivorFormat = customFormatVersion(null);
 		const survivorFormat = customFormatVersion(false);
 		const targetFormat = customFormatVersion(true);
@@ -413,20 +413,30 @@ describe("deployment history undeploy", () => {
 		historyFindFirst.mockResolvedValue(target);
 		historyFindMany.mockResolvedValue([target, survivor, olderSurvivor]);
 		getAllFormats.mockResolvedValue([targetFormat]);
-		getFormatById
-			.mockResolvedValueOnce(targetFormat)
-			.mockResolvedValueOnce(targetFormat)
-			.mockResolvedValueOnce(survivorFormat)
-			.mockResolvedValueOnce(survivorFormat);
+		getFormatById.mockResolvedValue(targetFormat);
 
 		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
-			success: true,
-			data: { restoredCFs: ["Shared CF"], skippedShared: [] },
+			success: false,
+			data: { restoredCFs: [], skippedShared: [] },
 		});
-		expect(updateFormat).toHaveBeenCalledWith(7, survivorFormat);
+		expect(response.json().data.errors[0]).toContain(
+			"upstream API has no conditional update",
+		);
+		expect(updateFormat).not.toHaveBeenCalled();
+		expect(historyUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "history-1" },
+				data: expect.objectContaining({
+					undeployStatus: "PARTIAL",
+					undeployProgress: expect.stringContaining(
+						'"kind":"custom_format","name":"Shared CF","outcome":"failed"',
+					),
+				}),
+			}),
+		);
 	});
 
 	it("does not write a shared Custom Format when its rollback snapshot is not the survivor state", async () => {
@@ -483,7 +493,7 @@ describe("deployment history undeploy", () => {
 		expect(updateFormat).not.toHaveBeenCalled();
 	});
 
-	it("unwinds the latest shared quality-profile write before preserving the survivor state", async () => {
+	it("requires manual shared quality-profile restore while preserving the survivor state", async () => {
 		const survivorProfile = qualityProfile(100);
 		const targetProfile = qualityProfile(500);
 		const target = currentHistory(
@@ -523,22 +533,22 @@ describe("deployment history undeploy", () => {
 		historyFindFirst.mockResolvedValue(target);
 		historyFindMany.mockResolvedValue([target, survivor]);
 		getAllProfiles.mockResolvedValue([targetProfile]);
-		getProfileById
-			.mockResolvedValueOnce(targetProfile)
-			.mockResolvedValueOnce(targetProfile)
-			.mockResolvedValueOnce(survivorProfile)
-			.mockResolvedValueOnce(survivorProfile);
+		getProfileById.mockResolvedValue(targetProfile);
 
 		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
 
 		expect(response.statusCode, response.body).toBe(200);
-		expect(response.json().success).toBe(true);
-		expect(updateProfile).toHaveBeenCalledWith(4, survivorProfile);
+		expect(response.json().success).toBe(false);
+		expect(response.json().data.errors[0]).toContain(
+			"upstream API has no conditional update",
+		);
+		expect(updateProfile).not.toHaveBeenCalled();
 		expect(historyUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
+					undeployStatus: "PARTIAL",
 					undeployProgress: expect.stringContaining(
-						'"kind":"quality_profile","name":"Profile","outcome":"restored"',
+						'"kind":"quality_profile","name":"Profile","outcome":"failed"',
 					),
 				}),
 			}),
@@ -596,7 +606,7 @@ describe("deployment history undeploy", () => {
 		expect(updateProfile).not.toHaveBeenCalled();
 	});
 
-	it("unwinds the latest shared naming write before preserving the survivor state", async () => {
+	it("requires manual shared naming restore while preserving the survivor state", async () => {
 		const survivorNaming = radarrNaming("V1");
 		const targetNaming = radarrNaming("V2");
 		const target = currentHistory(
@@ -631,23 +641,25 @@ describe("deployment history undeploy", () => {
 		historyFindMany.mockResolvedValue([target, survivor]);
 		rawRequest
 			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => targetNaming })
-			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => targetNaming })
-			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) })
-			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => survivorNaming })
-			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => survivorNaming });
+			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => targetNaming });
 
 		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
 
-		expect(response.json().success).toBe(true);
-		expect(rawRequest).toHaveBeenCalledWith(instance, "/api/v3/config/naming", {
-			method: "PUT",
-			body: survivorNaming,
-		});
+		expect(response.json().success).toBe(false);
+		expect(response.json().data.errors[0]).toContain(
+			"upstream API has no conditional update",
+		);
+		expect(rawRequest).not.toHaveBeenCalledWith(
+			instance,
+			"/api/v3/config/naming",
+			expect.objectContaining({ method: "PUT" }),
+		);
 		expect(historyUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
+					undeployStatus: "PARTIAL",
 					undeployProgress: expect.stringContaining(
-						'"kind":"naming","name":"Naming configuration","outcome":"restored"',
+						'"kind":"naming","name":"Naming configuration","outcome":"failed"',
 					),
 				}),
 			}),
@@ -709,7 +721,7 @@ describe("deployment history undeploy", () => {
 		}
 	});
 
-	it("restores a pending naming write when ARR matches its persisted intent", async () => {
+	it("requires manual restore for a pending naming write that matches persisted intent", async () => {
 		const beforeNaming = radarrNaming("Before");
 		const intendedNaming = radarrNaming("Intended");
 		const history = currentHistory(
@@ -725,19 +737,35 @@ describe("deployment history undeploy", () => {
 		Object.assign(history, { errors: JSON.stringify(["Original deployment failure"]) });
 		historyFindFirst.mockResolvedValue(history);
 		historyFindMany.mockResolvedValue([history]);
-		rawRequest
-			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => intendedNaming })
-			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({}) })
-			.mockResolvedValueOnce({ ok: true, status: 200, json: async () => beforeNaming });
+		rawRequest.mockResolvedValueOnce({
+			ok: true,
+			status: 200,
+			json: async () => intendedNaming,
+		});
 
 		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
 
 		expect(response.statusCode, response.body).toBe(200);
-		expect(response.json().success).toBe(true);
-		expect(rawRequest).toHaveBeenCalledWith(instance, "/api/v3/config/naming", {
-			method: "PUT",
-			body: beforeNaming,
-		});
+		expect(response.json().success).toBe(false);
+		expect(response.json().data.errors[0]).toContain(
+			"upstream API has no conditional update",
+		);
+		expect(rawRequest).not.toHaveBeenCalledWith(
+			instance,
+			"/api/v3/config/naming",
+			expect.objectContaining({ method: "PUT" }),
+		);
+		expect(historyUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "history-1" },
+				data: expect.objectContaining({
+					undeployStatus: "PARTIAL",
+					undeployProgress: expect.stringContaining(
+						'"kind":"naming","name":"Naming configuration","outcome":"failed"',
+					),
+				}),
+			}),
+		);
 		for (const [args] of historyUpdate.mock.calls) {
 			expect(args.data).not.toHaveProperty("errors");
 		}
@@ -780,8 +808,7 @@ describe("deployment history undeploy", () => {
 		}
 	});
 
-	it("restores a profile before safely refusing an unconditional created-format delete", async () => {
-		const callOrder: string[] = [];
+	it("records an already-restored profile before refusing an unconditional created-format delete", async () => {
 		const beforeProfile = qualityProfile(null);
 		const deployedProfile = qualityProfile(100);
 		const deployedFormat = { id: 7, name: "Managed CF", specifications: [] };
@@ -810,23 +837,17 @@ describe("deployment history undeploy", () => {
 		const history = currentHistory(data);
 		historyFindFirst.mockResolvedValue(history);
 		historyFindMany.mockResolvedValue([history]);
-		getAllProfiles.mockResolvedValueOnce([deployedProfile]).mockResolvedValue([beforeProfile]);
-		getProfileById.mockResolvedValueOnce(deployedProfile).mockResolvedValue(beforeProfile);
-		updateProfile.mockImplementation(async () => {
-			callOrder.push("profile-restored");
-		});
+		getAllProfiles.mockResolvedValue([beforeProfile]);
+		getProfileById.mockResolvedValue(beforeProfile);
 		getAllFormats.mockResolvedValue([deployedFormat]);
 		getFormatById.mockResolvedValue(deployedFormat);
-		deleteFormat.mockImplementation(async () => {
-			callOrder.push("format-deleted");
-		});
 
 		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({ success: false, data: { deleted: 0 } });
 		expect(response.json().data.errors[0]).toContain("cannot be deleted safely");
-		expect(callOrder).toEqual(["profile-restored"]);
+		expect(updateProfile).not.toHaveBeenCalled();
 		expect(deleteFormat).not.toHaveBeenCalled();
 		expect(historyUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -842,13 +863,24 @@ describe("deployment history undeploy", () => {
 				where: { id: "history-1" },
 				data: expect.objectContaining({
 					undeployStatus: "PARTIAL",
+					undeployProgress: expect.stringContaining(
+						'"kind":"quality_profile","name":"Profile","outcome":"restored"',
+					),
+				}),
+			}),
+		);
+		expect(historyUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "history-1" },
+				data: expect.objectContaining({
+					undeployStatus: "PARTIAL",
 					undeployProgress: expect.stringContaining('"outcome":"failed"'),
 				}),
 			}),
 		);
 	});
 
-	it("stops before Custom Format deletion and records retryable progress when profile restore fails", async () => {
+	it("stops before Custom Format deletion and records retryable manual profile progress", async () => {
 		const beforeProfile = qualityProfile(null);
 		const deployedProfile = qualityProfile(100);
 		const deployedFormat = { id: 7, name: "Managed CF", specifications: [] };
@@ -880,7 +912,6 @@ describe("deployment history undeploy", () => {
 		historyFindMany.mockResolvedValue([history]);
 		getAllProfiles.mockResolvedValue([deployedProfile]);
 		getProfileById.mockResolvedValue(deployedProfile);
-		updateProfile.mockRejectedValue(new Error("profile write failed"));
 		getAllFormats.mockResolvedValue([deployedFormat]);
 		getFormatById.mockResolvedValue(deployedFormat);
 
@@ -888,13 +919,20 @@ describe("deployment history undeploy", () => {
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({ success: false, data: { deleted: 0 } });
+		expect(response.json().data.errors[0]).toContain(
+			"upstream API has no conditional update",
+		);
+		expect(updateProfile).not.toHaveBeenCalled();
+		expect(getAllFormats).not.toHaveBeenCalled();
 		expect(deleteFormat).not.toHaveBeenCalled();
 		expect(historyUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: { id: "history-1" },
 				data: expect.objectContaining({
 					undeployStatus: "PARTIAL",
-					undeployProgress: expect.stringContaining("profile write failed"),
+					undeployProgress: expect.stringContaining(
+						'"kind":"quality_profile","name":"Profile","outcome":"failed"',
+					),
 				}),
 			}),
 		);

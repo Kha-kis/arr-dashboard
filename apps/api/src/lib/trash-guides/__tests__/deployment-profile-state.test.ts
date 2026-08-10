@@ -183,7 +183,7 @@ describe("rollbackQualityProfileDeployment", () => {
 		expect(update).not.toHaveBeenCalled();
 	});
 
-	it("restores a Radarr profile whose leaf items keep identity inside quality", async () => {
+	it("retains a Radarr profile whose leaf items keep identity inside quality", async () => {
 		const before = completeProfile({
 			items: [
 				{
@@ -207,16 +207,18 @@ describe("rollbackQualityProfileDeployment", () => {
 			},
 		};
 
-		await rollbackQualityProfileDeployment(client as never, {
-			beforeProfile: before,
-			action: "updated",
-			status: "applied",
-			profileId: 4,
-			postStateToken: createQualityProfileStateToken(deployed),
-			intendedPostStateToken: null,
-		});
+		await expect(
+			rollbackQualityProfileDeployment(client as never, {
+				beforeProfile: before,
+				action: "updated",
+				status: "applied",
+				profileId: 4,
+				postStateToken: createQualityProfileStateToken(deployed),
+				intendedPostStateToken: null,
+			}),
+		).rejects.toThrow("cannot be restored safely");
 
-		expect(update).toHaveBeenCalledWith(4, before);
+		expect(update).not.toHaveBeenCalled();
 	});
 
 	it.each([

@@ -191,36 +191,6 @@ describe("rollbackCustomFormatDeployment", () => {
 		expect(update).not.toHaveBeenCalled();
 	});
 
-	it("does not report restore success when the follow-up state still differs", async () => {
-		const before = {
-			id: 4,
-			name: "Existing CF",
-			specifications: [completeSpecification("old")],
-			includeCustomFormatWhenRenaming: false,
-		};
-		const deployed = { ...before, specifications: [completeSpecification("new")] };
-		const client = {
-			customFormat: {
-				getAll: vi.fn().mockResolvedValue([deployed]),
-				getById: vi.fn().mockResolvedValue(deployed),
-				update: vi.fn().mockResolvedValue(undefined),
-			},
-		};
-
-		await expect(
-			rollbackCustomFormatDeployment(
-				client as never,
-				appliedState({
-					beforeFormat: before,
-					action: "updated",
-					resourceId: 4,
-					name: "Existing CF",
-					postStateToken: createUpstreamResourceStateToken(deployed),
-				}),
-			),
-		).rejects.toThrow("did not match its pre-deployment state after restore");
-	});
-
 	it.each([
 		["incomplete", { id: 4, name: "Existing CF" }],
 		[

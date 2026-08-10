@@ -299,7 +299,8 @@ describe("sync rollback route", () => {
 		expect(profileUpdate).not.toHaveBeenCalled();
 	});
 
-	it("restores the quality profile before restoring referenced Custom Formats", async () => {
+	it("records an already-restored profile before refusing an unconditional Custom Format restore", async () => {
+		profileGetById.mockReset().mockResolvedValue(qualityProfile([]));
 		formatGetById
 			.mockResolvedValueOnce({
 				id: 7,
@@ -316,81 +317,127 @@ describe("sync rollback route", () => {
 		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
 
 		expect(response.statusCode).toBe(200);
-		expect(response.json()).toMatchObject({ success: true, restoredCount: 2, deletedCount: 0 });
-		expect(callOrder).toEqual(["profile-restored", "format-restored"]);
+		expect(response.json()).toMatchObject({
+			success: false,
+			restoredCount: 1,
+			deletedCount: 0,
+			failedCount: 1,
+		});
+		expect(response.json().errors[0]).toContain("no conditional update");
+		expect(callOrder).toEqual([]);
+		expect(profileUpdate).not.toHaveBeenCalled();
+		expect(formatUpdate).not.toHaveBeenCalled();
+		expect(formatDelete).not.toHaveBeenCalled();
 		expect(deploymentUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({ data: expect.objectContaining({ undeployStatus: "COMPLETED" }) }),
+			expect.objectContaining({ data: expect.objectContaining({ undeployStatus: "PARTIAL" }) }),
 		);
+		expect(syncUpdate).toHaveBeenCalledWith({
+			where: { backupId: "backup-1", userId, rolledBack: false },
+			data: expect.objectContaining({
+				rollbackStatus: "PARTIAL",
+				rollbackProgress: expect.stringContaining(
+					'"kind":"custom_format","name":"Updated CF","outcome":"failed"',
+				),
+			}),
+		});
 	});
 
 	it.each([
 		["wrapper-sync", "child-sync"],
 		["child-sync", "wrapper-sync"],
-	])("rolls back both histories through %s and makes %s idempotent", async (entryId, siblingId) => {
-		formatGetById
-			.mockReset()
-			.mockResolvedValueOnce({
-				id: 7,
-				name: "Updated CF",
-				specifications: [],
-				includeCustomFormatWhenRenaming: true,
-			})
-			.mockResolvedValue({
-				id: 7,
-				name: "Updated CF",
-				specifications: [],
-				includeCustomFormatWhenRenaming: false,
-			});
-		const rows = new Map<string, Record<string, unknown>>(
-			["wrapper-sync", "child-sync"].map((id) => [
-				id,
-				{
-					...syncRecord,
+	])(
+		"records partial progress through %s, resumes through %s, and makes completion idempotent",
+		async (entryId, siblingId) => {
+			profileGetById.mockReset().mockResolvedValue(qualityProfile([]));
+			formatGetById
+				.mockReset()
+				.mockResolvedValueOnce({
+					id: 7,
+					name: "Updated CF",
+					specifications: [],
+					includeCustomFormatWhenRenaming: true,
+				})
+				.mockResolvedValue({
+					id: 7,
+					name: "Updated CF",
+					specifications: [],
+					includeCustomFormatWhenRenaming: false,
+				});
+			const rows = new Map<string, Record<string, unknown>>(
+				["wrapper-sync", "child-sync"].map((id) => [
 					id,
-					rolledBack: false,
-					rolledBackAt: null,
-					rollbackStatus: null,
-					rollbackProgress: null,
-				},
-			]),
-		);
-		syncFindFirst.mockImplementation(async ({ where }) => rows.get(where.id) ?? null);
-		syncUpdate.mockImplementation(async ({ where, data }) => {
-			let count = 0;
-			for (const row of rows.values()) {
-				if (
-					row.backupId === where.backupId &&
-					row.userId === where.userId &&
-					row.rolledBack === where.rolledBack
-				) {
-					Object.assign(row, data);
-					count++;
+					{
+						...syncRecord,
+						id,
+						rolledBack: false,
+						rolledBackAt: null,
+						rollbackStatus: null,
+						rollbackProgress: null,
+					},
+				]),
+			);
+			syncFindFirst.mockImplementation(async ({ where }) => rows.get(where.id) ?? null);
+			syncUpdate.mockImplementation(async ({ where, data }) => {
+				let count = 0;
+				for (const row of rows.values()) {
+					if (
+						row.backupId === where.backupId &&
+						row.userId === where.userId &&
+						row.rolledBack === where.rolledBack
+					) {
+						Object.assign(row, data);
+						count++;
+					}
 				}
-			}
-			return { count };
-		});
+				return { count };
+			});
 
-		const response = await createInjectAuthenticated(app)("POST", `/${entryId}/rollback`);
+			const response = await createInjectAuthenticated(app)("POST", `/${entryId}/rollback`);
 
-		expect(response.statusCode, response.body).toBe(200);
-		expect(response.json(), response.body).toMatchObject({ success: true });
-		expect(rows.get("wrapper-sync")).toMatchObject({
-			rolledBack: true,
-			rollbackStatus: "COMPLETED",
-		});
-		expect(rows.get("child-sync")).toMatchObject({
-			rolledBack: true,
-			rollbackStatus: "COMPLETED",
-		});
+			expect(response.statusCode, response.body).toBe(200);
+			expect(response.json(), response.body).toMatchObject({ success: false, failedCount: 1 });
+			expect(response.json().errors[0]).toContain("no conditional update");
+			expect(rows.get("wrapper-sync")).toMatchObject({
+				rolledBack: false,
+				rollbackStatus: "PARTIAL",
+			});
+			expect(rows.get("child-sync")).toMatchObject({
+				rolledBack: false,
+				rollbackStatus: "PARTIAL",
+			});
+			expect(profileGetById).toHaveBeenCalledOnce();
+			expect(profileUpdate).not.toHaveBeenCalled();
+			expect(formatUpdate).not.toHaveBeenCalled();
+			expect(formatDelete).not.toHaveBeenCalled();
 
-		profileUpdate.mockClear();
-		formatUpdate.mockClear();
-		const retry = await createInjectAuthenticated(app)("POST", `/${siblingId}/rollback`);
-		expect(retry.statusCode).toBe(400);
-		expect(retry.json()).toMatchObject({ error: "ALREADY_ROLLED_BACK" });
-		expect(profileUpdate).not.toHaveBeenCalled();
-		expect(formatUpdate).not.toHaveBeenCalled();
-	});
+			const retry = await createInjectAuthenticated(app)("POST", `/${siblingId}/rollback`);
+			expect(retry.statusCode, retry.body).toBe(200);
+			expect(retry.json(), retry.body).toMatchObject({
+				success: true,
+				restoredCount: 1,
+				failedCount: 0,
+			});
+			expect(rows.get("wrapper-sync")).toMatchObject({
+				rolledBack: true,
+				rollbackStatus: "COMPLETED",
+			});
+			expect(rows.get("child-sync")).toMatchObject({
+				rolledBack: true,
+				rollbackStatus: "COMPLETED",
+			});
+			expect(profileGetById).toHaveBeenCalledOnce();
+			expect(formatGetById).toHaveBeenCalledTimes(2);
+			expect(profileUpdate).not.toHaveBeenCalled();
+			expect(formatUpdate).not.toHaveBeenCalled();
+			expect(formatDelete).not.toHaveBeenCalled();
+
+			const completedRetry = await createInjectAuthenticated(app)("POST", `/${entryId}/rollback`);
+			expect(completedRetry.statusCode).toBe(400);
+			expect(completedRetry.json()).toMatchObject({ error: "ALREADY_ROLLED_BACK" });
+			expect(profileGetById).toHaveBeenCalledOnce();
+			expect(formatGetById).toHaveBeenCalledTimes(2);
+		},
+	);
 
 	it("uses the fresh leased sync row instead of a stale pre-lock snapshot", async () => {
 		syncFindFirst
@@ -405,15 +452,15 @@ describe("sync rollback route", () => {
 		expect(formatUpdate).not.toHaveBeenCalled();
 	});
 
-	it("does not delete Custom Formats after quality profile restoration fails", async () => {
-		profileUpdate.mockRejectedValueOnce(new Error("profile PUT failed"));
-
+	it("stops before Custom Format work when profile restoration requires an unconditional PUT", async () => {
 		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({ success: false, failedCount: 1 });
-		expect(response.json().errors[0]).toContain("profile PUT failed");
+		expect(response.json().errors[0]).toContain("no conditional update");
+		expect(profileUpdate).not.toHaveBeenCalled();
 		expect(formatUpdate).not.toHaveBeenCalled();
+		expect(formatDelete).not.toHaveBeenCalled();
 		expect(deploymentUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ undeployStatus: "PARTIAL" }) }),
 		);
@@ -421,7 +468,7 @@ describe("sync rollback route", () => {
 			where: { backupId: "backup-1", userId, rolledBack: false },
 			data: expect.objectContaining({
 				rollbackStatus: "PARTIAL",
-				rollbackProgress: expect.stringContaining("profile PUT failed"),
+				rollbackProgress: expect.stringContaining("no conditional update"),
 			}),
 		});
 	});
@@ -440,16 +487,19 @@ describe("sync rollback route", () => {
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
-			success: true,
-			restoredCount: 2,
+			success: false,
+			restoredCount: 1,
 			deletedCount: 0,
+			failedCount: 1,
 		});
-		expect(profileUpdate).toHaveBeenCalledOnce();
+		expect(response.json().errors[0]).toContain("no conditional update");
+		expect(profileUpdate).not.toHaveBeenCalled();
 		expect(formatUpdate).not.toHaveBeenCalled();
+		expect(formatDelete).not.toHaveBeenCalled();
 		expect(syncUpdate).toHaveBeenCalledWith({
 			where: { backupId: "backup-1", userId, rolledBack: false },
 			data: expect.objectContaining({
-				rollbackStatus: "COMPLETED",
+				rollbackStatus: "PARTIAL",
 				rollbackProgress: expect.stringContaining('"key":"custom_format:7"'),
 			}),
 		});
@@ -597,7 +647,7 @@ describe("sync rollback route", () => {
 		});
 	});
 
-	it("unwinds the latest shared Custom Format write before preserving the survivor state", async () => {
+	it("refuses an unconditional shared Custom Format restore and records retryable progress", async () => {
 		const olderSurvivorFormat = {
 			id: 7,
 			name: "Created CF",
@@ -630,6 +680,14 @@ describe("sync rollback route", () => {
 				intendedPostStateToken: createUpstreamResourceStateToken(targetFormat),
 			},
 		];
+		targetBackup.qualityProfileDeployment = {
+			beforeProfile: null,
+			status: "not_started",
+			action: "created",
+			profileId: null,
+			postStateToken: null,
+			intendedPostStateToken: null,
+		};
 		const targetBackupRecord = {
 			id: "backup-1",
 			backupData: JSON.stringify(targetBackup),
@@ -701,13 +759,17 @@ describe("sync rollback route", () => {
 		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
 
 		expect(response.statusCode, response.body).toBe(200);
-		expect(response.json().success).toBe(true);
-		expect(formatUpdate).toHaveBeenCalledWith(7, survivorFormat);
+		expect(response.json()).toMatchObject({ success: false, failedCount: 1 });
+		expect(response.json().errors[0]).toContain("no conditional update");
+		expect(profileUpdate).not.toHaveBeenCalled();
+		expect(formatUpdate).not.toHaveBeenCalled();
+		expect(formatDelete).not.toHaveBeenCalled();
 		expect(syncUpdate).toHaveBeenCalledWith({
 			where: { backupId: "backup-1", userId, rolledBack: false },
 			data: expect.objectContaining({
+				rollbackStatus: "PARTIAL",
 				rollbackProgress: expect.stringContaining(
-					'"kind":"custom_format","name":"Created CF","outcome":"restored"',
+					'"kind":"custom_format","name":"Created CF","outcome":"failed"',
 				),
 			}),
 		});

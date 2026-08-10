@@ -147,33 +147,6 @@ describe("restoreNamingDeployment", () => {
 		);
 	});
 
-	it("does not report restore success when naming follow-up state still differs", async () => {
-		const snapshot = radarrConfig();
-		const deployedConfig = radarrConfig({ standardMovieFormat: "Deployed" });
-		const rawRequest = vi
-			.fn()
-			.mockResolvedValueOnce({
-				ok: true,
-				status: 200,
-				json: vi.fn().mockResolvedValue(deployedConfig),
-			})
-			.mockResolvedValueOnce({ ok: true, status: 202 })
-			.mockResolvedValueOnce({
-				ok: true,
-				status: 200,
-				json: vi.fn().mockResolvedValue(deployedConfig),
-			});
-
-		await expect(
-			restoreNamingDeployment(
-				{ rawRequest } as never,
-				{ service: "RADARR" } as never,
-				snapshot,
-				createUpstreamResourceStateToken(deployedConfig),
-			),
-		).rejects.toThrow("did not match its pre-deployment state after restore");
-	});
-
 	it("refuses to overwrite naming configuration changed after deployment", async () => {
 		const rawRequest = vi.fn().mockResolvedValue({
 			ok: true,
