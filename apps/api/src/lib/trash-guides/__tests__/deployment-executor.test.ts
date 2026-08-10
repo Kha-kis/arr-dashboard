@@ -1253,6 +1253,76 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		);
 	});
 
+	it("accepts read-only custom format names added by ARR after a profile update", async () => {
+		const profile = {
+			id: 1,
+			name: "Any",
+			formatItems: [{ format: 42, name: "Managed CF", score: 10 }],
+		};
+		const postWriteProfile = {
+			...profile,
+			formatItems: [{ format: 42, name: "Managed CF", score: 20 }],
+		};
+		const update = vi.fn().mockResolvedValue(postWriteProfile);
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([{ id: 42, name: "Managed CF" }]),
+			},
+			qualityProfile: {
+				getById: vi
+					.fn()
+					.mockResolvedValueOnce(profile)
+					.mockResolvedValueOnce(profile)
+					.mockResolvedValueOnce(postWriteProfile),
+				update,
+			},
+		};
+		const prisma = {
+			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+			templateQualityProfileMapping: {
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+				upsert: vi.fn().mockResolvedValue({}),
+			},
+			$transaction: vi.fn(async (operations: Array<Promise<unknown>>) => Promise.all(operations)),
+		};
+		const executor = new DeploymentExecutorService(prisma as never, {} as never);
+		const syncQualityProfile = (
+			executor as unknown as {
+				syncQualityProfile: (...args: unknown[]) => Promise<unknown>;
+			}
+		).syncQualityProfile.bind(executor);
+
+		await expect(
+			syncQualityProfile(
+				client,
+				{ qualityProfile: { trash_score_set: "default" } },
+				[
+					{
+						trashId: "managed-trash-id",
+						name: "Managed CF",
+						originalConfig: { trash_scores: { default: 20 } },
+					},
+				],
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				{ "managed-trash-id": "use_template" },
+				"Any",
+				profile,
+				undefined,
+				[],
+				new Map(),
+				["instance-1"],
+			),
+		).resolves.toMatchObject({ errors: [] });
+
+		expect(update).toHaveBeenCalledWith(
+			1,
+			expect.objectContaining({ formatItems: [{ format: 42, score: 20 }] }),
+		);
+	});
+
 	it("defers selected-instance mapping finalization without changing an alias", async () => {
 		const profile = { id: 2, name: "Any", formatItems: [] };
 		const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
