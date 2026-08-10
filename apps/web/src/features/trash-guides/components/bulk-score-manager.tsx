@@ -42,6 +42,10 @@ import {
 } from "../../../hooks/api/useQualityProfileScores";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import type {
+	BulkOverridesResponse,
+	ScoreRecoveryPlan,
+} from "../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
@@ -174,6 +178,8 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 	const [allOverrides, setAllOverrides] = useState<
 		Map<string, { customFormatId: number; score: number }>
 	>(new Map());
+	const [scoreRecoveryPlans, setScoreRecoveryPlans] = useState<ScoreRecoveryPlan[]>([]);
+	const [retryingProfileId, setRetryingProfileId] = useState<number | null>(null);
 
 	// Create override map for quick lookups: `${profileId}-${cfId}` → has override
 	const overrideMap = useMemo(() => {
@@ -208,7 +214,7 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 					throw new Error(`Failed to fetch bulk overrides: ${response.status}`);
 				}
 
-				const data = await response.json();
+				const data = (await response.json()) as BulkOverridesResponse;
 
 				const newOverrides = new Map<string, { customFormatId: number; score: number }>();
 
@@ -226,10 +232,12 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 				}
 
 				setAllOverrides(newOverrides);
+				setScoreRecoveryPlans(data?.success ? (data.recoveryPlans ?? []) : []);
 			} catch (error) {
 				if (error instanceof Error && error.name === "AbortError") {
 					return;
 				}
+				setScoreRecoveryPlans([]);
 				toast.error("Failed to fetch quality profile overrides");
 			}
 		},
@@ -248,6 +256,8 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		setSelectedCFs(new Set());
 		setQualityProfileIds([]);
 		setAllOverrides(new Map());
+		setScoreRecoveryPlans([]);
+		setRetryingProfileId(null);
 	}, [instanceId]);
 
 	// Sync scores from query data and reapply retained local edits.
@@ -402,6 +412,31 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		});
 		if (result.successCount > 0) {
 			onOperationComplete?.();
+		}
+	};
+
+	const handleRecoveryRetry = async (plan: ScoreRecoveryPlan) => {
+		if (!instanceId || !plan.retryAction || retryingProfileId !== null) return;
+		setRetryingProfileId(plan.qualityProfileId);
+		try {
+			await bulkUpdateScores.mutateAsync([
+				{
+					entryKey: `${instanceId}-${plan.qualityProfileId}`,
+					profileId: plan.qualityProfileId,
+					instanceId,
+					changes: plan.retryAction.scoreUpdates.map((update) => ({
+						cfTrashId: `cf-${update.customFormatId}`,
+						score: update.score,
+					})),
+					recoveryToken: plan.retryAction.recoveryToken,
+				},
+			]);
+			await fetchOverridesForProfiles(qualityProfileIds);
+			onOperationComplete?.();
+		} catch (error) {
+			toast.error(getErrorMessage(error, "The exact score retry failed"));
+		} finally {
+			setRetryingProfileId(null);
 		}
 	};
 
@@ -660,6 +695,64 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 					)}
 				</div>
 			</div>
+
+			{scoreRecoveryPlans.length > 0 && (
+				<div className="rounded-2xl border border-warning/40 bg-warning/10 p-4">
+					<div className="flex items-start gap-3">
+						<AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+						<div className="min-w-0 flex-1 space-y-3">
+							<div>
+								<p className="font-medium text-foreground">Unfinished score updates</p>
+								<p className="text-sm text-muted-foreground">
+									A previous ARR write has an uncertain result. Resolve it before making other score
+									or deployment changes.
+								</p>
+							</div>
+							{scoreRecoveryPlans.map((plan) => {
+								const profileName =
+									scores
+										.flatMap((score) => score.templateScores)
+										.find(
+											(templateScore) =>
+												parseInt(templateScore.templateId.split("-").pop() || "0", 10) ===
+												plan.qualityProfileId,
+										)?.qualityProfileName ?? `Profile ${plan.qualityProfileId}`;
+								return (
+									<div
+										key={plan.qualityProfileId}
+										className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/50 bg-card/60 p-3"
+									>
+										<div>
+											<p className="text-sm font-medium text-foreground">{profileName}</p>
+											<p className="text-xs text-muted-foreground">
+												{plan.entries.length} unresolved score operation
+												{plan.entries.length === 1 ? "" : "s"}
+											</p>
+										</div>
+										{plan.retryable && plan.retryAction ? (
+											<button
+												type="button"
+												onClick={() => void handleRecoveryRetry(plan)}
+												disabled={isScoreSavePending || retryingProfileId !== null}
+												className="inline-flex items-center gap-2 rounded-xl border border-warning/50 bg-warning/15 px-4 py-2 text-sm font-medium text-foreground disabled:opacity-50"
+											>
+												{retryingProfileId === plan.qualityProfileId && (
+													<Loader2 className="h-4 w-4 animate-spin" />
+												)}
+												Retry score update for {profileName}
+											</button>
+										) : (
+											<p className="text-sm font-medium text-warning">
+												Manual reconciliation required
+											</p>
+										)}
+									</div>
+								);
+							})}
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* Save/Discard Changes Bar */}
 			{modifiedScores.size > 0 && (

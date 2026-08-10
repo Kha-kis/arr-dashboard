@@ -1,5 +1,5 @@
 import type { PrismaClient } from "../prisma.js";
-import { AppValidationError } from "../errors.js";
+import { AppValidationError, ConflictError } from "../errors.js";
 import {
 	type DeploymentBackupState,
 	hasPendingDeploymentMutation,
@@ -224,7 +224,7 @@ export async function assertNoActiveDeploymentOwnership(
 	const seen = new Set<string>();
 	for (const row of [...syncRows, ...deploymentRows]) {
 		if (!row.backup) {
-			throw new AppValidationError(
+			throw new ConflictError(
 				"This ARR connection has active deployment ownership without verifiable rollback data. Resolve that history before changing the connection.",
 			);
 		}
@@ -234,7 +234,7 @@ export async function assertNoActiveDeploymentOwnership(
 		try {
 			state = parseDeploymentBackupState(row.backup.backupData);
 		} catch {
-			throw new AppValidationError(
+			throw new ConflictError(
 				"This ARR connection has active deployment ownership with legacy or invalid rollback data. Resolve that history before changing the connection.",
 			);
 		}
@@ -244,7 +244,7 @@ export async function assertNoActiveDeploymentOwnership(
 			(state.namingDeployment && state.namingDeployment.status !== "not_started") ||
 			state.managedCustomFormatsCaptured
 		) {
-			throw new AppValidationError(
+			throw new ConflictError(
 				"This ARR connection has active deployment ownership. Roll back or undeploy it before changing the connection.",
 			);
 		}

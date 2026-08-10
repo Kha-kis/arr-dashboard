@@ -126,6 +126,34 @@ describe("useBulkUpdateScores", () => {
 		queryClient.clear();
 	});
 
+	it("forwards the durable recovery token on an exact retry", async () => {
+		apiMocks.updateQualityProfileScores.mockResolvedValue(successfulResponse);
+		const queryClient = new QueryClient({
+			defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+		});
+		const { result } = renderHook(() => useBulkUpdateScores(), {
+			wrapper: createWrapper(queryClient),
+		});
+
+		await act(async () => {
+			await result.current.mutateAsync([
+				{
+					entryKey: "instance-1-101",
+					instanceId: "instance-1",
+					profileId: 101,
+					changes: [{ cfTrashId: "cf-10", score: 75 }],
+					recoveryToken: "a".repeat(64),
+				},
+			]);
+		});
+
+		expect(apiMocks.updateQualityProfileScores).toHaveBeenCalledWith("instance-1", 101, {
+			recoveryToken: "a".repeat(64),
+			scoreUpdates: [{ customFormatId: 10, score: 75 }],
+		});
+		queryClient.clear();
+	});
+
 	it("returns typed partial results and refreshes every successful profile", async () => {
 		apiMocks.updateQualityProfileScores
 			.mockResolvedValueOnce(successfulResponse)

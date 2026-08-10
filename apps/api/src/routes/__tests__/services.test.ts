@@ -101,6 +101,38 @@ function makeInstance(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function makeAppliedDeploymentBackup() {
+	return {
+		id: "backup-active",
+		backupData: JSON.stringify({
+			schemaVersion: 2,
+			endpointKey: "endpoint",
+			connectionStateToken: "connection",
+			customFormats: [],
+			customFormatDeployments: [
+				{
+					beforeFormat: null,
+					action: "created",
+					resourceId: 7,
+					name: "Created CF",
+					status: "applied",
+					postStateToken: "created-post",
+				},
+			],
+			managedCustomFormats: [],
+			managedCustomFormatsCaptured: true,
+			qualityProfileDeployment: {
+				beforeProfile: null,
+				status: "not_started",
+				action: "updated",
+				profileId: null,
+				postStateToken: null,
+			},
+			namingDeployment: null,
+		}),
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Mock Prisma client
 // ---------------------------------------------------------------------------
@@ -507,6 +539,31 @@ describe("PUT /services/:id", () => {
 		expect(mockPrisma.serviceInstance.updateMany).not.toHaveBeenCalled();
 	});
 
+	it("blocks an ARR connection replacement while a deployment still owns upstream state", async () => {
+		const existing = makeInstance({
+			service: "RADARR",
+			baseUrl: "http://radarr:7878",
+		});
+		mockRequireInstance.mockResolvedValue(existing);
+		mockBuildUpdateData.mockReturnValue({ baseUrl: "http://replacement-radarr:7878" });
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([existing]);
+		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValue([
+			{
+				status: "SUCCESS",
+				backupId: "backup-active",
+				backup: makeAppliedDeploymentBackup(),
+			},
+		]);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { baseUrl: "http://replacement-radarr:7878" },
+		});
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain("active deployment ownership");
+		expect(mockPrisma.serviceInstance.updateMany).not.toHaveBeenCalled();
+	});
+
 	it("atomically clears Jellyfin cache state after a connection update", async () => {
 		const order: string[] = [];
 		mockRequireInstance.mockResolvedValue(
@@ -900,6 +957,129 @@ describe("DELETE /services/:id", () => {
 		expect(res.statusCode).toBe(204);
 		expect(mockPrisma.templateQualityProfileMapping.updateMany).not.toHaveBeenCalled();
 		expect(mockPrisma.instanceQualityProfileOverride.updateMany).not.toHaveBeenCalled();
+	});
+
+	it("does not migrate saved ARR state to a distinct endpoint that reuses credentials", async () => {
+		const source = makeInstance({
+			id: "inst-1",
+			service: "RADARR",
+			baseUrl: "http://radarr-a:7878",
+			connectionGeneration: 2,
+		});
+		const distinct = makeInstance({
+			id: "inst-2",
+			service: "RADARR",
+			baseUrl: "http://radarr-b:7878",
+			connectionGeneration: 5,
+		});
+		mockRequireInstance.mockResolvedValue(source);
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([source, distinct]);
+		mockPrisma.templateQualityProfileMapping.findMany.mockResolvedValue([
+			{
+				id: "mapping-source",
+				instanceId: source.id,
+				templateId: "template-1",
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "notify",
+				managedCustomFormatsCaptured: false,
+				managedCustomFormats: null,
+				connectionGeneration: source.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(source),
+				template: { userId: "user-1" },
+				instance: { userId: "user-1" },
+			},
+		]);
+
+		const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+		expect(res.statusCode).toBe(409);
+		expect(mockPrisma.templateQualityProfileMapping.updateMany).not.toHaveBeenCalled();
+		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
+	it("rejects alias deletion when duplicate mappings disagree about deployment authority", async () => {
+		const source = makeInstance({
+			id: "inst-1",
+			service: "SONARR",
+			baseUrl: "http://sonarr:8989",
+			connectionGeneration: 2,
+		});
+		const survivor = makeInstance({
+			id: "inst-2",
+			service: "SONARR",
+			baseUrl: "http://sonarr:8989/",
+			connectionGeneration: 5,
+		});
+		mockRequireInstance.mockResolvedValue(source);
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([source, survivor]);
+		mockPrisma.templateQualityProfileMapping.findMany.mockResolvedValue([
+			{
+				id: "mapping-source",
+				instanceId: source.id,
+				templateId: "template-1",
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "auto",
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: '[{"resourceId":7}]',
+				connectionGeneration: source.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(source),
+				template: { userId: "user-1" },
+				instance: { userId: "user-1" },
+			},
+			{
+				id: "mapping-survivor",
+				instanceId: survivor.id,
+				templateId: "template-1",
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "notify",
+				managedCustomFormatsCaptured: false,
+				managedCustomFormats: null,
+				connectionGeneration: survivor.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(survivor),
+				template: { userId: "user-1" },
+				instance: { userId: "user-1" },
+			},
+		]);
+
+		const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain("conflicting deployment authority");
+		expect(mockPrisma.templateQualityProfileMapping.deleteMany).not.toHaveBeenCalled();
+		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
+	it("keeps durable deployment history instead of cascading it during alias deletion", async () => {
+		const source = makeInstance({
+			id: "inst-1",
+			service: "RADARR",
+			baseUrl: "http://radarr:7878",
+		});
+		const survivor = makeInstance({
+			id: "inst-2",
+			service: "RADARR",
+			baseUrl: "http://radarr:7878/",
+		});
+		mockRequireInstance.mockResolvedValue(source);
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([source, survivor]);
+		mockPrisma.serviceInstance.findFirst.mockResolvedValueOnce(source);
+		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValue([
+			{
+				id: "deployment-1",
+				status: "SUCCESS",
+				rolledBack: false,
+				undeployStatus: null,
+			},
+		]);
+
+		const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain("deployment history");
+		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
 	});
 
 	it("never migrates ARR state to another user's equivalent alias", async () => {

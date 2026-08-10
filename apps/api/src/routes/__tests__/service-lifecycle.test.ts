@@ -80,6 +80,8 @@ function createPrismaStub() {
 				.map((row) => ({ ...row, tags: [] }));
 		}),
 		findFirst: vi.fn(async ({ where }: any) => {
+			// This lifecycle fake has no durable TRaSH deployment relations.
+			if (where.OR) return null;
 			for (const row of instances.values()) {
 				if (where.id && row.id !== where.id) continue;
 				if (where.userId && row.userId !== where.userId) continue;

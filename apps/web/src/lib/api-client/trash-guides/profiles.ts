@@ -77,9 +77,37 @@ export type InstanceOverride = {
 	updatedAt: string;
 };
 
+export type ScoreRecoveryPlan = {
+	qualityProfileId: number;
+	entries: Array<{
+		customFormatId: number;
+		operation: string | null;
+		intendedScore: number | null;
+		status: string;
+	}>;
+	retryable: boolean;
+	requiresManualReconciliation: boolean;
+	retryAction: {
+		method: "PATCH";
+		recoveryToken: string;
+		scoreUpdates: ScoreUpdate[];
+	} | null;
+};
+
 export type GetOverridesResponse = {
 	success: boolean;
 	overrides: InstanceOverride[];
+	recoveryPlans: ScoreRecoveryPlan[];
+};
+
+export type BulkOverridesResponse = {
+	success: boolean;
+	overridesByProfile: Record<
+		string,
+		Array<{ customFormatId: number; score: number; updatedAt: string }>
+	>;
+	totalOverrides: number;
+	recoveryPlans: ScoreRecoveryPlan[];
 };
 
 export type PromoteOverridePayload = {
@@ -122,6 +150,7 @@ export type ScoreUpdate = {
 
 export type UpdateProfileScoresPayload = {
 	scoreUpdates: ScoreUpdate[];
+	recoveryToken?: string;
 };
 
 export type UpdateProfileScoresResponse = {

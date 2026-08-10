@@ -25,10 +25,13 @@ import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
 import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
+import { assertNoActiveDeploymentOwnership } from "../lib/trash-guides/deployment-operation-gate.js";
 import {
+	assertEquivalentDeploymentMappingAuthority,
 	createDeploymentConnectionBinding,
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
+	getEquivalentServiceInstanceIds,
 	isCurrentDeploymentConnectionMapping,
 	normalizeDeploymentBaseUrl,
 } from "../lib/trash-guides/deployment-target.js";
@@ -211,19 +214,42 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					const aliases = await tx.serviceInstance.findMany({
 						where: { userId, service: current.service },
 					});
-					const endpointAliases = aliases.filter(
-						(alias) =>
-							alias.userId === userId &&
-							alias.service === current.service &&
-							app.arrClientFactory.createConnectionCredentialIdentity(alias) ===
-								currentCredentialIdentity,
-					);
+					const aliasesWithIdentity = aliases.map((alias) => ({
+						...alias,
+						credentialIdentity: app.arrClientFactory.createConnectionCredentialIdentity(alias),
+					}));
+					const endpointInstanceIds = getEquivalentServiceInstanceIds(aliasesWithIdentity, {
+						...current,
+						credentialIdentity: currentCredentialIdentity,
+					});
+					const endpointAliases = aliases.filter((alias) => endpointInstanceIds.includes(alias.id));
 					if (!endpointAliases.some((alias) => alias.id === current.id)) {
 						throw new ConflictError(
 							"The ARR alias topology changed before deletion could be authorized.",
 						);
 					}
-					const endpointInstanceIds = endpointAliases.map((alias) => alias.id);
+					const durableDeploymentState = await tx.serviceInstance.findFirst({
+						where: {
+							id: current.id,
+							userId,
+							OR: [
+								{ trashSyncHistory: { some: {} } },
+								{ trashBackups: { some: {} } },
+								{ trashSchedules: { some: {} } },
+								{ deploymentHistory: { some: {} } },
+								{ standaloneCFDeployments: { some: {} } },
+								{ qualitySizeMapping: { isNot: null } },
+								{ namingConfig: { isNot: null } },
+								{ namingDeployHistory: { some: {} } },
+							],
+						},
+						select: { id: true },
+					});
+					if (durableDeploymentState) {
+						throw new ConflictError(
+							"This ARR alias has deployment history or managed configuration that would be lost by deletion. Remove or migrate that state before deleting the service.",
+						);
+					}
 					const [mappings, overrides] = await Promise.all([
 						tx.templateQualityProfileMapping.findMany({
 							where: { instanceId: { in: endpointInstanceIds } },
@@ -260,12 +286,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						(override) => override.instanceId === current.id,
 					);
 					const hasMigratableState = sourceMappings.length > 0 || sourceOverrides.length > 0;
-					const exactSurvivors = endpointAliases.filter(
-						(alias) =>
-							alias.id !== current.id &&
-							app.arrClientFactory.createConnectionCredentialIdentity(alias) ===
-								currentCredentialIdentity,
-					);
+					const exactSurvivors = endpointAliases.filter((alias) => alias.id !== current.id);
 					if (hasMigratableState && exactSurvivors.length !== 1) {
 						throw new ConflictError(
 							"Saved profile state cannot be migrated because no single exact surviving ARR alias exists.",
@@ -319,14 +340,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 								(candidate) => candidate.qualityProfileId === mapping.qualityProfileId,
 							);
 							if (target) {
-								if (
-									target.templateId !== mapping.templateId ||
-									target.qualityProfileName !== mapping.qualityProfileName
-								) {
+								if (target.templateId !== mapping.templateId) {
 									throw new ConflictError(
 										"Equivalent ARR aliases have conflicting template mappings.",
 									);
 								}
+								assertEquivalentDeploymentMappingAuthority([mapping, target]);
 								const deleted = await tx.templateQualityProfileMapping.deleteMany({
 									where: {
 										id: mapping.id,
@@ -600,6 +619,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							"This ARR endpoint has unresolved score intent. Reconcile it before changing the connection.",
 						);
 					}
+					await assertNoActiveDeploymentOwnership(app.prisma, userId, equivalentInstanceIds);
 				}
 				const serviceUpdateData = arrConnectionChanged
 					? {

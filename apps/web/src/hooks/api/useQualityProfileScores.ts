@@ -15,6 +15,7 @@ export type BulkScoreUpdateEntry = {
 	profileId: number;
 	instanceId: string;
 	changes: Array<{ cfTrashId: string; score: number }>;
+	recoveryToken?: string;
 };
 
 /**
@@ -147,12 +148,14 @@ export function useBulkUpdateScores() {
 			}
 
 			for (const entry of preparedEntries) {
-				const { entryKey, profileId, instanceId, scoreUpdates } = entry;
+				const { entryKey, profileId, instanceId, recoveryToken, scoreUpdates } = entry;
 
 				try {
-					const response = await updateQualityProfileScores(instanceId, profileId, {
-						scoreUpdates,
-					});
+					const response = await updateQualityProfileScores(
+						instanceId,
+						profileId,
+						recoveryToken ? { recoveryToken, scoreUpdates } : { scoreUpdates },
+					);
 
 					results.push({
 						entryKey,

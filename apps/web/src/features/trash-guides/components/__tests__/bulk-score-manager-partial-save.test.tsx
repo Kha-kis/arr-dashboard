@@ -364,4 +364,65 @@ describe("BulkScoreManager partial saves", () => {
 		await waitFor(() => expect(hookMocks.bulkScoresLoaded).toHaveBeenCalledWith("instance-1", 1));
 		expect(screen.getAllByRole("spinbutton")[1]).toHaveValue(125);
 	});
+
+	it("restores an exact score retry from durable recovery data after reload", async () => {
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				success: true,
+				overridesByProfile: {},
+				recoveryPlans: [
+					{
+						qualityProfileId: 101,
+						entries: [
+							{
+								customFormatId: 10,
+								operation: "SET_SCORE",
+								intendedScore: 75,
+								status: "UNCERTAIN",
+							},
+						],
+						retryable: true,
+						requiresManualReconciliation: false,
+						retryAction: {
+							method: "PATCH",
+							recoveryToken: "a".repeat(64),
+							scoreUpdates: [{ customFormatId: 10, score: 75 }],
+						},
+					},
+				],
+			}),
+		} as Response);
+		hookMocks.bulkUpdateScores.mockResolvedValue({
+			totalProfiles: 1,
+			successCount: 1,
+			failureCount: 0,
+			results: [
+				{
+					entryKey: "instance-1-101",
+					instanceId: "instance-1",
+					profileId: 101,
+					success: true,
+					response: { success: true, message: "Recovered", updatedCount: 1 },
+				},
+			],
+		});
+
+		renderWithQueryClient(<BulkScoreManager userId="user-1" />);
+		await selectInstanceAndLoadScores();
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Retry score update for Profile 101" }),
+		);
+
+		await waitFor(() => expect(hookMocks.bulkUpdateScores).toHaveBeenCalledTimes(1));
+		expect(hookMocks.bulkUpdateScores).toHaveBeenCalledWith([
+			{
+				entryKey: "instance-1-101",
+				instanceId: "instance-1",
+				profileId: 101,
+				changes: [{ cfTrashId: "cf-10", score: 75 }],
+				recoveryToken: "a".repeat(64),
+			},
+		]);
+	});
 });
