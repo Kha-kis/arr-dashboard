@@ -145,6 +145,7 @@ export interface PlexEpisodeItem {
 const DEFAULT_TIMEOUT = 15_000;
 const SAFETY_PAGE_SIZE = 200;
 const SAFETY_MAX_ITEMS = 100_000;
+const HISTORY_SORT = "viewedAt:desc";
 
 /**
  * Extract a ratingKey from a Plex path like "/library/metadata/65486".
@@ -434,7 +435,7 @@ export class PlexClient {
 			const take = Math.min(pageSize, remaining);
 
 			const data = await this.request(
-				`/status/sessions/history/all?sort=viewedAt:desc,historyKey:desc&X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${take}`,
+				`/status/sessions/history/all?sort=${HISTORY_SORT}&X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${take}`,
 				{ schema: plexHistoryResponseSchema },
 			);
 
