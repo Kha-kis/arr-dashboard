@@ -111,6 +111,18 @@ describe("deployment preview authority", () => {
 		).rejects.toThrow("source ARR connection changed");
 	});
 
+	it("blocks a repointed source alias before falling back through an original alias", async () => {
+		const selectedAlias = { ...instance, id: "instance-alias" };
+		const repointedSource = { ...instance, baseUrl: "http://other-radarr:7878" };
+
+		await expect(
+			createService({
+				instance: selectedAlias,
+				instances: [repointedSource, selectedAlias],
+			}).generatePreview("template-1", selectedAlias.id, "user-1"),
+		).rejects.toThrow("source ARR connection changed");
+	});
+
 	it("matches a differently named ARR Custom Format by the shared trailing UUID", async () => {
 		const preview = await createService().generatePreview("template-1", "instance-1", "user-1");
 

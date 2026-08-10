@@ -328,20 +328,29 @@ export function isVerifiedClonedProfileSourceConnection(args: {
 	sourceInstanceId?: string | null;
 	sourceConnectionStateToken?: string | null;
 	equivalentInstanceIds: string[];
-	instance: DeploymentConnectionInstance;
+	sourceInstance?: DeploymentConnectionInstance | null;
 }): boolean {
-	if (!args.sourceInstanceId || !args.equivalentInstanceIds.includes(args.sourceInstanceId)) {
+	if (!args.sourceInstanceId) {
 		return false;
 	}
 	if (!args.sourceConnectionStateToken) {
-		return false;
+		throw new ConflictError(
+			"This cloned profile predates verified source-connection binding. Recreate the template from the current source profile before deploying it back to that ARR endpoint.",
+		);
 	}
-	if (createDeploymentConnectionStateToken(args.instance) !== args.sourceConnectionStateToken) {
+	if (!args.sourceInstance || args.sourceInstance.id !== args.sourceInstanceId) {
+		throw new ConflictError(
+			"The cloned profile's recorded source ARR instance is unavailable. Recreate the template from the current source profile before deploying it back to that endpoint.",
+		);
+	}
+	if (
+		createDeploymentConnectionStateToken(args.sourceInstance) !== args.sourceConnectionStateToken
+	) {
 		throw new ConflictError(
 			"The cloned profile's source ARR connection changed after the template was created. Recreate the template from the current connection before deploying it back to that source instance.",
 		);
 	}
-	return true;
+	return args.equivalentInstanceIds.includes(args.sourceInstanceId);
 }
 
 /** Bind database ownership records to the exact configured ARR connection. */

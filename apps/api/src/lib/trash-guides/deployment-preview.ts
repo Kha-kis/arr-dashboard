@@ -551,7 +551,9 @@ export class DeploymentPreviewService {
 			sourceInstanceId: templateConfig.completeQualityProfile?.sourceInstanceId,
 			sourceConnectionStateToken: templateConfig.completeQualityProfile?.sourceConnectionStateToken,
 			equivalentInstanceIds,
-			instance,
+			sourceInstance: aliases.find(
+				(alias) => alias.id === templateConfig.completeQualityProfile?.sourceInstanceId,
+			),
 		});
 		const resolvedTarget = resolveDeploymentTarget({
 			profiles: instanceQualityProfiles,

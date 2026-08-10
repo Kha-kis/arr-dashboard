@@ -212,7 +212,11 @@ export const TemplateCreation = ({
 	// In edit mode, trashId is undefined and we don't need profile data from TRaSH Guides
 	// For cloned profiles, we fetch from the instance, not TRaSH cache
 	const hasTrashId = !!wizardState.selectedProfile.trashId;
-	const { data, isLoading } = useQuery({
+	const {
+		data,
+		isLoading,
+		error: profileDetailsError,
+	} = useQuery({
 		queryKey: isCloned
 			? qualityProfileKeys.clone.sourceReview(wizardState.selectedProfile.trashId ?? "")
 			: ["quality-profile-details", serviceType, wizardState.selectedProfile.trashId],
@@ -231,6 +235,9 @@ export const TemplateCreation = ({
 		// Skip fetch in edit mode (no trashId) - we already have all data from the template
 		enabled: hasTrashId && !isEditMode,
 	});
+	const clonedSourceStateToken = isCloned ? data?.data?.sourceStateToken : undefined;
+	const clonedSourceReviewUnavailable =
+		isCloned && !isEditMode && !isLoading && !clonedSourceStateToken;
 
 	// Fetch CF Groups from cache for edit mode categorization
 	// This helps determine which CFs belong to which groups even when template data is incomplete
@@ -322,7 +329,7 @@ export const TemplateCreation = ({
 
 				// Extract profile config from the data we fetched
 				const profileData = data?.data?.profile || data?.profile;
-				const sourceStateToken = data?.data?.sourceStateToken;
+				const sourceStateToken = clonedSourceStateToken;
 				if (!sourceStateToken) {
 					throw new Error(
 						"Cannot create template: the cloned profile review expired. Refresh the profile and try again.",
@@ -791,20 +798,27 @@ export const TemplateCreation = ({
 			</div>
 
 			{/* Error/Success Messages */}
-			{(importMutation.isError || updateMutation.isError || clonedMutation.isError) && (
+			{(importMutation.isError ||
+				updateMutation.isError ||
+				clonedMutation.isError ||
+				clonedSourceReviewUnavailable) && (
 				<Alert variant="danger">
 					<AlertDescription>
-						{importMutation.error instanceof Error
-							? importMutation.error.message
-							: updateMutation.error instanceof Error
-								? updateMutation.error.message
-								: clonedMutation.error instanceof Error
-									? clonedMutation.error.message
-									: isEditMode
-										? "Failed to update template"
-										: isCloned
-											? "Failed to create template from cloned profile"
-											: "Failed to import quality profile"}
+						{clonedSourceReviewUnavailable
+							? profileDetailsError instanceof Error
+								? profileDetailsError.message
+								: "The cloned profile review is unavailable. Refresh or go back and select the source profile again."
+							: importMutation.error instanceof Error
+								? importMutation.error.message
+								: updateMutation.error instanceof Error
+									? updateMutation.error.message
+									: clonedMutation.error instanceof Error
+										? clonedMutation.error.message
+										: isEditMode
+											? "Failed to update template"
+											: isCloned
+												? "Failed to create template from cloned profile"
+												: "Failed to import quality profile"}
 					</AlertDescription>
 				</Alert>
 			)}
@@ -845,6 +859,7 @@ export const TemplateCreation = ({
 						disabled={
 							!templateName.trim() ||
 							selectedCFs.length === 0 ||
+							clonedSourceReviewUnavailable ||
 							importMutation.isPending ||
 							updateMutation.isPending ||
 							clonedMutation.isPending

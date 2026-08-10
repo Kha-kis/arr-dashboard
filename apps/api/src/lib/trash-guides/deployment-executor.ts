@@ -1875,7 +1875,9 @@ export class DeploymentExecutorService {
 				sourceConnectionStateToken:
 					templateConfig.completeQualityProfile?.sourceConnectionStateToken,
 				equivalentInstanceIds,
-				instance,
+				sourceInstance: serviceAliases.find(
+					(alias) => alias.id === templateConfig.completeQualityProfile?.sourceInstanceId,
+				),
 			});
 			const resolvedTarget = resolveDeploymentTarget({
 				profiles: allProfiles,

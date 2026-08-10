@@ -195,6 +195,49 @@ describe("deployment execution authority", () => {
 		expect(createBackup).not.toHaveBeenCalled();
 	});
 
+	it("rejects a repointed cloned source before execution can use an original alias", async () => {
+		const selectedAlias = { ...instance, id: "instance-alias" };
+		const repointedSource = { ...instance, baseUrl: "http://other-radarr:7878" };
+		const clonedTemplate = {
+			...template,
+			configData: JSON.stringify({
+				customFormats: [],
+				completeQualityProfile: {
+					sourceInstanceId: instance.id,
+					sourceConnectionStateToken: createDeploymentConnectionStateToken(instance),
+					sourceProfileId: profile.id,
+				},
+			}),
+		};
+		const { executor, prisma, createBackup } = createFixture([]);
+		prisma.serviceInstance.findFirst.mockResolvedValue(selectedAlias);
+		prisma.serviceInstance.findMany.mockResolvedValue([repointedSource, selectedAlias]);
+		const privateExecutor = executor as unknown as {
+			validateAndPrepareDeployment: (...args: unknown[]) => Promise<unknown>;
+		};
+		vi.mocked(privateExecutor.validateAndPrepareDeployment).mockResolvedValue({
+			template: clonedTemplate,
+			instance: selectedAlias,
+			templateConfig: JSON.parse(clonedTemplate.configData),
+			templateCFs: [],
+			overridesForInstance: {},
+			effectiveQualityConfig: undefined,
+			usingQualityOverride: false,
+		} as never);
+
+		await expect(
+			executor.deploySingleInstance(
+				clonedTemplate.id,
+				selectedAlias.id,
+				"user-1",
+				"notify",
+				undefined,
+				"review-token",
+			),
+		).rejects.toThrow("source ARR connection changed");
+		expect(createBackup).not.toHaveBeenCalled();
+	});
+
 	it("does not rebind a legacy mapping before backup succeeds", async () => {
 		const legacyMapping = currentMapping({
 			connectionGeneration: 0,

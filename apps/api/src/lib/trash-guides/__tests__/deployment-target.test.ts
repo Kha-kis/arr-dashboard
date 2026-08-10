@@ -39,23 +39,23 @@ describe("resolveDeploymentTarget", () => {
 				sourceInstanceId: "instance-1",
 				sourceConnectionStateToken,
 				equivalentInstanceIds: ["instance-1"],
-				instance: sourceInstance,
+				sourceInstance,
 			}),
 		).toBe(true);
-		expect(
+		expect(() =>
 			isVerifiedClonedProfileSourceConnection({
 				sourceInstanceId: "instance-1",
 				sourceConnectionStateToken: undefined,
 				equivalentInstanceIds: ["instance-1"],
-				instance: sourceInstance,
+				sourceInstance,
 			}),
-		).toBe(false);
+		).toThrow("predates verified source-connection binding");
 		expect(
 			isVerifiedClonedProfileSourceConnection({
 				sourceInstanceId: "other-instance",
 				sourceConnectionStateToken,
 				equivalentInstanceIds: ["instance-1"],
-				instance: sourceInstance,
+				sourceInstance: { ...sourceInstance, id: "other-instance" },
 			}),
 		).toBe(false);
 		expect(() =>
@@ -63,7 +63,30 @@ describe("resolveDeploymentTarget", () => {
 				sourceInstanceId: "instance-1",
 				sourceConnectionStateToken,
 				equivalentInstanceIds: ["instance-1"],
-				instance: { ...sourceInstance, encryptedApiKey: "changed-key" },
+				sourceInstance: { ...sourceInstance, encryptedApiKey: "changed-key" },
+			}),
+		).toThrow("source ARR connection changed");
+
+		const selectedAlias = {
+			...sourceInstance,
+			id: "instance-alias",
+			encryptedApiKey: "separately-encrypted-key",
+			encryptionIv: "different-iv",
+		};
+		expect(
+			isVerifiedClonedProfileSourceConnection({
+				sourceInstanceId: sourceInstance.id,
+				sourceConnectionStateToken,
+				equivalentInstanceIds: [sourceInstance.id, selectedAlias.id],
+				sourceInstance,
+			}),
+		).toBe(true);
+		expect(() =>
+			isVerifiedClonedProfileSourceConnection({
+				sourceInstanceId: sourceInstance.id,
+				sourceConnectionStateToken,
+				equivalentInstanceIds: [selectedAlias.id],
+				sourceInstance: { ...sourceInstance, baseUrl: "http://repointed-radarr:7878" },
 			}),
 		).toThrow("source ARR connection changed");
 	});
