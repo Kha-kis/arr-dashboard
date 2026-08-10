@@ -22,6 +22,7 @@ export async function assertNoPendingDeploymentOperation(
 	userId: string,
 	instanceIds: string[],
 	overrideRetry?: ScoreIntentRetry,
+	excludedSyncHistoryId?: string,
 ): Promise<void> {
 	const [syncRows, deploymentRows, uncertainOverrides] = await Promise.all([
 		prisma.trashSyncHistory.findMany({
@@ -29,6 +30,7 @@ export async function assertNoPendingDeploymentOperation(
 				userId,
 				instanceId: { in: instanceIds },
 				rolledBack: false,
+				...(excludedSyncHistoryId ? { id: { not: excludedSyncHistoryId } } : {}),
 			},
 			select: {
 				status: true,
@@ -274,6 +276,7 @@ export async function reconcileInterruptedDeploymentHistories(
 					select: {
 						id: true,
 						backupId: true,
+						status: true,
 						rollbackStatus: true,
 						backup: { select: { backupData: true } },
 					},
@@ -312,14 +315,25 @@ export async function reconcileInterruptedDeploymentHistories(
 			? "The application restarted while an upstream deployment result was uncertain. Rollback or manual resolution is required before another deployment."
 			: "The application restarted before deployment history could be finalized. Review the upstream ARR state before retrying.";
 		const appliedCustomFormats = state.customFormatDeployments.filter(
-			(item) => item.status === "applied",
+			(item) =>
+				item.status === "applied" ||
+				(item.status === "pending" &&
+					item.action === "created" &&
+					item.resourceId !== null &&
+					item.postStateToken !== null),
 		);
 		const appliedConfigs: Array<Record<string, unknown>> = appliedCustomFormats.map((item) => ({
 			name: item.name,
 			action: item.action,
+			type: "custom_format",
 		}));
 		const profile = state.qualityProfileDeployment;
-		if (profile.status === "applied") {
+		const hasDurablyProvenPendingProfile =
+			profile.status === "pending" &&
+			profile.profileId !== null &&
+			profile.profileName !== null &&
+			profile.postStateToken !== null;
+		if (profile.status === "applied" || hasDurablyProvenPendingProfile) {
 			if (profile.profileId === null || profile.profileName === null) {
 				if (!pending) {
 					return {
@@ -338,7 +352,11 @@ export async function reconcileInterruptedDeploymentHistories(
 			}
 		}
 		if (state.namingDeployment?.status === "applied") {
-			appliedConfigs.push({ name: "Naming configuration", action: "updated" });
+			appliedConfigs.push({
+				name: "Naming configuration",
+				action: "updated",
+				type: "naming",
+			});
 		}
 		if (pending) {
 			return {
@@ -381,7 +399,7 @@ export async function reconcileInterruptedDeploymentHistories(
 		const syncAppliedAudit = reconciliation.appliedConfigs
 			? {
 					configsApplied: reconciliation.appliedConfigs.length,
-					configsFailed: status === "PARTIAL_SUCCESS" ? 1 : 0,
+					configsFailed: status === "UNCERTAIN" ? 0 : 1,
 					appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
 				}
 			: {};
@@ -428,7 +446,7 @@ export async function reconcileInterruptedDeploymentHistories(
 		const appliedAudit = reconciliation.appliedConfigs
 			? {
 					configsApplied: reconciliation.appliedConfigs.length,
-					configsFailed: status === "PARTIAL_SUCCESS" ? 1 : 0,
+					configsFailed: status === "UNCERTAIN" ? 0 : 1,
 					appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
 				}
 			: {};

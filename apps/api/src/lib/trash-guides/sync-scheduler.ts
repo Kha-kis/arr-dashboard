@@ -5,6 +5,7 @@
  * Modeled after BackupScheduler — periodic check with in-flight guard.
  */
 
+import type { NotificationEventType } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { NotificationPayload } from "../notifications/types.js";
@@ -35,7 +36,10 @@ export class TrashSyncScheduler {
 		private logger: FastifyBaseLogger,
 		private deploymentExecutor: DeploymentExecutorService,
 		private arrClientFactory: ArrClientFactory,
-		private notifyFn?: (payload: NotificationPayload) => Promise<void>,
+		private notifyFn?: (
+			payload: NotificationPayload,
+			options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
+		) => Promise<void>,
 		options?: { trackTick?: TickWrapper },
 	) {
 		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
@@ -213,8 +217,63 @@ export class TrashSyncScheduler {
 				undefined,
 			);
 
-			// Update schedule timing
-			await this.updateNextRunAt(schedule.id, schedule.frequency);
+			// Preserve the upstream result even if this schedule was changed or removed
+			// while the sync was running. An UNCERTAIN mutation result is more important
+			// than a local schedule-maintenance failure and must still reach the user.
+			let scheduleAdvanceError: unknown;
+			try {
+				await this.updateNextRunAt(schedule.id, schedule.frequency);
+			} catch (error) {
+				scheduleAdvanceError = error;
+				this.logger.error(
+					{ err: error, scheduleId: schedule.id, syncId: result.syncId },
+					"Failed to update nextRunAt after scheduled sync",
+				);
+			}
+
+			if (result.status === "UNCERTAIN") {
+				const errorSummary = result.errors.map((e) => e.error).join("; ") || "Unknown result";
+				const scheduleSummary = scheduleAdvanceError
+					? ` Schedule timing also could not be updated: ${getErrorMessage(scheduleAdvanceError)}`
+					: "";
+				this.logger.warn(
+					{
+						scheduleId: schedule.id,
+						templateName,
+						errors: result.errors,
+					},
+					"Scheduled TRaSH sync result is uncertain and requires reconciliation",
+				);
+
+				if (schedule.notifyUser) {
+					this.notifyFn?.(
+						{
+							eventType: "TRASH_DEPLOY_UNCERTAIN",
+							title: `Scheduled sync needs review: ${templateName}`,
+							body: `${templateName} → ${instanceLabel}: ARR may have applied changes, but the result could not be verified. ${errorSummary}${scheduleSummary}`,
+							url: "/trash-guides",
+							metadata: {
+								templateId: schedule.templateId,
+								instanceId: schedule.instanceId,
+								syncId: result.syncId,
+								reason: "uncertain_result",
+								scheduleAdvanceFailed: Boolean(scheduleAdvanceError),
+							},
+						},
+						{
+							userId: schedule.userId,
+							fallbackEventTypes: ["TRASH_SYNC_ERROR"],
+						},
+					).catch((err) => {
+						this.logger.debug({ err }, "Sync review notification dispatch failed");
+					});
+				}
+				return;
+			}
+
+			if (scheduleAdvanceError) {
+				throw scheduleAdvanceError;
+			}
 
 			if (result.success) {
 				this.logger.info(

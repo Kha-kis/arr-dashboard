@@ -255,6 +255,7 @@ export {
 // ============================================================================
 
 export type {
+	AcknowledgeSyncReviewResult,
 	ConflictInfo,
 	RollbackResult,
 	SyncDetail,
@@ -269,6 +270,7 @@ export type {
 	ValidationResult,
 } from "./sync";
 export {
+	acknowledgeSyncReview,
 	createSyncProgressStream,
 	executeSync,
 	getSyncDetail,
@@ -334,9 +336,9 @@ export type {
 	NamingConfigCreatePayload,
 	NamingConfigDeleteResponse,
 	NamingConfigSaveResponse,
+	NamingPresetsApiResponse,
 	NamingPreviewApiResponse,
 	NamingPreviewPayload,
-	NamingPresetsApiResponse,
 } from "./naming";
 export {
 	applyNaming,

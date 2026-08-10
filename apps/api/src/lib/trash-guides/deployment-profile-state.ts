@@ -10,8 +10,8 @@ const restorableQualitySchema = z.looseObject({
 const restorableQualityProfileItemSchema: z.ZodType = z.lazy(() =>
 	z
 		.looseObject({
-			id: z.number().int().nonnegative().safe(),
-			name: z.string().min(1),
+			id: z.number().int().nonnegative().safe().optional(),
+			name: z.string().min(1).optional(),
 			allowed: z.boolean(),
 			quality: restorableQualitySchema.optional(),
 			items: z.array(restorableQualityProfileItemSchema),
@@ -21,6 +21,12 @@ const restorableQualityProfileItemSchema: z.ZodType = z.lazy(() =>
 				ctx.addIssue({
 					code: "custom",
 					message: "Quality profile item requires a quality or non-empty nested items",
+				});
+			}
+			if (!item.quality && (item.id === undefined || item.name === undefined)) {
+				ctx.addIssue({
+					code: "custom",
+					message: "Quality profile group requires an ID and name",
 				});
 			}
 		}),

@@ -26,11 +26,16 @@ function makePayload(overrides?: Partial<NotificationPayload>): NotificationPayl
 	};
 }
 
-function makeSubscription(channelId: string, channelType: string, enabled = true) {
+function makeSubscription(
+	channelId: string,
+	channelType: string,
+	enabled = true,
+	eventType = "HUNT_COMPLETED",
+) {
 	return {
 		id: `sub-${channelId}`,
 		channelId,
-		eventType: "HUNT_COMPLETED",
+		eventType,
 		channel: {
 			id: channelId,
 			name: `Channel ${channelId}`,
@@ -113,6 +118,34 @@ describe("NotificationService", () => {
 				status: "sent",
 			}),
 		});
+	});
+
+	it("routes a logical event to explicit and legacy fallback channels once per channel", async () => {
+		mockPrisma.notificationSubscription.findMany.mockResolvedValue([
+			makeSubscription("explicit", "discord", true, "TRASH_DEPLOY_UNCERTAIN"),
+			makeSubscription("explicit", "discord", true, "TRASH_DEPLOY_FAILED"),
+			makeSubscription("legacy", "telegram", true, "TRASH_DEPLOY_FAILED"),
+		]);
+		mockDispatcher.send.mockResolvedValue({ success: true, retryable: false } satisfies SendResult);
+		const payload = makePayload({ eventType: "TRASH_DEPLOY_UNCERTAIN" });
+
+		await service.notify(payload, {
+			userId: "user-1",
+			fallbackEventTypes: ["TRASH_DEPLOY_FAILED"],
+		});
+
+		expect(mockPrisma.notificationSubscription.findMany).toHaveBeenCalledWith({
+			where: {
+				eventType: { in: ["TRASH_DEPLOY_UNCERTAIN", "TRASH_DEPLOY_FAILED"] },
+				channel: { userId: "user-1" },
+			},
+			include: { channel: true },
+		});
+		expect(mockDispatcher.send).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.notificationLog.create).toHaveBeenCalledTimes(2);
+		for (const [call] of mockPrisma.notificationLog.create.mock.calls) {
+			expect(call.data.eventType).toBe("TRASH_DEPLOY_UNCERTAIN");
+		}
 	});
 
 	it("uses an updated normalized base URL for subsequent notification links", async () => {

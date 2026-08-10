@@ -94,6 +94,7 @@ export const notificationEventTypeSchema = z.enum([
 	"TRASH_PROFILE_UPDATED",
 	"TRASH_SYNC_ERROR",
 	"TRASH_DEPLOY_FAILED",
+	"TRASH_DEPLOY_UNCERTAIN",
 	// Backup
 	"BACKUP_COMPLETED",
 	"BACKUP_FAILED",

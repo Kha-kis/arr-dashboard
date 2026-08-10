@@ -213,8 +213,9 @@ export const DeploymentPreviewModal = ({
 		);
 	};
 
-	// Derive error message from mutation state
-	const deploymentError = deploymentMutation.isError
+	const deploymentUncertain = deploymentMutation.data?.result?.status === "UNCERTAIN";
+	// Derive terminal message from mutation state
+	const deploymentMessage = deploymentMutation.isError
 		? getErrorMessage(deploymentMutation.error, "Failed to execute deployment")
 		: deploymentMutation.data && !deploymentMutation.data.success
 			? Array.isArray(deploymentMutation.data.result?.errors) &&
@@ -712,21 +713,29 @@ export const DeploymentPreviewModal = ({
 			</LegacyDialogContent>
 
 			<LegacyDialogFooter>
-				{deploymentError && (
+				{deploymentMessage && (
 					<div
 						className="flex items-start gap-2 rounded-xl p-3 mr-auto"
 						style={{
-							backgroundColor: SEMANTIC_COLORS.error.bg,
-							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+							backgroundColor: deploymentUncertain
+								? SEMANTIC_COLORS.warning.bg
+								: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${deploymentUncertain ? SEMANTIC_COLORS.warning.border : SEMANTIC_COLORS.error.border}`,
 						}}
 					>
-						<AlertCircle
+						<AlertTriangle
 							className="h-5 w-5 mt-0.5 shrink-0"
-							style={{ color: SEMANTIC_COLORS.error.from }}
+							style={{
+								color: deploymentUncertain
+									? SEMANTIC_COLORS.warning.from
+									: SEMANTIC_COLORS.error.from,
+							}}
 						/>
 						<div>
-							<p className="text-sm font-medium text-foreground">Deployment Failed</p>
-							<p className="text-sm text-muted-foreground mt-1">{deploymentError}</p>
+							<p className="text-sm font-medium text-foreground">
+								{deploymentUncertain ? "Deployment Result Needs Review" : "Deployment Failed"}
+							</p>
+							<p className="text-sm text-muted-foreground mt-1">{deploymentMessage}</p>
 						</div>
 					</div>
 				)}

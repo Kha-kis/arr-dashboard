@@ -83,6 +83,7 @@ export type DeploymentResult = {
 	instanceId: string;
 	instanceLabel: string;
 	success: boolean;
+	status: "SUCCESS" | "FAILED" | "UNCERTAIN";
 	customFormatsCreated: number;
 	customFormatsUpdated: number;
 	customFormatsSkipped: number;
@@ -100,6 +101,7 @@ export type BulkDeploymentResult = {
 	totalInstances: number;
 	successfulInstances: number;
 	failedInstances: number;
+	uncertainInstances: number;
 	results: DeploymentResult[];
 };
 

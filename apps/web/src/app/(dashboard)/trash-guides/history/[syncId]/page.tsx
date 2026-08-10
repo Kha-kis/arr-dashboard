@@ -8,23 +8,31 @@ import {
 	Clock,
 	Database,
 	RotateCcw,
+	ShieldCheck,
 	XCircle,
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useRollbackSync, useSyncDetail } from "../../../../../hooks/api/useSync";
+import { getSyncHistoryStatusLabel } from "../../../../../features/trash-guides/lib/sync-history-status";
+import {
+	useAcknowledgeSyncReview,
+	useRollbackSync,
+	useSyncDetail,
+} from "../../../../../hooks/api/useSync";
 
 const STATUS_ICONS = {
 	SUCCESS: CheckCircle2,
 	PARTIAL_SUCCESS: AlertCircle,
 	FAILED: XCircle,
+	UNCERTAIN: AlertCircle,
 };
 
 const STATUS_COLORS = {
 	SUCCESS: "text-green-400 bg-green-500/10 border-green-500/20",
 	PARTIAL_SUCCESS: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
 	FAILED: "text-red-400 bg-red-500/10 border-red-500/20",
+	UNCERTAIN: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
 };
 
 export default function SyncDetailPage() {
@@ -35,8 +43,10 @@ export default function SyncDetailPage() {
 
 	const { data: sync, isLoading, error } = useSyncDetail(syncId);
 	const rollbackMutation = useRollbackSync();
+	const acknowledgeMutation = useAcknowledgeSyncReview();
 
 	const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
+	const [showAcknowledgeConfirm, setShowAcknowledgeConfirm] = useState(false);
 
 	// Accessibility refs for modal
 	const modalRef = useRef<HTMLDivElement>(null);
@@ -57,15 +67,30 @@ export default function SyncDetailPage() {
 			});
 			setShowRollbackConfirm(false);
 			toast.success("Rollback completed successfully");
-		} catch (error) {
-			console.error("Rollback failed:", error);
+		} catch {
 			toast.error("Rollback failed. Please try again.");
+		}
+	};
+
+	const handleAcknowledgeReview = async () => {
+		if (!sync?.instanceId) {
+			setShowAcknowledgeConfirm(false);
+			toast.error("Cannot acknowledge review: sync data is unavailable");
+			return;
+		}
+
+		try {
+			await acknowledgeMutation.mutateAsync({ syncId: syncId!, instanceId: sync.instanceId });
+			setShowAcknowledgeConfirm(false);
+			toast.success("Manual review acknowledged");
+		} catch {
+			toast.error("Could not acknowledge the review. Refresh and try again.");
 		}
 	};
 
 	// Focus management and accessibility for modal
 	useEffect(() => {
-		if (!showRollbackConfirm) return;
+		if (!showRollbackConfirm && !showAcknowledgeConfirm) return;
 
 		// Save the element that had focus before opening
 		previousActiveElementRef.current = document.activeElement as HTMLElement;
@@ -103,8 +128,9 @@ export default function SyncDetailPage() {
 		// Handle keyboard events
 		const handleKeyDown = (e: KeyboardEvent) => {
 			// Escape key: close modal only if not pending
-			if (e.key === "Escape" && !rollbackMutation.isPending) {
+			if (e.key === "Escape" && !rollbackMutation.isPending && !acknowledgeMutation.isPending) {
 				setShowRollbackConfirm(false);
+				setShowAcknowledgeConfirm(false);
 				return;
 			}
 
@@ -143,7 +169,12 @@ export default function SyncDetailPage() {
 				previousActiveElementRef.current.focus();
 			}
 		};
-	}, [showRollbackConfirm, rollbackMutation.isPending]);
+	}, [
+		showRollbackConfirm,
+		showAcknowledgeConfirm,
+		rollbackMutation.isPending,
+		acknowledgeMutation.isPending,
+	]);
 
 	const formatDuration = (ms: number | null) => {
 		if (ms == null) return "N/A";
@@ -215,16 +246,28 @@ export default function SyncDetailPage() {
 					</div>
 				</div>
 
-				{sync.backupId && (
-					<button
-						type="button"
-						onClick={() => setShowRollbackConfirm(true)}
-						className="flex items-center gap-2 rounded-lg bg-yellow-500/10 px-4 py-2 text-sm font-medium text-yellow-400 transition hover:bg-yellow-500/20"
-					>
-						<RotateCcw className="h-4 w-4" />
-						Rollback
-					</button>
-				)}
+				<div className="flex items-center gap-2">
+					{sync.status === "UNCERTAIN" && !sync.backupId && (
+						<button
+							type="button"
+							onClick={() => setShowAcknowledgeConfirm(true)}
+							className="flex items-center gap-2 rounded-lg bg-yellow-500/10 px-4 py-2 text-sm font-medium text-yellow-400 transition hover:bg-yellow-500/20"
+						>
+							<ShieldCheck className="h-4 w-4" />
+							Acknowledge Review
+						</button>
+					)}
+					{sync.backupId && (
+						<button
+							type="button"
+							onClick={() => setShowRollbackConfirm(true)}
+							className="flex items-center gap-2 rounded-lg bg-yellow-500/10 px-4 py-2 text-sm font-medium text-yellow-400 transition hover:bg-yellow-500/20"
+						>
+							<RotateCcw className="h-4 w-4" />
+							Rollback
+						</button>
+					)}
+				</div>
 			</div>
 
 			{/* Status Overview */}
@@ -234,7 +277,7 @@ export default function SyncDetailPage() {
 						<StatusIcon className="h-5 w-5" />
 						<span className="text-sm font-medium">Status</span>
 					</div>
-					<p className="mt-2 text-lg font-semibold">{sync.status.replace("_", " ")}</p>
+					<p className="mt-2 text-lg font-semibold">{getSyncHistoryStatusLabel(sync.status)}</p>
 				</div>
 
 				<div className="rounded-xl border border-border bg-card p-4">
@@ -283,9 +326,9 @@ export default function SyncDetailPage() {
 				<div className="rounded-xl border border-border bg-card p-6">
 					<h2 className="mb-4 text-lg font-semibold text-foreground">Applied Configurations</h2>
 					<div className="space-y-2">
-						{sync.appliedConfigs.map((config, index) => (
+						{sync.appliedConfigs.map((config) => (
 							<div
-								key={index}
+								key={config.name}
 								className="flex items-center justify-between rounded-lg border border-border bg-card p-3"
 							>
 								<span className="font-medium text-foreground">{config.name}</span>
@@ -301,9 +344,9 @@ export default function SyncDetailPage() {
 				<div className="rounded-xl border border-red-500/20 bg-red-500/10 p-6">
 					<h2 className="mb-4 text-lg font-semibold text-red-200">Failed Configurations</h2>
 					<div className="space-y-2">
-						{sync.failedConfigs.map((config, index) => (
+						{sync.failedConfigs.map((config) => (
 							<div
-								key={index}
+								key={config.name}
 								className="flex items-start justify-between rounded-lg border border-red-500/20 bg-red-500/10 p-3"
 							>
 								<div className="flex-1">
@@ -329,15 +372,7 @@ export default function SyncDetailPage() {
 
 			{/* Rollback Confirmation Modal */}
 			{showRollbackConfirm && (
-				<div
-					className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 p-4"
-					onClick={(e) => {
-						// Close on backdrop click only if not pending
-						if (e.target === e.currentTarget && !rollbackMutation.isPending) {
-							setShowRollbackConfirm(false);
-						}
-					}}
-				>
+				<div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 p-4">
 					<div
 						ref={modalRef}
 						tabIndex={-1}
@@ -346,7 +381,6 @@ export default function SyncDetailPage() {
 						aria-labelledby="rollback-confirm-title"
 						aria-describedby="rollback-confirm-description"
 						className="w-full max-w-md rounded-xl border border-border bg-background p-6 focus:outline-hidden"
-						onClick={(e) => e.stopPropagation()}
 					>
 						<h3
 							id="rollback-confirm-title"
@@ -394,6 +428,61 @@ export default function SyncDetailPage() {
 								role="alert"
 							>
 								<p className="text-sm text-red-300">{rollbackMutation.error.message}</p>
+							</div>
+						)}
+					</div>
+				</div>
+			)}
+
+			{/* Manual Review Acknowledgement Modal */}
+			{showAcknowledgeConfirm && (
+				<div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 p-4">
+					<div
+						ref={modalRef}
+						tabIndex={-1}
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="acknowledge-review-title"
+						aria-describedby="acknowledge-review-description"
+						className="w-full max-w-md rounded-xl border border-border bg-background p-6 focus:outline-hidden"
+					>
+						<h3
+							id="acknowledge-review-title"
+							ref={titleRef}
+							tabIndex={-1}
+							className="text-xl font-semibold text-foreground focus:outline-hidden"
+						>
+							Acknowledge Manual Review
+						</h3>
+						<p id="acknowledge-review-description" className="mt-2 text-sm text-muted-foreground">
+							Use this only after checking the current ARR configuration and accepting it as-is.
+							This records your review and clears the blocked state. It does not change ARR or
+							perform a rollback.
+						</p>
+						<div className="mt-6 flex justify-end gap-3">
+							<button
+								type="button"
+								onClick={() => setShowAcknowledgeConfirm(false)}
+								disabled={acknowledgeMutation.isPending}
+								className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-card/80 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleAcknowledgeReview}
+								disabled={acknowledgeMutation.isPending}
+								className="flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-medium text-black transition hover:bg-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								{acknowledgeMutation.isPending ? "Acknowledging..." : "Acknowledge Review"}
+							</button>
+						</div>
+						{acknowledgeMutation.error && (
+							<div
+								className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3"
+								role="alert"
+							>
+								<p className="text-sm text-red-300">{acknowledgeMutation.error.message}</p>
 							</div>
 						)}
 					</div>
