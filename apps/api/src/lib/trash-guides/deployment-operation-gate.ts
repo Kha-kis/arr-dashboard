@@ -446,7 +446,7 @@ export async function reconcileInterruptedDeploymentHistories(
 		const appliedAudit = reconciliation.appliedConfigs
 			? {
 					configsApplied: reconciliation.appliedConfigs.length,
-					configsFailed: status === "PARTIAL_SUCCESS" ? 1 : 0,
+					configsFailed: status === "UNCERTAIN" ? 0 : 1,
 					appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
 				}
 			: {};

@@ -1020,6 +1020,32 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		);
 	});
 
+	it("keeps orphan pending-ledger counters uncertain instead of failed", async () => {
+		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const prisma = {
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([{ id: "sync-1", backupId: "backup-1", backup: backup("pending") }]),
+				updateMany: syncUpdateMany,
+			},
+			$transaction: vi.fn(),
+		};
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
+		expect(syncUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					configsApplied: 0,
+					configsFailed: 0,
+					appliedConfigs: "[]",
+				}),
+			}),
+		);
+	});
+
 	it("reconstructs applied counters and details from a durable ledger", async () => {
 		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });

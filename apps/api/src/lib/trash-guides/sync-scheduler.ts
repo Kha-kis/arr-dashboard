@@ -5,6 +5,7 @@
  * Modeled after BackupScheduler — periodic check with in-flight guard.
  */
 
+import type { NotificationEventType } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { NotificationPayload } from "../notifications/types.js";
@@ -35,7 +36,10 @@ export class TrashSyncScheduler {
 		private logger: FastifyBaseLogger,
 		private deploymentExecutor: DeploymentExecutorService,
 		private arrClientFactory: ArrClientFactory,
-		private notifyFn?: (payload: NotificationPayload) => Promise<void>,
+		private notifyFn?: (
+			payload: NotificationPayload,
+			options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
+		) => Promise<void>,
 		options?: { trackTick?: TickWrapper },
 	) {
 		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
@@ -228,18 +232,24 @@ export class TrashSyncScheduler {
 				);
 
 				if (schedule.notifyUser) {
-					this.notifyFn?.({
-						eventType: "TRASH_SYNC_ERROR",
-						title: `Scheduled sync needs review: ${templateName}`,
-						body: `${templateName} → ${instanceLabel}: ARR may have applied changes, but the result could not be verified. ${errorSummary}`,
-						url: "/trash-guides",
-						metadata: {
-							templateId: schedule.templateId,
-							instanceId: schedule.instanceId,
-							syncId: result.syncId,
-							reason: "uncertain_result",
+					this.notifyFn?.(
+						{
+							eventType: "TRASH_DEPLOY_UNCERTAIN",
+							title: `Scheduled sync needs review: ${templateName}`,
+							body: `${templateName} → ${instanceLabel}: ARR may have applied changes, but the result could not be verified. ${errorSummary}`,
+							url: "/trash-guides",
+							metadata: {
+								templateId: schedule.templateId,
+								instanceId: schedule.instanceId,
+								syncId: result.syncId,
+								reason: "uncertain_result",
+							},
 						},
-					}).catch((err) => {
+						{
+							userId: schedule.userId,
+							fallbackEventTypes: ["TRASH_SYNC_ERROR"],
+						},
+					).catch((err) => {
 						this.logger.debug({ err }, "Sync review notification dispatch failed");
 					});
 				}

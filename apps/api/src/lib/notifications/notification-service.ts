@@ -1,4 +1,4 @@
-import type { NotificationChannelType } from "@arr/shared";
+import type { NotificationChannelType, NotificationEventType } from "@arr/shared";
 
 const REDACTED_PLACEHOLDER = "••••••••";
 const SECRET_FIELD_NAMES = new Set([
@@ -48,6 +48,7 @@ export class NotificationService {
 		payload: NotificationPayload;
 		deliverAt: number;
 		userId?: string;
+		fallbackEventTypes?: NotificationEventType[];
 	}> = [];
 	private deferFlushTimer: ReturnType<typeof setInterval> | null = null;
 	private static readonly MAX_DEFERRED_QUEUE_SIZE = 200;
@@ -96,6 +97,7 @@ export class NotificationService {
 		deferUntil: string,
 		ruleId: string,
 		userId?: string,
+		fallbackEventTypes?: NotificationEventType[],
 	): void {
 		// Cap queue to prevent unbounded growth
 		if (this.deferredQueue.length >= NotificationService.MAX_DEFERRED_QUEUE_SIZE) {
@@ -106,7 +108,7 @@ export class NotificationService {
 			this.deferredQueue.shift();
 		}
 		const deliverAt = new Date(deferUntil).getTime();
-		this.deferredQueue.push({ payload, deliverAt, userId });
+		this.deferredQueue.push({ payload, deliverAt, userId, fallbackEventTypes });
 		this.logger.info(
 			{ eventType: payload.eventType, ruleId, deferUntil, queueSize: this.deferredQueue.length },
 			"Notification deferred until quiet hours end",
@@ -135,7 +137,11 @@ export class NotificationService {
 		const deliveryOptions = { skipRules: true };
 		for (const item of ready) {
 			try {
-				await this.notify(item.payload, { ...deliveryOptions, userId: item.userId });
+				await this.notify(item.payload, {
+					...deliveryOptions,
+					userId: item.userId,
+					fallbackEventTypes: item.fallbackEventTypes,
+				});
 			} catch (err: unknown) {
 				this.logger.warn(
 					{ err, eventType: item.payload.eventType },
@@ -151,7 +157,11 @@ export class NotificationService {
 	 */
 	async notify(
 		payload: NotificationPayload,
-		options?: { skipRules?: boolean; userId?: string },
+		options?: {
+			skipRules?: boolean;
+			userId?: string;
+			fallbackEventTypes?: NotificationEventType[];
+		},
 	): Promise<void> {
 		// Dedup: skip if an identical payload was dispatched within the TTL window
 		if (this.dedupGate.isDuplicate(payload)) {
@@ -159,9 +169,14 @@ export class NotificationService {
 			return;
 		}
 
+		const subscriptionEventTypes = [
+			payload.eventType,
+			...new Set(options?.fallbackEventTypes ?? []),
+		];
 		const subscriptions = await this.prisma.notificationSubscription.findMany({
 			where: {
-				eventType: payload.eventType,
+				eventType:
+					subscriptionEventTypes.length === 1 ? payload.eventType : { in: subscriptionEventTypes },
 				...(options?.userId ? { channel: { userId: options.userId } } : {}),
 			},
 			include: {
@@ -170,7 +185,19 @@ export class NotificationService {
 		});
 
 		// Filter to enabled channels only
-		let enabledSubs = subscriptions.filter((sub) => sub.channel.enabled);
+		const enabledByChannel = new Map<string, (typeof subscriptions)[number]>();
+		for (const subscription of subscriptions
+			.filter((sub) => sub.channel.enabled)
+			.sort(
+				(left, right) =>
+					Number(left.eventType !== payload.eventType) -
+					Number(right.eventType !== payload.eventType),
+			)) {
+			if (!enabledByChannel.has(subscription.channelId)) {
+				enabledByChannel.set(subscription.channelId, subscription);
+			}
+		}
+		let enabledSubs = [...enabledByChannel.values()];
 
 		if (enabledSubs.length === 0) {
 			this.logger.debug(
@@ -195,7 +222,13 @@ export class NotificationService {
 					return;
 				}
 				if (ruleResult.action === "defer" && ruleResult.deferUntil) {
-					this.deferNotification(payload, ruleResult.deferUntil, ruleResult.ruleId, userId);
+					this.deferNotification(
+						payload,
+						ruleResult.deferUntil,
+						ruleResult.ruleId,
+						userId,
+						options?.fallbackEventTypes,
+					);
 					return;
 				}
 				if (ruleResult.action === "throttle" && ruleResult.throttleMinutes) {
@@ -219,7 +252,7 @@ export class NotificationService {
 		}
 
 		// Aggregation: batch high-frequency notifications into digests
-		if (userId && this.aggregationBuffer) {
+		if (userId && this.aggregationBuffer && !options?.fallbackEventTypes?.length) {
 			const aggConfigs = await this.loadAggregationConfigs(userId);
 			const aggConfig = this.aggregationBuffer.hasConfig(payload.eventType, aggConfigs);
 			if (aggConfig) {

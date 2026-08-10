@@ -19,22 +19,15 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		metadata: Record<string, unknown>,
 	): Promise<void> => {
 		if (!app.notificationService) return;
-		const explicitSubscription = await prisma.notificationSubscription.findFirst({
-			where: {
-				eventType: "TRASH_DEPLOY_UNCERTAIN",
-				channel: { userId, enabled: true },
-			},
-			select: { channelId: true },
-		});
 		await app.notificationService.notify(
 			{
-				eventType: explicitSubscription ? "TRASH_DEPLOY_UNCERTAIN" : "TRASH_DEPLOY_FAILED",
+				eventType: "TRASH_DEPLOY_UNCERTAIN",
 				title,
 				body,
 				url: "/trash-guides",
 				metadata: { ...metadata, reason: "uncertain_result" },
 			},
-			{ userId },
+			{ userId, fallbackEventTypes: ["TRASH_DEPLOY_FAILED"] },
 		);
 	};
 
@@ -453,18 +446,17 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		const hasUncertain =
 			result.uncertainInstances > 0 ||
 			result.results.some((deployment) => deployment.status === "UNCERTAIN");
+		const failedNames = result.results
+			.filter((deployment) => deployment.status === "FAILED")
+			.map((deployment) => deployment.instanceLabel)
+			.join(", ");
 
-		if (hasFailures) {
-			const failedNames = result.results
-				.filter((deployment) => deployment.status === "FAILED")
-				.map((r) => r.instanceLabel)
-				.join(", ");
-
+		if (hasFailures && !hasUncertain) {
 			app.notificationService
 				?.notify({
 					eventType: "TRASH_DEPLOY_FAILED",
 					title: `TRaSH bulk deployment had failures`,
-					body: `Failed on: ${failedNames || "unknown instances"}${hasUncertain ? "; other instances also need review" : ""}`,
+					body: `Failed on: ${failedNames || "unknown instances"}`,
 					url: "/trash-guides",
 					metadata: {
 						totalInstances: instanceIds.length,
@@ -482,30 +474,21 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				.filter((deployment) => deployment.status === "UNCERTAIN")
 				.map((deployment) => deployment.instanceLabel)
 				.join(", ");
-			void prisma.notificationSubscription
-				.findFirst({
-					where: {
-						eventType: "TRASH_DEPLOY_UNCERTAIN",
-						channel: { userId, enabled: true },
-					},
-					select: { channelId: true },
-				})
-				.then((explicitSubscription) => {
-					if (hasFailures && !explicitSubscription) return;
-					return notifyUncertainDeployment(
-						userId,
-						"TRaSH bulk deployment needs review",
-						`Unverified result on: ${uncertainNames || "unknown instances"}`,
-						{
-							totalInstances: instanceIds.length,
-							uncertainInstances: result.uncertainInstances,
-							templateId,
-						},
-					);
-				})
-				.catch((err) => {
-					request.log.warn({ err }, "Bulk deployment review notification dispatch failed");
-				});
+			void notifyUncertainDeployment(
+				userId,
+				hasFailures
+					? "TRaSH bulk deployment had failures and needs review"
+					: "TRaSH bulk deployment needs review",
+				`${hasFailures ? `Failed on: ${failedNames || "unknown instances"}. ` : ""}Unverified result on: ${uncertainNames || "unknown instances"}`,
+				{
+					totalInstances: instanceIds.length,
+					failedInstances: result.failedInstances,
+					uncertainInstances: result.uncertainInstances,
+					templateId,
+				},
+			).catch((err) => {
+				request.log.warn({ err }, "Bulk deployment review notification dispatch failed");
+			});
 		}
 
 		return reply.send({

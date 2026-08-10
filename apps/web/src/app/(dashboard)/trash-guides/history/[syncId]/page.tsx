@@ -14,17 +14,20 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useRollbackSync, useSyncDetail } from "../../../../../hooks/api/useSync";
+import { getSyncHistoryStatusLabel } from "../../../../../features/trash-guides/lib/sync-history-status";
 
 const STATUS_ICONS = {
 	SUCCESS: CheckCircle2,
 	PARTIAL_SUCCESS: AlertCircle,
 	FAILED: XCircle,
+	UNCERTAIN: AlertCircle,
 };
 
 const STATUS_COLORS = {
 	SUCCESS: "text-green-400 bg-green-500/10 border-green-500/20",
 	PARTIAL_SUCCESS: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
 	FAILED: "text-red-400 bg-red-500/10 border-red-500/20",
+	UNCERTAIN: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
 };
 
 export default function SyncDetailPage() {
@@ -234,7 +237,7 @@ export default function SyncDetailPage() {
 						<StatusIcon className="h-5 w-5" />
 						<span className="text-sm font-medium">Status</span>
 					</div>
-					<p className="mt-2 text-lg font-semibold">{sync.status.replace("_", " ")}</p>
+					<p className="mt-2 text-lg font-semibold">{getSyncHistoryStatusLabel(sync.status)}</p>
 				</div>
 
 				<div className="rounded-xl border border-border bg-card p-4">

@@ -14,17 +14,20 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Badge, Button } from "../../../../components/ui";
 import { useSyncHistory } from "../../../../hooks/api/useSync";
+import { getSyncHistoryStatusLabel } from "../../../../features/trash-guides/lib/sync-history-status";
 
 const STATUS_ICONS = {
 	SUCCESS: CheckCircle2,
 	PARTIAL_SUCCESS: AlertCircle,
 	FAILED: XCircle,
+	UNCERTAIN: AlertCircle,
 };
 
 const STATUS_BADGE_VARIANTS: Record<string, "success" | "warning" | "danger" | "default"> = {
 	SUCCESS: "success",
 	PARTIAL_SUCCESS: "warning",
 	FAILED: "danger",
+	UNCERTAIN: "warning",
 };
 
 export default function SyncHistoryPage() {
@@ -171,7 +174,7 @@ export default function SyncHistoryPage() {
 										<td className="px-6 py-4">
 											<Badge variant={statusVariant} size="sm" className="gap-1.5">
 												<StatusIcon className="h-3.5 w-3.5" />
-												{sync.status.replace("_", " ")}
+												{getSyncHistoryStatusLabel(sync.status)}
 											</Badge>
 										</td>
 										<td className="px-6 py-4">
