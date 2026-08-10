@@ -153,9 +153,11 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue(status ? [status] : []) },
 			plexCache: {
 				count: vi.fn().mockResolvedValue(1),
-				findMany: vi.fn().mockResolvedValue([
-					makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
-				]),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const rule = plexCleanupRule();
@@ -188,9 +190,11 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
 			plexCache: {
 				count: vi.fn().mockResolvedValue(1),
-				findMany: vi.fn().mockResolvedValue([
-					makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
-				]),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -231,9 +235,11 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			},
 			plexCache: {
 				count: vi.fn().mockResolvedValue(1),
-				findMany: vi.fn().mockResolvedValue([
-					makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
-				]),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
 			},
 			plexEpisodeCache: {
 				findMany: vi.fn().mockResolvedValue([

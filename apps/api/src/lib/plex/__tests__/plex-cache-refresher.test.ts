@@ -306,7 +306,9 @@ describe("evictStaleRows", () => {
 			} as unknown as PrismaClient;
 			const client = {
 				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
-				getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+				getLibrarySections: vi
+					.fn()
+					.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 				getLibraryItems: vi.fn().mockResolvedValue([]),
 				getHistory,
 				getOnDeck: vi.fn().mockResolvedValue([]),
