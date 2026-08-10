@@ -321,18 +321,21 @@ export async function reconcileInterruptedDeploymentHistories(
 		const profile = state.qualityProfileDeployment;
 		if (profile.status === "applied") {
 			if (profile.profileId === null || profile.profileName === null) {
-				return {
-					status: "FAILED",
-					message:
-						"The application restarted with applied deployment details that could not be reconstructed exactly. Review the upstream ARR state before retrying.",
-				};
+				if (!pending) {
+					return {
+						status: "FAILED",
+						message:
+							"The application restarted with applied deployment details that could not be reconstructed exactly. Review the upstream ARR state before retrying.",
+					};
+				}
+			} else {
+				appliedConfigs.push({
+					name: profile.profileName,
+					action: profile.action,
+					type: "quality_profile",
+					id: profile.profileId,
+				});
 			}
-			appliedConfigs.push({
-				name: profile.profileName,
-				action: profile.action,
-				type: "quality_profile",
-				id: profile.profileId,
-			});
 		}
 		if (state.namingDeployment?.status === "applied") {
 			appliedConfigs.push({ name: "Naming configuration", action: "updated" });

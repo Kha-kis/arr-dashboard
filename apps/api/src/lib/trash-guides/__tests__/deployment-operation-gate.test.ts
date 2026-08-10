@@ -96,6 +96,20 @@ function mixedAppliedAndPendingBackup() {
 	return { ...result, backupData: JSON.stringify(state) };
 }
 
+function mixedPendingAndIncompleteAppliedProfileBackup() {
+	const result = mixedAppliedAndPendingBackup();
+	const state = JSON.parse(result.backupData);
+	state.qualityProfileDeployment = {
+		beforeProfile: { id: 9, name: "HD-1080p" },
+		status: "applied",
+		action: "updated",
+		profileId: 9,
+		profileName: null,
+		postStateToken: "profile-post",
+	};
+	return { ...result, backupData: JSON.stringify(state) };
+}
+
 describe("assertNoPendingDeploymentOperation", () => {
 	it("blocks endpoint mutations while a rollback is partial and retryable", async () => {
 		const prisma = {
@@ -766,6 +780,51 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 					status: "UNCERTAIN",
 					configsApplied: 1,
 					configsFailed: 0,
+					appliedConfigs: JSON.stringify(appliedConfigs),
+				}),
+			}),
+		);
+	});
+
+	it("lets pending state dominate incomplete applied-profile audit metadata", async () => {
+		const interruptedBackup = mixedPendingAndIncompleteAppliedProfileBackup();
+		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const prisma = {
+			templateDeploymentHistory: {
+				findMany: vi.fn().mockResolvedValue([
+					{ id: "deployment-1", backupId: "backup-1", backup: interruptedBackup },
+				]),
+			},
+			trashSyncHistory: {
+				findMany: vi.fn().mockResolvedValue([
+					{ id: "sync-1", backupId: "backup-1", backup: interruptedBackup },
+				]),
+			},
+			$transaction: vi.fn(async (callback) =>
+				callback({
+					templateDeploymentHistory: { updateMany: deploymentUpdateMany },
+					trashSyncHistory: { updateMany: syncUpdateMany },
+				}),
+			),
+		};
+		const appliedConfigs = [{ name: "Applied CF", action: "updated" }];
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
+		expect(deploymentUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					appliedCFs: 1,
+					appliedConfigs: JSON.stringify(appliedConfigs),
+				}),
+			}),
+		);
+		expect(syncUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					configsApplied: 1,
 					appliedConfigs: JSON.stringify(appliedConfigs),
 				}),
 			}),
