@@ -60,6 +60,7 @@ describe("sync rollback route", () => {
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
+		syncUpdate.mockResolvedValue({ count: 1 });
 		const beforeProfile = qualityProfile([]);
 		const deployedProfile = qualityProfile([{ format: 7, score: 100 }]);
 		const beforeFormat = {
@@ -265,6 +266,36 @@ describe("sync rollback route", () => {
 		expect(response.json()).toMatchObject({ error: "REVIEW_STATE_CHANGED" });
 	});
 
+	it.each([
+		"not-json",
+		JSON.stringify(["Created CF"]),
+		JSON.stringify([{ name: 42, action: "created" }]),
+		JSON.stringify([{ name: "Created CF", action: "removed" }]),
+	])("rejects invalid rollback ownership evidence before upstream work: %s", async (evidence) => {
+		syncRecord.appliedConfigs = evidence;
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode).toBe(500);
+		expect(response.json()).toMatchObject({
+			error: "ROLLBACK_FAILED",
+			message: expect.stringContaining("ownership evidence is invalid"),
+		});
+		expect(profileUpdate).not.toHaveBeenCalled();
+		expect(formatUpdate).not.toHaveBeenCalled();
+		expect(formatDelete).not.toHaveBeenCalled();
+		expect(syncUpdate).toHaveBeenLastCalledWith({
+			where: {
+				id: "sync-1",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+				rollbackAttemptedAt: expect.any(Date),
+			},
+			data: expect.objectContaining({ rollbackStatus: "PARTIAL" }),
+		});
+	});
+
 	it("refuses a legacy raw-array backup without durable endpoint and resource identity", async () => {
 		const restoredFormat = {
 			id: 7,
@@ -380,10 +411,21 @@ describe("sync rollback route", () => {
 			syncUpdate.mockImplementation(async ({ where, data }) => {
 				let count = 0;
 				for (const row of rows.values()) {
+					const matchesIdentity = where.id ? row.id === where.id : row.backupId === where.backupId;
+					const matchesRollbackStatus =
+						where.rollbackStatus === undefined || row.rollbackStatus === where.rollbackStatus;
+					const matchesClaimStatus =
+						where.OR === undefined ||
+						where.OR.some(
+							(clause: { rollbackStatus: string | null }) =>
+								row.rollbackStatus === clause.rollbackStatus,
+						);
 					if (
-						row.backupId === where.backupId &&
+						matchesIdentity &&
 						row.userId === where.userId &&
-						row.rolledBack === where.rolledBack
+						(where.rolledBack === undefined || row.rolledBack === where.rolledBack) &&
+						matchesRollbackStatus &&
+						matchesClaimStatus
 					) {
 						Object.assign(row, data);
 						count++;

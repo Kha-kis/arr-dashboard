@@ -76,6 +76,9 @@ const rollbackAppliedConfigsSchema = z.array(
 		.object({
 			name: z.string().trim().min(1),
 			action: z.enum(["created", "updated"]).optional(),
+			type: z.enum(["custom_format", "quality_profile", "naming"]).optional(),
+			id: z.number().int().optional(),
+			fields: z.number().int().nonnegative().optional(),
 		})
 		.passthrough(),
 );
@@ -588,13 +591,6 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			data: {
 				rollbackStatus: "IN_PROGRESS",
 				rollbackAttemptedAt,
-				rollbackProgress: JSON.stringify([
-					{
-						step: "rollback",
-						status: "IN_PROGRESS",
-						attemptedAt: rollbackAttemptedAt.toISOString(),
-					},
-				]),
 			},
 		});
 
@@ -605,27 +601,29 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			});
 		}
 
-		const persistPartialRollback = async (
-			errors: string[],
-			progress: Record<string, unknown> = {},
-		) => {
+		const persistPartialRollback = async () => {
 			const result = await app.prisma.trashSyncHistory.updateMany({
 				where: {
 					id: syncId,
 					userId,
+					rolledBack: false,
 					rollbackStatus: "IN_PROGRESS",
 					rollbackAttemptedAt,
 				},
 				data: {
 					rollbackStatus: "PARTIAL",
-					rollbackProgress: JSON.stringify([
-						{ step: "rollback", status: "PARTIAL", errors, ...progress },
-					]),
 				},
 			});
 			if (result.count !== 1) {
 				throw new Error("Rollback recovery state changed before progress could be persisted");
 			}
+		};
+		const stopClaimedRollback = async (
+			statusCode: number,
+			payload: { error: string; message: string },
+		) => {
+			await persistPartialRollback();
+			return reply.status(statusCode).send(payload);
 		};
 
 		// Start metrics tracking
@@ -647,10 +645,13 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								include: { backup: true, instance: true, template: true },
 							});
 							if (!sync) {
-								return reply.status(404).send({ error: "NOT_FOUND", message: "Sync not found" });
+								return reply.status(404).send({
+									error: "NOT_FOUND",
+									message: "Sync not found",
+								});
 							}
 							if (!sync.backupId || !sync.backup) {
-								return reply.status(400).send({
+								return stopClaimedRollback(400, {
 									error: "NO_BACKUP",
 									message: "No backup available for this sync operation",
 								});
@@ -676,7 +677,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 									credentialIdentity: leasedCredentialIdentity!,
 								}) !== endpointKey
 							) {
-								return reply.status(409).send({
+								return stopClaimedRollback(409, {
 									error: "ROLLBACK_TARGET_CHANGED",
 									message: "The ARR service connection changed while rollback was starting.",
 								});
@@ -690,7 +691,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 									{ syncId, err: error },
 									"Failed to parse backup data for rollback",
 								);
-								return reply.status(400).send({
+								return stopClaimedRollback(400, {
 									error: "INVALID_BACKUP",
 									message: "Backup data is corrupted or invalid",
 								});
@@ -701,7 +702,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								!Array.isArray(rawBackup) &&
 								Reflect.get(rawBackup, "schemaVersion") === 2;
 							if (!isV2Backup) {
-								return reply.status(409).send({
+								return stopClaimedRollback(409, {
 									error: "LEGACY_BACKUP_UNVERIFIED",
 									message:
 										"This legacy backup does not contain the endpoint and resource identity needed for a safe automatic rollback. Restore it manually after verifying the ARR instance and each target resource.",
@@ -750,7 +751,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 									{ syncId, err: error },
 									"Failed to parse backup data for rollback",
 								);
-								return reply.status(400).send({
+								return stopClaimedRollback(400, {
 									error: "INVALID_BACKUP",
 									message: "Backup data is corrupted or invalid",
 								});
@@ -759,14 +760,14 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								backupEndpointKey !== endpointKey ||
 								backupConnectionStateToken !== createDeploymentConnectionStateToken(currentInstance)
 							) {
-								return reply.status(409).send({
+								return stopClaimedRollback(409, {
 									error: "ROLLBACK_TARGET_CHANGED",
 									message:
 										"The backup is not bound to this ARR service connection, so rollback was stopped.",
 								});
 							}
 							if (!sync.templateId || !sync.backupId) {
-								return reply.status(409).send({
+								return stopClaimedRollback(409, {
 									error: "ROLLBACK_OWNERSHIP_UNKNOWN",
 									message: "The rollback history is missing durable deployment ownership metadata.",
 								});
@@ -797,19 +798,21 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								| SonarrClient
 								| RadarrClient;
 
-							interface AppliedConfig {
-								name: string;
-								action?: "created" | "updated";
-								type?: string;
-								fields?: number;
-							}
 							let appliedConfigs: AppliedConfig[] = [];
 							try {
 								if (sync.appliedConfigs) {
-									appliedConfigs = JSON.parse(sync.appliedConfigs) as AppliedConfig[];
+									appliedConfigs = rollbackAppliedConfigsSchema.parse(
+										JSON.parse(sync.appliedConfigs),
+									);
 								}
-							} catch {
-								request.log.warn({ syncId }, "Could not parse appliedConfigs for rollback");
+							} catch (error) {
+								request.log.warn(
+									{ syncId, err: error },
+									"Could not parse rollback ownership evidence",
+								);
+								throw new Error(
+									"Rollback ownership evidence is invalid; no created Custom Formats were deleted",
+								);
 							}
 
 							let restoredCount = 0;
@@ -822,7 +825,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								existingRollbackSteps = parseRollbackProgress(sync.rollbackProgress);
 							} catch (error) {
 								request.log.warn({ syncId, err: error }, "Invalid rollback progress rejected");
-								return reply.status(409).send({
+								return stopClaimedRollback(409, {
 									error: "INVALID_ROLLBACK_PROGRESS",
 									message:
 										"The saved rollback progress is invalid, so no upstream changes were made.",
@@ -1333,7 +1336,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			// Specialized catch: records failure metrics before propagating
 			const errorMessage = getErrorMessage(error, "Rollback failed");
 			try {
-				await persistPartialRollback([errorMessage]);
+				await persistPartialRollback();
 			} catch (stateError) {
 				request.log.error(
 					{ err: stateError, syncId, rollbackAttemptedAt },

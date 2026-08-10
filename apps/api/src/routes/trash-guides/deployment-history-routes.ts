@@ -7,6 +7,7 @@
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginAsync } from "fastify";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { isNonterminalUndeploy } from "../../lib/backup/backup-validation.js";
 import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
 import {
 	assertSharedDeploymentRestorationAllowed,
@@ -466,6 +467,52 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					"This legacy deployment has no identity-bound backup and cannot be undeployed safely.",
 			});
 		}
+
+		const undeployAttemptedAt = new Date();
+		const claim = await app.prisma.templateDeploymentHistory.updateMany({
+			where: {
+				id: historyId,
+				userId,
+				rolledBack: false,
+				OR: [{ undeployStatus: null }, { undeployStatus: "PARTIAL" }],
+			},
+			data: {
+				undeployStatus: "IN_PROGRESS",
+				undeployAttemptedAt,
+			},
+		});
+		if (claim.count !== 1) {
+			return reply.status(409).send({
+				statusCode: 409,
+				error: "Conflict",
+				message: "An undeploy is already active or requires explicit recovery resolution.",
+			});
+		}
+
+		const persistPartialUndeploy = async () => {
+			const result = await app.prisma.templateDeploymentHistory.updateMany({
+				where: {
+					id: historyId,
+					userId,
+					rolledBack: false,
+					undeployStatus: "IN_PROGRESS",
+					undeployAttemptedAt,
+				},
+				data: {
+					status: "PARTIAL_UNDEPLOY",
+					undeployStatus: "PARTIAL",
+				},
+			});
+			if (result.count !== 1) {
+				throw new Error("Undeploy recovery state changed before progress could be persisted");
+			}
+		};
+		const stopClaimedUndeploy = async (statusCode: number, payload: Record<string, unknown>) => {
+			await persistPartialUndeploy();
+			return reply.status(statusCode).send(payload);
+		};
+		let upstreamMutationAttempted = false;
+
 		return withCleanupTopologyMutationLease({ prisma: app.prisma, log: request.log }, userId, () =>
 			app.deploymentExecutor.runWithEndpointMutation(
 				userId,
@@ -502,7 +549,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						});
 					}
 					if (!history.backup) {
-						return reply.status(409).send({
+						return stopClaimedUndeploy(409, {
 							success: false,
 							message:
 								"This legacy deployment has no identity-bound backup and cannot be undeployed safely.",
@@ -523,7 +570,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 							credentialIdentity: currentCredentialIdentity!,
 						}) !== endpointKey
 					) {
-						return reply.status(409).send({
+						return stopClaimedUndeploy(409, {
 							success: false,
 							message: "The ARR service connection changed while undeploy was starting.",
 						});
@@ -534,7 +581,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						backupState = parseDeploymentBackupState(deploymentBackup.backupData);
 					} catch (error) {
 						request.log.warn({ err: error, historyId }, "Unsafe undeploy backup rejected");
-						return reply.status(409).send({
+						return stopClaimedUndeploy(409, {
 							success: false,
 							message:
 								"This deployment backup is legacy or incomplete and cannot be undeployed safely.",
@@ -545,7 +592,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						backupState.connectionStateToken !==
 							createDeploymentConnectionStateToken(currentInstance)
 					) {
-						return reply.status(409).send({
+						return stopClaimedUndeploy(409, {
 							success: false,
 							message: "The deployment backup is not bound to this ARR service connection.",
 						});
@@ -579,13 +626,13 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						existingProgress = parseUndeployProgress(history.undeployProgress);
 					} catch (error) {
 						request.log.warn({ err: error, historyId }, "Invalid undeploy progress rejected");
-						return reply.status(409).send({
+						return stopClaimedUndeploy(409, {
 							success: false,
 							message: "The saved undeploy progress is invalid, so no upstream changes were made.",
 						});
 					}
 					const stepByKey = new Map(existingProgress.map((step) => [step.key, step]));
-					const attemptedAt = new Date();
+					const attemptedAt = undeployAttemptedAt;
 					const setStep = (step: UndeployStep): void => {
 						stepByKey.set(step.key, step);
 					};
@@ -670,6 +717,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 											createQualityProfileStateToken(profileState.beforeProfile),
 											resourceLabel,
 										);
+										upstreamMutationAttempted = true;
 										await rollbackQualityProfileDeployment(client, {
 											...profileState,
 											status: profileStatus,
@@ -702,6 +750,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 								}
 							} else {
 								try {
+									upstreamMutationAttempted = true;
 									await rollbackQualityProfileDeployment(client, {
 										...profileState,
 										status: profileStatus,
@@ -767,6 +816,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 										createUpstreamResourceStateToken(state.beforeFormat),
 										resourceLabel,
 									);
+									upstreamMutationAttempted = true;
 									await rollbackCustomFormatDeployment(client, state);
 									const restoredFormat = await client.customFormat.getById(state.resourceId);
 									assertSharedDeploymentState(
@@ -795,6 +845,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 							continue;
 						}
 						try {
+							upstreamMutationAttempted = true;
 							const result = await rollbackCustomFormatDeployment(client, state);
 							setStep({
 								key,
@@ -856,6 +907,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 											createUpstreamResourceStateToken(namingState.beforeConfig),
 											"naming configuration",
 										);
+										upstreamMutationAttempted = true;
 										await restoreNamingDeployment(
 											app.arrClientFactory,
 											currentInstance,
@@ -907,6 +959,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 								});
 							} else {
 								try {
+									upstreamMutationAttempted = true;
 									await restoreNamingDeployment(
 										app.arrClientFactory,
 										currentInstance,
@@ -1004,6 +1057,30 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					});
 				},
 			),
-		);
+		).catch(async (error) => {
+			const message = getErrorMessage(error, "Undeploy failed");
+			try {
+				await persistPartialUndeploy();
+			} catch (stateError) {
+				request.log.error(
+					{ err: stateError, historyId, undeployAttemptedAt },
+					"Failed to persist undeploy failure state",
+				);
+			}
+			request.log.error({ err: error, historyId }, "Deployment undeploy failed");
+			const statusCode =
+				error &&
+				typeof error === "object" &&
+				"statusCode" in error &&
+				typeof error.statusCode === "number"
+					? error.statusCode
+					: 500;
+			return reply.status(upstreamMutationAttempted ? 207 : statusCode).send({
+				success: false,
+				message: upstreamMutationAttempted
+					? "ARR changes may have completed, but recovery state could not be finalized. The undeploy remains retryable."
+					: message,
+			});
+		});
 	});
 };

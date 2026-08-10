@@ -89,6 +89,7 @@ describe("deployment history undeploy", () => {
 	const historyFindFirst = vi.fn();
 	const historyFindMany = vi.fn();
 	const historyUpdate = vi.fn();
+	const historyUpdateMany = vi.fn();
 	const syncUpdateMany = vi.fn();
 	const syncFindMany = vi.fn();
 	const instanceFindFirst = vi.fn();
@@ -101,12 +102,20 @@ describe("deployment history undeploy", () => {
 	const getProfileById = vi.fn();
 	const updateProfile = vi.fn();
 	const rawRequest = vi.fn();
+	const systemGet = vi.fn();
+	const transaction = vi.fn();
+	let transactionClient: Record<string, unknown>;
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
 		app = Fastify({ logger: false });
 		setupAuthInjection(app, { id: userId, username: "admin" });
 		registerTestErrorHandler(app);
+		transactionClient = {
+			templateDeploymentHistory: { update: historyUpdate },
+			trashSyncHistory: { updateMany: syncUpdateMany },
+		};
+		transaction.mockImplementation(async (callback) => callback(transactionClient));
 		const prisma = {
 			libraryCleanupConfig: {
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
@@ -116,21 +125,17 @@ describe("deployment history undeploy", () => {
 				findFirst: historyFindFirst,
 				findMany: historyFindMany,
 				update: historyUpdate,
+				updateMany: historyUpdateMany,
 			},
 			trashSyncHistory: { findMany: syncFindMany, updateMany: syncUpdateMany },
 			serviceInstance: {
 				findFirst: instanceFindFirst,
 				findMany: instanceFindMany,
 			},
-			$transaction: vi.fn(async (callback) =>
-				callback({
-					templateDeploymentHistory: { update: historyUpdate },
-					trashSyncHistory: { updateMany: syncUpdateMany },
-				}),
-			),
+			$transaction: transaction,
 		};
 		const client = {
-			system: { get: vi.fn().mockResolvedValue({ version: "5.0.0" }) },
+			system: { get: systemGet.mockResolvedValue({ version: "5.0.0" }) },
 			customFormat: {
 				getAll: getAllFormats,
 				getById: getFormatById,
@@ -165,6 +170,7 @@ describe("deployment history undeploy", () => {
 		instanceFindMany.mockResolvedValue([instance]);
 		syncFindMany.mockResolvedValue([]);
 		historyUpdate.mockResolvedValue({});
+		historyUpdateMany.mockResolvedValue({ count: 1 });
 		syncUpdateMany.mockResolvedValue({ count: 1 });
 		await app.register(deploymentHistoryRoutes);
 		await app.ready();
@@ -205,6 +211,79 @@ describe("deployment history undeploy", () => {
 			message: "This deployment has already been undeployed",
 		});
 		expect(historyUpdate).not.toHaveBeenCalled();
+		expect(deleteFormat).not.toHaveBeenCalled();
+	});
+
+	it("claims undeploy without overwriting resumable progress before reading ARR", async () => {
+		const history = {
+			...currentHistory(backupData()),
+			undeployStatus: "PARTIAL",
+			undeployProgress: JSON.stringify([
+				{
+					key: "custom_format:7",
+					kind: "custom_format",
+					name: "Managed CF",
+					outcome: "restored",
+				},
+			]),
+		};
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(historyUpdateMany).toHaveBeenNthCalledWith(1, {
+			where: {
+				id: "history-1",
+				userId,
+				rolledBack: false,
+				OR: [{ undeployStatus: null }, { undeployStatus: "PARTIAL" }],
+			},
+			data: {
+				undeployStatus: "IN_PROGRESS",
+				undeployAttemptedAt: expect.any(Date),
+			},
+		});
+		expect(historyUpdateMany.mock.invocationCallOrder[0]).toBeLessThan(
+			systemGet.mock.invocationCallOrder[0]!,
+		);
+	});
+
+	it("stops before ARR access when another undeploy owns the claim", async () => {
+		const history = currentHistory(backupData());
+		historyFindFirst.mockResolvedValue(history);
+		historyUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode).toBe(409);
+		expect(systemGet).not.toHaveBeenCalled();
+		expect(historyFindFirst).toHaveBeenCalledOnce();
+	});
+
+	it("releases the claim as retryable when ARR validation fails unexpectedly", async () => {
+		const history = currentHistory(backupData());
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+		systemGet.mockRejectedValueOnce(new Error("ARR read failed"));
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode).toBe(500);
+		expect(historyUpdateMany).toHaveBeenLastCalledWith({
+			where: {
+				id: "history-1",
+				userId,
+				rolledBack: false,
+				undeployStatus: "IN_PROGRESS",
+				undeployAttemptedAt: expect.any(Date),
+			},
+			data: {
+				status: "PARTIAL_UNDEPLOY",
+				undeployStatus: "PARTIAL",
+			},
+		});
 		expect(deleteFormat).not.toHaveBeenCalled();
 	});
 
@@ -422,9 +501,7 @@ describe("deployment history undeploy", () => {
 			success: false,
 			data: { restoredCFs: [], skippedShared: [] },
 		});
-		expect(response.json().data.errors[0]).toContain(
-			"upstream API has no conditional update",
-		);
+		expect(response.json().data.errors[0]).toContain("upstream API has no conditional update");
 		expect(updateFormat).not.toHaveBeenCalled();
 		expect(historyUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -539,9 +616,7 @@ describe("deployment history undeploy", () => {
 
 		expect(response.statusCode, response.body).toBe(200);
 		expect(response.json().success).toBe(false);
-		expect(response.json().data.errors[0]).toContain(
-			"upstream API has no conditional update",
-		);
+		expect(response.json().data.errors[0]).toContain("upstream API has no conditional update");
 		expect(updateProfile).not.toHaveBeenCalled();
 		expect(historyUpdate).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -646,9 +721,7 @@ describe("deployment history undeploy", () => {
 		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
 
 		expect(response.json().success).toBe(false);
-		expect(response.json().data.errors[0]).toContain(
-			"upstream API has no conditional update",
-		);
+		expect(response.json().data.errors[0]).toContain("upstream API has no conditional update");
 		expect(rawRequest).not.toHaveBeenCalledWith(
 			instance,
 			"/api/v3/config/naming",
@@ -747,9 +820,7 @@ describe("deployment history undeploy", () => {
 
 		expect(response.statusCode, response.body).toBe(200);
 		expect(response.json().success).toBe(false);
-		expect(response.json().data.errors[0]).toContain(
-			"upstream API has no conditional update",
-		);
+		expect(response.json().data.errors[0]).toContain("upstream API has no conditional update");
 		expect(rawRequest).not.toHaveBeenCalledWith(
 			instance,
 			"/api/v3/config/naming",
@@ -919,9 +990,7 @@ describe("deployment history undeploy", () => {
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({ success: false, data: { deleted: 0 } });
-		expect(response.json().data.errors[0]).toContain(
-			"upstream API has no conditional update",
-		);
+		expect(response.json().data.errors[0]).toContain("upstream API has no conditional update");
 		expect(updateProfile).not.toHaveBeenCalled();
 		expect(getAllFormats).not.toHaveBeenCalled();
 		expect(deleteFormat).not.toHaveBeenCalled();
