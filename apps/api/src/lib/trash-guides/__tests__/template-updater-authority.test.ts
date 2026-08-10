@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { createDeploymentConnectionStateToken } from "../deployment-target.js";
 import { TemplateUpdater } from "../template-updater.js";
 
-const template = { id: "template-1", userId: "user-1", name: "Any" };
+const template = {
+	id: "template-1",
+	userId: "user-1",
+	name: "Any",
+	instanceOverrides: null as string | null,
+};
 
 function instance(id: string, baseUrl: string) {
 	return {
@@ -178,6 +183,35 @@ describe("TemplateUpdater automation authority", () => {
 				errors: [expect.stringContaining("conflicting deployment authority")],
 			}),
 		]);
+	});
+
+	it("blocks equivalent aliases with different instance overrides", async () => {
+		const primary = instance("a-primary", "http://radarr/");
+		const alias = instance("z-alias", "HTTP://RADARR:80");
+		const previousOverrides = template.instanceOverrides;
+		template.instanceOverrides = JSON.stringify({
+			[primary.id]: { cfScoreOverrides: { "trash-cf": 100 } },
+			[alias.id]: { cfScoreOverrides: { "trash-cf": 200 } },
+		});
+		try {
+			const { privateUpdater, deploySingleInstanceFromAutomation } = createUpdater([
+				mapping(primary),
+				mapping(alias),
+			]);
+
+			const outcomes = await privateUpdater.deployToMappedInstances(template.id);
+
+			expect(deploySingleInstanceFromAutomation).not.toHaveBeenCalled();
+			expect(outcomes).toEqual([
+				expect.objectContaining({
+					instanceId: primary.id,
+					status: "FAILED",
+					errors: [expect.stringContaining("conflicting instance overrides")],
+				}),
+			]);
+		} finally {
+			template.instanceOverrides = previousOverrides;
+		}
 	});
 
 	it("reports a resolved executor failure as an endpoint failure", async () => {

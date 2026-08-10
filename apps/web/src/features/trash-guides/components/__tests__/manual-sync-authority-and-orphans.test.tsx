@@ -3,8 +3,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SyncExecuteRequest } from "../../../../lib/api-client/trash-guides";
+import type { SyncExecuteRequest, ValidationResult } from "../../../../lib/api-client/trash-guides";
 import { DeploymentPreviewModal } from "../deployment-preview-modal";
+import { SyncValidationModal } from "../sync-validation-modal";
 import { TemplateList } from "../template-list";
 
 const executionToken = "a".repeat(64);
@@ -15,7 +16,7 @@ const hookMocks = vi.hoisted(() => ({
 	useExecuteDeployment: vi.fn(),
 }));
 
-const validationResult = {
+const validationResult: ValidationResult = {
 	valid: true,
 	conflicts: [],
 	errors: [],
@@ -52,15 +53,14 @@ const validationResult = {
 	},
 };
 
+let activeValidationResult = validationResult;
+
 vi.mock("../../../../hooks/api/useSync", () => ({
 	useExecuteSync: () => ({ mutateAsync: hookMocks.executeSync }),
-	useValidateSync: (options?: { onSuccess?: (data: typeof validationResult) => void }) => ({
-		mutate: (
-			_request: unknown,
-			callbacks?: { onSuccess?: (data: typeof validationResult) => void },
-		) => {
-			options?.onSuccess?.(validationResult);
-			callbacks?.onSuccess?.(validationResult);
+	useValidateSync: (options?: { onSuccess?: (data: ValidationResult) => void }) => ({
+		mutate: (_request: unknown, callbacks?: { onSuccess?: (data: ValidationResult) => void }) => {
+			options?.onSuccess?.(activeValidationResult);
+			callbacks?.onSuccess?.(activeValidationResult);
 		},
 		isPending: false,
 		isError: false,
@@ -143,6 +143,7 @@ function renderWithQueryClient(children: ReactNode) {
 describe("manual sync authority", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		activeValidationResult = validationResult;
 		hookMocks.executeSync.mockResolvedValue({ syncId: "sync-1" });
 	});
 
@@ -190,6 +191,7 @@ describe("manual sync authority", () => {
 describe("orphan review visibility", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		activeValidationResult = validationResult;
 	});
 
 	it("shows every orphan score reset in manual sync validation", async () => {
@@ -235,5 +237,121 @@ describe("orphan review visibility", () => {
 		expect(screen.getByText("Orphan Two")).toBeInTheDocument();
 		expect(screen.getByText("-50 → 0")).toBeInTheDocument();
 		expect(screen.queryByText("Instance is up to date")).not.toBeInTheDocument();
+	});
+});
+
+describe("manual sync reviewed preview", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		activeValidationResult = {
+			...validationResult,
+			conflicts: [],
+			warnings: ["Validation warning shown to the reviewer."],
+			preview: {
+				...validationResult.preview!,
+				summary: {
+					...validationResult.preview!.summary,
+					totalItems: 2,
+					newCustomFormats: 1,
+					updatedCustomFormats: 1,
+					totalConflicts: 1,
+					unresolvedConflicts: 1,
+				},
+				customFormats: [
+					{
+						trashId: "created-format",
+						name: "Created Format",
+						action: "create",
+						defaultScore: 25,
+						scoreOverride: 25,
+						templateData: {},
+						conflicts: [],
+						hasConflicts: false,
+					},
+					{
+						trashId: "updated-format",
+						name: "Updated Format",
+						action: "update",
+						defaultScore: 500,
+						scoreOverride: 500,
+						templateData: { score: 500 },
+						instanceData: { score: 100 },
+						hasConflicts: true,
+						conflicts: [
+							{
+								cfTrashId: "updated-format",
+								cfName: "Updated Format",
+								conflictType: "score_mismatch",
+								templateValue: 500,
+								instanceValue: 100,
+								suggestedResolution: "use_template",
+							},
+						],
+					},
+				],
+				namingChanges: ["movieFolderFormat", "standardMovieFormat"],
+				warnings: ["Preview warning bound to this execution token."],
+				requiresConflictResolution: true,
+				canDeploy: false,
+			},
+		};
+	});
+
+	it("renders every token-bound reviewed change and warning", async () => {
+		renderWithQueryClient(
+			<SyncValidationModal
+				templateId="template-1"
+				templateName="Test Template"
+				instanceId="instance-1"
+				instanceName="Test Instance"
+				onConfirm={vi.fn()}
+				onCancel={vi.fn()}
+			/>,
+		);
+
+		expect(await screen.findByText("Custom Format Changes (2)")).toBeInTheDocument();
+		expect(screen.getByText("Created Format")).toBeInTheDocument();
+		expect(screen.getByText("Create")).toBeInTheDocument();
+		expect(screen.getByText("Updated Format")).toBeInTheDocument();
+		expect(screen.getByText("Update")).toBeInTheDocument();
+		expect(screen.getByText("Score mismatch")).toBeInTheDocument();
+		expect(screen.getByText("Template: 500")).toBeInTheDocument();
+		expect(screen.getByText("Instance: 100")).toBeInTheDocument();
+		expect(screen.getByText("Naming Changes (2)")).toBeInTheDocument();
+		expect(screen.getByText("movieFolderFormat")).toBeInTheDocument();
+		expect(screen.getByText("standardMovieFormat")).toBeInTheDocument();
+		expect(screen.getByText("Orphan One")).toBeInTheDocument();
+		expect(screen.getByText("Orphan Two")).toBeInTheDocument();
+		expect(screen.getByText(/Validation warning shown to the reviewer\./)).toBeInTheDocument();
+		expect(screen.getByText(/Preview warning bound to this execution token\./)).toBeInTheDocument();
+	});
+
+	it("requires an explicit resolution for preview conflicts before confirmation", async () => {
+		const onConfirm = vi.fn();
+		renderWithQueryClient(
+			<SyncValidationModal
+				templateId="template-1"
+				templateName="Test Template"
+				instanceId="instance-1"
+				instanceName="Test Instance"
+				onConfirm={onConfirm}
+				onCancel={vi.fn()}
+			/>,
+		);
+
+		const confirmButton = await screen.findByRole("button", {
+			name: "Resolve all conflicts to continue",
+		});
+		expect(confirmButton).toBeDisabled();
+		fireEvent.click(confirmButton);
+		expect(onConfirm).not.toHaveBeenCalled();
+
+		fireEvent.click(screen.getByRole("button", { name: "Keep existing Updated Format" }));
+		expect(confirmButton).toBeEnabled();
+		fireEvent.click(confirmButton);
+
+		expect(onConfirm).toHaveBeenCalledWith(executionToken, {
+			"updated-format": "SKIP",
+		});
 	});
 });

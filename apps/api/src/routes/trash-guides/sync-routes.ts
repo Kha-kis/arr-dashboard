@@ -244,7 +244,16 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			});
 		}
 
-		const { syncEngine } = await getServices(userId);
+		const { syncEngine, templateUpdater } = await getServices(userId);
+		const templateSync = await templateUpdater.syncTemplate(body.templateId, undefined, userId);
+		if (!templateSync.success) {
+			return reply.send({
+				valid: false,
+				conflicts: [],
+				errors: [`Template sync failed: ${templateSync.errors?.join(", ") || "Unknown error"}`],
+				warnings: [],
+			});
+		}
 		const validation = await syncEngine.validate({
 			templateId: body.templateId,
 			instanceId: body.instanceId,
@@ -303,19 +312,21 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 		const finalProgress: SyncProgress = {
 			syncId: result.syncId,
 			status:
-				result.status === "UNCERTAIN"
-					? "UNCERTAIN"
-					: result.status === "FAILED"
-						? "FAILED"
-						: "COMPLETED",
+				result.status === "SUCCESS"
+					? "COMPLETED"
+					: result.status === "UNCERTAIN"
+						? "UNCERTAIN"
+						: "FAILED",
 			currentStep:
 				result.status === "UNCERTAIN"
 					? "Sync result is uncertain; resolve or roll back before retrying"
-					: result.status !== "FAILED"
+					: result.status === "SUCCESS"
 						? result.warnings?.length
 							? `Sync completed with warnings: ${result.warnings.join("; ")}`
 							: `Sync completed: ${result.configsApplied} applied, ${result.configsFailed} failed`
-						: "Sync failed",
+						: result.status === "PARTIAL_SUCCESS"
+							? `Sync completed with errors: ${result.configsApplied} applied, ${result.configsFailed} failed`
+							: "Sync failed",
 			progress: 100,
 			totalConfigs: result.configsApplied + result.configsFailed + result.configsSkipped,
 			appliedConfigs: result.configsApplied,

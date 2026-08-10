@@ -668,9 +668,21 @@ export class DeploymentExecutorService {
 				const cfResolution =
 					conflictResolutions?.[templateCF.trashId] ?? conflictResolutions?.[templateCF.name];
 				if (existingCF && cfResolution === "keep_existing") {
-					if (existingCF.id !== undefined) {
-						resolvedResourceIds.set(templateCF.trashId, existingCF.id);
+					if (existingCF.id === undefined) {
+						throw new ConflictError(
+							`Custom Format "${templateCF.name}" has no stable ARR identity. Refresh the preview and try again.`,
+						);
 					}
+					const freshExistingCF = await client.customFormat.getById(existingCF.id);
+					if (
+						createUpstreamResourceStateToken(freshExistingCF) !==
+						createUpstreamResourceStateToken(existingCF)
+					) {
+						throw new ConflictError(
+							`Custom Format "${templateCF.name}" changed during deployment. Refresh the preview and review the deployment again.`,
+						);
+					}
+					resolvedResourceIds.set(templateCF.trashId, existingCF.id);
 					skipped++;
 					continue;
 				}
@@ -774,10 +786,10 @@ export class DeploymentExecutorService {
 					);
 					mutationState.status = "applied";
 					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
-					await persistMutationState(mutationState, false);
-					resolvedResourceIds.set(templateCF.trashId, createdFormat.id);
 					created++;
 					details.created.push(templateCF.name);
+					await persistMutationState(mutationState, false);
+					resolvedResourceIds.set(templateCF.trashId, createdFormat.id);
 				}
 			} catch (error) {
 				if (upstreamMutationStarted) {
@@ -1383,6 +1395,17 @@ export class DeploymentExecutorService {
 		database: PrismaClient,
 		finalization: NonNullable<SyncQualityProfileResult["mappingFinalization"]>,
 	): Promise<void> {
+		const bindingByInstanceId = new Map(
+			finalization.connectionBindings.map((binding) => [binding.instanceId, binding]),
+		);
+		if (
+			bindingByInstanceId.size !== finalization.equivalentInstanceIds.length ||
+			finalization.equivalentInstanceIds.some((instanceId) => !bindingByInstanceId.has(instanceId))
+		) {
+			throw new ConflictError(
+				"Equivalent ARR alias connection authority is incomplete and cannot be finalized safely.",
+			);
+		}
 		const liveOverrides = await database.instanceQualityProfileOverride.findMany({
 			where: {
 				userId: finalization.userId,
@@ -1425,17 +1448,73 @@ export class DeploymentExecutorService {
 				qualityProfileId: finalization.qualityProfileId,
 			},
 		});
-		for (const [customFormatId, score] of finalization.savedScoreOverrides) {
-			await database.instanceQualityProfileOverride.create({
-				data: {
-					userId: finalization.userId,
-					instanceId: finalization.instanceId,
+		for (const binding of bindingByInstanceId.values()) {
+			for (const [customFormatId, score] of finalization.savedScoreOverrides) {
+				await database.instanceQualityProfileOverride.create({
+					data: {
+						userId: finalization.userId,
+						instanceId: binding.instanceId,
+						qualityProfileId: finalization.qualityProfileId,
+						customFormatId,
+						score,
+						status: "APPLIED",
+						connectionGeneration: binding.connectionGeneration,
+						connectionStateToken: binding.connectionStateToken,
+					},
+				});
+			}
+		}
+	}
+
+	private async finalizeQualityProfileMappingState(
+		database: PrismaClient,
+		finalization: NonNullable<SyncQualityProfileResult["mappingFinalization"]>,
+	): Promise<void> {
+		await this.finalizeSavedScoreOverrideState(database, finalization);
+		const bindingByInstanceId = new Map(
+			finalization.connectionBindings.map((binding) => [binding.instanceId, binding]),
+		);
+		if (
+			bindingByInstanceId.size !== finalization.equivalentInstanceIds.length ||
+			finalization.equivalentInstanceIds.some((instanceId) => !bindingByInstanceId.has(instanceId))
+		) {
+			throw new ConflictError(
+				"Equivalent ARR alias connection authority is incomplete and cannot be finalized safely.",
+			);
+		}
+
+		await database.templateQualityProfileMapping.deleteMany({
+			where: {
+				templateId: finalization.templateId,
+				instanceId: { in: finalization.equivalentInstanceIds },
+			},
+		});
+		for (const binding of bindingByInstanceId.values()) {
+			await database.templateQualityProfileMapping.upsert({
+				where: {
+					instanceId_qualityProfileId: {
+						instanceId: binding.instanceId,
+						qualityProfileId: finalization.qualityProfileId,
+					},
+				},
+				create: {
+					templateId: finalization.templateId,
+					instanceId: binding.instanceId,
 					qualityProfileId: finalization.qualityProfileId,
-					customFormatId,
-					score,
-					status: "APPLIED",
-					connectionGeneration: finalization.connectionGeneration,
-					connectionStateToken: finalization.connectionStateToken,
+					qualityProfileName: finalization.qualityProfileName,
+					connectionGeneration: binding.connectionGeneration,
+					connectionStateToken: binding.connectionStateToken,
+					syncStrategy: finalization.syncStrategy || "notify",
+					lastSyncedAt: new Date(),
+				},
+				update: {
+					templateId: finalization.templateId,
+					qualityProfileName: finalization.qualityProfileName,
+					connectionGeneration: binding.connectionGeneration,
+					connectionStateToken: binding.connectionStateToken,
+					...(finalization.syncStrategy && { syncStrategy: finalization.syncStrategy }),
+					lastSyncedAt: new Date(),
+					updatedAt: new Date(),
 				},
 			});
 		}
@@ -2181,49 +2260,13 @@ export class DeploymentExecutorService {
 										);
 									}
 
-									await this.finalizeSavedScoreOverrideState(database, mappingFinalization);
-
-									await database.templateQualityProfileMapping.deleteMany({
-										where: {
-											templateId: mappingFinalization.templateId,
-											instanceId: { in: mappingFinalization.equivalentInstanceIds },
-										},
-									});
-									await database.templateQualityProfileMapping.upsert({
-										where: {
-											instanceId_qualityProfileId: {
-												instanceId: mappingFinalization.instanceId,
-												qualityProfileId: mappingFinalization.qualityProfileId,
-											},
-										},
-										create: {
-											templateId: mappingFinalization.templateId,
-											instanceId: mappingFinalization.instanceId,
-											qualityProfileId: mappingFinalization.qualityProfileId,
-											qualityProfileName: mappingFinalization.qualityProfileName,
-											connectionGeneration: mappingFinalization.connectionGeneration,
-											connectionStateToken: mappingFinalization.connectionStateToken,
-											syncStrategy: mappingFinalization.syncStrategy || "notify",
-											lastSyncedAt: new Date(),
-										},
-										update: {
-											templateId: mappingFinalization.templateId,
-											qualityProfileName: mappingFinalization.qualityProfileName,
-											connectionGeneration: mappingFinalization.connectionGeneration,
-											connectionStateToken: mappingFinalization.connectionStateToken,
-											...(mappingFinalization.syncStrategy && {
-												syncStrategy: mappingFinalization.syncStrategy,
-											}),
-											lastSyncedAt: new Date(),
-											updatedAt: new Date(),
-										},
-									});
+									await this.finalizeQualityProfileMappingState(database, mappingFinalization);
 								}
 								if (managedMappingUpdate) {
 									await database.templateQualityProfileMapping.updateMany({
 										where: {
 											templateId,
-											instanceId,
+											instanceId: { in: equivalentInstanceIds },
 											qualityProfileId: managedMappingUpdate.managedProfileId,
 										},
 										data: {

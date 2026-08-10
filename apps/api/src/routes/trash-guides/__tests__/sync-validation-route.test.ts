@@ -64,6 +64,7 @@ describe("manual sync review authority", () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mocks.syncTemplate.mockResolvedValue({ success: true, errors: [] });
 		mocks.validate.mockResolvedValue({ valid: true, conflicts: [], errors: [], warnings: [] });
 		mocks.generatePreview.mockResolvedValue({
 			templateId,
@@ -92,14 +93,20 @@ describe("manual sync review authority", () => {
 		app = undefined;
 	});
 
-	it("returns the exact deployment plan without refreshing the template", async () => {
+	it("refreshes persisted template data before validating and issuing the reviewed plan", async () => {
 		app = await createApp();
 		const response = await createInjectAuthenticated(app)("POST", "/validate", {
 			body: { templateId, instanceId },
 		});
 
 		expect(response.statusCode).toBe(200);
-		expect(mocks.syncTemplate).not.toHaveBeenCalled();
+		expect(mocks.syncTemplate).toHaveBeenCalledWith(templateId, undefined, "user-1");
+		expect(mocks.syncTemplate.mock.invocationCallOrder[0]).toBeLessThan(
+			mocks.validate.mock.invocationCallOrder[0]!,
+		);
+		expect(mocks.validate.mock.invocationCallOrder[0]).toBeLessThan(
+			mocks.generatePreview.mock.invocationCallOrder[0]!,
+		);
 		expect(response.json()).toMatchObject({
 			valid: true,
 			executionToken,
@@ -109,6 +116,28 @@ describe("manual sync review authority", () => {
 				namingChanges: ["movieFolderFormat"],
 			},
 		});
+	});
+
+	it("does not issue a review token when the template refresh fails", async () => {
+		mocks.syncTemplate.mockResolvedValueOnce({
+			success: false,
+			errors: ["GitHub unavailable"],
+		});
+		app = await createApp();
+
+		const response = await createInjectAuthenticated(app)("POST", "/validate", {
+			body: { templateId, instanceId },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({
+			valid: false,
+			conflicts: [],
+			errors: ["Template sync failed: GitHub unavailable"],
+			warnings: [],
+		});
+		expect(mocks.validate).not.toHaveBeenCalled();
+		expect(mocks.generatePreview).not.toHaveBeenCalled();
 	});
 
 	it("executes only as manual and forwards the reviewed token", async () => {
@@ -123,5 +152,35 @@ describe("manual sync review authority", () => {
 			undefined,
 			executionToken,
 		);
+		expect(mocks.syncTemplate).not.toHaveBeenCalled();
+	});
+
+	it("exposes partial success as non-success terminal progress", async () => {
+		mocks.execute.mockResolvedValueOnce({
+			syncId: "sync-partial",
+			success: false,
+			status: "PARTIAL_SUCCESS",
+			configsApplied: 2,
+			configsFailed: 1,
+			configsSkipped: 0,
+			errors: [{ configName: "HDR", error: "Update failed", retryable: true }],
+			warnings: [],
+		});
+		app = await createApp();
+
+		const executeResponse = await createInjectAuthenticated(app)("POST", "/execute", {
+			body: { templateId, instanceId, executionToken },
+		});
+		const progressResponse = await createInjectAuthenticated(app)("GET", "/sync-partial/progress");
+
+		expect(executeResponse.statusCode).toBe(200);
+		expect(progressResponse.statusCode).toBe(200);
+		expect(progressResponse.json()).toMatchObject({
+			syncId: "sync-partial",
+			status: "FAILED",
+			progress: 100,
+			appliedConfigs: 2,
+			failedConfigs: 1,
+		});
 	});
 });

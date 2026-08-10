@@ -236,6 +236,37 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 		expect(update).not.toHaveBeenCalled();
 	});
 
+	it("revalidates a kept format before retaining its managed identity", async () => {
+		const existing = { id: 1, name: "Test CF", specifications: [] } as SdkCustomFormat;
+		const client = {
+			customFormat: {
+				getById: vi.fn().mockResolvedValue({
+					...existing,
+					name: "Changed after review",
+				}),
+				update: vi.fn(),
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployCustomFormats.bind(executor);
+
+		await expect(
+			run(
+				client,
+				[{ trashId: "cf-1", name: "Test CF", originalConfig: { specifications: [] } }],
+				new Map([["cf-1", existing]]),
+				new Map([["Test CF", existing]]),
+				{ "cf-1": "keep_existing" },
+			),
+		).rejects.toThrow("changed during deployment");
+		expect(client.customFormat.getById).toHaveBeenCalledWith(1);
+		expect(client.customFormat.update).not.toHaveBeenCalled();
+	});
+
 	it("aborts instead of creating a duplicate format that appeared after preview", async () => {
 		const create = vi.fn();
 		const client = {
@@ -1627,6 +1658,108 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		expect(deleteMany).not.toHaveBeenCalled();
 		expect(transaction).not.toHaveBeenCalled();
 		expect(upsert).not.toHaveBeenCalled();
+	});
+
+	it("finalizes mapping and saved-score authority for every equivalent alias", async () => {
+		const deleteMappings = vi.fn().mockResolvedValue({ count: 2 });
+		const upsertMapping = vi.fn().mockResolvedValue({});
+		const deleteOverrides = vi.fn().mockResolvedValue({ count: 0 });
+		const createOverride = vi.fn().mockResolvedValue({});
+		const database = {
+			templateQualityProfileMapping: {
+				deleteMany: deleteMappings,
+				upsert: upsertMapping,
+			},
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "instance-primary",
+						qualityProfileId: 7,
+						customFormatId: 42,
+						score: 100,
+						status: "APPLIED",
+						connectionGeneration: 2,
+						connectionStateToken: "primary-token",
+					},
+					{
+						instanceId: "instance-alias",
+						qualityProfileId: 7,
+						customFormatId: 42,
+						score: 100,
+						status: "APPLIED",
+						connectionGeneration: 3,
+						connectionStateToken: "alias-token",
+					},
+				]),
+				deleteMany: deleteOverrides,
+				create: createOverride,
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never) as unknown as {
+			finalizeQualityProfileMappingState: (
+				database: unknown,
+				finalization: Record<string, unknown>,
+			) => Promise<void>;
+		};
+		const connectionBindings = [
+			{
+				instanceId: "instance-primary",
+				connectionGeneration: 2,
+				connectionStateToken: "primary-token",
+			},
+			{
+				instanceId: "instance-alias",
+				connectionGeneration: 3,
+				connectionStateToken: "alias-token",
+			},
+		];
+
+		await executor.finalizeQualityProfileMappingState(database, {
+			userId: "user-1",
+			templateId: "template-1",
+			instanceId: "instance-primary",
+			equivalentInstanceIds: ["instance-primary", "instance-alias"],
+			connectionBindings,
+			connectionReadBindings: connectionBindings,
+			savedScoreOverrides: [[42, 100]],
+			qualityProfileId: 7,
+			qualityProfileName: "HD-1080p",
+			connectionGeneration: 2,
+			connectionStateToken: "primary-token",
+			syncStrategy: "auto",
+		});
+
+		expect(deleteMappings).toHaveBeenCalledWith({
+			where: {
+				templateId: "template-1",
+				instanceId: { in: ["instance-primary", "instance-alias"] },
+			},
+		});
+		expect(upsertMapping).toHaveBeenCalledTimes(2);
+		expect(upsertMapping).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					instanceId_qualityProfileId: {
+						instanceId: "instance-alias",
+						qualityProfileId: 7,
+					},
+				},
+				create: expect.objectContaining({
+					instanceId: "instance-alias",
+					connectionGeneration: 3,
+					connectionStateToken: "alias-token",
+				}),
+			}),
+		);
+		expect(createOverride).toHaveBeenCalledTimes(2);
+		expect(createOverride).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				instanceId: "instance-alias",
+				customFormatId: 42,
+				connectionGeneration: 3,
+				connectionStateToken: "alias-token",
+			}),
+		});
 	});
 
 	it("resets an orphaned managed score and defers override cleanup until finalization", async () => {

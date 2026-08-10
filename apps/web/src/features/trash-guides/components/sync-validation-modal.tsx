@@ -13,12 +13,12 @@
  */
 
 import { Info, Loader2, RefreshCw, X } from "lucide-react";
-import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
 import { useValidateSync } from "../../../hooks/api/useSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { ValidationResult } from "../../../lib/api-client/trash-guides";
+import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import {
 	detectErrorTypes,
@@ -37,6 +37,21 @@ import {
 
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === "development";
+
+const ACTION_LABELS = {
+	create: "Create",
+	update: "Update",
+	delete: "Delete",
+	skip: "Skip",
+} as const;
+
+const formatConflictType = (conflictType: string) => {
+	const label = conflictType.replaceAll("_", " ");
+	return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+};
+
+const formatConflictValue = (value: unknown) =>
+	typeof value === "object" && value !== null ? JSON.stringify(value) : String(value);
 
 interface SyncValidationModalProps {
 	templateId: string;
@@ -223,15 +238,7 @@ export const SyncValidationModal = ({
 			{
 				onSuccess: (data) => {
 					setValidation(data);
-					if (data && Array.isArray(data.conflicts) && data.conflicts.length > 0) {
-						const defaultResolutions: Record<string, "REPLACE" | "SKIP"> = {};
-						data.conflicts.forEach((conflict) => {
-							defaultResolutions[conflict.configName] = "REPLACE";
-						});
-						setResolutions(defaultResolutions);
-					} else {
-						setResolutions({});
-					}
+					setResolutions({});
 				},
 			},
 		);
@@ -264,26 +271,46 @@ export const SyncValidationModal = ({
 		}));
 	};
 
-	const handleConfirm = () => {
-		if (!validation?.executionToken) return;
-		onConfirm(validation.executionToken, resolutions);
-	};
-
 	const isValidating = validateMutation.isPending;
 	const hasErrors = Array.isArray(validation?.errors) && validation.errors.length > 0;
-	const _hasWarnings = Array.isArray(validation?.warnings) && validation.warnings.length > 0;
-	const hasConflicts = Array.isArray(validation?.conflicts) && validation.conflicts.length > 0;
 	const canProceed = !!validation?.executionToken && validation.valid && !hasErrors;
-	const orphanedCustomFormats = validation?.preview?.orphanedCustomFormats ?? [];
+	const preview = validation?.preview;
+	const customFormats = preview?.customFormats ?? [];
+	const namingChanges = preview?.namingChanges ?? [];
+	const unmatchedCustomFormats = preview?.unmatchedCustomFormats ?? [];
+	const orphanedCustomFormats = preview?.orphanedCustomFormats ?? [];
+	const previewConflictItems = customFormats.filter(
+		(item) => item.hasConflicts || item.conflicts.length > 0,
+	);
+	const previewConflictNames = new Set(previewConflictItems.map((item) => item.name));
+	const legacyConflicts = (validation?.conflicts ?? []).filter(
+		(conflict) => !previewConflictNames.has(conflict.configName),
+	);
+	const conflictKeys = [
+		...previewConflictItems.map((item) => item.trashId),
+		...legacyConflicts.map((conflict) => conflict.configName),
+	];
+	const previewHasUnrenderableConflicts = Boolean(
+		preview &&
+			(preview.requiresConflictResolution || preview.summary.unresolvedConflicts > 0) &&
+			conflictKeys.length === 0,
+	);
+	const hasConflicts = conflictKeys.length > 0 || previewHasUnrenderableConflicts;
+	const hasUnresolvedConflicts =
+		previewHasUnrenderableConflicts || conflictKeys.some((key) => !resolutions[key]);
+	const canConfirm = canProceed && !hasUnresolvedConflicts;
 
 	const hasSilentFailure = validation && !validation.valid && !hasErrors;
 
 	const errorTypes = hasErrors ? detectErrorTypes(validation.errors) : new Set<ErrorType>();
 
-	const informationalWarnings = (validation?.warnings || []).filter(
+	const warnings = Array.from(
+		new Set([...(validation?.warnings ?? []), ...(preview?.warnings ?? [])]),
+	);
+	const informationalWarnings = warnings.filter(
 		(w) => w.includes("is reachable") || w.includes("Validation passed"),
 	);
-	const actualWarnings = (validation?.warnings || []).filter(
+	const actualWarnings = warnings.filter(
 		(w) => !w.includes("is reachable") && !w.includes("Validation passed"),
 	);
 	const hasActualWarnings = actualWarnings.length > 0;
@@ -291,6 +318,11 @@ export const SyncValidationModal = ({
 	const _isAutoRetrying = retryProgress !== null && retryProgress.isWaiting;
 
 	const displayError = localError ?? validateMutation.error ?? null;
+
+	const handleConfirm = () => {
+		if (!validation?.executionToken || !canConfirm) return;
+		onConfirm(validation.executionToken, resolutions);
+	};
 
 	// Shared retry props for extracted panels
 	const retryProps = {
@@ -432,6 +464,132 @@ export const SyncValidationModal = ({
 								</div>
 							)}
 
+							{customFormats.length > 0 && (
+								<section className="space-y-3" aria-labelledby="sync-custom-format-changes">
+									<h3
+										id="sync-custom-format-changes"
+										className="text-sm font-medium text-foreground"
+									>
+										Custom Format Changes ({customFormats.length})
+									</h3>
+									<div className="space-y-2">
+										{customFormats.map((item) => {
+											const hasItemConflicts = item.hasConflicts || item.conflicts.length > 0;
+											const resolution = resolutions[item.trashId];
+
+											return (
+												<div
+													key={item.trashId}
+													className="rounded-xl border border-border/50 bg-card/30 p-3"
+												>
+													<div className="flex items-start justify-between gap-3">
+														<div className="min-w-0">
+															<p className="truncate text-sm font-medium text-foreground">
+																{item.name}
+															</p>
+															<p className="mt-1 text-xs text-muted-foreground">
+																Score: {item.scoreOverride}
+															</p>
+														</div>
+														<span className="shrink-0 rounded-full border border-border/50 bg-muted/50 px-2 py-0.5 text-xs font-medium text-foreground">
+															{ACTION_LABELS[item.action]}
+														</span>
+													</div>
+
+													{hasItemConflicts && (
+														<div className="mt-3 space-y-3 border-t border-border/50 pt-3">
+															<div>
+																<p className="text-xs font-medium text-foreground">
+																	{item.conflicts.length} Conflict
+																	{item.conflicts.length !== 1 ? "s" : ""} Detected
+																</p>
+																<div className="mt-2 space-y-2">
+													{item.conflicts.map((conflict) => (
+														<div
+															key={`${item.trashId}-${conflict.cfTrashId}-${conflict.conflictType}`}
+																			className="rounded-lg border border-border/50 bg-muted/20 p-2 text-xs"
+																		>
+																			<p className="font-medium text-foreground">
+																				{formatConflictType(conflict.conflictType)}
+																			</p>
+																			<p className="mt-1 break-words text-muted-foreground">
+																				Template: {formatConflictValue(conflict.templateValue)}
+																			</p>
+																			<p className="mt-1 break-words text-muted-foreground">
+																				Instance: {formatConflictValue(conflict.instanceValue)}
+																			</p>
+																		</div>
+																	))}
+																</div>
+															</div>
+															<div className="flex flex-wrap gap-2">
+																<Button
+																	size="sm"
+																	variant={resolution === "REPLACE" ? "default" : "outline"}
+																	aria-label={`Use template version of ${item.name}`}
+																	aria-pressed={resolution === "REPLACE"}
+																	onClick={() => handleResolutionChange(item.trashId, "REPLACE")}
+																	className="rounded-xl"
+																>
+																	Use template
+																</Button>
+																<Button
+																	size="sm"
+																	variant={resolution === "SKIP" ? "default" : "outline"}
+																	aria-label={`Keep existing ${item.name}`}
+																	aria-pressed={resolution === "SKIP"}
+																	onClick={() => handleResolutionChange(item.trashId, "SKIP")}
+																	className="rounded-xl"
+																>
+																	Keep existing
+																</Button>
+															</div>
+														</div>
+													)}
+												</div>
+											);
+										})}
+									</div>
+								</section>
+							)}
+
+							{namingChanges.length > 0 && (
+								<section className="space-y-3" aria-labelledby="sync-naming-changes">
+									<h3 id="sync-naming-changes" className="text-sm font-medium text-foreground">
+										Naming Changes ({namingChanges.length})
+									</h3>
+									<div className="space-y-2">
+										{namingChanges.map((field) => (
+											<div
+												key={field}
+												className="rounded-lg border border-border/50 bg-card/30 px-3 py-2 text-sm text-foreground"
+											>
+												{field}
+											</div>
+										))}
+									</div>
+								</section>
+							)}
+
+							{unmatchedCustomFormats.length > 0 && (
+								<section className="space-y-3" aria-labelledby="sync-unmatched-formats">
+									<h3 id="sync-unmatched-formats" className="text-sm font-medium text-foreground">
+										Unmatched Custom Formats ({unmatchedCustomFormats.length})
+									</h3>
+									<div className="space-y-2">
+										{unmatchedCustomFormats.map((item) => (
+											<div
+												key={item.instanceId}
+												className="rounded-lg border border-border/50 bg-card/30 px-3 py-2"
+											>
+												<p className="text-sm font-medium text-foreground">{item.name}</p>
+												<p className="mt-1 text-xs text-muted-foreground">{item.reason}</p>
+											</div>
+										))}
+									</div>
+								</section>
+							)}
+
 							{orphanedCustomFormats.length > 0 && (
 								<div
 									className="rounded-xl p-4"
@@ -476,22 +634,22 @@ export const SyncValidationModal = ({
 								</div>
 							)}
 
-							{/* Conflicts */}
-							{hasConflicts && validation.conflicts && (
+							{/* Legacy validation conflicts that are not represented in the preview. */}
+							{legacyConflicts.length > 0 && (
 								<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 									<div className="flex items-start gap-3">
 										<Info className="h-5 w-5 shrink-0" style={{ color: themeGradient.from }} />
 										<div className="flex-1">
 											<h3 className="font-medium text-foreground">
-												{validation.conflicts.length} Conflict
-												{validation.conflicts.length !== 1 ? "s" : ""} Detected
+												{legacyConflicts.length} Additional Conflict
+												{legacyConflicts.length !== 1 ? "s" : ""} Detected
 											</h3>
 											<p className="mt-1 text-sm text-muted-foreground">
 												Choose how to handle existing Custom Formats with the same name
 											</p>
 
 											<div className="mt-4 space-y-3">
-												{validation.conflicts.map((conflict) => (
+												{legacyConflicts.map((conflict) => (
 													<div
 														key={conflict.configName}
 														className="rounded-xl border border-border/50 bg-card/30 p-3"
@@ -515,6 +673,8 @@ export const SyncValidationModal = ({
 																	onClick={() =>
 																		handleResolutionChange(conflict.configName, "REPLACE")
 																	}
+																	aria-label={`Replace ${conflict.configName} with template version`}
+																	aria-pressed={resolutions[conflict.configName] === "REPLACE"}
 																	className="rounded-xl"
 																	style={
 																		resolutions[conflict.configName] === "REPLACE"
@@ -536,6 +696,8 @@ export const SyncValidationModal = ({
 																	onClick={() =>
 																		handleResolutionChange(conflict.configName, "SKIP")
 																	}
+																	aria-label={`Keep existing ${conflict.configName}`}
+																	aria-pressed={resolutions[conflict.configName] === "SKIP"}
 																	className="rounded-xl"
 																	style={
 																		resolutions[conflict.configName] === "SKIP"
@@ -554,6 +716,21 @@ export const SyncValidationModal = ({
 											</div>
 										</div>
 									</div>
+								</div>
+							)}
+
+							{previewHasUnrenderableConflicts && (
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.error.bg,
+										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+									}}
+								>
+									<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+										The reviewed preview reports unresolved conflicts but did not include their
+										details. Validate again before syncing.
+									</p>
 								</div>
 							)}
 
@@ -596,10 +773,10 @@ export const SyncValidationModal = ({
 					</Button>
 					<Button
 						onClick={handleConfirm}
-						disabled={!canProceed || isValidating}
+						disabled={!canConfirm || isValidating}
 						className="gap-2 rounded-xl font-medium"
 						style={
-							canProceed && !isValidating
+							canConfirm && !isValidating
 								? {
 										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
 										boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
@@ -607,7 +784,11 @@ export const SyncValidationModal = ({
 								: undefined
 						}
 					>
-						{hasConflicts ? "Proceed with Resolutions" : "Start Sync"}
+						{hasUnresolvedConflicts
+							? "Resolve all conflicts to continue"
+							: hasConflicts
+								? "Proceed with Resolutions"
+								: "Start Sync"}
 					</Button>
 				</div>
 			</div>

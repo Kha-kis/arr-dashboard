@@ -329,6 +329,41 @@ describe("deployment authority writer locking", () => {
 		);
 	});
 
+	it("refuses to unlink aliases with conflicting deployment ownership", async () => {
+		const aliasInstance = { ...instance, id: "instance-alias", label: "Radarr alias" };
+		const aliasMapping = {
+			...mapping,
+			id: "mapping-alias",
+			instanceId: aliasInstance.id,
+			qualityProfileId: 5,
+			instance: aliasInstance,
+		};
+		const deleteMappings = vi.fn();
+		const deleteOverrides = vi.fn();
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance, aliasInstance]) },
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue(mapping),
+				findMany: vi.fn().mockResolvedValue([mapping, aliasMapping]),
+			},
+			$transaction: vi.fn().mockImplementation((action) =>
+				action({
+					templateQualityProfileMapping: { deleteMany: deleteMappings },
+					instanceQualityProfileOverride: { deleteMany: deleteOverrides },
+				}),
+			),
+		};
+		app = await createApp(prisma, createSerializedExecutor());
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/unlink", {
+			body: { templateId: mapping.templateId, instanceId: mapping.instanceId },
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(deleteMappings).not.toHaveBeenCalled();
+		expect(deleteOverrides).not.toHaveBeenCalled();
+	});
+
 	it.each([
 		["sync strategy", "PATCH", "/sync-strategy"],
 		["unlink", "DELETE", "/unlink"],

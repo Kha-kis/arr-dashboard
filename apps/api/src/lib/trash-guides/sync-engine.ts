@@ -690,7 +690,8 @@ export class SyncEngine {
 			// Emit completion
 			this.emitProgress({
 				syncId,
-				status: status === "UNCERTAIN" ? "UNCERTAIN" : "COMPLETED",
+				status:
+					status === "SUCCESS" ? "COMPLETED" : status === "UNCERTAIN" ? "UNCERTAIN" : "FAILED",
 				currentStep: resultSuccess
 					? warnings.length
 						? "Sync completed with warnings"

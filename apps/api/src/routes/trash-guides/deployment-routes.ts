@@ -506,6 +506,14 @@ export async function deploymentRoutes(app: FastifyInstance) {
 						"Deployment authority changed while the template was being unlinked",
 					);
 				}
+				assertEquivalentDeploymentMappingAuthority(
+					equivalentMappings.map((candidate) => ({
+						...candidate,
+						// Unlink is allowed to repair strategy-only drift, but not disagreement
+						// about the profile or Custom Formats that this template owns.
+						syncStrategy: null,
+					})),
+				);
 				await prisma.$transaction(async (transaction) => {
 					const deleted = await transaction.templateQualityProfileMapping.deleteMany({
 						where: {

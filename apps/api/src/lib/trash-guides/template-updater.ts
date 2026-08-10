@@ -30,6 +30,7 @@ import type { DeploymentExecutorService } from "./deployment-executor.js";
 import {
 	assertEquivalentDeploymentMappingAuthority,
 	createDeploymentConnectionBindingCandidates,
+	createUpstreamResourceStateToken,
 } from "./deployment-target.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
 import { trashCustomFormatGroupSchema, trashCustomFormatSchema } from "./github-schemas.js";
@@ -870,7 +871,7 @@ export class TemplateUpdater {
 
 		const template = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId },
-			select: { userId: true, name: true },
+			select: { userId: true, name: true, instanceOverrides: true },
 		});
 
 		if (!template) {
@@ -889,6 +890,19 @@ export class TemplateUpdater {
 		});
 		if (candidateMappings.length === 0) {
 			return [];
+		}
+
+		let instanceOverrides: Record<string, unknown> = {};
+		let instanceOverridesError: string | undefined;
+		try {
+			const parsed = template.instanceOverrides ? JSON.parse(template.instanceOverrides) : {};
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+				throw new Error("instance overrides must be an object");
+			}
+			instanceOverrides = parsed as Record<string, unknown>;
+		} catch (error) {
+			instanceOverridesError = `Automatic deployment blocked because the template's instance overrides could not be validated: ${getErrorMessage(error)}`;
+			log.error({ err: error, templateId }, "Auto-deploy blocked by invalid instance overrides");
 		}
 
 		const endpointMappings = new Map<string, typeof candidateMappings>();
@@ -914,6 +928,15 @@ export class TemplateUpdater {
 				instanceId: mapping.instanceId,
 				instanceLabel: mapping.instance.label,
 			};
+			if (instanceOverridesError) {
+				outcomes.push({
+					...outcomeTarget,
+					success: false,
+					status: "FAILED",
+					errors: [instanceOverridesError],
+				});
+				continue;
+			}
 			const staleMappings = endpointGroup.filter(
 				(candidate) =>
 					!createDeploymentConnectionBindingCandidates(candidate.instance).some(
@@ -946,6 +969,38 @@ export class TemplateUpdater {
 						mappingIds: endpointGroup.map((mapping) => mapping.id),
 					},
 					"Auto-deploy blocked by conflicting alias mappings for one ARR endpoint",
+				);
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [error] });
+				continue;
+			}
+			const invalidOverrideMapping = endpointGroup.find((candidate) => {
+				const value = instanceOverrides[candidate.instanceId];
+				return (
+					value !== undefined &&
+					value !== null &&
+					(typeof value !== "object" || Array.isArray(value))
+				);
+			});
+			if (invalidOverrideMapping) {
+				const error = `Auto-deploy to "${mapping.instance.label}" blocked: instance overrides for ARR alias "${invalidOverrideMapping.instance.label}" are invalid. Review and save the template overrides before continuing.`;
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [error] });
+				continue;
+			}
+			const aliasOverrides = endpointGroup.map(
+				(candidate) => instanceOverrides[candidate.instanceId] ?? {},
+			);
+			const overrideStates = new Set(
+				aliasOverrides.map((value) => createUpstreamResourceStateToken(value)),
+			);
+			if (overrideStates.size > 1) {
+				const error = `Auto-deploy to "${mapping.instance.label}" blocked: equivalent ARR aliases have conflicting instance overrides. Reconcile the per-instance Custom Format and quality settings before continuing.`;
+				log.error(
+					{
+						templateId,
+						endpointKey,
+						mappingIds: endpointGroup.map((candidate) => candidate.id),
+					},
+					"Auto-deploy blocked by conflicting alias instance overrides",
 				);
 				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [error] });
 				continue;
