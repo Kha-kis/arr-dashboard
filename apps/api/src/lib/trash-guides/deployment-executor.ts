@@ -848,22 +848,24 @@ export class DeploymentExecutorService {
 					);
 				}
 				createdProfile = true;
-				await persistProfileState({
-					beforeProfile: null,
-					status: "pending",
-					action: "created",
-					profileId: null,
-					profileName,
-					postStateToken: null,
-					intendedPostStateToken: null,
-				});
-				upstreamMutationStarted = true;
 				targetProfile = await createQualityProfileFromSchema(
 					client,
 					templateConfig,
 					templateCFs,
 					profileName,
 					effectiveQualityConfig,
+					async () => {
+						await persistProfileState({
+							beforeProfile: null,
+							status: "pending",
+							action: "created",
+							profileId: null,
+							profileName,
+							postStateToken: null,
+							intendedPostStateToken: null,
+						});
+						upstreamMutationStarted = true;
+					},
 				);
 				if (targetProfile?.id === undefined) {
 					throw new Error("ARR created the quality profile without returning its ID");
@@ -1441,10 +1443,7 @@ export class DeploymentExecutorService {
 				body: namingState.mergedConfig,
 			});
 			if (!putResponse.ok) {
-				return {
-					fieldsApplied: 0,
-					error: `Failed to apply naming config: HTTP ${putResponse.status}`,
-				};
+				throw new Error(`Naming config PUT returned HTTP ${putResponse.status}`);
 			}
 			const postWriteResponse = await this.clientFactory.rawRequest(
 				instance,
@@ -1792,9 +1791,11 @@ export class DeploymentExecutorService {
 							{ err: backupError, backupId: backup.id, instanceId },
 							"Naming presets applied but rollback metadata could not be finalized",
 						);
-						profileResult.errors.push(
-							"Naming presets were applied, but rollback metadata could not be finalized. Check the server logs before attempting a rollback.",
+						const uncertainError = new ConflictError(
+							"Naming presets were applied, but rollback metadata could not be finalized. Resolve or roll back the interrupted deployment before retrying.",
 						);
+						Object.assign(uncertainError, { deploymentResultUncertain: true });
+						throw uncertainError;
 					}
 				}
 			}
@@ -2008,7 +2009,7 @@ export class DeploymentExecutorService {
 				);
 			}
 
-			if (error instanceof ConflictError) {
+			if (error instanceof ConflictError && !isDeploymentResultUncertain(error)) {
 				if (partialDetails && partialCounts) {
 					const partialDeployment = {
 						...partialCounts,

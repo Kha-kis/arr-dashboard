@@ -4,6 +4,27 @@ import { DeploymentExecutorService } from "../deployment-executor.js";
 import { createQualityProfileStateToken } from "../deployment-target.js";
 
 describe("DeploymentExecutorService Task 4A result propagation", () => {
+	it("returns an explicit uncertain result when a conflict follows a possible upstream write", async () => {
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const uncertain = Object.assign(new ConflictError("ARR write result is uncertain"), {
+			deploymentResultUncertain: true,
+		});
+		const privateExecutor = executor as unknown as {
+			validateAndPrepareDeployment: (...args: unknown[]) => Promise<unknown>;
+			executeSingleDeployment: (...args: unknown[]) => Promise<unknown>;
+		};
+		vi.spyOn(privateExecutor, "validateAndPrepareDeployment").mockRejectedValue(uncertain);
+
+		await expect(
+			privateExecutor.executeSingleDeployment("template-1", "instance-1", "user-1"),
+		).resolves.toMatchObject({
+			instanceId: "instance-1",
+			success: false,
+			status: "UNCERTAIN",
+			errors: ["ARR write result is uncertain"],
+		});
+	});
+
 	it("blocks production deployment before upstream writes when recovery is pending", async () => {
 		const instance = {
 			id: "instance-1",
@@ -254,12 +275,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			errors: [],
 		} as never);
 
-		let conflict: unknown;
-		try {
-			await executor.deploySingleInstance("template-1", "instance-1", "user-1");
-		} catch (error) {
-			conflict = error;
-		}
+		const result = await executor.deploySingleInstance("template-1", "instance-1", "user-1");
 
 		const appliedProfile = {
 			name: "Any",
@@ -267,13 +283,10 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			type: "quality_profile",
 			id: 9,
 		};
-		expect(conflict).toBeInstanceOf(ConflictError);
-		expect(conflict).toMatchObject({
-			details: {
-				partialDeployment: {
-					qualityProfile: { action: "created", profileId: 9, profileName: "Any" },
-				},
-			},
+		expect(result).toMatchObject({
+			success: false,
+			status: "UNCERTAIN",
+			qualityProfileApplied: { action: "created", profileId: 9, profileName: "Any" },
 		});
 		expect(storedBackupPayloads).toContainEqual(expect.any(String));
 		expect(

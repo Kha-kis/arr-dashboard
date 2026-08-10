@@ -582,8 +582,12 @@ export class SyncEngine {
 					"Upstream changes were applied, but sync history could not be finalized. Retry or resolve this sync before making further changes.";
 				errors.push({ configName: "Sync history", error: auditError, retryable: true });
 				warnings.push("ARR changes may be present, but the local audit record is incomplete.");
-				configsFailed = errors.length;
-				status = configsApplied > 0 ? "PARTIAL_SUCCESS" : "FAILED";
+				configsFailed = deploymentUncertain ? 0 : errors.length;
+				status = deploymentUncertain
+					? "UNCERTAIN"
+					: configsApplied > 0
+						? "PARTIAL_SUCCESS"
+						: "FAILED";
 				resultSuccess = false;
 			}
 

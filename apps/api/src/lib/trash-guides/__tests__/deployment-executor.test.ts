@@ -797,6 +797,36 @@ describe("DeploymentExecutorService - naming deployment state", () => {
 		});
 		expect(rawRequest).toHaveBeenCalledTimes(3);
 	});
+
+	it("marks a non-success naming PUT response as uncertain", async () => {
+		const beforeConfig = { id: 1, standardMovieFormat: "Original" };
+		const rawRequest = vi
+			.fn()
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: vi.fn().mockResolvedValue(beforeConfig),
+			})
+			.mockResolvedValueOnce({ ok: false, status: 500 });
+		const executor = new DeploymentExecutorService({} as never, { rawRequest } as never);
+		const deployNamingPresets = (
+			executor as unknown as {
+				deployNamingPresets: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployNamingPresets.bind(executor);
+
+		await expect(
+			deployNamingPresets(
+				{
+					currentConfig: beforeConfig,
+					mergedConfig: { ...beforeConfig, standardMovieFormat: "Deployed" },
+					changedFields: ["standardMovieFormat"],
+				},
+				{ id: "instance-1", service: "RADARR" },
+			),
+		).rejects.toMatchObject({ deploymentResultUncertain: true });
+		expect(rawRequest).toHaveBeenCalledTimes(2);
+	});
 });
 
 describe("DeploymentExecutorService - saved override concurrency", () => {
@@ -1060,6 +1090,46 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 				postStateToken: createQualityProfileStateToken(createdProfile),
 			}),
 		);
+	});
+
+	it("does not leave a pending profile ledger when preparation fails before create", async () => {
+		const persistProfileState = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([]),
+				getSchema: vi.fn().mockRejectedValue(new Error("schema read failed")),
+				create: vi.fn(),
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const syncQualityProfile = (
+			executor as unknown as {
+				syncQualityProfile: (...args: unknown[]) => Promise<{ errors: string[] }>;
+			}
+		).syncQualityProfile.bind(executor);
+
+		const result = await syncQualityProfile(
+			client,
+			{},
+			[],
+			"template-1",
+			"instance-1",
+			"user-1",
+			undefined,
+			undefined,
+			"Any",
+			undefined,
+			undefined,
+			[],
+			new Map(),
+			["instance-1"],
+			undefined,
+			persistProfileState,
+		);
+
+		expect(result.errors).toEqual([expect.stringContaining("schema read failed")]);
+		expect(persistProfileState).not.toHaveBeenCalled();
+		expect(client.qualityProfile.create).not.toHaveBeenCalled();
 	});
 
 	it("retains the created-state token while a later profile update is pending", async () => {

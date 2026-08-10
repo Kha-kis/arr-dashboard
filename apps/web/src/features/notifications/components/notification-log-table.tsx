@@ -28,6 +28,7 @@ const EVENT_TYPE_OPTIONS = [
 	{ value: "TRASH_PROFILE_UPDATED", label: "TRaSH: Profile Updated" },
 	{ value: "TRASH_SYNC_ERROR", label: "TRaSH: Sync Error" },
 	{ value: "TRASH_DEPLOY_FAILED", label: "TRaSH: Deploy Failed" },
+	{ value: "TRASH_DEPLOY_UNCERTAIN", label: "TRaSH: Deploy Needs Review" },
 	{ value: "BACKUP_COMPLETED", label: "Backup: Completed" },
 	{ value: "BACKUP_FAILED", label: "Backup: Failed" },
 	{ value: "LIBRARY_NEW_CONTENT", label: "Library: New Content" },

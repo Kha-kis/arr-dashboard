@@ -56,6 +56,44 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 		);
 	});
 
+	it("preserves an uncertain result when sync history finalization also fails", async () => {
+		const prisma = {
+			trashSyncHistory: {
+				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
+				update: vi.fn().mockRejectedValue(new Error("database unavailable")),
+			},
+		};
+		const engine = new SyncEngine(
+			prisma as never,
+			{ syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }) } as never,
+			{
+				deploySingleInstance: vi.fn().mockResolvedValue({
+					instanceId: "instance-123",
+					instanceLabel: "Test Radarr",
+					success: false,
+					status: "UNCERTAIN",
+					customFormatsCreated: 1,
+					customFormatsUpdated: 0,
+					customFormatsSkipped: 0,
+					errors: ["ARR write result is uncertain"],
+					details: { created: ["Created CF"], updated: [], failed: [] },
+				}),
+			} as never,
+		);
+
+		const result = await engine.execute(createSyncOptions(), undefined);
+
+		expect(result).toMatchObject({
+			success: false,
+			status: "UNCERTAIN",
+			configsApplied: 1,
+			configsFailed: 0,
+		});
+		expect(result.warnings).toContain(
+			"ARR changes may be present, but the local audit record is incomplete.",
+		);
+	});
+
 	it("records a durably created profile when a later reviewed recheck conflicts", async () => {
 		const historyUpdate = vi.fn().mockResolvedValue({});
 		const prisma = {

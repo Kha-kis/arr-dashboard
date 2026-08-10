@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef } from "react";
 import { Button } from "../../../components/ui";
 import { useSyncProgress } from "../../../hooks/api/useSync";
@@ -263,6 +263,7 @@ export const SyncProgressModal = ({
 										const isActive = currentStageIndex === index;
 										const isPast = currentStageIndex > index;
 										const isCurrentFailed = isFailed && currentStageIndex === index;
+										const isCurrentUncertain = isUncertain && currentStageIndex === index;
 
 										return (
 											<div
@@ -280,24 +281,33 @@ export const SyncProgressModal = ({
 														style={{
 															borderColor: isCurrentFailed
 																? SEMANTIC_COLORS.error.from
-																: isPast || isCompleted
-																	? SEMANTIC_COLORS.success.from
-																	: isActive
-																		? themeGradient.from
-																		: "rgba(var(--border))",
+																: isCurrentUncertain
+																	? SEMANTIC_COLORS.warning.from
+																	: isPast || isCompleted
+																		? SEMANTIC_COLORS.success.from
+																		: isActive
+																			? themeGradient.from
+																			: "rgba(var(--border))",
 															backgroundColor: isCurrentFailed
 																? SEMANTIC_COLORS.error.bg
-																: isPast || isCompleted
-																	? SEMANTIC_COLORS.success.bg
-																	: isActive
-																		? `${themeGradient.from}10`
-																		: "transparent",
+																: isCurrentUncertain
+																	? SEMANTIC_COLORS.warning.bg
+																	: isPast || isCompleted
+																		? SEMANTIC_COLORS.success.bg
+																		: isActive
+																			? `${themeGradient.from}10`
+																			: "transparent",
 														}}
 													>
 														{isCurrentFailed ? (
 															<XCircle
 																className="h-5 w-5"
 																style={{ color: SEMANTIC_COLORS.error.from }}
+															/>
+														) : isCurrentUncertain ? (
+															<AlertTriangle
+																className="h-5 w-5"
+																style={{ color: SEMANTIC_COLORS.warning.from }}
 															/>
 														) : isPast || isCompleted ? (
 															<CheckCircle2
@@ -320,7 +330,7 @@ export const SyncProgressModal = ({
 															isActive ? "text-foreground" : "text-muted-foreground"
 														}`}
 													>
-														{STAGE_LABELS[stage]}
+														{isCurrentUncertain ? STAGE_LABELS.UNCERTAIN : STAGE_LABELS[stage]}
 													</span>
 												</div>
 
@@ -421,23 +431,41 @@ export const SyncProgressModal = ({
 								<div
 									className="rounded-xl p-4"
 									style={{
-										backgroundColor: SEMANTIC_COLORS.error.bg,
-										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+										backgroundColor: isUncertain
+											? SEMANTIC_COLORS.warning.bg
+											: SEMANTIC_COLORS.error.bg,
+										border: `1px solid ${isUncertain ? SEMANTIC_COLORS.warning.border : SEMANTIC_COLORS.error.border}`,
 									}}
 								>
 									<div className="flex items-start gap-3">
-										<AlertCircle
+										<AlertTriangle
 											className="h-5 w-5 shrink-0 mt-0.5"
-											style={{ color: SEMANTIC_COLORS.error.from }}
+											style={{
+												color: isUncertain
+													? SEMANTIC_COLORS.warning.from
+													: SEMANTIC_COLORS.error.from,
+											}}
 										/>
 										<div className="flex-1">
-											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
-												{progress.errors.length} Error{progress.errors.length !== 1 ? "s" : ""}{" "}
-												Occurred
+											<h3
+												className="font-medium"
+												style={{
+													color: isUncertain
+														? SEMANTIC_COLORS.warning.text
+														: SEMANTIC_COLORS.error.text,
+												}}
+											>
+												{isUncertain
+													? "Result could not be verified"
+													: `${progress.errors.length} Error${progress.errors.length !== 1 ? "s" : ""} Occurred`}
 											</h3>
 											<ul
 												className="mt-2 space-y-1 text-sm"
-												style={{ color: SEMANTIC_COLORS.error.text }}
+												style={{
+													color: isUncertain
+														? SEMANTIC_COLORS.warning.text
+														: SEMANTIC_COLORS.error.text,
+												}}
 											>
 												{progress.errors.map((errItem, index) => (
 													<li key={index}>
@@ -520,12 +548,12 @@ export const SyncProgressModal = ({
 
 				{/* Footer */}
 				<div className="flex items-center justify-end gap-3 border-t border-border/30 p-6">
-					{(isCompleted || isFailed) && (
+					{(isCompleted || isFailed || isUncertain) && (
 						<Button variant="outline" onClick={onClose} className="gap-2">
 							Close
 						</Button>
 					)}
-					{!isCompleted && !isFailed && (
+					{!isCompleted && !isFailed && !isUncertain && (
 						<div className="flex items-center gap-2 text-sm text-muted-foreground">
 							<Loader2 className="h-4 w-4 animate-spin" style={{ color: themeGradient.from }} />
 							Sync in progress...

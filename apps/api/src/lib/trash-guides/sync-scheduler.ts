@@ -216,7 +216,34 @@ export class TrashSyncScheduler {
 			// Update schedule timing
 			await this.updateNextRunAt(schedule.id, schedule.frequency);
 
-			if (result.success) {
+			if (result.status === "UNCERTAIN") {
+				const errorSummary = result.errors.map((e) => e.error).join("; ") || "Unknown result";
+				this.logger.warn(
+					{
+						scheduleId: schedule.id,
+						templateName,
+						errors: result.errors,
+					},
+					"Scheduled TRaSH sync result is uncertain and requires reconciliation",
+				);
+
+				if (schedule.notifyUser) {
+					this.notifyFn?.({
+						eventType: "TRASH_SYNC_ERROR",
+						title: `Scheduled sync needs review: ${templateName}`,
+						body: `${templateName} → ${instanceLabel}: ARR may have applied changes, but the result could not be verified. ${errorSummary}`,
+						url: "/trash-guides",
+						metadata: {
+							templateId: schedule.templateId,
+							instanceId: schedule.instanceId,
+							syncId: result.syncId,
+							reason: "uncertain_result",
+						},
+					}).catch((err) => {
+						this.logger.debug({ err }, "Sync review notification dispatch failed");
+					});
+				}
+			} else if (result.success) {
 				this.logger.info(
 					{
 						scheduleId: schedule.id,

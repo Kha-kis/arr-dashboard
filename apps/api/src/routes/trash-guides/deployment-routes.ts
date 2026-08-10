@@ -12,6 +12,31 @@ import { createDeploymentPreviewService } from "../../lib/trash-guides/deploymen
 export async function deploymentRoutes(app: FastifyInstance) {
 	const { prisma, deploymentExecutor } = app;
 	const deploymentPreview = createDeploymentPreviewService(prisma, app.arrClientFactory, app.log);
+	const notifyUncertainDeployment = async (
+		userId: string,
+		title: string,
+		body: string,
+		metadata: Record<string, unknown>,
+	): Promise<void> => {
+		if (!app.notificationService) return;
+		const explicitSubscription = await prisma.notificationSubscription.findFirst({
+			where: {
+				eventType: "TRASH_DEPLOY_UNCERTAIN",
+				channel: { userId, enabled: true },
+			},
+			select: { channelId: true },
+		});
+		await app.notificationService.notify(
+			{
+				eventType: explicitSubscription ? "TRASH_DEPLOY_UNCERTAIN" : "TRASH_DEPLOY_FAILED",
+				title,
+				body,
+				url: "/trash-guides",
+				metadata: { ...metadata, reason: "uncertain_result" },
+			},
+			{ userId },
+		);
+	};
 
 	/**
 	 * POST /api/trash-guides/deployment/preview
@@ -97,6 +122,27 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			return reply.send({
 				success: true,
 				result: result,
+			});
+		}
+
+		if (result.status === "UNCERTAIN") {
+			request.log.warn(
+				{ templateId, instanceId },
+				"Deployment result is uncertain and requires reconciliation",
+			);
+			notifyUncertainDeployment(
+				userId,
+				`TRaSH deployment needs review on ${result.instanceLabel}`,
+				result.errors?.join("; ") ??
+					"ARR may have applied changes, but the result could not be verified.",
+				{ instance: result.instanceLabel, templateId, instanceId },
+			).catch((err) => {
+				request.log.warn({ err }, "Deployment review notification dispatch failed");
+			});
+			return reply.send({
+				success: false,
+				error: "Deployment result is uncertain",
+				result,
 			});
 		}
 
@@ -418,7 +464,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				?.notify({
 					eventType: "TRASH_DEPLOY_FAILED",
 					title: `TRaSH bulk deployment had failures`,
-					body: `Failed on: ${failedNames || "unknown instances"}`,
+					body: `Failed on: ${failedNames || "unknown instances"}${hasUncertain ? "; other instances also need review" : ""}`,
 					url: "/trash-guides",
 					metadata: {
 						totalInstances: instanceIds.length,
@@ -428,6 +474,37 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				})
 				.catch((err) => {
 					request.log.warn({ err }, "Bulk deployment failed notification dispatch failed");
+				});
+		}
+
+		if (hasUncertain) {
+			const uncertainNames = result.results
+				.filter((deployment) => deployment.status === "UNCERTAIN")
+				.map((deployment) => deployment.instanceLabel)
+				.join(", ");
+			void prisma.notificationSubscription
+				.findFirst({
+					where: {
+						eventType: "TRASH_DEPLOY_UNCERTAIN",
+						channel: { userId, enabled: true },
+					},
+					select: { channelId: true },
+				})
+				.then((explicitSubscription) => {
+					if (hasFailures && !explicitSubscription) return;
+					return notifyUncertainDeployment(
+						userId,
+						"TRaSH bulk deployment needs review",
+						`Unverified result on: ${uncertainNames || "unknown instances"}`,
+						{
+							totalInstances: instanceIds.length,
+							uncertainInstances: result.uncertainInstances,
+							templateId,
+						},
+					);
+				})
+				.catch((err) => {
+					request.log.warn({ err }, "Bulk deployment review notification dispatch failed");
 				});
 		}
 

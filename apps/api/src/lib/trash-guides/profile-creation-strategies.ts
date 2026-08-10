@@ -35,6 +35,7 @@ export async function createQualityProfileFromSchema(
 	templateCFs: TemplateCF[],
 	profileName: string,
 	effectiveQualityConfig?: CustomQualityConfig,
+	beforeCreate?: () => void | Promise<void>,
 	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile response
 ): Promise<any> {
 	try {
@@ -47,6 +48,7 @@ export async function createQualityProfileFromSchema(
 				templateConfig,
 				templateCFs,
 				profileName,
+				beforeCreate,
 			);
 		}
 
@@ -61,6 +63,7 @@ export async function createQualityProfileFromSchema(
 				templateCFs,
 				profileName,
 				customQualityConfig,
+				beforeCreate,
 			);
 		}
 
@@ -191,6 +194,7 @@ export async function createQualityProfileFromSchema(
 					}),
 		};
 
+		await beforeCreate?.();
 		return await submitNewProfile(client, profileToCreate);
 	} catch (createError) {
 		log.error({ err: createError }, "Failed to create quality profile");
@@ -212,6 +216,7 @@ export async function createQualityProfileFromClonedProfile(
 	templateConfig: Record<string, any>,
 	templateCFs: TemplateCF[],
 	profileName: string,
+	beforeCreate?: () => void | Promise<void>,
 	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile response
 ): Promise<any> {
 	const clonedProfile = templateConfig.completeQualityProfile;
@@ -313,6 +318,7 @@ export async function createQualityProfileFromClonedProfile(
 		}),
 	};
 
+	await beforeCreate?.();
 	return await submitNewProfile(client, profileToCreate);
 }
 
@@ -329,6 +335,7 @@ export async function createQualityProfileFromCustomConfig(
 	templateCFs: TemplateCF[],
 	profileName: string,
 	customQualityConfig: CustomQualityConfig,
+	beforeCreate?: () => void | Promise<void>,
 	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile response
 ): Promise<any> {
 	const { byName: qualitiesByName } = extractQualitiesFromSchema(schema.items);
@@ -415,5 +422,6 @@ export async function createQualityProfileFromCustomConfig(
 		formatItems: formatItemsWithScores,
 	};
 
+	await beforeCreate?.();
 	return await submitNewProfile(client, profileToCreate);
 }

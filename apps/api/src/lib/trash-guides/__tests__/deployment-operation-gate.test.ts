@@ -648,7 +648,7 @@ describe("reconcileInterruptedDeploymentHistories identified pending mutations",
 			data: expect.objectContaining({
 				status: "UNCERTAIN",
 				configsApplied: 2,
-				configsFailed: 1,
+				configsFailed: 0,
 				appliedConfigs: JSON.stringify([appliedFormat, appliedProfile]),
 			}),
 		});

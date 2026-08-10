@@ -26,6 +26,7 @@ const EVENT_LABELS: Record<string, string> = {
 	TRASH_PROFILE_UPDATED: "TRaSH: Profile Updated",
 	TRASH_SYNC_ERROR: "TRaSH: Sync Error",
 	TRASH_DEPLOY_FAILED: "TRaSH: Deploy Failed",
+	TRASH_DEPLOY_UNCERTAIN: "TRaSH: Deploy Needs Review",
 	BACKUP_COMPLETED: "Backup: Completed",
 	BACKUP_FAILED: "Backup: Failed",
 	LIBRARY_NEW_CONTENT: "Library: New Content",
