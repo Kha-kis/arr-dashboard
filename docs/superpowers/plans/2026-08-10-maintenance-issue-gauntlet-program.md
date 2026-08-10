@@ -48,7 +48,8 @@ Vitest, Next.js, React Query, Docker Compose, Radarr, Sonarr, and Plex.
 | A: completed-report closure | #665 and #666 | Reporters receive exact merged and `:dev` evidence; completed issues close without code changes | No code pull request |
 | B: Plex history compatibility | #673 and #675 | Both cache refreshers and Library Cleanup can consume complete Plex history on the reported server while incomplete or unstable pagination still fails closed | One Plex-only `main` pull request |
 | C: TRaSH Auto Sync | #674 | A deployed `auto` mapping persists, is represented honestly in the UI, detects an upstream change, and updates the exact mapped ARR profile once | One TRaSH-only `main` pull request |
-| D: Library Cleanup recovery | Existing RECOVERY and AUDIT gates | Real restart and fault-injection evidence verifies durable, idempotent recovery | Separate harness or focused runtime pull requests |
+| D: residual deployment-plan UI | PR #672 | The remaining deployment-plan display and incognito masking are separated from the superseded integration branch and verified without importing its replaced safety stack | One focused TRaSH UI pull request |
+| E: Library Cleanup recovery | Existing RECOVERY and AUDIT gates | Real restart and fault-injection evidence verifies durable, idempotent recovery | Separate harness or focused runtime pull requests |
 
 Issues #665 and #666 cannot add new implementation scope unless a reporter
 provides a scenario that still fails on the merged `:dev` image. Such a report
@@ -124,7 +125,9 @@ Every code wave follows these gates:
 
   Confirm #672 contains no commits absent from merged replacement pull requests
   #676 through #682. Add a concise replacement-stack comment and close #672
-  without merging it.
+  without merging it only if no effective implementation remains. If unique
+  behavior remains, keep #672 open, identify the exact residual paths, and
+  route them to Wave D instead of importing them into Waves B or C.
 
 ## Task 2: Execute the Plex compatibility wave
 
@@ -181,7 +184,41 @@ Every code wave follows these gates:
   a selected-but-disabled UI control as a scheduler fix unless the live
   scheduled mutation also passed.
 
-## Task 4: Resume Library Cleanup recovery
+## Task 4: Extract the residual deployment-plan UI from #672
+
+**Files:**
+
+- Source evidence: PR #672 commits `983c790` and `118c32c`
+- Expected paths:
+  `apps/web/src/features/trash-guides/components/sync-validation-panels.tsx`
+  and
+  `apps/web/src/features/trash-guides/components/sync-validation-modal.tsx`
+
+**Interfaces:**
+
+- Consumes: the deployment-plan display and incognito masking that remain only
+  on #672.
+- Produces: one focused `main` pull request without the safety and recovery
+  implementation already replaced by #676 through #682.
+
+- [ ] **Step 1: Freeze the residual diff**
+
+  Compare #672 at the two identified commits with current `main`. Record only
+  behavior that is still absent. Do not cherry-pick or merge the integration
+  branch wholesale.
+
+- [ ] **Step 2: Write and approve a focused implementation plan**
+
+  Cover deployment-plan rendering, incognito behavior, user-visible browser
+  verification, focused component tests, and the bounded review budget. Keep
+  this wave behind the user-reported Plex and Auto Sync bugs.
+
+- [ ] **Step 3: Implement, verify, and retire #672**
+
+  Merge the focused replacement only after its own gauntlet. Then update and
+  close #672 unmerged with exact replacement evidence.
+
+## Task 5: Resume Library Cleanup recovery
 
 **Files:**
 
@@ -219,6 +256,9 @@ The maintenance program is complete when:
   previously returned HTTP 400;
 - #674 passes persistence, UI, scheduler, exact-target mutation, restart, and
   manual/notify non-regression scenarios;
+- #672 has no unique implementation left and is closed unmerged after its
+  deployment-plan display and incognito masking land through a focused pull
+  request;
 - every accepted finding ID is closed with evidence;
 - no P0, P1, or in-contract/current-delta P2 remains open;
 - each code wave has green focused tests, repository gauntlet, build, live
