@@ -104,23 +104,87 @@ the matrix pass.
 
 ## Builder and critic loop
 
+The gauntlet has a bounded discovery phase followed by a finding-ledger closure
+phase. A correction does not restart an unrestricted review of the whole
+feature.
+
+### Contract freeze
+
+Before a major implementation wave, freeze its acceptance scenarios, mutation
+boundaries, threat model, required evidence, and explicit out-of-scope work.
+New information may amend the contract, but the amendment and maintainer
+rationale must be recorded before it can expand the blocking scope.
+
+### Discovery phase
+
 For each independently testable gap:
 
 1. Reproduce it against the real code or a production-shaped fixture.
 2. Add a test that fails for the reported behavior.
 3. Have a builder implement the smallest coherent correction.
 4. Run focused validation.
-5. Give the actual diff, tests, and running artifact to fresh critics:
+5. Give the actual diff, tests, and running artifact to independent critics for
+   one complete pass over their assigned surface:
    - rule semantics and preview parity;
    - destructive data safety;
    - retry/idempotency and regression;
    - operator UX and observability, when affected.
-6. Send every reproducible P0, P1, or P2 gap back through the loop.
-7. Run a whole-feature integration pass after each major wave so individually
+6. Record every actionable finding in one ledger with a stable identifier,
+   severity, violated acceptance requirement, owner, status, and closure
+   evidence.
+7. Triage the complete discovery set before starting a remediation batch.
+8. Run a whole-feature integration pass after each major wave so individually
    correct parts do not form an inconsistent system.
 
+Discovery closes after every required critic has completed its assigned pass.
+It is not reopened merely because a later reviewer identifies unrelated
+hardening or a pre-existing condition outside the frozen contract.
+
+### Closure phase
+
+1. Address accepted findings in coherent batches rather than requesting a new
+   review after every small correction.
+2. Closure critics review the unresolved finding identifiers, the lines changed
+   to resolve them, and directly affected mutation paths. They do not begin a
+   fresh whole-feature audit.
+3. A new finding may block closure only when it demonstrates a P0 or P1 issue,
+   or a P2 issue that violates the frozen acceptance contract or was introduced
+   by the remediation delta.
+4. Pre-existing, unrelated, or future-hardening findings are recorded as
+   follow-up candidates with maintainer rationale. They do not reopen the
+   current gauntlet.
+5. Additional targeted closure is required when evidence for an accepted
+   finding is incomplete or a remediation materially changes an architecture or
+   mutation boundary. The review remains scoped to that change.
+
+Severity controls the merge decision:
+
+- P0 and P1 findings always block.
+- P2 findings block when they are in the frozen contract or introduced by the
+  current delta. Other P2 findings require a recorded follow-up decision.
+- P3 suggestions and non-actionable hardening ideas enter the backlog and do
+  not block closure.
+
+### Hosted review budget
+
+Request one full hosted pull-request review on the frozen candidate. Triage all
+of its findings before editing, address accepted findings in one remediation
+batch, and use targeted closure review plus CI to verify that batch. Request a
+second full hosted review only when the remediation materially changes the
+architecture or a safety-critical mutation boundary; otherwise another
+whole-PR review would restart discovery without changing the quality bar. A
+third full hosted review is not part of the current loop. If the exceptional
+second review exposes a contract-invalidating architectural problem, close the
+current wave as not mergeable and open a newly scoped gauntlet wave rather than
+expanding the pull request again.
+
+The normal review budget is one discovery pass per critic domain, one closure
+pass per domain, one full hosted review, and one hosted-review remediation
+batch. This budget limits repeated re-auditing; it never permits merging with a
+known unresolved blocker.
+
 The implementer does not grade its own mutation boundary. Hosted pull-request
-review is an additional critic, not a replacement for the independent
+review remains an additional critic, not a replacement for the independent
 data-safety and regression reviews.
 
 ## Live verification policy
@@ -180,11 +244,19 @@ The umbrella gauntlet is complete only when all of the following are true:
   maintainer rationale and evidence.
 - Every acceptance scenario is green in its required automated and live layers.
 - A fresh repository search finds no untracked open Library Cleanup issue.
-- Fresh independent critics find no reproducible P0, P1, or P2 gap.
+- Every accepted finding identifier has closure evidence; no P0 or P1 finding
+  remains open, and no P2 finding that is in scope or introduced by the current
+  delta remains open.
+- Independent closure critics confirm the accepted findings and directly
+  affected mutation paths. Out-of-scope discoveries have recorded maintainer
+  rationale and follow-up disposition rather than silently expanding the
+  feature.
 - Formatting, shared build when applicable, root typecheck, full tests, lint,
   production build, database smoke tests, Docker builds, and browser
   verification pass.
-- Hosted review is clean and all review threads are resolved.
+- Hosted review has completed within the review budget, every actionable thread
+  is resolved with evidence, and any material-boundary exception has passed its
+  targeted additional review.
 - The final pull request is marked ready, then all newly triggered reviews and
   CI are allowed to finish before a merge decision.
 - Documentation describes the behavior that was actually verified.

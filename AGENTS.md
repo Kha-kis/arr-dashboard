@@ -57,6 +57,29 @@ TRaSH deployment, and upstream write paths are safety-critical.
   data-dependent, or deletion-adjacent code changes. Do not spend subagents on
   trivial documentation-only changes.
 
+## Review convergence
+
+For substantial or safety-critical gauntlets, freeze the acceptance contract
+before full review, give each required critic one discovery pass, and record
+actionable findings in a stable ledger. After discovery closes, review only
+unresolved findings, their remediation delta, and directly affected mutation
+paths; do not restart an unrestricted whole-feature audit after every fix.
+
+- P0 and P1 findings always block. P2 findings block when they violate the
+  frozen contract or were introduced by the current delta. Record unrelated or
+  pre-existing hardening as a follow-up with maintainer rationale.
+- Request one full hosted pull-request review on the frozen candidate and
+  address accepted findings in one remediation batch. Request another full
+  hosted review only when that remediation materially changes the architecture
+  or a safety-critical mutation boundary; otherwise use targeted closure review
+  and CI. A third full review requires a newly scoped gauntlet wave rather than
+  another expansion of the current pull request.
+- A review budget limits repeated re-auditing. It never permits merging with a
+  known unresolved blocker.
+
+Library Cleanup uses the detailed discovery, closure, and exit gates in
+`docs/library-cleanup-gauntlet.md`.
+
 ## Verification gauntlet
 
 Run the narrowest useful test while iterating. Before every PR:
