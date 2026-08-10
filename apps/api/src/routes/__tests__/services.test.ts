@@ -191,7 +191,12 @@ beforeEach(async () => {
 	});
 	app.decorate("deploymentExecutor", {
 		runWithEndpointMutation: vi.fn(async (lockedUserId, target, _operation, callback) =>
-			callback(createDeploymentEndpointKey(lockedUserId, target)),
+			callback(
+				createDeploymentEndpointKey(lockedUserId, {
+					...target,
+					credentialIdentity: "credential-identity",
+				}),
+			),
 		),
 	});
 

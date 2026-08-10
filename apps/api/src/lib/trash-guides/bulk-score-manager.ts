@@ -142,13 +142,29 @@ export class BulkScoreManager {
 				connectionGeneration: true,
 			},
 		});
-		const equivalentInstanceIds = new Set(getEquivalentServiceInstanceIds(aliases, instance));
+		const credentialIdentity = this.clientFactory.createConnectionCredentialIdentity(instance);
+		const equivalentInstanceIds = new Set(
+			getEquivalentServiceInstanceIds(
+				aliases.map((alias) => ({
+					...alias,
+					credentialIdentity: this.clientFactory.createConnectionCredentialIdentity(alias),
+				})),
+				{ ...instance, credentialIdentity },
+			),
+		);
 		equivalentInstanceIds.add(instance.id);
 		const connectionBindings = aliases
 			.filter((alias) => equivalentInstanceIds.has(alias.id))
-			.flatMap(createDeploymentConnectionBindingCandidates);
+			.flatMap((alias) =>
+				createDeploymentConnectionBindingCandidates(
+					alias,
+					this.clientFactory.createConnectionCredentialIdentity(alias),
+				),
+			);
 		if (!connectionBindings.some((binding) => binding.instanceId === instance.id)) {
-			connectionBindings.push(...createDeploymentConnectionBindingCandidates(instance));
+			connectionBindings.push(
+				...createDeploymentConnectionBindingCandidates(instance, credentialIdentity),
+			);
 		}
 
 		// Resolve management through every current alias for the physical ARR endpoint.
@@ -317,8 +333,8 @@ export class BulkScoreManager {
 			return scoreInfo.fallbackScore;
 		};
 
-		// Step 2: Collect all unique custom formats across all instances
-		// Key: CF name, Value: CustomFormatScoreEntry
+		// Step 2: Collect exact Custom Format resources from the selected instance.
+		// Names are display data and are not unique in ARR.
 		const cfMap = new Map<string, CustomFormatScoreEntry>();
 
 		for (const instance of instances) {
@@ -377,7 +393,7 @@ export class BulkScoreManager {
 				if (cf.id === undefined || !cf.name) continue;
 
 				const cfName = cf.name;
-				const cfKey = cfName;
+				const cfKey = String(cf.id);
 
 				// Get or create CF entry
 				let cfEntry = cfMap.get(cfKey);

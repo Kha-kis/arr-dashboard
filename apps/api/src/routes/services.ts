@@ -192,8 +192,13 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			"ARR service alias deletion",
 			async (endpointKey) => {
 				const current = await requireInstance(app, userId, existing.id);
+				const currentCredentialIdentity =
+					app.arrClientFactory.createConnectionCredentialIdentity(current);
 				if (
-					createDeploymentEndpointKey(userId, current) !== endpointKey ||
+					createDeploymentEndpointKey(userId, {
+						...current,
+						credentialIdentity: currentCredentialIdentity,
+					}) !== endpointKey ||
 					createDeploymentConnectionStateToken(current) !==
 						createDeploymentConnectionStateToken(existing)
 				) {
@@ -206,12 +211,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					const aliases = await tx.serviceInstance.findMany({
 						where: { userId, service: current.service },
 					});
-					const normalizedBaseUrl = normalizeDeploymentBaseUrl(current.baseUrl);
 					const endpointAliases = aliases.filter(
 						(alias) =>
 							alias.userId === userId &&
 							alias.service === current.service &&
-							normalizeDeploymentBaseUrl(alias.baseUrl) === normalizedBaseUrl,
+							app.arrClientFactory.createConnectionCredentialIdentity(alias) ===
+								currentCredentialIdentity,
 					);
 					if (!endpointAliases.some((alias) => alias.id === current.id)) {
 						throw new ConflictError(
@@ -255,8 +260,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						(override) => override.instanceId === current.id,
 					);
 					const hasMigratableState = sourceMappings.length > 0 || sourceOverrides.length > 0;
-					const currentCredentialIdentity =
-						app.arrClientFactory.createConnectionCredentialIdentity(current);
 					const exactSurvivors = endpointAliases.filter(
 						(alias) =>
 							alias.id !== current.id &&
@@ -271,8 +274,15 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 					const survivor = exactSurvivors[0];
 					if (survivor && hasMigratableState) {
-						const sourceBindings = [createDeploymentConnectionBinding(current)];
-						const survivorBindings = [createDeploymentConnectionBinding(survivor)];
+						const sourceBindings = [
+							createDeploymentConnectionBinding(current, currentCredentialIdentity),
+						];
+						const survivorBindings = [
+							createDeploymentConnectionBinding(
+								survivor,
+								app.arrClientFactory.createConnectionCredentialIdentity(survivor),
+							),
+						];
 						if (
 							sourceMappings.some(
 								(mapping) => !isCurrentDeploymentConnectionMapping(mapping, sourceBindings),

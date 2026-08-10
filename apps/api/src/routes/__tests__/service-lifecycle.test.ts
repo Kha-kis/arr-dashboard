@@ -322,7 +322,14 @@ describe("Service instance lifecycle", () => {
 		} as never);
 		app.decorate("deploymentExecutor", {
 			runWithEndpointMutation: vi.fn(async (lockedUserId, target, _operation, callback) =>
-				callback(createDeploymentEndpointKey(lockedUserId, target)),
+				callback(
+					createDeploymentEndpointKey(lockedUserId, {
+						...target,
+						credentialIdentity: (app as any).arrClientFactory.createConnectionCredentialIdentity(
+							target,
+						),
+					}),
+				),
 			),
 		} as never);
 

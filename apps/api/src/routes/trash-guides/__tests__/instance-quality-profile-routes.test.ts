@@ -30,7 +30,12 @@ describe("instance quality profile score persistence", () => {
 	const findServiceInstances = vi.fn();
 	const findMappings = vi.fn();
 	const findOverrides = vi.fn();
+	const findUniqueOverride = vi.fn();
 	const findTransactionOverrides = vi.fn();
+	const countTransactionOverrides = vi.fn();
+	const findTransactionInstance = vi.fn();
+	const findTransactionMappings = vi.fn();
+	const updateTemplates = vi.fn();
 	const deleteAliasOverrides = vi.fn();
 	const upsertOverride = vi.fn();
 	const updateOverrides = vi.fn();
@@ -86,7 +91,12 @@ describe("instance quality profile score persistence", () => {
 		findServiceInstances.mockResolvedValue([instance]);
 		findMappings.mockResolvedValue([mapping]);
 		findOverrides.mockImplementation(async ({ select }) => (select ? [] : []));
+		findUniqueOverride.mockResolvedValue(null);
 		findTransactionOverrides.mockResolvedValue([]);
+		countTransactionOverrides.mockResolvedValue(0);
+		findTransactionInstance.mockResolvedValue(instance);
+		findTransactionMappings.mockResolvedValue([]);
+		updateTemplates.mockResolvedValue({ count: 1 });
 		deleteAliasOverrides.mockResolvedValue({ count: 0 });
 		upsertOverride.mockResolvedValue({});
 		updateOverrides.mockResolvedValue({ count: 1 });
@@ -95,8 +105,12 @@ describe("instance quality profile score persistence", () => {
 		getCustomFormats.mockResolvedValue([{ id: 7, name: "Reject" }]);
 
 		const transactionClient = {
+			serviceInstance: { findFirst: findTransactionInstance },
+			templateQualityProfileMapping: { findMany: findTransactionMappings },
+			trashTemplate: { updateMany: updateTemplates },
 			instanceQualityProfileOverride: {
 				findMany: findTransactionOverrides,
+				count: countTransactionOverrides,
 				deleteMany: deleteAliasOverrides,
 				upsert: upsertOverride,
 				updateMany: updateOverrides,
@@ -119,7 +133,7 @@ describe("instance quality profile score persistence", () => {
 			},
 			instanceQualityProfileOverride: {
 				findMany: findOverrides,
-				findUnique: vi.fn().mockResolvedValue(null),
+				findUnique: findUniqueOverride,
 				upsert: upsertOverride,
 				updateMany: updateOverrides,
 				deleteMany: deleteOverrides,
@@ -144,7 +158,12 @@ describe("instance quality profile score persistence", () => {
 		app.decorate("deploymentExecutor", {
 			runWithEndpointMutation: runWithEndpointMutation.mockImplementation(
 				async (_userId, target, _operation, callback) =>
-					callback(createDeploymentEndpointKey(userId, target)),
+					callback(
+						createDeploymentEndpointKey(userId, {
+							...target,
+							credentialIdentity: "credentials",
+						}),
+					),
 			),
 		} as never);
 		await app.register(registerInstanceQualityProfileRoutes);
@@ -582,7 +601,12 @@ describe("instance quality profile score persistence", () => {
 			}
 			activeMutation = true;
 			try {
-				return await callback(createDeploymentEndpointKey(userId, target));
+				return await callback(
+					createDeploymentEndpointKey(userId, {
+						...target,
+						credentialIdentity: "credentials",
+					}),
+				);
 			} finally {
 				activeMutation = false;
 			}
@@ -632,6 +656,98 @@ describe("instance quality profile score persistence", () => {
 
 		expect(response.statusCode).toBe(400);
 		expect(upsertOverride).not.toHaveBeenCalled();
+		expect(updateProfile).not.toHaveBeenCalled();
+	});
+
+	it("rejects a row-level retry that omits part of the saved profile recovery plan", async () => {
+		findOverrides.mockImplementation(async ({ select }) =>
+			select?.connectionStateToken
+				? [
+						{
+							id: "intent-7",
+							instanceId: instance.id,
+							updatedAt: new Date("2026-08-09T00:00:00Z"),
+							qualityProfileId: 4,
+							customFormatId: 7,
+							intentOperation: "SET_SCORE",
+							intendedScore: -10_000,
+							connectionGeneration: instance.connectionGeneration,
+							connectionStateToken: createDeploymentConnectionStateToken(instance),
+						},
+						{
+							id: "intent-8",
+							instanceId: instance.id,
+							updatedAt: new Date("2026-08-09T00:00:00Z"),
+							qualityProfileId: 4,
+							customFormatId: 8,
+							intentOperation: "SET_SCORE",
+							intendedScore: 50,
+							connectionGeneration: instance.connectionGeneration,
+							connectionStateToken: createDeploymentConnectionStateToken(instance),
+						},
+					]
+				: [],
+		);
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{ body: { scoreUpdates: [{ customFormatId: 7, score: -10_000 }] } },
+		);
+
+		expect(response.statusCode).toBe(400);
+		expect(response.json().message).toContain("exact score update");
+		expect(updateProfile).not.toHaveBeenCalled();
+	});
+
+	it("rejects a stale recovery token after another request resolved the intent", async () => {
+		findOverrides.mockResolvedValue([]);
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{
+				body: {
+					recoveryToken: "a".repeat(64),
+					scoreUpdates: [{ customFormatId: 7, score: -10_000 }],
+				},
+			},
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("no longer exists");
+		expect(updateProfile).not.toHaveBeenCalled();
+	});
+
+	it("rejects a recovery token after the saved intent changes", async () => {
+		findOverrides.mockResolvedValue([
+			{
+				id: "intent-7",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				intentOperation: "SET_SCORE",
+				intendedScore: 25,
+				status: "UNCERTAIN",
+				updatedAt: new Date("2026-08-09T01:00:00Z"),
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"PATCH",
+			"/instance-1/quality-profiles/4/scores",
+			{
+				body: {
+					recoveryToken: "a".repeat(64),
+					scoreUpdates: [{ customFormatId: 7, score: 25 }],
+				},
+			},
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("plan changed");
 		expect(updateProfile).not.toHaveBeenCalled();
 	});
 
@@ -714,13 +830,22 @@ describe("instance quality profile score persistence", () => {
 		expect(response.statusCode, response.body).toBe(200);
 		expect(response.json()).toMatchObject({
 			overrides: [],
-			recoveryIntents: [
+			recoveryPlans: [
 				{
-					customFormatId: 7,
-					operation: "SET_SCORE",
-					intendedScore: -10_000,
-					status: "UNCERTAIN",
-					retryAction: { method: "PATCH", score: -10_000 },
+					qualityProfileId: 4,
+					entries: [
+						{
+							customFormatId: 7,
+							operation: "SET_SCORE",
+							intendedScore: -10_000,
+							status: "UNCERTAIN",
+						},
+					],
+					retryAction: {
+						method: "PATCH",
+						recoveryToken: expect.stringMatching(/^[a-f0-9]{64}$/),
+						scoreUpdates: [{ customFormatId: 7, score: -10_000 }],
+					},
 				},
 			],
 		});
@@ -762,7 +887,7 @@ describe("instance quality profile score persistence", () => {
 		);
 
 		expect(response.statusCode, response.body).toBe(200);
-		expect(response.json().recoveryIntents).toEqual([
+		expect(response.json().recoveryPlans).toEqual([
 			expect.objectContaining({
 				retryable: false,
 				requiresManualReconciliation: true,
@@ -795,7 +920,7 @@ describe("instance quality profile score persistence", () => {
 		);
 
 		expect(response.statusCode, response.body).toBe(200);
-		expect(response.json().recoveryIntents).toEqual([
+		expect(response.json().recoveryPlans).toEqual([
 			expect.objectContaining({
 				retryable: false,
 				requiresManualReconciliation: true,
