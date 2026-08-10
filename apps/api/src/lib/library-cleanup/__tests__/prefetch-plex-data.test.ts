@@ -127,59 +127,75 @@ const plexDecisionItem = {
 	data: JSON.stringify({ remoteIds: { tmdbId: 42 } }),
 };
 
+type PlexStatusOverride =
+	| Partial<{
+			lastRefreshedAt: Date;
+			lastResult: string;
+			lastAttemptResult: string;
+			lastErrorMessage: string | null;
+			lastAttemptErrorMessage: string | null;
+			itemCount: number;
+	  }>
+	| undefined;
+
+const unavailablePlexEvidenceCases = [
+	["missing status", () => undefined],
+	["stale timestamp", () => ({ lastRefreshedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })],
+	["failed result", () => ({ lastResult: "error" })],
+	["failed latest attempt", () => ({ lastAttemptResult: "error" })],
+	["completed-generation error", () => ({ lastErrorMessage: "refresh failed" })],
+	["latest-attempt error", () => ({ lastAttemptErrorMessage: "refresh failed" })],
+	["connection repoint", () => ({ lastRefreshedAt: new Date("2026-08-10T10:00:00.000Z") })],
+	["normal cache row-count mismatch", () => ({ itemCount: 2 })],
+] satisfies ReadonlyArray<readonly [string, () => PlexStatusOverride]>;
+
 describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
-	it.each([
-		["missing status", () => undefined],
-		["stale timestamp", () => ({ lastRefreshedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })],
-		["failed result", () => ({ lastResult: "error" })],
-		["failed latest attempt", () => ({ lastAttemptResult: "error" })],
-		["completed-generation error", () => ({ lastErrorMessage: "refresh failed" })],
-		["latest-attempt error", () => ({ lastAttemptErrorMessage: "refresh failed" })],
-		["connection repoint", () => ({ lastRefreshedAt: new Date("2026-08-10T10:00:00.000Z") })],
-		["normal cache row-count mismatch", () => ({ itemCount: 2 })],
-	] as const)("blocks Plex cleanup evidence for %s", async (caseName, overrides) => {
-		const instance = {
-			id: "plex-inst-1",
-			updatedAt:
-				caseName === "connection repoint"
-					? new Date("2026-08-10T11:00:00.000Z")
-					: new Date("2026-08-10T00:00:00.000Z"),
-		};
-		const baseStatus = completeStatus(instance.id, new Date(), 1);
-		const statusOverride = overrides();
-		const status = statusOverride ? { ...baseStatus, ...statusOverride } : undefined;
-		const prisma = {
-			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
-			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue(status ? [status] : []) },
-			plexCache: {
-				count: vi.fn().mockResolvedValue(1),
-				findMany: vi
-					.fn()
-					.mockResolvedValue([
-						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
-					]),
-			},
-		} as unknown as CleanupExecutorDeps["prisma"];
-		const rule = plexCleanupRule();
+	it.each(unavailablePlexEvidenceCases)(
+		"blocks Plex cleanup evidence for %s",
+		async (caseName, overrides) => {
+			const instance = {
+				id: "plex-inst-1",
+				updatedAt:
+					caseName === "connection repoint"
+						? new Date("2026-08-10T11:00:00.000Z")
+						: new Date("2026-08-10T00:00:00.000Z"),
+			};
+			const baseStatus = completeStatus(instance.id, new Date(), 1);
+			const statusOverride = overrides();
+			const status = statusOverride ? { ...baseStatus, ...statusOverride } : undefined;
+			const prisma = {
+				serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+				cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue(status ? [status] : []) },
+				plexCache: {
+					count: vi.fn().mockResolvedValue(1),
+					findMany: vi
+						.fn()
+						.mockResolvedValue([
+							makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+						]),
+				},
+			} as unknown as CleanupExecutorDeps["prisma"];
+			const rule = plexCleanupRule();
 
-		const result = await buildEvalContextWithHealth(
-			{ prisma, log } as CleanupExecutorDeps,
-			"user-1",
-			[rule],
-		);
-
-		expect(result.ctx.plexMap).toBeUndefined();
-		expect(result.failedSources).toContain("plex");
-		expect(
-			evaluateItemAgainstRules(
-				plexDecisionItem,
+			const result = await buildEvalContextWithHealth(
+				{ prisma, log } as CleanupExecutorDeps,
+				"user-1",
 				[rule],
-				"SONARR",
-				result.ctx,
-				result.failedSources,
-			),
-		).toBeNull();
-	});
+			);
+
+			expect(result.ctx.plexMap).toBeUndefined();
+			expect(result.failedSources).toContain("plex");
+			expect(
+				evaluateItemAgainstRules(
+					plexDecisionItem,
+					[rule],
+					"SONARR",
+					result.ctx,
+					result.failedSources,
+				),
+			).toBeNull();
+		},
+	);
 
 	it("keeps a complete Plex generation available for cleanup evaluation", async () => {
 		const completedAt = new Date();
