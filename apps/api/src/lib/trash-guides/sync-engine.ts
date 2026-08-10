@@ -14,6 +14,7 @@ import type { DeploymentExecutorService } from "./deployment-executor.js";
 import { isDeploymentResultUncertain } from "./deployment-history-manager.js";
 import {
 	createDeploymentConnectionBindingCandidates,
+	createDeploymentConnectionStateToken,
 	getEquivalentServiceInstanceIds,
 	isCurrentDeploymentConnectionMapping,
 	isLegacyDeploymentConnectionMapping,
@@ -206,11 +207,29 @@ export class SyncEngine {
 		const aliases = serviceAliases.some((alias) => alias.id === instance.id)
 			? serviceAliases
 			: [...serviceAliases, instance];
-		const equivalentInstanceIds = getEquivalentServiceInstanceIds(aliases, instance);
+		const aliasesWithCredentials = aliases.map((alias) => ({
+			...alias,
+			credentialIdentity:
+				typeof this.arrClientFactory?.createConnectionCredentialIdentity === "function"
+					? this.arrClientFactory.createConnectionCredentialIdentity(alias)
+					: createDeploymentConnectionStateToken(alias),
+		}));
+		const instanceWithCredential = aliasesWithCredentials.find(
+			(alias) => alias.id === instance.id,
+		) ?? {
+			...instance,
+			credentialIdentity: createDeploymentConnectionStateToken(instance),
+		};
+		const equivalentInstanceIds = getEquivalentServiceInstanceIds(
+			aliasesWithCredentials,
+			instanceWithCredential,
+		);
 		if (!equivalentInstanceIds.includes(instance.id)) equivalentInstanceIds.push(instance.id);
-		const connectionBindings = aliases
+		const connectionBindings = aliasesWithCredentials
 			.filter((alias) => equivalentInstanceIds.includes(alias.id))
-			.flatMap(createDeploymentConnectionBindingCandidates);
+			.flatMap((alias) =>
+				createDeploymentConnectionBindingCandidates(alias, alias.credentialIdentity),
+			);
 		const allQualityProfileMappings = await this.prisma.templateQualityProfileMapping.findMany({
 			where: { instanceId: { in: equivalentInstanceIds } },
 		});

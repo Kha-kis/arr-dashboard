@@ -38,6 +38,7 @@ function createService(
 		customFormats?: Array<{ id: number; name: string; specifications: unknown[] }>;
 		mappings?: Array<Record<string, unknown>>;
 		instances?: (typeof instance)[];
+		savedOverrides?: Array<Record<string, unknown>>;
 	} = {},
 ) {
 	const existingFormat = {
@@ -55,7 +56,9 @@ function createService(
 		templateQualityProfileMapping: {
 			findMany: vi.fn().mockResolvedValue(options.mappings ?? []),
 		},
-		instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+		instanceQualityProfileOverride: {
+			findMany: vi.fn().mockResolvedValue(options.savedOverrides ?? []),
+		},
 		trashCache: { findFirst: vi.fn().mockResolvedValue(null) },
 	};
 	const client = {
@@ -107,6 +110,42 @@ describe("deployment preview authority", () => {
 
 		expect(preview.canDeploy).toBe(false);
 		expect(preview.executionToken).toBe("");
+	});
+
+	it("accepts a legacy saved override only when ARR still has its exact score", async () => {
+		const preview = await createService({
+			savedOverrides: [
+				{
+					instanceId: instance.id,
+					qualityProfileId: 4,
+					customFormatId: 42,
+					score: 100,
+					status: "APPLIED",
+					connectionGeneration: 0,
+					connectionStateToken: null,
+				},
+			],
+		}).generatePreview("template-1", "instance-1", "user-1");
+
+		expect(preview.executionToken).toMatch(/^[a-f0-9]{64}$/);
+	});
+
+	it("rejects a legacy saved override when ARR no longer has its recorded score", async () => {
+		await expect(
+			createService({
+				savedOverrides: [
+					{
+						instanceId: instance.id,
+						qualityProfileId: 4,
+						customFormatId: 42,
+						score: 200,
+						status: "APPLIED",
+						connectionGeneration: 0,
+						connectionStateToken: null,
+					},
+				],
+			}).generatePreview("template-1", "instance-1", "user-1"),
+		).rejects.toThrow("unverified saved score override");
 	});
 
 	it("fails closed when ARR returns duplicate Custom Format identities", async () => {

@@ -388,6 +388,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			"user-123",
 			undefined,
 			undefined,
+			"review-token",
 			"sync-1",
 		);
 	});

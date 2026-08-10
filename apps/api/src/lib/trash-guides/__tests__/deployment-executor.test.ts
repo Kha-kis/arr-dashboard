@@ -1846,6 +1846,49 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 });
 
 describe("DeploymentExecutorService - legacy override finalization", () => {
+	async function loadLegacyOverrideScore(recordedScore: number, liveScore: number) {
+		const prisma = {
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "instance-1",
+						qualityProfileId: 1,
+						customFormatId: 42,
+						score: recordedScore,
+						status: "APPLIED",
+						connectionGeneration: 0,
+						connectionStateToken: null,
+					},
+				]),
+			},
+		};
+		const executor = new DeploymentExecutorService(prisma as never, {} as never) as unknown as {
+			loadEquivalentInstanceOverrideScores: (...args: unknown[]) => Promise<Map<number, number>>;
+		};
+		return executor.loadEquivalentInstanceOverrideScores(
+			"user-1",
+			[
+				{
+					instanceId: "instance-1",
+					connectionGeneration: 2,
+					connectionStateToken: "current-connection",
+				},
+			],
+			1,
+			{ id: 1, name: "Any", formatItems: [{ format: 42, score: liveScore }] },
+		);
+	}
+
+	it("loads legacy override intent when its exact score remains live", async () => {
+		await expect(loadLegacyOverrideScore(100, 100)).resolves.toEqual(new Map([[42, 100]]));
+	});
+
+	it("rejects legacy override intent after its live score drifts", async () => {
+		await expect(loadLegacyOverrideScore(100, 200)).rejects.toThrow(
+			"unverified saved score override",
+		);
+	});
+
 	async function prepareLegacyFinalization() {
 		const profile = { id: 1, name: "Any", formatItems: [{ format: 42, score: 100 }] };
 		const legacyOverride = {

@@ -41,6 +41,12 @@ function createUpdater(
 	const deploySingleInstanceFromAutomation = vi.fn().mockResolvedValue({
 		...deploymentResult,
 	});
+	const createEndpointMutationKey = vi
+		.fn()
+		.mockImplementation(
+			(userId: string, target: ReturnType<typeof instance>) =>
+				`${userId}:${target.service}:credential-1`,
+		);
 	const prisma = {
 		trashTemplate: { findUnique: vi.fn().mockResolvedValue(template) },
 		templateQualityProfileMapping: { findMany: vi.fn().mockResolvedValue(mappings) },
@@ -50,7 +56,7 @@ function createUpdater(
 		{} as never,
 		{} as never,
 		{} as never,
-		{ deploySingleInstanceFromAutomation } as never,
+		{ deploySingleInstanceFromAutomation, createEndpointMutationKey } as never,
 	);
 	const privateUpdater = updater as unknown as {
 		deployToMappedInstances: (templateId: string) => Promise<
@@ -98,7 +104,7 @@ describe("TemplateUpdater automation authority", () => {
 		expect(deploySingleInstanceFromAutomation).not.toHaveBeenCalled();
 		expect(outcomes).toEqual([
 			expect.objectContaining({
-				endpointKey: "user-1:RADARR:http://radarr/",
+				endpointKey: "user-1:RADARR:credential-1",
 				instanceId: primary.id,
 				success: false,
 				errors: [expect.stringContaining("stale or legacy")],

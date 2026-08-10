@@ -249,7 +249,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			retentionExpiresAt: null,
 			data: {
 				schemaVersion: 2,
-				endpointKey: "user-1:RADARR:http://radarr:7878",
+				endpointKey: "user-1:RADARR:credential-1",
 				connectionStateToken: "connection",
 				customFormats: [],
 				customFormatDeployments: [],
@@ -305,7 +305,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			undefined,
 			undefined,
 			executionToken,
-			"user-1:RADARR:http://radarr:7878/",
+			"user-1:RADARR:credential-1",
 		);
 
 		const appliedProfile = {

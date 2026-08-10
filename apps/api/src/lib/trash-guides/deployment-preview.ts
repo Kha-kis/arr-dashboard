@@ -503,7 +503,12 @@ export class DeploymentPreviewService {
 		if (!equivalentInstanceIds.includes(instanceId)) equivalentInstanceIds.push(instanceId);
 		const connectionBindings = aliases
 			.filter((alias) => equivalentInstanceIds.includes(alias.id))
-			.flatMap(createDeploymentConnectionBindingCandidates);
+			.flatMap((alias) =>
+				createDeploymentConnectionBindingCandidates(
+					alias,
+					createCredentialIdentity(this.clientFactory, alias),
+				),
+			);
 		const qualityProfileMappings = await this.prisma.templateQualityProfileMapping.findMany({
 			where: { instanceId: { in: equivalentInstanceIds } },
 			orderBy: { updatedAt: "desc" },
@@ -574,12 +579,14 @@ export class DeploymentPreviewService {
 			});
 			for (const override of savedOverrides) {
 				const currentOverride = isCurrentDeploymentConnectionMapping(override, connectionBindings);
-				if (
-					!currentOverride &&
-					!(selectedMappingIsLegacy && isLegacyDeploymentConnectionMapping(override))
-				) {
+				const liveScore = targetProfile.formatItems?.find(
+					(item: { format?: number; score?: number }) => item.format === override.customFormatId,
+				)?.score;
+				const verifiedLegacyOverride =
+					isLegacyDeploymentConnectionMapping(override) && liveScore === override.score;
+				if (!currentOverride && !verifiedLegacyOverride) {
 					throw new AppValidationError(
-						"This ARR endpoint has a saved score override bound to an older connection. Reconcile the stale override before deploying.",
+						"This ARR endpoint has an unverified saved score override. Restore its recorded score on the current profile or remove the override before deploying.",
 					);
 				}
 				const existingScore = savedScoreOverrides.get(override.customFormatId);

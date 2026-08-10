@@ -386,6 +386,10 @@ export class DeploymentExecutorService {
 		});
 	}
 
+	createEndpointMutationKey(userId: string, instance: EndpointCredentialSource): string {
+		return this.createEndpointKey(userId, instance);
+	}
+
 	// ============================================================================
 	// Private Helper Methods
 	// ============================================================================
@@ -1209,14 +1213,15 @@ export class DeploymentExecutorService {
 				if (targetProfile.id === undefined) {
 					throw new Error("Quality profile ID is missing");
 				}
-				const [latestTargetProfile, latestOverrideScores] = await Promise.all([
-					client.qualityProfile.getById(targetProfile.id) as Promise<SdkQualityProfile>,
-					this.loadEquivalentInstanceOverrideScores(
-						userId,
-						connectionReadBindings,
-						targetProfile.id,
-					),
-				]);
+				const latestTargetProfile = (await client.qualityProfile.getById(
+					targetProfile.id,
+				)) as SdkQualityProfile;
+				const latestOverrideScores = await this.loadEquivalentInstanceOverrideScores(
+					userId,
+					connectionReadBindings,
+					targetProfile.id,
+					latestTargetProfile,
+				);
 				if (
 					createQualityProfileStateToken(latestTargetProfile) !==
 						createQualityProfileStateToken(targetProfile) ||
@@ -1337,6 +1342,7 @@ export class DeploymentExecutorService {
 		userId: string,
 		connectionBindings: DeploymentConnectionReadBinding[],
 		qualityProfileId: number,
+		liveProfile: SdkQualityProfile,
 	): Promise<Map<number, number>> {
 		const instanceIds = [...new Set(connectionBindings.map((binding) => binding.instanceId))];
 		const overrides = await this.prisma.instanceQualityProfileOverride.findMany({
@@ -1349,9 +1355,15 @@ export class DeploymentExecutorService {
 		});
 		const scores = new Map<number, number>();
 		for (const override of overrides) {
-			if (!isCurrentDeploymentConnectionMapping(override, connectionBindings)) {
+			const currentOverride = isCurrentDeploymentConnectionMapping(override, connectionBindings);
+			const liveScore = liveProfile.formatItems?.find(
+				(item) => item.format === override.customFormatId,
+			)?.score;
+			const verifiedLegacyOverride =
+				isLegacyDeploymentConnectionMapping(override) && liveScore === override.score;
+			if (!currentOverride && !verifiedLegacyOverride) {
 				throw new ConflictError(
-					"This ARR endpoint has a saved score override bound to an older connection. Reconcile the stale override before deploying.",
+					"This ARR endpoint has an unverified saved score override. Restore its recorded score on the current profile or remove the override before deploying.",
 				);
 			}
 			const existingScore = scores.get(override.customFormatId);
@@ -1380,7 +1392,8 @@ export class DeploymentExecutorService {
 		for (const override of liveOverrides) {
 			if (
 				override.status !== "APPLIED" ||
-				!isCurrentDeploymentConnectionMapping(override, finalization.connectionReadBindings)
+				(!isCurrentDeploymentConnectionMapping(override, finalization.connectionReadBindings) &&
+					!isLegacyDeploymentConnectionMapping(override))
 			) {
 				throw new ConflictError(
 					"Saved score override authority changed before deployment state could be finalized.",
@@ -1823,6 +1836,7 @@ export class DeploymentExecutorService {
 							userId,
 							overrideReadBindings,
 							authorizedTarget.profile.id,
+							authorizedTarget.profile,
 						)
 					: new Map<number, number>();
 			let previousManagedFormats: ManagedCustomFormatIdentity[] = [];
@@ -2372,7 +2386,16 @@ export class DeploymentExecutorService {
 
 			const selectedInstances = await this.prisma.serviceInstance.findMany({
 				where: { id: { in: instanceIds }, userId },
-				select: { id: true, service: true, baseUrl: true },
+				select: {
+					id: true,
+					service: true,
+					baseUrl: true,
+					encryptedApiKey: true,
+					encryptionIv: true,
+					encryptedHttpAuthCredentials: true,
+					httpAuthEncryptionIv: true,
+					connectionGeneration: true,
+				},
 			});
 			if (selectedInstances.length !== instanceIds.length) {
 				throw new AppValidationError(
@@ -2383,7 +2406,7 @@ export class DeploymentExecutorService {
 			const endpointOwners = new Map<string, string>();
 			for (const instanceId of instanceIds) {
 				const instance = selectedById.get(instanceId)!;
-				const endpointKey = createDeploymentEndpointKey(userId, instance);
+				const endpointKey = this.createEndpointKey(userId, instance);
 				const existingInstanceId = endpointOwners.get(endpointKey);
 				if (existingInstanceId && existingInstanceId !== instance.id) {
 					throw new AppValidationError(

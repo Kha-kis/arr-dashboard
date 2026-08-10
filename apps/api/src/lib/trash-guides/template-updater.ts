@@ -27,10 +27,7 @@ import { TemplateNotFoundError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
-import {
-	createDeploymentConnectionBindingCandidates,
-	createDeploymentEndpointKey,
-} from "./deployment-target.js";
+import { createDeploymentConnectionBindingCandidates } from "./deployment-target.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
 import { trashCustomFormatGroupSchema, trashCustomFormatSchema } from "./github-schemas.js";
 
@@ -867,7 +864,10 @@ export class TemplateUpdater {
 
 		const endpointMappings = new Map<string, typeof candidateMappings>();
 		for (const mapping of candidateMappings) {
-			const endpointKey = createDeploymentEndpointKey(template.userId, mapping.instance);
+			const endpointKey = this.deploymentExecutor.createEndpointMutationKey(
+				template.userId,
+				mapping.instance,
+			);
 			const grouped = endpointMappings.get(endpointKey) ?? [];
 			grouped.push(mapping);
 			endpointMappings.set(endpointKey, grouped);
