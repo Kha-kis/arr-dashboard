@@ -512,9 +512,15 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					const currentInstance = await app.prisma.serviceInstance.findFirst({
 						where: { id: history.instanceId, userId },
 					});
+					const currentCredentialIdentity = currentInstance
+						? app.arrClientFactory.createConnectionCredentialIdentity(currentInstance)
+						: null;
 					if (
 						!currentInstance ||
-						createDeploymentEndpointKey(userId, currentInstance) !== endpointKey
+						createDeploymentEndpointKey(userId, {
+							service: currentInstance.service,
+							credentialIdentity: currentCredentialIdentity!,
+						}) !== endpointKey
 					) {
 						return reply.status(409).send({
 							success: false,

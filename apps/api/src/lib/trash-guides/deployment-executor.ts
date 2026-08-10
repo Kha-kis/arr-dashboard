@@ -71,6 +71,19 @@ type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]
 type SdkQualityProfile =
 	| Awaited<ReturnType<SonarrClient["qualityProfile"]["getAll"]>>[number]
 	| Awaited<ReturnType<RadarrClient["qualityProfile"]["getAll"]>>[number];
+type EndpointCredentialSource = {
+	id: string;
+	service: string;
+	baseUrl: string;
+	encryptedApiKey: string;
+	encryptionIv: string;
+	encryptedHttpAuthCredentials?: string | null;
+	httpAuthEncryptionIv?: string | null;
+	connectionGeneration?: number | null;
+};
+type EndpointMutationTarget =
+	| EndpointCredentialSource
+	| { service: string; credentialIdentity: string };
 
 // ============================================================================
 // Types
@@ -335,12 +348,23 @@ export class DeploymentExecutorService {
 		this.clientFactory = clientFactory;
 	}
 
-	private createCredentialIdentity(
-		instance: Parameters<ArrClientFactory["createConnectionCredentialIdentity"]>[0],
-	): string {
+	private createCredentialIdentity(instance: EndpointCredentialSource): string {
 		return typeof this.clientFactory.createConnectionCredentialIdentity === "function"
-			? this.clientFactory.createConnectionCredentialIdentity(instance)
+			? this.clientFactory.createConnectionCredentialIdentity(
+					instance as Parameters<ArrClientFactory["createConnectionCredentialIdentity"]>[0],
+				)
 			: createDeploymentConnectionStateToken(instance);
+	}
+
+	private createEndpointKey(userId: string, instance: EndpointMutationTarget): string {
+		const credentialIdentity =
+			"credentialIdentity" in instance
+				? instance.credentialIdentity
+				: this.createCredentialIdentity(instance);
+		return createDeploymentEndpointKey(userId, {
+			service: instance.service,
+			credentialIdentity,
+		});
 	}
 
 	// ============================================================================
@@ -494,7 +518,7 @@ export class DeploymentExecutorService {
 
 		const backupData: DeploymentBackupData = {
 			schemaVersion: 2,
-			endpointKey: createDeploymentEndpointKey(userId, instance),
+			endpointKey: this.createEndpointKey(userId, instance),
 			connectionStateToken: createDeploymentConnectionStateToken(instance),
 			customFormats: preDeploymentCFs,
 			customFormatDeployments: [],
@@ -1297,11 +1321,11 @@ export class DeploymentExecutorService {
 
 	async runWithEndpointMutation<T>(
 		userId: string,
-		instance: Parameters<typeof createDeploymentEndpointKey>[1],
+		instance: EndpointMutationTarget,
 		operation: string,
 		action: (endpointKey: string) => Promise<T>,
 	): Promise<T> {
-		const endpointKey = createDeploymentEndpointKey(userId, instance);
+		const endpointKey = this.createEndpointKey(userId, instance);
 		if (this.activeMutationEndpoints.has(endpointKey)) {
 			throw new AppValidationError(
 				`${operation} cannot start while another deployment or rollback is active for this ARR endpoint.`,
@@ -1326,7 +1350,16 @@ export class DeploymentExecutorService {
 	): Promise<DeploymentResult> {
 		const lockInstance = await this.prisma.serviceInstance.findFirst({
 			where: { id: instanceId, userId },
-			select: { service: true, baseUrl: true },
+			select: {
+				id: true,
+				service: true,
+				baseUrl: true,
+				encryptedApiKey: true,
+				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
+				connectionGeneration: true,
+			},
 		});
 		if (!lockInstance) {
 			throw new InstanceNotFoundError(instanceId);
@@ -1453,10 +1486,7 @@ export class DeploymentExecutorService {
 			const { template, instance, templateConfig, templateCFs, effectiveQualityConfig } =
 				await this.validateAndPrepareDeployment(templateId, instanceId, userId);
 			instanceLabel = instance.label;
-			if (
-				expectedEndpointKey &&
-				createDeploymentEndpointKey(userId, instance) !== expectedEndpointKey
-			) {
+			if (expectedEndpointKey && this.createEndpointKey(userId, instance) !== expectedEndpointKey) {
 				throw new ConflictError(
 					"The ARR service connection changed while deployment was starting. Refresh the preview and try again.",
 				);
@@ -1503,8 +1533,8 @@ export class DeploymentExecutorService {
 				connectionGeneration: alias.connectionGeneration,
 				connectionStateToken: createDeploymentConnectionStateToken(alias),
 			}));
-			const connectionReadBindings = equivalentAliases.flatMap(
-				createDeploymentConnectionBindingCandidates,
+			const connectionReadBindings = equivalentAliases.flatMap((alias) =>
+				createDeploymentConnectionBindingCandidates(alias, this.createCredentialIdentity(alias)),
 			);
 			await assertNoPendingDeploymentOperation(
 				this.prisma,

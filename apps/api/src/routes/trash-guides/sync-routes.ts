@@ -632,9 +632,15 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 							const currentInstance = await app.prisma.serviceInstance.findFirst({
 								where: { id: sync.instanceId, userId },
 							});
+							const leasedCredentialIdentity = currentInstance
+								? app.arrClientFactory.createConnectionCredentialIdentity(currentInstance)
+								: null;
 							if (
 								!currentInstance ||
-								createDeploymentEndpointKey(userId, currentInstance) !== endpointKey
+								createDeploymentEndpointKey(userId, {
+									service: currentInstance.service,
+									credentialIdentity: leasedCredentialIdentity!,
+								}) !== endpointKey
 							) {
 								return reply.status(409).send({
 									error: "ROLLBACK_TARGET_CHANGED",

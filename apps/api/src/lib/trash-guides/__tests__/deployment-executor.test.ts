@@ -375,7 +375,12 @@ describe("DeploymentExecutorService - backup parity", () => {
 				return result;
 			}),
 		};
-		const executor = new DeploymentExecutorService(prisma as never, {} as never);
+		const executor = new DeploymentExecutorService(
+			prisma as never,
+			{
+				createConnectionCredentialIdentity: vi.fn().mockReturnValue("credential-1"),
+			} as never,
+		);
 		const createBackupAndHistory = (
 			executor as unknown as {
 				createBackupAndHistory: (...args: unknown[]) => Promise<unknown>;
@@ -419,7 +424,12 @@ describe("DeploymentExecutorService - backup parity", () => {
 				}),
 			),
 		};
-		const executor = new DeploymentExecutorService(prisma as never, {} as never);
+		const executor = new DeploymentExecutorService(
+			prisma as never,
+			{
+				createConnectionCredentialIdentity: vi.fn().mockReturnValue("credential-1"),
+			} as never,
+		);
 		const createBackupAndHistory = (
 			executor as unknown as {
 				createBackupAndHistory: (
@@ -477,7 +487,7 @@ describe("DeploymentExecutorService - backup parity", () => {
 
 		const backupData = JSON.parse(createBackup.mock.calls[0]![0].data.backupData);
 		expect(backupData).toMatchObject({
-			endpointKey: "user-1:RADARR:http://radarr:7878/",
+			endpointKey: "user-1:RADARR:credential-1",
 			connectionStateToken: expect.any(String),
 			customFormats: [{ id: 5, name: "CF" }],
 			customFormatDeployments: [],

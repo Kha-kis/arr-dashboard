@@ -25,6 +25,7 @@ const instance = {
 	encryptedHttpAuthCredentials: null,
 	httpAuthEncryptionIv: null,
 	connectionGeneration: 2,
+	credentialIdentity: "credential-1",
 };
 
 function qualityProfile(formatItems: Array<{ format: number; score: number }>) {
@@ -182,7 +183,12 @@ describe("sync rollback route", () => {
 		} as never);
 		app.decorate("deploymentExecutor", {
 			runWithEndpointMutation: vi.fn(async (_userId, target, _operation, callback) =>
-				callback(createDeploymentEndpointKey(userId, target)),
+				callback(
+					createDeploymentEndpointKey(userId, {
+						service: target.service,
+						credentialIdentity: "credential-1",
+					}),
+				),
 			),
 		} as never);
 		await app.register(registerSyncRoutes);
@@ -271,7 +277,7 @@ describe("sync rollback route", () => {
 				specifications: [],
 				includeCustomFormatWhenRenaming: false,
 			});
-		const rows = new Map(
+		const rows = new Map<string, Record<string, unknown>>(
 			["wrapper-sync", "child-sync"].map((id) => [
 				id,
 				{

@@ -119,7 +119,16 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
 			serviceInstance: {
-				findFirst: vi.fn().mockResolvedValue({ service: "RADARR", baseUrl: "http://radarr:7878" }),
+				findFirst: vi.fn().mockResolvedValue({
+					id: "instance-1",
+					service: "RADARR",
+					baseUrl: "http://radarr:7878",
+					encryptedApiKey: "encrypted-key",
+					encryptionIv: "iv",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
+					connectionGeneration: 1,
+				}),
 				findMany: vi.fn().mockResolvedValue([
 					{
 						id: "instance-1",
@@ -168,7 +177,10 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 				update: vi.fn(),
 			},
 		};
-		const clientFactory = { create: vi.fn().mockReturnValue(client) };
+		const clientFactory = {
+			create: vi.fn().mockReturnValue(client),
+			createConnectionCredentialIdentity: vi.fn().mockReturnValue("credential-1"),
+		};
 		const executor = new DeploymentExecutorService(prisma as never, clientFactory as never);
 		const privateExecutor = executor as unknown as {
 			validateAndPrepareDeployment: (...args: unknown[]) => Promise<unknown>;
@@ -351,7 +363,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		});
 		const first = executor.runWithEndpointMutation(
 			"user-1",
-			{ service: "RADARR", baseUrl: "http://radarr:7878/" },
+			{ service: "RADARR", credentialIdentity: "credential-1" },
 			"Deployment",
 			async () => firstAction,
 		);
@@ -359,7 +371,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		await expect(
 			executor.runWithEndpointMutation(
 				"user-1",
-				{ service: "radarr", baseUrl: "HTTP://RADARR:7878" },
+				{ service: "radarr", credentialIdentity: "credential-1" },
 				"Rollback",
 				async () => undefined,
 			),
@@ -370,7 +382,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		await expect(
 			executor.runWithEndpointMutation(
 				"user-1",
-				{ service: "RADARR", baseUrl: "http://radarr:7878" },
+				{ service: "RADARR", credentialIdentity: "credential-1" },
 				"Rollback",
 				async () => "completed",
 			),

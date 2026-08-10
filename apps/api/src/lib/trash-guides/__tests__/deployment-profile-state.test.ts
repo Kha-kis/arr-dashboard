@@ -67,7 +67,7 @@ describe("rollbackQualityProfileDeployment", () => {
 		expect(remove).not.toHaveBeenCalled();
 	});
 
-	it("does not report delete success while the created profile still exists", async () => {
+	it("does not delete an unchanged created profile without conditional ARR deletion", async () => {
 		const deployed = { id: 7, name: "Created profile", formatItems: [] };
 		const remove = vi.fn().mockResolvedValue(undefined);
 		const client = {
@@ -87,8 +87,8 @@ describe("rollbackQualityProfileDeployment", () => {
 				postStateToken: createQualityProfileStateToken(deployed),
 				intendedPostStateToken: null,
 			}),
-		).rejects.toThrow("still exists after deletion");
-		expect(remove).toHaveBeenCalledWith(7);
+		).rejects.toThrow("cannot be deleted safely");
+		expect(remove).not.toHaveBeenCalled();
 	});
 
 	it("refuses to delete a created profile changed after deployment", async () => {

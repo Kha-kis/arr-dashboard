@@ -25,6 +25,7 @@ const instance = {
 	encryptedHttpAuthCredentials: null,
 	httpAuthEncryptionIv: null,
 	connectionGeneration: 1,
+	credentialIdentity: "credential-1",
 };
 
 function qualityProfile(score: number | null) {
@@ -151,7 +152,12 @@ describe("deployment history undeploy", () => {
 		} as never);
 		app.decorate("deploymentExecutor", {
 			runWithEndpointMutation: vi.fn(async (_userId, target, _operation, callback) =>
-				callback(createDeploymentEndpointKey(userId, target)),
+				callback(
+					createDeploymentEndpointKey(userId, {
+						service: target.service,
+						credentialIdentity: "credential-1",
+					}),
+				),
 			),
 		} as never);
 		instanceFindFirst.mockResolvedValue(instance);
