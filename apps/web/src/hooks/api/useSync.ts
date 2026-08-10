@@ -293,7 +293,11 @@ export function useSyncProgress(syncId: string | null, enabled = true) {
 		refetchInterval: (query) => {
 			const data = query.state.data;
 			// Stop polling when completed or failed
-			if (data?.status === "COMPLETED" || data?.status === "FAILED") {
+			if (
+				data?.status === "COMPLETED" ||
+				data?.status === "FAILED" ||
+				data?.status === "UNCERTAIN"
+			) {
 				return false;
 			}
 			return 2000; // Poll every 2 seconds

@@ -11,6 +11,51 @@ const createSyncOptions = (overrides: Partial<SyncOptions> = {}): SyncOptions =>
 });
 
 describe("SyncEngine Task 4A partial result consumption", () => {
+	it("propagates an unverified write as uncertain without counting it as failed", async () => {
+		const historyUpdate = vi.fn().mockResolvedValue({});
+		const prisma = {
+			trashSyncHistory: {
+				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
+				update: historyUpdate,
+			},
+		};
+		const uncertain = Object.assign(new ConflictError("ARR write result is uncertain"), {
+			deploymentResultUncertain: true,
+			partialDeployment: {
+				created: 1,
+				updated: 0,
+				skipped: 0,
+				details: { created: ["Created CF"], updated: [], failed: [] },
+			},
+		});
+		const engine = new SyncEngine(
+			prisma as never,
+			{ syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }) } as never,
+			{ deploySingleInstance: vi.fn().mockRejectedValue(uncertain) } as never,
+		);
+		const progress = vi.fn();
+		engine.onProgress("sync-1", progress);
+
+		await expect(engine.execute(createSyncOptions(), undefined)).resolves.toMatchObject({
+			success: false,
+			status: "UNCERTAIN",
+			configsApplied: 1,
+			configsFailed: 0,
+		});
+		expect(historyUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					configsApplied: 1,
+					configsFailed: 0,
+				}),
+			}),
+		);
+		expect(progress).toHaveBeenLastCalledWith(
+			expect.objectContaining({ status: "UNCERTAIN", failedConfigs: 0 }),
+		);
+	});
+
 	it("records a durably created profile when a later reviewed recheck conflicts", async () => {
 		const historyUpdate = vi.fn().mockResolvedValue({});
 		const prisma = {

@@ -45,7 +45,7 @@ export interface SyncError {
 export interface SyncResult {
 	syncId: string;
 	success: boolean;
-	status: "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
+	status: "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED" | "UNCERTAIN";
 	duration: number;
 	configsApplied: number;
 	configsFailed: number;
@@ -60,7 +60,8 @@ export type SyncProgressStatus =
 	| "BACKING_UP"
 	| "APPLYING"
 	| "COMPLETED"
-	| "FAILED";
+	| "FAILED"
+	| "UNCERTAIN";
 
 export interface SyncProgress {
 	syncId: string;

@@ -115,6 +115,74 @@ describe("finalizeDeploymentHistory", () => {
 });
 
 describe("finalizeDeploymentHistoryWithPartialFailure", () => {
+	it("keeps an unverified first upstream mutation uncertain", async () => {
+		const trashSyncUpdate = vi.fn().mockResolvedValue({});
+		const templateDeploymentUpdate = vi.fn().mockResolvedValue({});
+		const prisma = {
+			trashSyncHistory: { update: trashSyncUpdate },
+			templateDeploymentHistory: { update: templateDeploymentUpdate },
+		};
+		const error = Object.assign(new Error("ARR write result could not be verified"), {
+			deploymentResultUncertain: true,
+		});
+
+		await finalizeDeploymentHistoryWithPartialFailure(
+			prisma as never,
+			"sync-1",
+			"deployment-1",
+			new Date(),
+			{ created: [], updated: [], failed: [], orphaned: [] },
+			{ created: 0, updated: 0, skipped: 0 },
+			error,
+		);
+
+		expect(trashSyncUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: "UNCERTAIN" }) }),
+		);
+		expect(templateDeploymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ status: "UNCERTAIN" }) }),
+		);
+	});
+
+	it("keeps an unverified upstream mutation uncertain while preserving proven writes", async () => {
+		const trashSyncUpdate = vi.fn().mockResolvedValue({});
+		const templateDeploymentUpdate = vi.fn().mockResolvedValue({});
+		const prisma = {
+			trashSyncHistory: { update: trashSyncUpdate },
+			templateDeploymentHistory: { update: templateDeploymentUpdate },
+		};
+		const error = Object.assign(new Error("ARR write result could not be verified"), {
+			deploymentResultUncertain: true,
+		});
+
+		await finalizeDeploymentHistoryWithPartialFailure(
+			prisma as never,
+			"sync-1",
+			"deployment-1",
+			new Date(),
+			{ created: ["Created CF"], updated: [], failed: [], orphaned: [] },
+			{ created: 1, updated: 0, skipped: 0 },
+			error,
+		);
+
+		expect(trashSyncUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					configsApplied: 1,
+					appliedConfigs: JSON.stringify([
+						{ name: "Created CF", action: "created", type: "custom_format" },
+					]),
+				}),
+			}),
+		);
+		expect(templateDeploymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ status: "UNCERTAIN", appliedCFs: 1 }),
+			}),
+		);
+	});
+
 	it("records a created quality profile in both histories when a later phase is blocked", async () => {
 		const trashSyncUpdate = vi.fn().mockResolvedValue({});
 		const templateDeploymentUpdate = vi.fn().mockResolvedValue({});

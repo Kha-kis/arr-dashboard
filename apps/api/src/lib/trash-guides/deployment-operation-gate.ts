@@ -315,7 +315,12 @@ export async function reconcileInterruptedDeploymentHistories(
 			? "The application restarted while an upstream deployment result was uncertain. Rollback or manual resolution is required before another deployment."
 			: "The application restarted before deployment history could be finalized. Review the upstream ARR state before retrying.";
 		const appliedCustomFormats = state.customFormatDeployments.filter(
-			(item) => item.status === "applied",
+			(item) =>
+				item.status === "applied" ||
+				(item.status === "pending" &&
+					item.action === "created" &&
+					item.resourceId !== null &&
+					item.postStateToken !== null),
 		);
 		const appliedConfigs: Array<Record<string, unknown>> = appliedCustomFormats.map((item) => ({
 			name: item.name,
@@ -323,13 +328,12 @@ export async function reconcileInterruptedDeploymentHistories(
 			type: "custom_format",
 		}));
 		const profile = state.qualityProfileDeployment;
-		const hasDurablyProvenCreatedProfile =
+		const hasDurablyProvenPendingProfile =
 			profile.status === "pending" &&
-			profile.action === "created" &&
 			profile.profileId !== null &&
 			profile.profileName !== null &&
 			profile.postStateToken !== null;
-		if (profile.status === "applied" || hasDurablyProvenCreatedProfile) {
+		if (profile.status === "applied" || hasDurablyProvenPendingProfile) {
 			if (profile.profileId === null || profile.profileName === null) {
 				if (!pending) {
 					return {

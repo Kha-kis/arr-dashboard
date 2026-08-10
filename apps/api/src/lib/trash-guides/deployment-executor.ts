@@ -34,6 +34,7 @@ import {
 	finalizeDeploymentHistory,
 	finalizeDeploymentHistoryWithFailure,
 	finalizeDeploymentHistoryWithPartialFailure,
+	isDeploymentResultUncertain,
 } from "./deployment-history-manager.js";
 import { assertNoPendingDeploymentOperation } from "./deployment-operation-gate.js";
 import {
@@ -93,6 +94,7 @@ export interface DeploymentResult {
 	instanceId: string;
 	instanceLabel: string;
 	success: boolean;
+	status: "SUCCESS" | "FAILED" | "UNCERTAIN";
 	customFormatsCreated: number;
 	customFormatsUpdated: number;
 	customFormatsSkipped: number;
@@ -118,6 +120,7 @@ export interface BulkDeploymentResult {
 	totalInstances: number;
 	successfulInstances: number;
 	failedInstances: number;
+	uncertainInstances: number;
 	results: DeploymentResult[];
 }
 
@@ -754,11 +757,11 @@ export class DeploymentExecutorService {
 						{ err: error, cfName: templateCF.name },
 						"Custom Format mutation could not be verified",
 					);
-					throwWithPartialDeployment(
-						new ConflictError(
-							`Custom Format "${templateCF.name}" may have changed, but its post-write state could not be verified. Resolve or roll back the interrupted deployment before retrying.`,
-						),
+					const uncertainError = new ConflictError(
+						`Custom Format "${templateCF.name}" may have changed, but its post-write state could not be verified. Resolve or roll back the interrupted deployment before retrying.`,
 					);
+					Object.assign(uncertainError, { deploymentResultUncertain: true });
+					throwWithPartialDeployment(uncertainError);
 				}
 				if (error instanceof ConflictError) {
 					throwWithPartialDeployment(error);
@@ -803,6 +806,7 @@ export class DeploymentExecutorService {
 		const errors: string[] = [];
 		const orphanedCFs: string[] = [];
 		let mutation: QualityProfileMutation | undefined;
+		let upstreamMutationStarted = false;
 		let orphanedOverrideCleanup: SyncQualityProfileResult["orphanedOverrideCleanup"];
 		let mappingFinalization: SyncQualityProfileResult["mappingFinalization"];
 		const connectionBinding = connectionBindings.find(
@@ -853,6 +857,7 @@ export class DeploymentExecutorService {
 					postStateToken: null,
 					intendedPostStateToken: null,
 				});
+				upstreamMutationStarted = true;
 				targetProfile = await createQualityProfileFromSchema(
 					client,
 					templateConfig,
@@ -1210,6 +1215,7 @@ export class DeploymentExecutorService {
 					postStateToken: createdProfile ? createQualityProfileStateToken(targetProfile) : null,
 					intendedPostStateToken: createQualityProfileStateToken(updatedProfile),
 				});
+				upstreamMutationStarted = true;
 				// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr profile types differ but are runtime-compatible
 				await client.qualityProfile.update(targetProfile.id, updatedProfile as any);
 				const postWriteProfile = (await client.qualityProfile.getById(
@@ -1261,7 +1267,18 @@ export class DeploymentExecutorService {
 				};
 			}
 		} catch (error) {
-			if (error instanceof ConflictError) {
+			let resolvedError = error;
+			if (upstreamMutationStarted && !isDeploymentResultUncertain(error)) {
+				const uncertainError =
+					error instanceof ConflictError
+						? error
+						: new ConflictError(
+								`Quality profile "${profileName}" may have changed, but its post-write state could not be verified. Resolve or roll back the interrupted deployment before retrying.`,
+							);
+				Object.assign(uncertainError, { deploymentResultUncertain: true });
+				resolvedError = uncertainError;
+			}
+			if (resolvedError instanceof ConflictError) {
 				if (mutation) {
 					const partialDeployment = {
 						created: 0,
@@ -1270,7 +1287,7 @@ export class DeploymentExecutorService {
 						details: { created: [], updated: [], failed: [], orphaned: [] },
 						qualityProfile: mutation,
 					};
-					Object.assign(error, {
+					Object.assign(resolvedError, {
 						partialDeployment,
 						details: {
 							partialDeployment: {
@@ -1280,10 +1297,12 @@ export class DeploymentExecutorService {
 						},
 					});
 				}
-				throw error;
+				throw resolvedError;
 			}
-			log.error({ err: error }, "Failed to update quality profile");
-			errors.push(`Failed to update quality profile: ${getErrorMessage(error, "Unknown error")}`);
+			log.error({ err: resolvedError }, "Failed to update quality profile");
+			errors.push(
+				`Failed to update quality profile: ${getErrorMessage(resolvedError, "Unknown error")}`,
+			);
 		}
 
 		return { errors, orphanedCFs, mutation, orphanedOverrideCleanup, mappingFinalization };
@@ -1389,6 +1408,7 @@ export class DeploymentExecutorService {
 		beforeWrite?: () => Promise<void>,
 	): Promise<{ fieldsApplied: number; error?: string; postStateToken?: string }> {
 		let fieldsApplied = 0;
+		let upstreamMutationStarted = false;
 		try {
 			if (namingState.changedFields.length === 0) {
 				return { fieldsApplied: 0 };
@@ -1415,6 +1435,7 @@ export class DeploymentExecutorService {
 			}
 			await beforeWrite?.();
 
+			upstreamMutationStarted = true;
 			const putResponse = await this.clientFactory.rawRequest(instance, "/api/v3/config/naming", {
 				method: "PUT",
 				body: namingState.mergedConfig,
@@ -1430,10 +1451,9 @@ export class DeploymentExecutorService {
 				"/api/v3/config/naming",
 			);
 			if (!postWriteResponse.ok) {
-				return {
-					fieldsApplied: 0,
-					error: `Naming config was applied, but its post-write state could not be verified: HTTP ${postWriteResponse.status}`,
-				};
+				throw new Error(
+					`Naming config was applied, but its post-write state could not be verified: HTTP ${postWriteResponse.status}`,
+				);
 			}
 			const postWriteConfig = (await postWriteResponse.json()) as Record<string, unknown>;
 			assertIntendedWritableState(
@@ -1452,6 +1472,16 @@ export class DeploymentExecutorService {
 				postStateToken: createUpstreamResourceStateToken(postWriteConfig),
 			};
 		} catch (error) {
+			if (upstreamMutationStarted) {
+				const uncertainError =
+					error instanceof ConflictError
+						? error
+						: new ConflictError(
+								"Naming configuration may have changed, but its post-write state could not be verified. Resolve or roll back the interrupted deployment before retrying.",
+							);
+				Object.assign(uncertainError, { deploymentResultUncertain: true });
+				throw uncertainError;
+			}
 			if (error instanceof ConflictError) throw error;
 			return {
 				fieldsApplied,
@@ -1917,6 +1947,7 @@ export class DeploymentExecutorService {
 				instanceId,
 				instanceLabel: instance.label,
 				success: allErrors.length === 0,
+				status: allErrors.length === 0 ? "SUCCESS" : "FAILED",
 				customFormatsCreated: cfResult.created,
 				customFormatsUpdated: cfResult.updated,
 				customFormatsSkipped: cfResult.skipped,
@@ -2005,6 +2036,7 @@ export class DeploymentExecutorService {
 				instanceId,
 				instanceLabel,
 				success: false,
+				status: isDeploymentResultUncertain(error) ? "UNCERTAIN" : "FAILED",
 				customFormatsCreated: partialCounts?.created ?? 0,
 				customFormatsUpdated: partialCounts?.updated ?? 0,
 				customFormatsSkipped: partialCounts?.skipped ?? 0,
@@ -2044,6 +2076,7 @@ export class DeploymentExecutorService {
 					instanceId,
 					instanceLabel: `Instance ${index + 1}`,
 					success: false,
+					status: isDeploymentResultUncertain(error) ? "UNCERTAIN" : "FAILED",
 					customFormatsCreated: partialDeployment?.created ?? 0,
 					customFormatsUpdated: partialDeployment?.updated ?? 0,
 					customFormatsSkipped: partialDeployment?.skipped ?? 0,
@@ -2061,8 +2094,9 @@ export class DeploymentExecutorService {
 			templateId,
 			templateName: template.name,
 			totalInstances: instanceIds.length,
-			successfulInstances: results.filter((result) => result.success).length,
-			failedInstances: results.filter((result) => !result.success).length,
+			successfulInstances: results.filter((result) => result.status === "SUCCESS").length,
+			failedInstances: results.filter((result) => result.status === "FAILED").length,
+			uncertainInstances: results.filter((result) => result.status === "UNCERTAIN").length,
 			results,
 		};
 	}

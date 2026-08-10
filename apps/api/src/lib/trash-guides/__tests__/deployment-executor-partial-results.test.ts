@@ -289,9 +289,11 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			expect.objectContaining({
 				where: { id: "sync-history-1" },
 				data: expect.objectContaining({
-					status: "PARTIAL_SUCCESS",
+					status: "UNCERTAIN",
 					configsApplied: 1,
+					configsFailed: 0,
 					appliedConfigs: JSON.stringify([appliedProfile]),
+					failedConfigs: JSON.stringify([]),
 				}),
 			}),
 		);
@@ -299,8 +301,9 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			expect.objectContaining({
 				where: { id: "deployment-history-1" },
 				data: expect.objectContaining({
-					status: "PARTIAL_SUCCESS",
+					status: "UNCERTAIN",
 					appliedConfigs: JSON.stringify([appliedProfile]),
+					failedConfigs: JSON.stringify([]),
 				}),
 			}),
 		);
@@ -353,6 +356,28 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			details,
 		});
 		expect(result.results[0]?.qualityProfileApplied).not.toHaveProperty("postStateToken");
+	});
+
+	it("counts an unverified bulk write as uncertain instead of failed", async () => {
+		const prisma = {
+			trashTemplate: {
+				findUnique: vi.fn().mockResolvedValue({ id: "template-1", name: "Any" }),
+			},
+		};
+		const executor = new DeploymentExecutorService(prisma as never, {} as never);
+		const uncertain = Object.assign(new ConflictError("ARR write result is uncertain"), {
+			deploymentResultUncertain: true,
+		});
+		vi.spyOn(executor, "deploySingleInstance").mockRejectedValue(uncertain);
+
+		const result = await executor.deployBulkInstances("template-1", ["instance-1"], "user-1");
+
+		expect(result).toMatchObject({
+			successfulInstances: 0,
+			failedInstances: 0,
+			uncertainInstances: 1,
+			results: [{ status: "UNCERTAIN", success: false }],
+		});
 	});
 
 	it("serializes deployment and rollback work across equivalent endpoint records", async () => {

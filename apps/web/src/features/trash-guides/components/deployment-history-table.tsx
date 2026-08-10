@@ -59,6 +59,11 @@ const StatusBadge = ({ status }: { status: string }) => {
 			icon: AlertTriangle,
 			color: SEMANTIC_COLORS.warning,
 		},
+		UNCERTAIN: {
+			label: "Needs Review",
+			icon: AlertTriangle,
+			color: SEMANTIC_COLORS.warning,
+		},
 		FAILED: {
 			label: "Failed",
 			icon: XCircle,

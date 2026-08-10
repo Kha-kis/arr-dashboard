@@ -541,8 +541,8 @@ describe("assertNoPendingDeploymentOperation", () => {
 	});
 });
 
-describe("reconcileInterruptedDeploymentHistories created profile recovery", () => {
-	it("counts a durably identified pending profile creation and stays retryable on restart", async () => {
+describe("reconcileInterruptedDeploymentHistories identified pending mutations", () => {
+	it("preserves identified CF creation and verified profile update audit evidence", async () => {
 		const createdProfileBackup = {
 			id: "backup-created-profile",
 			backupData: JSON.stringify({
@@ -550,13 +550,23 @@ describe("reconcileInterruptedDeploymentHistories created profile recovery", () 
 				endpointKey: "user-1:RADARR:http://radarr:7878/",
 				connectionStateToken: "connection",
 				customFormats: [],
-				customFormatDeployments: [],
+				customFormatDeployments: [
+					{
+						beforeFormat: null,
+						action: "created",
+						resourceId: 7,
+						name: "Created CF",
+						status: "pending",
+						postStateToken: "exact-created-format-token",
+						intendedPostStateToken: "different-intended-token",
+					},
+				],
 				managedCustomFormats: [],
 				managedCustomFormatsCaptured: false,
 				qualityProfileDeployment: {
-					beforeProfile: null,
+					beforeProfile: { id: 42, name: "HD-1080p", formatItems: [] },
 					status: "pending",
-					action: "created",
+					action: "updated",
 					profileId: 42,
 					profileName: "HD-1080p",
 					postStateToken: "exact-created-profile-token",
@@ -611,18 +621,23 @@ describe("reconcileInterruptedDeploymentHistories created profile recovery", () 
 		};
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
+		const appliedFormat = {
+			name: "Created CF",
+			action: "created",
+			type: "custom_format",
+		};
 		const appliedProfile = {
 			name: "HD-1080p",
-			action: "created",
+			action: "updated",
 			type: "quality_profile",
 			id: 42,
 		};
 		expect(deploymentUpdateMany).toHaveBeenCalledWith({
 			where: { id: "deployment-created-profile", status: "IN_PROGRESS" },
 			data: expect.objectContaining({
-				status: "PARTIAL_SUCCESS",
-				appliedCFs: 0,
-				appliedConfigs: JSON.stringify([appliedProfile]),
+				status: "UNCERTAIN",
+				appliedCFs: 1,
+				appliedConfigs: JSON.stringify([appliedFormat, appliedProfile]),
 			}),
 		});
 		expect(syncUpdateMany).toHaveBeenCalledWith({
@@ -631,10 +646,10 @@ describe("reconcileInterruptedDeploymentHistories created profile recovery", () 
 				status: { in: ["IN_PROGRESS", "RUNNING"] },
 			},
 			data: expect.objectContaining({
-				status: "PARTIAL_SUCCESS",
-				configsApplied: 1,
+				status: "UNCERTAIN",
+				configsApplied: 2,
 				configsFailed: 1,
-				appliedConfigs: JSON.stringify([appliedProfile]),
+				appliedConfigs: JSON.stringify([appliedFormat, appliedProfile]),
 			}),
 		});
 
@@ -649,7 +664,7 @@ describe("reconcileInterruptedDeploymentHistories created profile recovery", () 
 					templateDeploymentHistory: {
 						findMany: vi.fn().mockResolvedValue([
 							{
-								status: "PARTIAL_SUCCESS",
+								status: "UNCERTAIN",
 								backup: createdProfileBackup,
 							},
 						]),
@@ -833,7 +848,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		});
 	});
 
-	it("atomically marks paired pending histories uncertain while preserving the safety gate", async () => {
+	it("atomically marks paired histories uncertain while preserving applied audit evidence", async () => {
 		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const transaction = vi.fn(async (callback) =>

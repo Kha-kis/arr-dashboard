@@ -598,6 +598,7 @@ describe("DeploymentExecutorService - backup parity", () => {
 			),
 		).rejects.toMatchObject({
 			message: expect.stringContaining("post-write state could not be verified"),
+			deploymentResultUncertain: true,
 		});
 		expect(persist).toHaveBeenCalledOnce();
 		expect(persist).toHaveBeenCalledWith(
@@ -642,6 +643,7 @@ describe("DeploymentExecutorService - backup parity", () => {
 			),
 		).rejects.toMatchObject({
 			message: expect.stringContaining("post-write state could not be verified"),
+			deploymentResultUncertain: true,
 			partialDeployment: {
 				created: 0,
 				updated: 0,
@@ -776,18 +778,22 @@ describe("DeploymentExecutorService - naming deployment state", () => {
 			}
 		).deployNamingPresets.bind(executor);
 
-		await expect(
-			deployNamingPresets(
+		let error: unknown;
+		try {
+			await deployNamingPresets(
 				{
 					currentConfig: beforeConfig,
 					mergedConfig: { ...beforeConfig, standardMovieFormat: "Deployed" },
 					changedFields: ["standardMovieFormat"],
 				},
 				{ id: "instance-1", service: "RADARR" },
-			),
-		).resolves.toMatchObject({
-			fieldsApplied: 0,
-			error: expect.stringContaining("post-write state could not be verified"),
+			);
+		} catch (caughtError) {
+			error = caughtError;
+		}
+		expect(error).toBeInstanceOf(ConflictError);
+		expect(error).toMatchObject({
+			deploymentResultUncertain: true,
 		});
 		expect(rawRequest).toHaveBeenCalledTimes(3);
 	});
@@ -1021,28 +1027,30 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 			}
 		).syncQualityProfile.bind(executor);
 
-		const result = await syncQualityProfile(
-			client,
-			{},
-			[],
-			"template-1",
-			"instance-1",
-			"user-1",
-			undefined,
-			undefined,
-			"Any",
-			undefined,
-			undefined,
-			[],
-			new Map(),
-			["instance-1"],
-			undefined,
-			persistProfileState,
-		);
-
-		expect(result.errors).toEqual(
-			expect.arrayContaining([expect.stringContaining("later custom format read failed")]),
-		);
+		let error: unknown;
+		try {
+			await syncQualityProfile(
+				client,
+				{},
+				[],
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				"Any",
+				undefined,
+				undefined,
+				[],
+				new Map(),
+				["instance-1"],
+				undefined,
+				persistProfileState,
+			);
+		} catch (caughtError) {
+			error = caughtError;
+		}
+		expect(error).toMatchObject({ deploymentResultUncertain: true });
 		expect(persistProfileState).toHaveBeenNthCalledWith(
 			2,
 			expect.objectContaining({
@@ -1092,34 +1100,36 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 			}
 		).syncQualityProfile.bind(executor);
 
-		const result = await syncQualityProfile(
-			client,
-			{ qualityProfile: { trash_score_set: "default" } },
-			[
-				{
-					trashId: "managed-cf",
-					name: "Managed CF",
-					originalConfig: { trash_scores: { default: 100 } },
-				},
-			],
-			"template-1",
-			"instance-1",
-			"user-1",
-			undefined,
-			undefined,
-			"Any",
-			undefined,
-			undefined,
-			[],
-			new Map(),
-			["instance-1"],
-			undefined,
-			persistProfileState,
-		);
-
-		expect(result.errors).toEqual(
-			expect.arrayContaining([expect.stringContaining("ledger persistence stopped execution")]),
-		);
+		let error: unknown;
+		try {
+			await syncQualityProfile(
+				client,
+				{ qualityProfile: { trash_score_set: "default" } },
+				[
+					{
+						trashId: "managed-cf",
+						name: "Managed CF",
+						originalConfig: { trash_scores: { default: 100 } },
+					},
+				],
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				"Any",
+				undefined,
+				undefined,
+				[],
+				new Map(),
+				["instance-1"],
+				undefined,
+				persistProfileState,
+			);
+		} catch (caughtError) {
+			error = caughtError;
+		}
+		expect(error).toMatchObject({ deploymentResultUncertain: true });
 		expect(persistProfileState).toHaveBeenNthCalledWith(
 			3,
 			expect.objectContaining({
@@ -1252,33 +1262,36 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 			}
 		).syncQualityProfile.bind(executor);
 
-		const result = await syncQualityProfile(
-			client,
-			{ qualityProfile: { trash_score_set: "default" } },
-			[
-				{
-					trashId: "managed-cf",
-					name: "Managed CF",
-					originalConfig: { trash_scores: { default: 100 } },
-				},
-			],
-			"template-1",
-			"instance-1",
-			"user-1",
-			undefined,
-			undefined,
-			"Any",
-			profile,
-			undefined,
-			[],
-			new Map(),
-			["instance-1"],
-			undefined,
-			persistProfileState,
-		);
-
-		expect(result.errors).toEqual([expect.stringContaining("post-write profile read failed")]);
-		expect(result.mutation).toBeUndefined();
+		let error: unknown;
+		try {
+			await syncQualityProfile(
+				client,
+				{ qualityProfile: { trash_score_set: "default" } },
+				[
+					{
+						trashId: "managed-cf",
+						name: "Managed CF",
+						originalConfig: { trash_scores: { default: 100 } },
+					},
+				],
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				"Any",
+				profile,
+				undefined,
+				[],
+				new Map(),
+				["instance-1"],
+				undefined,
+				persistProfileState,
+			);
+		} catch (caughtError) {
+			error = caughtError;
+		}
+		expect(error).toMatchObject({ deploymentResultUncertain: true });
 		expect(update).toHaveBeenCalledOnce();
 		expect(persistProfileState).toHaveBeenCalledOnce();
 	});

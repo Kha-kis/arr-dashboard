@@ -40,6 +40,7 @@ const STAGE_LABELS: Record<SyncProgressStatus, string> = {
 	APPLYING: "Applying Configurations",
 	COMPLETED: "Completed",
 	FAILED: "Failed",
+	UNCERTAIN: "Needs Review",
 };
 
 /**
@@ -77,8 +78,9 @@ export const SyncProgressModal = ({
 				const currentStage = progress?.status || "INITIALIZING";
 				const isFailed = currentStage === "FAILED";
 				const isCompleted = currentStage === "COMPLETED";
+				const isUncertain = currentStage === "UNCERTAIN";
 				// Only allow closing when sync is finished
-				if (isCompleted || isFailed) {
+				if (isCompleted || isFailed || isUncertain) {
 					onClose();
 				}
 			}
@@ -148,17 +150,20 @@ export const SyncProgressModal = ({
 
 	const currentStage = progress?.status || "INITIALIZING";
 	const rawStageIndex = STAGE_ORDER.indexOf(currentStage);
-	// Handle FAILED status which is not in STAGE_ORDER - clamp to valid range
+	// Terminal failure and uncertainty are not normal stages; clamp them to the final position.
 	const currentStageIndex =
-		currentStage === "FAILED" ? STAGE_ORDER.length - 1 : Math.max(0, rawStageIndex);
+		currentStage === "FAILED" || currentStage === "UNCERTAIN"
+			? STAGE_ORDER.length - 1
+			: Math.max(0, rawStageIndex);
 	const isFailed = currentStage === "FAILED";
+	const isUncertain = currentStage === "UNCERTAIN";
 	const isCompleted = currentStage === "COMPLETED";
 
 	return (
 		<div
 			className="fixed inset-0 z-modal flex items-center justify-center p-4 animate-in fade-in duration-200"
 			onClick={(_e) => {
-				if (isCompleted || isFailed) {
+				if (isCompleted || isFailed || isUncertain) {
 					onClose();
 				}
 			}}
@@ -197,7 +202,7 @@ export const SyncProgressModal = ({
 								}}
 							>
 								<RefreshCw
-									className={`h-6 w-6 ${!isCompleted && !isFailed ? "animate-spin" : ""}`}
+									className={`h-6 w-6 ${!isCompleted && !isFailed && !isUncertain ? "animate-spin" : ""}`}
 									style={{ color: themeGradient.from }}
 								/>
 							</div>
@@ -350,9 +355,11 @@ export const SyncProgressModal = ({
 											width: `${progress.progress}%`,
 											background: isFailed
 												? `linear-gradient(90deg, ${SEMANTIC_COLORS.error.from}, ${SEMANTIC_COLORS.error.to})`
-												: isCompleted
-													? `linear-gradient(90deg, ${SEMANTIC_COLORS.success.from}, ${SEMANTIC_COLORS.success.to})`
-													: `linear-gradient(90deg, ${themeGradient.from}, ${themeGradient.to})`,
+												: isUncertain
+													? `linear-gradient(90deg, ${SEMANTIC_COLORS.warning.from}, ${SEMANTIC_COLORS.warning.to})`
+													: isCompleted
+														? `linear-gradient(90deg, ${SEMANTIC_COLORS.success.from}, ${SEMANTIC_COLORS.success.to})`
+														: `linear-gradient(90deg, ${themeGradient.from}, ${themeGradient.to})`,
 										}}
 									/>
 								</div>

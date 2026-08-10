@@ -148,29 +148,6 @@ export function getCreatedCustomFormatNamesForRollback(value: unknown): Set<stri
 	return names;
 }
 
-function assertLegacyRestoreState(
-	actual: unknown,
-	intended: Record<string, unknown>,
-	resourceLabel: string,
-): void {
-	if (!actual || typeof actual !== "object" || Array.isArray(actual)) {
-		throw new Error(`${resourceLabel} returned an invalid restored state.`);
-	}
-	const actualRecord = actual as Record<string, unknown>;
-	const intendedProjection: Record<string, unknown> = {};
-	const actualProjection: Record<string, unknown> = {};
-	for (const key of Object.keys(intended)) {
-		intendedProjection[key] = intended[key];
-		actualProjection[key] = actualRecord[key];
-	}
-	if (
-		createUpstreamResourceStateToken(actualProjection) !==
-		createUpstreamResourceStateToken(intendedProjection)
-	) {
-		throw new Error(`${resourceLabel} did not match its legacy backup after restore.`);
-	}
-}
-
 interface RollbackStep {
 	key: string;
 	kind: "quality_profile" | "custom_format" | "naming" | "legacy";
@@ -282,10 +259,12 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 		// so that polling endpoints can retrieve it
 		const finalProgress: SyncProgress = {
 			syncId: result.syncId,
-			status: result.success ? "COMPLETED" : "FAILED",
+			status: result.status === "UNCERTAIN" ? "UNCERTAIN" : result.success ? "COMPLETED" : "FAILED",
 			currentStep: result.success
 				? `Sync completed: ${result.configsApplied} applied, ${result.configsFailed} failed`
-				: "Sync failed",
+				: result.status === "UNCERTAIN"
+					? "Sync result is uncertain; resolve or roll back before retrying"
+					: "Sync failed",
 			progress: 100,
 			totalConfigs: result.configsApplied + result.configsFailed + result.configsSkipped,
 			appliedConfigs: result.configsApplied,
@@ -329,7 +308,11 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 				reply.raw.write(`data: ${JSON.stringify(progress)}\n\n`);
 
 				// Close stream when completed or failed
-				if (progress.status === "COMPLETED" || progress.status === "FAILED") {
+				if (
+					progress.status === "COMPLETED" ||
+					progress.status === "FAILED" ||
+					progress.status === "UNCERTAIN"
+				) {
 					setTimeout(() => {
 						if (!reply.raw.destroyed) {
 							reply.raw.end();
@@ -667,176 +650,10 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								!Array.isArray(rawBackup) &&
 								Reflect.get(rawBackup, "schemaVersion") === 2;
 							if (!isV2Backup) {
-								interface LegacyBackupCustomFormat {
-									id?: number;
-									name: string;
-									specifications?: unknown[];
-									includeCustomFormatWhenRenaming?: boolean;
-									trash_id?: string;
-								}
-								let legacyFormats: LegacyBackupCustomFormat[];
-								let legacyProfile: Record<string, unknown> | null = null;
-								if (Array.isArray(rawBackup)) {
-									legacyFormats = rawBackup as LegacyBackupCustomFormat[];
-								} else if (
-									typeof rawBackup === "object" &&
-									rawBackup !== null &&
-									!Object.hasOwn(rawBackup, "schemaVersion") &&
-									Array.isArray(Reflect.get(rawBackup, "customFormats"))
-								) {
-									legacyFormats = Reflect.get(
-										rawBackup,
-										"customFormats",
-									) as LegacyBackupCustomFormat[];
-									const profile = Reflect.get(rawBackup, "qualityProfile");
-									legacyProfile =
-										typeof profile === "object" && profile !== null
-											? (profile as Record<string, unknown>)
-											: null;
-								} else {
-									return reply.status(400).send({
-										error: "INVALID_BACKUP",
-										message: "Backup data is corrupted or invalid",
-									});
-								}
-								if (legacyFormats.some((format) => !format || typeof format.name !== "string")) {
-									return reply.status(400).send({
-										error: "INVALID_BACKUP",
-										message: "Backup data is corrupted or invalid",
-									});
-								}
-								const client = app.arrClientFactory.create(currentInstance) as
-									| SonarrClient
-									| RadarrClient;
-								const currentFormats = await client.customFormat.getAll();
-								const currentByName = new Map(
-									currentFormats.flatMap((format) =>
-										format.name ? [[format.name, format] as const] : [],
-									),
-								);
-								let restoredCount = 0;
-								const errors: string[] = [];
-								const legacySteps: RollbackStep[] = [];
-								for (const backupFormat of legacyFormats) {
-									const { trash_id: _trashId, ...restorableFormat } = backupFormat;
-									try {
-										const currentFormat = currentByName.get(backupFormat.name);
-										if (currentFormat?.id) {
-											const intendedFormat = {
-												...restorableFormat,
-												id: currentFormat.id,
-											};
-											await client.customFormat.update(
-												currentFormat.id,
-												intendedFormat as Parameters<typeof client.customFormat.update>[1],
-											);
-											assertLegacyRestoreState(
-												await client.customFormat.getById(currentFormat.id),
-												intendedFormat,
-												`Custom Format "${backupFormat.name}"`,
-											);
-										} else {
-											const { id: _legacyId, ...createData } = restorableFormat;
-											const createdFormat = await client.customFormat.create(
-												createData as Parameters<typeof client.customFormat.create>[0],
-											);
-											if (!createdFormat.id)
-												throw new Error("ARR did not return a Custom Format ID");
-											assertLegacyRestoreState(
-												await client.customFormat.getById(createdFormat.id),
-												createData,
-												`Custom Format "${backupFormat.name}"`,
-											);
-										}
-										restoredCount++;
-										legacySteps.push({
-											key: `legacy:custom_format:${backupFormat.name}`,
-											kind: "legacy",
-											name: backupFormat.name,
-											outcome: "restored",
-										});
-									} catch (error) {
-										const message = `Failed to restore "${backupFormat.name}": ${getErrorMessage(error, "Unknown error")}`;
-										errors.push(message);
-										legacySteps.push({
-											key: `legacy:custom_format:${backupFormat.name}`,
-											kind: "legacy",
-											name: backupFormat.name,
-											outcome: "failed",
-											error: message,
-										});
-									}
-								}
-								if (legacyProfile && typeof legacyProfile.id === "number") {
-									try {
-										await client.qualityProfile.update(
-											legacyProfile.id,
-											// biome-ignore lint/suspicious/noExplicitAny: legacy ARR snapshots are dynamic
-											legacyProfile as any,
-										);
-										assertLegacyRestoreState(
-											await client.qualityProfile.getById(legacyProfile.id),
-											legacyProfile,
-											"Quality profile",
-										);
-										restoredCount++;
-										legacySteps.push({
-											key: "legacy:quality_profile",
-											kind: "legacy",
-											name: "Quality profile",
-											outcome: "restored",
-										});
-									} catch (error) {
-										const message = `Failed to restore quality profile: ${getErrorMessage(error, "Unknown error")}`;
-										errors.push(message);
-										legacySteps.push({
-											key: "legacy:quality_profile",
-											kind: "legacy",
-											name: "Quality profile",
-											outcome: "failed",
-											error: message,
-										});
-									}
-								}
-								const attemptedAt = new Date();
-								const progress = JSON.stringify(legacySteps);
-								await app.prisma.$transaction(async (tx) => {
-									await tx.trashSyncHistory.updateMany({
-										where: { backupId: sync.backupId, userId, rolledBack: false },
-										data: {
-											rolledBack: errors.length === 0,
-											...(errors.length === 0 ? { rolledBackAt: attemptedAt } : {}),
-											rollbackStatus: errors.length === 0 ? "COMPLETED" : "PARTIAL",
-											rollbackAttemptedAt: attemptedAt,
-											rollbackProgress: progress,
-										},
-									});
-									await tx.templateDeploymentHistory.updateMany({
-										where: { backupId: sync.backupId, userId },
-										data: {
-											rolledBack: errors.length === 0,
-											...(errors.length === 0
-												? { rolledBackAt: attemptedAt, rolledBackBy: userId }
-												: {}),
-											undeployStatus: errors.length === 0 ? "COMPLETED" : "PARTIAL",
-											undeployAttemptedAt: attemptedAt,
-											undeployProgress: progress,
-										},
-									});
-								});
-								const metricsResult = completeMetrics();
-								if (errors.length === 0) metricsResult.recordSuccess();
-								else metricsResult.recordFailure(errors[0]);
-								return reply.send({
-									success: errors.length === 0,
-									restoredCount,
-									deletedCount: 0,
-									failedCount: errors.length,
-									errors: errors.length > 0 ? errors : undefined,
+								return reply.status(409).send({
+									error: "LEGACY_BACKUP_UNVERIFIED",
 									message:
-										errors.length === 0
-											? "Legacy rollback completed"
-											: "Legacy rollback completed with errors",
+										"This legacy backup does not contain the endpoint and resource identity needed for a safe automatic rollback. Restore it manually after verifying the ARR instance and each target resource.",
 								});
 							}
 							// Parse backup data (contains the pre-sync state)

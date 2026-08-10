@@ -49,6 +49,14 @@ function getAppliedConfigs(
 	];
 }
 
+export function isDeploymentResultUncertain(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		Reflect.get(error, "deploymentResultUncertain") === true
+	);
+}
+
 /**
  * Finalizes deployment history records with results.
  */
@@ -153,13 +161,14 @@ export async function finalizeDeploymentHistoryWithFailure(
 	const endTime = new Date();
 	const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
 	const errorMessage = getErrorMessage(error, "Unknown error");
+	const status = isDeploymentResultUncertain(error) ? "UNCERTAIN" : "FAILED";
 
 	await withHistoryTransaction(prisma, async (database) => {
 		if (historyId) {
 			await database.trashSyncHistory.update({
 				where: { id: historyId },
 				data: {
-					status: "FAILED",
+					status,
 					completedAt: endTime,
 					duration,
 					errorLog: errorMessage,
@@ -171,7 +180,7 @@ export async function finalizeDeploymentHistoryWithFailure(
 			await database.templateDeploymentHistory.update({
 				where: { id: deploymentHistoryId },
 				data: {
-					status: "FAILED",
+					status,
 					duration,
 					errors: JSON.stringify([errorMessage]),
 				},
@@ -198,13 +207,14 @@ export async function finalizeDeploymentHistoryWithPartialFailure(
 	const errorMessage = getErrorMessage(error, "Unknown error");
 	const appliedCFCount = counts.created + counts.updated;
 	const appliedCount = appliedCFCount + (qualityProfile ? 1 : 0);
-	const status = appliedCount > 0 ? "PARTIAL_SUCCESS" : "FAILED";
+	const uncertain = isDeploymentResultUncertain(error);
+	const status = uncertain ? "UNCERTAIN" : appliedCount > 0 ? "PARTIAL_SUCCESS" : "FAILED";
 	const failedConfigs = [
 		...details.failed.map((name, index) => ({
 			name,
 			error: priorErrors[index] ?? "Custom Format deployment failed",
 		})),
-		{ name: "Deployment phase", error: errorMessage },
+		...(uncertain ? [] : [{ name: "Deployment phase", error: errorMessage }]),
 	];
 	await withHistoryTransaction(prisma, async (database) => {
 		if (historyId) {
@@ -215,7 +225,7 @@ export async function finalizeDeploymentHistoryWithPartialFailure(
 					completedAt: endTime,
 					duration,
 					configsApplied: appliedCount,
-					configsFailed: details.failed.length + 1,
+					configsFailed: details.failed.length + (uncertain ? 0 : 1),
 					configsSkipped: counts.skipped,
 					appliedConfigs: JSON.stringify(getAppliedConfigs(details, qualityProfile)),
 					failedConfigs: JSON.stringify(failedConfigs),

@@ -402,11 +402,15 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		// success: true only when all deployments succeeded
 		// Check both failedInstances count and individual result.success flags
 		const hasFailures =
-			result.failedInstances > 0 || result.results.some((deployment) => !deployment.success);
+			result.failedInstances > 0 ||
+			result.results.some((deployment) => deployment.status === "FAILED");
+		const hasUncertain =
+			result.uncertainInstances > 0 ||
+			result.results.some((deployment) => deployment.status === "UNCERTAIN");
 
 		if (hasFailures) {
 			const failedNames = result.results
-				.filter((r) => !r.success)
+				.filter((deployment) => deployment.status === "FAILED")
 				.map((r) => r.instanceLabel)
 				.join(", ");
 
@@ -428,7 +432,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		}
 
 		return reply.send({
-			success: !hasFailures,
+			success: !hasFailures && !hasUncertain,
 			result: result,
 		});
 	});

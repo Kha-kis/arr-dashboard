@@ -201,7 +201,7 @@ describe("sync rollback route", () => {
 		vi.clearAllMocks();
 	});
 
-	it("restores a legacy raw-array Custom Format backup under the mutation leases", async () => {
+	it("refuses a legacy raw-array backup without durable endpoint and resource identity", async () => {
 		const restoredFormat = {
 			id: 7,
 			name: "Updated CF",
@@ -214,12 +214,12 @@ describe("sync rollback route", () => {
 
 		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
 
-		expect(response.statusCode, response.body).toBe(200);
-		expect(response.json()).toMatchObject({ success: true, restoredCount: 1 });
-		expect(formatUpdate).toHaveBeenCalledWith(7, restoredFormat);
+		expect(response.statusCode, response.body).toBe(409);
+		expect(response.json()).toMatchObject({ error: "LEGACY_BACKUP_UNVERIFIED" });
+		expect(formatUpdate).not.toHaveBeenCalled();
 	});
 
-	it("restores a legacy object backup containing a quality profile", async () => {
+	it("refuses a legacy object backup without durable endpoint and resource identity", async () => {
 		const restoredProfile = qualityProfile([]);
 		(syncRecord.backup as { backupData: string }).backupData = JSON.stringify({
 			customFormats: [],
@@ -230,9 +230,9 @@ describe("sync rollback route", () => {
 
 		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
 
-		expect(response.statusCode, response.body).toBe(200);
-		expect(response.json()).toMatchObject({ success: true, restoredCount: 1 });
-		expect(profileUpdate).toHaveBeenCalledWith(4, restoredProfile);
+		expect(response.statusCode, response.body).toBe(409);
+		expect(response.json()).toMatchObject({ error: "LEGACY_BACKUP_UNVERIFIED" });
+		expect(profileUpdate).not.toHaveBeenCalled();
 	});
 
 	it("restores the quality profile before restoring referenced Custom Formats", async () => {

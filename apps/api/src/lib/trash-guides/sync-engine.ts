@@ -11,6 +11,7 @@ import { ConflictError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
+import { isDeploymentResultUncertain } from "./deployment-history-manager.js";
 import { getSyncMetrics } from "./sync-metrics.js";
 import type { TemplateUpdater } from "./template-updater.js";
 import { USER_CF_PREFIX } from "./user-cf-resolver.js";
@@ -30,7 +31,14 @@ export interface SyncOptions {
 
 export interface SyncProgress {
 	syncId: string;
-	status: "INITIALIZING" | "VALIDATING" | "BACKING_UP" | "APPLYING" | "COMPLETED" | "FAILED";
+	status:
+		| "INITIALIZING"
+		| "VALIDATING"
+		| "BACKING_UP"
+		| "APPLYING"
+		| "COMPLETED"
+		| "FAILED"
+		| "UNCERTAIN";
 	currentStep: string;
 	progress: number; // 0-100
 	totalConfigs: number;
@@ -48,7 +56,7 @@ export interface SyncError {
 export interface SyncResult {
 	syncId: string;
 	success: boolean;
-	status: "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
+	status: "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED" | "UNCERTAIN";
 	duration: number;
 	configsApplied: number;
 	configsFailed: number;
@@ -540,12 +548,15 @@ export class SyncEngine {
 					: []),
 			];
 			const configsApplied = appliedConfigEntries.length;
-			let configsFailed = errors.length;
-			let status: SyncResult["status"] = deployResult.success
-				? "SUCCESS"
-				: configsApplied > 0
-					? "PARTIAL_SUCCESS"
-					: "FAILED";
+			const deploymentUncertain = deployResult.status === "UNCERTAIN";
+			let configsFailed = deploymentUncertain ? 0 : errors.length;
+			let status: SyncResult["status"] = deploymentUncertain
+				? "UNCERTAIN"
+				: deployResult.success
+					? "SUCCESS"
+					: configsApplied > 0
+						? "PARTIAL_SUCCESS"
+						: "FAILED";
 
 			let resultSuccess = deployResult.success;
 			// Update sync history
@@ -560,7 +571,9 @@ export class SyncEngine {
 						configsFailed,
 						configsSkipped: deployResult.customFormatsSkipped,
 						appliedConfigs: JSON.stringify(appliedConfigEntries),
-						failedConfigs: errors.length > 0 ? JSON.stringify(errors) : null,
+						failedConfigs:
+							!deploymentUncertain && errors.length > 0 ? JSON.stringify(errors) : null,
+						errorLog: deploymentUncertain ? errors.map((error) => error.error).join("\n") : null,
 					},
 				});
 			} catch (historyError) {
@@ -577,12 +590,14 @@ export class SyncEngine {
 			// Emit completion
 			this.emitProgress({
 				syncId,
-				status: "COMPLETED",
+				status: status === "UNCERTAIN" ? "UNCERTAIN" : "COMPLETED",
 				currentStep: resultSuccess
 					? warnings.length
 						? "Sync completed with warnings"
 						: "Sync completed successfully"
-					: "Sync completed with errors",
+					: status === "UNCERTAIN"
+						? "Sync result is uncertain; resolve or roll back before retrying"
+						: "Sync completed with errors",
 				progress: 100,
 				totalConfigs: configsApplied + configsFailed + deployResult.customFormatsSkipped,
 				appliedConfigs: configsApplied,
@@ -644,6 +659,7 @@ export class SyncEngine {
 						})
 					: undefined;
 			const reviewedDeploymentBlocked = deploymentAttempted && error instanceof ConflictError;
+			const deploymentUncertain = isDeploymentResultUncertain(error);
 			const appliedDeploymentCount = partialDeployment
 				? partialDeployment.created +
 					partialDeployment.updated +
@@ -674,7 +690,7 @@ export class SyncEngine {
 					]
 				: [];
 			const deploymentFailureCount = reviewedDeploymentBlocked
-				? (partialDeployment?.details.failed?.length ?? 0) + 1
+				? (partialDeployment?.details.failed?.length ?? 0) + (deploymentUncertain ? 0 : 1)
 				: 0;
 			const priorDeploymentErrors = partialDeployment?.errors ?? [];
 			const failedConfigEntries = reviewedDeploymentBlocked
@@ -683,7 +699,7 @@ export class SyncEngine {
 							name,
 							error: priorDeploymentErrors[index] ?? "Custom Format deployment failed",
 						})),
-						{ name: "Deployment phase", error: errorMessage },
+						...(deploymentUncertain ? [] : [{ name: "Deployment phase", error: errorMessage }]),
 					]
 				: [];
 
@@ -694,8 +710,9 @@ export class SyncEngine {
 				await this.prisma.trashSyncHistory.update({
 					where: { id: syncId },
 					data: {
-						status:
-							reviewedDeploymentBlocked && appliedDeploymentCount > 0
+						status: deploymentUncertain
+							? "UNCERTAIN"
+							: reviewedDeploymentBlocked && appliedDeploymentCount > 0
 								? "PARTIAL_SUCCESS"
 								: "FAILED",
 						completedAt: new Date(),
@@ -721,7 +738,7 @@ export class SyncEngine {
 			// Emit failure
 			this.emitProgress({
 				syncId,
-				status: "FAILED",
+				status: deploymentUncertain ? "UNCERTAIN" : "FAILED",
 				currentStep: reviewedDeploymentBlocked
 					? `Template refresh completed; deployment blocked: ${errorMessage}`
 					: errorMessage,
@@ -730,7 +747,7 @@ export class SyncEngine {
 					? appliedDeploymentCount + deploymentFailureCount + (partialDeployment?.skipped ?? 0)
 					: 0,
 				appliedConfigs: reviewedDeploymentBlocked ? appliedDeploymentCount : 0,
-				failedConfigs: deploymentFailureCount,
+				failedConfigs: deploymentUncertain ? 0 : deploymentFailureCount,
 				errors: [{ configName: "Sync", error: errorMessage, retryable: false }],
 			});
 
@@ -743,7 +760,11 @@ export class SyncEngine {
 				return {
 					syncId,
 					success: false,
-					status: appliedDeploymentCount > 0 ? "PARTIAL_SUCCESS" : "FAILED",
+					status: deploymentUncertain
+						? "UNCERTAIN"
+						: appliedDeploymentCount > 0
+							? "PARTIAL_SUCCESS"
+							: "FAILED",
 					duration,
 					configsApplied: appliedDeploymentCount,
 					configsFailed: deploymentFailureCount,
