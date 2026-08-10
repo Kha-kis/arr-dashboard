@@ -847,4 +847,352 @@ describe("instance quality profile score persistence", () => {
 		expect(upsertOverride).not.toHaveBeenCalled();
 		expect(updateProfile).not.toHaveBeenCalled();
 	});
+
+	it("rejects reset when equivalent aliases have conflicting mapping authority", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		const template = {
+			id: "template-1",
+			userId,
+			configData: JSON.stringify({ customFormats: [] }),
+		};
+		const managedCustomFormats = JSON.stringify([
+			{
+				trashId: "trash-7",
+				name: "Reject",
+				resourceId: 7,
+				stateToken: "format-state",
+				profileId: 4,
+				appliedScore: 100,
+			},
+		]);
+		findServiceInstances.mockResolvedValueOnce([instance, alias]);
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-primary",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats,
+				template,
+			},
+			{
+				id: "mapping-alias",
+				templateId: template.id,
+				instanceId: alias.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Different profile",
+				syncStrategy: "manual",
+				connectionGeneration: alias.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(alias),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats,
+				template,
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(updateProfile).not.toHaveBeenCalled();
+	});
+
+	it("resets an instance override to the nested TRaSH profile score set", async () => {
+		const template = {
+			id: "template-1",
+			userId,
+			configData: JSON.stringify({
+				customFormats: [
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						originalConfig: { trash_scores: { default: 0, "sqp-1-1080p": -10_000 } },
+					},
+				],
+				qualityProfile: { trash_score_set: "sqp-1-1080p" },
+			}),
+		};
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-1",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify([
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						resourceId: 7,
+						stateToken: "format-state",
+						profileId: 4,
+						appliedScore: 100,
+					},
+				]),
+				template,
+			},
+		]);
+		findOverrides
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([
+				{
+					id: "override-1",
+					userId,
+					instanceId: instance.id,
+					qualityProfileId: 4,
+					customFormatId: 7,
+					score: 100,
+					status: "APPLIED",
+					intentOperation: null,
+					intendedScore: null,
+					connectionGeneration: instance.connectionGeneration,
+					connectionStateToken: createDeploymentConnectionStateToken(instance),
+					updatedAt: new Date("2026-08-09T00:00:00Z"),
+				},
+			]);
+		findUniqueOverride.mockResolvedValueOnce({
+			id: "override-1",
+			userId,
+			instanceId: instance.id,
+			qualityProfileId: 4,
+			customFormatId: 7,
+			score: 100,
+			status: "APPLIED",
+		});
+		const before = { id: 4, name: "Any", formatItems: [{ format: 7, score: 100 }] };
+		const after = { ...before, formatItems: [{ format: 7, score: -10_000 }] };
+		getProfile
+			.mockReset()
+			.mockResolvedValueOnce(before)
+			.mockResolvedValueOnce(before)
+			.mockResolvedValue(after);
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().revertedScore).toBe(-10_000);
+		expect(updateProfile).toHaveBeenCalledWith(
+			4,
+			expect.objectContaining({
+				formatItems: [expect.objectContaining({ format: 7, score: -10_000 })],
+			}),
+		);
+		expect(updateOverrides.mock.invocationCallOrder[0]).toBeLessThan(
+			updateProfile.mock.invocationCallOrder[0]!,
+		);
+		expect(deleteOverrides.mock.invocationCallOrder[0]).toBeGreaterThan(
+			updateProfile.mock.invocationCallOrder[0]!,
+		);
+	});
+
+	it("restores an applied reset intent when the profile changes before the ARR write", async () => {
+		const template = {
+			id: "template-1",
+			userId,
+			configData: JSON.stringify({
+				customFormats: [
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						originalConfig: { trash_scores: { default: 0 } },
+					},
+				],
+			}),
+		};
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-1",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify([
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						resourceId: 7,
+						stateToken: "format-state",
+						profileId: 4,
+						appliedScore: 100,
+					},
+				]),
+				template,
+			},
+		]);
+		const originalUpdatedAt = new Date("2026-08-09T00:00:00Z");
+		const override = {
+			id: "override-1",
+			userId,
+			instanceId: instance.id,
+			qualityProfileId: 4,
+			customFormatId: 7,
+			score: 100,
+			status: "APPLIED",
+			intentOperation: null,
+			intendedScore: null,
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			updatedAt: originalUpdatedAt,
+		};
+		findOverrides
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([override]);
+		findUniqueOverride.mockResolvedValueOnce(override);
+		const before = { id: 4, name: "Any", formatItems: [{ format: 7, score: 100 }] };
+		const changed = { ...before, formatItems: [{ format: 7, score: 200 }] };
+		getProfile.mockReset().mockResolvedValueOnce(before).mockResolvedValueOnce(changed);
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode, response.body).toBe(409);
+		expect(updateProfile).not.toHaveBeenCalled();
+		expect(updateOverrides).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: override.id, status: "PENDING" }),
+				data: {
+					status: "APPLIED",
+					intentOperation: null,
+					intendedScore: null,
+					updatedAt: originalUpdatedAt,
+				},
+			}),
+		);
+		expect(deleteOverrides).not.toHaveBeenCalled();
+	});
+
+	it("promotes only an applied override bound through managed TRaSH identity", async () => {
+		const template = {
+			id: "template-1",
+			userId,
+			updatedAt: new Date("2026-08-09T00:00:00Z"),
+			configData: JSON.stringify({
+				customFormats: [
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						originalConfig: { _instanceCFId: 9001 },
+					},
+				],
+			}),
+		};
+		const mapping = {
+			id: "mapping-1",
+			templateId: template.id,
+			instanceId: instance.id,
+			qualityProfileId: 4,
+			qualityProfileName: "Any",
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			managedCustomFormatsCaptured: true,
+			managedCustomFormats: JSON.stringify([
+				{
+					trashId: "trash-7",
+					name: "Reject",
+					resourceId: 7,
+					stateToken: "format-state",
+					profileId: 4,
+					appliedScore: 100,
+				},
+			]),
+			updatedAt: new Date("2026-08-09T00:00:00Z"),
+			template,
+		};
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "override-1",
+				userId,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10_000,
+				status: "APPLIED",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				updatedAt: new Date("2026-08-09T00:00:00Z"),
+			},
+		]);
+		findMappings.mockResolvedValueOnce([mapping]);
+		findTransactionMappings.mockResolvedValueOnce([mapping]);
+		deleteAliasOverrides.mockResolvedValueOnce({ count: 1 });
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/4/promote-override",
+			{ body: { customFormatId: 7, templateId: "template-1" } },
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(updateTemplates).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					configData: expect.stringContaining('"scoreOverride":-10000'),
+				}),
+			}),
+		);
+	});
+
+	it("refuses to promote an unresolved score intent", async () => {
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "override-1",
+				userId,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10_000,
+				status: "UNCERTAIN",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				updatedAt: new Date("2026-08-09T00:00:00Z"),
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/instance-1/quality-profiles/4/promote-override",
+			{ body: { customFormatId: 7, templateId: "template-1" } },
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(updateTemplates).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[
+			"POST",
+			"/instance-1/quality-profiles/4.5/promote-override",
+			{ customFormatId: 7, templateId: "template-1" },
+		],
+		["DELETE", "/instance-1/quality-profiles/4.5/overrides/7", undefined],
+		["DELETE", "/instance-1/quality-profiles/4/overrides/7.5", undefined],
+		["POST", "/instance-1/quality-profiles/4/overrides/bulk-delete", undefined],
+	] as const)("rejects invalid mutation input for %s %s", async (method, url, body) => {
+		const response = await createInjectAuthenticated(app)(method, url, body ? { body } : undefined);
+
+		expect(response.statusCode).toBe(400);
+		expect(updateProfile).not.toHaveBeenCalled();
+	});
 });

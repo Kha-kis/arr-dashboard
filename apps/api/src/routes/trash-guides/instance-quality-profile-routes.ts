@@ -218,6 +218,293 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		return { instance, aliases, equivalentInstanceIds, connectionReadBindings };
 	}
 
+	async function resetScoreOverrides(
+		userId: string,
+		instanceId: string,
+		profileId: number,
+		requestedCustomFormatIds: number[],
+	) {
+		const customFormatIds = [...new Set(requestedCustomFormatIds)];
+		if (customFormatIds.length !== requestedCustomFormatIds.length) {
+			throw new AppValidationError("Each Custom Format can only be reset once per request.");
+		}
+		const initialContext = await getEquivalentConnectionContext(userId, instanceId);
+		if (!initialContext) throw new AppValidationError("Instance not found or access denied");
+
+		return runWithCoordinatedEndpointMutation(
+			userId,
+			initialContext.instance,
+			"Quality profile override reset",
+			async (endpointKey) => {
+				const connectionContext = await getEquivalentConnectionContext(userId, instanceId);
+				if (
+					!connectionContext ||
+					createDeploymentEndpointKey(userId, connectionContext.instance) !== endpointKey ||
+					createDeploymentConnectionStateToken(connectionContext.instance) !==
+						createDeploymentConnectionStateToken(initialContext.instance)
+				) {
+					throw new ConflictError(
+						"The ARR service connection changed while the override reset was starting.",
+					);
+				}
+				const connectionBindings = connectionContext.connectionReadBindings;
+				const mappings = await app.prisma.templateQualityProfileMapping.findMany({
+					where: {
+						qualityProfileId: profileId,
+						OR: connectionBindings,
+						template: { userId },
+					},
+					include: { template: true },
+					orderBy: { updatedAt: "desc" },
+				});
+				assertNoLegacyDeploymentConnectionMappings(mappings);
+				assertCurrentConnectionRows(mappings, connectionBindings, "template mapping");
+				const templateIds = new Set(mappings.map((mapping) => mapping.templateId));
+				if (mappings.length === 0 || templateIds.size !== 1) {
+					throw new ConflictError(
+						"The quality profile does not have one current template mapping for this ARR connection.",
+					);
+				}
+				const mapping = mappings[0]!;
+				if (
+					mappings.some(
+						(candidate) =>
+							candidate.qualityProfileName !== mapping.qualityProfileName ||
+							candidate.syncStrategy !== mapping.syncStrategy ||
+							candidate.managedCustomFormatsCaptured !== mapping.managedCustomFormatsCaptured ||
+							candidate.managedCustomFormats !== mapping.managedCustomFormats,
+					)
+				) {
+					throw new ConflictError(
+						"Equivalent ARR aliases have conflicting quality-profile mapping authority.",
+					);
+				}
+				const managedFormats = readPersistedManagedCustomFormatIdentities(mapping);
+				const trashIdByResourceId = new Map(
+					managedFormats.map((format) => [format.resourceId, format.trashId]),
+				);
+				let templateConfig: ParsedTemplateConfig;
+				try {
+					templateConfig = JSON.parse(mapping.template.configData) as ParsedTemplateConfig;
+				} catch (error) {
+					throw new AppValidationError(
+						`Template configuration is invalid: ${getErrorMessage(error)}`,
+					);
+				}
+
+				const pendingResetIntents = await app.prisma.instanceQualityProfileOverride.findMany({
+					where: {
+						userId,
+						instanceId: { in: connectionContext.equivalentInstanceIds },
+						qualityProfileId: profileId,
+						customFormatId: { in: customFormatIds },
+						status: { in: ["PENDING", "UNCERTAIN"] },
+					},
+					select: {
+						id: true,
+						instanceId: true,
+						connectionGeneration: true,
+						connectionStateToken: true,
+						customFormatId: true,
+						intentOperation: true,
+						intendedScore: true,
+					},
+				});
+				assertCurrentConnectionRows(pendingResetIntents, connectionBindings, "score reset intent");
+				const persistedResetScores = new Map<number, number>();
+				for (const intent of pendingResetIntents) {
+					if (intent.intentOperation !== "RESET_SCORE" || intent.intendedScore === null) {
+						throw new ConflictError(
+							"A different score write is unresolved for this profile. Retry or reconcile it first.",
+						);
+					}
+					const previous = persistedResetScores.get(intent.customFormatId);
+					if (previous !== undefined && previous !== intent.intendedScore) {
+						throw new ConflictError(
+							"Equivalent aliases contain conflicting reset intent for this Custom Format.",
+						);
+					}
+					persistedResetScores.set(intent.customFormatId, intent.intendedScore);
+				}
+				const templateScores = new Map(
+					customFormatIds.map((customFormatId) => [
+						customFormatId,
+						persistedResetScores.has(customFormatId)
+							? { score: persistedResetScores.get(customFormatId)!, inTemplate: true }
+							: getTemplateScore(
+									templateConfig,
+									customFormatId,
+									trashIdByResourceId.get(customFormatId),
+								),
+					]),
+				);
+				await assertNoPendingDeploymentOperation(
+					app.prisma,
+					userId,
+					connectionContext.equivalentInstanceIds,
+					{
+						qualityProfileId: profileId,
+						operation: "RESET_SCORE",
+						scoreUpdates: customFormatIds.map((customFormatId) => ({
+							customFormatId,
+							score: templateScores.get(customFormatId)!.score,
+						})),
+						connectionBindings,
+					},
+				);
+				const overrides = await app.prisma.instanceQualityProfileOverride.findMany({
+					where: {
+						userId,
+						qualityProfileId: profileId,
+						customFormatId: { in: customFormatIds },
+						status: { in: ["APPLIED", "PENDING", "UNCERTAIN"] },
+						OR: connectionBindings,
+					},
+				});
+				assertCurrentConnectionRows(overrides, connectionBindings, "saved score override");
+				if (
+					customFormatIds.some(
+						(customFormatId) =>
+							overrides.filter((override) => override.customFormatId === customFormatId).length ===
+							0,
+					)
+				) {
+					throw new ConflictError(
+						"One or more overrides changed or are not bound to the current ARR connection. Refresh and try again.",
+					);
+				}
+
+				const intentAt = new Date();
+				await app.prisma.$transaction(async (transaction) => {
+					for (const override of overrides) {
+						const write = await transaction.instanceQualityProfileOverride.updateMany({
+							where: {
+								id: override.id,
+								updatedAt: override.updatedAt,
+								status: { in: ["APPLIED", "PENDING", "UNCERTAIN"] },
+							},
+							data: {
+								status: "PENDING",
+								intentOperation: "RESET_SCORE",
+								intendedScore: templateScores.get(override.customFormatId)!.score,
+								updatedAt: intentAt,
+							},
+						});
+						if (write.count !== 1) {
+							throw new ConflictError(
+								"One or more overrides changed while the reset intent was being saved. Refresh and try again.",
+							);
+						}
+					}
+				});
+
+				const pendingResetWhere = {
+					userId,
+					status: "PENDING",
+					OR: overrides.map((override) => ({ id: override.id, updatedAt: intentAt })),
+				} as const;
+				let writeAttempted = false;
+				try {
+					const client = app.arrClientFactory.create(connectionContext.instance) as
+						| SonarrClient
+						| RadarrClient;
+					const profile = await client.qualityProfile.getById(profileId);
+					assertExactLiveProfile(profile, profileId, mapping.qualityProfileName);
+					for (const customFormatId of customFormatIds) {
+						const matches = (profile.formatItems ?? []).filter(
+							(item) => item.format === customFormatId,
+						);
+						if (matches.length !== 1) {
+							throw new ConflictError(
+								"The selected Custom Format is missing or duplicated in the live quality profile.",
+							);
+						}
+					}
+					const reviewedProfileToken = createQualityProfileStateToken(profile);
+					const updatedProfile = {
+						...profile,
+						formatItems: (profile.formatItems ?? []).map((item) => {
+							const reset = item.format === undefined ? undefined : templateScores.get(item.format);
+							return reset ? { ...item, score: reset.score } : item;
+						}),
+					};
+					const freshProfile = await client.qualityProfile.getById(profileId);
+					assertExactLiveProfile(freshProfile, profileId, mapping.qualityProfileName);
+					if (createQualityProfileStateToken(freshProfile) !== reviewedProfileToken) {
+						throw new ConflictError(
+							"The quality profile changed while the override reset was being prepared. Refresh and try again.",
+						);
+					}
+					writeAttempted = true;
+					// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr profile types are runtime-compatible
+					await client.qualityProfile.update(profileId, updatedProfile as any);
+					const postWriteProfile = await client.qualityProfile.getById(profileId);
+					assertExactLiveProfile(postWriteProfile, profileId, mapping.qualityProfileName);
+					for (const [customFormatId, reset] of templateScores) {
+						const matches = (postWriteProfile.formatItems ?? []).filter(
+							(item) => item.format === customFormatId,
+						);
+						if (matches.length !== 1 || matches[0]!.score !== reset.score) {
+							throw new ConflictError(
+								"ARR accepted the profile update, but the reset scores could not be verified. Saved overrides were retained for retry.",
+							);
+						}
+					}
+				} catch (error) {
+					try {
+						if (writeAttempted) {
+							await app.prisma.instanceQualityProfileOverride.updateMany({
+								where: pendingResetWhere,
+								data: { status: "UNCERTAIN" },
+							});
+						} else {
+							await app.prisma.$transaction(async (transaction) => {
+								for (const override of overrides) {
+									const restored = await transaction.instanceQualityProfileOverride.updateMany({
+										where: {
+											id: override.id,
+											userId,
+											status: "PENDING",
+											updatedAt: intentAt,
+										},
+										data: {
+											status: override.status,
+											intentOperation: override.intentOperation,
+											intendedScore: override.intendedScore,
+											updatedAt: override.updatedAt,
+										},
+									});
+									if (restored.count !== 1) {
+										throw new ConflictError(
+											"The reset was not sent to ARR, but its saved override state changed before it could be restored.",
+										);
+									}
+								}
+							});
+						}
+					} catch (intentError) {
+						app.log.error(
+							{ err: intentError, instanceId, profileId },
+							writeAttempted
+								? "Failed to mark an uncertain quality-profile reset intent"
+								: "Failed to restore a quality-profile reset intent that was not sent upstream",
+						);
+					}
+					throw error;
+				}
+				const deleted = await app.prisma.instanceQualityProfileOverride.deleteMany({
+					where: pendingResetWhere,
+				});
+				if (deleted.count !== overrides.length) {
+					throw new ConflictError(
+						"Scores were reset upstream, but one or more saved overrides changed concurrently and were retained.",
+					);
+				}
+				return { deletedCount: customFormatIds.length, templateScores };
+			},
+		);
+	}
+
 	/**
 	 * PATCH /api/trash-guides/instances/:instanceId/quality-profiles/:profileId/scores
 	 * Update custom format scores for a quality profile
