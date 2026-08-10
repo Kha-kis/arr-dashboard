@@ -185,8 +185,9 @@ Compose, SQLite, PostgreSQL, Radarr, and Sonarr.
 - [ ] **Step 5: Run the focused tests before implementation**
 
   ```bash
-  pnpm --filter @arr/api test -- src/lib/trash-guides/__tests__/template-updater-authority.test.ts src/lib/trash-guides/__tests__/update-scheduler-uncertain.test.ts src/routes/trash-guides/__tests__/deployment-authority-writer-locks.test.ts
-  pnpm --filter @arr/web test -- src/hooks/api/__tests__/useDeploymentPreview-authority.test.tsx src/features/trash-guides/components/__tests__/deployment-execution-token.test.tsx
+  pnpm --filter @arr/shared build
+  pnpm --filter @arr/api exec vitest run src/lib/trash-guides/__tests__/template-updater-authority.test.ts src/lib/trash-guides/__tests__/update-scheduler-uncertain.test.ts src/routes/trash-guides/__tests__/deployment-authority-writer-locks.test.ts
+  pnpm --filter @arr/web exec vitest run src/hooks/api/__tests__/useDeploymentPreview-authority.test.tsx src/features/trash-guides/components/__tests__/deployment-execution-token.test.tsx
   ```
 
   Expected: exactly the test representing `TRASH-674-001` fails. If all tests
@@ -310,8 +311,9 @@ Compose, SQLite, PostgreSQL, Radarr, and Sonarr.
 - [ ] **Step 5: Run the complete focused matrix**
 
   ```bash
-  pnpm --filter @arr/api test -- src/lib/trash-guides/__tests__/template-updater-authority.test.ts src/lib/trash-guides/__tests__/update-scheduler-uncertain.test.ts src/lib/trash-guides/__tests__/sync-scheduler-uncertain.test.ts src/lib/trash-guides/__tests__/deployment-operation-gate.test.ts src/lib/trash-guides/__tests__/maintenance-gate.test.ts src/routes/trash-guides/__tests__/deployment-authority-writer-locks.test.ts
-  pnpm --filter @arr/web test -- src/hooks/api/__tests__/useDeploymentPreview-authority.test.tsx src/features/trash-guides/components/__tests__/deployment-execution-token.test.tsx
+  pnpm --filter @arr/shared build
+  pnpm --filter @arr/api exec vitest run src/lib/trash-guides/__tests__/template-updater-authority.test.ts src/lib/trash-guides/__tests__/update-scheduler-uncertain.test.ts src/lib/trash-guides/__tests__/sync-scheduler-uncertain.test.ts src/lib/trash-guides/__tests__/deployment-operation-gate.test.ts src/lib/trash-guides/__tests__/maintenance-gate.test.ts src/routes/trash-guides/__tests__/deployment-authority-writer-locks.test.ts
+  pnpm --filter @arr/web exec vitest run src/hooks/api/__tests__/useDeploymentPreview-authority.test.tsx src/features/trash-guides/components/__tests__/deployment-execution-token.test.tsx
   ```
 
 ### Task 5: Verify the real lifecycle against disposable ARR instances

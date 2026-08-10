@@ -95,7 +95,8 @@ Compose, SQLite, and PostgreSQL.
   Run:
 
   ```bash
-  pnpm --filter @arr/api test -- src/lib/plex/__tests__/plex-client-completeness.test.ts
+  pnpm --filter @arr/shared build
+  pnpm --filter @arr/api exec vitest run src/lib/plex/__tests__/plex-client-completeness.test.ts
   ```
 
   Expected: the new test fails with `Plex API error: HTTP 400 Bad Request`
@@ -144,7 +145,8 @@ Compose, SQLite, and PostgreSQL.
   Run:
 
   ```bash
-  pnpm --filter @arr/api test -- src/lib/plex/__tests__/plex-client-completeness.test.ts
+  pnpm --filter @arr/shared build
+  pnpm --filter @arr/api exec vitest run src/lib/plex/__tests__/plex-client-completeness.test.ts
   ```
 
   Expected: the compatibility regression and all existing completeness tests
@@ -193,7 +195,8 @@ Compose, SQLite, and PostgreSQL.
 - [ ] **Step 4: Run the client safety suite**
 
   ```bash
-  pnpm --filter @arr/api test -- src/lib/plex/__tests__/plex-client-completeness.test.ts src/lib/plex/__tests__/plex-client-media-parts.test.ts
+  pnpm --filter @arr/shared build
+  pnpm --filter @arr/api exec vitest run src/lib/plex/__tests__/plex-client-completeness.test.ts src/lib/plex/__tests__/plex-client-media-parts.test.ts
   ```
 
   Expected: all tests pass with no skipped new regression.
@@ -225,7 +228,8 @@ Compose, SQLite, and PostgreSQL.
 - [ ] **Step 1: Run both cache refresher suites**
 
   ```bash
-  pnpm --filter @arr/api test -- src/lib/plex/__tests__/plex-cache-refresher.test.ts src/lib/plex/plex-episode-cache-refresher.test.ts
+  pnpm --filter @arr/shared build
+  pnpm --filter @arr/api exec vitest run src/lib/plex/__tests__/plex-cache-refresher.test.ts src/lib/plex/plex-episode-cache-refresher.test.ts
   ```
 
   Expected: both suites pass, including incomplete-history and verification
@@ -234,7 +238,8 @@ Compose, SQLite, and PostgreSQL.
 - [ ] **Step 2: Run the Plex-dependent Library Cleanup suites**
 
   ```bash
-  pnpm --filter @arr/api test -- src/lib/library-cleanup/__tests__/prefetch-plex-data.test.ts src/lib/library-cleanup/__tests__/shared-plex-safety.test.ts src/lib/library-cleanup/__tests__/shared-plex-sonarr-safety.test.ts
+  pnpm --filter @arr/shared build
+  pnpm --filter @arr/api exec vitest run src/lib/library-cleanup/__tests__/prefetch-plex-data.test.ts src/lib/library-cleanup/__tests__/shared-plex-safety.test.ts src/lib/library-cleanup/__tests__/shared-plex-sonarr-safety.test.ts
   ```
 
   Expected: complete evidence remains usable and incomplete evidence remains
