@@ -84,9 +84,14 @@ describe("legacy deployment connection rebind", () => {
 		const { prisma, mappingUpdateMany, overrideUpdateMany, overrideCount } = createPrisma();
 		const binding = createDeploymentConnectionBinding(currentInstance);
 
-		await rebindLegacyDeploymentConnectionState(prisma as never, "user-1", [reviewedMapping], 4, [
-			binding,
-		]);
+		await rebindLegacyDeploymentConnectionState(
+			prisma as never,
+			"user-1",
+			[reviewedMapping],
+			4,
+			[legacyOverride],
+			[binding],
+		);
 
 		expect(mappingUpdateMany).toHaveBeenCalledWith({
 			where: {
@@ -134,9 +139,14 @@ describe("legacy deployment connection rebind", () => {
 		const { prisma, mappingUpdateMany } = createPrisma(options);
 
 		await expect(
-			rebindLegacyDeploymentConnectionState(prisma as never, "user-1", [reviewedMapping], 4, [
-				createDeploymentConnectionBinding(currentInstance),
-			]),
+			rebindLegacyDeploymentConnectionState(
+				prisma as never,
+				"user-1",
+				[reviewedMapping],
+				4,
+				[legacyOverride],
+				[createDeploymentConnectionBinding(currentInstance)],
+			),
 		).rejects.toThrow("no longer authorized");
 		expect(mappingUpdateMany).not.toHaveBeenCalled();
 	});
@@ -148,11 +158,44 @@ describe("legacy deployment connection rebind", () => {
 		});
 
 		await expect(
-			rebindLegacyDeploymentConnectionState(prisma as never, "user-1", [reviewedMapping], 4, [
-				reviewedBinding,
-			]),
+			rebindLegacyDeploymentConnectionState(
+				prisma as never,
+				"user-1",
+				[reviewedMapping],
+				4,
+				[legacyOverride],
+				[reviewedBinding],
+			),
 		).rejects.toThrow("connection changed after preview");
 		expect(mappingUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it("accepts reviewed aliases with different URLs when their credential identity matches", async () => {
+		const alias = {
+			...currentInstance,
+			id: "instance-2",
+			baseUrl: "https://radarr.example.com",
+			encryptedApiKey: "separately-encrypted-key",
+			encryptionIv: "separate-iv",
+		};
+		const { prisma, mappingUpdateMany } = createPrisma({
+			instances: [currentInstance, alias],
+		});
+
+		await expect(
+			rebindLegacyDeploymentConnectionState(
+				prisma as never,
+				"user-1",
+				[reviewedMapping],
+				4,
+				[legacyOverride],
+				[
+					createDeploymentConnectionBinding(currentInstance, "same-credentials"),
+					createDeploymentConnectionBinding(alias, "same-credentials"),
+				],
+			),
+		).resolves.toBeUndefined();
+		expect(mappingUpdateMany).toHaveBeenCalledOnce();
 	});
 
 	it("rejects a user-owned binding that no longer represents the reviewed physical endpoint", async () => {
@@ -166,11 +209,18 @@ describe("legacy deployment connection rebind", () => {
 		});
 
 		await expect(
-			rebindLegacyDeploymentConnectionState(prisma as never, "user-1", [reviewedMapping], 4, [
-				createDeploymentConnectionBinding(currentInstance),
-				createDeploymentConnectionBinding(unrelatedInstance),
-			]),
-		).rejects.toThrow("no longer belongs to one ARR endpoint");
+			rebindLegacyDeploymentConnectionState(
+				prisma as never,
+				"user-1",
+				[reviewedMapping],
+				4,
+				[legacyOverride],
+				[
+					createDeploymentConnectionBinding(currentInstance),
+					createDeploymentConnectionBinding(unrelatedInstance),
+				],
+			),
+		).rejects.toThrow("cannot be proven to belong to one ARR endpoint");
 		expect(mappingUpdateMany).not.toHaveBeenCalled();
 	});
 
@@ -184,10 +234,33 @@ describe("legacy deployment connection rebind", () => {
 		const { prisma, mappingUpdateMany } = createPrisma({ mappings: [liveMapping] });
 
 		await expect(
-			rebindLegacyDeploymentConnectionState(prisma as never, "user-1", [reviewedMapping], 4, [
-				createDeploymentConnectionBinding(currentInstance),
-			]),
+			rebindLegacyDeploymentConnectionState(
+				prisma as never,
+				"user-1",
+				[reviewedMapping],
+				4,
+				[legacyOverride],
+				[createDeploymentConnectionBinding(currentInstance)],
+			),
 		).rejects.toThrow("mapping changed after preview");
+		expect(mappingUpdateMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects a score override whose reviewed value changed before the transaction", async () => {
+		const { prisma, mappingUpdateMany } = createPrisma({
+			overrides: [{ ...legacyOverride, score: 200 }],
+		});
+
+		await expect(
+			rebindLegacyDeploymentConnectionState(
+				prisma as never,
+				"user-1",
+				[reviewedMapping],
+				4,
+				[legacyOverride],
+				[createDeploymentConnectionBinding(currentInstance)],
+			),
+		).rejects.toThrow("score overrides changed after preview");
 		expect(mappingUpdateMany).not.toHaveBeenCalled();
 	});
 
@@ -195,9 +268,14 @@ describe("legacy deployment connection rebind", () => {
 		const { prisma, overrideUpdateMany } = createPrisma({ mappingUpdateCount: 0 });
 
 		await expect(
-			rebindLegacyDeploymentConnectionState(prisma as never, "user-1", [reviewedMapping], 4, [
-				createDeploymentConnectionBinding(currentInstance),
-			]),
+			rebindLegacyDeploymentConnectionState(
+				prisma as never,
+				"user-1",
+				[reviewedMapping],
+				4,
+				[legacyOverride],
+				[createDeploymentConnectionBinding(currentInstance)],
+			),
 		).rejects.toThrow("mapping changed after preview");
 		expect(overrideUpdateMany).not.toHaveBeenCalled();
 	});
@@ -206,9 +284,14 @@ describe("legacy deployment connection rebind", () => {
 		const { prisma } = createPrisma({ overrideUpdateCount: 0 });
 
 		await expect(
-			rebindLegacyDeploymentConnectionState(prisma as never, "user-1", [reviewedMapping], 4, [
-				createDeploymentConnectionBinding(currentInstance),
-			]),
+			rebindLegacyDeploymentConnectionState(
+				prisma as never,
+				"user-1",
+				[reviewedMapping],
+				4,
+				[legacyOverride],
+				[createDeploymentConnectionBinding(currentInstance)],
+			),
 		).rejects.toThrow("score overrides changed");
 	});
 
@@ -216,9 +299,14 @@ describe("legacy deployment connection rebind", () => {
 		const { prisma } = createPrisma({ remainingLegacyOverrides: 1 });
 
 		await expect(
-			rebindLegacyDeploymentConnectionState(prisma as never, "user-1", [reviewedMapping], 4, [
-				createDeploymentConnectionBinding(currentInstance),
-			]),
+			rebindLegacyDeploymentConnectionState(
+				prisma as never,
+				"user-1",
+				[reviewedMapping],
+				4,
+				[legacyOverride],
+				[createDeploymentConnectionBinding(currentInstance)],
+			),
 		).rejects.toThrow("score overrides changed");
 	});
 });

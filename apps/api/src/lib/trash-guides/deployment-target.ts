@@ -18,13 +18,14 @@ export interface DeploymentServiceInstance {
 	id: string;
 	service: string;
 	baseUrl: string;
-	credentialIdentity?: string;
+	credentialIdentity: string;
 }
 
 export interface DeploymentConnectionBinding {
 	instanceId: string;
 	connectionGeneration: number;
 	connectionStateToken: string | null;
+	credentialIdentity?: string;
 }
 
 interface DeploymentConnectionMapping {
@@ -234,12 +235,11 @@ export function getEquivalentServiceInstanceIds(
 	target: DeploymentServiceInstance,
 ): string[] {
 	const targetService = target.service.toUpperCase();
-	const targetBaseUrl = normalizeDeploymentBaseUrl(target.baseUrl);
 	return instances
 		.filter(
 			(instance) =>
 				instance.service.toUpperCase() === targetService &&
-				normalizeDeploymentBaseUrl(instance.baseUrl) === targetBaseUrl,
+				instance.credentialIdentity === target.credentialIdentity,
 		)
 		.map((instance) => instance.id);
 }
@@ -247,9 +247,9 @@ export function getEquivalentServiceInstanceIds(
 /** Stable in-process lock identity for one user's physical ARR endpoint. */
 export function createDeploymentEndpointKey(
 	userId: string,
-	instance: Pick<DeploymentServiceInstance, "service" | "baseUrl">,
+	instance: Pick<DeploymentServiceInstance, "service" | "credentialIdentity">,
 ): string {
-	return `${userId}:${instance.service.toUpperCase()}:${normalizeDeploymentBaseUrl(instance.baseUrl)}`;
+	return `${userId}:${instance.service.toUpperCase()}:${instance.credentialIdentity}`;
 }
 
 /** Bind rollback metadata to both the normalized endpoint and configured credentials. */
@@ -278,19 +278,22 @@ export function createDeploymentConnectionStateToken(instance: {
 /** Bind database ownership records to the exact configured ARR connection. */
 export function createDeploymentConnectionBinding(
 	instance: DeploymentConnectionInstance,
+	credentialIdentity?: string,
 ): DeploymentConnectionBinding {
 	return {
 		instanceId: instance.id,
 		connectionGeneration: instance.connectionGeneration ?? 0,
 		connectionStateToken: createDeploymentConnectionStateToken(instance),
+		...(credentialIdentity ? { credentialIdentity } : {}),
 	};
 }
 
 /** Resolve mappings bound to the exact configured ARR connection. */
 export function createDeploymentConnectionBindingCandidates(
 	instance: DeploymentConnectionInstance,
+	credentialIdentity?: string,
 ): DeploymentConnectionBinding[] {
-	return [createDeploymentConnectionBinding(instance)];
+	return [createDeploymentConnectionBinding(instance, credentialIdentity)];
 }
 
 /** Locate pre-binding mappings so callers can reject them without trusting them as ownership. */

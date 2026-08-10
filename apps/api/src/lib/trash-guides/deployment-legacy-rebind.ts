@@ -3,7 +3,6 @@ import type { PrismaClient } from "../prisma.js";
 import {
 	createDeploymentConnectionBinding,
 	type DeploymentConnectionBinding,
-	normalizeDeploymentBaseUrl,
 } from "./deployment-target.js";
 
 interface LegacyDeploymentMapping {
@@ -12,6 +11,20 @@ interface LegacyDeploymentMapping {
 	instanceId: string;
 	qualityProfileId: number;
 	qualityProfileName: string;
+	connectionGeneration: number;
+	connectionStateToken: string | null;
+}
+
+interface LegacyDeploymentOverride {
+	id: string;
+	userId: string;
+	instanceId: string;
+	qualityProfileId: number;
+	customFormatId: number;
+	score: number;
+	status: string;
+	intentOperation: string | null;
+	intendedScore: number | null;
 	connectionGeneration: number;
 	connectionStateToken: string | null;
 }
@@ -32,6 +45,26 @@ function mappingMatchesReview(
 	);
 }
 
+function overrideMatchesReview(
+	live: LegacyDeploymentOverride | undefined,
+	reviewed: LegacyDeploymentOverride,
+): boolean {
+	return Boolean(
+		live &&
+			live.id === reviewed.id &&
+			live.userId === reviewed.userId &&
+			live.instanceId === reviewed.instanceId &&
+			live.qualityProfileId === reviewed.qualityProfileId &&
+			live.customFormatId === reviewed.customFormatId &&
+			live.score === reviewed.score &&
+			live.status === reviewed.status &&
+			live.intentOperation === reviewed.intentOperation &&
+			live.intendedScore === reviewed.intendedScore &&
+			live.connectionGeneration === reviewed.connectionGeneration &&
+			live.connectionStateToken === reviewed.connectionStateToken,
+	);
+}
+
 /**
  * Bind user-reviewed 2.x mappings and saved score intent to the exact current
  * connection. Ownership, connection identity, mappings, and overrides are all
@@ -42,15 +75,18 @@ export async function rebindLegacyDeploymentConnectionState(
 	userId: string,
 	mappings: LegacyDeploymentMapping[],
 	qualityProfileId: number,
+	overrides: LegacyDeploymentOverride[],
 	connectionBindings: DeploymentConnectionBinding[],
 ): Promise<void> {
 	const mappingIds = mappings.map((mapping) => mapping.id);
+	const overrideIds = overrides.map((override) => override.id);
 	const templateIds = [...new Set(mappings.map((mapping) => mapping.templateId))];
 	const bindingByInstanceId = new Map(
 		connectionBindings.map((binding) => [binding.instanceId, binding]),
 	);
 	if (
 		new Set(mappingIds).size !== mappingIds.length ||
+		new Set(overrideIds).size !== overrideIds.length ||
 		bindingByInstanceId.size !== connectionBindings.length
 	) {
 		throw new ConflictError(
@@ -107,15 +143,18 @@ export async function rebindLegacyDeploymentConnectionState(
 					"The reviewed legacy deployment mapping or ARR instance is no longer authorized for this user.",
 				);
 			}
-			const endpointKeys = new Set(
-				liveInstances.map(
-					(instance) =>
-						`${instance.service.toUpperCase()}:${normalizeDeploymentBaseUrl(instance.baseUrl)}`,
-				),
+			const services = new Set(liveInstances.map((instance) => instance.service.toUpperCase()));
+			const reviewedCredentialIdentities = new Set(
+				connectionBindings.map((binding) => binding.credentialIdentity).filter(Boolean),
 			);
-			if (endpointKeys.size !== 1) {
+			if (
+				services.size !== 1 ||
+				(connectionBindings.length > 1 &&
+					(reviewedCredentialIdentities.size !== 1 ||
+						connectionBindings.some((binding) => !binding.credentialIdentity)))
+			) {
 				throw new ConflictError(
-					"The reviewed legacy deployment no longer belongs to one ARR endpoint. Refresh and review the deployment again.",
+					"The reviewed legacy deployment cannot be proven to belong to one ARR endpoint. Refresh and review the deployment again.",
 				);
 			}
 
@@ -147,7 +186,7 @@ export async function rebindLegacyDeploymentConnectionState(
 				}
 			}
 
-			const legacyOverrides = await tx.instanceQualityProfileOverride.findMany({
+			const liveOverrides = await tx.instanceQualityProfileOverride.findMany({
 				where: {
 					userId,
 					instanceId: { in: [...bindingByInstanceId.keys()] },
@@ -169,6 +208,23 @@ export async function rebindLegacyDeploymentConnectionState(
 					connectionStateToken: true,
 				},
 			});
+			const liveOverrideById = new Map(liveOverrides.map((override) => [override.id, override]));
+			if (
+				liveOverrides.length !== overrides.length ||
+				overrides.some(
+					(override) =>
+						override.userId !== userId ||
+						override.qualityProfileId !== qualityProfileId ||
+						!bindingByInstanceId.has(override.instanceId) ||
+						override.connectionGeneration !== 0 ||
+						override.connectionStateToken !== null ||
+						!overrideMatchesReview(liveOverrideById.get(override.id), override),
+				)
+			) {
+				throw new ConflictError(
+					"The legacy score overrides changed after preview. Refresh and review the deployment again.",
+				);
+			}
 
 			for (const mapping of mappings) {
 				const binding = bindingByInstanceId.get(mapping.instanceId)!;
@@ -195,7 +251,7 @@ export async function rebindLegacyDeploymentConnectionState(
 				}
 			}
 
-			for (const override of legacyOverrides) {
+			for (const override of overrides) {
 				const binding = bindingByInstanceId.get(override.instanceId);
 				if (!binding) {
 					throw new ConflictError(

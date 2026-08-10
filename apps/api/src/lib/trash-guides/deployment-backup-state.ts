@@ -21,6 +21,9 @@ const customFormatStateSchema = z
 		if (state.status === "applied" && !state.postStateToken) {
 			ctx.addIssue({ code: "custom", message: "Applied CF state requires a post token" });
 		}
+		if (state.status === "applied" && state.resourceId === null) {
+			ctx.addIssue({ code: "custom", message: "Applied CF state requires a resource ID" });
+		}
 	});
 
 const qualityProfileStateSchema = z
@@ -39,6 +42,9 @@ const qualityProfileStateSchema = z
 		}
 		if (state.status === "applied" && !state.postStateToken) {
 			ctx.addIssue({ code: "custom", message: "Applied profile state requires a post token" });
+		}
+		if (state.status === "applied" && state.profileId === null) {
+			ctx.addIssue({ code: "custom", message: "Applied profile state requires a profile ID" });
 		}
 	});
 

@@ -65,4 +65,38 @@ describe("parseDeploymentBackupState", () => {
 		backup.qualityProfileDeployment.status = "unknown" as never;
 		expect(() => parseDeploymentBackupState(JSON.stringify(backup))).toThrow();
 	});
+
+	it("rejects an applied Custom Format whose upstream ID was not captured", () => {
+		const backup = validBackup();
+		backup.customFormatDeployments = [
+			{
+				beforeFormat: null,
+				action: "created",
+				resourceId: null,
+				name: "Foo",
+				status: "applied",
+				postStateToken: "token",
+			},
+		] as never;
+
+		expect(() => parseDeploymentBackupState(JSON.stringify(backup))).toThrow(
+			"Applied CF state requires a resource ID",
+		);
+	});
+
+	it("rejects an applied quality profile whose upstream ID was not captured", () => {
+		const backup = validBackup();
+		backup.qualityProfileDeployment = {
+			beforeProfile: null,
+			action: "created",
+			profileId: null,
+			profileName: "Any",
+			status: "applied",
+			postStateToken: "token",
+		} as never;
+
+		expect(() => parseDeploymentBackupState(JSON.stringify(backup))).toThrow(
+			"Applied profile state requires a profile ID",
+		);
+	});
 });

@@ -440,7 +440,7 @@ describe("createDeploymentStateToken", () => {
 });
 
 describe("getEquivalentServiceInstanceIds", () => {
-	it("groups duplicate local records for the same normalized ARR endpoint across credentials", () => {
+	it("groups aliases by service and credential identity across different URLs", () => {
 		const target = {
 			id: "radarr-1",
 			service: "RADARR",
@@ -464,24 +464,45 @@ describe("getEquivalentServiceInstanceIds", () => {
 						baseUrl: "http://radarr",
 						credentialIdentity: "other-credentials",
 					},
-					{ id: "sonarr-1", service: "SONARR", baseUrl: "http://radarr" },
-					{ id: "radarr-other", service: "RADARR", baseUrl: "http://other" },
+					{
+						id: "sonarr-1",
+						service: "SONARR",
+						baseUrl: "http://radarr",
+						credentialIdentity: "same-credentials",
+					},
+					{
+						id: "radarr-other",
+						service: "RADARR",
+						baseUrl: "https://radarr.example.com",
+						credentialIdentity: "same-credentials",
+					},
 				],
 				target,
 			),
-		).toEqual(["radarr-1", "radarr-2", "radarr-other-credentials"]);
+		).toEqual(["radarr-1", "radarr-2", "radarr-other"]);
 	});
 
-	it("uses the same lock identity for normalized duplicate records", () => {
+	it("uses the same lock identity for credential aliases with different URLs", () => {
 		expect(
 			createDeploymentEndpointKey("user-1", {
 				service: "RADARR",
-				baseUrl: "HTTP://RADARR:80/",
+				credentialIdentity: "same-credentials",
 			}),
 		).toBe(
 			createDeploymentEndpointKey("user-1", {
 				service: "radarr",
-				baseUrl: "http://radarr",
+				credentialIdentity: "same-credentials",
+			}),
+		);
+		expect(
+			createDeploymentEndpointKey("user-1", {
+				service: "RADARR",
+				credentialIdentity: "other-credentials",
+			}),
+		).not.toBe(
+			createDeploymentEndpointKey("user-1", {
+				service: "RADARR",
+				credentialIdentity: "same-credentials",
 			}),
 		);
 	});
