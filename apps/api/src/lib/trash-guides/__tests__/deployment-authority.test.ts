@@ -280,6 +280,7 @@ describe("deployment execution authority", () => {
 			},
 			target: { profile, profileName: "Any", matchedBy: "mapping_id" },
 			customFormats: [],
+			mappingAuthority: createDeploymentMappingAuthorityState([mapping]),
 			savedScoreOverrides: [],
 			orphanedFormatScoreChanges: [],
 		});
