@@ -1549,6 +1549,12 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 				[],
 				new Map(),
 				["instance-1"],
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				[],
+				new Map([["managed-trash-id", 42]]),
 			),
 		).resolves.toMatchObject({ errors: [] });
 
