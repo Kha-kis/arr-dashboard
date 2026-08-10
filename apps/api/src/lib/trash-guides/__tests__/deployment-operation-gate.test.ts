@@ -817,7 +817,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		});
 	});
 
-	it("uses a non-claiming failure when applied profile details are incomplete", async () => {
+	it("marks recovery uncertain when applied profile details are incomplete", async () => {
 		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const incomplete = fullyAppliedBackup();
 		const backupData = JSON.parse(incomplete.backupData);
@@ -845,7 +845,12 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 			}),
 		});
 		expect(syncUpdateMany).toHaveBeenCalledWith(
-			expect.objectContaining({ data: expect.objectContaining({ status: "FAILED" }) }),
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					errorLog: expect.stringContaining("upstream result is uncertain"),
+				}),
+			}),
 		);
 	});
 
