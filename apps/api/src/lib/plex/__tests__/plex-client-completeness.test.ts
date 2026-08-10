@@ -19,6 +19,17 @@ function libraryItem(index: number) {
 	};
 }
 
+function historyItem(index: number) {
+	return {
+		historyKey: `/status/sessions/history/${index}`,
+		ratingKey: `movie-${index}`,
+		title: `Movie ${index}`,
+		type: "movie",
+		viewedAt: 1_700_000_000,
+		accountID: 1,
+	};
+}
+
 describe("PlexClient authoritative inventory completeness", () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();
@@ -84,6 +95,25 @@ describe("PlexClient authoritative inventory completeness", () => {
 		await expect(client.getHistory({ maxResults: 100_000, requireComplete: true })).rejects.toThrow(
 			/exceeding the safe 100000-row limit/i,
 		);
+	});
+
+	it("uses a Plex-compatible single sort key for complete history", async () => {
+		const history = Array.from({ length: 201 }, (_, index) => historyItem(index));
+		const fetchMock = vi.fn(async (input: string | URL | Request) => {
+			const url = new URL(input instanceof Request ? input.url : input.toString());
+			if (url.searchParams.get("sort") !== "viewedAt:desc") {
+				return new Response(null, { status: 400, statusText: "Bad Request" });
+			}
+			const offset = Number(url.searchParams.get("X-Plex-Container-Start") ?? "0");
+			const page = history.slice(offset, offset + 200);
+			return response({ offset, size: page.length, totalSize: history.length, Metadata: page });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const client = new PlexClient("http://plex.test", "token", log);
+		await expect(
+			client.getHistory({ maxResults: 100_000, requireComplete: true }),
+		).resolves.toHaveLength(201);
 	});
 
 	it("rejects a repeated history page instead of exposing an incomplete watch inventory", async () => {
