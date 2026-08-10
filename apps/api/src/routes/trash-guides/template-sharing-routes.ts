@@ -7,6 +7,7 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { createEnhancedTemplateService } from "../../lib/trash-guides/enhanced-template-service.js";
+import { withTrashTemplateMutationGuard } from "../../lib/trash-guides/template-mutation-guard.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -114,7 +115,9 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const { jsonData, options } = validateRequest(templateImportBodySchema, request.body);
 
 		const service = createEnhancedTemplateService(app.prisma);
-		const result = await service.importTemplateEnhanced(userId, jsonData, options || {});
+		const result = await withTrashTemplateMutationGuard(userId, () =>
+			service.importTemplateEnhanced(userId, jsonData, options || {}),
+		);
 
 		if (!result.success) {
 			return reply.status(400).send({

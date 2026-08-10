@@ -39,6 +39,8 @@ export function TemplateUpdateBanner({ update, onSyncSuccess }: TemplateUpdateBa
 	const [showDiffModal, setShowDiffModal] = useState(false);
 
 	const isSynced = update.isRecentlyAutoSynced ?? false;
+	const isDeploymentCatchUp = update.deploymentCatchUp ?? false;
+	const isAutomaticDeploymentCatchUp = isDeploymentCatchUp && update.canAutoSync;
 
 	// Green semantic styles for synced, theme-colored styles for pending
 	const bannerStyle: React.CSSProperties | undefined = isSynced
@@ -65,7 +67,13 @@ export function TemplateUpdateBanner({ update, onSyncSuccess }: TemplateUpdateBa
 				)}
 
 				<span className="text-sm font-medium text-foreground truncate">
-					{isSynced ? "Recently Auto-Synced" : "Update Available"}
+					{isSynced
+						? "Recently Auto-Synced"
+						: isDeploymentCatchUp
+							? isAutomaticDeploymentCatchUp
+								? "Deployment Catch-up Pending"
+								: "Manual Deployment Needed"
+							: "Update Available"}
 				</span>
 
 				<div className="flex-1" />
@@ -111,20 +119,27 @@ export function TemplateUpdateBanner({ update, onSyncSuccess }: TemplateUpdateBa
 				)}
 			</div>
 
-			{/* Action button row */}
-			<div className="mt-3 flex justify-center">
-				<button
-					type="button"
-					onClick={() => setShowDiffModal(true)}
-					className={cn(
-						"px-4 py-1.5 text-xs font-medium text-primary-fg rounded transition-colors",
-						buttonClasses,
-					)}
-					style={buttonStyle}
-				>
-					{isSynced ? "View Recent Changes" : "View Changes"}
-				</button>
-			</div>
+			{isDeploymentCatchUp ? (
+				<p className="mt-3 text-center text-xs text-muted-foreground">
+					{isAutomaticDeploymentCatchUp
+						? "A re-enabled auto-sync target will be brought up to date automatically."
+						: "Local template modifications prevent automatic catch-up. Review them, then use Deploy to Instance to update the re-enabled target."}
+				</p>
+			) : (
+				<div className="mt-3 flex justify-center">
+					<button
+						type="button"
+						onClick={() => setShowDiffModal(true)}
+						className={cn(
+							"px-4 py-1.5 text-xs font-medium text-primary-fg rounded transition-colors",
+							buttonClasses,
+						)}
+						style={buttonStyle}
+					>
+						{isSynced ? "View Recent Changes" : "View Changes"}
+					</button>
+				</div>
+			)}
 
 			{/* Expandable details */}
 			{showDetails && (
@@ -165,16 +180,18 @@ export function TemplateUpdateBanner({ update, onSyncSuccess }: TemplateUpdateBa
 				</div>
 			)}
 
-			<TemplateDiffModal
-				open={showDiffModal}
-				onClose={() => setShowDiffModal(false)}
-				templateId={showDiffModal ? update.templateId : null}
-				templateName={update.templateName}
-				onSyncSuccess={() => {
-					setShowDiffModal(false);
-					onSyncSuccess?.();
-				}}
-			/>
+			{!isDeploymentCatchUp && (
+				<TemplateDiffModal
+					open={showDiffModal}
+					onClose={() => setShowDiffModal(false)}
+					templateId={showDiffModal ? update.templateId : null}
+					templateName={update.templateName}
+					onSyncSuccess={() => {
+						setShowDiffModal(false);
+						onSyncSuccess?.();
+					}}
+				/>
+			)}
 		</div>
 	);
 }
