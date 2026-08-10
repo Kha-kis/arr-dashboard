@@ -7,6 +7,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
+	type AcknowledgeSyncReviewResult,
+	acknowledgeSyncReview,
 	createSyncProgressStream,
 	executeSync,
 	getSyncDetail,
@@ -377,6 +379,22 @@ export function useRollbackSync() {
 				queryClient.invalidateQueries({
 					queryKey: ["sync-history"],
 				});
+			}
+		},
+	});
+}
+
+export function useAcknowledgeSyncReview() {
+	const queryClient = useQueryClient();
+
+	return useMutation<AcknowledgeSyncReviewResult, Error, RollbackVariables>({
+		mutationFn: ({ syncId }) => acknowledgeSyncReview(syncId),
+		onSuccess: (_data, variables) => {
+			queryClient.invalidateQueries({ queryKey: syncKeys.detail(variables.syncId) });
+			if (variables.instanceId) {
+				queryClient.invalidateQueries({ queryKey: syncKeys.history(variables.instanceId) });
+			} else {
+				queryClient.invalidateQueries({ queryKey: ["sync-history"] });
 			}
 		},
 	});

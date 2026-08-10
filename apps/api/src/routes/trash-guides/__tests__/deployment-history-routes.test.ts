@@ -155,6 +155,7 @@ describe("deployment history undeploy", () => {
 				callback(
 					createDeploymentEndpointKey(userId, {
 						service: target.service,
+						baseUrl: target.baseUrl,
 						credentialIdentity: "credential-1",
 					}),
 				),

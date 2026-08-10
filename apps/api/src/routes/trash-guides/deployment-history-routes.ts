@@ -519,6 +519,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						!currentInstance ||
 						createDeploymentEndpointKey(userId, {
 							service: currentInstance.service,
+							baseUrl: currentInstance.baseUrl,
 							credentialIdentity: currentCredentialIdentity!,
 						}) !== endpointKey
 					) {

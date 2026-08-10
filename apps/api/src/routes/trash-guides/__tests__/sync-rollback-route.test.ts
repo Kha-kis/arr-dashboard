@@ -186,6 +186,7 @@ describe("sync rollback route", () => {
 				callback(
 					createDeploymentEndpointKey(userId, {
 						service: target.service,
+						baseUrl: target.baseUrl,
 						credentialIdentity: "credential-1",
 					}),
 				),
@@ -199,6 +200,69 @@ describe("sync rollback route", () => {
 		await app.close();
 		callOrder.length = 0;
 		vi.clearAllMocks();
+	});
+
+	it("acknowledges a backup-less uncertain sync only after explicit review", async () => {
+		syncRecord = {
+			...syncRecord,
+			status: "UNCERTAIN",
+			backupId: null,
+			backup: null,
+			errorLog: "The application restarted before a deployment ledger was linked.",
+		};
+		syncFindFirst.mockResolvedValue(syncRecord);
+		syncUpdate.mockResolvedValue({ count: 1 });
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/acknowledge-review");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json()).toMatchObject({
+			success: true,
+			status: "FAILED",
+			message: expect.stringContaining("acknowledged"),
+		});
+		expect(syncUpdate).toHaveBeenCalledWith({
+			where: {
+				id: "sync-1",
+				userId,
+				status: "UNCERTAIN",
+				backupId: null,
+			},
+			data: expect.objectContaining({
+				status: "FAILED",
+				errorLog: expect.stringContaining("Manual review acknowledged"),
+			}),
+		});
+		expect(profileUpdate).not.toHaveBeenCalled();
+		expect(formatUpdate).not.toHaveBeenCalled();
+		expect(formatDelete).not.toHaveBeenCalled();
+	});
+
+	it("refuses to acknowledge a sync that has rollback evidence", async () => {
+		syncRecord = { ...syncRecord, status: "UNCERTAIN" };
+		syncFindFirst.mockResolvedValue(syncRecord);
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/acknowledge-review");
+
+		expect(response.statusCode, response.body).toBe(409);
+		expect(response.json()).toMatchObject({ error: "REVIEW_NOT_ACKNOWLEDGEABLE" });
+		expect(syncUpdate).not.toHaveBeenCalled();
+	});
+
+	it("fails closed if the uncertain sync changes during acknowledgement", async () => {
+		syncRecord = {
+			...syncRecord,
+			status: "UNCERTAIN",
+			backupId: null,
+			backup: null,
+		};
+		syncFindFirst.mockResolvedValue(syncRecord);
+		syncUpdate.mockResolvedValue({ count: 0 });
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/acknowledge-review");
+
+		expect(response.statusCode, response.body).toBe(409);
+		expect(response.json()).toMatchObject({ error: "REVIEW_STATE_CHANGED" });
 	});
 
 	it("refuses a legacy raw-array backup without durable endpoint and resource identity", async () => {

@@ -23,8 +23,8 @@ import {
 } from "../../lib/trash-guides/deployment-custom-format-state.js";
 import { restoreNamingDeployment } from "../../lib/trash-guides/deployment-naming-state.js";
 import {
-	rollbackQualityProfileDeployment,
 	type QualityProfileRollbackState,
+	rollbackQualityProfileDeployment,
 } from "../../lib/trash-guides/deployment-profile-state.js";
 import {
 	createDeploymentConnectionStateToken,
@@ -483,6 +483,56 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	});
 
 	/**
+	 * Acknowledge a legacy interrupted wrapper that has no rollback ledger.
+	 * This never claims rollback or mutates ARR; it records the administrator's
+	 * explicit manual review so the unresolved local gate can be released.
+	 */
+	app.post<{
+		Params: { syncId: string };
+	}>("/:syncId/acknowledge-review", async (request, reply) => {
+		const { syncId } = request.params;
+		const userId = request.currentUser!.id;
+		const sync = await app.prisma.trashSyncHistory.findFirst({
+			where: { id: syncId, userId },
+			select: { status: true, backupId: true, errorLog: true },
+		});
+
+		if (!sync) {
+			return reply.status(404).send({ error: "NOT_FOUND", message: "Sync not found" });
+		}
+		if (sync.status !== "UNCERTAIN" || sync.backupId !== null) {
+			return reply.status(409).send({
+				error: "REVIEW_NOT_ACKNOWLEDGEABLE",
+				message: "Only an uncertain sync without a rollback ledger can be acknowledged manually.",
+			});
+		}
+
+		const reviewedAt = new Date();
+		const reviewMessage = `Manual review acknowledged at ${reviewedAt.toISOString()}. No automatic rollback was performed; the administrator accepted the current ARR state.`;
+		const updated = await app.prisma.trashSyncHistory.updateMany({
+			where: { id: syncId, userId, status: "UNCERTAIN", backupId: null },
+			data: {
+				status: "FAILED",
+				completedAt: reviewedAt,
+				errorLog: sync.errorLog ? `${sync.errorLog}\n${reviewMessage}` : reviewMessage,
+			},
+		});
+		if (updated.count !== 1) {
+			return reply.status(409).send({
+				error: "REVIEW_STATE_CHANGED",
+				message: "The sync changed while manual review was being acknowledged. Refresh and retry.",
+			});
+		}
+
+		request.log.warn({ syncId }, "Backup-less uncertain sync manually acknowledged");
+		return reply.send({
+			success: true,
+			status: "FAILED",
+			message: "Manual review acknowledged. No automatic rollback was performed.",
+		});
+	});
+
+	/**
 	 * Rollback to backup
 	 * POST /api/trash-guides/sync/:syncId/rollback
 	 *
@@ -622,6 +672,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								!currentInstance ||
 								createDeploymentEndpointKey(userId, {
 									service: currentInstance.service,
+									baseUrl: currentInstance.baseUrl,
 									credentialIdentity: leasedCredentialIdentity!,
 								}) !== endpointKey
 							) {

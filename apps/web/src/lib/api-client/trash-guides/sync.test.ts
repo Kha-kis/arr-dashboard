@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSyncProgressStream } from "./sync";
+import { acknowledgeSyncReview, createSyncProgressStream } from "./sync";
 
 class FakeEventSource {
 	static last: FakeEventSource | null = null;
@@ -42,5 +42,30 @@ describe("createSyncProgressStream", () => {
 		expect(source!.close).not.toHaveBeenCalled();
 		vi.advanceTimersByTime(1000);
 		expect(source!.close).toHaveBeenCalledOnce();
+	});
+});
+
+describe("acknowledgeSyncReview", () => {
+	it("posts to the backup-less uncertainty acknowledgement endpoint", async () => {
+		const responseBody = {
+			success: true,
+			status: "FAILED" as const,
+			message: "Manual review acknowledged. No automatic rollback was performed.",
+		};
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify(responseBody), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(acknowledgeSyncReview("sync-1")).resolves.toEqual(responseBody);
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/trash-guides/sync/sync-1/acknowledge-review",
+			expect.objectContaining({ method: "POST", body: "{}" }),
+		);
+
+		vi.unstubAllGlobals();
 	});
 });

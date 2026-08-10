@@ -121,6 +121,12 @@ export interface RollbackResult {
 	errors: string[];
 }
 
+export interface AcknowledgeSyncReviewResult {
+	success: boolean;
+	status: "FAILED";
+	message: string;
+}
+
 // ============================================================================
 // API Functions
 // ============================================================================
@@ -185,6 +191,17 @@ export async function rollbackSync(syncId: string): Promise<RollbackResult> {
 	return await apiRequest<RollbackResult>(`/api/trash-guides/sync/${syncId}/rollback`, {
 		method: "POST",
 	});
+}
+
+/**
+ * Record that an administrator reviewed a backup-less uncertain sync.
+ * This does not mutate the ARR service or claim that a rollback occurred.
+ */
+export async function acknowledgeSyncReview(syncId: string): Promise<AcknowledgeSyncReviewResult> {
+	return await apiRequest<AcknowledgeSyncReviewResult>(
+		`/api/trash-guides/sync/${syncId}/acknowledge-review`,
+		{ method: "POST" },
+	);
 }
 
 /**
