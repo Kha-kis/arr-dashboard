@@ -83,7 +83,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			} as never,
 		);
 
-		const result = await engine.execute(createSyncOptions(), undefined);
+		const result = await engine.execute(createSyncOptions(), undefined, "review-token");
 
 		expect(result).toMatchObject({
 			success: false,
