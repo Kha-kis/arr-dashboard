@@ -112,8 +112,9 @@ export async function rollbackQualityProfileDeployment(
 		if (createQualityProfileStateToken(fullCurrent) !== verifiedPostStateToken) {
 			throw new Error("The created quality profile changed after deployment and was not deleted.");
 		}
-		await client.qualityProfile.delete(state.profileId);
-		return;
+		throw new Error(
+			"The created quality profile cannot be deleted safely because the upstream API has no conditional delete. Verify that it is unused, then remove it manually.",
+		);
 	}
 
 	if (!currentProfile || !beforeProfile) {

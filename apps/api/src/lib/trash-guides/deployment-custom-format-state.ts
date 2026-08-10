@@ -24,7 +24,7 @@ export const restorableCustomFormatSchema = z.looseObject({
 	id: z.number().int().positive().safe(),
 	name: z.string().min(1),
 	specifications: z.array(restorableCustomFormatSpecificationSchema),
-	includeCustomFormatWhenRenaming: z.boolean().nullable(),
+	includeCustomFormatWhenRenaming: z.boolean().nullable().optional(),
 });
 
 export interface CustomFormatRollbackState {

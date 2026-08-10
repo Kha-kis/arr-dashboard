@@ -18,7 +18,7 @@ function completeProfile(overrides: Record<string, unknown> = {}) {
 }
 
 describe("rollbackQualityProfileDeployment", () => {
-	it("deletes a profile created by the deployment only while it is unchanged", async () => {
+	it("retains an unchanged created profile when deletion has no conditional boundary", async () => {
 		const deployed = { id: 7, name: "Created profile", formatItems: [] };
 		const remove = vi.fn().mockResolvedValue(undefined);
 		const client = {
@@ -29,18 +29,20 @@ describe("rollbackQualityProfileDeployment", () => {
 			},
 		};
 
-		await rollbackQualityProfileDeployment(client as never, {
-			beforeProfile: null,
-			action: "created",
-			status: "applied",
-			profileId: 7,
-			postStateToken: createQualityProfileStateToken(deployed),
-			intendedPostStateToken: null,
-		});
-		expect(remove).toHaveBeenCalledWith(7);
+		await expect(
+			rollbackQualityProfileDeployment(client as never, {
+				beforeProfile: null,
+				action: "created",
+				status: "applied",
+				profileId: 7,
+				postStateToken: createQualityProfileStateToken(deployed),
+				intendedPostStateToken: null,
+			}),
+		).rejects.toThrow("cannot be deleted safely");
+		expect(remove).not.toHaveBeenCalled();
 	});
 
-	it("deletes an unchanged pending create from its verified created-state token", async () => {
+	it("retains an unchanged pending create when deletion has no conditional boundary", async () => {
 		const created = { id: 7, name: "Created profile", formatItems: [] };
 		const remove = vi.fn().mockResolvedValue(undefined);
 		const client = {
@@ -51,16 +53,18 @@ describe("rollbackQualityProfileDeployment", () => {
 			},
 		};
 
-		await rollbackQualityProfileDeployment(client as never, {
-			beforeProfile: null,
-			action: "created",
-			status: "pending",
-			profileId: 7,
-			postStateToken: createQualityProfileStateToken(created),
-			intendedPostStateToken: null,
-		});
+		await expect(
+			rollbackQualityProfileDeployment(client as never, {
+				beforeProfile: null,
+				action: "created",
+				status: "pending",
+				profileId: 7,
+				postStateToken: createQualityProfileStateToken(created),
+				intendedPostStateToken: null,
+			}),
+		).rejects.toThrow("cannot be deleted safely");
 
-		expect(remove).toHaveBeenCalledWith(7);
+		expect(remove).not.toHaveBeenCalled();
 	});
 
 	it("refuses to delete a created profile changed after deployment", async () => {

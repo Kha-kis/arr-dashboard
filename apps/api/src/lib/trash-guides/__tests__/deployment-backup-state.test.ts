@@ -135,6 +135,16 @@ describe("shouldRetainDeploymentBackup", () => {
 
 	it.each([
 		["raw Custom Format array", JSON.stringify([])],
+		[
+			"legacy Custom Format without include-on-rename",
+			JSON.stringify([
+				{
+					id: 7,
+					name: "Legacy CF",
+					specifications: [],
+				},
+			]),
+		],
 		["object snapshot", JSON.stringify({ customFormats: [], qualityProfile: null })],
 		[
 			"object snapshot with Unknown quality",
