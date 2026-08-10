@@ -356,7 +356,9 @@ describe("BulkScoreManager partial saves", () => {
 		await waitFor(() => expect(profile202Input).toHaveValue(125));
 
 		bulkScoresResponse.data.scores[0]!.templateScores[1]!.currentScore = 5;
-		hookMocks.refreshBulkScores();
+		act(() => {
+			hookMocks.refreshBulkScores();
+		});
 		fireEvent.click(screen.getByRole("button", { name: "Modified Only" }));
 
 		await waitFor(() => expect(hookMocks.bulkScoresLoaded).toHaveBeenCalledWith("instance-1", 1));
