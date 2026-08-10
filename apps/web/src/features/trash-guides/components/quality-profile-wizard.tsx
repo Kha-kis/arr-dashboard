@@ -1,7 +1,7 @@
 "use client";
 
 import type { CustomQualityConfig, NamingSelectedPresets, TrashTemplate } from "@arr/shared";
-import type { WizardEditingTemplate } from "../types/wizard-types";
+import type { WizardClonedSourceReview, WizardEditingTemplate } from "../types/wizard-types";
 import { X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
@@ -131,6 +131,8 @@ interface WizardState {
 	customQualityConfig?: CustomQualityConfig;
 	/** Optional naming presets to deploy with this template */
 	namingSelection?: NamingSelectedPresets;
+	/** Exact cloned ARR snapshot reviewed during Custom Format configuration. */
+	clonedSourceReview?: WizardClonedSourceReview;
 }
 
 // Standard step order for TRaSH Guides profiles: quality config before CF config
@@ -292,6 +294,7 @@ export const QualityProfileWizard = ({
 			currentStep: nextStep,
 			selectedProfile: profile,
 			customFormatSelections: {},
+			clonedSourceReview: undefined,
 			templateName: profile.name,
 			templateDescription: profile.description
 				? htmlToPlainText(profile.description)
@@ -317,12 +320,14 @@ export const QualityProfileWizard = ({
 				conditionsEnabled: Record<string, boolean>;
 			}
 		>,
+		clonedSourceReview?: WizardClonedSourceReview,
 	) => {
 		// Go to summary - template naming happens in the Review step
 		setWizardState((prev) => ({
 			...prev,
 			currentStep: "summary",
 			customFormatSelections: selections,
+			clonedSourceReview,
 		}));
 	};
 
@@ -536,6 +541,7 @@ export const QualityProfileWizard = ({
 								templateDescription: wizardState.templateDescription,
 								customQualityConfig: wizardState.customQualityConfig,
 								namingSelection: wizardState.namingSelection,
+								clonedSourceReview: wizardState.clonedSourceReview,
 							}}
 							templateId={wizardState.templateId} // Pass template ID for update
 							isEditMode={isEditMode}

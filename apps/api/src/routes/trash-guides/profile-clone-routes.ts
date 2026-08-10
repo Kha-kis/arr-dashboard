@@ -14,8 +14,13 @@ import type {
 import { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { ConflictError } from "../../lib/errors.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createCFMatcher, type InstanceCustomFormat } from "../../lib/trash-guides/cf-matcher.js";
+import {
+	createClonedProfileSourceStateToken,
+	createDeploymentConnectionStateToken,
+} from "../../lib/trash-guides/deployment-target.js";
 import { createProfileCloner } from "../../lib/trash-guides/profile-cloner.js";
 import {
 	type ArrQualityProfileResponse,
@@ -102,7 +107,17 @@ const createTemplateSchema = z.object({
 	}),
 	matchedTrashProfileId: z.string().optional(),
 	matchedScoreSet: z.string().optional(),
+	sourceStateToken: z.string().regex(/^[a-f0-9]{64}$/i),
 });
+
+function requireSourceProfileName(profile: { name?: string | null }): string {
+	if (typeof profile.name !== "string" || profile.name.trim().length === 0) {
+		throw new ConflictError(
+			"The cloned source quality profile name is missing. Refresh the profile and try again.",
+		);
+	}
+	return profile.name;
+}
 
 // ============================================================================
 // Routes
@@ -275,7 +290,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			client.qualityProfile.getById(profileId),
 			client.customFormat.getAll(),
 		]);
-
+		requireSourceProfileName(profile);
 		// Get the CFs used in this profile (from formatItems)
 		const profileCFIds = new Set(
 			((profile as ArrQualityProfileResponse).formatItems || []).map(
@@ -289,6 +304,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			(cf): cf is typeof cf & { id: number; name: string } =>
 				cf.id !== undefined && cf.name !== undefined && cf.name !== null,
 		);
+		const sourceStateToken = createClonedProfileSourceStateToken({
+			userId: request.currentUser!.id,
+			instance,
+			profile,
+			customFormats: validCustomFormats,
+		});
 
 		const profileCustomFormats = validCustomFormats
 			.filter((cf) => profileCFIds.has(cf.id))
@@ -309,6 +330,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		return reply.status(200).send({
 			success: true,
 			data: {
+				sourceStateToken,
 				profile: {
 					id: profile.id,
 					name: profile.name,
@@ -532,8 +554,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			customFormatSelections,
 			sourceInstanceId,
 			sourceProfileId,
-			sourceProfileName,
-			sourceInstanceLabel,
+			sourceStateToken,
 			profileConfig,
 			matchedTrashProfileId,
 			matchedScoreSet,
@@ -558,6 +579,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const instance = await requireInstance(app, userId, sourceInstanceId);
+		if (instance.service.toUpperCase() !== serviceType) {
+			return reply.status(400).send({
+				success: false,
+				error: `Service type mismatch: instance is ${instance.service}, request is ${serviceType}`,
+			});
+		}
 
 		// Create SDK client
 		const client = app.arrClientFactory.create(instance);
@@ -575,17 +602,36 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			client.qualityProfile.getById(sourceProfileId) as Promise<ArrQualityProfileResponse>,
 			client.customFormat.getAll(),
 		]);
+		if (fullProfile.id !== sourceProfileId) {
+			throw new ConflictError(
+				"The cloned source quality profile identity changed while the template was being created. Refresh the profile and try again.",
+			);
+		}
+		const sourceProfileName = requireSourceProfileName(fullProfile);
+		const validCustomFormats = allCustomFormats.filter(
+			(cf): cf is typeof cf & { id: number; name: string } =>
+				cf.id !== undefined && cf.name !== undefined && cf.name !== null,
+		);
+		const currentSourceStateToken = createClonedProfileSourceStateToken({
+			userId,
+			instance,
+			profile: fullProfile,
+			customFormats: validCustomFormats,
+		});
+		if (currentSourceStateToken !== sourceStateToken.toLowerCase()) {
+			throw new ConflictError(
+				"The reviewed source profile or ARR connection changed while the template was being created. Refresh the profile and review it again.",
+			);
+		}
 
 		// Build a lookup map for instance CFs (filter out CFs with undefined id or name)
 		const cfLookup = new Map<number, { id: number; name: string; specifications?: unknown[] }>();
-		for (const cf of allCustomFormats) {
-			if (cf.id !== undefined && cf.name !== undefined && cf.name !== null) {
-				cfLookup.set(cf.id, {
-					id: cf.id,
-					name: cf.name,
-					specifications: cf.specifications ?? undefined,
-				});
-			}
+		for (const cf of validCustomFormats) {
+			cfLookup.set(cf.id, {
+				id: cf.id,
+				name: cf.name,
+				specifications: cf.specifications ?? undefined,
+			});
 		}
 
 		// Get TRaSH cache for matching
@@ -614,8 +660,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const completeQualityProfile = buildCompleteQualityProfile(fullProfile, profileConfig, {
 			sourceInstanceId,
-			sourceInstanceLabel,
-			sourceProfileId,
+			sourceInstanceLabel: instance.label,
+			sourceConnectionStateToken: createDeploymentConnectionStateToken(instance),
+			sourceProfileId: fullProfile.id,
 			sourceProfileName,
 		});
 
@@ -648,8 +695,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const templateService = createTemplateService(app.prisma, app.dbProvider);
 		const template = await templateService.createTemplate(userId, {
 			name: templateName,
-			description:
-				templateDescription || `Cloned from ${sourceInstanceLabel}: ${sourceProfileName}`,
+			description: templateDescription || `Cloned from ${instance.label}: ${sourceProfileName}`,
 			serviceType,
 			config: templateConfig,
 			sourceQualityProfileTrashId: safeMatchedTrashProfileId || trashId,

@@ -308,6 +308,56 @@ export function createDeploymentConnectionStateToken(instance: {
 	});
 }
 
+/** Bind cloned-profile creation to the exact reviewed owner, connection, and ARR profile state. */
+export function createClonedProfileSourceStateToken(args: {
+	userId: string;
+	instance: DeploymentConnectionInstance;
+	profile: unknown;
+	customFormats: unknown[];
+}): string {
+	const customFormats = args.customFormats
+		.map((customFormat) => stableValue(customFormat))
+		.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+	return createUpstreamResourceStateToken({
+		userId: args.userId,
+		instanceId: args.instance.id,
+		connectionGeneration: args.instance.connectionGeneration ?? 0,
+		connectionStateToken: createDeploymentConnectionStateToken(args.instance),
+		profileStateToken: createQualityProfileStateToken(args.profile),
+		customFormats,
+	});
+}
+
+/** Authorize numeric cloned-profile targeting only on the reviewed source ARR connection. */
+export function isVerifiedClonedProfileSourceConnection(args: {
+	sourceInstanceId?: string | null;
+	sourceConnectionStateToken?: string | null;
+	equivalentInstanceIds: string[];
+	sourceInstance?: DeploymentConnectionInstance | null;
+}): boolean {
+	if (!args.sourceInstanceId) {
+		return false;
+	}
+	if (!args.sourceConnectionStateToken) {
+		throw new ConflictError(
+			"This cloned profile predates verified source-connection binding. Recreate the template from the current source profile before deploying it back to that ARR endpoint.",
+		);
+	}
+	if (!args.sourceInstance || args.sourceInstance.id !== args.sourceInstanceId) {
+		throw new ConflictError(
+			"The cloned profile's recorded source ARR instance is unavailable. Recreate the template from the current source profile before deploying it back to that endpoint.",
+		);
+	}
+	if (
+		createDeploymentConnectionStateToken(args.sourceInstance) !== args.sourceConnectionStateToken
+	) {
+		throw new ConflictError(
+			"The cloned profile's source ARR connection changed after the template was created. Recreate the template from the current connection before deploying it back to that source instance.",
+		);
+	}
+	return args.equivalentInstanceIds.includes(args.sourceInstanceId);
+}
+
 /** Bind database ownership records to the exact configured ARR connection. */
 export function createDeploymentConnectionBinding(
 	instance: DeploymentConnectionInstance,
