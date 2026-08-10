@@ -147,7 +147,10 @@ export const TemplateList = ({
 		}
 	};
 
-	const handleSyncValidationComplete = async (resolutions: Record<string, "REPLACE" | "SKIP">) => {
+	const handleSyncValidationComplete = async (
+		executionToken: string,
+		resolutions: Record<string, "REPLACE" | "SKIP">,
+	) => {
 		if (!modals.validationModal) return;
 
 		try {
@@ -155,6 +158,7 @@ export const TemplateList = ({
 				templateId: modals.validationModal.templateId,
 				instanceId: modals.validationModal.instanceId,
 				syncType: "MANUAL",
+				executionToken,
 				conflictResolutions: resolutions,
 			});
 

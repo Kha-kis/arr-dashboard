@@ -139,13 +139,12 @@ export async function assertNoPendingDeploymentOperation(
 	if (
 		syncRows.some(
 			(row) =>
-				!row.backup &&
-				(row.status === "IN_PROGRESS" ||
-					row.status === "RUNNING" ||
-					row.status === "PARTIAL_SUCCESS"),
+				row.status === "IN_PROGRESS" ||
+				row.status === "RUNNING" ||
+				(!row.backup && row.status === "PARTIAL_SUCCESS"),
 		) ||
 		deploymentRows.some(
-			(row) => !row.backup && (row.status === "IN_PROGRESS" || row.status === "PARTIAL_SUCCESS"),
+			(row) => row.status === "IN_PROGRESS" || (!row.backup && row.status === "PARTIAL_SUCCESS"),
 		)
 	) {
 		throw new AppValidationError(
@@ -284,7 +283,7 @@ export async function reconcileInterruptedDeploymentHistories(
 			: [];
 
 	type Reconciliation = {
-		status: "FAILED" | "UNCERTAIN" | "PARTIAL_SUCCESS";
+		status: "FAILED" | "UNCERTAIN";
 		message: string;
 		appliedCFCount?: number;
 		appliedConfigs?: Array<Record<string, unknown>>;
@@ -370,8 +369,9 @@ export async function reconcileInterruptedDeploymentHistories(
 			return { status: "FAILED", message };
 		}
 		return {
-			status: "PARTIAL_SUCCESS",
-			message,
+			status: "UNCERTAIN",
+			message:
+				"The application restarted after upstream changes were applied but before deployment authority could be finalized. Resolve or roll back this deployment before making further changes.",
 			appliedCFCount: appliedCustomFormats.length,
 			appliedConfigs,
 		};

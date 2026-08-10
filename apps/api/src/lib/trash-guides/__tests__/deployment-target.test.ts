@@ -11,6 +11,7 @@ import {
 	createLegacyDeploymentConnectionBindings,
 	createQualityProfileStateToken,
 	getEquivalentServiceInstanceIds,
+	isDeploymentBackupEndpointIdentityCurrent,
 	resolveDeploymentTarget,
 	type DeploymentProfileMapping,
 } from "../deployment-target.js";
@@ -544,6 +545,33 @@ describe("getEquivalentServiceInstanceIds", () => {
 				encryptedApiKey: "rotated-key",
 			}),
 		);
+	});
+
+	it("accepts a legacy endpoint key only with the exact URL-bound connection token", () => {
+		const instance = {
+			id: "radarr-1",
+			service: "RADARR",
+			baseUrl: "http://radarr:7878",
+			encryptedApiKey: "encrypted-key",
+			encryptionIv: "iv",
+			connectionGeneration: 2,
+		};
+		const backupConnectionStateToken = createDeploymentConnectionStateToken(instance);
+		const identity = {
+			userId: "user-1",
+			backupEndpointKey: "user-1:RADARR:credential-1",
+			backupConnectionStateToken,
+			instance,
+			credentialIdentity: "credential-1",
+		};
+
+		expect(isDeploymentBackupEndpointIdentityCurrent(identity)).toBe(true);
+		expect(
+			isDeploymentBackupEndpointIdentityCurrent({
+				...identity,
+				instance: { ...instance, baseUrl: "http://other-radarr:7878" },
+			}),
+		).toBe(false);
 	});
 
 	it("requires an exact token even on a generation-zero connection", () => {

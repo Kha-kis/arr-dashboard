@@ -23,11 +23,11 @@ import { rollbackCustomFormatDeployment } from "../../lib/trash-guides/deploymen
 import { restoreNamingDeployment } from "../../lib/trash-guides/deployment-naming-state.js";
 import { rollbackQualityProfileDeployment } from "../../lib/trash-guides/deployment-profile-state.js";
 import {
-	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
 	getEquivalentServiceInstanceIds,
+	isDeploymentBackupEndpointIdentityCurrent,
 } from "../../lib/trash-guides/deployment-target.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 
@@ -588,9 +588,13 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						});
 					}
 					if (
-						backupState.endpointKey !== endpointKey ||
-						backupState.connectionStateToken !==
-							createDeploymentConnectionStateToken(currentInstance)
+						!isDeploymentBackupEndpointIdentityCurrent({
+							userId,
+							backupEndpointKey: backupState.endpointKey,
+							backupConnectionStateToken: backupState.connectionStateToken,
+							instance: currentInstance,
+							credentialIdentity: currentCredentialIdentity!,
+						})
 					) {
 						return stopClaimedUndeploy(409, {
 							success: false,

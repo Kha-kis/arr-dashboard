@@ -22,16 +22,17 @@ import {
 	rollbackCustomFormatDeployment,
 } from "../../lib/trash-guides/deployment-custom-format-state.js";
 import { restoreNamingDeployment } from "../../lib/trash-guides/deployment-naming-state.js";
+import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
 import {
 	type QualityProfileRollbackState,
 	rollbackQualityProfileDeployment,
 } from "../../lib/trash-guides/deployment-profile-state.js";
 import {
-	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
 	getEquivalentServiceInstanceIds,
+	isDeploymentBackupEndpointIdentityCurrent,
 } from "../../lib/trash-guides/deployment-target.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
@@ -56,8 +57,9 @@ const validateSyncSchema = z.object({
 const executeSyncSchema = z.object({
 	templateId: z.string().cuid(),
 	instanceId: z.string().cuid(),
-	syncType: z.enum(["MANUAL", "SCHEDULED"]),
+	syncType: z.literal("MANUAL").optional(),
 	conflictResolutions: z.record(z.string(), z.enum(["REPLACE", "SKIP"])).optional(),
+	executionToken: z.string().length(64),
 });
 
 const syncHistoryQuerySchema = z.object({
@@ -192,6 +194,19 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	// Shared services (repo-independent)
 	const cacheManager = createCacheManager(app.prisma);
 	const { deploymentExecutor } = app;
+	async function ownsSyncTarget(userId: string, templateId: string, instanceId: string) {
+		const [template, instance] = await Promise.all([
+			app.prisma.trashTemplate.findFirst({
+				where: { id: templateId, userId, deletedAt: null },
+				select: { id: true },
+			}),
+			app.prisma.serviceInstance.findFirst({
+				where: { id: instanceId, userId },
+				select: { id: true },
+			}),
+		]);
+		return Boolean(template && instance);
+	}
 
 	/** Create repo-aware services configured for the current user's repo settings */
 	async function getServices(userId: string) {
@@ -221,8 +236,24 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.post("/validate", async (request: FastifyRequest, reply) => {
 		const body = validateRequest(validateSyncSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
+		if (!(await ownsSyncTarget(userId, body.templateId, body.instanceId))) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: "Sync target not found",
+			});
+		}
 
-		const { syncEngine } = await getServices(userId);
+		const { syncEngine, templateUpdater } = await getServices(userId);
+		const templateSync = await templateUpdater.syncTemplate(body.templateId, undefined, userId);
+		if (!templateSync.success) {
+			return reply.send({
+				valid: false,
+				conflicts: [],
+				errors: [`Template sync failed: ${templateSync.errors?.join(", ") || "Unknown error"}`],
+				warnings: [],
+			});
+		}
 		const validation = await syncEngine.validate({
 			templateId: body.templateId,
 			instanceId: body.instanceId,
@@ -230,7 +261,17 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			syncType: "MANUAL",
 		});
 
-		return reply.send(validation);
+		if (!validation.valid) return reply.send(validation);
+		const preview = await createDeploymentPreviewService(
+			app.prisma,
+			app.arrClientFactory,
+			app.log,
+		).generatePreview(body.templateId, body.instanceId, userId);
+		return reply.send({
+			...validation,
+			executionToken: preview.executionToken,
+			preview,
+		});
 	});
 
 	/**
@@ -240,6 +281,13 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.post("/execute", async (request: FastifyRequest, reply) => {
 		const body = validateRequest(executeSyncSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
+		if (!(await ownsSyncTarget(userId, body.templateId, body.instanceId))) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: "Sync target not found",
+			});
+		}
 
 		// Convert conflictResolutions object to Map
 		const resolutionsMap = body.conflictResolutions
@@ -253,21 +301,32 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 				templateId: body.templateId,
 				instanceId: body.instanceId,
 				userId,
-				syncType: body.syncType,
+				syncType: "MANUAL",
 			},
 			resolutionsMap,
+			body.executionToken,
 		);
 
 		// By the time we get here, sync is complete. Store final state in progress store
 		// so that polling endpoints can retrieve it
 		const finalProgress: SyncProgress = {
 			syncId: result.syncId,
-			status: result.status === "UNCERTAIN" ? "UNCERTAIN" : result.success ? "COMPLETED" : "FAILED",
-			currentStep: result.success
-				? `Sync completed: ${result.configsApplied} applied, ${result.configsFailed} failed`
-				: result.status === "UNCERTAIN"
+			status:
+				result.status === "SUCCESS"
+					? "COMPLETED"
+					: result.status === "UNCERTAIN"
+						? "UNCERTAIN"
+						: "FAILED",
+			currentStep:
+				result.status === "UNCERTAIN"
 					? "Sync result is uncertain; resolve or roll back before retrying"
-					: "Sync failed",
+					: result.status === "SUCCESS"
+						? result.warnings?.length
+							? `Sync completed with warnings: ${result.warnings.join("; ")}`
+							: `Sync completed: ${result.configsApplied} applied, ${result.configsFailed} failed`
+						: result.status === "PARTIAL_SUCCESS"
+							? `Sync completed with errors: ${result.configsApplied} applied, ${result.configsFailed} failed`
+							: "Sync failed",
 			progress: 100,
 			totalConfigs: result.configsApplied + result.configsFailed + result.configsSkipped,
 			appliedConfigs: result.configsApplied,
@@ -757,8 +816,13 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								});
 							}
 							if (
-								backupEndpointKey !== endpointKey ||
-								backupConnectionStateToken !== createDeploymentConnectionStateToken(currentInstance)
+								!isDeploymentBackupEndpointIdentityCurrent({
+									userId,
+									backupEndpointKey,
+									backupConnectionStateToken,
+									instance: currentInstance,
+									credentialIdentity: leasedCredentialIdentity!,
+								})
 							) {
 								return stopClaimedRollback(409, {
 									error: "ROLLBACK_TARGET_CHANGED",

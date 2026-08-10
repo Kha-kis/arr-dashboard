@@ -192,12 +192,13 @@ export const DeploymentPreviewModal = ({
 	const deploymentMutation = useExecuteDeployment();
 
 	const handleDeploy = () => {
-		if (!templateId || !instanceId) return;
+		if (!templateId || !instanceId || !data?.data.executionToken) return;
 
 		deploymentMutation.mutate(
 			{
 				templateId,
 				instanceId,
+				executionToken: data.data.executionToken,
 				syncStrategy,
 				conflictResolutions:
 					Object.keys(conflictResolutions).length > 0 ? conflictResolutions : undefined,
@@ -695,8 +696,43 @@ export const DeploymentPreviewModal = ({
 							</div>
 						)}
 
+						{/* Previously Managed Custom Formats */}
+						{data.data.orphanedCustomFormats.length > 0 && (
+							<div className="space-y-3">
+								<h3 className="text-sm font-medium text-foreground">
+									Managed Custom Formats Reset to Zero ({data.data.orphanedCustomFormats.length})
+								</h3>
+								<p className="text-xs text-muted-foreground">
+									These formats are no longer in the template. Deployment will reset their scores to
+									0.
+								</p>
+								<div className="max-h-48 space-y-2 overflow-y-auto">
+									{data.data.orphanedCustomFormats.map((orphan) => (
+										<div
+											key={orphan.instanceId}
+											className="flex items-center justify-between gap-4 rounded-xl border p-3"
+											style={{
+												backgroundColor: SEMANTIC_COLORS.warning.bg,
+												borderColor: SEMANTIC_COLORS.warning.border,
+											}}
+										>
+											<span className="min-w-0 truncate text-sm font-medium text-foreground">
+												{orphan.name}
+											</span>
+											<span
+												className="shrink-0 font-mono text-sm"
+												style={{ color: SEMANTIC_COLORS.warning.text }}
+											>
+												{orphan.score} → 0
+											</span>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+
 						{/* No Changes Message */}
-						{data.data.summary.totalItems === 0 && (
+						{data.data.summary.totalItems === 0 && data.data.orphanedCustomFormats.length === 0 && (
 							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-8 text-center">
 								<CheckCircle2
 									className="h-12 w-12 mx-auto mb-3"

@@ -7,11 +7,120 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { ConflictError } from "../../lib/errors.js";
+import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
 import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
+import { assertEquivalentDeploymentMappingAuthority } from "../../lib/trash-guides/deployment-target.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+
+const executeDeploymentSchema = z.object({
+	templateId: z.string().min(1),
+	instanceId: z.string().min(1),
+	syncStrategy: z.enum(["auto", "manual", "notify"]).optional(),
+	conflictResolutions: z.record(z.string(), z.enum(["use_template", "keep_existing"])).optional(),
+	executionToken: z.string().length(64),
+});
+
+const executeBulkDeploymentSchema = z
+	.object({
+		templateId: z.string().min(1),
+		instanceIds: z.array(z.string().min(1)).min(1),
+		syncStrategy: z.enum(["auto", "manual", "notify"]).optional(),
+		instanceSyncStrategies: z.record(z.string(), z.enum(["auto", "manual", "notify"])).optional(),
+		executionTokens: z.record(z.string(), z.string().length(64)),
+	})
+	.superRefine((body, context) => {
+		const selectedInstanceIds = new Set(body.instanceIds);
+		for (const instanceId of body.instanceIds) {
+			if (!body.executionTokens[instanceId]) {
+				context.addIssue({
+					code: "custom",
+					path: ["executionTokens", instanceId],
+					message: "A fresh execution token is required for every selected instance",
+				});
+			}
+		}
+		for (const instanceId of Object.keys(body.executionTokens)) {
+			if (!selectedInstanceIds.has(instanceId)) {
+				context.addIssue({
+					code: "custom",
+					path: ["executionTokens", instanceId],
+					message: "Execution tokens may only be provided for selected instances",
+				});
+			}
+		}
+	});
+
+const syncStrategySchema = z.object({
+	templateId: z.string().min(1),
+	instanceId: z.string().min(1),
+	syncStrategy: z.enum(["auto", "manual", "notify"]),
+});
+
+const bulkSyncStrategySchema = z.object({
+	templateId: z.string().min(1),
+	syncStrategy: z.enum(["auto", "manual", "notify"]),
+});
+
+const unlinkDeploymentSchema = z.object({
+	templateId: z.string().min(1),
+	instanceId: z.string().min(1),
+});
 
 export async function deploymentRoutes(app: FastifyInstance) {
 	const { prisma, deploymentExecutor } = app;
 	const deploymentPreview = createDeploymentPreviewService(prisma, app.arrClientFactory, app.log);
+	const runWithEndpointLocks = async <T>(
+		userId: string,
+		instances: Array<Parameters<typeof deploymentExecutor.createEndpointMutationKey>[1]>,
+		operation: string,
+		action: () => Promise<T>,
+	): Promise<T> => {
+		const targets = new Map<string, (typeof instances)[number]>();
+		for (const instance of instances) {
+			targets.set(deploymentExecutor.createEndpointMutationKey(userId, instance), instance);
+		}
+		const orderedTargets = [...targets.entries()].sort(([left], [right]) =>
+			left.localeCompare(right),
+		);
+		const acquire = async (index: number): Promise<T> => {
+			const target = orderedTargets[index];
+			if (!target) return action();
+			return deploymentExecutor.runWithEndpointMutation(userId, target[1], operation, () =>
+				acquire(index + 1),
+			);
+		};
+		return withCleanupTopologyMutationLease({ prisma, log: app.log }, userId, () => acquire(0));
+	};
+	const loadEquivalentEndpointMappings = async (
+		userId: string,
+		templateId: string,
+		targetInstance: Parameters<typeof deploymentExecutor.createEndpointMutationKey>[1],
+	) => {
+		const endpointKey = deploymentExecutor.createEndpointMutationKey(userId, targetInstance);
+		const configuredInstances = await prisma.serviceInstance.findMany({
+			where: { userId },
+		});
+		const equivalentInstanceIds = configuredInstances
+			.filter(
+				(instance) =>
+					deploymentExecutor.createEndpointMutationKey(userId, instance) === endpointKey,
+			)
+			.map((instance) => instance.id);
+		if (!equivalentInstanceIds.includes(targetInstance.id)) {
+			equivalentInstanceIds.push(targetInstance.id);
+		}
+		return prisma.templateQualityProfileMapping.findMany({
+			where: {
+				templateId,
+				instanceId: { in: equivalentInstanceIds },
+				template: { userId },
+			},
+			orderBy: { updatedAt: "desc" },
+			include: { instance: true },
+		});
+	};
 	const notifyUncertainDeployment = async (
 		userId: string,
 		title: string,
@@ -41,40 +150,14 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			instanceId: string;
 		};
 	}>("/preview", async (request, reply) => {
-		const { templateId, instanceId } = request.body;
+		const { templateId, instanceId } = validateRequest(unlinkDeploymentSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceId) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceId are required",
-			});
-		}
 
 		const preview = await deploymentPreview.generatePreview(templateId, instanceId, userId);
 
-		// Check for existing deployment to get current sync strategy
-		// Find the mapping by templateId and instanceId
-		const existingMapping = await prisma.templateQualityProfileMapping.findFirst({
-			where: {
-				templateId,
-				instanceId,
-			},
-			orderBy: { updatedAt: "desc" },
-			select: { syncStrategy: true },
-		});
-
 		return reply.send({
 			success: true,
-			data: {
-				...preview,
-				// Include existing sync strategy if this instance was previously deployed
-				existingSyncStrategy: existingMapping?.syncStrategy as
-					| "auto"
-					| "manual"
-					| "notify"
-					| undefined,
-			},
+			data: preview,
 		});
 	});
 
@@ -88,17 +171,12 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			instanceId: string;
 			syncStrategy?: "auto" | "manual" | "notify";
 			conflictResolutions?: Record<string, "use_template" | "keep_existing">; // Map of trashId → resolution
+			executionToken: string;
 		};
 	}>("/execute", async (request, reply) => {
-		const { templateId, instanceId, syncStrategy, conflictResolutions } = request.body;
+		const { templateId, instanceId, syncStrategy, conflictResolutions, executionToken } =
+			validateRequest(executeDeploymentSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceId) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceId are required",
-			});
-		}
 
 		// Execute deployment with conflict resolutions
 		const result = await deploymentExecutor.deploySingleInstance(
@@ -107,6 +185,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			userId,
 			syncStrategy,
 			conflictResolutions,
+			executionToken,
 		);
 
 		request.log.info({ templateId, instanceId, success: result.success }, "Deployment executed");
@@ -167,7 +246,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				request.log.warn({ err }, "Deployment failed notification dispatch failed");
 			});
 
-		return reply.status(400).send({
+		return reply.send({
 			success: false,
 			error: "Deployment failed",
 			result: result,
@@ -186,22 +265,10 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/sync-strategy", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { templateId, instanceId, syncStrategy } = request.body;
-
-		if (!templateId || !instanceId || !syncStrategy) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId, instanceId, and syncStrategy are required",
-			});
-		}
-
-		// Validate syncStrategy value
-		if (!["auto", "manual", "notify"].includes(syncStrategy)) {
-			return reply.status(400).send({
-				success: false,
-				error: "syncStrategy must be 'auto', 'manual', or 'notify'",
-			});
-		}
+		const { templateId, instanceId, syncStrategy } = validateRequest(
+			syncStrategySchema,
+			request.body,
+		);
 
 		// Find the mapping and verify ownership
 		const mapping = await prisma.templateQualityProfileMapping.findFirst({
@@ -211,6 +278,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			},
 			orderBy: { updatedAt: "desc" },
 			include: {
+				instance: true,
 				template: {
 					select: { userId: true },
 				},
@@ -234,14 +302,45 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			});
 		}
 
-		// Update the sync strategy (single instance)
-		const updated = await prisma.templateQualityProfileMapping.update({
-			where: { id: mapping.id },
-			data: {
-				syncStrategy,
-				updatedAt: new Date(),
+		await runWithEndpointLocks(
+			userId,
+			[mapping.instance],
+			"Deployment authority update",
+			async () => {
+				const equivalentMappings = await loadEquivalentEndpointMappings(
+					userId,
+					templateId,
+					mapping.instance,
+				);
+				if (!equivalentMappings.some((candidate) => candidate.id === mapping.id)) {
+					throw new ConflictError(
+						"Deployment authority changed while the sync strategy was being updated",
+					);
+				}
+				// A strategy write is also the repair path for aliases left with divergent
+				// strategies by older single-row writers. Every other ownership field must
+				// still agree before replacing that one field across the endpoint.
+				assertEquivalentDeploymentMappingAuthority(
+					equivalentMappings.map((candidate) => ({ ...candidate, syncStrategy: null })),
+				);
+				const updated = await prisma.templateQualityProfileMapping.updateMany({
+					where: {
+						templateId,
+						template: { userId },
+						OR: equivalentMappings.map((candidate) => ({
+							id: candidate.id,
+							updatedAt: candidate.updatedAt,
+						})),
+					},
+					data: { syncStrategy, updatedAt: new Date() },
+				});
+				if (updated.count !== equivalentMappings.length) {
+					throw new ConflictError(
+						"Deployment authority changed while the sync strategy was being updated",
+					);
+				}
 			},
-		});
+		);
 
 		request.log.info({ templateId, instanceId, syncStrategy }, "Sync strategy updated");
 
@@ -251,7 +350,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			data: {
 				templateId,
 				instanceId,
-				syncStrategy: updated.syncStrategy,
+				syncStrategy,
 			},
 		});
 	});
@@ -267,22 +366,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/sync-strategy-bulk", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { templateId, syncStrategy } = request.body;
-
-		if (!templateId || !syncStrategy) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and syncStrategy are required",
-			});
-		}
-
-		// Validate syncStrategy value
-		if (!["auto", "manual", "notify"].includes(syncStrategy)) {
-			return reply.status(400).send({
-				success: false,
-				error: "syncStrategy must be 'auto', 'manual', or 'notify'",
-			});
-		}
+		const { templateId, syncStrategy } = validateRequest(bulkSyncStrategySchema, request.body);
 
 		// Verify template belongs to user
 		const template = await prisma.trashTemplate.findFirst({
@@ -299,31 +383,63 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			});
 		}
 
-		// Update all mappings for this template
-		const result = await prisma.templateQualityProfileMapping.updateMany({
-			where: {
-				templateId,
-			},
-			data: {
-				syncStrategy,
-				updatedAt: new Date(),
-			},
+		const mappings = await prisma.templateQualityProfileMapping.findMany({
+			where: { templateId, template: { userId } },
+			include: { instance: true },
 		});
-
-		if (result.count === 0) {
+		if (mappings.length === 0) {
 			return reply.status(404).send({
 				success: false,
 				error: "No deployment mappings found for this template",
 			});
 		}
 
+		await runWithEndpointLocks(
+			userId,
+			mappings.map((mapping) => mapping.instance),
+			"Bulk deployment authority update",
+			async () => {
+				const currentMappings = await prisma.templateQualityProfileMapping.findMany({
+					where: { templateId, template: { userId } },
+					include: { instance: true },
+				});
+				const reviewedMappingState = new Set(
+					mappings.map((mapping) => `${mapping.id}:${mapping.updatedAt.toISOString()}`),
+				);
+				if (
+					currentMappings.length !== mappings.length ||
+					currentMappings.some(
+						(mapping) =>
+							!reviewedMappingState.has(`${mapping.id}:${mapping.updatedAt.toISOString()}`),
+					)
+				) {
+					throw new ConflictError(
+						"Deployment authority changed while the bulk sync strategy was being updated",
+					);
+				}
+				const result = await prisma.templateQualityProfileMapping.updateMany({
+					where: {
+						templateId,
+						template: { userId },
+						OR: mappings.map((mapping) => ({ id: mapping.id, updatedAt: mapping.updatedAt })),
+					},
+					data: { syncStrategy, updatedAt: new Date() },
+				});
+				if (result.count !== mappings.length) {
+					throw new ConflictError(
+						"Deployment authority changed while the bulk sync strategy was being updated",
+					);
+				}
+			},
+		);
+
 		return reply.send({
 			success: true,
-			message: `Updated ${result.count} instance(s) to '${syncStrategy}' sync strategy`,
+			message: `Updated ${mappings.length} instance(s) to '${syncStrategy}' sync strategy`,
 			data: {
 				templateId,
 				syncStrategy,
-				updatedCount: result.count,
+				updatedCount: mappings.length,
 			},
 		});
 	});
@@ -339,15 +455,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			instanceId: string;
 		};
 	}>("/unlink", async (request, reply) => {
-		const { templateId, instanceId } = request.body;
+		const { templateId, instanceId } = validateRequest(unlinkDeploymentSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceId) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceId are required",
-			});
-		}
 
 		// Find the mapping
 		const mapping = await prisma.templateQualityProfileMapping.findFirst({
@@ -357,11 +466,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			},
 			orderBy: { updatedAt: "desc" },
 			include: {
-				instance: {
-					select: {
-						label: true,
-					},
-				},
+				instance: true,
 				template: {
 					select: {
 						name: true,
@@ -386,18 +491,57 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			});
 		}
 
-		// Delete the mapping
-		await prisma.templateQualityProfileMapping.delete({
-			where: { id: mapping.id },
-		});
-
-		// Also delete any instance-level overrides for this template+instance
-		await prisma.instanceQualityProfileOverride.deleteMany({
-			where: {
-				instanceId,
-				qualityProfileId: mapping.qualityProfileId,
+		await runWithEndpointLocks(
+			userId,
+			[mapping.instance],
+			"Deployment authority unlink",
+			async () => {
+				const equivalentMappings = await loadEquivalentEndpointMappings(
+					userId,
+					templateId,
+					mapping.instance,
+				);
+				if (!equivalentMappings.some((candidate) => candidate.id === mapping.id)) {
+					throw new ConflictError(
+						"Deployment authority changed while the template was being unlinked",
+					);
+				}
+				assertEquivalentDeploymentMappingAuthority(
+					equivalentMappings.map((candidate) => ({
+						...candidate,
+						// Unlink is allowed to repair strategy-only drift, but not disagreement
+						// about the profile or Custom Formats that this template owns.
+						syncStrategy: null,
+					})),
+				);
+				await prisma.$transaction(async (transaction) => {
+					const deleted = await transaction.templateQualityProfileMapping.deleteMany({
+						where: {
+							templateId,
+							template: { userId },
+							OR: equivalentMappings.map((candidate) => ({
+								id: candidate.id,
+								updatedAt: candidate.updatedAt,
+							})),
+						},
+					});
+					if (deleted.count !== equivalentMappings.length) {
+						throw new ConflictError(
+							"Deployment authority changed while the template was being unlinked",
+						);
+					}
+					await transaction.instanceQualityProfileOverride.deleteMany({
+						where: {
+							userId,
+							OR: equivalentMappings.map((candidate) => ({
+								instanceId: candidate.instanceId,
+								qualityProfileId: candidate.qualityProfileId,
+							})),
+						},
+					});
+				});
 			},
-		});
+		);
 
 		request.log.info(
 			{ templateId, instanceId, mappingId: mapping.id },
@@ -427,17 +571,12 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			instanceIds: string[];
 			syncStrategy?: "auto" | "manual" | "notify";
 			instanceSyncStrategies?: Record<string, "auto" | "manual" | "notify">;
+			executionTokens: Record<string, string>;
 		};
 	}>("/execute-bulk", async (request, reply) => {
-		const { templateId, instanceIds, syncStrategy, instanceSyncStrategies } = request.body;
+		const { templateId, instanceIds, syncStrategy, instanceSyncStrategies, executionTokens } =
+			validateRequest(executeBulkDeploymentSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
-
-		if (!templateId || !instanceIds || instanceIds.length === 0) {
-			return reply.status(400).send({
-				success: false,
-				error: "templateId and instanceIds are required",
-			});
-		}
 
 		// Execute bulk deployment with per-instance strategies support
 		const result = await deploymentExecutor.deployBulkInstances(
@@ -446,6 +585,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			userId,
 			syncStrategy,
 			instanceSyncStrategies,
+			executionTokens,
 		);
 
 		request.log.info({ templateId, instanceCount: instanceIds.length }, "Bulk deployment executed");

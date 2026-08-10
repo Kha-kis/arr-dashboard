@@ -86,7 +86,7 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 						{
 							repoConfigResolver,
 							deploymentExecutor: app.deploymentExecutor,
-							notifyFn: (payload) => app.notificationService.notify(payload),
+							notifyFn: (payload, options) => app.notificationService.notify(payload, options),
 							trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashUpdate, fn),
 						},
 					);
