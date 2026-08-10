@@ -2,6 +2,7 @@ import { ConflictError } from "../errors.js";
 import type { PrismaClient } from "../prisma.js";
 import {
 	createDeploymentConnectionBinding,
+	normalizeDeploymentBaseUrl,
 	type DeploymentConnectionBinding,
 } from "./deployment-target.js";
 
@@ -144,11 +145,15 @@ export async function rebindLegacyDeploymentConnectionState(
 				);
 			}
 			const services = new Set(liveInstances.map((instance) => instance.service.toUpperCase()));
+			const baseUrls = new Set(
+				liveInstances.map((instance) => normalizeDeploymentBaseUrl(instance.baseUrl)),
+			);
 			const reviewedCredentialIdentities = new Set(
 				connectionBindings.map((binding) => binding.credentialIdentity).filter(Boolean),
 			);
 			if (
 				services.size !== 1 ||
+				baseUrls.size !== 1 ||
 				(connectionBindings.length > 1 &&
 					(reviewedCredentialIdentities.size !== 1 ||
 						connectionBindings.some((binding) => !binding.credentialIdentity)))

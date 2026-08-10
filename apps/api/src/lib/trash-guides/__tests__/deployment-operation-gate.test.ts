@@ -82,6 +82,20 @@ function fullyAppliedBackup() {
 	};
 }
 
+function mixedAppliedAndPendingBackup() {
+	const result = backup("pending");
+	const state = JSON.parse(result.backupData);
+	state.customFormatDeployments.unshift({
+		beforeFormat: { id: 8, name: "Applied CF" },
+		action: "updated",
+		resourceId: 8,
+		name: "Applied CF",
+		status: "applied",
+		postStateToken: "applied-post",
+	});
+	return { ...result, backupData: JSON.stringify(state) };
+}
+
 describe("assertNoPendingDeploymentOperation", () => {
 	it("blocks endpoint mutations while a rollback is partial and retryable", async () => {
 		const prisma = {
@@ -660,7 +674,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		});
 	});
 
-	it("atomically marks paired histories failed while preserving a pending safety gate", async () => {
+	it("atomically marks paired pending histories uncertain while preserving the safety gate", async () => {
 		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const transaction = vi.fn(async (callback) =>
@@ -690,14 +704,69 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		expect(deploymentUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: { id: "deployment-1", status: "IN_PROGRESS" },
-				data: expect.objectContaining({ status: "FAILED" }),
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					appliedCFs: 0,
+					appliedConfigs: "[]",
+				}),
 			}),
 		);
 		expect(syncUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
-					status: "FAILED",
+					status: "UNCERTAIN",
+					configsApplied: 0,
+					configsFailed: 0,
+					appliedConfigs: "[]",
 					errorLog: expect.stringContaining("uncertain"),
+				}),
+			}),
+		);
+	});
+
+	it("keeps mixed applied and pending histories uncertain while preserving proven audit", async () => {
+		const interruptedBackup = mixedAppliedAndPendingBackup();
+		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const prisma = {
+			templateDeploymentHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ id: "deployment-1", backupId: "backup-1", backup: interruptedBackup },
+					]),
+			},
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([{ id: "sync-1", backupId: "backup-1", backup: interruptedBackup }]),
+			},
+			$transaction: vi.fn(async (callback) =>
+				callback({
+					templateDeploymentHistory: { updateMany: deploymentUpdateMany },
+					trashSyncHistory: { updateMany: syncUpdateMany },
+				}),
+			),
+		};
+		const appliedConfigs = [{ name: "Applied CF", action: "updated" }];
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
+		expect(deploymentUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					appliedCFs: 1,
+					appliedConfigs: JSON.stringify(appliedConfigs),
+				}),
+			}),
+		);
+		expect(syncUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					configsApplied: 1,
+					configsFailed: 0,
+					appliedConfigs: JSON.stringify(appliedConfigs),
 				}),
 			}),
 		);

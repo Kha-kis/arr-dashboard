@@ -280,14 +280,12 @@ export async function reconcileInterruptedDeploymentHistories(
 				})
 			: [];
 
-	type Reconciliation =
-		| { status: "FAILED" | "UNCERTAIN"; message: string }
-		| {
-				status: "PARTIAL_SUCCESS";
-				message: string;
-				appliedCFCount: number;
-				appliedConfigs: Array<Record<string, unknown>>;
-		  };
+	type Reconciliation = {
+		status: "FAILED" | "UNCERTAIN" | "PARTIAL_SUCCESS";
+		message: string;
+		appliedCFCount?: number;
+		appliedConfigs?: Array<Record<string, unknown>>;
+	};
 	const classify = (backup: { backupData: string } | null): Reconciliation => {
 		let pending = false;
 		if (!backup) {
@@ -339,6 +337,14 @@ export async function reconcileInterruptedDeploymentHistories(
 		if (state.namingDeployment?.status === "applied") {
 			appliedConfigs.push({ name: "Naming configuration", action: "updated" });
 		}
+		if (pending) {
+			return {
+				status: "UNCERTAIN",
+				message,
+				appliedCFCount: appliedCustomFormats.length,
+				appliedConfigs,
+			};
+		}
 		if (appliedConfigs.length === 0) {
 			return { status: "FAILED", message };
 		}
@@ -363,21 +369,19 @@ export async function reconcileInterruptedDeploymentHistories(
 		}
 		const reconciliation = classify(history.backup);
 		const { status, message } = reconciliation;
-		const appliedAudit =
-			status === "PARTIAL_SUCCESS"
-				? {
-						appliedCFs: reconciliation.appliedCFCount,
-						appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
-					}
-				: {};
-		const syncAppliedAudit =
-			status === "PARTIAL_SUCCESS"
-				? {
-						configsApplied: reconciliation.appliedConfigs.length,
-						configsFailed: 1,
-						appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
-					}
-				: {};
+		const appliedAudit = reconciliation.appliedConfigs
+			? {
+					appliedCFs: reconciliation.appliedCFCount ?? 0,
+					appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
+				}
+			: {};
+		const syncAppliedAudit = reconciliation.appliedConfigs
+			? {
+					configsApplied: reconciliation.appliedConfigs.length,
+					configsFailed: status === "PARTIAL_SUCCESS" ? 1 : 0,
+					appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
+				}
+			: {};
 		const primaryReconciled = await prisma.$transaction(async (tx) => {
 			const primary = await tx.templateDeploymentHistory.updateMany({
 				where: { id: history.id, status: "IN_PROGRESS" },
@@ -418,14 +422,13 @@ export async function reconcileInterruptedDeploymentHistories(
 		}
 		const reconciliation = classify(history.backup);
 		const { status, message } = reconciliation;
-		const appliedAudit =
-			status === "PARTIAL_SUCCESS"
-				? {
-						configsApplied: reconciliation.appliedConfigs.length,
-						configsFailed: 1,
-						appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
-					}
-				: {};
+		const appliedAudit = reconciliation.appliedConfigs
+			? {
+					configsApplied: reconciliation.appliedConfigs.length,
+					configsFailed: status === "PARTIAL_SUCCESS" ? 1 : 0,
+					appliedConfigs: JSON.stringify(reconciliation.appliedConfigs),
+				}
+			: {};
 		const result = await prisma.trashSyncHistory.updateMany({
 			where: { id: history.id, status: { in: ["IN_PROGRESS", "RUNNING"] } },
 			data: { status, completedAt: new Date(), errorLog: message, ...appliedAudit },

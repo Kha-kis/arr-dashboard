@@ -235,10 +235,12 @@ export function getEquivalentServiceInstanceIds(
 	target: DeploymentServiceInstance,
 ): string[] {
 	const targetService = target.service.toUpperCase();
+	const targetBaseUrl = normalizeDeploymentBaseUrl(target.baseUrl);
 	return instances
 		.filter(
 			(instance) =>
 				instance.service.toUpperCase() === targetService &&
+				normalizeDeploymentBaseUrl(instance.baseUrl) === targetBaseUrl &&
 				instance.credentialIdentity === target.credentialIdentity,
 		)
 		.map((instance) => instance.id);
@@ -247,9 +249,9 @@ export function getEquivalentServiceInstanceIds(
 /** Stable in-process lock identity for one user's physical ARR endpoint. */
 export function createDeploymentEndpointKey(
 	userId: string,
-	instance: Pick<DeploymentServiceInstance, "service" | "credentialIdentity">,
+	instance: Pick<DeploymentServiceInstance, "service" | "baseUrl" | "credentialIdentity">,
 ): string {
-	return `${userId}:${instance.service.toUpperCase()}:${instance.credentialIdentity}`;
+	return `${userId}:${instance.service.toUpperCase()}:${normalizeDeploymentBaseUrl(instance.baseUrl)}:${instance.credentialIdentity}`;
 }
 
 /** Bind rollback metadata to both the normalized endpoint and configured credentials. */

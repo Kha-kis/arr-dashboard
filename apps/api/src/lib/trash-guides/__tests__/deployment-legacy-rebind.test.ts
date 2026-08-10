@@ -170,11 +170,11 @@ describe("legacy deployment connection rebind", () => {
 		expect(mappingUpdateMany).not.toHaveBeenCalled();
 	});
 
-	it("accepts reviewed aliases with different URLs when their credential identity matches", async () => {
+	it("accepts reviewed aliases with the same normalized URL and credential identity", async () => {
 		const alias = {
 			...currentInstance,
 			id: "instance-2",
-			baseUrl: "https://radarr.example.com",
+			baseUrl: "HTTP://RADARR:80/",
 			encryptedApiKey: "separately-encrypted-key",
 			encryptionIv: "separate-iv",
 		};
@@ -196,6 +196,34 @@ describe("legacy deployment connection rebind", () => {
 			),
 		).resolves.toBeUndefined();
 		expect(mappingUpdateMany).toHaveBeenCalledOnce();
+	});
+
+	it("rejects reviewed aliases on different URLs even when credentials match", async () => {
+		const otherEndpoint = {
+			...currentInstance,
+			id: "instance-2",
+			baseUrl: "https://other-radarr.example.com",
+			encryptedApiKey: "separately-encrypted-key",
+			encryptionIv: "separate-iv",
+		};
+		const { prisma, mappingUpdateMany } = createPrisma({
+			instances: [currentInstance, otherEndpoint],
+		});
+
+		await expect(
+			rebindLegacyDeploymentConnectionState(
+				prisma as never,
+				"user-1",
+				[reviewedMapping],
+				4,
+				[legacyOverride],
+				[
+					createDeploymentConnectionBinding(currentInstance, "same-credentials"),
+					createDeploymentConnectionBinding(otherEndpoint, "same-credentials"),
+				],
+			),
+		).rejects.toThrow("cannot be proven to belong to one ARR endpoint");
+		expect(mappingUpdateMany).not.toHaveBeenCalled();
 	});
 
 	it("rejects a user-owned binding that no longer represents the reviewed physical endpoint", async () => {
