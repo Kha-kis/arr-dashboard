@@ -43,7 +43,11 @@ export async function finalizeDeploymentHistory(
 				configsApplied: counts.created + counts.updated,
 				configsFailed: details.failed.length,
 				configsSkipped: intentionalSkips,
-				appliedConfigs: JSON.stringify([...details.created, ...details.updated]),
+				appliedConfigs: JSON.stringify(
+					details.created
+						.map((name) => ({ name, action: "created" }))
+						.concat(details.updated.map((name) => ({ name, action: "updated" }))),
+				),
 				failedConfigs: details.failed.length > 0 ? JSON.stringify(details.failed) : null,
 				errorLog: errors.length > 0 ? errors.join("\n") : null,
 			},

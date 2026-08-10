@@ -11,6 +11,7 @@ import { registerCustomFormatRoutes } from "./custom-format-routes.js";
 import { deploymentHistoryRoutes } from "./deployment-history-routes.js";
 import { deploymentRoutes } from "./deployment-routes.js";
 import registerInstanceQualityProfileRoutes from "./instance-quality-profile-routes.js";
+import { registerTrashGuidesMaintenanceHooks } from "./maintenance-hooks.js";
 import { namingRoutes } from "./naming-routes.js";
 import profileCloneRoutes from "./profile-clone-routes.js";
 import { registerQualityProfileRoutes } from "./quality-profile-routes.js";
@@ -24,6 +25,8 @@ import { registerUpdateRoutes } from "./update-routes.js";
 import { registerUserCustomFormatRoutes } from "./user-custom-format-routes.js";
 
 export async function registerTrashGuidesRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
+	registerTrashGuidesMaintenanceHooks(app);
+
 	// Register cache routes under /cache
 	app.register(registerTrashCacheRoutes, { prefix: "/cache" });
 

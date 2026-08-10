@@ -7,8 +7,13 @@
 
 import type { BackupData } from "@arr/shared";
 import { loggers } from "../logger.js";
-import type { Prisma, PrismaClient } from "../prisma.js";
-import { validateRecords } from "./backup-validation.js";
+import type { Prisma, PrismaClient, TrashBackup } from "../prisma.js";
+import {
+	isNonterminalRollback,
+	isNonterminalUndeploy,
+	validateCoordinationEvidence,
+	validateRecords,
+} from "./backup-validation.js";
 
 const log = loggers.backup;
 
@@ -16,10 +21,10 @@ export interface ExportDatabaseOptions {
 	/** Include TRaSH ARR config snapshots (can be large) */
 	includeTrashBackups?: boolean;
 	/**
-	 * Skip operational history tables (huntLog, huntSearchHistory, trashSyncHistory,
-	 * templateDeploymentHistory). These grow unbounded over time and are not needed
-	 * for restoring a working configuration — losing them on restore is expected.
-	 * Defaults to true for scheduled backups (set by caller).
+	 * Skip disposable operational history. Hunt history is omitted entirely;
+	 * terminal TRaSH history is omitted while nonterminal rollback/undeploy rows
+	 * and their referenced snapshots are always preserved. Defaults to true for
+	 * scheduled and update backups (set by caller).
 	 */
 	excludeOperationalHistory?: boolean;
 	/**
@@ -30,14 +35,237 @@ export interface ExportDatabaseOptions {
 	historyRetentionLimit?: number;
 }
 
+type CoordinationKind = "rollback" | "undeploy";
+type CoordinationRow = Record<string, unknown> & { id: string };
+
+function isAuditOnlyUncertainSync(record: Record<string, unknown>): boolean {
+	return (
+		record.status === "UNCERTAIN" &&
+		record.rollbackStatus == null &&
+		record.backupId == null &&
+		record.rolledBack !== true
+	);
+}
+
+function shouldPreserveSyncHistory(record: Record<string, unknown>): boolean {
+	return isNonterminalRollback(record) || isAuditOnlyUncertainSync(record);
+}
+
+const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
+	rollback: [
+		"userId",
+		"instanceId",
+		"templateId",
+		"status",
+		"rolledBack",
+		"appliedConfigs",
+		"rollbackStatus",
+		"rollbackAttemptedAt",
+		"rollbackProgress",
+		"backupId",
+	],
+	undeploy: [
+		"userId",
+		"instanceId",
+		"templateId",
+		"status",
+		"rolledBack",
+		"canRollback",
+		"appliedConfigs",
+		"templateSnapshot",
+		"undeployStatus",
+		"undeployAttemptedAt",
+		"undeployProgress",
+		"backupId",
+	],
+};
+
+function recordsById(value: unknown): Map<string, CoordinationRow> {
+	const records = new Map<string, CoordinationRow>();
+	if (!Array.isArray(value)) return records;
+	for (const row of value) {
+		if (
+			typeof row === "object" &&
+			row !== null &&
+			"id" in row &&
+			typeof row.id === "string" &&
+			row.id.length > 0
+		) {
+			records.set(row.id, row as CoordinationRow);
+		}
+	}
+	return records;
+}
+
+function assertCurrentUndeployFallbackPreserved(
+	current: CoordinationRow,
+	incomingTemplates: Map<string, CoordinationRow>,
+): void {
+	if (typeof current.templateSnapshot === "string" && current.templateSnapshot.length > 0) {
+		return;
+	}
+	if (typeof current.templateId !== "string" || current.templateId.length === 0) {
+		throw new Error(
+			`Cannot restore backup: current nonterminal coordination row ${current.id} has no undeploy template authority`,
+		);
+	}
+	const currentTemplate = current.template;
+	if (typeof currentTemplate !== "object" || currentTemplate === null) {
+		throw new Error(
+			`Cannot restore backup: current undeploy fallback template ${current.templateId} is missing from the database`,
+		);
+	}
+	const incomingTemplate = incomingTemplates.get(current.templateId);
+	if (!incomingTemplate) {
+		throw new Error(
+			`Cannot restore backup: current undeploy fallback template ${current.templateId} is missing from incoming data`,
+		);
+	}
+	for (const field of ["userId", "serviceType", "configData"] as const) {
+		if (incomingTemplate[field] !== (currentTemplate as Record<string, unknown>)[field]) {
+			throw new Error(
+				`Cannot restore backup: current undeploy fallback template ${current.templateId} changed ${field}`,
+			);
+		}
+	}
+}
+
+function comparableCoordinationValue(value: unknown): unknown {
+	return value instanceof Date ? value.toISOString() : value;
+}
+
+function assertCurrentRowPreserved(
+	kind: CoordinationKind,
+	current: CoordinationRow,
+	incomingRows: Map<string, CoordinationRow>,
+): void {
+	const incoming = incomingRows.get(current.id);
+	if (!incoming) {
+		throw new Error(
+			`Cannot restore backup: current nonterminal coordination row ${current.id} is missing from incoming data`,
+		);
+	}
+
+	for (const field of COORDINATION_FIELDS[kind]) {
+		if (
+			comparableCoordinationValue(incoming[field]) !== comparableCoordinationValue(current[field])
+		) {
+			throw new Error(
+				`Cannot restore backup: current nonterminal coordination row ${current.id} changed ${field}`,
+			);
+		}
+	}
+}
+
+async function validateCurrentCoordinationPreserved(
+	tx: Prisma.TransactionClient,
+	data: BackupData["data"],
+): Promise<void> {
+	const currentRollbackRows = (
+		await tx.trashSyncHistory.findMany({
+			where: {
+				OR: [
+					{ rollbackStatus: { not: "COMPLETED" } },
+					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+					{ status: "UNCERTAIN", rollbackStatus: null, backupId: null },
+				],
+			},
+		})
+	).filter(shouldPreserveSyncHistory) as CoordinationRow[];
+	const currentUndeployRows = (
+		await tx.templateDeploymentHistory.findMany({
+			where: {
+				OR: [
+					{ undeployStatus: { not: "COMPLETED" } },
+					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
+				],
+			},
+			include: {
+				template: {
+					select: { id: true, userId: true, serviceType: true, configData: true },
+				},
+			},
+		})
+	).filter(isNonterminalUndeploy) as CoordinationRow[];
+	const incomingRollbackRows = recordsById(data.trashSyncHistory);
+	const incomingUndeployRows = recordsById(data.templateDeploymentHistory);
+	const incomingTemplates = recordsById(data.trashTemplates);
+
+	for (const row of currentRollbackRows) {
+		assertCurrentRowPreserved("rollback", row, incomingRollbackRows);
+	}
+	for (const row of currentUndeployRows) {
+		assertCurrentRowPreserved("undeploy", row, incomingUndeployRows);
+		assertCurrentUndeployFallbackPreserved(row, incomingTemplates);
+	}
+
+	const currentRecoveryRows = [
+		...currentRollbackRows.filter((row) =>
+			isNonterminalRollback({
+				status: row.status,
+				rolledBack: row.rolledBack,
+				rollbackStatus: row.rollbackStatus,
+			}),
+		),
+		...currentUndeployRows,
+	];
+	const requiredSnapshotIds = currentRecoveryRows.map((row) => {
+		if (typeof row.backupId !== "string" || row.backupId.length === 0) {
+			throw new Error(
+				`Cannot restore backup: current nonterminal coordination row ${row.id} has no required recovery snapshot reference`,
+			);
+		}
+		return row.backupId;
+	});
+	if (requiredSnapshotIds.length === 0) return;
+
+	const currentSnapshots = recordsById(
+		await tx.trashBackup.findMany({ where: { id: { in: [...new Set(requiredSnapshotIds)] } } }),
+	);
+	const incomingSnapshots = recordsById(data.trashBackups);
+	for (const snapshotId of new Set(requiredSnapshotIds)) {
+		const current = currentSnapshots.get(snapshotId);
+		if (!current) {
+			throw new Error(
+				`Cannot restore backup: current recovery snapshot ${snapshotId} is missing from the database`,
+			);
+		}
+		const incoming = incomingSnapshots.get(snapshotId);
+		if (!incoming) {
+			throw new Error(
+				`Cannot restore backup: current recovery snapshot ${snapshotId} is missing from incoming data`,
+			);
+		}
+		for (const field of ["userId", "instanceId", "backupData"] as const) {
+			if (incoming[field] !== current[field]) {
+				throw new Error(
+					`Cannot restore backup: current recovery snapshot ${snapshotId} changed ${field}`,
+				);
+			}
+		}
+	}
+}
+
+function mergeRowsById<T extends { id: string }>(rows: T[], preservedRows: T[]): T[] {
+	const merged = [...rows];
+	const seen = new Set(rows.map((row) => row.id));
+	for (const row of preservedRows) {
+		if (!seen.has(row.id)) {
+			merged.push(row);
+			seen.add(row.id);
+		}
+	}
+	return merged;
+}
+
 /**
  * Export all database tables.
  *
  * Tables are fetched sequentially (not in parallel) so each table's row data
  * lives only as long as needed before being assigned into the result object.
- * For scheduled backups, operational history tables are skipped by default to
- * keep peak heap bounded — those tables grow unbounded over time and are not
- * essential for restore.
+ * For scheduled backups, disposable operational history is skipped by default
+ * to keep peak heap bounded. Nonterminal rollback/undeploy coordination is
+ * always exported because it is required to resume safely after restore.
  */
 export async function exportDatabase(prisma: PrismaClient, options: ExportDatabaseOptions = {}) {
 	const skipHistory = options.excludeOperationalHistory ?? false;
@@ -83,14 +311,39 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		return find(historyLimit);
 	};
 
-	const trashSyncHistory = skipHistory
+	// Rollback/undeploy coordination is durable safety state, even though it is
+	// stored in history tables. Fetch it independently so exclusion and row caps
+	// can discard terminal audit rows without stranding resumable operations.
+	const nonterminalRollbackHistory = (
+		await prisma.trashSyncHistory.findMany({
+			where: {
+				OR: [
+					{ rollbackStatus: { not: "COMPLETED" } },
+					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+					{ status: "UNCERTAIN", rollbackStatus: null, backupId: null },
+				],
+			},
+		})
+	).filter(shouldPreserveSyncHistory);
+	const nonterminalUndeployHistory = (
+		await prisma.templateDeploymentHistory.findMany({
+			where: {
+				OR: [
+					{ undeployStatus: { not: "COMPLETED" } },
+					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
+				],
+			},
+		})
+	).filter(isNonterminalUndeploy);
+
+	const cappedTrashSyncHistory = skipHistory
 		? []
 		: await fetchCappedHistory(
 				"trashSyncHistory",
 				() => prisma.trashSyncHistory.count(),
 				(take) => prisma.trashSyncHistory.findMany({ take, orderBy: { startedAt: "desc" } }),
 			);
-	const templateDeploymentHistory = skipHistory
+	const cappedTemplateDeploymentHistory = skipHistory
 		? []
 		: await fetchCappedHistory(
 				"templateDeploymentHistory",
@@ -98,6 +351,11 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 				(take) =>
 					prisma.templateDeploymentHistory.findMany({ take, orderBy: { deployedAt: "desc" } }),
 			);
+	const trashSyncHistory = mergeRowsById(cappedTrashSyncHistory, nonterminalRollbackHistory);
+	const templateDeploymentHistory = mergeRowsById(
+		cappedTemplateDeploymentHistory,
+		nonterminalUndeployHistory,
+	);
 
 	// Hunting feature: configs are config (always full); logs/history are operational
 	const huntConfigs = await prisma.huntConfig.findMany();
@@ -116,9 +374,9 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 				(take) => prisma.huntSearchHistory.findMany({ take, orderBy: { searchedAt: "desc" } }),
 			);
 
-	// Optionally include TRaSH instance backups (ARR config snapshots)
-	// Limited to non-expired backups from the last 7 days to control size
-	let trashBackups: unknown[] = [];
+	// Optionally include recent TRaSH instance backups. Snapshots referenced by
+	// nonterminal rollback/undeploy rows are added below regardless of age/expiry.
+	let trashBackups: TrashBackup[] = [];
 	if (options.includeTrashBackups) {
 		const sevenDaysAgo = new Date();
 		sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -132,6 +390,33 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 			},
 		});
 	}
+
+	const requiredBackupIds = [
+		...nonterminalRollbackHistory.filter(isNonterminalRollback),
+		...nonterminalUndeployHistory,
+	].map((row) => {
+		if (typeof row.backupId !== "string" || row.backupId.length === 0) {
+			throw new Error(
+				`Cannot create backup: nonterminal coordination row ${row.id} has no referenced TRaSH backup snapshot`,
+			);
+		}
+		return row.backupId;
+	});
+	const uniqueRequiredBackupIds = [...new Set(requiredBackupIds)];
+	if (uniqueRequiredBackupIds.length > 0) {
+		const requiredSnapshots = await prisma.trashBackup.findMany({
+			where: { id: { in: uniqueRequiredBackupIds } },
+		});
+		trashBackups = mergeRowsById(trashBackups, requiredSnapshots);
+	}
+
+	validateCoordinationEvidence({
+		serviceInstances,
+		trashTemplates,
+		trashSyncHistory,
+		templateDeploymentHistory,
+		trashBackups,
+	});
 
 	return {
 		// Core authentication & services
@@ -177,6 +462,8 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 export async function restoreDatabase(prisma: PrismaClient, data: BackupData["data"]) {
 	// Use a transaction to ensure atomicity
 	await prisma.$transaction(async (tx) => {
+		await validateCurrentCoordinationPreserved(tx, data);
+
 		// =================================================================
 		// DELETE all existing data (in reverse order of dependencies)
 		// =================================================================

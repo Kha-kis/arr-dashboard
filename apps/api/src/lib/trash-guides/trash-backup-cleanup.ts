@@ -14,6 +14,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../../lib/prisma.js";
+import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import {
 	passthroughTickWrapper,
 	type TickWrapper,
@@ -80,6 +81,10 @@ export class TrashBackupCleanupService {
 	 * Run the cleanup process
 	 */
 	async runCleanup(): Promise<CleanupStats> {
+		return withCleanupOperationGuard(() => this.runCleanupGuarded());
+	}
+
+	private async runCleanupGuarded(): Promise<CleanupStats> {
 		// In-flight guard: prevent overlapping cleanup runs
 		if (this.isRunning) {
 			this.logger.debug("Trash backup cleanup already running, skipping");
@@ -129,6 +134,33 @@ export class TrashBackupCleanupService {
 				expiresAt: {
 					not: null,
 					lte: new Date(),
+				},
+				// Legacy snapshots may still have an expiry timestamp even while a
+				// rollback or undeploy is retryable. Keep them until coordination is terminal.
+				syncHistory: {
+					none: {
+						rolledBack: false,
+						OR: [
+							{
+								rollbackStatus: { not: null },
+								NOT: { rollbackStatus: "COMPLETED" },
+							},
+							{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+						],
+					},
+				},
+				deploymentHistory: {
+					none: {
+						rolledBack: false,
+						OR: [
+							{
+								undeployStatus: { not: null },
+								NOT: { undeployStatus: "COMPLETED" },
+							},
+							{ status: "PARTIAL_UNDEPLOY", undeployStatus: null },
+							{ status: "IN_PROGRESS" },
+						],
+					},
 				},
 			},
 		});

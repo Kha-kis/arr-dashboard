@@ -131,6 +131,8 @@ function createPrismaStub() {
 			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			createMany: vi.fn().mockResolvedValue({ count: 0 }),
 		},
+		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 	};
 }
 

@@ -50,7 +50,10 @@ import {
 	recordConfiguredRunAudit,
 	runCleanupAuditBestEffort,
 } from "./cleanup-audit.js";
-import { withCleanupOperationGuard } from "./cleanup-maintenance-gate.js";
+import {
+	withCleanupOperationGuard,
+	withExclusiveCleanupOperationGuard,
+} from "./cleanup-maintenance-gate.js";
 import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
@@ -275,9 +278,16 @@ async function withCleanupMutationLease<T>(
 	userId: string,
 	mutate: () => Promise<T>,
 	conflictError: () => Error,
-	options: { configId?: string; leaseRowMayBeDeleted?: boolean } = {},
+	options: {
+		configId?: string;
+		leaseRowMayBeDeleted?: boolean;
+		exclusiveOperation?: boolean;
+	} = {},
 ): Promise<T> {
-	return await withCleanupOperationGuard(async () => {
+	const runWithOperationGuard = options.exclusiveOperation
+		? withExclusiveCleanupOperationGuard
+		: withCleanupOperationGuard;
+	return await runWithOperationGuard(async () => {
 		const { prisma, log } = deps;
 		// Ensure the per-user coordination row exists when the caller does not
 		// already have its ID. This closes the initialization race between a
@@ -327,6 +337,22 @@ export async function withCleanupTopologyMutationLease<T>(
 		mutate,
 		() => new CleanupTopologyMutationConflictError(),
 		options,
+	);
+}
+
+/** Serialize destructive ARR service deletion against every cleanup/TRaSH mutation. */
+export async function withExclusiveCleanupTopologyMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: () => Promise<T>,
+	options: { leaseRowMayBeDeleted?: boolean } = {},
+): Promise<T> {
+	return await withCleanupMutationLease(
+		deps,
+		userId,
+		mutate,
+		() => new CleanupTopologyMutationConflictError(),
+		{ ...options, exclusiveOperation: true },
 	);
 }
 

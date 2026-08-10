@@ -2,7 +2,10 @@ import { ALL_SERVICES, arrServiceTypeSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
-import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
+import {
+	withCleanupTopologyMutationLease,
+	withExclusiveCleanupTopologyMutationLease,
+} from "../lib/library-cleanup/cleanup-executor.js";
 import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
 import type { ServiceInstance, ServiceType } from "../lib/prisma.js";
 import { withQuiObservationTopologyGuard } from "../lib/qui/observation-topology-guard.js";
@@ -20,6 +23,7 @@ import {
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
+import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { validateRequest } from "../lib/utils/validate.js";
 import { invalidatePulseCache } from "./pulse.js";
 
@@ -407,12 +411,17 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const { id } = validateRequest(idParams, request.params);
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
-		return await withCleanupTopologyMutationLease(
+		return await withExclusiveCleanupTopologyMutationLease(
 			{ prisma: app.prisma, log: request.log },
 			userId,
 			async () => {
-				const existing = await requireInstance(app, userId, id);
-				if (existing.service === "QUI") {
+				const current = await requireInstance(app, userId, id);
+				if (current.service === "RADARR" || current.service === "SONARR") {
+					// Re-check after exclusive ownership is established. This is the
+					// execution-time authority check before the cascading delete.
+					await assertNoActiveTrashRecoveryForInstance(app.prisma, userId, id);
+				}
+				if (current.service === "QUI") {
 					await withQuiObservationTopologyGuard(userId, async () => {
 						await app.prisma.$transaction(async (tx) => {
 							await tx.serviceInstance.delete({ where: { id, userId } });
