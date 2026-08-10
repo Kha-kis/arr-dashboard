@@ -369,7 +369,9 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 		}
 	}
 
-	validateCoordinationEvidence(dataRecord);
+	if (b.version === BACKUP_VERSION) {
+		validateCoordinationEvidence(dataRecord);
+	}
 
 	// Validate required secret fields
 	if (

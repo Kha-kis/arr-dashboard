@@ -430,6 +430,57 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			});
 		}
 
+		const rollbackAttemptedAt = new Date();
+		const claim = await app.prisma.trashSyncHistory.updateMany({
+			where: {
+				id: syncId,
+				userId,
+				rolledBack: false,
+				OR: [{ rollbackStatus: null }, { rollbackStatus: "PARTIAL" }],
+			},
+			data: {
+				rollbackStatus: "IN_PROGRESS",
+				rollbackAttemptedAt,
+				rollbackProgress: JSON.stringify([
+					{
+						step: "rollback",
+						status: "IN_PROGRESS",
+						attemptedAt: rollbackAttemptedAt.toISOString(),
+					},
+				]),
+			},
+		});
+
+		if (claim.count !== 1) {
+			return reply.status(409).send({
+				error: "ROLLBACK_IN_PROGRESS",
+				message: "A rollback is already in progress for this sync operation",
+			});
+		}
+
+		const persistPartialRollback = async (
+			errors: string[],
+			progress: Record<string, unknown> = {},
+		) => {
+			const result = await app.prisma.trashSyncHistory.updateMany({
+				where: {
+					id: syncId,
+					userId,
+					rollbackStatus: "IN_PROGRESS",
+					rollbackAttemptedAt,
+				},
+				data: {
+					rollbackStatus: "PARTIAL",
+					rollbackProgress: JSON.stringify([
+						{ step: "rollback", status: "PARTIAL", errors, ...progress },
+					]),
+				},
+			});
+			if (result.count !== 1) {
+				throw new Error("Rollback recovery state changed before progress could be persisted");
+			}
+		};
+
 		// Start metrics tracking
 		const metrics = getSyncMetrics();
 		const completeMetrics = metrics.startOperation("rollback");
@@ -463,6 +514,9 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 				}
 			} catch (error) {
 				request.log.warn({ syncId, err: error }, "Failed to parse backup data for rollback");
+				await persistPartialRollback(["Backup data is corrupted or invalid"], {
+					step: "parse-backup",
+				});
 				return reply.status(400).send({
 					error: "INVALID_BACKUP",
 					message: "Backup data is corrupted or invalid",
@@ -590,14 +644,37 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			// Only mark as fully rolled back when all operations succeeded.
 			// Partial failures leave rolledBack=false so the user can retry.
 			if (failedCount === 0) {
-				await app.prisma.trashSyncHistory.update({
-					where: { id: syncId },
+				const completedState = await app.prisma.trashSyncHistory.updateMany({
+					where: {
+						id: syncId,
+						userId,
+						rollbackStatus: "IN_PROGRESS",
+						rollbackAttemptedAt,
+					},
 					data: {
 						rolledBack: true,
 						rolledBackAt: new Date(),
+						rollbackStatus: "COMPLETED",
+						rollbackProgress: JSON.stringify([
+							{
+								step: "rollback",
+								status: "COMPLETED",
+								restoredCount,
+								deletedCount,
+								failedCount,
+							},
+						]),
 					},
 				});
+				if (completedState.count !== 1) {
+					throw new Error("Rollback completion state could not be persisted");
+				}
 			} else {
+				await persistPartialRollback(errors, {
+					restoredCount,
+					deletedCount,
+					failedCount,
+				});
 				request.log.warn(
 					{ syncId, failedCount, errors },
 					"Partial rollback — not marking as rolled back to allow retry",
@@ -637,6 +714,14 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 		} catch (error) {
 			// Specialized catch: records failure metrics before propagating
 			const errorMessage = getErrorMessage(error, "Rollback failed");
+			try {
+				await persistPartialRollback([errorMessage]);
+			} catch (stateError) {
+				request.log.error(
+					{ err: stateError, syncId, rollbackAttemptedAt },
+					"Failed to persist rollback failure state",
+				);
+			}
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
 

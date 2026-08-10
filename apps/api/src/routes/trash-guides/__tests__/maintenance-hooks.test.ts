@@ -20,10 +20,12 @@ describe.sequential("TRaSH Guides maintenance hooks", () => {
 		registerTrashGuidesMaintenanceHooks(app);
 		const started = deferred();
 		const finish = deferred();
-		app.post("/mutate", async () => {
-			started.resolve();
-			await finish.promise;
-			return { ok: true };
+		await app.register(async (child) => {
+			child.post("/mutate", async () => {
+				started.resolve();
+				await finish.promise;
+				return { ok: true };
+			});
 		});
 		await app.ready();
 
@@ -53,6 +55,44 @@ describe.sequential("TRaSH Guides maintenance hooks", () => {
 
 		finish.resolve();
 		await restore;
+		await app.close();
+	});
+
+	it("does not release mutation ownership merely because the request aborts", async () => {
+		const app = Fastify({ logger: false });
+		registerTrashGuidesMaintenanceHooks(app);
+		const started = deferred();
+		const finish = deferred();
+		const aborted = deferred();
+		app.addHook("onRequestAbort", async (_request) => {
+			aborted.resolve();
+		});
+		app.post("/mutate", async () => {
+			started.resolve();
+			await finish.promise;
+			return { ok: true };
+		});
+		await app.listen({ host: "127.0.0.1", port: 0 });
+
+		const address = app.server.address();
+		if (!address || typeof address === "string") throw new Error("Expected TCP address");
+		const controller = new AbortController();
+		const request = fetch(`http://127.0.0.1:${address.port}/mutate`, {
+			method: "POST",
+			signal: controller.signal,
+		}).catch(() => undefined);
+		await started.promise;
+		controller.abort();
+		await request;
+		await aborted.promise;
+
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		finish.resolve();
+		await new Promise((resolve) => setTimeout(resolve, 10));
+		await expect(withCleanupMaintenanceGuard(async () => "restored")).resolves.toBe("restored");
 		await app.close();
 	});
 });

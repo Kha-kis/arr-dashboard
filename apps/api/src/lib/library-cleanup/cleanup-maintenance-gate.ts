@@ -9,6 +9,7 @@
 
 let activeCleanupOperations = 0;
 let maintenanceActive = false;
+let exclusiveCleanupOperationActive = false;
 
 export class CleanupMaintenanceConflictError extends Error {
 	readonly statusCode = 409;
@@ -21,9 +22,9 @@ export class CleanupMaintenanceConflictError extends Error {
 
 /** Acquire a shared operation guard that remains active until the returned release is called. */
 export function acquireCleanupOperationGuard(): () => void {
-	if (maintenanceActive) {
+	if (maintenanceActive || exclusiveCleanupOperationActive) {
 		throw new CleanupMaintenanceConflictError(
-			"Library cleanup and service changes are unavailable while database maintenance is running",
+			"Cleanup-sensitive changes are unavailable during database maintenance or ARR service deletion",
 		);
 	}
 	activeCleanupOperations += 1;
@@ -33,6 +34,26 @@ export function acquireCleanupOperationGuard(): () => void {
 		released = true;
 		activeCleanupOperations -= 1;
 	};
+}
+
+/**
+ * Run a destructive topology mutation only when every cleanup-sensitive
+ * operation has settled, and prevent new operations from starting meanwhile.
+ */
+export async function withExclusiveCleanupOperationGuard<T>(
+	operation: () => Promise<T>,
+): Promise<T> {
+	if (maintenanceActive || exclusiveCleanupOperationActive || activeCleanupOperations > 0) {
+		throw new CleanupMaintenanceConflictError(
+			"This service cannot be deleted while database maintenance, TRaSH, or library cleanup work is active",
+		);
+	}
+	exclusiveCleanupOperationActive = true;
+	try {
+		return await operation();
+	} finally {
+		exclusiveCleanupOperationActive = false;
+	}
 }
 
 export async function withCleanupOperationGuard<T>(operation: () => Promise<T>): Promise<T> {
@@ -48,7 +69,7 @@ export async function withCleanupMaintenanceGuard<T>(
 	maintenance: () => Promise<T>,
 	options: { holdAfterSuccess?: boolean } = {},
 ): Promise<T> {
-	if (maintenanceActive || activeCleanupOperations > 0) {
+	if (maintenanceActive || exclusiveCleanupOperationActive || activeCleanupOperations > 0) {
 		throw new CleanupMaintenanceConflictError();
 	}
 	maintenanceActive = true;

@@ -4,6 +4,7 @@ import {
 	CleanupMaintenanceConflictError,
 	withCleanupMaintenanceGuard,
 	withCleanupOperationGuard,
+	withExclusiveCleanupOperationGuard,
 } from "../cleanup-maintenance-gate.js";
 
 describe.sequential("cleanup maintenance gate", () => {
@@ -59,5 +60,41 @@ describe.sequential("cleanup maintenance gate", () => {
 		release();
 		release();
 		await expect(withCleanupMaintenanceGuard(async () => "restored")).resolves.toBe("restored");
+	});
+
+	it("makes destructive topology changes exclusive with cleanup-sensitive operations", async () => {
+		const releaseOperation = acquireCleanupOperationGuard();
+
+		await expect(withExclusiveCleanupOperationGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		releaseOperation();
+		let finishExclusive!: () => void;
+		const exclusiveBlocked = new Promise<void>((resolve) => {
+			finishExclusive = resolve;
+		});
+		const exclusive = withExclusiveCleanupOperationGuard(() => exclusiveBlocked);
+
+		await expect(withCleanupOperationGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		finishExclusive();
+		await exclusive;
+		await expect(withCleanupOperationGuard(async () => "available")).resolves.toBe("available");
+	});
+
+	it("releases destructive topology ownership after failure", async () => {
+		await expect(
+			withExclusiveCleanupOperationGuard(async () => {
+				throw new Error("delete failed");
+			}),
+		).rejects.toThrow("delete failed");
+
+		await expect(withCleanupOperationGuard(async () => "available")).resolves.toBe("available");
 	});
 });

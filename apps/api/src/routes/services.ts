@@ -2,13 +2,15 @@ import { ALL_SERVICES, arrServiceTypeSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
-import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
+import {
+	withCleanupTopologyMutationLease,
+	withExclusiveCleanupTopologyMutationLease,
+} from "../lib/library-cleanup/cleanup-executor.js";
 import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
 import type { ServiceInstance, ServiceType } from "../lib/prisma.js";
 import { withQuiObservationTopologyGuard } from "../lib/qui/observation-topology-guard.js";
 import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
-import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import {
 	decryptHttpAuthCredentials,
 	encryptHttpAuthCredentials,
@@ -21,6 +23,7 @@ import {
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
+import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { validateRequest } from "../lib/utils/validate.js";
 import { invalidatePulseCache } from "./pulse.js";
 
@@ -407,34 +410,37 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	app.delete("/services/:id", async (request, reply) => {
 		const { id } = validateRequest(idParams, request.params);
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const existing = await requireInstance(app, userId, id);
+		const withTopologyLease =
+			existing.service === "RADARR" || existing.service === "SONARR"
+				? withExclusiveCleanupTopologyMutationLease
+				: withCleanupTopologyMutationLease;
 
-		return await withCleanupTopologyMutationLease(
-			{ prisma: app.prisma, log: request.log },
-			userId,
-			async () => {
-				const existing = await requireInstance(app, userId, id);
-				if (existing.service === "RADARR" || existing.service === "SONARR") {
-					await assertNoActiveTrashRecoveryForInstance(app.prisma, userId, id);
-				}
-				if (existing.service === "QUI") {
-					await withQuiObservationTopologyGuard(userId, async () => {
-						await app.prisma.$transaction(async (tx) => {
-							await tx.serviceInstance.delete({ where: { id, userId } });
-							await clearDurableQuiObservations(tx, userId);
-						});
-						invalidateTorrentListCache(id);
-						clearFileIdIndexCache(id);
+		return await withTopologyLease({ prisma: app.prisma, log: request.log }, userId, async () => {
+			const current = await requireInstance(app, userId, id);
+			if (current.service === "RADARR" || current.service === "SONARR") {
+				// Re-check after exclusive ownership is established. This is the
+				// execution-time authority check before the cascading delete.
+				await assertNoActiveTrashRecoveryForInstance(app.prisma, userId, id);
+			}
+			if (current.service === "QUI") {
+				await withQuiObservationTopologyGuard(userId, async () => {
+					await app.prisma.$transaction(async (tx) => {
+						await tx.serviceInstance.delete({ where: { id, userId } });
+						await clearDurableQuiObservations(tx, userId);
 					});
-				} else {
-					await app.prisma.serviceInstance.delete({ where: { id, userId } });
 					invalidateTorrentListCache(id);
 					clearFileIdIndexCache(id);
-				}
+				});
+			} else {
+				await app.prisma.serviceInstance.delete({ where: { id, userId } });
+				invalidateTorrentListCache(id);
+				clearFileIdIndexCache(id);
+			}
 
-				request.log.info({ instanceId: id }, "Service instance deleted");
-				return reply.status(204).send();
-			},
-		);
+			request.log.info({ instanceId: id }, "Service instance deleted");
+			return reply.status(204).send();
+		});
 	});
 
 	app.get("/tags", async (_request, reply) => {

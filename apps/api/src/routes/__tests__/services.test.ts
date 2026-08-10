@@ -63,6 +63,7 @@ vi.mock("../../lib/services/service-formatter.js", () => ({
 
 import Fastify from "fastify";
 import { InstanceNotFoundError } from "../../lib/errors.js";
+import { acquireCleanupOperationGuard } from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { registerServiceRoutes } from "../services.js";
 import {
 	createInjectAuthenticated,
@@ -515,6 +516,18 @@ describe("DELETE /services/:id", () => {
 		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
 	});
 
+	it("revalidates ownership after acquiring deletion authority", async () => {
+		mockRequireInstance
+			.mockResolvedValueOnce(makeInstance())
+			.mockRejectedValueOnce(new InstanceNotFoundError("inst-1"));
+
+		const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+		expect(res.statusCode).toBe(404);
+		expect(mockRequireInstance).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
 	it("refuses to erase an instance with active TRaSH recovery evidence", async () => {
 		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValueOnce([
 			{
@@ -530,6 +543,18 @@ describe("DELETE /services/:id", () => {
 		expect(res.statusCode).toBe(409);
 		expect(JSON.parse(res.payload).message).toContain("recovery");
 		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
+	it("refuses to race an ARR deletion with an active TRaSH mutation", async () => {
+		const releaseMutation = acquireCleanupOperationGuard();
+		try {
+			const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+			expect(res.statusCode).toBe(409);
+			expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+		} finally {
+			releaseMutation();
+		}
 	});
 });
 

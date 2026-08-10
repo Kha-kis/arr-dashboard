@@ -304,6 +304,42 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		expect(() => validateBackup(currentBackup)).not.toThrow();
 	});
 
+	it("applies coordination evidence requirements according to backup version", () => {
+		const legacyBackup = {
+			version: "1.0",
+			appVersion: "2.23.0",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashTemplates: [{ id: "template-1", userId: "user-1" }],
+				templateDeploymentHistory: [
+					{
+						id: "legacy-partial-undeploy",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						status: "PARTIAL_UNDEPLOY",
+					},
+				],
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(legacyBackup)).not.toThrow();
+		expect(() => validateBackup({ ...legacyBackup, version: "1.1" })).toThrow(
+			"missing backup snapshot reference",
+		);
+	});
+
 	it.each(["1.0", "1.1"])(
 		"accepts a valid %s payload with authoritative coordination ownership",
 		(version) => {
