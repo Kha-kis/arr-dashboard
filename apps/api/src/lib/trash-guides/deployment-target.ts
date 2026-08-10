@@ -14,6 +14,17 @@ export interface DeploymentProfileMapping {
 	connectionStateToken: string | null;
 }
 
+interface DeploymentMappingAuthorityInput {
+	id?: string;
+	instanceId?: string;
+	qualityProfileId: number;
+	qualityProfileName: string;
+	syncStrategy?: string | null;
+	managedCustomFormatsCaptured?: boolean | null;
+	managedCustomFormats?: string | null;
+	updatedAt?: Date | string | null;
+}
+
 export interface DeploymentServiceInstance {
 	id: string;
 	service: string;
@@ -343,6 +354,56 @@ export function assertNoLegacyDeploymentConnectionMappings(
 	}
 }
 
+function deploymentMappingAuthorityValue(mapping: DeploymentMappingAuthorityInput) {
+	return {
+		qualityProfileId: mapping.qualityProfileId,
+		qualityProfileName: mapping.qualityProfileName,
+		syncStrategy: mapping.syncStrategy ?? null,
+		managedCustomFormatsCaptured: mapping.managedCustomFormatsCaptured ?? false,
+		managedCustomFormats: mapping.managedCustomFormats ?? null,
+	};
+}
+
+/** Fail closed when aliases disagree about the resources one template owns. */
+export function assertEquivalentDeploymentMappingAuthority(
+	mappings: DeploymentMappingAuthorityInput[],
+): void {
+	const expected = mappings[0];
+	if (!expected) return;
+	const expectedAuthority = JSON.stringify(stableValue(deploymentMappingAuthorityValue(expected)));
+	if (
+		mappings.some(
+			(mapping) =>
+				JSON.stringify(stableValue(deploymentMappingAuthorityValue(mapping))) !== expectedAuthority,
+		)
+	) {
+		throw new ConflictError(
+			"Equivalent ARR aliases have conflicting deployment authority. Reconcile the quality profile, sync strategy, and managed Custom Format snapshot before continuing.",
+		);
+	}
+}
+
+/** Canonical mapping state included in preview tokens to detect replacement or revocation. */
+export function createDeploymentMappingAuthorityState(
+	mappings: DeploymentMappingAuthorityInput[],
+): unknown[] {
+	return mappings
+		.map((mapping) => ({
+			id: mapping.id ?? null,
+			instanceId: mapping.instanceId ?? null,
+			...deploymentMappingAuthorityValue(mapping),
+			updatedAt:
+				mapping.updatedAt instanceof Date
+					? mapping.updatedAt.toISOString()
+					: (mapping.updatedAt ?? null),
+		}))
+		.sort((left, right) =>
+			`${left.instanceId ?? ""}:${left.id ?? ""}`.localeCompare(
+				`${right.instanceId ?? ""}:${right.id ?? ""}`,
+			),
+		);
+}
+
 /** Create an opaque fingerprint for the exact upstream state shown in preview. */
 export function createDeploymentStateToken(args: {
 	template: {
@@ -362,6 +423,7 @@ export function createDeploymentStateToken(args: {
 	customFormats: unknown[];
 	namingConfig?: unknown;
 	namingPayload?: unknown;
+	mappingAuthority?: unknown;
 	savedScoreOverrides?: unknown;
 	orphanedFormatScoreChanges?: unknown;
 }): string {
@@ -380,6 +442,7 @@ export function createDeploymentStateToken(args: {
 		customFormats: args.customFormats,
 		namingConfig: args.namingConfig ?? null,
 		namingPayload: args.namingPayload ?? null,
+		mappingAuthority: args.mappingAuthority ?? null,
 		savedScoreOverrides: args.savedScoreOverrides ?? null,
 		orphanedFormatScoreChanges: args.orphanedFormatScoreChanges ?? null,
 	});

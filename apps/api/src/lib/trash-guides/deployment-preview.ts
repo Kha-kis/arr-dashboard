@@ -33,8 +33,10 @@ import {
 import { prepareNamingDeployment } from "./deployment-naming-state.js";
 import {
 	assertDeploymentTargetOwnership,
+	assertEquivalentDeploymentMappingAuthority,
 	createDeploymentConnectionBindingCandidates,
 	createDeploymentConnectionStateToken,
+	createDeploymentMappingAuthorityState,
 	createDeploymentStateToken,
 	getEquivalentServiceInstanceIds,
 	isCurrentDeploymentConnectionMapping,
@@ -532,6 +534,7 @@ export class DeploymentPreviewService {
 				"This template has conflicting quality-profile mappings for duplicate records of the same ARR instance. Unlink the stale deployment before continuing.",
 			);
 		}
+		assertEquivalentDeploymentMappingAuthority(templateMappings);
 		const qualityProfileMapping =
 			templateMappings.find((mapping) => mapping.instanceId === instanceId) ?? templateMappings[0];
 		const selectedMappingIsLegacy = Boolean(
@@ -860,6 +863,7 @@ export class DeploymentPreviewService {
 				customFormats: instanceCustomFormats,
 				namingConfig: namingState?.currentConfig,
 				namingPayload: namingState?.mergedConfig,
+				mappingAuthority: createDeploymentMappingAuthorityState(templateMappings),
 				savedScoreOverrides: [...savedScoreOverrides.entries()].sort(
 					([left], [right]) => left - right,
 				),

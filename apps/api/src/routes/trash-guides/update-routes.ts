@@ -156,6 +156,25 @@ export async function registerUpdateRoutes(app: FastifyInstance, _opts: FastifyP
 	app.post("/process-auto", async (request, reply) => {
 		const { templateUpdater } = await getServices(request.currentUser!.id);
 		const result = await templateUpdater.processAutoUpdates(request.currentUser!.id);
+		for (const outcome of result.uncertainDeployments) {
+			await app.notificationService.notify(
+				{
+					eventType: "TRASH_DEPLOY_UNCERTAIN",
+					title: `Automatic TRaSH deployment needs review on ${outcome.instanceLabel}`,
+					body: outcome.errors.join("; "),
+					url: "/trash-guides",
+					metadata: {
+						instanceId: outcome.instanceId,
+						endpointKey: outcome.endpointKey,
+						reason: "uncertain_result",
+					},
+				},
+				{
+					userId: request.currentUser!.id,
+					fallbackEventTypes: ["TRASH_SYNC_ERROR"],
+				},
+			);
+		}
 
 		return reply.send({
 			success: true,
@@ -164,6 +183,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, _opts: FastifyP
 					processed: result.processed,
 					successful: result.successful,
 					failed: result.failed,
+					uncertain: result.uncertain,
 				},
 				results: result.results,
 			},

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { DeploymentPreviewService } from "../deployment-preview.js";
+import { createDeploymentConnectionStateToken } from "../deployment-target.js";
 
 const trashId = "a1b2c3d4-e5f6-47a8-9b0c-1d2e3f4a5b6c";
 const instance = {
@@ -183,5 +184,38 @@ describe("deployment preview authority", () => {
 				"user-1",
 			),
 		).rejects.toThrow("older connection");
+	});
+
+	it("fails closed when equivalent aliases disagree about their managed-format snapshot", async () => {
+		const alias = { ...instance, id: "instance-alias" };
+		const sharedMapping = {
+			templateId: "template-1",
+			qualityProfileId: 4,
+			qualityProfileName: "Any",
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			syncStrategy: "auto",
+			managedCustomFormatsCaptured: true,
+		};
+
+		await expect(
+			createService({
+				instances: [instance, alias],
+				mappings: [
+					{
+						...sharedMapping,
+						id: "mapping-primary",
+						instanceId: instance.id,
+						managedCustomFormats: '[{"resourceId":42}]',
+					},
+					{
+						...sharedMapping,
+						id: "mapping-alias",
+						instanceId: alias.id,
+						managedCustomFormats: '[{"resourceId":43}]',
+					},
+				],
+			}).generatePreview("template-1", "instance-1", "user-1"),
+		).rejects.toThrow("conflicting deployment authority");
 	});
 });

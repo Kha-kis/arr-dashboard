@@ -295,6 +295,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			},
 			target: { profile: undefined, profileName: "Any", matchedBy: "new" },
 			customFormats: [{ id: 42, name: "Managed CF" }],
+			mappingAuthority: [],
 			savedScoreOverrides: [],
 			orphanedFormatScoreChanges: [],
 		});

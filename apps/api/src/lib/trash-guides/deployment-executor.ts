@@ -54,9 +54,11 @@ import {
 import { assertNoPendingDeploymentOperation } from "./deployment-operation-gate.js";
 import {
 	assertDeploymentTargetOwnership,
+	assertEquivalentDeploymentMappingAuthority,
 	createDeploymentConnectionBindingCandidates,
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
+	createDeploymentMappingAuthorityState,
 	createDeploymentStateToken,
 	createLegacyDeploymentConnectionBindings,
 	createQualityProfileStateToken,
@@ -1755,6 +1757,7 @@ export class DeploymentExecutorService {
 					"This template has conflicting quality-profile mappings for duplicate records of the same ARR instance. Unlink the stale deployment before continuing.",
 				);
 			}
+			assertEquivalentDeploymentMappingAuthority(templateMappings);
 			const qualityProfileMapping =
 				templateMappings.find((mapping) => mapping.instanceId === instanceId) ??
 				templateMappings[0];
@@ -1893,6 +1896,7 @@ export class DeploymentExecutorService {
 					customFormats: existingCFs,
 					namingConfig: namingState?.currentConfig,
 					namingPayload: namingState?.mergedConfig,
+					mappingAuthority: createDeploymentMappingAuthorityState(templateMappings),
 					savedScoreOverrides: [...instanceOverrideScores.entries()].sort(
 						([left], [right]) => left - right,
 					),

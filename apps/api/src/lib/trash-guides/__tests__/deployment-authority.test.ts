@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DeploymentExecutorService } from "../deployment-executor.js";
 import {
 	createDeploymentConnectionStateToken,
+	createDeploymentMappingAuthorityState,
 	createDeploymentStateToken,
 } from "../deployment-target.js";
 
@@ -43,6 +44,29 @@ function currentMapping(overrides: Record<string, unknown> = {}) {
 		managedCustomFormatsCaptured: true,
 		...overrides,
 	};
+}
+
+function reviewedExecutionToken(mappingState: ReturnType<typeof currentMapping>) {
+	return createDeploymentStateToken({
+		template: {
+			id: template.id,
+			name: template.name,
+			configData: template.configData,
+			instanceOverrides: template.instanceOverrides,
+			sourceQualityProfileName: template.sourceQualityProfileName,
+		},
+		instanceId: instance.id,
+		connection: {
+			service: instance.service,
+			baseUrl: instance.baseUrl,
+			credentialIdentity: "encrypted-key:iv::",
+		},
+		target: { profile, profileName: "Any", matchedBy: "mapping_id" },
+		customFormats: [],
+		mappingAuthority: createDeploymentMappingAuthorityState([mappingState]),
+		savedScoreOverrides: [],
+		orphanedFormatScoreChanges: [],
+	});
 }
 
 function createFixture(
@@ -127,6 +151,27 @@ describe("deployment execution authority", () => {
 		expect(createBackup).not.toHaveBeenCalled();
 	});
 
+	it("invalidates a reviewed token when deployment authority changes", async () => {
+		const reviewedMapping = currentMapping({ updatedAt: new Date("2026-08-09T10:00:00.000Z") });
+		const changedMapping = currentMapping({
+			updatedAt: new Date("2026-08-09T10:01:00.000Z"),
+			syncStrategy: "notify",
+		});
+		const { executor, createBackup } = createFixture([changedMapping]);
+
+		await expect(
+			executor.deploySingleInstance(
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				reviewedExecutionToken(reviewedMapping),
+			),
+		).rejects.toThrow("changed after this preview");
+		expect(createBackup).not.toHaveBeenCalled();
+	});
+
 	it("rejects ambiguous Custom Format identities before backup or upstream mutation", async () => {
 		const duplicateTrashId = "a1b2c3d4-e5f6-47a8-9b0c-1d2e3f4a5b6c";
 		const { executor, createBackup } = createFixture(
@@ -157,25 +202,7 @@ describe("deployment execution authority", () => {
 			syncStrategy: "notify",
 		});
 		const { executor, createBackup, transaction } = createFixture([legacyMapping]);
-		const executionToken = createDeploymentStateToken({
-			template: {
-				id: template.id,
-				name: template.name,
-				configData: template.configData,
-				instanceOverrides: template.instanceOverrides,
-				sourceQualityProfileName: template.sourceQualityProfileName,
-			},
-			instanceId: instance.id,
-			connection: {
-				service: instance.service,
-				baseUrl: instance.baseUrl,
-				credentialIdentity: "encrypted-key:iv::",
-			},
-			target: { profile, profileName: "Any", matchedBy: "mapping_id" },
-			customFormats: [],
-			savedScoreOverrides: [],
-			orphanedFormatScoreChanges: [],
-		});
+		const executionToken = reviewedExecutionToken(legacyMapping);
 
 		await expect(
 			executor.deploySingleInstance(
@@ -207,7 +234,7 @@ describe("deployment execution authority", () => {
 
 		await expect(
 			executor.deploySingleInstanceFromAutomation("template-1", "instance-1", "user-1"),
-		).rejects.toThrow(/Automatic deployment|older connection/);
+		).rejects.toThrow(/Automatic deployment|older connection|conflicting deployment authority/);
 		expect(createBackup).not.toHaveBeenCalled();
 	});
 

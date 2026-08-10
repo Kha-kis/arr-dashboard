@@ -30,13 +30,19 @@ function mapping(target: ReturnType<typeof instance>, overrides: Record<string, 
 		connectionGeneration: target.connectionGeneration,
 		connectionStateToken: createDeploymentConnectionStateToken(target),
 		instance: target,
+		managedCustomFormatsCaptured: true,
+		managedCustomFormats: "[]",
 		...overrides,
 	};
 }
 
 function createUpdater(
 	mappings: Array<ReturnType<typeof mapping>>,
-	deploymentResult: { success: boolean; errors: string[] } = { success: true, errors: [] },
+	deploymentResult: {
+		success: boolean;
+		errors: string[];
+		status?: "SUCCESS" | "FAILED" | "UNCERTAIN";
+	} = { success: true, errors: [], status: "SUCCESS" },
 ) {
 	const deploySingleInstanceFromAutomation = vi.fn().mockResolvedValue({
 		...deploymentResult,
@@ -65,6 +71,7 @@ function createUpdater(
 				instanceId: string;
 				instanceLabel: string;
 				success: boolean;
+				status: "SUCCESS" | "FAILED" | "UNCERTAIN";
 				errors: string[];
 			}>
 		>;
@@ -153,6 +160,26 @@ describe("TemplateUpdater automation authority", () => {
 		]);
 	});
 
+	it("blocks equivalent aliases with different managed-format snapshots", async () => {
+		const primary = instance("a-primary", "http://radarr/");
+		const alias = instance("z-alias", "HTTP://RADARR:80");
+		const { privateUpdater, deploySingleInstanceFromAutomation } = createUpdater([
+			mapping(primary, { managedCustomFormats: '[{"resourceId":42}]' }),
+			mapping(alias, { managedCustomFormats: '[{"resourceId":43}]' }),
+		]);
+
+		const outcomes = await privateUpdater.deployToMappedInstances(template.id);
+
+		expect(deploySingleInstanceFromAutomation).not.toHaveBeenCalled();
+		expect(outcomes).toEqual([
+			expect.objectContaining({
+				instanceId: primary.id,
+				status: "FAILED",
+				errors: [expect.stringContaining("conflicting deployment authority")],
+			}),
+		]);
+	});
+
 	it("reports a resolved executor failure as an endpoint failure", async () => {
 		const target = instance("instance-1", "http://radarr:7878");
 		const { privateUpdater } = createUpdater([mapping(target)], {
@@ -231,6 +258,116 @@ describe("TemplateUpdater automation authority", () => {
 				success: false,
 				errors: [expect.stringContaining("ARR rejected the deployment")],
 			}),
+		]);
+	});
+
+	it("preserves an uncertain auto-deployment as needing review", async () => {
+		const target = instance("instance-1", "http://radarr:7878");
+		const { updater } = createUpdater([mapping(target)], {
+			success: false,
+			status: "UNCERTAIN",
+			errors: ["ARR write could not be verified"],
+		});
+		vi.spyOn(updater, "checkForUpdates").mockResolvedValue({
+			templatesWithUpdates: [
+				{
+					templateId: template.id,
+					templateName: template.name,
+					currentCommit: "old",
+					latestCommit: "new",
+					hasUserModifications: false,
+					autoSyncInstanceCount: 1,
+					canAutoSync: true,
+					serviceType: "RADARR",
+				},
+			],
+			latestCommit: {
+				commitHash: "new",
+				commitDate: "2026-08-09",
+				commitMessage: "update",
+				commitUrl: "https://example.com/commit/new",
+			},
+			totalTemplates: 1,
+			outdatedTemplates: 1,
+		});
+		vi.spyOn(updater, "syncTemplate").mockResolvedValue({
+			success: true,
+			templateId: template.id,
+			previousCommit: "old",
+			newCommit: "new",
+		});
+
+		const result = await updater.processAutoUpdates(template.userId);
+
+		expect(result).toMatchObject({ processed: 1, successful: 0, failed: 0, uncertain: 1 });
+		expect(result.results).toEqual([
+			expect.objectContaining({
+				templateId: template.id,
+				success: false,
+				errors: [expect.stringContaining("needs review")],
+			}),
+		]);
+	});
+
+	it("preserves uncertainty when another endpoint also fails", async () => {
+		const target = instance("instance-1", "http://radarr:7878");
+		const { updater, privateUpdater } = createUpdater([mapping(target)]);
+		vi.spyOn(privateUpdater, "deployToMappedInstances").mockResolvedValue([
+			{
+				endpointKey: "failed-endpoint",
+				instanceId: "failed-instance",
+				instanceLabel: "Failed Radarr",
+				success: false,
+				status: "FAILED",
+				errors: ["ARR rejected the deployment"],
+			},
+			{
+				endpointKey: "uncertain-endpoint",
+				instanceId: "uncertain-instance",
+				instanceLabel: "Uncertain Radarr",
+				success: false,
+				status: "UNCERTAIN",
+				errors: ["ARR write could not be verified"],
+			},
+		]);
+		vi.spyOn(updater, "checkForUpdates").mockResolvedValue({
+			templatesWithUpdates: [
+				{
+					templateId: template.id,
+					templateName: template.name,
+					currentCommit: "old",
+					latestCommit: "new",
+					hasUserModifications: false,
+					autoSyncInstanceCount: 2,
+					canAutoSync: true,
+					serviceType: "RADARR",
+				},
+			],
+			latestCommit: {
+				commitHash: "new",
+				commitDate: "2026-08-09",
+				commitMessage: "update",
+				commitUrl: "https://example.com/commit/new",
+			},
+			totalTemplates: 1,
+			outdatedTemplates: 1,
+		});
+		vi.spyOn(updater, "syncTemplate").mockResolvedValue({
+			success: true,
+			templateId: template.id,
+			previousCommit: "old",
+			newCommit: "new",
+		});
+
+		const result = await updater.processAutoUpdates(template.userId);
+
+		expect(result).toMatchObject({ processed: 1, successful: 0, failed: 1, uncertain: 1 });
+		expect(result.uncertainDeployments).toEqual([
+			expect.objectContaining({ instanceId: "uncertain-instance", status: "UNCERTAIN" }),
+		]);
+		expect(result.results[0]?.errors).toEqual([
+			expect.stringContaining("ARR rejected"),
+			expect.stringContaining("could not be verified"),
 		]);
 	});
 

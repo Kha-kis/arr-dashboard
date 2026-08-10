@@ -27,7 +27,10 @@ import { TemplateNotFoundError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
-import { createDeploymentConnectionBindingCandidates } from "./deployment-target.js";
+import {
+	assertEquivalentDeploymentMappingAuthority,
+	createDeploymentConnectionBindingCandidates,
+} from "./deployment-target.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
 import { trashCustomFormatGroupSchema, trashCustomFormatSchema } from "./github-schemas.js";
 
@@ -63,6 +66,7 @@ interface AutomationDeploymentOutcome {
 	instanceId: string;
 	instanceLabel: string;
 	success: boolean;
+	status: "SUCCESS" | "FAILED" | "UNCERTAIN";
 	errors: string[];
 }
 
@@ -751,6 +755,8 @@ export class TemplateUpdater {
 		processed: number;
 		successful: number;
 		failed: number;
+		uncertain: number;
+		uncertainDeployments: AutomationDeploymentOutcome[];
 		results: SyncResult[];
 		skippedForApproval: number;
 		templatesWithScoreConflicts: number;
@@ -766,6 +772,8 @@ export class TemplateUpdater {
 		const results: SyncResult[] = [];
 		let successful = 0;
 		let failed = 0;
+		let uncertain = 0;
+		const uncertainDeployments: AutomationDeploymentOutcome[] = [];
 		let templatesWithScoreConflicts = 0;
 
 		for (const template of autoSyncTemplates) {
@@ -788,7 +796,16 @@ export class TemplateUpdater {
 
 				try {
 					const deploymentOutcomes = await this.deployToMappedInstances(template.templateId);
-					const failedDeployments = deploymentOutcomes.filter((outcome) => !outcome.success);
+					const failedDeployments = deploymentOutcomes.filter(
+						(outcome) => outcome.status === "FAILED",
+					);
+					const uncertainOutcomes = deploymentOutcomes.filter(
+						(outcome) => outcome.status === "UNCERTAIN",
+					);
+					if (uncertainOutcomes.length > 0) {
+						uncertain++;
+						uncertainDeployments.push(...uncertainOutcomes);
+					}
 					if (failedDeployments.length > 0) {
 						const deploymentErrors = failedDeployments.flatMap((outcome) =>
 							outcome.errors.length > 0
@@ -796,8 +813,18 @@ export class TemplateUpdater {
 								: [`Auto-deploy to "${outcome.instanceLabel}" failed without an error message.`],
 						);
 						result.success = false;
-						result.errors = [...(result.errors ?? []), ...deploymentErrors];
+						result.errors = [
+							...(result.errors ?? []),
+							...deploymentErrors,
+							...uncertainOutcomes.flatMap((outcome) => outcome.errors),
+						];
 						failed++;
+					} else if (uncertainOutcomes.length > 0) {
+						result.success = false;
+						result.errors = [
+							...(result.errors ?? []),
+							...uncertainOutcomes.flatMap((outcome) => outcome.errors),
+						];
 					} else {
 						successful++;
 					}
@@ -822,6 +849,8 @@ export class TemplateUpdater {
 			processed: autoSyncTemplates.length,
 			successful,
 			failed,
+			uncertain,
+			uncertainDeployments,
 			results,
 			skippedForApproval,
 			templatesWithScoreConflicts,
@@ -905,7 +934,7 @@ export class TemplateUpdater {
 					},
 					"Auto-deploy blocked for endpoint with a stale or legacy ARR mapping",
 				);
-				outcomes.push({ ...outcomeTarget, success: false, errors: [error] });
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [error] });
 				continue;
 			}
 			if (new Set(endpointGroup.map((mapping) => mapping.qualityProfileId)).size > 1) {
@@ -918,7 +947,18 @@ export class TemplateUpdater {
 					},
 					"Auto-deploy blocked by conflicting alias mappings for one ARR endpoint",
 				);
-				outcomes.push({ ...outcomeTarget, success: false, errors: [error] });
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [error] });
+				continue;
+			}
+			try {
+				assertEquivalentDeploymentMappingAuthority(endpointGroup);
+			} catch (error) {
+				const message = `Auto-deploy to "${mapping.instance.label}" blocked: ${getErrorMessage(error)}`;
+				log.error(
+					{ err: error, templateId, endpointKey },
+					"Auto-deploy blocked by conflicting alias deployment authority",
+				);
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [message] });
 				continue;
 			}
 			if (endpointGroup.length > 1) {
@@ -938,7 +978,21 @@ export class TemplateUpdater {
 					template.userId,
 				);
 
-				if (!result.success) {
+				if (result.status === "UNCERTAIN") {
+					const errors =
+						result.errors.length > 0
+							? result.errors.map(
+									(error) => `Auto-deploy to "${mapping.instance.label}" needs review: ${error}`,
+								)
+							: [
+									`Auto-deploy to "${mapping.instance.label}" needs review because ARR may have applied changes that could not be verified.`,
+								];
+					log.warn(
+						{ templateId, instanceLabel: mapping.instance.label, errors: result.errors },
+						"Auto-deploy result is uncertain and requires reconciliation",
+					);
+					outcomes.push({ ...outcomeTarget, success: false, status: "UNCERTAIN", errors });
+				} else if (!result.success) {
 					const errors =
 						result.errors.length > 0
 							? result.errors.map(
@@ -954,9 +1008,9 @@ export class TemplateUpdater {
 						},
 						"Failed to auto-deploy template to instance",
 					);
-					outcomes.push({ ...outcomeTarget, success: false, errors });
+					outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors });
 				} else {
-					outcomes.push({ ...outcomeTarget, success: true, errors: [] });
+					outcomes.push({ ...outcomeTarget, success: true, status: "SUCCESS", errors: [] });
 				}
 			} catch (error) {
 				const message = `Auto-deploy to "${mapping.instance.label}" failed: ${getErrorMessage(error)}`;
@@ -964,7 +1018,7 @@ export class TemplateUpdater {
 					{ err: error, templateId, templateName: template.name, instanceId: mapping.instanceId },
 					"Error auto-deploying template to instance",
 				);
-				outcomes.push({ ...outcomeTarget, success: false, errors: [message] });
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [message] });
 			}
 		}
 
