@@ -157,23 +157,30 @@ export async function registerUpdateRoutes(app: FastifyInstance, _opts: FastifyP
 		const { templateUpdater } = await getServices(request.currentUser!.id);
 		const result = await templateUpdater.processAutoUpdates(request.currentUser!.id);
 		for (const outcome of result.uncertainDeployments) {
-			await app.notificationService.notify(
-				{
-					eventType: "TRASH_DEPLOY_UNCERTAIN",
-					title: `Automatic TRaSH deployment needs review on ${outcome.instanceLabel}`,
-					body: outcome.errors.join("; "),
-					url: "/trash-guides",
-					metadata: {
-						instanceId: outcome.instanceId,
-						endpointKey: outcome.endpointKey,
-						reason: "uncertain_result",
+			try {
+				await app.notificationService.notify(
+					{
+						eventType: "TRASH_DEPLOY_UNCERTAIN",
+						title: `Automatic TRaSH deployment needs review on ${outcome.instanceLabel}`,
+						body: outcome.errors.join("; "),
+						url: "/trash-guides",
+						metadata: {
+							instanceId: outcome.instanceId,
+							endpointKey: outcome.endpointKey,
+							reason: "uncertain_result",
+						},
 					},
-				},
-				{
-					userId: request.currentUser!.id,
-					fallbackEventTypes: ["TRASH_SYNC_ERROR"],
-				},
-			);
+					{
+						userId: request.currentUser!.id,
+						fallbackEventTypes: ["TRASH_SYNC_ERROR"],
+					},
+				);
+			} catch (error) {
+				request.log.warn(
+					{ err: error, instanceId: outcome.instanceId, endpointKey: outcome.endpointKey },
+					"Automatic deployment review notification failed",
+				);
+			}
 		}
 
 		return reply.send({

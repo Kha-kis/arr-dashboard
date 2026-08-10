@@ -58,12 +58,21 @@ const mapping = {
 	templateId: "template-1",
 	instanceId: instance.id,
 	qualityProfileId: 4,
+	qualityProfileName: "Any",
+	syncStrategy: "auto",
+	managedCustomFormatsCaptured: true,
+	managedCustomFormats: "[]",
 	updatedAt: new Date("2026-08-09T10:00:00.000Z"),
 	instance,
 	template: { name: "Any", userId: "user-1" },
 };
 
 async function createApp(prisma: unknown, deploymentExecutor: unknown) {
+	const database = prisma as Record<string, unknown>;
+	database.libraryCleanupConfig ??= {
+		upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+		updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+	};
 	const app = Fastify({ logger: false });
 	setupAuthInjection(app);
 	registerTestErrorHandler(app);
@@ -95,8 +104,10 @@ describe("deployment authority writer locking", () => {
 			return { count: 1 };
 		});
 		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 			templateQualityProfileMapping: {
 				findFirst: vi.fn().mockResolvedValue(mapping),
+				findMany: vi.fn().mockResolvedValue([mapping]),
 				updateMany,
 			},
 		};
@@ -147,7 +158,11 @@ describe("deployment authority writer locking", () => {
 			instanceQualityProfileOverride: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		};
 		const prisma = {
-			templateQualityProfileMapping: { findFirst: vi.fn().mockResolvedValue(mapping) },
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue(mapping),
+				findMany: vi.fn().mockResolvedValue([mapping]),
+			},
 			$transaction: vi.fn().mockImplementation((action) => action(transaction)),
 		};
 		const executor = createSerializedExecutor();
@@ -174,4 +189,141 @@ describe("deployment authority writer locking", () => {
 		expect(response.statusCode).toBe(200);
 		expect(upstreamWrites).toBe(0);
 	});
+
+	it("changes sync strategy for every equivalent alias", async () => {
+		const aliasInstance = { ...instance, id: "instance-alias", label: "Radarr alias" };
+		const aliasMapping = {
+			...mapping,
+			id: "mapping-alias",
+			instanceId: aliasInstance.id,
+			instance: aliasInstance,
+		};
+		const updateMany = vi.fn().mockResolvedValue({ count: 2 });
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance, aliasInstance]) },
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue(mapping),
+				findMany: vi.fn().mockResolvedValue([mapping, aliasMapping]),
+				updateMany,
+			},
+		};
+		const executor = createSerializedExecutor();
+		app = await createApp(prisma, executor);
+
+		const response = await createInjectAuthenticated(app)("PATCH", "/sync-strategy", {
+			body: {
+				templateId: mapping.templateId,
+				instanceId: mapping.instanceId,
+				syncStrategy: "notify",
+			},
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: expect.arrayContaining([
+						expect.objectContaining({ id: mapping.id }),
+						expect.objectContaining({ id: aliasMapping.id }),
+					]),
+				}),
+				data: expect.objectContaining({ syncStrategy: "notify" }),
+			}),
+		);
+	});
+
+	it("unlinks every equivalent alias and its matching score overrides", async () => {
+		const aliasInstance = { ...instance, id: "instance-alias", label: "Radarr alias" };
+		const aliasMapping = {
+			...mapping,
+			id: "mapping-alias",
+			instanceId: aliasInstance.id,
+			instance: aliasInstance,
+		};
+		const deleteMappings = vi.fn().mockResolvedValue({ count: 2 });
+		const deleteOverrides = vi.fn().mockResolvedValue({ count: 2 });
+		const transaction = {
+			templateQualityProfileMapping: { deleteMany: deleteMappings },
+			instanceQualityProfileOverride: { deleteMany: deleteOverrides },
+		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance, aliasInstance]) },
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue(mapping),
+				findMany: vi.fn().mockResolvedValue([mapping, aliasMapping]),
+			},
+			$transaction: vi.fn().mockImplementation((action) => action(transaction)),
+		};
+		const executor = createSerializedExecutor();
+		app = await createApp(prisma, executor);
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/unlink", {
+			body: { templateId: mapping.templateId, instanceId: mapping.instanceId },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(deleteMappings).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: expect.arrayContaining([
+						expect.objectContaining({ id: mapping.id }),
+						expect.objectContaining({ id: aliasMapping.id }),
+					]),
+				}),
+			}),
+		);
+		expect(deleteOverrides).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: expect.arrayContaining([
+						expect.objectContaining({ instanceId: instance.id, qualityProfileId: 4 }),
+						expect.objectContaining({ instanceId: aliasInstance.id, qualityProfileId: 4 }),
+					]),
+				}),
+			}),
+		);
+	});
+
+	it.each([
+		["sync strategy", "PATCH", "/sync-strategy"],
+		["unlink", "DELETE", "/unlink"],
+	] as const)(
+		"blocks a cross-process %s change while another mutation owns the database lease",
+		async (_case, method, path) => {
+			const updateMappings = vi.fn();
+			const deleteMappings = vi.fn();
+			const prisma = {
+				libraryCleanupConfig: {
+					upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+					updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+				},
+				serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+				templateQualityProfileMapping: {
+					findFirst: vi.fn().mockResolvedValue(mapping),
+					findMany: vi.fn().mockResolvedValue([mapping]),
+					updateMany: updateMappings,
+				},
+				$transaction: vi.fn().mockImplementation(async (action) =>
+					action({
+						templateQualityProfileMapping: { deleteMany: deleteMappings },
+						instanceQualityProfileOverride: { deleteMany: vi.fn() },
+					}),
+				),
+			};
+			const executor = createSerializedExecutor();
+			app = await createApp(prisma, executor);
+
+			const response = await createInjectAuthenticated(app)(method, path, {
+				body: {
+					templateId: mapping.templateId,
+					instanceId: mapping.instanceId,
+					...(method === "PATCH" ? { syncStrategy: "notify" } : {}),
+				},
+			});
+
+			expect(response.statusCode).toBe(409);
+			expect(updateMappings).not.toHaveBeenCalled();
+			expect(deleteMappings).not.toHaveBeenCalled();
+		},
+	);
 });

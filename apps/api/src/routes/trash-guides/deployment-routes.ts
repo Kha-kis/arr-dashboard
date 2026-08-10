@@ -9,7 +9,9 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { ConflictError } from "../../lib/errors.js";
+import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
 import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
+import { assertEquivalentDeploymentMappingAuthority } from "../../lib/trash-guides/deployment-target.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const executeDeploymentSchema = z.object({
@@ -89,7 +91,35 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				acquire(index + 1),
 			);
 		};
-		return acquire(0);
+		return withCleanupTopologyMutationLease({ prisma, log: app.log }, userId, () => acquire(0));
+	};
+	const loadEquivalentEndpointMappings = async (
+		userId: string,
+		templateId: string,
+		targetInstance: Parameters<typeof deploymentExecutor.createEndpointMutationKey>[1],
+	) => {
+		const endpointKey = deploymentExecutor.createEndpointMutationKey(userId, targetInstance);
+		const configuredInstances = await prisma.serviceInstance.findMany({
+			where: { userId },
+		});
+		const equivalentInstanceIds = configuredInstances
+			.filter(
+				(instance) =>
+					deploymentExecutor.createEndpointMutationKey(userId, instance) === endpointKey,
+			)
+			.map((instance) => instance.id);
+		if (!equivalentInstanceIds.includes(targetInstance.id)) {
+			equivalentInstanceIds.push(targetInstance.id);
+		}
+		return prisma.templateQualityProfileMapping.findMany({
+			where: {
+				templateId,
+				instanceId: { in: equivalentInstanceIds },
+				template: { userId },
+			},
+			orderBy: { updatedAt: "desc" },
+			include: { instance: true },
+		});
 	};
 	const notifyUncertainDeployment = async (
 		userId: string,
@@ -277,17 +307,29 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			[mapping.instance],
 			"Deployment authority update",
 			async () => {
+				const equivalentMappings = await loadEquivalentEndpointMappings(
+					userId,
+					templateId,
+					mapping.instance,
+				);
+				if (!equivalentMappings.some((candidate) => candidate.id === mapping.id)) {
+					throw new ConflictError(
+						"Deployment authority changed while the sync strategy was being updated",
+					);
+				}
+				assertEquivalentDeploymentMappingAuthority(equivalentMappings);
 				const updated = await prisma.templateQualityProfileMapping.updateMany({
 					where: {
-						id: mapping.id,
 						templateId,
-						instanceId,
-						updatedAt: mapping.updatedAt,
 						template: { userId },
+						OR: equivalentMappings.map((candidate) => ({
+							id: candidate.id,
+							updatedAt: candidate.updatedAt,
+						})),
 					},
 					data: { syncStrategy, updatedAt: new Date() },
 				});
-				if (updated.count !== 1) {
+				if (updated.count !== equivalentMappings.length) {
 					throw new ConflictError(
 						"Deployment authority changed while the sync strategy was being updated",
 					);
@@ -352,6 +394,24 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			mappings.map((mapping) => mapping.instance),
 			"Bulk deployment authority update",
 			async () => {
+				const currentMappings = await prisma.templateQualityProfileMapping.findMany({
+					where: { templateId, template: { userId } },
+					include: { instance: true },
+				});
+				const reviewedMappingState = new Set(
+					mappings.map((mapping) => `${mapping.id}:${mapping.updatedAt.toISOString()}`),
+				);
+				if (
+					currentMappings.length !== mappings.length ||
+					currentMappings.some(
+						(mapping) =>
+							!reviewedMappingState.has(`${mapping.id}:${mapping.updatedAt.toISOString()}`),
+					)
+				) {
+					throw new ConflictError(
+						"Deployment authority changed while the bulk sync strategy was being updated",
+					);
+				}
 				const result = await prisma.templateQualityProfileMapping.updateMany({
 					where: {
 						templateId,
@@ -431,23 +491,40 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			[mapping.instance],
 			"Deployment authority unlink",
 			async () => {
+				const equivalentMappings = await loadEquivalentEndpointMappings(
+					userId,
+					templateId,
+					mapping.instance,
+				);
+				if (!equivalentMappings.some((candidate) => candidate.id === mapping.id)) {
+					throw new ConflictError(
+						"Deployment authority changed while the template was being unlinked",
+					);
+				}
 				await prisma.$transaction(async (transaction) => {
 					const deleted = await transaction.templateQualityProfileMapping.deleteMany({
 						where: {
-							id: mapping.id,
 							templateId,
-							instanceId,
-							updatedAt: mapping.updatedAt,
 							template: { userId },
+							OR: equivalentMappings.map((candidate) => ({
+								id: candidate.id,
+								updatedAt: candidate.updatedAt,
+							})),
 						},
 					});
-					if (deleted.count !== 1) {
+					if (deleted.count !== equivalentMappings.length) {
 						throw new ConflictError(
 							"Deployment authority changed while the template was being unlinked",
 						);
 					}
 					await transaction.instanceQualityProfileOverride.deleteMany({
-						where: { userId, instanceId, qualityProfileId: mapping.qualityProfileId },
+						where: {
+							userId,
+							OR: equivalentMappings.map((candidate) => ({
+								instanceId: candidate.instanceId,
+								qualityProfileId: candidate.qualityProfileId,
+							})),
+						},
 					});
 				});
 			},
