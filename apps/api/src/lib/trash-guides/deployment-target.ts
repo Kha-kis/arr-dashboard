@@ -265,6 +265,26 @@ export function createDeploymentEndpointKey(
 	return `${userId}:${instance.service.toUpperCase()}:${normalizeDeploymentBaseUrl(instance.baseUrl)}:${instance.credentialIdentity}`;
 }
 
+/** Accept pre-URL endpoint keys only when the exact connection token still matches. */
+export function isDeploymentBackupEndpointIdentityCurrent(args: {
+	userId: string;
+	backupEndpointKey: string;
+	backupConnectionStateToken: string;
+	instance: DeploymentConnectionInstance;
+	credentialIdentity: string;
+}): boolean {
+	if (args.backupConnectionStateToken !== createDeploymentConnectionStateToken(args.instance)) {
+		return false;
+	}
+	const currentKey = createDeploymentEndpointKey(args.userId, {
+		service: args.instance.service,
+		baseUrl: args.instance.baseUrl,
+		credentialIdentity: args.credentialIdentity,
+	});
+	const legacyKey = `${args.userId}:${args.instance.service.toUpperCase()}:${args.credentialIdentity}`;
+	return args.backupEndpointKey === currentKey || args.backupEndpointKey === legacyKey;
+}
+
 /** Bind rollback metadata to both the normalized endpoint and configured credentials. */
 export function createDeploymentConnectionStateToken(instance: {
 	service: string;

@@ -3,6 +3,7 @@ import { ConflictError } from "../../errors.js";
 import { DeploymentExecutorService } from "../deployment-executor.js";
 import {
 	createDeploymentConnectionStateToken,
+	createDeploymentEndpointKey,
 	createDeploymentStateToken,
 	createQualityProfileStateToken,
 } from "../deployment-target.js";
@@ -250,7 +251,11 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			retentionExpiresAt: null,
 			data: {
 				schemaVersion: 2,
-				endpointKey: "user-1:RADARR:credential-1",
+				endpointKey: createDeploymentEndpointKey("user-1", {
+					service: "RADARR",
+					baseUrl: "http://radarr:7878",
+					credentialIdentity: "credential-1",
+				}),
 				connectionStateToken: "connection",
 				customFormats: [],
 				customFormatDeployments: [],
@@ -307,7 +312,11 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			undefined,
 			undefined,
 			executionToken,
-			"user-1:RADARR:credential-1",
+			createDeploymentEndpointKey("user-1", {
+				service: "RADARR",
+				baseUrl: "http://radarr:7878",
+				credentialIdentity: "credential-1",
+			}),
 		);
 
 		const appliedProfile = {

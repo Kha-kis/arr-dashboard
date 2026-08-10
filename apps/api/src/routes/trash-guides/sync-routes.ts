@@ -28,11 +28,11 @@ import {
 	rollbackQualityProfileDeployment,
 } from "../../lib/trash-guides/deployment-profile-state.js";
 import {
-	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
 	getEquivalentServiceInstanceIds,
+	isDeploymentBackupEndpointIdentityCurrent,
 } from "../../lib/trash-guides/deployment-target.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
@@ -805,8 +805,13 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								});
 							}
 							if (
-								backupEndpointKey !== endpointKey ||
-								backupConnectionStateToken !== createDeploymentConnectionStateToken(currentInstance)
+								!isDeploymentBackupEndpointIdentityCurrent({
+									userId,
+									backupEndpointKey,
+									backupConnectionStateToken,
+									instance: currentInstance,
+									credentialIdentity: leasedCredentialIdentity!,
+								})
 							) {
 								return stopClaimedRollback(409, {
 									error: "ROLLBACK_TARGET_CHANGED",

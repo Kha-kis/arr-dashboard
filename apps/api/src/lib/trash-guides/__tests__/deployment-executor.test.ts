@@ -10,6 +10,7 @@ import { ConflictError } from "../../errors.js";
 import { extractTrashId } from "../cf-field-utils.js";
 import { DeploymentExecutorService } from "../deployment-executor.js";
 import {
+	createDeploymentEndpointKey,
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
 } from "../deployment-target.js";
@@ -542,7 +543,11 @@ describe("DeploymentExecutorService - backup parity", () => {
 
 		const backupData = JSON.parse(createBackup.mock.calls[0]![0].data.backupData);
 		expect(backupData).toMatchObject({
-			endpointKey: "user-1:RADARR:http://radarr:7878/:credential-1",
+			endpointKey: createDeploymentEndpointKey("user-1", {
+				service: "RADARR",
+				baseUrl: "http://radarr:7878",
+				credentialIdentity: "credential-1",
+			}),
 			connectionStateToken: expect.any(String),
 			customFormats: [{ id: 5, name: "CF" }],
 			customFormatDeployments: [],
