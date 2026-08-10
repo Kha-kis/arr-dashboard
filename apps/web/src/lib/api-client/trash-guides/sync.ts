@@ -217,7 +217,7 @@ export function createSyncProgressStream(
 			onProgress(data);
 
 			// Close on completion
-			if (data.status === "COMPLETED" || data.status === "FAILED") {
+			if (data.status === "COMPLETED" || data.status === "FAILED" || data.status === "UNCERTAIN") {
 				setTimeout(() => {
 					eventSource.close();
 				}, 1000);
