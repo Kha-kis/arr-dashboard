@@ -176,6 +176,7 @@ Summary: 3 Vitest files passed, 415 tests passed, 0 skipped (Vitest reported no 
 
 - `apps/api/src/lib/plex/__tests__/plex-cache-refresher.test.ts`
 - `apps/api/src/lib/library-cleanup/__tests__/prefetch-plex-data.test.ts`
+- `.superpowers/sdd/2026-08-10-plex-history-compatibility/task-4-report.md` — committed stable test-output/evidence artifact.
 
 ### Commit
 
@@ -183,7 +184,7 @@ This batch is committed with the exact subject: `test(plex): cover incomplete ca
 
 ### Self-review
 
-- Test files only; no production, live-service, documentation, generated, or unrelated files changed.
+- Three files only: the two test files and this committed stable test-output/evidence artifact; no production, live-service, generated, or unrelated files changed.
 - The ordinary refresher assertions protect the request boundary and atomic publication guard.
 - Cleanup assertions exercise the maps and failed-source state consumed by cleanup evaluation, including both normal and episode row-count checks.
 - `git diff --check` passed before commit.
@@ -191,3 +192,7 @@ This batch is committed with the exact subject: `test(plex): cover incomplete ca
 ### Concerns
 
 No known concerns. The full package suite and unrelated validation commands were intentionally not run because this fix round was constrained to Task 4's two focused command groups. No live services were contacted.
+
+## Fix Round 2: correct verification evidence scope
+
+This documentation-only correction adds the committed stable test-output/evidence artifact to the file inventory and updates the self-review to the accurate three-file scope. Recorded command output and test claims are unchanged.
