@@ -401,7 +401,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		});
 		const first = executor.runWithEndpointMutation(
 			"user-1",
-			{ service: "RADARR", credentialIdentity: "credential-1" },
+			{ service: "RADARR", baseUrl: "http://radarr:7878", credentialIdentity: "credential-1" },
 			"Deployment",
 			async () => firstAction,
 		);
@@ -409,7 +409,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		await expect(
 			executor.runWithEndpointMutation(
 				"user-1",
-				{ service: "radarr", credentialIdentity: "credential-1" },
+				{ service: "radarr", baseUrl: "http://radarr:7878/", credentialIdentity: "credential-1" },
 				"Rollback",
 				async () => undefined,
 			),
@@ -420,7 +420,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		await expect(
 			executor.runWithEndpointMutation(
 				"user-1",
-				{ service: "RADARR", credentialIdentity: "credential-1" },
+				{ service: "RADARR", baseUrl: "http://radarr:7878", credentialIdentity: "credential-1" },
 				"Rollback",
 				async () => "completed",
 			),

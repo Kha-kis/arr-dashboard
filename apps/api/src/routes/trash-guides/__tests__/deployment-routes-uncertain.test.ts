@@ -63,6 +63,35 @@ describe("deployment route uncertain outcomes", () => {
 		);
 	});
 
+	it("returns a partial direct result successfully so clients can refresh applied state", async () => {
+		deploySingleInstance.mockResolvedValue({
+			instanceId: "instance-1",
+			instanceLabel: "Radarr",
+			success: false,
+			status: "FAILED",
+			customFormatsCreated: 1,
+			customFormatsUpdated: 0,
+			customFormatsSkipped: 0,
+			errors: ["A later deployment phase was blocked"],
+			details: { created: ["Created CF"], updated: [], failed: [], orphaned: [] },
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/execute", {
+			body: { templateId: "template-1", instanceId: "instance-1" },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			success: false,
+			error: "Deployment partially applied",
+			result: {
+				status: "FAILED",
+				customFormatsCreated: 1,
+				details: { created: ["Created CF"] },
+			},
+		});
+	});
+
 	it("sends one logical review notification for mixed bulk failure and uncertainty", async () => {
 		deployBulkInstances.mockResolvedValue({
 			templateId: "template-1",

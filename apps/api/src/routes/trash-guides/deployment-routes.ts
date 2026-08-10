@@ -139,6 +139,19 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			});
 		}
 
+		const partiallyApplied =
+			result.customFormatsCreated > 0 ||
+			result.customFormatsUpdated > 0 ||
+			Boolean(result.qualityProfileApplied) ||
+			(result.namingFieldsApplied ?? 0) > 0;
+		if (partiallyApplied) {
+			return reply.send({
+				success: false,
+				error: "Deployment partially applied",
+				result,
+			});
+		}
+
 		app.notificationService
 			?.notify({
 				eventType: "TRASH_DEPLOY_FAILED",

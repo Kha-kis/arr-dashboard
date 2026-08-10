@@ -2011,27 +2011,11 @@ export class DeploymentExecutorService {
 				);
 			}
 
-			if (error instanceof ConflictError && !isDeploymentResultUncertain(error)) {
-				if (partialDetails && partialCounts) {
-					const partialDeployment = {
-						...partialCounts,
-						details: partialDetails,
-						errors: partialErrors,
-						...(partialProfile && { qualityProfile: partialProfile }),
-					};
-					const publicPartialDeployment = {
-						...partialCounts,
-						details: partialDetails,
-						errors: partialErrors,
-						...(partialProfile && {
-							qualityProfile: toPublicQualityProfileMutation(partialProfile),
-						}),
-					};
-					Object.assign(error, {
-						partialDeployment,
-						details: { partialDeployment: publicPartialDeployment },
-					});
-				}
+			if (
+				error instanceof ConflictError &&
+				!isDeploymentResultUncertain(error) &&
+				(!partialDetails || !partialCounts)
+			) {
 				throw error;
 			}
 
