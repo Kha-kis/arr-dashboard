@@ -200,13 +200,28 @@ export async function finalizeDeploymentHistoryWithPartialFailure(
 	error: unknown,
 	qualityProfile?: QualityProfileMutation,
 	priorErrors: string[] = [],
+	namingFieldsApplied = 0,
 ): Promise<void> {
 	if (!historyId && !deploymentHistoryId) return;
 	const endTime = new Date();
 	const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
 	const errorMessage = getErrorMessage(error, "Unknown error");
 	const appliedCFCount = counts.created + counts.updated;
-	const appliedCount = appliedCFCount + (qualityProfile ? 1 : 0);
+	const appliedCount =
+		appliedCFCount + (qualityProfile ? 1 : 0) + (namingFieldsApplied > 0 ? 1 : 0);
+	const appliedConfigs = [
+		...getAppliedConfigs(details, qualityProfile),
+		...(namingFieldsApplied > 0
+			? [
+					{
+						name: "Naming configuration",
+						action: "updated",
+						type: "naming",
+						fields: namingFieldsApplied,
+					},
+				]
+			: []),
+	];
 	const uncertain = isDeploymentResultUncertain(error);
 	const status = uncertain ? "UNCERTAIN" : appliedCount > 0 ? "PARTIAL_SUCCESS" : "FAILED";
 	const failedConfigs = [
@@ -227,7 +242,7 @@ export async function finalizeDeploymentHistoryWithPartialFailure(
 					configsApplied: appliedCount,
 					configsFailed: details.failed.length + (uncertain ? 0 : 1),
 					configsSkipped: counts.skipped,
-					appliedConfigs: JSON.stringify(getAppliedConfigs(details, qualityProfile)),
+					appliedConfigs: JSON.stringify(appliedConfigs),
 					failedConfigs: JSON.stringify(failedConfigs),
 					errorLog: [...priorErrors, errorMessage].join("\n"),
 				},
@@ -242,7 +257,7 @@ export async function finalizeDeploymentHistoryWithPartialFailure(
 					duration,
 					appliedCFs: appliedCFCount,
 					failedCFs: details.failed.length,
-					appliedConfigs: JSON.stringify(getAppliedConfigs(details, qualityProfile)),
+					appliedConfigs: JSON.stringify(appliedConfigs),
 					failedConfigs: JSON.stringify(failedConfigs),
 					errors: JSON.stringify([errorMessage]),
 				},

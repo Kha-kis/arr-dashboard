@@ -142,6 +142,7 @@ describe("DeploymentExecutorService naming finalization", () => {
 		expect(result).toMatchObject({
 			success: false,
 			status: "UNCERTAIN",
+			namingFieldsApplied: 1,
 			errors: [expect.stringContaining("rollback metadata could not be finalized")],
 		});
 		expect(backupUpdate).toHaveBeenCalledTimes(3);

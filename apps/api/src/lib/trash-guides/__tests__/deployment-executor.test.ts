@@ -253,7 +253,12 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 	});
 
 	it("records the exact created Custom Format state before the follow-up read", async () => {
-		const created = { id: 7, name: "Test CF", specifications: [] };
+		const created = {
+			id: 7,
+			name: "Test CF",
+			includeCustomFormatWhenRenaming: false,
+			specifications: [],
+		};
 		const persistMutationState = vi.fn().mockResolvedValue(undefined);
 		const client = {
 			customFormat: {
@@ -288,6 +293,56 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 			}),
 			false,
 		);
+	});
+
+	it("preserves a verified creation when final ledger persistence fails", async () => {
+		const created = {
+			id: 7,
+			name: "Test CF",
+			includeCustomFormatWhenRenaming: false,
+			specifications: [],
+		};
+		const persistMutationState = vi
+			.fn()
+			.mockResolvedValueOnce(undefined)
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(new Error("final ledger unavailable"));
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([]),
+				create: vi.fn().mockResolvedValue(created),
+				getById: vi.fn().mockResolvedValue(created),
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployCustomFormats.bind(executor);
+
+		let conflict: unknown;
+		try {
+			await run(
+				client,
+				[{ trashId: "cf-1", name: "Test CF", originalConfig: { specifications: [] } }],
+				new Map(),
+				new Map(),
+				undefined,
+				persistMutationState,
+			);
+		} catch (error) {
+			conflict = error;
+		}
+
+		expect(conflict).toMatchObject({
+			partialDeployment: {
+				created: 1,
+				updated: 0,
+				skipped: 0,
+				details: { created: ["Test CF"], updated: [], failed: [] },
+			},
+		});
 	});
 
 	it("attaches earlier successful writes when a later format drifts", async () => {
@@ -487,7 +542,7 @@ describe("DeploymentExecutorService - backup parity", () => {
 
 		const backupData = JSON.parse(createBackup.mock.calls[0]![0].data.backupData);
 		expect(backupData).toMatchObject({
-			endpointKey: "user-1:RADARR:credential-1",
+			endpointKey: "user-1:RADARR:http://radarr:7878/:credential-1",
 			connectionStateToken: expect.any(String),
 			customFormats: [{ id: 5, name: "CF" }],
 			customFormatDeployments: [],

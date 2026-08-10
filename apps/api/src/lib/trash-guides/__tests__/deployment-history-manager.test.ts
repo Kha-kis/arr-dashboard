@@ -115,6 +115,60 @@ describe("finalizeDeploymentHistory", () => {
 });
 
 describe("finalizeDeploymentHistoryWithPartialFailure", () => {
+	it("preserves verified naming evidence in both partial histories", async () => {
+		const syncUpdate = vi.fn().mockResolvedValue({});
+		const deploymentUpdate = vi.fn().mockResolvedValue({});
+		const prisma = {
+			trashSyncHistory: { update: syncUpdate },
+			templateDeploymentHistory: { update: deploymentUpdate },
+			$transaction: vi.fn(async (callback) =>
+				callback({
+					trashSyncHistory: { update: syncUpdate },
+					templateDeploymentHistory: { update: deploymentUpdate },
+				}),
+			),
+		};
+		const uncertain = Object.assign(new Error("ledger finalization failed"), {
+			deploymentResultUncertain: true,
+		});
+		const namingConfig = {
+			name: "Naming configuration",
+			action: "updated",
+			type: "naming",
+			fields: 2,
+		};
+
+		await finalizeDeploymentHistoryWithPartialFailure(
+			prisma as never,
+			"sync-1",
+			"deployment-1",
+			new Date(),
+			{ created: [], updated: [], failed: [], orphaned: [] },
+			{ created: 0, updated: 0, skipped: 0 },
+			uncertain,
+			undefined,
+			[],
+			2,
+		);
+
+		expect(syncUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					configsApplied: 1,
+					appliedConfigs: JSON.stringify([namingConfig]),
+				}),
+			}),
+		);
+		expect(deploymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					appliedConfigs: JSON.stringify([namingConfig]),
+				}),
+			}),
+		);
+	});
 	it("keeps an unverified first upstream mutation uncertain", async () => {
 		const trashSyncUpdate = vi.fn().mockResolvedValue({});
 		const templateDeploymentUpdate = vi.fn().mockResolvedValue({});

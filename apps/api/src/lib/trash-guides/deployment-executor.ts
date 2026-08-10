@@ -84,7 +84,7 @@ type EndpointCredentialSource = {
 };
 type EndpointMutationTarget =
 	| EndpointCredentialSource
-	| { service: string; credentialIdentity: string };
+	| { service: string; baseUrl: string; credentialIdentity: string };
 
 // ============================================================================
 // Types
@@ -366,6 +366,7 @@ export class DeploymentExecutorService {
 				: this.createCredentialIdentity(instance);
 		return createDeploymentEndpointKey(userId, {
 			service: instance.service,
+			baseUrl: instance.baseUrl,
 			credentialIdentity,
 		});
 	}
@@ -747,9 +748,9 @@ export class DeploymentExecutorService {
 					);
 					mutationState.status = "applied";
 					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
-					await persistMutationState(mutationState, false);
 					created++;
 					details.created.push(templateCF.name);
+					await persistMutationState(mutationState, false);
 				}
 			} catch (error) {
 				if (upstreamMutationStarted) {
@@ -1505,6 +1506,7 @@ export class DeploymentExecutorService {
 		const warnings: string[] = [];
 		let appliedProfileMutation: QualityProfileMutation | undefined;
 		let instanceLabel = "Unknown";
+		let namingFieldsApplied = 0;
 		let deploymentPhase: "before_cf" | "custom_formats" | "quality_profile" | "post_profile" =
 			"before_cf";
 
@@ -1764,7 +1766,6 @@ export class DeploymentExecutorService {
 
 			// Deploy naming presets if the template includes them
 			let namingWarning: string | undefined;
-			let namingFieldsApplied = 0;
 			if (namingState && profileResult.errors.length === 0) {
 				const namingResult = await this.deployNamingPresets(namingState, instance, async () => {
 					if (!backup.data.namingDeployment) {
@@ -1992,6 +1993,7 @@ export class DeploymentExecutorService {
 						error,
 						partialProfile,
 						partialErrors,
+						namingFieldsApplied,
 					);
 				} else {
 					await finalizeDeploymentHistoryWithFailure(
@@ -2045,6 +2047,7 @@ export class DeploymentExecutorService {
 				...(partialProfile && {
 					qualityProfileApplied: toPublicQualityProfileMutation(partialProfile),
 				}),
+				...(namingFieldsApplied > 0 && { namingFieldsApplied }),
 				...(partialDetails && { details: partialDetails }),
 			};
 		}
