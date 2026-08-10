@@ -504,9 +504,9 @@ export const SyncValidationModal = ({
 																	{item.conflicts.length !== 1 ? "s" : ""} Detected
 																</p>
 																<div className="mt-2 space-y-2">
-													{item.conflicts.map((conflict) => (
-														<div
-															key={`${item.trashId}-${conflict.cfTrashId}-${conflict.conflictType}`}
+																	{item.conflicts.map((conflict) => (
+																		<div
+																			key={`${item.trashId}-${conflict.cfTrashId}-${conflict.conflictType}`}
 																			className="rounded-lg border border-border/50 bg-muted/20 p-2 text-xs"
 																		>
 																			<p className="font-medium text-foreground">

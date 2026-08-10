@@ -961,9 +961,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				}),
 			),
 		};
-		const appliedConfigs = [
-			{ name: "Applied CF", action: "updated", type: "custom_format" },
-		];
+		const appliedConfigs = [{ name: "Applied CF", action: "updated", type: "custom_format" }];
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
 		expect(deploymentUpdateMany).toHaveBeenCalledWith(
@@ -993,14 +991,16 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const prisma = {
 			templateDeploymentHistory: {
-				findMany: vi.fn().mockResolvedValue([
-					{ id: "deployment-1", backupId: "backup-1", backup: interruptedBackup },
-				]),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ id: "deployment-1", backupId: "backup-1", backup: interruptedBackup },
+					]),
 			},
 			trashSyncHistory: {
-				findMany: vi.fn().mockResolvedValue([
-					{ id: "sync-1", backupId: "backup-1", backup: interruptedBackup },
-				]),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([{ id: "sync-1", backupId: "backup-1", backup: interruptedBackup }]),
 			},
 			$transaction: vi.fn(async (callback) =>
 				callback({
@@ -1009,9 +1009,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				}),
 			),
 		};
-		const appliedConfigs = [
-			{ name: "Applied CF", action: "updated", type: "custom_format" },
-		];
+		const appliedConfigs = [{ name: "Applied CF", action: "updated", type: "custom_format" }];
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
 		expect(deploymentUpdateMany).toHaveBeenCalledWith(
