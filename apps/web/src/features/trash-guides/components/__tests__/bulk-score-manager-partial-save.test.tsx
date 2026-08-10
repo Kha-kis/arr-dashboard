@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const hookMocks = vi.hoisted(() => ({
 	bulkScoresLoaded: vi.fn(),
-	bulkScoresVersion: 0,
+	refreshBulkScores: vi.fn(),
 	bulkUpdateScores: vi.fn(),
 }));
 
@@ -50,10 +50,17 @@ vi.mock("../../../../hooks/api/useBulkScores", async () => {
 	return {
 		useBulkScores: ({ instanceId }: { instanceId: string }) => {
 			const [data, setData] = useState<typeof bulkScoresResponse | undefined>();
+			const [refreshVersion, setRefreshVersion] = useState(0);
+			useEffect(() => {
+				hookMocks.refreshBulkScores.mockImplementation(() => {
+					setRefreshVersion((version) => version + 1);
+				});
+				return () => hookMocks.refreshBulkScores.mockReset();
+			}, []);
 			useEffect(() => {
 				setData(instanceId ? structuredClone(bulkScoresResponse) : undefined);
-				hookMocks.bulkScoresLoaded(instanceId, hookMocks.bulkScoresVersion);
-			}, [instanceId, hookMocks.bulkScoresVersion]);
+				hookMocks.bulkScoresLoaded(instanceId, refreshVersion);
+			}, [instanceId, refreshVersion]);
 			return { data, isLoading: false };
 		},
 	};
@@ -134,7 +141,6 @@ async function selectInstanceAndLoadScores() {
 describe("BulkScoreManager partial saves", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		hookMocks.bulkScoresVersion = 0;
 		bulkScoresResponse.data.scores[0]!.templateScores[0]!.currentScore = 0;
 		bulkScoresResponse.data.scores[0]!.templateScores[1]!.currentScore = 0;
 		vi.stubGlobal(
@@ -297,21 +303,26 @@ describe("BulkScoreManager partial saves", () => {
 		expect(screen.getByRole("button", { name: "Reset to Template" })).toBeDisabled();
 		expect(removeOverride).toBeDisabled();
 
-		act(() =>
-			inFlightSave.resolve({
-				totalProfiles: 1,
-				successCount: 1,
-				failureCount: 0,
-				results: [
-					{
-						entryKey: "instance-1-101",
-						instanceId: "instance-1",
-						profileId: 101,
-						success: true,
-						response: { success: true, message: "Saved", updatedCount: 1 },
-					},
-				],
-			}),
+		const saveResult: BulkUpdateScoresResult = {
+			totalProfiles: 1,
+			successCount: 1,
+			failureCount: 0,
+			results: [
+				{
+					entryKey: "instance-1-101",
+					instanceId: "instance-1",
+					profileId: 101,
+					success: true,
+					response: { success: true, message: "Saved", updatedCount: 1 },
+				},
+			],
+		};
+		await act(async () => {
+			inFlightSave.resolve(saveResult);
+			await inFlightSave.promise;
+		});
+		await waitFor(() =>
+			expect(screen.queryByRole("button", { name: "Saving..." })).not.toBeInTheDocument(),
 		);
 	});
 
@@ -343,7 +354,7 @@ describe("BulkScoreManager partial saves", () => {
 		await waitFor(() => expect(profile202Input).toHaveValue(125));
 
 		bulkScoresResponse.data.scores[0]!.templateScores[1]!.currentScore = 5;
-		hookMocks.bulkScoresVersion += 1;
+		hookMocks.refreshBulkScores();
 		fireEvent.click(screen.getByRole("button", { name: "Modified Only" }));
 
 		await waitFor(() => expect(hookMocks.bulkScoresLoaded).toHaveBeenCalledWith("instance-1", 1));
