@@ -8,11 +8,16 @@ import {
 function createRecoveryPrisma() {
 	const rollbackUpdate = Promise.resolve({ count: 2 });
 	const undeployUpdate = Promise.resolve({ count: 3 });
-	const syncUpdate = Promise.resolve({ count: 4 });
+	const snapshotlessSyncUpdate = Promise.resolve({ count: 1 });
+	const recoverableSyncUpdate = Promise.resolve({ count: 3 });
 	const deploymentUpdate = Promise.resolve({ count: 1 });
 	const trashSyncHistory = {
 		findMany: vi.fn().mockResolvedValue([]),
-		updateMany: vi.fn().mockReturnValueOnce(rollbackUpdate).mockReturnValueOnce(syncUpdate),
+		updateMany: vi
+			.fn()
+			.mockReturnValueOnce(rollbackUpdate)
+			.mockReturnValueOnce(snapshotlessSyncUpdate)
+			.mockReturnValueOnce(recoverableSyncUpdate),
 	};
 	const templateDeploymentHistory = {
 		findMany: vi.fn().mockResolvedValue([]),
@@ -20,7 +25,7 @@ function createRecoveryPrisma() {
 	};
 	const $transaction = vi
 		.fn()
-		.mockResolvedValue([{ count: 2 }, { count: 3 }, { count: 4 }, { count: 1 }]);
+		.mockResolvedValue([{ count: 2 }, { count: 3 }, { count: 1 }, { count: 3 }, { count: 1 }]);
 
 	return {
 		prisma: {
@@ -33,7 +38,8 @@ function createRecoveryPrisma() {
 		$transaction,
 		rollbackUpdate,
 		undeployUpdate,
-		syncUpdate,
+		snapshotlessSyncUpdate,
+		recoverableSyncUpdate,
 		deploymentUpdate,
 	};
 }
@@ -47,7 +53,8 @@ describe("reconcileAbandonedTrashRecoveryClaims", () => {
 			$transaction,
 			rollbackUpdate,
 			undeployUpdate,
-			syncUpdate,
+			snapshotlessSyncUpdate,
+			recoverableSyncUpdate,
 			deploymentUpdate,
 		} = createRecoveryPrisma();
 
@@ -70,7 +77,23 @@ describe("reconcileAbandonedTrashRecoveryClaims", () => {
 			},
 		});
 		expect(trashSyncHistory.updateMany).toHaveBeenNthCalledWith(2, {
-			where: { status: { in: ["IN_PROGRESS", "RUNNING"] } },
+			where: {
+				status: { in: ["IN_PROGRESS", "RUNNING"] },
+				backupId: null,
+			},
+			data: {
+				status: "UNCERTAIN",
+				errorLog:
+					"Operation was interrupted by an application restart; final upstream state is uncertain.",
+				rollbackStatus: null,
+				rollbackProgress: null,
+			},
+		});
+		expect(trashSyncHistory.updateMany).toHaveBeenNthCalledWith(3, {
+			where: {
+				status: { in: ["IN_PROGRESS", "RUNNING"] },
+				backupId: { not: null },
+			},
 			data: {
 				status: "UNCERTAIN",
 				errorLog:
@@ -94,7 +117,8 @@ describe("reconcileAbandonedTrashRecoveryClaims", () => {
 		expect($transaction).toHaveBeenCalledWith([
 			rollbackUpdate,
 			undeployUpdate,
-			syncUpdate,
+			snapshotlessSyncUpdate,
+			recoverableSyncUpdate,
 			deploymentUpdate,
 		]);
 		expect(counts).toEqual({

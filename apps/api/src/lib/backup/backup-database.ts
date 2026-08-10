@@ -38,6 +38,19 @@ export interface ExportDatabaseOptions {
 type CoordinationKind = "rollback" | "undeploy";
 type CoordinationRow = Record<string, unknown> & { id: string };
 
+function isAuditOnlyUncertainSync(record: Record<string, unknown>): boolean {
+	return (
+		record.status === "UNCERTAIN" &&
+		record.rollbackStatus == null &&
+		record.backupId == null &&
+		record.rolledBack !== true
+	);
+}
+
+function shouldPreserveSyncHistory(record: Record<string, unknown>): boolean {
+	return isNonterminalRollback(record) || isAuditOnlyUncertainSync(record);
+}
+
 const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
 	rollback: [
 		"userId",
@@ -59,6 +72,7 @@ const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
 		"rolledBack",
 		"canRollback",
 		"appliedConfigs",
+		"templateSnapshot",
 		"undeployStatus",
 		"undeployAttemptedAt",
 		"undeployProgress",
@@ -81,6 +95,39 @@ function recordsById(value: unknown): Map<string, CoordinationRow> {
 		}
 	}
 	return records;
+}
+
+function assertCurrentUndeployFallbackPreserved(
+	current: CoordinationRow,
+	incomingTemplates: Map<string, CoordinationRow>,
+): void {
+	if (typeof current.templateSnapshot === "string" && current.templateSnapshot.length > 0) {
+		return;
+	}
+	if (typeof current.templateId !== "string" || current.templateId.length === 0) {
+		throw new Error(
+			`Cannot restore backup: current nonterminal coordination row ${current.id} has no undeploy template authority`,
+		);
+	}
+	const currentTemplate = current.template;
+	if (typeof currentTemplate !== "object" || currentTemplate === null) {
+		throw new Error(
+			`Cannot restore backup: current undeploy fallback template ${current.templateId} is missing from the database`,
+		);
+	}
+	const incomingTemplate = incomingTemplates.get(current.templateId);
+	if (!incomingTemplate) {
+		throw new Error(
+			`Cannot restore backup: current undeploy fallback template ${current.templateId} is missing from incoming data`,
+		);
+	}
+	for (const field of ["userId", "serviceType", "configData"] as const) {
+		if (incomingTemplate[field] !== (currentTemplate as Record<string, unknown>)[field]) {
+			throw new Error(
+				`Cannot restore backup: current undeploy fallback template ${current.templateId} changed ${field}`,
+			);
+		}
+	}
 }
 
 function comparableCoordinationValue(value: unknown): unknown {
@@ -120,10 +167,11 @@ async function validateCurrentCoordinationPreserved(
 				OR: [
 					{ rollbackStatus: { not: "COMPLETED" } },
 					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+					{ status: "UNCERTAIN", rollbackStatus: null, backupId: null },
 				],
 			},
 		})
-	).filter(isNonterminalRollback) as CoordinationRow[];
+	).filter(shouldPreserveSyncHistory) as CoordinationRow[];
 	const currentUndeployRows = (
 		await tx.templateDeploymentHistory.findMany({
 			where: {
@@ -132,19 +180,36 @@ async function validateCurrentCoordinationPreserved(
 					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
 				],
 			},
+			include: {
+				template: {
+					select: { id: true, userId: true, serviceType: true, configData: true },
+				},
+			},
 		})
 	).filter(isNonterminalUndeploy) as CoordinationRow[];
 	const incomingRollbackRows = recordsById(data.trashSyncHistory);
 	const incomingUndeployRows = recordsById(data.templateDeploymentHistory);
+	const incomingTemplates = recordsById(data.trashTemplates);
 
 	for (const row of currentRollbackRows) {
 		assertCurrentRowPreserved("rollback", row, incomingRollbackRows);
 	}
 	for (const row of currentUndeployRows) {
 		assertCurrentRowPreserved("undeploy", row, incomingUndeployRows);
+		assertCurrentUndeployFallbackPreserved(row, incomingTemplates);
 	}
 
-	const requiredSnapshotIds = [...currentRollbackRows, ...currentUndeployRows].map((row) => {
+	const currentRecoveryRows = [
+		...currentRollbackRows.filter((row) =>
+			isNonterminalRollback({
+				status: row.status,
+				rolledBack: row.rolledBack,
+				rollbackStatus: row.rollbackStatus,
+			}),
+		),
+		...currentUndeployRows,
+	];
+	const requiredSnapshotIds = currentRecoveryRows.map((row) => {
 		if (typeof row.backupId !== "string" || row.backupId.length === 0) {
 			throw new Error(
 				`Cannot restore backup: current nonterminal coordination row ${row.id} has no required recovery snapshot reference`,
@@ -255,10 +320,11 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 				OR: [
 					{ rollbackStatus: { not: "COMPLETED" } },
 					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+					{ status: "UNCERTAIN", rollbackStatus: null, backupId: null },
 				],
 			},
 		})
-	).filter(isNonterminalRollback);
+	).filter(shouldPreserveSyncHistory);
 	const nonterminalUndeployHistory = (
 		await prisma.templateDeploymentHistory.findMany({
 			where: {
@@ -325,16 +391,17 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		});
 	}
 
-	const requiredBackupIds = [...nonterminalRollbackHistory, ...nonterminalUndeployHistory].map(
-		(row) => {
-			if (typeof row.backupId !== "string" || row.backupId.length === 0) {
-				throw new Error(
-					`Cannot create backup: nonterminal coordination row ${row.id} has no referenced TRaSH backup snapshot`,
-				);
-			}
-			return row.backupId;
-		},
-	);
+	const requiredBackupIds = [
+		...nonterminalRollbackHistory.filter(isNonterminalRollback),
+		...nonterminalUndeployHistory,
+	].map((row) => {
+		if (typeof row.backupId !== "string" || row.backupId.length === 0) {
+			throw new Error(
+				`Cannot create backup: nonterminal coordination row ${row.id} has no referenced TRaSH backup snapshot`,
+			);
+		}
+		return row.backupId;
+	});
 	const uniqueRequiredBackupIds = [...new Set(requiredBackupIds)];
 	if (uniqueRequiredBackupIds.length > 0) {
 		const requiredSnapshots = await prisma.trashBackup.findMany({

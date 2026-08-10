@@ -242,6 +242,30 @@ describe("POST /sync/:syncId/rollback state coordination", () => {
 		);
 	});
 
+	it.each([
+		JSON.stringify(["Created CF"]),
+		JSON.stringify([{}]),
+		JSON.stringify([{ name: 42, action: "created" }]),
+		JSON.stringify([{ name: "Created CF", action: "removed" }]),
+	])("never completes when ownership evidence has an invalid structure: %s", async (evidence) => {
+		findFirst.mockResolvedValueOnce(syncHistory({ appliedConfigs: evidence }));
+
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/trash-guides/sync/${SYNC_ID}/rollback`,
+		});
+
+		expect(response.statusCode).toBe(500);
+		expect(response.json().message).toContain("ownership evidence is invalid");
+		expect(getAll).not.toHaveBeenCalled();
+		expect(updateMany.mock.calls.some(([args]) => args.data.rollbackStatus === "COMPLETED")).toBe(
+			false,
+		);
+		expect(updateMany.mock.calls.some(([args]) => args.data.rollbackStatus === "PARTIAL")).toBe(
+			true,
+		);
+	});
+
 	it("persists COMPLETED only after all upstream work succeeds", async () => {
 		findFirst.mockResolvedValueOnce(
 			syncHistory({

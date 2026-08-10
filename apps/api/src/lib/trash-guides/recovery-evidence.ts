@@ -32,53 +32,70 @@ function restartInterruptedProgress(
 export async function reconcileAbandonedTrashRecoveryClaims(
 	prisma: PrismaClient,
 ): Promise<ReconciledRecoveryClaimCounts> {
-	const [rollback, undeploy, sync, deployment] = await prisma.$transaction([
-		prisma.trashSyncHistory.updateMany({
-			where: { rollbackStatus: "IN_PROGRESS" },
-			data: {
-				rollbackStatus: "PARTIAL",
-				rollbackProgress: restartInterruptedProgress("rollback", RESTART_INTERRUPTED_MESSAGE),
-			},
-		}),
-		prisma.templateDeploymentHistory.updateMany({
-			where: { undeployStatus: "IN_PROGRESS" },
-			data: {
-				undeployStatus: "PARTIAL",
-				undeployProgress: restartInterruptedProgress(
-					"remove-custom-formats",
-					RESTART_INTERRUPTED_MESSAGE,
-				),
-			},
-		}),
-		prisma.trashSyncHistory.updateMany({
-			where: { status: { in: ["IN_PROGRESS", "RUNNING"] } },
-			data: {
-				status: "UNCERTAIN",
-				errorLog: RESTART_UNCERTAIN_MESSAGE,
-				rollbackStatus: "PARTIAL",
-				rollbackProgress: restartInterruptedProgress("rollback", RESTART_UNCERTAIN_MESSAGE),
-			},
-		}),
-		prisma.templateDeploymentHistory.updateMany({
-			where: { status: "IN_PROGRESS" },
-			data: {
-				status: "UNCERTAIN",
-				errors: JSON.stringify([RESTART_UNCERTAIN_MESSAGE]),
-				undeployStatus: "PARTIAL",
-				undeployProgress: restartInterruptedProgress(
-					"remove-custom-formats",
-					RESTART_UNCERTAIN_MESSAGE,
-				),
-			},
-		}),
-	]);
+	const [rollback, undeploy, snapshotlessSync, recoverableSync, deployment] =
+		await prisma.$transaction([
+			prisma.trashSyncHistory.updateMany({
+				where: { rollbackStatus: "IN_PROGRESS" },
+				data: {
+					rollbackStatus: "PARTIAL",
+					rollbackProgress: restartInterruptedProgress("rollback", RESTART_INTERRUPTED_MESSAGE),
+				},
+			}),
+			prisma.templateDeploymentHistory.updateMany({
+				where: { undeployStatus: "IN_PROGRESS" },
+				data: {
+					undeployStatus: "PARTIAL",
+					undeployProgress: restartInterruptedProgress(
+						"remove-custom-formats",
+						RESTART_INTERRUPTED_MESSAGE,
+					),
+				},
+			}),
+			prisma.trashSyncHistory.updateMany({
+				where: {
+					status: { in: ["IN_PROGRESS", "RUNNING"] },
+					backupId: null,
+				},
+				data: {
+					status: "UNCERTAIN",
+					errorLog: RESTART_UNCERTAIN_MESSAGE,
+					rollbackStatus: null,
+					rollbackProgress: null,
+				},
+			}),
+			prisma.trashSyncHistory.updateMany({
+				where: {
+					status: { in: ["IN_PROGRESS", "RUNNING"] },
+					backupId: { not: null },
+				},
+				data: {
+					status: "UNCERTAIN",
+					errorLog: RESTART_UNCERTAIN_MESSAGE,
+					rollbackStatus: "PARTIAL",
+					rollbackProgress: restartInterruptedProgress("rollback", RESTART_UNCERTAIN_MESSAGE),
+				},
+			}),
+			prisma.templateDeploymentHistory.updateMany({
+				where: { status: "IN_PROGRESS" },
+				data: {
+					status: "UNCERTAIN",
+					errors: JSON.stringify([RESTART_UNCERTAIN_MESSAGE]),
+					undeployStatus: "PARTIAL",
+					undeployProgress: restartInterruptedProgress(
+						"remove-custom-formats",
+						RESTART_UNCERTAIN_MESSAGE,
+					),
+				},
+			}),
+		]);
+	const syncCount = snapshotlessSync.count + recoverableSync.count;
 
 	return {
 		rollback: rollback.count,
 		undeploy: undeploy.count,
-		sync: sync.count,
+		sync: syncCount,
 		deployment: deployment.count,
-		total: rollback.count + undeploy.count + sync.count + deployment.count,
+		total: rollback.count + undeploy.count + syncCount + deployment.count,
 	};
 }
 

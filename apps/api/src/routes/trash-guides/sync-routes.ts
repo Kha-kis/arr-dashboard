@@ -47,6 +47,17 @@ const syncHistoryQuerySchema = z.object({
 		.transform((val) => (val ? Number.parseInt(val, 10) : 0)),
 });
 
+const rollbackAppliedConfigsSchema = z.array(
+	z
+		.object({
+			name: z.string().trim().min(1),
+			action: z.enum(["created", "updated"]).optional(),
+		})
+		.passthrough(),
+);
+
+type AppliedConfig = z.infer<typeof rollbackAppliedConfigsSchema>[number];
+
 // ============================================================================
 // In-Memory Progress Tracking (temporary - will move to Redis/cache later)
 // ============================================================================
@@ -525,14 +536,10 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 
 			// Parse appliedConfigs to know which CFs were CREATED by the sync (not just updated)
 			// We only delete CFs that were created, not ones that existed before
-			interface AppliedConfig {
-				name: string;
-				action?: "created" | "updated";
-			}
 			let appliedConfigs: AppliedConfig[] = [];
 			try {
 				if (sync.appliedConfigs) {
-					appliedConfigs = JSON.parse(sync.appliedConfigs) as AppliedConfig[];
+					appliedConfigs = rollbackAppliedConfigsSchema.parse(JSON.parse(sync.appliedConfigs));
 				}
 			} catch (error) {
 				request.log.warn({ syncId, err: error }, "Could not parse rollback ownership evidence");

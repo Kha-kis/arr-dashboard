@@ -15,15 +15,19 @@ function dependencyPlugin(name: string, decoration: string, value: unknown) {
 function createPrisma(transactionResult: Array<{ count: number }> | Error) {
 	const rollbackCount = transactionResult instanceof Error ? 0 : (transactionResult[0]?.count ?? 0);
 	const undeployCount = transactionResult instanceof Error ? 0 : (transactionResult[1]?.count ?? 0);
-	const syncCount = transactionResult instanceof Error ? 0 : (transactionResult[2]?.count ?? 0);
-	const deploymentCount =
+	const snapshotlessSyncCount =
+		transactionResult instanceof Error ? 0 : (transactionResult[2]?.count ?? 0);
+	const recoverableSyncCount =
 		transactionResult instanceof Error ? 0 : (transactionResult[3]?.count ?? 0);
+	const deploymentCount =
+		transactionResult instanceof Error ? 0 : (transactionResult[4]?.count ?? 0);
 	return {
 		trashSyncHistory: {
 			updateMany: vi
 				.fn()
 				.mockReturnValueOnce(Promise.resolve({ count: rollbackCount }))
-				.mockReturnValueOnce(Promise.resolve({ count: syncCount })),
+				.mockReturnValueOnce(Promise.resolve({ count: snapshotlessSyncCount }))
+				.mockReturnValueOnce(Promise.resolve({ count: recoverableSyncCount })),
 		},
 		templateDeploymentHistory: {
 			updateMany: vi
@@ -51,7 +55,13 @@ describe("deployment executor startup reconciliation", () => {
 	it("reconciles and logs abandoned claims before exposing the executor", async () => {
 		const app = Fastify({ logger: false });
 		apps.push(app);
-		const prisma = createPrisma([{ count: 4 }, { count: 1 }, { count: 2 }, { count: 3 }]);
+		const prisma = createPrisma([
+			{ count: 4 },
+			{ count: 1 },
+			{ count: 1 },
+			{ count: 1 },
+			{ count: 3 },
+		]);
 		const info = vi.spyOn(app.log, "info");
 
 		app.register(dependencyPlugin("prisma", "prisma", prisma));
@@ -90,7 +100,13 @@ describe("deployment executor startup reconciliation", () => {
 	it("does not log reconciliation when startup finds no abandoned claims", async () => {
 		const app = Fastify({ logger: false });
 		apps.push(app);
-		const prisma = createPrisma([{ count: 0 }, { count: 0 }, { count: 0 }, { count: 0 }]);
+		const prisma = createPrisma([
+			{ count: 0 },
+			{ count: 0 },
+			{ count: 0 },
+			{ count: 0 },
+			{ count: 0 },
+		]);
 		const info = vi.spyOn(app.log, "info");
 
 		app.register(dependencyPlugin("prisma", "prisma", prisma));
