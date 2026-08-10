@@ -84,6 +84,7 @@ export const SyncValidationModal = ({
 }: SyncValidationModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
+	const displayTemplateName = incognitoMode ? "TRaSH template" : templateName;
 	const displayInstanceName = incognitoMode ? getLinuxInstanceName(instanceName) : instanceName;
 	const [resolutions, setResolutions] = useState<Record<string, "REPLACE" | "SKIP">>({});
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
@@ -124,17 +125,18 @@ export const SyncValidationModal = ({
 			const endTime = Date.now();
 			setTiming((prev) => {
 				const duration = prev.startTime > 0 ? endTime - prev.startTime : null;
-				console.error("[SyncValidationModal] Validation error:", {
-					error: error.message,
-					templateId,
-					instanceId,
-					retryCount,
-					timing: {
-						startTime: prev.startTime > 0 ? new Date(prev.startTime).toISOString() : null,
-						endTime: new Date(endTime).toISOString(),
-						durationMs: duration,
-					},
-				});
+				if (!incognitoMode) {
+					console.error("[SyncValidationModal] Validation error:", {
+						templateId,
+						instanceId,
+						retryCount,
+						timing: {
+							startTime: prev.startTime > 0 ? new Date(prev.startTime).toISOString() : null,
+							endTime: new Date(endTime).toISOString(),
+							durationMs: duration,
+						},
+					});
+				}
 				return { ...prev, endTime, duration };
 			});
 		},
@@ -143,9 +145,12 @@ export const SyncValidationModal = ({
 			const endTime = Date.now();
 			setTiming((prev) => {
 				const duration = endTime - prev.startTime;
-				if (!data.valid && (!data.errors || data.errors.length === 0)) {
-					console.warn("[SyncValidationModal] Silent failure - full validation response:", {
-						validation: data,
+				if (!incognitoMode && !data.valid && (!data.errors || data.errors.length === 0)) {
+					console.warn("[SyncValidationModal] Silent validation failure:", {
+						valid: data.valid,
+						errorCount: data.errors?.length ?? 0,
+						warningCount: data.warnings?.length ?? 0,
+						hasPreview: Boolean(data.preview),
 						templateId,
 						instanceId,
 						timing: {
@@ -314,10 +319,23 @@ export const SyncValidationModal = ({
 		(w) => !w.includes("is reachable") && !w.includes("Validation passed"),
 	);
 	const hasActualWarnings = actualWarnings.length > 0;
+	const displayedValidationErrors = incognitoMode
+		? ["Validation errors hidden in incognito mode."]
+		: (validation?.errors ?? []);
+	const displayedActualWarnings = incognitoMode
+		? ["Deployment warnings hidden in incognito mode."]
+		: actualWarnings;
+	const displayedInformationalWarnings = incognitoMode
+		? ["Validation information hidden in incognito mode."]
+		: informationalWarnings;
 
 	const _isAutoRetrying = retryProgress !== null && retryProgress.isWaiting;
 
 	const displayError = localError ?? validateMutation.error ?? null;
+	const displayedMutationError =
+		incognitoMode && displayError
+			? new Error("Validation request failed; details hidden in incognito mode.")
+			: displayError;
 
 	const handleConfirm = () => {
 		if (!validation?.executionToken || !canConfirm) return;
@@ -384,8 +402,9 @@ export const SyncValidationModal = ({
 								Validate Sync
 							</h2>
 							<p className="mt-1 text-sm text-muted-foreground">
-								Template: <span className="font-medium text-foreground">{templateName}</span> →
-								Instance: <span className="font-medium text-foreground">{displayInstanceName}</span>
+								Template: <span className="font-medium text-foreground">{displayTemplateName}</span>{" "}
+								→ Instance:{" "}
+								<span className="font-medium text-foreground">{displayInstanceName}</span>
 							</p>
 						</div>
 					</div>
@@ -428,7 +447,7 @@ export const SyncValidationModal = ({
 
 							{hasErrors && (
 								<ValidationErrorPanel
-									errors={validation.errors}
+									errors={displayedValidationErrors}
 									errorTypes={errorTypes}
 									themeGradient={themeGradient}
 									onCancel={onCancel}
@@ -440,7 +459,7 @@ export const SyncValidationModal = ({
 								/>
 							)}
 
-							{hasActualWarnings && <ValidationWarningsPanel warnings={actualWarnings} />}
+							{hasActualWarnings && <ValidationWarningsPanel warnings={displayedActualWarnings} />}
 
 							{/* Informational messages */}
 							{informationalWarnings.length > 0 && canProceed && (
@@ -455,13 +474,30 @@ export const SyncValidationModal = ({
 										<Info className="h-5 w-5 shrink-0" style={{ color: themeGradient.from }} />
 										<div className="flex-1">
 											<ul className="space-y-1 text-sm text-muted-foreground">
-												{informationalWarnings.map((info, index) => (
+												{displayedInformationalWarnings.map((info, index) => (
 													<li key={index}>• {info}</li>
 												))}
 											</ul>
 										</div>
 									</div>
 								</div>
+							)}
+
+							{preview && (
+								<section
+									className="rounded-xl border border-border/50 bg-card/30 p-4"
+									aria-labelledby="sync-deployment-plan"
+								>
+									<h3 id="sync-deployment-plan" className="font-medium text-foreground">
+										Deployment plan
+									</h3>
+									<p className="mt-1 text-xs text-muted-foreground">
+										{preview.summary.newCustomFormats} create,{" "}
+										{preview.summary.updatedCustomFormats} update,{" "}
+										{preview.summary.orphanedCustomFormats} score reset,{" "}
+										{preview.summary.skippedCustomFormats} unchanged
+									</p>
+								</section>
 							)}
 
 							{customFormats.length > 0 && (
@@ -473,9 +509,10 @@ export const SyncValidationModal = ({
 										Custom Format Changes ({customFormats.length})
 									</h3>
 									<div className="space-y-2">
-										{customFormats.map((item) => {
+										{customFormats.map((item, index) => {
 											const hasItemConflicts = item.hasConflicts || item.conflicts.length > 0;
 											const resolution = resolutions[item.trashId];
+											const displayName = incognitoMode ? `Custom Format ${index + 1}` : item.name;
 
 											return (
 												<div
@@ -485,7 +522,7 @@ export const SyncValidationModal = ({
 													<div className="flex items-start justify-between gap-3">
 														<div className="min-w-0">
 															<p className="truncate text-sm font-medium text-foreground">
-																{item.name}
+																{displayName}
 															</p>
 															<p className="mt-1 text-xs text-muted-foreground">
 																Score: {item.scoreOverride}
@@ -513,10 +550,14 @@ export const SyncValidationModal = ({
 																				{formatConflictType(conflict.conflictType)}
 																			</p>
 																			<p className="mt-1 break-words text-muted-foreground">
-																				Template: {formatConflictValue(conflict.templateValue)}
+																				{incognitoMode
+																					? "Conflict details hidden in incognito mode."
+																					: `Template: ${formatConflictValue(conflict.templateValue)}`}
 																			</p>
 																			<p className="mt-1 break-words text-muted-foreground">
-																				Instance: {formatConflictValue(conflict.instanceValue)}
+																				{incognitoMode
+																					? null
+																					: `Instance: ${formatConflictValue(conflict.instanceValue)}`}
 																			</p>
 																		</div>
 																	))}
@@ -526,7 +567,7 @@ export const SyncValidationModal = ({
 																<Button
 																	size="sm"
 																	variant={resolution === "REPLACE" ? "default" : "outline"}
-																	aria-label={`Use template version of ${item.name}`}
+																	aria-label={`Use template version of ${displayName}`}
 																	aria-pressed={resolution === "REPLACE"}
 																	onClick={() => handleResolutionChange(item.trashId, "REPLACE")}
 																	className="rounded-xl"
@@ -536,7 +577,7 @@ export const SyncValidationModal = ({
 																<Button
 																	size="sm"
 																	variant={resolution === "SKIP" ? "default" : "outline"}
-																	aria-label={`Keep existing ${item.name}`}
+																	aria-label={`Keep existing ${displayName}`}
 																	aria-pressed={resolution === "SKIP"}
 																	onClick={() => handleResolutionChange(item.trashId, "SKIP")}
 																	className="rounded-xl"
@@ -559,12 +600,12 @@ export const SyncValidationModal = ({
 										Naming Changes ({namingChanges.length})
 									</h3>
 									<div className="space-y-2">
-										{namingChanges.map((field) => (
+										{namingChanges.map((field, index) => (
 											<div
 												key={field}
 												className="rounded-lg border border-border/50 bg-card/30 px-3 py-2 text-sm text-foreground"
 											>
-												{field}
+												{incognitoMode ? `Naming setting ${index + 1}` : field}
 											</div>
 										))}
 									</div>
@@ -577,13 +618,17 @@ export const SyncValidationModal = ({
 										Unmatched Custom Formats ({unmatchedCustomFormats.length})
 									</h3>
 									<div className="space-y-2">
-										{unmatchedCustomFormats.map((item) => (
+										{unmatchedCustomFormats.map((item, index) => (
 											<div
 												key={item.instanceId}
 												className="rounded-lg border border-border/50 bg-card/30 px-3 py-2"
 											>
-												<p className="text-sm font-medium text-foreground">{item.name}</p>
-												<p className="mt-1 text-xs text-muted-foreground">{item.reason}</p>
+												<p className="text-sm font-medium text-foreground">
+													{incognitoMode ? `Unmatched Custom Format ${index + 1}` : item.name}
+												</p>
+												<p className="mt-1 text-xs text-muted-foreground">
+													{incognitoMode ? "Match details hidden in incognito mode." : item.reason}
+												</p>
 											</div>
 										))}
 									</div>
@@ -612,13 +657,13 @@ export const SyncValidationModal = ({
 												0.
 											</p>
 											<div className="mt-3 space-y-2">
-												{orphanedCustomFormats.map((orphan) => (
+												{orphanedCustomFormats.map((orphan, index) => (
 													<div
 														key={orphan.instanceId}
 														className="flex items-center justify-between gap-4 rounded-lg border border-border/50 bg-card/30 px-3 py-2"
 													>
 														<span className="min-w-0 truncate text-sm font-medium text-foreground">
-															{orphan.name}
+															{incognitoMode ? `Orphaned Custom Format ${index + 1}` : orphan.name}
 														</span>
 														<span
 															className="shrink-0 font-mono text-sm"
@@ -649,16 +694,22 @@ export const SyncValidationModal = ({
 											</p>
 
 											<div className="mt-4 space-y-3">
-												{legacyConflicts.map((conflict) => (
+												{legacyConflicts.map((conflict, index) => (
 													<div
 														key={conflict.configName}
 														className="rounded-xl border border-border/50 bg-card/30 p-3"
 													>
 														<div className="flex items-center justify-between">
 															<div className="flex-1">
-																<p className="font-medium text-foreground">{conflict.configName}</p>
+																<p className="font-medium text-foreground">
+																	{incognitoMode
+																		? `Custom Format conflict ${index + 1}`
+																		: conflict.configName}
+																</p>
 																<p className="mt-0.5 text-xs text-muted-foreground">
-																	{conflict.reason}
+																	{incognitoMode
+																		? "Conflict details hidden in incognito mode."
+																		: conflict.reason}
 																</p>
 															</div>
 
@@ -673,7 +724,11 @@ export const SyncValidationModal = ({
 																	onClick={() =>
 																		handleResolutionChange(conflict.configName, "REPLACE")
 																	}
-																	aria-label={`Replace ${conflict.configName} with template version`}
+																	aria-label={
+																		incognitoMode
+																			? `Replace Custom Format conflict ${index + 1} with template version`
+																			: `Replace ${conflict.configName} with template version`
+																	}
 																	aria-pressed={resolutions[conflict.configName] === "REPLACE"}
 																	className="rounded-xl"
 																	style={
@@ -696,7 +751,11 @@ export const SyncValidationModal = ({
 																	onClick={() =>
 																		handleResolutionChange(conflict.configName, "SKIP")
 																	}
-																	aria-label={`Keep existing ${conflict.configName}`}
+																	aria-label={
+																		incognitoMode
+																			? `Keep existing Custom Format conflict ${index + 1}`
+																			: `Keep existing ${conflict.configName}`
+																	}
 																	aria-pressed={resolutions[conflict.configName] === "SKIP"}
 																	className="rounded-xl"
 																	style={
@@ -739,10 +798,12 @@ export const SyncValidationModal = ({
 					)}
 
 					{/* Mutation Error */}
-					{displayError && <MutationErrorPanel error={displayError} {...retryProps} />}
+					{displayedMutationError && (
+						<MutationErrorPanel error={displayedMutationError} {...retryProps} />
+					)}
 
 					{/* Development Debug Panel */}
-					{isDevelopment && (
+					{isDevelopment && !incognitoMode && (
 						<SyncDebugPanel
 							templateId={templateId}
 							instanceId={instanceId}
