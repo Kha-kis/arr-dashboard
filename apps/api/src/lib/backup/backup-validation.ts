@@ -15,6 +15,13 @@ const SUPPORTED_BACKUP_VERSIONS = new Set([LEGACY_BACKUP_VERSION, BACKUP_VERSION
 
 type CoordinationRecord = Record<string, unknown>;
 
+type CoordinationState = {
+	rollbackStatus?: unknown;
+	undeployStatus?: unknown;
+	status?: unknown;
+	rolledBack?: unknown;
+};
+
 function isRecord(value: unknown): value is CoordinationRecord {
 	return typeof value === "object" && value !== null;
 }
@@ -23,8 +30,44 @@ function isNonterminalStatus(value: unknown): boolean {
 	return typeof value === "string" && value !== "COMPLETED";
 }
 
+export function isNonterminalRollback(record: CoordinationState): boolean {
+	if (record.rolledBack === true || record.rollbackStatus === "COMPLETED") {
+		return false;
+	}
+
+	return isNonterminalStatus(record.rollbackStatus);
+}
+
+export function isNonterminalUndeploy(record: CoordinationState): boolean {
+	if (record.rolledBack === true || record.undeployStatus === "COMPLETED") {
+		return false;
+	}
+
+	return isNonterminalStatus(record.undeployStatus) || record.status === "PARTIAL_UNDEPLOY";
+}
+
 function coordinationId(record: CoordinationRecord): string {
 	return typeof record.id === "string" && record.id.length > 0 ? record.id : "<unknown>";
+}
+
+function recordsById(value: unknown, label: string): Map<string, CoordinationRecord> {
+	const records = new Map<string, CoordinationRecord>();
+	if (!Array.isArray(value)) {
+		return records;
+	}
+
+	for (const record of value) {
+		if (isRecord(record) && typeof record.id === "string" && record.id.length > 0) {
+			if (records.has(record.id)) {
+				throw new Error(
+					`Invalid TRaSH recovery evidence: duplicate ${label} identity ${record.id}`,
+				);
+			}
+			records.set(record.id, record);
+		}
+	}
+
+	return records;
 }
 
 /**
@@ -32,28 +75,59 @@ function coordinationId(record: CoordinationRecord): string {
  * This runs before secrets or database state are changed.
  */
 export function validateCoordinationEvidence(data: Record<string, unknown>): void {
+	const instancesById = recordsById(data.serviceInstances, "service instance");
+	const templatesById = recordsById(data.trashTemplates, "template");
 	const snapshots = Array.isArray(data.trashBackups) ? data.trashBackups : [];
 	const snapshotsById = new Map<string, CoordinationRecord>();
-	for (const snapshot of snapshots) {
-		if (isRecord(snapshot) && typeof snapshot.id === "string") {
-			snapshotsById.set(snapshot.id, snapshot);
+	for (let index = 0; index < snapshots.length; index++) {
+		const snapshot = snapshots[index];
+		if (!isRecord(snapshot) || typeof snapshot.id !== "string" || snapshot.id.length === 0) {
+			throw new Error(
+				`Invalid TRaSH recovery snapshot at index ${index}: missing snapshot identity`,
+			);
 		}
+		if (snapshotsById.has(snapshot.id)) {
+			throw new Error(
+				`Invalid TRaSH recovery evidence: duplicate backup snapshot identity ${snapshot.id}`,
+			);
+		}
+		if (
+			typeof snapshot.instanceId !== "string" ||
+			snapshot.instanceId.length === 0 ||
+			typeof snapshot.userId !== "string" ||
+			snapshot.userId.length === 0
+		) {
+			throw new Error(
+				`Invalid TRaSH recovery snapshot ${snapshot.id}: missing instance or owner identity`,
+			);
+		}
+
+		const instance = instancesById.get(snapshot.instanceId);
+		if (!instance) {
+			throw new Error(
+				`Invalid TRaSH recovery snapshot ${snapshot.id}: referenced service instance ${snapshot.instanceId} is missing`,
+			);
+		}
+		if (instance.userId !== snapshot.userId) {
+			throw new Error(
+				`Invalid TRaSH recovery snapshot ${snapshot.id}: owner does not match service instance ${snapshot.instanceId}`,
+			);
+		}
+
+		snapshotsById.set(snapshot.id, snapshot);
 	}
 
 	const requiredRows: Array<{ kind: "rollback" | "undeploy"; row: CoordinationRecord }> = [];
 	if (Array.isArray(data.trashSyncHistory)) {
 		for (const row of data.trashSyncHistory) {
-			if (isRecord(row) && isNonterminalStatus(row.rollbackStatus)) {
+			if (isRecord(row) && isNonterminalRollback(row)) {
 				requiredRows.push({ kind: "rollback", row });
 			}
 		}
 	}
 	if (Array.isArray(data.templateDeploymentHistory)) {
 		for (const row of data.templateDeploymentHistory) {
-			if (
-				isRecord(row) &&
-				(isNonterminalStatus(row.undeployStatus) || row.status === "PARTIAL_UNDEPLOY")
-			) {
+			if (isRecord(row) && isNonterminalUndeploy(row)) {
 				requiredRows.push({ kind: "undeploy", row });
 			}
 		}
@@ -71,6 +145,41 @@ export function validateCoordinationEvidence(data: Record<string, unknown>): voi
 				`Invalid ${kind} coordination evidence for row ${rowId}: missing instance or owner identity`,
 			);
 		}
+
+		const instance = instancesById.get(row.instanceId);
+		if (!instance) {
+			throw new Error(
+				`Invalid ${kind} coordination evidence for row ${rowId}: referenced service instance ${row.instanceId} is missing`,
+			);
+		}
+		if (instance.userId !== row.userId) {
+			throw new Error(
+				`Invalid ${kind} coordination evidence for row ${rowId}: owner does not match service instance ${row.instanceId}`,
+			);
+		}
+
+		const requiresTemplate =
+			kind === "undeploy" || (row.templateId !== null && row.templateId !== undefined);
+		if (requiresTemplate) {
+			if (typeof row.templateId !== "string" || row.templateId.length === 0) {
+				throw new Error(
+					`Invalid ${kind} coordination evidence for row ${rowId}: missing template reference`,
+				);
+			}
+
+			const template = templatesById.get(row.templateId);
+			if (!template) {
+				throw new Error(
+					`Invalid ${kind} coordination evidence for row ${rowId}: referenced template ${row.templateId} is missing`,
+				);
+			}
+			if (template.userId !== row.userId) {
+				throw new Error(
+					`Invalid ${kind} coordination evidence for row ${rowId}: owner does not match template ${row.templateId}`,
+				);
+			}
+		}
+
 		if (typeof row.backupId !== "string" || row.backupId.length === 0) {
 			throw new Error(
 				`Invalid ${kind} coordination evidence for row ${rowId}: missing backup snapshot reference`,

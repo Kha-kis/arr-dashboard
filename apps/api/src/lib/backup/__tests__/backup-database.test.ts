@@ -63,6 +63,8 @@ function makeMockPrisma(rows: Partial<Record<TableName, unknown[]>> = {}): {
 describe("exportDatabase — operational history exclusion", () => {
 	it("skips disposable history but preserves nonterminal rollback and undeploy coordination", async () => {
 		const { prisma, mock } = makeMockPrisma({
+			serviceInstance: [{ id: "instance-1", userId: "user-1" }],
+			trashTemplate: [{ id: "template-1", userId: "user-1" }],
 			huntLog: [{ id: "h1" }],
 			huntSearchHistory: [{ id: "s1" }],
 		});
@@ -76,6 +78,7 @@ describe("exportDatabase — operational history exclusion", () => {
 		const undeploy = {
 			id: "undeploy-active",
 			instanceId: "instance-1",
+			templateId: "template-1",
 			userId: "user-1",
 			backupId: "snapshot-undeploy",
 			undeployStatus: "IN_PROGRESS",
@@ -125,7 +128,9 @@ describe("exportDatabase — operational history exclusion", () => {
 	});
 
 	it("unions nonterminal coordination outside the capped history window", async () => {
-		const { prisma, mock } = makeMockPrisma();
+		const { prisma, mock } = makeMockPrisma({
+			serviceInstance: [{ id: "instance-1", userId: "user-1" }],
+		});
 		const rollback = {
 			id: "rollback-outside-cap",
 			instanceId: "instance-1",
@@ -157,6 +162,35 @@ describe("exportDatabase — operational history exclusion", () => {
 		expect(result.trashSyncHistory).toEqual([recentTerminal, rollback]);
 	});
 
+	it.each([
+		{
+			name: "was already rolled back",
+			terminalState: { rolledBack: true },
+		},
+		{
+			name: "completed undeployment",
+			terminalState: { undeployStatus: "COMPLETED" },
+		},
+	])("does not preserve a legacy PARTIAL_UNDEPLOY row that $name", async ({ terminalState }) => {
+		const { prisma, mock } = makeMockPrisma();
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce([]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "legacy-terminal-undeploy",
+				instanceId: "instance-1",
+				userId: "user-1",
+				backupId: null,
+				status: "PARTIAL_UNDEPLOY",
+				...terminalState,
+			},
+		]);
+
+		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
+
+		expect(result.templateDeploymentHistory).toEqual([]);
+		expect(mock.trashBackup.findMany).not.toHaveBeenCalled();
+	});
+
 	it("fails closed when a nonterminal coordination row has no snapshot reference", async () => {
 		const { prisma, mock } = makeMockPrisma();
 		mock.trashSyncHistory.findMany.mockResolvedValueOnce([
@@ -176,7 +210,9 @@ describe("exportDatabase — operational history exclusion", () => {
 	});
 
 	it("fails closed when a referenced coordination snapshot is absent", async () => {
-		const { prisma, mock } = makeMockPrisma();
+		const { prisma, mock } = makeMockPrisma({
+			serviceInstance: [{ id: "instance-1", userId: "user-1" }],
+		});
 		mock.trashSyncHistory.findMany.mockResolvedValueOnce([
 			{
 				id: "rollback-missing-evidence",
@@ -263,7 +299,15 @@ describe("exportDatabase — operational history exclusion", () => {
 
 	it("includeTrashBackups: true filters by 7-day window + non-expired", async () => {
 		const { prisma, mock } = makeMockPrisma({
-			trashBackup: [{ id: "tb1" }],
+			serviceInstance: [{ id: "instance-1", userId: "user-1" }],
+			trashBackup: [
+				{
+					id: "tb1",
+					instanceId: "instance-1",
+					userId: "user-1",
+					backupData: "recovery-evidence",
+				},
+			],
 		});
 
 		await exportDatabase(prisma, { includeTrashBackups: true });

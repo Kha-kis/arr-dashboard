@@ -8,7 +8,12 @@
 import type { BackupData } from "@arr/shared";
 import { loggers } from "../logger.js";
 import type { Prisma, PrismaClient, TrashBackup } from "../prisma.js";
-import { validateCoordinationEvidence, validateRecords } from "./backup-validation.js";
+import {
+	isNonterminalRollback,
+	isNonterminalUndeploy,
+	validateCoordinationEvidence,
+	validateRecords,
+} from "./backup-validation.js";
 
 const log = loggers.backup;
 
@@ -28,28 +33,6 @@ export interface ExportDatabaseOptions {
 	 * months of accumulated history from blowing the heap. Default: 1000.
 	 */
 	historyRetentionLimit?: number;
-}
-
-type CoordinationRow = {
-	id: string;
-	instanceId: string;
-	userId: string;
-	backupId: string | null;
-	rollbackStatus?: string | null;
-	undeployStatus?: string | null;
-	status?: string;
-};
-
-function isNonterminalStatus(status: string | null | undefined): boolean {
-	return typeof status === "string" && status !== "COMPLETED";
-}
-
-function isNonterminalRollback(row: CoordinationRow): boolean {
-	return isNonterminalStatus(row.rollbackStatus);
-}
-
-function isNonterminalUndeploy(row: CoordinationRow): boolean {
-	return isNonterminalStatus(row.undeployStatus) || row.status === "PARTIAL_UNDEPLOY";
 }
 
 function mergeRowsById<T extends { id: string }>(rows: T[], preservedRows: T[]): T[] {
@@ -207,6 +190,8 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 	}
 
 	validateCoordinationEvidence({
+		serviceInstances,
+		trashTemplates,
 		trashSyncHistory,
 		templateDeploymentHistory,
 		trashBackups,

@@ -50,6 +50,9 @@ function makePrismaWithCoordinationEvidence(): PrismaClient {
 			rollbackStatus: "IN_PROGRESS",
 		},
 	]);
+	(prisma.serviceInstance as { findMany: ReturnType<typeof vi.fn> }).findMany.mockResolvedValue([
+		{ id: "instance-1", userId: "user-1" },
+	]);
 	(prisma.trashBackup as { findMany: ReturnType<typeof vi.fn> }).findMany.mockResolvedValue([
 		{
 			id: "snapshot-1",

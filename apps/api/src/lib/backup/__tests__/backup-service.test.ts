@@ -304,6 +304,61 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		expect(() => validateBackup(currentBackup)).not.toThrow();
 	});
 
+	it.each(["1.0", "1.1"])(
+		"accepts a valid %s payload with authoritative coordination ownership",
+		(version) => {
+			const validBackup = {
+				version,
+				appVersion: "3.0.0-beta",
+				timestamp: new Date().toISOString(),
+				data: {
+					users: [],
+					sessions: [],
+					serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+					serviceTags: [],
+					serviceInstanceTags: [],
+					oidcAccounts: [],
+					webAuthnCredentials: [],
+					trashTemplates: [{ id: "template-1", userId: "user-1" }],
+					trashSyncHistory: [
+						{
+							id: "rollback-1",
+							instanceId: "instance-1",
+							templateId: "template-1",
+							userId: "user-1",
+							rollbackStatus: "IN_PROGRESS",
+							backupId: "snapshot-1",
+						},
+					],
+					templateDeploymentHistory: [
+						{
+							id: "undeploy-1",
+							instanceId: "instance-1",
+							templateId: "template-1",
+							userId: "user-1",
+							undeployStatus: "IN_PROGRESS",
+							backupId: "snapshot-1",
+						},
+					],
+					trashBackups: [
+						{
+							id: "snapshot-1",
+							instanceId: "instance-1",
+							userId: "user-1",
+							backupData: "recovery-evidence",
+						},
+					],
+				},
+				secrets: {
+					encryptionKey: "test-encryption-key-32-bytes-hex",
+					sessionCookieSecret: "test-session-cookie-secret",
+				},
+			};
+
+			expect(() => validateBackup(validBackup)).not.toThrow();
+		},
+	);
+
 	it.each([
 		{
 			name: "missing backupId",
@@ -338,10 +393,15 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		{
 			name: "mismatched snapshot ownership",
 			history: {
+				serviceInstances: [
+					{ id: "instance-1", userId: "user-1" },
+					{ id: "instance-2", userId: "user-1" },
+				],
 				templateDeploymentHistory: [
 					{
 						id: "undeploy-1",
 						instanceId: "instance-1",
+						templateId: "template-1",
 						userId: "user-1",
 						undeployStatus: "IN_PROGRESS",
 						backupId: "snapshot-1",
@@ -364,6 +424,7 @@ describe("BackupService - Backup Validation (Unit)", () => {
 					{
 						id: "undeploy-2",
 						instanceId: "instance-1",
+						templateId: "template-1",
 						userId: "user-1",
 						status: "PARTIAL_UNDEPLOY",
 						backupId: "snapshot-2",
@@ -387,11 +448,12 @@ describe("BackupService - Backup Validation (Unit)", () => {
 			data: {
 				users: [],
 				sessions: [],
-				serviceInstances: [],
+				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
 				serviceTags: [],
 				serviceInstanceTags: [],
 				oidcAccounts: [],
 				webAuthnCredentials: [],
+				trashTemplates: [{ id: "template-1", userId: "user-1" }],
 				...history,
 			},
 			secrets: {
@@ -401,6 +463,243 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		};
 
 		expect(() => validateBackup(unsafeBackup)).toThrow("coordination evidence");
+	});
+
+	it.each([
+		{
+			name: "snapshot references a missing service instance",
+			history: {
+				trashBackups: [
+					{
+						id: "snapshot-missing-instance",
+						instanceId: "instance-missing",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "referenced service instance instance-missing is missing",
+		},
+		{
+			name: "snapshot owner differs from its service instance owner",
+			history: {
+				trashBackups: [
+					{
+						id: "snapshot-cross-owner",
+						instanceId: "instance-1",
+						userId: "user-2",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "owner does not match service instance instance-1",
+		},
+		{
+			name: "journal references a missing service instance",
+			history: {
+				trashSyncHistory: [
+					{
+						id: "rollback-missing-instance",
+						instanceId: "instance-missing",
+						userId: "user-1",
+						rollbackStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "referenced service instance instance-missing is missing",
+		},
+		{
+			name: "journal owner differs from its service instance owner",
+			history: {
+				trashSyncHistory: [
+					{
+						id: "rollback-cross-owner",
+						instanceId: "instance-1",
+						userId: "user-2",
+						rollbackStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "owner does not match service instance instance-1",
+		},
+		{
+			name: "undeploy journal references a missing template",
+			history: {
+				templateDeploymentHistory: [
+					{
+						id: "undeploy-missing-template",
+						instanceId: "instance-1",
+						templateId: "template-missing",
+						userId: "user-1",
+						undeployStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "referenced template template-missing is missing",
+		},
+		{
+			name: "undeploy journal omits its template reference",
+			history: {
+				templateDeploymentHistory: [
+					{
+						id: "undeploy-without-template",
+						instanceId: "instance-1",
+						userId: "user-1",
+						undeployStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "missing template reference",
+		},
+		{
+			name: "undeploy journal owner differs from its template owner",
+			history: {
+				trashTemplates: [{ id: "template-1", userId: "user-2" }],
+				templateDeploymentHistory: [
+					{
+						id: "undeploy-cross-owner-template",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						undeployStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "owner does not match template template-1",
+		},
+		{
+			name: "rollback journal owner differs from its referenced template owner",
+			history: {
+				trashTemplates: [{ id: "template-1", userId: "user-2" }],
+				trashSyncHistory: [
+					{
+						id: "rollback-cross-owner-template",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						rollbackStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "owner does not match template template-1",
+		},
+		{
+			name: "authoritative service identities are duplicated",
+			history: {
+				serviceInstances: [
+					{ id: "instance-1", userId: "user-1" },
+					{ id: "instance-1", userId: "user-2" },
+				],
+			},
+			message: "duplicate service instance identity instance-1",
+		},
+		{
+			name: "recovery snapshot identities are duplicated",
+			history: {
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "first",
+					},
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "second",
+					},
+				],
+			},
+			message: "duplicate backup snapshot identity snapshot-1",
+		},
+		{
+			name: "authoritative template identities are duplicated",
+			history: {
+				trashTemplates: [
+					{ id: "template-1", userId: "user-1" },
+					{ id: "template-1", userId: "user-2" },
+				],
+			},
+			message: "duplicate template identity template-1",
+		},
+	])("rejects $name before restore", ({ history, message }) => {
+		const unsafeBackup = {
+			version: "1.1",
+			appVersion: "3.0.0-beta",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashTemplates: [{ id: "template-1", userId: "user-1" }],
+				...history,
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(unsafeBackup)).toThrow(message);
 	});
 
 	it("does not require snapshots for completed coordination", () => {
@@ -417,7 +716,18 @@ describe("BackupService - Backup Validation (Unit)", () => {
 				oidcAccounts: [],
 				webAuthnCredentials: [],
 				trashSyncHistory: [{ id: "done", rollbackStatus: "COMPLETED" }],
-				templateDeploymentHistory: [{ id: "done", undeployStatus: "COMPLETED" }],
+				templateDeploymentHistory: [
+					{
+						id: "legacy-rolled-back",
+						status: "PARTIAL_UNDEPLOY",
+						rolledBack: true,
+					},
+					{
+						id: "legacy-undeploy-completed",
+						status: "PARTIAL_UNDEPLOY",
+						undeployStatus: "COMPLETED",
+					},
+				],
 				trashBackups: [],
 			},
 			secrets: {
