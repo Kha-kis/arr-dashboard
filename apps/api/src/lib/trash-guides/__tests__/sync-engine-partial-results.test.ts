@@ -36,7 +36,9 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 		const progress = vi.fn();
 		engine.onProgress("sync-1", progress);
 
-		await expect(engine.execute(createSyncOptions(), undefined)).resolves.toMatchObject({
+		await expect(
+			engine.execute(createSyncOptions(), undefined, "review-token"),
+		).resolves.toMatchObject({
 			success: false,
 			status: "UNCERTAIN",
 			configsApplied: 1,

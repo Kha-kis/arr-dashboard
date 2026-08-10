@@ -425,17 +425,38 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 
 	it("counts an unverified bulk write as uncertain instead of failed", async () => {
 		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			},
 			trashTemplate: {
 				findUnique: vi.fn().mockResolvedValue({ id: "template-1", name: "Any" }),
+			},
+			serviceInstance: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						{ id: "instance-1", service: "RADARR", baseUrl: "http://radarr:7878" },
+					]),
 			},
 		};
 		const executor = new DeploymentExecutorService(prisma as never, {} as never);
 		const uncertain = Object.assign(new ConflictError("ARR write result is uncertain"), {
 			deploymentResultUncertain: true,
 		});
-		vi.spyOn(executor, "deploySingleInstance").mockRejectedValue(uncertain);
+		const privateExecutor = executor as unknown as {
+			executeSingleDeployment: (...args: unknown[]) => Promise<unknown>;
+		};
+		vi.spyOn(privateExecutor, "executeSingleDeployment").mockRejectedValue(uncertain);
 
-		const result = await executor.deployBulkInstances("template-1", ["instance-1"], "user-1");
+		const result = await executor.deployBulkInstances(
+			"template-1",
+			["instance-1"],
+			"user-1",
+			undefined,
+			undefined,
+			{ "instance-1": "review-token" },
+		);
 
 		expect(result).toMatchObject({
 			successfulInstances: 0,

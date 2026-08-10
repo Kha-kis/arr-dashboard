@@ -2459,13 +2459,13 @@ export class DeploymentExecutorService {
 
 			return {
 				templateId,
-					templateName: template.name,
-					totalInstances: instanceIds.length,
-					successfulInstances: results.filter((result) => result.status === "SUCCESS").length,
-					failedInstances: results.filter((result) => result.status === "FAILED").length,
-					uncertainInstances: results.filter((result) => result.status === "UNCERTAIN").length,
-					results,
-				};
-			});
+				templateName: template.name,
+				totalInstances: instanceIds.length,
+				successfulInstances: results.filter((result) => result.status === "SUCCESS").length,
+				failedInstances: results.filter((result) => result.status === "FAILED").length,
+				uncertainInstances: results.filter((result) => result.status === "UNCERTAIN").length,
+				results,
+			};
+		});
 	}
 }
