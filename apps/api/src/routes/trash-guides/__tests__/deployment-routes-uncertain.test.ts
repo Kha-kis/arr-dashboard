@@ -81,7 +81,11 @@ describe("deployment route uncertain outcomes", () => {
 		});
 
 		const response = await createInjectAuthenticated(app)("POST", "/execute", {
-			body: { templateId: "template-1", instanceId: "instance-1" },
+			body: {
+				templateId: "template-1",
+				instanceId: "instance-1",
+				executionToken: "a".repeat(64),
+			},
 		});
 
 		expect(response.statusCode).toBe(200);
