@@ -286,6 +286,42 @@ describe("evictStaleRows", () => {
 		expect(prisma.$transaction).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		["bounded history", "Plex history exceeded the safe 100000-row limit"],
+		["repeated page", "Plex history returned a duplicate row while paging"],
+	] as const)(
+		"rejects incomplete %s history before publishing a cache generation",
+		async (_caseName, message) => {
+			const getHistory = vi.fn().mockRejectedValue(new Error(message));
+			const cacheDelete = vi.fn();
+			const statusUpsert = vi.fn();
+			const tx = {
+				plexCache: { deleteMany: cacheDelete, createMany: vi.fn() },
+				cacheRefreshStatus: { upsert: statusUpsert },
+			};
+			const prisma = {
+				$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+					callback(tx),
+				),
+			} as unknown as PrismaClient;
+			const client = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+				getLibraryItems: vi.fn().mockResolvedValue([]),
+				getHistory,
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+
+			const result = await refreshPlexCache(client, prisma, "inst-1", silentLog, undefined);
+
+			expect(getHistory).toHaveBeenCalledWith({ maxResults: 100_000, requireComplete: true });
+			expect(result.complete).toBe(false);
+			expect(prisma.$transaction).not.toHaveBeenCalled();
+			expect(cacheDelete).not.toHaveBeenCalled();
+			expect(statusUpsert).not.toHaveBeenCalled();
+		},
+	);
+
 	it("keeps the previous generation when playback starts during history verification", async () => {
 		const getOnDeck = vi
 			.fn()
