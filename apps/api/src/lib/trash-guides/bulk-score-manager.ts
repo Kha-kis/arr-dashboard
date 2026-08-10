@@ -22,6 +22,12 @@ import type { ArrClientFactory } from "../arr/client-factory.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
+import { readPersistedManagedCustomFormatIdentities } from "./deployment-managed-format-state.js";
+import {
+	assertNoLegacyDeploymentConnectionMappings,
+	createDeploymentConnectionBindingCandidates,
+	getEquivalentServiceInstanceIds,
+} from "./deployment-target.js";
 
 const log = loggers.trashGuides;
 
@@ -71,6 +77,7 @@ export class BulkScoreManager {
 				encryptionIv: true,
 				encryptedHttpAuthCredentials: true,
 				httpAuthEncryptionIv: true,
+				connectionGeneration: true,
 			},
 		});
 
@@ -122,19 +129,116 @@ export class BulkScoreManager {
 			}
 		}
 
-		// Fetch template mappings for all quality profiles in this instance
-		const templateMappings = await this.prisma.templateQualityProfileMapping.findMany({
-			where: {
-				instanceId: filters.instanceId,
-			},
+		const aliases = await this.prisma.serviceInstance.findMany({
+			where: { userId, service: instance.service },
 			select: {
-				qualityProfileId: true,
-				templateId: true,
+				id: true,
+				service: true,
+				baseUrl: true,
+				encryptedApiKey: true,
+				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
+				connectionGeneration: true,
 			},
 		});
+		const credentialIdentity = this.clientFactory.createConnectionCredentialIdentity(instance);
+		const equivalentInstanceIds = new Set(
+			getEquivalentServiceInstanceIds(
+				aliases.map((alias) => ({
+					...alias,
+					credentialIdentity: this.clientFactory.createConnectionCredentialIdentity(alias),
+				})),
+				{ ...instance, credentialIdentity },
+			),
+		);
+		equivalentInstanceIds.add(instance.id);
+		const connectionBindings = aliases
+			.filter((alias) => equivalentInstanceIds.has(alias.id))
+			.flatMap((alias) =>
+				createDeploymentConnectionBindingCandidates(
+					alias,
+					this.clientFactory.createConnectionCredentialIdentity(alias),
+				),
+			);
+		if (!connectionBindings.some((binding) => binding.instanceId === instance.id)) {
+			connectionBindings.push(
+				...createDeploymentConnectionBindingCandidates(instance, credentialIdentity),
+			);
+		}
+
+		// Resolve management through every current alias for the physical ARR endpoint.
+		const templateMappings = await this.prisma.templateQualityProfileMapping.findMany({
+			where: {
+				OR: connectionBindings,
+				template: { userId },
+			},
+			select: {
+				instanceId: true,
+				qualityProfileId: true,
+				templateId: true,
+				connectionGeneration: true,
+				connectionStateToken: true,
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: true,
+			},
+		});
+		assertNoLegacyDeploymentConnectionMappings(templateMappings);
+		const templateIdsByProfile = new Map<number, Set<string>>();
+		for (const mapping of templateMappings) {
+			const ids = templateIdsByProfile.get(mapping.qualityProfileId) ?? new Set<string>();
+			ids.add(mapping.templateId);
+			templateIdsByProfile.set(mapping.qualityProfileId, ids);
+		}
+		if ([...templateIdsByProfile.values()].some((templateIds) => templateIds.size > 1)) {
+			throw new Error(
+				"Equivalent ARR service records have conflicting template mappings for one quality profile",
+			);
+		}
+		const managedSnapshotsByProfile = new Map<
+			number,
+			{ captured: boolean; snapshot: string | null }
+		>();
+		for (const mapping of templateMappings) {
+			const existing = managedSnapshotsByProfile.get(mapping.qualityProfileId);
+			if (
+				existing &&
+				(existing.captured !== mapping.managedCustomFormatsCaptured ||
+					existing.snapshot !== mapping.managedCustomFormats)
+			) {
+				throw new Error(
+					"Equivalent ARR service records have conflicting managed Custom Format snapshots",
+				);
+			}
+			managedSnapshotsByProfile.set(mapping.qualityProfileId, {
+				captured: mapping.managedCustomFormatsCaptured,
+				snapshot: mapping.managedCustomFormats,
+			});
+		}
 		const templateMappingMap = new Map(
 			templateMappings.map((mapping) => [mapping.qualityProfileId, mapping.templateId]),
 		);
+		const managedTrashIdsByProfile = new Map<number, Map<number, string>>();
+		for (const mapping of templateMappings) {
+			if (!mapping.managedCustomFormatsCaptured) continue;
+			const byResourceId =
+				managedTrashIdsByProfile.get(mapping.qualityProfileId) ?? new Map<number, string>();
+			for (const managed of readPersistedManagedCustomFormatIdentities(mapping)) {
+				if (managed.profileId !== mapping.qualityProfileId) {
+					throw new Error(
+						"A managed Custom Format identity is bound to a different quality profile",
+					);
+				}
+				const existingTrashId = byResourceId.get(managed.resourceId);
+				if (existingTrashId && existingTrashId !== managed.trashId) {
+					throw new Error(
+						"Equivalent ARR service records have conflicting managed Custom Format identities",
+					);
+				}
+				byResourceId.set(managed.resourceId, managed.trashId);
+			}
+			managedTrashIdsByProfile.set(mapping.qualityProfileId, byResourceId);
+		}
 
 		// Fetch templates to get TRaSH default scores
 		const templateIds = [...new Set(templateMappings.map((m) => m.templateId))];
@@ -151,14 +255,13 @@ export class BulkScoreManager {
 					})
 				: [];
 
-		// Build a map of CF name → all available score set scores
-		// Key: CF name, Value: { trashId, scoreSetScores (all available scores by score set) }
+		// Build template-specific score metadata keyed by durable TRaSH identity.
+		// ARR names are display data and are not unique.
 		interface TrashScoreInfo {
-			trashId: string;
 			scoreSetScores: Record<string, number>; // scoreSet → score (e.g., "anime" → 100, "default" → 0)
 			fallbackScore: number; // score from originalConfig.score if no trash_scores
 		}
-		const trashScoreInfoMap = new Map<string, TrashScoreInfo>();
+		const trashScoreInfoByTemplate = new Map<string, Map<string, TrashScoreInfo>>();
 
 		// Build a map of templateId → scoreSet for looking up the correct default per profile
 		const templateScoreSetMap = new Map<string, string>();
@@ -168,6 +271,7 @@ export class BulkScoreManager {
 				const config = JSON.parse(template.configData) as TemplateConfig;
 				const scoreSet = config.qualityProfile?.trash_score_set || "default";
 				templateScoreSetMap.set(template.id, scoreSet);
+				const scoreInfoByTrashId = new Map<string, TrashScoreInfo>();
 
 				for (const cf of config.customFormats || []) {
 					// Get the original config which may have trash_scores
@@ -178,7 +282,7 @@ export class BulkScoreManager {
 						[key: string]: unknown;
 					};
 
-					if (!trashScoreInfoMap.has(cf.name)) {
+					if (!scoreInfoByTrashId.has(cf.trashId)) {
 						const scoreSetScores: Record<string, number> = {};
 						let fallbackScore = 0;
 
@@ -195,21 +299,28 @@ export class BulkScoreManager {
 							fallbackScore = Number(originalConfig.score);
 						}
 
-						trashScoreInfoMap.set(cf.name, {
-							trashId: cf.trashId,
+						scoreInfoByTrashId.set(cf.trashId, {
 							scoreSetScores,
 							fallbackScore,
 						});
 					}
 				}
+				trashScoreInfoByTemplate.set(template.id, scoreInfoByTrashId);
 			} catch (error) {
 				log.error({ err: error, templateId: template.id }, "Failed to parse template config");
 			}
 		}
 
 		// Helper function to calculate the correct default score for a CF given a score set
-		const getDefaultScoreForScoreSet = (cfName: string, scoreSet: string): number => {
-			const scoreInfo = trashScoreInfoMap.get(cfName);
+		const getDefaultScoreForScoreSet = (
+			profileId: number,
+			resourceId: number,
+			scoreSet: string,
+		): number => {
+			const templateId = templateMappingMap.get(profileId);
+			const trashId = managedTrashIdsByProfile.get(profileId)?.get(resourceId);
+			const scoreInfo =
+				templateId && trashId ? trashScoreInfoByTemplate.get(templateId)?.get(trashId) : undefined;
 			if (!scoreInfo) return 0;
 
 			// Priority: scoreSet score > default score > fallbackScore > 0
@@ -222,8 +333,8 @@ export class BulkScoreManager {
 			return scoreInfo.fallbackScore;
 		};
 
-		// Step 2: Collect all unique custom formats across all instances
-		// Key: CF name, Value: CustomFormatScoreEntry
+		// Step 2: Collect exact Custom Format resources from the selected instance.
+		// Names are display data and are not unique in ARR.
 		const cfMap = new Map<string, CustomFormatScoreEntry>();
 
 		for (const instance of instances) {
@@ -282,7 +393,7 @@ export class BulkScoreManager {
 				if (cf.id === undefined || !cf.name) continue;
 
 				const cfName = cf.name;
-				const cfKey = cfName;
+				const cfKey = String(cf.id);
 
 				// Get or create CF entry
 				let cfEntry = cfMap.get(cfKey);
@@ -305,7 +416,11 @@ export class BulkScoreManager {
 						const profileScoreSet = templateId
 							? templateScoreSetMap.get(templateId) || "default"
 							: "default";
-						const trashDefaultScore = getDefaultScoreForScoreSet(cfName, profileScoreSet);
+						const trashDefaultScore = getDefaultScoreForScoreSet(
+							profileRef.profileId,
+							cf.id,
+							profileScoreSet,
+						);
 
 						const templateScore: TemplateScore = {
 							templateId: `${profileRef.instanceId}-${profileRef.profileId}`,
