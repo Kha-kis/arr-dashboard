@@ -8,6 +8,7 @@ import type { ServiceInstance, ServiceType } from "../lib/prisma.js";
 import { withQuiObservationTopologyGuard } from "../lib/qui/observation-topology-guard.js";
 import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
+import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import {
 	decryptHttpAuthCredentials,
 	encryptHttpAuthCredentials,
@@ -412,6 +413,9 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			userId,
 			async () => {
 				const existing = await requireInstance(app, userId, id);
+				if (existing.service === "RADARR" || existing.service === "SONARR") {
+					await assertNoActiveTrashRecoveryForInstance(app.prisma, userId, id);
+				}
 				if (existing.service === "QUI") {
 					await withQuiObservationTopologyGuard(userId, async () => {
 						await app.prisma.$transaction(async (tx) => {

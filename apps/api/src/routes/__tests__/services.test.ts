@@ -130,6 +130,8 @@ function createMockPrisma() {
 		serviceInstanceTag: {
 			findFirst: vi.fn().mockResolvedValue(null),
 		},
+		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -510,6 +512,23 @@ describe("DELETE /services/:id", () => {
 		const res = await injectAuthenticated("DELETE", "/services/inst-999");
 
 		expect(res.statusCode).toBe(404);
+		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
+	it("refuses to erase an instance with active TRaSH recovery evidence", async () => {
+		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "deployment-1",
+				status: "PARTIAL_UNDEPLOY",
+				undeployStatus: "PARTIAL",
+				rolledBack: false,
+			},
+		]);
+
+		const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain("recovery");
 		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
 	});
 });

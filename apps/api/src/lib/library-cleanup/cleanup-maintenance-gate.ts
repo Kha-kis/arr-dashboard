@@ -19,17 +19,28 @@ export class CleanupMaintenanceConflictError extends Error {
 	}
 }
 
-export async function withCleanupOperationGuard<T>(operation: () => Promise<T>): Promise<T> {
+/** Acquire a shared operation guard that remains active until the returned release is called. */
+export function acquireCleanupOperationGuard(): () => void {
 	if (maintenanceActive) {
 		throw new CleanupMaintenanceConflictError(
 			"Library cleanup and service changes are unavailable while database maintenance is running",
 		);
 	}
 	activeCleanupOperations += 1;
+	let released = false;
+	return () => {
+		if (released) return;
+		released = true;
+		activeCleanupOperations -= 1;
+	};
+}
+
+export async function withCleanupOperationGuard<T>(operation: () => Promise<T>): Promise<T> {
+	const release = acquireCleanupOperationGuard();
 	try {
 		return await operation();
 	} finally {
-		activeCleanupOperations -= 1;
+		release();
 	}
 }
 

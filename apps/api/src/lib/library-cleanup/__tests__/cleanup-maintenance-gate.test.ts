@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	acquireCleanupOperationGuard,
 	CleanupMaintenanceConflictError,
 	withCleanupMaintenanceGuard,
 	withCleanupOperationGuard,
@@ -46,5 +47,17 @@ describe.sequential("cleanup maintenance gate", () => {
 		).rejects.toThrow("restore failed");
 
 		await expect(withCleanupOperationGuard(async () => "available")).resolves.toBe("available");
+	});
+
+	it("holds an explicitly acquired operation guard until its idempotent release", async () => {
+		const release = acquireCleanupOperationGuard();
+
+		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toBeInstanceOf(
+			CleanupMaintenanceConflictError,
+		);
+
+		release();
+		release();
+		await expect(withCleanupMaintenanceGuard(async () => "restored")).resolves.toBe("restored");
 	});
 });

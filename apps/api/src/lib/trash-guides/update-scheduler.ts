@@ -17,6 +17,7 @@ import type { RadarrClient, SonarrClient } from "arr-sdk";
 import { z } from "zod";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
 import { createTrashFetcher } from "./github-fetcher.js";
@@ -243,6 +244,10 @@ export class UpdateScheduler {
 	 * Check for updates and process them
 	 */
 	private async checkForUpdates(): Promise<void> {
+		return withCleanupOperationGuard(() => this.checkForUpdatesGuarded());
+	}
+
+	private async checkForUpdatesGuarded(): Promise<void> {
 		// Prevent concurrent checks
 		if (this.isCheckInProgress) {
 			this.logger.warn("Update check already in progress, skipping");
