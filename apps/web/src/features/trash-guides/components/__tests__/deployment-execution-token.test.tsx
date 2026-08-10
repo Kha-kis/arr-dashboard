@@ -3,6 +3,7 @@ import type { DeploymentPreview } from "@arr/shared";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { BulkDeploymentModal } from "../bulk-deployment-modal";
 import { DeploymentPreviewModal } from "../deployment-preview-modal";
 
@@ -58,7 +59,11 @@ const renderWithQueryClient = (children: ReactNode) => {
 	const queryClient = new QueryClient({
 		defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
 	});
-	return render(<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>);
+	return render(
+		<QueryClientProvider client={queryClient}>
+			<IncognitoProvider>{children}</IncognitoProvider>
+		</QueryClientProvider>,
+	);
 };
 
 describe("deployment execution tokens", () => {
