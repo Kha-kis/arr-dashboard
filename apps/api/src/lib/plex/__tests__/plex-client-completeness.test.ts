@@ -114,6 +114,10 @@ describe("PlexClient authoritative inventory completeness", () => {
 		await expect(
 			client.getHistory({ maxResults: 100_000, requireComplete: true }),
 		).resolves.toHaveLength(201);
+		for (const [input] of fetchMock.mock.calls) {
+			const url = new URL(input instanceof Request ? input.url : input.toString());
+			expect(url.searchParams.get("sort")).toBe("viewedAt:desc");
+		}
 	});
 
 	it("rejects a repeated history page instead of exposing an incomplete watch inventory", async () => {
@@ -122,7 +126,7 @@ describe("PlexClient authoritative inventory completeness", () => {
 			ratingKey: `movie-${index}`,
 			title: `Movie ${index}`,
 			type: "movie",
-			viewedAt: 1_700_000_000 + index,
+			viewedAt: 1_700_000_000,
 			accountID: 1,
 		}));
 		const fetchMock = vi
