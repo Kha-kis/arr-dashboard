@@ -21,6 +21,8 @@ export type TemplateUpdateInfo = {
 	autoSyncInstanceCount: number;
 	canAutoSync: boolean;
 	serviceType: ServiceType;
+	/** True when the template is current but a re-enabled auto-sync target still needs deployment */
+	deploymentCatchUp?: boolean;
 	/** True if this template was recently auto-synced (is current, not pending) */
 	isRecentlyAutoSynced?: boolean;
 	/** Timestamp of the last auto-sync, if isRecentlyAutoSynced is true */

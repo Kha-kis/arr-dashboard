@@ -14,6 +14,7 @@ import type {
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { createBulkScoreManager } from "../../lib/trash-guides/bulk-score-manager.js";
+import { withTrashTemplateMutationGuard } from "../../lib/trash-guides/template-mutation-guard.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -133,7 +134,9 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const update: BulkScoreUpdate = validateRequest(bulkScoreUpdateSchema, request.body);
 
 		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
-		const result = await bulkScoreManager.updateScores(userId, update);
+		const result = await withTrashTemplateMutationGuard(userId, () =>
+			bulkScoreManager.updateScores(userId, update),
+		);
 
 		return reply.status(200).send(result);
 	});
@@ -147,7 +150,9 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const copy: BulkScoreCopy = validateRequest(bulkScoreCopySchema, request.body);
 
 		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
-		const result = await bulkScoreManager.copyScores(userId, copy);
+		const result = await withTrashTemplateMutationGuard(userId, () =>
+			bulkScoreManager.copyScores(userId, copy),
+		);
 
 		return reply.status(200).send(result);
 	});
@@ -161,7 +166,9 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const reset: BulkScoreReset = validateRequest(bulkScoreResetSchema, request.body);
 
 		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
-		const result = await bulkScoreManager.resetScores(userId, reset);
+		const result = await withTrashTemplateMutationGuard(userId, () =>
+			bulkScoreManager.resetScores(userId, reset),
+		);
 
 		return reply.status(200).send(result);
 	});
@@ -195,7 +202,9 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const importData: BulkScoreImport = validateRequest(bulkScoreImportSchema, request.body);
 
 		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
-		const result = await bulkScoreManager.importScores(userId, importData);
+		const result = await withTrashTemplateMutationGuard(userId, () =>
+			bulkScoreManager.importScores(userId, importData),
+		);
 
 		return reply.status(200).send(result);
 	});

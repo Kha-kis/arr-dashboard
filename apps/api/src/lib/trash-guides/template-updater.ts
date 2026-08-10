@@ -29,6 +29,7 @@ import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import {
 	assertEquivalentDeploymentMappingAuthority,
+	createAutomationCatchUpTemplateStateToken,
 	createDeploymentConnectionBindingCandidates,
 	createUpstreamResourceStateToken,
 } from "./deployment-target.js";
@@ -40,6 +41,7 @@ const log = loggers.trashGuides;
 import { getSyncMetrics } from "./sync-metrics.js";
 import { computeTemplateDiff } from "./template-differ.js";
 import { mergeTemplateConfig, validateMergedConfig } from "./template-merger.js";
+import { withTrashTemplateMutationGuard } from "./template-mutation-guard.js";
 import { getRecommendedScore, type TrashCFWithScores } from "./template-score-utils.js";
 import type { VersionInfo, VersionTracker } from "./version-tracker.js";
 
@@ -133,6 +135,10 @@ export class TemplateUpdater {
 				qualityProfileMappings: {
 					select: {
 						syncStrategy: true,
+						lastSyncedAt: true,
+						instance: {
+							select: { enabled: true },
+						},
 					},
 				},
 			},
@@ -219,11 +225,33 @@ export class TemplateUpdater {
 						: undefined,
 				});
 			} else {
-				// Template is up-to-date — check if it was recently auto-synced
-				const autoSyncInstanceCount = template.qualityProfileMappings.filter(
-					(m) => m.syncStrategy === "auto",
-				).length;
+				const autoMappings = template.qualityProfileMappings.filter(
+					(mapping) => mapping.syncStrategy === "auto",
+				);
+				const autoSyncInstanceCount = autoMappings.length;
+				const pendingEnabledDeployments = template.lastSyncedAt
+					? autoMappings.filter(
+							(mapping) =>
+								mapping.instance.enabled && mapping.lastSyncedAt < template.lastSyncedAt!,
+						)
+					: [];
 
+				if (pendingEnabledDeployments.length > 0) {
+					templatesWithUpdates.push({
+						templateId: template.id,
+						templateName: template.name,
+						currentCommit: template.trashGuidesCommitHash,
+						latestCommit: latestCommit.commitHash,
+						hasUserModifications: template.hasUserModifications,
+						autoSyncInstanceCount,
+						canAutoSync: !template.hasUserModifications,
+						serviceType: template.serviceType as "RADARR" | "SONARR",
+						deploymentCatchUp: true,
+					});
+					continue;
+				}
+
+				// Template and every enabled auto target are up-to-date — surface a recent sync.
 				if (autoSyncInstanceCount > 0 && template.lastSyncedAt) {
 					const lastSyncedAt = template.lastSyncedAt;
 					const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -356,6 +384,44 @@ export class TemplateUpdater {
 	 * - Handles deletions by removing obsolete entries
 	 */
 	async syncTemplate(
+		templateId: string,
+		targetCommitHash?: string,
+		userId?: string,
+		options?: {
+			includeQualityProfileCFs?: boolean;
+			applyScoreUpdates?: boolean;
+		},
+	): Promise<SyncResult> {
+		const owner = await this.prisma.trashTemplate.findUnique({
+			where: { id: templateId, deletedAt: null },
+			select: { userId: true },
+		});
+		if (!owner) {
+			return {
+				success: false,
+				templateId,
+				previousCommit: null,
+				newCommit: targetCommitHash ?? "",
+				errors: ["Template not found"],
+				errorType: "not_found",
+			};
+		}
+		if (userId && owner.userId !== userId) {
+			return {
+				success: false,
+				templateId,
+				previousCommit: null,
+				newCommit: targetCommitHash ?? "",
+				errors: ["Not authorized to modify this template"],
+				errorType: "not_authorized",
+			};
+		}
+		return withTrashTemplateMutationGuard(owner.userId, () =>
+			this.syncTemplateUnlocked(templateId, targetCommitHash, userId, options),
+		);
+	}
+
+	private async syncTemplateUnlocked(
 		templateId: string,
 		targetCommitHash?: string,
 		userId?: string,
@@ -778,15 +844,17 @@ export class TemplateUpdater {
 		let templatesWithScoreConflicts = 0;
 
 		for (const template of autoSyncTemplates) {
-			const result = await this.syncTemplate(
-				template.templateId,
-				template.latestCommit,
-				undefined,
-				{
-					includeQualityProfileCFs: true,
-					applyScoreUpdates: true,
-				},
-			);
+			const result: SyncResult = template.deploymentCatchUp
+				? {
+						success: true,
+						templateId: template.templateId,
+						previousCommit: template.currentCommit,
+						newCommit: template.latestCommit,
+					}
+				: await this.syncTemplate(template.templateId, template.latestCommit, undefined, {
+						includeQualityProfileCFs: true,
+						applyScoreUpdates: true,
+					});
 
 			results.push(result);
 
@@ -796,7 +864,9 @@ export class TemplateUpdater {
 				}
 
 				try {
-					const deploymentOutcomes = await this.deployToMappedInstances(template.templateId);
+					const deploymentOutcomes = template.deploymentCatchUp
+						? await this.deployToMappedInstances(template.templateId, true)
+						: await this.deployToMappedInstances(template.templateId);
 					const failedDeployments = deploymentOutcomes.filter(
 						(outcome) => outcome.status === "FAILED",
 					);
@@ -864,6 +934,7 @@ export class TemplateUpdater {
 	 */
 	private async deployToMappedInstances(
 		templateId: string,
+		catchUpOnly = false,
 	): Promise<AutomationDeploymentOutcome[]> {
 		if (!this.deploymentExecutor) {
 			return [];
@@ -871,7 +942,15 @@ export class TemplateUpdater {
 
 		const template = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId },
-			select: { userId: true, name: true, instanceOverrides: true },
+			select: {
+				userId: true,
+				name: true,
+				configData: true,
+				instanceOverrides: true,
+				trashGuidesCommitHash: true,
+				lastSyncedAt: true,
+				hasUserModifications: true,
+			},
 		});
 
 		if (!template) {
@@ -879,15 +958,17 @@ export class TemplateUpdater {
 			return [];
 		}
 
-		const candidateMappings = await this.prisma.templateQualityProfileMapping.findMany({
-			where: {
-				templateId,
-				syncStrategy: "auto",
-			},
-			include: {
-				instance: true,
-			},
-		});
+		const candidateMappings = (
+			await this.prisma.templateQualityProfileMapping.findMany({
+				where: {
+					templateId,
+					syncStrategy: "auto",
+				},
+				include: {
+					instance: true,
+				},
+			})
+		).filter((mapping) => mapping.instance.enabled);
 		if (candidateMappings.length === 0) {
 			return [];
 		}
@@ -920,6 +1001,13 @@ export class TemplateUpdater {
 		for (const [endpointKey, endpointGroup] of [...endpointMappings.entries()].sort(
 			([left], [right]) => left.localeCompare(right),
 		)) {
+			if (
+				catchUpOnly &&
+				(!template.lastSyncedAt ||
+					!endpointGroup.some((mapping) => mapping.lastSyncedAt < template.lastSyncedAt!))
+			) {
+				continue;
+			}
 			const mapping = [...endpointGroup].sort((left, right) =>
 				left.instanceId.localeCompare(right.instanceId),
 			)[0]!;
@@ -1027,11 +1115,22 @@ export class TemplateUpdater {
 				);
 			}
 			try {
-				const result = await this.deploymentExecutor.deploySingleInstanceFromAutomation(
-					templateId,
-					mapping.instanceId,
-					template.userId,
-				);
+				const result = catchUpOnly
+					? await this.deploymentExecutor.deploySingleInstanceFromAutomation(
+							templateId,
+							mapping.instanceId,
+							template.userId,
+							undefined,
+							undefined,
+							template.lastSyncedAt
+								? createAutomationCatchUpTemplateStateToken(template)
+								: undefined,
+						)
+					: await this.deploymentExecutor.deploySingleInstanceFromAutomation(
+							templateId,
+							mapping.instanceId,
+							template.userId,
+						);
 
 				if (result.status === "UNCERTAIN") {
 					const errors =

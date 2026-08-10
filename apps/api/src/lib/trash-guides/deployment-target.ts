@@ -39,6 +39,26 @@ export interface DeploymentConnectionBinding {
 	credentialIdentity?: string;
 }
 
+export interface AutomationCatchUpTemplateState {
+	configData: string;
+	instanceOverrides: string | null;
+	trashGuidesCommitHash: string | null;
+	lastSyncedAt: Date | null;
+	hasUserModifications: boolean;
+}
+
+export function createAutomationCatchUpTemplateStateToken(
+	template: AutomationCatchUpTemplateState,
+): string {
+	return createUpstreamResourceStateToken({
+		configData: template.configData,
+		instanceOverrides: template.instanceOverrides,
+		trashGuidesCommitHash: template.trashGuidesCommitHash,
+		lastSyncedAt: template.lastSyncedAt?.toISOString() ?? null,
+		hasUserModifications: template.hasUserModifications,
+	});
+}
+
 interface DeploymentConnectionMapping {
 	connectionGeneration?: number | null;
 	connectionStateToken?: string | null;

@@ -33,6 +33,8 @@ export interface TemplateUpdateInfo {
 	isRecentlyAutoSynced?: boolean;
 	/** Timestamp of the last auto-sync, if isRecentlyAutoSynced is true */
 	lastAutoSyncTimestamp?: string;
+	/** True when the template is current but an enabled auto target still needs deployment */
+	deploymentCatchUp?: boolean;
 }
 
 export interface UpdateCheckResult {
