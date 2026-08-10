@@ -13,15 +13,21 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
-import type { PrismaClient } from "../../lib/prisma.js";
+import type { Prisma, PrismaClient } from "../../lib/prisma.js";
 import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import {
 	passthroughTickWrapper,
 	type TickWrapper,
 } from "../scheduler-registry/scheduler-registry.js";
+import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
 
 // Run cleanup every hour
 const CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+// Bound the backup blobs loaded and parsed during each candidate scan.
+const BACKUP_CANDIDATE_PAGE_SIZE = 400;
+// Each candidate contributes two bound values (id + backupData). Keep ample
+// room for the timestamp and relation predicates under SQLite's 999-variable cap.
+const BACKUP_DELETE_BATCH_SIZE = 400;
 
 export interface CleanupStats {
 	expiredCount: number;
@@ -128,48 +134,68 @@ export class TrashBackupCleanupService {
 	/**
 	 * Delete backups that have passed their expiration date
 	 */
-	private async cleanupExpiredBackups(): Promise<number> {
-		const result = await this.prisma.trashBackup.deleteMany({
-			where: {
-				expiresAt: {
-					not: null,
-					lte: new Date(),
+	private async deleteCandidateBatches(
+		candidates: Array<{ id: string; backupData: string }>,
+		where: Prisma.TrashBackupWhereInput,
+	): Promise<number> {
+		let deleted = 0;
+		for (let index = 0; index < candidates.length; index += BACKUP_DELETE_BATCH_SIZE) {
+			const batch = candidates.slice(index, index + BACKUP_DELETE_BATCH_SIZE);
+			const result = await this.prisma.trashBackup.deleteMany({
+				where: {
+					...where,
+					OR: batch.map((backup) => ({ id: backup.id, backupData: backup.backupData })),
 				},
-				// Legacy snapshots may still have an expiry timestamp even while a
-				// rollback or undeploy is retryable. Keep them until coordination is terminal.
-				syncHistory: {
-					none: {
-						rolledBack: false,
-						OR: [
-							{
-								rollbackStatus: { not: null },
-								NOT: { rollbackStatus: "COMPLETED" },
-							},
-							{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
-						],
-					},
-				},
-				deploymentHistory: {
-					none: {
-						rolledBack: false,
-						OR: [
-							{
-								undeployStatus: { not: null },
-								NOT: { undeployStatus: "COMPLETED" },
-							},
-							{ status: "PARTIAL_UNDEPLOY", undeployStatus: null },
-							{ status: "IN_PROGRESS" },
-						],
-					},
-				},
-			},
-		});
+			});
+			deleted += result.count;
+		}
+		return deleted;
+	}
 
-		if (result.count > 0) {
-			this.logger.debug({ count: result.count }, "Deleted expired trash backups");
+	private async cleanupExpiredBackups(): Promise<number> {
+		const now = new Date();
+		let cursorId: string | undefined;
+		let count = 0;
+
+		for (;;) {
+			const expired = await this.prisma.trashBackup.findMany({
+				where: {
+					expiresAt: { not: null, lte: now },
+					// The backup remains durable ownership and rollback evidence until
+					// every referencing history has been explicitly resolved.
+					syncHistory: { none: { rolledBack: false } },
+					deploymentHistory: { none: { rolledBack: false } },
+					...(cursorId ? { id: { gt: cursorId } } : {}),
+				},
+				select: { id: true, backupData: true },
+				orderBy: { id: "asc" },
+				take: BACKUP_CANDIDATE_PAGE_SIZE,
+			});
+
+			if (expired.length === 0) break;
+			cursorId = expired.at(-1)!.id;
+
+			const deletable = expired.filter(
+				(backup) => !shouldRetainDeploymentBackup(backup.backupData),
+			);
+			if (deletable.length > 0) {
+				count += await this.deleteCandidateBatches(deletable, {
+					expiresAt: { not: null, lte: now },
+					// Re-check ownership in the mutation itself. A history may have
+					// linked this backup after selection but before deleteMany executes.
+					syncHistory: { none: { rolledBack: false } },
+					deploymentHistory: { none: { rolledBack: false } },
+				});
+			}
+
+			if (expired.length < BACKUP_CANDIDATE_PAGE_SIZE) break;
 		}
 
-		return result.count;
+		if (count > 0) {
+			this.logger.debug({ count }, "Deleted expired trash backups");
+		}
+
+		return count;
 	}
 
 	/**
@@ -185,45 +211,61 @@ export class TrashBackupCleanupService {
 	private async cleanupOrphanedBackups(): Promise<number> {
 		const orphanThreshold = new Date();
 		orphanThreshold.setDate(orphanThreshold.getDate() - 7);
+		let cursorId: string | undefined;
+		let count = 0;
 
-		// Find backups that might be orphaned (old enough to check)
-		const potentialOrphans = await this.prisma.trashBackup.findMany({
-			where: {
-				createdAt: {
-					lte: orphanThreshold,
+		for (;;) {
+			// Find backups that might be orphaned (old enough to check)
+			const potentialOrphans = await this.prisma.trashBackup.findMany({
+				where: {
+					createdAt: {
+						lte: orphanThreshold,
+					},
+					syncHistory: { none: { rolledBack: false } },
+					deploymentHistory: { none: { rolledBack: false } },
+					...(cursorId ? { id: { gt: cursorId } } : {}),
 				},
-			},
-			select: {
-				id: true,
-				_count: {
-					select: {
-						syncHistory: true,
-						deploymentHistory: true,
+				select: {
+					id: true,
+					backupData: true,
+					_count: {
+						select: {
+							syncHistory: true,
+							deploymentHistory: true,
+						},
 					},
 				},
-			},
-		});
+				orderBy: { id: "asc" },
+				take: BACKUP_CANDIDATE_PAGE_SIZE,
+			});
 
-		// Filter to only those with no references
-		const orphanIds = potentialOrphans
-			.filter((backup) => backup._count.syncHistory === 0 && backup._count.deploymentHistory === 0)
-			.map((backup) => backup.id);
+			if (potentialOrphans.length === 0) break;
+			cursorId = potentialOrphans.at(-1)!.id;
 
-		if (orphanIds.length === 0) {
-			return 0;
+			// Filter to only those with no references
+			const orphanIds = potentialOrphans.filter(
+				(backup) =>
+					backup._count.syncHistory === 0 &&
+					backup._count.deploymentHistory === 0 &&
+					!shouldRetainDeploymentBackup(backup.backupData),
+			);
+
+			if (orphanIds.length > 0) {
+				count += await this.deleteCandidateBatches(orphanIds, {
+					createdAt: { lte: orphanThreshold },
+					syncHistory: { none: { rolledBack: false } },
+					deploymentHistory: { none: { rolledBack: false } },
+				});
+			}
+
+			if (potentialOrphans.length < BACKUP_CANDIDATE_PAGE_SIZE) break;
 		}
 
-		const result = await this.prisma.trashBackup.deleteMany({
-			where: {
-				id: { in: orphanIds },
-			},
-		});
-
-		if (result.count > 0) {
-			this.logger.debug({ count: result.count }, "Deleted orphaned trash backups");
+		if (count > 0) {
+			this.logger.debug({ count }, "Deleted orphaned trash backups");
 		}
 
-		return result.count;
+		return count;
 	}
 
 	/**
