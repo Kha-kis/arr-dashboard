@@ -13,6 +13,7 @@ vi.mock("../deployment-naming-state.js", async (importOriginal) => {
 });
 
 import { DeploymentExecutorService } from "../deployment-executor.js";
+import { createDeploymentConnectionStateToken } from "../deployment-target.js";
 
 describe("DeploymentExecutorService naming finalization", () => {
 	it("returns UNCERTAIN when the applied naming ledger cannot be finalized", async () => {
@@ -64,7 +65,22 @@ describe("DeploymentExecutorService naming finalization", () => {
 			.mockRejectedValueOnce(new Error("database unavailable"));
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
-			templateQualityProfileMapping: { findMany: vi.fn().mockResolvedValue([]) },
+			templateQualityProfileMapping: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						id: "mapping-1",
+						templateId: "template-1",
+						instanceId: "instance-1",
+						qualityProfileId: 4,
+						qualityProfileName: "Any",
+						connectionGeneration: 1,
+						connectionStateToken: createDeploymentConnectionStateToken(instance),
+						syncStrategy: "auto",
+						managedCustomFormats: "[]",
+						managedCustomFormatsCaptured: true,
+					},
+				]),
+			},
 			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
 			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 			templateDeploymentHistory: {
