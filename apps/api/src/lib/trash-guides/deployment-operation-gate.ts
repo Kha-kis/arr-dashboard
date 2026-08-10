@@ -139,13 +139,12 @@ export async function assertNoPendingDeploymentOperation(
 	if (
 		syncRows.some(
 			(row) =>
-				!row.backup &&
-				(row.status === "IN_PROGRESS" ||
-					row.status === "RUNNING" ||
-					row.status === "PARTIAL_SUCCESS"),
+				row.status === "IN_PROGRESS" ||
+				row.status === "RUNNING" ||
+				(!row.backup && row.status === "PARTIAL_SUCCESS"),
 		) ||
 		deploymentRows.some(
-			(row) => !row.backup && (row.status === "IN_PROGRESS" || row.status === "PARTIAL_SUCCESS"),
+			(row) => row.status === "IN_PROGRESS" || (!row.backup && row.status === "PARTIAL_SUCCESS"),
 		)
 	) {
 		throw new AppValidationError(

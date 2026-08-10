@@ -237,6 +237,54 @@ describe("finalizeDeploymentHistoryWithPartialFailure", () => {
 		);
 	});
 
+	it("preserves applied naming evidence when finalization becomes uncertain", async () => {
+		const trashSyncUpdate = vi.fn().mockResolvedValue({});
+		const templateDeploymentUpdate = vi.fn().mockResolvedValue({});
+		const prisma = {
+			trashSyncHistory: { update: trashSyncUpdate },
+			templateDeploymentHistory: { update: templateDeploymentUpdate },
+		};
+		const error = Object.assign(new Error("Managed state could not be finalized"), {
+			deploymentResultUncertain: true,
+		});
+
+		await finalizeDeploymentHistoryWithPartialFailure(
+			prisma as never,
+			"sync-1",
+			"deployment-1",
+			new Date(),
+			{ created: [], updated: [], failed: [], orphaned: [] },
+			{ created: 0, updated: 0, skipped: 0 },
+			error,
+			undefined,
+			[],
+			3,
+		);
+
+		const appliedConfigs = JSON.stringify([
+			{
+				name: "Naming configuration",
+				action: "updated",
+				type: "naming",
+				fields: 3,
+			},
+		]);
+		expect(trashSyncUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					configsApplied: 1,
+					appliedConfigs,
+				}),
+			}),
+		);
+		expect(templateDeploymentUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ status: "UNCERTAIN", appliedConfigs }),
+			}),
+		);
+	});
+
 	it("records a created quality profile in both histories when a later phase is blocked", async () => {
 		const trashSyncUpdate = vi.fn().mockResolvedValue({});
 		const templateDeploymentUpdate = vi.fn().mockResolvedValue({});

@@ -1656,6 +1656,7 @@ export class DeploymentExecutorService {
 		const warnings: string[] = [];
 		let appliedProfileMutation: QualityProfileMutation | undefined;
 		let instanceLabel = "Unknown";
+		let managedFinalizationUncertain = false;
 		let namingFieldsApplied = 0;
 		let deploymentPhase: "before_cf" | "custom_formats" | "quality_profile" | "post_profile" =
 			"before_cf";
@@ -2251,9 +2252,37 @@ export class DeploymentExecutorService {
 					"Deployment succeeded but history finalization failed",
 				);
 				if (requiresManagedFinalization) {
-					allErrors.push(
-						"ARR changes were applied, but managed deployment state could not be finalized. The prior mapping and saved score overrides were preserved; retry this deployment or roll it back before making further changes.",
-					);
+					managedFinalizationUncertain = true;
+					const finalizationMessage =
+						"ARR changes were applied, but managed deployment state could not be finalized. The prior mapping and saved score overrides were preserved; resolve or roll back this deployment before making further changes.";
+					const uncertaintyError = Object.assign(new ConflictError(finalizationMessage), {
+						deploymentResultUncertain: true,
+					});
+					const priorErrors = [...allErrors];
+					allErrors.push(finalizationMessage);
+					try {
+						await finalizeDeploymentHistoryWithPartialFailure(
+							this.prisma,
+							historyId,
+							deploymentHistoryId,
+							startTime,
+							cfResult.details,
+							{
+								created: cfResult.created,
+								updated: cfResult.updated,
+								skipped: cfResult.skipped,
+							},
+							uncertaintyError,
+							appliedProfileMutation,
+							priorErrors,
+							namingFieldsApplied,
+						);
+					} catch (uncertainHistoryError) {
+						log.error(
+							{ err: uncertainHistoryError, templateId, instanceId },
+							"Failed to mark deployment history uncertain after managed finalization failed",
+						);
+					}
 				} else {
 					warnings.push(
 						"Deployment completed, but its history record could not be finalized. Check the server logs.",
@@ -2272,7 +2301,12 @@ export class DeploymentExecutorService {
 				instanceId,
 				instanceLabel: instance.label,
 				success: allErrors.length === 0,
-				status: allErrors.length === 0 ? "SUCCESS" : "FAILED",
+				status:
+					allErrors.length === 0
+						? "SUCCESS"
+						: managedFinalizationUncertain
+							? "UNCERTAIN"
+							: "FAILED",
 				customFormatsCreated: cfResult.created,
 				customFormatsUpdated: cfResult.updated,
 				customFormatsSkipped: cfResult.skipped,

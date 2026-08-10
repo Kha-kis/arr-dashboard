@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ConflictError } from "../../errors.js";
 import { DeploymentExecutorService } from "../deployment-executor.js";
 import {
+	createDeploymentConnectionStateToken,
 	createDeploymentStateToken,
 	createQualityProfileStateToken,
 } from "../deployment-target.js";
@@ -465,6 +466,158 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			uncertainInstances: 1,
 			results: [{ status: "UNCERTAIN", success: false }],
 		});
+	});
+
+	it("marks applied work uncertain when managed history finalization rolls back", async () => {
+		const instance = {
+			id: "instance-1",
+			userId: "user-1",
+			label: "Radarr",
+			service: "RADARR",
+			baseUrl: "http://radarr:7878",
+			encryptedApiKey: "encrypted-key",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			connectionGeneration: 1,
+		};
+		const profile = { id: 1, name: "Any", formatItems: [], items: [], cutoff: 1 };
+		const mapping = {
+			id: "mapping-1",
+			templateId: "template-1",
+			instanceId: "instance-1",
+			qualityProfileId: 1,
+			qualityProfileName: "Any",
+			connectionGeneration: 1,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			syncStrategy: "auto",
+			managedCustomFormatsCaptured: true,
+			managedCustomFormats: "[]",
+			updatedAt: new Date("2026-08-09T00:00:00.000Z"),
+		};
+		const syncHistoryUpdate = vi.fn().mockResolvedValue({});
+		const deploymentHistoryUpdate = vi.fn().mockResolvedValue({});
+		const mappingUpdate = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("managed mapping transaction failed"));
+		const transactionClient = {
+			trashSyncHistory: { update: syncHistoryUpdate },
+			templateDeploymentHistory: { update: deploymentHistoryUpdate },
+			templateQualityProfileMapping: { updateMany: mappingUpdate },
+		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			trashSyncHistory: {
+				findMany: vi.fn().mockResolvedValue([]),
+				update: syncHistoryUpdate,
+			},
+			templateDeploymentHistory: {
+				findMany: vi.fn().mockResolvedValue([]),
+				create: vi.fn().mockResolvedValue({ id: "deployment-history-1" }),
+				update: deploymentHistoryUpdate,
+			},
+			templateQualityProfileMapping: {
+				findMany: vi.fn().mockResolvedValue([mapping]),
+				updateMany: mappingUpdate,
+			},
+			instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+			trashBackup: { update: vi.fn().mockResolvedValue({}) },
+			$transaction: vi.fn(async (work: (database: typeof transactionClient) => Promise<void>) =>
+				work(transactionClient),
+			),
+		};
+		const client = {
+			system: { get: vi.fn().mockResolvedValue({ version: "5.0.0" }) },
+			customFormat: { getAll: vi.fn().mockResolvedValue([]) },
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([profile]),
+				getById: vi.fn().mockResolvedValue(profile),
+			},
+		};
+		const executor = new DeploymentExecutorService(
+			prisma as never,
+			{ create: vi.fn().mockReturnValue(client) } as never,
+		);
+		const privateExecutor = executor as unknown as {
+			validateAndPrepareDeployment: (...args: unknown[]) => Promise<unknown>;
+			createBackupAndHistory: (...args: unknown[]) => Promise<unknown>;
+			deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			syncQualityProfile: (...args: unknown[]) => Promise<unknown>;
+			executeSingleDeployment: (...args: unknown[]) => Promise<unknown>;
+		};
+		vi.spyOn(privateExecutor, "validateAndPrepareDeployment").mockResolvedValue({
+			template: {
+				id: "template-1",
+				name: "Any",
+				serviceType: "RADARR",
+				configData: "{}",
+				instanceOverrides: null,
+				sourceQualityProfileName: null,
+			},
+			instance,
+			templateConfig: {},
+			templateCFs: [],
+			effectiveQualityConfig: undefined,
+		} as never);
+		vi.spyOn(privateExecutor, "createBackupAndHistory").mockResolvedValue({
+			backup: {
+				id: "backup-1",
+				retentionExpiresAt: null,
+				data: {
+					schemaVersion: 2,
+					endpointKey: "endpoint",
+					connectionStateToken: "connection",
+					customFormats: [],
+					customFormatDeployments: [],
+					managedCustomFormats: [],
+					managedCustomFormatsCaptured: false,
+					qualityProfileDeployment: {
+						beforeProfile: profile,
+						status: "not_started",
+						action: "updated",
+						profileId: 1,
+						profileName: "Any",
+						postStateToken: null,
+						intendedPostStateToken: null,
+					},
+					namingDeployment: null,
+				},
+			},
+			historyId: "sync-history-1",
+		} as never);
+		vi.spyOn(privateExecutor, "deployCustomFormats").mockResolvedValue({
+			created: 0,
+			updated: 0,
+			skipped: 0,
+			resolvedResourceIds: new Map(),
+			details: { created: [], updated: [], failed: [], orphaned: [] },
+			errors: [],
+		} as never);
+		vi.spyOn(privateExecutor, "syncQualityProfile").mockResolvedValue({
+			errors: [],
+			orphanedCFs: [],
+		} as never);
+
+		await expect(
+			privateExecutor.executeSingleDeployment("template-1", "instance-1", "user-1"),
+		).resolves.toMatchObject({
+			success: false,
+			status: "UNCERTAIN",
+			errors: [expect.stringContaining("managed deployment state could not be finalized")],
+		});
+		expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+		expect(syncHistoryUpdate).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				where: { id: "sync-history-1" },
+				data: expect.objectContaining({ status: "UNCERTAIN" }),
+			}),
+		);
+		expect(deploymentHistoryUpdate).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				where: { id: "deployment-history-1" },
+				data: expect.objectContaining({ status: "UNCERTAIN" }),
+			}),
+		);
 	});
 
 	it("serializes deployment and rollback work across equivalent endpoint records", async () => {

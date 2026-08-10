@@ -165,6 +165,44 @@ describe("assertNoPendingDeploymentOperation", () => {
 		).resolves.toBeUndefined();
 	});
 
+	it.each([
+		{
+			label: "sync",
+			syncRows: [
+				{
+					status: "RUNNING",
+					rollbackStatus: null,
+					backupId: "backup-1",
+					backup: fullyAppliedBackup(),
+				},
+			],
+			deploymentRows: [],
+		},
+		{
+			label: "deployment",
+			syncRows: [],
+			deploymentRows: [
+				{
+					status: "IN_PROGRESS",
+					undeployStatus: null,
+					backupId: "backup-1",
+					backup: fullyAppliedBackup(),
+				},
+			],
+		},
+	])("blocks a transient $label history even when its ledger is terminal", async (rows) => {
+		const prisma = {
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue(rows.syncRows) },
+			templateDeploymentHistory: {
+				findMany: vi.fn().mockResolvedValue(rows.deploymentRows),
+			},
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(prisma as never, "user-1", ["instance-1"]),
+		).rejects.toThrow("uncertain upstream result");
+	});
+
 	it("fails closed when a current backup ledger is malformed", async () => {
 		const malformed = backup("pending");
 		malformed.backupData = JSON.stringify({ schemaVersion: 2, customFormatDeployments: [] });
