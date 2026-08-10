@@ -175,7 +175,9 @@ describe("SyncValidationModal deployment plan", () => {
 		);
 
 		await waitFor(() => expect(screen.getByText("Deployment plan")).toBeInTheDocument());
-		expect(screen.getByText(/1 create, 1 update, 1 score reset, 1 unchanged/)).toBeInTheDocument();
+		expect(
+			screen.getByText(/1 create, 1 update, 1 score reset, 1 skipped\/disabled/),
+		).toBeInTheDocument();
 		expect(screen.getByText("Secret New Format")).toBeInTheDocument();
 		expect(screen.getByText("Create")).toBeInTheDocument();
 		expect(screen.getByText("Secret HDR")).toBeInTheDocument();

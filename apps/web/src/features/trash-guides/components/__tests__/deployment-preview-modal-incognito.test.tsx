@@ -141,6 +141,7 @@ describe("DeploymentPreviewModal privacy boundary", () => {
 		);
 
 		expect(await screen.findByText("Deployment Summary")).toBeInTheDocument();
+		expect(screen.getByText("Skipped / disabled")).toBeInTheDocument();
 		expect(screen.getByText("Secret New Format")).toBeInTheDocument();
 		expect(screen.getByText("Secret HDR")).toBeInTheDocument();
 		expect(screen.getByText("Secret Family Profile")).toBeInTheDocument();

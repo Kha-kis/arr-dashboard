@@ -517,7 +517,7 @@ export const DeploymentPreviewModal = ({
 								</div>
 								<div className="space-y-1">
 									<p className="text-xs" style={{ color: SEMANTIC_COLORS.info.text }}>
-										Unchanged
+										Skipped / disabled
 									</p>
 									<p
 										className="text-2xl font-semibold"

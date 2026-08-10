@@ -495,7 +495,7 @@ export const SyncValidationModal = ({
 										{preview.summary.newCustomFormats} create,{" "}
 										{preview.summary.updatedCustomFormats} update,{" "}
 										{preview.summary.orphanedCustomFormats} score reset,{" "}
-										{preview.summary.skippedCustomFormats} unchanged
+										{preview.summary.skippedCustomFormats} skipped/disabled
 									</p>
 								</section>
 							)}
