@@ -7,8 +7,8 @@
 
 import type { BackupData } from "@arr/shared";
 import { loggers } from "../logger.js";
-import type { Prisma, PrismaClient } from "../prisma.js";
-import { validateRecords } from "./backup-validation.js";
+import type { Prisma, PrismaClient, TrashBackup } from "../prisma.js";
+import { validateCoordinationEvidence, validateRecords } from "./backup-validation.js";
 
 const log = loggers.backup;
 
@@ -16,10 +16,10 @@ export interface ExportDatabaseOptions {
 	/** Include TRaSH ARR config snapshots (can be large) */
 	includeTrashBackups?: boolean;
 	/**
-	 * Skip operational history tables (huntLog, huntSearchHistory, trashSyncHistory,
-	 * templateDeploymentHistory). These grow unbounded over time and are not needed
-	 * for restoring a working configuration — losing them on restore is expected.
-	 * Defaults to true for scheduled backups (set by caller).
+	 * Skip disposable operational history. Hunt history is omitted entirely;
+	 * terminal TRaSH history is omitted while nonterminal rollback/undeploy rows
+	 * and their referenced snapshots are always preserved. Defaults to true for
+	 * scheduled and update backups (set by caller).
 	 */
 	excludeOperationalHistory?: boolean;
 	/**
@@ -30,14 +30,48 @@ export interface ExportDatabaseOptions {
 	historyRetentionLimit?: number;
 }
 
+type CoordinationRow = {
+	id: string;
+	instanceId: string;
+	userId: string;
+	backupId: string | null;
+	rollbackStatus?: string | null;
+	undeployStatus?: string | null;
+	status?: string;
+};
+
+function isNonterminalStatus(status: string | null | undefined): boolean {
+	return typeof status === "string" && status !== "COMPLETED";
+}
+
+function isNonterminalRollback(row: CoordinationRow): boolean {
+	return isNonterminalStatus(row.rollbackStatus);
+}
+
+function isNonterminalUndeploy(row: CoordinationRow): boolean {
+	return isNonterminalStatus(row.undeployStatus) || row.status === "PARTIAL_UNDEPLOY";
+}
+
+function mergeRowsById<T extends { id: string }>(rows: T[], preservedRows: T[]): T[] {
+	const merged = [...rows];
+	const seen = new Set(rows.map((row) => row.id));
+	for (const row of preservedRows) {
+		if (!seen.has(row.id)) {
+			merged.push(row);
+			seen.add(row.id);
+		}
+	}
+	return merged;
+}
+
 /**
  * Export all database tables.
  *
  * Tables are fetched sequentially (not in parallel) so each table's row data
  * lives only as long as needed before being assigned into the result object.
- * For scheduled backups, operational history tables are skipped by default to
- * keep peak heap bounded — those tables grow unbounded over time and are not
- * essential for restore.
+ * For scheduled backups, disposable operational history is skipped by default
+ * to keep peak heap bounded. Nonterminal rollback/undeploy coordination is
+ * always exported because it is required to resume safely after restore.
  */
 export async function exportDatabase(prisma: PrismaClient, options: ExportDatabaseOptions = {}) {
 	const skipHistory = options.excludeOperationalHistory ?? false;
@@ -83,14 +117,30 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		return find(historyLimit);
 	};
 
-	const trashSyncHistory = skipHistory
+	// Rollback/undeploy coordination is durable safety state, even though it is
+	// stored in history tables. Fetch it independently so exclusion and row caps
+	// can discard terminal audit rows without stranding resumable operations.
+	const nonterminalRollbackHistory = (
+		await prisma.trashSyncHistory.findMany({
+			where: { rollbackStatus: { not: "COMPLETED" } },
+		})
+	).filter(isNonterminalRollback);
+	const nonterminalUndeployHistory = (
+		await prisma.templateDeploymentHistory.findMany({
+			where: {
+				OR: [{ undeployStatus: { not: "COMPLETED" } }, { status: "PARTIAL_UNDEPLOY" }],
+			},
+		})
+	).filter(isNonterminalUndeploy);
+
+	const cappedTrashSyncHistory = skipHistory
 		? []
 		: await fetchCappedHistory(
 				"trashSyncHistory",
 				() => prisma.trashSyncHistory.count(),
 				(take) => prisma.trashSyncHistory.findMany({ take, orderBy: { startedAt: "desc" } }),
 			);
-	const templateDeploymentHistory = skipHistory
+	const cappedTemplateDeploymentHistory = skipHistory
 		? []
 		: await fetchCappedHistory(
 				"templateDeploymentHistory",
@@ -98,6 +148,11 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 				(take) =>
 					prisma.templateDeploymentHistory.findMany({ take, orderBy: { deployedAt: "desc" } }),
 			);
+	const trashSyncHistory = mergeRowsById(cappedTrashSyncHistory, nonterminalRollbackHistory);
+	const templateDeploymentHistory = mergeRowsById(
+		cappedTemplateDeploymentHistory,
+		nonterminalUndeployHistory,
+	);
 
 	// Hunting feature: configs are config (always full); logs/history are operational
 	const huntConfigs = await prisma.huntConfig.findMany();
@@ -116,9 +171,9 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 				(take) => prisma.huntSearchHistory.findMany({ take, orderBy: { searchedAt: "desc" } }),
 			);
 
-	// Optionally include TRaSH instance backups (ARR config snapshots)
-	// Limited to non-expired backups from the last 7 days to control size
-	let trashBackups: unknown[] = [];
+	// Optionally include recent TRaSH instance backups. Snapshots referenced by
+	// nonterminal rollback/undeploy rows are added below regardless of age/expiry.
+	let trashBackups: TrashBackup[] = [];
 	if (options.includeTrashBackups) {
 		const sevenDaysAgo = new Date();
 		sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -132,6 +187,30 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 			},
 		});
 	}
+
+	const requiredBackupIds = [...nonterminalRollbackHistory, ...nonterminalUndeployHistory].map(
+		(row) => {
+			if (typeof row.backupId !== "string" || row.backupId.length === 0) {
+				throw new Error(
+					`Cannot create backup: nonterminal coordination row ${row.id} has no referenced TRaSH backup snapshot`,
+				);
+			}
+			return row.backupId;
+		},
+	);
+	const uniqueRequiredBackupIds = [...new Set(requiredBackupIds)];
+	if (uniqueRequiredBackupIds.length > 0) {
+		const requiredSnapshots = await prisma.trashBackup.findMany({
+			where: { id: { in: uniqueRequiredBackupIds } },
+		});
+		trashBackups = mergeRowsById(trashBackups, requiredSnapshots);
+	}
+
+	validateCoordinationEvidence({
+		trashSyncHistory,
+		templateDeploymentHistory,
+		trashBackups,
+	});
 
 	return {
 		// Core authentication & services

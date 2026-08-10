@@ -281,6 +281,154 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		expect(() => validateBackup(validBackup)).not.toThrow();
 	});
 
+	it("accepts the current 1.1 payload format", () => {
+		const currentBackup = {
+			version: "1.1",
+			appVersion: "3.0.0-beta",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(currentBackup)).not.toThrow();
+	});
+
+	it.each([
+		{
+			name: "missing backupId",
+			history: {
+				trashSyncHistory: [
+					{
+						id: "rollback-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						rollbackStatus: "IN_PROGRESS",
+						backupId: null,
+					},
+				],
+				trashBackups: [],
+			},
+		},
+		{
+			name: "missing referenced snapshot",
+			history: {
+				trashSyncHistory: [
+					{
+						id: "rollback-2",
+						instanceId: "instance-1",
+						userId: "user-1",
+						rollbackStatus: "PARTIAL",
+						backupId: "snapshot-missing",
+					},
+				],
+				trashBackups: [],
+			},
+		},
+		{
+			name: "mismatched snapshot ownership",
+			history: {
+				templateDeploymentHistory: [
+					{
+						id: "undeploy-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						undeployStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-2",
+						userId: "user-1",
+						backupData: "wrong-instance-evidence",
+					},
+				],
+			},
+		},
+		{
+			name: "empty snapshot payload",
+			history: {
+				templateDeploymentHistory: [
+					{
+						id: "undeploy-2",
+						instanceId: "instance-1",
+						userId: "user-1",
+						status: "PARTIAL_UNDEPLOY",
+						backupId: "snapshot-2",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-2",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "",
+					},
+				],
+			},
+		},
+	])("fails closed before restore when coordination evidence is $name", ({ history }) => {
+		const unsafeBackup = {
+			version: "1.1",
+			appVersion: "3.0.0-beta",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				...history,
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(unsafeBackup)).toThrow("coordination evidence");
+	});
+
+	it("does not require snapshots for completed coordination", () => {
+		const completedBackup = {
+			version: "1.1",
+			appVersion: "3.0.0-beta",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashSyncHistory: [{ id: "done", rollbackStatus: "COMPLETED" }],
+				templateDeploymentHistory: [{ id: "done", undeployStatus: "COMPLETED" }],
+				trashBackups: [],
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(completedBackup)).not.toThrow();
+	});
+
 	it("should reject invalid backup version", () => {
 		const invalidBackup = {
 			version: "999.0",

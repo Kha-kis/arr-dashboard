@@ -338,11 +338,11 @@ export class BackupService {
 	 *
 	 * @param appVersion - Application version string
 	 * @param type - Backup type (manual, scheduled, update)
-	 * @param options.includeTrashBackups - Include TRaSH ARR config snapshots (can be large)
-	 * @param options.excludeOperationalHistory - Skip huntLog/huntSearchHistory/trashSyncHistory/
-	 *   templateDeploymentHistory. These are operational logs that grow unbounded — losing them
-	 *   on restore is expected. Defaults to true for non-manual backups (scheduled + update),
-	 *   false for manual.
+	 * @param options.includeTrashBackups - Include recent TRaSH ARR config snapshots (can be large).
+	 *   Snapshots required by nonterminal rollback/undeploy coordination are always included.
+	 * @param options.excludeOperationalHistory - Skip hunt history and terminal TRaSH history.
+	 *   Nonterminal rollback/undeploy coordination is always preserved. Defaults to true for
+	 *   non-manual backups (scheduled + update), false for manual.
 	 * @param options.historyRetentionLimit - When operational history IS included, cap each
 	 *   table to last N rows (default 1000).
 	 */
@@ -365,9 +365,9 @@ export class BackupService {
 		await ensureBackupsDirectory(this.backupsDir);
 
 		// 2. Export all database data. Non-manual backups (scheduled + update) skip
-		// operational history by default — those tables grow unbounded and can blow
-		// the 768 MB container heap cap. Manual backups preserve full history unless
-		// the caller explicitly opts in.
+		// disposable operational history by default, while exportDatabase always
+		// retains nonterminal rollback/undeploy coordination and its snapshots.
+		// Manual backups preserve full history unless the caller explicitly opts in.
 		const excludeOperationalHistory = options.excludeOperationalHistory ?? type !== "manual";
 
 		const data = await exportDatabase(this.prisma, {
@@ -376,20 +376,16 @@ export class BackupService {
 			historyRetentionLimit: options.historyRetentionLimit,
 		});
 
-		// Operator visibility: log when history was excluded so a user inspecting a
-		// restore that has empty huntLog/etc. can correlate it to the backup type.
+		// Operator visibility: distinguish discarded audit rows from coordination
+		// state that remains resumable after restore.
 		if (excludeOperationalHistory) {
 			log.info(
 				{
 					backupType: type,
-					skippedTables: [
-						"huntLog",
-						"huntSearchHistory",
-						"trashSyncHistory",
-						"templateDeploymentHistory",
-					],
+					skippedTables: ["huntLog", "huntSearchHistory"],
+					preservedTables: ["trashSyncHistory", "templateDeploymentHistory", "trashBackup"],
 				},
-				"Backup excluded operational history tables (config + state still preserved)",
+				"Backup excluded disposable operational history while preserving nonterminal TRaSH coordination evidence",
 			);
 		}
 

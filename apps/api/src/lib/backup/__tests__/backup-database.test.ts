@@ -61,28 +61,137 @@ function makeMockPrisma(rows: Partial<Record<TableName, unknown[]>> = {}): {
 }
 
 describe("exportDatabase — operational history exclusion", () => {
-	it("skips huntLog/huntSearchHistory/trashSyncHistory/templateDeploymentHistory when excludeOperationalHistory: true", async () => {
+	it("skips disposable history but preserves nonterminal rollback and undeploy coordination", async () => {
 		const { prisma, mock } = makeMockPrisma({
 			huntLog: [{ id: "h1" }],
 			huntSearchHistory: [{ id: "s1" }],
-			trashSyncHistory: [{ id: "ts1" }],
-			templateDeploymentHistory: [{ id: "td1" }],
 		});
+		const rollback = {
+			id: "rollback-active",
+			instanceId: "instance-1",
+			userId: "user-1",
+			backupId: "snapshot-rollback",
+			rollbackStatus: "PARTIAL",
+		};
+		const undeploy = {
+			id: "undeploy-active",
+			instanceId: "instance-1",
+			userId: "user-1",
+			backupId: "snapshot-undeploy",
+			undeployStatus: "IN_PROGRESS",
+			status: "PARTIAL_UNDEPLOY",
+		};
+		const snapshots = [
+			{
+				id: "snapshot-rollback",
+				instanceId: "instance-1",
+				userId: "user-1",
+				backupData: "rollback-evidence",
+			},
+			{
+				id: "snapshot-undeploy",
+				instanceId: "instance-1",
+				userId: "user-1",
+				backupData: "undeploy-evidence",
+			},
+		];
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce([rollback]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([undeploy]);
+		mock.trashBackup.findMany.mockResolvedValueOnce(snapshots);
 
 		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
 
-		// History tables return empty arrays without ever calling findMany
+		// Disposable history remains unloaded, preserving the bounded-memory behavior.
 		expect(result.huntLogs).toEqual([]);
 		expect(result.huntSearchHistory).toEqual([]);
-		expect(result.trashSyncHistory).toEqual([]);
-		expect(result.templateDeploymentHistory).toEqual([]);
-
-		// Crucial: findMany was NOT called on the skipped tables — that's the
-		// memory win, otherwise we'd still be loading rows just to throw them away.
 		expect(mock.huntLog.findMany).not.toHaveBeenCalled();
 		expect(mock.huntSearchHistory.findMany).not.toHaveBeenCalled();
-		expect(mock.trashSyncHistory.findMany).not.toHaveBeenCalled();
-		expect(mock.templateDeploymentHistory.findMany).not.toHaveBeenCalled();
+
+		// Safety coordination is state, not disposable history.
+		expect(result.trashSyncHistory).toEqual([rollback]);
+		expect(result.templateDeploymentHistory).toEqual([undeploy]);
+		expect(result.trashBackups).toEqual(snapshots);
+		expect(mock.trashSyncHistory.findMany).toHaveBeenCalledWith({
+			where: { rollbackStatus: { not: "COMPLETED" } },
+		});
+		expect(mock.templateDeploymentHistory.findMany).toHaveBeenCalledWith({
+			where: {
+				OR: [{ undeployStatus: { not: "COMPLETED" } }, { status: "PARTIAL_UNDEPLOY" }],
+			},
+		});
+		expect(mock.trashBackup.findMany).toHaveBeenCalledWith({
+			where: { id: { in: ["snapshot-rollback", "snapshot-undeploy"] } },
+		});
+	});
+
+	it("unions nonterminal coordination outside the capped history window", async () => {
+		const { prisma, mock } = makeMockPrisma();
+		const rollback = {
+			id: "rollback-outside-cap",
+			instanceId: "instance-1",
+			userId: "user-1",
+			backupId: "snapshot-1",
+			rollbackStatus: "IN_PROGRESS",
+		};
+		const recentTerminal = {
+			id: "recent-terminal",
+			instanceId: "instance-1",
+			userId: "user-1",
+			rollbackStatus: "COMPLETED",
+		};
+		mock.trashSyncHistory.findMany
+			.mockResolvedValueOnce([rollback])
+			.mockResolvedValueOnce([recentTerminal]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+		mock.trashBackup.findMany.mockResolvedValueOnce([
+			{
+				id: "snapshot-1",
+				instanceId: "instance-1",
+				userId: "user-1",
+				backupData: "evidence",
+			},
+		]);
+
+		const result = await exportDatabase(prisma, { historyRetentionLimit: 1 });
+
+		expect(result.trashSyncHistory).toEqual([recentTerminal, rollback]);
+	});
+
+	it("fails closed when a nonterminal coordination row has no snapshot reference", async () => {
+		const { prisma, mock } = makeMockPrisma();
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "rollback-without-snapshot",
+				instanceId: "instance-1",
+				userId: "user-1",
+				backupId: null,
+				rollbackStatus: "IN_PROGRESS",
+			},
+		]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([]);
+
+		await expect(exportDatabase(prisma, { excludeOperationalHistory: true })).rejects.toThrow(
+			"rollback-without-snapshot",
+		);
+	});
+
+	it("fails closed when a referenced coordination snapshot is absent", async () => {
+		const { prisma, mock } = makeMockPrisma();
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "rollback-missing-evidence",
+				instanceId: "instance-1",
+				userId: "user-1",
+				backupId: "missing-snapshot",
+				rollbackStatus: "PARTIAL",
+			},
+		]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([]);
+		mock.trashBackup.findMany.mockResolvedValueOnce([]);
+
+		await expect(exportDatabase(prisma, { excludeOperationalHistory: true })).rejects.toThrow(
+			"missing-snapshot",
+		);
 	});
 
 	it("includes operational history with row cap when excludeOperationalHistory: false (default)", async () => {

@@ -8,7 +8,93 @@
 import type { BackupData } from "@arr/shared";
 import type { EncryptedBackupEnvelope } from "./backup-crypto.js";
 
-export const BACKUP_VERSION = "1.0";
+export const BACKUP_VERSION = "1.1";
+export const LEGACY_BACKUP_VERSION = "1.0";
+
+const SUPPORTED_BACKUP_VERSIONS = new Set([LEGACY_BACKUP_VERSION, BACKUP_VERSION]);
+
+type CoordinationRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is CoordinationRecord {
+	return typeof value === "object" && value !== null;
+}
+
+function isNonterminalStatus(value: unknown): boolean {
+	return typeof value === "string" && value !== "COMPLETED";
+}
+
+function coordinationId(record: CoordinationRecord): string {
+	return typeof record.id === "string" && record.id.length > 0 ? record.id : "<unknown>";
+}
+
+/**
+ * Verify that rollback/undeploy work can still be resumed after restore.
+ * This runs before secrets or database state are changed.
+ */
+export function validateCoordinationEvidence(data: Record<string, unknown>): void {
+	const snapshots = Array.isArray(data.trashBackups) ? data.trashBackups : [];
+	const snapshotsById = new Map<string, CoordinationRecord>();
+	for (const snapshot of snapshots) {
+		if (isRecord(snapshot) && typeof snapshot.id === "string") {
+			snapshotsById.set(snapshot.id, snapshot);
+		}
+	}
+
+	const requiredRows: Array<{ kind: "rollback" | "undeploy"; row: CoordinationRecord }> = [];
+	if (Array.isArray(data.trashSyncHistory)) {
+		for (const row of data.trashSyncHistory) {
+			if (isRecord(row) && isNonterminalStatus(row.rollbackStatus)) {
+				requiredRows.push({ kind: "rollback", row });
+			}
+		}
+	}
+	if (Array.isArray(data.templateDeploymentHistory)) {
+		for (const row of data.templateDeploymentHistory) {
+			if (
+				isRecord(row) &&
+				(isNonterminalStatus(row.undeployStatus) || row.status === "PARTIAL_UNDEPLOY")
+			) {
+				requiredRows.push({ kind: "undeploy", row });
+			}
+		}
+	}
+
+	for (const { kind, row } of requiredRows) {
+		const rowId = coordinationId(row);
+		if (
+			typeof row.instanceId !== "string" ||
+			row.instanceId.length === 0 ||
+			typeof row.userId !== "string" ||
+			row.userId.length === 0
+		) {
+			throw new Error(
+				`Invalid ${kind} coordination evidence for row ${rowId}: missing instance or owner identity`,
+			);
+		}
+		if (typeof row.backupId !== "string" || row.backupId.length === 0) {
+			throw new Error(
+				`Invalid ${kind} coordination evidence for row ${rowId}: missing backup snapshot reference`,
+			);
+		}
+
+		const snapshot = snapshotsById.get(row.backupId);
+		if (!snapshot) {
+			throw new Error(
+				`Invalid ${kind} coordination evidence for row ${rowId}: referenced snapshot ${row.backupId} is missing`,
+			);
+		}
+		if (
+			snapshot.instanceId !== row.instanceId ||
+			snapshot.userId !== row.userId ||
+			typeof snapshot.backupData !== "string" ||
+			snapshot.backupData.length === 0
+		) {
+			throw new Error(
+				`Invalid ${kind} coordination evidence for row ${rowId}: referenced snapshot ${row.backupId} is incomplete or belongs to a different instance or owner`,
+			);
+		}
+	}
+}
 
 /**
  * Validate that an object is a valid encrypted backup envelope
@@ -112,8 +198,10 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 		throw new Error("Invalid backup format: missing or invalid version");
 	}
 
-	if (b.version !== BACKUP_VERSION) {
-		throw new Error(`Unsupported backup version: ${b.version} (expected ${BACKUP_VERSION})`);
+	if (!SUPPORTED_BACKUP_VERSIONS.has(b.version)) {
+		throw new Error(
+			`Unsupported backup version: ${b.version} (supported: ${[...SUPPORTED_BACKUP_VERSIONS].join(", ")})`,
+		);
 	}
 
 	if (!b.data || typeof b.data !== "object") {
@@ -171,6 +259,8 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 			throw new Error(`Invalid backup format: ${field} must be an array`);
 		}
 	}
+
+	validateCoordinationEvidence(dataRecord);
 
 	// Validate required secret fields
 	if (
