@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
+	createUpstreamResourceStateToken,
 } from "../../../lib/trash-guides/deployment-target.js";
 import {
 	createInjectAuthenticated,
@@ -23,6 +24,8 @@ const instance = {
 	httpAuthEncryptionIv: null,
 	connectionGeneration: 2,
 };
+const liveManagedCustomFormat = { id: 7, name: "Reject", specifications: [] };
+const liveManagedCustomFormatStateToken = createUpstreamResourceStateToken(liveManagedCustomFormat);
 
 describe("instance quality profile score persistence", () => {
 	let app: FastifyInstance;
@@ -43,6 +46,7 @@ describe("instance quality profile score persistence", () => {
 	const getProfile = vi.fn();
 	const updateProfile = vi.fn();
 	const getCustomFormats = vi.fn();
+	const getCustomFormat = vi.fn();
 	const runWithEndpointMutation = vi.fn();
 
 	beforeEach(async () => {
@@ -103,6 +107,7 @@ describe("instance quality profile score persistence", () => {
 		deleteOverrides.mockResolvedValue({ count: 1 });
 		updateProfile.mockResolvedValue(undefined);
 		getCustomFormats.mockResolvedValue([{ id: 7, name: "Reject" }]);
+		getCustomFormat.mockResolvedValue(liveManagedCustomFormat);
 
 		const transactionClient = {
 			serviceInstance: { findFirst: findTransactionInstance },
@@ -144,7 +149,7 @@ describe("instance quality profile score persistence", () => {
 		};
 		const client = {
 			qualityProfile: { getById: getProfile, update: updateProfile },
-			customFormat: { getAll: getCustomFormats },
+			customFormat: { getAll: getCustomFormats, getById: getCustomFormat },
 		};
 
 		app = Fastify({ logger: false });
@@ -985,7 +990,7 @@ describe("instance quality profile score persistence", () => {
 				trashId: "trash-7",
 				name: "Reject",
 				resourceId: 7,
-				stateToken: "format-state",
+				stateToken: liveManagedCustomFormatStateToken,
 				profileId: 4,
 				appliedScore: 100,
 			},
@@ -1029,12 +1034,19 @@ describe("instance quality profile score persistence", () => {
 		expect(updateProfile).not.toHaveBeenCalled();
 	});
 
-	it("resets an instance override to the nested TRaSH profile score set", async () => {
+	it("matches a reset by managed TRaSH identity when instance resource IDs collide", async () => {
 		const template = {
 			id: "template-1",
 			userId,
 			configData: JSON.stringify({
+				completeQualityProfile: { sourceInstanceId: instance.id },
 				customFormats: [
+					{
+						trashId: "instance-only-format",
+						name: "Unmanaged format from the source instance",
+						scoreOverride: 250,
+						originalConfig: { _instanceCFId: 7 },
+					},
 					{
 						trashId: "trash-7",
 						name: "Reject",
@@ -1060,7 +1072,7 @@ describe("instance quality profile score persistence", () => {
 						trashId: "trash-7",
 						name: "Reject",
 						resourceId: 7,
-						stateToken: "format-state",
+						stateToken: liveManagedCustomFormatStateToken,
 						profileId: 4,
 						appliedScore: 100,
 					},
@@ -1125,6 +1137,492 @@ describe("instance quality profile score persistence", () => {
 		);
 	});
 
+	it("fails before saving reset intent when a managed Custom Format identity drifted", async () => {
+		const template = {
+			id: "template-1",
+			userId,
+			configData: JSON.stringify({
+				customFormats: [{ trashId: "trash-7", scoreOverride: -10_000 }],
+			}),
+		};
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-1",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify([
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						resourceId: 7,
+						stateToken: liveManagedCustomFormatStateToken,
+						profileId: 4,
+						appliedScore: 100,
+					},
+				]),
+				template,
+			},
+		]);
+		const override = {
+			id: "override-1",
+			userId,
+			instanceId: instance.id,
+			qualityProfileId: 4,
+			customFormatId: 7,
+			score: 100,
+			status: "APPLIED",
+			intentOperation: null,
+			intendedScore: null,
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			updatedAt: new Date("2026-08-09T00:00:00Z"),
+		};
+		findOverrides
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([override]);
+		getCustomFormat.mockResolvedValue({
+			id: 7,
+			name: "Replacement format",
+			specifications: [],
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("Custom Format identity changed");
+		expect(updateOverrides).not.toHaveBeenCalled();
+		expect(updateProfile).not.toHaveBeenCalled();
+		expect(deleteOverrides).not.toHaveBeenCalled();
+	});
+
+	it("rechecks managed Custom Format identity before resuming a reset intent", async () => {
+		const template = {
+			id: "template-1",
+			userId,
+			configData: JSON.stringify({
+				customFormats: [{ trashId: "trash-7", scoreOverride: -10_000 }],
+			}),
+		};
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-1",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify([
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						resourceId: 7,
+						stateToken: liveManagedCustomFormatStateToken,
+						profileId: 4,
+						appliedScore: 100,
+					},
+				]),
+				template,
+			},
+		]);
+		const pendingIntent = {
+			id: "override-1",
+			userId,
+			instanceId: instance.id,
+			qualityProfileId: 4,
+			customFormatId: 7,
+			score: 100,
+			status: "PENDING",
+			intentOperation: "RESET_SCORE",
+			intendedScore: -10_000,
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			updatedAt: new Date("2026-08-09T00:00:00Z"),
+		};
+		findOverrides
+			.mockResolvedValueOnce([pendingIntent])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([pendingIntent]);
+		const before = { id: 4, name: "Any", formatItems: [{ format: 7, score: 100 }] };
+		const after = { ...before, formatItems: [{ format: 7, score: -10_000 }] };
+		getProfile
+			.mockReset()
+			.mockResolvedValueOnce(before)
+			.mockResolvedValueOnce(before)
+			.mockResolvedValue(after);
+		getCustomFormat
+			.mockResolvedValueOnce(liveManagedCustomFormat)
+			.mockResolvedValue({ id: 7, name: "Replacement format", specifications: [] });
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("Custom Format identity changed");
+		expect(updateProfile).not.toHaveBeenCalled();
+		expect(deleteOverrides).not.toHaveBeenCalled();
+	});
+
+	it("retains an uncertain reset intent when Custom Format identity changes after the ARR write", async () => {
+		const template = {
+			id: "template-1",
+			userId,
+			configData: JSON.stringify({
+				customFormats: [{ trashId: "trash-7", scoreOverride: -10_000 }],
+			}),
+		};
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-1",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify([
+					{
+						trashId: "trash-7",
+						name: "Reject",
+						resourceId: 7,
+						stateToken: liveManagedCustomFormatStateToken,
+						profileId: 4,
+						appliedScore: 100,
+					},
+				]),
+				template,
+			},
+		]);
+		const override = {
+			id: "override-1",
+			userId,
+			instanceId: instance.id,
+			qualityProfileId: 4,
+			customFormatId: 7,
+			score: 100,
+			status: "APPLIED",
+			intentOperation: null,
+			intendedScore: null,
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			updatedAt: new Date("2026-08-09T00:00:00Z"),
+		};
+		findOverrides
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([override]);
+		const before = { id: 4, name: "Any", formatItems: [{ format: 7, score: 100 }] };
+		const after = { ...before, formatItems: [{ format: 7, score: -10_000 }] };
+		getProfile
+			.mockReset()
+			.mockResolvedValueOnce(before)
+			.mockResolvedValueOnce(before)
+			.mockResolvedValue(after);
+		getCustomFormat
+			.mockResolvedValueOnce(liveManagedCustomFormat)
+			.mockResolvedValueOnce(liveManagedCustomFormat)
+			.mockResolvedValue({ id: 7, name: "Replacement format", specifications: [] });
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("Custom Format identity changed");
+		expect(updateProfile).toHaveBeenCalledOnce();
+		expect(updateOverrides).toHaveBeenCalledWith(
+			expect.objectContaining({ data: { status: "UNCERTAIN" } }),
+		);
+		expect(deleteOverrides).not.toHaveBeenCalled();
+	});
+
+	it("does not reuse source-instance resource IDs on a different ARR endpoint", async () => {
+		const template = {
+			id: "template-1",
+			userId,
+			configData: JSON.stringify({
+				completeQualityProfile: {
+					sourceInstanceId: "source-instance",
+					sourceConnectionStateToken: "source-token",
+				},
+				customFormats: [
+					{
+						trashId: "instance-only-format",
+						scoreOverride: 250,
+						originalConfig: { _instanceCFId: 7 },
+					},
+					{
+						trashId: "managed-format",
+						scoreOverride: -10_000,
+						originalConfig: { _instanceCFId: 9001 },
+					},
+				],
+			}),
+		};
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-1",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify([
+					{
+						trashId: "managed-format",
+						name: "Managed format",
+						resourceId: 9001,
+						stateToken: liveManagedCustomFormatStateToken,
+						profileId: 4,
+						appliedScore: -10_000,
+					},
+				]),
+				template,
+			},
+		]);
+		const override = {
+			id: "override-1",
+			userId,
+			instanceId: instance.id,
+			qualityProfileId: 4,
+			customFormatId: 7,
+			score: 100,
+			status: "APPLIED",
+			intentOperation: null,
+			intendedScore: null,
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			updatedAt: new Date("2026-08-09T00:00:00Z"),
+		};
+		findOverrides
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([override]);
+		findUniqueOverride.mockResolvedValueOnce(override);
+		const before = { id: 4, name: "Any", formatItems: [{ format: 7, score: 100 }] };
+		const after = { ...before, formatItems: [{ format: 7, score: 0 }] };
+		getProfile
+			.mockReset()
+			.mockResolvedValueOnce(before)
+			.mockResolvedValueOnce(before)
+			.mockResolvedValue(after);
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("Custom Format identity could not be established");
+		expect(updateOverrides).not.toHaveBeenCalled();
+		expect(updateProfile).not.toHaveBeenCalled();
+		expect(deleteOverrides).not.toHaveBeenCalled();
+	});
+
+	it("retains instance-ID fallback on the verified cloned source connection", async () => {
+		const template = {
+			id: "template-1",
+			userId,
+			configData: JSON.stringify({
+				completeQualityProfile: {
+					sourceInstanceId: instance.id,
+					sourceConnectionStateToken: createDeploymentConnectionStateToken(instance),
+				},
+				customFormats: [
+					{
+						trashId: "instance-only-format",
+						name: "Instance-only format",
+						scoreOverride: 250,
+						originalConfig: {
+							_instanceCFId: 7,
+							name: "Instance-only format",
+							specifications: [],
+						},
+					},
+				],
+			}),
+		};
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-1",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: "[]",
+				template,
+			},
+		]);
+		const override = {
+			id: "override-1",
+			userId,
+			instanceId: instance.id,
+			qualityProfileId: 4,
+			customFormatId: 7,
+			score: 100,
+			status: "APPLIED",
+			intentOperation: null,
+			intendedScore: null,
+			connectionGeneration: instance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			updatedAt: new Date("2026-08-09T00:00:00Z"),
+		};
+		findOverrides
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([override]);
+		findUniqueOverride.mockResolvedValueOnce(override);
+		const before = { id: 4, name: "Any", formatItems: [{ format: 7, score: 100 }] };
+		const after = { ...before, formatItems: [{ format: 7, score: 250 }] };
+		getProfile
+			.mockReset()
+			.mockResolvedValueOnce(before)
+			.mockResolvedValueOnce(before)
+			.mockResolvedValue(after);
+		getCustomFormat.mockResolvedValue({
+			id: 7,
+			name: "Instance-only format",
+			specifications: [],
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().revertedScore).toBe(250);
+	});
+
+	it.each([
+		{
+			label: "managed resource IDs",
+			managedCustomFormats: [
+				{ trashId: "trash-a", resourceId: 7 },
+				{ trashId: "trash-b", resourceId: 7 },
+			],
+			customFormats: [{ trashId: "trash-a" }, { trashId: "trash-b" }],
+		},
+		{
+			label: "managed TRaSH identities",
+			managedCustomFormats: [
+				{ trashId: "trash-a", resourceId: 7 },
+				{ trashId: "trash-a", resourceId: 8 },
+			],
+			customFormats: [{ trashId: "trash-a" }],
+		},
+	])("fails closed on duplicate $label", async ({ managedCustomFormats, customFormats }) => {
+		const template = {
+			id: "template-1",
+			userId,
+			configData: JSON.stringify({ customFormats }),
+		};
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-1",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify(
+					managedCustomFormats.map((format) => ({
+						...format,
+						name: "Managed format",
+						stateToken: liveManagedCustomFormatStateToken,
+						profileId: 4,
+						appliedScore: 100,
+					})),
+				),
+				template,
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("duplicate managed Custom Format authority");
+		expect(updateProfile).not.toHaveBeenCalled();
+		expect(deleteOverrides).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when a template repeats the managed TRaSH identity", async () => {
+		const template = {
+			id: "template-1",
+			userId,
+			configData: JSON.stringify({
+				customFormats: [
+					{ trashId: "trash-7", scoreOverride: 100 },
+					{ trashId: "trash-7", scoreOverride: 200 },
+				],
+			}),
+		};
+		findMappings.mockResolvedValueOnce([
+			{
+				id: "mapping-1",
+				templateId: template.id,
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				qualityProfileName: "Any",
+				syncStrategy: "manual",
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				managedCustomFormatsCaptured: true,
+				managedCustomFormats: JSON.stringify([
+					{
+						trashId: "trash-7",
+						name: "Managed format",
+						resourceId: 7,
+						stateToken: liveManagedCustomFormatStateToken,
+						profileId: 4,
+						appliedScore: 100,
+					},
+				]),
+				template,
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"DELETE",
+			"/instance-1/quality-profiles/4/overrides/7",
+		);
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("duplicate Custom Format identity");
+		expect(updateProfile).not.toHaveBeenCalled();
+		expect(deleteOverrides).not.toHaveBeenCalled();
+	});
+
 	it("restores an applied reset intent when the profile changes before the ARR write", async () => {
 		const template = {
 			id: "template-1",
@@ -1155,7 +1653,7 @@ describe("instance quality profile score persistence", () => {
 						trashId: "trash-7",
 						name: "Reject",
 						resourceId: 7,
-						stateToken: "format-state",
+						stateToken: liveManagedCustomFormatStateToken,
 						profileId: 4,
 						appliedScore: 100,
 					},
@@ -1237,7 +1735,7 @@ describe("instance quality profile score persistence", () => {
 					trashId: "trash-7",
 					name: "Reject",
 					resourceId: 7,
-					stateToken: "format-state",
+					stateToken: liveManagedCustomFormatStateToken,
 					profileId: 4,
 					appliedScore: 100,
 				},

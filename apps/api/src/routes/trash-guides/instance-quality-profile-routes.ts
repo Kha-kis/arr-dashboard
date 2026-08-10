@@ -19,6 +19,7 @@ import {
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
 	getEquivalentServiceInstanceIds,
+	isVerifiedClonedProfileSourceConnection,
 	isCurrentDeploymentConnectionMapping,
 } from "../../lib/trash-guides/deployment-target.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
@@ -36,6 +37,8 @@ interface ParsedTemplateCustomFormat {
 	conditionsEnabled?: Record<string, boolean>;
 	originalConfig?: {
 		_instanceCFId?: number;
+		name?: string;
+		specifications?: unknown[];
 		trash_scores?: Record<string, number>;
 		[key: string]: unknown;
 	};
@@ -44,6 +47,10 @@ interface ParsedTemplateCustomFormat {
 /** Parsed template configuration data structure */
 interface ParsedTemplateConfig {
 	customFormats?: ParsedTemplateCustomFormat[];
+	completeQualityProfile?: {
+		sourceInstanceId?: string;
+		sourceConnectionStateToken?: string;
+	};
 	qualityProfile?: { trash_score_set?: string };
 	[key: string]: unknown;
 }
@@ -99,15 +106,37 @@ function parsePositiveSafeIntegerParam(value: string): number | null {
 	return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
+function findTemplateCustomFormat(
+	config: ParsedTemplateConfig,
+	customFormatId: number,
+	trashId?: string,
+	allowInstanceIdFallback = false,
+): ParsedTemplateCustomFormat | undefined {
+	const matches =
+		config.customFormats?.filter((cf) =>
+			trashId !== undefined
+				? cf.trashId === trashId
+				: allowInstanceIdFallback && cf.originalConfig?._instanceCFId === customFormatId,
+		) ?? [];
+	if (matches.length > 1) {
+		throw new ConflictError(
+			"The template contains a duplicate Custom Format identity for this score reset.",
+		);
+	}
+	return matches[0];
+}
+
 function getTemplateScore(
 	config: ParsedTemplateConfig,
 	customFormatId: number,
 	trashId?: string,
+	allowInstanceIdFallback = false,
 ): { score: number; inTemplate: boolean } {
-	const templateCf = config.customFormats?.find(
-		(cf) =>
-			(trashId !== undefined && cf.trashId === trashId) ||
-			cf.originalConfig?._instanceCFId === customFormatId,
+	const templateCf = findTemplateCustomFormat(
+		config,
+		customFormatId,
+		trashId,
+		allowInstanceIdFallback,
 	);
 	if (!templateCf) return { score: 0, inTemplate: false };
 	if (templateCf.scoreOverride !== undefined) {
@@ -122,6 +151,75 @@ function getTemplateScore(
 		score: templateCf.originalConfig?.trash_scores?.default ?? 0,
 		inTemplate: true,
 	};
+}
+
+type ScoreResetCustomFormatIdentity =
+	| { kind: "managed"; stateToken: string }
+	| { kind: "source"; stateToken: string };
+
+function createSourceCustomFormatIdentity(
+	templateCustomFormat: ParsedTemplateCustomFormat | undefined,
+): ScoreResetCustomFormatIdentity {
+	const originalConfig = templateCustomFormat?.originalConfig;
+	if (
+		!originalConfig ||
+		typeof originalConfig.name !== "string" ||
+		originalConfig.name.length === 0 ||
+		!Array.isArray(originalConfig.specifications)
+	) {
+		throw new ConflictError(
+			"Custom Format identity could not be established from the verified source template.",
+		);
+	}
+	return {
+		kind: "source",
+		stateToken: createUpstreamResourceStateToken({
+			name: originalConfig.name,
+			specifications: originalConfig.specifications,
+		}),
+	};
+}
+
+async function assertCurrentCustomFormatIdentity(
+	client: SonarrClient | RadarrClient,
+	customFormatId: number,
+	expected: ScoreResetCustomFormatIdentity,
+): Promise<void> {
+	let live: unknown;
+	try {
+		live = await client.customFormat.getById(customFormatId);
+	} catch {
+		throw new ConflictError(
+			"The Custom Format identity changed or could not be verified. Refresh and try again.",
+		);
+	}
+	if (!live || typeof live !== "object" || Array.isArray(live)) {
+		throw new ConflictError(
+			"The Custom Format identity changed or could not be verified. Refresh and try again.",
+		);
+	}
+	const candidate = live as {
+		id?: number;
+		name?: unknown;
+		specifications?: unknown;
+	};
+	if (candidate.id !== customFormatId) {
+		throw new ConflictError(
+			"The Custom Format identity changed or could not be verified. Refresh and try again.",
+		);
+	}
+	const liveStateToken =
+		expected.kind === "managed"
+			? createUpstreamResourceStateToken(live)
+			: createUpstreamResourceStateToken({
+					name: candidate.name,
+					specifications: candidate.specifications,
+				});
+	if (liveStateToken !== expected.stateToken) {
+		throw new ConflictError(
+			"The Custom Format identity changed or could not be verified. Refresh and try again.",
+		);
+	}
 }
 
 function assertCurrentConnectionRows(
@@ -406,9 +504,25 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					);
 				}
 				const managedFormats = readPersistedManagedCustomFormatIdentities(mapping);
-				const trashIdByResourceId = new Map(
-					managedFormats.map((format) => [format.resourceId, format.trashId]),
-				);
+				const trashIdByResourceId = new Map<number, string>();
+				const managedIdentityByResourceId = new Map<number, ScoreResetCustomFormatIdentity>();
+				const resourceIdByTrashId = new Map<string, number>();
+				for (const format of managedFormats) {
+					if (
+						trashIdByResourceId.has(format.resourceId) ||
+						resourceIdByTrashId.has(format.trashId)
+					) {
+						throw new ConflictError(
+							"The deployment mapping contains duplicate managed Custom Format authority.",
+						);
+					}
+					trashIdByResourceId.set(format.resourceId, format.trashId);
+					managedIdentityByResourceId.set(format.resourceId, {
+						kind: "managed",
+						stateToken: format.stateToken,
+					});
+					resourceIdByTrashId.set(format.trashId, format.resourceId);
+				}
 				let templateConfig: ParsedTemplateConfig;
 				try {
 					templateConfig = JSON.parse(mapping.template.configData) as ParsedTemplateConfig;
@@ -417,7 +531,6 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 						`Template configuration is invalid: ${getErrorMessage(error)}`,
 					);
 				}
-
 				const pendingResetIntents = await app.prisma.instanceQualityProfileOverride.findMany({
 					where: {
 						userId,
@@ -452,6 +565,44 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					}
 					persistedResetScores.set(intent.customFormatId, intent.intendedScore);
 				}
+				const requiresInstanceIdFallback = customFormatIds.some(
+					(customFormatId) => !trashIdByResourceId.has(customFormatId),
+				);
+				const sourceBinding = templateConfig.completeQualityProfile;
+				const isRecordedSourceConnection = Boolean(
+					requiresInstanceIdFallback &&
+						sourceBinding?.sourceInstanceId &&
+						connectionContext.equivalentInstanceIds.includes(sourceBinding.sourceInstanceId),
+				);
+				const allowInstanceIdFallback = isRecordedSourceConnection
+					? isVerifiedClonedProfileSourceConnection({
+							sourceInstanceId: sourceBinding?.sourceInstanceId,
+							sourceConnectionStateToken: sourceBinding?.sourceConnectionStateToken,
+							equivalentInstanceIds: connectionContext.equivalentInstanceIds,
+							sourceInstance: connectionContext.aliases.find(
+								(alias) => alias.id === sourceBinding?.sourceInstanceId,
+							),
+						})
+					: false;
+				const customFormatIdentities = new Map<number, ScoreResetCustomFormatIdentity>();
+				for (const customFormatId of customFormatIds) {
+					const managedIdentity = managedIdentityByResourceId.get(customFormatId);
+					if (managedIdentity) {
+						customFormatIdentities.set(customFormatId, managedIdentity);
+						continue;
+					}
+					if (!allowInstanceIdFallback) {
+						throw new ConflictError(
+							"Custom Format identity could not be established for this ARR connection.",
+						);
+					}
+					customFormatIdentities.set(
+						customFormatId,
+						createSourceCustomFormatIdentity(
+							findTemplateCustomFormat(templateConfig, customFormatId, undefined, true),
+						),
+					);
+				}
 				const templateScores = new Map(
 					customFormatIds.map((customFormatId) => [
 						customFormatId,
@@ -461,6 +612,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 									templateConfig,
 									customFormatId,
 									trashIdByResourceId.get(customFormatId),
+									allowInstanceIdFallback,
 								),
 					]),
 				);
@@ -499,6 +651,12 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 						"One or more overrides changed or are not bound to the current ARR connection. Refresh and try again.",
 					);
 				}
+				const client = app.arrClientFactory.create(connectionContext.instance) as
+					| SonarrClient
+					| RadarrClient;
+				for (const [customFormatId, identity] of customFormatIdentities) {
+					await assertCurrentCustomFormatIdentity(client, customFormatId, identity);
+				}
 
 				const intentAt = new Date();
 				await app.prisma.$transaction(async (transaction) => {
@@ -531,9 +689,6 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				} as const;
 				let writeAttempted = false;
 				try {
-					const client = app.arrClientFactory.create(connectionContext.instance) as
-						| SonarrClient
-						| RadarrClient;
 					const profile = await client.qualityProfile.getById(profileId);
 					assertExactLiveProfile(profile, profileId, mapping.qualityProfileName);
 					for (const customFormatId of customFormatIds) {
@@ -561,9 +716,15 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 							"The quality profile changed while the override reset was being prepared. Refresh and try again.",
 						);
 					}
+					for (const [customFormatId, identity] of customFormatIdentities) {
+						await assertCurrentCustomFormatIdentity(client, customFormatId, identity);
+					}
 					writeAttempted = true;
 					// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr profile types are runtime-compatible
 					await client.qualityProfile.update(profileId, updatedProfile as any);
+					for (const [customFormatId, identity] of customFormatIdentities) {
+						await assertCurrentCustomFormatIdentity(client, customFormatId, identity);
+					}
 					const postWriteProfile = await client.qualityProfile.getById(profileId);
 					assertExactLiveProfile(postWriteProfile, profileId, mapping.qualityProfileName);
 					for (const [customFormatId, reset] of templateScores) {
