@@ -232,6 +232,51 @@ describe("deployment authority writer locking", () => {
 		);
 	});
 
+	it("repairs divergent alias strategies while preserving exact ownership authority", async () => {
+		const aliasInstance = { ...instance, id: "instance-alias", label: "Radarr alias" };
+		const aliasMapping = {
+			...mapping,
+			id: "mapping-alias",
+			instanceId: aliasInstance.id,
+			syncStrategy: "manual",
+			instance: aliasInstance,
+		};
+		const updateMany = vi.fn().mockResolvedValue({ count: 2 });
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance, aliasInstance]) },
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue(mapping),
+				findMany: vi.fn().mockResolvedValue([mapping, aliasMapping]),
+				updateMany,
+			},
+		};
+		app = await createApp(prisma, createSerializedExecutor());
+
+		const response = await createInjectAuthenticated(app)("PATCH", "/sync-strategy", {
+			body: {
+				templateId: mapping.templateId,
+				instanceId: mapping.instanceId,
+				syncStrategy: "notify",
+			},
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: expect.arrayContaining([
+						expect.objectContaining({ id: mapping.id, updatedAt: mapping.updatedAt }),
+						expect.objectContaining({
+							id: aliasMapping.id,
+							updatedAt: aliasMapping.updatedAt,
+						}),
+					]),
+				}),
+				data: expect.objectContaining({ syncStrategy: "notify" }),
+			}),
+		);
+	});
+
 	it("unlinks every equivalent alias and its matching score overrides", async () => {
 		const aliasInstance = { ...instance, id: "instance-alias", label: "Radarr alias" };
 		const aliasMapping = {

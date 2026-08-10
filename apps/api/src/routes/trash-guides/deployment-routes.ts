@@ -317,7 +317,12 @@ export async function deploymentRoutes(app: FastifyInstance) {
 						"Deployment authority changed while the sync strategy was being updated",
 					);
 				}
-				assertEquivalentDeploymentMappingAuthority(equivalentMappings);
+				// A strategy write is also the repair path for aliases left with divergent
+				// strategies by older single-row writers. Every other ownership field must
+				// still agree before replacing that one field across the endpoint.
+				assertEquivalentDeploymentMappingAuthority(
+					equivalentMappings.map((candidate) => ({ ...candidate, syncStrategy: null })),
+				);
 				const updated = await prisma.templateQualityProfileMapping.updateMany({
 					where: {
 						templateId,

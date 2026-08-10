@@ -761,6 +761,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 	it.each([
 		{ label: "missing", backup: null },
 		{ label: "invalid", backup: { id: "backup-invalid", backupData: "not-json" } },
+		{ label: "terminal", backup: fullyAppliedBackup() },
 	])(
 		"keeps a restarted $label-ledger operation blocked after reconciliation",
 		async ({ backup: interruptedBackup }) => {
@@ -1051,9 +1052,9 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 			expect.objectContaining({
 				where: { id: "sync-1", status: { in: ["IN_PROGRESS", "RUNNING"] } },
 				data: expect.objectContaining({
-					status: "PARTIAL_SUCCESS",
+					status: "UNCERTAIN",
 					configsApplied: 1,
-					configsFailed: 1,
+					configsFailed: 0,
 					appliedConfigs: JSON.stringify([
 						{ name: "Foo", action: "updated", type: "custom_format" },
 					]),
@@ -1127,7 +1128,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		expect(deploymentUpdateMany).toHaveBeenCalledWith({
 			where: { id: "deployment-1", status: "IN_PROGRESS" },
 			data: expect.objectContaining({
-				status: "PARTIAL_SUCCESS",
+				status: "UNCERTAIN",
 				appliedCFs: 2,
 				appliedConfigs: JSON.stringify(appliedConfigs),
 			}),
@@ -1138,9 +1139,9 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				status: { in: ["IN_PROGRESS", "RUNNING"] },
 			},
 			data: expect.objectContaining({
-				status: "PARTIAL_SUCCESS",
+				status: "UNCERTAIN",
 				configsApplied: 4,
-				configsFailed: 1,
+				configsFailed: 0,
 				appliedConfigs: JSON.stringify(appliedConfigs),
 			}),
 		});
