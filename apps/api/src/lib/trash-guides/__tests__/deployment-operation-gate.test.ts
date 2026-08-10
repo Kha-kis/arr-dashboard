@@ -233,6 +233,29 @@ describe("assertNoPendingDeploymentOperation", () => {
 		).rejects.toThrow("uncertain upstream result");
 	});
 
+	it("excludes the wrapper sync that initiated the current deployment", async () => {
+		const findSyncRows = vi.fn().mockResolvedValue([]);
+		const prisma = {
+			trashSyncHistory: { findMany: findSyncRows },
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(
+				prisma as never,
+				"user-1",
+				["instance-1"],
+				undefined,
+				"sync-current",
+			),
+		).resolves.toBeUndefined();
+		expect(findSyncRows).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: { not: "sync-current" } }),
+			}),
+		);
+	});
+
 	it("blocks a transient deployment whose backup relation is missing", async () => {
 		const prisma = {
 			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
@@ -1040,11 +1063,11 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		});
 	});
 
-	it("reconciles a RUNNING sync without a deployment backup", async () => {
+	it("keeps a legacy RUNNING sync without a linked ledger uncertain", async () => {
 		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const findMany = vi
 			.fn()
-			.mockResolvedValue([{ id: "sync-running", backupId: null, backup: null }]);
+			.mockResolvedValue([{ id: "sync-running", status: "RUNNING", backupId: null, backup: null }]);
 		const prisma = {
 			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 			trashSyncHistory: { findMany, updateMany: syncUpdateMany },
@@ -1064,7 +1087,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 			data: expect.objectContaining({
 				status: "UNCERTAIN",
 				completedAt: expect.any(Date),
-				errorLog: expect.stringContaining("uncertain"),
+				errorLog: expect.stringContaining("upstream result is uncertain"),
 			}),
 		});
 	});

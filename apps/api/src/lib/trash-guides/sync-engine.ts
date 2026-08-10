@@ -496,6 +496,7 @@ export class SyncEngine {
 				options.userId,
 				undefined, // syncStrategy - not used in sync engine
 				deploymentConflictResolutions,
+				syncId,
 			);
 
 			// Calculate duration and status

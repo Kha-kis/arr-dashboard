@@ -795,8 +795,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								const attemptedAt = new Date();
 								const progress = JSON.stringify(legacySteps);
 								await app.prisma.$transaction(async (tx) => {
-									await tx.trashSyncHistory.update({
-										where: { id: syncId },
+									await tx.trashSyncHistory.updateMany({
+										where: { backupId: sync.backupId, userId, rolledBack: false },
 										data: {
 											rolledBack: errors.length === 0,
 											...(errors.length === 0 ? { rolledBackAt: attemptedAt } : {}),
@@ -991,8 +991,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 							): Promise<void> => {
 								const rollbackProgress = JSON.stringify([...stepByKey.values()]);
 								await app.prisma.$transaction(async (tx) => {
-									await tx.trashSyncHistory.update({
-										where: { id: syncId },
+									await tx.trashSyncHistory.updateMany({
+										where: { backupId: sync.backupId, userId, rolledBack: false },
 										data: { rollbackStatus, rollbackAttemptedAt, rollbackProgress },
 									});
 									await tx.templateDeploymentHistory.updateMany({
@@ -1389,8 +1389,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 							if (failedCount === 0) {
 								const rolledBackAt = new Date();
 								await app.prisma.$transaction(async (tx) => {
-									await tx.trashSyncHistory.update({
-										where: { id: syncId },
+									await tx.trashSyncHistory.updateMany({
+										where: { backupId: sync.backupId, userId, rolledBack: false },
 										data: {
 											rolledBack: true,
 											rolledBackAt,

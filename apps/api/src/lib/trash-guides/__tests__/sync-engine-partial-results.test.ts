@@ -261,6 +261,16 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 	});
 
 	it("preserves applied counts but reports non-success when sync history finalization fails", async () => {
+		const deploySingleInstance = vi.fn().mockResolvedValue({
+			instanceId: "instance-123",
+			instanceLabel: "Test Radarr",
+			success: true,
+			customFormatsCreated: 1,
+			customFormatsUpdated: 1,
+			customFormatsSkipped: 0,
+			errors: [],
+			details: { created: ["Created CF"], updated: ["Updated CF"], failed: [] },
+		});
 		const prisma = {
 			trashSyncHistory: {
 				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
@@ -270,18 +280,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 		const engine = new SyncEngine(
 			prisma as never,
 			{ syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }) } as never,
-			{
-				deploySingleInstance: vi.fn().mockResolvedValue({
-					instanceId: "instance-123",
-					instanceLabel: "Test Radarr",
-					success: true,
-					customFormatsCreated: 1,
-					customFormatsUpdated: 1,
-					customFormatsSkipped: 0,
-					errors: [],
-					details: { created: ["Created CF"], updated: ["Updated CF"], failed: [] },
-				}),
-			} as never,
+			{ deploySingleInstance } as never,
 		);
 
 		const result = await engine.execute(createSyncOptions(), undefined);
@@ -296,5 +295,13 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			"ARR changes may be present, but the local audit record is incomplete.",
 		]);
 		expect(prisma.trashSyncHistory.update).toHaveBeenCalledTimes(1);
+		expect(deploySingleInstance).toHaveBeenCalledWith(
+			"template-123",
+			"instance-123",
+			"user-123",
+			undefined,
+			undefined,
+			"sync-1",
+		);
 	});
 });

@@ -144,6 +144,7 @@ describe("sync rollback route", () => {
 				findFirst: syncFindFirst,
 				findMany: vi.fn().mockResolvedValue([]),
 				update: syncUpdate,
+				updateMany: syncUpdate,
 			},
 			templateDeploymentHistory: {
 				findMany: deploymentFindMany.mockResolvedValue([
@@ -162,7 +163,7 @@ describe("sync rollback route", () => {
 			},
 			$transaction: vi.fn(async (callback) =>
 				callback({
-					trashSyncHistory: { update: syncUpdate },
+					trashSyncHistory: { update: syncUpdate, updateMany: syncUpdate },
 					templateDeploymentHistory: {
 						updateMany: deploymentUpdateMany.mockResolvedValue({ count: 1 }),
 					},
@@ -252,6 +253,75 @@ describe("sync rollback route", () => {
 		);
 	});
 
+	it.each([
+		["wrapper-sync", "child-sync"],
+		["child-sync", "wrapper-sync"],
+	])("rolls back both histories through %s and makes %s idempotent", async (entryId, siblingId) => {
+		formatGetById
+			.mockReset()
+			.mockResolvedValueOnce({
+				id: 7,
+				name: "Updated CF",
+				specifications: [],
+				includeCustomFormatWhenRenaming: true,
+			})
+			.mockResolvedValue({
+				id: 7,
+				name: "Updated CF",
+				specifications: [],
+				includeCustomFormatWhenRenaming: false,
+			});
+		const rows = new Map(
+			["wrapper-sync", "child-sync"].map((id) => [
+				id,
+				{
+					...syncRecord,
+					id,
+					rolledBack: false,
+					rolledBackAt: null,
+					rollbackStatus: null,
+					rollbackProgress: null,
+				},
+			]),
+		);
+		syncFindFirst.mockImplementation(async ({ where }) => rows.get(where.id) ?? null);
+		syncUpdate.mockImplementation(async ({ where, data }) => {
+			let count = 0;
+			for (const row of rows.values()) {
+				if (
+					row.backupId === where.backupId &&
+					row.userId === where.userId &&
+					row.rolledBack === where.rolledBack
+				) {
+					Object.assign(row, data);
+					count++;
+				}
+			}
+			return { count };
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", `/${entryId}/rollback`);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json(), response.body).toMatchObject({ success: true });
+		expect(rows.get("wrapper-sync")).toMatchObject({
+			rolledBack: true,
+			rollbackStatus: "COMPLETED",
+		});
+		expect(rows.get("child-sync")).toMatchObject({
+			rolledBack: true,
+			rollbackStatus: "COMPLETED",
+		});
+
+		profileUpdate.mockClear();
+		formatUpdate.mockClear();
+		const retry = await createInjectAuthenticated(app)("POST", `/${siblingId}/rollback`);
+		expect(retry.statusCode).toBe(400);
+		expect(retry.json()).toMatchObject({ error: "ALREADY_ROLLED_BACK" });
+		expect(profileUpdate).not.toHaveBeenCalled();
+		expect(formatUpdate).not.toHaveBeenCalled();
+	});
+
 	it("uses the fresh leased sync row instead of a stale pre-lock snapshot", async () => {
 		syncFindFirst
 			.mockResolvedValueOnce(syncRecord)
@@ -278,7 +348,7 @@ describe("sync rollback route", () => {
 			expect.objectContaining({ data: expect.objectContaining({ undeployStatus: "PARTIAL" }) }),
 		);
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { id: "sync-1" },
+			where: { backupId: "backup-1", userId, rolledBack: false },
 			data: expect.objectContaining({
 				rollbackStatus: "PARTIAL",
 				rollbackProgress: expect.stringContaining("profile PUT failed"),
@@ -307,7 +377,7 @@ describe("sync rollback route", () => {
 		expect(profileUpdate).toHaveBeenCalledOnce();
 		expect(formatUpdate).not.toHaveBeenCalled();
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { id: "sync-1" },
+			where: { backupId: "backup-1", userId, rolledBack: false },
 			data: expect.objectContaining({
 				rollbackStatus: "COMPLETED",
 				rollbackProgress: expect.stringContaining('"key":"custom_format:7"'),
@@ -378,7 +448,7 @@ describe("sync rollback route", () => {
 		expect(response.json().errors[0]).toContain("post-deployment state was not verified");
 		expect(rawRequest).toHaveBeenCalledWith(instance, "/api/v3/config/naming");
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { id: "sync-1" },
+			where: { backupId: "backup-1", userId, rolledBack: false },
 			data: expect.objectContaining({ rollbackStatus: "PARTIAL" }),
 		});
 	});
@@ -452,7 +522,7 @@ describe("sync rollback route", () => {
 			expect.objectContaining({ method: "PUT" }),
 		);
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { id: "sync-1" },
+			where: { backupId: "backup-1", userId, rolledBack: false },
 			data: expect.objectContaining({ rollbackStatus: "COMPLETED" }),
 		});
 	});
@@ -564,7 +634,7 @@ describe("sync rollback route", () => {
 		expect(response.json().success).toBe(true);
 		expect(formatUpdate).toHaveBeenCalledWith(7, survivorFormat);
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { id: "sync-1" },
+			where: { backupId: "backup-1", userId, rolledBack: false },
 			data: expect.objectContaining({
 				rollbackProgress: expect.stringContaining(
 					'"kind":"custom_format","name":"Created CF","outcome":"restored"',

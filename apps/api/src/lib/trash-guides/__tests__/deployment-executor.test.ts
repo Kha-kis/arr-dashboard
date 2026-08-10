@@ -344,14 +344,78 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 });
 
 describe("DeploymentExecutorService - backup parity", () => {
+	it("rolls back the backup transaction when the parent wrapper changed before linkage", async () => {
+		const committedBackups: unknown[] = [];
+		const committedHistories: unknown[] = [];
+		const createHistory = vi.fn();
+		const prisma = {
+			trashSettings: { findUnique: vi.fn().mockResolvedValue({ backupRetentionDays: 30 }) },
+			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
+				const stagedBackups: unknown[] = [];
+				const stagedHistories: unknown[] = [];
+				const result = await callback({
+					trashBackup: {
+						create: vi.fn(async ({ data }) => {
+							const backup = { id: "backup-raced", ...data };
+							stagedBackups.push(backup);
+							return backup;
+						}),
+					},
+					trashSyncHistory: {
+						updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+						create: createHistory.mockImplementation(async ({ data }) => {
+							const history = { id: "history-raced", ...data };
+							stagedHistories.push(history);
+							return history;
+						}),
+					},
+				});
+				committedBackups.push(...stagedBackups);
+				committedHistories.push(...stagedHistories);
+				return result;
+			}),
+		};
+		const executor = new DeploymentExecutorService(prisma as never, {} as never);
+		const createBackupAndHistory = (
+			executor as unknown as {
+				createBackupAndHistory: (...args: unknown[]) => Promise<unknown>;
+			}
+		).createBackupAndHistory.bind(executor);
+
+		await expect(
+			createBackupAndHistory(
+				{
+					id: "instance-1",
+					service: "RADARR",
+					baseUrl: "http://radarr:7878",
+					encryptedApiKey: "encrypted-key",
+					encryptionIv: "iv",
+				},
+				"user-1",
+				[],
+				"template-1",
+				null,
+				undefined,
+				"parent-sync-raced",
+			),
+		).rejects.toThrow("parent sync history changed");
+		expect(committedBackups).toEqual([]);
+		expect(committedHistories).toEqual([]);
+		expect(createHistory).not.toHaveBeenCalled();
+	});
+
 	it("backs up naming state with Custom Formats and the quality profile", async () => {
 		const createBackup = vi.fn().mockResolvedValue({ id: "backup-1" });
+		const linkParentSync = vi.fn().mockResolvedValue({ count: 1 });
 		const prisma = {
 			trashSettings: { findUnique: vi.fn().mockResolvedValue({ backupRetentionDays: 30 }) },
 			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
 				callback({
 					trashBackup: { create: createBackup },
-					trashSyncHistory: { create: vi.fn().mockResolvedValue({ id: "history-1" }) },
+					trashSyncHistory: {
+						create: vi.fn().mockResolvedValue({ id: "history-1" }),
+						updateMany: linkParentSync,
+					},
 				}),
 			),
 		};
@@ -375,6 +439,7 @@ describe("DeploymentExecutorService - backup parity", () => {
 						mergedConfig: Record<string, unknown>;
 						changedFields: string[];
 					},
+					parentSyncHistoryId?: string,
 				) => Promise<unknown>;
 			}
 		).createBackupAndHistory.bind(executor);
@@ -397,7 +462,18 @@ describe("DeploymentExecutorService - backup parity", () => {
 				mergedConfig: { ...namingConfig, standardMovieFormat: "Deployed" },
 				changedFields: ["standardMovieFormat"],
 			},
+			"parent-sync-1",
 		);
+		expect(linkParentSync).toHaveBeenCalledWith({
+			where: {
+				id: "parent-sync-1",
+				userId: "user-1",
+				instanceId: "instance-1",
+				status: "RUNNING",
+				backupId: null,
+			},
+			data: { backupId: "backup-1" },
+		});
 
 		const backupData = JSON.parse(createBackup.mock.calls[0]![0].data.backupData);
 		expect(backupData).toMatchObject({

@@ -22,6 +22,7 @@ export async function assertNoPendingDeploymentOperation(
 	userId: string,
 	instanceIds: string[],
 	overrideRetry?: ScoreIntentRetry,
+	excludedSyncHistoryId?: string,
 ): Promise<void> {
 	const [syncRows, deploymentRows, uncertainOverrides] = await Promise.all([
 		prisma.trashSyncHistory.findMany({
@@ -29,6 +30,7 @@ export async function assertNoPendingDeploymentOperation(
 				userId,
 				instanceId: { in: instanceIds },
 				rolledBack: false,
+				...(excludedSyncHistoryId ? { id: { not: excludedSyncHistoryId } } : {}),
 			},
 			select: {
 				status: true,
@@ -274,6 +276,7 @@ export async function reconcileInterruptedDeploymentHistories(
 					select: {
 						id: true,
 						backupId: true,
+						status: true,
 						rollbackStatus: true,
 						backup: { select: { backupData: true } },
 					},

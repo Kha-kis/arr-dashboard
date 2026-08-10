@@ -478,6 +478,7 @@ export class DeploymentExecutorService {
 		// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile snapshot
 		preDeploymentQP?: any,
 		preDeploymentNaming?: PreparedNamingDeployment,
+		parentSyncHistoryId?: string,
 	): Promise<BackupAndHistoryResult> {
 		const userSettings = await this.prisma.trashSettings.findUnique({
 			where: { userId },
@@ -530,6 +531,23 @@ export class DeploymentExecutorService {
 					expiresAt,
 				},
 			});
+			if (parentSyncHistoryId) {
+				const linkedParent = await tx.trashSyncHistory.updateMany({
+					where: {
+						id: parentSyncHistoryId,
+						userId,
+						instanceId: instance.id,
+						status: "RUNNING",
+						backupId: null,
+					},
+					data: { backupId: backupRecord.id },
+				});
+				if (linkedParent.count !== 1) {
+					throw new ConflictError(
+						"The parent sync history changed before its deployment ledger could be linked.",
+					);
+				}
+			}
 
 			const historyRecord = await tx.trashSyncHistory.create({
 				data: {
@@ -1304,6 +1322,7 @@ export class DeploymentExecutorService {
 		userId: string,
 		syncStrategy?: "auto" | "manual" | "notify",
 		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
+		parentSyncHistoryId?: string,
 	): Promise<DeploymentResult> {
 		const lockInstance = await this.prisma.serviceInstance.findFirst({
 			where: { id: instanceId, userId },
@@ -1321,6 +1340,7 @@ export class DeploymentExecutorService {
 					syncStrategy,
 					conflictResolutions,
 					endpointKey,
+					parentSyncHistoryId,
 				),
 			),
 		);
@@ -1414,6 +1434,7 @@ export class DeploymentExecutorService {
 		syncStrategy?: "auto" | "manual" | "notify",
 		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
 		expectedEndpointKey?: string,
+		parentSyncHistoryId?: string,
 	): Promise<DeploymentResult> {
 		const startTime = new Date();
 		let historyId: string | null = null;
@@ -1485,7 +1506,13 @@ export class DeploymentExecutorService {
 			const connectionReadBindings = equivalentAliases.flatMap(
 				createDeploymentConnectionBindingCandidates,
 			);
-			await assertNoPendingDeploymentOperation(this.prisma, userId, equivalentInstanceIds);
+			await assertNoPendingDeploymentOperation(
+				this.prisma,
+				userId,
+				equivalentInstanceIds,
+				undefined,
+				parentSyncHistoryId,
+			);
 			const [existingCFs, fetchedProfiles, qualityProfileMappings] = await Promise.all([
 				client.customFormat.getAll(),
 				client.qualityProfile.getAll(),
@@ -1543,6 +1570,7 @@ export class DeploymentExecutorService {
 				templateId,
 				preDeploymentQP,
 				namingState,
+				parentSyncHistoryId,
 			);
 			const persistBackupLedger = async (): Promise<void> => {
 				const backupData = JSON.stringify(backup.data);
