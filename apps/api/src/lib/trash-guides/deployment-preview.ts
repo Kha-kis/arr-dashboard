@@ -547,14 +547,17 @@ export class DeploymentPreviewService {
 				"This 2.x deployment mapping is not yet bound to a verified ARR connection. Executing this exact preview will bind it to the current connection only after the reviewed deployment succeeds.",
 			);
 		}
-		const isVerifiedSourceInstance = isVerifiedClonedProfileSourceConnection({
-			sourceInstanceId: templateConfig.completeQualityProfile?.sourceInstanceId,
-			sourceConnectionStateToken: templateConfig.completeQualityProfile?.sourceConnectionStateToken,
-			equivalentInstanceIds,
-			sourceInstance: aliases.find(
-				(alias) => alias.id === templateConfig.completeQualityProfile?.sourceInstanceId,
-			),
-		});
+		const isVerifiedSourceInstance = qualityProfileMapping
+			? false
+			: isVerifiedClonedProfileSourceConnection({
+					sourceInstanceId: templateConfig.completeQualityProfile?.sourceInstanceId,
+					sourceConnectionStateToken:
+						templateConfig.completeQualityProfile?.sourceConnectionStateToken,
+					equivalentInstanceIds,
+					sourceInstance: aliases.find(
+						(alias) => alias.id === templateConfig.completeQualityProfile?.sourceInstanceId,
+					),
+				});
 		const resolvedTarget = resolveDeploymentTarget({
 			profiles: instanceQualityProfiles,
 			mapping: qualityProfileMapping,

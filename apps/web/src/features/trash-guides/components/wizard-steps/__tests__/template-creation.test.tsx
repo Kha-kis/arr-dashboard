@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TemplateCreation } from "../template-creation";
 
@@ -44,6 +44,7 @@ vi.mock("../../../../../hooks/useThemeGradient", () => ({
 describe("TemplateCreation cloned source review", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mocks.clonedMutation.mutateAsync.mockResolvedValue({});
 		mocks.useQuery
 			.mockReturnValueOnce({
 				data: undefined,
@@ -75,8 +76,53 @@ describe("TemplateCreation cloned source review", () => {
 			/>,
 		);
 
-		expect(screen.getByText("ARR source profile is unavailable")).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"The cloned profile review is unavailable. Go back and review the Custom Formats again.",
+			),
+		).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Create Template" })).toBeDisabled();
 		expect(mocks.clonedMutation.mutateAsync).not.toHaveBeenCalled();
+	});
+
+	it("creates from the exact source snapshot carried from configuration", async () => {
+		render(
+			<TemplateCreation
+				serviceType="RADARR"
+				wizardState={{
+					selectedProfile: {
+						trashId: "cloned-instance-1-4-1700000000000-abc123",
+						name: "Any",
+						description: "Cloned from Radarr",
+					} as never,
+					customFormatSelections: {
+						"instance-42": { selected: true, conditionsEnabled: {} },
+					},
+					templateName: "My cloned profile",
+					templateDescription: "",
+					clonedSourceReview: {
+						sourceStateToken: "a".repeat(64),
+						profile: {
+							name: "Any",
+							upgradeAllowed: true,
+							cutoff: 1,
+							minFormatScore: 0,
+							items: [],
+						},
+						mandatoryCFTrashIds: ["instance-42"],
+					},
+				}}
+				onComplete={vi.fn()}
+				onBack={vi.fn()}
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "Create Template" }));
+
+		await waitFor(() =>
+			expect(mocks.clonedMutation.mutateAsync).toHaveBeenCalledWith(
+				expect.objectContaining({ sourceStateToken: "a".repeat(64) }),
+			),
+		);
 	});
 });

@@ -123,6 +123,35 @@ describe("deployment preview authority", () => {
 		).rejects.toThrow("source ARR connection changed");
 	});
 
+	it("uses a current mapped target after the original cloned source record was removed", async () => {
+		const mappedInstance = {
+			...instance,
+			id: "mapped-instance",
+			baseUrl: "http://mapped-radarr:7878",
+		};
+		const mapping = {
+			id: "mapping-1",
+			templateId: template.id,
+			instanceId: mappedInstance.id,
+			qualityProfileId: 4,
+			qualityProfileName: "Any",
+			connectionGeneration: mappedInstance.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(mappedInstance),
+			syncStrategy: "notify",
+			managedCustomFormats: "[]",
+			managedCustomFormatsCaptured: true,
+		};
+
+		const preview = await createService({
+			instance: mappedInstance,
+			instances: [mappedInstance],
+			mappings: [mapping],
+		}).generatePreview(template.id, mappedInstance.id, "user-1");
+
+		expect(preview.warnings).not.toContainEqual(expect.stringContaining("cloned source"));
+		expect(preview.executionToken).toMatch(/^[a-f0-9]{64}$/);
+	});
+
 	it("matches a differently named ARR Custom Format by the shared trailing UUID", async () => {
 		const preview = await createService().generatePreview("template-1", "instance-1", "user-1");
 

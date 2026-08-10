@@ -40,6 +40,8 @@ let upstreamProfileId = 7;
 let upstreamProfileName: string | null | undefined = "Any";
 let instanceService: "RADARR" | "SONARR" = "RADARR";
 let instanceEncryptedApiKey = "encrypted-key-a";
+let upstreamCustomFormatName = "Reviewed CF";
+let upstreamCustomFormatSpecifications: unknown[] = [{ name: "Source", value: "WEB-DL" }];
 
 function createClient() {
 	const Client = instanceService === "RADARR" ? clients.MockRadarrClient : clients.MockSonarrClient;
@@ -52,12 +54,19 @@ function createClient() {
 				cutoff: 1,
 				minFormatScore: 0,
 				cutoffFormatScore: 0,
-				formatItems: [],
+				formatItems: [{ format: 42, score: 100 }],
 				items: [],
 			}),
 		},
 		customFormat: {
-			getAll: vi.fn().mockResolvedValue([]),
+			getAll: vi.fn().mockImplementation(async () => [
+				{
+					id: 42,
+					name: upstreamCustomFormatName,
+					specifications: upstreamCustomFormatSpecifications,
+					includeCustomFormatWhenRenaming: false,
+				},
+			]),
 		},
 	});
 }
@@ -91,6 +100,8 @@ describe("profile clone source authority", () => {
 		upstreamProfileName = "Any";
 		instanceService = "RADARR";
 		instanceEncryptedApiKey = "encrypted-key-a";
+		upstreamCustomFormatName = "Reviewed CF";
+		upstreamCustomFormatSpecifications = [{ name: "Source", value: "WEB-DL" }];
 		mocks.cacheGet.mockResolvedValue([]);
 		mocks.getCommitHash.mockResolvedValue("commit-1");
 		mocks.createTemplate.mockResolvedValue({ id: "template-1" });
@@ -212,6 +223,34 @@ describe("profile clone source authority", () => {
 	it("rejects creation when the reviewed source connection changed", async () => {
 		const sourceStateToken = await getSourceStateToken();
 		instanceEncryptedApiKey = "encrypted-key-b";
+
+		const response = await createInjectAuthenticated(app)("POST", "/create-template", {
+			body: requestBody("RADARR", sourceStateToken),
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json()).toEqual(
+			expect.objectContaining({ message: expect.stringContaining("reviewed source") }),
+		);
+		expect(mocks.createTemplate).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[
+			"name",
+			() => {
+				upstreamCustomFormatName = "Changed CF";
+			},
+		],
+		[
+			"specifications",
+			() => {
+				upstreamCustomFormatSpecifications = [{ name: "Source", value: "Bluray" }];
+			},
+		],
+	] as const)("rejects creation when reviewed Custom Format %s changed", async (_field, mutate) => {
+		const sourceStateToken = await getSourceStateToken();
+		mutate();
 
 		const response = await createInjectAuthenticated(app)("POST", "/create-template", {
 			body: requestBody("RADARR", sourceStateToken),

@@ -291,12 +291,6 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			client.customFormat.getAll(),
 		]);
 		requireSourceProfileName(profile);
-		const sourceStateToken = createClonedProfileSourceStateToken({
-			userId: request.currentUser!.id,
-			instance,
-			profile,
-		});
-
 		// Get the CFs used in this profile (from formatItems)
 		const profileCFIds = new Set(
 			((profile as ArrQualityProfileResponse).formatItems || []).map(
@@ -310,6 +304,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			(cf): cf is typeof cf & { id: number; name: string } =>
 				cf.id !== undefined && cf.name !== undefined && cf.name !== null,
 		);
+		const sourceStateToken = createClonedProfileSourceStateToken({
+			userId: request.currentUser!.id,
+			instance,
+			profile,
+			customFormats: validCustomFormats,
+		});
 
 		const profileCustomFormats = validCustomFormats
 			.filter((cf) => profileCFIds.has(cf.id))
@@ -608,10 +608,15 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 		}
 		const sourceProfileName = requireSourceProfileName(fullProfile);
+		const validCustomFormats = allCustomFormats.filter(
+			(cf): cf is typeof cf & { id: number; name: string } =>
+				cf.id !== undefined && cf.name !== undefined && cf.name !== null,
+		);
 		const currentSourceStateToken = createClonedProfileSourceStateToken({
 			userId,
 			instance,
 			profile: fullProfile,
+			customFormats: validCustomFormats,
 		});
 		if (currentSourceStateToken !== sourceStateToken.toLowerCase()) {
 			throw new ConflictError(
@@ -621,14 +626,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Build a lookup map for instance CFs (filter out CFs with undefined id or name)
 		const cfLookup = new Map<number, { id: number; name: string; specifications?: unknown[] }>();
-		for (const cf of allCustomFormats) {
-			if (cf.id !== undefined && cf.name !== undefined && cf.name !== null) {
-				cfLookup.set(cf.id, {
-					id: cf.id,
-					name: cf.name,
-					specifications: cf.specifications ?? undefined,
-				});
-			}
+		for (const cf of validCustomFormats) {
+			cfLookup.set(cf.id, {
+				id: cf.id,
+				name: cf.name,
+				specifications: cf.specifications ?? undefined,
+			});
 		}
 
 		// Get TRaSH cache for matching

@@ -313,13 +313,18 @@ export function createClonedProfileSourceStateToken(args: {
 	userId: string;
 	instance: DeploymentConnectionInstance;
 	profile: unknown;
+	customFormats: unknown[];
 }): string {
+	const customFormats = args.customFormats
+		.map((customFormat) => stableValue(customFormat))
+		.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
 	return createUpstreamResourceStateToken({
 		userId: args.userId,
 		instanceId: args.instance.id,
 		connectionGeneration: args.instance.connectionGeneration ?? 0,
 		connectionStateToken: createDeploymentConnectionStateToken(args.instance),
 		profileStateToken: createQualityProfileStateToken(args.profile),
+		customFormats,
 	});
 }
 

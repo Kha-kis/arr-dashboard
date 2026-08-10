@@ -238,6 +238,65 @@ describe("deployment execution authority", () => {
 		expect(createBackup).not.toHaveBeenCalled();
 	});
 
+	it("uses a current mapped target after the original cloned source record was removed", async () => {
+		const clonedTemplate = {
+			...template,
+			configData: JSON.stringify({
+				customFormats: [],
+				completeQualityProfile: {
+					sourceInstanceId: "removed-source",
+					sourceConnectionStateToken: "removed-source-token",
+					sourceProfileId: 99,
+				},
+			}),
+		};
+		const mapping = currentMapping({ syncStrategy: "notify" });
+		const { executor, createBackup } = createFixture([mapping]);
+		const privateExecutor = executor as unknown as {
+			validateAndPrepareDeployment: (...args: unknown[]) => Promise<unknown>;
+		};
+		vi.mocked(privateExecutor.validateAndPrepareDeployment).mockResolvedValue({
+			template: clonedTemplate,
+			instance,
+			templateConfig: JSON.parse(clonedTemplate.configData),
+			templateCFs: [],
+			overridesForInstance: {},
+			effectiveQualityConfig: undefined,
+			usingQualityOverride: false,
+		} as never);
+		const executionToken = createDeploymentStateToken({
+			template: {
+				id: clonedTemplate.id,
+				name: clonedTemplate.name,
+				configData: clonedTemplate.configData,
+				instanceOverrides: clonedTemplate.instanceOverrides,
+				sourceQualityProfileName: clonedTemplate.sourceQualityProfileName,
+			},
+			instanceId: instance.id,
+			connection: {
+				service: instance.service,
+				baseUrl: instance.baseUrl,
+				credentialIdentity: "encrypted-key:iv::",
+			},
+			target: { profile, profileName: "Any", matchedBy: "mapping_id" },
+			customFormats: [],
+			savedScoreOverrides: [],
+			orphanedFormatScoreChanges: [],
+		});
+
+		await expect(
+			executor.deploySingleInstance(
+				clonedTemplate.id,
+				instance.id,
+				"user-1",
+				"notify",
+				undefined,
+				executionToken,
+			),
+		).resolves.toMatchObject({ success: false, errors: ["authority accepted"] });
+		expect(createBackup).toHaveBeenCalledOnce();
+	});
+
 	it("does not rebind a legacy mapping before backup succeeds", async () => {
 		const legacyMapping = currentMapping({
 			connectionGeneration: 0,

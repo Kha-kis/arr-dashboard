@@ -25,8 +25,7 @@ import {
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { apiRequest } from "../../../../lib/api-client/base";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
-import { qualityProfileKeys } from "../../../../lib/query-keys";
-import type { WizardCFGroup } from "../../types/wizard-types";
+import type { WizardCFGroup, WizardClonedSourceReview } from "../../types/wizard-types";
 
 /** Response from profile details endpoints */
 interface ProfileDetailsResponse {
@@ -172,6 +171,7 @@ interface TemplateCreationProps {
 		templateDescription: string;
 		customQualityConfig?: CustomQualityConfig;
 		namingSelection?: NamingSelectedPresets;
+		clonedSourceReview?: WizardClonedSourceReview;
 	};
 	templateId?: string; // For editing existing templates
 	isEditMode?: boolean;
@@ -212,32 +212,22 @@ export const TemplateCreation = ({
 	// In edit mode, trashId is undefined and we don't need profile data from TRaSH Guides
 	// For cloned profiles, we fetch from the instance, not TRaSH cache
 	const hasTrashId = !!wizardState.selectedProfile.trashId;
-	const {
-		data,
-		isLoading,
-		error: profileDetailsError,
-	} = useQuery({
-		queryKey: isCloned
-			? qualityProfileKeys.clone.sourceReview(wizardState.selectedProfile.trashId ?? "")
-			: ["quality-profile-details", serviceType, wizardState.selectedProfile.trashId],
+	const { data: fetchedData, isLoading } = useQuery({
+		queryKey: ["quality-profile-details", serviceType, wizardState.selectedProfile.trashId],
 		queryFn: async () => {
-			if (isCloned && clonedProfileInfo) {
-				// Fetch from cloned profile endpoint
-				return await apiRequest<ProfileDetailsResponse>(
-					`/api/trash-guides/profile-clone/profile-details/${clonedProfileInfo.instanceId}/${clonedProfileInfo.profileId}`,
-				);
-			}
 			// Fetch from TRaSH Guides cache
 			return await apiRequest<ProfileDetailsResponse>(
 				`/api/trash-guides/quality-profiles/${serviceType}/${wizardState.selectedProfile.trashId}`,
 			);
 		},
 		// Skip fetch in edit mode (no trashId) - we already have all data from the template
-		enabled: hasTrashId && !isEditMode,
+		enabled: hasTrashId && !isEditMode && !isCloned,
 	});
-	const clonedSourceStateToken = isCloned ? data?.data?.sourceStateToken : undefined;
-	const clonedSourceReviewUnavailable =
-		isCloned && !isEditMode && !isLoading && !clonedSourceStateToken;
+	const data = fetchedData;
+	const clonedSourceStateToken = isCloned
+		? wizardState.clonedSourceReview?.sourceStateToken
+		: undefined;
+	const clonedSourceReviewUnavailable = isCloned && !isEditMode && !wizardState.clonedSourceReview;
 
 	// Fetch CF Groups from cache for edit mode categorization
 	// This helps determine which CFs belong to which groups even when template data is incomplete
@@ -328,7 +318,7 @@ export const TemplateCreation = ({
 				}
 
 				// Extract profile config from the data we fetched
-				const profileData = data?.data?.profile || data?.profile;
+				const profileData = wizardState.clonedSourceReview?.profile;
 				const sourceStateToken = clonedSourceStateToken;
 				if (!sourceStateToken) {
 					throw new Error(
@@ -399,15 +389,18 @@ export const TemplateCreation = ({
 	// Build list of selected CF Groups for display (groups with at least one selected CF)
 	// In edit mode, prefer cfGroupsCache from TRaSH cache, fallback to template's stored groups
 	// This ensures proper categorization even for templates with incomplete group data
-	const cfGroups: WizardCFGroup[] = isEditMode
-		? cfGroupsCache ||
-			editingTemplate?.config.customFormatGroups.map((g) => ({
-				trash_id: g.trashId,
-				name: g.name || "",
-				custom_formats: (g.originalConfig?.custom_formats as WizardCFGroup["custom_formats"]) || [],
-			})) ||
-			[]
-		: data?.cfGroups || [];
+	const cfGroups: WizardCFGroup[] = isCloned
+		? []
+		: isEditMode
+			? cfGroupsCache ||
+				editingTemplate?.config.customFormatGroups.map((g) => ({
+					trash_id: g.trashId,
+					name: g.name || "",
+					custom_formats:
+						(g.originalConfig?.custom_formats as WizardCFGroup["custom_formats"]) || [],
+				})) ||
+				[]
+			: data?.cfGroups || [];
 
 	const selectedCFTrashIds = new Set(
 		Object.entries(wizardState.customFormatSelections)
@@ -430,9 +423,13 @@ export const TemplateCreation = ({
 	// Categorize CFs by their properties
 	// In edit mode, use the source profile data to determine mandatory CFs
 	// This requires the template to have sourceQualityProfileTrashId set
-	const mandatoryCFs = isEditMode
-		? sourceProfileData?.mandatoryCFs || []
-		: data?.mandatoryCFs || [];
+	const mandatoryCFs = isCloned
+		? (wizardState.clonedSourceReview?.mandatoryCFTrashIds ?? []).map((trash_id) => ({
+				trash_id,
+			}))
+		: isEditMode
+			? sourceProfileData?.mandatoryCFs || []
+			: data?.mandatoryCFs || [];
 	const mandatoryCFIds = new Set(mandatoryCFs.map((cf) => cf.trash_id));
 
 	// CFs from groups that have at least one selected CF
@@ -805,9 +802,7 @@ export const TemplateCreation = ({
 				<Alert variant="danger">
 					<AlertDescription>
 						{clonedSourceReviewUnavailable
-							? profileDetailsError instanceof Error
-								? profileDetailsError.message
-								: "The cloned profile review is unavailable. Refresh or go back and select the source profile again."
+							? "The cloned profile review is unavailable. Go back and review the Custom Formats again."
 							: importMutation.error instanceof Error
 								? importMutation.error.message
 								: updateMutation.error instanceof Error
