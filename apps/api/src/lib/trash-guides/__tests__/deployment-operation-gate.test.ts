@@ -922,7 +922,9 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				}),
 			),
 		};
-		const appliedConfigs = [{ name: "Applied CF", action: "updated" }];
+		const appliedConfigs = [
+			{ name: "Applied CF", action: "updated", type: "custom_format" },
+		];
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
 		expect(deploymentUpdateMany).toHaveBeenCalledWith(
@@ -968,7 +970,9 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				}),
 			),
 		};
-		const appliedConfigs = [{ name: "Applied CF", action: "updated" }];
+		const appliedConfigs = [
+			{ name: "Applied CF", action: "updated", type: "custom_format" },
+		];
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
 		expect(deploymentUpdateMany).toHaveBeenCalledWith(
