@@ -55,7 +55,9 @@ vi.mock("../../../../hooks/api/useBulkScores", async () => {
 				hookMocks.refreshBulkScores.mockImplementation(() => {
 					setRefreshVersion((version) => version + 1);
 				});
-				return () => hookMocks.refreshBulkScores.mockReset();
+				return () => {
+					hookMocks.refreshBulkScores.mockReset();
+				};
 			}, []);
 			useEffect(() => {
 				setData(instanceId ? structuredClone(bulkScoresResponse) : undefined);
