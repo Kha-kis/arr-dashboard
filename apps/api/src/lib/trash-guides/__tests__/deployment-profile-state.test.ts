@@ -183,6 +183,42 @@ describe("rollbackQualityProfileDeployment", () => {
 		expect(update).not.toHaveBeenCalled();
 	});
 
+	it("restores a Radarr profile whose leaf items keep identity inside quality", async () => {
+		const before = completeProfile({
+			items: [
+				{
+					quality: { id: 0, name: "Unknown" },
+					items: [],
+					allowed: false,
+				},
+			],
+			formatItems: [{ format: 7, name: "Managed CF", score: 0 }],
+		});
+		const deployed = {
+			...before,
+			formatItems: [{ format: 7, name: "Managed CF", score: 100 }],
+		};
+		const update = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([deployed]),
+				getById: vi.fn().mockResolvedValueOnce(deployed).mockResolvedValueOnce(before),
+				update,
+			},
+		};
+
+		await rollbackQualityProfileDeployment(client as never, {
+			beforeProfile: before,
+			action: "updated",
+			status: "applied",
+			profileId: 4,
+			postStateToken: createQualityProfileStateToken(deployed),
+			intendedPostStateToken: null,
+		});
+
+		expect(update).toHaveBeenCalledWith(4, before);
+	});
+
 	it.each([
 		["incomplete", { id: 4, name: "Existing" }],
 		["malformed nested item", completeProfile({ items: [{}] })],
