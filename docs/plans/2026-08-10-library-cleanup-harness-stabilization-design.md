@@ -130,4 +130,3 @@ image identities retained.
 
 Because this is deletion-adjacent harness work, independent data-safety and
 regression reviews are required before merge readiness is claimed.
-

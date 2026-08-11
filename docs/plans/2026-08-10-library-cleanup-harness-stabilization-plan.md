@@ -1,8 +1,8 @@
 # Library Cleanup Harness Stabilization Implementation Plan
 
-> **Issue:** #690  
-> **Base:** `origin/main`  
-> **Branch:** `codex/690-stabilize-cleanup-harness`  
+> **Issue:** #690
+> **Base:** `origin/main`
+> **Branch:** `codex/690-stabilize-cleanup-harness`
 > **Design:** `docs/plans/2026-08-10-library-cleanup-harness-stabilization-design.md`
 
 ## Goal
@@ -159,4 +159,3 @@ identities and exact diagnostics under the ignored artifact directory.
 Finally, run guarded teardown for the exact project name, confirm only the
 disposable project volumes were removed, and reassess PR readiness with
 `arr-validate` and `arr-prepare-pr`.
-
