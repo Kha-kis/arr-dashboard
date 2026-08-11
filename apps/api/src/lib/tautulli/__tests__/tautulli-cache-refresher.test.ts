@@ -297,6 +297,58 @@ describe("refreshTautulliCache (end-to-end)", () => {
 		expect(tx.tautulliCache.createMany).not.toHaveBeenCalled();
 	});
 
+	it("collects a verified live snapshot without publishing cache state", async () => {
+		const watchedAt = 1_723_000_000;
+		const mockClient = {
+			getLibraries: vi
+				.fn()
+				.mockResolvedValue([
+					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
+				]),
+			getHistory: vi.fn().mockResolvedValue({
+				data: [
+					{
+						row_id: 1,
+						rating_key: "rk-1",
+						parent_rating_key: "",
+						grandparent_rating_key: "",
+						title: "Recent Movie",
+						grandparent_title: "",
+						media_type: "movie",
+						user: "alice",
+						date: watchedAt,
+						play_count: 1,
+					},
+				],
+				recordsFiltered: 1,
+				recordsTotal: 1,
+			}),
+			getMetadata: vi.fn().mockResolvedValue({
+				guids: ["tmdb://12345"],
+				media_type: "movie",
+				title: "Recent Movie",
+				rating_key: "rk-1",
+			}),
+		} as unknown as TautulliClient;
+		const transaction = vi.fn();
+		const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+		const result = await refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, undefined, {
+			publish: false,
+		});
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 0 });
+		expect(result.snapshot?.rows).toEqual([
+			expect.objectContaining({
+				instanceId: "inst-1",
+				tmdbId: 12345,
+				lastWatchedAt: new Date(watchedAt * 1000),
+				watchCount: 1,
+			}),
+		]);
+		expect(transaction).not.toHaveBeenCalled();
+	});
+
 	it("discards an outgoing Tautulli generation after its connection changes before publication", async () => {
 		let resolveHistory: (result: {
 			data: unknown[];

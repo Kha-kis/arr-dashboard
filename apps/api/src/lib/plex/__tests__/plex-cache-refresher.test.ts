@@ -221,6 +221,47 @@ describe("evictStaleRows", () => {
 		expect(tx.plexCache.createMany).not.toHaveBeenCalled();
 	});
 
+	it("collects a verified live snapshot without publishing cache state", async () => {
+		const watchedAt = 1_723_000_000;
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "rk-1",
+					title: "Recent Movie",
+					type: "movie",
+					Guid: [{ id: "tmdb://12345" }],
+				},
+			]),
+			getHistory: vi
+				.fn()
+				.mockResolvedValue([
+					{ type: "movie", ratingKey: "rk-1", accountID: 1, viewedAt: watchedAt },
+				]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const transaction = vi.fn();
+		const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined, {
+			publish: false,
+		});
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 0 });
+		expect(result.snapshot?.rows).toEqual([
+			expect.objectContaining({
+				instanceId: "inst-1",
+				tmdbId: 12345,
+				lastWatchedAt: new Date(watchedAt * 1000),
+				watchCount: 1,
+			}),
+		]);
+		expect(result.snapshot?.sections).toEqual([{ key: "1", title: "Movies", type: "movie" }]);
+		expect(transaction).not.toHaveBeenCalled();
+	});
+
 	it("discards an outgoing Plex generation after its connection changes before publication", async () => {
 		let resolveLibraryItems: (items: unknown[]) => void = () => {};
 		const pendingLibraryItems = new Promise<unknown[]>((resolve) => {

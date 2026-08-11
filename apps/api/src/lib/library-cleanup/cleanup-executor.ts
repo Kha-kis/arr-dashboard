@@ -15,13 +15,16 @@ import type { CleanupRuleExpression, DataSourceDependency } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
-import { refreshJellyfinCache } from "../jellyfin/jellyfin-cache-refresher.js";
+import {
+	type JellyfinCacheSnapshotRow,
+	refreshJellyfinCache,
+} from "../jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-refresher.js";
 import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
-import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
+import { type PlexCacheSnapshotRow, refreshPlexCache } from "../plex/plex-cache-refresher.js";
 import { createPlexClient } from "../plex/plex-client.js";
 import { refreshPlexEpisodeCache } from "../plex/plex-episode-cache-refresher.js";
 import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
@@ -34,7 +37,10 @@ import type {
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { providerConnectionIdentity } from "../services/provider-connection-guard.js";
-import { refreshTautulliCache } from "../tautulli/tautulli-cache-refresher.js";
+import {
+	refreshTautulliCache,
+	type TautulliCacheSnapshotRow,
+} from "../tautulli/tautulli-cache-refresher.js";
 import { createTautulliClient } from "../tautulli/tautulli-client.js";
 import { createTmdbV3Client } from "../tmdb/list-client.js";
 import { createTraktClient } from "../trakt/list-client.js";
@@ -4589,6 +4595,148 @@ export async function prefetchSeerrRequests(
 	}
 }
 
+function snapshotUsers(value: string): string[] {
+	const parsed = safeJsonParse(value);
+	if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
+		throw new Error("Provider snapshot contained invalid watched-user data");
+	}
+	return parsed;
+}
+
+function tautulliSnapshotToWatchMap(rows: TautulliCacheSnapshotRow[]): TautulliWatchMap {
+	const map: TautulliWatchMap = new Map();
+	for (const row of rows) {
+		const key = `${row.mediaType}:${row.tmdbId}`;
+		const watchedByUsers = snapshotUsers(row.watchedByUsers);
+		const existing = map.get(key);
+		if (existing) {
+			if (
+				row.lastWatchedAt &&
+				(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
+			) {
+				existing.lastWatchedAt = row.lastWatchedAt;
+			}
+			existing.watchCount += row.watchCount;
+			for (const user of watchedByUsers) {
+				if (!existing.watchedByUsers.includes(user)) existing.watchedByUsers.push(user);
+			}
+		} else {
+			map.set(key, {
+				lastWatchedAt: row.lastWatchedAt,
+				watchCount: row.watchCount,
+				watchedByUsers: [...watchedByUsers],
+			});
+		}
+	}
+	return map;
+}
+
+function plexSnapshotToWatchMap(rows: PlexCacheSnapshotRow[]): PlexWatchMap {
+	const map: PlexWatchMap = new Map();
+	for (const row of rows) {
+		const key = `${row.mediaType}:${row.tmdbId}`;
+		const watchedByUsers = snapshotUsers(row.watchedByUsers);
+		const collections = snapshotUsers(row.collections);
+		const labels = snapshotUsers(row.labels);
+		const sectionInfo: PlexSectionWatchInfo = {
+			sectionId: row.sectionId,
+			sectionTitle: row.sectionTitle,
+			lastWatchedAt: row.lastWatchedAt,
+			watchCount: row.watchCount,
+			watchedByUsers,
+			onDeck: row.onDeck,
+			userRating: row.userRating,
+			collections,
+			labels,
+			addedAt: row.addedAt,
+		};
+		const existing = map.get(key);
+		if (existing) {
+			existing.sections.push(sectionInfo);
+			if (
+				row.lastWatchedAt &&
+				(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
+			) {
+				existing.lastWatchedAt = row.lastWatchedAt;
+			}
+			existing.watchCount += row.watchCount;
+			for (const user of watchedByUsers) {
+				if (!existing.watchedByUsers.includes(user)) existing.watchedByUsers.push(user);
+			}
+			existing.onDeck = existing.onDeck || row.onDeck;
+			if (row.userRating != null) {
+				existing.userRating =
+					existing.userRating != null
+						? Math.max(existing.userRating, row.userRating)
+						: row.userRating;
+			}
+			for (const collection of collections) {
+				if (!existing.collections.includes(collection)) existing.collections.push(collection);
+			}
+			for (const label of labels) {
+				if (!existing.labels.includes(label)) existing.labels.push(label);
+			}
+			if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
+				existing.addedAt = row.addedAt;
+			}
+		} else {
+			map.set(key, {
+				lastWatchedAt: row.lastWatchedAt,
+				watchCount: row.watchCount,
+				watchedByUsers: [...watchedByUsers],
+				onDeck: row.onDeck,
+				userRating: row.userRating,
+				collections: [...collections],
+				labels: [...labels],
+				addedAt: row.addedAt,
+				sections: [sectionInfo],
+			});
+		}
+	}
+	return map;
+}
+
+function jellyfinSnapshotToWatchMap(rows: JellyfinCacheSnapshotRow[]): JellyfinWatchMap {
+	const map: JellyfinWatchMap = new Map();
+	for (const row of rows) {
+		const key = `${row.mediaType}:${row.tmdbId}`;
+		const watchedByUsers = snapshotUsers(row.watchedByUsers);
+		const existing = map.get(key);
+		if (existing) {
+			if (
+				row.lastWatchedAt &&
+				(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
+			) {
+				existing.lastWatchedAt = row.lastWatchedAt;
+			}
+			existing.watchCount += row.watchCount;
+			for (const user of watchedByUsers) {
+				if (!existing.watchedByUsers.includes(user)) existing.watchedByUsers.push(user);
+			}
+			existing.onDeck = existing.onDeck || row.onDeck;
+			if (row.userRating != null) {
+				existing.userRating =
+					existing.userRating != null
+						? Math.max(existing.userRating, row.userRating)
+						: row.userRating;
+			}
+			if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
+				existing.addedAt = row.addedAt;
+			}
+		} else {
+			map.set(key, {
+				lastWatchedAt: row.lastWatchedAt,
+				watchCount: row.watchCount,
+				watchedByUsers: [...watchedByUsers],
+				onDeck: row.onDeck,
+				userRating: row.userRating,
+				addedAt: row.addedAt,
+			});
+		}
+	}
+	return map;
+}
+
 /**
  * Prefetch Tautulli watch data from the TautulliCache table and build a lookup map.
  * Returns undefined if no Tautulli instance is configured.
@@ -5247,7 +5395,7 @@ async function evaluateAllItems(
 	];
 	const hasTautulliRules = TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t));
 	const tautulliResult = hasTautulliRules
-		? await prefetchTautulliData(deps, config.userId)
+		? await collectLiveTautulliPolicyEvidence(deps, config.userId)
 		: undefined;
 	const tautulliMap = hasTautulliRules ? tautulliResult : undefined;
 
@@ -5272,7 +5420,7 @@ async function evaluateAllItems(
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(seriesRules).size > 0;
 	const publishedPlexEvidence =
 		hasPlexRules || needsPlexSectionInventory
-			? await loadPublishedPlexPolicyEvidence(deps, config.userId, seriesRules)
+			? await collectLivePlexPolicyEvidence(deps, config.userId, seriesRules)
 			: undefined;
 	const plexMap = hasPlexRules ? publishedPlexEvidence?.plexMap : undefined;
 
@@ -5287,7 +5435,7 @@ async function evaluateAllItems(
 	];
 	const hasJellyfinRules = JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t));
 	const jellyfinResult = hasJellyfinRules
-		? await prefetchJellyfinData(deps, config.userId)
+		? await collectLiveJellyfinPolicyEvidence(deps, config.userId)
 		: undefined;
 	const jellyfinMap = hasJellyfinRules ? jellyfinResult : undefined;
 
@@ -8368,6 +8516,7 @@ function providerTopologyFingerprint(instances: ServiceInstance[]): string {
 			service: instance.service,
 			baseUrl: instance.baseUrl,
 			enabled: instance.enabled,
+			connectionGeneration: instance.connectionGeneration,
 			encryptedApiKey: instance.encryptedApiKey,
 			encryptionIv: instance.encryptionIv,
 			encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
@@ -8511,6 +8660,218 @@ async function loadPublishedPlexPolicyEvidence(
 		return await loadPublishedPlexPolicyEvidenceUnsafe(deps, userId, rules);
 	} catch (error) {
 		deps.log.warn({ err: error }, "Published Plex policy evidence was unavailable");
+		return undefined;
+	}
+}
+
+function sortProviderRows<T extends { instanceId: string; mediaType: string; tmdbId: number }>(
+	rows: T[],
+): T[] {
+	const detailKey = (row: T): string => {
+		if ("sectionId" in row && typeof row.sectionId === "string") return row.sectionId;
+		if ("libraryId" in row && typeof row.libraryId === "string") return row.libraryId;
+		return "";
+	};
+	return [...rows].sort(
+		(left, right) =>
+			left.instanceId.localeCompare(right.instanceId) ||
+			left.mediaType.localeCompare(right.mediaType) ||
+			left.tmdbId - right.tmdbId ||
+			detailKey(left).localeCompare(detailKey(right)) ||
+			evidenceFingerprint(left).localeCompare(evidenceFingerprint(right)),
+	);
+}
+
+async function collectLivePlexPolicyEvidence(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
+): Promise<PublishedPlexPolicyEvidence | undefined> {
+	try {
+		const initial = await loadProviderInstances(deps, userId, ["PLEX"]);
+		if (initial.length === 0) return undefined;
+		const topology = providerTopologyFingerprint(initial);
+		let accepted:
+			| {
+					plexMap: PlexWatchMap;
+					plexSectionTitles: Set<string>;
+					fingerprint: string;
+					completedAt: Date;
+			  }
+			| undefined;
+		for (let pass = 0; pass < 2; pass++) {
+			const rows: PlexCacheSnapshotRow[] = [];
+			const sections = new Set<string>();
+			const completions: Date[] = [];
+			for (const instance of initial) {
+				const client =
+					deps.plexCacheClientFactory?.(instance) ??
+					(deps.encryptor ? createPlexClient(deps.encryptor, instance, deps.log) : null);
+				if (!client) throw new Error("Plex credentials were unavailable");
+				const collected = await refreshPlexCache(
+					client,
+					deps.prisma,
+					instance.id,
+					deps.log,
+					providerConnectionIdentity(instance),
+					{ publish: false },
+				);
+				if (
+					collected.errors > 0 ||
+					collected.complete !== true ||
+					!collected.completedAt ||
+					!collected.snapshot
+				) {
+					throw new Error("Plex live evidence collection was incomplete");
+				}
+				rows.push(...collected.snapshot.rows);
+				for (const section of collected.snapshot.sections) sections.add(section.title);
+				completions.push(collected.completedAt);
+			}
+			const after = await loadProviderInstances(deps, userId, ["PLEX"]);
+			if (providerTopologyFingerprint(after) !== topology) {
+				throw new Error("Plex topology changed during live evidence collection");
+			}
+			for (const title of collectConfiguredPlexSectionTitles(rules)) {
+				if (!sections.has(title)) throw new Error(`Plex library ${title} was unavailable`);
+			}
+			const sortedRows = sortProviderRows(rows);
+			const fingerprint = evidenceFingerprint([topology, sortedRows, sections]);
+			if (accepted && accepted.fingerprint !== fingerprint) {
+				throw new Error("Plex evidence changed between verification passes");
+			}
+			accepted = {
+				plexMap: plexSnapshotToWatchMap(sortedRows),
+				plexSectionTitles: sections,
+				fingerprint,
+				completedAt: new Date(Math.min(...completions.map((date) => date.getTime()))),
+			};
+		}
+		return accepted
+			? {
+					plexMap: accepted.plexMap,
+					plexSectionTitles: accepted.plexSectionTitles,
+					completedAt: accepted.completedAt,
+					generationFingerprint: accepted.fingerprint,
+				}
+			: undefined;
+	} catch (error) {
+		deps.log.warn({ err: error }, "Live read-only Plex policy evidence failed closed");
+		return undefined;
+	}
+}
+
+async function collectLiveTautulliPolicyEvidence(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<TautulliWatchMap | undefined> {
+	try {
+		const initial = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
+		if (initial.length === 0) return undefined;
+		const topology = providerTopologyFingerprint(initial);
+		let accepted: { map: TautulliWatchMap; fingerprint: string } | undefined;
+		for (let pass = 0; pass < 2; pass++) {
+			const rows: TautulliCacheSnapshotRow[] = [];
+			for (const instance of initial) {
+				const client =
+					deps.tautulliCacheClientFactory?.(instance) ??
+					(deps.encryptor ? createTautulliClient(deps.encryptor, instance, deps.log) : null);
+				if (!client) throw new Error("Tautulli credentials were unavailable");
+				const collected = await refreshTautulliCache(
+					client,
+					deps.prisma,
+					instance.id,
+					deps.log,
+					providerConnectionIdentity(instance),
+					{ publish: false },
+				);
+				if (collected.errors > 0 || collected.complete !== true || !collected.snapshot) {
+					throw new Error("Tautulli live evidence collection was incomplete");
+				}
+				rows.push(...collected.snapshot.rows);
+			}
+			const after = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
+			if (providerTopologyFingerprint(after) !== topology) {
+				throw new Error("Tautulli topology changed during live evidence collection");
+			}
+			const sortedRows = sortProviderRows(rows);
+			const fingerprint = evidenceFingerprint([topology, sortedRows]);
+			if (accepted && accepted.fingerprint !== fingerprint) {
+				throw new Error("Tautulli evidence changed between verification passes");
+			}
+			accepted = { map: tautulliSnapshotToWatchMap(sortedRows), fingerprint };
+		}
+		return accepted?.map;
+	} catch (error) {
+		deps.log.warn({ err: error }, "Live read-only Tautulli policy evidence failed closed");
+		return undefined;
+	}
+}
+
+async function collectLiveJellyfinPolicyEvidence(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<JellyfinWatchMap | undefined> {
+	try {
+		const initial = await loadProviderInstances(deps, userId, ["JELLYFIN", "EMBY"]);
+		if (initial.length === 0) return undefined;
+		const topology = providerTopologyFingerprint(initial);
+		let accepted: { map: JellyfinWatchMap; fingerprint: string } | undefined;
+		for (let pass = 0; pass < 2; pass++) {
+			const rows: JellyfinCacheSnapshotRow[] = [];
+			const coverage: Array<{
+				instanceId: string;
+				users: Array<{ id: string; name: string }>;
+				libraries: Array<{
+					userId: string;
+					libraryId: string;
+					libraryName: string;
+					collectionType: string;
+				}>;
+			}> = [];
+			for (const instance of initial) {
+				const client =
+					deps.jellyfinCacheClientFactory?.(instance) ??
+					(deps.encryptor ? createJellyfinClient(deps.encryptor, instance, deps.log) : null);
+				if (!client) throw new Error("Jellyfin credentials were unavailable");
+				const collected = await refreshJellyfinCache(
+					client,
+					deps.prisma,
+					instance.id,
+					deps.log,
+					jellyfinConnectionFingerprint(instance),
+					{ publish: false },
+				);
+				if (
+					collected.errors > 0 ||
+					collected.complete !== true ||
+					!collected.snapshot ||
+					!Array.isArray(collected.snapshot.users) ||
+					!Array.isArray(collected.snapshot.libraries)
+				) {
+					throw new Error("Jellyfin live evidence collection was incomplete");
+				}
+				rows.push(...collected.snapshot.rows);
+				coverage.push({
+					instanceId: instance.id,
+					users: collected.snapshot.users,
+					libraries: collected.snapshot.libraries,
+				});
+			}
+			const after = await loadProviderInstances(deps, userId, ["JELLYFIN", "EMBY"]);
+			if (providerTopologyFingerprint(after) !== topology) {
+				throw new Error("Jellyfin topology changed during live evidence collection");
+			}
+			const sortedRows = sortProviderRows(rows);
+			const fingerprint = evidenceFingerprint([topology, sortedRows, coverage]);
+			if (accepted && accepted.fingerprint !== fingerprint) {
+				throw new Error("Jellyfin evidence changed between verification passes");
+			}
+			accepted = { map: jellyfinSnapshotToWatchMap(sortedRows), fingerprint };
+		}
+		return accepted?.map;
+	} catch (error) {
+		deps.log.warn({ err: error }, "Live read-only Jellyfin policy evidence failed closed");
 		return undefined;
 	}
 }
@@ -9134,6 +9495,7 @@ export async function buildEvalContextWithHealth(
 		conditions: string | null;
 		plexLibraryFilter?: string | null;
 	}>,
+	options: { providerEvidence?: "published" | "live" } = {},
 ): Promise<{ ctx: EvalContext; failedSources: Set<DataSourceDependency> }> {
 	const activeTypes = collectActiveRuleTypes(rules);
 
@@ -9199,12 +9561,22 @@ export async function buildEvalContextWithHealth(
 		listEvidence,
 	] = await Promise.all([
 		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
-		needsTautulli ? prefetchTautulliData(deps, userId) : undefined,
+		needsTautulli
+			? options.providerEvidence === "live"
+				? collectLiveTautulliPolicyEvidence(deps, userId)
+				: prefetchTautulliData(deps, userId)
+			: undefined,
 		needsPlex || needsPlexSectionInventory
-			? loadPublishedPlexPolicyEvidence(deps, userId, rules)
+			? options.providerEvidence === "live"
+				? collectLivePlexPolicyEvidence(deps, userId, rules)
+				: loadPublishedPlexPolicyEvidence(deps, userId, rules)
 			: undefined,
 		needsPlexEpisodes ? prefetchPlexEpisodeData(deps, userId) : undefined,
-		needsJellyfin ? prefetchJellyfinData(deps, userId) : undefined,
+		needsJellyfin
+			? options.providerEvidence === "live"
+				? collectLiveJellyfinPolicyEvidence(deps, userId)
+				: prefetchJellyfinData(deps, userId)
+			: undefined,
 		needsJellyfinEpisodes ? prefetchJellyfinEpisodeData(deps, userId) : undefined,
 		refreshListMutationEvidence(deps, userId, rules),
 	]);

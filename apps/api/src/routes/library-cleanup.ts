@@ -2061,6 +2061,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			},
 			userId,
 			config.rules.filter((rule) => rule.targetScope !== "episode"),
+			{ providerEvidence: "live" },
 		);
 
 		const results = explainItemAgainstRules(

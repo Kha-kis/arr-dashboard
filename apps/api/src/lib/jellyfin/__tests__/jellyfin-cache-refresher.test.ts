@@ -196,6 +196,92 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(payload.lastWatchedAt).toEqual(new Date("2024-06-20T22:00:00Z"));
 	});
 
+	it("discovers and scans media libraries visible only to a later user", async () => {
+		const twoUsers: JellyfinUser[] = [
+			{ id: "user-1", name: "Alice" },
+			{ id: "user-2", name: "Bob" },
+		];
+		const aliceLibrary: JellyfinLibrary = {
+			id: "lib-alice",
+			name: "Alice TV",
+			collectionType: "tvshows",
+		};
+		const bobLibrary: JellyfinLibrary = {
+			id: "lib-bob",
+			name: "Bob Movies",
+			collectionType: "movies",
+		};
+		const bobMovie = makeSeriesItem({
+			id: "jf-movie-bob",
+			name: "Bob's Recent Movie",
+			type: "Movie",
+			tmdbId: 4242,
+			played: true,
+			playCount: 1,
+			lastPlayedDate: "2026-08-09T20:00:00Z",
+		});
+		const client = {
+			getUsers: vi.fn().mockResolvedValue(twoUsers),
+			getLibraries: vi.fn(async (userId: string) =>
+				userId === "user-1" ? [aliceLibrary] : [bobLibrary],
+			),
+			getLibraryItems: vi.fn(async (userId: string, libraryId: string) => {
+				if (userId === "user-2" && libraryId === "lib-bob") return [bobMovie];
+				return [];
+			}),
+			getResumeItems: vi.fn().mockResolvedValue([]),
+			getNextUp: vi.fn().mockResolvedValue([]),
+		} as unknown as JellyfinClient;
+		const { stub, upserts } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		expect(client.getLibraries).toHaveBeenNthCalledWith(1, "user-1");
+		expect(client.getLibraries).toHaveBeenNthCalledWith(2, "user-2");
+		expect(client.getLibraryItems).toHaveBeenCalledWith(
+			"user-2",
+			"lib-bob",
+			expect.objectContaining({ includeItemTypes: "Movie" }),
+		);
+		expect(upserts).toHaveLength(1);
+		expect(upserts[0]).toMatchObject({
+			create: {
+				libraryId: "lib-bob",
+				lastWatchedAt: new Date("2026-08-09T20:00:00Z"),
+				watchCount: 1,
+				watchedByUsers: '["Bob"]',
+			},
+		});
+	});
+
+	it("fails closed when any user's library inventory is unavailable", async () => {
+		const twoUsers: JellyfinUser[] = [
+			{ id: "user-1", name: "Alice" },
+			{ id: "user-2", name: "Bob" },
+		];
+		const client = {
+			getUsers: vi.fn().mockResolvedValue(twoUsers),
+			getLibraries: vi
+				.fn()
+				.mockResolvedValueOnce(oneLibrary)
+				.mockRejectedValueOnce(new Error("Bob's library inventory was truncated")),
+		} as unknown as JellyfinClient;
+		const deleteMany = vi.fn();
+		const transaction = vi.fn();
+		const stub = { jellyfinCache: { deleteMany }, $transaction: transaction };
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result.complete).toBe(false);
+		expect(result.errors).toBeGreaterThan(0);
+		expect(result.errorMessages).toContainEqual(
+			expect.stringContaining("Bob's library inventory was truncated"),
+		);
+		expect(deleteMany).not.toHaveBeenCalled();
+		expect(transaction).not.toHaveBeenCalled();
+	});
+
 	it("evicts stale rows when a discovered library is authoritatively empty", async () => {
 		const client = makeMockClient([]);
 		const { stub, tx } = makeMockPrisma();
@@ -360,6 +446,35 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(stub.$transaction).toHaveBeenCalledWith(expect.any(Function), {
 			isolationLevel: "Serializable",
 		});
+	});
+
+	it("collects a complete live snapshot without publishing cache state", async () => {
+		const watchedAt = "2024-08-06T10:00:00Z";
+		const client = makeMockClient([
+			makeSeriesItem({ played: true, playCount: 1, lastPlayedDate: watchedAt }),
+		]);
+		const transaction = vi.fn();
+		const stub = { $transaction: transaction };
+
+		const result = await refreshJellyfinCache(
+			client,
+			stub as never,
+			"inst-1",
+			silentLog,
+			undefined,
+			{ publish: false },
+		);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 0 });
+		expect(result.snapshot?.rows).toEqual([
+			expect.objectContaining({
+				instanceId: "inst-1",
+				tmdbId: 99999,
+				lastWatchedAt: new Date(watchedAt),
+				watchCount: 1,
+			}),
+		]);
+		expect(transaction).not.toHaveBeenCalled();
 	});
 
 	it("discards a completed scan when the service connection changed before publication", async () => {

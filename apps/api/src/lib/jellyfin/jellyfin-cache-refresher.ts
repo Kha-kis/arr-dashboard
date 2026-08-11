@@ -18,7 +18,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
 import { withCurrentJellyfinConnection } from "./jellyfin-connection-guard.js";
-import type { JellyfinClient } from "./jellyfin-client.js";
+import type { JellyfinClient, JellyfinLibrary, JellyfinUser } from "./jellyfin-client.js";
 
 export const JELLYFIN_STALE_EVICTION_CHUNK_SIZE = 500;
 
@@ -43,6 +43,49 @@ interface ItemAggregation {
 	thumb: string | null;
 }
 
+export interface JellyfinCacheSnapshotRow {
+	instanceId: string;
+	tmdbId: number;
+	mediaType: "movie" | "series";
+	libraryId: string;
+	libraryName: string;
+	title: string;
+	jellyfinId: string;
+	lastWatchedAt: Date | null;
+	watchCount: number;
+	watchedByUsers: string;
+	onDeck: boolean;
+	userRating: number | null;
+	collections: string;
+	addedAt: Date | null;
+	thumb: string | null;
+}
+
+export interface JellyfinCacheSnapshot {
+	rows: JellyfinCacheSnapshotRow[];
+	users: Array<{ id: string; name: string }>;
+	libraries: Array<{
+		userId: string;
+		libraryId: string;
+		libraryName: string;
+		collectionType: string;
+	}>;
+}
+
+export interface JellyfinCacheRefreshOptions {
+	publish?: boolean;
+}
+
+export interface JellyfinCacheRefreshResult {
+	upserted: number;
+	errors: number;
+	errorMessages: string[];
+	complete: boolean;
+	completedAt?: Date;
+	superseded?: boolean;
+	snapshot?: JellyfinCacheSnapshot;
+}
+
 // ============================================================================
 // Main Refresh Function
 // ============================================================================
@@ -53,14 +96,8 @@ export async function refreshJellyfinCache(
 	instanceId: string,
 	log: FastifyBaseLogger,
 	expectedConnectionFingerprint?: string,
-): Promise<{
-	upserted: number;
-	errors: number;
-	errorMessages: string[];
-	complete: boolean;
-	completedAt?: Date;
-	superseded?: boolean;
-}> {
+	options: JellyfinCacheRefreshOptions = {},
+): Promise<JellyfinCacheRefreshResult> {
 	let upserted = 0;
 	let errors = 0;
 	let complete = true;
@@ -80,19 +117,27 @@ export async function refreshJellyfinCache(
 			};
 		}
 
-		// Use the first user (admin) for library enumeration
-		const primaryUserId = users[0]!.id;
+		// Step 2: Inventory each user's visible media libraries. Jellyfin and Emby
+		// permissions can expose different libraries to different users, so no
+		// single user is an authoritative proxy for server-wide coverage.
+		const librariesByUser: Array<{
+			user: JellyfinUser;
+			libraries: JellyfinLibrary[];
+		}> = [];
+		for (const user of users) {
+			const libraries = await client.getLibraries(user.id);
+			librariesByUser.push({
+				user,
+				libraries: libraries.filter(
+					(lib) =>
+						lib.collectionType === "movies" ||
+						lib.collectionType === "tvshows" ||
+						lib.collectionType === "CollectionFolder",
+				),
+			});
+		}
 
-		// Step 2: Get libraries and filter to movie/tvshow
-		const libraries = await client.getLibraries(primaryUserId);
-		const mediaLibraries = libraries.filter(
-			(lib) =>
-				lib.collectionType === "movies" ||
-				lib.collectionType === "tvshows" ||
-				lib.collectionType === "CollectionFolder",
-		);
-
-		if (mediaLibraries.length === 0) {
+		if (librariesByUser.every(({ libraries }) => libraries.length === 0)) {
 			complete = false;
 			log.info({ instanceId }, "Jellyfin cache refresh: no movie/TV libraries found");
 			return {
@@ -106,15 +151,15 @@ export async function refreshJellyfinCache(
 		// Step 3: Aggregate items across all users
 		const aggregations = new Map<string, ItemAggregation>();
 
-		for (const library of mediaLibraries) {
-			const includeItemTypes =
-				library.collectionType === "movies"
-					? "Movie"
-					: library.collectionType === "tvshows"
-						? "Series"
-						: "Movie,Series"; // CollectionFolder or unknown — fetch both
+		for (const { user, libraries } of librariesByUser) {
+			for (const library of libraries) {
+				const includeItemTypes =
+					library.collectionType === "movies"
+						? "Movie"
+						: library.collectionType === "tvshows"
+							? "Series"
+							: "Movie,Series"; // CollectionFolder or unknown — fetch both
 
-			for (const user of users) {
 				try {
 					const items = await client.getLibraryItems(user.id, library.id, {
 						includeItemTypes,
@@ -232,9 +277,55 @@ export async function refreshJellyfinCache(
 		// Step 5: Publish a complete replacement atomically. An incomplete scan
 		// must leave the previous successful generation untouched.
 		const items = Array.from(aggregations.values());
+		const rows: JellyfinCacheSnapshotRow[] = items.map((agg) => ({
+			instanceId,
+			tmdbId: agg.tmdbId,
+			mediaType: agg.mediaType,
+			libraryId: agg.libraryId,
+			libraryName: agg.libraryName,
+			title: agg.title,
+			jellyfinId: agg.jellyfinId,
+			lastWatchedAt: agg.lastWatchedAt,
+			watchCount: agg.watchCount,
+			watchedByUsers: JSON.stringify([...agg.watchedByUsers].sort()),
+			onDeck: agg.onDeck,
+			userRating: agg.userRating,
+			collections: JSON.stringify([...agg.collections].sort()),
+			addedAt: agg.addedAt,
+			thumb: agg.thumb,
+		}));
 		let completedAt: Date | undefined;
 		if (errors === 0 && complete) {
 			completedAt = new Date();
+			if (options.publish === false) {
+				return {
+					upserted: 0,
+					errors: 0,
+					errorMessages: [],
+					complete: true,
+					completedAt,
+					snapshot: {
+						rows,
+						users: users
+							.map((user) => ({ id: user.id, name: user.name }))
+							.sort((left, right) => left.id.localeCompare(right.id)),
+						libraries: librariesByUser
+							.flatMap(({ user, libraries }) =>
+								libraries.map((library) => ({
+									userId: user.id,
+									libraryId: library.id,
+									libraryName: library.name,
+									collectionType: library.collectionType,
+								})),
+							)
+							.sort(
+								(left, right) =>
+									left.userId.localeCompare(right.userId) ||
+									left.libraryId.localeCompare(right.libraryId),
+							),
+					},
+				};
+			}
 			try {
 				const publication = await withCurrentJellyfinConnection(
 					prisma,
@@ -313,7 +404,13 @@ export async function refreshJellyfinCache(
 			log.warn({ instanceId, errors }, "Skipping cache publication due to incomplete refresh");
 		}
 
-		return { upserted, errors, errorMessages, complete: complete && errors === 0, completedAt };
+		return {
+			upserted,
+			errors,
+			errorMessages,
+			complete: complete && errors === 0,
+			completedAt,
+		};
 	} catch (err) {
 		complete = false;
 		errors++;
