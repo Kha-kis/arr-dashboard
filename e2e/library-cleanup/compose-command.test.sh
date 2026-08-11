@@ -7,33 +7,124 @@ trap 'rm -rf "$TEMP_DIR"' EXIT HUP INT TERM
 
 FAKE_COMPOSE="$TEMP_DIR/fake-compose"
 COMPOSE_LOG="$TEMP_DIR/compose.log"
+FAKE_DOCKER_BIN_DIR="$TEMP_DIR/docker-bin"
+FAKE_STANDALONE_BIN_DIR="$TEMP_DIR/standalone-bin"
+EMPTY_BIN_DIR="$TEMP_DIR/empty-bin"
+FAKE_HOME="$TEMP_DIR/home"
+EMPTY_HOME="$TEMP_DIR/empty-home"
+ISOLATED_DOCKER_CONFIG="$TEMP_DIR/isolated-docker-config"
+SYSTEM_PATH=$PATH
+mkdir -p \
+	"$FAKE_DOCKER_BIN_DIR" \
+	"$FAKE_STANDALONE_BIN_DIR" \
+	"$EMPTY_BIN_DIR" \
+	"$FAKE_HOME/.docker/cli-plugins" \
+	"$EMPTY_HOME" \
+	"$ISOLATED_DOCKER_CONFIG"
+
 cat >"$FAKE_COMPOSE" <<'EOF'
 #!/bin/sh
-printf '%s\n' "$@" >"$ARR_COMPOSE_LOG"
+{
+	printf '%s\n' override
+	printf '%s\n' "$@"
+} >"$ARR_COMPOSE_LOG"
 EOF
 chmod +x "$FAKE_COMPOSE"
 
-COMPOSE_PROJECT_NAME=lc-e2e-contract
-ARR_COMPOSE_BIN="$FAKE_COMPOSE"
-ARR_COMPOSE_LOG="$COMPOSE_LOG"
-export COMPOSE_PROJECT_NAME ARR_COMPOSE_BIN ARR_COMPOSE_LOG
-
-. "$SCRIPT_DIR/compose-command.sh"
-compose ps --status running --services
-
-expected_args="$TEMP_DIR/expected-args"
-{
-	printf '%s\n' -p lc-e2e-contract
-	printf '%s\n' -f "$SCRIPT_DIR/compose.yml"
-	printf '%s\n' -f "$SCRIPT_DIR/compose.debug.yml"
-	printf '%s\n' ps --status running --services
-} >"$expected_args"
-
-if ! cmp -s "$expected_args" "$COMPOSE_LOG"; then
-	echo "compose helper did not invoke ARR_COMPOSE_BIN with the isolated harness model." >&2
-	diff -u "$expected_args" "$COMPOSE_LOG" >&2 || true
-	exit 1
+cat >"$FAKE_DOCKER_BIN_DIR/docker" <<'EOF'
+#!/bin/sh
+if [ "$1" = compose ] && [ "$2" = version ]; then
+	exit 0
 fi
+{
+	printf '%s\n' docker
+	printf '%s\n' "$@"
+} >"$ARR_COMPOSE_LOG"
+EOF
+chmod +x "$FAKE_DOCKER_BIN_DIR/docker"
+
+cat >"$FAKE_STANDALONE_BIN_DIR/docker-compose" <<'EOF'
+#!/bin/sh
+if [ "$1" = version ]; then
+	exit 0
+fi
+{
+	printf '%s\n' docker-compose
+	printf '%s\n' "$@"
+} >"$ARR_COMPOSE_LOG"
+EOF
+chmod +x "$FAKE_STANDALONE_BIN_DIR/docker-compose"
+
+FAKE_PLUGIN="$FAKE_HOME/.docker/cli-plugins/docker-compose"
+cat >"$FAKE_PLUGIN" <<'EOF'
+#!/bin/sh
+{
+	printf '%s\n' plugin
+	printf '%s\n' "$@"
+} >"$ARR_COMPOSE_LOG"
+EOF
+chmod +x "$FAKE_PLUGIN"
+
+assert_compose_args() {
+	expected_command=$1
+	expected_args="$TEMP_DIR/expected-args"
+	{
+		printf '%s\n' "$expected_command"
+		if [ "$expected_command" = docker ]; then
+			printf '%s\n' compose
+		fi
+		printf '%s\n' -p lc-e2e-contract
+		printf '%s\n' -f "$SCRIPT_DIR/compose.yml"
+		printf '%s\n' -f "$SCRIPT_DIR/compose.debug.yml"
+		printf '%s\n' ps --status running --services
+	} >"$expected_args"
+
+	if ! cmp -s "$expected_args" "$COMPOSE_LOG"; then
+		echo "compose helper did not select $expected_command with the isolated harness model." >&2
+		diff -u "$expected_args" "$COMPOSE_LOG" >&2 || true
+		exit 1
+	fi
+}
+
+exercise_compose() {
+	COMPOSE_PROJECT_NAME=lc-e2e-contract
+	ARR_COMPOSE_LOG="$COMPOSE_LOG"
+	export COMPOSE_PROJECT_NAME ARR_COMPOSE_LOG
+	. "$SCRIPT_DIR/compose-command.sh"
+	compose ps --status running --services
+}
+
+ARR_COMPOSE_BIN="$FAKE_COMPOSE"
+export ARR_COMPOSE_BIN
+exercise_compose
+assert_compose_args override
+
+unset ARR_COMPOSE_BIN
+HOME="$EMPTY_HOME"
+DOCKER_CONFIG="$ISOLATED_DOCKER_CONFIG"
+PATH=$FAKE_DOCKER_BIN_DIR
+export PATH HOME DOCKER_CONFIG
+exercise_compose
+PATH=$SYSTEM_PATH
+export PATH
+assert_compose_args docker
+
+unset ARR_COMPOSE_BIN
+PATH=$FAKE_STANDALONE_BIN_DIR
+export PATH
+exercise_compose
+PATH=$SYSTEM_PATH
+export PATH
+assert_compose_args docker-compose
+
+unset ARR_COMPOSE_BIN
+PATH=$EMPTY_BIN_DIR
+HOME="$FAKE_HOME"
+export PATH
+exercise_compose
+PATH=$SYSTEM_PATH
+export PATH
+assert_compose_args plugin
 
 for script in \
 	bootstrap-arr.sh \

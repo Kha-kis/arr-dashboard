@@ -3,16 +3,64 @@
 : "${SCRIPT_DIR:?compose-command.sh requires SCRIPT_DIR}"
 : "${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}"
 
-ARR_COMPOSE_BIN=${ARR_COMPOSE_BIN:-/home/khak1s/.docker/cli-plugins/docker-compose}
-export ARR_COMPOSE_BIN
+resolve_compose_command() {
+	if [ -n "${ARR_COMPOSE_BIN:-}" ]; then
+		if [ ! -x "$ARR_COMPOSE_BIN" ]; then
+			echo "Library-cleanup harness refused: ARR_COMPOSE_BIN is not an executable: $ARR_COMPOSE_BIN." >&2
+			exit 1
+		fi
+		COMPOSE_COMMAND=executable
+		return
+	fi
 
-if [ ! -x "$ARR_COMPOSE_BIN" ]; then
-	echo "Library-cleanup harness refused: Compose binary is not executable at $ARR_COMPOSE_BIN." >&2
+	if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+		ARR_COMPOSE_BIN=$(command -v docker-compose)
+		export ARR_COMPOSE_BIN
+		COMPOSE_COMMAND=executable
+		return
+	fi
+
+	for compose_plugin in \
+		"${DOCKER_CONFIG:+$DOCKER_CONFIG/cli-plugins/docker-compose}" \
+		"${XDG_CONFIG_HOME:+$XDG_CONFIG_HOME/docker/cli-plugins/docker-compose}" \
+		"${HOME:+$HOME/.docker/cli-plugins/docker-compose}" \
+		"${HOME:+$HOME/.local/lib/docker/cli-plugins/docker-compose}" \
+		/usr/local/lib/docker/cli-plugins/docker-compose \
+		/usr/local/libexec/docker/cli-plugins/docker-compose \
+		/usr/lib/docker/cli-plugins/docker-compose \
+		/usr/libexec/docker/cli-plugins/docker-compose; do
+		if [ -n "$compose_plugin" ] && [ -x "$compose_plugin" ]; then
+			ARR_COMPOSE_BIN=$compose_plugin
+			export ARR_COMPOSE_BIN
+			COMPOSE_COMMAND=executable
+			return
+		fi
+	done
+
+	if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+		COMPOSE_COMMAND=docker
+		return
+	fi
+
+	echo "Library-cleanup harness refused: Docker Compose v2 was not found. Set ARR_COMPOSE_BIN to an executable." >&2
 	exit 1
-fi
+}
+
+resolve_compose_command
+
+run_compose() {
+	case "$COMPOSE_COMMAND" in
+		docker) docker compose "$@" ;;
+		executable) "$ARR_COMPOSE_BIN" "$@" ;;
+		*)
+			echo "Library-cleanup harness refused: invalid Compose command selection." >&2
+			exit 1
+			;;
+	esac
+}
 
 compose_base() {
-	"$ARR_COMPOSE_BIN" -p "$COMPOSE_PROJECT_NAME" -f "$SCRIPT_DIR/compose.yml" "$@"
+	run_compose -p "$COMPOSE_PROJECT_NAME" -f "$SCRIPT_DIR/compose.yml" "$@"
 }
 
 compose() {
