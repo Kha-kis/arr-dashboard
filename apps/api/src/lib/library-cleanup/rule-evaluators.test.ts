@@ -711,7 +711,7 @@ describe("qualified provider negatives", () => {
 		).toMatchObject({ kind: "retained", evidence: "unknown" });
 	});
 
-	it("certifies zero only after every configured Plex selector resolves", () => {
+	it("does not certify zero from resolved Plex selectors without an observed item", () => {
 		const rule = makeRule({
 			ruleType: "plex_on_deck",
 			parameters: JSON.stringify({ isDeck: false }),
@@ -724,7 +724,7 @@ describe("qualified provider negatives", () => {
 
 		expect(
 			evaluateRuleState(makeCacheItem(), rule as LibraryCleanupRule, "RADARR", ctx).state,
-		).toBe("true");
+		).toBe("unknown");
 	});
 
 	it.each(["tmdb", "trakt"] as const)(
@@ -800,7 +800,7 @@ describe("tautulli_watch_count rule", () => {
 		expect(result).toContain("play count: 10");
 	});
 
-	it("infers 0 plays for items missing from tautulli when map is populated", () => {
+	it("does not infer 0 plays for an item missing from Tautulli history", () => {
 		// Item with tmdbId 99999 — not in the tautulliMap
 		const missingData = { ...DEFAULT_DATA, remoteIds: { tmdbId: 99999 } };
 		const result = evaluateSingleCondition(
@@ -809,7 +809,7 @@ describe("tautulli_watch_count rule", () => {
 			{ operator: "less_than", count: 1 },
 			ctx,
 		);
-		expect(result).toContain("Tautulli play count: 0");
+		expect(result).toBeNull();
 	});
 
 	it("does not match when count equals threshold for less_than", () => {
@@ -1128,7 +1128,7 @@ describe("composite rules", () => {
 		},
 		{
 			name: "Plex condition without a per-item row",
-			expected: "true",
+			expected: "unknown",
 			ruleType: "plex_on_deck",
 			parameters: { isDeck: true },
 			item: makeCacheItem(),
@@ -1745,18 +1745,18 @@ describe("golden test — multi-rule priority evaluation", () => {
 		expect(result!.ruleId).toBe("r-declined"); // declined rule still matches first
 	});
 
-	it("treats absence from a complete Plex inventory as never watched", () => {
+	it("treats absence from the Plex item inventory as unknown coverage", () => {
 		// No seerr data (tmdbId 99999), high rating (9.0), recently added (1 day)
 		// - r-declined: no seerr data → skip
 		// - r-low-rating: 9.0 not < 5 → skip
-		// - r-never-watched: no per-item Plex row in a complete inventory → known never watched
+		// - r-never-watched: no per-item Plex row → provider coverage is unknown
 		const result = evaluateItemAgainstRules(
 			recentHighRated,
 			rules as LibraryCleanupRule[],
 			"RADARR",
 			ctx,
 		);
-		expect(result).toMatchObject({ ruleId: "r-never-watched", action: "unmonitor" });
+		expect(result).toBeNull();
 	});
 
 	it("protected item is excluded by title pattern in composite rule", () => {

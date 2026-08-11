@@ -865,7 +865,9 @@ function lookupTautulliWatch(
 	const mediaType = item.itemType === "movie" ? "movie" : "series";
 	const key = `${mediaType}:${tmdbId}`;
 
-	return tautulliMap.get(key) ?? { lastWatchedAt: null, watchCount: 0, watchedByUsers: [] };
+	// A complete Tautulli history scan proves only the rows it observed. An
+	// absent TMDB id may belong to another Plex library, so absence is UNKNOWN.
+	return tautulliMap.get(key) ?? null;
 }
 
 /**
@@ -919,23 +921,7 @@ function evaluateTautulliWatchCount(
 	ctx: EvalContext,
 ): string | null {
 	const watch = lookupTautulliWatch(item, ctx.tautulliMap);
-	if (!watch) {
-		// Not in Tautulli — infer 0 plays when Tautulli is configured and item has a file
-		if (
-			ctx.tautulliMap &&
-			ctx.tautulliMap.size > 0 &&
-			params.operator === "less_than" &&
-			params.count > 0 &&
-			item.hasFile &&
-			item.arrAddedAt
-		) {
-			const ageDays = Math.floor(
-				(ctx.now.getTime() - item.arrAddedAt.getTime()) / (1000 * 60 * 60 * 24),
-			);
-			return `Not tracked by Tautulli, in library for ${ageDays} days (threshold: < ${params.count} plays)`;
-		}
-		return null;
-	}
+	if (!watch) return null;
 	const count = watch.watchCount;
 
 	// Age context for low play counts
@@ -1019,7 +1005,10 @@ function lookupPlexWatch(
 		addedAt: null,
 		sections: [],
 	};
-	const entry = plexMap.get(key) ?? emptyEntry;
+	const entry = plexMap.get(key);
+	// Plex refreshes inventory every item in each visible section, including
+	// unwatched items. Only an observed row can therefore certify a negative.
+	if (!entry) return null;
 
 	// If no filter, return the pre-computed aggregates (existing behavior)
 	if (!plexLibraryFilter || plexLibraryFilter.length === 0) return entry;
@@ -1340,16 +1329,9 @@ function lookupJellyfinWatch(
 	const tmdbId = remoteIds?.tmdbId;
 	if (!tmdbId) return null;
 	const mediaType = item.itemType === "movie" ? "movie" : "series";
-	return (
-		jellyfinMap.get(`${mediaType}:${tmdbId}`) ?? {
-			lastWatchedAt: null,
-			watchCount: 0,
-			watchedByUsers: [],
-			onDeck: false,
-			userRating: null,
-			addedAt: null,
-		}
-	);
+	// Jellyfin refreshes every item visible to every enumerated user. Missing
+	// rows are not evidence that an unrelated ARR library was never watched.
+	return jellyfinMap.get(`${mediaType}:${tmdbId}`) ?? null;
 }
 
 function evaluateJellyfinLastWatched(

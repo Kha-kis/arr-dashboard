@@ -39,6 +39,33 @@ interface ParsedGuid {
 	mediaType: "movie" | "series";
 }
 
+export interface TautulliCacheSnapshotRow {
+	instanceId: string;
+	tmdbId: number;
+	mediaType: "movie" | "series";
+	lastWatchedAt: Date;
+	watchCount: number;
+	watchedByUsers: string;
+}
+
+export interface TautulliCacheSnapshot {
+	rows: TautulliCacheSnapshotRow[];
+}
+
+export interface TautulliCacheRefreshOptions {
+	publish?: boolean;
+}
+
+export interface TautulliCacheRefreshResult {
+	upserted: number;
+	errors: number;
+	errorMessages: string[];
+	complete: boolean;
+	completedAt?: Date;
+	superseded?: boolean;
+	snapshot?: TautulliCacheSnapshot;
+}
+
 /**
  * Refresh the TautulliCache for a given instance.
  * Fetches history from Tautulli and aggregates into per-item watch stats.
@@ -49,14 +76,8 @@ export async function refreshTautulliCache(
 	instanceId: string,
 	log: FastifyBaseLogger,
 	expectedConnection: ProviderConnectionIdentity | undefined,
-): Promise<{
-	upserted: number;
-	errors: number;
-	errorMessages: string[];
-	complete: boolean;
-	completedAt?: Date;
-	superseded?: boolean;
-}> {
+	options: TautulliCacheRefreshOptions = {},
+): Promise<TautulliCacheRefreshResult> {
 	let upserted = 0;
 	let errors = 0;
 	let complete = true;
@@ -383,14 +404,7 @@ export async function refreshTautulliCache(
 		}
 
 		// 5. Stage every row, then publish a complete replacement atomically.
-		const rows: Array<{
-			instanceId: string;
-			tmdbId: number;
-			mediaType: "movie" | "series";
-			lastWatchedAt: Date;
-			watchCount: number;
-			watchedByUsers: string;
-		}> = [];
+		const rows: TautulliCacheSnapshotRow[] = [];
 		for (const [ratingKey, info] of itemMap) {
 			const guid = ratingKeyToGuid.get(ratingKey);
 			if (!guid) continue;
@@ -410,6 +424,16 @@ export async function refreshTautulliCache(
 			// Re-read the entire snapshot immediately before publication.
 			await verifyCompleteHistorySnapshot();
 			completedAt = new Date();
+			if (options.publish === false) {
+				return {
+					upserted: 0,
+					errors: 0,
+					errorMessages: [],
+					complete: true,
+					completedAt,
+					snapshot: { rows },
+				};
+			}
 			try {
 				const publication = await withCurrentProviderConnection(
 					prisma,

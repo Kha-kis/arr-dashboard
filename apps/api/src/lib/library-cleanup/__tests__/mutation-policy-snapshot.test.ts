@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createMutationPolicySnapshotGetter,
+	executeCleanupPreview,
 	MUTATION_POLICY_SNAPSHOT_MAX_AGE_MS,
 } from "../cleanup-executor.js";
 import type { CleanupExecutorDeps } from "../types.js";
@@ -332,4 +333,260 @@ describe("authoritative mutation policy snapshots", () => {
 		expect(findInstances).not.toHaveBeenCalled();
 		expect(refreshMocks.plex).not.toHaveBeenCalled();
 	});
+});
+
+describe("interactive preview live watch authority", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-08-10T12:00:00.000Z"));
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it.each([
+		["Plex", "PLEX", "plex_last_watched", refreshMocks.plex, "plex"],
+		["Tautulli", "TAUTULLI", "tautulli_last_watched", refreshMocks.tautulli, "tautulli"],
+		["Jellyfin", "JELLYFIN", "jellyfin_last_watched", refreshMocks.jellyfin, "jellyfin"],
+	] as const)(
+		"uses live %s authority without publishing provider cache state",
+		async (_label, service, ruleType, refreshMock, source) => {
+			const provider = { ...instance(service), connectionGeneration: 1 };
+			const radarr = {
+				...instance("PLEX"),
+				id: "radarr-1",
+				service: "RADARR",
+				name: "Radarr",
+				baseUrl: "http://radarr.test",
+				connectionGeneration: 1,
+			};
+			const recentWatch = new Date("2026-08-09T12:00:00.000Z");
+			const snapshot =
+				service === "PLEX"
+					? {
+							rows: [
+								{
+									instanceId: provider.id,
+									tmdbId: 42,
+									mediaType: "movie",
+									sectionId: "1",
+									sectionTitle: "Movies",
+									title: "Recent Movie",
+									ratingKey: "plex-42",
+									lastWatchedAt: recentWatch,
+									watchCount: 1,
+									watchedByUsers: '["alice"]',
+									onDeck: false,
+									userRating: null,
+									collections: "[]",
+									labels: "[]",
+									addedAt: new Date("2025-01-01T00:00:00.000Z"),
+									thumb: null,
+								},
+							],
+							sections: [{ key: "1", title: "Movies", type: "movie" }],
+						}
+					: service === "TAUTULLI"
+						? {
+								rows: [
+									{
+										instanceId: provider.id,
+										tmdbId: 42,
+										mediaType: "movie",
+										lastWatchedAt: recentWatch,
+										watchCount: 1,
+										watchedByUsers: '["alice"]',
+									},
+								],
+							}
+						: {
+								rows: [
+									{
+										instanceId: provider.id,
+										tmdbId: 42,
+										mediaType: "movie",
+										libraryId: "1",
+										libraryName: "Movies",
+										title: "Recent Movie",
+										jellyfinId: "jf-42",
+										lastWatchedAt: recentWatch,
+										watchCount: 1,
+										watchedByUsers: '["alice"]',
+										onDeck: false,
+										userRating: null,
+										collections: "[]",
+										addedAt: new Date("2025-01-01T00:00:00.000Z"),
+										thumb: null,
+									},
+								],
+								users: [{ id: "user-1", name: "Alice" }],
+								libraries: [
+									{
+										userId: "user-1",
+										libraryId: "1",
+										libraryName: "Movies",
+										collectionType: "movies",
+									},
+								],
+							};
+			refreshMock.mockResolvedValue({
+				upserted: 0,
+				errors: 0,
+				errorMessages: [],
+				complete: true,
+				completedAt: new Date(),
+				snapshot,
+			});
+			const transaction = vi.fn();
+			const deleteMany = vi.fn();
+			const createMany = vi.fn();
+			const statusUpsert = vi.fn();
+			const findInstances = vi.fn(async ({ where }: { where: { service?: unknown } }) => {
+				const all = [radarr, provider];
+				if (typeof where.service === "string") {
+					return all.filter((entry) => entry.service === where.service);
+				}
+				if (where.service && typeof where.service === "object" && "in" in where.service) {
+					const services = (where.service as { in: string[] }).in;
+					return all.filter((entry) => services.includes(entry.service));
+				}
+				return all;
+			});
+			const configRule = {
+				...rule(ruleType),
+				parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+				action: "unmonitor",
+				plexLibraryFilter: null,
+				excludeTags: null,
+				excludeTitles: null,
+				scanMediaServerAfterDelete: false,
+				rejectionMemoryDays: 0,
+			};
+			const candidate = {
+				id: "cache-42",
+				instanceId: "radarr-1",
+				arrItemId: 42,
+				itemType: "movie",
+				title: "Recent Movie",
+				year: 2024,
+				monitored: true,
+				hasFile: true,
+				status: "released",
+				qualityProfileId: 1,
+				qualityProfileName: "HD",
+				sizeOnDisk: 1_000n,
+				arrAddedAt: new Date("2025-01-01T00:00:00.000Z"),
+				cachedAt: new Date(),
+				data: JSON.stringify({ tmdbId: 42, service: "radarr" }),
+				torrentState: null,
+				infoHash: null,
+			};
+			const libraryFindMany = vi.fn().mockResolvedValueOnce([candidate]).mockResolvedValue([]);
+			const deps = {
+				prisma: {
+					$transaction: transaction,
+					libraryCleanupConfig: {
+						findUnique: vi.fn().mockResolvedValue({
+							id: "config-1",
+							userId: "user-1",
+							enabled: true,
+							dryRunMode: true,
+							requireApproval: false,
+							maxRemovalsPerRun: 10,
+							respectQuiSeeding: false,
+							rejectionMemoryDays: 0,
+							rules: [configRule],
+						}),
+					},
+					serviceInstance: { findMany: findInstances },
+					libraryCache: { findMany: libraryFindMany },
+					plexCache: { deleteMany, createMany },
+					tautulliCache: { deleteMany, createMany },
+					jellyfinCache: { deleteMany, createMany },
+					cacheRefreshStatus: { upsert: statusUpsert },
+					libraryCleanupApproval: { findMany: vi.fn().mockResolvedValue([]) },
+					libraryCleanupLog: { findFirst: vi.fn().mockResolvedValue(null) },
+				},
+				arrClientFactory: { create: vi.fn() },
+				plexCacheClientFactory: vi.fn(() => ({}) as never),
+				tautulliCacheClientFactory: vi.fn(() => ({}) as never),
+				jellyfinCacheClientFactory: vi.fn(() => ({}) as never),
+				log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+			} as unknown as CleanupExecutorDeps;
+
+			const result = await executeCleanupPreview(deps, "user-1");
+
+			expect(result.itemsEvaluated).toBe(1);
+			expect(result.itemsFlagged).toBe(0);
+			expect(result.previewItemCount).toBe(0);
+			expect(result.details).toEqual([]);
+			expect(result.prefetchHealth?.[source]).toBe("ok");
+			expect(refreshMock).toHaveBeenCalledTimes(2);
+			expect(transaction).not.toHaveBeenCalled();
+			expect(deleteMany).not.toHaveBeenCalled();
+			expect(createMany).not.toHaveBeenCalled();
+			expect(statusUpsert).not.toHaveBeenCalled();
+
+			const changedSnapshot = structuredClone(snapshot);
+			changedSnapshot.rows[0]!.watchCount += 1;
+			refreshMock
+				.mockReset()
+				.mockResolvedValueOnce({
+					upserted: 0,
+					errors: 0,
+					errorMessages: [],
+					complete: true,
+					completedAt: new Date(),
+					snapshot,
+				})
+				.mockResolvedValueOnce({
+					upserted: 0,
+					errors: 0,
+					errorMessages: [],
+					complete: true,
+					completedAt: new Date(),
+					snapshot: changedSnapshot,
+				});
+			libraryFindMany.mockReset().mockResolvedValueOnce([candidate]).mockResolvedValue([]);
+
+			const changedResult = await executeCleanupPreview(deps, "user-1");
+
+			expect(changedResult.itemsEvaluated).toBe(1);
+			expect(changedResult.itemsFlagged).toBe(0);
+			expect(changedResult.previewItemCount).toBe(0);
+			expect(changedResult.prefetchHealth?.[source]).toBe("failed");
+			expect(changedResult.warnings).toContainEqual(expect.stringContaining("unavailable"));
+			expect(transaction).not.toHaveBeenCalled();
+			expect(deleteMany).not.toHaveBeenCalled();
+			expect(createMany).not.toHaveBeenCalled();
+			expect(statusUpsert).not.toHaveBeenCalled();
+
+			configRule.parameters = JSON.stringify({ operator: "never" });
+			const unrelatedSnapshot = structuredClone(snapshot);
+			unrelatedSnapshot.rows = [];
+			refreshMock.mockReset().mockResolvedValue({
+				upserted: 0,
+				errors: 0,
+				errorMessages: [],
+				complete: true,
+				completedAt: new Date(),
+				snapshot: unrelatedSnapshot,
+			});
+			libraryFindMany.mockReset().mockResolvedValueOnce([candidate]).mockResolvedValue([]);
+
+			const unrelatedResult = await executeCleanupPreview(deps, "user-1");
+
+			expect(unrelatedResult.itemsEvaluated).toBe(1);
+			expect(unrelatedResult.itemsFlagged).toBe(0);
+			expect(unrelatedResult.previewItemCount).toBe(0);
+			expect(unrelatedResult.prefetchHealth?.[source]).toBe("ok");
+			expect(refreshMock).toHaveBeenCalledTimes(2);
+			expect(transaction).not.toHaveBeenCalled();
+			expect(deleteMany).not.toHaveBeenCalled();
+			expect(createMany).not.toHaveBeenCalled();
+			expect(statusUpsert).not.toHaveBeenCalled();
+		},
+	);
 });

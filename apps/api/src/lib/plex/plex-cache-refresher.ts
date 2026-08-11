@@ -67,6 +67,44 @@ interface ItemAggregation {
 	thumb: string | null;
 }
 
+export interface PlexCacheSnapshotRow {
+	instanceId: string;
+	tmdbId: number;
+	mediaType: "movie" | "series";
+	sectionId: string;
+	sectionTitle: string;
+	title: string;
+	ratingKey: string | null;
+	lastWatchedAt: Date | null;
+	watchCount: number;
+	watchedByUsers: string;
+	onDeck: boolean;
+	userRating: number | null;
+	collections: string;
+	labels: string;
+	addedAt: Date | null;
+	thumb: string | null;
+}
+
+export interface PlexCacheSnapshot {
+	rows: PlexCacheSnapshotRow[];
+	sections: Array<{ key: string; title: string; type: "movie" | "show" }>;
+}
+
+export interface PlexCacheRefreshOptions {
+	publish?: boolean;
+}
+
+export interface PlexCacheRefreshResult {
+	upserted: number;
+	errors: number;
+	errorMessages: string[];
+	complete: boolean;
+	completedAt?: Date;
+	superseded?: boolean;
+	snapshot?: PlexCacheSnapshot;
+}
+
 function onDeckSignature(items: Awaited<ReturnType<PlexClient["getOnDeck"]>>): string[] {
 	return items
 		.map((item) =>
@@ -93,14 +131,8 @@ export async function refreshPlexCache(
 	instanceId: string,
 	log: FastifyBaseLogger,
 	expectedConnection: ProviderConnectionIdentity | undefined,
-): Promise<{
-	upserted: number;
-	errors: number;
-	errorMessages: string[];
-	complete: boolean;
-	completedAt?: Date;
-	superseded?: boolean;
-}> {
+	options: PlexCacheRefreshOptions = {},
+): Promise<PlexCacheRefreshResult> {
 	let upserted = 0;
 	let errors = 0;
 	let complete = true;
@@ -311,6 +343,46 @@ export async function refreshPlexCache(
 				throw new Error("Plex on-deck state changed before cache publication");
 			}
 			completedAt = new Date();
+			if (options.publish === false) {
+				const sections = mediaLibs
+					.map((section) => ({
+						key: section.key,
+						title: section.title,
+						type: section.type as "movie" | "show",
+					}))
+					.sort(
+						(left, right) =>
+							left.key.localeCompare(right.key) ||
+							left.title.localeCompare(right.title) ||
+							left.type.localeCompare(right.type),
+					);
+				const rows: PlexCacheSnapshotRow[] = aggregationsArray.map((agg) => ({
+					instanceId,
+					tmdbId: agg.tmdbId,
+					mediaType: agg.mediaType,
+					sectionId: agg.sectionId,
+					sectionTitle: agg.sectionTitle,
+					title: agg.title,
+					ratingKey: agg.ratingKey,
+					lastWatchedAt: agg.lastWatchedAt,
+					watchCount: agg.watchCount,
+					watchedByUsers: JSON.stringify([...agg.watchedByUsers].sort()),
+					onDeck: agg.onDeck,
+					userRating: agg.userRating,
+					collections: JSON.stringify([...agg.collections].sort()),
+					labels: JSON.stringify([...agg.labels].sort()),
+					addedAt: agg.addedAt,
+					thumb: agg.thumb,
+				}));
+				return {
+					upserted: 0,
+					errors: 0,
+					errorMessages: [],
+					complete: true,
+					completedAt,
+					snapshot: { rows, sections },
+				};
+			}
 			const generationId = randomUUID();
 			const generationMetadata = JSON.stringify({
 				sections: mediaLibs
