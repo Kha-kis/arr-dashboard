@@ -84,8 +84,11 @@ characters (`A-Z`, `a-z`, `0-9`, `.`, `_`, `~`, and `-`).
 The preflight only runs Compose model rendering; it does not build, pull,
 create, or start containers. All harness scripts resolve Compose through
 `compose-command.sh`. It discovers Docker Compose v2 portably; set
-`ARR_COMPOSE_BIN` only to override it with an exact executable. The baseline default is
-`khak1s/arr-dashboard:2.23.0`, matching `docs/RELEASING.md`. Most images remain
+`ARR_COMPOSE_BIN` only to override it with an exact executable. Set
+`ARR_DOCKER_BIN` instead when the harness must use a specific Docker CLI or
+context; that CLI must provide Compose v2, and the two overrides cannot be used
+together. The baseline default is `khak1s/arr-dashboard:2.23.0`, matching
+`docs/RELEASING.md`. Most images remain
 configurable in the ignored `.env` for pinned compatibility runs, but Radarr,
 Sonarr, Plex, and qBittorrent overrides must retain the expected LinuxServer
 repository and an immutable digest. The checked-in defaults pin the reviewed

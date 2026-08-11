@@ -61,6 +61,9 @@ test("filesystem bootstrap executes the resolved Docker Compose command vector",
 `,
 	);
 	await chmod(fakeDocker, 0o755);
+	const defaultDockerEnv = { ...process.env };
+	delete defaultDockerEnv.ARR_DOCKER_BIN;
+	delete defaultDockerEnv.ARR_COMPOSE_BIN;
 
 	const result = spawnSync(
 		process.execPath,
@@ -68,7 +71,7 @@ test("filesystem bootstrap executes the resolved Docker Compose command vector",
 		{
 			encoding: "utf8",
 			env: {
-				...process.env,
+				...defaultDockerEnv,
 				ARR_COMPOSE_LOG: composeLog,
 				COMPOSE_PROJECT_NAME: "lc-e2e-690-20260810",
 				FIXTURE_PUID: "1000",
@@ -85,7 +88,7 @@ test("filesystem bootstrap executes the resolved Docker Compose command vector",
 		{
 			encoding: "utf8",
 			env: {
-				...process.env,
+				...defaultDockerEnv,
 				ARR_COMPOSE_LOG: composeLog,
 				ARR_DOCKER_BIN: fakeDocker,
 				COMPOSE_PROJECT_NAME: "lc-e2e-690-20260810",
@@ -296,6 +299,17 @@ test("file record verification accepts only the expected absolute or relative pa
 	assert.equal(
 		fileRecordMatches(
 			{ relativePath: "Season 02/Breaking.Bad.S01E01.1080p.mkv" },
+			itemPath,
+			expectedPath,
+		),
+		false,
+	);
+	assert.equal(
+		fileRecordMatches(
+			{
+				path: `${itemPath}/Season 02/Breaking.Bad.S01E01.1080p.mkv`,
+				relativePath: "Season 01/Breaking.Bad.S01E01.1080p.mkv",
+			},
 			itemPath,
 			expectedPath,
 		),

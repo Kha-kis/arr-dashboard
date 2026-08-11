@@ -15,6 +15,18 @@ is_compose_v2() {
 
 resolve_compose_command() {
 	DOCKER_BIN=${ARR_DOCKER_BIN:-docker}
+	if [ -n "${ARR_DOCKER_BIN:-}" ]; then
+		if [ -n "${ARR_COMPOSE_BIN:-}" ]; then
+			echo "Library-cleanup harness refused: ARR_DOCKER_BIN and ARR_COMPOSE_BIN cannot both be set." >&2
+			exit 1
+		fi
+		if ! command -v "$DOCKER_BIN" >/dev/null 2>&1 || ! is_compose_v2 "$DOCKER_BIN" compose; then
+			echo "Library-cleanup harness refused: ARR_DOCKER_BIN must provide Docker Compose v2 or newer." >&2
+			exit 1
+		fi
+		COMPOSE_COMMAND=docker
+		return
+	fi
 	if [ -n "${ARR_COMPOSE_BIN:-}" ]; then
 		if [ ! -x "$ARR_COMPOSE_BIN" ]; then
 			echo "Library-cleanup harness refused: ARR_COMPOSE_BIN is not an executable: $ARR_COMPOSE_BIN." >&2

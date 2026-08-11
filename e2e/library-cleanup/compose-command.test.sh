@@ -154,7 +154,7 @@ unset ARR_COMPOSE_BIN
 ARR_DOCKER_BIN="$WRAPPED_DOCKER"
 HOME="$EMPTY_HOME"
 DOCKER_CONFIG="$ISOLATED_DOCKER_CONFIG"
-PATH=$EMPTY_BIN_DIR:$SYSTEM_PATH
+PATH=$FAKE_STANDALONE_BIN_DIR:$EMPTY_BIN_DIR:$SYSTEM_PATH
 export ARR_DOCKER_BIN PATH HOME DOCKER_CONFIG
 exercise_compose
 assert_resolved_compose_vector "$WRAPPED_DOCKER" compose
@@ -162,6 +162,19 @@ PATH=$SYSTEM_PATH
 export PATH
 assert_compose_args docker
 unset ARR_DOCKER_BIN
+
+if (
+	ARR_DOCKER_BIN="$WRAPPED_DOCKER"
+	ARR_COMPOSE_BIN="$FAKE_COMPOSE"
+	HOME="$EMPTY_HOME"
+	DOCKER_CONFIG="$ISOLATED_DOCKER_CONFIG"
+	PATH=$FAKE_DOCKER_BIN_DIR
+	export ARR_DOCKER_BIN ARR_COMPOSE_BIN HOME DOCKER_CONFIG PATH
+	exercise_compose
+) >/dev/null 2>&1; then
+	echo "compose helper accepted conflicting Docker and Compose executable overrides." >&2
+	exit 1
+fi
 
 unset ARR_COMPOSE_BIN
 PATH=$FAKE_STANDALONE_BIN_DIR
@@ -245,8 +258,45 @@ EOF
 	fi
 }
 
-for script in bootstrap-arr.sh bootstrap-dashboard.sh bootstrap-plex.sh run-live-scenario.sh; do
+assert_configured_docker_preserves_caller_config() {
+	script=$1
+	harness_dir=$TEMP_DIR/configured-docker-config-$script
+	resolver_log=$harness_dir/resolver-docker-config
+	expected_resolver_log=$harness_dir/expected-resolver-docker-config
+	mkdir -p "$harness_dir"
+	cp "$SCRIPT_DIR/$script" "$harness_dir/$script"
+	cat >"$harness_dir/compose-command.sh" <<'EOF'
+#!/bin/sh
+printf '%s\n' "${DOCKER_CONFIG-}" >"$ARR_COMPOSE_RESOLVER_CONFIG_LOG"
+exit 0
+EOF
+	if ! (
+		unset DOCKER_CONFIG
+		COMPOSE_PROJECT_NAME=lc-e2e-contract
+		ARR_DOCKER_BIN=/custom/docker
+		ARR_COMPOSE_RESOLVER_CONFIG_LOG=$resolver_log
+		export COMPOSE_PROJECT_NAME ARR_DOCKER_BIN ARR_COMPOSE_RESOLVER_CONFIG_LOG
+		sh "$harness_dir/$script"
+	); then
+		echo "$script did not reach the shared Compose resolver." >&2
+		exit 1
+	fi
+	printf '\n' >"$expected_resolver_log"
+	if ! cmp -s "$expected_resolver_log" "$resolver_log"; then
+		echo "$script replaced the configured Docker CLI's caller-selected config." >&2
+		diff -u "$expected_resolver_log" "$resolver_log" >&2 || true
+		exit 1
+	fi
+}
+
+for script in \
+	bootstrap-arr.sh \
+	bootstrap-dashboard.sh \
+	bootstrap-plex.sh \
+	bootstrap-torrents.sh \
+	run-live-scenario.sh; do
 	assert_default_docker_config_precedes_resolver "$script"
+	assert_configured_docker_preserves_caller_config "$script"
 done
 
 echo "compose command contract and bypass checks passed."

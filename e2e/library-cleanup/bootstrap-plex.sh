@@ -7,8 +7,10 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 	export COMPOSE_PROJECT_NAME
 fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
-DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
-export DOCKER_CONFIG
+if [ -z "${ARR_DOCKER_BIN:-}" ]; then
+	DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
+	export DOCKER_CONFIG
+fi
 . "$SCRIPT_DIR/compose-command.sh"
 . "$SCRIPT_DIR/live-project-guard.sh"
 RUNNER_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}

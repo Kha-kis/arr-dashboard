@@ -9,8 +9,10 @@ fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
 RUNNER_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
 RUNNER_SCRIPT=/tmp/lc-e2e-bootstrap-torrents-$PROJECT_NAME.mjs
-DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
-export DOCKER_CONFIG
+if [ -z "${ARR_DOCKER_BIN:-}" ]; then
+	DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
+	export DOCKER_CONFIG
+fi
 . "$SCRIPT_DIR/compose-command.sh"
 . "$SCRIPT_DIR/live-project-guard.sh"
 

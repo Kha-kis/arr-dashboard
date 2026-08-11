@@ -245,7 +245,7 @@ export function isPathWithinRoot(candidate, root) {
 
 export function fileRecordMatches(record, itemPath, expectedPath) {
 	if (!record || typeof record !== "object") return false;
-	if (record.path === expectedPath) return true;
+	if (record.path !== undefined && record.path !== null) return record.path === expectedPath;
 	const expectedRelative = path.posix.relative(itemPath, expectedPath);
 	return record.relativePath === expectedRelative;
 }
