@@ -9,7 +9,8 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
 . "$SCRIPT_DIR/compose-command.sh"
-RUNNER_SERVICE=${ARR_BOOTSTRAP_RUNNER_SERVICE:-dashboard-sqlite}
+. "$SCRIPT_DIR/live-project-guard.sh"
+RUNNER_SERVICE=${ARR_BOOTSTRAP_RUNNER_SERVICE:-${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}}
 CONFIG_TIMEOUT_SECONDS=${ARR_BOOTSTRAP_CONFIG_TIMEOUT_SECONDS:-120}
 POLL_SECONDS=2
 
@@ -80,6 +81,9 @@ compose \
 python3 check-compose-model.py \
 	--require-live-name \
 	--expected-project "$PROJECT_NAME" <"$DEBUG_MODEL"
+
+acquire_live_project_lock
+verify_live_project
 
 require_running_service() {
 	rrs_service=$1

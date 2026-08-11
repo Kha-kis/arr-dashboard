@@ -7,14 +7,25 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 	export COMPOSE_PROJECT_NAME
 fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
-RUNNER_SERVICE=dashboard-sqlite
+RUNNER_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
 RUNNER_SCRIPT=/tmp/lc-e2e-bootstrap-torrents-$PROJECT_NAME.mjs
 DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
 export DOCKER_CONFIG
 . "$SCRIPT_DIR/compose-command.sh"
+. "$SCRIPT_DIR/live-project-guard.sh"
+
+case "$RUNNER_SERVICE" in
+	dashboard-sqlite | dashboard-postgres) ;;
+	*)
+		echo "Torrent bootstrap refused: unsupported runner service $RUNNER_SERVICE." >&2
+		exit 1
+		;;
+esac
 
 cd "$SCRIPT_DIR"
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
+acquire_live_project_lock
+verify_live_project
 
 cleanup() {
 	compose exec -T --user 0 "$RUNNER_SERVICE" rm -f "$RUNNER_SCRIPT" >/dev/null 2>&1 || true

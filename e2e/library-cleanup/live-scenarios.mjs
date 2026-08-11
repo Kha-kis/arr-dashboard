@@ -9,7 +9,7 @@ const USERNAME = "gauntlet-admin";
 const PASSWORD = "LibraryCleanupGauntlet2026!";
 const LEGACY_HARNESS_RULE_NAMES = new Set(["qUI seeding exclusion"]);
 
-const ARR = Object.freeze({
+export const ARR = Object.freeze({
 	"radarr-hd": {
 		label: "Library Cleanup Radarr HD",
 		service: "RADARR",
@@ -17,7 +17,8 @@ const ARR = Object.freeze({
 		apiKeyEnv: "RADARR_A_KEY",
 		kind: "movie",
 		quality: "1080p",
-		libraryPath: "/radarr-a/data/The Matrix (1999)/The.Matrix.1999.1080p.BluRay.x264-LCE2E.mkv",
+		libraryPath:
+			"/radarr-a/data/library/radarr-a/The Matrix (1999)/The.Matrix.1999.1080p.BluRay.x264-LCE2E.mkv",
 		plexPath:
 			"/plex/data/library/radarr-a/The Matrix (1999)/The.Matrix.1999.1080p.BluRay.x264-LCE2E.mkv",
 	},
@@ -28,7 +29,8 @@ const ARR = Object.freeze({
 		apiKeyEnv: "RADARR_B_KEY",
 		kind: "movie",
 		quality: "2160p",
-		libraryPath: "/radarr-b/data/The Matrix (1999)/The.Matrix.1999.2160p.UHD.BluRay.x265-LCE2E.mkv",
+		libraryPath:
+			"/radarr-b/data/library/radarr-b/The Matrix (1999)/The.Matrix.1999.2160p.UHD.BluRay.x265-LCE2E.mkv",
 		plexPath:
 			"/plex/data/library/radarr-b/The Matrix (1999)/The.Matrix.1999.2160p.UHD.BluRay.x265-LCE2E.mkv",
 	},
@@ -40,7 +42,7 @@ const ARR = Object.freeze({
 		kind: "series",
 		quality: "1080p",
 		libraryPath:
-			"/sonarr-a/data/Breaking Bad/Season 01/Breaking.Bad.S01E01.1080p.BluRay.x264-LCE2E.mkv",
+			"/sonarr-a/data/library/sonarr-a/Breaking Bad/Season 01/Breaking.Bad.S01E01.1080p.BluRay.x264-LCE2E.mkv",
 		plexPath:
 			"/plex/data/library/sonarr-a/Breaking Bad/Season 01/Breaking.Bad.S01E01.1080p.BluRay.x264-LCE2E.mkv",
 	},
@@ -52,7 +54,7 @@ const ARR = Object.freeze({
 		kind: "series",
 		quality: "2160p",
 		libraryPath:
-			"/sonarr-b/data/Breaking Bad/Season 01/Breaking.Bad.S01E01.2160p.UHD.BluRay.x265-LCE2E.mkv",
+			"/sonarr-b/data/library/sonarr-b/Breaking Bad/Season 01/Breaking.Bad.S01E01.2160p.UHD.BluRay.x265-LCE2E.mkv",
 		plexPath:
 			"/plex/data/library/sonarr-b/Breaking Bad/Season 01/Breaking.Bad.S01E01.2160p.UHD.BluRay.x265-LCE2E.mkv",
 	},
@@ -310,6 +312,12 @@ async function assertArrRemoved(spec) {
 	);
 }
 
+async function assertFixtureFilePresent(spec) {
+	await fs.access(spec.libraryPath).catch((error) => {
+		throw new Error(`${spec.label} fixture file was absent before execution: ${error.message}`);
+	});
+}
+
 async function assertQuiSourcesRemain(api) {
 	const summary = await api("/api/qui/summary");
 	invariant(
@@ -485,6 +493,7 @@ async function runSeriesDelete(ctx, targetKey) {
 		scanMediaServerAfterDelete: true,
 	});
 	assertPreview(await preview(api), [target.label], "delete");
+	await assertFixtureFilePresent(target);
 	const result = await execute(api);
 	invariant(
 		result.isDryRun === false && result.itemsRemoved === 1,
@@ -565,6 +574,7 @@ async function runEpisodeDelete(ctx, targetKey) {
 			episodePreview.items[0]?.episodeNumber === 1,
 		"Episode preview did not identify Breaking Bad S01E01",
 	);
+	await assertFixtureFilePresent(target);
 	const result = await execute(api);
 	invariant(
 		result.itemsFilesDeleted === 1 && result.itemsRemoved === 0,

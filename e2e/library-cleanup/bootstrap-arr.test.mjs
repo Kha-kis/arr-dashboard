@@ -11,11 +11,14 @@ import {
 	buildSeriesAddBody,
 	buildFixtureRemoval,
 	classifyFixtureFileState,
+	classifyFixtureEpisodeAssociation,
 	fileRecordMatches,
 	fixtureLibraryPath,
 	isRepeatedFixtureResetState,
+	isMissingPlexLibraryValidation,
 	isPathWithinRoot,
 	MOVIE,
+	plexNotificationSaveEndpoint,
 	SERIES,
 	validateCredentials,
 } from "./bootstrap-arr.mjs";
@@ -151,6 +154,36 @@ test("Plex notifications carry exact per-instance path mappings and delete event
 	assert.throws(() => buildPlexNotificationPayload({ ...schema, fields: [] }, ARR_FIXTURES[0]));
 });
 
+test("Plex notification bootstrap explicitly defers library validation", () => {
+	assert.equal(plexNotificationSaveEndpoint(undefined), "/api/v3/notification?forceSave=true");
+	assert.equal(plexNotificationSaveEndpoint({ id: 19 }), "/api/v3/notification/19?forceSave=true");
+	assert.throws(() => plexNotificationSaveEndpoint({ id: "19" }), /invalid identity/);
+});
+
+test("only the exact missing Plex library validation is deferrable", () => {
+	assert.equal(
+		isMissingPlexLibraryValidation(
+			new Error("POST failed with HTTP 400: At least one Movie library is required"),
+			"movie",
+		),
+		true,
+	);
+	assert.equal(
+		isMissingPlexLibraryValidation(
+			new Error("POST failed with HTTP 400: Authentication Token is invalid"),
+			"movie",
+		),
+		false,
+	);
+	assert.equal(
+		isMissingPlexLibraryValidation(
+			new Error("POST failed with HTTP 400: At least one Movie library is required"),
+			"series",
+		),
+		false,
+	);
+});
+
 test("placeholder media has a Matroska header and unique per-instance content", () => {
 	const buffers = ARR_FIXTURES.map((fixture) => buildPlaceholderBuffer(fixture));
 	assert.equal(new Set(buffers.map((buffer) => buffer.toString("base64"))).size, 4);
@@ -245,6 +278,28 @@ test("fixture state treats import transitions between separate reads as transien
 			associatedFileId: 14,
 		}),
 		{ kind: "reset", reason: "duplicate", recordIds: [13, 14] },
+	);
+});
+
+test("Sonarr episode creation is pending until exactly one valid S01E01 exists", () => {
+	assert.deepEqual(classifyFixtureEpisodeAssociation([], 9), { kind: "pending" });
+	assert.deepEqual(
+		classifyFixtureEpisodeAssociation(
+			[{ id: 4, seriesId: 9, seasonNumber: 1, episodeNumber: 1, hasFile: false }],
+			9,
+		),
+		{ kind: "ready", fileId: null },
+	);
+	assert.throws(
+		() =>
+			classifyFixtureEpisodeAssociation(
+				[
+					{ id: 4, seriesId: 9, seasonNumber: 1, episodeNumber: 1, hasFile: false },
+					{ id: 5, seriesId: 9, seasonNumber: 1, episodeNumber: 1, hasFile: false },
+				],
+				9,
+			),
+		/duplicate S01E01/,
 	);
 });
 

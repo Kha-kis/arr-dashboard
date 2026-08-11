@@ -18,6 +18,7 @@ fi
 COMPOSE_PROJECT_NAME=$PROJECT_NAME
 export COMPOSE_PROJECT_NAME
 . "$SCRIPT_DIR/compose-command.sh"
+. "$SCRIPT_DIR/live-project-guard.sh"
 
 TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lc-e2e-teardown.XXXXXX")
 trap 'rm -rf "$TEMP_DIR"' EXIT HUP INT TERM
@@ -32,6 +33,8 @@ export POSTGRES_PASSWORD_FILE PLEX_CLAIM_FILE
 # names; checks the exact harness service/model contract; validates secrets;
 # and accepts no caller-supplied Compose files or external paths.
 sh "$SCRIPT_DIR/validate-compose.sh" --live-project "$PROJECT_NAME"
+acquire_live_project_lock
+verify_live_project
 
 echo "Removing only disposable project $PROJECT_NAME, including its named volumes."
 compose \

@@ -161,9 +161,8 @@ async function ensureWatchedEpisode(showSection) {
 	await request(
 		`/:/scrobble?key=${encodeURIComponent(episode.ratingKey)}&identifier=com.plexapp.plugins.library`,
 	);
-	const refreshedEpisodes = (
-		await request(`/library/metadata/${show.ratingKey}/allLeaves`)
-	).json()?.MediaContainer?.Metadata;
+	const refreshedEpisodes = (await request(`/library/metadata/${show.ratingKey}/allLeaves`)).json()
+		?.MediaContainer?.Metadata;
 	const refreshed = Array.isArray(refreshedEpisodes)
 		? refreshedEpisodes.find((candidate) => candidate.ratingKey === episode.ratingKey)
 		: undefined;

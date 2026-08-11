@@ -24,6 +24,10 @@ mkdir -p \
 
 cat >"$FAKE_COMPOSE" <<'EOF'
 #!/bin/sh
+if [ "$1" = version ] && [ "$2" = --short ]; then
+	printf '%s\n' 2.40.0
+	exit 0
+fi
 {
 	printf '%s\n' override
 	printf '%s\n' "$@"
@@ -33,7 +37,8 @@ chmod +x "$FAKE_COMPOSE"
 
 cat >"$FAKE_DOCKER_BIN_DIR/docker" <<'EOF'
 #!/bin/sh
-if [ "$1" = compose ] && [ "$2" = version ]; then
+if [ "$1" = compose ] && [ "$2" = version ] && [ "$3" = --short ]; then
+	printf '%s\n' 2.40.0
 	exit 0
 fi
 {
@@ -45,7 +50,8 @@ chmod +x "$FAKE_DOCKER_BIN_DIR/docker"
 
 cat >"$FAKE_STANDALONE_BIN_DIR/docker-compose" <<'EOF'
 #!/bin/sh
-if [ "$1" = version ]; then
+if [ "$1" = version ] && [ "$2" = --short ]; then
+	printf '%s\n' 2.40.0
 	exit 0
 fi
 {
@@ -58,12 +64,26 @@ chmod +x "$FAKE_STANDALONE_BIN_DIR/docker-compose"
 FAKE_PLUGIN="$FAKE_HOME/.docker/cli-plugins/docker-compose"
 cat >"$FAKE_PLUGIN" <<'EOF'
 #!/bin/sh
+if [ "$1" = version ] && [ "$2" = --short ]; then
+	printf '%s\n' 5.1.0
+	exit 0
+fi
 {
 	printf '%s\n' plugin
 	printf '%s\n' "$@"
 } >"$ARR_COMPOSE_LOG"
 EOF
 chmod +x "$FAKE_PLUGIN"
+
+cat >"$FAKE_STANDALONE_BIN_DIR/legacy-compose" <<'EOF'
+#!/bin/sh
+if [ "$1" = version ] && [ "$2" = --short ]; then
+	printf '%s\n' 1.29.2
+	exit 0
+fi
+exit 99
+EOF
+chmod +x "$FAKE_STANDALONE_BIN_DIR/legacy-compose"
 
 assert_compose_args() {
 	expected_command=$1
@@ -126,6 +146,16 @@ PATH=$SYSTEM_PATH
 export PATH
 assert_compose_args plugin
 
+unset ARR_COMPOSE_BIN
+ln -s "$FAKE_STANDALONE_BIN_DIR/legacy-compose" "$EMPTY_BIN_DIR/docker-compose"
+PATH=$EMPTY_BIN_DIR
+HOME="$FAKE_HOME"
+export PATH HOME
+exercise_compose
+PATH=$SYSTEM_PATH
+export PATH
+assert_compose_args plugin
+
 for script in \
 	bootstrap-arr.sh \
 	bootstrap-dashboard.sh \
@@ -134,6 +164,8 @@ for script in \
 	bootstrap-torrents.sh \
 	run-browser-policy.sh \
 	run-live-scenario.sh \
+	start-profile.sh \
+	stop-profile.sh \
 	teardown.sh \
 	validate-compose.sh; do
 	if ! grep -Fq '. "$SCRIPT_DIR/compose-command.sh"' "$SCRIPT_DIR/$script"; then

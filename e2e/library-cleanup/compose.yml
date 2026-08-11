@@ -1,5 +1,12 @@
 name: ${COMPOSE_PROJECT_NAME:?Set a unique lc-e2e-* project name}
 
+x-run-labels: &run-labels
+  io.arr-dashboard.library-cleanup.project: ${COMPOSE_PROJECT_NAME}
+  io.arr-dashboard.library-cleanup.run-token: ${LC_E2E_RUN_TOKEN:?Set a random LC_E2E_RUN_TOKEN}
+
+x-run-owned-service: &run-owned-service
+  labels: *run-labels
+
 x-linuxserver-environment: &linuxserver-environment
   PUID: ${PUID:-1000}
   PGID: ${PGID:-1000}
@@ -28,7 +35,7 @@ x-dashboard-dependencies: &dashboard-dependencies
     condition: service_healthy
   sonarr-b:
     condition: service_healthy
-  plex:
+  plex-loopback-proxy:
     condition: service_healthy
   qbittorrent-a:
     condition: service_healthy
@@ -43,6 +50,7 @@ x-dashboard-dependencies: &dashboard-dependencies
 
 services:
   radarr-a:
+    <<: *run-owned-service
     image: ${RADARR_IMAGE:-lscr.io/linuxserver/radarr:5.16.3@sha256:eb894bd26fd3fb29981bf91b140834417ce2ed28ab8217d0ce121db5c460f39a}
     environment: *linuxserver-environment
     volumes:
@@ -58,6 +66,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7878/ping"]
 
   radarr-b:
+    <<: *run-owned-service
     image: ${RADARR_IMAGE:-lscr.io/linuxserver/radarr:5.16.3@sha256:eb894bd26fd3fb29981bf91b140834417ce2ed28ab8217d0ce121db5c460f39a}
     environment: *linuxserver-environment
     volumes:
@@ -73,6 +82,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7878/ping"]
 
   sonarr-a:
+    <<: *run-owned-service
     image: ${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:4.0.15@sha256:fbe67c25693dc5f3de220c5691f374576ae265df782c16918cc071b630490bd7}
     environment: *linuxserver-environment
     volumes:
@@ -88,6 +98,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8989/ping"]
 
   sonarr-b:
+    <<: *run-owned-service
     image: ${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:4.0.15@sha256:fbe67c25693dc5f3de220c5691f374576ae265df782c16918cc071b630490bd7}
     environment: *linuxserver-environment
     volumes:
@@ -103,6 +114,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8989/ping"]
 
   plex:
+    <<: *run-owned-service
     image: ${PLEX_IMAGE:-lscr.io/linuxserver/plex:1.41.5@sha256:5c07f70ae39709c71927ecb864cb9328acb01eb6c08779d1efb09b90b68a0692}
     environment:
       <<: *linuxserver-environment
@@ -126,6 +138,7 @@ services:
       start_period: 45s
 
   plex-loopback-proxy:
+    <<: *run-owned-service
     image: ${CANDIDATE_DASHBOARD_IMAGE:-arr-dashboard-library-cleanup:local}
     entrypoint: ["node", "-e"]
     command:
@@ -154,11 +167,13 @@ services:
             return;
           }
           const { "x-plex-token": _discardedToken, ...forwardedHeaders } = request.headers;
+          requestUrl.searchParams.delete("X-Plex-Token");
+          const upstreamPath = requestUrl.pathname + requestUrl.search;
           const upstream = http.request({
             host: "127.0.0.1",
             port: 32400,
             method: request.method,
-            path: request.url,
+            path: upstreamPath,
             headers: { ...forwardedHeaders, host: "127.0.0.1:32400" },
           }, (upstreamResponse) => {
             response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
@@ -189,6 +204,7 @@ services:
       start_period: 5s
 
   qbittorrent-a:
+    <<: *run-owned-service
     image: ${QBITTORRENT_IMAGE:-lscr.io/linuxserver/qbittorrent:5.1.2@sha256:7034f73a3c6fa4ea40fd67df462939d1665d765231b572523921c98c2db5362e}
     environment:
       <<: *linuxserver-environment
@@ -209,6 +225,7 @@ services:
       start_period: 30s
 
   qbittorrent-b:
+    <<: *run-owned-service
     image: ${QBITTORRENT_IMAGE:-lscr.io/linuxserver/qbittorrent:5.1.2@sha256:7034f73a3c6fa4ea40fd67df462939d1665d765231b572523921c98c2db5362e}
     environment:
       <<: *linuxserver-environment
@@ -229,6 +246,7 @@ services:
       start_period: 30s
 
   qui-a:
+    <<: *run-owned-service
     image: ${QUI_IMAGE:-ghcr.io/autobrr/qui:v1.16.1}
     environment:
       TZ: ${TZ:-Etc/UTC}
@@ -261,6 +279,7 @@ services:
       start_period: 30s
 
   qui-b:
+    <<: *run-owned-service
     image: ${QUI_IMAGE:-ghcr.io/autobrr/qui:v1.16.1}
     environment:
       TZ: ${TZ:-Etc/UTC}
@@ -293,6 +312,7 @@ services:
       start_period: 30s
 
   postgres:
+    <<: *run-owned-service
     image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     environment:
       POSTGRES_USER: arr_dashboard
@@ -314,6 +334,7 @@ services:
       start_period: 15s
 
   toxiproxy:
+    <<: *run-owned-service
     image: ${TOXIPROXY_IMAGE:-ghcr.io/shopify/toxiproxy:2.12.0}
     expose:
       - "8474"
@@ -328,6 +349,7 @@ services:
       start_period: 10s
 
   dashboard-sqlite:
+    <<: *run-owned-service
     image: ${CANDIDATE_DASHBOARD_IMAGE:-arr-dashboard-library-cleanup:local}
     build:
       context: ../..
@@ -360,6 +382,7 @@ services:
     healthcheck: *dashboard-healthcheck
 
   dashboard-postgres:
+    <<: *run-owned-service
     image: ${CANDIDATE_DASHBOARD_IMAGE:-arr-dashboard-library-cleanup:local}
     build:
       context: ../..
@@ -401,6 +424,7 @@ services:
     healthcheck: *dashboard-healthcheck
 
   dashboard-baseline:
+    <<: *run-owned-service
     image: ${BASELINE_DASHBOARD_IMAGE:-khak1s/arr-dashboard:2.23.0}
     profiles: ["baseline"]
     environment:
@@ -434,25 +458,41 @@ secrets:
 
 volumes:
   shared-media:
+    labels: *run-labels
   radarr-a-config:
+    labels: *run-labels
   radarr-b-config:
+    labels: *run-labels
   sonarr-a-config:
+    labels: *run-labels
   sonarr-b-config:
+    labels: *run-labels
   plex-config:
+    labels: *run-labels
   qbittorrent-a-config:
+    labels: *run-labels
   qbittorrent-b-config:
+    labels: *run-labels
   qui-a-config:
+    labels: *run-labels
   qui-b-config:
+    labels: *run-labels
   postgres-data:
+    labels: *run-labels
   dashboard-sqlite-config:
+    labels: *run-labels
   dashboard-postgres-config:
+    labels: *run-labels
   dashboard-baseline-config:
+    labels: *run-labels
 
 networks:
   cleanup-internal:
+    labels: *run-labels
     internal: true
     ipam:
       config:
         - subnet: ${HARNESS_SUBNET:-172.31.250.0/24}
   metadata-egress:
     driver: bridge
+    labels: *run-labels

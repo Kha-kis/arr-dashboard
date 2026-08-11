@@ -20,6 +20,11 @@ elif [ -z "${COMPOSE_PROJECT_NAME:-}" ]; then
   export COMPOSE_PROJECT_NAME
 fi
 
+if [ "$REQUIRE_LIVE_NAME" -eq 0 ] && [ -z "${LC_E2E_RUN_TOKEN:-}" ]; then
+  LC_E2E_RUN_TOKEN=0000000000000000000000000000000000000000000000000000000000000000
+  export LC_E2E_RUN_TOKEN
+fi
+
 . "$SCRIPT_DIR/compose-command.sh"
 
 if ! compose version >/dev/null 2>&1; then

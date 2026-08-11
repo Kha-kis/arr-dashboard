@@ -3,17 +3,31 @@
 : "${SCRIPT_DIR:?compose-command.sh requires SCRIPT_DIR}"
 : "${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}"
 
+is_compose_v2() {
+	compose_version=$("$@" version --short 2>/dev/null) || return 1
+	compose_version=${compose_version#v}
+	compose_major=${compose_version%%.*}
+	case "$compose_major" in
+		'' | *[!0-9]*) return 1 ;;
+		*) [ "$compose_major" -ge 2 ] ;;
+	esac
+}
+
 resolve_compose_command() {
 	if [ -n "${ARR_COMPOSE_BIN:-}" ]; then
 		if [ ! -x "$ARR_COMPOSE_BIN" ]; then
 			echo "Library-cleanup harness refused: ARR_COMPOSE_BIN is not an executable: $ARR_COMPOSE_BIN." >&2
 			exit 1
 		fi
+		if ! is_compose_v2 "$ARR_COMPOSE_BIN"; then
+			echo "Library-cleanup harness refused: ARR_COMPOSE_BIN must provide Docker Compose v2 or newer." >&2
+			exit 1
+		fi
 		COMPOSE_COMMAND=executable
 		return
 	fi
 
-	if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+	if command -v docker-compose >/dev/null 2>&1 && is_compose_v2 docker-compose; then
 		ARR_COMPOSE_BIN=$(command -v docker-compose)
 		export ARR_COMPOSE_BIN
 		COMPOSE_COMMAND=executable
@@ -29,7 +43,7 @@ resolve_compose_command() {
 		/usr/local/libexec/docker/cli-plugins/docker-compose \
 		/usr/lib/docker/cli-plugins/docker-compose \
 		/usr/libexec/docker/cli-plugins/docker-compose; do
-		if [ -n "$compose_plugin" ] && [ -x "$compose_plugin" ]; then
+		if [ -n "$compose_plugin" ] && [ -x "$compose_plugin" ] && is_compose_v2 "$compose_plugin"; then
 			ARR_COMPOSE_BIN=$compose_plugin
 			export ARR_COMPOSE_BIN
 			COMPOSE_COMMAND=executable
@@ -37,7 +51,7 @@ resolve_compose_command() {
 		fi
 	done
 
-	if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+	if command -v docker >/dev/null 2>&1 && is_compose_v2 docker compose; then
 		COMPOSE_COMMAND=docker
 		return
 	fi

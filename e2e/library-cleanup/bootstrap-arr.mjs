@@ -222,6 +222,23 @@ export function buildPlexNotificationPayload(schema, fixture) {
 	};
 }
 
+export function plexNotificationSaveEndpoint(current) {
+	if (current === undefined) return "/api/v3/notification?forceSave=true";
+	if (!Number.isSafeInteger(current?.id) || current.id <= 0) {
+		throw new Error("existing Plex notification has an invalid identity");
+	}
+	return `/api/v3/notification/${current.id}?forceSave=true`;
+}
+
+export function isMissingPlexLibraryValidation(error, kind) {
+	if (!(error instanceof Error) || !error.message.includes("failed with HTTP 400")) return false;
+	const expected =
+		kind === "movie"
+			? ["At least one Movie library is required"]
+			: ["At least one TV library is required", "At least one Series library is required"];
+	return expected.some((message) => error.message.includes(message));
+}
+
 export function isPathWithinRoot(candidate, root) {
 	return candidate === root || candidate.startsWith(`${root}/`);
 }
@@ -541,15 +558,21 @@ async function ensurePlexNotification(baseUrl, apiKey, fixture) {
 		throw new Error(`${fixture.service} has duplicate Library Cleanup Plex notifications`);
 	}
 	const current = matching[0];
-	const saved = await requestJson(
-		baseUrl,
-		apiKey,
-		current ? `/api/v3/notification/${current.id}` : "/api/v3/notification",
-		{
+	let saved;
+	try {
+		saved = await requestJson(baseUrl, apiKey, plexNotificationSaveEndpoint(current), {
 			method: current ? "PUT" : "POST",
 			body: current ? { ...desired, id: current.id } : desired,
-		},
-	);
+		});
+	} catch (error) {
+		if (!current && isMissingPlexLibraryValidation(error, fixture.kind)) {
+			process.stdout.write(
+				`${fixture.service}: Plex notification deferred until fixture libraries exist\n`,
+			);
+			return false;
+		}
+		throw error;
+	}
 	if (!Number.isSafeInteger(saved?.id) || saved.implementation !== "PlexServer") {
 		throw new Error(`${fixture.service} did not persist the Plex notification`);
 	}
@@ -565,6 +588,7 @@ async function ensurePlexNotification(baseUrl, apiKey, fixture) {
 	) {
 		throw new Error(`${fixture.service} Plex path mapping did not round-trip exactly`);
 	}
+	return true;
 }
 
 async function firstQualityProfileId(baseUrl, apiKey, service) {
@@ -673,24 +697,31 @@ async function associatedFileId(baseUrl, apiKey, fixture, item) {
 	}
 
 	const episodes = await requestJson(baseUrl, apiKey, `/api/v3/episode?seriesId=${item.id}`);
+	const association = classifyFixtureEpisodeAssociation(episodes, item.id);
+	if (association.kind === "pending") return undefined;
+	return association.fileId;
+}
+
+export function classifyFixtureEpisodeAssociation(episodes, itemId) {
 	if (!Array.isArray(episodes)) {
-		throw new Error(`${fixture.service} returned an invalid episode list`);
+		throw new Error("Sonarr returned an invalid episode list");
 	}
 	const matching = episodes.filter(
 		(episode) => episode.seasonNumber === 1 && episode.episodeNumber === 1,
 	);
-	if (matching.length !== 1) {
-		throw new Error(`${fixture.service} did not return exactly one S01E01 fixture episode`);
+	if (matching.length === 0) return { kind: "pending" };
+	if (matching.length > 1) {
+		throw new Error("Sonarr returned duplicate S01E01 fixture episodes");
 	}
 	const episode = matching[0];
-	if (!Number.isSafeInteger(episode?.id) || episode.seriesId !== item.id) {
-		throw new Error(`${fixture.service} returned an invalid S01E01 identity`);
+	if (!Number.isSafeInteger(episode?.id) || episode.seriesId !== itemId) {
+		throw new Error("Sonarr returned an invalid S01E01 identity");
 	}
-	if (episode.hasFile === false) return null;
+	if (episode.hasFile === false) return { kind: "ready", fileId: null };
 	if (episode.hasFile !== true || !Number.isSafeInteger(episode.episodeFileId)) {
-		throw new Error(`${fixture.service} returned an invalid episode-file association`);
+		throw new Error("Sonarr returned an invalid episode-file association");
 	}
-	return episode.episodeFileId;
+	return { kind: "ready", fileId: episode.episodeFileId };
 }
 
 function fixtureFileEndpoint(fixture, item) {
@@ -701,11 +732,15 @@ function fixtureFileEndpoint(fixture, item) {
 
 async function readFixtureFileState(baseUrl, apiKey, fixture, item) {
 	const records = await requestJson(baseUrl, apiKey, fixtureFileEndpoint(fixture, item));
+	const fileId = await associatedFileId(baseUrl, apiKey, fixture, item);
+	if (fixture.kind === "series" && fileId === undefined) {
+		return { kind: "transient", reason: "episode-pending" };
+	}
 	return classifyFixtureFileState({
 		fixture,
 		item,
 		records,
-		associatedFileId: await associatedFileId(baseUrl, apiKey, fixture, item),
+		associatedFileId: fileId,
 	});
 }
 

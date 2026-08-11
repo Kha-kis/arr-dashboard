@@ -10,6 +10,7 @@ fi
 
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
 . "$SCRIPT_DIR/compose-command.sh"
+. "$SCRIPT_DIR/live-project-guard.sh"
 RUNNER_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
 DOCKER_BIN=${ARR_DOCKER_BIN:-docker}
 
@@ -23,6 +24,8 @@ esac
 
 cd "$SCRIPT_DIR"
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
+acquire_live_project_lock
+verify_live_project
 
 if ! compose ps --status running --services | grep -Fxq "$RUNNER_SERVICE"; then
 	echo "Browser policy gate refused: $RUNNER_SERVICE is not running in $PROJECT_NAME." >&2

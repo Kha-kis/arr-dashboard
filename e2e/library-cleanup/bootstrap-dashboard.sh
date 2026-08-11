@@ -8,6 +8,7 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
 . "$SCRIPT_DIR/compose-command.sh"
+. "$SCRIPT_DIR/live-project-guard.sh"
 DASHBOARD_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
 DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
 export DOCKER_CONFIG
@@ -22,6 +23,8 @@ esac
 
 cd "$SCRIPT_DIR"
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
+acquire_live_project_lock
+verify_live_project
 
 extract_api_key() {
 	service=$1
