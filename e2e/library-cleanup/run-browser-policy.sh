@@ -9,16 +9,9 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 fi
 
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
+. "$SCRIPT_DIR/compose-command.sh"
 RUNNER_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
 DOCKER_BIN=${ARR_DOCKER_BIN:-docker}
-
-run_compose() {
-	if [ -n "${ARR_COMPOSE_BIN:-}" ]; then
-		"$ARR_COMPOSE_BIN" "$@"
-	else
-		"$DOCKER_BIN" compose "$@"
-	fi
-}
 
 case "$RUNNER_SERVICE" in
 	dashboard-sqlite | dashboard-postgres) ;;
@@ -31,14 +24,12 @@ esac
 cd "$SCRIPT_DIR"
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
 
-if ! run_compose -p "$PROJECT_NAME" -f compose.yml -f compose.debug.yml \
-	ps --status running --services | grep -Fxq "$RUNNER_SERVICE"; then
+if ! compose ps --status running --services | grep -Fxq "$RUNNER_SERVICE"; then
 	echo "Browser policy gate refused: $RUNNER_SERVICE is not running in $PROJECT_NAME." >&2
 	exit 1
 fi
 
-container_id=$(run_compose -p "$PROJECT_NAME" -f compose.yml -f compose.debug.yml \
-	ps -q "$RUNNER_SERVICE")
+container_id=$(compose ps -q "$RUNNER_SERVICE")
 container_project=$("$DOCKER_BIN" inspect "$container_id" \
 	--format '{{index .Config.Labels "com.docker.compose.project"}}')
 container_service=$("$DOCKER_BIN" inspect "$container_id" \
@@ -202,8 +193,7 @@ LC_E2E_BASE_URL=$BASE_URL \
 	PLAYWRIGHT_STATUS=$?
 
 POST_CHECKOUT_COMMIT=$(git -C "$REPO_ROOT" rev-parse HEAD)
-POST_CONTAINER_ID=$(run_compose -p "$PROJECT_NAME" -f compose.yml -f compose.debug.yml \
-	ps -q "$RUNNER_SERVICE")
+POST_CONTAINER_ID=$(compose ps -q "$RUNNER_SERVICE")
 if [ "$POST_CHECKOUT_COMMIT" != "$CHECKOUT_COMMIT" ] || \
 	[ -n "$(git -C "$REPO_ROOT" status --porcelain)" ] || \
 	[ "$POST_CONTAINER_ID" != "$container_id" ]; then

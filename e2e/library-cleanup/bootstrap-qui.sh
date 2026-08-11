@@ -3,14 +3,11 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
+. "$SCRIPT_DIR/compose-command.sh"
 PRIVATE_SUBNET=${HARNESS_SUBNET:-172.31.250.0/24}
 
 cd "$SCRIPT_DIR"
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
-
-compose() {
-	docker compose -f compose.yml -f compose.debug.yml "$@"
-}
 
 temporary_password() {
 	service=$1

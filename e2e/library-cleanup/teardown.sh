@@ -15,6 +15,10 @@ if [ "$PROJECT_NAME" != "$CONFIRMED_PROJECT" ]; then
   exit 1
 fi
 
+COMPOSE_PROJECT_NAME=$PROJECT_NAME
+export COMPOSE_PROJECT_NAME
+. "$SCRIPT_DIR/compose-command.sh"
+
 TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lc-e2e-teardown.XXXXXX")
 trap 'rm -rf "$TEMP_DIR"' EXIT HUP INT TERM
 umask 077
@@ -30,11 +34,8 @@ export POSTGRES_PASSWORD_FILE PLEX_CLAIM_FILE
 sh "$SCRIPT_DIR/validate-compose.sh" --live-project "$PROJECT_NAME"
 
 echo "Removing only disposable project $PROJECT_NAME, including its named volumes."
-docker compose \
-  -p "$PROJECT_NAME" \
-  --profile candidate-sqlite \
+compose \
+	--profile candidate-sqlite \
   --profile candidate-postgres \
   --profile baseline \
-  -f "$SCRIPT_DIR/compose.yml" \
-  -f "$SCRIPT_DIR/compose.debug.yml" \
-  down --volumes --remove-orphans
+	down --volumes --remove-orphans

@@ -7,8 +7,8 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 	export COMPOSE_PROJECT_NAME
 fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
+. "$SCRIPT_DIR/compose-command.sh"
 DASHBOARD_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
-COMPOSE_BIN=${ARR_COMPOSE_BIN:-/home/khak1s/.docker/cli-plugins/docker-compose}
 DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
 export DOCKER_CONFIG
 
@@ -22,10 +22,6 @@ esac
 
 cd "$SCRIPT_DIR"
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
-
-compose() {
-	"$COMPOSE_BIN" -p "$PROJECT_NAME" -f compose.yml -f compose.debug.yml "$@"
-}
 
 extract_api_key() {
 	service=$1

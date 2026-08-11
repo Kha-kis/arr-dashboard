@@ -7,8 +7,8 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 	export COMPOSE_PROJECT_NAME
 fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
+. "$SCRIPT_DIR/compose-command.sh"
 MODE=${1:?Specify policy, delete:<fixture>, or episode:<fixture>}
-COMPOSE_BIN=${ARR_COMPOSE_BIN:-/home/khak1s/.docker/cli-plugins/docker-compose}
 DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
 RUNNER_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
 RUNNER_SCRIPT=/tmp/lc-e2e-live-scenarios-$PROJECT_NAME.mjs
@@ -24,10 +24,6 @@ esac
 
 cd "$SCRIPT_DIR"
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
-
-compose() {
-	"$COMPOSE_BIN" -p "$PROJECT_NAME" -f compose.yml -f compose.debug.yml "$@"
-}
 
 cleanup() {
 	compose exec -T --user 0 "$RUNNER_SERVICE" rm -f "$RUNNER_SCRIPT" >/dev/null 2>&1 || true
