@@ -7,18 +7,26 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 	export COMPOSE_PROJECT_NAME
 fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
-COMPOSE_BIN=${ARR_COMPOSE_BIN:-/home/khak1s/.docker/cli-plugins/docker-compose}
-RUNNER_SERVICE=dashboard-sqlite
+if [ -z "${ARR_DOCKER_BIN:-}" ]; then
+	DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
+	export DOCKER_CONFIG
+fi
+. "$SCRIPT_DIR/compose-command.sh"
+. "$SCRIPT_DIR/live-project-guard.sh"
+RUNNER_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
 RUNNER_SCRIPT=/tmp/lc-e2e-bootstrap-plex-$PROJECT_NAME.mjs
-DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
-export DOCKER_CONFIG
+case "$RUNNER_SERVICE" in
+	dashboard-sqlite | dashboard-postgres) ;;
+	*)
+		echo "Plex bootstrap refused: unsupported runner service $RUNNER_SERVICE." >&2
+		exit 1
+		;;
+esac
 
 cd "$SCRIPT_DIR"
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
-
-compose() {
-	"$COMPOSE_BIN" -p "$PROJECT_NAME" -f compose.yml -f compose.debug.yml "$@"
-}
+acquire_live_project_lock
+verify_live_project
 
 cleanup() {
 	compose exec -T --user 0 "$RUNNER_SERVICE" rm -f "$RUNNER_SCRIPT" >/dev/null 2>&1 || true

@@ -5,15 +5,6 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 REQUIRE_LIVE_NAME=0
 EXPECTED_PROJECT=""
-DOCKER_BIN=${ARR_DOCKER_BIN:-docker}
-
-run_compose() {
-  if [ -n "${ARR_COMPOSE_BIN:-}" ]; then
-    "$ARR_COMPOSE_BIN" "$@"
-  else
-    "$DOCKER_BIN" compose "$@"
-  fi
-}
 
 if [ "$#" -gt 0 ]; then
   if [ "$#" -ne 2 ] || [ "$1" != "--live-project" ]; then
@@ -29,7 +20,14 @@ elif [ -z "${COMPOSE_PROJECT_NAME:-}" ]; then
   export COMPOSE_PROJECT_NAME
 fi
 
-if ! run_compose version >/dev/null 2>&1; then
+if [ "$REQUIRE_LIVE_NAME" -eq 0 ] && [ -z "${LC_E2E_RUN_TOKEN:-}" ]; then
+  LC_E2E_RUN_TOKEN=0000000000000000000000000000000000000000000000000000000000000000
+  export LC_E2E_RUN_TOKEN
+fi
+
+. "$SCRIPT_DIR/compose-command.sh"
+
+if ! compose version >/dev/null 2>&1; then
   echo "Docker Compose v2 is not available." >&2
   exit 2
 fi
@@ -71,12 +69,11 @@ check_base_model() {
   fi
 }
 
-run_compose \
+compose_base \
   --profile candidate-sqlite \
   --profile candidate-postgres \
   --profile baseline \
-  -f compose.yml \
-  config --format json | check_base_model
+	config --format json | check_base_model
 
 check_debug_model() {
   if [ "$REQUIRE_LIVE_NAME" -eq 1 ]; then
@@ -88,12 +85,10 @@ check_debug_model() {
   fi
 }
 
-run_compose \
+compose \
   --profile candidate-sqlite \
   --profile candidate-postgres \
   --profile baseline \
-  -f compose.yml \
-  -f compose.debug.yml \
-  config --format json | check_debug_model
+	config --format json | check_debug_model
 
 echo "Compose syntax and safety checks passed without building, pulling, or starting services."

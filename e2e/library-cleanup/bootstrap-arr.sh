@@ -8,8 +8,13 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 	export COMPOSE_PROJECT_NAME
 fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
-COMPOSE_BIN=${ARR_COMPOSE_BIN:-/home/khak1s/.docker/cli-plugins/docker-compose}
-RUNNER_SERVICE=${ARR_BOOTSTRAP_RUNNER_SERVICE:-dashboard-sqlite}
+if [ -z "${ARR_DOCKER_BIN:-}" ]; then
+	DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
+	export DOCKER_CONFIG
+fi
+. "$SCRIPT_DIR/compose-command.sh"
+. "$SCRIPT_DIR/live-project-guard.sh"
+RUNNER_SERVICE=${ARR_BOOTSTRAP_RUNNER_SERVICE:-${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}}
 CONFIG_TIMEOUT_SECONDS=${ARR_BOOTSTRAP_CONFIG_TIMEOUT_SECONDS:-120}
 POLL_SECONDS=2
 
@@ -21,27 +26,12 @@ case "$RUNNER_SERVICE" in
 		;;
 esac
 
-if [ ! -x "$COMPOSE_BIN" ]; then
-	echo "ARR bootstrap refused: Compose binary is not executable at $COMPOSE_BIN." >&2
-	exit 1
-fi
-
-DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
-export DOCKER_CONFIG
 cd "$SCRIPT_DIR"
 
 TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lc-e2e-arr-bootstrap.XXXXXX")
 umask 077
 RUNNER_DIR=/tmp/lc-e2e-arr-bootstrap-$PROJECT_NAME
 RUNNER_SCRIPT=$RUNNER_DIR/bootstrap-arr.mjs
-
-compose() {
-	"$COMPOSE_BIN" \
-		-p "$PROJECT_NAME" \
-		-f "$SCRIPT_DIR/compose.yml" \
-		-f "$SCRIPT_DIR/compose.debug.yml" \
-		"$@"
-}
 
 cleanup() {
 	if [ "${RUNNER_PREPARED:-0}" -eq 1 ]; then
@@ -74,12 +64,10 @@ fi
 python3 check-dockerignore.py "$REPO_ROOT/.dockerignore" --self-test
 
 BASE_MODEL=$TEMP_DIR/base-model.json
-"$COMPOSE_BIN" \
-	-p "$PROJECT_NAME" \
+compose_base \
 	--profile candidate-sqlite \
 	--profile candidate-postgres \
 	--profile baseline \
-	-f "$SCRIPT_DIR/compose.yml" \
 	config --format json >"$BASE_MODEL"
 python3 check-compose-model.py \
 	--self-test \
@@ -87,17 +75,17 @@ python3 check-compose-model.py \
 	--expected-project "$PROJECT_NAME" <"$BASE_MODEL"
 
 DEBUG_MODEL=$TEMP_DIR/debug-model.json
-"$COMPOSE_BIN" \
-	-p "$PROJECT_NAME" \
+compose \
 	--profile candidate-sqlite \
 	--profile candidate-postgres \
 	--profile baseline \
-	-f "$SCRIPT_DIR/compose.yml" \
-	-f "$SCRIPT_DIR/compose.debug.yml" \
 	config --format json >"$DEBUG_MODEL"
 python3 check-compose-model.py \
 	--require-live-name \
 	--expected-project "$PROJECT_NAME" <"$DEBUG_MODEL"
+
+acquire_live_project_lock
+verify_live_project
 
 require_running_service() {
 	rrs_service=$1
@@ -165,11 +153,25 @@ CREDENTIALS_FILE=$TEMP_DIR/credentials.json
 	printf '"}'
 } >"$CREDENTIALS_FILE"
 
-COMPOSE_PROJECT_NAME=$PROJECT_NAME \
-	ARR_COMPOSE_BIN=$COMPOSE_BIN \
-	FIXTURE_PUID=${PUID:-1000} \
-	FIXTURE_PGID=${PGID:-1000} \
-	node "$SCRIPT_DIR/bootstrap-arr.mjs" --filesystem-only
+case "$COMPOSE_COMMAND" in
+	docker)
+		COMPOSE_PROJECT_NAME=$PROJECT_NAME \
+			FIXTURE_PUID=${PUID:-1000} \
+			FIXTURE_PGID=${PGID:-1000} \
+			node "$SCRIPT_DIR/bootstrap-arr.mjs" --filesystem-only \
+			"$ARR_RESOLVED_COMPOSE_EXECUTABLE" "$ARR_RESOLVED_COMPOSE_ARGUMENT"
+		;;
+	executable)
+		COMPOSE_PROJECT_NAME=$PROJECT_NAME \
+			FIXTURE_PUID=${PUID:-1000} \
+			FIXTURE_PGID=${PGID:-1000} \
+			node "$SCRIPT_DIR/bootstrap-arr.mjs" --filesystem-only "$ARR_RESOLVED_COMPOSE_EXECUTABLE"
+		;;
+	*)
+		echo "ARR bootstrap refused: invalid Compose command selection." >&2
+		exit 1
+		;;
+esac
 
 compose exec -T --user 0 "$RUNNER_SERVICE" mkdir -p "$RUNNER_DIR"
 RUNNER_PREPARED=1

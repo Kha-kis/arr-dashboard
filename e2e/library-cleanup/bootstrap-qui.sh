@@ -3,14 +3,23 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
+. "$SCRIPT_DIR/compose-command.sh"
+. "$SCRIPT_DIR/live-project-guard.sh"
 PRIVATE_SUBNET=${HARNESS_SUBNET:-172.31.250.0/24}
+RUNNER_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
+
+case "$RUNNER_SERVICE" in
+	dashboard-sqlite | dashboard-postgres) ;;
+	*)
+		echo "qUI bootstrap refused: unsupported runner service $RUNNER_SERVICE." >&2
+		exit 1
+		;;
+esac
 
 cd "$SCRIPT_DIR"
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
-
-compose() {
-	docker compose -f compose.yml -f compose.debug.yml "$@"
-}
+acquire_live_project_lock
+verify_live_project
 
 temporary_password() {
 	service=$1
@@ -29,7 +38,7 @@ register_pair() {
 	qbit_password=$2
 	upper_pair=$(printf '%s' "$pair" | tr '[:lower:]' '[:upper:]')
 
-	compose exec -T -e QBIT_PASSWORD="$qbit_password" -e PRIVATE_SUBNET="$PRIVATE_SUBNET" dashboard-sqlite node -e '
+	compose exec -T -e QBIT_PASSWORD="$qbit_password" -e PRIVATE_SUBNET="$PRIVATE_SUBNET" "$RUNNER_SERVICE" node -e '
 		const [quiHost, qbitHost, name] = process.argv.slice(1);
 		const login = await fetch(`${qbitHost}/api/v2/auth/login`, {
 			method: "POST",

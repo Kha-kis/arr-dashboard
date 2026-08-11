@@ -222,15 +222,122 @@ export function buildPlexNotificationPayload(schema, fixture) {
 	};
 }
 
+export function plexNotificationSaveEndpoint(current) {
+	if (current === undefined) return "/api/v3/notification?forceSave=true";
+	if (!Number.isSafeInteger(current?.id) || current.id <= 0) {
+		throw new Error("existing Plex notification has an invalid identity");
+	}
+	return `/api/v3/notification/${current.id}?forceSave=true`;
+}
+
+export function isMissingPlexLibraryValidation(error, kind) {
+	if (!(error instanceof Error) || !error.message.includes("failed with HTTP 400")) return false;
+	const expected =
+		kind === "movie"
+			? ["At least one Movie library is required"]
+			: ["At least one TV library is required", "At least one Series library is required"];
+	return expected.some((message) => error.message.includes(message));
+}
+
 export function isPathWithinRoot(candidate, root) {
 	return candidate === root || candidate.startsWith(`${root}/`);
 }
 
 export function fileRecordMatches(record, itemPath, expectedPath) {
 	if (!record || typeof record !== "object") return false;
-	if (record.path === expectedPath) return true;
+	if (record.path !== undefined && record.path !== null) return record.path === expectedPath;
 	const expectedRelative = path.posix.relative(itemPath, expectedPath);
 	return record.relativePath === expectedRelative;
+}
+
+export function fixtureLibraryPath(fixture) {
+	return fixture.kind === "movie"
+		? path.posix.join(fixture.itemPath, fixture.fileName)
+		: path.posix.join(fixture.itemPath, "Season 01", fixture.fileName);
+}
+
+export function classifyFixtureFileState({ fixture, item, records, associatedFileId }) {
+	if (!Number.isSafeInteger(item?.id) || item.id <= 0 || item.path !== fixture.itemPath) {
+		throw new Error(`${fixture.service} has an invalid fixture item identity`);
+	}
+	if (!Array.isArray(records)) {
+		throw new Error(`${fixture.service} returned an invalid ${fixture.kind} file list`);
+	}
+	if (
+		associatedFileId !== null &&
+		(!Number.isSafeInteger(associatedFileId) || associatedFileId <= 0)
+	) {
+		throw new Error(`${fixture.service} returned an invalid parent file association`);
+	}
+
+	const expectedPath = fixtureLibraryPath(fixture);
+	const parentField = fixture.kind === "movie" ? "movieId" : "seriesId";
+	for (const record of records) {
+		if (!fileRecordMatches(record, item.path, expectedPath)) {
+			throw new Error(`${fixture.service} returned a foreign file path for the controlled fixture`);
+		}
+		if (!Number.isSafeInteger(record?.id) || record.id <= 0 || record[parentField] !== item.id) {
+			throw new Error(
+				`${fixture.service} returned an invalid file identity for the controlled fixture`,
+			);
+		}
+	}
+
+	const recordIds = records.map((record) => record.id).sort((left, right) => left - right);
+	if (records.length === 0) {
+		if (associatedFileId !== null) {
+			return { kind: "transient", reason: "association-ahead", recordIds };
+		}
+		return { kind: "absent" };
+	}
+	if (associatedFileId === null) {
+		return { kind: "transient", reason: "association-behind", recordIds };
+	}
+	if (!recordIds.includes(associatedFileId)) {
+		return { kind: "transient", reason: "association-mismatch", recordIds };
+	}
+	if (records.length > 1) {
+		return {
+			kind: "reset",
+			reason: "duplicate",
+			recordIds,
+		};
+	}
+
+	const record = records[0];
+	if (!Number.isFinite(Number(record.size)) || Number(record.size) <= 0) {
+		return { kind: "pending" };
+	}
+	return { kind: "ready", record };
+}
+
+export function isRepeatedFixtureResetState(first, second) {
+	return (
+		first?.kind === "reset" &&
+		second?.kind === "reset" &&
+		first.reason === second.reason &&
+		Array.isArray(first.recordIds) &&
+		Array.isArray(second.recordIds) &&
+		first.recordIds.length === second.recordIds.length &&
+		first.recordIds.length > 0 &&
+		first.recordIds.every(
+			(recordId, index) =>
+				Number.isSafeInteger(recordId) && recordId > 0 && recordId === second.recordIds[index],
+		)
+	);
+}
+
+export function buildFixtureRemoval(fixture, item) {
+	if (!Number.isSafeInteger(item?.id) || item.id <= 0) {
+		throw new Error(`${fixture.service} has an invalid item identity for fixture removal`);
+	}
+	return {
+		endpoint:
+			fixture.kind === "movie"
+				? `/api/v3/movie/${item.id}?deleteFiles=false&addImportExclusion=false`
+				: `/api/v3/series/${item.id}?deleteFiles=false&addImportListExclusion=false`,
+		method: "DELETE",
+	};
 }
 
 export function buildPlaceholderBuffer(fixture) {
@@ -315,9 +422,33 @@ async function waitForService(baseUrl, apiKey, service) {
 	);
 }
 
-function composeExec(service, variables, script) {
+export function parseFilesystemComposeCommand(
+	command,
+	configuredDocker = process.env.ARR_DOCKER_BIN || "docker",
+) {
+	if (
+		Array.isArray(command) &&
+		command.length === 1 &&
+		typeof command[0] === "string" &&
+		command[0].length > 0
+	) {
+		return command;
+	}
+	if (
+		Array.isArray(command) &&
+		command.length === 2 &&
+		command[0] === configuredDocker &&
+		command[1] === "compose"
+	) {
+		return command;
+	}
+	throw new Error(
+		"--filesystem-only requires an executable or the resolved Docker Compose command",
+	);
+}
+
+function composeExec(composeCommand, service, variables, script) {
 	const projectName = assertUniqueProjectName(requireEnvironment("COMPOSE_PROJECT_NAME"));
-	const composeBin = requireEnvironment("ARR_COMPOSE_BIN");
 	const args = ["-p", projectName];
 	for (const composeFile of COMPOSE_FILES) args.push("-f", composeFile);
 	args.push("exec", "-T", "--user", "0");
@@ -326,7 +457,7 @@ function composeExec(service, variables, script) {
 	}
 	args.push(service, "sh", "-eu", "-c", script);
 
-	const result = spawnSync(composeBin, args, {
+	const result = spawnSync(composeCommand[0], [...composeCommand.slice(1), ...args], {
 		cwd: SCRIPT_DIR,
 		encoding: "utf8",
 		env: process.env,
@@ -340,8 +471,9 @@ function composeExec(service, variables, script) {
 	}
 }
 
-function prepareRootFolder(fixture) {
+function prepareRootFolder(composeCommand, fixture) {
 	composeExec(
+		composeCommand,
 		fixture.service,
 		{
 			FIXTURE_ROOT: fixture.rootFolderPath,
@@ -354,11 +486,12 @@ chmod 0775 "$FIXTURE_ROOT"`,
 	);
 }
 
-function createHardlinkedFixture(fixture, libraryPath) {
+function createHardlinkedFixture(composeCommand, fixture, libraryPath) {
 	const contentBuffer = buildPlaceholderBuffer(fixture);
 	const expectedSha256 = createHash("sha256").update(contentBuffer).digest("hex");
 
 	composeExec(
+		composeCommand,
 		fixture.service,
 		{
 			FIXTURE_SOURCE: fixture.sourcePath,
@@ -451,15 +584,21 @@ async function ensurePlexNotification(baseUrl, apiKey, fixture) {
 		throw new Error(`${fixture.service} has duplicate Library Cleanup Plex notifications`);
 	}
 	const current = matching[0];
-	const saved = await requestJson(
-		baseUrl,
-		apiKey,
-		current ? `/api/v3/notification/${current.id}` : "/api/v3/notification",
-		{
+	let saved;
+	try {
+		saved = await requestJson(baseUrl, apiKey, plexNotificationSaveEndpoint(current), {
 			method: current ? "PUT" : "POST",
 			body: current ? { ...desired, id: current.id } : desired,
-		},
-	);
+		});
+	} catch (error) {
+		if (!current && isMissingPlexLibraryValidation(error, fixture.kind)) {
+			process.stdout.write(
+				`${fixture.service}: Plex notification deferred until fixture libraries exist\n`,
+			);
+			return false;
+		}
+		throw error;
+	}
 	if (!Number.isSafeInteger(saved?.id) || saved.implementation !== "PlexServer") {
 		throw new Error(`${fixture.service} did not persist the Plex notification`);
 	}
@@ -475,6 +614,7 @@ async function ensurePlexNotification(baseUrl, apiKey, fixture) {
 	) {
 		throw new Error(`${fixture.service} Plex path mapping did not round-trip exactly`);
 	}
+	return true;
 }
 
 async function firstQualityProfileId(baseUrl, apiKey, service) {
@@ -495,6 +635,7 @@ async function ensureMovie(baseUrl, apiKey, fixture) {
 	if (matching.length > 1)
 		throw new Error(`${fixture.service} has duplicate TMDb ${MOVIE.tmdbId} movies`);
 	let movie = matching[0];
+	let created = false;
 	if (!movie) {
 		const qualityProfileId = await firstQualityProfileId(baseUrl, apiKey, fixture.service);
 		await requestJson(baseUrl, apiKey, "/api/v3/movie", {
@@ -503,11 +644,12 @@ async function ensureMovie(baseUrl, apiKey, fixture) {
 		});
 		const refreshed = await requestJson(baseUrl, apiKey, "/api/v3/movie");
 		movie = refreshed.find((candidate) => candidate.tmdbId === MOVIE.tmdbId);
+		created = true;
 	}
 	if (!Number.isSafeInteger(movie?.id) || movie?.path !== fixture.itemPath) {
 		throw new Error(`${fixture.service} movie is missing or outside its exact fixture root`);
 	}
-	return movie;
+	return { item: movie, created };
 }
 
 async function ensureSeries(baseUrl, apiKey, fixture) {
@@ -518,6 +660,7 @@ async function ensureSeries(baseUrl, apiKey, fixture) {
 	if (matching.length > 1)
 		throw new Error(`${fixture.service} has duplicate TVDb ${SERIES.tvdbId} series`);
 	let series = matching[0];
+	let created = false;
 	if (!series) {
 		const qualityProfileId = await firstQualityProfileId(baseUrl, apiKey, fixture.service);
 		await requestJson(baseUrl, apiKey, "/api/v3/series", {
@@ -526,11 +669,177 @@ async function ensureSeries(baseUrl, apiKey, fixture) {
 		});
 		const refreshed = await requestJson(baseUrl, apiKey, "/api/v3/series");
 		series = refreshed.find((candidate) => candidate.tvdbId === SERIES.tvdbId);
+		created = true;
 	}
 	if (!Number.isSafeInteger(series?.id) || series?.path !== fixture.itemPath) {
 		throw new Error(`${fixture.service} series is missing or outside its exact fixture root`);
 	}
-	return series;
+	return { item: series, created };
+}
+
+function assertControlledItem(fixture, item) {
+	const externalId = fixture.kind === "movie" ? item?.tmdbId : item?.tvdbId;
+	const expectedExternalId = fixture.kind === "movie" ? MOVIE.tmdbId : SERIES.tvdbId;
+	if (
+		!Number.isSafeInteger(item?.id) ||
+		item.id <= 0 ||
+		item.path !== fixture.itemPath ||
+		externalId !== expectedExternalId
+	) {
+		throw new Error(`${fixture.service} changed the controlled fixture identity`);
+	}
+	return item;
+}
+
+function assertGuardedFixtureFile(fixture) {
+	const libraryPath = fixtureLibraryPath(fixture);
+	let content;
+	try {
+		content = readFileSync(libraryPath);
+	} catch (error) {
+		throw new Error(
+			`${fixture.service} guarded fixture file is unavailable: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+	if (
+		!content.includes(Buffer.from("ARR-DASHBOARD-LIBRARY-CLEANUP-E2E")) ||
+		!content.includes(Buffer.from(`${fixture.service}:${fixture.kind}:${fixture.quality}`))
+	) {
+		throw new Error(`${fixture.service} refused to normalize an unguarded fixture file`);
+	}
+}
+
+async function associatedFileId(baseUrl, apiKey, fixture, item) {
+	if (fixture.kind === "movie") {
+		const current = assertControlledItem(
+			fixture,
+			await requestJson(baseUrl, apiKey, `/api/v3/movie/${item.id}`),
+		);
+		if (current.hasFile === false) return null;
+		if (current.hasFile !== true || !Number.isSafeInteger(current.movieFile?.id)) {
+			throw new Error(`${fixture.service} returned an invalid movie-file association`);
+		}
+		return current.movieFile.id;
+	}
+
+	const episodes = await requestJson(baseUrl, apiKey, `/api/v3/episode?seriesId=${item.id}`);
+	const association = classifyFixtureEpisodeAssociation(episodes, item.id);
+	if (association.kind === "pending") return undefined;
+	return association.fileId;
+}
+
+export function classifyFixtureEpisodeAssociation(episodes, itemId) {
+	if (!Array.isArray(episodes)) {
+		throw new Error("Sonarr returned an invalid episode list");
+	}
+	const matching = episodes.filter(
+		(episode) => episode.seasonNumber === 1 && episode.episodeNumber === 1,
+	);
+	if (matching.length === 0) return { kind: "pending" };
+	if (matching.length > 1) {
+		throw new Error("Sonarr returned duplicate S01E01 fixture episodes");
+	}
+	const episode = matching[0];
+	if (!Number.isSafeInteger(episode?.id) || episode.seriesId !== itemId) {
+		throw new Error("Sonarr returned an invalid S01E01 identity");
+	}
+	if (episode.hasFile === false) return { kind: "ready", fileId: null };
+	if (episode.hasFile !== true || !Number.isSafeInteger(episode.episodeFileId)) {
+		throw new Error("Sonarr returned an invalid episode-file association");
+	}
+	return { kind: "ready", fileId: episode.episodeFileId };
+}
+
+function fixtureFileEndpoint(fixture, item) {
+	return fixture.kind === "movie"
+		? `/api/v3/moviefile?movieId=${item.id}`
+		: `/api/v3/episodefile?seriesId=${item.id}`;
+}
+
+async function readFixtureFileState(baseUrl, apiKey, fixture, item) {
+	const records = await requestJson(baseUrl, apiKey, fixtureFileEndpoint(fixture, item));
+	const fileId = await associatedFileId(baseUrl, apiKey, fixture, item);
+	if (fixture.kind === "series" && fileId === undefined) {
+		return { kind: "transient", reason: "episode-pending" };
+	}
+	return classifyFixtureFileState({
+		fixture,
+		item,
+		records,
+		associatedFileId: fileId,
+	});
+}
+
+async function waitForStableFixtureFileState(baseUrl, apiKey, fixture, item) {
+	const deadline = Date.now() + FILE_RECORD_TIMEOUT_MS;
+	let lastReason = "unknown";
+	while (Date.now() < deadline) {
+		const state = await readFixtureFileState(baseUrl, apiKey, fixture, item);
+		if (state.kind !== "transient") return state;
+		lastReason = state.reason;
+		await new Promise((resolve) => setTimeout(resolve, 1_000));
+	}
+	throw new Error(`${fixture.service} file state did not stabilize (last state: ${lastReason})`);
+}
+
+async function resetControlledFixture(baseUrl, apiKey, fixture, item, expectedState) {
+	assertGuardedFixtureFile(fixture);
+	const current = assertControlledItem(
+		fixture,
+		await requestJson(
+			baseUrl,
+			apiKey,
+			fixture.kind === "movie" ? `/api/v3/movie/${item.id}` : `/api/v3/series/${item.id}`,
+		),
+	);
+	const state = await readFixtureFileState(baseUrl, apiKey, fixture, current);
+	if (state.kind === "ready") return false;
+	if (!isRepeatedFixtureResetState(expectedState, state)) {
+		throw new Error(
+			`${fixture.service} fixture reset state did not stabilize before authorization`,
+		);
+	}
+
+	const currentImmediatelyBeforeDelete = assertControlledItem(
+		fixture,
+		await requestJson(
+			baseUrl,
+			apiKey,
+			fixture.kind === "movie" ? `/api/v3/movie/${current.id}` : `/api/v3/series/${current.id}`,
+		),
+	);
+	const stateImmediatelyBeforeDelete = await readFixtureFileState(
+		baseUrl,
+		apiKey,
+		fixture,
+		currentImmediatelyBeforeDelete,
+	);
+	if (!isRepeatedFixtureResetState(state, stateImmediatelyBeforeDelete)) {
+		throw new Error(`${fixture.service} fixture reset state changed before deletion`);
+	}
+	assertGuardedFixtureFile(fixture);
+	const removal = buildFixtureRemoval(fixture, currentImmediatelyBeforeDelete);
+	await requestJson(baseUrl, apiKey, removal.endpoint, { method: removal.method });
+	assertGuardedFixtureFile(fixture);
+
+	const items = await requestJson(
+		baseUrl,
+		apiKey,
+		fixture.kind === "movie" ? "/api/v3/movie" : "/api/v3/series",
+	);
+	if (!Array.isArray(items)) {
+		throw new Error(`${fixture.service} returned an invalid item list after fixture reset`);
+	}
+	const expectedExternalId = fixture.kind === "movie" ? MOVIE.tmdbId : SERIES.tvdbId;
+	const remaining = items.filter((candidate) =>
+		fixture.kind === "movie"
+			? candidate.tmdbId === expectedExternalId
+			: candidate.tvdbId === expectedExternalId,
+	);
+	if (remaining.length !== 0) {
+		throw new Error(`${fixture.service} did not remove the controlled fixture database entry`);
+	}
+	return true;
 }
 
 async function runRescan(baseUrl, apiKey, fixture, itemId) {
@@ -557,81 +866,82 @@ async function runRescan(baseUrl, apiKey, fixture, itemId) {
 	throw new Error(`${fixture.service} ${commandName} did not finish in time`);
 }
 
-async function waitForFileRecord(baseUrl, apiKey, fixture, item, libraryPath) {
-	const endpoint =
-		fixture.kind === "movie"
-			? `/api/v3/moviefile?movieId=${item.id}`
-			: `/api/v3/episodefile?seriesId=${item.id}`;
+async function waitForFileRecord(baseUrl, apiKey, fixture, item) {
 	const deadline = Date.now() + FILE_RECORD_TIMEOUT_MS;
+	let lastState = "absent";
 	while (Date.now() < deadline) {
-		const records = await requestJson(baseUrl, apiKey, endpoint);
-		if (Array.isArray(records)) {
-			const matching = records.filter((candidate) =>
-				fileRecordMatches(candidate, item.path, libraryPath),
+		const state = await readFixtureFileState(baseUrl, apiKey, fixture, item);
+		lastState = state.kind === "reset" ? state.reason : state.kind;
+		if (state.kind === "ready") return state.record;
+		if (state.kind === "reset" && state.reason === "duplicate") {
+			throw new Error(
+				`${fixture.service} still returned duplicate exact fixture rows after normalization: ${state.recordIds.join(", ")}`,
 			);
-			if (matching.length > 1) {
-				throw new Error(
-					`${fixture.service} returned ${matching.length} records for the exact fixture file`,
-				);
-			}
-			const record = matching[0];
-			if (record && Number(record.size) > 0) return record;
 		}
 		await new Promise((resolve) => setTimeout(resolve, 1_000));
 	}
-	throw new Error(`${fixture.service} did not create the expected ${fixture.kind} file record`);
+	throw new Error(
+		`${fixture.service} did not create one freshly associated ${fixture.kind} file record (last state: ${lastState})`,
+	);
 }
 
-async function bootstrapFixture(fixture, apiKey) {
+export async function bootstrapFixture(fixture, apiKey) {
 	const baseUrl = assertHarnessServiceUrl(fixture.baseUrl, fixture.service);
 	await waitForService(baseUrl, apiKey, fixture.service);
 	await ensureRootFolder(baseUrl, apiKey, fixture);
 	await ensurePlexNotification(baseUrl, apiKey, fixture);
 
-	const item =
+	let ensured =
 		fixture.kind === "movie"
 			? await ensureMovie(baseUrl, apiKey, fixture)
 			: await ensureSeries(baseUrl, apiKey, fixture);
-	const libraryPath =
-		fixture.kind === "movie"
-			? path.posix.join(fixture.itemPath, fixture.fileName)
-			: path.posix.join(fixture.itemPath, "Season 01", fixture.fileName);
-
-	const endpoint =
-		fixture.kind === "movie"
-			? `/api/v3/moviefile?movieId=${item.id}`
-			: `/api/v3/episodefile?seriesId=${item.id}`;
-	const existingRecords = await requestJson(baseUrl, apiKey, endpoint);
-	if (!Array.isArray(existingRecords)) {
-		throw new Error(`${fixture.service} returned an invalid ${fixture.kind} file list`);
-	}
-	const matchingExisting = existingRecords.filter((candidate) =>
-		fileRecordMatches(candidate, item.path, libraryPath),
-	);
-	if (matchingExisting.length > 1) {
-		throw new Error(
-			`${fixture.service} returned ${matchingExisting.length} records for the exact fixture file`,
+	let state = await waitForStableFixtureFileState(baseUrl, apiKey, fixture, ensured.item);
+	if (state.kind === "ready") {
+		process.stdout.write(
+			`${fixture.service}: ${fixture.quality} ${fixture.kind} fixture ready (item ${ensured.item.id}, file ${state.record.id})\n`,
 		);
+		return;
 	}
-	// Always rescan after restoring the fixture hardlink. Sonarr can retain an
-	// episode-file row after cleanup while the episode and series statistics
-	// remain detached from it; path existence alone is not fresh evidence.
-	await runRescan(baseUrl, apiKey, fixture, item.id);
-	const record = await waitForFileRecord(baseUrl, apiKey, fixture, item, libraryPath);
+
+	if (state.kind === "reset") {
+		const reset = await resetControlledFixture(baseUrl, apiKey, fixture, ensured.item, state);
+		if (!reset) {
+			state = await readFixtureFileState(baseUrl, apiKey, fixture, ensured.item);
+			if (state.kind !== "ready") {
+				throw new Error(
+					`${fixture.service} fixture changed while normalization was being authorized`,
+				);
+			}
+			process.stdout.write(
+				`${fixture.service}: ${fixture.quality} ${fixture.kind} fixture ready (item ${ensured.item.id}, file ${state.record.id})\n`,
+			);
+			return;
+		}
+		ensured =
+			fixture.kind === "movie"
+				? await ensureMovie(baseUrl, apiKey, fixture)
+				: await ensureSeries(baseUrl, apiKey, fixture);
+		if (!ensured.created) {
+			throw new Error(`${fixture.service} did not recreate the normalized fixture`);
+		}
+	} else if (state.kind === "absent" && !ensured.created) {
+		await runRescan(baseUrl, apiKey, fixture, ensured.item.id);
+	} else if (state.kind !== "absent" && state.kind !== "pending") {
+		throw new Error(`${fixture.service} returned unsupported fixture state ${state.kind}`);
+	}
+
+	const record = await waitForFileRecord(baseUrl, apiKey, fixture, ensured.item);
 	process.stdout.write(
-		`${fixture.service}: ${fixture.quality} ${fixture.kind} fixture ready (item ${item.id}, file ${record.id})\n`,
+		`${fixture.service}: ${fixture.quality} ${fixture.kind} fixture ready (item ${ensured.item.id}, file ${record.id})\n`,
 	);
 }
 
-export function prepareFilesystem() {
+export function prepareFilesystem(command) {
+	const composeCommand = parseFilesystemComposeCommand(command);
 	assertUniqueProjectName(requireEnvironment("COMPOSE_PROJECT_NAME"));
 	for (const fixture of ARR_FIXTURES) {
-		prepareRootFolder(fixture);
-		const libraryPath =
-			fixture.kind === "movie"
-				? path.posix.join(fixture.itemPath, fixture.fileName)
-				: path.posix.join(fixture.itemPath, "Season 01", fixture.fileName);
-		createHardlinkedFixture(fixture, libraryPath);
+		prepareRootFolder(composeCommand, fixture);
+		createHardlinkedFixture(composeCommand, fixture, fixtureLibraryPath(fixture));
 	}
 }
 
@@ -646,7 +956,7 @@ export async function bootstrapApis(credentials) {
 export async function main() {
 	const mode = process.argv[2];
 	if (mode === "--filesystem-only") {
-		prepareFilesystem();
+		prepareFilesystem(process.argv.slice(3));
 		return;
 	}
 	if (mode === "--api-only") {

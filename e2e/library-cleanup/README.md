@@ -11,6 +11,10 @@ fail-closed policy and mutation scenarios for issues #616, #618, #619, #657,
 - Use a unique project name beginning with `lc-e2e-`, such as
   `lc-e2e-616-20260803-153000`. Live preflights reject empty, malformed,
   generic, production-like, and non-run-specific names.
+- Generate one random `LC_E2E_RUN_TOKEN` per project and retain it in the
+  ignored `.env` until teardown. Every container, volume, and network carries
+  that token; live commands also take a per-project process lock and refuse
+  stale, foreign, bind-mounted, image-drifted, or differently owned resources.
 - Every config, database, and media store is a Compose named volume. There are
   no host media/config/database bind mounts and no external volumes or networks.
 - The base file publishes only one selected dashboard profile, on `127.0.0.1`.
@@ -64,6 +68,7 @@ cp .env.example .env
 mkdir -p secrets
 openssl rand -hex 24 >secrets/postgres-password.txt
 : >secrets/plex-claim.txt
+# Add the output of `openssl rand -hex 32` as LC_E2E_RUN_TOKEN in .env.
 # Edit .env and set a unique name, for example:
 # COMPOSE_PROJECT_NAME=lc-e2e-616-20260803-153000
 sh ./validate-compose.sh --live-project lc-e2e-616-20260803-153000
@@ -76,11 +81,19 @@ The PostgreSQL password preflight reads the secret file without displaying its
 value. It rejects empty values and anything outside URL-safe unreserved ASCII
 characters (`A-Z`, `a-z`, `0-9`, `.`, `_`, `~`, and `-`).
 
-The preflight only runs `docker compose config`; it does not build, pull, create,
-or start containers. The baseline default is
-`khak1s/arr-dashboard:2.23.0`, matching `docs/RELEASING.md`. Most images remain
-configurable in the ignored `.env` for pinned compatibility runs. qUI is the
-exception: both instances are allowlisted to the reviewed official
+The preflight only runs Compose model rendering; it does not build, pull,
+create, or start containers. All harness scripts resolve Compose through
+`compose-command.sh`. It discovers Docker Compose v2 portably; set
+`ARR_COMPOSE_BIN` only to override it with an exact executable. Set
+`ARR_DOCKER_BIN` instead when the harness must use a specific Docker CLI or
+context; that CLI must provide Compose v2, and the two overrides cannot be used
+together. The baseline default is `khak1s/arr-dashboard:2.23.0`, matching
+`docs/RELEASING.md`. Most images remain
+configurable in the ignored `.env` for pinned compatibility runs, but Radarr,
+Sonarr, Plex, and qBittorrent overrides must retain the expected LinuxServer
+repository and an immutable digest. The checked-in defaults pin the reviewed
+Radarr 5.16.3, Sonarr 4.0.15, Plex 1.41.5, and qBittorrent 5.1.2 manifests. qUI
+is the exception: both instances are allowlisted to the reviewed official
 `ghcr.io/autobrr/qui:v1.16.1` image and use a Compose-defined probe against
 `/healthz/readiness`. An arbitrary override such as `busybox` fails validation.
 
@@ -101,21 +114,21 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 CANDIDATE_IMAGE=$(sh ./build-candidate-image.sh)
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE"
+export CANDIDATE_DASHBOARD_IMAGE
 
 # Required immediately before a live command.
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
-
+COMPOSE_PROJECT_NAME="$PROJECT_NAME"
+export COMPOSE_PROJECT_NAME
 # Candidate built from this checkout, SQLite
-CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
-  docker compose --profile candidate-sqlite up --no-build --wait dashboard-sqlite
+sh ./start-profile.sh sqlite
 
 # Candidate built from this checkout, PostgreSQL
-CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
-  docker compose --profile candidate-postgres up --no-build --wait dashboard-postgres
+sh ./start-profile.sh postgres
 
 # Published 2.23.0 baseline reproduction
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose \
-  --profile baseline up --wait dashboard-baseline
+sh ./start-profile.sh baseline
 ```
 
 The Compose model has no project-name fallback. Do not use stale generic names
@@ -143,12 +156,18 @@ sh ./bootstrap-arr.sh
 sh ./bootstrap-torrents.sh
 sh ./bootstrap-qui.sh
 sh ./bootstrap-plex.sh
+# Now that Plex libraries exist, persist and verify every ARR notification.
+sh ./bootstrap-arr.sh
 sh ./bootstrap-dashboard.sh
 ```
 
 The unclaimed Plex fixture exposes real local library and episode metadata. Its
 loopback-only bridge supplies one deterministic owner history row because an
 unclaimed server does not publish owner history through the normal endpoint.
+Candidate dashboard startup waits for that bridge before reporting healthy.
+ARR notification records are initially saved with ARR's explicit validation
+deferral because Plex libraries are created in the next bootstrap step; the
+later deletion scenarios prove that the live notification and scan path works.
 The application still performs its normal cache refresh, pagination, episode
 metadata, shared-path, and mutation-boundary checks against Plex. The bridge has
 no published port, storage, or connection to a non-harness network.
@@ -161,19 +180,19 @@ sh ./run-live-scenario.sh policy-gate
 sh ./run-live-scenario.sh policy-core
 sh ./run-browser-policy.sh
 
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
-  stop dashboard-sqlite
-CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
-  docker compose -f compose.yml -f compose.debug.yml --profile candidate-postgres \
-  up --no-build --wait dashboard-postgres
+sh ./stop-profile.sh sqlite
+sh ./start-profile.sh postgres
+export LC_E2E_DASHBOARD_SERVICE=dashboard-postgres
+sh ./bootstrap-arr.sh
+sh ./bootstrap-plex.sh
+sh ./bootstrap-torrents.sh
+sh ./bootstrap-qui.sh
 LC_E2E_DASHBOARD_SERVICE=dashboard-postgres sh ./bootstrap-dashboard.sh
 LC_E2E_DASHBOARD_SERVICE=dashboard-postgres sh ./run-browser-policy.sh
 
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
-  stop dashboard-postgres
-CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
-  docker compose -f compose.yml -f compose.debug.yml --profile candidate-sqlite \
-  up --no-build --wait dashboard-sqlite
+unset LC_E2E_DASHBOARD_SERVICE
+sh ./stop-profile.sh postgres
+sh ./start-profile.sh sqlite
 sh ./bootstrap-dashboard.sh
 
 sh ./run-live-scenario.sh delete:radarr-uhd
@@ -190,10 +209,11 @@ sh ./run-live-scenario.sh episode:sonarr-uhd
 ```
 
 `policy` runs the gate and core policy cases together when no fixture refresh
-can occur between them. `policy-gate` is the deterministic qUI assertion: run
-it only after the qUI torrent-state scheduler has published a complete fresh
-generation. `policy-core` covers #618, #619, and #660 independently of that
-scheduler timing.
+can occur between them. `policy-gate` is the deterministic qUI assertion: the
+runner restarts the selected disposable dashboard under the project lock and
+waits for its qUI torrent-state scheduler to publish a complete fresh
+generation before evaluating the rule. `policy-core` covers #618, #619, and
+#660 independently of that scheduler timing.
 
 `run-browser-policy.sh` drives a signed Chromium session against the selected
 candidate dashboard. It authors and round-trips `(A AND B) OR (A AND NOT C)`,
@@ -216,9 +236,17 @@ project, and checkout/container identity is checked again after the tests. Set
 PostgreSQL candidate.
 
 The ARR bootstrap is idempotent for an already populated fixture. It skips an
-unnecessary rescan when the exact expected file has one record and fails if an
-ARR instance reports duplicate records for the same path, rather than letting
-ambiguous ownership reach a cleanup scenario.
+unnecessary rescan only when the exact expected file row is freshly associated
+with its movie or S01E01 parent. If the exact controlled fixture has detached or
+duplicate rows, the bootstrap preserves the guarded hardlink, removes only that
+fixture's ARR database entry with file deletion disabled, and recreates it. Any
+foreign path, external ID, parent, malformed identity, or failure to converge
+still stops before a cleanup scenario.
+
+Torrent bootstrap authenticates separately to each disposable qBittorrent
+instance using its temporary startup password and forwards only the resulting
+SID cookie. It no longer depends on qUI's later isolated-subnet authorization
+setup or on unauthenticated Web API access.
 
 The Radarr and Sonarr series-deletion scenarios enable the #667 post-delete
 media-server scan option and poll Plex directly without manually starting a

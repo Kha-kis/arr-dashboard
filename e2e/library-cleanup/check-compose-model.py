@@ -48,6 +48,15 @@ EXPECTED_VOLUMES = {
 }
 EXPECTED_NETWORKS = {"cleanup-internal", "metadata-egress"}
 ALLOWED_QUI_IMAGES = {"ghcr.io/autobrr/qui:v1.16.1"}
+EXPECTED_INTEGRATION_IMAGE_REPOSITORIES = {
+    "radarr-a": "lscr.io/linuxserver/radarr",
+    "radarr-b": "lscr.io/linuxserver/radarr",
+    "sonarr-a": "lscr.io/linuxserver/sonarr",
+    "sonarr-b": "lscr.io/linuxserver/sonarr",
+    "plex": "lscr.io/linuxserver/plex",
+    "qbittorrent-a": "lscr.io/linuxserver/qbittorrent",
+    "qbittorrent-b": "lscr.io/linuxserver/qbittorrent",
+}
 QUI_READINESS_TEST = [
     "CMD",
     "wget",
@@ -69,6 +78,8 @@ GENERIC_LIVE_PROJECTS = {
 }
 GENERIC_LIVE_PARTS = {"default", "demo", "dev", "local", "shared", "test"}
 SUSPICIOUS_LIVE_PREFIXES = ("main", "prod", "stable")
+RUN_PROJECT_LABEL = "io.arr-dashboard.library-cleanup.project"
+RUN_TOKEN_LABEL = "io.arr-dashboard.library-cleanup.run-token"
 
 
 class SafetyError(ValueError):
@@ -93,6 +104,19 @@ def validate_project_name(project: str, *, require_live_name: bool) -> None:
         fail("live project name contains a production-like or branch-like identifier")
     if not any(character.isdigit() for character in project) or len(project) < 16:
         fail("live project name must include a run-specific numeric discriminator")
+
+
+def validate_run_labels(labels: object, project: str, expected_token: str | None = None) -> str:
+    if not isinstance(labels, dict):
+        fail("harness resource is missing run-ownership labels")
+    if labels.get(RUN_PROJECT_LABEL) != project:
+        fail("harness resource has a mismatched run project label")
+    token = labels.get(RUN_TOKEN_LABEL)
+    if not isinstance(token, str) or not re.fullmatch(r"[a-f0-9]{64}", token):
+        fail("LC_E2E_RUN_TOKEN must be a random 64-character lowercase hex token")
+    if expected_token is not None and token != expected_token:
+        fail("harness resources do not share one run-ownership token")
+    return token
 
 
 def validate_postgres_password_value(value: bytes) -> None:
@@ -152,11 +176,23 @@ def validate_model(
     services = services_value
     if set(services) != EXPECTED_SERVICES:
         fail("rendered service set does not exactly match the Library Cleanup harness")
+    run_token = validate_run_labels(services["radarr-a"].get("labels"), project)
+
+    for service_name, expected_repository in EXPECTED_INTEGRATION_IMAGE_REPOSITORIES.items():
+        image = services[service_name].get("image")
+        if not isinstance(image, str) or not re.fullmatch(
+            rf"{re.escape(expected_repository)}:[A-Za-z0-9._-]+@sha256:[a-f0-9]{{64}}", image
+        ):
+            fail(f"{service_name} image must be an immutable digest from its expected repository")
+    for left, right in (("radarr-a", "radarr-b"), ("sonarr-a", "sonarr-b"), ("qbittorrent-a", "qbittorrent-b")):
+        if services[left].get("image") != services[right].get("image"):
+            fail(f"{left} and {right} must use the same integration image")
 
     for service_name, service_value in services.items():
         if not isinstance(service_value, dict):
             fail(f"{service_name} has an invalid rendered definition")
         service = service_value
+        validate_run_labels(service.get("labels"), project, run_token)
         if "container_name" in service:
             fail(f"{service_name} sets container_name")
         for mount in service.get("volumes", []):
@@ -169,6 +205,10 @@ def validate_model(
     volumes_value = model.get("volumes", {})
     if not isinstance(volumes_value, dict):
         fail("rendered Compose volumes are missing")
+    for volume in volumes_value.values():
+        validate_run_labels(
+            volume.get("labels") if isinstance(volume, dict) else None, project, run_token
+        )
     if set(volumes_value) != EXPECTED_VOLUMES:
         fail("rendered volume set does not exactly match the Library Cleanup harness")
     for volume_name, volume in volumes_value.items():
@@ -184,6 +224,9 @@ def validate_model(
     if set(networks_value) != EXPECTED_NETWORKS:
         fail("rendered network set does not exactly match the Library Cleanup harness")
     for network_name, network in networks_value.items():
+        validate_run_labels(
+            network.get("labels") if isinstance(network, dict) else None, project, run_token
+        )
         if network.get("external"):
             fail(f"network {network_name} is external")
         expected_name = f"{project}_{network_name}"
@@ -241,6 +284,13 @@ def validate_model(
         fail("Plex loopback proxy must share only the disposable Plex network namespace")
     if plex_proxy.get("volumes") or plex_proxy.get("ports"):
         fail("Plex loopback proxy must not mount data or publish ports")
+
+    for dashboard_name in ("dashboard-sqlite", "dashboard-postgres", "dashboard-baseline"):
+        proxy_dependency = services[dashboard_name].get("depends_on", {}).get(
+            "plex-loopback-proxy", {}
+        )
+        if proxy_dependency.get("condition") != "service_healthy":
+            fail(f"{dashboard_name} must wait for the Plex loopback proxy")
 
     shared_targets = {
         "radarr-a": "/radarr-a/data",
@@ -345,9 +395,37 @@ def run_self_tests(model: dict[str, object]) -> None:
     expect_rejected(mutated, "arbitrary qUI image")
     negative_count += 1
 
+    for service_name in (
+        "radarr-a",
+        "sonarr-a",
+        "plex",
+        "qbittorrent-a",
+    ):
+        mutated = copy.deepcopy(model)
+        mutated["services"][service_name]["image"] = "lscr.io/linuxserver/example:latest"
+        expect_rejected(mutated, f"mutable integration image for {service_name}")
+        negative_count += 1
+
+        mutated = copy.deepcopy(model)
+        mutated["services"][service_name]["image"] = "busybox@sha256:" + "0" * 64
+        expect_rejected(mutated, f"unexpected integration image for {service_name}")
+        negative_count += 1
+
+    immutable_override = copy.deepcopy(model)
+    for service_name in ("radarr-a", "radarr-b"):
+        immutable_override["services"][service_name]["image"] = (
+            "lscr.io/linuxserver/radarr:compat@sha256:" + "1" * 64
+        )
+    validate_model(immutable_override)
+
     mutated = copy.deepcopy(model)
     mutated["services"]["qui-a"].pop("healthcheck", None)
     expect_rejected(mutated, "missing qUI readiness healthcheck")
+    negative_count += 1
+
+    mutated = copy.deepcopy(model)
+    mutated["services"]["dashboard-sqlite"]["depends_on"].pop("plex-loopback-proxy")
+    expect_rejected(mutated, "dashboard bypasses the Plex loopback readiness gate")
     negative_count += 1
 
     mutated = copy.deepcopy(model)
@@ -359,6 +437,19 @@ def run_self_tests(model: dict[str, object]) -> None:
     mutated["services"]["unexpected"] = {}
     expect_rejected(mutated, "unexpected service")
     negative_count += 1
+
+    for resource_type, resource_name in (
+        ("services", "radarr-a"),
+        ("volumes", "shared-media"),
+        ("networks", "cleanup-internal"),
+    ):
+        mutated = copy.deepcopy(model)
+        current = mutated[resource_type][resource_name]["labels"][RUN_TOKEN_LABEL]
+        mutated[resource_type][resource_name]["labels"][RUN_TOKEN_LABEL] = (
+            "1" * 64 if current != "1" * 64 else "2" * 64
+        )
+        expect_rejected(mutated, f"mismatched run token on {resource_type}/{resource_name}")
+        negative_count += 1
 
     mutated = copy.deepcopy(model)
     mutated["volumes"]["shared-media"]["name"] = "unrelated_shared-media"

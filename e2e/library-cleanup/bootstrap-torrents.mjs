@@ -100,20 +100,79 @@ export function buildTorrent(fileName, content) {
 	};
 }
 
-async function qbitRequest(baseUrl, endpoint, init = {}) {
-	const response = await fetch(`${baseUrl}${endpoint}`, {
+function credentialEnvironmentNames(service) {
+	const prefix = service.toUpperCase().replaceAll("-", "_");
+	return {
+		password: `${prefix}_PASSWORD`,
+		username: `${prefix}_USERNAME`,
+	};
+}
+
+export function resolveQbitCredentials(service, environment = process.env) {
+	const names = credentialEnvironmentNames(service);
+	const username = environment[names.username];
+	const password = environment[names.password];
+	if (typeof username !== "string" || username.length === 0) {
+		throw new Error(`${service} requires ${names.username}`);
+	}
+	if (typeof password !== "string" || password.length === 0) {
+		throw new Error(`${service} requires ${names.password}`);
+	}
+	return { username, password };
+}
+
+function extractSidCookie(response) {
+	const setCookies =
+		typeof response.headers.getSetCookie === "function"
+			? response.headers.getSetCookie()
+			: [response.headers.get("set-cookie")].filter(Boolean);
+	for (const setCookie of setCookies) {
+		const match = /(?:^|;\s*)SID=([^;,\s]+)/.exec(setCookie);
+		if (match?.[1]) return `SID=${match[1]}`;
+	}
+	return undefined;
+}
+
+export async function createQbitSession({ baseUrl, credentials, fetchImpl = fetch, service }) {
+	const endpoint = "/api/v2/auth/login";
+	const response = await fetchImpl(`${baseUrl}${endpoint}`, {
+		body: new URLSearchParams(credentials),
+		headers: { "Content-Type": "application/x-www-form-urlencoded" },
+		method: "POST",
+		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+	});
+	await response.text();
+	if (!response.ok) {
+		throw new Error(`${service} POST ${endpoint} failed with HTTP ${response.status}`);
+	}
+	const sidCookie = extractSidCookie(response);
+	if (!sidCookie) {
+		throw new Error(
+			`${service} POST ${endpoint} failed with HTTP ${response.status}: SID cookie missing`,
+		);
+	}
+	return { baseUrl, fetchImpl, service, sidCookie };
+}
+
+export async function qbitRequest(session, endpoint, init = {}) {
+	const method = init.method ?? "GET";
+	const response = await session.fetchImpl(`${session.baseUrl}${endpoint}`, {
 		...init,
+		headers: { ...init.headers, Cookie: session.sidCookie },
 		signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
 	});
 	const text = await response.text();
 	if (!response.ok) {
-		throw new Error(`${init.method ?? "GET"} ${endpoint} failed with HTTP ${response.status}`);
+		throw new Error(`${session.service} ${method} ${endpoint} failed with HTTP ${response.status}`);
 	}
 	return text;
 }
 
-async function addAndVerify(fixture) {
+async function addAndVerify(fixture, session) {
 	const baseUrl = assertHarnessQbitUrl(fixture.baseUrl, fixture.service);
+	if (session.baseUrl !== baseUrl || session.service !== fixture.service) {
+		throw new Error(`${fixture.service} session does not match its isolated endpoint`);
+	}
 	const content = await readFile(fixture.sourcePath);
 	if (!content.includes(Buffer.from("ARR-DASHBOARD-LIBRARY-CLEANUP-E2E"))) {
 		throw new Error(`${fixture.service} source is not a guarded gauntlet fixture`);
@@ -121,20 +180,20 @@ async function addAndVerify(fixture) {
 	const fileName = path.posix.basename(fixture.sourcePath);
 	const { infoHash, metainfo } = buildTorrent(fileName, content);
 	const existing = JSON.parse(
-		await qbitRequest(baseUrl, `/api/v2/torrents/info?hashes=${infoHash}`),
+		await qbitRequest(session, `/api/v2/torrents/info?hashes=${infoHash}`),
 	);
 	if (existing.length === 0) {
 		const form = new FormData();
 		form.append("torrents", new Blob([metainfo]), `${fileName}.torrent`);
 		form.append("savepath", path.posix.dirname(fixture.sourcePath));
 		form.append("category", "arr-dashboard-library-cleanup-gauntlet");
-		await qbitRequest(baseUrl, "/api/v2/torrents/add", { method: "POST", body: form });
+		await qbitRequest(session, "/api/v2/torrents/add", { method: "POST", body: form });
 	}
 
 	const deadline = Date.now() + VERIFY_TIMEOUT_MS;
 	while (Date.now() < deadline) {
 		const torrents = JSON.parse(
-			await qbitRequest(baseUrl, `/api/v2/torrents/info?hashes=${infoHash}`),
+			await qbitRequest(session, `/api/v2/torrents/info?hashes=${infoHash}`),
 		);
 		const torrent = torrents[0];
 		if (
@@ -151,8 +210,22 @@ async function addAndVerify(fixture) {
 	throw new Error(`${fixture.service} did not expose the exact torrent fixture`);
 }
 
-export async function main() {
-	for (const fixture of TORRENT_FIXTURES) await addAndVerify(fixture);
+export async function main({ environment = process.env, fetchImpl = fetch } = {}) {
+	const sessions = new Map();
+	for (const fixture of TORRENT_FIXTURES) {
+		let session = sessions.get(fixture.service);
+		if (!session) {
+			const baseUrl = assertHarnessQbitUrl(fixture.baseUrl, fixture.service);
+			session = await createQbitSession({
+				baseUrl,
+				credentials: resolveQbitCredentials(fixture.service, environment),
+				fetchImpl,
+				service: fixture.service,
+			});
+			sessions.set(fixture.service, session);
+		}
+		await addAndVerify(fixture, session);
+	}
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
