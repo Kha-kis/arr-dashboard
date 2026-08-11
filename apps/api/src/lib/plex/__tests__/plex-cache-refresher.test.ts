@@ -463,7 +463,7 @@ describe("evictStaleRows", () => {
 		expect(deleteMany).not.toHaveBeenCalled();
 	});
 
-	it("fails closed when a relevant history row cannot be mapped to current metadata", async () => {
+	it("publishes a complete current library while ignoring history for a stale library key", async () => {
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
@@ -477,8 +477,58 @@ describe("evictStaleRows", () => {
 			]),
 			getHistory: vi.fn().mockResolvedValue([
 				{
-					ratingKey: "missing",
-					title: "Missing Movie",
+					ratingKey: "stale",
+					title: "Stale Movie",
+					type: "movie",
+					viewedAt: 1_700_000_000,
+					accountID: 1,
+				},
+			]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
+		const createMany = vi.fn().mockResolvedValue({ count: 1 });
+		const tx = {
+			plexCache: { deleteMany, createMany },
+			cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+		};
+		const prisma = {
+			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+				callback(tx),
+			),
+		} as unknown as PrismaClient;
+		vi.mocked(silentLog.info).mockClear();
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		expect(deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
+		expect(createMany).toHaveBeenCalledWith({
+			data: [expect.objectContaining({ ratingKey: "current", tmdbId: 42 })],
+		});
+		expect(silentLog.info).toHaveBeenCalledWith(
+			expect.objectContaining({ ignoredHistoricalItems: 1 }),
+			"Plex cache refresh complete",
+		);
+	});
+
+	it("fails closed when a current historical item has no TMDB metadata", async () => {
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "current-without-tmdb",
+					title: "Current Movie Without TMDB",
+					type: "movie",
+					Guid: [],
+				},
+			]),
+			getHistory: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "current-without-tmdb",
+					title: "Current Movie Without TMDB",
 					type: "movie",
 					viewedAt: 1_700_000_000,
 					accountID: 1,
@@ -487,19 +537,19 @@ describe("evictStaleRows", () => {
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
 		const deleteMany = vi.fn();
-		const prisma = {
-			plexCache: {
-				upsert: vi.fn().mockResolvedValue({ id: "fresh-1" }),
-				findMany: vi.fn(),
-				deleteMany,
-			},
-			$transaction: vi.fn(async (operations: Promise<unknown>[]) => Promise.all(operations)),
-		} as unknown as PrismaClient;
+		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+		vi.mocked(silentLog.warn).mockClear();
 
 		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
-		expect(result.complete).toBe(false);
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(deleteMany).not.toHaveBeenCalled();
+		expect(silentLog.warn).toHaveBeenCalledWith(
+			expect.objectContaining({
+				incompleteReasons: expect.objectContaining({ currentItemsWithoutTmdbMetadata: 1 }),
+			}),
+			"Plex cache: skipping eviction because the refreshed inventory was incomplete",
+		);
 	});
 
 	it("fails closed when one discovered library returns only a partial snapshot", async () => {

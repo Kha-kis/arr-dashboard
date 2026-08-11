@@ -139,12 +139,20 @@ export async function refreshPlexCache(
 	let completedAt: Date | undefined;
 	let superseded = false;
 	const errorMessages: string[] = [];
+	const incompleteReasons: Record<string, number> = {};
+	let totalLibraryItems = 0;
+	let mappedLibraryItems = 0;
+	let ignoredHistoricalItems = 0;
+	const markIncomplete = (reason: string) => {
+		complete = false;
+		incompleteReasons[reason] = (incompleteReasons[reason] ?? 0) + 1;
+	};
 
 	try {
 		// 1. Build accountId → username map
 		const accounts = await client.getAccounts();
 		if (accounts.length === 0) {
-			complete = false;
+			markIncomplete("noUserAccounts");
 			errors++;
 			errorMessages.push("Plex returned no user accounts");
 			log.warn({ instanceId }, "Plex cache refresh: no user accounts discovered");
@@ -158,7 +166,7 @@ export async function refreshPlexCache(
 		const sections = await client.getLibrarySections();
 		const mediaLibs = sections.filter((s) => s.type === "movie" || s.type === "show");
 		if (mediaLibs.length === 0) {
-			complete = false;
+			markIncomplete("noMediaLibraries");
 			errors++;
 			errorMessages.push("Plex returned no movie or show libraries");
 			log.warn({ instanceId }, "Plex cache refresh: no movie or show libraries discovered");
@@ -181,14 +189,19 @@ export async function refreshPlexCache(
 				thumb: string | null;
 			}
 		>();
+		const currentLibraryRatingKeys = new Set<string>();
 
 		for (const lib of mediaLibs) {
 			try {
 				const items = await client.getLibraryItems(lib.key);
 				for (const item of items) {
+					totalLibraryItems++;
+					if (item.ratingKey) {
+						currentLibraryRatingKeys.add(item.ratingKey);
+					}
 					const tmdbId = parsePlexTmdbId(item.Guid);
 					if (!tmdbId) {
-						complete = false;
+						markIncomplete("currentItemsWithoutTmdbMetadata");
 						continue;
 					}
 
@@ -208,13 +221,14 @@ export async function refreshPlexCache(
 					});
 				}
 			} catch (err) {
-				complete = false;
+				markIncomplete("librarySnapshotFetchFailures");
 				const msg = `Failed to fetch library "${lib.title}": ${getErrorMessage(err)}`;
 				log.warn({ err, sectionId: lib.key, sectionTitle: lib.title }, msg);
 				errors++;
 				errorMessages.push(msg);
 			}
 		}
+		mappedLibraryItems = ratingKeyMap.size;
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
 		const history = await client.getHistory({ maxResults: 100_000, requireComplete: true });
@@ -228,16 +242,22 @@ export async function refreshPlexCache(
 				? (entry.grandparentRatingKey ?? entry.ratingKey)
 				: entry.ratingKey;
 
+			const isRelevantHistory = entry.type === "movie" || entry.type === "episode";
+			if (isRelevantHistory && !currentLibraryRatingKeys.has(itemRatingKey)) {
+				ignoredHistoricalItems++;
+				continue;
+			}
+
 			const itemData = ratingKeyMap.get(itemRatingKey);
 			if (!itemData) {
-				if (entry.type === "movie" || entry.type === "episode") complete = false;
+				if (isRelevantHistory) markIncomplete("currentHistoryItemsWithoutMappedMetadata");
 				continue;
 			}
 
 			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
 			const username = accountMap.get(entry.accountID);
 			if (!username) {
-				complete = false;
+				markIncomplete("historyItemsWithUnknownAccounts");
 				continue;
 			}
 
@@ -308,7 +328,9 @@ export async function refreshPlexCache(
 
 				const itemData = ratingKeyMap.get(itemRatingKey);
 				if (!itemData) {
-					if (deckItem.type === "movie" || deckItem.type === "episode") complete = false;
+					if (deckItem.type === "movie" || deckItem.type === "episode") {
+						markIncomplete("onDeckItemsWithoutMappedMetadata");
+					}
 					continue;
 				}
 
@@ -319,14 +341,13 @@ export async function refreshPlexCache(
 				}
 			}
 		} catch (err) {
-			complete = false;
+			markIncomplete("onDeckFetchFailures");
 			errors++;
 			errorMessages.push(`Failed to fetch Plex on-deck items: ${getErrorMessage(err)}`);
 			log.warn({ err }, "Failed to fetch Plex on-deck items");
 		}
 
 		// Release ratingKeyMap — all data now lives in aggregations (#239)
-		const libraryItemCount = ratingKeyMap.size;
 		ratingKeyMap.clear();
 
 		// 6. Publish one complete generation atomically. Until every upstream
@@ -466,7 +487,15 @@ export async function refreshPlexCache(
 			}
 		} else {
 			log.warn(
-				{ instanceId, aggregationSize: aggregationsArray.length, errors },
+				{
+					instanceId,
+					aggregationSize: aggregationsArray.length,
+					totalLibraryItems,
+					mappedLibraryItems,
+					ignoredHistoricalItems,
+					incompleteReasons,
+					errors,
+				},
 				"Plex cache: skipping eviction because the refreshed inventory was incomplete",
 			);
 		}
@@ -474,7 +503,10 @@ export async function refreshPlexCache(
 		log.info(
 			{
 				instanceId,
-				totalLibraryItems: libraryItemCount,
+				totalLibraryItems,
+				mappedLibraryItems,
+				ignoredHistoricalItems,
+				incompleteReasons,
 				totalHistory: historyCount,
 				uniqueItems: aggregationsArray.length,
 				upserted,
