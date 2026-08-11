@@ -77,7 +77,9 @@ def model_container_names(model: dict[str, Any], project: str) -> set[str]:
 			raise OwnershipError("rendered model has an invalid service definition")
 		container_name = service.get("container_name")
 		if container_name is None:
-			physical_names.add(f"{project}-{service_name}-1")
+			physical_names.update(
+				{f"{project}-{service_name}-1", f"{project}_{service_name}_1"}
+			)
 		elif isinstance(container_name, str) and container_name:
 			physical_names.add(container_name)
 		else:

@@ -49,6 +49,9 @@ if [ "$command" = ls ]; then
 			container-default)
 				[ "$kind" = container ] && case " $* " in *' -a '*) printf '%s\n' "${LC_E2E_TEST_PROJECT}-app-1" ;; esac
 				;;
+			container-compat)
+				[ "$kind" = container ] && case " $* " in *' -a '*) printf '%s\n' "${LC_E2E_TEST_PROJECT}_app_1" ;; esac
+				;;
 			container-named)
 				[ "$kind" = container ] && case " $* " in *' -a '*) printf '%s\n' "${LC_E2E_TEST_PROJECT}-named-physical" ;; esac
 				;;
@@ -64,6 +67,9 @@ if [ "$command" = inspect ]; then
 		case "${LC_E2E_TEST_COLLISION:?}:$kind" in
 			container-default:container)
 				printf '%s\n' "[{\"Name\":\"/${LC_E2E_TEST_PROJECT}-app-1\",\"Config\":{\"Labels\":{\"com.docker.compose.project\":\"foreign\"}}}]"
+				;;
+			container-compat:container)
+				printf '%s\n' "[{\"Name\":\"/${LC_E2E_TEST_PROJECT}_app_1\",\"Config\":{\"Labels\":{\"com.docker.compose.project\":\"foreign\"}}}]"
 				;;
 			container-named:container)
 				printf '%s\n' "[{\"Name\":\"/${LC_E2E_TEST_PROJECT}-named-physical\",\"Config\":{\"Labels\":{\"com.docker.compose.project\":\"foreign\"}}}]"
@@ -105,6 +111,7 @@ assert_rejects_collision() {
 	fi
 	case "$kind" in
 		container-default) expected_name="${PROJECT}-app-1" ;;
+		container-compat) expected_name="${PROJECT}_app_1" ;;
 		container-named) expected_name="${PROJECT}-named-physical" ;;
 		*) expected_name="${PROJECT}_" ;;
 	esac
@@ -118,6 +125,7 @@ assert_rejects_collision() {
 assert_rejects_collision volume
 assert_rejects_collision network
 assert_rejects_collision container-default
+assert_rejects_collision container-compat
 assert_rejects_collision container-named
 
 echo "live project exact-name ownership tests passed."
