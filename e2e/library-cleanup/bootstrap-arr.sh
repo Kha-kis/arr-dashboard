@@ -8,6 +8,8 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 	export COMPOSE_PROJECT_NAME
 fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
+DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
+export DOCKER_CONFIG
 . "$SCRIPT_DIR/compose-command.sh"
 . "$SCRIPT_DIR/live-project-guard.sh"
 RUNNER_SERVICE=${ARR_BOOTSTRAP_RUNNER_SERVICE:-${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}}
@@ -22,8 +24,6 @@ case "$RUNNER_SERVICE" in
 		;;
 esac
 
-DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
-export DOCKER_CONFIG
 cd "$SCRIPT_DIR"
 
 TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/lc-e2e-arr-bootstrap.XXXXXX")

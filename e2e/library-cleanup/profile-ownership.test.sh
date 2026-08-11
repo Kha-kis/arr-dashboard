@@ -72,9 +72,12 @@ is_post_up_run() {
 }
 
 if [ "$command" = ls ]; then
-	case " $* " in
-		*' --format '*)
+		case " $* " in
+			*' --format '*)
 			case "${LC_E2E_TEST_COLLISION:-}:$kind" in
+				container:container)
+					case " $* " in *' -a '*) printf '%s\n' "${LC_E2E_TEST_PROJECT}-app-1" ;; esac
+				;;
 				volume:volume) printf '%s\n' "${LC_E2E_TEST_PROJECT}_data" ;;
 				network:network) printf '%s\n' "${LC_E2E_TEST_PROJECT}_private" ;;
 				*)
@@ -91,8 +94,11 @@ if [ "$command" = ls ]; then
 	exit 0
 fi
 
-if [ "$command" = inspect ]; then
-	case "${LC_E2E_TEST_COLLISION:-}:$kind" in
+	if [ "$command" = inspect ]; then
+		case "${LC_E2E_TEST_COLLISION:-}:$kind" in
+			container:container)
+				printf '%s\n' "[{\"Name\":\"/${LC_E2E_TEST_PROJECT}-app-1\",\"Config\":{\"Labels\":{\"com.docker.compose.project\":\"foreign\"}}}]"
+				;;
 		volume:volume)
 			printf '%s\n' "[{\"Name\":\"${LC_E2E_TEST_PROJECT}_data\",\"Labels\":{\"com.docker.compose.project\":\"foreign\"}}]"
 			;;
@@ -199,5 +205,6 @@ assert_name_collision_stops_before_up() {
 
 assert_name_collision_stops_before_up volume
 assert_name_collision_stops_before_up network
+assert_name_collision_stops_before_up container
 
 echo "dashboard profile ownership test passed."

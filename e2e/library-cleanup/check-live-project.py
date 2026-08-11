@@ -27,17 +27,17 @@ class OwnershipError(ValueError):
 	"""A live resource cannot be attributed to this exact harness run."""
 
 
-def docker_json(*args: str) -> Any:
+def docker_json(docker_bin: str, *args: str) -> Any:
 	result = subprocess.run(
-		["docker", *args], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+		[docker_bin, *args], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
 	)
 	return json.loads(result.stdout)
 
 
-def matching_ids(kind: str, project: str) -> set[str]:
+def matching_ids(docker_bin: str, kind: str, project: str) -> set[str]:
 	ids: set[str] = set()
 	for label in (f"{PROJECT_LABEL}={project}", f"{RUN_PROJECT_LABEL}={project}"):
-		command = ["docker", kind, "ls"]
+		command = [docker_bin, kind, "ls"]
 		if kind == "container":
 			command.append("-a")
 		command.extend(["--filter", f"label={label}", "--quiet"])
@@ -67,11 +67,34 @@ def model_resource_names(model: dict[str, Any], resource_kind: str) -> set[str]:
 	return physical_names
 
 
-def existing_named_ids(kind: str, physical_names: set[str]) -> set[str]:
+def model_container_names(model: dict[str, Any], project: str) -> set[str]:
+	services = model.get("services")
+	if not isinstance(services, dict):
+		raise OwnershipError("rendered model has no services")
+	physical_names: set[str] = set()
+	for service_name, service in services.items():
+		if not isinstance(service_name, str) or not isinstance(service, dict):
+			raise OwnershipError("rendered model has an invalid service definition")
+		container_name = service.get("container_name")
+		if container_name is None:
+			physical_names.add(f"{project}-{service_name}-1")
+		elif isinstance(container_name, str) and container_name:
+			physical_names.add(container_name)
+		else:
+			raise OwnershipError(f"rendered service {service_name} has an invalid container_name")
+	return physical_names
+
+
+def existing_named_ids(docker_bin: str, kind: str, physical_names: set[str]) -> set[str]:
 	if not physical_names:
 		return set()
+	format_field = "{{.Names}}" if kind == "container" else "{{.Name}}"
+	command = [docker_bin, kind, "ls"]
+	if kind == "container":
+		command.append("-a")
+	command.extend(["--format", format_field])
 	result = subprocess.run(
-		["docker", kind, "ls", "--format", "{{.Name}}"],
+		command,
 		check=True,
 		stdout=subprocess.PIPE,
 		stderr=subprocess.PIPE,
@@ -80,10 +103,10 @@ def existing_named_ids(kind: str, physical_names: set[str]) -> set[str]:
 	return {name for name in result.stdout.splitlines() if name in physical_names}
 
 
-def inspect_many(kind: str, identifiers: set[str]) -> list[dict[str, Any]]:
+def inspect_many(docker_bin: str, kind: str, identifiers: set[str]) -> list[dict[str, Any]]:
 	if not identifiers:
 		return []
-	return docker_json(kind, "inspect", *sorted(identifiers))
+	return docker_json(docker_bin, kind, "inspect", *sorted(identifiers))
 
 
 def labels_of(resource: dict[str, Any]) -> dict[str, str]:
@@ -329,6 +352,7 @@ def main() -> int:
 	parser.add_argument("--run-token")
 	parser.add_argument("--config-files")
 	parser.add_argument("--working-dir")
+	parser.add_argument("--docker-bin")
 	parser.add_argument("--allow-empty", action="store_true")
 	parser.add_argument("--self-test", action="store_true")
 	args = parser.parse_args()
@@ -336,38 +360,53 @@ def main() -> int:
 		run_self_tests()
 		return 0
 	if not all(
-		(args.model, args.hashes, args.project, args.run_token, args.config_files, args.working_dir)
+		(
+			args.model,
+			args.hashes,
+			args.project,
+			args.run_token,
+			args.config_files,
+			args.working_dir,
+			args.docker_bin,
+		)
 	):
 		parser.error(
-			"--model, --hashes, --project, --run-token, --config-files, and --working-dir are required"
+				"--model, --hashes, --project, --run-token, --config-files, --working-dir, and --docker-bin are required"
 		)
 	try:
 		model = json.loads(args.model.read_text())
 		config_hashes = dict(
 			line.split(maxsplit=1) for line in args.hashes.read_text().splitlines() if line.strip()
 		)
-		container_ids = matching_ids("container", args.project)
-		volume_ids = matching_ids("volume", args.project)
-		network_ids = matching_ids("network", args.project)
-		volume_ids.update(existing_named_ids("volume", model_resource_names(model, "volume")))
-		network_ids.update(existing_named_ids("network", model_resource_names(model, "network")))
-		containers = inspect_many("container", container_ids)
-		volumes = inspect_many("volume", volume_ids)
-		networks = inspect_many("network", network_ids)
+		container_ids = matching_ids(args.docker_bin, "container", args.project)
+		volume_ids = matching_ids(args.docker_bin, "volume", args.project)
+		network_ids = matching_ids(args.docker_bin, "network", args.project)
+		container_ids.update(
+			existing_named_ids(args.docker_bin, "container", model_container_names(model, args.project))
+		)
+		volume_ids.update(
+			existing_named_ids(args.docker_bin, "volume", model_resource_names(model, "volume"))
+		)
+		network_ids.update(
+			existing_named_ids(args.docker_bin, "network", model_resource_names(model, "network"))
+		)
+		containers = inspect_many(args.docker_bin, "container", container_ids)
+		volumes = inspect_many(args.docker_bin, "volume", volume_ids)
+		networks = inspect_many(args.docker_bin, "network", network_ids)
 		image_refs = {
 			service.get("image")
 			for service in model["services"].values()
 			if isinstance(service.get("image"), str)
 		}
 		image_ids = {
-			image: docker_json("image", "inspect", image)[0]["Id"]
+			image: docker_json(args.docker_bin, "image", "inspect", image)[0]["Id"]
 			for image in image_refs
 			if any(container.get("Config", {}).get("Image") == image for container in containers)
 		}
 		for container in containers:
 			for mount in container.get("Mounts", []):
 				if mount.get("Type") == "volume":
-					mount["Labels"] = docker_json("volume", "inspect", mount["Name"])[0].get("Labels", {})
+					mount["Labels"] = docker_json(args.docker_bin, "volume", "inspect", mount["Name"])[0].get("Labels", {})
 		validate_resources(
 			model,
 			args.project,

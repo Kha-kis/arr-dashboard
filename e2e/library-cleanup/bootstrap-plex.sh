@@ -7,13 +7,12 @@ if [ -z "${COMPOSE_PROJECT_NAME:-}" ] && [ -f "$SCRIPT_DIR/.env" ]; then
 	export COMPOSE_PROJECT_NAME
 fi
 PROJECT_NAME=${COMPOSE_PROJECT_NAME:?Set the unique live COMPOSE_PROJECT_NAME}
+DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
+export DOCKER_CONFIG
 . "$SCRIPT_DIR/compose-command.sh"
 . "$SCRIPT_DIR/live-project-guard.sh"
 RUNNER_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
 RUNNER_SCRIPT=/tmp/lc-e2e-bootstrap-plex-$PROJECT_NAME.mjs
-DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
-export DOCKER_CONFIG
-
 case "$RUNNER_SERVICE" in
 	dashboard-sqlite | dashboard-postgres) ;;
 	*)

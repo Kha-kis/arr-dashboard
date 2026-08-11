@@ -13,6 +13,7 @@ EMPTY_BIN_DIR="$TEMP_DIR/empty-bin"
 FAKE_HOME="$TEMP_DIR/home"
 EMPTY_HOME="$TEMP_DIR/empty-home"
 ISOLATED_DOCKER_CONFIG="$TEMP_DIR/isolated-docker-config"
+WRAPPED_DOCKER="$TEMP_DIR/docker wrapper"
 SYSTEM_PATH=$PATH
 mkdir -p \
 	"$FAKE_DOCKER_BIN_DIR" \
@@ -21,6 +22,12 @@ mkdir -p \
 	"$FAKE_HOME/.docker/cli-plugins" \
 	"$EMPTY_HOME" \
 	"$ISOLATED_DOCKER_CONFIG"
+
+cat >"$EMPTY_BIN_DIR/docker" <<'EOF'
+#!/bin/sh
+exit 1
+EOF
+chmod +x "$EMPTY_BIN_DIR/docker"
 
 cat >"$FAKE_COMPOSE" <<'EOF'
 #!/bin/sh
@@ -47,6 +54,8 @@ fi
 } >"$ARR_COMPOSE_LOG"
 EOF
 chmod +x "$FAKE_DOCKER_BIN_DIR/docker"
+cp "$FAKE_DOCKER_BIN_DIR/docker" "$WRAPPED_DOCKER"
+chmod +x "$WRAPPED_DOCKER"
 
 cat >"$FAKE_STANDALONE_BIN_DIR/docker-compose" <<'EOF'
 #!/bin/sh
@@ -142,6 +151,19 @@ export PATH
 assert_compose_args docker
 
 unset ARR_COMPOSE_BIN
+ARR_DOCKER_BIN="$WRAPPED_DOCKER"
+HOME="$EMPTY_HOME"
+DOCKER_CONFIG="$ISOLATED_DOCKER_CONFIG"
+PATH=$EMPTY_BIN_DIR:$SYSTEM_PATH
+export ARR_DOCKER_BIN PATH HOME DOCKER_CONFIG
+exercise_compose
+assert_resolved_compose_vector "$WRAPPED_DOCKER" compose
+PATH=$SYSTEM_PATH
+export PATH
+assert_compose_args docker
+unset ARR_DOCKER_BIN
+
+unset ARR_COMPOSE_BIN
 PATH=$FAKE_STANDALONE_BIN_DIR
 export PATH
 exercise_compose
@@ -151,7 +173,7 @@ export PATH
 assert_compose_args docker-compose
 
 unset ARR_COMPOSE_BIN
-PATH=$EMPTY_BIN_DIR
+PATH=$EMPTY_BIN_DIR:$SYSTEM_PATH
 HOME="$FAKE_HOME"
 export PATH
 exercise_compose
@@ -162,7 +184,7 @@ assert_compose_args plugin
 
 unset ARR_COMPOSE_BIN
 ln -s "$FAKE_STANDALONE_BIN_DIR/legacy-compose" "$EMPTY_BIN_DIR/docker-compose"
-PATH=$EMPTY_BIN_DIR
+PATH=$EMPTY_BIN_DIR:$SYSTEM_PATH
 HOME="$FAKE_HOME"
 export PATH HOME
 exercise_compose
@@ -191,6 +213,40 @@ for script in \
 		echo "$script bypasses the shared Compose helper." >&2
 		exit 1
 	fi
+done
+
+assert_default_docker_config_precedes_resolver() {
+	script=$1
+	harness_dir=$TEMP_DIR/default-config-$script
+	resolver_log=$harness_dir/resolver-docker-config
+	expected_resolver_log=$harness_dir/expected-resolver-docker-config
+	mkdir -p "$harness_dir"
+	cp "$SCRIPT_DIR/$script" "$harness_dir/$script"
+	cat >"$harness_dir/compose-command.sh" <<'EOF'
+#!/bin/sh
+printf '%s\n' "${DOCKER_CONFIG-}" >"$ARR_COMPOSE_RESOLVER_CONFIG_LOG"
+exit 0
+EOF
+	if ! (
+		unset DOCKER_CONFIG
+		COMPOSE_PROJECT_NAME=lc-e2e-contract
+		ARR_COMPOSE_RESOLVER_CONFIG_LOG=$resolver_log
+		export COMPOSE_PROJECT_NAME ARR_COMPOSE_RESOLVER_CONFIG_LOG
+		sh "$harness_dir/$script"
+	); then
+		echo "$script did not reach the shared Compose resolver." >&2
+		exit 1
+	fi
+	printf '%s\n' /tmp/lc-e2e-docker-config >"$expected_resolver_log"
+	if ! cmp -s "$expected_resolver_log" "$resolver_log"; then
+		echo "$script resolved Compose before exporting its default isolated DOCKER_CONFIG." >&2
+		diff -u "$expected_resolver_log" "$resolver_log" >&2 || true
+		exit 1
+	fi
+}
+
+for script in bootstrap-arr.sh bootstrap-dashboard.sh bootstrap-plex.sh run-live-scenario.sh; do
+	assert_default_docker_config_precedes_resolver "$script"
 done
 
 echo "compose command contract and bypass checks passed."

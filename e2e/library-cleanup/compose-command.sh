@@ -14,6 +14,7 @@ is_compose_v2() {
 }
 
 resolve_compose_command() {
+	DOCKER_BIN=${ARR_DOCKER_BIN:-docker}
 	if [ -n "${ARR_COMPOSE_BIN:-}" ]; then
 		if [ ! -x "$ARR_COMPOSE_BIN" ]; then
 			echo "Library-cleanup harness refused: ARR_COMPOSE_BIN is not an executable: $ARR_COMPOSE_BIN." >&2
@@ -51,7 +52,7 @@ resolve_compose_command() {
 		fi
 	done
 
-	if command -v docker >/dev/null 2>&1 && is_compose_v2 docker compose; then
+	if command -v "$DOCKER_BIN" >/dev/null 2>&1 && is_compose_v2 "$DOCKER_BIN" compose; then
 		COMPOSE_COMMAND=docker
 		return
 	fi
@@ -65,7 +66,7 @@ resolve_compose_command
 resolve_compose_command_vector() {
 	case "$COMPOSE_COMMAND" in
 		docker)
-			ARR_RESOLVED_COMPOSE_EXECUTABLE=docker
+			ARR_RESOLVED_COMPOSE_EXECUTABLE=$DOCKER_BIN
 			ARR_RESOLVED_COMPOSE_ARGUMENT=compose
 			;;
 		executable)
@@ -83,7 +84,7 @@ resolve_compose_command_vector
 
 run_compose() {
 	case "$COMPOSE_COMMAND" in
-		docker) docker compose "$@" ;;
+		docker) "$DOCKER_BIN" compose "$@" ;;
 		executable) "$ARR_COMPOSE_BIN" "$@" ;;
 		*)
 			echo "Library-cleanup harness refused: invalid Compose command selection." >&2

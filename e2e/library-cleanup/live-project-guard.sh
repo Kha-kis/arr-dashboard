@@ -67,6 +67,7 @@ verify_dashboard_profile() {
 
 verify_live_project() {
 	allow_empty=${1:-}
+	docker_bin=${ARR_DOCKER_BIN:-docker}
 	model_file=$(mktemp "${TMPDIR:-/tmp}/lc-e2e-live-model.XXXXXX")
 	hash_file=$(mktemp "${TMPDIR:-/tmp}/lc-e2e-live-hashes.XXXXXX")
 	if ! compose --profile candidate-sqlite --profile candidate-postgres --profile baseline \
@@ -79,11 +80,13 @@ verify_live_project() {
 	if [ "$allow_empty" = "--allow-empty" ]; then
 		python3 "$SCRIPT_DIR/check-live-project.py" --model "$model_file" --hashes "$hash_file" \
 			--project "$PROJECT_NAME" --run-token "$LC_E2E_RUN_TOKEN" \
+			--docker-bin "$docker_bin" \
 			--config-files "$SCRIPT_DIR/compose.yml,$SCRIPT_DIR/compose.debug.yml" \
 			--working-dir "$SCRIPT_DIR" --allow-empty
 	else
 		python3 "$SCRIPT_DIR/check-live-project.py" --model "$model_file" --hashes "$hash_file" \
 			--project "$PROJECT_NAME" --run-token "$LC_E2E_RUN_TOKEN" \
+			--docker-bin "$docker_bin" \
 			--config-files "$SCRIPT_DIR/compose.yml,$SCRIPT_DIR/compose.debug.yml" \
 			--working-dir "$SCRIPT_DIR"
 	fi
