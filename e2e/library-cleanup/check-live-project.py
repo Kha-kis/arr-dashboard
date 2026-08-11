@@ -103,10 +103,26 @@ def existing_named_ids(docker_bin: str, kind: str, physical_names: set[str]) -> 
 	return {name for name in result.stdout.splitlines() if name in physical_names}
 
 
+def deduplicate_inspections(kind: str, inspections: Any) -> list[dict[str, Any]]:
+	if not isinstance(inspections, list):
+		raise OwnershipError(f"docker {kind} inspect returned an invalid response")
+	unique: dict[str, dict[str, Any]] = {}
+	for resource in inspections:
+		if not isinstance(resource, dict):
+			raise OwnershipError(f"docker {kind} inspect returned an invalid resource")
+		identity = resource.get("Id") or resource.get("ID") or resource.get("Name")
+		if not isinstance(identity, str) or not identity:
+			raise OwnershipError(f"docker {kind} inspect returned a resource without an identity")
+		unique.setdefault(identity, resource)
+	return list(unique.values())
+
+
 def inspect_many(docker_bin: str, kind: str, identifiers: set[str]) -> list[dict[str, Any]]:
 	if not identifiers:
 		return []
-	return docker_json(docker_bin, kind, "inspect", *sorted(identifiers))
+	return deduplicate_inspections(
+		kind, docker_json(docker_bin, kind, "inspect", *sorted(identifiers))
+	)
 
 
 def labels_of(resource: dict[str, Any]) -> dict[str, str]:
@@ -276,6 +292,7 @@ def run_self_tests() -> None:
 	volume_labels = {**labels, VOLUME_LABEL: "data"}
 	network_labels = {**labels, NETWORK_LABEL: "private"}
 	container = {
+		"Id": "container-id",
 		"Name": f"/{project}-app-1",
 		"Config": {"Labels": labels, "Image": "example:test"},
 		"Image": "sha256:image",
@@ -290,6 +307,9 @@ def run_self_tests() -> None:
 	}
 	volume = {"Name": f"{project}_data", "Labels": volume_labels}
 	network = {"Name": f"{project}_private", "Labels": network_labels}
+	assert deduplicate_inspections("container", [container, json.loads(json.dumps(container))]) == [
+		container
+	]
 	validate_resources(
 		model,
 		project,
