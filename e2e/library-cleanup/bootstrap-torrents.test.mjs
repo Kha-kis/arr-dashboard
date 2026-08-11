@@ -83,7 +83,10 @@ test("qBittorrent session logs in with disposable credentials and retains the SI
 	assert.equal(session.sidCookie, "SID=disposable-a");
 	assert.equal(mock.calls[0].url, "http://qbittorrent-a:8080/api/v2/auth/login");
 	assert.equal(mock.calls[0].init.method, "POST");
-	assert.equal(mock.calls[0].init.body.toString(), "username=bootstrap-a&password=not-in-error-output");
+	assert.equal(
+		mock.calls[0].init.body.toString(),
+		"username=bootstrap-a&password=not-in-error-output",
+	);
 });
 
 test("qBittorrent session rejects a successful login response without a SID cookie", async () => {

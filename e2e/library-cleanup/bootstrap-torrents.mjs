@@ -133,12 +133,7 @@ function extractSidCookie(response) {
 	return undefined;
 }
 
-export async function createQbitSession({
-	baseUrl,
-	credentials,
-	fetchImpl = fetch,
-	service,
-}) {
+export async function createQbitSession({ baseUrl, credentials, fetchImpl = fetch, service }) {
 	const endpoint = "/api/v2/auth/login";
 	const response = await fetchImpl(`${baseUrl}${endpoint}`, {
 		body: new URLSearchParams(credentials),
@@ -152,7 +147,9 @@ export async function createQbitSession({
 	}
 	const sidCookie = extractSidCookie(response);
 	if (!sidCookie) {
-		throw new Error(`${service} POST ${endpoint} failed with HTTP ${response.status}: SID cookie missing`);
+		throw new Error(
+			`${service} POST ${endpoint} failed with HTTP ${response.status}: SID cookie missing`,
+		);
 	}
 	return { baseUrl, fetchImpl, service, sidCookie };
 }

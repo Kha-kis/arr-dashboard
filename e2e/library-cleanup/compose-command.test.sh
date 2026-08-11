@@ -40,6 +40,7 @@ for script in \
 	bootstrap-dashboard.sh \
 	bootstrap-plex.sh \
 	bootstrap-qui.sh \
+	bootstrap-torrents.sh \
 	run-browser-policy.sh \
 	run-live-scenario.sh \
 	teardown.sh \

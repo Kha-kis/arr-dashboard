@@ -76,11 +76,16 @@ The PostgreSQL password preflight reads the secret file without displaying its
 value. It rejects empty values and anything outside URL-safe unreserved ASCII
 characters (`A-Z`, `a-z`, `0-9`, `.`, `_`, `~`, and `-`).
 
-The preflight only runs `docker compose config`; it does not build, pull, create,
-or start containers. The baseline default is
+The preflight only runs Compose model rendering; it does not build, pull,
+create, or start containers. All harness scripts resolve Compose through
+`compose-command.sh`. Set `ARR_COMPOSE_BIN` to the exact Compose v2 executable
+when the default standalone plugin path is not available. The baseline default is
 `khak1s/arr-dashboard:2.23.0`, matching `docs/RELEASING.md`. Most images remain
-configurable in the ignored `.env` for pinned compatibility runs. qUI is the
-exception: both instances are allowlisted to the reviewed official
+configurable in the ignored `.env` for pinned compatibility runs, but Radarr,
+Sonarr, Plex, and qBittorrent overrides must retain the expected LinuxServer
+repository and an immutable digest. The checked-in defaults pin the reviewed
+Radarr 5.16.3, Sonarr 4.0.15, Plex 1.41.5, and qBittorrent 5.1.2 manifests. qUI
+is the exception: both instances are allowlisted to the reviewed official
 `ghcr.io/autobrr/qui:v1.16.1` image and use a Compose-defined probe against
 `/healthz/readiness`. An arbitrary override such as `busybox` fails validation.
 
@@ -104,18 +109,20 @@ CANDIDATE_IMAGE=$(sh ./build-candidate-image.sh)
 
 # Required immediately before a live command.
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
+COMPOSE_PROJECT_NAME="$PROJECT_NAME"
+export COMPOSE_PROJECT_NAME
+. ./compose-command.sh
 
 # Candidate built from this checkout, SQLite
-CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
-  docker compose --profile candidate-sqlite up --no-build --wait dashboard-sqlite
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" \
+  compose --profile candidate-sqlite up --no-build --wait dashboard-sqlite
 
 # Candidate built from this checkout, PostgreSQL
-CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
-  docker compose --profile candidate-postgres up --no-build --wait dashboard-postgres
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" \
+  compose --profile candidate-postgres up --no-build --wait dashboard-postgres
 
 # Published 2.23.0 baseline reproduction
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose \
-  --profile baseline up --wait dashboard-baseline
+compose --profile baseline up --wait dashboard-baseline
 ```
 
 The Compose model has no project-name fallback. Do not use stale generic names
@@ -161,18 +168,16 @@ sh ./run-live-scenario.sh policy-gate
 sh ./run-live-scenario.sh policy-core
 sh ./run-browser-policy.sh
 
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
-  stop dashboard-sqlite
-CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
-  docker compose -f compose.yml -f compose.debug.yml --profile candidate-postgres \
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" compose stop dashboard-sqlite
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" \
+  compose --profile candidate-postgres \
   up --no-build --wait dashboard-postgres
 LC_E2E_DASHBOARD_SERVICE=dashboard-postgres sh ./bootstrap-dashboard.sh
 LC_E2E_DASHBOARD_SERVICE=dashboard-postgres sh ./run-browser-policy.sh
 
-COMPOSE_PROJECT_NAME="$PROJECT_NAME" docker compose -f compose.yml -f compose.debug.yml \
-  stop dashboard-postgres
-CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" COMPOSE_PROJECT_NAME="$PROJECT_NAME" \
-  docker compose -f compose.yml -f compose.debug.yml --profile candidate-sqlite \
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" compose stop dashboard-postgres
+CANDIDATE_DASHBOARD_IMAGE="$CANDIDATE_IMAGE" \
+  compose --profile candidate-sqlite \
   up --no-build --wait dashboard-sqlite
 sh ./bootstrap-dashboard.sh
 
@@ -216,9 +221,17 @@ project, and checkout/container identity is checked again after the tests. Set
 PostgreSQL candidate.
 
 The ARR bootstrap is idempotent for an already populated fixture. It skips an
-unnecessary rescan when the exact expected file has one record and fails if an
-ARR instance reports duplicate records for the same path, rather than letting
-ambiguous ownership reach a cleanup scenario.
+unnecessary rescan only when the exact expected file row is freshly associated
+with its movie or S01E01 parent. If the exact controlled fixture has detached or
+duplicate rows, the bootstrap preserves the guarded hardlink, removes only that
+fixture's ARR database entry with file deletion disabled, and recreates it. Any
+foreign path, external ID, parent, malformed identity, or failure to converge
+still stops before a cleanup scenario.
+
+Torrent bootstrap authenticates separately to each disposable qBittorrent
+instance using its temporary startup password and forwards only the resulting
+SID cookie. It no longer depends on qUI's later isolated-subnet authorization
+setup or on unauthenticated Web API access.
 
 The Radarr and Sonarr series-deletion scenarios enable the #667 post-delete
 media-server scan option and poll Plex directly without manually starting a

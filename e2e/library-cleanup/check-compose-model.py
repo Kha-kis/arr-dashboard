@@ -48,14 +48,14 @@ EXPECTED_VOLUMES = {
 }
 EXPECTED_NETWORKS = {"cleanup-internal", "metadata-egress"}
 ALLOWED_QUI_IMAGES = {"ghcr.io/autobrr/qui:v1.16.1"}
-EXPECTED_INTEGRATION_IMAGES = {
-    "radarr-a": "lscr.io/linuxserver/radarr:5.16.3@sha256:eb894bd26fd3fb29981bf91b140834417ce2ed28ab8217d0ce121db5c460f39a",
-    "radarr-b": "lscr.io/linuxserver/radarr:5.16.3@sha256:eb894bd26fd3fb29981bf91b140834417ce2ed28ab8217d0ce121db5c460f39a",
-    "sonarr-a": "lscr.io/linuxserver/sonarr:4.0.15@sha256:fbe67c25693dc5f3de220c5691f374576ae265df782c16918cc071b630490bd7",
-    "sonarr-b": "lscr.io/linuxserver/sonarr:4.0.15@sha256:fbe67c25693dc5f3de220c5691f374576ae265df782c16918cc071b630490bd7",
-    "plex": "lscr.io/linuxserver/plex:1.41.5@sha256:5c07f70ae39709c71927ecb864cb9328acb01eb6c08779d1efb09b90b68a0692",
-    "qbittorrent-a": "lscr.io/linuxserver/qbittorrent:5.1.2@sha256:7034f73a3c6fa4ea40fd67df462939d1665d765231b572523921c98c2db5362e",
-    "qbittorrent-b": "lscr.io/linuxserver/qbittorrent:5.1.2@sha256:7034f73a3c6fa4ea40fd67df462939d1665d765231b572523921c98c2db5362e",
+EXPECTED_INTEGRATION_IMAGE_REPOSITORIES = {
+    "radarr-a": "lscr.io/linuxserver/radarr",
+    "radarr-b": "lscr.io/linuxserver/radarr",
+    "sonarr-a": "lscr.io/linuxserver/sonarr",
+    "sonarr-b": "lscr.io/linuxserver/sonarr",
+    "plex": "lscr.io/linuxserver/plex",
+    "qbittorrent-a": "lscr.io/linuxserver/qbittorrent",
+    "qbittorrent-b": "lscr.io/linuxserver/qbittorrent",
 }
 QUI_READINESS_TEST = [
     "CMD",
@@ -162,9 +162,15 @@ def validate_model(
     if set(services) != EXPECTED_SERVICES:
         fail("rendered service set does not exactly match the Library Cleanup harness")
 
-    for service_name, expected_image in EXPECTED_INTEGRATION_IMAGES.items():
-        if services[service_name].get("image") != expected_image:
-            fail(f"{service_name} image is not the reviewed immutable integration default")
+    for service_name, expected_repository in EXPECTED_INTEGRATION_IMAGE_REPOSITORIES.items():
+        image = services[service_name].get("image")
+        if not isinstance(image, str) or not re.fullmatch(
+            rf"{re.escape(expected_repository)}:[A-Za-z0-9._-]+@sha256:[a-f0-9]{{64}}", image
+        ):
+            fail(f"{service_name} image must be an immutable digest from its expected repository")
+    for left, right in (("radarr-a", "radarr-b"), ("sonarr-a", "sonarr-b"), ("qbittorrent-a", "qbittorrent-b")):
+        if services[left].get("image") != services[right].get("image"):
+            fail(f"{left} and {right} must use the same integration image")
 
     for service_name, service_value in services.items():
         if not isinstance(service_value, dict):
@@ -373,6 +379,13 @@ def run_self_tests(model: dict[str, object]) -> None:
         mutated["services"][service_name]["image"] = "busybox@sha256:" + "0" * 64
         expect_rejected(mutated, f"unexpected integration image for {service_name}")
         negative_count += 1
+
+    immutable_override = copy.deepcopy(model)
+    for service_name in ("radarr-a", "radarr-b"):
+        immutable_override["services"][service_name]["image"] = (
+            "lscr.io/linuxserver/radarr:compat@sha256:" + "1" * 64
+        )
+    validate_model(immutable_override)
 
     mutated = copy.deepcopy(model)
     mutated["services"]["qui-a"].pop("healthcheck", None)

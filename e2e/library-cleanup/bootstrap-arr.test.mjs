@@ -9,7 +9,10 @@ import {
 	buildPlexNotificationPayload,
 	buildPlaceholderBuffer,
 	buildSeriesAddBody,
+	buildFixtureRemoval,
+	classifyFixtureFileState,
 	fileRecordMatches,
+	fixtureLibraryPath,
 	isPathWithinRoot,
 	MOVIE,
 	SERIES,
@@ -128,7 +131,8 @@ test("Plex notifications carry exact per-instance path mappings and delete event
 	};
 	const radarr = buildPlexNotificationPayload(schema, ARR_FIXTURES[0]);
 	const sonarr = buildPlexNotificationPayload(schema, ARR_FIXTURES[2]);
-	const values = (payload) => Object.fromEntries(payload.fields.map((field) => [field.name, field.value]));
+	const values = (payload) =>
+		Object.fromEntries(payload.fields.map((field) => [field.name, field.value]));
 	assert.deepEqual(values(radarr), {
 		host: "plex",
 		port: 33240,
@@ -176,4 +180,98 @@ test("file record verification accepts only the expected absolute or relative pa
 		),
 		false,
 	);
+});
+
+test("fixture state reuses only one exact freshly associated ARR file", () => {
+	const fixture = ARR_FIXTURES[0];
+	const libraryPath = fixtureLibraryPath(fixture);
+	const record = { id: 41, movieId: 7, path: libraryPath, size: 1_024 };
+	assert.deepEqual(
+		classifyFixtureFileState({
+			fixture,
+			item: { id: 7, path: fixture.itemPath },
+			records: [record],
+			associatedFileId: 41,
+		}),
+		{ kind: "ready", record },
+	);
+});
+
+test("fixture state distinguishes absent, detached, and duplicate controlled rows", () => {
+	const fixture = ARR_FIXTURES[2];
+	const libraryPath = fixtureLibraryPath(fixture);
+	const item = { id: 9, path: fixture.itemPath };
+	assert.deepEqual(
+		classifyFixtureFileState({ fixture, item, records: [], associatedFileId: null }),
+		{ kind: "absent" },
+	);
+	assert.deepEqual(
+		classifyFixtureFileState({
+			fixture,
+			item,
+			records: [{ id: 12, seriesId: 9, path: libraryPath, size: 512 }],
+			associatedFileId: null,
+		}),
+		{ kind: "reset", reason: "detached", recordIds: [12] },
+	);
+	assert.deepEqual(
+		classifyFixtureFileState({
+			fixture,
+			item,
+			records: [
+				{ id: 14, seriesId: 9, path: libraryPath, size: 512 },
+				{ id: 13, seriesId: 9, relativePath: `Season 01/${fixture.fileName}`, size: 512 },
+			],
+			associatedFileId: 14,
+		}),
+		{ kind: "reset", reason: "duplicate", recordIds: [13, 14] },
+	);
+});
+
+test("fixture state fails closed for foreign paths, malformed rows, or conflicting associations", () => {
+	const fixture = ARR_FIXTURES[0];
+	const libraryPath = fixtureLibraryPath(fixture);
+	const item = { id: 7, path: fixture.itemPath };
+	assert.throws(
+		() =>
+			classifyFixtureFileState({
+				fixture,
+				item,
+				records: [{ id: 41, movieId: 7, path: `${fixture.itemPath}/foreign.mkv`, size: 1 }],
+				associatedFileId: null,
+			}),
+		/foreign file path/,
+	);
+	assert.throws(
+		() =>
+			classifyFixtureFileState({
+				fixture,
+				item,
+				records: [{ id: "41", movieId: 7, path: libraryPath, size: 1 }],
+				associatedFileId: null,
+			}),
+		/invalid file identity/,
+	);
+	assert.throws(
+		() =>
+			classifyFixtureFileState({
+				fixture,
+				item,
+				records: [{ id: 41, movieId: 7, path: libraryPath, size: 1 }],
+				associatedFileId: 42,
+			}),
+		/conflicting file association/,
+	);
+});
+
+test("fixture removal always preserves files and disables exclusion side effects", () => {
+	assert.deepEqual(buildFixtureRemoval(ARR_FIXTURES[0], { id: 7 }), {
+		endpoint: "/api/v3/movie/7?deleteFiles=false&addImportExclusion=false",
+		method: "DELETE",
+	});
+	assert.deepEqual(buildFixtureRemoval(ARR_FIXTURES[2], { id: 9 }), {
+		endpoint: "/api/v3/series/9?deleteFiles=false&addImportListExclusion=false",
+		method: "DELETE",
+	});
+	assert.throws(() => buildFixtureRemoval(ARR_FIXTURES[0], { id: "7" }), /invalid item identity/);
 });
