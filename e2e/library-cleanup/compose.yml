@@ -43,7 +43,7 @@ x-dashboard-dependencies: &dashboard-dependencies
 
 services:
   radarr-a:
-    image: ${RADARR_IMAGE:-lscr.io/linuxserver/radarr:latest}
+    image: ${RADARR_IMAGE:-lscr.io/linuxserver/radarr:5.16.3@sha256:eb894bd26fd3fb29981bf91b140834417ce2ed28ab8217d0ce121db5c460f39a}
     environment: *linuxserver-environment
     volumes:
       - radarr-a-config:/config
@@ -58,7 +58,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7878/ping"]
 
   radarr-b:
-    image: ${RADARR_IMAGE:-lscr.io/linuxserver/radarr:latest}
+    image: ${RADARR_IMAGE:-lscr.io/linuxserver/radarr:5.16.3@sha256:eb894bd26fd3fb29981bf91b140834417ce2ed28ab8217d0ce121db5c460f39a}
     environment: *linuxserver-environment
     volumes:
       - radarr-b-config:/config
@@ -73,7 +73,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:7878/ping"]
 
   sonarr-a:
-    image: ${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:latest}
+    image: ${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:4.0.15@sha256:fbe67c25693dc5f3de220c5691f374576ae265df782c16918cc071b630490bd7}
     environment: *linuxserver-environment
     volumes:
       - sonarr-a-config:/config
@@ -88,7 +88,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8989/ping"]
 
   sonarr-b:
-    image: ${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:latest}
+    image: ${SONARR_IMAGE:-lscr.io/linuxserver/sonarr:4.0.15@sha256:fbe67c25693dc5f3de220c5691f374576ae265df782c16918cc071b630490bd7}
     environment: *linuxserver-environment
     volumes:
       - sonarr-b-config:/config
@@ -103,7 +103,7 @@ services:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8989/ping"]
 
   plex:
-    image: ${PLEX_IMAGE:-lscr.io/linuxserver/plex:latest}
+    image: ${PLEX_IMAGE:-lscr.io/linuxserver/plex:1.41.5@sha256:5c07f70ae39709c71927ecb864cb9328acb01eb6c08779d1efb09b90b68a0692}
     environment:
       <<: *linuxserver-environment
       VERSION: docker
@@ -137,6 +137,7 @@ services:
             const offset = Number(requestUrl.searchParams.get("X-Plex-Container-Start") ?? "0");
             const metadata = offset === 0 ? [{
               ratingKey: "17",
+              historyKey: "lc-e2e-plex-history-pilot-17",
               parentRatingKey: "16",
               grandparentRatingKey: "15",
               title: "Pilot",
@@ -188,7 +189,7 @@ services:
       start_period: 5s
 
   qbittorrent-a:
-    image: ${QBITTORRENT_IMAGE:-lscr.io/linuxserver/qbittorrent:latest}
+    image: ${QBITTORRENT_IMAGE:-lscr.io/linuxserver/qbittorrent:5.1.2@sha256:7034f73a3c6fa4ea40fd67df462939d1665d765231b572523921c98c2db5362e}
     environment:
       <<: *linuxserver-environment
       WEBUI_PORT: "8080"
@@ -208,7 +209,7 @@ services:
       start_period: 30s
 
   qbittorrent-b:
-    image: ${QBITTORRENT_IMAGE:-lscr.io/linuxserver/qbittorrent:latest}
+    image: ${QBITTORRENT_IMAGE:-lscr.io/linuxserver/qbittorrent:5.1.2@sha256:7034f73a3c6fa4ea40fd67df462939d1665d765231b572523921c98c2db5362e}
     environment:
       <<: *linuxserver-environment
       WEBUI_PORT: "8080"
