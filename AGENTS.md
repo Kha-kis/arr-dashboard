@@ -1,8 +1,11 @@
 # AGENTS.md — arr-dashboard
 
-Read `CLAUDE.md` for the tracked architecture and pattern reference. If a local
-`HANDOVER.md` exists, read it for machine-specific state and recent project
-history; do not assume it exists in a fresh clone.
+Read `CLAUDE.md` for the tracked architecture and pattern reference. A local
+`HANDOVER.md`, when present, is an optional machine-state snapshot: read it only
+when the task depends on the maintainer environment, local checkout state, or
+live instances. Do not load it for repository-only work, treat it as project
+policy, or use it as a credential source. Verify its volatile details before
+acting, and do not assume it exists in a fresh clone.
 
 Codex-native task workflows live in `.agents/skills/` and are automatically
 discoverable. Use the matching `arr-*` skill for issue fixes, validation,
