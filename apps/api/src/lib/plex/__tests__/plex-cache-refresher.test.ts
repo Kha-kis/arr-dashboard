@@ -547,6 +547,7 @@ describe("evictStaleRows", () => {
 				callback(tx),
 			),
 		} as unknown as PrismaClient;
+		vi.mocked(silentLog.info).mockClear();
 
 		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
@@ -555,6 +556,42 @@ describe("evictStaleRows", () => {
 			expect.objectContaining({ ignoredHistoricalItems: 1 }),
 			"Plex cache refresh complete",
 		);
+	});
+
+	it("fails closed when stale relevant history belongs to an unknown account", async () => {
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "current",
+					title: "Current Movie",
+					type: "movie",
+					Guid: [{ id: "tmdb://42" }],
+				},
+			]),
+			getHistory: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "stale",
+					title: "Stale Movie",
+					type: "movie",
+					viewedAt: 1_700_000_000,
+					accountID: 999,
+				},
+			]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const transaction = vi.fn();
+		const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages).toContain(
+			"Plex cache incomplete: 1 history item(s) with unknown accounts",
+		);
+		expect(transaction).not.toHaveBeenCalled();
 	});
 
 	it.each([

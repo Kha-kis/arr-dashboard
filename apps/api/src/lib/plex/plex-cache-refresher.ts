@@ -259,13 +259,21 @@ export async function refreshPlexCache(
 		for (const entry of history) {
 			const isRelevantHistory = entry.type === "movie" || entry.type === "episode";
 			const itemRatingKey = entry.type === "episode" ? entry.grandparentRatingKey : entry.ratingKey;
-			if (isRelevantHistory && !itemRatingKey?.trim()) {
-				markIncomplete("historyItemsWithoutUsableMediaKey");
+			if (!itemRatingKey?.trim()) {
+				if (isRelevantHistory) markIncomplete("historyItemsWithoutUsableMediaKey");
 				continue;
 			}
-			if (isRelevantHistory && !currentLibraryRatingKeys.has(itemRatingKey)) {
-				ignoredHistoricalItems++;
-				continue;
+
+			const username = accountMap.get(entry.accountID);
+			if (isRelevantHistory) {
+				if (!username) {
+					markIncomplete("historyItemsWithUnknownAccounts");
+					continue;
+				}
+				if (!currentLibraryRatingKeys.has(itemRatingKey)) {
+					ignoredHistoricalItems++;
+					continue;
+				}
 			}
 
 			const itemData = ratingKeyMap.get(itemRatingKey);
@@ -275,7 +283,6 @@ export async function refreshPlexCache(
 			}
 
 			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
-			const username = accountMap.get(entry.accountID);
 			if (!username) {
 				markIncomplete("historyItemsWithUnknownAccounts");
 				continue;
