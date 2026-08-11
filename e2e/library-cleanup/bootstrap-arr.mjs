@@ -422,9 +422,28 @@ async function waitForService(baseUrl, apiKey, service) {
 	);
 }
 
-function composeExec(service, variables, script) {
+export function parseFilesystemComposeCommand(command) {
+	if (
+		Array.isArray(command) &&
+		command.length === 1 &&
+		typeof command[0] === "string" &&
+		command[0].length > 0
+	) {
+		return command;
+	}
+	if (
+		Array.isArray(command) &&
+		command.length === 2 &&
+		command[0] === "docker" &&
+		command[1] === "compose"
+	) {
+		return command;
+	}
+	throw new Error("--filesystem-only requires an executable or the exact docker compose command");
+}
+
+function composeExec(composeCommand, service, variables, script) {
 	const projectName = assertUniqueProjectName(requireEnvironment("COMPOSE_PROJECT_NAME"));
-	const composeBin = requireEnvironment("ARR_COMPOSE_BIN");
 	const args = ["-p", projectName];
 	for (const composeFile of COMPOSE_FILES) args.push("-f", composeFile);
 	args.push("exec", "-T", "--user", "0");
@@ -433,7 +452,7 @@ function composeExec(service, variables, script) {
 	}
 	args.push(service, "sh", "-eu", "-c", script);
 
-	const result = spawnSync(composeBin, args, {
+	const result = spawnSync(composeCommand[0], [...composeCommand.slice(1), ...args], {
 		cwd: SCRIPT_DIR,
 		encoding: "utf8",
 		env: process.env,
@@ -447,8 +466,9 @@ function composeExec(service, variables, script) {
 	}
 }
 
-function prepareRootFolder(fixture) {
+function prepareRootFolder(composeCommand, fixture) {
 	composeExec(
+		composeCommand,
 		fixture.service,
 		{
 			FIXTURE_ROOT: fixture.rootFolderPath,
@@ -461,11 +481,12 @@ chmod 0775 "$FIXTURE_ROOT"`,
 	);
 }
 
-function createHardlinkedFixture(fixture, libraryPath) {
+function createHardlinkedFixture(composeCommand, fixture, libraryPath) {
 	const contentBuffer = buildPlaceholderBuffer(fixture);
 	const expectedSha256 = createHash("sha256").update(contentBuffer).digest("hex");
 
 	composeExec(
+		composeCommand,
 		fixture.service,
 		{
 			FIXTURE_SOURCE: fixture.sourcePath,
@@ -859,7 +880,7 @@ async function waitForFileRecord(baseUrl, apiKey, fixture, item) {
 	);
 }
 
-async function bootstrapFixture(fixture, apiKey) {
+export async function bootstrapFixture(fixture, apiKey) {
 	const baseUrl = assertHarnessServiceUrl(fixture.baseUrl, fixture.service);
 	await waitForService(baseUrl, apiKey, fixture.service);
 	await ensureRootFolder(baseUrl, apiKey, fixture);
@@ -910,11 +931,12 @@ async function bootstrapFixture(fixture, apiKey) {
 	);
 }
 
-export function prepareFilesystem() {
+export function prepareFilesystem(command) {
+	const composeCommand = parseFilesystemComposeCommand(command);
 	assertUniqueProjectName(requireEnvironment("COMPOSE_PROJECT_NAME"));
 	for (const fixture of ARR_FIXTURES) {
-		prepareRootFolder(fixture);
-		createHardlinkedFixture(fixture, fixtureLibraryPath(fixture));
+		prepareRootFolder(composeCommand, fixture);
+		createHardlinkedFixture(composeCommand, fixture, fixtureLibraryPath(fixture));
 	}
 }
 
@@ -929,7 +951,7 @@ export async function bootstrapApis(credentials) {
 export async function main() {
 	const mode = process.argv[2];
 	if (mode === "--filesystem-only") {
-		prepareFilesystem();
+		prepareFilesystem(process.argv.slice(3));
 		return;
 	}
 	if (mode === "--api-only") {

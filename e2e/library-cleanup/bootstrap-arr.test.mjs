@@ -1,27 +1,82 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
 	ARR_FIXTURES,
 	assertHarnessServiceUrl,
 	assertUniqueProjectName,
-	buildMovieAddBody,
-	buildPlexNotificationPayload,
-	buildPlaceholderBuffer,
-	buildSeriesAddBody,
+	bootstrapFixture,
 	buildFixtureRemoval,
-	classifyFixtureFileState,
+	buildMovieAddBody,
+	buildPlaceholderBuffer,
+	buildPlexNotificationPayload,
+	buildSeriesAddBody,
 	classifyFixtureEpisodeAssociation,
+	classifyFixtureFileState,
 	fileRecordMatches,
 	fixtureLibraryPath,
-	isRepeatedFixtureResetState,
 	isMissingPlexLibraryValidation,
 	isPathWithinRoot,
+	isRepeatedFixtureResetState,
 	MOVIE,
 	plexNotificationSaveEndpoint,
 	SERIES,
 	validateCredentials,
 } from "./bootstrap-arr.mjs";
+
+const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
+
+test("filesystem bootstrap executes Docker Compose as a two-token command vector", async (t) => {
+	const tempDir = await mkdtemp(path.join(tmpdir(), "lc-e2e-bootstrap-arr-command-"));
+	t.after(() => rm(tempDir, { recursive: true, force: true }));
+	const composeLog = path.join(tempDir, "compose.log");
+	const fakeDocker = path.join(tempDir, "docker");
+	await writeFile(
+		fakeDocker,
+		`#!/bin/sh
+{
+	printf '%s\\n' "$@"
+	printf '%s\\n' --
+} >>"$ARR_COMPOSE_LOG"
+`,
+	);
+	await chmod(fakeDocker, 0o755);
+
+	const result = spawnSync(
+		process.execPath,
+		[path.join(SCRIPT_DIR, "bootstrap-arr.mjs"), "--filesystem-only", "docker", "compose"],
+		{
+			encoding: "utf8",
+			env: {
+				...process.env,
+				ARR_COMPOSE_LOG: composeLog,
+				COMPOSE_PROJECT_NAME: "lc-e2e-690-20260810",
+				FIXTURE_PUID: "1000",
+				FIXTURE_PGID: "1000",
+				PATH: `${tempDir}${path.delimiter}${process.env.PATH}`,
+			},
+		},
+	);
+	assert.equal(result.status, 0, result.stderr);
+
+	const invocations = (await readFile(composeLog, "utf8"))
+		.trim()
+		.split("--\n")
+		.filter(Boolean)
+		.map((invocation) => invocation.trim().split("\n"));
+	assert.equal(invocations.length, ARR_FIXTURES.length * 2);
+	for (const invocation of invocations) {
+		assert.deepEqual(invocation.slice(0, 3), ["compose", "-p", "lc-e2e-690-20260810"]);
+		const shellIndex = invocation.lastIndexOf("sh");
+		assert.equal(invocation[shellIndex + 1], "-eu");
+		assert.equal(invocation[shellIndex + 2], "-c");
+	}
+});
 
 test("project guard accepts only unique disposable harness names", () => {
 	assert.equal(assertUniqueProjectName("lc-e2e-616-20260804"), "lc-e2e-616-20260804");
@@ -323,6 +378,132 @@ test("fixture reset authorization requires identical duplicate snapshots", () =>
 		false,
 	);
 	assert.equal(isRepeatedFixtureResetState(duplicate, { kind: "ready", record: {} }), false);
+});
+
+test("duplicate ARR reset deletes bodylessly, verifies absence, recreates one row, and retains the file", async (t) => {
+	const tempDir = await mkdtemp(path.join(tmpdir(), "lc-e2e-duplicate-reset-"));
+	t.after(() => rm(tempDir, { recursive: true, force: true }));
+	const fixture = {
+		...ARR_FIXTURES[0],
+		rootFolderPath: path.join(tempDir, "root"),
+		itemPath: path.join(tempDir, "library", "The Matrix (1999)"),
+		sourcePath: path.join(tempDir, "torrents", "The.Matrix.1999.1080p.BluRay.x264-LCE2E.mkv"),
+	};
+	const libraryPath = fixtureLibraryPath(fixture);
+	const fixtureContent = buildPlaceholderBuffer(fixture);
+	await mkdir(path.dirname(libraryPath), { recursive: true });
+	await writeFile(libraryPath, fixtureContent);
+
+	const oldMovie = {
+		id: 7,
+		tmdbId: MOVIE.tmdbId,
+		path: fixture.itemPath,
+		hasFile: true,
+		movieFile: { id: 14 },
+	};
+	const recreatedMovie = {
+		id: 8,
+		tmdbId: MOVIE.tmdbId,
+		path: fixture.itemPath,
+		hasFile: true,
+		movieFile: { id: 22 },
+	};
+	const duplicateRecords = [
+		{ id: 13, movieId: oldMovie.id, path: libraryPath, size: fixtureContent.length },
+		{ id: 14, movieId: oldMovie.id, path: libraryPath, size: fixtureContent.length },
+	];
+	const calls = [];
+	let deleted = false;
+	let recreated = false;
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = async (input, init = {}) => {
+		const url = new URL(String(input));
+		const method = init.method ?? "GET";
+		calls.push({ method, path: `${url.pathname}${url.search}`, body: init.body });
+		const json = (value) => new Response(JSON.stringify(value), { status: 200 });
+		if (url.pathname === "/api/v3/system/status") return json({ version: "5.0" });
+		if (url.pathname === "/api/v3/rootfolder") {
+			return method === "POST"
+				? json({ path: fixture.rootFolderPath, accessible: true })
+				: json([]);
+		}
+		if (url.pathname === "/api/v3/notification/schema") {
+			return json([
+				{
+					implementation: "PlexServer",
+					fields: [
+						"host",
+						"port",
+						"useSsl",
+						"urlBase",
+						"authToken",
+						"updateLibrary",
+						"mapFrom",
+						"mapTo",
+					].map((name) => ({ name })),
+				},
+			]);
+		}
+		if (url.pathname === "/api/v3/notification") {
+			if (method === "GET") return json([]);
+			return json({ ...JSON.parse(init.body), id: 1 });
+		}
+		if (url.pathname === "/api/v3/qualityprofile") return json([{ id: 1 }]);
+		if (url.pathname === "/api/v3/moviefile") {
+			return json(
+				recreated
+					? [{ id: 22, movieId: recreatedMovie.id, path: libraryPath, size: fixtureContent.length }]
+					: duplicateRecords,
+			);
+		}
+		if (url.pathname === "/api/v3/movie/7") {
+			if (method === "DELETE") {
+				deleted = true;
+				return new Response(null, { status: 200 });
+			}
+			return json(oldMovie);
+		}
+		if (url.pathname === "/api/v3/movie/8") return json(recreatedMovie);
+		if (url.pathname === "/api/v3/movie") {
+			if (method === "POST") {
+				recreated = true;
+				return json(recreatedMovie);
+			}
+			if (!deleted) return json([oldMovie]);
+			return json(recreated ? [recreatedMovie] : []);
+		}
+		throw new Error(`unexpected request ${method} ${url.pathname}${url.search}`);
+	};
+	t.after(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	await bootstrapFixture(fixture, "a".repeat(32));
+
+	const deletion = calls.find((call) => call.method === "DELETE");
+	assert.deepEqual(deletion, {
+		method: "DELETE",
+		path: "/api/v3/movie/7?deleteFiles=false&addImportExclusion=false",
+		body: undefined,
+	});
+	const deletionIndex = calls.indexOf(deletion);
+	assert.deepEqual(calls[deletionIndex + 1], {
+		method: "GET",
+		path: "/api/v3/movie",
+		body: undefined,
+	});
+	assert.equal(calls[deletionIndex + 2].method, "GET");
+	assert.deepEqual(calls[deletionIndex + 4], {
+		method: "POST",
+		path: "/api/v3/movie",
+		body: JSON.stringify(buildMovieAddBody(1, fixture.rootFolderPath, fixture.itemPath)),
+	});
+	assert.equal(calls.filter((call) => call.path === "/api/v3/moviefile?movieId=7").length, 3);
+	assert.deepEqual(
+		calls.filter((call) => call.path === "/api/v3/moviefile?movieId=8"),
+		[{ method: "GET", path: "/api/v3/moviefile?movieId=8", body: undefined }],
+	);
+	assert.deepEqual(await readFile(libraryPath), fixtureContent);
 });
 
 test("fixture state fails closed for foreign paths or malformed rows", () => {

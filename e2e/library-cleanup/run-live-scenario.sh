@@ -13,6 +13,7 @@ MODE=${1:?Specify policy, delete:<fixture>, or episode:<fixture>}
 DOCKER_CONFIG=${DOCKER_CONFIG:-/tmp/lc-e2e-docker-config}
 RUNNER_SERVICE=${LC_E2E_DASHBOARD_SERVICE:-dashboard-sqlite}
 RUNNER_SCRIPT=/tmp/lc-e2e-live-scenarios-$PROJECT_NAME.mjs
+DOCKER_BIN=${ARR_DOCKER_BIN:-docker}
 export DOCKER_CONFIG
 
 case "$RUNNER_SERVICE" in
@@ -54,9 +55,32 @@ done
 
 case "$MODE" in
 	policy | policy-gate)
-		sync_started=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+		container_id=$(compose ps -q "$RUNNER_SERVICE")
+		if [ -z "$container_id" ]; then
+			echo "Policy gate refused: could not identify $RUNNER_SERVICE before restart." >&2
+			exit 1
+		fi
 		compose restart "$RUNNER_SERVICE"
 		compose up --no-build --wait "$RUNNER_SERVICE"
+		verify_live_project
+		restarted_container_id=$(compose ps -q "$RUNNER_SERVICE")
+		if [ "$restarted_container_id" != "$container_id" ]; then
+			echo "Policy gate refused: $RUNNER_SERVICE container identity changed during restart." >&2
+			exit 1
+		fi
+		container_project=$("$DOCKER_BIN" inspect "$restarted_container_id" \
+			--format '{{index .Config.Labels "com.docker.compose.project"}}')
+		container_service=$("$DOCKER_BIN" inspect "$restarted_container_id" \
+			--format '{{index .Config.Labels "com.docker.compose.service"}}')
+		if [ "$container_project" != "$PROJECT_NAME" ] || [ "$container_service" != "$RUNNER_SERVICE" ]; then
+			echo "Policy gate refused a container outside $PROJECT_NAME/$RUNNER_SERVICE after restart." >&2
+			exit 1
+		fi
+		sync_started=$("$DOCKER_BIN" inspect "$restarted_container_id" --format '{{.State.StartedAt}}')
+		if [ -z "$sync_started" ] || [ "$sync_started" = "0001-01-01T00:00:00Z" ]; then
+			echo "Policy gate refused: restarted $RUNNER_SERVICE has no precise StartedAt timestamp." >&2
+			exit 1
+		fi
 		sync_complete=0
 		for attempt in $(seq 1 30); do
 			if compose logs --no-color --since "$sync_started" "$RUNNER_SERVICE" 2>&1 |

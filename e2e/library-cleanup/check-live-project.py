@@ -52,6 +52,34 @@ def matching_ids(kind: str, project: str) -> set[str]:
 	return ids
 
 
+def model_resource_names(model: dict[str, Any], resource_kind: str) -> set[str]:
+	resources = model.get(f"{resource_kind}s")
+	if not isinstance(resources, dict):
+		raise OwnershipError(f"rendered model has no {resource_kind}s")
+	physical_names: set[str] = set()
+	for logical_name, definition in resources.items():
+		if not isinstance(logical_name, str) or not isinstance(definition, dict):
+			raise OwnershipError(f"rendered model has an invalid {resource_kind} definition")
+		physical_name = definition.get("name")
+		if not isinstance(physical_name, str) or not physical_name:
+			raise OwnershipError(f"rendered {resource_kind} {logical_name} has no physical name")
+		physical_names.add(physical_name)
+	return physical_names
+
+
+def existing_named_ids(kind: str, physical_names: set[str]) -> set[str]:
+	if not physical_names:
+		return set()
+	result = subprocess.run(
+		["docker", kind, "ls", "--format", "{{.Name}}"],
+		check=True,
+		stdout=subprocess.PIPE,
+		stderr=subprocess.PIPE,
+		text=True,
+	)
+	return {name for name in result.stdout.splitlines() if name in physical_names}
+
+
 def inspect_many(kind: str, identifiers: set[str]) -> list[dict[str, Any]]:
 	if not identifiers:
 		return []
@@ -321,6 +349,8 @@ def main() -> int:
 		container_ids = matching_ids("container", args.project)
 		volume_ids = matching_ids("volume", args.project)
 		network_ids = matching_ids("network", args.project)
+		volume_ids.update(existing_named_ids("volume", model_resource_names(model, "volume")))
+		network_ids.update(existing_named_ids("network", model_resource_names(model, "network")))
 		containers = inspect_many("container", container_ids)
 		volumes = inspect_many("volume", volume_ids)
 		networks = inspect_many("network", network_ids)

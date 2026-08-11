@@ -106,6 +106,16 @@ assert_compose_args() {
 	fi
 }
 
+assert_resolved_compose_vector() {
+	expected_executable=$1
+	expected_argument=$2
+	if [ "$ARR_RESOLVED_COMPOSE_EXECUTABLE" != "$expected_executable" ] || \
+		[ "$ARR_RESOLVED_COMPOSE_ARGUMENT" != "$expected_argument" ]; then
+		echo "compose helper did not preserve the resolved command vector." >&2
+		exit 1
+	fi
+}
+
 exercise_compose() {
 	COMPOSE_PROJECT_NAME=lc-e2e-contract
 	ARR_COMPOSE_LOG="$COMPOSE_LOG"
@@ -117,6 +127,7 @@ exercise_compose() {
 ARR_COMPOSE_BIN="$FAKE_COMPOSE"
 export ARR_COMPOSE_BIN
 exercise_compose
+assert_resolved_compose_vector "$FAKE_COMPOSE" ""
 assert_compose_args override
 
 unset ARR_COMPOSE_BIN
@@ -125,6 +136,7 @@ DOCKER_CONFIG="$ISOLATED_DOCKER_CONFIG"
 PATH=$FAKE_DOCKER_BIN_DIR
 export PATH HOME DOCKER_CONFIG
 exercise_compose
+assert_resolved_compose_vector docker compose
 PATH=$SYSTEM_PATH
 export PATH
 assert_compose_args docker
@@ -133,6 +145,7 @@ unset ARR_COMPOSE_BIN
 PATH=$FAKE_STANDALONE_BIN_DIR
 export PATH
 exercise_compose
+assert_resolved_compose_vector "$FAKE_STANDALONE_BIN_DIR/docker-compose" ""
 PATH=$SYSTEM_PATH
 export PATH
 assert_compose_args docker-compose
@@ -142,6 +155,7 @@ PATH=$EMPTY_BIN_DIR
 HOME="$FAKE_HOME"
 export PATH
 exercise_compose
+assert_resolved_compose_vector "$FAKE_PLUGIN" ""
 PATH=$SYSTEM_PATH
 export PATH
 assert_compose_args plugin
@@ -152,6 +166,7 @@ PATH=$EMPTY_BIN_DIR
 HOME="$FAKE_HOME"
 export PATH HOME
 exercise_compose
+assert_resolved_compose_vector "$FAKE_PLUGIN" ""
 PATH=$SYSTEM_PATH
 export PATH
 assert_compose_args plugin

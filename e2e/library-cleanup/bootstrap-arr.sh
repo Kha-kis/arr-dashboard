@@ -151,10 +151,25 @@ CREDENTIALS_FILE=$TEMP_DIR/credentials.json
 	printf '"}'
 } >"$CREDENTIALS_FILE"
 
-COMPOSE_PROJECT_NAME=$PROJECT_NAME \
-	FIXTURE_PUID=${PUID:-1000} \
-	FIXTURE_PGID=${PGID:-1000} \
-	node "$SCRIPT_DIR/bootstrap-arr.mjs" --filesystem-only
+case "$COMPOSE_COMMAND" in
+	docker)
+		COMPOSE_PROJECT_NAME=$PROJECT_NAME \
+			FIXTURE_PUID=${PUID:-1000} \
+			FIXTURE_PGID=${PGID:-1000} \
+			node "$SCRIPT_DIR/bootstrap-arr.mjs" --filesystem-only \
+			"$ARR_RESOLVED_COMPOSE_EXECUTABLE" "$ARR_RESOLVED_COMPOSE_ARGUMENT"
+		;;
+	executable)
+		COMPOSE_PROJECT_NAME=$PROJECT_NAME \
+			FIXTURE_PUID=${PUID:-1000} \
+			FIXTURE_PGID=${PGID:-1000} \
+			node "$SCRIPT_DIR/bootstrap-arr.mjs" --filesystem-only "$ARR_RESOLVED_COMPOSE_EXECUTABLE"
+		;;
+	*)
+		echo "ARR bootstrap refused: invalid Compose command selection." >&2
+		exit 1
+		;;
+esac
 
 compose exec -T --user 0 "$RUNNER_SERVICE" mkdir -p "$RUNNER_DIR"
 RUNNER_PREPARED=1

@@ -62,6 +62,25 @@ resolve_compose_command() {
 
 resolve_compose_command
 
+resolve_compose_command_vector() {
+	case "$COMPOSE_COMMAND" in
+		docker)
+			ARR_RESOLVED_COMPOSE_EXECUTABLE=docker
+			ARR_RESOLVED_COMPOSE_ARGUMENT=compose
+			;;
+		executable)
+			ARR_RESOLVED_COMPOSE_EXECUTABLE=$ARR_COMPOSE_BIN
+			ARR_RESOLVED_COMPOSE_ARGUMENT=
+			;;
+		*)
+			echo "Library-cleanup harness refused: invalid Compose command selection." >&2
+			exit 1
+			;;
+	esac
+}
+
+resolve_compose_command_vector
+
 run_compose() {
 	case "$COMPOSE_COMMAND" in
 		docker) docker compose "$@" ;;

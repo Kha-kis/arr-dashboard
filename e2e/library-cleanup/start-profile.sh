@@ -37,6 +37,7 @@ cd "$SCRIPT_DIR"
 sh ./validate-compose.sh --live-project "$PROJECT_NAME"
 acquire_live_project_lock
 verify_live_project --allow-empty
+verify_dashboard_profile "$service"
 
 if [ "$no_build" -eq 1 ]; then
 	compose --profile "$compose_profile" up --no-build --wait "$service"
@@ -44,3 +45,4 @@ else
 	compose --profile "$compose_profile" up --wait "$service"
 fi
 verify_live_project
+verify_dashboard_profile "$service" --require-running

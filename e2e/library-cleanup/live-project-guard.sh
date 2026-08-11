@@ -32,6 +32,39 @@ acquire_live_project_lock() {
 	fi
 }
 
+verify_dashboard_profile() {
+	selected_service=${1:?verify_dashboard_profile requires one dashboard service}
+	require_running=${2:-}
+	case "$selected_service" in
+		dashboard-sqlite | dashboard-postgres | dashboard-baseline) ;;
+		*)
+			echo "Harness refused: unsupported selected dashboard service $selected_service." >&2
+			return 2
+			;;
+	esac
+
+	if ! running_services=$(compose ps --status running --services); then
+		echo "Harness refused: could not determine which dashboard profile is running." >&2
+		return 1
+	fi
+	selected_running=0
+	for running_service in $running_services; do
+		case "$running_service" in
+			dashboard-sqlite | dashboard-postgres | dashboard-baseline)
+				if [ "$running_service" != "$selected_service" ]; then
+					echo "Harness start refused: $running_service is already running; stop it before starting $selected_service." >&2
+					return 1
+				fi
+				selected_running=1
+				;;
+		esac
+	done
+	if [ "$require_running" = "--require-running" ] && [ "$selected_running" -ne 1 ]; then
+		echo "Harness refused: $selected_service is not the running dashboard after Compose up." >&2
+		return 1
+	fi
+}
+
 verify_live_project() {
 	allow_empty=${1:-}
 	model_file=$(mktemp "${TMPDIR:-/tmp}/lc-e2e-live-model.XXXXXX")
