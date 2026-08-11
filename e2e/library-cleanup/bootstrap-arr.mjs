@@ -266,33 +266,48 @@ export function classifyFixtureFileState({ fixture, item, records, associatedFil
 		}
 	}
 
+	const recordIds = records.map((record) => record.id).sort((left, right) => left - right);
 	if (records.length === 0) {
 		if (associatedFileId !== null) {
-			throw new Error(
-				`${fixture.service} returned a conflicting file association without a file row`,
-			);
+			return { kind: "transient", reason: "association-ahead", recordIds };
 		}
 		return { kind: "absent" };
+	}
+	if (associatedFileId === null) {
+		return { kind: "transient", reason: "association-behind", recordIds };
+	}
+	if (!recordIds.includes(associatedFileId)) {
+		return { kind: "transient", reason: "association-mismatch", recordIds };
 	}
 	if (records.length > 1) {
 		return {
 			kind: "reset",
 			reason: "duplicate",
-			recordIds: records.map((record) => record.id).sort((left, right) => left - right),
+			recordIds,
 		};
 	}
 
 	const record = records[0];
-	if (associatedFileId === null) {
-		return { kind: "reset", reason: "detached", recordIds: [record.id] };
-	}
-	if (associatedFileId !== record.id) {
-		throw new Error(`${fixture.service} returned a conflicting file association`);
-	}
 	if (!Number.isFinite(Number(record.size)) || Number(record.size) <= 0) {
 		return { kind: "pending" };
 	}
 	return { kind: "ready", record };
+}
+
+export function isRepeatedFixtureResetState(first, second) {
+	return (
+		first?.kind === "reset" &&
+		second?.kind === "reset" &&
+		first.reason === second.reason &&
+		Array.isArray(first.recordIds) &&
+		Array.isArray(second.recordIds) &&
+		first.recordIds.length === second.recordIds.length &&
+		first.recordIds.length > 0 &&
+		first.recordIds.every(
+			(recordId, index) =>
+				Number.isSafeInteger(recordId) && recordId > 0 && recordId === second.recordIds[index],
+		)
+	);
 }
 
 export function buildFixtureRemoval(fixture, item) {
@@ -694,7 +709,19 @@ async function readFixtureFileState(baseUrl, apiKey, fixture, item) {
 	});
 }
 
-async function resetControlledFixture(baseUrl, apiKey, fixture, item) {
+async function waitForStableFixtureFileState(baseUrl, apiKey, fixture, item) {
+	const deadline = Date.now() + FILE_RECORD_TIMEOUT_MS;
+	let lastReason = "unknown";
+	while (Date.now() < deadline) {
+		const state = await readFixtureFileState(baseUrl, apiKey, fixture, item);
+		if (state.kind !== "transient") return state;
+		lastReason = state.reason;
+		await new Promise((resolve) => setTimeout(resolve, 1_000));
+	}
+	throw new Error(`${fixture.service} file state did not stabilize (last state: ${lastReason})`);
+}
+
+async function resetControlledFixture(baseUrl, apiKey, fixture, item, expectedState) {
 	assertGuardedFixtureFile(fixture);
 	const current = assertControlledItem(
 		fixture,
@@ -706,11 +733,31 @@ async function resetControlledFixture(baseUrl, apiKey, fixture, item) {
 	);
 	const state = await readFixtureFileState(baseUrl, apiKey, fixture, current);
 	if (state.kind === "ready") return false;
-	if (state.kind !== "reset") {
-		throw new Error(`${fixture.service} refused to reset fixture state ${state.kind}`);
+	if (!isRepeatedFixtureResetState(expectedState, state)) {
+		throw new Error(
+			`${fixture.service} fixture reset state did not stabilize before authorization`,
+		);
 	}
 
-	const removal = buildFixtureRemoval(fixture, current);
+	const currentImmediatelyBeforeDelete = assertControlledItem(
+		fixture,
+		await requestJson(
+			baseUrl,
+			apiKey,
+			fixture.kind === "movie" ? `/api/v3/movie/${current.id}` : `/api/v3/series/${current.id}`,
+		),
+	);
+	const stateImmediatelyBeforeDelete = await readFixtureFileState(
+		baseUrl,
+		apiKey,
+		fixture,
+		currentImmediatelyBeforeDelete,
+	);
+	if (!isRepeatedFixtureResetState(state, stateImmediatelyBeforeDelete)) {
+		throw new Error(`${fixture.service} fixture reset state changed before deletion`);
+	}
+	assertGuardedFixtureFile(fixture);
+	const removal = buildFixtureRemoval(fixture, currentImmediatelyBeforeDelete);
 	await requestJson(baseUrl, apiKey, removal.endpoint, { method: removal.method });
 	assertGuardedFixtureFile(fixture);
 
@@ -787,7 +834,7 @@ async function bootstrapFixture(fixture, apiKey) {
 		fixture.kind === "movie"
 			? await ensureMovie(baseUrl, apiKey, fixture)
 			: await ensureSeries(baseUrl, apiKey, fixture);
-	let state = await readFixtureFileState(baseUrl, apiKey, fixture, ensured.item);
+	let state = await waitForStableFixtureFileState(baseUrl, apiKey, fixture, ensured.item);
 	if (state.kind === "ready") {
 		process.stdout.write(
 			`${fixture.service}: ${fixture.quality} ${fixture.kind} fixture ready (item ${ensured.item.id}, file ${state.record.id})\n`,
@@ -796,7 +843,7 @@ async function bootstrapFixture(fixture, apiKey) {
 	}
 
 	if (state.kind === "reset") {
-		const reset = await resetControlledFixture(baseUrl, apiKey, fixture, ensured.item);
+		const reset = await resetControlledFixture(baseUrl, apiKey, fixture, ensured.item, state);
 		if (!reset) {
 			state = await readFixtureFileState(baseUrl, apiKey, fixture, ensured.item);
 			if (state.kind !== "ready") {

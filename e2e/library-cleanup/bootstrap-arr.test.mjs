@@ -13,6 +13,7 @@ import {
 	classifyFixtureFileState,
 	fileRecordMatches,
 	fixtureLibraryPath,
+	isRepeatedFixtureResetState,
 	isPathWithinRoot,
 	MOVIE,
 	SERIES,
@@ -197,7 +198,7 @@ test("fixture state reuses only one exact freshly associated ARR file", () => {
 	);
 });
 
-test("fixture state distinguishes absent, detached, and duplicate controlled rows", () => {
+test("fixture state treats import transitions between separate reads as transient", () => {
 	const fixture = ARR_FIXTURES[2];
 	const libraryPath = fixtureLibraryPath(fixture);
 	const item = { id: 9, path: fixture.itemPath };
@@ -212,8 +213,27 @@ test("fixture state distinguishes absent, detached, and duplicate controlled row
 			records: [{ id: 12, seriesId: 9, path: libraryPath, size: 512 }],
 			associatedFileId: null,
 		}),
-		{ kind: "reset", reason: "detached", recordIds: [12] },
+		{ kind: "transient", reason: "association-behind", recordIds: [12] },
 	);
+	assert.deepEqual(
+		classifyFixtureFileState({
+			fixture,
+			item,
+			records: [],
+			associatedFileId: 12,
+		}),
+		{ kind: "transient", reason: "association-ahead", recordIds: [] },
+	);
+	assert.deepEqual(
+		classifyFixtureFileState({
+			fixture,
+			item,
+			records: [{ id: 12, seriesId: 9, path: libraryPath, size: 512 }],
+			associatedFileId: 13,
+		}),
+		{ kind: "transient", reason: "association-mismatch", recordIds: [12] },
+	);
+
 	assert.deepEqual(
 		classifyFixtureFileState({
 			fixture,
@@ -228,7 +248,29 @@ test("fixture state distinguishes absent, detached, and duplicate controlled row
 	);
 });
 
-test("fixture state fails closed for foreign paths, malformed rows, or conflicting associations", () => {
+test("fixture reset authorization requires identical duplicate snapshots", () => {
+	const duplicate = { kind: "reset", reason: "duplicate", recordIds: [13, 14] };
+	assert.equal(isRepeatedFixtureResetState(duplicate, duplicate), true);
+	assert.equal(
+		isRepeatedFixtureResetState(duplicate, {
+			kind: "reset",
+			reason: "duplicate",
+			recordIds: [13, 15],
+		}),
+		false,
+	);
+	assert.equal(
+		isRepeatedFixtureResetState(duplicate, {
+			kind: "transient",
+			reason: "association-behind",
+			recordIds: [13, 14],
+		}),
+		false,
+	);
+	assert.equal(isRepeatedFixtureResetState(duplicate, { kind: "ready", record: {} }), false);
+});
+
+test("fixture state fails closed for foreign paths or malformed rows", () => {
 	const fixture = ARR_FIXTURES[0];
 	const libraryPath = fixtureLibraryPath(fixture);
 	const item = { id: 7, path: fixture.itemPath };
@@ -251,16 +293,6 @@ test("fixture state fails closed for foreign paths, malformed rows, or conflicti
 				associatedFileId: null,
 			}),
 		/invalid file identity/,
-	);
-	assert.throws(
-		() =>
-			classifyFixtureFileState({
-				fixture,
-				item,
-				records: [{ id: 41, movieId: 7, path: libraryPath, size: 1 }],
-				associatedFileId: 42,
-			}),
-		/conflicting file association/,
 	);
 });
 
