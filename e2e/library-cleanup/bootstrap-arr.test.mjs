@@ -24,6 +24,7 @@ import {
 	isPathWithinRoot,
 	isRepeatedFixtureResetState,
 	MOVIE,
+	parseFilesystemComposeCommand,
 	plexNotificationSaveEndpoint,
 	SERIES,
 	validateCredentials,
@@ -31,11 +32,25 @@ import {
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
-test("filesystem bootstrap executes Docker Compose as a two-token command vector", async (t) => {
+test("filesystem command parsing accepts only the configured Docker executable", () => {
+	const configuredDocker = "/opt/docker wrappers/docker";
+	assert.deepEqual(
+		parseFilesystemComposeCommand([configuredDocker, "compose"], configuredDocker),
+		[configuredDocker, "compose"],
+	);
+	assert.throws(
+		() => parseFilesystemComposeCommand(["docker", "compose"], configuredDocker),
+		/resolved Docker Compose command/,
+	);
+});
+
+test("filesystem bootstrap executes the resolved Docker Compose command vector", async (t) => {
 	const tempDir = await mkdtemp(path.join(tmpdir(), "lc-e2e-bootstrap-arr-command-"));
 	t.after(() => rm(tempDir, { recursive: true, force: true }));
 	const composeLog = path.join(tempDir, "compose.log");
-	const fakeDocker = path.join(tempDir, "docker");
+	const wrapperDir = path.join(tempDir, "docker wrappers");
+	const fakeDocker = path.join(wrapperDir, "docker");
+	await mkdir(wrapperDir);
 	await writeFile(
 		fakeDocker,
 		`#!/bin/sh
@@ -58,18 +73,35 @@ test("filesystem bootstrap executes Docker Compose as a two-token command vector
 				COMPOSE_PROJECT_NAME: "lc-e2e-690-20260810",
 				FIXTURE_PUID: "1000",
 				FIXTURE_PGID: "1000",
-				PATH: `${tempDir}${path.delimiter}${process.env.PATH}`,
+				PATH: `${wrapperDir}${path.delimiter}${process.env.PATH}`,
 			},
 		},
 	);
 	assert.equal(result.status, 0, result.stderr);
+
+	const configuredResult = spawnSync(
+		process.execPath,
+		[path.join(SCRIPT_DIR, "bootstrap-arr.mjs"), "--filesystem-only", fakeDocker, "compose"],
+		{
+			encoding: "utf8",
+			env: {
+				...process.env,
+				ARR_COMPOSE_LOG: composeLog,
+				ARR_DOCKER_BIN: fakeDocker,
+				COMPOSE_PROJECT_NAME: "lc-e2e-690-20260810",
+				FIXTURE_PUID: "1000",
+				FIXTURE_PGID: "1000",
+			},
+		},
+	);
+	assert.equal(configuredResult.status, 0, configuredResult.stderr);
 
 	const invocations = (await readFile(composeLog, "utf8"))
 		.trim()
 		.split("--\n")
 		.filter(Boolean)
 		.map((invocation) => invocation.trim().split("\n"));
-	assert.equal(invocations.length, ARR_FIXTURES.length * 2);
+	assert.equal(invocations.length, ARR_FIXTURES.length * 4);
 	for (const invocation of invocations) {
 		assert.deepEqual(invocation.slice(0, 3), ["compose", "-p", "lc-e2e-690-20260810"]);
 		const shellIndex = invocation.lastIndexOf("sh");

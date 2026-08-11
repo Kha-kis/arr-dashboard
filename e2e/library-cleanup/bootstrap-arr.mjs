@@ -422,7 +422,10 @@ async function waitForService(baseUrl, apiKey, service) {
 	);
 }
 
-export function parseFilesystemComposeCommand(command) {
+export function parseFilesystemComposeCommand(
+	command,
+	configuredDocker = process.env.ARR_DOCKER_BIN || "docker",
+) {
 	if (
 		Array.isArray(command) &&
 		command.length === 1 &&
@@ -434,12 +437,14 @@ export function parseFilesystemComposeCommand(command) {
 	if (
 		Array.isArray(command) &&
 		command.length === 2 &&
-		command[0] === "docker" &&
+		command[0] === configuredDocker &&
 		command[1] === "compose"
 	) {
 		return command;
 	}
-	throw new Error("--filesystem-only requires an executable or the exact docker compose command");
+	throw new Error(
+		"--filesystem-only requires an executable or the resolved Docker Compose command",
+	);
 }
 
 function composeExec(composeCommand, service, variables, script) {
