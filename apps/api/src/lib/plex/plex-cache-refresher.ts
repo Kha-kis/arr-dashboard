@@ -118,6 +118,25 @@ function onDeckSignature(items: Awaited<ReturnType<PlexClient["getOnDeck"]>>): s
 		.sort();
 }
 
+const incompleteReasonLabels: Record<string, string> = {
+	currentLibraryItemsWithoutRatingKeys: "current library item(s) without a usable rating key",
+	currentItemsWithoutTmdbMetadata: "current library item(s) without TMDB metadata",
+	historyItemsWithoutUsableMediaKey: "history item(s) without a usable media key",
+	currentHistoryItemsWithoutMappedMetadata: "current history item(s) without mapped TMDB metadata",
+	historyItemsWithUnknownAccounts: "history item(s) with unknown accounts",
+	onDeckItemsWithoutMappedMetadata: "on-deck item(s) without mapped TMDB metadata",
+};
+
+function appendIncompleteReasonMessages(
+	errorMessages: string[],
+	incompleteReasons: Record<string, number>,
+): void {
+	for (const [reason, count] of Object.entries(incompleteReasons)) {
+		const label = incompleteReasonLabels[reason];
+		if (label) errorMessages.push(`Plex cache incomplete: ${count} ${label}`);
+	}
+}
+
 // ============================================================================
 // Refresher
 // ============================================================================
@@ -196,9 +215,11 @@ export async function refreshPlexCache(
 				const items = await client.getLibraryItems(lib.key);
 				for (const item of items) {
 					totalLibraryItems++;
-					if (item.ratingKey) {
-						currentLibraryRatingKeys.add(item.ratingKey);
+					if (!item.ratingKey.trim()) {
+						markIncomplete("currentLibraryItemsWithoutRatingKeys");
+						continue;
 					}
+					currentLibraryRatingKeys.add(item.ratingKey);
 					const tmdbId = parsePlexTmdbId(item.Guid);
 					if (!tmdbId) {
 						markIncomplete("currentItemsWithoutTmdbMetadata");
@@ -236,13 +257,12 @@ export async function refreshPlexCache(
 		const aggregations = new Map<string, ItemAggregation>();
 
 		for (const entry of history) {
-			// For episodes, use the show's ratingKey
-			const isEpisode = entry.type === "episode";
-			const itemRatingKey = isEpisode
-				? (entry.grandparentRatingKey ?? entry.ratingKey)
-				: entry.ratingKey;
-
 			const isRelevantHistory = entry.type === "movie" || entry.type === "episode";
+			const itemRatingKey = entry.type === "episode" ? entry.grandparentRatingKey : entry.ratingKey;
+			if (isRelevantHistory && !itemRatingKey?.trim()) {
+				markIncomplete("historyItemsWithoutUsableMediaKey");
+				continue;
+			}
 			if (isRelevantHistory && !currentLibraryRatingKeys.has(itemRatingKey)) {
 				ignoredHistoricalItems++;
 				continue;
@@ -521,6 +541,8 @@ export async function refreshPlexCache(
 		errors++;
 		errorMessages.push(msg);
 	}
+
+	appendIncompleteReasonMessages(errorMessages, incompleteReasons);
 
 	return {
 		upserted,

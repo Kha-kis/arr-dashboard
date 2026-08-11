@@ -513,6 +513,123 @@ describe("evictStaleRows", () => {
 		);
 	});
 
+	it("publishes a complete current show library while ignoring stale episode history", async () => {
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "2", title: "Shows", type: "show" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "current-show",
+					title: "Current Show",
+					type: "show",
+					Guid: [{ id: "tmdb://84" }],
+				},
+			]),
+			getHistory: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "stale-episode",
+					grandparentRatingKey: "stale-show",
+					title: "Stale Episode",
+					type: "episode",
+					viewedAt: 1_700_000_000,
+					accountID: 1,
+				},
+			]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const tx = {
+			plexCache: { deleteMany: vi.fn(), createMany: vi.fn() },
+			cacheRefreshStatus: { upsert: vi.fn() },
+		};
+		const prisma = {
+			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+				callback(tx),
+			),
+		} as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		expect(silentLog.info).toHaveBeenCalledWith(
+			expect.objectContaining({ ignoredHistoricalItems: 1 }),
+			"Plex cache refresh complete",
+		);
+	});
+
+	it.each([
+		[
+			"movie history has an empty rating key",
+			{ type: "movie", ratingKey: "", title: "Movie", viewedAt: 1_700_000_000, accountID: 1 },
+			"Plex cache incomplete: 1 history item(s) without a usable media key",
+		],
+		[
+			"episode history has no grandparent rating key",
+			{
+				type: "episode",
+				ratingKey: "episode-1",
+				title: "Episode",
+				viewedAt: 1_700_000_000,
+				accountID: 1,
+			},
+			"Plex cache incomplete: 1 history item(s) without a usable media key",
+		],
+	] as const)(
+		"fails closed without publication when %s",
+		async (_caseName, historyEntry, message) => {
+			const mockClient = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi
+					.fn()
+					.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+				getLibraryItems: vi.fn().mockResolvedValue([
+					{
+						ratingKey: "current",
+						title: "Current Movie",
+						type: "movie",
+						Guid: [{ id: "tmdb://42" }],
+					},
+				]),
+				getHistory: vi.fn().mockResolvedValue([historyEntry]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+			const transaction = vi.fn();
+			const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: false, upserted: 0 });
+			expect(result.errorMessages).toContain(message);
+			expect(transaction).not.toHaveBeenCalled();
+		},
+	);
+
+	it("fails closed without publication when a current library item has an empty rating key", async () => {
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi
+				.fn()
+				.mockResolvedValue([
+					{ ratingKey: "", title: "Current Movie", type: "movie", Guid: [{ id: "tmdb://42" }] },
+				]),
+			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const transaction = vi.fn();
+		const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages).toContain(
+			"Plex cache incomplete: 1 current library item(s) without a usable rating key",
+		);
+		expect(transaction).not.toHaveBeenCalled();
+	});
+
 	it("fails closed when a current historical item has no TMDB metadata", async () => {
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
@@ -536,14 +653,17 @@ describe("evictStaleRows", () => {
 			]),
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
-		const deleteMany = vi.fn();
-		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+		const transaction = vi.fn();
+		const prisma = { $transaction: transaction } as unknown as PrismaClient;
 		vi.mocked(silentLog.warn).mockClear();
 
 		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(deleteMany).not.toHaveBeenCalled();
+		expect(result.errorMessages).toContain(
+			"Plex cache incomplete: 1 current library item(s) without TMDB metadata",
+		);
+		expect(transaction).not.toHaveBeenCalled();
 		expect(silentLog.warn).toHaveBeenCalledWith(
 			expect.objectContaining({
 				incompleteReasons: expect.objectContaining({ currentItemsWithoutTmdbMetadata: 1 }),
