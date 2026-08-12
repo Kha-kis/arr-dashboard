@@ -2701,6 +2701,166 @@ describe("shared Plex deletion safety", () => {
 		expect(result).toMatchObject({ status: "completed", itemsRemoved: 1, itemsSkipped: 0 });
 	});
 
+	it("blocks queued execution when the retained Radarr peer file changes after planning", async () => {
+		const fixture = makeDeps();
+		const { peerClient, peerMovie } = configureVerifiedRadarrPeer(fixture);
+		const context = createSharedPlexSafetyContext();
+		expect(await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context)).toEqual(
+			new Map(),
+		);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_radarr") throw new Error("Expected a verified Radarr safety plan");
+		const storedApproval = approvalRecord({ safetySnapshot: serializeExecutableSafetyPlan(plan) });
+		const updateApproval = configureApprovalStore(fixture.deps, storedApproval);
+		const updateStoredApproval = updateApproval.getMockImplementation();
+		if (!updateStoredApproval) throw new Error("Expected an approval store implementation");
+		updateApproval.mockImplementation((async (args: {
+			where: { status?: string };
+			data: { reviewedAt?: Date };
+		}) => {
+			const result = await updateStoredApproval(args as never);
+			if (args.data.reviewedAt && args.where.status === "executing") {
+				peerClient.movieFile.getById.mockResolvedValue({
+					...peerMovie,
+					id: 2999,
+					path: "/downloads-hd/Example Movie (2024)/Example.Movie.Replacement.mkv",
+					size: 1_100,
+				});
+			}
+			return result;
+		}) as never);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(result.errors[0]).toContain("ownership changed");
+		expect(fixture.deleteMovieFile).not.toHaveBeenCalled();
+		expect(fixture.deleteMovie).not.toHaveBeenCalled();
+		expect(peerClient.movie.delete).not.toHaveBeenCalled();
+		expect(peerClient.movieFile.delete).not.toHaveBeenCalled();
+	});
+
+	it("retains the queued Radarr record when its Plex notification mapping changes after file deletion", async () => {
+		const fixture = makeDeps({ onMovieDelete: true, onMovieFileDelete: true });
+		const { peerClient } = configureVerifiedRadarrPeer(fixture);
+		const originalNotifications = await fixture.targetClient.notification.getAll();
+		const context = createSharedPlexSafetyContext();
+		expect(await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context)).toEqual(
+			new Map(),
+		);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_radarr") throw new Error("Expected a verified Radarr safety plan");
+		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+			approvalRecord({ safetySnapshot: serializeExecutableSafetyPlan(plan) }) as never,
+		]);
+		const deleteSelectedFile = fixture.deleteMovieFile.getMockImplementation();
+		if (!deleteSelectedFile) throw new Error("Expected a target file delete implementation");
+		fixture.deleteMovieFile.mockImplementation(async (movieFileId) => {
+			await deleteSelectedFile(movieFileId);
+			fixture.targetClient.notification.getAll.mockResolvedValue(
+				originalNotifications.map((notification: Record<string, unknown>) => ({
+					...notification,
+					fields: notificationFields({ mapFrom: "/movies-4k", mapTo: "/changed-plex-root" }),
+				})),
+			);
+		});
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(fixture.deleteMovieFile).toHaveBeenCalledWith(1001);
+		expect(fixture.deleteMovie).not.toHaveBeenCalled();
+		expect(result.errors[0]).toContain("Partial cleanup");
+		expect(peerClient.movie.delete).not.toHaveBeenCalled();
+		expect(peerClient.movieFile.delete).not.toHaveBeenCalled();
+	});
+
+	it("retains the direct Radarr record when a new unowned Plex part appears after file deletion", async () => {
+		const fixture = makeDeps();
+		const { peerClient } = configureVerifiedRadarrPeer(fixture);
+		const deleteSelectedFile = fixture.deleteMovieFile.getMockImplementation();
+		if (!deleteSelectedFile) throw new Error("Expected a target file delete implementation");
+		fixture.deleteMovieFile.mockImplementation(async (movieFileId) => {
+			await deleteSelectedFile(movieFileId);
+			fixture.getMovieMediaPartsByTmdbId.mockResolvedValue([
+				{
+					ratingKey: "plex-movie-42",
+					parts: [
+						{ file: "/plex/movies-hd/Example Movie (2024)/Example.Movie.1080p.mkv", size: 1_000 },
+						{
+							file: "/plex/movies-remux/Example Movie (2024)/Example.Movie.Remux.mkv",
+							size: 3_000,
+						},
+					],
+				},
+			]);
+		});
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "4K cleanup",
+				reason: "Matched 4K profile",
+				action: "delete",
+			},
+			rating: 8,
+		} as never;
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result).toMatchObject({ status: "partial", itemsRemoved: 0, itemsFilesDeleted: 1 });
+		expect(fixture.deleteMovieFile).toHaveBeenCalledWith(1001);
+		expect(fixture.deleteMovie).not.toHaveBeenCalled();
+		expect(peerClient.movie.delete).not.toHaveBeenCalled();
+		expect(peerClient.movieFile.delete).not.toHaveBeenCalled();
+	});
+
+	it("retains a retrying Radarr record when its retained peer disappears after file deletion", async () => {
+		const fixture = makeDeps();
+		const { peerClient } = configureVerifiedRadarrPeer(fixture);
+		const context = createSharedPlexSafetyContext();
+		expect(await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context)).toEqual(
+			new Map(),
+		);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_radarr") throw new Error("Expected a verified Radarr safety plan");
+		const storedApproval = approvalRecord({
+			status: "retry_pending",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		});
+		configureApprovalStore(fixture.deps, storedApproval);
+		const deleteSelectedFile = fixture.deleteMovieFile.getMockImplementation();
+		if (!deleteSelectedFile) throw new Error("Expected a target file delete implementation");
+		fixture.deleteMovieFile.mockImplementation(async (movieFileId) => {
+			await deleteSelectedFile(movieFileId);
+			peerClient.movie.getAll.mockResolvedValue([]);
+		});
+
+		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(fixture.deleteMovieFile).toHaveBeenCalledWith(1001);
+		expect(fixture.deleteMovie).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "retry_pending" });
+		expect(peerClient.movie.delete).not.toHaveBeenCalled();
+		expect(peerClient.movieFile.delete).not.toHaveBeenCalled();
+	});
+
 	it("removes an already-fileless Radarr record without enabling file deletion", async () => {
 		const { deps, deleteMovie, deleteMovieFile, getMovieMediaPartsByTmdbId } = makeDeps({
 			initialMovieFileId: null,
@@ -3272,6 +3432,7 @@ describe("shared Plex deletion safety", () => {
 		targetClient.movie.getById
 			.mockResolvedValueOnce(movie)
 			.mockResolvedValueOnce(movie)
+			.mockResolvedValueOnce(movie)
 			.mockResolvedValueOnce({ ...movie, hasFile: false });
 		deleteMovieFile.mockResolvedValueOnce(undefined);
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
@@ -3790,7 +3951,7 @@ describe("shared Plex deletion safety", () => {
 		expect(targetClient.movie.update).not.toHaveBeenCalled();
 		expect(retries[0]).toMatchObject({
 			status: "retry_pending",
-			safetySnapshot: radarrSafetySnapshot(null),
+			safetySnapshot: radarrSafetySnapshot(),
 		});
 		expect(result).toMatchObject({
 			status: "partial",
@@ -4036,7 +4197,7 @@ describe("shared Plex deletion safety", () => {
 			data: expect.objectContaining({
 				status: "pending",
 				lastExecutionError: expect.stringContaining("movie record could not be removed"),
-				safetySnapshot: radarrSafetySnapshot(null),
+				safetySnapshot: radarrSafetySnapshot(),
 			}),
 		});
 	});
@@ -4078,7 +4239,7 @@ describe("shared Plex deletion safety", () => {
 		expect(firstResult).toMatchObject({ removed: 0, failed: 1 });
 		expect(storedApproval).toMatchObject({
 			status: "pending",
-			safetySnapshot: radarrSafetySnapshot(null),
+			safetySnapshot: radarrSafetySnapshot(),
 		});
 
 		storedApproval.status = "approved";
@@ -4111,7 +4272,7 @@ describe("shared Plex deletion safety", () => {
 		expect(deleteMovie).toHaveBeenCalledOnce();
 		expect(storedApproval).toMatchObject({
 			status: "executed",
-			safetySnapshot: radarrSafetySnapshot(null),
+			safetySnapshot: radarrSafetySnapshot(),
 			lastExecutionError: null,
 		});
 		expect(
@@ -4288,7 +4449,7 @@ describe("shared Plex deletion safety", () => {
 		expect(storedApproval).toMatchObject({
 			status: "pending",
 			executionToken: null,
-			safetySnapshot: radarrSafetySnapshot(null),
+			safetySnapshot: radarrSafetySnapshot(),
 			lastExecutionError: expect.stringContaining("execution authority was lost"),
 		});
 	});
@@ -4649,7 +4810,7 @@ describe("shared Plex deletion safety", () => {
 		expect(retries).toHaveLength(1);
 		expect(retries[0]).toMatchObject({
 			status: "retry_executing",
-			safetySnapshot: radarrSafetySnapshot(null),
+			safetySnapshot: radarrSafetySnapshot(),
 		});
 		expect(retryResult).toMatchObject({
 			status: "partial",

@@ -1971,3 +1971,151 @@ export async function findSharedPlexDeleteBlocks(
 
 	return blocks;
 }
+
+/**
+ * Revalidate the retained side of a verified multi-Radarr ownership proof after
+ * the selected target file is gone. This deliberately does not require the
+ * deleted target Plex part to remain visible, so it can guard the subsequent
+ * fileless Radarr record deletion and its notification.
+ */
+export async function assertVerifiedRadarrPeerOwnershipRetained(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	targetArrItemId: number,
+	plan: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_radarr" }>,
+): Promise<void> {
+	const [arrInstances, plexInstances] = await Promise.all([
+		deps.prisma.serviceInstance.findMany({
+			where: { userId, service: { in: ["RADARR", "SONARR"] } },
+		}),
+		deps.prisma.serviceInstance.findMany({
+			where: { userId, service: "PLEX" },
+		}),
+	]);
+	const peerInstances = arrInstances.filter(
+		(instance) =>
+			instance.service === "RADARR" &&
+			createArrServiceFingerprint(instance) !== plan.target.serviceFingerprint,
+	);
+	const targetInstances = arrInstances.filter(
+		(instance) =>
+			instance.service === "RADARR" &&
+			createArrServiceFingerprint(instance) === plan.target.serviceFingerprint,
+	);
+	const peerIds = new Set(plan.peers.map((peer) => peer.instanceId));
+	if (
+		targetInstances.length !== 1 ||
+		peerInstances.length !== peerIds.size ||
+		peerInstances.some((instance) => !peerIds.has(instance.id))
+	) {
+		throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+	}
+
+	const targetClient = deps.arrClientFactory.create(targetInstances[0]!) as InstanceType<
+		typeof RadarrClient
+	>;
+	await assertVerifiedRadarrEmptyUnchanged(targetClient, targetArrItemId, plan.target);
+	const currentTargetMovie = await targetClient.movie.getById(targetArrItemId);
+	const currentTargetDeleteNotifications = radarrTargetDeleteNotificationWitnesses(
+		await targetClient.notification.getAll(),
+		currentTargetMovie,
+	);
+	if (
+		JSON.stringify(currentTargetDeleteNotifications) !==
+		JSON.stringify(plan.targetDeleteNotifications)
+	) {
+		throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+	}
+
+	const livePeers = new Map<string, NonNullable<PlexVerificationInput["radarrPeers"]>[number]>();
+	for (const peer of plan.peers) {
+		const peerInstance = peerInstances.find((instance) => instance.id === peer.instanceId);
+		if (!peerInstance || createArrServiceFingerprint(peerInstance) !== peer.serviceFingerprint) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+		}
+		const client = deps.arrClientFactory.create(peerInstance) as InstanceType<typeof RadarrClient>;
+		const movies = (await client.movie.getAll({ tmdbId: peer.externalId })).filter(
+			(movie) => movie.tmdbId === peer.externalId,
+		);
+		if (peer.arrItemId === null) {
+			if (movies.length !== 0) {
+				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+			}
+			continue;
+		}
+		const movie = movies[0];
+		if (movies.length !== 1 || !movie || movie.id !== peer.arrItemId || peer.mediaPath === null) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+		}
+		const peerTarget: VerifiedArrTargetIdentity = {
+			serviceFingerprint: peer.serviceFingerprint,
+			externalId: peer.externalId,
+			mediaPath: peer.mediaPath,
+		};
+		if (peer.file) {
+			await assertVerifiedRadarrFileUnchanged(client, peer.arrItemId, peerTarget, peer.file);
+		} else {
+			await assertVerifiedRadarrEmptyUnchanged(client, peer.arrItemId, peerTarget);
+		}
+		livePeers.set(peer.instanceId, {
+			identity: peer,
+			movieTags: movie.tags ?? [],
+			notifications: await client.notification.getAll(),
+		});
+	}
+
+	const context = createSharedPlexSafetyContext();
+	const ownerChecks = new Map<string, Promise<void>>();
+	for (const ownership of plan.ownership) {
+		const matchingPlexInstances = plexInstances.filter(
+			(instance) => normalizedServerUrl(instance.baseUrl) === ownership.plexServerUrl,
+		);
+		if (matchingPlexInstances.length === 0) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+		}
+		for (const plexInstance of matchingPlexInstances) {
+			const plex = await requirePlexClient(deps, context, ownerChecks, plexInstance);
+			const mediaItems = await plex.getMovieMediaPartsByTmdbId(plan.target.externalId);
+			const targetItems = mediaItems.filter(
+				(item) => item.ratingKey === ownership.target.ratingKey,
+			);
+			if (targetItems.length > 1) {
+				throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+			}
+			for (const expected of ownership.retained) {
+				const peer = livePeers.get(expected.instanceId);
+				if (!peer) throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+				const match = matchingPeerPlexPart(peer, mediaItems, ownership.plexServerUrl);
+				if (
+					!match ||
+					match.item.ratingKey !== expected.ratingKey ||
+					match.part.size !== expected.size ||
+					!pathsEqual(normalizeMediaPath(match.part.file), expected.fullPath) ||
+					JSON.stringify(match.mapping) !== JSON.stringify(expected.mapping)
+				) {
+					throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+				}
+			}
+			const currentTargetItem = targetItems[0];
+			if (currentTargetItem) {
+				const allowedTargetItemParts = new Set([
+					plexPartKey({
+						file: ownership.target.fullPath.value,
+						size: ownership.target.size,
+					}),
+					...ownership.retained
+						.filter((expected) => expected.ratingKey === ownership.target.ratingKey)
+						.map((expected) => plexPartKey({ file: expected.fullPath.value, size: expected.size })),
+				]);
+				const currentTargetItemPartKeys = currentTargetItem.parts.map(plexPartKey);
+				if (
+					new Set(currentTargetItemPartKeys).size !== currentTargetItemPartKeys.length ||
+					currentTargetItemPartKeys.some((partKey) => !allowedTargetItemParts.has(partKey))
+				) {
+					throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+				}
+			}
+		}
+	}
+	await assertVerifiedRadarrEmptyUnchanged(targetClient, targetArrItemId, plan.target);
+}
