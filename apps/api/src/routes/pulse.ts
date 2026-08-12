@@ -61,6 +61,7 @@ export const COLLECTOR_LABELS: Record<string, string> = {
 	collectArrQueueFailures: "queue failures",
 	collectSeerrCircuitBreaker: "Seerr circuit breaker",
 	collectCacheStaleness: "cache freshness",
+	collectTautulliCacheHealth: "Tautulli cache health",
 	collectLibrarySyncHealth: "library sync",
 	collectValidationHealth: "validation health",
 	collectLibraryInsightCounts: "library insights",
