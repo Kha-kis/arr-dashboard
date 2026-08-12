@@ -6,8 +6,10 @@ description: Use when adding, changing, debugging, or auditing arr-dashboard int
 # Change an arr-dashboard integration
 
 1. Resolve the current target branch and the requested service contract before
-   copying an adjacent integration. Tautulli is supported on stable 2.x;
-   Tracearr replaces it on 3.0. Keep the change on the intended release line.
+   copying an adjacent integration. On 3.0, Tracearr is the recommended
+   historical-analytics provider and Tautulli is a fully supported alternative;
+   neither provider silently substitutes for or mixes data with the other. Keep
+   the change on the intended release line.
 2. Read [integration-risks.md](references/integration-risks.md) for contract
    changes, service mutations, or production-shape audits. Record the target
    service, upstream contract, and complete caller/consumer surface.

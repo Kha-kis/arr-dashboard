@@ -20,7 +20,8 @@
 - Create: `apps/api/src/lib/tautulli/tautulli-helpers.ts`
 - Create: `apps/api/src/lib/tautulli/tautulli-client.test.ts`
 - Create: `apps/api/src/lib/tautulli/tautulli-schemas.test.ts`
-- Modify: `packages/shared/src/types/services.ts`
+- Create: `packages/shared/src/types/tautulli.ts`
+- Modify: `packages/shared/src/index.ts`
 
 - [ ] Write failing tests for API-key query auth, optional HTTP Basic auth, pagination, sparse metadata, upstream error normalization, and statistics completeness.
 - [ ] Implement Zod schemas and a per-instance client using encrypted service credentials; never log URLs, keys, usernames, or titles.
@@ -32,11 +33,11 @@
 **Files:**
 - Create: `apps/api/src/lib/tautulli/tautulli-cache-refresher.ts`
 - Create: `apps/api/src/lib/tautulli/tautulli-cache-refresher.test.ts`
-- Modify: `apps/api/prisma/schema.prisma`
-- Create: `apps/api/prisma/migrations/20260812100000_restore_tautulli_cache/migration.sql`
+- Modify if required by the retained 3.0 cache contract: `apps/api/prisma/schema.prisma`
+- Create only if the schema actually changes: `apps/api/prisma/migrations/20260812100000_restore_tautulli_cache/migration.sql`
 
 - [ ] Add failing tests for atomic publication, duplicate/group rejection, frozen totals, sparse rows, caps, chunked stale eviction, overlapping runs, disabled/deleted instances, and generation changes.
-- [ ] Model cache generations and refresh attempts consistently with the Wave-4 Plex/Jellyfin lifecycle; failed attempts preserve the last successful generation.
+- [ ] Reuse the retained `TautulliCache` and `CacheRefreshStatus` models when they already satisfy the Wave-4 Plex/Jellyfin lifecycle; do not create an empty migration. Failed attempts preserve the last successful generation.
 - [ ] Gather into an unpublished generation, validate the full snapshot, then publish in one guarded transaction.
 - [ ] Do not treat connection fingerprints as verified Plex server identity.
 - [ ] Run `pnpm --filter @arr/api test -- tautulli-cache-refresher` and commit: `feat: add guarded tautulli cache refresh`.
