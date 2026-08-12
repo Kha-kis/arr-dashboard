@@ -146,13 +146,15 @@ function makeDeps(
 describe("authoritative mutation policy snapshots", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		refreshMocks.plex.mockResolvedValue({
+		refreshMocks.plex.mockImplementation(async (_client, _prisma, instanceId: string) => ({
 			upserted: 0,
 			errors: 0,
 			errorMessages: [],
 			complete: true,
 			completedAt: new Date(),
-		});
+			generationId: `generation-${instanceId}`,
+			inventoryTargets: [],
+		}));
 		refreshMocks.plexEpisodes.mockResolvedValue({
 			upserted: 0,
 			errors: 0,
@@ -264,6 +266,23 @@ describe("authoritative mutation policy snapshots", () => {
 		expect(refreshMocks.plexEpisodes).toHaveBeenCalledOnce();
 	});
 
+	it("rejects inventory identities that do not belong to the published Plex generation", async () => {
+		refreshMocks.plex.mockResolvedValue({
+			upserted: 0,
+			errors: 0,
+			errorMessages: [],
+			complete: true,
+			completedAt: new Date(),
+			generationId: "different-generation",
+			inventoryTargets: [],
+		});
+		const { deps } = makeDeps([rule("plex_watch_count")], [instance("PLEX")]);
+
+		const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+
+		expect(snapshot.failedSources).toEqual(new Set(["plex"]));
+	});
+
 	it("excludes disabled Plex episode caches from refreshed authority", async () => {
 		const { deps, findInstances } = makeDeps([rule("plex_episode_completion")], [instance("PLEX")]);
 
@@ -336,13 +355,117 @@ describe("authoritative mutation policy snapshots", () => {
 	});
 
 	it.each([
-		["Radarr", "blocks", "RADARR", "movie", true],
-		["Sonarr", "blocks", "SONARR", "series", true],
-		["Radarr", "allows", "RADARR", "movie", false],
-		["Sonarr", "allows", "SONARR", "series", false],
+		[
+			"Radarr",
+			"blocks an added target",
+			"RADARR",
+			"movie",
+			[],
+			["plex-b-84"],
+			["plex-a-84"],
+			["plex-b-84"],
+			true,
+			false,
+		],
+		[
+			"Sonarr",
+			"blocks an added target",
+			"SONARR",
+			"series",
+			[],
+			["plex-b-84"],
+			["plex-a-84"],
+			["plex-b-84"],
+			true,
+			false,
+		],
+		[
+			"Radarr",
+			"allows unchanged identity",
+			"RADARR",
+			"movie",
+			[],
+			["plex-b-84"],
+			[],
+			["plex-b-84"],
+			false,
+			false,
+		],
+		[
+			"Sonarr",
+			"allows unchanged identity",
+			"SONARR",
+			"series",
+			[],
+			["plex-b-84"],
+			[],
+			["plex-b-84"],
+			false,
+			false,
+		],
+		[
+			"Sonarr",
+			"allows unchanged identity without an optional TMDb ID",
+			"SONARR",
+			"series",
+			[],
+			["plex-b-84"],
+			[],
+			["plex-b-84"],
+			false,
+			true,
+		],
+		[
+			"Radarr",
+			"blocks a disappeared target",
+			"RADARR",
+			"movie",
+			[],
+			["plex-b-84"],
+			[],
+			[],
+			true,
+			false,
+		],
+		[
+			"Sonarr",
+			"blocks a disappeared target",
+			"SONARR",
+			"series",
+			[],
+			["plex-b-84"],
+			[],
+			[],
+			true,
+			false,
+		],
+		[
+			"Radarr",
+			"allows unchanged duplicate editions",
+			"RADARR",
+			"movie",
+			[],
+			["plex-b-84-a", "plex-b-84-b"],
+			[],
+			["plex-b-84-a", "plex-b-84-b"],
+			false,
+			false,
+		],
+		[
+			"Sonarr",
+			"allows unchanged duplicate editions",
+			"SONARR",
+			"series",
+			[],
+			["plex-b-84-a", "plex-b-84-b"],
+			[],
+			["plex-b-84-a", "plex-b-84-b"],
+			false,
+			false,
+		],
 	] as const)(
-		"%s %s a Plex-authorized delete after final target revalidation",
-		async (_label, expectedOutcome, service, mediaType, becomesCurrent) => {
+		"%s %s after final target revalidation",
+		async (_label, _expectedBehavior, service, mediaType, plexATargetsAtSnapshot, plexBTargetsAtSnapshot, plexATargetsAtMutation, plexBTargetsAtMutation, expectedToBlock, omitSonarrTmdbId) => {
 			const plexA = { ...instance("PLEX"), id: "plex-a", name: "Plex A" };
 			const plexB = { ...instance("PLEX"), id: "plex-b", name: "Plex B" };
 			const plexRule = {
@@ -353,7 +476,21 @@ describe("authoritative mutation policy snapshots", () => {
 				action: "delete",
 				scanMediaServerAfterDelete: false,
 			};
-			const { deps } = makeDeps([plexRule], [plexA, plexB]);
+			const matchedRule = omitSonarrTmdbId
+				? {
+						...rule("age"),
+						parameters: JSON.stringify({ operator: "older_than", days: 0 }),
+						serviceFilter: JSON.stringify([service]),
+						targetScope: "series",
+						action: "delete",
+						scanMediaServerAfterDelete: false,
+					}
+				: plexRule;
+			const plexDependencyRule = omitSonarrTmdbId ? { ...plexRule, priority: 2 } : plexRule;
+			const { deps } = makeDeps(omitSonarrTmdbId ? [matchedRule, plexDependencyRule] : [plexRule], [
+				plexA,
+				plexB,
+			]);
 			const publishedRow = {
 				id: "plex-row-b",
 				instanceId: plexB.id,
@@ -361,7 +498,7 @@ describe("authoritative mutation policy snapshots", () => {
 				mediaType,
 				sectionId: "movies",
 				sectionTitle: "Movies",
-				ratingKey: "plex-b-84",
+				ratingKey: plexBTargetsAtSnapshot[0] ?? null,
 				lastWatchedAt: null,
 				watchCount: 0,
 				watchedByUsers: "[]",
@@ -378,6 +515,8 @@ describe("authoritative mutation policy snapshots", () => {
 				where: { instanceId: string };
 			}) => (where.instanceId === plexB.id ? 1 : 0)) as never);
 			const publishedAt = new Date();
+			const generationIds = new Map<string, string>();
+			let refreshCallCount = 0;
 			vi.mocked(deps.prisma.cacheRefreshStatus.findMany).mockImplementation((async ({
 				where,
 			}: {
@@ -388,7 +527,7 @@ describe("authoritative mutation policy snapshots", () => {
 					lastRefreshedAt: publishedAt,
 					lastResult: "success",
 					itemCount: instanceId === plexB.id ? 1 : 0,
-					generationId: `generation-${instanceId}`,
+					generationId: generationIds.get(instanceId),
 					generationMetadata: JSON.stringify({
 						sections: [{ key: "movies", title: "Movies", type: "movie" }],
 					}),
@@ -396,13 +535,34 @@ describe("authoritative mutation policy snapshots", () => {
 					lastAttemptResult: "success",
 					lastAttemptErrorMessage: null,
 				}))) as never);
+			refreshMocks.plex.mockImplementation(async (_client, _prisma, instanceId: string) => {
+				const pass = Math.floor(refreshCallCount / 2) + 1;
+				refreshCallCount++;
+				const generationId = `generation-${pass}-${instanceId}`;
+				generationIds.set(instanceId, generationId);
+				return {
+					upserted: instanceId === plexB.id ? 1 : 0,
+					errors: 0,
+					errorMessages: [],
+					complete: true,
+					completedAt: publishedAt,
+					generationId,
+					inventoryTargets: (instanceId === plexA.id
+						? plexATargetsAtSnapshot
+						: plexBTargetsAtSnapshot
+					).map((ratingKey) => ({
+						mediaType,
+						tmdbId: 84,
+						...(mediaType === "series" ? { tvdbId: 84 } : {}),
+						ratingKey,
+					})),
+				};
+			});
 
 			const currentTargets = (plexInstanceId: string) =>
-				plexInstanceId === plexA.id
-					? becomesCurrent
-						? [{ ratingKey: "plex-a-84" }]
-						: []
-					: [{ ratingKey: "plex-b-84" }];
+				(plexInstanceId === plexA.id ? plexATargetsAtMutation : plexBTargetsAtMutation).map(
+					(ratingKey) => ({ ratingKey }),
+				);
 			deps.plexCacheClientFactory = vi.fn(
 				(plexInstance) =>
 					({
@@ -428,7 +588,9 @@ describe("authoritative mutation policy snapshots", () => {
 			};
 			const rawItem = {
 				id: 101,
-				...(service === "RADARR" ? { tmdbId: 84 } : { tvdbId: 84, tmdbId: 84 }),
+				...(service === "RADARR"
+					? { tmdbId: 84 }
+					: { tvdbId: 84, ...(omitSonarrTmdbId ? {} : { tmdbId: 84 }) }),
 				title: `Example ${_label} Item`,
 				path: `/media/example-${service.toLowerCase()}`,
 				monitored: true,
@@ -458,7 +620,7 @@ describe("authoritative mutation policy snapshots", () => {
 					arrInstance as never,
 					101,
 					{
-						matchedRuleId: plexRule.id,
+						matchedRuleId: matchedRule.id,
 						action: "delete",
 						scanMediaServerAfterDelete: false,
 					},
@@ -466,7 +628,7 @@ describe("authoritative mutation policy snapshots", () => {
 				);
 				await deleteMovieFile();
 			};
-			if (expectedOutcome === "blocks") {
+			if (expectedToBlock) {
 				await expect(executeAuthorizedDelete()).rejects.toThrow(
 					/provider evidence could not re-authorize/i,
 				);

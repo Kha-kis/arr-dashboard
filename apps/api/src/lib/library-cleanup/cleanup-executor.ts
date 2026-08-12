@@ -24,7 +24,11 @@ import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-refresher.js";
 import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
-import { type PlexCacheSnapshotRow, refreshPlexCache } from "../plex/plex-cache-refresher.js";
+import {
+	type PlexCacheSnapshotRow,
+	type PlexInventoryTarget,
+	refreshPlexCache,
+} from "../plex/plex-cache-refresher.js";
 import {
 	createPlexClient,
 	type PlexClient,
@@ -2861,6 +2865,24 @@ type PlexTargetLookupClient = Pick<
 	"getMovieMediaPartsByTmdbId" | "getSeriesEpisodeMediaPartsByTvdbId"
 >;
 
+type PlexTargetRatingKeysByInstance = Map<string, Map<string, Set<string>>>;
+
+function plexTargetIdentityKey(
+	mediaType: PlexInventoryTarget["mediaType"],
+	idType: "tmdb" | "tvdb",
+	externalId: number,
+): string {
+	return `${mediaType}:${idType}:${externalId}`;
+}
+
+function plexInventoryTargetKeys(target: PlexInventoryTarget): string[] {
+	const keys = [plexTargetIdentityKey(target.mediaType, "tmdb", target.tmdbId)];
+	if (target.mediaType === "series" && target.tvdbId) {
+		keys.push(plexTargetIdentityKey("series", "tvdb", target.tvdbId));
+	}
+	return keys;
+}
+
 async function readCurrentPlexTargetRatingKeys(
 	client: PlexTargetLookupClient,
 	service: "RADARR" | "SONARR",
@@ -2892,7 +2914,8 @@ async function assertCurrentPlexTargetCoveredByPolicySnapshot(
 	userId: string,
 	service: "RADARR" | "SONARR",
 	externalId: number,
-	ratingKeysByInstance: Map<string, Set<string>>,
+	targetKey: string,
+	ratingKeysByInstance: PlexTargetRatingKeysByInstance,
 	expectedTopologyFingerprint: string,
 ): Promise<void> {
 	const initial = await loadProviderInstances(deps, userId, ["PLEX"]);
@@ -2918,9 +2941,11 @@ async function assertCurrentPlexTargetCoveredByPolicySnapshot(
 			throw new Error("Plex target identity changed between verification passes");
 		}
 
-		const coveredRatingKeys = ratingKeysByInstance.get(instance.id)!;
-		if (second.some((ratingKey) => !coveredRatingKeys.has(ratingKey))) {
-			throw new Error("Plex target became current after the policy snapshot was captured");
+		const expectedRatingKeys = [
+			...(ratingKeysByInstance.get(instance.id)?.get(targetKey) ?? new Set<string>()),
+		].sort();
+		if (evidenceFingerprint(second) !== evidenceFingerprint(expectedRatingKeys)) {
+			throw new Error("Plex target identity changed after the policy snapshot was captured");
 		}
 	}
 
@@ -2985,19 +3010,36 @@ export async function assertCurrentSeriesMutationAuthority(
 				ruleUsesUnavailableData(rule, plexDependency),
 		);
 		if (plexCanAffectPolicy) {
-			if (!policySnapshot.plexRatingKeysByInstance || !policySnapshot.plexTopologyFingerprint) {
+			if (
+				!policySnapshot.plexTargetRatingKeysByInstance ||
+				!policySnapshot.plexTopologyFingerprint
+			) {
 				throw new Error("The policy snapshot lacked complete Plex target coverage");
 			}
-			const externalId = instance.service === "RADARR" ? rawItem.tmdbId : rawItem.tvdbId;
-			if (typeof externalId !== "number" || !Number.isSafeInteger(externalId) || externalId <= 0) {
-				throw new Error("Live ARR state lacked the external ID required for Plex verification");
+			const lookupExternalId = instance.service === "RADARR" ? rawItem.tmdbId : rawItem.tvdbId;
+			const policyTmdbId = rawItem.tmdbId;
+			const hasPolicyTmdbId =
+				typeof policyTmdbId === "number" && Number.isSafeInteger(policyTmdbId) && policyTmdbId > 0;
+			if (
+				typeof lookupExternalId !== "number" ||
+				!Number.isSafeInteger(lookupExternalId) ||
+				lookupExternalId <= 0
+			) {
+				throw new Error("Live ARR state lacked the IDs required for Plex verification");
 			}
+			const targetKey =
+				instance.service === "RADARR"
+					? plexTargetIdentityKey("movie", "tmdb", lookupExternalId)
+					: hasPolicyTmdbId
+						? plexTargetIdentityKey("series", "tmdb", policyTmdbId)
+						: plexTargetIdentityKey("series", "tvdb", lookupExternalId);
 			await assertCurrentPlexTargetCoveredByPolicySnapshot(
 				deps,
 				userId,
 				instance.service,
-				externalId,
-				policySnapshot.plexRatingKeysByInstance,
+				lookupExternalId,
+				targetKey,
+				policySnapshot.plexTargetRatingKeysByInstance,
 				policySnapshot.plexTopologyFingerprint,
 			);
 		}
@@ -4935,15 +4977,17 @@ async function prefetchTautulliData(
 	}
 }
 
-interface PublishedPlexCacheData {
-	plexMap: PlexWatchMap;
-	ratingKeysByInstance: Map<string, Set<string>>;
-}
-
-async function prefetchPlexCacheData(
+/**
+ * Prefetch Plex watch data from the PlexCache table and build a lookup map.
+ * Now section-aware: each row carries sectionId/sectionTitle, and PlexWatchInfo
+ * contains both pre-computed cross-section aggregates and a per-section breakdown.
+ * Also includes collections and labels from the PlexCache table.
+ * Returns undefined if no Plex instance is configured.
+ */
+export async function prefetchPlexData(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<PublishedPlexCacheData | undefined> {
+): Promise<PlexWatchMap | undefined> {
 	const { prisma, log } = deps;
 
 	const plexInstances = await prisma.serviceInstance.findMany({
@@ -4960,23 +5004,18 @@ async function prefetchPlexCacheData(
 		}
 		const map: PlexWatchMap = new Map();
 		const instanceIds = plexInstances.map((i) => i.id);
-		const ratingKeysByInstance = new Map(
-			instanceIds.map((instanceId) => [instanceId, new Set<string>()]),
-		);
 		let cursor: string | undefined;
 		let totalRows = 0;
 
-		// Cursor-paginate to bound peak heap. Preserve the per-instance rating-key
-		// coverage used by final destructive policy revalidation.
+		// Cursor-paginate to bound peak heap. Project only columns the watch-map
+		// builder reads — skipping ratingKey/thumb/title and the per-row instanceId.
 		while (true) {
 			const batch = await prisma.plexCache.findMany({
 				where: { instanceId: { in: instanceIds } },
 				select: {
 					id: true,
-					instanceId: true,
 					tmdbId: true,
 					mediaType: true,
-					ratingKey: true,
 					sectionId: true,
 					sectionTitle: true,
 					lastWatchedAt: true,
@@ -4998,9 +5037,6 @@ async function prefetchPlexCacheData(
 
 			for (const row of batch) {
 				try {
-					if (typeof row.ratingKey !== "string" || row.ratingKey.trim() === "") {
-						throw new Error("Plex cache row lacked a usable rating key");
-					}
 					// Key is mediaType:tmdbId (aggregating across sections)
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
@@ -5067,7 +5103,6 @@ async function prefetchPlexCacheData(
 							sections: [sectionInfo],
 						});
 					}
-					ratingKeysByInstance.get(row.instanceId)?.add(row.ratingKey);
 				} catch (rowErr) {
 					log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Plex cache row with bad data");
 				}
@@ -5081,7 +5116,7 @@ async function prefetchPlexCacheData(
 			{ totalRows, totalEntries: map.size },
 			"Plex watch data prefetch complete for cleanup",
 		);
-		return { plexMap: map, ratingKeysByInstance };
+		return map;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5089,20 +5124,6 @@ async function prefetchPlexCacheData(
 		);
 		return undefined;
 	}
-}
-
-/**
- * Prefetch Plex watch data from the PlexCache table and build a lookup map.
- * Now section-aware: each row carries sectionId/sectionTitle, and PlexWatchInfo
- * contains both pre-computed cross-section aggregates and a per-section breakdown.
- * Also includes collections and labels from the PlexCache table.
- * Returns undefined if no Plex instance is configured.
- */
-export async function prefetchPlexData(
-	deps: CleanupExecutorDeps,
-	userId: string,
-): Promise<PlexWatchMap | undefined> {
-	return (await prefetchPlexCacheData(deps, userId))?.plexMap;
 }
 
 /**
@@ -8661,12 +8682,15 @@ async function loadProviderInstances(
 	});
 }
 
-interface PublishedPlexPolicyEvidence {
+interface PlexPolicyEvidence {
 	plexMap: PlexWatchMap;
 	plexSectionTitles: Set<string>;
-	ratingKeysByInstance: Map<string, Set<string>>;
 	completedAt: Date;
 	generationFingerprint: string;
+}
+
+interface PublishedPlexPolicyEvidence extends PlexPolicyEvidence {
+	generationIdsByInstance: Map<string, string>;
 }
 
 function parsePublishedPlexSections(metadata: string | null): Array<{
@@ -8764,16 +8788,18 @@ async function loadPublishedPlexPolicyEvidenceUnsafe(
 		if (!sectionTitles.has(title)) return undefined;
 	}
 
-	const plexCacheData = await prefetchPlexCacheData(deps, userId);
-	if (!plexCacheData) return undefined;
+	const plexMap = await prefetchPlexData(deps, userId);
+	if (!plexMap) return undefined;
 	const after = await readStatuses();
 	if (evidenceFingerprint(before) !== evidenceFingerprint(after)) return undefined;
 	return {
-		plexMap: plexCacheData.plexMap,
+		plexMap,
 		plexSectionTitles: sectionTitles,
-		ratingKeysByInstance: plexCacheData.ratingKeysByInstance,
 		completedAt: new Date(Math.min(...before.map((status) => status.lastRefreshedAt.getTime()))),
 		generationFingerprint: evidenceFingerprint(before),
+		generationIdsByInstance: new Map(
+			before.map((status) => [status.instanceId, status.generationId!]),
+		),
 	};
 }
 
@@ -8812,7 +8838,7 @@ async function collectLivePlexPolicyEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
-): Promise<PublishedPlexPolicyEvidence | undefined> {
+): Promise<PlexPolicyEvidence | undefined> {
 	try {
 		const initial = await loadProviderInstances(deps, userId, ["PLEX"]);
 		if (initial.length === 0) return undefined;
@@ -8821,7 +8847,6 @@ async function collectLivePlexPolicyEvidence(
 			| {
 					plexMap: PlexWatchMap;
 					plexSectionTitles: Set<string>;
-					ratingKeysByInstance: Map<string, Set<string>>;
 					fingerprint: string;
 					completedAt: Date;
 			  }
@@ -8863,30 +8888,13 @@ async function collectLivePlexPolicyEvidence(
 				if (!sections.has(title)) throw new Error(`Plex library ${title} was unavailable`);
 			}
 			const sortedRows = sortProviderRows(rows);
-			const ratingKeysByInstance = new Map(
-				initial.map((instance) => [instance.id, new Set<string>()]),
-			);
-			for (const row of sortedRows) {
-				if (typeof row.ratingKey !== "string" || row.ratingKey.trim() === "") {
-					throw new Error("Plex live evidence lacked a usable rating key");
-				}
-				const ratingKeys = ratingKeysByInstance.get(row.instanceId);
-				if (!ratingKeys) throw new Error("Plex live evidence referenced an unknown instance");
-				ratingKeys.add(row.ratingKey);
-			}
-			const fingerprint = evidenceFingerprint([
-				topology,
-				sortedRows,
-				sections,
-				ratingKeysByInstance,
-			]);
+			const fingerprint = evidenceFingerprint([topology, sortedRows, sections]);
 			if (accepted && accepted.fingerprint !== fingerprint) {
 				throw new Error("Plex evidence changed between verification passes");
 			}
 			accepted = {
 				plexMap: plexSnapshotToWatchMap(sortedRows),
 				plexSectionTitles: sections,
-				ratingKeysByInstance,
 				fingerprint,
 				completedAt: new Date(Math.min(...completions.map((date) => date.getTime()))),
 			};
@@ -8895,7 +8903,6 @@ async function collectLivePlexPolicyEvidence(
 			? {
 					plexMap: accepted.plexMap,
 					plexSectionTitles: accepted.plexSectionTitles,
-					ratingKeysByInstance: accepted.ratingKeysByInstance,
 					completedAt: accepted.completedAt,
 					generationFingerprint: accepted.fingerprint,
 				}
@@ -9030,7 +9037,7 @@ async function refreshPlexMutationEvidence(
 	| {
 			plexMap: PlexWatchMap;
 			plexSectionTitles: Set<string>;
-			ratingKeysByInstance: Map<string, Set<string>>;
+			ratingKeysByInstance: PlexTargetRatingKeysByInstance;
 			plexEpisodeMap?: PlexEpisodeMap;
 			completedAt: Date;
 			topologyFingerprint: string;
@@ -9045,7 +9052,7 @@ async function refreshPlexMutationEvidence(
 			| {
 					plexMap: PlexWatchMap;
 					plexSectionTitles: Set<string>;
-					ratingKeysByInstance: Map<string, Set<string>>;
+					ratingKeysByInstance: PlexTargetRatingKeysByInstance;
 					plexEpisodeMap?: PlexEpisodeMap;
 					fingerprint: string;
 					completedAt: Date;
@@ -9053,6 +9060,10 @@ async function refreshPlexMutationEvidence(
 			| undefined;
 		for (let pass = 0; pass < 2; pass++) {
 			const passCompletions: Date[] = [];
+			const generationIdsByInstance = new Map<string, string>();
+			const ratingKeysByInstance: PlexTargetRatingKeysByInstance = new Map(
+				initial.map((instance) => [instance.id, new Map<string, Set<string>>()]),
+			);
 			for (const instance of initial) {
 				const client =
 					deps.plexCacheClientFactory?.(instance) ??
@@ -9069,8 +9080,22 @@ async function refreshPlexMutationEvidence(
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Plex cache refresh was incomplete");
 				}
-				if (!refreshed.completedAt) throw new Error("Plex refresh lacked a completion timestamp");
+				if (!refreshed.completedAt || !refreshed.generationId || !refreshed.inventoryTargets) {
+					throw new Error("Plex refresh lacked complete inventory identity evidence");
+				}
 				passCompletions.push(refreshed.completedAt);
+				generationIdsByInstance.set(instance.id, refreshed.generationId);
+				const instanceTargets = ratingKeysByInstance.get(instance.id)!;
+				for (const target of refreshed.inventoryTargets) {
+					for (const targetKey of plexInventoryTargetKeys(target)) {
+						let ratingKeys = instanceTargets.get(targetKey);
+						if (!ratingKeys) {
+							ratingKeys = new Set<string>();
+							instanceTargets.set(targetKey, ratingKeys);
+						}
+						ratingKeys.add(target.ratingKey);
+					}
+				}
 				if (includeEpisodes) {
 					const episodes = await refreshPlexEpisodeCache(
 						client,
@@ -9100,11 +9125,16 @@ async function refreshPlexMutationEvidence(
 			if (!publishedPlex || (includeEpisodes && !plexEpisodeMap)) {
 				throw new Error("Plex refreshed evidence could not be loaded");
 			}
+			if (
+				evidenceFingerprint(publishedPlex.generationIdsByInstance) !==
+				evidenceFingerprint(generationIdsByInstance)
+			) {
+				throw new Error("Plex inventory identity did not match the published generation");
+			}
 			const fingerprint = evidenceFingerprint([
-				publishedPlex.generationFingerprint,
 				publishedPlex.plexMap,
 				publishedPlex.plexSectionTitles,
-				publishedPlex.ratingKeysByInstance,
+				ratingKeysByInstance,
 				plexEpisodeMap,
 			]);
 			if (accepted && accepted.fingerprint !== fingerprint) {
@@ -9113,7 +9143,7 @@ async function refreshPlexMutationEvidence(
 			accepted = {
 				plexMap: publishedPlex.plexMap,
 				plexSectionTitles: publishedPlex.plexSectionTitles,
-				ratingKeysByInstance: publishedPlex.ratingKeysByInstance,
+				ratingKeysByInstance,
 				plexEpisodeMap,
 				fingerprint,
 				completedAt: new Date(Math.min(...passCompletions.map((date) => date.getTime()))),
@@ -9443,7 +9473,7 @@ async function buildMutationEvalContext(
 	ctx: EvalContext;
 	failedSources: Set<DataSourceDependency>;
 	sourceCompletedAt: Map<Exclude<DataSourceDependency, null>, Date>;
-	plexRatingKeysByInstance?: Map<string, Set<string>>;
+	plexTargetRatingKeysByInstance?: PlexTargetRatingKeysByInstance;
 	plexTopologyFingerprint?: string;
 }> {
 	const activeTypes = collectActiveRuleTypes(rules);
@@ -9541,7 +9571,7 @@ async function buildMutationEvalContext(
 		},
 		failedSources,
 		sourceCompletedAt,
-		plexRatingKeysByInstance: plexEvidence?.ratingKeysByInstance,
+		plexTargetRatingKeysByInstance: plexEvidence?.ratingKeysByInstance,
 		plexTopologyFingerprint: plexEvidence?.topologyFingerprint,
 	};
 }
@@ -9556,7 +9586,7 @@ export interface MutationPolicySnapshot {
 	failedSources: Set<DataSourceDependency>;
 	sourceCompletedAt: Map<Exclude<DataSourceDependency, null>, Date>;
 	oldestSourceCompletedAt: Date | null;
-	plexRatingKeysByInstance?: Map<string, Set<string>>;
+	plexTargetRatingKeysByInstance?: PlexTargetRatingKeysByInstance;
 	plexTopologyFingerprint?: string;
 	providerTopologyFingerprint: string;
 }
@@ -9600,7 +9630,7 @@ async function createMutationPolicySnapshot(
 		ctx,
 		failedSources,
 		sourceCompletedAt,
-		plexRatingKeysByInstance,
+		plexTargetRatingKeysByInstance,
 		plexTopologyFingerprint,
 	} = await buildMutationEvalContext(deps, userId, rules);
 	const oldestSourceCompletedAt =
@@ -9630,7 +9660,7 @@ async function createMutationPolicySnapshot(
 		failedSources,
 		sourceCompletedAt,
 		oldestSourceCompletedAt,
-		plexRatingKeysByInstance,
+		plexTargetRatingKeysByInstance,
 		plexTopologyFingerprint,
 		providerTopologyFingerprint: providerTopologyFingerprint(providerInstances),
 	};

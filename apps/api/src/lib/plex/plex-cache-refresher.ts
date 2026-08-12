@@ -45,6 +45,19 @@ function parsePlexTmdbId(guids: Array<{ id: string }> | undefined): number | nul
 	return null;
 }
 
+function parsePlexTvdbId(guids: Array<{ id: string }> | undefined): number | null {
+	if (!guids) return null;
+
+	for (const guid of guids) {
+		const match = guid.id.match(/^tvdb:\/\/(\d+)$/);
+		if (match?.[1]) {
+			return Number.parseInt(match[1], 10);
+		}
+	}
+
+	return null;
+}
+
 // ============================================================================
 // Aggregation Types
 // ============================================================================
@@ -91,6 +104,13 @@ export interface PlexCacheSnapshot {
 	sections: Array<{ key: string; title: string; type: "movie" | "show" }>;
 }
 
+export interface PlexInventoryTarget {
+	mediaType: "movie" | "series";
+	tmdbId: number;
+	tvdbId?: number;
+	ratingKey: string;
+}
+
 export interface PlexCacheRefreshOptions {
 	publish?: boolean;
 }
@@ -102,7 +122,9 @@ export interface PlexCacheRefreshResult {
 	complete: boolean;
 	completedAt?: Date;
 	superseded?: boolean;
+	generationId?: string;
 	snapshot?: PlexCacheSnapshot;
+	inventoryTargets?: PlexInventoryTarget[];
 }
 
 function onDeckSignature(items: Awaited<ReturnType<PlexClient["getOnDeck"]>>): string[] {
@@ -184,11 +206,13 @@ export async function refreshPlexCache(
 	let complete = true;
 	let completedAt: Date | undefined;
 	let superseded = false;
+	let publishedGenerationId: string | undefined;
 	const errorMessages: string[] = [];
 	const incompleteReasons: Record<string, number> = {};
 	let totalLibraryItems = 0;
 	let mappedLibraryItems = 0;
 	let ignoredHistoricalItems = 0;
+	let verifiedInventoryTargets: PlexInventoryTarget[] | undefined;
 	const markIncomplete = (reason: string) => {
 		complete = false;
 		incompleteReasons[reason] = (incompleteReasons[reason] ?? 0) + 1;
@@ -238,6 +262,7 @@ export async function refreshPlexCache(
 		>();
 		const currentLibraryRatingKeys = new Set<string>();
 		const initialLibraryInventorySignature: string[] = [];
+		const inventoryTargets: PlexInventoryTarget[] = [];
 
 		for (const lib of mediaLibs) {
 			try {
@@ -257,6 +282,13 @@ export async function refreshPlexCache(
 					}
 
 					const mediaType: "movie" | "series" = item.type === "movie" ? "movie" : "series";
+					const tvdbId = mediaType === "series" ? parsePlexTvdbId(item.Guid) : null;
+					inventoryTargets.push({
+						mediaType,
+						tmdbId,
+						...(tvdbId ? { tvdbId } : {}),
+						ratingKey: item.ratingKey,
+					});
 					ratingKeyMap.set(item.ratingKey, {
 						tmdbId,
 						mediaType,
@@ -280,6 +312,13 @@ export async function refreshPlexCache(
 			}
 		}
 		initialLibraryInventorySignature.sort();
+		inventoryTargets.sort(
+			(left, right) =>
+				left.mediaType.localeCompare(right.mediaType) ||
+				left.tmdbId - right.tmdbId ||
+				(left.tvdbId ?? 0) - (right.tvdbId ?? 0) ||
+				left.ratingKey.localeCompare(right.ratingKey),
+		);
 		mappedLibraryItems = ratingKeyMap.size;
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
@@ -416,11 +455,6 @@ export async function refreshPlexCache(
 		aggregations.clear();
 
 		if (errors === 0 && complete) {
-			await client.verifyHistorySnapshot(history);
-			const latestOnDeckSignature = onDeckSignature(await client.getOnDeck());
-			if (JSON.stringify(latestOnDeckSignature) !== JSON.stringify(verifiedOnDeckSignature)) {
-				throw new Error("Plex on-deck state changed before cache publication");
-			}
 			const latestSections = await client.getLibrarySections();
 			const latestMediaLibs = latestSections.filter(
 				(section) => section.type === "movie" || section.type === "show",
@@ -445,6 +479,12 @@ export async function refreshPlexCache(
 			) {
 				throw new Error("Plex library inventory changed before cache publication");
 			}
+			await client.verifyHistorySnapshot(history);
+			const latestOnDeckSignature = onDeckSignature(await client.getOnDeck());
+			if (JSON.stringify(latestOnDeckSignature) !== JSON.stringify(verifiedOnDeckSignature)) {
+				throw new Error("Plex on-deck state changed before cache publication");
+			}
+			verifiedInventoryTargets = inventoryTargets;
 			completedAt = new Date();
 			if (options.publish === false) {
 				const sections = mediaLibs
@@ -483,6 +523,7 @@ export async function refreshPlexCache(
 					errorMessages: [],
 					complete: true,
 					completedAt,
+					inventoryTargets,
 					snapshot: { rows, sections },
 				};
 			}
@@ -555,6 +596,7 @@ export async function refreshPlexCache(
 				);
 				if (publication.matched) {
 					upserted = aggregationsArray.length;
+					publishedGenerationId = generationId;
 				} else {
 					superseded = true;
 					complete = false;
@@ -613,6 +655,9 @@ export async function refreshPlexCache(
 		complete: complete && errors === 0,
 		completedAt,
 		superseded: superseded || undefined,
+		generationId: complete && errors === 0 && completedAt ? publishedGenerationId : undefined,
+		inventoryTargets:
+			complete && errors === 0 && completedAt ? verifiedInventoryTargets : undefined,
 	};
 }
 

@@ -646,6 +646,119 @@ describe("evictStaleRows", () => {
 		expect(transaction).not.toHaveBeenCalled();
 	});
 
+	it.each(["history", "on-deck"] as const)(
+		"fails closed when Plex %s changes during final library verification",
+		async (activity) => {
+			let inventoryVerificationFinished = false;
+			const currentMovie = {
+				ratingKey: "current",
+				title: "Current Movie",
+				type: "movie",
+				Guid: [{ id: "tmdb://42" }],
+			};
+			const mockClient = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi
+					.fn()
+					.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+				getLibraryItems: vi
+					.fn()
+					.mockResolvedValueOnce([currentMovie])
+					.mockImplementationOnce(async () => {
+						inventoryVerificationFinished = true;
+						return [currentMovie];
+					}),
+				getHistory: vi.fn().mockResolvedValue([]),
+				verifyHistorySnapshot: vi.fn(async () => {
+					if (activity === "history" && inventoryVerificationFinished) {
+						throw new Error("Plex history changed during inventory verification");
+					}
+				}),
+				getOnDeck: vi.fn(async () =>
+					activity === "on-deck" && inventoryVerificationFinished
+						? [{ ratingKey: "current", type: "movie" }]
+						: [],
+				),
+			} as unknown as PlexClient;
+			const tx = {
+				plexCache: { deleteMany: vi.fn(), createMany: vi.fn() },
+				cacheRefreshStatus: { upsert: vi.fn() },
+			};
+			const transaction = vi.fn(
+				async (callback: (transactionClient: typeof tx) => Promise<unknown>) => callback(tx),
+			);
+			const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: false, upserted: 0 });
+			expect(transaction).not.toHaveBeenCalled();
+		},
+	);
+
+	it("preserves every current rating key when duplicate editions share one cache row", async () => {
+		const editions = [
+			{
+				ratingKey: "edition-a",
+				title: "Example Movie",
+				type: "movie",
+				Guid: [{ id: "tmdb://42" }],
+			},
+			{
+				ratingKey: "edition-b",
+				title: "Example Movie",
+				type: "movie",
+				Guid: [{ id: "tmdb://42" }],
+			},
+		];
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue(editions),
+			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined, {
+			publish: false,
+		});
+
+		expect(result.snapshot?.rows).toHaveLength(1);
+		expect(result.inventoryTargets).toEqual([
+			{ mediaType: "movie", tmdbId: 42, ratingKey: "edition-a" },
+			{ mediaType: "movie", tmdbId: 42, ratingKey: "edition-b" },
+		]);
+	});
+
+	it("uses TVDb identity for current Sonarr series targets", async () => {
+		const series = {
+			ratingKey: "show-123",
+			title: "Example Series",
+			type: "show",
+			Guid: [{ id: "tmdb://42" }, { id: "tvdb://123" }],
+		};
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "2", title: "Shows", type: "show" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([series]),
+			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined, {
+			publish: false,
+		});
+
+		expect(result.snapshot?.rows).toHaveLength(1);
+		expect(result.inventoryTargets).toEqual([
+			{ mediaType: "series", tmdbId: 42, tvdbId: 123, ratingKey: "show-123" },
+		]);
+	});
+
 	it("fails closed when stale relevant history belongs to an unknown account", async () => {
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
