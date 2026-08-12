@@ -31,14 +31,34 @@ import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
 import { buildMovieFile } from "../library/movie-normalizer.js";
+import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
 import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "../prisma.js";
-import { evaluateItemAgainstRulesViaEngine } from "../rules/cleanup-adapter.js";
+import {
+	evaluateItemAgainstRulesViaEngine,
+	evaluateRuleViaEngine,
+} from "../rules/cleanup-adapter.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
 import { withCleanupOperationGuard } from "./cleanup-maintenance-gate.js";
-import { applyQuiSeedingFilter } from "./qui-filter.js";
-import { evaluateSingleCondition, extractRating, parseAudioChannels } from "./rule-evaluators.js";
+import {
+	type EpisodeCleanupCandidate,
+	type EpisodePlexWatchEvidence,
+	evaluateEpisodeWatchCountRule,
+	isSupportedEpisodeCleanupRule,
+	toEpisodeTargetMetadata,
+} from "./episode-scope.js";
+import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
+import {
+	evaluateSingleCondition,
+	extractRating,
+	parseAudioChannels,
+	passesInstanceFilter,
+	passesServiceFilter,
+	passesTagExclusion,
+	passesTitleExclusion,
+	shouldSkipForFailedSource,
+} from "./rule-evaluators.js";
 import {
 	ArrCrossInstanceOwnershipChangedDuringSafetyCheckError,
 	ArrFileChangedDuringSafetyCheckError,
@@ -556,11 +576,18 @@ function buildDetail(
 		instanceId: item.cacheItem.instanceId,
 		arrItemId: item.cacheItem.arrItemId,
 		title: item.cacheItem.title,
+		seriesTitle: item.episodeTarget?.seriesTitle,
+		episodeTitle: item.episodeTarget?.episodeTitle,
 		ruleId: item.match.ruleId,
 		rule: item.match.ruleName,
 		reason: reasonOverride ?? item.match.reason,
 		action,
 		itemType: item.cacheItem.itemType,
+		targetScope: item.episodeTarget ? "episode" : "series",
+		arrEpisodeId: item.episodeTarget?.arrEpisodeId,
+		seasonNumber: item.episodeTarget?.seasonNumber,
+		episodeNumber: item.episodeTarget?.episodeNumber,
+		episodeFileId: item.episodeTarget?.episodeFileId,
 		sizeOnDisk: item.cacheItem.sizeOnDisk.toString(),
 		year: item.cacheItem.year,
 		rating: null,
@@ -598,12 +625,16 @@ function buildRetryDetail(
 }
 
 function toDeleteTargets(items: FlaggedItem[]): CleanupDeleteTarget[] {
-	return items.map((item) => ({
-		instanceId: item.cacheItem.instanceId,
-		arrItemId: item.cacheItem.arrItemId,
-		itemType: item.cacheItem.itemType,
-		action: item.match.action,
-	}));
+	// Task 5 owns destructive episode authority. Until then, episode candidates
+	// remain preview-only and cannot enter the legacy series safety/mutation path.
+	return items
+		.filter((item) => !item.episodeTarget)
+		.map((item) => ({
+			instanceId: item.cacheItem.instanceId,
+			arrItemId: item.cacheItem.arrItemId,
+			itemType: item.cacheItem.itemType,
+			action: item.match.action,
+		}));
 }
 
 export function selectInspectableCleanupPreviewItems(
@@ -1025,19 +1056,7 @@ export function buildCleanupPreviewDetails(
 ): CleanupRunResult["details"] {
 	return flagged.map((item) => {
 		const safetyReason = sharedPlexBlocks.get(cleanupDeleteTargetKey(item.cacheItem));
-		return {
-			instanceId: item.cacheItem.instanceId,
-			arrItemId: item.cacheItem.arrItemId,
-			title: item.cacheItem.title,
-			ruleId: item.match.ruleId,
-			rule: item.match.ruleName,
-			reason: safetyReason ?? item.match.reason,
-			action: safetyReason ? "skipped" : item.match.action,
-			itemType: item.cacheItem.itemType,
-			sizeOnDisk: item.cacheItem.sizeOnDisk.toString(),
-			year: item.cacheItem.year,
-			rating: item.rating,
-		};
+		return buildDetail(item, safetyReason ? "skipped" : item.match.action, safetyReason);
 	});
 }
 
@@ -3398,9 +3417,23 @@ async function evaluateAllItems(
 	// Load all user instances to map instanceId → service type
 	const instances = await prisma.serviceInstance.findMany({
 		where: { userId: config.userId },
-		select: { id: true, service: true },
 	});
 	const instanceServiceMap = new Map(instances.map((i) => [i.id, i.service]));
+	const respectQuiSeeding = Boolean(config.respectQuiSeeding);
+	const useCachedQuiSeedingGate =
+		respectQuiSeeding &&
+		instances.some((instance) => instance.service === "QUI" && instance.enabled);
+	const persistedEpisodeRules = rules.filter((rule) => rule.targetScope === "episode");
+	const seriesRules = rules.filter((rule) => rule.targetScope !== "episode");
+	const episodeRules = rules.filter(isSupportedEpisodeCleanupRule);
+	const unsupportedEpisodeRules = persistedEpisodeRules.filter(
+		(rule) => rule.enabled && !isSupportedEpisodeCleanupRule(rule),
+	);
+	if (unsupportedEpisodeRules.length > 0) {
+		warnings.push(
+			`${unsupportedEpisodeRules.length} enabled episode-scoped cleanup ${unsupportedEpisodeRules.length === 1 ? "rule was" : "rules were"} skipped because ${unsupportedEpisodeRules.length === 1 ? "its" : "their"} persisted shape is unsupported.`,
+		);
+	}
 	const exemptionPolicy = await loadCleanupExemptionPolicy(deps, config.userId);
 	if (exemptionPolicy.globalBlock) {
 		warnings.push(
@@ -3414,7 +3447,7 @@ async function evaluateAllItems(
 	}
 
 	// Collect all active rule types (including inside composite conditions)
-	const activeTypes = collectActiveRuleTypes(rules);
+	const activeTypes = collectActiveRuleTypes(seriesRules);
 
 	// Prefetch Seerr requests if any Seerr rule types are active
 	const SEERR_RULE_TYPES = [
@@ -3537,6 +3570,13 @@ async function evaluateAllItems(
 	const flagged: FlaggedItem[] = [];
 	let totalEvaluated = 0;
 	let cursor: string | undefined;
+	const freshEpisodeWatchMap =
+		episodeRules.length > 0
+			? await prefetchFreshPlexEpisodeWatchData(deps, instances, now, warnings)
+			: new Map<string, EpisodePlexWatchEvidence[]>();
+	const watchedEpisodeSeriesTmdbIds = new Set(
+		[...freshEpisodeWatchMap.keys()].map((key) => Number.parseInt(key.split(":", 1)[0]!, 10)),
+	);
 
 	// Phase 2.2: optionally exclude items qui has confirmed are seeding,
 	// to honor seeding obligations (private trackers, ratio targets). The
@@ -3545,10 +3585,13 @@ async function evaluateAllItems(
 	// gives it a testable seam (see `__tests__/qui-filter.test.ts`) and
 	// keeps cross-feature qui deps next to their consumer rather than
 	// pulled into `lib/qui/` (which stays focused on the qui client).
-	const baseWhere = applyQuiSeedingFilter(
-		{ instanceId: { in: instances.map((i) => i.id) } },
-		Boolean(config.respectQuiSeeding),
-	);
+	const baseWhere =
+		episodeRules.length > 0
+			? { instanceId: { in: instances.map((i) => i.id) } }
+			: applyQuiSeedingFilter(
+					{ instanceId: { in: instances.map((i) => i.id) } },
+					useCachedQuiSeedingGate,
+				);
 
 	// Paginate through LibraryCache with cursor-based pagination
 	while (true) {
@@ -3570,6 +3613,8 @@ async function evaluateAllItems(
 				arrAddedAt: true,
 				cachedAt: true,
 				data: true,
+				torrentState: true,
+				infoHash: true,
 			},
 			take: CACHE_QUERY_BATCH_SIZE,
 			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -3598,19 +3643,43 @@ async function evaluateAllItems(
 				continue;
 			}
 
-			const match = evaluateItemAgainstRulesViaEngine(
-				item,
-				rules,
-				instanceService,
-				ctx,
-				failedSources,
-			);
+			const match =
+				useCachedQuiSeedingGate && isQuiSeedingState(item.torrentState)
+					? null
+					: evaluateItemAgainstRulesViaEngine(
+							item,
+							seriesRules,
+							instanceService,
+							ctx,
+							failedSources,
+						);
 			if (match) {
 				flagged.push({
 					cacheItem: item,
 					match,
 					rating: extractRating(item),
 				});
+			}
+			if (
+				instanceService === "SONARR" &&
+				item.itemType === "series" &&
+				!match &&
+				episodeRules.length > 0 &&
+				!seriesRetentionProtectsEpisode(item, seriesRules, ctx, failedSources)
+			) {
+				const episodeMatches = await evaluateSeriesEpisodes(
+					deps,
+					item,
+					instances.find((instance) => instance.id === item.instanceId),
+					episodeRules,
+					freshEpisodeWatchMap,
+					watchedEpisodeSeriesTmdbIds,
+					respectQuiSeeding,
+					useCachedQuiSeedingGate,
+					warnings,
+				);
+				totalEvaluated += episodeMatches.evaluated;
+				flagged.push(...episodeMatches.flagged);
 			}
 		}
 
@@ -3619,6 +3688,306 @@ async function evaluateAllItems(
 	}
 
 	return { flagged, totalEvaluated, prefetchHealth, warnings };
+}
+
+const PLEX_EPISODE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
+
+export function episodeCoordinateKey(
+	showTmdbId: number,
+	seasonNumber: number,
+	episodeNumber: number,
+): string {
+	return `${showTmdbId}:${seasonNumber}:${episodeNumber}`;
+}
+
+export function extractSeriesTmdbId(data: string): number | null {
+	const parsed = safeJsonParse(data) as {
+		remoteIds?: { tmdbId?: unknown };
+		tmdbId?: unknown;
+	} | null;
+	const value = parsed?.remoteIds?.tmdbId ?? parsed?.tmdbId;
+	return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+/**
+ * Loads only complete, connection-bound episode evidence. Every Plex source
+ * remains a separate witness: counts are never summed across servers or copies.
+ */
+export async function prefetchFreshPlexEpisodeWatchData(
+	deps: CleanupExecutorDeps,
+	instances: ServiceInstance[],
+	now: Date,
+	warnings: string[],
+): Promise<Map<string, EpisodePlexWatchEvidence[]>> {
+	const plexInstances = instances.filter(
+		(instance) => instance.service === "PLEX" && instance.enabled,
+	);
+	if (plexInstances.length === 0) {
+		warnings.push(
+			"No enabled Plex instance was available; episode-scoped cleanup targets were skipped.",
+		);
+		return new Map();
+	}
+	const plexInstanceIds = plexInstances.map((instance) => instance.id);
+	const plexUpdatedAtById = new Map(
+		plexInstances.map((instance) => [instance.id, instance.updatedAt.getTime()]),
+	);
+	const plexFingerprintById = new Map(
+		plexInstances.map((instance) => [instance.id, plexConnectionFingerprint(instance)]),
+	);
+
+	try {
+		const rows = await deps.prisma.plexEpisodeCache.findMany({
+			where: { instanceId: { in: plexInstanceIds }, watchCount: { gt: 0 } },
+			select: {
+				instanceId: true,
+				showTmdbId: true,
+				seasonNumber: true,
+				episodeNumber: true,
+				watchCount: true,
+				lastWatchedAt: true,
+				watchedByUsers: true,
+				ratingKey: true,
+				refreshedAt: true,
+				sourceFingerprint: true,
+			},
+		});
+		const result = new Map<string, EpisodePlexWatchEvidence[]>();
+		let staleEvidenceCount = 0;
+		let incompleteEvidenceCount = 0;
+		const freshnessThreshold = now.getTime() - PLEX_EPISODE_FRESHNESS_MS;
+		for (const row of rows) {
+			if (
+				row.watchCount === null ||
+				row.refreshedAt === null ||
+				typeof row.ratingKey !== "string" ||
+				row.ratingKey.trim().length === 0
+			) {
+				incompleteEvidenceCount++;
+				continue;
+			}
+			const sourceUpdatedAt = plexUpdatedAtById.get(row.instanceId);
+			const sourceFingerprint = plexFingerprintById.get(row.instanceId);
+			if (
+				sourceUpdatedAt === undefined ||
+				!sourceFingerprint ||
+				row.sourceFingerprint !== sourceFingerprint ||
+				row.refreshedAt.getTime() < freshnessThreshold ||
+				row.refreshedAt.getTime() < sourceUpdatedAt
+			) {
+				staleEvidenceCount++;
+				continue;
+			}
+			const parsedUsers = safeJsonParse(row.watchedByUsers);
+			const watchedByUsers = Array.isArray(parsedUsers)
+				? parsedUsers.filter((user): user is string => typeof user === "string")
+				: [];
+			const key = episodeCoordinateKey(row.showTmdbId, row.seasonNumber, row.episodeNumber);
+			const evidence: EpisodePlexWatchEvidence = {
+				plexInstanceId: row.instanceId,
+				sourceFingerprint,
+				ratingKey: row.ratingKey,
+				watchCount: row.watchCount,
+				lastWatchedAt: row.lastWatchedAt,
+				watchedByUsers,
+				refreshedAt: row.refreshedAt,
+			};
+			const current = result.get(key) ?? [];
+			current.push(evidence);
+			current.sort(
+				(left, right) =>
+					right.watchCount - left.watchCount ||
+					left.plexInstanceId.localeCompare(right.plexInstanceId),
+			);
+			result.set(key, current);
+		}
+		if (staleEvidenceCount > 0) {
+			warnings.push(
+				`${staleEvidenceCount} stale Plex episode watch entr${staleEvidenceCount === 1 ? "y was" : "ies were"} ignored; only evidence refreshed within 24 hours can authorize episode cleanup.`,
+			);
+		}
+		if (incompleteEvidenceCount > 0) {
+			warnings.push(
+				`${incompleteEvidenceCount} incomplete Plex episode watch entr${incompleteEvidenceCount === 1 ? "y was" : "ies were"} ignored because its source, rating key, watch count, or refresh timestamp could not be proven.`,
+			);
+		}
+		if (result.size === 0) {
+			warnings.push(
+				"No fresh, complete Plex episode watch evidence was available; episode-scoped cleanup targets were skipped.",
+			);
+		}
+		return result;
+	} catch (error) {
+		deps.log.error({ err: error }, "Failed to load fresh Plex episode watch data");
+		warnings.push(
+			"Plex episode watch data was unavailable or stale; episode-scoped rules were skipped for safety.",
+		);
+		return new Map();
+	}
+}
+
+async function evaluateSeriesEpisodes(
+	deps: CleanupExecutorDeps,
+	item: CacheItemForEval,
+	instance: ServiceInstance | undefined,
+	episodeRules: LibraryCleanupRule[],
+	watchMap: Map<string, EpisodePlexWatchEvidence[]>,
+	watchedSeriesTmdbIds: Set<number>,
+	respectQuiSeeding: boolean,
+	useCachedQuiSeedingGate: boolean,
+	warnings: string[],
+): Promise<{ evaluated: number; flagged: FlaggedItem[] }> {
+	if (!instance) return { evaluated: 0, flagged: [] };
+	const tmdbId = extractSeriesTmdbId(item.data);
+	if (tmdbId === null || !watchedSeriesTmdbIds.has(tmdbId)) return { evaluated: 0, flagged: [] };
+	const applicableRules = episodeRules.filter(
+		(rule) =>
+			passesServiceFilter("SONARR", rule.serviceFilter) &&
+			passesInstanceFilter(item.instanceId, rule.instanceFilter) &&
+			passesTagExclusion(item, rule.excludeTags) &&
+			passesTitleExclusion(item.title, rule.excludeTitles),
+	);
+	if (applicableRules.length === 0) return { evaluated: 0, flagged: [] };
+
+	let rawEpisodes: Array<Record<string, unknown>>;
+	try {
+		const sonarr = deps.arrClientFactory.create(instance) as InstanceType<typeof SonarrClient>;
+		rawEpisodes = (await sonarr.episode.getAll({
+			seriesId: item.arrItemId,
+			includeEpisodeFile: true,
+		})) as Array<Record<string, unknown>>;
+	} catch (error) {
+		deps.log.error(
+			{ err: error, instanceId: item.instanceId, arrItemId: item.arrItemId },
+			"Failed to load live Sonarr episode inventory for episode cleanup",
+		);
+		warnings.push(
+			"Live Sonarr episode inventory was unavailable for one cleanup candidate; its episodes were skipped.",
+		);
+		return { evaluated: 0, flagged: [] };
+	}
+
+	const fileRows = await deps.prisma.episodeFileCache.findMany({
+		where: { instanceId: item.instanceId, arrSeriesId: item.arrItemId },
+		select: { arrEpisodeFileId: true, path: true, size: true, infoHash: true, torrentState: true },
+	});
+	const filesById = new Map(fileRows.map((file) => [file.arrEpisodeFileId, file]));
+	const consumerIdsByFile = new Map<number, number[]>();
+	for (const raw of rawEpisodes) {
+		if (
+			typeof raw.id === "number" &&
+			Number.isSafeInteger(raw.id) &&
+			raw.id > 0 &&
+			typeof raw.episodeFileId === "number" &&
+			Number.isSafeInteger(raw.episodeFileId) &&
+			raw.episodeFileId > 0
+		) {
+			const consumers = consumerIdsByFile.get(raw.episodeFileId) ?? [];
+			consumers.push(raw.id);
+			consumerIdsByFile.set(raw.episodeFileId, consumers);
+		}
+	}
+
+	const flagged: FlaggedItem[] = [];
+	let evaluated = 0;
+	for (const raw of rawEpisodes) {
+		const { id: arrEpisodeId, seasonNumber, episodeNumber, episodeFileId } = raw;
+		if (
+			typeof arrEpisodeId !== "number" ||
+			!Number.isSafeInteger(arrEpisodeId) ||
+			arrEpisodeId <= 0 ||
+			typeof seasonNumber !== "number" ||
+			!Number.isSafeInteger(seasonNumber) ||
+			seasonNumber < 0 ||
+			typeof episodeNumber !== "number" ||
+			!Number.isSafeInteger(episodeNumber) ||
+			episodeNumber <= 0 ||
+			typeof episodeFileId !== "number" ||
+			!Number.isSafeInteger(episodeFileId) ||
+			episodeFileId <= 0 ||
+			typeof raw.monitored !== "boolean"
+		) {
+			continue;
+		}
+		const evidence = watchMap.get(episodeCoordinateKey(tmdbId, seasonNumber, episodeNumber));
+		const file = filesById.get(episodeFileId);
+		if (!evidence?.length || !file) continue;
+		if (useCachedQuiSeedingGate && isQuiSeedingState(file.torrentState)) {
+			warnings.push(
+				`Episode S${seasonNumber}E${episodeNumber} was skipped because its exact file has an active qUI state.`,
+			);
+			continue;
+		}
+		evaluated++;
+		const candidate: EpisodeCleanupCandidate = {
+			instanceId: item.instanceId,
+			arrSeriesId: item.arrItemId,
+			arrEpisodeId,
+			seasonNumber,
+			episodeNumber,
+			episodeFileId,
+			episodeFileConsumerIds: [...(consumerIdsByFile.get(episodeFileId) ?? [])].sort(
+				(left, right) => left - right,
+			),
+			seriesTitle: item.title,
+			episodeTitle: typeof raw.title === "string" && raw.title.trim() ? raw.title : "Episode",
+			monitored: raw.monitored,
+			respectQuiSeeding,
+			watchCount: evidence[0]!.watchCount,
+			lastWatchedAt: evidence[0]!.lastWatchedAt,
+			watchedByUsers: evidence[0]!.watchedByUsers,
+			plexWatchEvidence: evidence,
+			file: {
+				arrEpisodeFileId: file.arrEpisodeFileId,
+				path: file.path,
+				size: file.size,
+				infoHash: file.infoHash,
+				torrentState: file.torrentState,
+			},
+		};
+		for (const rule of applicableRules) {
+			const parameters = safeJsonParse(rule.parameters) as { count?: unknown } | null;
+			if (typeof parameters?.count !== "number" || !Number.isFinite(parameters.count)) continue;
+			const watchCountThreshold = parameters.count;
+			const qualifyingEvidence = evidence.filter(
+				(witness) => witness.watchCount > watchCountThreshold,
+			);
+			if (qualifyingEvidence.length === 0) continue;
+			const ruleCandidate: EpisodeCleanupCandidate = {
+				...candidate,
+				watchCount: qualifyingEvidence[0]!.watchCount,
+				lastWatchedAt: qualifyingEvidence[0]!.lastWatchedAt,
+				watchedByUsers: qualifyingEvidence[0]!.watchedByUsers,
+				plexWatchEvidence: qualifyingEvidence,
+			};
+			const match = evaluateEpisodeWatchCountRule(ruleCandidate, rule);
+			if (!match) continue;
+			flagged.push({
+				cacheItem: { ...item, sizeOnDisk: file.size },
+				match,
+				rating: extractRating(item),
+				episodeTarget: toEpisodeTargetMetadata(ruleCandidate),
+			});
+			break;
+		}
+	}
+	return { evaluated, flagged };
+}
+
+/** A matching parent retention rule protects every child episode candidate. */
+export function seriesRetentionProtectsEpisode(
+	item: CacheItemForEval,
+	seriesRules: LibraryCleanupRule[],
+	ctx: EvalContext,
+	failedSources: Set<DataSourceDependency>,
+): boolean {
+	return seriesRules.some(
+		(rule) =>
+			rule.enabled &&
+			rule.retentionMode &&
+			!shouldSkipForFailedSource(rule, failedSources) &&
+			evaluateRuleViaEngine(item, rule, "SONARR", ctx) !== null,
+	);
 }
 
 /**
