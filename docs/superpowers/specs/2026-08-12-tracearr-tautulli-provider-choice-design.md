@@ -111,11 +111,11 @@ The current blocking Tautulli-removal flow is retired.
   provider automatically to preserve behavior.
 - Existing installations with both providers default to Tracearr and may select
   Tautulli in Settings.
-- Previously deleted configurations cannot be reconstructed safely. Affected beta
-  users receive an actionable notice to re-add Tautulli; the application must not
-  invent URLs or credentials from stale caches or backups.
-- Any old Tautulli-removal report remains historical audit data and is not treated
-  as authority to delete a newly added Tautulli instance.
+- Previously deleted configurations cannot be reconstructed safely. The
+  application must not invent URLs or credentials from stale caches or backups.
+- Any old Tautulli-removal report remains historical audit evidence only. It has
+  no user or deleted-instance identity, cannot prove user-scoped removal, and
+  current upgrades show no recovery or removal notice from it alone.
 
 Stored `tautulli_*` rule kinds become legal and evaluable again when Tautulli is
 the selected provider. They remain visible and fail closed when their required
@@ -135,11 +135,10 @@ dashboard when the application can preserve a valid configuration safely.
   available. The notice links directly to the analytics-provider selector.
 - **Neither configured:** continue normally and show the ordinary unconfigured
   analytics state with Setup links for both providers.
-- **Prior beta removal proven by the existing migration report:** show a one-time
-  recovery notice explaining that an earlier beta removed the Tautulli
-  connection. Link directly to the add-Tautulli form and recovery documentation;
-  do not infer removal from absence alone or reconstruct credentials, URLs, or
-  rules from stale cache data.
+- **Prior beta removal:** do not show a recovery notice from the existing
+  installation-wide migration report. The `tautulli-prior-removal` notice kind
+  is reserved and dormant until a future durable evidence source identifies the
+  affected user and actual deletion.
 
 The notice is dismissible, never deletes data, and is not required for future
 application startup. Its dismissal state is durable so it does not reappear on

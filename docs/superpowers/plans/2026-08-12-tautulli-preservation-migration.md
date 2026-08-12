@@ -66,7 +66,9 @@ type TautulliNotice = {
 ```
 
 - [ ] Replace the deletion acknowledgement endpoint with a validated dismissal endpoint that only upserts the current user's notice key.
-- [ ] Emit `prior-removal` only when the existing report proves the prior beta removed state; never expose credentials or raw report secrets.
+- [ ] Keep `prior-removal` reserved and dormant; an existing legacy report
+  cannot prove user-scoped removal because it has no user or deleted-instance
+  identity. Never expose credentials or raw report secrets.
 - [ ] Run `pnpm --filter @arr/api test -- system-migrations-tautulli` and commit: `feat: expose nonblocking tautulli notices`.
 
 ## Task 4: Replace the blocking wizard with a notice

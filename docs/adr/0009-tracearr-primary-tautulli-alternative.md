@@ -53,15 +53,17 @@ Tautulli instance or alter a Tautulli-dependent rule merely because 3.0 starts.
   link to the provider selector.
 - **Neither configured:** continue normally and show the ordinary unconfigured
   analytics state with setup links for both providers.
-- **Prior beta removal proven by the existing migration report:** show a
-  one-time recovery notice linking to the add-Tautulli form and recovery
-  documentation. Do not infer removal from absence or reconstruct credentials,
-  URLs, or rules from stale cache data.
+- **Prior beta removal:** the existing installation-wide migration report is
+  historical audit evidence only. It contains no user identity or deleted
+  instance identity, so it cannot prove user-scoped removal and current
+  upgrades show no recovery or removal notice from that report alone.
 
-The notice is dismissible, durable, and never deletes data. Old removal reports
-remain historical audit data and are not authority to delete a newly added
-Tautulli instance. Previously deleted configurations cannot be reconstructed
-safely; affected users receive an actionable recovery notice.
+The `tautulli-prior-removal` notice kind remains reserved and dormant until a
+future durable evidence source identifies both the affected user and the actual
+deletion. Notices are dismissible, durable, and never delete data. Old removal
+reports are not authority to delete a newly added Tautulli instance or to
+attribute recovery to a user. Previously deleted configurations cannot be
+reconstructed safely.
 
 Stored `tautulli_*` rule kinds are legal and evaluable again when Tautulli is the
 selected provider. They fail closed when required Tautulli evidence is
