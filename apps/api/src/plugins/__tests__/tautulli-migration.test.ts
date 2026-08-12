@@ -2,9 +2,25 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Fastify from "fastify";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { registerInfrastructure } from "../../bootstrap/infrastructure.js";
 import type { PrismaClient } from "../../prisma.js";
-import tautulliMigrationPlugin from "../tautulli-migration.js";
+
+// The production registration path is under test. These plugins do not affect
+// Tautulli state, so keep them inert while retaining the real migration plugin
+// if it is registered by infrastructure.
+vi.mock("../arr-client.js", () => ({ arrClientPlugin: async () => {} }));
+vi.mock("../deployment-executor.js", () => ({ default: async () => {} }));
+vi.mock("../heap-monitor.js", () => ({ default: async () => {} }));
+vi.mock("../http-auth-migration.js", () => ({ default: async () => {} }));
+vi.mock("../lifecycle.js", () => ({ default: async () => {} }));
+vi.mock("../notification-service.js", () => ({ default: async () => {} }));
+vi.mock("../prisma.js", () => ({ prismaPlugin: async () => {} }));
+vi.mock("../runtime-lease.js", () => ({ default: async () => {} }));
+vi.mock("../scheduler-registry.js", () => ({ default: async () => {} }));
+vi.mock("../security.js", () => ({ securityPlugin: async () => {} }));
+vi.mock("../seerr-cache.js", () => ({ default: async () => {} }));
+vi.mock("../seerr-circuit-breaker.js", () => ({ default: async () => {} }));
 
 const historicalReport = {
 	ranAt: "2026-08-01T12:00:00.000Z",
@@ -27,7 +43,7 @@ const historicalReport = {
 	totalAffectedRules: 1,
 };
 
-describe("tautulliMigrationPlugin", () => {
+describe("registerInfrastructure", () => {
 	let dataDir: string;
 
 	afterEach(async () => {
@@ -77,7 +93,7 @@ describe("tautulliMigrationPlugin", () => {
 		const app = Fastify({ logger: false });
 		app.decorate("config", { DATABASE_URL: `file:${path.join(dataDir, "prod.db")}` } as never);
 		app.decorate("prisma", prisma);
-		app.register(tautulliMigrationPlugin);
+		registerInfrastructure(app);
 
 		await app.ready();
 
