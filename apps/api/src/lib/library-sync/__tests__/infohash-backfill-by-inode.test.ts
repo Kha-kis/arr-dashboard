@@ -35,6 +35,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // return whatever we've staged via `stagedStats` / `stagedDirs`.
 vi.mock("node:fs/promises", () => ({
 	stat: vi.fn(async (path: string) => {
+		statHook?.(path);
 		const sequence = stagedStatSequences.get(path);
 		const info = sequence && sequence.length > 0 ? sequence.shift() : stagedStats.get(path);
 		if (!info) {
@@ -45,6 +46,7 @@ vi.mock("node:fs/promises", () => ({
 		return makeMockStat(info.symlinkTarget ?? info, false);
 	}),
 	lstat: vi.fn(async (path: string) => {
+		statHook?.(path);
 		const sequence = stagedStatSequences.get(path);
 		const info = sequence && sequence.length > 0 ? sequence.shift() : stagedStats.get(path);
 		if (!info) {
@@ -99,6 +101,7 @@ interface StagedChild {
 const stagedStats = new Map<string, StagedStat>();
 const stagedStatSequences = new Map<string, StagedStat[]>();
 const stagedDirs = new Map<string, StagedChild[]>();
+let statHook: ((path: string) => void) | null = null;
 
 function makeMockStat(info: StagedStat, includeLinkType: boolean) {
 	return {
@@ -206,6 +209,7 @@ beforeEach(() => {
 	stagedStats.clear();
 	stagedStatSequences.clear();
 	stagedDirs.clear();
+	statHook = null;
 	__testOnly.clearCache();
 });
 
@@ -548,6 +552,88 @@ describe("destructive inode proof", () => {
 		await expect(
 			buildFreshCompleteFileIdIndex(changedInventory as never, QUI_INSTANCE),
 		).rejects.toThrow(/stable/i);
+	});
+
+	it("bypasses cached backfill indexes and retries when a cross-seed appears during a fresh walk", async () => {
+		stageFile("/data/torrents/Foo.mkv", 100, 42, 3);
+		stageFile("/data/cross-seeds/Foo.mkv", 100, 42, 3);
+		const primary = makeQuiTorrent({
+			hash: "primary",
+			name: "Foo.mkv",
+			savePath: "/data/torrents",
+		});
+		const crossSeed = makeQuiTorrent({
+			hash: "cross-seed",
+			name: "Foo.mkv",
+			savePath: "/data/cross-seeds",
+		});
+		const client = makeFakeClient([primary]);
+		await buildFileIdIndex(client as never, QUI_INSTANCE);
+		client.listAllTorrents
+			.mockResolvedValueOnce([primary])
+			.mockResolvedValueOnce([primary, crossSeed])
+			.mockResolvedValueOnce([primary, crossSeed])
+			.mockResolvedValueOnce([primary, crossSeed]);
+
+		const index = await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
+
+		expect(index.byFileId.get("100:42")).toEqual(new Set(["primary", "cross-seed"]));
+		expect(client.listAllTorrents).toHaveBeenCalledTimes(5);
+	});
+
+	it("retries rather than replacing the earliest marker for shared torrent roots", async () => {
+		const sharedPath = "/data/torrents/Foo.mkv";
+		stageFile(sharedPath, 100, 42, 2);
+		let sharedStats = 0;
+		statHook = (path) => {
+			if (path !== sharedPath) return;
+			sharedStats++;
+			if (sharedStats === 2) {
+				stagedStats.set(sharedPath, {
+					dev: 100,
+					ino: 42,
+					nlink: 3,
+					ctimeMs: 43,
+					mtimeMs: 43,
+					type: "file",
+				});
+			}
+		};
+		const client = makeFakeClient([
+			makeQuiTorrent({ hash: "primary", name: "Foo.mkv", savePath: "/data/torrents" }),
+			makeQuiTorrent({ hash: "duplicate", name: "Foo.mkv", savePath: "/data/torrents" }),
+		]);
+
+		const index = await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
+
+		expect(index.byFileId.get("100:42")).toEqual(new Set(["primary", "duplicate"]));
+		expect(client.listAllTorrents).toHaveBeenCalledTimes(4);
+	});
+
+	it("rejects a nested directory entry added during marker capture", async () => {
+		const root = "/data/torrents/Season";
+		const nested = `${root}/Season 01`;
+		stagedStats.set(root, { dev: 100, ino: 1000, nlink: 1, type: "directory" });
+		stagedStats.set(nested, { dev: 100, ino: 1001, nlink: 1, type: "directory" });
+		stageFile(`${nested}/S01E01.mkv`, 100, 42, 2);
+		stagedDirs.set(root, [
+			{ name: "Season 01", parentPath: root, type: "directory" },
+			{ name: "S01E01.mkv", parentPath: nested, type: "file" },
+		]);
+		let injected = false;
+		statHook = (path) => {
+			if (path !== nested || injected) return;
+			injected = true;
+			stageFile(`${nested}/S01E02.mkv`, 100, 43, 2);
+			stagedDirs.get(root)?.push({ name: "S01E02.mkv", parentPath: nested, type: "file" });
+		};
+		const client = makeFakeClient([
+			makeQuiTorrent({ hash: "season", name: "Season", savePath: "/data/torrents" }),
+		]);
+
+		await expect(buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE)).rejects.toThrow(
+			/incomplete|stable/i,
+		);
 	});
 
 	it("fails closed when a target cannot be re-stat'd or has changed since the fresh snapshot", async () => {

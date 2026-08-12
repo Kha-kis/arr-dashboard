@@ -484,7 +484,7 @@ async function doBuildFileIdIndex(
 		} else {
 			byFileId.set(key, new Set([hash]));
 		}
-		inodeMarkers.set(key, toFileSystemMarker(info));
+		if (!inodeMarkers.has(key)) inodeMarkers.set(key, toFileSystemMarker(info));
 	};
 
 	for (const torrent of torrents) {
@@ -513,7 +513,9 @@ async function doBuildFileIdIndex(
 				: await statSafe(rootPath);
 			if (!rootInfo) continue;
 			resolved = true;
-			if (stabilityMarkers) stabilityMarkers.set(rootPath, toFileSystemMarker(rootInfo));
+			if (stabilityMarkers && !stabilityMarkers.has(rootPath)) {
+				stabilityMarkers.set(rootPath, toFileSystemMarker(rootInfo));
+			}
 
 			if (rootInfo.kind === "file") {
 				if (rootInfo.nlink < 2 && !requireStableSnapshot) {
@@ -532,7 +534,7 @@ async function doBuildFileIdIndex(
 				);
 				statted += stats.statted;
 				skippedNoLinks += stats.skippedNoLinks;
-				incompleteDirectoryWalks += stats.incompleteDirectoryWalks;
+				if (!stats.complete) incompleteDirectoryWalks++;
 			} else if (requireStableSnapshot) {
 				incompleteDirectoryWalks++;
 			}
@@ -600,16 +602,43 @@ async function indexDirectoryFiles(
 	addHash: (key: string, hash: string, info: StatInfo) => void,
 	requireStableSnapshot: boolean,
 	stabilityMarkers?: Map<string, FileSystemMarker>,
-): Promise<{ statted: number; skippedNoLinks: number; incompleteDirectoryWalks: number }> {
+): Promise<{ statted: number; skippedNoLinks: number; complete: boolean }> {
 	let statted = 0;
 	let skippedNoLinks = 0;
-	let incompleteDirectoryWalks = 0;
+	let complete = true;
 
 	let entries: Dirent[];
 	try {
 		entries = await readdir(rootPath, { recursive: true, withFileTypes: true });
 	} catch {
-		return { statted, skippedNoLinks, incompleteDirectoryWalks: 1 };
+		return { statted, skippedNoLinks, complete: false };
+	}
+
+	if (stabilityMarkers) {
+		const directoryPaths = new Set([rootPath]);
+		for (const entry of entries) {
+			directoryPaths.add(entry.parentPath);
+			if (entry.isDirectory()) directoryPaths.add(`${entry.parentPath}/${entry.name}`);
+		}
+		for (const directoryPath of directoryPaths) {
+			if (stabilityMarkers.has(directoryPath)) continue;
+			const directoryInfo = await statSafeNoSymlink(directoryPath);
+			if (directoryInfo?.kind !== "directory") {
+				complete = false;
+				continue;
+			}
+			stabilityMarkers.set(directoryPath, toFileSystemMarker(directoryInfo));
+		}
+		let verifiedEntries: Dirent[];
+		try {
+			verifiedEntries = await readdir(rootPath, { recursive: true, withFileTypes: true });
+		} catch {
+			return { statted, skippedNoLinks, complete: false };
+		}
+		if (directoryEntriesFingerprint(entries) !== directoryEntriesFingerprint(verifiedEntries)) {
+			return { statted, skippedNoLinks, complete: false };
+		}
+		entries = verifiedEntries;
 	}
 
 	// Cap the walk so a misconfigured torrent pointing at a media root
@@ -617,35 +646,22 @@ async function indexDirectoryFiles(
 	// pathologically many files anyway; this cap is defense-in-depth.
 	const capped = entries.length > MAX_WALK_ENTRIES_PER_TORRENT;
 	const limited = capped ? entries.slice(0, MAX_WALK_ENTRIES_PER_TORRENT) : entries;
-	if (capped) incompleteDirectoryWalks++;
+	if (capped) complete = false;
 
 	for (const entry of limited) {
-		if (entry.isSymbolicLink()) {
-			incompleteDirectoryWalks++;
-			continue;
-		}
-		if (entry.isDirectory()) {
-			if (stabilityMarkers) {
-				const directoryPath = `${entry.parentPath}/${entry.name}`;
-				const directoryInfo = await statSafeNoSymlink(directoryPath);
-				if (directoryInfo?.kind !== "directory") {
-					incompleteDirectoryWalks++;
-				} else {
-					stabilityMarkers.set(directoryPath, toFileSystemMarker(directoryInfo));
-				}
-			}
-			continue;
-		}
+		if (entry.isDirectory()) continue;
 		if (!entry.isFile()) {
-			if (requireStableSnapshot) incompleteDirectoryWalks++;
+			complete = false;
 			continue;
 		}
 		// `parentPath` is always present on Node 20.12+. We target Node 22
 		// (Dockerfile uses node:22-alpine3.21), so no fallback needed.
 		const filePath = `${entry.parentPath}/${entry.name}`;
-		const info = await statSafe(filePath);
+		const info = requireStableSnapshot
+			? await statSafeNoSymlink(filePath)
+			: await statSafe(filePath);
 		if (info?.kind !== "file") {
-			incompleteDirectoryWalks++;
+			complete = false;
 			continue;
 		}
 		if (info.nlink < 2 && !requireStableSnapshot) {
@@ -656,7 +672,18 @@ async function indexDirectoryFiles(
 		statted++;
 	}
 
-	return { statted, skippedNoLinks, incompleteDirectoryWalks };
+	return { statted, skippedNoLinks, complete };
+}
+
+function directoryEntriesFingerprint(entries: Dirent[]): string {
+	return JSON.stringify(
+		entries
+			.map((entry): [string, string] => [
+				`${entry.parentPath}/${entry.name}`,
+				entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other",
+			])
+			.sort((left, right) => left[0].localeCompare(right[0])),
+	);
 }
 
 /**

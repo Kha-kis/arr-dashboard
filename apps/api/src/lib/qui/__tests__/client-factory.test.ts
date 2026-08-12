@@ -1225,7 +1225,7 @@ describe("createQuiClient destructive torrent proof", () => {
 
 		await expect(
 			createQuiClient(buildApp(), buildInstance()).listAllTorrents({ requireComplete: true }),
-		).rejects.toThrow(/complete/i);
+		).rejects.toThrow(/shape|complete/i);
 	});
 
 	it("rejects a qUI response that declares partial results", async () => {
@@ -1262,6 +1262,74 @@ describe("createQuiClient destructive torrent proof", () => {
 		await expect(
 			createQuiClient(buildApp(), buildInstance()).listAllTorrents({ requireComplete: true }),
 		).rejects.toThrow(/instance/i);
+	});
+
+	it.each([
+		[
+			"exact-hash lookup",
+			(client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc"),
+		],
+		[
+			"full inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
+	] as const)("rejects invalid strict %s row identities and totals", async (_label, invoke) => {
+		for (const page of [
+			{
+				cross_instance_torrents: [wireTorrent({ instance_id: 0 })],
+				hasMore: false,
+				partialResults: false,
+				total: 1,
+			},
+			{
+				cross_instance_torrents: [wireTorrent({ hash: "   " })],
+				hasMore: false,
+				partialResults: false,
+				total: 1,
+			},
+			{ cross_instance_torrents: [], hasMore: false, partialResults: false, total: -1 },
+		]) {
+			fetchSpy.mockReset();
+			fetchSpy.mockResolvedValueOnce(
+				new Response(JSON.stringify(page), {
+					status: 200,
+					headers: { "content-type": "application/json" },
+				}),
+			);
+			await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow();
+		}
+	});
+
+	it.each([
+		[
+			"exact-hash lookup",
+			(client: ReturnType<typeof createQuiClient>) => client.getTorrentsByHash("abc"),
+		],
+		[
+			"full inventory",
+			(client: ReturnType<typeof createQuiClient>) =>
+				client.listAllTorrents({ requireComplete: true }),
+		],
+	] as const)("rejects %s pages with more rows than qUI declares", async (_label, invoke) => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					cross_instance_torrents: [
+						wireTorrent({ hash: "a" }),
+						wireTorrent({ hash: "b", instance_id: 2 }),
+					],
+					hasMore: false,
+					partialResults: false,
+					total: 1,
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		await expect(invoke(createQuiClient(buildApp(), buildInstance()))).rejects.toThrow(
+			/more rows/i,
+		);
 	});
 
 	it("rejects changing totals, duplicate rows, and empty continuation pages", async () => {
@@ -1355,7 +1423,7 @@ describe("createQuiClient destructive torrent proof", () => {
 			fetchSpy.mockResolvedValueOnce(
 				new Response(
 					JSON.stringify({
-						cross_instance_torrents: [wireTorrent({ hash: `abc-${page}`, instance_id: page })],
+						cross_instance_torrents: [wireTorrent({ hash: `abc-${page}`, instance_id: page + 1 })],
 						hasMore: true,
 						partialResults: false,
 						total: 52,
@@ -1366,6 +1434,6 @@ describe("createQuiClient destructive torrent proof", () => {
 		}
 		await expect(
 			createQuiClient(buildApp(), buildInstance()).getTorrentsByHash("abc"),
-		).rejects.toThrow(/complete/i);
+		).rejects.toThrow(/complete|safety limit/i);
 	});
 });

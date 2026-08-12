@@ -81,6 +81,8 @@ export async function runQuiTorrentStateSync(
 		let userTorrentsSeen = 0;
 		let userRowsUpdated = 0;
 		let userRowsCleared = 0;
+		let successfulInstanceScans = 0;
+		let completeInstanceScans = 0;
 		const instances = await listQuiInstances(app, userId);
 
 		// Track every hash this user's qui instances reported across all of them
@@ -124,7 +126,6 @@ export async function runQuiTorrentStateSync(
 		// stale-state cleanup for every user that runs after them in this tick,
 		// leaving deleted torrents showing as still-seeding indefinitely.
 		let userErrors = 0;
-		let userInventoryComplete = true;
 
 		for (const instance of instances) {
 			result.instancesScanned++;
@@ -142,7 +143,8 @@ export async function runQuiTorrentStateSync(
 						? await client.listTorrentInventory()
 						: { torrents: await client.listAllTorrents(), complete: true };
 				const torrents = inventory.torrents;
-				if (!inventory.complete) userInventoryComplete = false;
+				successfulInstanceScans++;
+				if (inventory.complete) completeInstanceScans++;
 				result.torrentsSeen += torrents.length;
 				userTorrentsSeen += torrents.length;
 
@@ -185,8 +187,17 @@ export async function runQuiTorrentStateSync(
 							torrentSyncedAt: new Date(),
 						},
 					});
-					result.rowsUpdated += updated.count;
-					userRowsUpdated += updated.count;
+					const episodeFilesUpdated = await app.prisma.episodeFileCache.updateMany({
+						where: { infoHash: hashLower, instance: { userId } },
+						data: {
+							torrentState: normalizedState,
+							torrentRatio: Number.isFinite(torrent.ratio) ? torrent.ratio : null,
+							torrentSyncedAt: new Date(),
+						},
+					});
+					const updatedCount = updated.count + episodeFilesUpdated.count;
+					result.rowsUpdated += updatedCount;
+					userRowsUpdated += updatedCount;
 				});
 
 				await Promise.all(updates);
@@ -209,17 +220,21 @@ export async function runQuiTorrentStateSync(
 		// torrents and would over-clear. Use per-user `userErrors`, not the
 		// global `result.errors`, otherwise one user's failure would suppress
 		// every other user's cleanup.
-		if (userErrors > 0 || !userInventoryComplete) {
+		if (userErrors > 0) {
 			log.info(
-				{ userId, userErrors, userInventoryComplete, seenHashes: seenHashesThisRun.size },
-				"qui torrent-state sync: skipping stale-state cleanup for user (qUI inventory incomplete, over-clearing risk)",
+				{ userId, userErrors, seenHashes: seenHashesThisRun.size },
+				"qui torrent-state sync: skipping stale-state cleanup for user (instance errors → incomplete view, over-clearing risk)",
 			);
-		} else if (seenHashesThisRun.size === 0) {
+		} else if (
+			instances.length === 0 ||
+			successfulInstanceScans !== instances.length ||
+			completeInstanceScans !== instances.length
+		) {
 			log.debug(
-				{ userId },
-				"qui torrent-state sync: skipping stale-state cleanup for user (no torrents seen)",
+				{ userId, instances: instances.length, successfulInstanceScans, completeInstanceScans },
+				"qui torrent-state sync: skipping stale-state cleanup for user (no complete instance inventory)",
 			);
-		} else if (userErrors === 0 && seenHashesThisRun.size > 0) {
+		} else {
 			try {
 				// Two-step diff-and-batch-update to avoid SQLite's
 				// IN/NOT-IN parameter cap (P2029). The naive
@@ -247,7 +262,38 @@ export async function runQuiTorrentStateSync(
 				for (let i = 0; i < staleIds.length; i += CHUNK) {
 					const batch = staleIds.slice(i, i + CHUNK);
 					const cleared = await app.prisma.libraryCache.updateMany({
-						where: { id: { in: batch } },
+						where: {
+							id: { in: batch },
+							instance: { userId },
+							torrentSyncedAt: { lt: runStartedAt },
+						},
+						data: {
+							torrentState: null,
+							torrentRatio: null,
+							torrentSyncedAt: null,
+						},
+					});
+					userCleared += cleared.count;
+				}
+				const staleEpisodeCandidates = await app.prisma.episodeFileCache.findMany({
+					where: {
+						instance: { userId },
+						torrentState: { not: null },
+						torrentSyncedAt: { lt: runStartedAt },
+					},
+					select: { id: true, infoHash: true },
+				});
+				const staleEpisodeIds = staleEpisodeCandidates
+					.filter((row) => row.infoHash && !seenHashesThisRun.has(row.infoHash))
+					.map((row) => row.id);
+				for (let i = 0; i < staleEpisodeIds.length; i += CHUNK) {
+					const batch = staleEpisodeIds.slice(i, i + CHUNK);
+					const cleared = await app.prisma.episodeFileCache.updateMany({
+						where: {
+							id: { in: batch },
+							instance: { userId },
+							torrentSyncedAt: { lt: runStartedAt },
+						},
 						data: {
 							torrentState: null,
 							torrentRatio: null,
@@ -259,6 +305,8 @@ export async function runQuiTorrentStateSync(
 				result.rowsCleared += userCleared;
 				userRowsCleared += userCleared;
 			} catch (error) {
+				userErrors++;
+				result.errors++;
 				log.warn({ err: error, userId }, "qui torrent-state sync: stale-state cleanup failed");
 			}
 		}
