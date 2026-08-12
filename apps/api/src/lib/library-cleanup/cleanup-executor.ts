@@ -2977,6 +2977,30 @@ function assertRefreshedPlexTargetMatchesPolicySnapshot(
 	}
 }
 
+function plexRulesCapableOfAffectingExpectedSeriesPolicy(
+	item: CacheItemForEval,
+	rules: LibraryCleanupRule[],
+	service: "RADARR" | "SONARR",
+	expectedRuleId: string,
+): LibraryCleanupRule[] {
+	const expectedRule = rules.find((rule) => rule.id === expectedRuleId);
+	if (!expectedRule || expectedRule.retentionMode) {
+		throw new Error("The expected cleanup winner was absent from the policy snapshot");
+	}
+	const plexDependency = new Set<DataSourceDependency>(["plex"]);
+	return rules.filter((rule) => {
+		const canAffectExpectedWinner =
+			rule.retentionMode ||
+			rule.priority < expectedRule.priority ||
+			(rule.priority === expectedRule.priority && rule.id.localeCompare(expectedRule.id) <= 0);
+		return (
+			canAffectExpectedWinner &&
+			passesCleanupRuleFilters(item, rule, service) &&
+			ruleUsesUnavailableData(rule, plexDependency)
+		);
+	});
+}
+
 /**
  * Re-establish series/movie cleanup authorization at the mutation boundary.
  * The queued/preview match is durable intent only: current live ARR state,
@@ -3008,16 +3032,17 @@ export async function assertCurrentSeriesMutationAuthority(
 					: (() => {
 							throw new Error(`Unsupported cleanup service: ${instance.service}`);
 						})();
-		const liveItem = toLiveSeriesPolicyItem(instance, arrItemId, rawItem);
-		const plexDependency = new Set<DataSourceDependency>(["plex"]);
-		const plexCanAffectPolicy = policySnapshot.rules.some(
-			(rule) =>
-				passesCleanupRuleFilters(liveItem, rule, instance.service) &&
-				ruleUsesUnavailableData(rule, plexDependency),
+		let authoritativeRawItem = rawItem;
+		let authoritativeLiveItem = toLiveSeriesPolicyItem(instance, arrItemId, rawItem);
+		const plexPolicyRules = plexRulesCapableOfAffectingExpectedSeriesPolicy(
+			authoritativeLiveItem,
+			policySnapshot.rules,
+			instance.service,
+			expectedRule.matchedRuleId,
 		);
 		let currentPolicyCtx = policySnapshot.ctx;
 		let currentFailedSources = policySnapshot.failedSources;
-		if (plexCanAffectPolicy) {
+		if (plexPolicyRules.length > 0) {
 			if (
 				!policySnapshot.plexTargetRatingKeysByInstance ||
 				!policySnapshot.plexTopologyFingerprint
@@ -3051,12 +3076,12 @@ export async function assertCurrentSeriesMutationAuthority(
 				policySnapshot.plexTopologyFingerprint,
 			);
 
-			const activeTypes = collectActiveRuleTypes(policySnapshot.rules);
+			const activeTypes = collectActiveRuleTypes(plexPolicyRules);
 			const currentPlexEvidence = await refreshPlexMutationEvidence(
 				deps,
 				userId,
 				activeTypes.has("plex_episode_completion"),
-				policySnapshot.rules,
+				plexPolicyRules,
 			);
 			if (
 				!currentPlexEvidence ||
@@ -3079,9 +3104,57 @@ export async function assertCurrentSeriesMutationAuthority(
 			};
 			currentFailedSources = new Set(policySnapshot.failedSources);
 			currentFailedSources.delete("plex");
+
+			authoritativeRawItem =
+				instance.service === "RADARR"
+					? ((await (arrClient as InstanceType<typeof RadarrClient>).movie.getById(
+							arrItemId,
+						)) as unknown as Record<string, unknown>)
+					: ((await (arrClient as InstanceType<typeof SonarrClient>).series.getById(
+							arrItemId,
+						)) as unknown as Record<string, unknown>);
+			authoritativeLiveItem = toLiveSeriesPolicyItem(instance, arrItemId, authoritativeRawItem);
+			const currentLookupExternalId =
+				instance.service === "RADARR" ? authoritativeRawItem.tmdbId : authoritativeRawItem.tvdbId;
+			const currentPolicyTmdbId = authoritativeRawItem.tmdbId;
+			const currentHasPolicyTmdbId =
+				typeof currentPolicyTmdbId === "number" &&
+				Number.isSafeInteger(currentPolicyTmdbId) &&
+				currentPolicyTmdbId > 0;
+			if (
+				typeof currentLookupExternalId !== "number" ||
+				!Number.isSafeInteger(currentLookupExternalId) ||
+				currentLookupExternalId <= 0
+			) {
+				throw new Error("Refreshed ARR state lacked the IDs required for Plex verification");
+			}
+			const currentTargetKey =
+				instance.service === "RADARR"
+					? plexTargetIdentityKey("movie", "tmdb", currentLookupExternalId)
+					: currentHasPolicyTmdbId
+						? plexTargetIdentityKey("series", "tmdb", currentPolicyTmdbId)
+						: plexTargetIdentityKey("series", "tvdb", currentLookupExternalId);
+			if (currentLookupExternalId !== lookupExternalId || currentTargetKey !== targetKey) {
+				throw new Error("ARR target identity changed during Plex policy revalidation");
+			}
+			const refreshedPlexPolicyRules = plexRulesCapableOfAffectingExpectedSeriesPolicy(
+				authoritativeLiveItem,
+				policySnapshot.rules,
+				instance.service,
+				expectedRule.matchedRuleId,
+			);
+			const refreshedRuleIds = new Set(refreshedPlexPolicyRules.map((rule) => rule.id));
+			if (refreshedRuleIds.size > plexPolicyRules.length) {
+				throw new Error("A new Plex-dependent policy became applicable during revalidation");
+			}
+			for (const ruleId of refreshedRuleIds) {
+				if (!plexPolicyRules.some((rule) => rule.id === ruleId)) {
+					throw new Error("A new Plex-dependent policy became applicable during revalidation");
+				}
+			}
 		}
 		const policy = evaluateItemPolicyState(
-			liveItem,
+			authoritativeLiveItem,
 			policySnapshot.rules,
 			instance.service,
 			currentPolicyCtx,
@@ -3096,7 +3169,11 @@ export async function assertCurrentSeriesMutationAuthority(
 			throw new Error("The exact matched cleanup policy is no longer authoritative");
 		}
 		await assertCurrentSeriesPolicySnapshotUnchanged(deps, userId, expectedRule, policySnapshot);
-		return { snapshot: policySnapshot, rawItem, policyItem: liveItem };
+		return {
+			snapshot: policySnapshot,
+			rawItem: authoritativeRawItem,
+			policyItem: authoritativeLiveItem,
+		};
 	} catch (error) {
 		deps.log.warn(
 			{ err: error, instanceId: instance.id, arrItemId, ruleId: expectedRule.matchedRuleId },

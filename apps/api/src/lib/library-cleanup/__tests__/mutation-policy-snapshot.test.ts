@@ -408,6 +408,19 @@ describe("authoritative mutation policy snapshots", () => {
 			true,
 		],
 		[
+			"Radarr",
+			"blocks a live ARR policy change during the Plex refresh",
+			"RADARR",
+			"movie",
+			[],
+			["plex-b-84"],
+			[],
+			["plex-b-84"],
+			true,
+			false,
+			false,
+		],
+		[
 			"Sonarr",
 			"allows unchanged identity",
 			"SONARR",
@@ -488,6 +501,8 @@ describe("authoritative mutation policy snapshots", () => {
 	] as const)(
 		"%s %s after final target revalidation",
 		async (_label, _expectedBehavior, service, mediaType, plexATargetsAtSnapshot, plexBTargetsAtSnapshot, plexATargetsAtMutation, plexBTargetsAtMutation, expectedToBlock, omitSonarrTmdbId, policyChangesAfterSnapshot) => {
+			const arrPolicyChangesDuringRefresh =
+				_expectedBehavior === "blocks a live ARR policy change during the Plex refresh";
 			const plexA = { ...instance("PLEX"), id: "plex-a", name: "Plex A" };
 			const plexB = { ...instance("PLEX"), id: "plex-b", name: "Plex B" };
 			const plexRule = {
@@ -511,10 +526,21 @@ describe("authoritative mutation policy snapshots", () => {
 					}
 				: plexRule;
 			const plexDependencyRule = omitSonarrTmdbId ? { ...plexRule, priority: 2 } : plexRule;
-			const { deps } = makeDeps(omitSonarrTmdbId ? [matchedRule, plexDependencyRule] : [plexRule], [
-				plexA,
-				plexB,
-			]);
+			const liveRetentionRule = {
+				...rule("monitored"),
+				id: "retain-monitored",
+				priority: 0,
+				parameters: "{}",
+				serviceFilter: JSON.stringify([service]),
+				targetScope: "series",
+				retentionMode: true,
+			};
+			const snapshotRules = arrPolicyChangesDuringRefresh
+				? [liveRetentionRule, plexRule]
+				: omitSonarrTmdbId
+					? [matchedRule, plexDependencyRule]
+					: [plexRule];
+			const { deps } = makeDeps(snapshotRules, [plexA, plexB]);
 			let refreshCallCount = 0;
 			let policyChangedDuringTargetLookup = false;
 			const publishedRow = {
@@ -624,7 +650,7 @@ describe("authoritative mutation policy snapshots", () => {
 					: { tvdbId: 84, ...(omitSonarrTmdbId ? {} : { tmdbId: 84 }) }),
 				title: `Example ${_label} Item`,
 				path: `/media/example-${service.toLowerCase()}`,
-				monitored: true,
+				monitored: !arrPolicyChangesDuringRefresh,
 				status: "ended",
 				qualityProfileId: 1,
 				sizeOnDisk: 2_000,
@@ -634,11 +660,16 @@ describe("authoritative mutation policy snapshots", () => {
 						? { movieFileCount: 1, sizeOnDisk: 2_000 }
 						: { episodeFileCount: 1, sizeOnDisk: 2_000 },
 			};
+			const getById = vi
+				.fn()
+				.mockResolvedValueOnce(rawItem)
+				.mockResolvedValue({
+					...rawItem,
+					monitored: arrPolicyChangesDuringRefresh ? true : rawItem.monitored,
+				});
 			deps.arrClientFactory = {
 				create: vi.fn(() =>
-					service === "RADARR"
-						? { movie: { getById: vi.fn().mockResolvedValue(rawItem) } }
-						: { series: { getById: vi.fn().mockResolvedValue(rawItem) } },
+					service === "RADARR" ? { movie: { getById } } : { series: { getById } },
 				),
 			} as never;
 			const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
@@ -670,6 +701,77 @@ describe("authoritative mutation policy snapshots", () => {
 			}
 		},
 	);
+
+	it("allows a non-Plex winner when only a lower-priority cleanup rule needs unavailable Plex evidence", async () => {
+		const plex = instance("PLEX");
+		const ageRule = {
+			...rule("age"),
+			priority: 1,
+			parameters: JSON.stringify({ operator: "older_than", days: 0 }),
+			serviceFilter: JSON.stringify(["RADARR"]),
+			targetScope: "series",
+			action: "delete",
+			scanMediaServerAfterDelete: false,
+		};
+		const lowerPlexRule = {
+			...rule("plex_last_watched"),
+			priority: 2,
+			parameters: JSON.stringify({ operator: "never" }),
+			serviceFilter: JSON.stringify(["RADARR"]),
+			targetScope: "series",
+			action: "delete",
+			scanMediaServerAfterDelete: false,
+		};
+		refreshMocks.plex.mockResolvedValue({
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["Plex unavailable"],
+			complete: false,
+			completedAt: new Date(),
+		});
+		const { deps } = makeDeps([ageRule, lowerPlexRule], [plex]);
+		const rawItem = {
+			id: 101,
+			tmdbId: 84,
+			title: "Example Radarr Item",
+			path: "/media/example-radarr",
+			monitored: true,
+			status: "released",
+			qualityProfileId: 1,
+			sizeOnDisk: 2_000,
+			added: "2025-01-01T00:00:00.000Z",
+			statistics: { movieFileCount: 1, sizeOnDisk: 2_000 },
+		};
+		const getById = vi.fn().mockResolvedValue(rawItem);
+		deps.arrClientFactory = {
+			create: vi.fn(() => ({ movie: { getById } })),
+		} as never;
+		const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+		const radarr = {
+			...instance("PLEX"),
+			id: "radarr-1",
+			name: "Radarr",
+			service: "RADARR",
+			baseUrl: "http://radarr.test",
+		};
+
+		expect(snapshot.failedSources).toContain("plex");
+		await expect(
+			assertCurrentSeriesMutationAuthority(
+				deps,
+				"user-1",
+				radarr as never,
+				101,
+				{
+					matchedRuleId: ageRule.id,
+					action: "delete",
+					scanMediaServerAfterDelete: false,
+				},
+				snapshot,
+			),
+		).resolves.toMatchObject({ rawItem });
+		expect(getById).toHaveBeenCalledOnce();
+	});
 });
 
 describe("interactive preview live watch authority", () => {
