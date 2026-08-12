@@ -53,11 +53,12 @@ import {
 	evaluateSingleCondition,
 	extractRating,
 	parseAudioChannels,
+	passesCleanupRuleFilters,
 	passesInstanceFilter,
 	passesServiceFilter,
 	passesTagExclusion,
 	passesTitleExclusion,
-	shouldSkipForFailedSource,
+	ruleUsesUnavailableData,
 } from "./rule-evaluators.js";
 import {
 	ArrCrossInstanceOwnershipChangedDuringSafetyCheckError,
@@ -3770,6 +3771,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			const sourceFingerprint = plexFingerprintById.get(row.instanceId);
 			if (
 				sourceUpdatedAt === undefined ||
+				!Number.isFinite(sourceUpdatedAt) ||
 				!sourceFingerprint ||
 				row.sourceFingerprint !== sourceFingerprint ||
 				row.refreshedAt.getTime() < freshnessThreshold ||
@@ -3983,10 +3985,10 @@ export function seriesRetentionProtectsEpisode(
 ): boolean {
 	return seriesRules.some(
 		(rule) =>
-			rule.enabled &&
 			rule.retentionMode &&
-			!shouldSkipForFailedSource(rule, failedSources) &&
-			evaluateRuleViaEngine(item, rule, "SONARR", ctx) !== null,
+			passesCleanupRuleFilters(item, rule, "SONARR") &&
+			(ruleUsesUnavailableData(rule, failedSources) ||
+				evaluateRuleViaEngine(item, rule, "SONARR", ctx) !== null),
 	);
 }
 

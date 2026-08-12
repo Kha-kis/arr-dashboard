@@ -60,14 +60,6 @@ import type {
 import { type DataSourceDependency, isRegexSafe, ruleDataSourceMap } from "@arr/shared";
 import type { LibraryCleanupRule } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
-import type {
-	CacheItemForEval,
-	EvalContext,
-	PlexWatchMap,
-	RuleAction,
-	RuleMatch,
-	SeerrRequestMap,
-} from "./types.js";
 import {
 	evaluateJellyfinAddedAt,
 	evaluateJellyfinEpisodeCompletion,
@@ -99,6 +91,14 @@ import {
 	evaluateSeerrRequestStatus,
 	lookupSeerrRequests,
 } from "./evaluators/seerr-evaluators.js";
+import type {
+	CacheItemForEval,
+	EvalContext,
+	PlexWatchMap,
+	RuleAction,
+	RuleMatch,
+	SeerrRequestMap,
+} from "./types.js";
 
 // ============================================================================
 // Per-Type Evaluators
@@ -1438,8 +1438,8 @@ export function evaluateRule(
  * 1. Retention rules checked first — if ANY match, item is protected (returns null).
  * 2. Cleanup rules checked in priority order — first match wins.
  *
- * When `failedSources` is provided, rules depending on unavailable data sources
- * are skipped to prevent false matches (the C1 safety fix).
+ * Unavailable cleanup rules are skipped. An applicable unavailable retention
+ * rule protects the item because cleanup cannot safely disprove it.
  */
 export function evaluateItemAgainstRules(
 	item: CacheItemForEval,
@@ -1451,7 +1451,8 @@ export function evaluateItemAgainstRules(
 	// Phase 1: Check retention rules first — any match = protected
 	for (const rule of rules) {
 		if (!rule.retentionMode) continue;
-		if (shouldSkipForFailedSource(rule, failedSources)) continue;
+		if (!passesCleanupRuleFilters(item, rule, instanceService)) continue;
+		if (ruleUsesUnavailableData(rule, failedSources)) return null;
 		const match = evaluateRule(item, rule, instanceService, ctx);
 		if (match) return null; // Item is protected by retention rule
 	}
@@ -1459,7 +1460,7 @@ export function evaluateItemAgainstRules(
 	// Phase 2: Check cleanup rules — first match wins
 	for (const rule of rules) {
 		if (rule.retentionMode) continue;
-		if (shouldSkipForFailedSource(rule, failedSources)) continue;
+		if (ruleUsesUnavailableData(rule, failedSources)) continue;
 		const match = evaluateRule(item, rule, instanceService, ctx);
 		if (match) return match;
 	}
@@ -1550,12 +1551,10 @@ export function explainItemAgainstRules(
  * Check if a rule should be skipped because its data source failed.
  * Examines both the top-level ruleType and composite sub-conditions.
  */
-export function shouldSkipForFailedSource(
+export function ruleUsesUnavailableData(
 	rule: LibraryCleanupRule,
 	failedSources?: Set<DataSourceDependency>,
 ): boolean {
-	if (!failedSources || failedSources.size === 0) return false;
-
 	// Check top-level rule type
 	if (shouldSkipRuleType(rule.ruleType, rule.parameters, failedSources)) return true;
 
@@ -1582,6 +1581,9 @@ export function shouldSkipForFailedSource(
 	return false;
 }
 
+/** Compatibility name for callers that only need cleanup-rule skip semantics. */
+export const shouldSkipForFailedSource = ruleUsesUnavailableData;
+
 /**
  * Check if a single rule type should be skipped based on failed data sources.
  * Handles dynamic dependencies like `user_retention` whose source depends on params.
@@ -1589,7 +1591,7 @@ export function shouldSkipForFailedSource(
 function shouldSkipRuleType(
 	ruleType: string,
 	parametersJson: string | null,
-	failedSources: Set<DataSourceDependency>,
+	failedSources?: Set<DataSourceDependency>,
 ): boolean {
 	// Special case: user_retention depends on params.source
 	if (ruleType === "user_retention") {
@@ -1597,16 +1599,32 @@ function shouldSkipRuleType(
 			? (safeJsonParse(parametersJson) as Record<string, unknown> | null)
 			: null;
 		const source = (params?.source as string) ?? "plex";
-		if (source === "plex") return failedSources.has("plex");
-		// "tautulli" rules are disabled by the 3.0 migration pass; if one is
-		// re-enabled, evaluateUserRetention's fail-safe handles it (no-match),
-		// so there is nothing to skip here. "either" degrades to plex-only.
-		if (source === "either") return failedSources.has("plex");
-		return false;
+		if (source === "plex" || source === "either") return failedSources?.has("plex") ?? false;
+		// No Tautulli runtime exists on next. A persisted/re-enabled Tautulli
+		// policy is therefore unavailable by design and fails closed.
+		return true;
+	}
+	if (ruleType === "seerr_requester_watched" || ruleType === "seerr_requester_not_watched") {
+		return failedSources?.has("seerr") === true || failedSources?.has("plex") === true;
 	}
 
 	const dep = ruleDataSourceMap[ruleType];
-	return dep != null && failedSources.has(dep);
+	return dep != null && failedSources?.has(dep) === true;
+}
+
+/** Apply the ordinary cleanup-rule filters without evaluating its condition. */
+export function passesCleanupRuleFilters(
+	item: CacheItemForEval,
+	rule: LibraryCleanupRule,
+	instanceService: string,
+): boolean {
+	return (
+		rule.enabled &&
+		passesServiceFilter(instanceService, rule.serviceFilter) &&
+		passesInstanceFilter(item.instanceId, rule.instanceFilter) &&
+		passesTagExclusion(item, rule.excludeTags) &&
+		passesTitleExclusion(item.title, rule.excludeTitles)
+	);
 }
 
 /**
