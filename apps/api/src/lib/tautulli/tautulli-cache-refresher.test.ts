@@ -164,26 +164,19 @@ describe("refreshTautulliCache", () => {
 		});
 	});
 
-	it.each([
-		[
-			"an incomplete client snapshot",
-			{
-				items: [historyRow()],
-				recordsFiltered: 2,
-				recordsTotal: 2,
-				complete: false,
-				incompleteReason: "page_limit_reached" as const,
-			},
-		],
-		[
-			"frozen totals that do not equal the gathered rows",
-			{ items: [historyRow()], recordsFiltered: 2, recordsTotal: 2, complete: true },
-		],
-	])("keeps the previous generation when given %s", async (_reason, snapshot) => {
+	it("keeps the previous generation when given an incomplete client snapshot", async () => {
 		const { prisma, state } = makeAtomicPrisma();
 
 		const result = await refreshTautulliCache(
-			completeClient({ snapshot }),
+			completeClient({
+				snapshot: {
+					items: [historyRow()],
+					recordsFiltered: 2,
+					recordsTotal: 2,
+					complete: false,
+					incompleteReason: "page_limit_reached",
+				},
+			}),
 			prisma,
 			"tautulli-1",
 			log,
@@ -194,6 +187,34 @@ describe("refreshTautulliCache", () => {
 		expect(state.rows).toEqual([{ tmdbId: 99, mediaType: "movie", watchCount: 4 }]);
 		expect(state.status).toMatchObject({
 			lastResult: "success",
+			generationId: "previous-generation",
+			lastAttemptResult: "error",
+		});
+	});
+
+	it("rejects a complete row-count snapshot whose frozen total is below its filtered total", async () => {
+		const { prisma, state } = makeAtomicPrisma();
+
+		const result = await refreshTautulliCache(
+			completeClient({
+				snapshot: {
+					items: [historyRow()],
+					recordsFiltered: 1,
+					recordsTotal: 0,
+					complete: true,
+				},
+			}),
+			prisma,
+			"tautulli-1",
+			log,
+			expectedConnection,
+		);
+
+		expect(result.errorMessages).toEqual([
+			"Tautulli history declared total is below filtered total for library movies",
+		]);
+		expect(state.rows).toEqual([{ tmdbId: 99, mediaType: "movie", watchCount: 4 }]);
+		expect(state.status).toMatchObject({
 			generationId: "previous-generation",
 			lastAttemptResult: "error",
 		});
@@ -242,22 +263,39 @@ describe("refreshTautulliCache", () => {
 		expect(state.status.lastAttemptResult).toBe("error");
 	});
 
-	it("enforces the aggregate history and metadata inventory caps before publishing", async () => {
-		const { prisma: historyPrisma } = makeAtomicPrisma();
+	it("rejects a complete valid-row-count snapshot that exceeds the aggregate history cap", async () => {
+		const { prisma, state } = makeAtomicPrisma();
+		const rows = Array.from({ length: 100_001 }, (_, index) =>
+			historyRow({ row_id: index + 1, rating_key: `movie-${index}` }),
+		);
 		const tooLargeHistory = completeClient({
-			snapshot: { items: [], recordsFiltered: 100_001, recordsTotal: 100_001, complete: true },
+			snapshot: {
+				items: rows,
+				recordsFiltered: rows.length,
+				recordsTotal: rows.length,
+				complete: true,
+			},
 		});
 
 		const historyResult = await refreshTautulliCache(
 			tooLargeHistory,
-			historyPrisma,
+			prisma,
 			"tautulli-1",
 			log,
 			expectedConnection,
 		);
-		expect(historyResult.complete).toBe(false);
+		expect(historyResult.errorMessages).toEqual([
+			"Tautulli history exceeds the safe 100000-row refresh limit",
+		]);
 		expect(tooLargeHistory.getMetadata).not.toHaveBeenCalled();
+		expect(state.rows).toEqual([{ tmdbId: 99, mediaType: "movie", watchCount: 4 }]);
+		expect(state.status).toMatchObject({
+			generationId: "previous-generation",
+			lastAttemptResult: "error",
+		});
+	});
 
+	it("enforces the metadata inventory cap before publishing", async () => {
 		const { prisma: metadataPrisma } = makeAtomicPrisma();
 		const metadataRows = Array.from({ length: 501 }, (_, index) =>
 			historyRow({ row_id: index + 1, rating_key: `movie-${index}` }),
@@ -280,6 +318,27 @@ describe("refreshTautulliCache", () => {
 		);
 		expect(metadataResult.complete).toBe(false);
 		expect(tooMuchMetadata.getMetadata).not.toHaveBeenCalled();
+	});
+
+	it("normalizes a connection refusal into non-sensitive failure text", async () => {
+		const { prisma } = makeAtomicPrisma();
+		const client = completeClient();
+		vi.mocked(client.getLibraries).mockRejectedValueOnce(
+			new Error("fetch failed", { cause: { code: "ECONNREFUSED" } }),
+		);
+
+		const result = await refreshTautulliCache(
+			client,
+			prisma,
+			"tautulli-1",
+			log,
+			expectedConnection,
+		);
+
+		expect(result.errorMessages).toEqual([
+			"Connection refused by the configured host (ECONNREFUSED)",
+		]);
+		expect(result.errorMessages.join(" ")).not.toContain("fetch failed");
 	});
 
 	it("coalesces overlapping refreshes for the same provider generation", async () => {

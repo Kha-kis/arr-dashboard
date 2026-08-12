@@ -13,6 +13,7 @@ import {
 	type ProviderConnectionIdentity,
 	withCurrentProviderConnection,
 } from "../services/provider-connection-guard.js";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { TautulliClient } from "./tautulli-client.js";
 
 const CACHE_TYPE = "tautulli";
@@ -144,7 +145,7 @@ async function performTautulliCacheRefresh(
 			completedAt,
 		};
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "Tautulli cache refresh failed";
+		const message = getErrorMessage(error, "Tautulli cache refresh failed");
 		log.warn(
 			{ err: error, instanceId },
 			"Tautulli cache refresh did not publish a complete generation",
@@ -243,11 +244,19 @@ async function gatherCompleteSnapshot(
 
 function assertCompleteHistorySnapshot(snapshot: TautulliHistorySnapshot, sectionId: string): void {
 	if (
+		Number.isSafeInteger(snapshot.recordsFiltered) &&
+		Number.isSafeInteger(snapshot.recordsTotal) &&
+		snapshot.recordsTotal < snapshot.recordsFiltered
+	) {
+		throw new Error(
+			`Tautulli history declared total is below filtered total for library ${sectionId}`,
+		);
+	}
+	if (
 		!snapshot.complete ||
 		!Number.isSafeInteger(snapshot.recordsFiltered) ||
 		snapshot.recordsFiltered < 0 ||
 		!Number.isSafeInteger(snapshot.recordsTotal) ||
-		snapshot.recordsTotal < snapshot.recordsFiltered ||
 		snapshot.items.length !== snapshot.recordsFiltered
 	) {
 		throw new Error(`Tautulli history snapshot was incomplete for library ${sectionId}`);
