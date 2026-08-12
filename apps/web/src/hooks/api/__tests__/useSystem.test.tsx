@@ -65,9 +65,13 @@ describe("useDismissTautulliProviderNotice", () => {
 		result.current.mutate("tautulli-both-configured");
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
-		expect(systemApi.dismissTautulliProviderNotice).toHaveBeenCalledWith("tautulli-both-configured");
+		expect(systemApi.dismissTautulliProviderNotice).toHaveBeenCalledWith(
+			"tautulli-both-configured",
+		);
 		expect(invalidateQueries).toHaveBeenCalledTimes(1);
-		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: systemKeys.tautulliProviderNotices });
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: systemKeys.tautulliProviderNotices,
+		});
 
 		client.clear();
 	});

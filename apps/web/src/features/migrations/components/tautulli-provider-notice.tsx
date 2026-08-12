@@ -34,7 +34,10 @@ export function TautulliProviderNotice() {
 			<AlertTitle>{content.title}</AlertTitle>
 			<AlertDescription>
 				<p>{content.description}</p>
-				<Link href={notice.actionUrl} className="mt-2 inline-flex font-medium underline underline-offset-4">
+				<Link
+					href={notice.actionUrl}
+					className="mt-2 inline-flex font-medium underline underline-offset-4"
+				>
 					Review services
 				</Link>
 			</AlertDescription>

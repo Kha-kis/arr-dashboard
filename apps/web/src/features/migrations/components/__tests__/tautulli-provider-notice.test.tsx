@@ -62,7 +62,9 @@ describe("Tautulli provider notice", () => {
 		expect(dismiss).toHaveFocus();
 		fireEvent.click(dismiss);
 		await waitFor(() =>
-			expect(systemApi.dismissTautulliProviderNotice).toHaveBeenCalledWith("tautulli-both-configured"),
+			expect(systemApi.dismissTautulliProviderNotice).toHaveBeenCalledWith(
+				"tautulli-both-configured",
+			),
 		);
 		await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
 	});
