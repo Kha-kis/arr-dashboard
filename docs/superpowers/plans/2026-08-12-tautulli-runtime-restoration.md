@@ -4,11 +4,11 @@
 
 **Goal:** Restore Tautulli as a maintainable 3.0 historical-analytics integration without copying obsolete stable architecture or weakening cache and cleanup safeguards.
 
-**Architecture:** Port stable client behavior behind 3.0's per-instance services, generation guards, atomic cache publication, failed-attempt tracking, Pulse, and unified rules. This wave restores provider capability but does not choose between Tracearr and Tautulli; selection belongs to the following wave.
+**Architecture:** Port stable client behavior behind 3.0's per-instance services, generation guards, atomic cache publication, failed-attempt tracking, and Pulse. This wave restores provider capability but does not choose between Tracearr and Tautulli; selection belongs to the following wave. Cleanup-rule activation remains fail-closed until provider selection and durable Plex identity are both available.
 
 **Tech stack:** Fastify, Prisma, Zod, TypeScript, React, TanStack Query, Vitest.
 
-**Global constraints:** Adapt behavior from stable commits, never wholesale-copy deletion-era files; no provider mixing/failover; Tautulli without verified Plex identity is analytics-only and cannot authorize cleanup.
+**Global constraints:** Adapt behavior from stable commits, never wholesale-copy deletion-era files; no provider mixing/failover; Tautulli without verified Plex identity is analytics-only and cannot authorize cleanup. Provider-specific Tautulli activity may be exposed only through explicitly Tautulli-scoped APIs and must not feed native or Tracearr live-session surfaces.
 
 ---
 
@@ -33,11 +33,9 @@
 **Files:**
 - Create: `apps/api/src/lib/tautulli/tautulli-cache-refresher.ts`
 - Create: `apps/api/src/lib/tautulli/tautulli-cache-refresher.test.ts`
-- Modify if required by the retained 3.0 cache contract: `apps/api/prisma/schema.prisma`
-- Create only if the schema actually changes: `apps/api/prisma/migrations/20260812100000_restore_tautulli_cache/migration.sql`
 
 - [ ] Add failing tests for atomic publication, duplicate/group rejection, frozen totals, sparse rows, caps, chunked stale eviction, overlapping runs, disabled/deleted instances, and generation changes.
-- [ ] Reuse the retained `TautulliCache` and `CacheRefreshStatus` models when they already satisfy the Wave-4 Plex/Jellyfin lifecycle; do not create an empty migration. Failed attempts preserve the last successful generation.
+- [ ] Reuse the retained `TautulliCache` and `CacheRefreshStatus` models; do not change the schema or create a migration in this wave. Failed attempts preserve the last successful generation.
 - [ ] Gather into an unpublished generation, validate the full snapshot, then publish in one guarded transaction.
 - [ ] Do not treat connection fingerprints as verified Plex server identity.
 - [ ] Run `pnpm --filter @arr/api test -- tautulli-cache-refresher` and commit: `feat: add guarded tautulli cache refresh`.
@@ -46,9 +44,9 @@
 
 **Files:**
 - Create: `apps/api/src/plugins/tautulli-cache-scheduler.ts`
-- Modify: `apps/api/src/bootstrap/infrastructure.ts`
+- Modify: `apps/api/src/bootstrap/schedulers.ts`
 - Modify: `apps/api/src/lib/pulse/collectors.ts`
-- Modify: `apps/api/src/lib/pulse/constants.ts`
+- Modify: `apps/api/src/routes/pulse.ts`
 - Test: `apps/api/src/plugins/__tests__/tautulli-cache-scheduler.test.ts`
 - Test: `apps/api/src/lib/pulse/__tests__/collectors-tautulli.test.ts`
 
@@ -67,13 +65,12 @@
 - Create: `apps/api/src/routes/tautulli/stats-routes.ts`
 - Create: `apps/api/src/routes/tautulli/__tests__/aggregation.test.ts`
 - Modify: `apps/api/src/routes/route-manifest.ts`
-- Modify: `apps/api/src/server.ts`
 - Create: `apps/web/src/lib/api-client/tautulli.ts`
 - Create: `apps/web/src/hooks/api/useTautulli.ts`
 - Modify: `docs/API-ROUTES.md`
 
 - [ ] Add failing ownership, pagination, cache-status, aggregation, disabled-instance, and incognito-sensitive response tests.
-- [ ] Return typed Tautulli-family results only; do not call Tracearr or native session stores from these routes.
+- [ ] Return typed Tautulli-family results only; do not call Tracearr or native session stores from these routes. Keep activity explicitly Tautulli-scoped so it cannot duplicate or mix with unified live-session surfaces.
 - [ ] Add manual refresh using the same guarded refresher as the scheduler.
 - [ ] Add route manifest and API documentation entries.
 - [ ] Run `pnpm --filter @arr/api test -- tautulli aggregation` and `pnpm --filter @arr/web test -- useTautulli`; commit: `feat: restore tautulli analytics routes`.
@@ -91,23 +88,23 @@
 
 - [ ] Add failing tests for connection success, HTTP Basic support, invalid API responses, encrypted credential persistence, edit preservation, and safe errors.
 - [ ] Re-enable Tautulli in service forms and summaries with supported fields only.
-- [ ] Mark identity-unverified Tautulli as `analytics_only`; connection success must not imply cleanup authorization.
+- [ ] Extend the service/status contract to mark identity-unverified Tautulli as `analytics_only`; connection success must not imply cleanup authorization or a complete cache generation.
 - [ ] Run focused API/web tests and commit: `feat: restore tautulli service setup`.
 
-## Task 6: Restore Tautulli-backed unified rules
+## Task 6: Preserve fail-closed cleanup-rule compatibility
 
 **Files:**
-- Modify: `packages/shared/src/rules/criteria.ts`
-- Modify: `apps/api/src/lib/library-cleanup/rule-evaluators.ts`
-- Modify: `apps/api/src/lib/library-cleanup/cleanup-executor.ts`
-- Modify: `apps/api/src/lib/rules/engine.ts`
+- Modify only if required by the tests: `packages/shared/src/rules/criteria.ts`
+- Modify only if required by the tests: `apps/api/src/lib/library-cleanup/rule-evaluators.ts`
+- Modify only if required by the tests: `apps/api/src/lib/library-cleanup/cleanup-executor.ts`
+- Modify only if required by the tests: `apps/api/src/lib/rules/engine.ts`
 - Test: `apps/api/src/lib/rules/__tests__/engine.test.ts`
 - Test: `apps/api/src/lib/library-cleanup/phase1-features.test.ts`
 
-- [ ] Add failing tests for the three previously supported Tautulli rule kinds, selected/unselected state, provider outage, stale/incomplete cache, and missing Plex identity.
-- [ ] Implement a Tautulli evidence adapter that returns unavailable/unknown rather than rewriting or deleting rules.
-- [ ] Fail closed when evidence is unselected, incomplete, stale, or identity-required but unverified.
-- [ ] Run focused rule tests and commit: `feat: restore tautulli rule evidence`.
+- [ ] Add regression tests proving the three preserved Tautulli rule kinds and `source: "tautulli"` remain unavailable/no-match even when Tautulli is configured or its cache is populated.
+- [ ] Preserve rule documents without rewriting or deleting them so later provider-selection and durable-identity waves can reactivate them deliberately.
+- [ ] Do not add a cleanup evidence adapter in this wave; no Tautulli path may authorize cleanup before provider selection and verified Plex identity exist.
+- [ ] Run focused rule tests and commit: `test: preserve fail-closed tautulli rules`.
 
 ## Task 7: Freeze and validate the wave
 
