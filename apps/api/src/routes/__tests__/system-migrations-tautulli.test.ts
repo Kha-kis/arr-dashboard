@@ -132,6 +132,27 @@ async function seedPriorRemovalReport(acknowledged = true) {
 	);
 }
 
+async function seedPartialPassReport() {
+	const backupDir = path.join(dataDir, "rules-pre-3.0");
+	await mkdir(backupDir, { recursive: true });
+	await writeFile(
+		path.join(backupDir, TAUTULLI_PASS_REPORT_FILE),
+		JSON.stringify({
+			ranAt: "2026-06-10T00:00:00.000Z",
+			surfaces: {
+				"library-cleanup": {
+					rulesScanned: 1,
+					rulesDisabled: [],
+					rulesModified: [],
+					rulesUnparseable: [],
+				},
+			},
+			totalAffectedRules: 0,
+		}),
+		"utf-8",
+	);
+}
+
 async function getNoticesForUser(userId = "user-1") {
 	const response = await app.inject({
 		method: "GET",
@@ -197,41 +218,17 @@ describe("GET /system/migrations/tautulli", () => {
 		expect(response.payload).not.toContain("password");
 	});
 
-	it("returns a safe recovery notice only when the historical report proves prior removal", async () => {
+	it("does not attribute acknowledged rules-only migration state to a provider removal", async () => {
 		await seedPriorRemovalReport();
 
-		const response = await app.inject({
-			method: "GET",
-			url: "/system/migrations/tautulli",
-			headers: { [AUTH_HEADER]: "1" },
-		});
-
-		expect(response.statusCode).toBe(200);
-		expect(JSON.parse(response.payload)).toEqual({
-			notices: [
-				{
-					key: "tautulli-prior-removal",
-					kind: "prior-removal",
-					actionUrl: "/settings/services",
-				},
-			],
-		});
-		expect(response.payload).not.toContain("Private rule");
+		await expect(getNoticesForUser()).resolves.toEqual({ notices: [] });
 	});
 
-	it("shows a report-backed recovery notice only to the user who still owns an affected rule", async () => {
+	it("does not attribute an installation-wide acknowledgment to another user", async () => {
 		await seedPriorRemovalReport();
 
 		await expect(getNoticesForUser("user-2")).resolves.toEqual({ notices: [] });
-		await expect(getNoticesForUser("user-1")).resolves.toEqual({
-			notices: [
-				{
-					key: "tautulli-prior-removal",
-					kind: "prior-removal",
-					actionUrl: "/settings/services",
-				},
-			],
-		});
+		await expect(getNoticesForUser("user-1")).resolves.toEqual({ notices: [] });
 	});
 
 	it("does not infer prior removal from a missing Tautulli row", async () => {
@@ -242,6 +239,24 @@ describe("GET /system/migrations/tautulli", () => {
 		await seedPriorRemovalReport(false);
 
 		await expect(getNoticesForUser()).resolves.toEqual({ notices: [] });
+	});
+
+	it("keeps the independent both-configured notice available when a report is partial", async () => {
+		instanceRows = [
+			{ id: "ta-1", label: "Tautulli", userId: "user-1", service: "TAUTULLI" },
+			{ id: "tr-1", label: "Tracearr", userId: "user-1", service: "TRACEARR" },
+		];
+		await seedPartialPassReport();
+
+		await expect(getNoticesForUser()).resolves.toEqual({
+			notices: [
+				{
+					key: "tautulli-both-configured",
+					kind: "both-configured",
+					actionUrl: "/settings/services",
+				},
+			],
+		});
 	});
 
 	it("hides only the current user's dismissed notice", async () => {

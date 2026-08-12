@@ -4,10 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
-import {
-	readTautulliPassReport,
-	type TautulliPassReport,
-} from "../lib/rules-migration/tautulli-pass.js";
+import { readTautulliPassReport } from "../lib/rules-migration/tautulli-pass.js";
 import { evaluateSecurityPosture } from "../lib/security/security-posture.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 import { validateRequest } from "../lib/utils/validate.js";
@@ -660,34 +657,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		]);
 
 		const dataDir = dirname(resolveSecretsPath(app.config.DATABASE_URL || "file:./dev.db"));
-		const rulesReport: TautulliPassReport | null = await readTautulliPassReport(
-			dataDir,
-			request.log,
-		);
-		const affectedRuleIds = rulesReport
-			? [
-					...rulesReport.surfaces["library-cleanup"].rulesDisabled,
-					...rulesReport.surfaces["library-cleanup"].rulesModified,
-					...rulesReport.surfaces["library-cleanup"].rulesUnparseable,
-					...rulesReport.surfaces["auto-tag"].rulesDisabled,
-					...rulesReport.surfaces["auto-tag"].rulesModified,
-					...rulesReport.surfaces["auto-tag"].rulesUnparseable,
-				].map((rule) => rule.id)
-			: [];
-		const hasCurrentUserPriorRemovalEvidence =
-			affectedRuleIds.length > 0 &&
-			(
-				await Promise.all([
-					app.prisma.libraryCleanupRule.findMany({
-						where: { id: { in: affectedRuleIds }, config: { userId } },
-						select: { id: true },
-					}),
-					app.prisma.autoTagRule.findMany({
-						where: { id: { in: affectedRuleIds }, userId },
-						select: { id: true },
-					}),
-				])
-			).some((rules) => rules.length > 0);
+		// Retain the private report read as historical audit evidence, but it has
+		// no user or deleted-instance identity and therefore cannot establish a
+		// user-scoped provider removal.
+		await readTautulliPassReport(dataDir, request.log);
 		const dismissedKeys = new Set(dismissals.map((dismissal) => dismissal.noticeKey));
 		const notices: TautulliNotice[] = [];
 
@@ -695,18 +668,6 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			notices.push({
 				key: "tautulli-both-configured",
 				kind: "both-configured",
-				actionUrl: "/settings/services",
-			});
-		}
-
-		if (
-			tautulliInstances.length === 0 &&
-			rulesReport?.acknowledgedAt &&
-			hasCurrentUserPriorRemovalEvidence
-		) {
-			notices.push({
-				key: "tautulli-prior-removal",
-				kind: "prior-removal",
 				actionUrl: "/settings/services",
 			});
 		}

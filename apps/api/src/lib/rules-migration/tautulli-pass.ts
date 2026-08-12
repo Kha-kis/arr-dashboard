@@ -45,6 +45,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyBaseLogger } from "fastify";
+import { z } from "zod";
 import type { PrismaClient } from "../prisma.js";
 
 export const TAUTULLI_RULE_KINDS = new Set([
@@ -94,6 +95,30 @@ export interface TautulliPassReport {
 	 */
 	acknowledgedAt?: string;
 }
+
+const ruleChangeSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	reason: z.enum(["tautulli-orphaned", "tautulli-condition-dropped", "unparseable"]),
+	droppedConditionKinds: z.array(z.string()).optional(),
+});
+
+const surfaceReportSchema = z.object({
+	rulesScanned: z.number(),
+	rulesDisabled: z.array(ruleChangeSchema),
+	rulesModified: z.array(ruleChangeSchema),
+	rulesUnparseable: z.array(ruleChangeSchema),
+});
+
+const tautulliPassReportSchema = z.object({
+	ranAt: z.string(),
+	surfaces: z.object({
+		"library-cleanup": surfaceReportSchema,
+		"auto-tag": surfaceReportSchema,
+	}),
+	totalAffectedRules: z.number(),
+	acknowledgedAt: z.string().optional(),
+});
 
 interface PlannedUpdate {
 	id: string;
@@ -382,11 +407,19 @@ export async function readTautulliPassReport(
 	const reportPath = path.join(dataDir, BACKUP_DIR_NAME, TAUTULLI_PASS_REPORT_FILE);
 	try {
 		const raw = await readFile(reportPath, "utf-8");
-		return JSON.parse(raw) as TautulliPassReport;
+		const parsed = tautulliPassReportSchema.safeParse(JSON.parse(raw));
+		if (!parsed.success) {
+			log?.warn(
+				{ reportPath },
+				"Tautulli pass report exists but could not be read — dialog disclosure degraded",
+			);
+			return null;
+		}
+		return parsed.data;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
 			log?.warn(
-				{ err: error, reportPath },
+				{ reportPath },
 				"Tautulli pass report exists but could not be read — dialog disclosure degraded",
 			);
 		}

@@ -2,7 +2,7 @@
 
 import type { ServiceInstanceSummary } from "@arr/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { libraryCleanupKeys, serviceKeys } from "../../lib/query-keys";
+import { libraryCleanupKeys, serviceKeys, systemKeys } from "../../lib/query-keys";
 import {
 	type CreateServicePayload,
 	createService,
@@ -28,6 +28,7 @@ export const useCreateServiceMutation = () => {
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: serviceKeys.all });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
+			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});
 };
@@ -53,6 +54,7 @@ export const useUpdateServiceMutation = () => {
 				});
 			});
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
+			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});
 };
@@ -70,6 +72,7 @@ export const useDeleteServiceMutation = () => {
 				return prev.filter((service) => service.id !== id);
 			});
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
+			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});
 };
