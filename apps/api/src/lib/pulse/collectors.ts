@@ -751,7 +751,7 @@ const collectTautulliCacheHealth: Collector = async (app, userId) => {
 		const newerFailedAttempt =
 			status.lastAttemptResult === "error" &&
 			status.lastAttemptAt != null &&
-			status.lastAttemptAt.getTime() > status.lastRefreshedAt.getTime();
+			status.lastAttemptAt.getTime() >= status.lastRefreshedAt.getTime();
 
 		if (status.lastResult === "error" || newerFailedAttempt) {
 			items.push({

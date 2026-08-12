@@ -75,6 +75,25 @@ describe("collectTautulliCacheHealth", () => {
 		expect(item?.detail).not.toMatch(/secret|alice|Private Show|apiKey|raw response/i);
 	});
 
+	it("reports a failed attempt recorded at the same timestamp as its successful generation", async () => {
+		const publishedAt = new Date();
+		const app = makeApp([
+			status({
+				lastRefreshedAt: publishedAt,
+				lastAttemptAt: publishedAt,
+				lastAttemptResult: "error",
+			}),
+		]);
+
+		const [item] = await collectTautulliCacheHealth(app, "user-1", log);
+
+		expect(item).toMatchObject({
+			id: "tautulli-cache-failure-tautulli-1",
+			title: "Tautulli cache refresh failed",
+		});
+		expect(item?.detail).toContain("last successful cache generation is still available");
+	});
+
 	it("reports stale Tautulli data with an entity-keyed id and skips disabled instances", async () => {
 		const stale = status({
 			id: "old-status-row",
