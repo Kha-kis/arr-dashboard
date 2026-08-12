@@ -345,3 +345,38 @@ describe("runQuiTorrentStateSync", () => {
 		});
 	});
 });
+
+describe("runQuiTorrentStateSync incomplete inventory compatibility", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("updates positive state from an incomplete inventory but never clears an absent cached state", async () => {
+		const app = makeApp();
+		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);
+		mockListQuiInstances.mockResolvedValue([
+			{ id: "qui-1", userId: "user-1", label: "main", baseUrl: "http://qui" },
+		]);
+		mockCreateQuiClient.mockReturnValue({
+			listTorrentInventory: vi.fn().mockResolvedValue({
+				torrents: [{ hash: "AAAA", state: "uploading", ratio: 1.5 }],
+				complete: false,
+			}),
+		});
+		app.prisma.libraryCache.findMany.mockResolvedValue([{ id: "row-bbbb", infoHash: "bbbb" }]);
+
+		const result = await runQuiTorrentStateSync(app);
+
+		expect(result.torrentsSeen).toBe(1);
+		expect(app.__updateMany).toHaveBeenCalledWith({
+			where: { infoHash: "aaaa", instance: { userId: "user-1" } },
+			data: expect.objectContaining({ torrentState: "seeding" }),
+		});
+		expect(
+			app.__updateMany.mock.calls.some(
+				(call: [{ where: Record<string, unknown> }]) =>
+					(call[0]?.where as { id?: { in?: unknown } })?.id?.in !== undefined,
+			),
+		).toBe(false);
+	});
+});

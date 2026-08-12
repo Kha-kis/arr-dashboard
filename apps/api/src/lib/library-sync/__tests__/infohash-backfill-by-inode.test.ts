@@ -35,19 +35,24 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // return whatever we've staged via `stagedStats` / `stagedDirs`.
 vi.mock("node:fs/promises", () => ({
 	stat: vi.fn(async (path: string) => {
-		const info = stagedStats.get(path);
+		const sequence = stagedStatSequences.get(path);
+		const info = sequence && sequence.length > 0 ? sequence.shift() : stagedStats.get(path);
 		if (!info) {
 			const err = new Error(`ENOENT: no such file '${path}'`);
 			(err as NodeJS.ErrnoException).code = "ENOENT";
 			throw err;
 		}
-		return {
-			dev: info.dev,
-			ino: info.ino,
-			nlink: info.nlink,
-			isFile: () => info.type === "file",
-			isDirectory: () => info.type === "directory",
-		};
+		return makeMockStat(info.symlinkTarget ?? info, false);
+	}),
+	lstat: vi.fn(async (path: string) => {
+		const sequence = stagedStatSequences.get(path);
+		const info = sequence && sequence.length > 0 ? sequence.shift() : stagedStats.get(path);
+		if (!info) {
+			const err = new Error(`ENOENT: no such file '${path}'`);
+			(err as NodeJS.ErrnoException).code = "ENOENT";
+			throw err;
+		}
+		return makeMockStat(info, true);
 	}),
 	readdir: vi.fn(async (path: string, _opts?: unknown) => {
 		const children = stagedDirs.get(path);
@@ -67,7 +72,7 @@ vi.mock("node:fs/promises", () => ({
 			path: child.parentPath, // back-compat alias
 			isFile: () => child.type === "file",
 			isDirectory: () => child.type === "directory",
-			isSymbolicLink: () => false,
+			isSymbolicLink: () => child.type === "symlink",
 			isBlockDevice: () => false,
 			isCharacterDevice: () => false,
 			isFIFO: () => false,
@@ -80,24 +85,43 @@ interface StagedStat {
 	dev: number;
 	ino: number;
 	nlink: number;
-	type: "file" | "directory";
+	type: "file" | "directory" | "symlink";
+	ctimeMs?: number;
+	mtimeMs?: number;
+	symlinkTarget?: Omit<StagedStat, "symlinkTarget">;
 }
 interface StagedChild {
 	name: string;
 	parentPath: string;
-	type: "file" | "directory";
+	type: "file" | "directory" | "symlink";
 }
 
 const stagedStats = new Map<string, StagedStat>();
+const stagedStatSequences = new Map<string, StagedStat[]>();
 const stagedDirs = new Map<string, StagedChild[]>();
+
+function makeMockStat(info: StagedStat, includeLinkType: boolean) {
+	return {
+		dev: info.dev,
+		ino: info.ino,
+		nlink: info.nlink,
+		ctimeMs: info.ctimeMs ?? 1,
+		mtimeMs: info.mtimeMs ?? 1,
+		isFile: () => info.type === "file",
+		isDirectory: () => info.type === "directory",
+		isSymbolicLink: () => includeLinkType && info.type === "symlink",
+	};
+}
 
 import {
 	__testOnly,
 	applyPathRewrite,
 	buildFileIdIndex,
+	buildFreshCompleteFileIdIndex,
 	deserializeFileIdIndex,
 	type FileIdIndex,
 	getAllHashesForFileId,
+	getAllHashesForFileIdComplete,
 	matchLibraryByFileId,
 	serializeFileIdIndex,
 } from "../infohash-backfill-by-inode.js";
@@ -180,9 +204,14 @@ const QUI_INSTANCE = { id: "qui-1", label: "qui-1", pathPrefix: null as string |
 
 beforeEach(() => {
 	stagedStats.clear();
+	stagedStatSequences.clear();
 	stagedDirs.clear();
 	__testOnly.clearCache();
 });
+
+function stageStatSequence(path: string, values: StagedStat[]): void {
+	stagedStatSequences.set(path, [...values]);
+}
 
 describe("applyPathRewrite", () => {
 	it("returns input unchanged when pathPrefix is null or empty", () => {
@@ -403,6 +432,145 @@ describe("buildFileIdIndex — caching", () => {
 		__testOnly.clearCache();
 		await buildFileIdIndex(client as never, QUI_INSTANCE);
 		expect(client.listAllTorrents).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe("destructive inode proof", () => {
+	it("builds a fresh complete snapshot, includes single-link content, and resolves every hash", async () => {
+		stageFile("/data/torrents/Foo.mkv", 100, 42, 1);
+		stageFile("/library/Foo.mkv", 100, 42, 1);
+		const client = {
+			listAllTorrents: vi
+				.fn()
+				.mockResolvedValueOnce([
+					makeQuiTorrent({ hash: "one", name: "Foo.mkv", savePath: "/data/torrents" }),
+					makeQuiTorrent({ hash: "two", name: "Foo.mkv", savePath: "/data/torrents" }),
+				])
+				.mockResolvedValueOnce([
+					makeQuiTorrent({ hash: "one", name: "Foo.mkv", savePath: "/data/torrents" }),
+					makeQuiTorrent({ hash: "two", name: "Foo.mkv", savePath: "/data/torrents" }),
+				]),
+		};
+
+		const index = await buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE);
+		const resolution = await getAllHashesForFileIdComplete("/library/Foo.mkv", index);
+
+		expect(client.listAllTorrents).toHaveBeenNthCalledWith(1, { requireComplete: true });
+		expect(client.listAllTorrents).toHaveBeenNthCalledWith(2, { requireComplete: true });
+		expect(index.byFileId.get("100:42")).toEqual(new Set(["one", "two"]));
+		expect(resolution).toEqual({ hashes: ["one", "two"], complete: true });
+	});
+
+	it("rejects unreadable torrent paths and symlinked directory entries from fresh proof", async () => {
+		const unreadable = {
+			listAllTorrents: vi
+				.fn()
+				.mockResolvedValue([
+					makeQuiTorrent({ hash: "missing", name: "Gone.mkv", savePath: "/missing" }),
+				]),
+		};
+		await expect(buildFreshCompleteFileIdIndex(unreadable as never, QUI_INSTANCE)).rejects.toThrow(
+			/incomplete|complete/i,
+		);
+
+		stageDir("/data/torrents/unsafe", 100, 50, []);
+		stagedDirs.set("/data/torrents/unsafe", [
+			{ name: "Foo.mkv", parentPath: "/data/torrents/unsafe", type: "symlink" },
+		]);
+		const symlinked = {
+			listAllTorrents: vi
+				.fn()
+				.mockResolvedValue([
+					makeQuiTorrent({ hash: "symlink", name: "unsafe", savePath: "/data/torrents" }),
+				]),
+		};
+		await expect(buildFreshCompleteFileIdIndex(symlinked as never, QUI_INSTANCE)).rejects.toThrow(
+			/incomplete|complete/i,
+		);
+	});
+
+	it("rejects a qUI content-root symlink even when its target is a regular file", async () => {
+		stagedStats.set("/data/torrents/Foo.mkv", {
+			dev: 100,
+			ino: 7,
+			nlink: 1,
+			type: "symlink",
+			symlinkTarget: { dev: 100, ino: 42, nlink: 1, type: "file" },
+		});
+		const client = {
+			listAllTorrents: vi
+				.fn()
+				.mockResolvedValue([
+					makeQuiTorrent({ hash: "symlink", name: "Foo.mkv", savePath: "/data/torrents" }),
+				]),
+		};
+
+		await expect(buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE)).rejects.toThrow(
+			/incomplete|complete/i,
+		);
+	});
+
+	it("rejects a qUI inventory or filesystem marker that changes while fresh proof is built", async () => {
+		stageStatSequence("/data/torrents/Foo.mkv", [
+			{ dev: 100, ino: 42, nlink: 2, type: "file", ctimeMs: 1, mtimeMs: 1 },
+			{ dev: 100, ino: 42, nlink: 2, type: "file", ctimeMs: 2, mtimeMs: 1 },
+			{ dev: 100, ino: 42, nlink: 2, type: "file", ctimeMs: 3, mtimeMs: 1 },
+			{ dev: 100, ino: 42, nlink: 2, type: "file", ctimeMs: 4, mtimeMs: 1 },
+		]);
+		const changedFileSystem = {
+			listAllTorrents: vi
+				.fn()
+				.mockResolvedValue([
+					makeQuiTorrent({ hash: "one", name: "Foo.mkv", savePath: "/data/torrents" }),
+				]),
+		};
+		await expect(
+			buildFreshCompleteFileIdIndex(changedFileSystem as never, QUI_INSTANCE),
+		).rejects.toThrow(/stable/i);
+
+		stageFile("/data/torrents/Stable.mkv", 100, 99, 2);
+		const changedInventory = {
+			listAllTorrents: vi
+				.fn()
+				.mockResolvedValueOnce([
+					makeQuiTorrent({ hash: "one", name: "Stable.mkv", savePath: "/data/torrents" }),
+				])
+				.mockResolvedValueOnce([
+					makeQuiTorrent({ hash: "two", name: "Stable.mkv", savePath: "/data/torrents" }),
+				])
+				.mockResolvedValueOnce([
+					makeQuiTorrent({ hash: "three", name: "Stable.mkv", savePath: "/data/torrents" }),
+				])
+				.mockResolvedValue([
+					makeQuiTorrent({ hash: "four", name: "Stable.mkv", savePath: "/data/torrents" }),
+				]),
+		};
+		await expect(
+			buildFreshCompleteFileIdIndex(changedInventory as never, QUI_INSTANCE),
+		).rejects.toThrow(/stable/i);
+	});
+
+	it("fails closed when a target cannot be re-stat'd or has changed since the fresh snapshot", async () => {
+		const index: FileIdIndex = {
+			byFileId: new Map([["100:42", new Set(["one"])]]),
+			inodeMarkers: new Map([
+				["100:42", { dev: 100, ino: 42, nlink: 2, ctimeMs: 1, mtimeMs: 1, kind: "file" }],
+			]),
+			statted: 1,
+			skippedNoLinks: 0,
+			skippedUnstatable: 0,
+			incompleteDirectoryWalks: 0,
+			stabilityMarkers: new Map(),
+		};
+
+		await expect(getAllHashesForFileIdComplete("/missing.mkv", index)).rejects.toThrow(/stat/i);
+		stageFile("/library/Replaced.mkv", 100, 42, 2);
+		stageStatSequence("/library/Replaced.mkv", [
+			{ dev: 100, ino: 42, nlink: 2, type: "file", ctimeMs: 2, mtimeMs: 1 },
+		]);
+		await expect(getAllHashesForFileIdComplete("/library/Replaced.mkv", index)).rejects.toThrow(
+			/changed/i,
+		);
 	});
 });
 

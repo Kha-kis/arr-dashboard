@@ -124,6 +124,7 @@ export async function runQuiTorrentStateSync(
 		// stale-state cleanup for every user that runs after them in this tick,
 		// leaving deleted torrents showing as still-seeding indefinitely.
 		let userErrors = 0;
+		let userInventoryComplete = true;
 
 		for (const instance of instances) {
 			result.instancesScanned++;
@@ -132,7 +133,16 @@ export async function runQuiTorrentStateSync(
 				const client = createQuiClient(app, instance);
 				// Single qui call returns torrents across every qBit instance behind
 				// this qui — exactly what we need for hash-based correlation.
-				const torrents = await client.listAllTorrents();
+				// The concrete qUI client always exposes an inventory marker. Keep
+				// the fallback for older test and plugin doubles that only model the
+				// legacy read-only helper; production absence is never inferred from
+				// that fallback because createQuiClient supplies the marker.
+				const inventory =
+					typeof (client as Partial<typeof client>).listTorrentInventory === "function"
+						? await client.listTorrentInventory()
+						: { torrents: await client.listAllTorrents(), complete: true };
+				const torrents = inventory.torrents;
+				if (!inventory.complete) userInventoryComplete = false;
 				result.torrentsSeen += torrents.length;
 				userTorrentsSeen += torrents.length;
 
@@ -199,10 +209,10 @@ export async function runQuiTorrentStateSync(
 		// torrents and would over-clear. Use per-user `userErrors`, not the
 		// global `result.errors`, otherwise one user's failure would suppress
 		// every other user's cleanup.
-		if (userErrors > 0) {
+		if (userErrors > 0 || !userInventoryComplete) {
 			log.info(
-				{ userId, userErrors, seenHashes: seenHashesThisRun.size },
-				"qui torrent-state sync: skipping stale-state cleanup for user (instance errors → incomplete view, over-clearing risk)",
+				{ userId, userErrors, userInventoryComplete, seenHashes: seenHashesThisRun.size },
+				"qui torrent-state sync: skipping stale-state cleanup for user (qUI inventory incomplete, over-clearing risk)",
 			);
 		} else if (seenHashesThisRun.size === 0) {
 			log.debug(
