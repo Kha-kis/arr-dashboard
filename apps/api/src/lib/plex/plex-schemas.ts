@@ -223,21 +223,27 @@ export const plexSessionsResponseSchema = z.looseObject({
 	}),
 });
 
-/** /library/metadata/{id}/allLeaves endpoint */
+const plexEpisodeMetadataSchema = z.looseObject({
+	ratingKey: z.string(),
+	title: z.string().optional().default(""),
+	parentIndex: z.number().optional(),
+	index: z.number().optional(),
+	viewCount: z.number().optional(),
+	lastViewedAt: z.number().optional(),
+});
+
+/** Paginated /library/metadata/{id}/allLeaves endpoint. */
+export const plexEpisodeLeavesResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		...plexSafetyPaginationFields,
+		Metadata: z.array(plexEpisodeMetadataSchema).optional(),
+	}),
+});
+
+/** Exact /library/metadata/{id} episode lookup. */
 export const plexEpisodesResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
-		Metadata: z
-			.array(
-				z.looseObject({
-					ratingKey: z.string(),
-					title: z.string().optional().default(""),
-					parentIndex: z.number().optional(),
-					index: z.number().optional(),
-					viewCount: z.number().optional(),
-					lastViewedAt: z.number().optional(),
-				}),
-			)
-			.optional(),
+		Metadata: z.array(plexEpisodeMetadataSchema).optional(),
 	}),
 });
 

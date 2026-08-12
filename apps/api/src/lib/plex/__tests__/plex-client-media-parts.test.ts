@@ -375,6 +375,83 @@ describe("PlexClient.getSeriesEpisodeMediaPartsByTvdbId", () => {
 	});
 });
 
+describe("PlexClient.getEpisodes", () => {
+	it("pages every episode before returning the show watch inventory", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						MediaContainer: {
+							offset: 0,
+							size: 1,
+							totalSize: 2,
+							Metadata: [
+								{
+									ratingKey: "episode-1",
+									title: "Episode 1",
+									parentIndex: 1,
+									index: 1,
+									viewCount: 1,
+								},
+							],
+						},
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			)
+			.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						MediaContainer: {
+							offset: 1,
+							size: 1,
+							totalSize: 2,
+							Metadata: [
+								{
+									ratingKey: "episode-2",
+									title: "Episode 2",
+									parentIndex: 1,
+									index: 2,
+									viewCount: 3,
+								},
+							],
+						},
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex:32400", "token", log);
+
+		await expect(client.getEpisodes("show-1")).resolves.toEqual([
+			{
+				ratingKey: "episode-1",
+				title: "Episode 1",
+				seasonNumber: 1,
+				episodeNumber: 1,
+				viewCount: 1,
+				lastViewedAt: undefined,
+			},
+			{
+				ratingKey: "episode-2",
+				title: "Episode 2",
+				seasonNumber: 1,
+				episodeNumber: 2,
+				viewCount: 3,
+				lastViewedAt: undefined,
+			},
+		]);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(
+			new URL(fetchMock.mock.calls[0]![0] as string).searchParams.get("X-Plex-Container-Start"),
+		).toBe("0");
+		expect(
+			new URL(fetchMock.mock.calls[1]![0] as string).searchParams.get("X-Plex-Container-Start"),
+		).toBe("1");
+	});
+});
+
 describe("PlexClient.getEpisodeWatchCount", () => {
 	it("reads the current count for the exact episode rating key", async () => {
 		const fetchMock = vi.fn().mockResolvedValue(

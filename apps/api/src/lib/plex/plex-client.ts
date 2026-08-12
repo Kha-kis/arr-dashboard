@@ -13,6 +13,7 @@ import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
 	plexAccountsResponseSchema,
+	plexEpisodeLeavesResponseSchema,
 	plexEpisodeMediaItemsResponseSchema,
 	plexEpisodesResponseSchema,
 	plexHistoryResponseSchema,
@@ -495,11 +496,13 @@ export class PlexClient {
 	 * Get all episodes for a show (all leaves).
 	 */
 	async getEpisodes(showRatingKey: string): Promise<PlexEpisodeItem[]> {
-		const data = await this.request(`/library/metadata/${showRatingKey}/allLeaves`, {
-			schema: plexEpisodesResponseSchema,
-		});
+		const episodes = await this.getCompleteSafetyMetadata(
+			`/library/metadata/${encodeURIComponent(showRatingKey)}/allLeaves`,
+			plexEpisodeLeavesResponseSchema,
+			(item) => item.ratingKey,
+		);
 
-		return (data.MediaContainer.Metadata ?? []).map((m) => ({
+		return episodes.map((m) => ({
 			ratingKey: m.ratingKey,
 			title: m.title,
 			seasonNumber: m.parentIndex ?? 0,
