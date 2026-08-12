@@ -218,7 +218,8 @@ export interface CacheHealthItem {
 		| "emby"
 		| "emby_episode";
 	lastRefreshedAt: string;
-	lastResult: "success" | "error";
+	/** `partial` means a bounded refresh persisted only a subset of its intended coverage. */
+	lastResult: "success" | "partial" | "error";
 	lastErrorMessage: string | null;
 	itemCount: number;
 	isStale: boolean;

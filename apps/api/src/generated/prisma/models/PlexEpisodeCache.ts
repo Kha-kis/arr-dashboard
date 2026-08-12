@@ -30,12 +30,14 @@ export type PlexEpisodeCacheAvgAggregateOutputType = {
   showTmdbId: number | null
   seasonNumber: number | null
   episodeNumber: number | null
+  watchCount: number | null
 }
 
 export type PlexEpisodeCacheSumAggregateOutputType = {
   showTmdbId: number | null
   seasonNumber: number | null
   episodeNumber: number | null
+  watchCount: number | null
 }
 
 export type PlexEpisodeCacheMinAggregateOutputType = {
@@ -49,6 +51,9 @@ export type PlexEpisodeCacheMinAggregateOutputType = {
   watched: boolean | null
   watchedByUsers: string | null
   lastWatchedAt: Date | null
+  watchCount: number | null
+  refreshedAt: Date | null
+  sourceFingerprint: string | null
 }
 
 export type PlexEpisodeCacheMaxAggregateOutputType = {
@@ -62,6 +67,9 @@ export type PlexEpisodeCacheMaxAggregateOutputType = {
   watched: boolean | null
   watchedByUsers: string | null
   lastWatchedAt: Date | null
+  watchCount: number | null
+  refreshedAt: Date | null
+  sourceFingerprint: string | null
 }
 
 export type PlexEpisodeCacheCountAggregateOutputType = {
@@ -75,6 +83,9 @@ export type PlexEpisodeCacheCountAggregateOutputType = {
   watched: number
   watchedByUsers: number
   lastWatchedAt: number
+  watchCount: number
+  refreshedAt: number
+  sourceFingerprint: number
   _all: number
 }
 
@@ -83,12 +94,14 @@ export type PlexEpisodeCacheAvgAggregateInputType = {
   showTmdbId?: true
   seasonNumber?: true
   episodeNumber?: true
+  watchCount?: true
 }
 
 export type PlexEpisodeCacheSumAggregateInputType = {
   showTmdbId?: true
   seasonNumber?: true
   episodeNumber?: true
+  watchCount?: true
 }
 
 export type PlexEpisodeCacheMinAggregateInputType = {
@@ -102,6 +115,9 @@ export type PlexEpisodeCacheMinAggregateInputType = {
   watched?: true
   watchedByUsers?: true
   lastWatchedAt?: true
+  watchCount?: true
+  refreshedAt?: true
+  sourceFingerprint?: true
 }
 
 export type PlexEpisodeCacheMaxAggregateInputType = {
@@ -115,6 +131,9 @@ export type PlexEpisodeCacheMaxAggregateInputType = {
   watched?: true
   watchedByUsers?: true
   lastWatchedAt?: true
+  watchCount?: true
+  refreshedAt?: true
+  sourceFingerprint?: true
 }
 
 export type PlexEpisodeCacheCountAggregateInputType = {
@@ -128,6 +147,9 @@ export type PlexEpisodeCacheCountAggregateInputType = {
   watched?: true
   watchedByUsers?: true
   lastWatchedAt?: true
+  watchCount?: true
+  refreshedAt?: true
+  sourceFingerprint?: true
   _all?: true
 }
 
@@ -228,6 +250,9 @@ export type PlexEpisodeCacheGroupByOutputType = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt: Date | null
+  watchCount: number | null
+  refreshedAt: Date | null
+  sourceFingerprint: string | null
   _count: PlexEpisodeCacheCountAggregateOutputType | null
   _avg: PlexEpisodeCacheAvgAggregateOutputType | null
   _sum: PlexEpisodeCacheSumAggregateOutputType | null
@@ -264,6 +289,9 @@ export type PlexEpisodeCacheWhereInput = {
   watched?: Prisma.BoolFilter<"PlexEpisodeCache"> | boolean
   watchedByUsers?: Prisma.StringFilter<"PlexEpisodeCache"> | string
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"PlexEpisodeCache"> | Date | string | null
+  watchCount?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
+  refreshedAt?: Prisma.DateTimeNullableFilter<"PlexEpisodeCache"> | Date | string | null
+  sourceFingerprint?: Prisma.StringNullableFilter<"PlexEpisodeCache"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }
 
@@ -278,6 +306,9 @@ export type PlexEpisodeCacheOrderByWithRelationInput = {
   watched?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  watchCount?: Prisma.SortOrderInput | Prisma.SortOrder
+  refreshedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  sourceFingerprint?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
 }
 
@@ -296,6 +327,9 @@ export type PlexEpisodeCacheWhereUniqueInput = Prisma.AtLeast<{
   watched?: Prisma.BoolFilter<"PlexEpisodeCache"> | boolean
   watchedByUsers?: Prisma.StringFilter<"PlexEpisodeCache"> | string
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"PlexEpisodeCache"> | Date | string | null
+  watchCount?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
+  refreshedAt?: Prisma.DateTimeNullableFilter<"PlexEpisodeCache"> | Date | string | null
+  sourceFingerprint?: Prisma.StringNullableFilter<"PlexEpisodeCache"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }, "id" | "instanceId_showTmdbId_seasonNumber_episodeNumber">
 
@@ -310,6 +344,9 @@ export type PlexEpisodeCacheOrderByWithAggregationInput = {
   watched?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  watchCount?: Prisma.SortOrderInput | Prisma.SortOrder
+  refreshedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  sourceFingerprint?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.PlexEpisodeCacheCountOrderByAggregateInput
   _avg?: Prisma.PlexEpisodeCacheAvgOrderByAggregateInput
   _max?: Prisma.PlexEpisodeCacheMaxOrderByAggregateInput
@@ -331,6 +368,9 @@ export type PlexEpisodeCacheScalarWhereWithAggregatesInput = {
   watched?: Prisma.BoolWithAggregatesFilter<"PlexEpisodeCache"> | boolean
   watchedByUsers?: Prisma.StringWithAggregatesFilter<"PlexEpisodeCache"> | string
   lastWatchedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlexEpisodeCache"> | Date | string | null
+  watchCount?: Prisma.IntNullableWithAggregatesFilter<"PlexEpisodeCache"> | number | null
+  refreshedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlexEpisodeCache"> | Date | string | null
+  sourceFingerprint?: Prisma.StringNullableWithAggregatesFilter<"PlexEpisodeCache"> | string | null
 }
 
 export type PlexEpisodeCacheCreateInput = {
@@ -343,6 +383,9 @@ export type PlexEpisodeCacheCreateInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  watchCount?: number | null
+  refreshedAt?: Date | string | null
+  sourceFingerprint?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutPlexEpisodeCachesInput
 }
 
@@ -357,6 +400,9 @@ export type PlexEpisodeCacheUncheckedCreateInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  watchCount?: number | null
+  refreshedAt?: Date | string | null
+  sourceFingerprint?: string | null
 }
 
 export type PlexEpisodeCacheUpdateInput = {
@@ -369,6 +415,9 @@ export type PlexEpisodeCacheUpdateInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutPlexEpisodeCachesNestedInput
 }
 
@@ -383,6 +432,9 @@ export type PlexEpisodeCacheUncheckedUpdateInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PlexEpisodeCacheCreateManyInput = {
@@ -396,6 +448,9 @@ export type PlexEpisodeCacheCreateManyInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  watchCount?: number | null
+  refreshedAt?: Date | string | null
+  sourceFingerprint?: string | null
 }
 
 export type PlexEpisodeCacheUpdateManyMutationInput = {
@@ -408,6 +463,9 @@ export type PlexEpisodeCacheUpdateManyMutationInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PlexEpisodeCacheUncheckedUpdateManyInput = {
@@ -421,6 +479,9 @@ export type PlexEpisodeCacheUncheckedUpdateManyInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PlexEpisodeCacheListRelationFilter = {
@@ -451,12 +512,16 @@ export type PlexEpisodeCacheCountOrderByAggregateInput = {
   watched?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrder
+  watchCount?: Prisma.SortOrder
+  refreshedAt?: Prisma.SortOrder
+  sourceFingerprint?: Prisma.SortOrder
 }
 
 export type PlexEpisodeCacheAvgOrderByAggregateInput = {
   showTmdbId?: Prisma.SortOrder
   seasonNumber?: Prisma.SortOrder
   episodeNumber?: Prisma.SortOrder
+  watchCount?: Prisma.SortOrder
 }
 
 export type PlexEpisodeCacheMaxOrderByAggregateInput = {
@@ -470,6 +535,9 @@ export type PlexEpisodeCacheMaxOrderByAggregateInput = {
   watched?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrder
+  watchCount?: Prisma.SortOrder
+  refreshedAt?: Prisma.SortOrder
+  sourceFingerprint?: Prisma.SortOrder
 }
 
 export type PlexEpisodeCacheMinOrderByAggregateInput = {
@@ -483,12 +551,16 @@ export type PlexEpisodeCacheMinOrderByAggregateInput = {
   watched?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrder
+  watchCount?: Prisma.SortOrder
+  refreshedAt?: Prisma.SortOrder
+  sourceFingerprint?: Prisma.SortOrder
 }
 
 export type PlexEpisodeCacheSumOrderByAggregateInput = {
   showTmdbId?: Prisma.SortOrder
   seasonNumber?: Prisma.SortOrder
   episodeNumber?: Prisma.SortOrder
+  watchCount?: Prisma.SortOrder
 }
 
 export type PlexEpisodeCacheCreateNestedManyWithoutInstanceInput = {
@@ -543,6 +615,9 @@ export type PlexEpisodeCacheCreateWithoutInstanceInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  watchCount?: number | null
+  refreshedAt?: Date | string | null
+  sourceFingerprint?: string | null
 }
 
 export type PlexEpisodeCacheUncheckedCreateWithoutInstanceInput = {
@@ -555,6 +630,9 @@ export type PlexEpisodeCacheUncheckedCreateWithoutInstanceInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  watchCount?: number | null
+  refreshedAt?: Date | string | null
+  sourceFingerprint?: string | null
 }
 
 export type PlexEpisodeCacheCreateOrConnectWithoutInstanceInput = {
@@ -596,6 +674,9 @@ export type PlexEpisodeCacheScalarWhereInput = {
   watched?: Prisma.BoolFilter<"PlexEpisodeCache"> | boolean
   watchedByUsers?: Prisma.StringFilter<"PlexEpisodeCache"> | string
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"PlexEpisodeCache"> | Date | string | null
+  watchCount?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
+  refreshedAt?: Prisma.DateTimeNullableFilter<"PlexEpisodeCache"> | Date | string | null
+  sourceFingerprint?: Prisma.StringNullableFilter<"PlexEpisodeCache"> | string | null
 }
 
 export type PlexEpisodeCacheCreateManyInstanceInput = {
@@ -608,6 +689,9 @@ export type PlexEpisodeCacheCreateManyInstanceInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  watchCount?: number | null
+  refreshedAt?: Date | string | null
+  sourceFingerprint?: string | null
 }
 
 export type PlexEpisodeCacheUpdateWithoutInstanceInput = {
@@ -620,6 +704,9 @@ export type PlexEpisodeCacheUpdateWithoutInstanceInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PlexEpisodeCacheUncheckedUpdateWithoutInstanceInput = {
@@ -632,6 +719,9 @@ export type PlexEpisodeCacheUncheckedUpdateWithoutInstanceInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceInput = {
@@ -644,6 +734,9 @@ export type PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 
@@ -659,6 +752,9 @@ export type PlexEpisodeCacheSelect<ExtArgs extends runtime.Types.Extensions.Inte
   watched?: boolean
   watchedByUsers?: boolean
   lastWatchedAt?: boolean
+  watchCount?: boolean
+  refreshedAt?: boolean
+  sourceFingerprint?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["plexEpisodeCache"]>
 
@@ -673,6 +769,9 @@ export type PlexEpisodeCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Ty
   watched?: boolean
   watchedByUsers?: boolean
   lastWatchedAt?: boolean
+  watchCount?: boolean
+  refreshedAt?: boolean
+  sourceFingerprint?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["plexEpisodeCache"]>
 
@@ -687,6 +786,9 @@ export type PlexEpisodeCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Ty
   watched?: boolean
   watchedByUsers?: boolean
   lastWatchedAt?: boolean
+  watchCount?: boolean
+  refreshedAt?: boolean
+  sourceFingerprint?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["plexEpisodeCache"]>
 
@@ -701,9 +803,12 @@ export type PlexEpisodeCacheSelectScalar = {
   watched?: boolean
   watchedByUsers?: boolean
   lastWatchedAt?: boolean
+  watchCount?: boolean
+  refreshedAt?: boolean
+  sourceFingerprint?: boolean
 }
 
-export type PlexEpisodeCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "showTmdbId" | "seasonNumber" | "episodeNumber" | "ratingKey" | "title" | "watched" | "watchedByUsers" | "lastWatchedAt", ExtArgs["result"]["plexEpisodeCache"]>
+export type PlexEpisodeCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "showTmdbId" | "seasonNumber" | "episodeNumber" | "ratingKey" | "title" | "watched" | "watchedByUsers" | "lastWatchedAt" | "watchCount" | "refreshedAt" | "sourceFingerprint", ExtArgs["result"]["plexEpisodeCache"]>
 export type PlexEpisodeCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -730,6 +835,18 @@ export type $PlexEpisodeCachePayload<ExtArgs extends runtime.Types.Extensions.In
     watched: boolean
     watchedByUsers: string
     lastWatchedAt: Date | null
+    /**
+     * Current episode viewCount for the configured Plex account. History is
+     * retained separately for attribution and never authorizes cleanup.
+     * Null means this row predates count-aware refresh.
+     */
+    watchCount: number | null
+    refreshedAt: Date | null
+    /**
+     * SHA-256 digest of the Plex connection snapshot that produced this row.
+     * Null means the row predates connection-bound refresh evidence.
+     */
+    sourceFingerprint: string | null
   }, ExtArgs["result"]["plexEpisodeCache"]>
   composites: {}
 }
@@ -1164,6 +1281,9 @@ export interface PlexEpisodeCacheFieldRefs {
   readonly watched: Prisma.FieldRef<"PlexEpisodeCache", 'Boolean'>
   readonly watchedByUsers: Prisma.FieldRef<"PlexEpisodeCache", 'String'>
   readonly lastWatchedAt: Prisma.FieldRef<"PlexEpisodeCache", 'DateTime'>
+  readonly watchCount: Prisma.FieldRef<"PlexEpisodeCache", 'Int'>
+  readonly refreshedAt: Prisma.FieldRef<"PlexEpisodeCache", 'DateTime'>
+  readonly sourceFingerprint: Prisma.FieldRef<"PlexEpisodeCache", 'String'>
 }
     
 
