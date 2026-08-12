@@ -28,7 +28,13 @@ export interface TautulliHistorySnapshot {
 	recordsFiltered: number;
 	recordsTotal: number;
 	complete: boolean;
-	incompleteReason?: "page_limit_reached" | "upstream_total_changed" | "empty_page";
+	incompleteReason?:
+		| "page_limit_reached"
+		| "upstream_total_changed"
+		| "empty_page"
+		| "missing_row_id"
+		| "duplicate_row_id"
+		| "unstable_row_id";
 }
 
 export interface TautulliHomeStatRow {

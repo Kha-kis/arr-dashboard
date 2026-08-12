@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TautulliClient } from "./tautulli-client.js";
+import { createTautulliClient, TautulliClient } from "./tautulli-client.js";
 
 const warn = vi.fn();
 const log = { warn, error: vi.fn(), info: vi.fn(), debug: vi.fn() } as unknown as FastifyBaseLogger;
@@ -48,6 +48,22 @@ describe("TautulliClient", () => {
 		expect(new Headers(request.headers).get("authorization")).toBe("Basic cHJveHk6c2VjcmV0");
 	});
 
+	it("rejects a non-Tautulli instance before decrypting its credentials", () => {
+		const decrypt = vi.fn();
+		const nonTautulliInstance = {
+			id: "plex-instance",
+			baseUrl: "http://plex.example",
+			encryptedApiKey: "encrypted-plex-key",
+			encryptionIv: "plex-iv",
+			service: "PLEX",
+		};
+
+		expect(() =>
+			createTautulliClient({ decrypt } as never, nonTautulliInstance as never, log),
+		).toThrow("Instance is not a Tautulli service");
+		expect(decrypt).not.toHaveBeenCalled();
+	});
+
 	it("returns explicit incomplete pagination metadata when its bounded history scan stops early", async () => {
 		const fetchMock = vi.fn().mockResolvedValue(success(historyPage(0, 2)));
 		vi.stubGlobal("fetch", fetchMock);
@@ -75,6 +91,36 @@ describe("TautulliClient", () => {
 			recordsFiltered: 3,
 			recordsTotal: 3,
 			complete: true,
+		});
+	});
+
+	it("marks a history snapshot incomplete when an upstream page repeats row IDs", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(success(historyPage(0, 2)))
+			.mockResolvedValueOnce(success(historyPage(0, 2)));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new TautulliClient("http://tautulli.example", "api-key-value", log);
+
+		await expect(client.getHistorySnapshot({ pageSize: 2, maxPages: 2 })).resolves.toMatchObject({
+			items: expect.arrayContaining([expect.objectContaining({ row_id: 1 })]),
+			complete: false,
+			incompleteReason: "duplicate_row_id",
+		});
+	});
+
+	it("marks a history snapshot incomplete when an upstream row has no stable ID", async () => {
+		const page = historyPage(0, 2);
+		const missingIdPage = {
+			...page,
+			data: page.data.map((item, index) => (index === 1 ? { ...item, row_id: undefined } : item)),
+		};
+		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(success(missingIdPage)));
+		const client = new TautulliClient("http://tautulli.example", "api-key-value", log);
+
+		await expect(client.getHistorySnapshot({ pageSize: 2, maxPages: 1 })).resolves.toMatchObject({
+			complete: false,
+			incompleteReason: "missing_row_id",
 		});
 	});
 

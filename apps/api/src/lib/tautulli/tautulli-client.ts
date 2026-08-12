@@ -85,6 +85,10 @@ export interface TautulliHistorySnapshotOptions {
 	section_id?: string;
 }
 
+export type TautulliClientInstanceData = Omit<ClientInstanceData, "service"> & {
+	service: "TAUTULLI";
+};
+
 export class TautulliClient {
 	private readonly baseUrl: string;
 	private readonly apiKey: string;
@@ -133,6 +137,8 @@ export class TautulliClient {
 		}
 
 		const items: TautulliHistoryItem[] = [];
+		const rowIds = new Set<number>();
+		let previousRowId: number | undefined;
 		let expectedFiltered: number | undefined;
 		let expectedTotal: number | undefined;
 		for (let page = 0; page < maxPages; page += 1) {
@@ -164,9 +170,49 @@ export class TautulliClient {
 			const recordsFiltered = expectedFiltered ?? data.recordsFiltered;
 			const recordsTotal = expectedTotal ?? data.recordsTotal;
 
-			items.push(...data.data);
-			if (items.length >= recordsFiltered) {
+			for (const item of data.data) {
+				if (item.row_id === undefined) {
+					return createTautulliHistorySnapshot(
+						items,
+						recordsFiltered,
+						recordsTotal,
+						false,
+						"missing_row_id",
+					);
+				}
+				if (rowIds.has(item.row_id)) {
+					return createTautulliHistorySnapshot(
+						items,
+						recordsFiltered,
+						recordsTotal,
+						false,
+						"duplicate_row_id",
+					);
+				}
+				if (previousRowId !== undefined && item.row_id < previousRowId) {
+					return createTautulliHistorySnapshot(
+						items,
+						recordsFiltered,
+						recordsTotal,
+						false,
+						"unstable_row_id",
+					);
+				}
+				rowIds.add(item.row_id);
+				previousRowId = item.row_id;
+				items.push(item);
+			}
+			if (items.length === recordsFiltered) {
 				return createTautulliHistorySnapshot(items, recordsFiltered, recordsTotal, true);
+			}
+			if (items.length > recordsFiltered) {
+				return createTautulliHistorySnapshot(
+					items,
+					recordsFiltered,
+					recordsTotal,
+					false,
+					"unstable_row_id",
+				);
 			}
 			if (data.data.length === 0) {
 				return createTautulliHistorySnapshot(
@@ -270,9 +316,12 @@ export class TautulliClient {
 
 export function createTautulliClient(
 	encryptor: Encryptor,
-	instance: ClientInstanceData,
+	instance: TautulliClientInstanceData,
 	log: FastifyBaseLogger,
 ): TautulliClient {
+	if (instance.service !== "TAUTULLI") {
+		throw new Error("Instance is not a Tautulli service");
+	}
 	const apiKey = encryptor.decrypt({
 		value: instance.encryptedApiKey,
 		iv: instance.encryptionIv,
