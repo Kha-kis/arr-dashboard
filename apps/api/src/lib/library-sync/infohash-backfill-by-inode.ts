@@ -816,18 +816,19 @@ function sameFileSystemMarker(marker: FileSystemMarker, info: StatInfo): boolean
 }
 
 function torrentInventoryFingerprint(torrents: QuiTorrent[]): string {
-	return torrents
-		.map((torrent) =>
-			[
-				torrent.instanceId ?? "",
-				torrent.hash.toLowerCase(),
-				torrent.name,
-				torrent.savePath,
-				torrent.size,
-			].join("\u0000"),
-		)
-		.sort()
-		.join("\u0001");
+	return JSON.stringify(
+		torrents
+			.map((torrent) =>
+				JSON.stringify([
+					torrent.instanceId ?? null,
+					torrent.hash.toLowerCase(),
+					torrent.name,
+					torrent.savePath,
+					torrent.size,
+				]),
+			)
+			.sort(),
+	);
 }
 
 function assertCompleteFileIdIndex(index: FileIdIndex): void {

@@ -554,6 +554,35 @@ describe("destructive inode proof", () => {
 		).rejects.toThrow(/stable/i);
 	});
 
+	it("does not let control characters collide in destructive inventory fingerprints", async () => {
+		const firstPath = "c/a\u0000b";
+		const secondPath = "b\u0000c/a";
+		stageFile(firstPath, 100, 42, 2);
+		stageFile(secondPath, 100, 43, 2);
+		const first = makeQuiTorrent({
+			hash: "same-hash",
+			name: "a\u0000b",
+			savePath: "c",
+		});
+		const second = makeQuiTorrent({
+			hash: "same-hash",
+			name: "a",
+			savePath: "b\u0000c",
+		});
+		const client = {
+			listAllTorrents: vi
+				.fn()
+				.mockResolvedValueOnce([first])
+				.mockResolvedValueOnce([second])
+				.mockResolvedValueOnce([first])
+				.mockResolvedValueOnce([second]),
+		};
+
+		await expect(buildFreshCompleteFileIdIndex(client as never, QUI_INSTANCE)).rejects.toThrow(
+			/stable/i,
+		);
+	});
+
 	it("bypasses cached backfill indexes and retries when a cross-seed appears during a fresh walk", async () => {
 		stageFile("/data/torrents/Foo.mkv", 100, 42, 3);
 		stageFile("/data/cross-seeds/Foo.mkv", 100, 42, 3);
