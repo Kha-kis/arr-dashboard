@@ -54,12 +54,28 @@ describe("serializeCriteriaDocumentToV0", () => {
 		expect(() => serializeCriteriaDocumentToV0(doc)).toThrow(V1SerializerError);
 	});
 
-	it("rejects a nested group (v1 is depth-1)", () => {
+	it("rejects a nested group because criteria v0 storage is flat", () => {
 		const doc: RuleDocument = {
 			version: 1,
 			root: { all: [{ any: [{ kind: "age", params: {} }] }] },
 		};
-		expect(() => serializeCriteriaDocumentToV0(doc)).toThrow(/depth-1/);
+		expect(() => serializeCriteriaDocumentToV0(doc)).toThrow(/nested group.*v0/i);
+	});
+
+	it("rejects a NOT root because recursive documents have no v0 representation", () => {
+		const doc: RuleDocument = {
+			version: 1,
+			root: { not: { kind: "age", params: {} } },
+		};
+		expect(() => serializeCriteriaDocumentToV0(doc)).toThrow(/NOT.*v0/i);
+	});
+
+	it("rejects a nested NOT instead of treating it as a flat condition", () => {
+		const doc: RuleDocument = {
+			version: 1,
+			root: { all: [{ not: { kind: "age", params: {} } }] },
+		};
+		expect(() => serializeCriteriaDocumentToV0(doc)).toThrow(/NOT.*v0/i);
 	});
 });
 
@@ -106,6 +122,19 @@ describe("serializeNotificationsDocumentToV0", () => {
 			},
 		};
 		expect(() => serializeNotificationsDocumentToV0(doc)).toThrow(/OR/);
+	});
+
+	it("rejects NOT because notification v0 conditions cannot represent it", () => {
+		const doc: RuleDocument = {
+			version: 1,
+			root: {
+				not: {
+					kind: "field_match",
+					params: { field: "title", operator: "contains", value: "4K" },
+				},
+			},
+		};
+		expect(() => serializeNotificationsDocumentToV0(doc)).toThrow(/NOT.*v0/i);
 	});
 
 	it("rejects a non-field_match predicate", () => {

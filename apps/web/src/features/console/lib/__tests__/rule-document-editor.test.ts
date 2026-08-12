@@ -14,6 +14,7 @@ import {
 	buildCriteriaDocument,
 	type CriteriaEditorState,
 	decomposeCriteriaDocument,
+	isCriteriaDocumentV0Editable,
 	toCriteriaV0Payload,
 	validateCriteriaEditor,
 } from "../rule-document-editor";
@@ -53,6 +54,30 @@ describe("buildCriteriaDocument", () => {
 });
 
 describe("decomposeCriteriaDocument", () => {
+	it("identifies recursive and NOT documents as read-only for the flat v0 editor", () => {
+		const recursive: RuleDocument = {
+			version: 1,
+			root: {
+				all: [
+					{ kind: "age", params: { operator: "older_than", days: 90 } },
+					{ not: { kind: "no_file", params: {} } },
+				],
+			},
+		};
+
+		expect(isCriteriaDocumentV0Editable(recursive)).toBe(false);
+		expect(() => decomposeCriteriaDocument(recursive)).toThrow(/recursive/i);
+	});
+
+	it("keeps a flat all/any document editable", () => {
+		const flat: RuleDocument = {
+			version: 1,
+			root: { any: [{ kind: "no_file", params: {} }] },
+		};
+
+		expect(isCriteriaDocumentV0Editable(flat)).toBe(true);
+	});
+
 	it("predicate root → single mode with one condition", () => {
 		const doc: RuleDocument = {
 			version: 1,

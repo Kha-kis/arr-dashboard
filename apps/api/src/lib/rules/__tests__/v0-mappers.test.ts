@@ -133,6 +133,75 @@ describe("mapCriteriaV0ToDocument — composites", () => {
 		expect(doc.root).toEqual({ all: [] });
 	});
 
+	it("parses a self-describing v1 document from composite conditions", () => {
+		const expression = {
+			version: 1,
+			root: {
+				not: {
+					all: [{ kind: "age", params: { operator: "older_than", days: 30 } }],
+				},
+			},
+		};
+		expect(
+			mapCriteriaV0ToDocument(
+				row({
+					ruleType: "composite",
+					parameters: "{}",
+					operator: null,
+					conditions: JSON.stringify(expression),
+				}),
+			),
+		).toEqual(expression);
+	});
+
+	it.each([
+		[
+			{
+				ruleType: "composite",
+				operator: "AND",
+				conditions: JSON.stringify({ version: 1, root: sizeCond }),
+			},
+			"operator",
+		],
+		[
+			{
+				ruleType: "age",
+				operator: null,
+				conditions: JSON.stringify({ version: 1, root: sizeCond }),
+			},
+			"ruleType",
+		],
+		[
+			{ ruleType: "composite", operator: null, conditions: JSON.stringify([sizeCond]) },
+			"v1 document",
+		],
+		[
+			{
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({ version: 1, root: { nope: [] } }),
+			},
+			"invalid",
+		],
+	])("rejects mixed or malformed v1 cleanup storage %#", (overrides, message) => {
+		expect(() => mapCriteriaV0ToDocument(row(overrides))).toThrow(message);
+	});
+
+	it("keeps a legacy leaf row with stray conditions on its original single-rule path", () => {
+		const doc = mapCriteriaV0ToDocument(
+			row({
+				ruleType: "age",
+				operator: null,
+				conditions: JSON.stringify([sizeCond]),
+			}),
+		);
+		expect(doc.root).toEqual({
+			kind: "age",
+			params: { field: "arrAddedAt", operator: "older_than", days: 365 },
+		});
+	});
+
 	it("leaf ruleType carrying operator+conditions maps as COMPOSITE — conditions win (review shape)", () => {
 		// Legacy evaluateRule keys the composite path on operator+conditions,
 		// ignoring the leaf ruleType/parameters entirely. The mapper must

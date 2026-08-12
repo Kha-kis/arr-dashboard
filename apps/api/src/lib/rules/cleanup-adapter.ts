@@ -44,7 +44,7 @@ import type {
 } from "../library-cleanup/types.js";
 import type { LibraryCleanupRule } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
-import { evaluateDocument, type PredicateEvaluator } from "./engine.js";
+import { evaluateDocument, type PredicateEvaluator, UNKNOWN } from "./engine.js";
 import { mapCriteriaV0ToDocument } from "./v0-mappers.js";
 
 /**
@@ -70,10 +70,12 @@ export function evaluateRuleViaEngine(
 
 	// Domain quirk guards (rule-level policy, deliberately NOT in the
 	// engine — see engine.ts header on empty-group semantics).
+	const isStoredV1Document =
+		rule.ruleType === "composite" && rule.operator === null && rule.conditions !== null;
 	if (rule.operator && rule.conditions) {
 		const conditions = safeJsonParse(rule.conditions) as unknown[] | null;
 		if (!conditions?.length) return null;
-	} else {
+	} else if (!isStoredV1Document) {
 		const params = safeJsonParse(rule.parameters) as Record<string, unknown> | null;
 		if (!params) return null;
 	}
@@ -86,8 +88,20 @@ export function evaluateRuleViaEngine(
 		return null;
 	}
 
-	const evalPredicate: PredicateEvaluator = (predicate) =>
-		evaluateSingleCondition(item, predicate.kind, predicate.params, ctx, plexLibFilter);
+	const evalPredicate: PredicateEvaluator = (predicate) => {
+		const reason = evaluateSingleCondition(
+			item,
+			predicate.kind,
+			predicate.params,
+			ctx,
+			plexLibFilter,
+		);
+		// Temporary Wave 3A bridge: the legacy evaluator collapses proven false
+		// and unavailable evidence to null. Recursive cleanup documents treat that
+		// null as unknown so NOT cannot create deletion authority. Task 3 replaces
+		// this bridge with evidence-aware true/false/unknown predicate results.
+		return reason ?? (isStoredV1Document ? UNKNOWN : null);
+	};
 
 	const result = evaluateDocument(doc, evalPredicate);
 	return result.matched

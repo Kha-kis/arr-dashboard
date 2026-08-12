@@ -17,6 +17,7 @@ import {
 	listUnavailableKinds,
 	normalizeDocument,
 	type PredicateEvaluator,
+	UNKNOWN,
 } from "../engine.js";
 
 /** Evaluator stub: kind "match_*" matches with its suffix as reason. */
@@ -98,10 +99,51 @@ describe("evaluateNode — any groups (legacy OR semantics)", () => {
 	});
 });
 
-describe("evaluateDocument — recursion ready", () => {
-	it("evaluates nested groups correctly even though v1 writes are depth-1", () => {
-		// The engine handles depth the grammar permits structurally; the
-		// depth-1 restriction is a write-path policy, not an engine limit.
+describe("evaluateNode — NOT and three-valued composition", () => {
+	const threeValuedEvaluator: PredicateEvaluator = (p) => {
+		if (p.kind === "match") return "reason:match";
+		if (p.kind === "unknown") return UNKNOWN;
+		return null;
+	};
+
+	it("inverts true and false while preserving unknown", () => {
+		expect(evaluateNode({ not: { kind: "match", params: {} } }, threeValuedEvaluator)).toEqual({
+			matched: false,
+		});
+		expect(evaluateNode({ not: { kind: "no_match", params: {} } }, threeValuedEvaluator)).toEqual({
+			matched: true,
+			reason: "NOT",
+		});
+		expect(evaluateNode({ not: { kind: "unknown", params: {} } }, threeValuedEvaluator)).toEqual({
+			matched: false,
+			unknown: true,
+		});
+	});
+
+	it("propagates unknown through nested all, any, and not", () => {
+		const result = evaluateDocument(
+			doc({
+				all: [
+					{ kind: "match", params: {} },
+					{
+						not: {
+							any: [
+								{ kind: "no_match", params: {} },
+								{ kind: "unknown", params: {} },
+							],
+						},
+					},
+				],
+			}),
+			threeValuedEvaluator,
+		);
+
+		expect(result).toEqual({ matched: false, unknown: true });
+	});
+});
+
+describe("evaluateDocument — recursive composition", () => {
+	it("evaluates nested groups correctly", () => {
 		const result = evaluateDocument(
 			doc({
 				all: [

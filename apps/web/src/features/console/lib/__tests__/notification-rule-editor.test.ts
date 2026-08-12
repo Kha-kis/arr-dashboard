@@ -64,4 +64,31 @@ describe("notification rule editor", () => {
 			{ id: "condition-0", field: "body", operator: "greater_than", value: 12 },
 		]);
 	});
+
+	it.each([
+		{
+			version: 1 as const,
+			root: {
+				not: {
+					kind: "field_match",
+					params: { field: "title", operator: "contains", value: "Radarr" },
+				},
+			},
+		},
+		{
+			version: 1 as const,
+			root: {
+				all: [
+					{
+						not: {
+							kind: "field_match",
+							params: { field: "title", operator: "contains", value: "Radarr" },
+						},
+					},
+				],
+			},
+		},
+	])("rejects recursive expressions instead of flattening notification v0 storage", (document) => {
+		expect(() => decomposeNotificationDocument(document)).toThrow(/notification v0/i);
+	});
 });

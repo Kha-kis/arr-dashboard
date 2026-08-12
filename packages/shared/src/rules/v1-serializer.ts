@@ -14,15 +14,15 @@
  * `serialize(map(v0)) === v0` and `map(serialize(v1)) === v1` for every
  * authorable rule (see __tests__/v1-serializer.test.ts).
  *
- * v1 is depth-1 (§2.1), so a composite's children must all be predicates;
- * a nested group throws. Empty groups also throw: an empty composite is not a
- * meaningful authored rule and would serialize to a no-op `{kind:"composite"}`
- * / `{all:[]}` shape — the form must reject it before it reaches here.
+ * The canonical v1 grammar is recursive, but v0 criteria/notification storage
+ * is flat. These serializers reject NOT and nested expressions explicitly;
+ * recursive cleanup documents use their self-describing v1 storage path.
  */
 
 import { FIELD_MATCH_KIND } from "./field-match.js";
 import {
 	groupChildren,
+	isRuleNot,
 	isRulePredicate,
 	type RuleDocument,
 	type RulePredicate,
@@ -61,6 +61,9 @@ export function serializeCriteriaDocumentToV0(doc: RuleDocument): CriteriaV0Payl
 			conditions: null,
 		};
 	}
+	if (isRuleNot(root)) {
+		throw new V1SerializerError("NOT expressions are not representable in criteria v0 storage");
+	}
 
 	const children = groupChildren(root);
 	if (children.length === 0) {
@@ -68,9 +71,14 @@ export function serializeCriteriaDocumentToV0(doc: RuleDocument): CriteriaV0Payl
 	}
 
 	const conditions = children.map((child, i) => {
+		if (isRuleNot(child)) {
+			throw new V1SerializerError(
+				`composite condition[${i}] is a NOT expression — not representable in criteria v0 storage`,
+			);
+		}
 		if (!isRulePredicate(child)) {
 			throw new V1SerializerError(
-				`composite condition[${i}] is a nested group — v1 rules are depth-1`,
+				`composite condition[${i}] is a nested group — not representable in criteria v0 storage`,
 			);
 		}
 		return { ruleType: child.kind, parameters: child.params };
@@ -111,6 +119,11 @@ export function serializeNotificationsDocumentToV0(doc: RuleDocument): Notificat
 		predicates = [root];
 	} else if ("all" in root) {
 		predicates = root.all.map((child, i) => {
+			if (isRuleNot(child)) {
+				throw new V1SerializerError(
+					`notification condition[${i}] is a NOT expression — not representable in v0`,
+				);
+			}
 			if (!isRulePredicate(child)) {
 				throw new V1SerializerError(
 					`notification condition[${i}] is a nested group — not representable in v0`,
@@ -118,6 +131,8 @@ export function serializeNotificationsDocumentToV0(doc: RuleDocument): Notificat
 			}
 			return child;
 		});
+	} else if (isRuleNot(root)) {
+		throw new V1SerializerError("NOT expressions are not representable in notification v0 storage");
 	} else {
 		throw new V1SerializerError(
 			"notification rules use implicit AND; an 'any' (OR) group is not representable in v0",

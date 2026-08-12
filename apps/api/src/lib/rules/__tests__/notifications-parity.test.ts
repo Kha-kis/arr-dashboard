@@ -144,4 +144,17 @@ describe("notifications parity — composition", () => {
 			]),
 		).toBe(false);
 	});
+
+	it("preserves the v0 maximum of 64 matching conditions", () => {
+		const conditions = Array.from(
+			{ length: 64 },
+			(): RuleCondition => ({
+				field: "eventType",
+				operator: "equals",
+				value: "HUNT_COMPLETED",
+			}),
+		);
+
+		expect(assertParity(payload(), conditions)).toBe(true);
+	});
 });

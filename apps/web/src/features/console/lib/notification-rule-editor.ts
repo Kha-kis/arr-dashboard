@@ -8,6 +8,7 @@ import {
 	FIELD_MATCH_KIND,
 	fieldMatchParamsSchema,
 	isKindLegalForContext,
+	isRuleNot,
 	isRulePredicate,
 	type RuleCondition,
 	type RuleDocument,
@@ -40,7 +41,13 @@ export function buildNotificationDocument(state: NotificationEditorState): RuleD
 
 export function decomposeNotificationDocument(doc: RuleDocument): NotificationEditorState {
 	const root = doc.root;
+	if (isRuleNot(root)) {
+		throw new Error("NOT expressions are not editable in notification v0 storage");
+	}
 	const nodes = isRulePredicate(root) ? [root] : "all" in root ? root.all : root.any;
+	if (!nodes.every(isRulePredicate)) {
+		throw new Error("Recursive expressions are not editable in notification v0 storage");
+	}
 
 	return {
 		conditions: nodes.map((node, index) => ({

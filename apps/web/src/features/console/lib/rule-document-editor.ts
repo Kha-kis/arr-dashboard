@@ -21,6 +21,7 @@
 import {
 	type CriteriaV0Payload,
 	isKindLegalForContext,
+	isRuleNot,
 	isRulePredicate,
 	type RuleContextId,
 	type RuleDocument,
@@ -79,6 +80,15 @@ export function buildCriteriaDocument(state: CriteriaEditorState): RuleDocument 
 	};
 }
 
+/** Whether the flat editor can round-trip this document without changing its meaning. */
+export function isCriteriaDocumentV0Editable(doc: RuleDocument): boolean {
+	const root = doc.root;
+	if (isRulePredicate(root)) return true;
+	if (isRuleNot(root)) return false;
+	const children = "all" in root ? root.all : root.any;
+	return children.every(isRulePredicate);
+}
+
 /**
  * v1 document → editor state (edit prefill). A predicate root is single mode; a
  * group is composite with operator + child predicates. Retired-kind predicates
@@ -95,19 +105,22 @@ export function decomposeCriteriaDocument(doc: RuleDocument): CriteriaEditorStat
 			conditions: [{ id: "cond-0", kind: root.kind, params: root.params }],
 		};
 	}
+	if (isRuleNot(root)) {
+		throw new Error("Recursive criteria documents cannot be edited by the flat v0 editor");
+	}
 
 	const isAll = "all" in root;
 	const children = isAll ? root.all : root.any;
+	if (!children.every(isRulePredicate)) {
+		throw new Error("Recursive criteria documents cannot be edited by the flat v0 editor");
+	}
 	return {
 		mode: "composite",
 		operator: isAll ? "all" : "any",
 		conditions: children.map((child, i) => ({
 			id: `cond-${i}`,
-			// Depth-1: children are predicates. A stray nested group (shouldn't
-			// occur from the read API) collapses to an empty predicate row that
-			// validation then flags.
-			kind: isRulePredicate(child) ? child.kind : "",
-			params: isRulePredicate(child) ? child.params : {},
+			kind: child.kind,
+			params: child.params,
 		})),
 	};
 }
