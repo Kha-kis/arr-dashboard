@@ -9,9 +9,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
-	sanitizeErrorMessage,
 	buildCacheHealthItems,
 	type CacheRefreshStatusRow,
+	sanitizeErrorMessage,
 } from "../../../lib/media-stats/cache-health-helpers.js";
 
 describe("sanitizeErrorMessage", () => {
@@ -112,5 +112,15 @@ describe("buildCacheHealthItems", () => {
 		const items = buildCacheHealthItems(statuses, instanceNameMap, baseDateMs);
 
 		expect(items[0]!.lastErrorMessage).toBe("Crash at [path]:99");
+	});
+
+	it("preserves partial refresh results in the public response", () => {
+		const items = buildCacheHealthItems(
+			[makeRow({ lastResult: "partial" })],
+			instanceNameMap,
+			baseDateMs,
+		);
+
+		expect(items[0]!.lastResult).toBe("partial");
 	});
 });

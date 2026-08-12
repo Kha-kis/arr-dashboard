@@ -314,6 +314,8 @@ describe("PlexClient.getSeriesEpisodeMediaPartsByTvdbId", () => {
 							Metadata: [
 								{
 									ratingKey: "episode-4k",
+									parentIndex: 1,
+									index: 1,
 									Media: [{ Part: [{ file: "/tv-4k/Example/S01E01.mkv", size: 2_000 }] }],
 								},
 							],
@@ -332,6 +334,8 @@ describe("PlexClient.getSeriesEpisodeMediaPartsByTvdbId", () => {
 							Metadata: [
 								{
 									ratingKey: "episode-hd",
+									parentIndex: 1,
+									index: 2,
 									Media: [{ Part: [{ file: "/tv-hd/Example/S01E01.mkv", size: 1_000 }] }],
 								},
 							],
@@ -349,10 +353,14 @@ describe("PlexClient.getSeriesEpisodeMediaPartsByTvdbId", () => {
 				episodes: [
 					{
 						ratingKey: "episode-4k",
+						seasonNumber: 1,
+						episodeNumber: 1,
 						parts: [{ file: "/tv-4k/Example/S01E01.mkv", size: 2_000 }],
 					},
 					{
 						ratingKey: "episode-hd",
+						seasonNumber: 1,
+						episodeNumber: 2,
 						parts: [{ file: "/tv-hd/Example/S01E01.mkv", size: 1_000 }],
 					},
 				],
@@ -364,5 +372,33 @@ describe("PlexClient.getSeriesEpisodeMediaPartsByTvdbId", () => {
 		expect(
 			new URL(fetchMock.mock.calls[2]![0] as string).searchParams.get("X-Plex-Container-Start"),
 		).toBe("1");
+	});
+});
+
+describe("PlexClient.getEpisodeWatchCount", () => {
+	it("reads the current count for the exact episode rating key", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(
+				JSON.stringify({
+					MediaContainer: {
+						Metadata: [
+							{
+								ratingKey: "episode-1",
+								title: "Episode 1",
+								viewCount: 3,
+							},
+						],
+					},
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex:32400", "token", log);
+
+		await expect(client.getEpisodeWatchCount("episode-1")).resolves.toBe(3);
+		expect(new URL(fetchMock.mock.calls[0]![0] as string).pathname).toBe(
+			"/library/metadata/episode-1",
+		);
 	});
 });
