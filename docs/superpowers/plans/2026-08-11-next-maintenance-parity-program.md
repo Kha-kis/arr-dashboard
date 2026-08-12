@@ -23,8 +23,9 @@ Emby, qUI, GitHub Actions, and Codex project skills.
 
 ## Global Constraints
 
-- `main` remains stable 2.x; every change in this program targets `next` on a
-  dedicated branch and pull request.
+- `main` remains stable 2.x; semantic forward-ports target `next` on dedicated
+  branches and pull requests. A newly reproduced cross-line safety defect is
+  fixed on `main` first, then forward-ported separately to `next`.
 - Never merge `main` into `next`. Port the verified behavior and tests, then
   adapt them to 3.0 architecture.
 - Do not restore Tautulli runtime, routes, cache refreshers, schedulers, UI, or
@@ -100,6 +101,16 @@ confirmed from the live source paths and 3.0 architecture.
 | Existing `next` debt | Required outcome | Wave |
 | --- | --- | --- |
 | Four OIDC files introduced by #649/#652 fail the root Biome formatter | Restore a clean formatting baseline in a dedicated mechanical-only PR | -1 |
+| #689 durable upstream server identity is not represented by connection fingerprints alone | Persist and verify the provider-returned Plex/Jellyfin/Emby server identity before cache publication, cleanup evidence use, or mutation; add an explicit reviewed server-replacement path | 4A |
+| #674's exact auto-sync-never-runs scenario remains unresolved; #686 proves only disabled-target safety | Make global update-driven auto-sync and per-link schedules observable, restart-safe, and exactly-once under deterministic SQLite/PostgreSQL fixtures | 11A |
+
+### Open bug closure map
+
+| Open issue | Program ownership | Required closure evidence |
+| --- | --- | --- |
+| #673 and #675 Plex HTTP 400 / degraded general cache | Wave 5 (#685, #693) | Plex 1.43-compatible movie/show and episode refreshes, plus the reported history-only-row case where current-library totals agree but the old generation was still rejected as incomplete |
+| #674 TRaSH auto-sync never runs | Waves 7-11, with #686 as partial evidence only | Reproduce or otherwise identify the exact scheduler path, verify a saved enabled target receives one current update, and separately retain disabled/re-enabled mutation safety; #686 alone does not close the reported scenario |
+| #689 wrong upstream behind a stable proxy | Wave 4A | Stable wrong-server proxy, between-read identity change, safe existing-instance enrollment, intentional replacement, and normal reverse-proxy coverage |
 
 ---
 
@@ -254,7 +265,7 @@ confirmed from the live source paths and 3.0 architecture.
 - Produces: stable-equivalent mutation authority while preserving 3.0 rule
   parity and Tracearr/Tautulli decisions.
 
-- [ ] **Step 1: Port retained-variant safety (#656, #658)**
+- [x] **Step 1: Port retained-variant safety (#656, #658)**
 
   Start with failing Radarr and Sonarr shared-library collision regressions.
   Implement canonical peer proofs and execution-time revalidation, then run
@@ -277,9 +288,16 @@ confirmed from the live source paths and 3.0 architecture.
 
   Add connection generations, guarded status/publication writes, Jellyfin
   single-flight refreshes, and actionable Pulse retries for Plex, Jellyfin, and
-  Emby. Do not restore Tautulli. Place issue #689 immediately after this wave so
-  its durable expected-server identity extends, rather than replaces, the
-  generation contract.
+  Emby. Do not restore Tautulli.
+
+- [ ] **Step 4A: Bind evidence to durable upstream identity (#689)**
+
+  Extend the provider-generation contract with the immutable identity returned
+  by the configured Plex, Jellyfin, or Emby server. Existing instances require
+  explicit safe enrollment, and intentional replacement requires a reviewed
+  transition; a matching URL, credential fingerprint, or two matching reads is
+  not sufficient evidence of server identity. Tautulli remains excluded from
+  the 3.0 runtime.
 
 - [ ] **Step 5: Port Plex evidence correctness (#685, #688, #693)**
 
@@ -341,6 +359,14 @@ confirmed from the live source paths and 3.0 architecture.
   instances, aliases, and unresolved recovery states, then apply pending work
   exactly once after safe re-enable.
 
+- [ ] **Step 5A: Resolve the exact auto-sync scheduler report (#674)**
+
+  Test global update-driven auto-sync and per-link schedules as separate
+  products. Persist or surface startup, revision-detection, cache, validation,
+  and deployment failures; prove one saved enabled mapping consumes one new
+  upstream revision exactly once across restart. If the defect reproduces on
+  stable, fix `main` first and forward-port the verified outcome separately.
+
 - [ ] **Step 6: Port deployment-plan privacy (#687)**
 
   Mask custom-format names, conflicts, naming fields, orphaned formats,
@@ -390,8 +416,12 @@ confirmed from the live source paths and 3.0 architecture.
 - All 47 original `main`-only commits have a recorded disposition.
 - All 21 required commits have semantic `next` equivalents; partial commits
   list intentionally omitted 2.x/Tautulli surfaces.
-- Issue #689 is either resolved on both lines or explicitly remains the only
-  named provider-identity follow-up with an owner and plan.
+- Issue #689 has a reviewed `next` implementation with safe existing-instance
+  enrollment, intentional replacement, reverse-proxy mismatch, and
+  mutation-boundary coverage.
+- Issue #674's reported enabled auto-sync path is represented by deterministic
+  SQLite and PostgreSQL scenarios and either fixed or closed with concrete
+  evidence; #686 alone is not accepted as closure.
 - No known P0/P1 or in-scope P2 data-safety finding remains open.
 - The full 3.0 gauntlet, database smoke checks, Docker checks, and disposable
   mutation scenarios pass on the final exact head.
