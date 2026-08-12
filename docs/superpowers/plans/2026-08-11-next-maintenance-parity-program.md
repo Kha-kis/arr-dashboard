@@ -103,7 +103,7 @@ confirmed from the live source paths and 3.0 architecture.
 | Existing `next` debt | Required outcome | Wave |
 | --- | --- | --- |
 | Four OIDC files introduced by #649/#652 fail the root Biome formatter | Restore a clean formatting baseline in a dedicated mechanical-only PR | -1 |
-| Prior beta Tautulli removal governance | Supersede ADR-0007, stop startup deletion, and replace the blocking wizard with non-blocking notices | 4A |
+| Prior beta Tautulli removal governance | Supersede ADR-0007, preserve Tautulli state, and replace destructive startup governance with non-blocking notices | 4A |
 | Stable Tautulli integration surface | Restore typed client, guarded cache, scheduler, routes, setup, Pulse, and rules on 3.0 primitives | 4B |
 | Tracearr/Tautulli provider choice | Persist deterministic selection; Tracearr recommended, Tautulli alternative; no mixing or failover | 4C |
 | #689 durable upstream server identity is not represented by connection fingerprints alone | Persist and verify provider-returned Plex/Jellyfin/Emby and provable Tautulli-associated Plex identity before cache publication, cleanup evidence use, or mutation; add an explicit reviewed server-replacement path | 4D |
@@ -306,11 +306,11 @@ confirmed from the live source paths and 3.0 architecture.
   Emby. Completed before the provider-choice decision and reused by the
   restoration waves.
 
-- [ ] **Step 4A: Preserve Tautulli and reverse removal governance**
+- [ ] **Step 4A: Preserve Tautulli and supersede removal governance**
 
-  Supersede ADR-0007, remove the startup mutation and deletion endpoint, retain
-  migration reports only as audit evidence, and replace the blocking wizard
-  with user-scoped non-blocking notices. Execute
+  Supersede ADR-0007, preserve existing Tautulli instances and rules, retain
+  old migration reports only as audit evidence, and use user-scoped
+  non-blocking notices for the approved provider states. Execute
   `2026-08-12-tautulli-preservation-migration.md`.
 
 - [ ] **Step 4B: Restore the Tautulli runtime**

@@ -1,10 +1,14 @@
 # ADR 0007: Tracearr Replaces Tautulli
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0009](0009-tracearr-primary-tautulli-alternative.md)
 - **Date:** 2026-06-09
 - **Deciders:** Backend maintainers
 - **Supersedes:** the phased Tautulli-deprecation plan (memory-tracked, pre-charter)
 - **Charter:** [3.0 charter](../3.0-charter.md) §2.2, Bucket A2, §6.1; decision log #2–#6
+
+> **Historical note (2026-08-12):** This ADR's removal decision is retained
+> as historical context only. ADR-0009 supersedes it and preserves Tautulli as
+> a supported alternative to recommended Tracearr in 3.0.
 
 ## Context
 

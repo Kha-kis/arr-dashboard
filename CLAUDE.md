@@ -42,7 +42,7 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 
 **Design**: Single-admin, self-hosted. Session-based auth (NOT JWT). Three auth methods: Password, OIDC, Passkeys.
 
-**Services**: Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Plex, Jellyfin, Emby, Seerr (Jellyseerr/Overseerr), qui, and Tracearr. Tautulli is removed in 3.0; its Prisma enum value remains only so legacy rows can reach the consent-gated migration dialog.
+**Services**: Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Plex, Jellyfin, Emby, Seerr (Jellyseerr/Overseerr), qui, Tracearr, and Tautulli. Tracearr is the recommended/default historical analytics provider; Tautulli is a supported alternative. Select one provider family at a time, never mix their historical data, and never silently fail over between them. Existing Tautulli configuration, cache data, and stored rules are preserved.
 
 **Fastify Decorations** (available in route handlers):
 - `request.currentUser` / `request.sessionToken` — populated by auth preHandler
