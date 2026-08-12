@@ -77,7 +77,9 @@ auth-state.json
 .claude/skills/next-best-practices
 .claude/skills/shadcn
 .claude/skills/web-design-guidelines
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 skills-lock.json
 
 # AI/ML development tool artifacts

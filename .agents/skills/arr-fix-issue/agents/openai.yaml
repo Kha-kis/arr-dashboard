@@ -1,0 +1,4 @@
+interface:
+  display_name: "Fix arr-dashboard issue"
+  short_description: "Reproduce and fix a reported issue safely"
+  default_prompt: "Use $arr-fix-issue to investigate and fix this arr-dashboard issue."
