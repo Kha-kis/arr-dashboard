@@ -10,45 +10,46 @@
  * Supports three actions per rule: delete, unmonitor, delete_files.
  */
 
+import { createHash, randomUUID } from "node:crypto";
 import {
-	crossDomainActionsSchema,
 	type CrossDomainRuleScope,
+	crossDomainActionsSchema,
 	crossDomainRuleScopeSchema,
 	type DataSourceDependency,
 	groupChildren,
 	isKindLegalForContext,
 	isRulePredicate,
 	type RuleDocument,
-	ruleDocumentSchema,
-	ruleDataSourceMap,
 	type RuleNode,
+	ruleDataSourceMap,
+	ruleDocumentSchema,
 	ruleParamSchemaMap,
 	validateV1Depth,
 	walkPredicates,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
-import { createHash, randomUUID } from "node:crypto";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
 import { buildMovieFile } from "../library/movie-normalizer.js";
 import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "../prisma.js";
+import { evaluateItemAgainstRulesViaEngine } from "../rules/cleanup-adapter.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
+import { withCleanupOperationGuard } from "./cleanup-maintenance-gate.js";
 import { applyQuiSeedingFilter } from "./qui-filter.js";
-import { evaluateItemAgainstRulesViaEngine } from "../rules/cleanup-adapter.js";
 import { evaluateSingleCondition, extractRating, parseAudioChannels } from "./rule-evaluators.js";
 import {
 	ArrCrossInstanceOwnershipChangedDuringSafetyCheckError,
 	ArrFileChangedDuringSafetyCheckError,
 	ArrMutationAuthorityChangedDuringSafetyCheckError,
+	ArrTargetChangedDuringSafetyCheckError,
 	assertVerifiedArrTargetUnchanged,
 	assertVerifiedRadarrEmptyUnchanged,
 	assertVerifiedRadarrFileUnchanged,
 	assertVerifiedRadarrPeerOwnershipRetained,
 	assertVerifiedSonarrFilesUnchanged,
 	assertVerifiedSonarrPeerOwnershipRetained,
-	ArrTargetChangedDuringSafetyCheckError,
 	buildCacheTargetSafetyPlan,
 	buildRadarrCacheSafetyPlan,
 	buildSonarrCacheSafetyPlan,
@@ -61,9 +62,9 @@ import {
 	findSharedPlexDeleteBlocks,
 	parseExecutableSafetyPlan,
 	RadarrFileChangedDuringSafetyCheckError,
-	serializeExecutableSafetyPlan,
 	type SharedMediaSafetyPlan,
 	SonarrFilesChangedDuringSafetyCheckError,
+	serializeExecutableSafetyPlan,
 	type VerifiedRadarrFileIdentity,
 	type VerifiedSonarrFileIdentity,
 } from "./shared-plex-safety.js";
@@ -83,7 +84,6 @@ import type {
 	SeerrRequestInfo,
 	SeerrRequestMap,
 } from "./types.js";
-import { withCleanupOperationGuard } from "./cleanup-maintenance-gate.js";
 
 // Default approval expiry: 7 days
 const APPROVAL_EXPIRY_DAYS = 7;
@@ -479,7 +479,7 @@ function hasVerifiedSonarrOwnershipProof(
 	return (
 		action === "delete" &&
 		plan?.kind === "verified_sonarr" &&
-		plan.peers.length > 0 &&
+		plan.peerInventoryComplete === true &&
 		plan.ownership.length > 0
 	);
 }
@@ -785,6 +785,7 @@ async function buildEvaluatedCacheSafetyPlan(
 		? {
 				...cachePlan,
 				peers: livePlan.peers,
+				peerInventoryComplete: livePlan.peerInventoryComplete,
 				ownership: livePlan.ownership,
 				targetDeleteNotifications: livePlan.targetDeleteNotifications,
 			}
@@ -903,7 +904,32 @@ function createRadarrDestructiveMutationAuthority(
 
 	return async () => {
 		await assertExecutionAllowed?.();
+		if (safetyPlan.kind === "verified_radarr_empty") {
+			if (postFileOwnershipPlan && postFileOwnershipPlan.ownership.length > 0) {
+				await assertVerifiedRadarrPeerOwnershipRetained(
+					deps,
+					userId,
+					target.arrItemId,
+					postFileOwnershipPlan,
+				);
+				return;
+			}
+			const context = createSharedPlexSafetyContext();
+			const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
+			const livePlan = asExecutableSafetyPlan(context.plans.get(cleanupDeleteTargetKey(target)));
+			if (
+				blocks.has(cleanupDeleteTargetKey(target)) ||
+				!livePlan ||
+				!executableSafetyPlansEqual(safetyPlan, livePlan)
+			) {
+				throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+					"Skipped for safety: verified Radarr ownership changed at the mutation boundary. Run cleanup again before deleting the record.",
+				);
+			}
+			return;
+		}
 		if (!ownershipPlan) return;
+		if (ownershipPlan.ownership.length === 0) return;
 		if (!fileDeleteAuthorityConsumed && safetyPlan.kind === "verified_radarr") {
 			const context = createSharedPlexSafetyContext();
 			const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
@@ -935,6 +961,25 @@ function createSonarrDestructiveMutationAuthority(
 	return async () => {
 		await assertExecutionAllowed?.();
 		if (fileDeleteAuthorityConsumed || safetyPlan.files.episodeFiles.length === 0) {
+			if (safetyPlan.ownership.length === 0) {
+				const context = createSharedPlexSafetyContext();
+				const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
+				const livePlan = asExecutableSafetyPlan(context.plans.get(cleanupDeleteTargetKey(target)));
+				const emptyFileRemainder = {
+					...safetyPlan,
+					files: { ...safetyPlan.files, episodeFiles: [] },
+				};
+				if (
+					blocks.has(cleanupDeleteTargetKey(target)) ||
+					!livePlan ||
+					!executableSafetyPlansEqual(emptyFileRemainder, livePlan)
+				) {
+					throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+						"Skipped for safety: verified Sonarr ownership changed at the mutation boundary. Run cleanup again before deleting the file.",
+					);
+				}
+				return;
+			}
 			await assertVerifiedSonarrPeerOwnershipRetained(deps, userId, target.arrItemId, safetyPlan);
 			return;
 		}

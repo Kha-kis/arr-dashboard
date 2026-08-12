@@ -77,6 +77,13 @@ export interface PlexSeriesMediaItem {
 	episodes: PlexEpisodeMediaItem[];
 }
 
+export class PlexMovieNotFoundError extends Error {
+	constructor(tmdbId: number) {
+		super(`Plex returned no movie item for TMDb ${tmdbId}`);
+		this.name = "PlexMovieNotFoundError";
+	}
+}
+
 export class PlexSeriesNotFoundError extends Error {
 	constructor(tvdbId: number) {
 		super(`Plex returned no series item for TVDB ${tvdbId}`);
@@ -322,7 +329,7 @@ export class PlexClient {
 			item.Guid?.some((guid) => guid.id === `tmdb://${tmdbId}`),
 		);
 		if (items.length === 0) {
-			throw new Error(`Plex returned no movie item for TMDb ${tmdbId}`);
+			throw new PlexMovieNotFoundError(tmdbId);
 		}
 
 		return items.map((item) => {
