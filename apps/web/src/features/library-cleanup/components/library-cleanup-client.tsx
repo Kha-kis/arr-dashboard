@@ -100,15 +100,22 @@ const tabConfig: PremiumTab[] = [
 interface ExplainTarget {
 	instanceId: string;
 	arrItemId: number;
+	arrEpisodeId?: number;
 	title: string;
 }
 
 type EpisodeDisplayFields = {
 	targetScope?: "series" | "episode";
+	arrEpisodeId?: number | null;
 	seasonNumber?: number | null;
 	episodeNumber?: number | null;
+	seriesTitle?: string | null;
 	episodeTitle?: string | null;
 };
+
+function getSeriesTitle(item: { title: string; seriesTitle?: string | null }) {
+	return item.seriesTitle || item.title;
+}
 
 function EpisodeIdentity({
 	item,
@@ -176,7 +183,11 @@ export function LibraryCleanupClient() {
 						executeError={execute.error}
 						onExplain={(target) => {
 							setExplainTarget(target);
-							explain.mutate({ instanceId: target.instanceId, arrItemId: target.arrItemId });
+							explain.mutate({
+								instanceId: target.instanceId,
+								arrItemId: target.arrItemId,
+								...(target.arrEpisodeId === undefined ? {} : { arrEpisodeId: target.arrEpisodeId }),
+							});
 						}}
 					/>
 				)}
@@ -185,7 +196,11 @@ export function LibraryCleanupClient() {
 					<ApprovalsTab
 						onExplain={(target) => {
 							setExplainTarget(target);
-							explain.mutate({ instanceId: target.instanceId, arrItemId: target.arrItemId });
+							explain.mutate({
+								instanceId: target.instanceId,
+								arrItemId: target.arrItemId,
+								...(target.arrEpisodeId === undefined ? {} : { arrEpisodeId: target.arrEpisodeId }),
+							});
 						}}
 					/>
 				)}
@@ -687,6 +702,7 @@ function ConfigTab({
 							<div className="max-h-80 overflow-y-auto space-y-2">
 								{previewData.items.map((item, i) => {
 									const score = extractStalenessScore(item.reason);
+									const seriesTitle = getSeriesTitle(item);
 									const ruleSummary = incognitoMode
 										? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
 										: `${item.matchedRuleName}: ${item.reason}`;
@@ -698,14 +714,11 @@ function ConfigTab({
 											<div className="min-w-0 flex-1">
 												<div className="flex items-center gap-2">
 													<span className="truncate">
-														{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+														{incognitoMode ? getLinuxIsoName(seriesTitle) : seriesTitle}
 													</span>
 													<QuiStatusBadge status={item.quiStatus} />
 												</div>
-												<EpisodeIdentity
-													item={item as typeof item & EpisodeDisplayFields}
-													incognitoMode={incognitoMode}
-												/>
+												<EpisodeIdentity item={item} incognitoMode={incognitoMode} />
 												{item.action === "skipped" && (
 													<p className="mt-1 text-xs text-muted-foreground">{ruleSummary}</p>
 												)}
@@ -717,7 +730,11 @@ function ConfigTab({
 														onExplain({
 															instanceId: item.instanceId,
 															arrItemId: item.arrItemId,
-															title: item.title,
+															...(item.targetScope === "episode" &&
+															typeof item.arrEpisodeId === "number"
+																? { arrEpisodeId: item.arrEpisodeId }
+																: {}),
+															title: seriesTitle,
 														})
 													}
 													className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors"
@@ -857,6 +874,9 @@ function ConfigTab({
 											Protection
 										</span>
 									)}
+									<StatusBadge status={rule.targetScope === "episode" ? "info" : "default"}>
+										{rule.targetScope === "episode" ? "Episode target" : "Series target"}
+									</StatusBadge>
 									{rule.action && rule.action !== "delete" && !rule.retentionMode && (
 										<StatusBadge status={rule.action === "unmonitor" ? "warning" : "info"}>
 											{rule.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
@@ -1125,7 +1145,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											role="checkbox"
 											aria-checked={selectedIds.has(item.id)}
 											aria-label={`Select ${
-												incognitoMode ? getLinuxIsoName(item.title) : item.title
+												incognitoMode ? getLinuxIsoName(getSeriesTitle(item)) : getSeriesTitle(item)
 											}`}
 											onClick={() => toggleItem(item.id)}
 											className="shrink-0"
@@ -1149,7 +1169,9 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 												<Film className="h-3.5 w-3.5 text-orange-400 shrink-0" aria-label="Movie" />
 											)}
 											<span className="font-medium truncate">
-												{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+												{incognitoMode
+													? getLinuxIsoName(getSeriesTitle(item))
+													: getSeriesTitle(item)}
 											</span>
 											{item.year && (
 												<span className="text-xs text-muted-foreground">({item.year})</span>
@@ -1167,6 +1189,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 												</StatusBadge>
 											)}
 										</div>
+										<EpisodeIdentity item={item} incognitoMode={incognitoMode} />
 										<p className="text-xs text-muted-foreground mt-0.5">
 											{incognitoMode
 												? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
@@ -1181,10 +1204,6 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											</p>
 										)}
 									</div>
-									<EpisodeIdentity
-										item={item as typeof item & EpisodeDisplayFields}
-										incognitoMode={incognitoMode}
-									/>
 									<span className="text-xs text-muted-foreground shrink-0">
 										{(Number(item.sizeOnDisk) / 1073741824).toFixed(1)} GB
 									</span>
@@ -1195,7 +1214,10 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											onExplain({
 												instanceId: item.instanceId,
 												arrItemId: item.arrItemId,
-												title: item.title,
+												...(item.targetScope === "episode" && typeof item.arrEpisodeId === "number"
+													? { arrEpisodeId: item.arrEpisodeId }
+													: {}),
+												title: getSeriesTitle(item),
 											})
 										}
 										className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors shrink-0"
@@ -1285,12 +1307,36 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 // Logs Tab
 // ============================================================================
 
-interface LogDetail {
+interface LogDetail extends EpisodeDisplayFields {
 	title: string;
 	rule: string;
 	reason: string;
 	action?: string;
 	status?: string;
+}
+
+function parseLogDetail(detail: Record<string, unknown>): LogDetail | null {
+	if (
+		typeof detail.title !== "string" ||
+		typeof detail.rule !== "string" ||
+		typeof detail.reason !== "string"
+	) {
+		return null;
+	}
+
+	return {
+		title: detail.title,
+		rule: detail.rule,
+		reason: detail.reason,
+		targetScope: detail.targetScope === "episode" ? "episode" : "series",
+		arrEpisodeId: typeof detail.arrEpisodeId === "number" ? detail.arrEpisodeId : null,
+		seasonNumber: typeof detail.seasonNumber === "number" ? detail.seasonNumber : null,
+		episodeNumber: typeof detail.episodeNumber === "number" ? detail.episodeNumber : null,
+		seriesTitle: typeof detail.seriesTitle === "string" ? detail.seriesTitle : null,
+		episodeTitle: typeof detail.episodeTitle === "string" ? detail.episodeTitle : null,
+		...(typeof detail.action === "string" ? { action: detail.action } : {}),
+		...(typeof detail.status === "string" ? { status: detail.status } : {}),
+	};
 }
 
 function LogsTab() {
@@ -1431,9 +1477,11 @@ function LogsTab() {
 								</thead>
 								<tbody>
 									{data.items.map((log) => {
-										const details = (Array.isArray(log.details)
+										const details = Array.isArray(log.details)
 											? log.details
-											: []) as unknown as LogDetail[];
+													.map(parseLogDetail)
+													.filter((detail): detail is LogDetail => detail !== null)
+											: [];
 										const isExpanded = expandedLogId === log.id;
 										return (
 											<React.Fragment key={log.id}>
@@ -1482,12 +1530,11 @@ function LogsTab() {
 																{details.map((d, i) => (
 																	<div key={i} className="flex items-center gap-2 text-xs">
 																		<span className="text-foreground font-medium truncate max-w-[200px]">
-																			{incognitoMode ? getLinuxIsoName(d.title) : d.title}
+																			{incognitoMode
+																				? getLinuxIsoName(getSeriesTitle(d))
+																				: getSeriesTitle(d)}
 																		</span>
-																		<EpisodeIdentity
-																			item={d as EpisodeDisplayFields}
-																			incognitoMode={incognitoMode}
-																		/>
+																		<EpisodeIdentity item={d} incognitoMode={incognitoMode} />
 																		<span className="text-muted-foreground">—</span>
 																		<span className="text-muted-foreground">{d.rule}</span>
 																		<span className="text-muted-foreground/70 truncate">
@@ -1853,6 +1900,9 @@ function ExplainDialog({
 						{target?.title ? (incognitoMode ? getLinuxIsoName(target.title) : target.title) : ""}
 					</DialogTitle>
 					<DialogDescription>How each cleanup rule evaluated this item.</DialogDescription>
+					{data?.item.targetScope === "episode" && (
+						<EpisodeIdentity item={data.item} incognitoMode={incognitoMode} />
+					)}
 				</DialogHeader>
 
 				{isPending ? (

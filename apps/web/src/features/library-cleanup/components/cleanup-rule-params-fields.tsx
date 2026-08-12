@@ -1,8 +1,8 @@
 "use client";
 
-import type { CleanupFieldOptionsResponse, CleanupRuleType } from "@arr/shared";
-import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
+import type { CleanupFieldOptionsResponse, CleanupRuleType, CleanupTargetScope } from "@arr/shared";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { ConditionParamsFields } from "../../rule-criteria/components/condition-params-fields";
 import { MultiSelectField } from "../../rule-criteria/components/multi-select-field";
 
@@ -226,6 +226,7 @@ type GroupedFieldKeys =
 
 export interface ParamsFieldsModel {
 	ruleType: CleanupRuleType;
+	targetScope: CleanupTargetScope;
 	criteria: Omit<ParamsFieldsProps, "ruleType" | GroupedFieldKeys>;
 	seerr: DomainFields<"seerr">;
 	plex: DomainFields<"plex">;
@@ -237,6 +238,7 @@ export interface ParamsFieldsModel {
 
 export function ParamsFields({ model }: { model: ParamsFieldsModel }) {
 	const [incognitoMode] = useIncognitoMode();
+	const { targetScope } = model;
 	const props: ParamsFieldsProps = {
 		ruleType: model.ruleType,
 		...model.criteria,
@@ -990,11 +992,12 @@ export function ParamsFields({ model }: { model: ParamsFieldsModel }) {
 						<label className="block flex-1">
 							<span className={labelClass}>Operator</span>
 							<select
-								value={plexWatchCountOp}
+								value={targetScope === "episode" ? "greater_than" : plexWatchCountOp}
 								onChange={(e) => setPlexWatchCountOp(e.target.value)}
+								disabled={targetScope === "episode"}
 								className={inputClass}
 							>
-								<option value="less_than">Less than</option>
+								{targetScope === "series" && <option value="less_than">Less than</option>}
 								<option value="greater_than">Greater than</option>
 							</select>
 						</label>
@@ -1009,7 +1012,11 @@ export function ParamsFields({ model }: { model: ParamsFieldsModel }) {
 							/>
 						</label>
 					</div>
-					<p className="text-xs text-muted-foreground">Flag items by total play count from Plex.</p>
+					<p className="text-xs text-muted-foreground">
+						{targetScope === "episode"
+							? "Flag individual Sonarr episodes whose Plex play count is greater than this value."
+							: "Flag items by total play count from Plex."}
+					</p>
 				</div>
 			);
 		case "plex_on_deck":

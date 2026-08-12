@@ -123,6 +123,7 @@ export function CleanupRuleComposerDialog({
 	const [action, setAction] = useState<CleanupAction>("delete");
 	const [retentionMode, setRetentionMode] = useState(false);
 	const [targetScope, setTargetScope] = useState<"series" | "episode">("series");
+	const [episodeWatchCount, setEpisodeWatchCount] = useState(1);
 	const [editorState, setEditorState] = useState<CriteriaEditorState>(freshEditorState);
 	const [error, setError] = useState<string | null>(null);
 
@@ -137,10 +138,9 @@ export function CleanupRuleComposerDialog({
 		if (isEdit && !editDataReady) return;
 		setError(null);
 		if (isEdit) {
-			setTargetScope(
-				(configRule as (typeof configRule & { targetScope?: "series" | "episode" }) | undefined)
-					?.targetScope ?? "series",
-			);
+			setTargetScope(configRule?.targetScope ?? "series");
+			const loadedEpisodeCount = configRule?.parameters.count;
+			setEpisodeWatchCount(typeof loadedEpisodeCount === "number" ? loadedEpisodeCount : 1);
 			setName(summary?.name ?? configRule?.name ?? "");
 			setEnabled(summary?.enabled ?? configRule?.enabled ?? true);
 			setAction((configRule?.action as CleanupAction) ?? "delete");
@@ -157,6 +157,7 @@ export function CleanupRuleComposerDialog({
 			setAction("delete");
 			setRetentionMode(false);
 			setTargetScope("series");
+			setEpisodeWatchCount(1);
 			setEditorState(freshEditorState());
 		}
 	}, [open, isEdit, editDataReady, summary, configRule]);
@@ -171,6 +172,7 @@ export function CleanupRuleComposerDialog({
 		setTargetScope(scope);
 		if (scope === "episode") {
 			setRetentionMode(false);
+			setEpisodeWatchCount(1);
 			setEditorState({
 				mode: "single",
 				operator: "all",
@@ -209,7 +211,7 @@ export function CleanupRuleComposerDialog({
 							{
 								id: "episode-watch-count",
 								kind: "plex_watch_count",
-								params: { operator: "greater_than", count: 1 },
+								params: { operator: "greater_than", count: episodeWatchCount },
 							},
 						],
 					}
@@ -358,6 +360,9 @@ export function CleanupRuleComposerDialog({
 										onClick={() => selectTargetScope(scope)}
 										disabled={isEdit}
 										aria-pressed={targetScope === scope}
+										title={
+											isEdit ? "Target scope cannot be changed while editing a rule" : undefined
+										}
 										className="rounded-lg border px-3 py-2 text-left text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60"
 										style={
 											targetScope === scope
@@ -373,6 +378,12 @@ export function CleanupRuleComposerDialog({
 									</button>
 								))}
 							</div>
+							{isEdit && (
+								<p className="mt-2 text-xs text-muted-foreground">
+									Target scope cannot be changed while editing. Create a new rule to use a different
+									scope.
+								</p>
+							)}
 							{targetScope === "episode" && (
 								<p className="mt-1 text-xs text-muted-foreground">
 									Episodes are a Sonarr-only workflow using Plex watch count.
@@ -425,7 +436,13 @@ export function CleanupRuleComposerDialog({
 								))}
 							</div>
 							<p className="mt-1 text-xs text-muted-foreground">
-								{ACTIONS.find((a) => a.value === action)?.hint}
+								{targetScope === "episode"
+									? action === "delete"
+										? "Unmonitor the exact Sonarr episode, then delete its verified episode file. The series and other episodes remain."
+										: action === "unmonitor"
+											? "Unmonitor only the exact Sonarr episode and keep its file."
+											: "Delete only the exact verified episode file. The episode remains monitored, so Sonarr may download it again."
+									: ACTIONS.find((a) => a.value === action)?.hint}
 							</p>
 						</div>
 
@@ -444,8 +461,26 @@ export function CleanupRuleComposerDialog({
 								/>
 							</div>
 						) : (
-							<div className="rounded-xl border border-border/50 bg-card/30 p-4 text-sm">
+							<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 p-4 text-sm">
 								<span className="font-medium">Plex Watch Count</span>
+								<div className="flex gap-2">
+									<label className="block flex-1">
+										<span className={labelClass}>Operator</span>
+										<select value="greater_than" disabled className={inputClass}>
+											<option value="greater_than">Greater than</option>
+										</select>
+									</label>
+									<label className="block w-24">
+										<span className={labelClass}>Count</span>
+										<input
+											type="number"
+											value={episodeWatchCount}
+											onChange={(event) => setEpisodeWatchCount(Number(event.target.value))}
+											min={0}
+											className={inputClass}
+										/>
+									</label>
+								</div>
 								<p className="mt-1 text-xs text-muted-foreground">
 									Episode rules always use a greater-than Plex watch count and cannot be composite
 									or retention rules.

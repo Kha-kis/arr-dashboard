@@ -213,6 +213,96 @@ describe("CleanupRuleComposerDialog — edit", () => {
 		expect(screen.getByText(/condition 2/i)).toBeTruthy();
 	});
 
+	it("round-trips an edited episode threshold and explains why scope is locked", async () => {
+		automationData = {
+			rules: [
+				{
+					id: "rule-episode",
+					name: "Watched episodes",
+					enabled: true,
+					context: "library-cleanup",
+					document: {
+						version: 1,
+						root: {
+							kind: "plex_watch_count",
+							params: { operator: "greater_than", count: 2 },
+						},
+					},
+					unavailableKinds: [],
+					unparseable: false,
+				},
+			],
+		};
+		configData = {
+			id: "cfg",
+			enabled: true,
+			intervalHours: 24,
+			lastRunAt: null,
+			nextRunAt: null,
+			dryRunMode: false,
+			maxRemovalsPerRun: 10,
+			requireApproval: true,
+			respectQuiSeeding: false,
+			rejectionMemoryDays: 0,
+			rules: [
+				{
+					id: "rule-episode",
+					name: "Watched episodes",
+					enabled: true,
+					priority: 0,
+					targetScope: "episode",
+					ruleType: "plex_watch_count",
+					parameters: { operator: "greater_than", count: 2 },
+					serviceFilter: ["sonarr"],
+					instanceFilter: null,
+					excludeTags: null,
+					excludeTitles: null,
+					plexLibraryFilter: null,
+					action: "delete",
+					operator: null,
+					conditions: null,
+					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
+					createdAt: "2026-01-01T00:00:00Z",
+					updatedAt: "2026-01-01T00:00:00Z",
+				},
+			],
+		};
+
+		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} editRuleId="rule-episode" />);
+
+		const episodeScope = await screen.findByRole("button", { name: /^Episodes/ });
+		expect(episodeScope).toHaveAttribute("aria-pressed", "true");
+		expect(episodeScope).toHaveAttribute(
+			"title",
+			"Target scope cannot be changed while editing a rule",
+		);
+		expect(
+			screen.getByText(
+				"Target scope cannot be changed while editing. Create a new rule to use a different scope.",
+			),
+		).toBeInTheDocument();
+		expect(screen.getByLabelText("Count")).toHaveValue(2);
+		fireEvent.change(screen.getByLabelText("Count"), { target: { value: "4" } });
+		fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+		await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+		expect(updateMutate).toHaveBeenCalledWith({
+			id: "rule-episode",
+			data: expect.objectContaining({
+				targetScope: "episode",
+				ruleType: "plex_watch_count",
+				parameters: { operator: "greater_than", count: 4 },
+				serviceFilter: ["sonarr"],
+				plexLibraryFilter: null,
+				retentionMode: false,
+				operator: null,
+				conditions: null,
+			}),
+		});
+	});
+
 	it("saves a PARTIAL update — composer-owned fields only, advanced filters omitted (preserved)", async () => {
 		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} editRuleId="rule-1" />);
 		await screen.findByDisplayValue("Old unwatched");

@@ -45,12 +45,14 @@ const mockFieldOptions = {
 	arrTags: [],
 };
 
+const mockUseServicesQuery = vi.fn();
+
 vi.mock("@/hooks/api/useLibraryCleanup", () => ({
 	useCleanupFieldOptions: () => ({ data: mockFieldOptions, isLoading: false }),
 }));
 
 vi.mock("@/hooks/api/useServicesQuery", () => ({
-	useServicesQuery: () => ({ data: [] }),
+	useServicesQuery: () => mockUseServicesQuery(),
 }));
 
 vi.mock("@/hooks/useThemeGradient", () => ({
@@ -150,6 +152,7 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 describe("CleanupRuleDialog", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockUseServicesQuery.mockReturnValue({ data: [] });
 	});
 
 	// ================================================================
@@ -208,11 +211,20 @@ describe("CleanupRuleDialog", () => {
 			);
 		});
 
-		it("constrains an episode rule to the supported Sonarr Plex watch-count shape", async () => {
+		it("shows only the supported episode rule controls and submits the editable threshold", async () => {
 			const onSave = vi.fn();
 			renderDialog({ onSave });
 
 			fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+
+			expect(screen.queryByText("Rule Mode")).not.toBeInTheDocument();
+			expect(screen.queryByText("Composite Rule")).not.toBeInTheDocument();
+			expect(screen.queryByText("Content Attributes")).not.toBeInTheDocument();
+			expect(screen.getByText("Plex Watch Count")).toBeInTheDocument();
+			const operator = screen.getByLabelText("Operator");
+			expect(operator).toBeDisabled();
+			expect(screen.queryByRole("option", { name: "Less than" })).not.toBeInTheDocument();
+			fireEvent.change(screen.getByLabelText("Count"), { target: { value: "3" } });
 			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
 				target: { value: "Watched episodes" },
 			});
@@ -223,7 +235,7 @@ describe("CleanupRuleDialog", () => {
 				expect.objectContaining({
 					targetScope: "episode",
 					ruleType: "plex_watch_count",
-					parameters: expect.objectContaining({ operator: "greater_than" }),
+					parameters: { operator: "greater_than", count: 3 },
 					serviceFilter: ["sonarr"],
 					retentionMode: false,
 					plexLibraryFilter: null,
@@ -231,6 +243,50 @@ describe("CleanupRuleDialog", () => {
 					conditions: null,
 				}),
 			);
+		});
+
+		it("removes Radarr instance selections when switching to episode scope", async () => {
+			mockUseServicesQuery.mockReturnValue({
+				data: [
+					{ id: "sonarr-hd", service: "sonarr", label: "Sonarr HD" },
+					{ id: "radarr-4k", service: "radarr", label: "Radarr 4K" },
+				],
+			});
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+
+			fireEvent.click(screen.getByRole("button", { name: "Sonarr HD" }));
+			fireEvent.click(screen.getByRole("button", { name: "Radarr 4K" }));
+			fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+
+			expect(screen.getByRole("button", { name: "Sonarr HD" })).toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: "Radarr 4K" })).not.toBeInTheDocument();
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Episode cleanup" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Add Rule" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toEqual(
+				expect.objectContaining({ instanceFilter: ["sonarr-hd"] }),
+			);
+		});
+
+		it("explains the exact episode action semantics", () => {
+			renderDialog();
+			fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+
+			expect(
+				screen.getByText(
+					/Unmonitor the exact Sonarr episode, then delete its verified episode file/,
+				),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Unmonitor" }));
+			expect(screen.getByText(/Unmonitor only the exact Sonarr episode/)).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Delete Files" }));
+			expect(
+				screen.getByText(/episode remains monitored, so Sonarr may download it again/),
+			).toBeInTheDocument();
 		});
 
 		it("defaults to delete action", () => {
@@ -278,13 +334,20 @@ describe("CleanupRuleDialog", () => {
 					ruleType: "plex_watch_count",
 					parameters: { operator: "greater_than", count: 2 },
 					serviceFilter: ["sonarr"],
-				}) as CleanupRuleResponse,
+				}),
 			});
 
-			expect(screen.getByRole("button", { name: /^Episodes/ })).toHaveAttribute(
-				"aria-pressed",
-				"true",
+			const episodeScope = screen.getByRole("button", { name: /^Episodes/ });
+			expect(episodeScope).toHaveAttribute("aria-pressed", "true");
+			expect(episodeScope).toHaveAttribute(
+				"title",
+				"Target scope cannot be changed while editing a rule",
 			);
+			expect(
+				screen.getByText(
+					"Target scope cannot be changed while editing. Create a new rule to use a different scope.",
+				),
+			).toBeInTheDocument();
 		});
 
 		it("submit button says 'Save Changes'", () => {
@@ -356,6 +419,7 @@ describe("CleanupRuleDialog", () => {
 			renderDialog({
 				templateData: {
 					name: "Template Rule",
+					targetScope: "series",
 					ruleType: "composite",
 					enabled: true,
 					priority: 0,
@@ -366,7 +430,7 @@ describe("CleanupRuleDialog", () => {
 					rejectionMemoryDays: 0,
 					operator: "AND",
 					conditions: [{ ruleType: "age", parameters: { operator: "older_than", days: 90 } }],
-				} as unknown as CreateCleanupRule,
+				},
 			});
 			expect(screen.getByText(/Template applied/)).toBeInTheDocument();
 		});
@@ -375,6 +439,7 @@ describe("CleanupRuleDialog", () => {
 			renderDialog({
 				templateData: {
 					name: "Template Rule",
+					targetScope: "series",
 					ruleType: "age",
 					enabled: true,
 					priority: 0,
@@ -383,7 +448,7 @@ describe("CleanupRuleDialog", () => {
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
-				} as unknown as CreateCleanupRule,
+				},
 			});
 			const nameInput = screen.getByPlaceholderText("e.g., Old low-rated movies");
 			expect(nameInput).toHaveValue("Template Rule");
@@ -393,6 +458,7 @@ describe("CleanupRuleDialog", () => {
 			renderDialog({
 				templateData: {
 					name: "Template Rule",
+					targetScope: "series",
 					ruleType: "age",
 					enabled: true,
 					priority: 0,
@@ -401,7 +467,7 @@ describe("CleanupRuleDialog", () => {
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
-				} as unknown as CreateCleanupRule,
+				},
 			});
 			expect(
 				screen.getByText("Set the item as unmonitored (keeps files and data)."),
@@ -412,6 +478,7 @@ describe("CleanupRuleDialog", () => {
 			renderDialog({
 				templateData: {
 					name: "Template Rule",
+					targetScope: "series",
 					ruleType: "composite",
 					enabled: true,
 					priority: 0,
@@ -427,7 +494,7 @@ describe("CleanupRuleDialog", () => {
 							parameters: { userNames: [] },
 						},
 					],
-				} as unknown as CreateCleanupRule,
+				},
 			});
 			expect(screen.getByText(/Fill in the usernames in each condition below/)).toBeInTheDocument();
 		});
@@ -436,6 +503,7 @@ describe("CleanupRuleDialog", () => {
 			renderDialog({
 				templateData: {
 					name: "Template Rule",
+					targetScope: "series",
 					ruleType: "age",
 					enabled: true,
 					priority: 0,
@@ -444,7 +512,7 @@ describe("CleanupRuleDialog", () => {
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
-				} as unknown as CreateCleanupRule,
+				},
 			});
 			expect(screen.getByText("New Cleanup Rule")).toBeInTheDocument();
 		});
@@ -453,6 +521,7 @@ describe("CleanupRuleDialog", () => {
 			renderDialog({
 				templateData: {
 					name: "Composite Template",
+					targetScope: "series",
 					ruleType: "composite",
 					enabled: true,
 					priority: 0,
@@ -466,7 +535,7 @@ describe("CleanupRuleDialog", () => {
 						{ ruleType: "age", parameters: { operator: "older_than", days: 90 } },
 						{ ruleType: "size", parameters: { operator: "greater_than", sizeGb: 100 } },
 					],
-				} as unknown as CreateCleanupRule,
+				},
 			});
 			expect(screen.getByText("Condition 1")).toBeInTheDocument();
 			expect(screen.getByText("Condition 2")).toBeInTheDocument();
