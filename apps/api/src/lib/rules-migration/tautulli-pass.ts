@@ -1,13 +1,18 @@
 /**
- * Tautulli rules pass — the one semantic stored-rule migration in 3.0.
+ * Historical Tautulli rules pass and report reader.
  *
  * ADR-0006 amendment 2 / ADR-0007 / docs/design/unified-rule-grammar.md §3.1.
  *
- * Tautulli support is removed in 3.0, which orphans the three
+ * This records the former removal pass for historical report reading. ADR-0009
+ * preserves Tautulli configuration and rules, so this pass is not registered
+ * or executed during startup. The report reader below remains observation-only
+ * for a later recovery notice.
+ *
+ * The former pass considered the three
  * Tautulli-typed condition kinds (`tautulli_last_watched`,
  * `tautulli_watch_count`, `tautulli_watched_by`) stored in
- * LibraryCleanupRule and AutoTagRule documents. This pass runs once at
- * first 3.0 boot, under the ADR-0006 5-point contract:
+ * LibraryCleanupRule and AutoTagRule documents. The retained historical pass
+ * used the ADR-0006 5-point contract:
  *
  *   1. Backup before mutation — original rows are written to
  *      `<dataDir>/rules-pre-3.0/<surface>.json` (first-write-wins so a
@@ -252,8 +257,7 @@ function mergeSurfaceReports(
 }
 
 /**
- * Run the pass. Safe to call on every boot — exits without side effects
- * when no Tautulli-typed conditions remain.
+ * Run the historical pass. It must never be registered or invoked at startup.
  */
 export async function runTautulliRulesPass(
 	prisma: PrismaClient,
