@@ -1,15 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { UnauthorizedError } from "../../lib/api-client/base";
 import {
 	clearValidationQuarantine,
-	completeTautulliMigration,
+	dismissTautulliProviderNotice,
 	fetchLogFiles,
 	fetchSecurityPosture,
 	fetchSystemInfo,
 	fetchSystemJobs,
 	fetchSystemSettings,
-	fetchTautulliMigrationStatus,
+	fetchTautulliProviderNotices,
 	fetchValidationHealth,
 	fetchValidationQuarantine,
 	type LogFilesResponse,
@@ -20,14 +19,15 @@ import {
 	type SystemInfoResponse,
 	type SystemJobsResponse,
 	type SystemSettingsResponse,
-	type TautulliMigrationStatus,
+	type TautulliNoticeKey,
+	type TautulliProviderNoticesResponse,
 	type UpdateSystemSettingsPayload,
 	updateSystemSettings,
 	type ValidationHealthResponse,
 } from "../../lib/api-client/system";
 import { getErrorMessage } from "../../lib/error-utils";
 import { POLLING_STANDARD, POLLING_STATS } from "../../lib/polling-intervals";
-import { pulseKeys, serviceKeys, systemKeys, validationKeys } from "../../lib/query-keys";
+import { systemKeys, validationKeys } from "../../lib/query-keys";
 
 // ============================================================================
 // System Settings
@@ -175,40 +175,26 @@ export function useClearQuarantine() {
 }
 
 // ============================================================================
-// Tautulli Removal Migration (3.0 — ADR-0007)
+// Tautulli Provider Notices (3.0)
 // ============================================================================
 
-export function useTautulliMigrationStatus() {
-	return useQuery<TautulliMigrationStatus>({
-		queryKey: systemKeys.tautulliMigration,
-		queryFn: fetchTautulliMigrationStatus,
-		// One-shot gate: no polling. Re-checked on mount and after the
-		// completion mutation invalidates the key.
-		staleTime: Number.POSITIVE_INFINITY,
-		// A 401 must not block the app, but a transient failure (API still
-		// booting right after the 3.0 upgrade — the likeliest moment) must
-		// not permanently hide a required migration gate either: retry a
-		// few times, then keep probing while errored.
-		retry: (failureCount, error) => !(error instanceof UnauthorizedError) && failureCount < 3,
-		refetchInterval: (query) => (query.state.status === "error" ? POLLING_STANDARD : false),
+export function useTautulliProviderNotices() {
+	return useQuery<TautulliProviderNoticesResponse>({
+		queryKey: systemKeys.tautulliProviderNotices,
+		queryFn: fetchTautulliProviderNotices,
 	});
 }
 
-export function useCompleteTautulliMigration() {
+export function useDismissTautulliProviderNotice() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: completeTautulliMigration,
+		mutationFn: (key: TautulliNoticeKey) => dismissTautulliProviderNotice(key),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliMigration });
-			// Instance rows were deleted (cache rows cascade) — refresh the
-			// services list and any Pulse rows derived from lingering caches.
-			queryClient.invalidateQueries({ queryKey: serviceKeys.all });
-			queryClient.invalidateQueries({ queryKey: pulseKeys.all });
-			toast.success("Tautulli removed — you're all set");
+			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 		onError: (err) => {
-			toast.error(`Failed to complete migration: ${getErrorMessage(err)}`);
+			toast.error(`Failed to dismiss Tautulli notice: ${getErrorMessage(err)}`);
 		},
 	});
 }

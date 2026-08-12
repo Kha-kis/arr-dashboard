@@ -532,7 +532,7 @@ export const backupKeys = {
 
 export const systemKeys = {
 	settings: ["system-settings"] as const,
-	tautulliMigration: ["system-tautulli-migration"] as const,
+	tautulliProviderNotices: ["system-tautulli-provider-notices"] as const,
 	info: ["system-info"] as const,
 	logs: ["system-logs"] as const,
 	securityPosture: ["system-security-posture"] as const,
