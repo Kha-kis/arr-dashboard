@@ -4,7 +4,7 @@ import path from "node:path";
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerInfrastructure } from "../../bootstrap/infrastructure.js";
-import type { PrismaClient } from "../../prisma.js";
+import type { PrismaClient } from "../../lib/prisma.js";
 
 // The production registration path is under test. These plugins do not affect
 // Tautulli state, so keep them inert while retaining the real migration plugin
