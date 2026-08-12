@@ -1,9 +1,18 @@
 # Tracearr Primary with Tautulli Alternative
 
-**Status:** Approved product direction; implementation planning pending
+**Status:** Approved product direction; implementation plans complete
 **Date:** 2026-08-12
 **Target:** `next` / arr-dashboard 3.0
 **Related:** Issue #689, ADR-0007, the Next Maintenance Parity Program
+
+## Implementation plans
+
+Execute these bounded plans in order:
+
+1. `../plans/2026-08-12-tautulli-preservation-migration.md`
+2. `../plans/2026-08-12-tautulli-runtime-restoration.md`
+3. `../plans/2026-08-12-analytics-provider-selection.md`
+4. `../plans/2026-08-12-durable-upstream-identity.md`
 
 ## Decision
 
