@@ -103,6 +103,33 @@ interface ExplainTarget {
 	title: string;
 }
 
+type EpisodeDisplayFields = {
+	targetScope?: "series" | "episode";
+	seasonNumber?: number | null;
+	episodeNumber?: number | null;
+	episodeTitle?: string | null;
+};
+
+function EpisodeIdentity({
+	item,
+	incognitoMode,
+}: {
+	item: EpisodeDisplayFields;
+	incognitoMode: boolean;
+}) {
+	if (item.targetScope !== "episode" || item.seasonNumber == null || item.episodeNumber == null)
+		return null;
+	const coordinates = `S${String(item.seasonNumber).padStart(2, "0")}E${String(item.episodeNumber).padStart(2, "0")}`;
+	return (
+		<p className="mt-0.5 text-xs text-muted-foreground">
+			{coordinates}
+			{item.episodeTitle
+				? ` · ${incognitoMode ? getLinuxIsoName(item.episodeTitle) : item.episodeTitle}`
+				: ""}
+		</p>
+	);
+}
+
 export function LibraryCleanupClient() {
 	const { gradient } = useThemeGradient();
 	const [activeTab, setActiveTab] = useState<Tab>("config");
@@ -675,6 +702,10 @@ function ConfigTab({
 													</span>
 													<QuiStatusBadge status={item.quiStatus} />
 												</div>
+												<EpisodeIdentity
+													item={item as typeof item & EpisodeDisplayFields}
+													incognitoMode={incognitoMode}
+												/>
 												{item.action === "skipped" && (
 													<p className="mt-1 text-xs text-muted-foreground">{ruleSummary}</p>
 												)}
@@ -1150,6 +1181,10 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 											</p>
 										)}
 									</div>
+									<EpisodeIdentity
+										item={item as typeof item & EpisodeDisplayFields}
+										incognitoMode={incognitoMode}
+									/>
 									<span className="text-xs text-muted-foreground shrink-0">
 										{(Number(item.sizeOnDisk) / 1073741824).toFixed(1)} GB
 									</span>
@@ -1449,6 +1484,10 @@ function LogsTab() {
 																		<span className="text-foreground font-medium truncate max-w-[200px]">
 																			{incognitoMode ? getLinuxIsoName(d.title) : d.title}
 																		</span>
+																		<EpisodeIdentity
+																			item={d as EpisodeDisplayFields}
+																			incognitoMode={incognitoMode}
+																		/>
 																		<span className="text-muted-foreground">—</span>
 																		<span className="text-muted-foreground">{d.rule}</span>
 																		<span className="text-muted-foreground/70 truncate">

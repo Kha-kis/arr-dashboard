@@ -173,6 +173,7 @@ function makeConfig(overrides: Partial<CleanupConfigResponse> = {}): CleanupConf
 				name: "Old Movies",
 				enabled: true,
 				priority: 0,
+				targetScope: "series",
 				ruleType: "age",
 				parameters: { field: "arrAddedAt", operator: "older_than", days: 365 },
 				serviceFilter: null,

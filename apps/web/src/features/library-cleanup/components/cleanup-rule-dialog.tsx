@@ -185,6 +185,7 @@ export function CleanupRuleDialog({
 
 	// ── Retention mode ─────────────────────────────────────────────
 	const [retentionMode, setRetentionMode] = useState(false);
+	const [targetScope, setTargetScope] = useState<"series" | "episode">("series");
 
 	// ── Rejection-memory override (issue #474) ────────────────────
 	// When `useGlobalRejectionMemory` is true the rule inherits the config
@@ -208,6 +209,10 @@ export function CleanupRuleDialog({
 	useEffect(() => {
 		if (!open) return;
 		if (editRule) {
+			setTargetScope(
+				(editRule as CleanupRuleResponse & { targetScope?: "series" | "episode" }).targetScope ??
+					"series",
+			);
 			setName(editRule.name);
 			setRuleType(editRule.ruleType);
 			setEnabled(editRule.enabled);
@@ -446,6 +451,7 @@ export function CleanupRuleDialog({
 		} else {
 			// Reset to defaults for create mode
 			setName("");
+			setTargetScope("series");
 			setRuleType("age");
 			setEnabled(true);
 			setExpandedCategories(new Set(["content"]));
@@ -551,6 +557,10 @@ export function CleanupRuleDialog({
 
 			// Overlay template data on top of defaults (create mode only)
 			if (templateData) {
+				setTargetScope(
+					(templateData as CreateCleanupRule & { targetScope?: "series" | "episode" })
+						.targetScope ?? "series",
+				);
 				setName(templateData.name);
 				setAction((templateData.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
 				setRetentionMode(templateData.retentionMode ?? false);
@@ -678,14 +688,31 @@ export function CleanupRuleDialog({
 	};
 	const buildParams = () => buildParamsPure(buildParamsState);
 
+	const selectTargetScope = (scope: "series" | "episode") => {
+		if (isEdit || scope === targetScope) return;
+		setTargetScope(scope);
+		if (scope === "episode") {
+			setRuleType("plex_watch_count");
+			setPlexWatchCountOp("greater_than");
+			setServiceFilter(["sonarr"]);
+			setSelectedPlexLibraries([]);
+			setIsComposite(false);
+			setConditions([]);
+			setCompositeError(null);
+			setRetentionMode(false);
+			setExpandedCategories(new Set(["plex"]));
+		}
+	};
+
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
-		if (isComposite && conditions.length === 0) {
+		const isEpisodeScope = targetScope === "episode";
+		if (!isEpisodeScope && isComposite && conditions.length === 0) {
 			setCompositeError("Composite rules must have at least one condition");
 			return;
 		}
 		// Validate composite conditions have required fields filled in
-		if (isComposite) {
+		if (!isEpisodeScope && isComposite) {
 			for (const cond of conditions) {
 				const p = cond.params;
 				if (
@@ -714,12 +741,21 @@ export function CleanupRuleDialog({
 					: 0;
 		const base = {
 			name,
-			ruleType: isComposite ? ("composite" as const) : ruleType,
+			targetScope,
+			ruleType: isEpisodeScope
+				? ("plex_watch_count" as const)
+				: isComposite
+					? ("composite" as const)
+					: ruleType,
 			enabled,
 			priority: editRule?.priority ?? 0,
-			parameters: isComposite ? {} : buildParams(),
+			parameters: isEpisodeScope
+				? { operator: "greater_than", count: plexWatchCountVal }
+				: isComposite
+					? {}
+					: buildParams(),
 			action,
-			retentionMode,
+			retentionMode: isEpisodeScope ? false : retentionMode,
 			useGlobalRejectionMemory,
 			// When override is off, omit `rejectionMemoryDays` from the payload
 			// entirely. The PATCH route's `!== undefined` discipline preserves
@@ -728,20 +764,22 @@ export function CleanupRuleDialog({
 			// the route defaults `undefined` to `0`, which is the right
 			// pre-#474 behavior when override is off.
 			...(useGlobalRejectionMemory ? {} : { rejectionMemoryDays: ruleRejectionDays }),
-			serviceFilter: serviceFilter.length > 0 ? serviceFilter : null,
+			serviceFilter: isEpisodeScope ? ["sonarr"] : serviceFilter.length > 0 ? serviceFilter : null,
 			instanceFilter: instanceFilter.length > 0 ? instanceFilter : null,
 			excludeTags: excludeTags.length > 0 ? excludeTags : null,
 			excludeTitles: excludeTitles.trim() ? splitCsv(excludeTitles) : null,
-			plexLibraryFilter: selectedPlexLibraries.length > 0 ? selectedPlexLibraries : null,
-			operator: isComposite ? compositeOperator : null,
-			conditions: isComposite
-				? conditions
-						.filter((c) => c.ruleType !== "composite")
-						.map((c) => ({
-							ruleType: c.ruleType as Exclude<CleanupRuleType, "composite">,
-							parameters: c.params,
-						}))
-				: null,
+			plexLibraryFilter:
+				!isEpisodeScope && selectedPlexLibraries.length > 0 ? selectedPlexLibraries : null,
+			operator: !isEpisodeScope && isComposite ? compositeOperator : null,
+			conditions:
+				!isEpisodeScope && isComposite
+					? conditions
+							.filter((c) => c.ruleType !== "composite")
+							.map((c) => ({
+								ruleType: c.ruleType as Exclude<CleanupRuleType, "composite">,
+								parameters: c.params,
+							}))
+					: null,
 		};
 		onSave(base as CreateCleanupRule);
 	};
@@ -831,23 +869,57 @@ export function CleanupRuleDialog({
 							/>
 						</div>
 
-						{/* ── Retention Mode toggle ────────────────── */}
-						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-2">
-								<ShieldOff className="h-4 w-4 text-emerald-400" />
-								<div>
-									<span className="text-sm font-medium">Retention Rule</span>
-									<p className="text-xs text-muted-foreground">
-										Protects matching items from other rules
-									</p>
-								</div>
+						<div>
+							<span className={labelClass}>Target</span>
+							<div className="mt-1.5 grid grid-cols-2 gap-2">
+								{(["series", "episode"] as const).map((scope) => (
+									<button
+										key={scope}
+										type="button"
+										onClick={() => selectTargetScope(scope)}
+										disabled={isEdit}
+										aria-pressed={targetScope === scope}
+										className="rounded-lg border px-3 py-2 text-left text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60"
+										style={
+											targetScope === scope
+												? {
+														borderColor: gradient.from,
+														backgroundColor: gradient.fromLight,
+														color: gradient.from,
+													}
+												: { borderColor: "var(--color-border)" }
+										}
+									>
+										{scope === "series" ? "Series" : "Episodes"}
+									</button>
+								))}
 							</div>
-							<Switch
-								checked={retentionMode}
-								onCheckedChange={setRetentionMode}
-								style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
-							/>
+							<p className="mt-1 text-xs text-muted-foreground">
+								{targetScope === "episode"
+									? "Episode cleanup is a Sonarr-only workflow using Plex watch count."
+									: "Plex totals and destructive actions apply to the full series and its episode files."}
+							</p>
 						</div>
+
+						{/* ── Retention Mode toggle ────────────────── */}
+						{targetScope === "series" && (
+							<div className="flex items-center justify-between">
+								<div className="flex items-center gap-2">
+									<ShieldOff className="h-4 w-4 text-emerald-400" />
+									<div>
+										<span className="text-sm font-medium">Retention Rule</span>
+										<p className="text-xs text-muted-foreground">
+											Protects matching items from other rules
+										</p>
+									</div>
+								</div>
+								<Switch
+									checked={retentionMode}
+									onCheckedChange={setRetentionMode}
+									style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
+								/>
+							</div>
+						)}
 
 						{/* ── Rejection-memory override (issue #474) ───── */}
 						<div className="space-y-2">
@@ -1394,14 +1466,17 @@ export function CleanupRuleDialog({
 						<div>
 							<span className={labelClass}>Service Filter</span>
 							<div className="flex gap-2 mt-1.5">
-								{(["sonarr", "radarr"] as const).map((svc) => {
+								{(targetScope === "episode"
+									? (["sonarr"] as const)
+									: (["sonarr", "radarr"] as const)
+								).map((svc) => {
 									const svcGradient = getServiceGradient(svc);
 									const isActive = serviceFilter.includes(svc);
 									return (
 										<button
 											key={svc}
 											type="button"
-											onClick={() => toggleService(svc)}
+											onClick={() => targetScope === "series" && toggleService(svc)}
 											aria-pressed={isActive}
 											aria-label={`Filter by ${svc}`}
 											className="rounded-lg border px-3 py-1.5 text-sm font-medium capitalize transition-all duration-200"
@@ -1480,22 +1555,24 @@ export function CleanupRuleDialog({
 							)}
 						</div>
 
-						{fieldOptions?.plexLibraries && fieldOptions.plexLibraries.length > 0 && (
-							<div>
-								<MultiSelectField
-									label="Plex Library Filter"
-									options={fieldOptions.plexLibraries}
-									selected={selectedPlexLibraries}
-									onChange={setSelectedPlexLibraries}
-									loading={fieldOptionsLoading}
-									inputClass={inputClass}
-									labelClass={labelClass}
-								/>
-								<p className="text-xs text-muted-foreground mt-1.5">
-									Limit Plex rules to specific libraries. Leave empty for all.
-								</p>
-							</div>
-						)}
+						{targetScope === "series" &&
+							fieldOptions?.plexLibraries &&
+							fieldOptions.plexLibraries.length > 0 && (
+								<div>
+									<MultiSelectField
+										label="Plex Library Filter"
+										options={fieldOptions.plexLibraries}
+										selected={selectedPlexLibraries}
+										onChange={setSelectedPlexLibraries}
+										loading={fieldOptionsLoading}
+										inputClass={inputClass}
+										labelClass={labelClass}
+									/>
+									<p className="text-xs text-muted-foreground mt-1.5">
+										Limit Plex rules to specific libraries. Leave empty for all.
+									</p>
+								</div>
+							)}
 					</div>
 
 					{/* ── Exclusions Section ────────────────────────── */}

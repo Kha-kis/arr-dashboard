@@ -76,6 +76,35 @@ beforeEach(() => {
 });
 
 describe("CleanupRuleComposerDialog — create", () => {
+	it("defaults a new rule to series scope", () => {
+		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} />);
+
+		expect(screen.getByRole("button", { name: /^Series/ })).toHaveAttribute("aria-pressed", "true");
+	});
+
+	it("serializes the constrained episode payload", async () => {
+		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} />);
+		fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+		fireEvent.change(screen.getByPlaceholderText(/old low-rated movies/i), {
+			target: { value: "Watched episodes" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /create rule/i }));
+
+		await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+		expect(createMutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				targetScope: "episode",
+				ruleType: "plex_watch_count",
+				parameters: { operator: "greater_than", count: 1 },
+				serviceFilter: ["sonarr"],
+				retentionMode: false,
+				plexLibraryFilter: null,
+				operator: null,
+				conditions: null,
+			}),
+		);
+	});
+
 	it("POSTs the merged core-action + serialized single-condition payload", async () => {
 		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} />);
 
@@ -90,6 +119,7 @@ describe("CleanupRuleComposerDialog — create", () => {
 			enabled: true,
 			action: "delete",
 			retentionMode: false,
+			targetScope: "series",
 			// Default seed condition is age; single → operator/conditions null.
 			ruleType: "age",
 			parameters: { operator: "older_than", days: 30 },
@@ -150,6 +180,7 @@ describe("CleanupRuleComposerDialog — edit", () => {
 					name: "Old unwatched",
 					enabled: true,
 					priority: 0,
+					targetScope: "series",
 					ruleType: "composite",
 					parameters: {},
 					serviceFilter: ["sonarr"],
@@ -196,6 +227,7 @@ describe("CleanupRuleComposerDialog — edit", () => {
 			enabled: true,
 			action: "unmonitor",
 			retentionMode: true,
+			targetScope: "series",
 			// Defaulted fields the composer doesn't edit are ECHOED from the loaded
 			// rule — base.partial() re-injects their defaults, so omitting them would
 			// clobber the stored values (priority reset to 0, useGlobalRejectionMemory

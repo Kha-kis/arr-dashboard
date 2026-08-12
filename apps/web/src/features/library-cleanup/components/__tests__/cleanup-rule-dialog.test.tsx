@@ -1,9 +1,9 @@
 import type { CleanupRuleResponse, CreateCleanupRule } from "@arr/shared";
-import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 
 // ---------------------------------------------------------------------------
 // jsdom polyfills required by Radix UI
@@ -123,6 +123,7 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 		name: "Old low-rated movies",
 		enabled: true,
 		priority: 0,
+		targetScope: "series",
 		ruleType: "age",
 		parameters: { field: "arrAddedAt", operator: "older_than", days: 365 },
 		serviceFilter: null,
@@ -198,6 +199,40 @@ describe("CleanupRuleDialog", () => {
 			expect(screen.getByText("Composite Rule")).toBeInTheDocument();
 		});
 
+		it("defaults a new rule to series scope", () => {
+			renderDialog();
+
+			expect(screen.getByRole("button", { name: /^Series/ })).toHaveAttribute(
+				"aria-pressed",
+				"true",
+			);
+		});
+
+		it("constrains an episode rule to the supported Sonarr Plex watch-count shape", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+
+			fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Watched episodes" },
+			});
+			fireEvent.click(screen.getByText("Add Rule").closest("button")!);
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave).toHaveBeenCalledWith(
+				expect.objectContaining({
+					targetScope: "episode",
+					ruleType: "plex_watch_count",
+					parameters: expect.objectContaining({ operator: "greater_than" }),
+					serviceFilter: ["sonarr"],
+					retentionMode: false,
+					plexLibraryFilter: null,
+					operator: null,
+					conditions: null,
+				}),
+			);
+		});
+
 		it("defaults to delete action", () => {
 			renderDialog();
 			// The "Delete" button should exist
@@ -234,6 +269,22 @@ describe("CleanupRuleDialog", () => {
 			renderDialog({ editRule: makeEditRule({ name: "My test rule" }) });
 			const nameInput = screen.getByPlaceholderText("e.g., Old low-rated movies");
 			expect(nameInput).toHaveValue("My test rule");
+		});
+
+		it("preserves episode scope when editing an existing episode rule", () => {
+			renderDialog({
+				editRule: makeEditRule({
+					targetScope: "episode",
+					ruleType: "plex_watch_count",
+					parameters: { operator: "greater_than", count: 2 },
+					serviceFilter: ["sonarr"],
+				}) as CleanupRuleResponse,
+			});
+
+			expect(screen.getByRole("button", { name: /^Episodes/ })).toHaveAttribute(
+				"aria-pressed",
+				"true",
+			);
 		});
 
 		it("submit button says 'Save Changes'", () => {
@@ -315,7 +366,7 @@ describe("CleanupRuleDialog", () => {
 					rejectionMemoryDays: 0,
 					operator: "AND",
 					conditions: [{ ruleType: "age", parameters: { operator: "older_than", days: 90 } }],
-				} as CreateCleanupRule,
+				} as unknown as CreateCleanupRule,
 			});
 			expect(screen.getByText(/Template applied/)).toBeInTheDocument();
 		});
@@ -332,7 +383,7 @@ describe("CleanupRuleDialog", () => {
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
-				} as CreateCleanupRule,
+				} as unknown as CreateCleanupRule,
 			});
 			const nameInput = screen.getByPlaceholderText("e.g., Old low-rated movies");
 			expect(nameInput).toHaveValue("Template Rule");
@@ -350,7 +401,7 @@ describe("CleanupRuleDialog", () => {
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
-				} as CreateCleanupRule,
+				} as unknown as CreateCleanupRule,
 			});
 			expect(
 				screen.getByText("Set the item as unmonitored (keeps files and data)."),
@@ -376,7 +427,7 @@ describe("CleanupRuleDialog", () => {
 							parameters: { userNames: [] },
 						},
 					],
-				} as CreateCleanupRule,
+				} as unknown as CreateCleanupRule,
 			});
 			expect(screen.getByText(/Fill in the usernames in each condition below/)).toBeInTheDocument();
 		});
@@ -393,7 +444,7 @@ describe("CleanupRuleDialog", () => {
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
-				} as CreateCleanupRule,
+				} as unknown as CreateCleanupRule,
 			});
 			expect(screen.getByText("New Cleanup Rule")).toBeInTheDocument();
 		});
@@ -415,7 +466,7 @@ describe("CleanupRuleDialog", () => {
 						{ ruleType: "age", parameters: { operator: "older_than", days: 90 } },
 						{ ruleType: "size", parameters: { operator: "greater_than", sizeGb: 100 } },
 					],
-				} as CreateCleanupRule,
+				} as unknown as CreateCleanupRule,
 			});
 			expect(screen.getByText("Condition 1")).toBeInTheDocument();
 			expect(screen.getByText("Condition 2")).toBeInTheDocument();
