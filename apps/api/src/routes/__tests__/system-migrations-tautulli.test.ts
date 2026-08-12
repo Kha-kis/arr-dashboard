@@ -1,11 +1,9 @@
 /**
- * GET/POST /system/migrations/tautulli HTTP integration tests (ADR-0007).
+ * HTTP contract tests for the non-blocking Tautulli provider notices.
  *
- * Pins the migration-dialog contract:
- *   - GET reports needed=true with instance labels while TAUTULLI rows linger
- *   - GET includes the rules-pass report when one exists, null when not
- *   - GET is needed=false (and skips the report read) once rows are gone
- *   - POST deletes only the current user's TAUTULLI rows and is idempotent
+ * These tests deliberately keep provider, cache, and rule fixtures as real
+ * in-memory rows. The system route may inspect provider state and persist a
+ * user-scoped notice dismissal, but it must never mutate those rows.
  */
 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -16,40 +14,64 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TAUTULLI_PASS_REPORT_FILE } from "../../lib/rules-migration/tautulli-pass.js";
 import schedulerRegistryPlugin from "../../plugins/scheduler-registry.js";
 import { registerSystemRoutes } from "../system.js";
-import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
+import { AUTH_HEADER, createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
 
 let app: ReturnType<typeof Fastify>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 let dataDir: string;
 
-type InstanceRow = { id: string; label: string; userId: string; service: string };
-let instanceRows: InstanceRow[];
+type InstanceRow = { id: string; label: string; userId: string; service: "TAUTULLI" | "TRACEARR" };
+type DismissalRow = { id: string; userId: string; noticeKey: string; dismissedAt: Date };
+type RuleRow = { id: string; userId: string; name: string };
 
-const findMany = vi.fn(async ({ where }: { where: { userId: string; service: string } }) =>
-	instanceRows
-		.filter((r) => r.userId === where.userId && r.service === where.service)
-		.map((r) => ({ id: r.id, label: r.label })),
+let instanceRows: InstanceRow[];
+let dismissalRows: DismissalRow[];
+let ruleRows: RuleRow[];
+
+const serviceInstanceFindMany = vi.fn(
+	async ({ where }: { where: { userId: string; service: "TAUTULLI" | "TRACEARR" } }) =>
+		instanceRows.filter((row) => row.userId === where.userId && row.service === where.service),
 );
-const deleteMany = vi.fn(async ({ where }: { where: { userId: string; service: string } }) => {
-	const before = instanceRows.length;
-	instanceRows = instanceRows.filter(
-		(r) => !(r.userId === where.userId && r.service === where.service),
-	);
-	return { count: before - instanceRows.length };
-});
+const dismissalFindMany = vi.fn(async ({ where }: { where: { userId: string } }) =>
+	dismissalRows.filter((row) => row.userId === where.userId),
+);
+const dismissalUpsert = vi.fn(
+	async ({
+		where,
+		create,
+	}: {
+		where: { userId_noticeKey: { userId: string; noticeKey: string } };
+		create: { userId: string; noticeKey: string };
+	}) => {
+		const existing = dismissalRows.find(
+			(row) =>
+				row.userId === where.userId_noticeKey.userId &&
+				row.noticeKey === where.userId_noticeKey.noticeKey,
+		);
+		if (existing) return existing;
+		const row = { id: `dismissal-${dismissalRows.length + 1}`, ...create, dismissedAt: new Date() };
+		dismissalRows.push(row);
+		return row;
+	},
+);
 
 beforeEach(async () => {
-	dataDir = await mkdtemp(path.join(tmpdir(), "tautulli-migration-route-"));
+	dataDir = await mkdtemp(path.join(tmpdir(), "tautulli-notice-route-"));
 	instanceRows = [];
-	findMany.mockClear();
-	deleteMany.mockClear();
+	dismissalRows = [];
+	ruleRows = [{ id: "rule-1", userId: "user-1", name: "Keep my Tautulli rule" }];
+	serviceInstanceFindMany.mockClear();
+	dismissalFindMany.mockClear();
+	dismissalUpsert.mockClear();
 
 	app = Fastify();
 	app.decorate("prisma", {
 		systemSettings: { findUnique: vi.fn(), create: vi.fn(), upsert: vi.fn() },
-		serviceInstance: { findMany, deleteMany },
+		serviceInstance: { findMany: serviceInstanceFindMany },
+		systemNoticeDismissal: { findMany: dismissalFindMany, upsert: dismissalUpsert },
+		libraryCleanupRule: { findMany: vi.fn(async () => ruleRows) },
+		autoTagRule: { findMany: vi.fn(async () => ruleRows) },
 	} as never);
-	// DATABASE_URL inside dataDir so dirname(resolveSecretsPath(...)) === dataDir
 	app.decorate("config", {
 		TRUST_PROXY: false,
 		COOKIE_SECURE: false,
@@ -59,6 +81,11 @@ beforeEach(async () => {
 	app.decorate("lifecycle", { getRestartMessage: () => "ok", restart: vi.fn() } as never);
 
 	setupAuthInjection(app);
+	app.addHook("preHandler", async (request: any) => {
+		if (request.headers[AUTH_HEADER] && request.headers["x-test-user"] === "user-2") {
+			request.currentUser = { id: "user-2", username: "other-admin" };
+		}
+	});
 	await app.register(schedulerRegistryPlugin);
 	await app.register(registerSystemRoutes, { prefix: "/system" });
 	await app.ready();
@@ -71,7 +98,7 @@ afterEach(async () => {
 	await rm(dataDir, { recursive: true, force: true });
 });
 
-async function seedReport() {
+async function seedPriorRemovalReport(acknowledged = true) {
 	const backupDir = path.join(dataDir, "rules-pre-3.0");
 	await mkdir(backupDir, { recursive: true });
 	await writeFile(
@@ -80,128 +107,194 @@ async function seedReport() {
 			ranAt: "2026-06-10T00:00:00.000Z",
 			surfaces: {
 				"library-cleanup": {
-					rulesScanned: 3,
-					rulesDisabled: [{ id: "c1", name: "Old watch rule", reason: "tautulli-orphaned" }],
-					rulesModified: [],
-					rulesUnparseable: [],
-				},
-				"auto-tag": {
 					rulesScanned: 1,
-					rulesDisabled: [],
+					rulesDisabled: [{ id: "rule-1", name: "Private rule", reason: "tautulli-orphaned" }],
 					rulesModified: [],
 					rulesUnparseable: [],
 				},
+				"auto-tag": { rulesScanned: 0, rulesDisabled: [], rulesModified: [], rulesUnparseable: [] },
 			},
 			totalAffectedRules: 1,
+			...(acknowledged ? { acknowledgedAt: "2026-06-10T01:00:00.000Z" } : {}),
 		}),
 		"utf-8",
 	);
 }
 
+async function getNoticesForUser(userId = "user-1") {
+	const response = await app.inject({
+		method: "GET",
+		url: "/system/migrations/tautulli",
+		headers: { [AUTH_HEADER]: "1", ...(userId === "user-2" ? { "x-test-user": "user-2" } : {}) },
+	});
+	expect(response.statusCode).toBe(200);
+	return JSON.parse(response.payload);
+}
+
 describe("GET /system/migrations/tautulli", () => {
-	it("reports needed=true with instance labels and the rules-pass report", async () => {
-		instanceRows = [{ id: "ta-1", label: "My Tautulli", userId: "user-1", service: "TAUTULLI" }];
-		await seedReport();
+	it.each([
+		["neither provider", [], []],
+		[
+			"Tautulli only",
+			[{ id: "ta-1", label: "private-tautulli", userId: "user-1", service: "TAUTULLI" }],
+			[],
+		],
+		[
+			"Tracearr only",
+			[{ id: "tr-1", label: "private-tracearr", userId: "user-1", service: "TRACEARR" }],
+			[],
+		],
+	] as const)("returns no notice when %s is configured", async (_state, instances, expected) => {
+		instanceRows = [...instances];
 
-		const res = await injectAuthenticated("GET", "/system/migrations/tautulli");
-
-		expect(res.statusCode).toBe(200);
-		const body = JSON.parse(res.payload);
-		expect(body.needed).toBe(true);
-		expect(body.instances).toEqual([{ id: "ta-1", label: "My Tautulli" }]);
-		expect(body.rulesReport.totalAffectedRules).toBe(1);
-		expect(body.rulesReport.surfaces["library-cleanup"].rulesDisabled[0].name).toBe(
-			"Old watch rule",
-		);
+		await expect(getNoticesForUser()).resolves.toEqual({ notices: expected });
 	});
 
-	it("degrades to rulesReport=null when no report file exists", async () => {
-		instanceRows = [{ id: "ta-1", label: "My Tautulli", userId: "user-1", service: "TAUTULLI" }];
+	it("returns a safe both-configured notice without provider labels or URLs", async () => {
+		instanceRows = [
+			{
+				id: "ta-1",
+				label: "Tautulli at https://secret.example",
+				userId: "user-1",
+				service: "TAUTULLI",
+			},
+			{
+				id: "tr-1",
+				label: "Tracearr https://user:password@example",
+				userId: "user-1",
+				service: "TRACEARR",
+			},
+		];
 
-		const res = await injectAuthenticated("GET", "/system/migrations/tautulli");
+		const response = await app.inject({
+			method: "GET",
+			url: "/system/migrations/tautulli",
+			headers: { [AUTH_HEADER]: "1" },
+		});
 
-		const body = JSON.parse(res.payload);
-		expect(body.needed).toBe(true);
-		expect(body.rulesReport).toBeNull();
+		expect(response.statusCode).toBe(200);
+		expect(JSON.parse(response.payload)).toEqual({
+			notices: [
+				{
+					key: "tautulli-both-configured",
+					kind: "both-configured",
+					actionUrl: "/settings/services",
+				},
+			],
+		});
+		expect(response.payload).not.toContain("secret.example");
+		expect(response.payload).not.toContain("password");
 	});
 
-	it("reports needed=false with no lingering instances", async () => {
-		const res = await injectAuthenticated("GET", "/system/migrations/tautulli");
+	it("returns a safe recovery notice only when the historical report proves prior removal", async () => {
+		await seedPriorRemovalReport();
 
-		const body = JSON.parse(res.payload);
-		expect(body).toEqual({ needed: false, instances: [], rulesReport: null });
+		const response = await app.inject({
+			method: "GET",
+			url: "/system/migrations/tautulli",
+			headers: { [AUTH_HEADER]: "1" },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(JSON.parse(response.payload)).toEqual({
+			notices: [
+				{
+					key: "tautulli-prior-removal",
+					kind: "prior-removal",
+					actionUrl: "/settings/services",
+				},
+			],
+		});
+		expect(response.payload).not.toContain("Private rule");
 	});
 
-	it("scopes the lookup to the current user and TAUTULLI service", async () => {
-		await injectAuthenticated("GET", "/system/migrations/tautulli");
+	it("does not infer prior removal from a missing Tautulli row", async () => {
+		await expect(getNoticesForUser()).resolves.toEqual({ notices: [] });
+	});
 
-		expect(findMany).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: { userId: "user-1", service: "TAUTULLI" },
-			}),
-		);
+	it("does not treat an unacknowledged rules report as proof that removal completed", async () => {
+		await seedPriorRemovalReport(false);
+
+		await expect(getNoticesForUser()).resolves.toEqual({ notices: [] });
+	});
+
+	it("hides only the current user's dismissed notice", async () => {
+		instanceRows = [
+			{ id: "ta-1", label: "Tautulli", userId: "user-1", service: "TAUTULLI" },
+			{ id: "tr-1", label: "Tracearr", userId: "user-1", service: "TRACEARR" },
+		];
+		dismissalRows = [
+			{
+				id: "dismissal-1",
+				userId: "user-1",
+				noticeKey: "tautulli-both-configured",
+				dismissedAt: new Date(),
+			},
+		];
+
+		await expect(getNoticesForUser()).resolves.toEqual({ notices: [] });
 	});
 });
 
 describe("POST /system/migrations/tautulli", () => {
-	it("deletes the current user's TAUTULLI rows and reports the count", async () => {
+	it("validates and idempotently persists the current user's dismissal without changing provider or rule rows", async () => {
 		instanceRows = [
-			{ id: "ta-1", label: "My Tautulli", userId: "user-1", service: "TAUTULLI" },
-			{ id: "plex-1", label: "My Plex", userId: "user-1", service: "PLEX" },
-			{ id: "ta-2", label: "Other user's", userId: "user-2", service: "TAUTULLI" },
+			{ id: "ta-1", label: "Tautulli", userId: "user-1", service: "TAUTULLI" },
+			{ id: "tr-1", label: "Tracearr", userId: "user-1", service: "TRACEARR" },
+			{ id: "ta-2", label: "Other Tautulli", userId: "user-2", service: "TAUTULLI" },
+		];
+		const providersBefore = structuredClone(instanceRows);
+		const rulesBefore = structuredClone(ruleRows);
+
+		const first = await injectAuthenticated("POST", "/system/migrations/tautulli", {
+			body: { key: "tautulli-both-configured" },
+		});
+		const second = await injectAuthenticated("POST", "/system/migrations/tautulli", {
+			body: { key: "tautulli-both-configured" },
+		});
+
+		expect(first.statusCode).toBe(200);
+		expect(JSON.parse(first.payload)).toEqual({ success: true });
+		expect(second.statusCode).toBe(200);
+		expect(JSON.parse(second.payload)).toEqual({ success: true });
+		expect(dismissalRows).toHaveLength(1);
+		expect(dismissalRows[0]).toMatchObject({
+			userId: "user-1",
+			noticeKey: "tautulli-both-configured",
+		});
+		expect(instanceRows).toEqual(providersBefore);
+		expect(ruleRows).toEqual(rulesBefore);
+	});
+
+	it("keeps dismissals isolated between users", async () => {
+		instanceRows = [
+			{ id: "ta-1", label: "Tautulli", userId: "user-1", service: "TAUTULLI" },
+			{ id: "tr-1", label: "Tracearr", userId: "user-1", service: "TRACEARR" },
+			{ id: "ta-2", label: "Other Tautulli", userId: "user-2", service: "TAUTULLI" },
+			{ id: "tr-2", label: "Other Tracearr", userId: "user-2", service: "TRACEARR" },
 		];
 
-		const res = await injectAuthenticated("POST", "/system/migrations/tautulli");
+		await injectAuthenticated("POST", "/system/migrations/tautulli", {
+			body: { key: "tautulli-both-configured" },
+		});
 
-		expect(res.statusCode).toBe(200);
-		expect(JSON.parse(res.payload)).toEqual({ success: true, removedInstances: 1 });
-		// Plex row and the other user's row survive
-		expect(instanceRows.map((r) => r.id).sort()).toEqual(["plex-1", "ta-2"]);
+		await expect(getNoticesForUser("user-2")).resolves.toEqual({
+			notices: [
+				{
+					key: "tautulli-both-configured",
+					kind: "both-configured",
+					actionUrl: "/settings/services",
+				},
+			],
+		});
 	});
 
-	it("is idempotent — a second call removes nothing and still succeeds", async () => {
-		instanceRows = [{ id: "ta-1", label: "My Tautulli", userId: "user-1", service: "TAUTULLI" }];
+	it("rejects a malformed notice key without persisting a dismissal", async () => {
+		const response = await injectAuthenticated("POST", "/system/migrations/tautulli", {
+			body: { key: "arbitrary-key" },
+		});
 
-		await injectAuthenticated("POST", "/system/migrations/tautulli");
-		const res = await injectAuthenticated("POST", "/system/migrations/tautulli");
-
-		expect(res.statusCode).toBe(200);
-		expect(JSON.parse(res.payload)).toEqual({ success: true, removedInstances: 0 });
-	});
-
-	it("resolves the migration: GET reports needed=false after POST (report acknowledged)", async () => {
-		instanceRows = [{ id: "ta-1", label: "My Tautulli", userId: "user-1", service: "TAUTULLI" }];
-		await seedReport();
-
-		await injectAuthenticated("POST", "/system/migrations/tautulli");
-		const res = await injectAuthenticated("GET", "/system/migrations/tautulli");
-
-		const body = JSON.parse(res.payload);
-		expect(body.needed).toBe(false);
-		// The report persists (acknowledged) — disclosure data is never deleted.
-		expect(typeof body.rulesReport.acknowledgedAt).toBe("string");
-	});
-
-	it("gates rules-only users: needed=true with no instances but an unacknowledged report", async () => {
-		// A 2.x user could hold tautulli_* rules with no configured instance;
-		// the boot pass disabled their rules and that deserves disclosure too.
-		await seedReport();
-
-		const res = await injectAuthenticated("GET", "/system/migrations/tautulli");
-
-		const body = JSON.parse(res.payload);
-		expect(body.needed).toBe(true);
-		expect(body.instances).toEqual([]);
-		expect(body.rulesReport.totalAffectedRules).toBe(1);
-	});
-
-	it("rules-only acknowledge: POST stamps the report so GET resolves", async () => {
-		await seedReport();
-
-		const post = await injectAuthenticated("POST", "/system/migrations/tautulli");
-		expect(JSON.parse(post.payload)).toEqual({ success: true, removedInstances: 0 });
-
-		const res = await injectAuthenticated("GET", "/system/migrations/tautulli");
-		expect(JSON.parse(res.payload).needed).toBe(false);
+		expect(response.statusCode).toBe(400);
+		expect(dismissalRows).toEqual([]);
 	});
 });
