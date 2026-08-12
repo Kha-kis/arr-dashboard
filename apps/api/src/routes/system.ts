@@ -664,6 +664,30 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			dataDir,
 			request.log,
 		);
+		const affectedRuleIds = rulesReport
+			? [
+					...rulesReport.surfaces["library-cleanup"].rulesDisabled,
+					...rulesReport.surfaces["library-cleanup"].rulesModified,
+					...rulesReport.surfaces["library-cleanup"].rulesUnparseable,
+					...rulesReport.surfaces["auto-tag"].rulesDisabled,
+					...rulesReport.surfaces["auto-tag"].rulesModified,
+					...rulesReport.surfaces["auto-tag"].rulesUnparseable,
+				].map((rule) => rule.id)
+			: [];
+		const hasCurrentUserPriorRemovalEvidence =
+			affectedRuleIds.length > 0 &&
+			(
+				await Promise.all([
+					app.prisma.libraryCleanupRule.findMany({
+						where: { id: { in: affectedRuleIds }, config: { userId } },
+						select: { id: true },
+					}),
+					app.prisma.autoTagRule.findMany({
+						where: { id: { in: affectedRuleIds }, userId },
+						select: { id: true },
+					}),
+				])
+			).some((rules) => rules.length > 0);
 		const dismissedKeys = new Set(dismissals.map((dismissal) => dismissal.noticeKey));
 		const notices: TautulliNotice[] = [];
 
@@ -678,7 +702,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		if (
 			tautulliInstances.length === 0 &&
 			rulesReport?.acknowledgedAt &&
-			rulesReport.totalAffectedRules > 0
+			hasCurrentUserPriorRemovalEvidence
 		) {
 			notices.push({
 				key: "tautulli-prior-removal",

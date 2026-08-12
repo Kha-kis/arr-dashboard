@@ -54,6 +54,16 @@ const dismissalUpsert = vi.fn(
 		return row;
 	},
 );
+const affectedRuleFindMany = vi.fn(
+	async ({
+		where,
+	}: {
+		where: { userId?: string; config?: { userId: string }; id: { in: string[] } };
+	}) => {
+		const userId = where.userId ?? where.config?.userId;
+		return ruleRows.filter((row) => where.id.in.includes(row.id) && row.userId === userId);
+	},
+);
 
 beforeEach(async () => {
 	dataDir = await mkdtemp(path.join(tmpdir(), "tautulli-notice-route-"));
@@ -63,14 +73,15 @@ beforeEach(async () => {
 	serviceInstanceFindMany.mockClear();
 	dismissalFindMany.mockClear();
 	dismissalUpsert.mockClear();
+	affectedRuleFindMany.mockClear();
 
 	app = Fastify();
 	app.decorate("prisma", {
 		systemSettings: { findUnique: vi.fn(), create: vi.fn(), upsert: vi.fn() },
 		serviceInstance: { findMany: serviceInstanceFindMany },
 		systemNoticeDismissal: { findMany: dismissalFindMany, upsert: dismissalUpsert },
-		libraryCleanupRule: { findMany: vi.fn(async () => ruleRows) },
-		autoTagRule: { findMany: vi.fn(async () => ruleRows) },
+		libraryCleanupRule: { findMany: affectedRuleFindMany },
+		autoTagRule: { findMany: affectedRuleFindMany },
 	} as never);
 	app.decorate("config", {
 		TRUST_PROXY: false,
@@ -206,6 +217,21 @@ describe("GET /system/migrations/tautulli", () => {
 			],
 		});
 		expect(response.payload).not.toContain("Private rule");
+	});
+
+	it("shows a report-backed recovery notice only to the user who still owns an affected rule", async () => {
+		await seedPriorRemovalReport();
+
+		await expect(getNoticesForUser("user-2")).resolves.toEqual({ notices: [] });
+		await expect(getNoticesForUser("user-1")).resolves.toEqual({
+			notices: [
+				{
+					key: "tautulli-prior-removal",
+					kind: "prior-removal",
+					actionUrl: "/settings/services",
+				},
+			],
+		});
 	});
 
 	it("does not infer prior removal from a missing Tautulli row", async () => {

@@ -434,3 +434,8 @@ export type QuiEventLog = Prisma.QuiEventLogModel
  * any write — severity is evaluated at read time.
  */
 export type PulseDismissal = Prisma.PulseDismissalModel
+/**
+ * Model SystemNoticeDismissal
+ * Durable per-user dismissal state for non-blocking system notices.
+ */
+export type SystemNoticeDismissal = Prisma.SystemNoticeDismissalModel

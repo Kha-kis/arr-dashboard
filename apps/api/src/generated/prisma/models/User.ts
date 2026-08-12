@@ -310,6 +310,7 @@ export type UserWhereInput = {
   quiActionLogs?: Prisma.QuiActionLogListRelationFilter
   quiEventLogs?: Prisma.QuiEventLogListRelationFilter
   pulseDismissals?: Prisma.PulseDismissalListRelationFilter
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -349,6 +350,7 @@ export type UserOrderByWithRelationInput = {
   quiActionLogs?: Prisma.QuiActionLogOrderByRelationAggregateInput
   quiEventLogs?: Prisma.QuiEventLogOrderByRelationAggregateInput
   pulseDismissals?: Prisma.PulseDismissalOrderByRelationAggregateInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -391,6 +393,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   quiActionLogs?: Prisma.QuiActionLogListRelationFilter
   quiEventLogs?: Prisma.QuiEventLogListRelationFilter
   pulseDismissals?: Prisma.PulseDismissalListRelationFilter
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalListRelationFilter
 }, "id" | "username" | "hashedWebhookSecret" | "hashedQuiWebhookSecret">
 
 export type UserOrderByWithAggregationInput = {
@@ -472,6 +475,7 @@ export type UserCreateInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -511,6 +515,7 @@ export type UserUncheckedCreateInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserUpdateInput = {
@@ -550,6 +555,7 @@ export type UserUpdateInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -589,6 +595,7 @@ export type UserUncheckedUpdateInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -1034,6 +1041,20 @@ export type UserUpdateOneRequiredWithoutPulseDismissalsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutPulseDismissalsInput, Prisma.UserUpdateWithoutPulseDismissalsInput>, Prisma.UserUncheckedUpdateWithoutPulseDismissalsInput>
 }
 
+export type UserCreateNestedOneWithoutSystemNoticeDismissalsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutSystemNoticeDismissalsInput, Prisma.UserUncheckedCreateWithoutSystemNoticeDismissalsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutSystemNoticeDismissalsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutSystemNoticeDismissalsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutSystemNoticeDismissalsInput, Prisma.UserUncheckedCreateWithoutSystemNoticeDismissalsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutSystemNoticeDismissalsInput
+  upsert?: Prisma.UserUpsertWithoutSystemNoticeDismissalsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutSystemNoticeDismissalsInput, Prisma.UserUpdateWithoutSystemNoticeDismissalsInput>, Prisma.UserUncheckedUpdateWithoutSystemNoticeDismissalsInput>
+}
+
 export type UserCreateWithoutSessionsInput = {
   id?: string
   username: string
@@ -1070,6 +1091,7 @@ export type UserCreateWithoutSessionsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutSessionsInput = {
@@ -1108,6 +1130,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutSessionsInput = {
@@ -1162,6 +1185,7 @@ export type UserUpdateWithoutSessionsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSessionsInput = {
@@ -1200,6 +1224,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutServiceInstancesInput = {
@@ -1238,6 +1263,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutServiceInstancesInput = {
@@ -1276,6 +1302,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutServiceInstancesInput = {
@@ -1330,6 +1357,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutServiceInstancesInput = {
@@ -1368,6 +1396,7 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutOidcAccountsInput = {
@@ -1406,6 +1435,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutOidcAccountsInput = {
@@ -1444,6 +1474,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutOidcAccountsInput = {
@@ -1498,6 +1529,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutOidcAccountsInput = {
@@ -1536,6 +1568,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutWebauthnCredentialsInput = {
@@ -1574,6 +1607,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
@@ -1612,6 +1646,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutWebauthnCredentialsInput = {
@@ -1666,6 +1701,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
@@ -1704,6 +1740,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTrashSettingsInput = {
@@ -1742,6 +1779,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTrashSettingsInput = {
@@ -1780,6 +1818,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTrashSettingsInput = {
@@ -1834,6 +1873,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTrashSettingsInput = {
@@ -1872,6 +1912,7 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQualitySizeMappingsInput = {
@@ -1910,6 +1951,7 @@ export type UserCreateWithoutQualitySizeMappingsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
@@ -1948,6 +1990,7 @@ export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQualitySizeMappingsInput = {
@@ -2002,6 +2045,7 @@ export type UserUpdateWithoutQualitySizeMappingsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
@@ -2040,6 +2084,7 @@ export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutUserCustomFormatsInput = {
@@ -2078,6 +2123,7 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
@@ -2116,6 +2162,7 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutUserCustomFormatsInput = {
@@ -2170,6 +2217,7 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
@@ -2208,6 +2256,7 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutLibraryCleanupConfigsInput = {
@@ -2246,6 +2295,7 @@ export type UserCreateWithoutLibraryCleanupConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
@@ -2284,6 +2334,7 @@ export type UserUncheckedCreateWithoutLibraryCleanupConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutLibraryCleanupConfigsInput = {
@@ -2338,6 +2389,7 @@ export type UserUpdateWithoutLibraryCleanupConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
@@ -2376,6 +2428,7 @@ export type UserUncheckedUpdateWithoutLibraryCleanupConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationChannelsInput = {
@@ -2414,6 +2467,7 @@ export type UserCreateWithoutNotificationChannelsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationChannelsInput = {
@@ -2452,6 +2506,7 @@ export type UserUncheckedCreateWithoutNotificationChannelsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationChannelsInput = {
@@ -2506,6 +2561,7 @@ export type UserUpdateWithoutNotificationChannelsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
@@ -2544,6 +2600,7 @@ export type UserUncheckedUpdateWithoutNotificationChannelsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationRulesInput = {
@@ -2582,6 +2639,7 @@ export type UserCreateWithoutNotificationRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationRulesInput = {
@@ -2620,6 +2678,7 @@ export type UserUncheckedCreateWithoutNotificationRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationRulesInput = {
@@ -2674,6 +2733,7 @@ export type UserUpdateWithoutNotificationRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationRulesInput = {
@@ -2712,6 +2772,7 @@ export type UserUncheckedUpdateWithoutNotificationRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNotificationAggregationConfigsInput = {
@@ -2750,6 +2811,7 @@ export type UserCreateWithoutNotificationAggregationConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
@@ -2788,6 +2850,7 @@ export type UserUncheckedCreateWithoutNotificationAggregationConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNotificationAggregationConfigsInput = {
@@ -2842,6 +2905,7 @@ export type UserUpdateWithoutNotificationAggregationConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
@@ -2880,6 +2944,7 @@ export type UserUncheckedUpdateWithoutNotificationAggregationConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNamingConfigsInput = {
@@ -2918,6 +2983,7 @@ export type UserCreateWithoutNamingConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNamingConfigsInput = {
@@ -2956,6 +3022,7 @@ export type UserUncheckedCreateWithoutNamingConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNamingConfigsInput = {
@@ -3010,6 +3077,7 @@ export type UserUpdateWithoutNamingConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNamingConfigsInput = {
@@ -3048,6 +3116,7 @@ export type UserUncheckedUpdateWithoutNamingConfigsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutNamingDeployHistoryInput = {
@@ -3086,6 +3155,7 @@ export type UserCreateWithoutNamingDeployHistoryInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
@@ -3124,6 +3194,7 @@ export type UserUncheckedCreateWithoutNamingDeployHistoryInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutNamingDeployHistoryInput = {
@@ -3178,6 +3249,7 @@ export type UserUpdateWithoutNamingDeployHistoryInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
@@ -3216,6 +3288,7 @@ export type UserUncheckedUpdateWithoutNamingDeployHistoryInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutLabelSyncRulesInput = {
@@ -3254,6 +3327,7 @@ export type UserCreateWithoutLabelSyncRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
@@ -3292,6 +3366,7 @@ export type UserUncheckedCreateWithoutLabelSyncRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutLabelSyncRulesInput = {
@@ -3346,6 +3421,7 @@ export type UserUpdateWithoutLabelSyncRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
@@ -3384,6 +3460,7 @@ export type UserUncheckedUpdateWithoutLabelSyncRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutAutoTagRulesInput = {
@@ -3422,6 +3499,7 @@ export type UserCreateWithoutAutoTagRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutAutoTagRulesInput = {
@@ -3460,6 +3538,7 @@ export type UserUncheckedCreateWithoutAutoTagRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutAutoTagRulesInput = {
@@ -3514,6 +3593,7 @@ export type UserUpdateWithoutAutoTagRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
@@ -3552,6 +3632,7 @@ export type UserUncheckedUpdateWithoutAutoTagRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutCrossDomainRulesInput = {
@@ -3590,6 +3671,7 @@ export type UserCreateWithoutCrossDomainRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutCrossDomainRulesInput = {
@@ -3628,6 +3710,7 @@ export type UserUncheckedCreateWithoutCrossDomainRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutCrossDomainRulesInput = {
@@ -3682,6 +3765,7 @@ export type UserUpdateWithoutCrossDomainRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutCrossDomainRulesInput = {
@@ -3720,6 +3804,7 @@ export type UserUncheckedUpdateWithoutCrossDomainRulesInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTmdbListCacheRowsInput = {
@@ -3758,6 +3843,7 @@ export type UserCreateWithoutTmdbListCacheRowsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
@@ -3796,6 +3882,7 @@ export type UserUncheckedCreateWithoutTmdbListCacheRowsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTmdbListCacheRowsInput = {
@@ -3850,6 +3937,7 @@ export type UserUpdateWithoutTmdbListCacheRowsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
@@ -3888,6 +3976,7 @@ export type UserUncheckedUpdateWithoutTmdbListCacheRowsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTraktListCacheRowsInput = {
@@ -3926,6 +4015,7 @@ export type UserCreateWithoutTraktListCacheRowsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
@@ -3964,6 +4054,7 @@ export type UserUncheckedCreateWithoutTraktListCacheRowsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTraktListCacheRowsInput = {
@@ -4018,6 +4109,7 @@ export type UserUpdateWithoutTraktListCacheRowsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
@@ -4056,6 +4148,7 @@ export type UserUncheckedUpdateWithoutTraktListCacheRowsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQuiActivityLogsInput = {
@@ -4094,6 +4187,7 @@ export type UserCreateWithoutQuiActivityLogsInput = {
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
@@ -4132,6 +4226,7 @@ export type UserUncheckedCreateWithoutQuiActivityLogsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQuiActivityLogsInput = {
@@ -4186,6 +4281,7 @@ export type UserUpdateWithoutQuiActivityLogsInput = {
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
@@ -4224,6 +4320,7 @@ export type UserUncheckedUpdateWithoutQuiActivityLogsInput = {
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQuiActionLogsInput = {
@@ -4262,6 +4359,7 @@ export type UserCreateWithoutQuiActionLogsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQuiActionLogsInput = {
@@ -4300,6 +4398,7 @@ export type UserUncheckedCreateWithoutQuiActionLogsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQuiActionLogsInput = {
@@ -4354,6 +4453,7 @@ export type UserUpdateWithoutQuiActionLogsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQuiActionLogsInput = {
@@ -4392,6 +4492,7 @@ export type UserUncheckedUpdateWithoutQuiActionLogsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutQuiEventLogsInput = {
@@ -4430,6 +4531,7 @@ export type UserCreateWithoutQuiEventLogsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutQuiEventLogsInput = {
@@ -4468,6 +4570,7 @@ export type UserUncheckedCreateWithoutQuiEventLogsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutQuiEventLogsInput = {
@@ -4522,6 +4625,7 @@ export type UserUpdateWithoutQuiEventLogsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
@@ -4560,6 +4664,7 @@ export type UserUncheckedUpdateWithoutQuiEventLogsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutPulseDismissalsInput = {
@@ -4598,6 +4703,7 @@ export type UserCreateWithoutPulseDismissalsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutPulseDismissalsInput = {
@@ -4636,6 +4742,7 @@ export type UserUncheckedCreateWithoutPulseDismissalsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutPulseDismissalsInput = {
@@ -4690,6 +4797,7 @@ export type UserUpdateWithoutPulseDismissalsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutPulseDismissalsInput = {
@@ -4728,6 +4836,179 @@ export type UserUncheckedUpdateWithoutPulseDismissalsInput = {
   quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
   quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
   quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  systemNoticeDismissals?: Prisma.SystemNoticeDismissalUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutSystemNoticeDismissalsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleCreateNestedManyWithoutUserInput
+  crossDomainRules?: Prisma.CrossDomainRuleCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutUserInput
+  pulseDismissals?: Prisma.PulseDismissalCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutSystemNoticeDismissalsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  hashedWebhookSecret?: string | null
+  hashedQuiWebhookSecret?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  encryptedTraktAccessToken?: string | null
+  traktTokenIv?: string | null
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedCreateNestedManyWithoutUserInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedCreateNestedManyWithoutUserInput
+  namingConfigs?: Prisma.NamingConfigUncheckedCreateNestedManyWithoutUserInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutUserInput
+  notificationRules?: Prisma.NotificationRuleUncheckedCreateNestedManyWithoutUserInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedCreateNestedManyWithoutUserInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedCreateNestedManyWithoutUserInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedCreateNestedManyWithoutUserInput
+  crossDomainRules?: Prisma.CrossDomainRuleUncheckedCreateNestedManyWithoutUserInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedCreateNestedManyWithoutUserInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedCreateNestedManyWithoutUserInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedCreateNestedManyWithoutUserInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutUserInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutUserInput
+  pulseDismissals?: Prisma.PulseDismissalUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutSystemNoticeDismissalsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutSystemNoticeDismissalsInput, Prisma.UserUncheckedCreateWithoutSystemNoticeDismissalsInput>
+}
+
+export type UserUpsertWithoutSystemNoticeDismissalsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutSystemNoticeDismissalsInput, Prisma.UserUncheckedUpdateWithoutSystemNoticeDismissalsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutSystemNoticeDismissalsInput, Prisma.UserUncheckedCreateWithoutSystemNoticeDismissalsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutSystemNoticeDismissalsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutSystemNoticeDismissalsInput, Prisma.UserUncheckedUpdateWithoutSystemNoticeDismissalsInput>
+}
+
+export type UserUpdateWithoutSystemNoticeDismissalsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUpdateManyWithoutUserNestedInput
+  crossDomainRules?: Prisma.CrossDomainRuleUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutUserNestedInput
+  pulseDismissals?: Prisma.PulseDismissalUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutSystemNoticeDismissalsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hashedQuiWebhookSecret?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  encryptedTraktAccessToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  traktTokenIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+  libraryCleanupConfigs?: Prisma.LibraryCleanupConfigUncheckedUpdateManyWithoutUserNestedInput
+  notificationChannels?: Prisma.NotificationChannelUncheckedUpdateManyWithoutUserNestedInput
+  namingConfigs?: Prisma.NamingConfigUncheckedUpdateManyWithoutUserNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutUserNestedInput
+  notificationRules?: Prisma.NotificationRuleUncheckedUpdateManyWithoutUserNestedInput
+  notificationAggregationConfigs?: Prisma.NotificationAggregationConfigUncheckedUpdateManyWithoutUserNestedInput
+  labelSyncRules?: Prisma.LabelSyncRuleUncheckedUpdateManyWithoutUserNestedInput
+  autoTagRules?: Prisma.AutoTagRuleUncheckedUpdateManyWithoutUserNestedInput
+  crossDomainRules?: Prisma.CrossDomainRuleUncheckedUpdateManyWithoutUserNestedInput
+  tmdbListCacheRows?: Prisma.TmdbListCacheUncheckedUpdateManyWithoutUserNestedInput
+  traktListCacheRows?: Prisma.TraktListCacheUncheckedUpdateManyWithoutUserNestedInput
+  quiActivityLogs?: Prisma.QuiActivityLogUncheckedUpdateManyWithoutUserNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutUserNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutUserNestedInput
+  pulseDismissals?: Prisma.PulseDismissalUncheckedUpdateManyWithoutUserNestedInput
 }
 
 
@@ -4757,6 +5038,7 @@ export type UserCountOutputType = {
   quiActionLogs: number
   quiEventLogs: number
   pulseDismissals: number
+  systemNoticeDismissals: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -4781,6 +5063,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   quiActionLogs?: boolean | UserCountOutputTypeCountQuiActionLogsArgs
   quiEventLogs?: boolean | UserCountOutputTypeCountQuiEventLogsArgs
   pulseDismissals?: boolean | UserCountOutputTypeCountPulseDismissalsArgs
+  systemNoticeDismissals?: boolean | UserCountOutputTypeCountSystemNoticeDismissalsArgs
 }
 
 /**
@@ -4940,6 +5223,13 @@ export type UserCountOutputTypeCountPulseDismissalsArgs<ExtArgs extends runtime.
   where?: Prisma.PulseDismissalWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountSystemNoticeDismissalsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.SystemNoticeDismissalWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -4978,6 +5268,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   quiActionLogs?: boolean | Prisma.User$quiActionLogsArgs<ExtArgs>
   quiEventLogs?: boolean | Prisma.User$quiEventLogsArgs<ExtArgs>
   pulseDismissals?: boolean | Prisma.User$pulseDismissalsArgs<ExtArgs>
+  systemNoticeDismissals?: boolean | Prisma.User$systemNoticeDismissalsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -5056,6 +5347,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   quiActionLogs?: boolean | Prisma.User$quiActionLogsArgs<ExtArgs>
   quiEventLogs?: boolean | Prisma.User$quiEventLogsArgs<ExtArgs>
   pulseDismissals?: boolean | Prisma.User$pulseDismissalsArgs<ExtArgs>
+  systemNoticeDismissals?: boolean | Prisma.User$systemNoticeDismissalsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -5086,6 +5378,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     quiActionLogs: Prisma.$QuiActionLogPayload<ExtArgs>[]
     quiEventLogs: Prisma.$QuiEventLogPayload<ExtArgs>[]
     pulseDismissals: Prisma.$PulseDismissalPayload<ExtArgs>[]
+    systemNoticeDismissals: Prisma.$SystemNoticeDismissalPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -5537,6 +5830,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   quiActionLogs<T extends Prisma.User$quiActionLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiActionLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiActionLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   quiEventLogs<T extends Prisma.User$quiEventLogsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$quiEventLogsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QuiEventLogPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   pulseDismissals<T extends Prisma.User$pulseDismissalsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$pulseDismissalsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PulseDismissalPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  systemNoticeDismissals<T extends Prisma.User$systemNoticeDismissalsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$systemNoticeDismissalsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$SystemNoticeDismissalPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -6491,6 +6785,30 @@ export type User$pulseDismissalsArgs<ExtArgs extends runtime.Types.Extensions.In
   take?: number
   skip?: number
   distinct?: Prisma.PulseDismissalScalarFieldEnum | Prisma.PulseDismissalScalarFieldEnum[]
+}
+
+/**
+ * User.systemNoticeDismissals
+ */
+export type User$systemNoticeDismissalsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the SystemNoticeDismissal
+   */
+  select?: Prisma.SystemNoticeDismissalSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the SystemNoticeDismissal
+   */
+  omit?: Prisma.SystemNoticeDismissalOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.SystemNoticeDismissalInclude<ExtArgs> | null
+  where?: Prisma.SystemNoticeDismissalWhereInput
+  orderBy?: Prisma.SystemNoticeDismissalOrderByWithRelationInput | Prisma.SystemNoticeDismissalOrderByWithRelationInput[]
+  cursor?: Prisma.SystemNoticeDismissalWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.SystemNoticeDismissalScalarFieldEnum | Prisma.SystemNoticeDismissalScalarFieldEnum[]
 }
 
 /**
