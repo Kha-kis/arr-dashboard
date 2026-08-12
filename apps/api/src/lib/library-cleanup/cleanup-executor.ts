@@ -1998,9 +1998,7 @@ async function executeQueuedCleanupItems(
 								assertMutationAuthority,
 								postFileOwnershipPlan,
 							)
-						: mutationInstance.service === "SONARR" &&
-								safetyPlan?.kind === "verified_sonarr" &&
-								safetyPlan.peers.length > 0
+						: mutationInstance.service === "SONARR" && safetyPlan?.kind === "verified_sonarr"
 							? createSonarrDestructiveMutationAuthority(
 									deps,
 									userId,
@@ -4320,9 +4318,7 @@ export async function executeDirectRemoval(
 							safetyPlan!,
 							assertRunLease,
 						)
-					: mutationInstance.service === "SONARR" &&
-							safetyPlan?.kind === "verified_sonarr" &&
-							safetyPlan.peers.length > 0
+					: mutationInstance.service === "SONARR" && safetyPlan?.kind === "verified_sonarr"
 						? createSonarrDestructiveMutationAuthority(
 								deps,
 								userId,

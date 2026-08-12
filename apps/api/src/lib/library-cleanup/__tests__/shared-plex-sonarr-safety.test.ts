@@ -1543,6 +1543,7 @@ describe("verified Sonarr mutation handoff", () => {
 		targetClient.episodeFile.getBySeries
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
+			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce([]);
 
 		await expect(executeApprovedItems(deps, "user-1", ["approval-1"])).resolves.toEqual({
@@ -1568,6 +1569,7 @@ describe("verified Sonarr mutation handoff", () => {
 		} = makeSonarrDeps();
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([approval()] as never);
 		targetClient.episodeFile.getBySeries
+			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce([]);
@@ -1622,6 +1624,45 @@ describe("verified Sonarr mutation handoff", () => {
 		});
 	});
 
+	it("blocks queued deletion when a Sonarr peer appears at the mutation boundary", async () => {
+		const fixture = makeSonarrDeps();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [target], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(target));
+		if (plan?.kind !== "verified_sonarr") throw new Error("Expected verified Sonarr plan");
+		expect(plan.peers).toEqual([]);
+		const storedApproval = {
+			...approval(),
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+		let peerAdded = false;
+		vi.mocked(fixture.deps.prisma.crossDomainRule.findMany).mockImplementation((async () => {
+			if (!peerAdded) {
+				peerAdded = true;
+				addSonarrPeer(fixture, {
+					seriesPath: fixture.series.path,
+					episodeFiles: [
+						{
+							id: 4001,
+							path: fixture.episodeFiles[0]!.path!,
+							relativePath: fixture.episodeFiles[0]!.relativePath!,
+							size: fixture.episodeFiles[0]!.size!,
+						},
+					],
+				});
+			}
+			return [];
+		}) as never);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(peerAdded).toBe(true);
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+	});
+
 	it("retains the series when peer ownership changes after target file deletion", async () => {
 		const fixture = makeSonarrDeps();
 		const peer = addSonarrPeer(fixture);
@@ -1661,24 +1702,27 @@ describe("verified Sonarr mutation handoff", () => {
 		const { deps, targetClient, episodeFiles, bulkDelete, deleteSeries, approvalUpdate } =
 			makeSonarrDeps();
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([approval()] as never);
-		targetClient.episodeFile.getBySeries.mockResolvedValueOnce(episodeFiles).mockResolvedValueOnce([
-			...episodeFiles,
-			{
-				id: 3003,
-				path: "/tv-4k/Example Series/Season 01/Example.S01E03.2160p.mkv",
-				size: 2_003,
-			},
-		]);
+		targetClient.episodeFile.getBySeries
+			.mockResolvedValueOnce(episodeFiles)
+			.mockResolvedValueOnce(episodeFiles)
+			.mockResolvedValueOnce([
+				...episodeFiles,
+				{
+					id: 3003,
+					path: "/tv-4k/Example Series/Season 01/Example.S01E03.2160p.mkv",
+					size: 2_003,
+				},
+			]);
 
 		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
 
 		expect(result).toMatchObject({ removed: 0, failed: 1 });
-		expect(result.errors[0]).toContain("Sonarr episode files changed");
+		expect(result.errors[0]).toContain("verified Sonarr ownership changed");
 		expect(bulkDelete).not.toHaveBeenCalled();
 		expect(deleteSeries).not.toHaveBeenCalled();
 		expect(approvalUpdate).toHaveBeenCalledWith({
 			where: expect.objectContaining({ id: "approval-1", status: "executing" }),
-			data: expect.objectContaining({ status: "pending" }),
+			data: expect.objectContaining({ status: "expired" }),
 		});
 	});
 
@@ -1693,6 +1737,7 @@ describe("verified Sonarr mutation handoff", () => {
 		} = makeSonarrDeps();
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([approval()] as never);
 		targetClient.episodeFile.getBySeries
+			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce([episodeFiles[1]!]);
@@ -1732,6 +1777,7 @@ describe("verified Sonarr mutation handoff", () => {
 		targetClient.episodeFile.getBySeries
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
+			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce([]);
 
 		await expect(executeApprovedItems(deps, "user-1", ["approval-1"])).resolves.toEqual({
@@ -1763,6 +1809,7 @@ describe("verified Sonarr mutation handoff", () => {
 		};
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([approval()] as never);
 		targetClient.episodeFile.getBySeries
+			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce([replacement]);
@@ -1797,6 +1844,7 @@ describe("verified Sonarr mutation handoff", () => {
 		targetClient.episodeFile.getBySeries
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
+			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce([])
 			.mockResolvedValueOnce([replacement])
 			.mockRejectedValueOnce(new Error("Sonarr read unavailable"));
@@ -1821,6 +1869,7 @@ describe("verified Sonarr mutation handoff", () => {
 		} = makeSonarrDeps();
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([approval()] as never);
 		targetClient.episodeFile.getBySeries
+			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce([]);
@@ -2216,6 +2265,69 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(deleteSeries).toHaveBeenCalledTimes(3);
 	});
 
+	it("blocks direct deletion when a Sonarr peer appears at the mutation boundary", async () => {
+		const fixture = makeSonarrDeps();
+		const retries = configureRetryStore(fixture.deps);
+		let peerAdded = false;
+		vi.mocked(fixture.deps.prisma.crossDomainRule.findMany).mockImplementation((async () => {
+			if (!peerAdded) {
+				peerAdded = true;
+				addSonarrPeer(fixture, {
+					seriesPath: fixture.series.path,
+					episodeFiles: [
+						{
+							id: 4001,
+							path: fixture.episodeFiles[0]!.path!,
+							relativePath: fixture.episodeFiles[0]!.relativePath!,
+							size: fixture.episodeFiles[0]!.size!,
+						},
+					],
+				});
+			}
+			return [];
+		}) as never);
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "sonarr-4k",
+				arrItemId: 201,
+				itemType: "series",
+				title: "Example Series",
+				year: 2024,
+				hasFile: true,
+				cachedAt: new Date("2026-07-27T12:05:00.000Z"),
+				sizeOnDisk: 4_003n,
+				data: JSON.stringify({
+					_arrDashboardSource: { serviceFingerprint: sonarrServiceFingerprint },
+					path: "/tv-4k/Example Series",
+					remoteIds: { tvdbId: 123 },
+				}),
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "Large series cleanup",
+				reason: "Matched size rule",
+				action: "delete",
+			},
+			rating: 8,
+		} as never;
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(peerAdded).toBe(true);
+		expect(retries).toHaveLength(1);
+		expect(result).toMatchObject({ itemsFilesDeleted: 0, itemsRemoved: 0 });
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+	});
+
 	it("removes an empty verified series without issuing a bulk file deletion", async () => {
 		const { deps, targetClient, bulkDelete, deleteSeries } = makeSonarrDeps({
 			episodeFiles: [],
@@ -2239,7 +2351,7 @@ describe("verified Sonarr mutation handoff", () => {
 	});
 
 	it.each(["delete", "delete_files"] as const)(
-		"allows %s for a fileless no-notification series when a sibling Sonarr exists",
+		"does not mutate %s for a stored fileless plan that omits a live sibling Sonarr",
 		async (action) => {
 			const fixture = makeSonarrDeps({
 				action,
@@ -2251,14 +2363,15 @@ describe("verified Sonarr mutation handoff", () => {
 				approval(action, [], []),
 			] as never);
 
-			await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
-				removed: action === "delete" ? 1 : 0,
-				failed: 0,
-				errors: [],
+			await expect(
+				executeApprovedItems(fixture.deps, "user-1", ["approval-1"]),
+			).resolves.toMatchObject({
+				removed: 0,
+				failed: action === "delete" ? 1 : 0,
 			});
 			expect(fixture.bulkDelete).not.toHaveBeenCalled();
-			expect(fixture.deleteSeries).toHaveBeenCalledTimes(action === "delete" ? 1 : 0);
-			expect(peer.peerClient.series.getAll).not.toHaveBeenCalled();
+			expect(fixture.deleteSeries).toHaveBeenCalledTimes(0);
+			expect(peer.peerClient.series.getAll).toHaveBeenCalledTimes(0);
 		},
 	);
 
@@ -2267,6 +2380,7 @@ describe("verified Sonarr mutation handoff", () => {
 			makeSonarrDeps();
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([approval()] as never);
 		targetClient.episodeFile.getBySeries
+			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce(episodeFiles)
 			.mockResolvedValueOnce([]);
