@@ -1,6 +1,7 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { PlexSeriesNotFoundError } from "../../plex/plex-client.js";
+import { plexConnectionFingerprint } from "../../plex/service-instance-fingerprint.js";
 import {
 	executeApprovedItems,
 	executeDirectRemoval,
@@ -24,6 +25,12 @@ const silentLog = {
 	info: vi.fn(),
 } as unknown as CleanupExecutorDeps["log"];
 
+const PLEX_SOURCE_FINGERPRINT = plexConnectionFingerprint({
+	baseUrl: "http://plex.internal:32400",
+	encryptedApiKey: "encrypted",
+	encryptionIv: "iv",
+});
+
 const sonarrServiceFingerprint = createArrServiceFingerprint({
 	id: "sonarr-4k",
 	service: "SONARR",
@@ -34,8 +41,33 @@ const sonarrServiceFingerprint = createArrServiceFingerprint({
 	httpAuthEncryptionIv: null,
 } as never);
 
+function episodeCleanupRule(action: "delete" | "delete_files" | "unmonitor" = "delete") {
+	return {
+		id: action === "delete" ? "episode-rule" : `episode-rule-${action}`,
+		configId: "config-1",
+		name: "Remove watched episodes",
+		enabled: true,
+		priority: 10,
+		ruleType: "plex_watch_count",
+		parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+		serviceFilter: JSON.stringify(["SONARR"]),
+		instanceFilter: null,
+		excludeTags: null,
+		excludeTitles: null,
+		plexLibraryFilter: null,
+		targetScope: "episode",
+		action,
+		operator: null,
+		conditions: null,
+		retentionMode: false,
+		createdAt: new Date(),
+		updatedAt: new Date(),
+	};
+}
+
 interface SonarrTestOptions {
 	action?: "delete" | "delete_files";
+	livePlexWatchCount?: number;
 	notificationKind?: "plex" | "mediabrowser" | "kodi" | "synology" | "none";
 	onSeriesDelete?: boolean;
 	onEpisodeFileDelete?: boolean;
@@ -51,10 +83,19 @@ interface SonarrTestOptions {
 		relativePath?: string | null;
 		size?: number;
 	}>;
+	episodes?: Array<{
+		id: number;
+		seasonNumber: number;
+		episodeNumber: number;
+		episodeFileId: number;
+		monitored: boolean;
+	}>;
 	plexSeries?: Array<{
 		ratingKey: string;
 		episodes: Array<{
 			ratingKey: string;
+			seasonNumber?: number;
+			episodeNumber?: number;
 			parts: Array<{ file: string; size: number }>;
 		}>;
 	}>;
@@ -99,6 +140,19 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		enabled: true,
 		encryptedApiKey: "encrypted",
 		encryptionIv: "iv",
+		updatedAt: new Date("2026-07-27T12:00:00.000Z"),
+	};
+	const quiInstance = {
+		id: "qui-1",
+		userId: "user-1",
+		service: "QUI",
+		label: "qUI",
+		baseUrl: "http://qui.internal",
+		enabled: true,
+		encryptedApiKey: "encrypted",
+		encryptionIv: "iv",
+		hasLocalFilesystemAccess: true,
+		pathPrefix: null,
 	};
 	const series = {
 		id: 201,
@@ -107,6 +161,7 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		title: "Example Series",
 		path: "/tv-4k/Example Series",
 		tags: options.seriesTags ?? [],
+		monitored: true,
 	};
 	const episodeFiles = options.episodeFiles ?? [
 		{
@@ -143,6 +198,20 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 	};
 
 	let liveEpisodeFiles = [...episodeFiles];
+	const liveEpisodes =
+		options.episodes ??
+		episodeFiles.map((file, index) => ({
+			id: 9_001 + index,
+			seasonNumber: 1,
+			episodeNumber: index + 1,
+			episodeFileId: file.id!,
+			monitored: true,
+		}));
+	const setEpisodeMonitored = vi.fn(async (ids: number[], monitored: boolean) => {
+		for (const episode of liveEpisodes) {
+			if (ids.includes(episode.id)) episode.monitored = monitored;
+		}
+	});
 	const bulkDelete = vi.fn(async (episodeFileIds: number[]) => {
 		const ids = new Set(episodeFileIds);
 		liveEpisodeFiles = liveEpisodeFiles.filter(
@@ -165,6 +234,10 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			getBySeries: vi.fn(async () => liveEpisodeFiles),
 			bulkDelete,
 		},
+		episode: {
+			getAll: vi.fn(async () => liveEpisodes),
+			setMonitored: setEpisodeMonitored,
+		},
 		notification: {
 			getAll: vi.fn().mockResolvedValue(notificationKind === "none" ? [] : [notification]),
 		},
@@ -174,6 +247,8 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			ratingKey: "show-123",
 			episodes: episodeFiles.map((file, index) => ({
 				ratingKey: `episode-${index + 1}`,
+				seasonNumber: 1,
+				episodeNumber: index + 1,
 				parts: [{ file: file.path!, size: file.size! }],
 			})),
 		},
@@ -181,10 +256,12 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 	const getSeriesEpisodeMediaPartsByTvdbId = vi
 		.fn()
 		.mockResolvedValue(options.plexSeries ?? defaultPlexSeries);
+	const getEpisodeWatchCount = vi.fn().mockResolvedValue(options.livePlexWatchCount ?? 1);
 	const plexClientFactory = vi.fn(() => ({
 		getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Owner" }]),
 		getMovieMediaPartsByTmdbId: vi.fn(),
 		getSeriesEpisodeMediaPartsByTvdbId,
+		getEpisodeWatchCount,
 	}));
 	const approvalUpdate = vi.fn().mockResolvedValue({ count: 1 });
 	const episodeFileCacheDeleteMany = vi.fn().mockResolvedValue({ count: episodeFiles.length });
@@ -214,14 +291,24 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 	const deps: CleanupExecutorDeps = {
 		prisma: {
 			libraryCleanupConfig: {
-				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
+				findUnique: vi.fn().mockResolvedValue({
+					id: "config-1",
+					respectQuiSeeding: false,
+					rules: [
+						episodeCleanupRule(),
+						episodeCleanupRule("delete_files"),
+						episodeCleanupRule("unmonitor"),
+					],
+				}),
 				updateMany: cleanupConfigUpdateMany,
 			},
 			serviceInstance: {
 				findMany: vi.fn(({ where }: { where: { service: string } }) =>
 					where.service === "PLEX"
 						? Promise.resolve([plexInstance])
-						: Promise.resolve([targetInstance]),
+						: where.service === "QUI"
+							? Promise.resolve([quiInstance])
+							: Promise.resolve([targetInstance]),
 				),
 				findFirst: vi.fn().mockResolvedValue(targetInstance),
 			},
@@ -235,6 +322,8 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 				update: vi.fn().mockResolvedValue({}),
 			},
 			libraryCache: {
+				findFirst: vi.fn().mockResolvedValue(null),
+				findMany: vi.fn().mockResolvedValue([]),
 				deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
@@ -244,9 +333,32 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 						arrEpisodeFileId: file.id,
 						path: file.path,
 						size: BigInt(file.size!),
+						infoHash: null,
+						torrentState: null,
 					})),
 				),
+				findFirst: vi.fn().mockResolvedValue({
+					infoHash: "episode-hash",
+					torrentState: "paused",
+				}),
 				deleteMany: episodeFileCacheDeleteMany,
+			},
+			plexEpisodeCache: {
+				findMany: vi.fn().mockImplementation((({ where }: { where: { episodeNumber: number } }) =>
+					Promise.resolve([
+						{
+							instanceId: plexInstance.id,
+							ratingKey: `episode-${where.episodeNumber}`,
+							watchCount: 1,
+							refreshedAt: new Date(),
+							sourceFingerprint: plexConnectionFingerprint(plexInstance),
+						},
+					])) as never),
+				findFirst: vi.fn().mockResolvedValue({
+					watchCount: 1,
+					refreshedAt: new Date(),
+					sourceFingerprint: plexConnectionFingerprint(plexInstance),
+				}),
 			},
 			libraryCleanupLog: {
 				create: vi.fn().mockResolvedValue({}),
@@ -256,6 +368,12 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			create: vi.fn(() => targetClient),
 		} as unknown as CleanupExecutorDeps["arrClientFactory"],
 		plexClientFactory,
+		quiClientFactory: vi.fn(() => ({
+			getTorrentsByHash: vi.fn().mockResolvedValue([{ hash: "episode-hash", state: "pausedUP" }]),
+		})),
+		quiFileHashIndexFactory: vi.fn().mockResolvedValue({
+			resolve: vi.fn().mockResolvedValue({ hashes: ["episode-hash"], complete: true }),
+		}),
 		log: silentLog,
 	};
 
@@ -263,6 +381,7 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		deps,
 		targetInstance,
 		plexInstance,
+		quiInstance,
 		targetClient,
 		series,
 		notification,
@@ -270,8 +389,14 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		bulkDelete,
 		deleteSeries,
 		getSeriesEpisodeMediaPartsByTvdbId,
+		getEpisodeWatchCount,
 		approvalUpdate,
 		episodeFileCacheDeleteMany,
+		setEpisodeMonitored,
+		setLiveEpisodeMonitored: (episodeId: number, monitored: boolean) => {
+			const episode = liveEpisodes.find((candidate) => candidate.id === episodeId);
+			if (episode) episode.monitored = monitored;
+		},
 		setLiveSeriesExists: (exists: boolean) => {
 			liveSeriesExists = exists;
 		},
@@ -284,6 +409,30 @@ const target = {
 	itemType: "series",
 	action: "delete",
 };
+
+function exactEpisodeTarget() {
+	return {
+		...target,
+		targetScope: "episode",
+		arrEpisodeId: 9_001,
+		seasonNumber: 1,
+		episodeNumber: 1,
+		episodeFileId: 3_001,
+		episodeFileConsumerIds: [9_001],
+		plexWatchEvidence: [
+			{
+				plexInstanceId: "plex-1",
+				sourceFingerprint: PLEX_SOURCE_FINGERPRINT,
+				ratingKey: "episode-1",
+				watchCount: 1,
+				refreshedAt: new Date(Date.now() - 60 * 60 * 1000),
+			},
+		],
+		respectQuiSeeding: true,
+		episodeFileInfoHash: "episode-hash",
+		episodeFileTorrentState: "paused",
+	};
+}
 
 function addSonarrPeer(
 	fixture: ReturnType<typeof makeSonarrDeps>,
@@ -334,7 +483,9 @@ function addSonarrPeer(
 		(args) =>
 			(args?.where?.service === "PLEX"
 				? Promise.resolve([fixture.plexInstance])
-				: Promise.resolve([fixture.targetInstance, peerInstance])) as never,
+				: args?.where?.service === "QUI"
+					? Promise.resolve([fixture.quiInstance])
+					: Promise.resolve([fixture.targetInstance, peerInstance])) as never,
 	);
 	vi.mocked(fixture.deps.arrClientFactory.create).mockImplementation(
 		(instance) => (instance.id === peerInstance.id ? peerClient : fixture.targetClient) as never,
@@ -343,6 +494,138 @@ function addSonarrPeer(
 }
 
 describe("shared Plex deletion safety for Sonarr", () => {
+	it("snapshots one exact Sonarr episode while retaining sibling files", async () => {
+		const { deps } = makeSonarrDeps();
+		const context = createSharedPlexSafetyContext();
+		const episodeTarget = exactEpisodeTarget();
+
+		expect(await findSharedPlexDeleteBlocks(deps, "user-1", [episodeTarget], context)).toEqual(
+			new Map(),
+		);
+		expect(context.plans.get(cleanupDeleteTargetKey(episodeTarget))).toMatchObject({
+			kind: "verified_sonarr_episode",
+			episode: {
+				arrEpisodeId: 9_001,
+				episodeFileId: 3_001,
+				episodeFileConsumerIds: [9_001],
+			},
+			selectedFile: { episodeFileId: 3_001 },
+			retainedTargetFiles: [{ episodeFileId: 3_002 }],
+		});
+	});
+
+	it("blocks an episode when its source-bound live Plex count no longer proves the candidate", async () => {
+		const fixture = makeSonarrDeps({ livePlexWatchCount: 0 });
+		const episodeTarget = exactEpisodeTarget();
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(episodeTarget))).toContain(
+			"watched Plex episode could not be mapped",
+		);
+		expect(fixture.getEpisodeWatchCount).toHaveBeenCalledWith("episode-1");
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("blocks episode evidence whose Plex rating key resolves to another physical copy", async () => {
+		const fixture = makeSonarrDeps({
+			plexSeries: [
+				{
+					ratingKey: "show-123",
+					episodes: [
+						{
+							ratingKey: "episode-1",
+							parts: [{ file: "/other-copy/Example.S01E01.mkv", size: 2_001 }],
+						},
+					],
+				},
+			],
+		});
+		const episodeTarget = exactEpisodeTarget();
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(episodeTarget))).toContain(
+			"watched Plex episode could not be mapped",
+		);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it.each(["incomplete", "active", "missing"] as const)(
+		"fails closed when exact episode qUI authority is %s",
+		async (mode) => {
+			const fixture = makeSonarrDeps();
+			if (mode === "incomplete") {
+				vi.mocked(fixture.deps.quiFileHashIndexFactory!).mockResolvedValue({
+					resolve: vi.fn().mockResolvedValue({ hashes: ["episode-hash"], complete: false }),
+				} as never);
+			} else if (mode === "active") {
+				vi.mocked(fixture.deps.quiClientFactory!).mockReturnValue({
+					getTorrentsByHash: vi
+						.fn()
+						.mockResolvedValue([{ hash: "episode-hash", state: "stalledUP" }]),
+				} as never);
+			} else {
+				fixture.deps.quiFileHashIndexFactory = undefined;
+			}
+			const episodeTarget = exactEpisodeTarget();
+
+			const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget]);
+
+			expect(blocks.get(cleanupDeleteTargetKey(episodeTarget))).toContain(
+				"exact Sonarr episode files",
+			);
+			expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+			expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		},
+	);
+
+	it("rejects a multi-episode physical file before exact episode mutation", async () => {
+		const fixture = makeSonarrDeps({
+			episodes: [
+				{
+					id: 9_001,
+					seasonNumber: 1,
+					episodeNumber: 1,
+					episodeFileId: 3_001,
+					monitored: true,
+				},
+				{
+					id: 9_002,
+					seasonNumber: 1,
+					episodeNumber: 2,
+					episodeFileId: 3_001,
+					monitored: true,
+				},
+			],
+		});
+		const episodeTarget = {
+			...exactEpisodeTarget(),
+			episodeFileConsumerIds: [9_001, 9_002],
+		};
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(episodeTarget))).toContain(
+			"exact Sonarr episode files",
+		);
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects an episode when a new Sonarr peer makes ownership incomplete", async () => {
+		const fixture = makeSonarrDeps();
+		addSonarrPeer(fixture);
+		const episodeTarget = exactEpisodeTarget();
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(episodeTarget))).toBeTruthy();
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
 	it("blocks at scale when another Sonarr may mount the same storage under a different path", async () => {
 		const targetEpisodeFiles = Array.from({ length: 1_000 }, (_, index) => ({
 			id: 3_001 + index,
@@ -1568,6 +1851,528 @@ describe("verified Sonarr mutation handoff", () => {
 		}) as never);
 		return updateMany;
 	}
+
+	function directEpisodeFlaggedItem(fixture: ReturnType<typeof makeSonarrDeps>) {
+		return {
+			cacheItem: {
+				id: "series-cache",
+				instanceId: fixture.targetInstance.id,
+				arrItemId: fixture.series.id,
+				itemType: "series",
+				title: fixture.series.title,
+				year: 2024,
+				monitored: true,
+				hasFile: true,
+				status: "continuing",
+				qualityProfileId: 1,
+				qualityProfileName: "HD",
+				sizeOnDisk: 2_001n,
+				arrAddedAt: new Date(),
+				cachedAt: new Date(),
+				data: JSON.stringify({
+					_arrDashboardSource: { serviceFingerprint: sonarrServiceFingerprint },
+					path: fixture.series.path,
+					remoteIds: { tvdbId: fixture.series.tvdbId, tmdbId: fixture.series.tmdbId },
+				}),
+			},
+			match: {
+				ruleId: "episode-rule",
+				ruleName: "Remove watched episodes",
+				reason: "Plex watch count 1 > 0",
+				action: "delete",
+			},
+			rating: 8.2,
+			episodeTarget: {
+				targetScope: "episode",
+				arrEpisodeId: 9_001,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				episodeFileId: 3_001,
+				episodeFileConsumerIds: [9_001],
+				seriesTitle: fixture.series.title,
+				episodeTitle: "Episode 1",
+				plexWatchEvidence: [
+					{
+						plexInstanceId: fixture.plexInstance.id,
+						sourceFingerprint: PLEX_SOURCE_FINGERPRINT,
+						ratingKey: "episode-1",
+						watchCount: 1,
+						lastWatchedAt: new Date(),
+						watchedByUsers: [],
+						refreshedAt: new Date(),
+					},
+				],
+				fileInfoHash: "episode-hash",
+				fileTorrentState: "paused",
+				respectQuiSeeding: true,
+			},
+		} as never;
+	}
+
+	it("unmonitors and deletes only the approved episode without removing its series", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+			removed: 1,
+			failed: 0,
+			errors: [],
+		});
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+		expect(fixture.episodeFileCacheDeleteMany).toHaveBeenCalledWith({
+			where: {
+				instanceId: "sonarr-4k",
+				arrSeriesId: 201,
+				arrEpisodeFileId: 3_001,
+			},
+		});
+	});
+
+	it.each(["unmonitor", "delete_files"] as const)(
+		"executes exact episode %s without mutating its series or sibling",
+		async (action) => {
+			const fixture = makeSonarrDeps();
+			const episodeTarget = { ...exactEpisodeTarget(), action };
+			const context = createSharedPlexSafetyContext();
+			await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+			const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+			if (plan?.kind !== "verified_sonarr_episode") {
+				throw new Error("Expected verified Sonarr episode plan");
+			}
+			vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+				id: "config-1",
+				respectQuiSeeding: true,
+				rules: [episodeCleanupRule(action)],
+			} as never);
+			const storedApproval = {
+				...approval(action === "unmonitor" ? "delete" : action),
+				action,
+				targetScope: "episode",
+				arrEpisodeId: 9_001,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				episodeTitle: "Episode 1",
+				matchedRuleId: episodeCleanupRule(action).id,
+				matchedRuleName: "Remove watched episodes",
+				safetySnapshot: serializeExecutableSafetyPlan(plan),
+			} as unknown as Record<string, unknown>;
+			configureApprovalStore(fixture.deps, storedApproval);
+
+			await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+				removed: 1,
+				failed: 0,
+				errors: [],
+			});
+			expect(fixture.setEpisodeMonitored).toHaveBeenCalledTimes(action === "unmonitor" ? 1 : 0);
+			expect(fixture.bulkDelete).toHaveBeenCalledTimes(action === "delete_files" ? 1 : 0);
+			if (action === "delete_files") {
+				expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+				expect(fixture.episodeFileCacheDeleteMany).toHaveBeenCalledWith({
+					where: {
+						instanceId: "sonarr-4k",
+						arrSeriesId: 201,
+						arrEpisodeFileId: 3_001,
+					},
+				});
+			} else {
+				expect(fixture.episodeFileCacheDeleteMany).not.toHaveBeenCalled();
+			}
+			expect(fixture.deleteSeries).not.toHaveBeenCalled();
+		},
+	);
+
+	it("executes a direct episode delete through the same exact durable boundary", async () => {
+		const fixture = makeSonarrDeps();
+		const intents = configureRetryStore(fixture.deps);
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{
+				id: "config-1",
+				maxRemovalsPerRun: 10,
+				respectQuiSeeding: true,
+				rules: [episodeCleanupRule()],
+			} as never,
+			"user-1",
+			[directEpisodeFlaggedItem(fixture)],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result.details).toEqual([expect.objectContaining({ action: "removed" })]);
+		expect(result).toMatchObject({ status: "completed", itemsRemoved: 1 });
+		expect(intents).toEqual([
+			expect.objectContaining({ targetScope: "episode", arrEpisodeId: 9_001, status: "executed" }),
+		]);
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+		expect(fixture.episodeFileCacheDeleteMany).toHaveBeenCalledWith({
+			where: {
+				instanceId: "sonarr-4k",
+				arrSeriesId: 201,
+				arrEpisodeFileId: 3_001,
+			},
+		});
+	});
+
+	it("records a lost Sonarr response only after exact episode unmonitor readback", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = { ...exactEpisodeTarget(), action: "unmonitor" as const };
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		fixture.setEpisodeMonitored.mockImplementation(async (episodeIds, monitored) => {
+			for (const episodeId of episodeIds) fixture.setLiveEpisodeMonitored(episodeId, monitored);
+			throw new Error("Sonarr response timed out");
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule("unmonitor")],
+		} as never);
+		const storedApproval = {
+			...approval(),
+			action: "unmonitor",
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule-unmonitor",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+			removed: 1,
+			failed: 0,
+			errors: [],
+		});
+		expect(storedApproval).toMatchObject({ status: "executed" });
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("keeps an unverifiable episode unmonitor retryable without deleting its file", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = { ...exactEpisodeTarget(), action: "unmonitor" as const };
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const liveEpisodes = await fixture.targetClient.episode.getAll();
+		let attempted = false;
+		fixture.setEpisodeMonitored.mockImplementation(async () => {
+			attempted = true;
+			throw new Error("Sonarr response timed out");
+		});
+		fixture.targetClient.episode.getAll.mockImplementation(async () => {
+			if (attempted) throw new Error("Sonarr readback unavailable");
+			return liveEpisodes;
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule("unmonitor")],
+		} as never);
+		const storedApproval = {
+			...approval(),
+			action: "unmonitor",
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule-unmonitor",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "retry_pending",
+			lastExecutionError: expect.stringContaining("could not confirm"),
+		});
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("reconciles a lost exact-file delete response without repeating the mutation", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = { ...exactEpisodeTarget(), action: "delete_files" as const };
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const deleteImplementation = fixture.bulkDelete.getMockImplementation();
+		fixture.bulkDelete.mockImplementation(async (fileIds) => {
+			await deleteImplementation?.(fileIds);
+			const episodes = await fixture.targetClient.episode.getAll();
+			const selected = episodes.find((episode) => episode.id === 9_001);
+			if (selected) selected.episodeFileId = 0;
+			throw new Error("Sonarr response timed out");
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule("delete_files")],
+		} as never);
+		const storedApproval = {
+			...approval("delete_files"),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule-delete_files",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const first = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(first).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "retry_pending" });
+		expect(fixture.episodeFileCacheDeleteMany).toHaveBeenCalledWith({
+			where: {
+				instanceId: "sonarr-4k",
+				arrSeriesId: 201,
+				arrEpisodeFileId: { in: [3_001] },
+			},
+		});
+
+		const retry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(retry).toEqual({ removed: 0, reconciled: 1, failed: 0, errors: [] });
+		expect(fixture.bulkDelete).toHaveBeenCalledTimes(1);
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "executed" });
+	});
+
+	it("keeps a completed episode unmonitor durable when file authority changes", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const matchingConfig = {
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule()],
+		};
+		const disabledConfig = {
+			...matchingConfig,
+			rules: [{ ...episodeCleanupRule(), enabled: false }],
+		};
+		let currentConfig = matchingConfig;
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockImplementation(
+			(async () => currentConfig) as never,
+		);
+		fixture.setEpisodeMonitored.mockImplementation(async (episodeIds, monitored) => {
+			for (const episodeId of episodeIds) fixture.setLiveEpisodeMonitored(episodeId, monitored);
+			currentConfig = disabledConfig;
+		});
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(result.errors[0]).toContain("accepted the episode unmonitor");
+		expect(storedApproval).toMatchObject({
+			status: "retry_pending",
+			lastExecutionError: expect.stringContaining("accepted the episode unmonitor"),
+		});
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledTimes(1);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+
+		const blockedRetry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(blockedRetry).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "retry_pending" });
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledTimes(1);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+
+		currentConfig = matchingConfig;
+		const completedRetry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(completedRetry).toMatchObject({ removed: 1, failed: 0 });
+		expect(storedApproval).toMatchObject({ status: "executed" });
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledTimes(1);
+		expect(fixture.bulkDelete).toHaveBeenCalledOnce();
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+	});
+
+	it("persists a direct episode delete after its exact unmonitor step", async () => {
+		const fixture = makeSonarrDeps();
+		const intents = configureRetryStore(fixture.deps);
+		const matchingConfig = {
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule()],
+		};
+		let currentConfig = matchingConfig;
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockImplementation(
+			(async () => currentConfig) as never,
+		);
+		fixture.setEpisodeMonitored.mockImplementation(async (episodeIds, monitored) => {
+			for (const episodeId of episodeIds) fixture.setLiveEpisodeMonitored(episodeId, monitored);
+			currentConfig = {
+				...matchingConfig,
+				rules: [{ ...episodeCleanupRule(), enabled: false }],
+			};
+		});
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{ ...matchingConfig, maxRemovalsPerRun: 10 } as never,
+			"user-1",
+			[directEpisodeFlaggedItem(fixture)],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result).toMatchObject({ status: "partial", itemsRemoved: 0 });
+		expect(intents).toEqual([
+			expect.objectContaining({
+				status: "retry_pending",
+				lastExecutionError: expect.stringContaining("accepted the episode unmonitor"),
+			}),
+		]);
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledTimes(1);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["disabled", { enabled: false }],
+		["threshold raised", { parameters: JSON.stringify({ operator: "greater_than", count: 1 }) }],
+	] as const)("expires an episode approval when its live rule is %s", async (_label, override) => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [{ ...episodeCleanupRule(), ...override }],
+		} as never);
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "expired" });
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it.each([true, false])(
+		"blocks an episode when the live parent %s rule takes precedence",
+		async (retentionMode) => {
+			const fixture = makeSonarrDeps();
+			const episodeTarget = exactEpisodeTarget();
+			const context = createSharedPlexSafetyContext();
+			await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+			const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+			if (plan?.kind !== "verified_sonarr_episode") {
+				throw new Error("Expected verified Sonarr episode plan");
+			}
+			fixture.series.monitored = false;
+			vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+				id: "config-1",
+				respectQuiSeeding: true,
+				rules: [
+					{
+						...episodeCleanupRule(),
+						id: "parent-rule",
+						priority: 0,
+						targetScope: "series",
+						ruleType: "unmonitored",
+						parameters: JSON.stringify({}),
+						retentionMode,
+					},
+					episodeCleanupRule(),
+				],
+			} as never);
+			const storedApproval = {
+				...approval(),
+				targetScope: "episode",
+				arrEpisodeId: 9_001,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				episodeTitle: "Episode 1",
+				matchedRuleId: "episode-rule",
+				matchedRuleName: "Remove watched episodes",
+				safetySnapshot: serializeExecutableSafetyPlan(plan),
+			} as unknown as Record<string, unknown>;
+			configureApprovalStore(fixture.deps, storedApproval);
+
+			const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+			expect(result).toMatchObject({ removed: 0, failed: 1 });
+			expect(storedApproval).toMatchObject({ status: "expired" });
+			expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+			expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		},
+	);
 
 	it("still uses exact-file deletion when no media-server notification applies", async () => {
 		const { deps, targetClient, episodeFiles, bulkDelete, deleteSeries } = makeSonarrDeps({

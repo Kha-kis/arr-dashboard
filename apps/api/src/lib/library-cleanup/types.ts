@@ -9,11 +9,16 @@ import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
 import type { PlexClient } from "../plex/plex-client.js";
 import type { LibraryItemType, PrismaClient, ServiceInstance } from "../prisma.js";
+import type { QuiClient } from "../qui/client-factory.js";
 import type { EpisodeTargetMetadata } from "./episode-scope.js";
 
 // ============================================================================
 // Dependencies
 // ============================================================================
+
+export interface CompleteQuiFileHashIndex {
+	resolve(path: string): Promise<{ hashes: string[]; complete: true }>;
+}
 
 export interface CleanupExecutorDeps {
 	prisma: PrismaClient;
@@ -25,7 +30,12 @@ export interface CleanupExecutorDeps {
 	) => Pick<
 		PlexClient,
 		"getAccounts" | "getMovieMediaPartsByTmdbId" | "getSeriesEpisodeMediaPartsByTvdbId"
-	>;
+	> &
+		Partial<Pick<PlexClient, "getEpisodeWatchCount">>;
+	/** Exact live qUI lookup used only after a complete inode inventory is available. */
+	quiClientFactory?: (instance: ServiceInstance) => Pick<QuiClient, "getTorrentsByHash">;
+	/** Build one fresh, complete qUI/filesystem inode snapshot for destructive authorization. */
+	quiFileHashIndexFactory?: (instance: ServiceInstance) => Promise<CompleteQuiFileHashIndex>;
 	log: FastifyBaseLogger;
 }
 
