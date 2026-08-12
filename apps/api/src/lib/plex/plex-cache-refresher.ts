@@ -45,6 +45,19 @@ function parsePlexTmdbId(guids: Array<{ id: string }> | undefined): number | nul
 	return null;
 }
 
+function parsePlexTvdbId(guids: Array<{ id: string }> | undefined): number | null {
+	if (!guids) return null;
+
+	for (const guid of guids) {
+		const match = guid.id.match(/^tvdb:\/\/(\d+)$/);
+		if (match?.[1]) {
+			return Number.parseInt(match[1], 10);
+		}
+	}
+
+	return null;
+}
+
 // ============================================================================
 // Aggregation Types
 // ============================================================================
@@ -91,6 +104,13 @@ export interface PlexCacheSnapshot {
 	sections: Array<{ key: string; title: string; type: "movie" | "show" }>;
 }
 
+export interface PlexInventoryTarget {
+	mediaType: "movie" | "series";
+	tmdbId: number;
+	tvdbId?: number;
+	ratingKey: string;
+}
+
 export interface PlexCacheRefreshOptions {
 	publish?: boolean;
 }
@@ -102,7 +122,9 @@ export interface PlexCacheRefreshResult {
 	complete: boolean;
 	completedAt?: Date;
 	superseded?: boolean;
+	generationId?: string;
 	snapshot?: PlexCacheSnapshot;
+	inventoryTargets?: PlexInventoryTarget[];
 }
 
 function onDeckSignature(items: Awaited<ReturnType<PlexClient["getOnDeck"]>>): string[] {
@@ -116,6 +138,52 @@ function onDeckSignature(items: Awaited<ReturnType<PlexClient["getOnDeck"]>>): s
 			]),
 		)
 		.sort();
+}
+
+function mediaLibrarySignature(
+	sections: Awaited<ReturnType<PlexClient["getLibrarySections"]>>,
+): string[] {
+	return sections
+		.map((section) => JSON.stringify([section.key, section.title, section.type]))
+		.sort();
+}
+
+function libraryInventoryItemSignature(
+	section: { key: string; type: string },
+	item: Awaited<ReturnType<PlexClient["getLibraryItems"]>>[number],
+): string {
+	return JSON.stringify([
+		section.key,
+		section.type,
+		item.ratingKey,
+		item.type,
+		item.title,
+		item.userRating ?? null,
+		item.addedAt ?? null,
+		item.thumb ?? null,
+		(item.Guid ?? []).map((guid) => guid.id).sort(),
+		(item.Collection ?? []).map((collection) => collection.tag).sort(),
+		(item.Label ?? []).map((label) => label.tag).sort(),
+	]);
+}
+
+const incompleteReasonLabels: Record<string, string> = {
+	currentLibraryItemsWithoutRatingKeys: "current library item(s) without a usable rating key",
+	currentItemsWithoutTmdbMetadata: "current library item(s) without TMDB metadata",
+	historyItemsWithoutUsableMediaKey: "history item(s) without a usable media key",
+	currentHistoryItemsWithoutMappedMetadata: "current history item(s) without mapped TMDB metadata",
+	historyItemsWithUnknownAccounts: "history item(s) with unknown accounts",
+	onDeckItemsWithoutMappedMetadata: "on-deck item(s) without mapped TMDB metadata",
+};
+
+function appendIncompleteReasonMessages(
+	errorMessages: string[],
+	incompleteReasons: Record<string, number>,
+): void {
+	for (const [reason, count] of Object.entries(incompleteReasons)) {
+		const label = incompleteReasonLabels[reason];
+		if (label) errorMessages.push(`Plex cache incomplete: ${count} ${label}`);
+	}
 }
 
 // ============================================================================
@@ -138,13 +206,23 @@ export async function refreshPlexCache(
 	let complete = true;
 	let completedAt: Date | undefined;
 	let superseded = false;
+	let publishedGenerationId: string | undefined;
 	const errorMessages: string[] = [];
+	const incompleteReasons: Record<string, number> = {};
+	let totalLibraryItems = 0;
+	let mappedLibraryItems = 0;
+	let ignoredHistoricalItems = 0;
+	let verifiedInventoryTargets: PlexInventoryTarget[] | undefined;
+	const markIncomplete = (reason: string) => {
+		complete = false;
+		incompleteReasons[reason] = (incompleteReasons[reason] ?? 0) + 1;
+	};
 
 	try {
 		// 1. Build accountId → username map
 		const accounts = await client.getAccounts();
 		if (accounts.length === 0) {
-			complete = false;
+			markIncomplete("noUserAccounts");
 			errors++;
 			errorMessages.push("Plex returned no user accounts");
 			log.warn({ instanceId }, "Plex cache refresh: no user accounts discovered");
@@ -157,8 +235,9 @@ export async function refreshPlexCache(
 		// 2. Get library sections (movie and show only)
 		const sections = await client.getLibrarySections();
 		const mediaLibs = sections.filter((s) => s.type === "movie" || s.type === "show");
+		const initialMediaLibrarySignature = mediaLibrarySignature(mediaLibs);
 		if (mediaLibs.length === 0) {
-			complete = false;
+			markIncomplete("noMediaLibraries");
 			errors++;
 			errorMessages.push("Plex returned no movie or show libraries");
 			log.warn({ instanceId }, "Plex cache refresh: no movie or show libraries discovered");
@@ -181,18 +260,35 @@ export async function refreshPlexCache(
 				thumb: string | null;
 			}
 		>();
+		const currentLibraryRatingKeys = new Set<string>();
+		const initialLibraryInventorySignature: string[] = [];
+		const inventoryTargets: PlexInventoryTarget[] = [];
 
 		for (const lib of mediaLibs) {
 			try {
 				const items = await client.getLibraryItems(lib.key);
 				for (const item of items) {
+					initialLibraryInventorySignature.push(libraryInventoryItemSignature(lib, item));
+					totalLibraryItems++;
+					if (!item.ratingKey.trim()) {
+						markIncomplete("currentLibraryItemsWithoutRatingKeys");
+						continue;
+					}
+					currentLibraryRatingKeys.add(item.ratingKey);
 					const tmdbId = parsePlexTmdbId(item.Guid);
 					if (!tmdbId) {
-						complete = false;
+						markIncomplete("currentItemsWithoutTmdbMetadata");
 						continue;
 					}
 
 					const mediaType: "movie" | "series" = item.type === "movie" ? "movie" : "series";
+					const tvdbId = mediaType === "series" ? parsePlexTvdbId(item.Guid) : null;
+					inventoryTargets.push({
+						mediaType,
+						tmdbId,
+						...(tvdbId ? { tvdbId } : {}),
+						ratingKey: item.ratingKey,
+					});
 					ratingKeyMap.set(item.ratingKey, {
 						tmdbId,
 						mediaType,
@@ -208,13 +304,22 @@ export async function refreshPlexCache(
 					});
 				}
 			} catch (err) {
-				complete = false;
+				markIncomplete("librarySnapshotFetchFailures");
 				const msg = `Failed to fetch library "${lib.title}": ${getErrorMessage(err)}`;
 				log.warn({ err, sectionId: lib.key, sectionTitle: lib.title }, msg);
 				errors++;
 				errorMessages.push(msg);
 			}
 		}
+		initialLibraryInventorySignature.sort();
+		inventoryTargets.sort(
+			(left, right) =>
+				left.mediaType.localeCompare(right.mediaType) ||
+				left.tmdbId - right.tmdbId ||
+				(left.tvdbId ?? 0) - (right.tvdbId ?? 0) ||
+				left.ratingKey.localeCompare(right.ratingKey),
+		);
+		mappedLibraryItems = ratingKeyMap.size;
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
 		const history = await client.getHistory({ maxResults: 100_000, requireComplete: true });
@@ -222,22 +327,34 @@ export async function refreshPlexCache(
 		const aggregations = new Map<string, ItemAggregation>();
 
 		for (const entry of history) {
-			// For episodes, use the show's ratingKey
-			const isEpisode = entry.type === "episode";
-			const itemRatingKey = isEpisode
-				? (entry.grandparentRatingKey ?? entry.ratingKey)
-				: entry.ratingKey;
+			const isRelevantHistory = entry.type === "movie" || entry.type === "episode";
+			const itemRatingKey = entry.type === "episode" ? entry.grandparentRatingKey : entry.ratingKey;
+			if (!itemRatingKey?.trim()) {
+				if (isRelevantHistory) markIncomplete("historyItemsWithoutUsableMediaKey");
+				continue;
+			}
+
+			const username = accountMap.get(entry.accountID);
+			if (isRelevantHistory) {
+				if (!username) {
+					markIncomplete("historyItemsWithUnknownAccounts");
+					continue;
+				}
+				if (!currentLibraryRatingKeys.has(itemRatingKey)) {
+					ignoredHistoricalItems++;
+					continue;
+				}
+			}
 
 			const itemData = ratingKeyMap.get(itemRatingKey);
 			if (!itemData) {
-				if (entry.type === "movie" || entry.type === "episode") complete = false;
+				if (isRelevantHistory) markIncomplete("currentHistoryItemsWithoutMappedMetadata");
 				continue;
 			}
 
 			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
-			const username = accountMap.get(entry.accountID);
 			if (!username) {
-				complete = false;
+				markIncomplete("historyItemsWithUnknownAccounts");
 				continue;
 			}
 
@@ -308,7 +425,9 @@ export async function refreshPlexCache(
 
 				const itemData = ratingKeyMap.get(itemRatingKey);
 				if (!itemData) {
-					if (deckItem.type === "movie" || deckItem.type === "episode") complete = false;
+					if (deckItem.type === "movie" || deckItem.type === "episode") {
+						markIncomplete("onDeckItemsWithoutMappedMetadata");
+					}
 					continue;
 				}
 
@@ -319,14 +438,13 @@ export async function refreshPlexCache(
 				}
 			}
 		} catch (err) {
-			complete = false;
+			markIncomplete("onDeckFetchFailures");
 			errors++;
 			errorMessages.push(`Failed to fetch Plex on-deck items: ${getErrorMessage(err)}`);
 			log.warn({ err }, "Failed to fetch Plex on-deck items");
 		}
 
 		// Release ratingKeyMap — all data now lives in aggregations (#239)
-		const libraryItemCount = ratingKeyMap.size;
 		ratingKeyMap.clear();
 
 		// 6. Publish one complete generation atomically. Until every upstream
@@ -337,11 +455,36 @@ export async function refreshPlexCache(
 		aggregations.clear();
 
 		if (errors === 0 && complete) {
+			const latestSections = await client.getLibrarySections();
+			const latestMediaLibs = latestSections.filter(
+				(section) => section.type === "movie" || section.type === "show",
+			);
+			if (
+				JSON.stringify(mediaLibrarySignature(latestMediaLibs)) !==
+				JSON.stringify(initialMediaLibrarySignature)
+			) {
+				throw new Error("Plex library sections changed before cache publication");
+			}
+			const latestLibraryInventorySignature: string[] = [];
+			for (const lib of latestMediaLibs) {
+				const items = await client.getLibraryItems(lib.key);
+				for (const item of items) {
+					latestLibraryInventorySignature.push(libraryInventoryItemSignature(lib, item));
+				}
+			}
+			latestLibraryInventorySignature.sort();
+			if (
+				JSON.stringify(latestLibraryInventorySignature) !==
+				JSON.stringify(initialLibraryInventorySignature)
+			) {
+				throw new Error("Plex library inventory changed before cache publication");
+			}
 			await client.verifyHistorySnapshot(history);
 			const latestOnDeckSignature = onDeckSignature(await client.getOnDeck());
 			if (JSON.stringify(latestOnDeckSignature) !== JSON.stringify(verifiedOnDeckSignature)) {
 				throw new Error("Plex on-deck state changed before cache publication");
 			}
+			verifiedInventoryTargets = inventoryTargets;
 			completedAt = new Date();
 			if (options.publish === false) {
 				const sections = mediaLibs
@@ -380,6 +523,7 @@ export async function refreshPlexCache(
 					errorMessages: [],
 					complete: true,
 					completedAt,
+					inventoryTargets,
 					snapshot: { rows, sections },
 				};
 			}
@@ -452,6 +596,7 @@ export async function refreshPlexCache(
 				);
 				if (publication.matched) {
 					upserted = aggregationsArray.length;
+					publishedGenerationId = generationId;
 				} else {
 					superseded = true;
 					complete = false;
@@ -466,7 +611,15 @@ export async function refreshPlexCache(
 			}
 		} else {
 			log.warn(
-				{ instanceId, aggregationSize: aggregationsArray.length, errors },
+				{
+					instanceId,
+					aggregationSize: aggregationsArray.length,
+					totalLibraryItems,
+					mappedLibraryItems,
+					ignoredHistoricalItems,
+					incompleteReasons,
+					errors,
+				},
 				"Plex cache: skipping eviction because the refreshed inventory was incomplete",
 			);
 		}
@@ -474,7 +627,10 @@ export async function refreshPlexCache(
 		log.info(
 			{
 				instanceId,
-				totalLibraryItems: libraryItemCount,
+				totalLibraryItems,
+				mappedLibraryItems,
+				ignoredHistoricalItems,
+				incompleteReasons,
 				totalHistory: historyCount,
 				uniqueItems: aggregationsArray.length,
 				upserted,
@@ -490,6 +646,8 @@ export async function refreshPlexCache(
 		errorMessages.push(msg);
 	}
 
+	appendIncompleteReasonMessages(errorMessages, incompleteReasons);
+
 	return {
 		upserted,
 		errors,
@@ -497,6 +655,9 @@ export async function refreshPlexCache(
 		complete: complete && errors === 0,
 		completedAt,
 		superseded: superseded || undefined,
+		generationId: complete && errors === 0 && completedAt ? publishedGenerationId : undefined,
+		inventoryTargets:
+			complete && errors === 0 && completedAt ? verifiedInventoryTargets : undefined,
 	};
 }
 

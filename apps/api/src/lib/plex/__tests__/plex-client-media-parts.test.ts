@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PlexClient } from "../plex-client.js";
+import { PlexClient, PlexMovieNotFoundError } from "../plex-client.js";
 
 const log = {
 	warn: vi.fn(),
@@ -74,8 +74,8 @@ describe("PlexClient.getMovieMediaPartsByTmdbId", () => {
 		);
 		const client = new PlexClient("http://plex:32400", "token", log);
 
-		await expect(client.getMovieMediaPartsByTmdbId(42)).rejects.toThrow(
-			"no movie item for TMDb 42",
+		await expect(client.getMovieMediaPartsByTmdbId(42)).rejects.toBeInstanceOf(
+			PlexMovieNotFoundError,
 		);
 	});
 

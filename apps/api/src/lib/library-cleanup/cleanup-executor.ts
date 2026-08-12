@@ -24,8 +24,17 @@ import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-refresher.js";
 import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
-import { type PlexCacheSnapshotRow, refreshPlexCache } from "../plex/plex-cache-refresher.js";
-import { createPlexClient } from "../plex/plex-client.js";
+import {
+	type PlexCacheSnapshotRow,
+	type PlexInventoryTarget,
+	refreshPlexCache,
+} from "../plex/plex-cache-refresher.js";
+import {
+	createPlexClient,
+	type PlexClient,
+	PlexMovieNotFoundError,
+	PlexSeriesNotFoundError,
+} from "../plex/plex-client.js";
 import { refreshPlexEpisodeCache } from "../plex/plex-episode-cache-refresher.js";
 import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
 import type {
@@ -2851,6 +2860,147 @@ export async function assertCurrentSeriesPolicySnapshotUnchanged(
 	}
 }
 
+type PlexTargetLookupClient = Pick<
+	PlexClient,
+	"getMovieMediaPartsByTmdbId" | "getSeriesEpisodeMediaPartsByTvdbId"
+>;
+
+type PlexTargetRatingKeysByInstance = Map<string, Map<string, Set<string>>>;
+
+function plexTargetIdentityKey(
+	mediaType: PlexInventoryTarget["mediaType"],
+	idType: "tmdb" | "tvdb",
+	externalId: number,
+): string {
+	return `${mediaType}:${idType}:${externalId}`;
+}
+
+function plexInventoryTargetKeys(target: PlexInventoryTarget): string[] {
+	const keys = [plexTargetIdentityKey(target.mediaType, "tmdb", target.tmdbId)];
+	if (target.mediaType === "series" && target.tvdbId) {
+		keys.push(plexTargetIdentityKey("series", "tvdb", target.tvdbId));
+	}
+	return keys;
+}
+
+async function readCurrentPlexTargetRatingKeys(
+	client: PlexTargetLookupClient,
+	service: "RADARR" | "SONARR",
+	externalId: number,
+): Promise<string[]> {
+	try {
+		const items =
+			service === "RADARR"
+				? await client.getMovieMediaPartsByTmdbId(externalId)
+				: await client.getSeriesEpisodeMediaPartsByTvdbId(externalId);
+		const ratingKeys = new Set<string>();
+		for (const item of items) {
+			if (typeof item.ratingKey !== "string" || item.ratingKey.trim() === "") {
+				throw new Error("Plex returned a target without a usable rating key");
+			}
+			ratingKeys.add(item.ratingKey);
+		}
+		return [...ratingKeys].sort();
+	} catch (error) {
+		if (error instanceof PlexMovieNotFoundError || error instanceof PlexSeriesNotFoundError) {
+			return [];
+		}
+		throw error;
+	}
+}
+
+async function assertCurrentPlexTargetCoveredByPolicySnapshot(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	service: "RADARR" | "SONARR",
+	externalId: number,
+	targetKey: string,
+	ratingKeysByInstance: PlexTargetRatingKeysByInstance,
+	expectedTopologyFingerprint: string,
+): Promise<void> {
+	const initial = await loadProviderInstances(deps, userId, ["PLEX"]);
+	if (
+		initial.length === 0 ||
+		providerTopologyFingerprint(initial) !== expectedTopologyFingerprint ||
+		ratingKeysByInstance.size !== initial.length ||
+		initial.some((instance) => !ratingKeysByInstance.has(instance.id))
+	) {
+		throw new Error("Plex topology no longer matched the policy snapshot");
+	}
+
+	for (const instance of initial) {
+		const client =
+			deps.plexClientFactory?.(instance) ??
+			deps.plexCacheClientFactory?.(instance) ??
+			(deps.encryptor ? createPlexClient(deps.encryptor, instance, deps.log) : null);
+		if (!client) throw new Error("Plex credentials were unavailable");
+
+		const first = await readCurrentPlexTargetRatingKeys(client, service, externalId);
+		const second = await readCurrentPlexTargetRatingKeys(client, service, externalId);
+		if (evidenceFingerprint(first) !== evidenceFingerprint(second)) {
+			throw new Error("Plex target identity changed between verification passes");
+		}
+
+		const expectedRatingKeys = [
+			...(ratingKeysByInstance.get(instance.id)?.get(targetKey) ?? new Set<string>()),
+		].sort();
+		if (evidenceFingerprint(second) !== evidenceFingerprint(expectedRatingKeys)) {
+			throw new Error("Plex target identity changed after the policy snapshot was captured");
+		}
+	}
+
+	const after = await loadProviderInstances(deps, userId, ["PLEX"]);
+	if (providerTopologyFingerprint(after) !== expectedTopologyFingerprint) {
+		throw new Error("Plex topology changed during final target verification");
+	}
+}
+
+function assertRefreshedPlexTargetMatchesPolicySnapshot(
+	expected: PlexTargetRatingKeysByInstance,
+	current: PlexTargetRatingKeysByInstance,
+	targetKey: string,
+): void {
+	if (
+		expected.size !== current.size ||
+		[...expected.keys()].some((instanceId) => !current.has(instanceId))
+	) {
+		throw new Error("Refreshed Plex target coverage did not match the policy snapshot");
+	}
+	for (const [instanceId, expectedTargets] of expected) {
+		const expectedRatingKeys = [...(expectedTargets.get(targetKey) ?? new Set<string>())].sort();
+		const currentRatingKeys = [
+			...(current.get(instanceId)?.get(targetKey) ?? new Set<string>()),
+		].sort();
+		if (evidenceFingerprint(currentRatingKeys) !== evidenceFingerprint(expectedRatingKeys)) {
+			throw new Error("Plex target identity changed during final policy revalidation");
+		}
+	}
+}
+
+function plexRulesCapableOfAffectingExpectedSeriesPolicy(
+	item: CacheItemForEval,
+	rules: LibraryCleanupRule[],
+	service: "RADARR" | "SONARR",
+	expectedRuleId: string,
+): LibraryCleanupRule[] {
+	const expectedRule = rules.find((rule) => rule.id === expectedRuleId);
+	if (!expectedRule || expectedRule.retentionMode) {
+		throw new Error("The expected cleanup winner was absent from the policy snapshot");
+	}
+	const plexDependency = new Set<DataSourceDependency>(["plex"]);
+	return rules.filter((rule) => {
+		const canAffectExpectedWinner =
+			rule.retentionMode ||
+			rule.priority < expectedRule.priority ||
+			(rule.priority === expectedRule.priority && rule.id.localeCompare(expectedRule.id) <= 0);
+		return (
+			canAffectExpectedWinner &&
+			passesCleanupRuleFilters(item, rule, service) &&
+			ruleUsesUnavailableData(rule, plexDependency)
+		);
+	});
+}
+
 /**
  * Re-establish series/movie cleanup authorization at the mutation boundary.
  * The queued/preview match is durable intent only: current live ARR state,
@@ -2882,13 +3032,133 @@ export async function assertCurrentSeriesMutationAuthority(
 					: (() => {
 							throw new Error(`Unsupported cleanup service: ${instance.service}`);
 						})();
-		const liveItem = toLiveSeriesPolicyItem(instance, arrItemId, rawItem);
-		const policy = evaluateItemPolicyState(
-			liveItem,
+		let authoritativeRawItem = rawItem;
+		let authoritativeLiveItem = toLiveSeriesPolicyItem(instance, arrItemId, rawItem);
+		const plexPolicyRules = plexRulesCapableOfAffectingExpectedSeriesPolicy(
+			authoritativeLiveItem,
 			policySnapshot.rules,
 			instance.service,
-			policySnapshot.ctx,
-			policySnapshot.failedSources,
+			expectedRule.matchedRuleId,
+		);
+		let currentPolicyCtx = policySnapshot.ctx;
+		let currentFailedSources = policySnapshot.failedSources;
+		if (plexPolicyRules.length > 0) {
+			if (
+				!policySnapshot.plexTargetRatingKeysByInstance ||
+				!policySnapshot.plexTopologyFingerprint
+			) {
+				throw new Error("The policy snapshot lacked complete Plex target coverage");
+			}
+			const lookupExternalId = instance.service === "RADARR" ? rawItem.tmdbId : rawItem.tvdbId;
+			const policyTmdbId = rawItem.tmdbId;
+			const hasPolicyTmdbId =
+				typeof policyTmdbId === "number" && Number.isSafeInteger(policyTmdbId) && policyTmdbId > 0;
+			if (
+				typeof lookupExternalId !== "number" ||
+				!Number.isSafeInteger(lookupExternalId) ||
+				lookupExternalId <= 0
+			) {
+				throw new Error("Live ARR state lacked the IDs required for Plex verification");
+			}
+			const targetKey =
+				instance.service === "RADARR"
+					? plexTargetIdentityKey("movie", "tmdb", lookupExternalId)
+					: hasPolicyTmdbId
+						? plexTargetIdentityKey("series", "tmdb", policyTmdbId)
+						: plexTargetIdentityKey("series", "tvdb", lookupExternalId);
+			await assertCurrentPlexTargetCoveredByPolicySnapshot(
+				deps,
+				userId,
+				instance.service,
+				lookupExternalId,
+				targetKey,
+				policySnapshot.plexTargetRatingKeysByInstance,
+				policySnapshot.plexTopologyFingerprint,
+			);
+
+			const activeTypes = collectActiveRuleTypes(plexPolicyRules);
+			const currentPlexEvidence = await refreshPlexMutationEvidence(
+				deps,
+				userId,
+				activeTypes.has("plex_episode_completion"),
+				plexPolicyRules,
+			);
+			if (
+				!currentPlexEvidence ||
+				!policySnapshot.plexTopologyFingerprint ||
+				currentPlexEvidence.topologyFingerprint !== policySnapshot.plexTopologyFingerprint
+			) {
+				throw new Error("Current Plex policy evidence did not match the authorized topology");
+			}
+			assertRefreshedPlexTargetMatchesPolicySnapshot(
+				policySnapshot.plexTargetRatingKeysByInstance,
+				currentPlexEvidence.ratingKeysByInstance,
+				targetKey,
+			);
+			currentPolicyCtx = {
+				...policySnapshot.ctx,
+				now: new Date(),
+				plexMap: currentPlexEvidence.plexMap,
+				plexSectionTitles: currentPlexEvidence.plexSectionTitles,
+				plexEpisodeMap: currentPlexEvidence.plexEpisodeMap,
+			};
+			currentFailedSources = new Set(policySnapshot.failedSources);
+			currentFailedSources.delete("plex");
+
+			authoritativeRawItem =
+				instance.service === "RADARR"
+					? ((await (arrClient as InstanceType<typeof RadarrClient>).movie.getById(
+							arrItemId,
+						)) as unknown as Record<string, unknown>)
+					: ((await (arrClient as InstanceType<typeof SonarrClient>).series.getById(
+							arrItemId,
+						)) as unknown as Record<string, unknown>);
+			authoritativeLiveItem = toLiveSeriesPolicyItem(instance, arrItemId, authoritativeRawItem);
+			const currentLookupExternalId =
+				instance.service === "RADARR" ? authoritativeRawItem.tmdbId : authoritativeRawItem.tvdbId;
+			const currentPolicyTmdbId = authoritativeRawItem.tmdbId;
+			const currentHasPolicyTmdbId =
+				typeof currentPolicyTmdbId === "number" &&
+				Number.isSafeInteger(currentPolicyTmdbId) &&
+				currentPolicyTmdbId > 0;
+			if (
+				typeof currentLookupExternalId !== "number" ||
+				!Number.isSafeInteger(currentLookupExternalId) ||
+				currentLookupExternalId <= 0
+			) {
+				throw new Error("Refreshed ARR state lacked the IDs required for Plex verification");
+			}
+			const currentTargetKey =
+				instance.service === "RADARR"
+					? plexTargetIdentityKey("movie", "tmdb", currentLookupExternalId)
+					: currentHasPolicyTmdbId
+						? plexTargetIdentityKey("series", "tmdb", currentPolicyTmdbId)
+						: plexTargetIdentityKey("series", "tvdb", currentLookupExternalId);
+			if (currentLookupExternalId !== lookupExternalId || currentTargetKey !== targetKey) {
+				throw new Error("ARR target identity changed during Plex policy revalidation");
+			}
+			const refreshedPlexPolicyRules = plexRulesCapableOfAffectingExpectedSeriesPolicy(
+				authoritativeLiveItem,
+				policySnapshot.rules,
+				instance.service,
+				expectedRule.matchedRuleId,
+			);
+			const refreshedRuleIds = new Set(refreshedPlexPolicyRules.map((rule) => rule.id));
+			if (refreshedRuleIds.size > plexPolicyRules.length) {
+				throw new Error("A new Plex-dependent policy became applicable during revalidation");
+			}
+			for (const ruleId of refreshedRuleIds) {
+				if (!plexPolicyRules.some((rule) => rule.id === ruleId)) {
+					throw new Error("A new Plex-dependent policy became applicable during revalidation");
+				}
+			}
+		}
+		const policy = evaluateItemPolicyState(
+			authoritativeLiveItem,
+			policySnapshot.rules,
+			instance.service,
+			currentPolicyCtx,
+			currentFailedSources,
 		);
 		if (
 			policy.kind !== "cleanup" ||
@@ -2898,7 +3168,12 @@ export async function assertCurrentSeriesMutationAuthority(
 		) {
 			throw new Error("The exact matched cleanup policy is no longer authoritative");
 		}
-		return { snapshot: policySnapshot, rawItem, policyItem: liveItem };
+		await assertCurrentSeriesPolicySnapshotUnchanged(deps, userId, expectedRule, policySnapshot);
+		return {
+			snapshot: policySnapshot,
+			rawItem: authoritativeRawItem,
+			policyItem: authoritativeLiveItem,
+		};
 	} catch (error) {
 		deps.log.warn(
 			{ err: error, instanceId: instance.id, arrItemId, ruleId: expectedRule.matchedRuleId },
@@ -8537,11 +8812,15 @@ async function loadProviderInstances(
 	});
 }
 
-interface PublishedPlexPolicyEvidence {
+interface PlexPolicyEvidence {
 	plexMap: PlexWatchMap;
 	plexSectionTitles: Set<string>;
 	completedAt: Date;
 	generationFingerprint: string;
+}
+
+interface PublishedPlexPolicyEvidence extends PlexPolicyEvidence {
+	generationIdsByInstance: Map<string, string>;
 }
 
 function parsePublishedPlexSections(metadata: string | null): Array<{
@@ -8648,6 +8927,9 @@ async function loadPublishedPlexPolicyEvidenceUnsafe(
 		plexSectionTitles: sectionTitles,
 		completedAt: new Date(Math.min(...before.map((status) => status.lastRefreshedAt.getTime()))),
 		generationFingerprint: evidenceFingerprint(before),
+		generationIdsByInstance: new Map(
+			before.map((status) => [status.instanceId, status.generationId!]),
+		),
 	};
 }
 
@@ -8686,7 +8968,7 @@ async function collectLivePlexPolicyEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
-): Promise<PublishedPlexPolicyEvidence | undefined> {
+): Promise<PlexPolicyEvidence | undefined> {
 	try {
 		const initial = await loadProviderInstances(deps, userId, ["PLEX"]);
 		if (initial.length === 0) return undefined;
@@ -8885,8 +9167,10 @@ async function refreshPlexMutationEvidence(
 	| {
 			plexMap: PlexWatchMap;
 			plexSectionTitles: Set<string>;
+			ratingKeysByInstance: PlexTargetRatingKeysByInstance;
 			plexEpisodeMap?: PlexEpisodeMap;
 			completedAt: Date;
+			topologyFingerprint: string;
 	  }
 	| undefined
 > {
@@ -8898,6 +9182,7 @@ async function refreshPlexMutationEvidence(
 			| {
 					plexMap: PlexWatchMap;
 					plexSectionTitles: Set<string>;
+					ratingKeysByInstance: PlexTargetRatingKeysByInstance;
 					plexEpisodeMap?: PlexEpisodeMap;
 					fingerprint: string;
 					completedAt: Date;
@@ -8905,6 +9190,10 @@ async function refreshPlexMutationEvidence(
 			| undefined;
 		for (let pass = 0; pass < 2; pass++) {
 			const passCompletions: Date[] = [];
+			const generationIdsByInstance = new Map<string, string>();
+			const ratingKeysByInstance: PlexTargetRatingKeysByInstance = new Map(
+				initial.map((instance) => [instance.id, new Map<string, Set<string>>()]),
+			);
 			for (const instance of initial) {
 				const client =
 					deps.plexCacheClientFactory?.(instance) ??
@@ -8921,8 +9210,22 @@ async function refreshPlexMutationEvidence(
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Plex cache refresh was incomplete");
 				}
-				if (!refreshed.completedAt) throw new Error("Plex refresh lacked a completion timestamp");
+				if (!refreshed.completedAt || !refreshed.generationId || !refreshed.inventoryTargets) {
+					throw new Error("Plex refresh lacked complete inventory identity evidence");
+				}
 				passCompletions.push(refreshed.completedAt);
+				generationIdsByInstance.set(instance.id, refreshed.generationId);
+				const instanceTargets = ratingKeysByInstance.get(instance.id)!;
+				for (const target of refreshed.inventoryTargets) {
+					for (const targetKey of plexInventoryTargetKeys(target)) {
+						let ratingKeys = instanceTargets.get(targetKey);
+						if (!ratingKeys) {
+							ratingKeys = new Set<string>();
+							instanceTargets.set(targetKey, ratingKeys);
+						}
+						ratingKeys.add(target.ratingKey);
+					}
+				}
 				if (includeEpisodes) {
 					const episodes = await refreshPlexEpisodeCache(
 						client,
@@ -8952,10 +9255,16 @@ async function refreshPlexMutationEvidence(
 			if (!publishedPlex || (includeEpisodes && !plexEpisodeMap)) {
 				throw new Error("Plex refreshed evidence could not be loaded");
 			}
+			if (
+				evidenceFingerprint(publishedPlex.generationIdsByInstance) !==
+				evidenceFingerprint(generationIdsByInstance)
+			) {
+				throw new Error("Plex inventory identity did not match the published generation");
+			}
 			const fingerprint = evidenceFingerprint([
-				publishedPlex.generationFingerprint,
 				publishedPlex.plexMap,
 				publishedPlex.plexSectionTitles,
+				ratingKeysByInstance,
 				plexEpisodeMap,
 			]);
 			if (accepted && accepted.fingerprint !== fingerprint) {
@@ -8964,6 +9273,7 @@ async function refreshPlexMutationEvidence(
 			accepted = {
 				plexMap: publishedPlex.plexMap,
 				plexSectionTitles: publishedPlex.plexSectionTitles,
+				ratingKeysByInstance,
 				plexEpisodeMap,
 				fingerprint,
 				completedAt: new Date(Math.min(...passCompletions.map((date) => date.getTime()))),
@@ -8973,8 +9283,10 @@ async function refreshPlexMutationEvidence(
 			? {
 					plexMap: accepted.plexMap,
 					plexSectionTitles: accepted.plexSectionTitles,
+					ratingKeysByInstance: accepted.ratingKeysByInstance,
 					plexEpisodeMap: accepted.plexEpisodeMap,
 					completedAt: accepted.completedAt,
+					topologyFingerprint: topology,
 				}
 			: undefined;
 	} catch (error) {
@@ -9291,6 +9603,8 @@ async function buildMutationEvalContext(
 	ctx: EvalContext;
 	failedSources: Set<DataSourceDependency>;
 	sourceCompletedAt: Map<Exclude<DataSourceDependency, null>, Date>;
+	plexTargetRatingKeysByInstance?: PlexTargetRatingKeysByInstance;
+	plexTopologyFingerprint?: string;
 }> {
 	const activeTypes = collectActiveRuleTypes(rules);
 	const needsSeerr = [
@@ -9387,6 +9701,8 @@ async function buildMutationEvalContext(
 		},
 		failedSources,
 		sourceCompletedAt,
+		plexTargetRatingKeysByInstance: plexEvidence?.ratingKeysByInstance,
+		plexTopologyFingerprint: plexEvidence?.topologyFingerprint,
 	};
 }
 
@@ -9400,6 +9716,8 @@ export interface MutationPolicySnapshot {
 	failedSources: Set<DataSourceDependency>;
 	sourceCompletedAt: Map<Exclude<DataSourceDependency, null>, Date>;
 	oldestSourceCompletedAt: Date | null;
+	plexTargetRatingKeysByInstance?: PlexTargetRatingKeysByInstance;
+	plexTopologyFingerprint?: string;
 	providerTopologyFingerprint: string;
 }
 
@@ -9438,11 +9756,13 @@ async function createMutationPolicySnapshot(
 	const rules = config.rules
 		.filter((rule) => rule.targetScope !== "episode")
 		.sort((left, right) => left.priority - right.priority || left.id.localeCompare(right.id));
-	const { ctx, failedSources, sourceCompletedAt } = await buildMutationEvalContext(
-		deps,
-		userId,
-		rules,
-	);
+	const {
+		ctx,
+		failedSources,
+		sourceCompletedAt,
+		plexTargetRatingKeysByInstance,
+		plexTopologyFingerprint,
+	} = await buildMutationEvalContext(deps, userId, rules);
 	const oldestSourceCompletedAt =
 		sourceCompletedAt.size > 0
 			? new Date(Math.min(...[...sourceCompletedAt.values()].map((date) => date.getTime())))
@@ -9470,6 +9790,8 @@ async function createMutationPolicySnapshot(
 		failedSources,
 		sourceCompletedAt,
 		oldestSourceCompletedAt,
+		plexTargetRatingKeysByInstance,
+		plexTopologyFingerprint,
 		providerTopologyFingerprint: providerTopologyFingerprint(providerInstances),
 	};
 	deps.log.info(
