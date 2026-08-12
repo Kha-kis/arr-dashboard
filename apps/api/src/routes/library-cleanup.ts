@@ -1428,6 +1428,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			year: cacheItem.year,
 			instanceId,
 			itemType: episodeItem ? "episode" : cacheItem.itemType,
+			targetScope: "series" as const,
 			...(episodeItem ?? {}),
 		};
 
@@ -1444,8 +1445,49 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			});
 		}
 		if (episodeItem) {
+			const parentRetentionRules = config.rules.filter(
+				(rule) => rule.targetScope !== "episode" && rule.retentionMode,
+			);
+			const parentRetentionResults = new Map<
+				string,
+				ReturnType<typeof explainItemAgainstRulesViaEngine>[number]
+			>();
+			if (parentRetentionRules.length > 0) {
+				const ctx = await buildEvalContext(
+					{
+						prisma: app.prisma,
+						arrClientFactory: app.arrClientFactory,
+						quiClientFactory: (candidate) => createQuiClient(app, candidate),
+						quiFileHashIndexFactory,
+						log: request.log,
+					},
+					userId,
+					parentRetentionRules,
+				);
+				for (const result of explainItemAgainstRulesViaEngine(
+					cacheItem as unknown as CacheItemForEval,
+					parentRetentionRules,
+					instance.service,
+					ctx,
+				)) {
+					parentRetentionResults.set(result.ruleId, result);
+				}
+			}
 			const results = config.rules.map((rule) => {
+				if (!rule.enabled) {
+					return {
+						ruleId: rule.id,
+						ruleName: rule.name,
+						matched: false,
+						reason: null,
+						filteredBy: "disabled" as const,
+						retentionMode: rule.retentionMode,
+					};
+				}
 				if (rule.targetScope !== "episode") {
+					if (rule.retentionMode) {
+						return parentRetentionResults.get(rule.id)!;
+					}
 					return {
 						ruleId: rule.id,
 						ruleName: rule.name,
@@ -1502,7 +1544,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					retentionMode: rule.retentionMode,
 				};
 			});
-			return reply.send({ item: responseItem, results, retentionProtected: false });
+			const retentionProtected = results.some((result) => result.retentionMode && result.matched);
+			return reply.send({ item: responseItem, results, retentionProtected });
 		}
 
 		// Build a fully-populated eval context with prefetched external data

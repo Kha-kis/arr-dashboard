@@ -39,7 +39,7 @@ const plexInstance = {
 	updatedAt: NOW,
 };
 
-function makeEpisodeRule() {
+function makeEpisodeRule(overrides: Record<string, unknown> = {}) {
 	return {
 		id: "episode-rule",
 		configId: "cleanup-config",
@@ -62,6 +62,7 @@ function makeEpisodeRule() {
 		rejectionMemoryDays: 0,
 		createdAt: NOW,
 		updatedAt: NOW,
+		...overrides,
 	};
 }
 
@@ -70,6 +71,7 @@ let episodeGetAll: ReturnType<typeof vi.fn>;
 let plexEpisodeCacheFindMany: ReturnType<typeof vi.fn>;
 let serviceInstanceFindFirst: ReturnType<typeof vi.fn>;
 let serviceInstanceFindMany: ReturnType<typeof vi.fn>;
+let libraryCleanupConfigFindUnique: ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
 	episodeGetAll = vi.fn().mockResolvedValue([
@@ -97,6 +99,9 @@ beforeEach(async () => {
 	]);
 	serviceInstanceFindFirst = vi.fn().mockResolvedValue(sonarrInstance);
 	serviceInstanceFindMany = vi.fn().mockResolvedValue([sonarrInstance, plexInstance]);
+	libraryCleanupConfigFindUnique = vi
+		.fn()
+		.mockResolvedValue({ id: "cleanup-config", rules: [makeEpisodeRule()] });
 
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: USER_ID, username: "admin" });
@@ -120,12 +125,12 @@ beforeEach(async () => {
 				qualityProfileId: 1,
 				qualityProfileName: "HD",
 				sizeOnDisk: 1_000n,
-				arrAddedAt: NOW,
+				arrAddedAt: new Date(0),
 				data: JSON.stringify({ remoteIds: { tmdbId: 12345 } }),
 			}),
 		},
 		libraryCleanupConfig: {
-			findUnique: vi.fn().mockResolvedValue({ id: "cleanup-config", rules: [makeEpisodeRule()] }),
+			findUnique: libraryCleanupConfigFindUnique,
 		},
 		plexEpisodeCache: { findMany: plexEpisodeCacheFindMany },
 		plexCache: { findMany: vi.fn().mockResolvedValue([]) },
@@ -144,6 +149,12 @@ afterEach(async () => {
 function explainEpisode() {
 	return createInjectAuthenticated(app)("POST", "/library-cleanup/explain", {
 		body: { instanceId: SONARR_INSTANCE_ID, arrItemId: 101, arrEpisodeId: 202 },
+	});
+}
+
+function explainSeries() {
+	return createInjectAuthenticated(app)("POST", "/library-cleanup/explain", {
+		body: { instanceId: SONARR_INSTANCE_ID, arrItemId: 101 },
 	});
 }
 
@@ -169,6 +180,59 @@ describe("POST /library-cleanup/explain episode scope", () => {
 				where: { instanceId: { in: [PLEX_INSTANCE_ID] }, watchCount: { gt: 0 } },
 			}),
 		);
+	});
+
+	it("reports disabled episode rules before scope, evidence, or predicate evaluation", async () => {
+		libraryCleanupConfigFindUnique.mockResolvedValueOnce({
+			id: "cleanup-config",
+			rules: [makeEpisodeRule({ enabled: false })],
+		});
+
+		const response = await explainEpisode();
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			results: [{ ruleId: "episode-rule", matched: false, filteredBy: "disabled" }],
+		});
+	});
+
+	it("keeps a matching parent series retention rule protective during an episode explanation", async () => {
+		libraryCleanupConfigFindUnique.mockResolvedValueOnce({
+			id: "cleanup-config",
+			rules: [
+				{
+					...makeEpisodeRule({
+						id: "series-retention",
+						name: "Keep aged series",
+						priority: 0,
+						targetScope: "series",
+						ruleType: "age",
+						parameters: JSON.stringify({ operator: "older_than", days: 0 }),
+						serviceFilter: null,
+						retentionMode: true,
+					}),
+				},
+				makeEpisodeRule({ priority: 1 }),
+			],
+		});
+
+		const response = await explainEpisode();
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			results: [
+				{ ruleId: "series-retention", matched: true, filteredBy: null, retentionMode: true },
+				{ ruleId: "episode-rule", matched: true, filteredBy: null, retentionMode: false },
+			],
+			retentionProtected: true,
+		});
+	});
+
+	it("returns explicit series identity when no episode is requested", async () => {
+		const response = await explainSeries();
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({ item: { itemType: "series", targetScope: "series" } });
 	});
 
 	it("rejects episode explain requests for non-Sonarr instances", async () => {
