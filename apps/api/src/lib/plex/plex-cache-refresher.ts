@@ -118,6 +118,33 @@ function onDeckSignature(items: Awaited<ReturnType<PlexClient["getOnDeck"]>>): s
 		.sort();
 }
 
+function mediaLibrarySignature(
+	sections: Awaited<ReturnType<PlexClient["getLibrarySections"]>>,
+): string[] {
+	return sections
+		.map((section) => JSON.stringify([section.key, section.title, section.type]))
+		.sort();
+}
+
+function libraryInventoryItemSignature(
+	section: { key: string; type: string },
+	item: Awaited<ReturnType<PlexClient["getLibraryItems"]>>[number],
+): string {
+	return JSON.stringify([
+		section.key,
+		section.type,
+		item.ratingKey,
+		item.type,
+		item.title,
+		item.userRating ?? null,
+		item.addedAt ?? null,
+		item.thumb ?? null,
+		(item.Guid ?? []).map((guid) => guid.id).sort(),
+		(item.Collection ?? []).map((collection) => collection.tag).sort(),
+		(item.Label ?? []).map((label) => label.tag).sort(),
+	]);
+}
+
 const incompleteReasonLabels: Record<string, string> = {
 	currentLibraryItemsWithoutRatingKeys: "current library item(s) without a usable rating key",
 	currentItemsWithoutTmdbMetadata: "current library item(s) without TMDB metadata",
@@ -184,6 +211,7 @@ export async function refreshPlexCache(
 		// 2. Get library sections (movie and show only)
 		const sections = await client.getLibrarySections();
 		const mediaLibs = sections.filter((s) => s.type === "movie" || s.type === "show");
+		const initialMediaLibrarySignature = mediaLibrarySignature(mediaLibs);
 		if (mediaLibs.length === 0) {
 			markIncomplete("noMediaLibraries");
 			errors++;
@@ -209,11 +237,13 @@ export async function refreshPlexCache(
 			}
 		>();
 		const currentLibraryRatingKeys = new Set<string>();
+		const initialLibraryInventorySignature: string[] = [];
 
 		for (const lib of mediaLibs) {
 			try {
 				const items = await client.getLibraryItems(lib.key);
 				for (const item of items) {
+					initialLibraryInventorySignature.push(libraryInventoryItemSignature(lib, item));
 					totalLibraryItems++;
 					if (!item.ratingKey.trim()) {
 						markIncomplete("currentLibraryItemsWithoutRatingKeys");
@@ -249,6 +279,7 @@ export async function refreshPlexCache(
 				errorMessages.push(msg);
 			}
 		}
+		initialLibraryInventorySignature.sort();
 		mappedLibraryItems = ratingKeyMap.size;
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
@@ -389,6 +420,30 @@ export async function refreshPlexCache(
 			const latestOnDeckSignature = onDeckSignature(await client.getOnDeck());
 			if (JSON.stringify(latestOnDeckSignature) !== JSON.stringify(verifiedOnDeckSignature)) {
 				throw new Error("Plex on-deck state changed before cache publication");
+			}
+			const latestSections = await client.getLibrarySections();
+			const latestMediaLibs = latestSections.filter(
+				(section) => section.type === "movie" || section.type === "show",
+			);
+			if (
+				JSON.stringify(mediaLibrarySignature(latestMediaLibs)) !==
+				JSON.stringify(initialMediaLibrarySignature)
+			) {
+				throw new Error("Plex library sections changed before cache publication");
+			}
+			const latestLibraryInventorySignature: string[] = [];
+			for (const lib of latestMediaLibs) {
+				const items = await client.getLibraryItems(lib.key);
+				for (const item of items) {
+					latestLibraryInventorySignature.push(libraryInventoryItemSignature(lib, item));
+				}
+			}
+			latestLibraryInventorySignature.sort();
+			if (
+				JSON.stringify(latestLibraryInventorySignature) !==
+				JSON.stringify(initialLibraryInventorySignature)
+			) {
+				throw new Error("Plex library inventory changed before cache publication");
 			}
 			completedAt = new Date();
 			if (options.publish === false) {

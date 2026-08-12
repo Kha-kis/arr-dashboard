@@ -558,6 +558,94 @@ describe("evictStaleRows", () => {
 		);
 	});
 
+	it("fails closed when a stale history key becomes current before publication", async () => {
+		const currentMovie = {
+			ratingKey: "current",
+			title: "Current Movie",
+			type: "movie",
+			Guid: [{ id: "tmdb://42" }],
+		};
+		const importedMovie = {
+			ratingKey: "imported",
+			title: "Imported Movie",
+			type: "movie",
+			Guid: [{ id: "tmdb://84" }],
+		};
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi
+				.fn()
+				.mockResolvedValueOnce([currentMovie])
+				.mockResolvedValueOnce([currentMovie, importedMovie]),
+			getHistory: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "imported",
+					title: "Imported Movie",
+					type: "movie",
+					viewedAt: 1_700_000_000,
+					accountID: 1,
+				},
+			]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const tx = {
+			plexCache: { deleteMany: vi.fn(), createMany: vi.fn() },
+			cacheRefreshStatus: { upsert: vi.fn() },
+		};
+		const transaction = vi.fn(
+			async (callback: (transactionClient: typeof tx) => Promise<unknown>) => callback(tx),
+		);
+		const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages).toContain(
+			"Plex cache refresh failed: Plex library inventory changed before cache publication",
+		);
+		expect(transaction).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when cleanup-relevant library metadata changes before publication", async () => {
+		const initialMovie = {
+			ratingKey: "current",
+			title: "Current Movie",
+			type: "movie",
+			Guid: [{ id: "tmdb://42" }],
+			Label: [{ tag: "eligible-for-cleanup" }],
+		};
+		const changedMovie = { ...initialMovie, Label: [] };
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi
+				.fn()
+				.mockResolvedValueOnce([initialMovie])
+				.mockResolvedValueOnce([changedMovie]),
+			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const tx = {
+			plexCache: { deleteMany: vi.fn(), createMany: vi.fn() },
+			cacheRefreshStatus: { upsert: vi.fn() },
+		};
+		const transaction = vi.fn(
+			async (callback: (transactionClient: typeof tx) => Promise<unknown>) => callback(tx),
+		);
+		const prisma = { $transaction: transaction } as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages).toContain(
+			"Plex cache refresh failed: Plex library inventory changed before cache publication",
+		);
+		expect(transaction).not.toHaveBeenCalled();
+	});
+
 	it("fails closed when stale relevant history belongs to an unknown account", async () => {
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),

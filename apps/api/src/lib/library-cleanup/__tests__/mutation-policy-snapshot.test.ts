@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	assertCurrentSeriesMutationAuthority,
 	createMutationPolicySnapshotGetter,
 	executeCleanupPreview,
 	MUTATION_POLICY_SNAPSHOT_MAX_AGE_MS,
@@ -70,8 +71,8 @@ function instance(service: "PLEX" | "TAUTULLI" | "JELLYFIN") {
 }
 
 function makeDeps(
-	rules: ReturnType<typeof rule>[],
-	instances = [] as ReturnType<typeof instance>[],
+	rules: Array<Record<string, unknown>>,
+	instances = [] as Array<Record<string, unknown> & { id: string; service: string }>,
 ) {
 	const findConfig = vi.fn().mockResolvedValue({
 		id: "config-1",
@@ -333,6 +334,149 @@ describe("authoritative mutation policy snapshots", () => {
 		expect(findInstances).not.toHaveBeenCalled();
 		expect(refreshMocks.plex).not.toHaveBeenCalled();
 	});
+
+	it.each([
+		["Radarr", "blocks", "RADARR", "movie", true],
+		["Sonarr", "blocks", "SONARR", "series", true],
+		["Radarr", "allows", "RADARR", "movie", false],
+		["Sonarr", "allows", "SONARR", "series", false],
+	] as const)(
+		"%s %s a Plex-authorized delete after final target revalidation",
+		async (_label, expectedOutcome, service, mediaType, becomesCurrent) => {
+			const plexA = { ...instance("PLEX"), id: "plex-a", name: "Plex A" };
+			const plexB = { ...instance("PLEX"), id: "plex-b", name: "Plex B" };
+			const plexRule = {
+				...rule("plex_last_watched"),
+				parameters: JSON.stringify({ operator: "never" }),
+				serviceFilter: JSON.stringify([service]),
+				targetScope: "series",
+				action: "delete",
+				scanMediaServerAfterDelete: false,
+			};
+			const { deps } = makeDeps([plexRule], [plexA, plexB]);
+			const publishedRow = {
+				id: "plex-row-b",
+				instanceId: plexB.id,
+				tmdbId: 84,
+				mediaType,
+				sectionId: "movies",
+				sectionTitle: "Movies",
+				ratingKey: "plex-b-84",
+				lastWatchedAt: null,
+				watchCount: 0,
+				watchedByUsers: "[]",
+				onDeck: false,
+				userRating: null,
+				collections: "[]",
+				labels: "[]",
+				addedAt: new Date("2025-01-01T00:00:00.000Z"),
+			};
+			vi.mocked(deps.prisma.plexCache.findMany).mockResolvedValue([publishedRow] as never);
+			vi.mocked(deps.prisma.plexCache.count).mockImplementation((async ({
+				where,
+			}: {
+				where: { instanceId: string };
+			}) => (where.instanceId === plexB.id ? 1 : 0)) as never);
+			const publishedAt = new Date();
+			vi.mocked(deps.prisma.cacheRefreshStatus.findMany).mockImplementation((async ({
+				where,
+			}: {
+				where: { instanceId: { in: string[] } };
+			}) =>
+				where.instanceId.in.map((instanceId) => ({
+					instanceId,
+					lastRefreshedAt: publishedAt,
+					lastResult: "success",
+					itemCount: instanceId === plexB.id ? 1 : 0,
+					generationId: `generation-${instanceId}`,
+					generationMetadata: JSON.stringify({
+						sections: [{ key: "movies", title: "Movies", type: "movie" }],
+					}),
+					lastErrorMessage: null,
+					lastAttemptResult: "success",
+					lastAttemptErrorMessage: null,
+				}))) as never);
+
+			const currentTargets = (plexInstanceId: string) =>
+				plexInstanceId === plexA.id
+					? becomesCurrent
+						? [{ ratingKey: "plex-a-84" }]
+						: []
+					: [{ ratingKey: "plex-b-84" }];
+			deps.plexCacheClientFactory = vi.fn(
+				(plexInstance) =>
+					({
+						getMovieMediaPartsByTmdbId: vi.fn().mockResolvedValue(currentTargets(plexInstance.id)),
+						getSeriesEpisodeMediaPartsByTvdbId: vi
+							.fn()
+							.mockResolvedValue(currentTargets(plexInstance.id)),
+					}) as never,
+			);
+			const arrInstance = {
+				id: `${service.toLowerCase()}-1`,
+				userId: "user-1",
+				name: _label,
+				service,
+				baseUrl: `http://${service.toLowerCase()}.test`,
+				encryptedApiKey: "encrypted",
+				encryptionIv: "iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				enabled: true,
+				createdAt: new Date("2026-07-31T12:00:00.000Z"),
+				updatedAt: new Date("2026-07-31T12:00:00.000Z"),
+			};
+			const rawItem = {
+				id: 101,
+				...(service === "RADARR" ? { tmdbId: 84 } : { tvdbId: 84, tmdbId: 84 }),
+				title: `Example ${_label} Item`,
+				path: `/media/example-${service.toLowerCase()}`,
+				monitored: true,
+				status: "ended",
+				qualityProfileId: 1,
+				sizeOnDisk: 2_000,
+				added: "2025-01-01T00:00:00.000Z",
+				statistics:
+					service === "RADARR"
+						? { movieFileCount: 1, sizeOnDisk: 2_000 }
+						: { episodeFileCount: 1, sizeOnDisk: 2_000 },
+			};
+			deps.arrClientFactory = {
+				create: vi.fn(() =>
+					service === "RADARR"
+						? { movie: { getById: vi.fn().mockResolvedValue(rawItem) } }
+						: { series: { getById: vi.fn().mockResolvedValue(rawItem) } },
+				),
+			} as never;
+			const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+			const deleteMovieFile = vi.fn();
+
+			const executeAuthorizedDelete = async () => {
+				await assertCurrentSeriesMutationAuthority(
+					deps,
+					"user-1",
+					arrInstance as never,
+					101,
+					{
+						matchedRuleId: plexRule.id,
+						action: "delete",
+						scanMediaServerAfterDelete: false,
+					},
+					snapshot,
+				);
+				await deleteMovieFile();
+			};
+			if (expectedOutcome === "blocks") {
+				await expect(executeAuthorizedDelete()).rejects.toThrow(
+					/provider evidence could not re-authorize/i,
+				);
+				expect(deleteMovieFile).not.toHaveBeenCalled();
+			} else {
+				await expect(executeAuthorizedDelete()).resolves.toBeUndefined();
+				expect(deleteMovieFile).toHaveBeenCalledOnce();
+			}
+		},
+	);
 });
 
 describe("interactive preview live watch authority", () => {

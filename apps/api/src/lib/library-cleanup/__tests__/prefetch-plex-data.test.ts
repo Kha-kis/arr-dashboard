@@ -13,12 +13,12 @@
 import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import { plexConnectionFingerprint } from "../../plex/service-instance-fingerprint.js";
-import { evaluateItemAgainstRules } from "../rule-evaluators.js";
 import {
 	buildEvalContextWithHealth,
 	prefetchFreshPlexEpisodeWatchData,
 	prefetchPlexData,
 } from "../cleanup-executor.js";
+import { evaluateItemAgainstRules } from "../rule-evaluators.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
 function makePlexRow(overrides: {
@@ -26,6 +26,8 @@ function makePlexRow(overrides: {
 	tmdbId: number;
 	mediaType: "movie" | "series";
 	sectionId: string;
+	instanceId?: string;
+	ratingKey?: string;
 	sectionTitle?: string;
 	watchCount?: number;
 	watchedByUsers?: string[];
@@ -38,8 +40,10 @@ function makePlexRow(overrides: {
 }) {
 	return {
 		id: overrides.id,
+		instanceId: overrides.instanceId ?? "plex-inst-1",
 		tmdbId: overrides.tmdbId,
 		mediaType: overrides.mediaType,
+		ratingKey: overrides.ratingKey ?? `rating-${overrides.id}`,
 		sectionId: overrides.sectionId,
 		sectionTitle: overrides.sectionTitle ?? `Section ${overrides.sectionId}`,
 		lastWatchedAt: overrides.lastWatchedAt ?? null,
