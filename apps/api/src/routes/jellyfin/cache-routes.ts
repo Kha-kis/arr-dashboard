@@ -7,9 +7,11 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
 import { refreshJellyfinCache } from "../../lib/jellyfin/jellyfin-cache-refresher.js";
-import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { runJellyfinCacheRefreshSingleFlight } from "../../lib/jellyfin/jellyfin-cache-singleflight.js";
+import { requireJellyfinClient } from "../../lib/jellyfin/jellyfin-helpers.js";
+import { jellyfinConnectionFingerprint } from "../../lib/jellyfin/service-instance-fingerprint.js";
+import { buildCacheHealthItems } from "../../lib/media-stats/cache-health-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceParams = z.object({
@@ -44,19 +46,7 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			},
 		});
 
-		const now = Date.now();
-		const STALE_THRESHOLD_MS = 12 * 60 * 60 * 1000; // 12 hours
-
-		const items = statuses.map((s) => ({
-			instanceId: s.instanceId,
-			instanceName: instanceMap.get(s.instanceId) ?? s.instanceId,
-			cacheType: s.cacheType,
-			lastRefreshedAt: s.lastRefreshedAt?.toISOString() ?? null,
-			lastResult: s.lastResult,
-			lastErrorMessage: s.lastErrorMessage,
-			itemCount: s.itemCount,
-			isStale: s.lastRefreshedAt ? now - s.lastRefreshedAt.getTime() > STALE_THRESHOLD_MS : true,
-		}));
+		const items = buildCacheHealthItems(statuses, instanceMap);
 
 		return reply.send({ items });
 	});
@@ -74,69 +64,26 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
 
-			const { client } = await requireJellyfinClient(app, userId, instanceId);
+			const { client, instance } = await requireJellyfinClient(app, userId, instanceId);
+			const result = await runJellyfinCacheRefreshSingleFlight(
+				instanceId,
+				jellyfinConnectionFingerprint(instance),
+				(expectedConnectionFingerprint) =>
+					refreshJellyfinCache(
+						client,
+						app.prisma,
+						instanceId,
+						request.log,
+						expectedConnectionFingerprint,
+					),
+				{ prisma: app.prisma, log: request.log },
+			);
 
-			try {
-				const result = await refreshJellyfinCache(client, app.prisma, instanceId, request.log);
-
-				await app.prisma.cacheRefreshStatus
-					.upsert({
-						where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
-						create: {
-							instanceId,
-							cacheType: "jellyfin",
-							lastRefreshedAt: new Date(),
-							lastResult: result.errors > 0 ? "error" : "success",
-							lastErrorMessage:
-								result.errorMessages.length > 0
-									? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-									: null,
-							itemCount: result.upserted,
-						},
-						update: {
-							lastRefreshedAt: new Date(),
-							lastResult: result.errors > 0 ? "error" : "success",
-							lastErrorMessage:
-								result.errorMessages.length > 0
-									? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-									: null,
-							itemCount: result.upserted,
-						},
-					})
-					.catch((trackErr) => {
-						request.log.warn(
-							{ err: trackErr, instanceId },
-							"Cache refreshed but failed to record status",
-						);
-					});
-
-				return reply.send({
-					success: true,
-					upserted: result.upserted,
-					errors: result.errors,
-				});
-			} catch (err) {
-				await app.prisma.cacheRefreshStatus
-					.upsert({
-						where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
-						create: {
-							instanceId,
-							cacheType: "jellyfin",
-							lastRefreshedAt: new Date(),
-							lastResult: "error",
-							lastErrorMessage: getErrorMessage(err, "Unknown error"),
-							itemCount: 0,
-						},
-						update: {
-							lastRefreshedAt: new Date(),
-							lastResult: "error",
-							lastErrorMessage: getErrorMessage(err, "Unknown error"),
-						},
-					})
-					.catch(() => {});
-
-				throw err;
-			}
+			return reply.send({
+				success: result.complete && Boolean(result.completedAt),
+				upserted: result.upserted,
+				errors: result.errors,
+			});
 		},
 	);
 }

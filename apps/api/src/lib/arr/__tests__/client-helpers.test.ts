@@ -55,6 +55,7 @@ const createMockInstance = (
 	encryptedHttpAuthCredentials: null,
 	httpAuthEncryptionIv: null,
 	enabled,
+	connectionGeneration: 0,
 	userId: "user-123",
 	isDefault: false,
 	storageGroupId: null,

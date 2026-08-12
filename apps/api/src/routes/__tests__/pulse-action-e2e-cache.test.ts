@@ -60,7 +60,7 @@ type CacheStatusRow = {
 	lastResult: "success" | "error";
 	lastErrorMessage: string | null;
 	itemCount: number;
-	instance: { label: string };
+	instance: { label: string; service: string; enabled: boolean };
 };
 
 const HOURS = 60 * 60 * 1000;
@@ -74,7 +74,7 @@ function makeStaleRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
 		lastResult: "success",
 		lastErrorMessage: null,
 		itemCount: 0,
-		instance: { label: "Home Plex" },
+		instance: { label: "Home Plex", service: "PLEX", enabled: true },
 		...overrides,
 	};
 }
@@ -159,7 +159,22 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 	it("stale Plex cache → action item → POST 200 → cache invalidation drops the row on next poll", async () => {
 		cacheStatuses = [makeStaleRow()];
 		requirePlexClient.mockResolvedValue({ client: { id: "plex-client" }, instance: {} });
-		refreshPlexCache.mockResolvedValue({ upserted: 42, errors: 0, errorMessages: [] });
+		refreshPlexCache.mockImplementation(async () => {
+			cacheStatuses[0] = {
+				...cacheStatuses[0]!,
+				lastRefreshedAt: new Date(),
+				lastResult: "success",
+				lastErrorMessage: null,
+				itemCount: 42,
+			};
+			return {
+				upserted: 42,
+				errors: 0,
+				errorMessages: [],
+				complete: true,
+				completedAt: new Date(),
+			};
+		});
 
 		// 1. Collector surfaces the item with an action envelope.
 		const first = await injectGet("/pulse");
@@ -188,17 +203,14 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 			"inst-plex",
 		);
 
-		// Flush microtasks + give the refresh mock (synchronously resolved)
-		// a tick to run its continuation + upsert the fresh lastRefreshedAt
-		// into our stubbed cacheStatuses. In production this is what takes
-		// time; in the test it's essentially instant — but we still have
-		// to yield the event loop.
+		// Flush microtasks so the mocked atomic refresher publishes its fresh
+		// status. The dispatcher itself must not perform an unguarded success
+		// write after the refresher returns.
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		expect(refreshPlexCache).toHaveBeenCalledTimes(1);
 
-		// 3. After the background task ran, the upsert callback has mutated
-		//    cacheStatuses[0].lastRefreshedAt to `now`. The collector should
-		//    read the fresh timestamp and not emit the stale row.
+		// 3. After the background task ran, the refresher's atomic publication
+		//    has updated the status. The collector should not emit the stale row.
 		const second = await injectGet("/pulse");
 		const secondBody = JSON.parse(second.payload);
 		const stillStale = secondBody.items.find(
@@ -223,5 +235,57 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 		expect(actionRes.statusCode).toBe(404);
 		expect(JSON.parse(actionRes.payload).error).toBe("InstanceNotFoundError");
 		expect(refreshPlexCache).not.toHaveBeenCalled();
+	});
+
+	it("invalidates a Pulse response cached while the background refresh is running", async () => {
+		cacheStatuses = [makeStaleRow()];
+		requirePlexClient.mockResolvedValue({
+			client: { id: "plex-client" },
+			instance: { service: "PLEX", connectionGeneration: 1 },
+		});
+		let settleRefresh: () => void = () => {};
+		refreshPlexCache.mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					settleRefresh = () => {
+						cacheStatuses[0] = {
+							...cacheStatuses[0]!,
+							lastRefreshedAt: new Date(),
+							lastResult: "success",
+						};
+						resolve({
+							upserted: 42,
+							errors: 0,
+							errorMessages: [],
+							complete: true,
+							completedAt: new Date(),
+						});
+					};
+				}),
+		);
+
+		await injectGet("/pulse");
+		const actionRes = await injectPost("/pulse/cache-stale-plex-row/action", {
+			kind: "cache.refresh",
+			target: { instanceId: "inst-plex", cacheType: "plex" },
+			label: "Refresh now",
+			destructive: false,
+		});
+		expect(actionRes.statusCode).toBe(200);
+
+		// The immediate route invalidation allows this request to cache the
+		// still-stale row while the background refresher is in flight.
+		const whileRefreshing = await injectGet("/pulse");
+		expect(JSON.parse(whileRefreshing.payload).items).toEqual(
+			expect.arrayContaining([expect.objectContaining({ id: "cache-stale-plex-row" })]),
+		);
+
+		settleRefresh();
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		// Settlement must invalidate that interim cached response; otherwise
+		// Pulse keeps showing the old failure until the cache TTL expires.
+		const afterSettlement = await injectGet("/pulse");
+		expect(JSON.parse(afterSettlement.payload).items).toEqual([]);
 	});
 });

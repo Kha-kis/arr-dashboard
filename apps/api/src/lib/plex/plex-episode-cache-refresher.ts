@@ -6,14 +6,34 @@
  * to keep API call count bounded.
  */
 
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
-import type { PrismaClientInstance } from "../prisma.js";
+import type { Prisma, PrismaClientInstance } from "../prisma.js";
+import {
+	type ProviderConnectionIdentity,
+	withCurrentProviderConnection,
+} from "../services/provider-connection-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PlexClient, PlexEpisodeItem } from "./plex-client.js";
 
 const MAX_SHOWS_PER_REFRESH = 50;
 const REFRESHES_PER_FRESHNESS_WINDOW = 4;
 const MAX_HISTORY_RESULTS = 5000;
+
+export interface PlexEpisodeRefreshResult {
+	upserted: number;
+	errors: number;
+	errorMessages: string[];
+	eligibleShows: number;
+	refreshedShows: number;
+	coverageIncomplete: boolean;
+	capacityDegraded: boolean;
+	complete: boolean;
+	completedAt?: Date;
+	superseded?: boolean;
+}
+
+type EpisodeWrite = (tx: Prisma.TransactionClient) => Promise<number>;
 
 function parseWatchedByUsers(value: string): string[] {
 	try {
@@ -47,18 +67,33 @@ export async function refreshPlexEpisodeCache(
 	instanceId: string,
 	log: FastifyBaseLogger,
 	sourceFingerprint: string,
-): Promise<{
-	upserted: number;
-	errors: number;
-	errorMessages: string[];
-	eligibleShows: number;
-	refreshedShows: number;
-	coverageIncomplete: boolean;
-	capacityDegraded: boolean;
-}> {
+	expectedConnection?: ProviderConnectionIdentity,
+): Promise<PlexEpisodeRefreshResult> {
 	let upserted = 0;
 	let errors = 0;
 	const errorMessages: string[] = [];
+	const writes: EpisodeWrite[] = [];
+	const replacementRows: Prisma.PlexEpisodeCacheCreateManyInput[] = [];
+	let parentGenerationId: string | undefined;
+	if (expectedConnection) {
+		const parentStatus = await prisma.cacheRefreshStatus.findUnique({
+			where: { instanceId_cacheType: { instanceId, cacheType: "plex" } },
+			select: { generationId: true, lastResult: true },
+		});
+		if (!parentStatus?.generationId || parentStatus.lastResult !== "success") {
+			return {
+				upserted: 0,
+				errors: 1,
+				errorMessages: ["Plex episode refresh requires a successful parent generation"],
+				eligibleShows: 0,
+				refreshedShows: 0,
+				coverageIncomplete: true,
+				capacityDegraded: false,
+				complete: false,
+			};
+		}
+		parentGenerationId = parentStatus.generationId;
+	}
 
 	// Find shows with recent watch activity (have a ratingKey and non-zero watchCount)
 	const recentlyWatchedShows = await prisma.plexCache.findMany({
@@ -85,6 +120,7 @@ export async function refreshPlexEpisodeCache(
 			refreshedShows: 0,
 			coverageIncomplete: false,
 			capacityDegraded: false,
+			complete: true,
 		};
 	}
 
@@ -352,66 +388,85 @@ export async function refreshPlexEpisodeCache(
 						// The identity predicates also make the update fail closed if
 						// another refresh changes the row after the read above.
 						if (!compatibleExistingState) continue;
-						const updated = await prisma.plexEpisodeCache.updateMany({
-							where: {
-								instanceId,
-								showTmdbId: tmdbId,
-								seasonNumber: episode.seasonNumber,
-								episodeNumber: episode.episodeNumber,
-								ratingKey: compatibleExistingState.ratingKey,
-								sourceFingerprint,
-							},
-							data: {
-								ratingKey: episode.ratingKey,
-								title: episode.title,
-								...aggregateWatchUpdate,
-								watchCount,
-								refreshedAt,
-								sourceFingerprint,
-							},
+						writes.push(async (tx) => {
+							const updated = await tx.plexEpisodeCache.updateMany({
+								where: {
+									instanceId,
+									showTmdbId: tmdbId,
+									seasonNumber: episode.seasonNumber,
+									episodeNumber: episode.episodeNumber,
+									ratingKey: compatibleExistingState.ratingKey,
+									sourceFingerprint,
+								},
+								data: {
+									ratingKey: episode.ratingKey,
+									title: episode.title,
+									...aggregateWatchUpdate,
+									watchCount,
+									refreshedAt,
+									sourceFingerprint,
+								},
+							});
+							return updated.count;
 						});
-						upserted += updated.count;
 						continue;
 					}
 					// A bounded successful history response proves only what it
 					// contains, but getEpisodes still proves this episode exists.
 					// Keep a conservative unwatched row for newly discovered
 					// episodes so completion rules retain the full denominator.
-					await prisma.plexEpisodeCache.upsert({
-						where: {
-							instanceId_showTmdbId_seasonNumber_episodeNumber: {
+					const replacementRow: Prisma.PlexEpisodeCacheCreateManyInput = {
+						instanceId,
+						showTmdbId: tmdbId,
+						seasonNumber: episode.seasonNumber,
+						episodeNumber: episode.episodeNumber,
+						ratingKey: episode.ratingKey,
+						title: episode.title,
+						watched: effectiveWatched,
+						watchedByUsers: JSON.stringify(effectiveWatchedByUsers),
+						lastWatchedAt: effectiveLastWatchedAt,
+						watchCount,
+						refreshedAt,
+						sourceFingerprint,
+					};
+					replacementRows.push(replacementRow);
+					writes.push(async (tx) => {
+						await tx.plexEpisodeCache.upsert({
+							where: {
+								instanceId_showTmdbId_seasonNumber_episodeNumber: {
+									instanceId,
+									showTmdbId: tmdbId,
+									seasonNumber: episode.seasonNumber,
+									episodeNumber: episode.episodeNumber,
+								},
+							},
+							create: {
 								instanceId,
 								showTmdbId: tmdbId,
 								seasonNumber: episode.seasonNumber,
 								episodeNumber: episode.episodeNumber,
+								ratingKey: episode.ratingKey,
+								title: episode.title,
+								watched: effectiveWatched,
+								watchedByUsers: JSON.stringify(effectiveWatchedByUsers),
+								lastWatchedAt: effectiveLastWatchedAt,
+								watchCount,
+								refreshedAt,
+								sourceFingerprint,
 							},
-						},
-						create: {
-							instanceId,
-							showTmdbId: tmdbId,
-							seasonNumber: episode.seasonNumber,
-							episodeNumber: episode.episodeNumber,
-							ratingKey: episode.ratingKey,
-							title: episode.title,
-							watched: effectiveWatched,
-							watchedByUsers: JSON.stringify(effectiveWatchedByUsers),
-							lastWatchedAt: effectiveLastWatchedAt,
-							watchCount,
-							refreshedAt,
-							sourceFingerprint,
-						},
-						update: {
-							ratingKey: episode.ratingKey,
-							title: episode.title,
-							watched: effectiveWatched,
-							watchedByUsers: JSON.stringify(effectiveWatchedByUsers),
-							lastWatchedAt: effectiveLastWatchedAt,
-							watchCount,
-							refreshedAt,
-							sourceFingerprint,
-						},
+							update: {
+								ratingKey: episode.ratingKey,
+								title: episode.title,
+								watched: effectiveWatched,
+								watchedByUsers: JSON.stringify(effectiveWatchedByUsers),
+								lastWatchedAt: effectiveLastWatchedAt,
+								watchCount,
+								refreshedAt,
+								sourceFingerprint,
+							},
+						});
+						return 1;
 					});
-					upserted++;
 				} catch (err) {
 					errors++;
 					if (errors <= 3) {
@@ -446,6 +501,113 @@ export async function refreshPlexEpisodeCache(
 		}
 	}
 
+	if (errors > 0) {
+		return {
+			upserted: 0,
+			errors,
+			errorMessages,
+			eligibleShows,
+			refreshedShows,
+			coverageIncomplete: true,
+			capacityDegraded,
+			complete: false,
+		};
+	}
+
+	const completedAt = new Date();
+	const generationId = randomUUID();
+	try {
+		if (expectedConnection) {
+			const publication = await withCurrentProviderConnection(
+				prisma,
+				instanceId,
+				expectedConnection,
+				async (tx) => {
+					const currentParent = await tx.cacheRefreshStatus.findUnique({
+						where: { instanceId_cacheType: { instanceId, cacheType: "plex" } },
+						select: { generationId: true },
+					});
+					if (currentParent?.generationId !== parentGenerationId) {
+						return { published: false as const, count: 0 };
+					}
+					const selectedShowIds = selectedShows.map(([tmdbId]) => tmdbId);
+					if (selectedShowIds.length > 0) {
+						await tx.plexEpisodeCache.deleteMany({
+							where: { instanceId, showTmdbId: { in: selectedShowIds } },
+						});
+					}
+					if (replacementRows.length > 0) {
+						await tx.plexEpisodeCache.createMany({ data: replacementRows });
+					}
+					const published = replacementRows.length;
+					await tx.cacheRefreshStatus.upsert({
+						where: {
+							instanceId_cacheType: { instanceId, cacheType: "plex_episode" },
+						},
+						create: {
+							instanceId,
+							cacheType: "plex_episode",
+							lastRefreshedAt: completedAt,
+							lastResult: capacityDegraded ? "partial" : "success",
+							lastErrorMessage: capacityDegraded
+								? `Capacity degraded: ${eligibleShows} watched shows exceed the 200-show/24-hour freshness capacity; only ${refreshedShows} were refreshed this cycle.`
+								: null,
+							itemCount: published,
+							generationId,
+							generationMetadata: JSON.stringify({ parentGenerationId }),
+							lastAttemptAt: completedAt,
+							lastAttemptResult: "success",
+						},
+						update: {
+							lastRefreshedAt: completedAt,
+							lastResult: capacityDegraded ? "partial" : "success",
+							lastErrorMessage: capacityDegraded
+								? `Capacity degraded: ${eligibleShows} watched shows exceed the 200-show/24-hour freshness capacity; only ${refreshedShows} were refreshed this cycle.`
+								: null,
+							itemCount: published,
+							generationId,
+							generationMetadata: JSON.stringify({ parentGenerationId }),
+							lastAttemptAt: completedAt,
+							lastAttemptResult: "success",
+							lastAttemptErrorMessage: null,
+						},
+					});
+					return { published: true as const, count: published };
+				},
+			);
+			if (!publication.matched || !publication.value.published) {
+				return {
+					upserted: 0,
+					errors: 0,
+					errorMessages: [],
+					eligibleShows,
+					refreshedShows,
+					coverageIncomplete: true,
+					capacityDegraded,
+					complete: false,
+					superseded: true,
+				};
+			}
+			upserted = publication.value.count;
+		} else {
+			const counts = await Promise.all(writes.map(async (write) => await write(prisma)));
+			upserted = counts.reduce((total, count) => total + count, 0);
+		}
+	} catch (err) {
+		const message = `Failed to publish Plex episode cache refresh: ${getErrorMessage(err)}`;
+		log.error({ err, instanceId }, message);
+		return {
+			upserted: 0,
+			errors: 1,
+			errorMessages: [message],
+			eligibleShows,
+			refreshedShows,
+			coverageIncomplete: true,
+			capacityDegraded,
+			complete: false,
+		};
+	}
+
 	log.info(
 		{
 			instanceId,
@@ -467,5 +629,7 @@ export async function refreshPlexEpisodeCache(
 		refreshedShows,
 		coverageIncomplete,
 		capacityDegraded,
+		complete: true,
+		completedAt,
 	};
 }

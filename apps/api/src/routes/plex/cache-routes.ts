@@ -10,6 +10,8 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
 import { refreshPlexCache } from "../../lib/plex/plex-cache-refresher.js";
+import { recordProviderCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
+import { providerConnectionIdentity } from "../../lib/services/provider-connection-guard.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { buildCacheHealthItems } from "../../lib/media-stats/cache-health-helpers.js";
@@ -55,68 +57,44 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
 
-			const { client } = await requirePlexClient(app, userId, instanceId);
+			const { client, instance } = await requirePlexClient(app, userId, instanceId);
+			const expectedConnection = providerConnectionIdentity(instance);
 
 			try {
-				const result = await refreshPlexCache(client, app.prisma, instanceId, request.log);
-
-				// Update CacheRefreshStatus so the health banner reflects the new state
-				await app.prisma.cacheRefreshStatus
-					.upsert({
-						where: { instanceId_cacheType: { instanceId, cacheType: "plex" } },
-						create: {
-							instanceId,
-							cacheType: "plex",
-							lastRefreshedAt: new Date(),
-							lastResult: result.errors > 0 ? "error" : "success",
-							lastErrorMessage:
-								result.errorMessages.length > 0
-									? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-									: null,
-							itemCount: result.upserted,
-						},
-						update: {
-							lastRefreshedAt: new Date(),
-							lastResult: result.errors > 0 ? "error" : "success",
-							lastErrorMessage:
-								result.errorMessages.length > 0
-									? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-									: null,
-							itemCount: result.upserted,
-						},
-					})
-					.catch((trackErr) => {
-						request.log.warn(
-							{ err: trackErr, instanceId },
-							"Cache refreshed but failed to record status",
-						);
-					});
+				const result = await refreshPlexCache(
+					client,
+					app.prisma,
+					instanceId,
+					request.log,
+					expectedConnection,
+				);
+				if (!result.complete && !result.superseded) {
+					await recordProviderCacheRefreshFailure(
+						app.prisma,
+						instanceId,
+						"plex",
+						result.errorMessages.slice(0, 3).join("; ") ||
+							"Plex refresh did not produce a complete generation",
+						expectedConnection,
+						request.log,
+					);
+				}
 
 				return reply.send({
-					success: true,
+					success: result.complete && Boolean(result.completedAt),
 					upserted: result.upserted,
 					errors: result.errors,
 				});
 			} catch (err) {
 				// Track failure in status table
-				await app.prisma.cacheRefreshStatus
-					.upsert({
-						where: { instanceId_cacheType: { instanceId, cacheType: "plex" } },
-						create: {
-							instanceId,
-							cacheType: "plex",
-							lastRefreshedAt: new Date(),
-							lastResult: "error",
-							lastErrorMessage: getErrorMessage(err, "Unknown error"),
-							itemCount: 0,
-						},
-						update: {
-							lastRefreshedAt: new Date(),
-							lastResult: "error",
-							lastErrorMessage: getErrorMessage(err, "Unknown error"),
-						},
-					})
-					.catch(() => {});
+				await recordProviderCacheRefreshFailure(
+					app.prisma,
+					instanceId,
+					"plex",
+					getErrorMessage(err, "Unknown error"),
+					expectedConnection,
+					request.log,
+				);
 
 				throw err;
 			}

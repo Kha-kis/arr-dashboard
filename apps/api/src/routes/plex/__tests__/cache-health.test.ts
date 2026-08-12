@@ -123,4 +123,29 @@ describe("buildCacheHealthItems", () => {
 
 		expect(items[0]!.lastResult).toBe("partial");
 	});
+
+	it("shows a newer failed attempt without discarding successful-generation age", () => {
+		const failedAt = new Date(baseDateMs + 60 * 60 * 1000);
+		const items = buildCacheHealthItems(
+			[
+				makeRow({
+					lastAttemptAt: failedAt,
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: "Connection refused",
+				}),
+			],
+			instanceNameMap,
+			baseDateMs + 13 * 60 * 60 * 1000,
+		);
+
+		expect(items[0]).toMatchObject({
+			lastRefreshedAt: baseDate.toISOString(),
+			lastResult: "success",
+			lastErrorMessage: null,
+			lastAttemptAt: failedAt.toISOString(),
+			lastAttemptResult: "error",
+			lastAttemptErrorMessage: "Connection refused",
+			isStale: true,
+		});
+	});
 });

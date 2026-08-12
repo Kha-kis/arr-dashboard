@@ -9,7 +9,7 @@
  *   emit action iff
  *     status.lastResult !== "error"
  *     AND status.lastRefreshedAt < now - STALE_CACHE_HOURS
- *     AND status.cacheType ∈ {"plex", "tautulli"}
+ *     AND status.cacheType ∈ {"plex", "jellyfin"}
  */
 
 import Fastify from "fastify";
@@ -41,8 +41,11 @@ type CacheStatusRow = {
 	lastRefreshedAt: Date;
 	lastResult: "success" | "error";
 	lastErrorMessage: string | null;
+	lastAttemptAt?: Date | null;
+	lastAttemptResult?: "success" | "error" | "partial" | null;
+	lastAttemptErrorMessage?: string | null;
 	itemCount: number;
-	instance: { label: string };
+	instance: { label: string; service: string; enabled: boolean };
 };
 
 const HOURS = 60 * 60 * 1000;
@@ -56,7 +59,7 @@ function makeRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
 		lastResult: "success",
 		lastErrorMessage: null,
 		itemCount: 0,
-		instance: { label: "Home Plex" },
+		instance: { label: "Home Plex", service: "PLEX", enabled: true },
 		...overrides,
 	};
 }
@@ -128,10 +131,7 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		expect(item.action).toBeUndefined();
 	});
 
-	it("does NOT emit an action on a cache-error row (even if cacheType is supported)", async () => {
-		// A refresh that just errored likely errors again on the same
-		// network/config issue — the inline "Refresh now" button would feel
-		// like a false promise. "Check settings" stays the right affordance.
+	it("emits a retry action for a failed Plex refresh", async () => {
 		cacheStatuses = [
 			makeRow({
 				id: "error-row",
@@ -146,7 +146,70 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		const item = body.items.find((i: { id: string }) => i.id === "cache-error-error-row");
 
 		expect(item).toBeDefined();
-		expect(item.action).toBeUndefined();
+		expect(item.action).toEqual({
+			kind: "cache.refresh",
+			target: { instanceId: "inst-1", cacheType: "plex" },
+			label: "Retry refresh",
+			destructive: false,
+		});
+	});
+
+	it("surfaces a newer failed attempt without replacing the last successful freshness", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "newer-failure",
+				lastRefreshedAt: new Date(Date.now() - HOURS),
+				lastAttemptAt: new Date(),
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "Plex history timed out",
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const item = JSON.parse(res.payload).items.find(
+			(candidate: { id: string }) => candidate.id === "cache-partial-newer-failure",
+		);
+
+		expect(item).toMatchObject({
+			detail: "Plex history timed out",
+			action: { label: "Retry refresh" },
+		});
+	});
+
+	it("uses the Emby label and source for the shared Jellyfin cache", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "emby-failure",
+				instanceId: "inst-emby",
+				cacheType: "jellyfin",
+				lastResult: "error",
+				lastErrorMessage: "fetch failed",
+				instance: { label: "Home Emby", service: "EMBY", enabled: true },
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		const item = JSON.parse(res.payload).items.find(
+			(candidate: { id: string }) => candidate.id === "cache-error-emby-failure",
+		);
+
+		expect(item).toMatchObject({
+			title: "Home Emby: Emby cache refresh failed",
+			source: "emby",
+			action: { target: { instanceId: "inst-emby", cacheType: "jellyfin" } },
+		});
+	});
+
+	it("does not surface a disabled instance cache row", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "disabled-row",
+				instance: { label: "Disabled Plex", service: "PLEX", enabled: false },
+			}),
+		];
+
+		const res = await injectAuthenticated("GET", "/pulse");
+		expect(JSON.parse(res.payload).items).toEqual([]);
 	});
 
 	it("does not emit any item for a fresh cache row", async () => {

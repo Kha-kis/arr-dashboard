@@ -38,9 +38,23 @@ vi.mock("../../plex/plex-cache-refresher.js", () => ({
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
 
+const refreshJellyfinCache = vi.fn();
+const runJellyfinCacheRefreshSingleFlight = vi.fn();
+vi.mock("../../jellyfin/jellyfin-cache-refresher.js", () => ({
+	refreshJellyfinCache: (...args: unknown[]) => refreshJellyfinCache(...args),
+}));
+vi.mock("../../jellyfin/jellyfin-cache-singleflight.js", () => ({
+	runJellyfinCacheRefreshSingleFlight: (...args: unknown[]) =>
+		runJellyfinCacheRefreshSingleFlight(...args),
+}));
+
 const requirePlexClient = vi.fn();
+const requireJellyfinClient = vi.fn();
 vi.mock("../../plex/plex-helpers.js", () => ({
 	requirePlexClient: (...args: unknown[]) => requirePlexClient(...args),
+}));
+vi.mock("../../jellyfin/jellyfin-helpers.js", () => ({
+	requireJellyfinClient: (...args: unknown[]) => requireJellyfinClient(...args),
 }));
 
 import { InstanceNotFoundError } from "../../errors.js";
@@ -62,6 +76,14 @@ const fakeLog = {
 
 const markEnabled = vi.fn();
 const cacheStatusUpsert = vi.fn();
+const plexInstance = { service: "PLEX" as const, connectionGeneration: 7 };
+const jellyfinInstance = {
+	service: "JELLYFIN" as const,
+	baseUrl: "https://jellyfin.example.test",
+	encryptedApiKey: "encrypted-key",
+	encryptionIv: "key-iv",
+	connectionGeneration: 3,
+};
 
 const fakeApp = {
 	prisma: {
@@ -80,7 +102,10 @@ beforeEach(() => {
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
 	refreshPlexCache.mockReset();
+	refreshJellyfinCache.mockReset();
+	runJellyfinCacheRefreshSingleFlight.mockReset();
 	requirePlexClient.mockReset();
+	requireJellyfinClient.mockReset();
 	markEnabled.mockReset();
 	cacheStatusUpsert.mockReset();
 	cacheStatusUpsert.mockResolvedValue({});
@@ -181,11 +206,21 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		label: "Refresh now",
 		destructive: false,
 	};
+	const jellyfinAction: PulseAction = {
+		...plexAction,
+		target: { instanceId: "inst-jellyfin-1", cacheType: "jellyfin" },
+	};
 
-	it("refreshes the plex cache via requirePlexClient + refreshPlexCache", async () => {
+	it("passes the owned Plex connection identity to its atomic refresher", async () => {
 		const fakeClient = { id: "plex-client" };
-		requirePlexClient.mockResolvedValue({ client: fakeClient, instance: {} });
-		refreshPlexCache.mockResolvedValue({ upserted: 42, errors: 0, errorMessages: [] });
+		requirePlexClient.mockResolvedValue({ client: fakeClient, instance: plexInstance });
+		refreshPlexCache.mockResolvedValue({
+			upserted: 42,
+			errors: 0,
+			errorMessages: [],
+			complete: true,
+			completedAt: new Date(),
+		});
 
 		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
 
@@ -207,22 +242,35 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			fakeApp.prisma,
 			"inst-plex-1",
 			fakeLog,
+			plexInstance,
 		);
-		// Write-through: collectCacheStaleness reads lastRefreshedAt from
-		// CacheRefreshStatus. Without this upsert the row stays stale and
-		// re-emits on the next poll.
-		expect(cacheStatusUpsert).toHaveBeenCalledTimes(1);
-		const upsertArgs = cacheStatusUpsert.mock.calls[0]?.[0] as {
-			where: { instanceId_cacheType: { instanceId: string; cacheType: string } };
-			update: { lastRefreshedAt: Date; lastResult: string; itemCount: number };
-		};
-		expect(upsertArgs.where.instanceId_cacheType).toEqual({
-			instanceId: "inst-plex-1",
-			cacheType: "plex",
+		// The full refresher owns the atomic success publication; the action
+		// dispatcher must never reintroduce an unguarded stale write-through.
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+	});
+
+	it("runs Jellyfin retries through the owned client and its single-flight observer", async () => {
+		const fakeClient = { id: "jellyfin-client" };
+		requireJellyfinClient.mockResolvedValue({ client: fakeClient, instance: jellyfinInstance });
+		runJellyfinCacheRefreshSingleFlight.mockResolvedValue({
+			upserted: 9,
+			errors: 0,
+			errorMessages: [],
+			complete: true,
+			completedAt: new Date(),
 		});
-		expect(upsertArgs.update.lastResult).toBe("success");
-		expect(upsertArgs.update.itemCount).toBe(42);
-		expect(upsertArgs.update.lastRefreshedAt).toBeInstanceOf(Date);
+
+		const result = await dispatchPulseAction(fakeApp, "user-1", jellyfinAction, fakeLog);
+		await result.backgroundTask;
+
+		expect(requireJellyfinClient).toHaveBeenCalledWith(fakeApp, "user-1", "inst-jellyfin-1");
+		expect(runJellyfinCacheRefreshSingleFlight).toHaveBeenCalledWith(
+			"inst-jellyfin-1",
+			expect.any(String),
+			expect.any(Function),
+			{ prisma: fakeApp.prisma, log: fakeLog },
+		);
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("returns 200 immediately even when the refresher is slow — fire-and-forget contract", async () => {
@@ -230,7 +278,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// test times out or returns after the refresher resolves, someone
 		// has re-introduced the `await refreshPlexCache(...)` in the main
 		// code path.
-		requirePlexClient.mockResolvedValue({ client: {}, instance: {} });
+		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
 		let resolveRefresh: (v: unknown) => void = () => {};
 		const pendingRefresh = new Promise((r) => {
 			resolveRefresh = r;
@@ -251,10 +299,16 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 		// Let the slow refresh complete, then the background task should
 		// run the write-through.
-		resolveRefresh({ upserted: 999, errors: 0, errorMessages: [] });
+		resolveRefresh({
+			upserted: 999,
+			errors: 0,
+			errorMessages: [],
+			complete: true,
+			completedAt: new Date(),
+		});
 		await result.backgroundTask;
 
-		expect(cacheStatusUpsert).toHaveBeenCalledTimes(1);
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("does NOT write through when the BACKGROUND refresher throws — stale row must keep emitting", async () => {
@@ -262,7 +316,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// unchanged so the staleness collector re-emits the row on the next
 		// poll. Writing on failure would tell operators "it's fresh" when
 		// it isn't — trust regression.
-		requirePlexClient.mockResolvedValue({ client: {}, instance: {} });
+		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
 		refreshPlexCache.mockRejectedValue(new Error("upstream Plex timeout"));
 
 		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);

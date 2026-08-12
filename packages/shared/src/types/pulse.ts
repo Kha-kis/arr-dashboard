@@ -43,7 +43,7 @@ export type SchedulerJobId = z.infer<typeof schedulerJobIdSchema>;
 // rows with cacheType "tautulli" may linger until the migration dialog
 // deletes their instances; they render as plain warnings without an
 // action button (see REFRESHABLE_CACHE_TYPES in pulse/collectors.ts).
-export const pulseCacheTypeSchema = z.enum(["plex"]);
+export const pulseCacheTypeSchema = z.enum(["plex", "jellyfin"]);
 export type PulseCacheType = z.infer<typeof pulseCacheTypeSchema>;
 
 // ARR services whose queues the dispatcher can retry. Prowlarr has no

@@ -23,6 +23,9 @@ export interface CacheRefreshStatusRow {
 	lastResult: string;
 	lastErrorMessage: string | null;
 	itemCount: number;
+	lastAttemptAt?: Date | null;
+	lastAttemptResult?: string | null;
+	lastAttemptErrorMessage?: string | null;
 }
 
 const STALE_THRESHOLD_MS = 12 * 60 * 60 * 1000; // 12 hours
@@ -37,14 +40,30 @@ export function buildCacheHealthItems(
 	nowMs?: number,
 ): CacheHealthItem[] {
 	const now = nowMs ?? Date.now();
-	return statuses.map((status) => ({
-		instanceId: status.instanceId,
-		instanceName: instanceNameMap.get(status.instanceId) ?? "Unknown",
-		cacheType: status.cacheType as CacheHealthItem["cacheType"],
-		lastRefreshedAt: status.lastRefreshedAt.toISOString(),
-		lastResult: status.lastResult as CacheHealthItem["lastResult"],
-		lastErrorMessage: sanitizeErrorMessage(status.lastErrorMessage),
-		itemCount: status.itemCount,
-		isStale: now - status.lastRefreshedAt.getTime() > STALE_THRESHOLD_MS,
-	}));
+	return statuses.map((status) => {
+		return {
+			instanceId: status.instanceId,
+			instanceName: instanceNameMap.get(status.instanceId) ?? "Unknown",
+			cacheType: status.cacheType as CacheHealthItem["cacheType"],
+			lastRefreshedAt: status.lastRefreshedAt.toISOString(),
+			lastResult: status.lastResult as CacheHealthItem["lastResult"],
+			lastErrorMessage: sanitizeErrorMessage(status.lastErrorMessage),
+			...(status.lastAttemptAt !== undefined
+				? { lastAttemptAt: status.lastAttemptAt?.toISOString() ?? null }
+				: {}),
+			...(status.lastAttemptResult !== undefined
+				? {
+						lastAttemptResult:
+							(status.lastAttemptResult as CacheHealthItem["lastAttemptResult"]) ?? null,
+					}
+				: {}),
+			...(status.lastAttemptErrorMessage !== undefined
+				? {
+						lastAttemptErrorMessage: sanitizeErrorMessage(status.lastAttemptErrorMessage ?? null),
+					}
+				: {}),
+			itemCount: status.itemCount,
+			isStale: now - status.lastRefreshedAt.getTime() > STALE_THRESHOLD_MS,
+		};
+	});
 }

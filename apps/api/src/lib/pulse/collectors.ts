@@ -600,7 +600,7 @@ const collectSeerrCircuitBreaker: Collector = async (app, userId) => {
 };
 
 // ============================================================================
-// 4. Cache Staleness (Plex)
+// 4. Cache Staleness (Plex / Jellyfin)
 // ============================================================================
 
 // Cache types the pulse-action dispatcher knows how to refresh. Must stay
@@ -610,22 +610,33 @@ const collectSeerrCircuitBreaker: Collector = async (app, userId) => {
 // that linger until the 3.0 dialog deletes their instances) still emit a
 // warning — just without an action button, so we don't ship a click the
 // backend can't fulfil.
-const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>(["plex"]);
+const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>(["plex", "jellyfin"]);
 
-function actionForStaleCache(instanceId: string, cacheType: string): PulseAction | undefined {
+function actionForCache(
+	instanceId: string,
+	cacheType: string,
+	label = "Refresh now",
+): PulseAction | undefined {
 	if (!REFRESHABLE_CACHE_TYPES.has(cacheType as PulseCacheType)) return undefined;
 	return {
 		kind: "cache.refresh",
 		target: { instanceId, cacheType: cacheType as PulseCacheType },
-		label: "Refresh now",
+		label,
 		destructive: false,
 	};
 }
 
+function cacheSource(cacheType: string, instanceService: string): string {
+	if (cacheType === "tautulli") return "tautulli";
+	if (instanceService === "EMBY" && cacheType.startsWith("jellyfin")) return "emby";
+	if (cacheType.startsWith("jellyfin")) return "jellyfin";
+	return "plex";
+}
+
 const collectCacheStaleness: Collector = async (app, userId) => {
 	const cacheStatuses = await app.prisma.cacheRefreshStatus.findMany({
-		where: { instance: { userId } },
-		include: { instance: { select: { label: true } } },
+		where: { instance: { userId, enabled: true } },
+		include: { instance: { select: { label: true, service: true, enabled: true } } },
 	});
 
 	if (cacheStatuses.length === 0) return [];
@@ -634,33 +645,66 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 	const staleThreshold = Date.now() - STALE_CACHE_HOURS * 60 * 60 * 1000;
 
 	for (const status of cacheStatuses) {
+		// Keep the enabled-state gate explicit as well as in the query. This is
+		// defensive against a service being disabled after the relation filter
+		// is planned and keeps fixture-backed collectors honest.
+		if (!status.instance.enabled) continue;
 		const label = status.instance.label;
 		const cacheLabels: Record<string, string> = {
 			plex: "Plex",
 			plex_episode: "Plex episodes",
+			jellyfin: "Jellyfin",
+			jellyfin_episode: "Jellyfin episodes",
 		};
-		const cacheLabel = cacheLabels[status.cacheType] ?? status.cacheType;
+		const cacheLabel =
+			status.instance.service === "EMBY" && status.cacheType.startsWith("jellyfin")
+				? status.cacheType === "jellyfin_episode"
+					? "Emby episodes"
+					: "Emby"
+				: (cacheLabels[status.cacheType] ?? status.cacheType);
+		const newerFailedAttempt =
+			status.lastAttemptResult === "error" &&
+			status.lastAttemptAt != null &&
+			status.lastAttemptAt.getTime() > status.lastRefreshedAt.getTime();
+		const effectiveResult = newerFailedAttempt ? "partial" : status.lastResult;
+		const effectiveError = newerFailedAttempt
+			? status.lastAttemptErrorMessage
+			: status.lastErrorMessage;
+		const effectiveTimestamp = status.lastAttemptAt ?? status.lastRefreshedAt;
 
-		if (status.lastResult === "error") {
-			// Error items intentionally do NOT carry an inline action — a
-			// failed refresh likely fails again on the same network/config
-			// issue, so the "Check settings" link remains the right affordance.
+		if (effectiveResult === "error") {
+			const action = actionForCache(status.instanceId, status.cacheType, "Retry refresh");
 			items.push({
 				id: `cache-error-${status.id}`,
 				severity: "warning",
 				category: "health",
 				title: `${label}: ${cacheLabel} cache refresh failed`,
-				detail: status.lastErrorMessage ?? "Unknown error",
+				detail: effectiveError ?? "Unknown error",
 				actionUrl: "/settings",
 				actionLabel: "Check settings",
-				source: status.cacheType === "tautulli" ? "tautulli" : "plex",
-				timestamp: status.lastRefreshedAt.toISOString(),
+				source: cacheSource(status.cacheType, status.instance.service),
+				timestamp: effectiveTimestamp.toISOString(),
+				...(action ? { action } : {}),
+			});
+		} else if (effectiveResult === "partial") {
+			const action = actionForCache(status.instanceId, status.cacheType, "Retry refresh");
+			items.push({
+				id: `cache-partial-${status.id}`,
+				severity: "warning",
+				category: "health",
+				title: `${label}: ${cacheLabel} cache coverage is degraded`,
+				detail: effectiveError ?? "The cache refresh completed with incomplete freshness coverage.",
+				actionUrl: "/settings",
+				actionLabel: "Check settings",
+				source: cacheSource(status.cacheType, status.instance.service),
+				timestamp: effectiveTimestamp.toISOString(),
+				...(action ? { action } : {}),
 			});
 		} else if (status.lastRefreshedAt.getTime() < staleThreshold) {
 			const hoursAgo = Math.round(
 				(Date.now() - status.lastRefreshedAt.getTime()) / (60 * 60 * 1000),
 			);
-			const action = actionForStaleCache(status.instanceId, status.cacheType);
+			const action = actionForCache(status.instanceId, status.cacheType);
 			items.push({
 				id: `cache-stale-${status.id}`,
 				severity: "warning",
@@ -669,7 +713,7 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				detail: `Last refreshed ${hoursAgo} hours ago`,
 				actionUrl: "/settings",
 				actionLabel: "Check settings",
-				source: status.cacheType === "tautulli" ? "tautulli" : "plex",
+				source: cacheSource(status.cacheType, status.instance.service),
 				timestamp: status.lastRefreshedAt.toISOString(),
 				...(action ? { action } : {}),
 			});

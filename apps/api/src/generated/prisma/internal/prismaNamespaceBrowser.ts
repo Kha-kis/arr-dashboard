@@ -195,6 +195,7 @@ export const ServiceInstanceScalarFieldEnum = {
   httpAuthEncryptionIv: 'httpAuthEncryptionIv',
   isDefault: 'isDefault',
   enabled: 'enabled',
+  connectionGeneration: 'connectionGeneration',
   storageGroupId: 'storageGroupId',
   hasLocalFilesystemAccess: 'hasLocalFilesystemAccess',
   pathPrefix: 'pathPrefix',
@@ -1056,7 +1057,12 @@ export const CacheRefreshStatusScalarFieldEnum = {
   lastRefreshedAt: 'lastRefreshedAt',
   lastResult: 'lastResult',
   lastErrorMessage: 'lastErrorMessage',
-  itemCount: 'itemCount'
+  itemCount: 'itemCount',
+  generationId: 'generationId',
+  generationMetadata: 'generationMetadata',
+  lastAttemptAt: 'lastAttemptAt',
+  lastAttemptResult: 'lastAttemptResult',
+  lastAttemptErrorMessage: 'lastAttemptErrorMessage'
 } as const
 
 export type CacheRefreshStatusScalarFieldEnum = (typeof CacheRefreshStatusScalarFieldEnum)[keyof typeof CacheRefreshStatusScalarFieldEnum]

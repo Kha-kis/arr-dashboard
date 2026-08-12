@@ -2,6 +2,211 @@ import { describe, expect, it, vi } from "vitest";
 import { refreshPlexEpisodeCache } from "./plex-episode-cache-refresher.js";
 
 describe("refreshPlexEpisodeCache watch count", () => {
+	it("does not publish a selected batch when one duplicate copy fails", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue([
+					{ tmdbId: 123, ratingKey: "show-broken" },
+					{ tmdbId: 123, ratingKey: "show-healthy" },
+				]),
+			},
+			plexEpisodeCache: { groupBy: vi.fn().mockResolvedValue([]), upsert },
+		};
+		const client = {
+			getHistory: vi.fn().mockResolvedValue([]),
+			getAccounts: vi.fn().mockResolvedValue([]),
+			getEpisodes: vi
+				.fn()
+				.mockRejectedValueOnce(new Error("stale Plex rating key"))
+				.mockResolvedValueOnce([
+					{
+						ratingKey: "episode-healthy",
+						title: "Healthy copy",
+						seasonNumber: 1,
+						episodeNumber: 1,
+						viewCount: 2,
+					},
+				]),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn() } as never,
+			"connection-fingerprint",
+		);
+
+		expect(result).toMatchObject({ upserted: 0, errors: 1, coverageIncomplete: true });
+		expect(upsert).not.toHaveBeenCalled();
+	});
+
+	it("does not publish a selected batch after its connection generation is superseded", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const statusUpsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			cacheRefreshStatus: {
+				findUnique: vi.fn().mockResolvedValue({ generationId: "parent-a", lastResult: "success" }),
+			},
+			plexCache: { findMany: vi.fn().mockResolvedValue([{ tmdbId: 123, ratingKey: "show-1" }]) },
+			plexEpisodeCache: { groupBy: vi.fn().mockResolvedValue([]), upsert },
+			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+				callback({
+					serviceInstance: {
+						findUnique: vi.fn().mockResolvedValue({
+							service: "PLEX",
+							enabled: true,
+							connectionGeneration: 8,
+						}),
+					},
+					plexEpisodeCache: { upsert },
+					cacheRefreshStatus: { upsert: statusUpsert },
+				}),
+			),
+		};
+		const client = {
+			getHistory: vi.fn().mockResolvedValue([]),
+			getAccounts: vi.fn().mockResolvedValue([]),
+			getEpisodes: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "episode-1",
+					title: "Pilot",
+					seasonNumber: 1,
+					episodeNumber: 1,
+					viewCount: 1,
+				},
+			]),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+			"connection-fingerprint",
+			{ service: "PLEX", connectionGeneration: 7 },
+		);
+
+		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
+		expect(upsert).not.toHaveBeenCalled();
+		expect(statusUpsert).not.toHaveBeenCalled();
+	});
+
+	it("does not publish a selected batch after its parent Plex generation is superseded", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const statusUpsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			cacheRefreshStatus: {
+				findUnique: vi.fn().mockResolvedValue({ generationId: "parent-a", lastResult: "success" }),
+			},
+			plexCache: { findMany: vi.fn().mockResolvedValue([{ tmdbId: 123, ratingKey: "show-1" }]) },
+			plexEpisodeCache: { groupBy: vi.fn().mockResolvedValue([]), upsert },
+			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+				callback({
+					serviceInstance: {
+						findUnique: vi.fn().mockResolvedValue({
+							service: "PLEX",
+							enabled: true,
+							connectionGeneration: 7,
+						}),
+					},
+					plexEpisodeCache: { upsert },
+					cacheRefreshStatus: {
+						findUnique: vi.fn().mockResolvedValue({ generationId: "parent-b" }),
+						upsert: statusUpsert,
+					},
+				}),
+			),
+		};
+		const client = {
+			getHistory: vi.fn().mockResolvedValue([]),
+			getAccounts: vi.fn().mockResolvedValue([]),
+			getEpisodes: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "episode-1",
+					title: "Pilot",
+					seasonNumber: 1,
+					episodeNumber: 1,
+					viewCount: 1,
+				},
+			]),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+			"connection-fingerprint",
+			{ service: "PLEX", connectionGeneration: 7 },
+		);
+
+		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
+		expect(upsert).not.toHaveBeenCalled();
+		expect(statusUpsert).not.toHaveBeenCalled();
+	});
+
+	it("publishes a large guarded episode batch with bounded bulk statements", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const deleteMany = vi.fn().mockResolvedValue({ count: 0 });
+		const createMany = vi.fn().mockImplementation(async ({ data }: { data: unknown[] }) => ({
+			count: data.length,
+		}));
+		const statusUpsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			cacheRefreshStatus: {
+				findUnique: vi.fn().mockResolvedValue({ generationId: "parent-a", lastResult: "success" }),
+			},
+			plexCache: { findMany: vi.fn().mockResolvedValue([{ tmdbId: 123, ratingKey: "show-1" }]) },
+			plexEpisodeCache: { groupBy: vi.fn().mockResolvedValue([]), upsert },
+			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+				callback({
+					serviceInstance: {
+						findUnique: vi.fn().mockResolvedValue({
+							service: "PLEX",
+							enabled: true,
+							connectionGeneration: 7,
+						}),
+					},
+					plexEpisodeCache: { deleteMany, createMany, upsert },
+					cacheRefreshStatus: {
+						findUnique: vi.fn().mockResolvedValue({ generationId: "parent-a" }),
+						upsert: statusUpsert,
+					},
+				}),
+			),
+		};
+		const episodes = Array.from({ length: 1_500 }, (_, index) => ({
+			ratingKey: `episode-${index}`,
+			title: `Episode ${index}`,
+			seasonNumber: Math.floor(index / 30) + 1,
+			episodeNumber: (index % 30) + 1,
+			viewCount: 0,
+		}));
+		const client = {
+			getHistory: vi.fn().mockResolvedValue([]),
+			getAccounts: vi.fn().mockResolvedValue([]),
+			getEpisodes: vi.fn().mockResolvedValue(episodes),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+			"connection-fingerprint",
+			{ service: "PLEX", connectionGeneration: 7 },
+		);
+
+		expect(result).toMatchObject({ complete: true, upserted: 1_500, errors: 0 });
+		expect(deleteMany).toHaveBeenCalledOnce();
+		expect(createMany).toHaveBeenCalledOnce();
+		expect(createMany.mock.calls[0]?.[0].data).toHaveLength(1_500);
+		expect(upsert).not.toHaveBeenCalled();
+		expect(statusUpsert).toHaveBeenCalledOnce();
+	});
+
 	it("keeps shared history in watched while using account metadata for watchCount", async () => {
 		const upsert = vi.fn().mockResolvedValue({});
 		const prisma = {
@@ -190,18 +395,11 @@ describe("refreshPlexEpisodeCache watch count", () => {
 		expect(result).toMatchObject({
 			eligibleShows: 1,
 			refreshedShows: 1,
-			upserted: 1,
+			upserted: 0,
 			errors: 1,
 			coverageIncomplete: true,
 		});
-		expect(upsert).toHaveBeenCalledWith(
-			expect.objectContaining({
-				create: expect.objectContaining({
-					ratingKey: "episode-healthy",
-					watchCount: 2,
-				}),
-			}),
-		);
+		expect(upsert).not.toHaveBeenCalled();
 	});
 
 	it("preserves capped watches when the cached duplicate copy fails", async () => {
@@ -264,20 +462,11 @@ describe("refreshPlexEpisodeCache watch count", () => {
 		);
 
 		expect(result).toMatchObject({
-			upserted: 1,
+			upserted: 0,
 			errors: 1,
 			coverageIncomplete: true,
 		});
-		expect(upsert).toHaveBeenCalledWith(
-			expect.objectContaining({
-				update: expect.objectContaining({
-					ratingKey: "episode-healthy",
-					watched: true,
-					watchedByUsers: JSON.stringify(["Archived Viewer"]),
-					lastWatchedAt: existingLastWatchedAt,
-				}),
-			}),
-		);
+		expect(upsert).not.toHaveBeenCalled();
 	});
 
 	it("preserves cached aggregate watches omitted by bounded successful history", async () => {
@@ -499,10 +688,8 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			"connection-fingerprint",
 		);
 
-		expect(result).toMatchObject({ upserted: 1, errors: 1 });
-		const call = upsert.mock.calls[0]?.[0];
-		expect(JSON.parse(call.update.watchedByUsers)).toEqual(["Real Viewer"]);
-		expect(call.update.watchedByUsers).not.toContain("Account 7");
+		expect(result).toMatchObject({ upserted: 0, errors: 1, complete: false });
+		expect(upsert).not.toHaveBeenCalled();
 	});
 
 	it("creates aggregate evidence without user attribution when account lookup is unavailable", async () => {
@@ -543,15 +730,8 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			"connection-fingerprint",
 		);
 
-		expect(result).toMatchObject({ upserted: 1, errors: 1 });
-		expect(upsert).toHaveBeenCalledWith(
-			expect.objectContaining({
-				create: expect.objectContaining({
-					watched: true,
-					watchedByUsers: JSON.stringify([]),
-				}),
-			}),
-		);
+		expect(result).toMatchObject({ upserted: 0, errors: 1, complete: false });
+		expect(upsert).not.toHaveBeenCalled();
 	});
 
 	it("keeps the episode denominator complete when history references a removed account", async () => {
@@ -676,23 +856,8 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			"connection-fingerprint",
 		);
 
-		expect(result).toMatchObject({ upserted: 1, errors: 1, refreshedShows: 1 });
-		expect(updateMany).toHaveBeenCalledWith({
-			where: {
-				instanceId: "plex-1",
-				showTmdbId: 123,
-				seasonNumber: 1,
-				episodeNumber: 1,
-				ratingKey: "episode-1",
-				sourceFingerprint: "connection-fingerprint",
-			},
-			data: expect.objectContaining({
-				watchCount: 2,
-				watched: true,
-				lastWatchedAt: new Date(1_700_000_000 * 1000),
-			}),
-		});
-		expect(updateMany.mock.calls[0]?.[0].data).not.toHaveProperty("watchedByUsers");
+		expect(result).toMatchObject({ upserted: 0, errors: 1, refreshedShows: 1, complete: false });
+		expect(updateMany).not.toHaveBeenCalled();
 		expect(upsert).not.toHaveBeenCalled();
 		expect(client.getAccounts).not.toHaveBeenCalled();
 	});
@@ -733,7 +898,7 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			]),
 		};
 
-		await refreshPlexEpisodeCache(
+		const result = await refreshPlexEpisodeCache(
 			client as never,
 			prisma as never,
 			"plex-1",
@@ -741,15 +906,8 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			"connection-fingerprint",
 		);
 
-		const call = updateMany.mock.calls[0]?.[0];
-		expect(call.data).toMatchObject({
-			ratingKey: "episode-1",
-			watchCount: 0,
-			sourceFingerprint: "connection-fingerprint",
-		});
-		expect(call.data).not.toHaveProperty("watched");
-		expect(call.data).not.toHaveProperty("watchedByUsers");
-		expect(call.data).not.toHaveProperty("lastWatchedAt");
+		expect(result).toMatchObject({ upserted: 0, errors: 1, complete: false });
+		expect(updateMany).not.toHaveBeenCalled();
 		expect(upsert).not.toHaveBeenCalled();
 	});
 
