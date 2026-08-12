@@ -13,6 +13,7 @@ import {
 	selectInspectableCleanupPreviewItems,
 } from "../cleanup-executor.js";
 import {
+	buildRadarrCacheSafetyPlan,
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
 	createSharedPlexSafetyContext,
@@ -705,6 +706,24 @@ describe("shared Plex deletion safety", () => {
 						size: 2_000,
 					},
 				}),
+			),
+		).toBeNull();
+	});
+
+	it("does not turn cached Radarr file metadata into a destructive executable plan", () => {
+		expect(
+			buildRadarrCacheSafetyPlan(
+				{
+					remoteIds: { tmdbId: 42 },
+					path: "/movies-4k/Example Movie (2024)",
+					movieFile: {
+						id: 1001,
+						path: "/movies-4k/Example Movie (2024)/Example.Movie.2160p.mkv",
+						size: 2_000,
+					},
+				},
+				true,
+				radarrTargetIdentity,
 			),
 		).toBeNull();
 	});

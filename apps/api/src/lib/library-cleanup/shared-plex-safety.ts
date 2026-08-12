@@ -450,34 +450,13 @@ export function buildRadarrCacheSafetyPlan(
 		externalId: requiredPositiveSafeInteger(remoteIds?.tmdbId, "Cached Radarr TMDb ID"),
 		mediaPath: normalizeMediaPath(item.path),
 	};
-	const movieFile = item.movieFile as Record<string, unknown> | null | undefined;
-	const movieFileId = movieFile?.id;
+	const movieFileId = (item.movieFile as Record<string, unknown> | null | undefined)?.id;
 	if (!hasFile) {
 		return typeof movieFileId !== "number" || movieFileId <= 0
 			? { kind: "verified_radarr_empty", target }
 			: null;
 	}
-	if (!movieFile) return null;
-	try {
-		const pathValue =
-			typeof movieFile.path === "string" && movieFile.path.trim()
-				? movieFile.path
-				: joinMediaPath(item.path, movieFile.relativePath, "RADARR");
-		return canonicalExecutableSafetyPlan({
-			kind: "verified_radarr",
-			target,
-			file: {
-				movieFileId,
-				fullPath: { value: pathValue },
-				size: movieFile.size,
-			},
-			peers: [],
-			ownership: [],
-			targetDeleteNotifications: [],
-		});
-	} catch {
-		return null;
-	}
+	return null;
 }
 
 export function buildSonarrCacheSafetyPlan(
