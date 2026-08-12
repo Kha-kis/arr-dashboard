@@ -366,6 +366,7 @@ describe("authoritative mutation policy snapshots", () => {
 			["plex-b-84"],
 			true,
 			false,
+			false,
 		],
 		[
 			"Sonarr",
@@ -377,6 +378,7 @@ describe("authoritative mutation policy snapshots", () => {
 			["plex-a-84"],
 			["plex-b-84"],
 			true,
+			false,
 			false,
 		],
 		[
@@ -390,6 +392,20 @@ describe("authoritative mutation policy snapshots", () => {
 			["plex-b-84"],
 			false,
 			false,
+			false,
+		],
+		[
+			"Radarr",
+			"blocks a mutable policy change with unchanged identity",
+			"RADARR",
+			"movie",
+			[],
+			["plex-b-84"],
+			[],
+			["plex-b-84"],
+			true,
+			false,
+			true,
 		],
 		[
 			"Sonarr",
@@ -400,6 +416,7 @@ describe("authoritative mutation policy snapshots", () => {
 			["plex-b-84"],
 			[],
 			["plex-b-84"],
+			false,
 			false,
 			false,
 		],
@@ -414,6 +431,7 @@ describe("authoritative mutation policy snapshots", () => {
 			["plex-b-84"],
 			false,
 			true,
+			false,
 		],
 		[
 			"Radarr",
@@ -425,6 +443,7 @@ describe("authoritative mutation policy snapshots", () => {
 			[],
 			[],
 			true,
+			false,
 			false,
 		],
 		[
@@ -438,6 +457,7 @@ describe("authoritative mutation policy snapshots", () => {
 			[],
 			true,
 			false,
+			false,
 		],
 		[
 			"Radarr",
@@ -450,6 +470,7 @@ describe("authoritative mutation policy snapshots", () => {
 			["plex-b-84-a", "plex-b-84-b"],
 			false,
 			false,
+			false,
 		],
 		[
 			"Sonarr",
@@ -460,17 +481,20 @@ describe("authoritative mutation policy snapshots", () => {
 			["plex-b-84-a", "plex-b-84-b"],
 			[],
 			["plex-b-84-a", "plex-b-84-b"],
+			false,
 			false,
 			false,
 		],
 	] as const)(
 		"%s %s after final target revalidation",
-		async (_label, _expectedBehavior, service, mediaType, plexATargetsAtSnapshot, plexBTargetsAtSnapshot, plexATargetsAtMutation, plexBTargetsAtMutation, expectedToBlock, omitSonarrTmdbId) => {
+		async (_label, _expectedBehavior, service, mediaType, plexATargetsAtSnapshot, plexBTargetsAtSnapshot, plexATargetsAtMutation, plexBTargetsAtMutation, expectedToBlock, omitSonarrTmdbId, policyChangesAfterSnapshot) => {
 			const plexA = { ...instance("PLEX"), id: "plex-a", name: "Plex A" };
 			const plexB = { ...instance("PLEX"), id: "plex-b", name: "Plex B" };
 			const plexRule = {
-				...rule("plex_last_watched"),
-				parameters: JSON.stringify({ operator: "never" }),
+				...rule(policyChangesAfterSnapshot ? "plex_on_deck" : "plex_last_watched"),
+				parameters: JSON.stringify(
+					policyChangesAfterSnapshot ? { isDeck: false } : { operator: "never" },
+				),
 				serviceFilter: JSON.stringify([service]),
 				targetScope: "series",
 				action: "delete",
@@ -491,6 +515,8 @@ describe("authoritative mutation policy snapshots", () => {
 				plexA,
 				plexB,
 			]);
+			let refreshCallCount = 0;
+			let policyChangedDuringTargetLookup = false;
 			const publishedRow = {
 				id: "plex-row-b",
 				instanceId: plexB.id,
@@ -508,7 +534,12 @@ describe("authoritative mutation policy snapshots", () => {
 				labels: "[]",
 				addedAt: new Date("2025-01-01T00:00:00.000Z"),
 			};
-			vi.mocked(deps.prisma.plexCache.findMany).mockResolvedValue([publishedRow] as never);
+			vi.mocked(deps.prisma.plexCache.findMany).mockImplementation((async () => [
+				{
+					...publishedRow,
+					onDeck: policyChangesAfterSnapshot && policyChangedDuringTargetLookup,
+				},
+			]) as never);
 			vi.mocked(deps.prisma.plexCache.count).mockImplementation((async ({
 				where,
 			}: {
@@ -516,7 +547,6 @@ describe("authoritative mutation policy snapshots", () => {
 			}) => (where.instanceId === plexB.id ? 1 : 0)) as never);
 			const publishedAt = new Date();
 			const generationIds = new Map<string, string>();
-			let refreshCallCount = 0;
 			vi.mocked(deps.prisma.cacheRefreshStatus.findMany).mockImplementation((async ({
 				where,
 			}: {
@@ -563,15 +593,16 @@ describe("authoritative mutation policy snapshots", () => {
 				(plexInstanceId === plexA.id ? plexATargetsAtMutation : plexBTargetsAtMutation).map(
 					(ratingKey) => ({ ratingKey }),
 				);
-			deps.plexCacheClientFactory = vi.fn(
-				(plexInstance) =>
-					({
-						getMovieMediaPartsByTmdbId: vi.fn().mockResolvedValue(currentTargets(plexInstance.id)),
-						getSeriesEpisodeMediaPartsByTvdbId: vi
-							.fn()
-							.mockResolvedValue(currentTargets(plexInstance.id)),
-					}) as never,
-			);
+			deps.plexCacheClientFactory = vi.fn((plexInstance) => {
+				const readCurrentTargets = async () => {
+					if (policyChangesAfterSnapshot) policyChangedDuringTargetLookup = true;
+					return currentTargets(plexInstance.id);
+				};
+				return {
+					getMovieMediaPartsByTmdbId: vi.fn(readCurrentTargets),
+					getSeriesEpisodeMediaPartsByTvdbId: vi.fn(readCurrentTargets),
+				} as never;
+			});
 			const arrInstance = {
 				id: `${service.toLowerCase()}-1`,
 				userId: "user-1",

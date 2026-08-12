@@ -2955,6 +2955,28 @@ async function assertCurrentPlexTargetCoveredByPolicySnapshot(
 	}
 }
 
+function assertRefreshedPlexTargetMatchesPolicySnapshot(
+	expected: PlexTargetRatingKeysByInstance,
+	current: PlexTargetRatingKeysByInstance,
+	targetKey: string,
+): void {
+	if (
+		expected.size !== current.size ||
+		[...expected.keys()].some((instanceId) => !current.has(instanceId))
+	) {
+		throw new Error("Refreshed Plex target coverage did not match the policy snapshot");
+	}
+	for (const [instanceId, expectedTargets] of expected) {
+		const expectedRatingKeys = [...(expectedTargets.get(targetKey) ?? new Set<string>())].sort();
+		const currentRatingKeys = [
+			...(current.get(instanceId)?.get(targetKey) ?? new Set<string>()),
+		].sort();
+		if (evidenceFingerprint(currentRatingKeys) !== evidenceFingerprint(expectedRatingKeys)) {
+			throw new Error("Plex target identity changed during final policy revalidation");
+		}
+	}
+}
+
 /**
  * Re-establish series/movie cleanup authorization at the mutation boundary.
  * The queued/preview match is durable intent only: current live ARR state,
@@ -2987,28 +3009,14 @@ export async function assertCurrentSeriesMutationAuthority(
 							throw new Error(`Unsupported cleanup service: ${instance.service}`);
 						})();
 		const liveItem = toLiveSeriesPolicyItem(instance, arrItemId, rawItem);
-		const policy = evaluateItemPolicyState(
-			liveItem,
-			policySnapshot.rules,
-			instance.service,
-			policySnapshot.ctx,
-			policySnapshot.failedSources,
-		);
-		if (
-			policy.kind !== "cleanup" ||
-			policy.match.ruleId !== expectedRule.matchedRuleId ||
-			policy.match.action !== expectedRule.action ||
-			(policy.match.scanMediaServerAfterDelete === true) !== expectedRule.scanMediaServerAfterDelete
-		) {
-			throw new Error("The exact matched cleanup policy is no longer authoritative");
-		}
-
 		const plexDependency = new Set<DataSourceDependency>(["plex"]);
 		const plexCanAffectPolicy = policySnapshot.rules.some(
 			(rule) =>
 				passesCleanupRuleFilters(liveItem, rule, instance.service) &&
 				ruleUsesUnavailableData(rule, plexDependency),
 		);
+		let currentPolicyCtx = policySnapshot.ctx;
+		let currentFailedSources = policySnapshot.failedSources;
 		if (plexCanAffectPolicy) {
 			if (
 				!policySnapshot.plexTargetRatingKeysByInstance ||
@@ -3042,7 +3050,52 @@ export async function assertCurrentSeriesMutationAuthority(
 				policySnapshot.plexTargetRatingKeysByInstance,
 				policySnapshot.plexTopologyFingerprint,
 			);
+
+			const activeTypes = collectActiveRuleTypes(policySnapshot.rules);
+			const currentPlexEvidence = await refreshPlexMutationEvidence(
+				deps,
+				userId,
+				activeTypes.has("plex_episode_completion"),
+				policySnapshot.rules,
+			);
+			if (
+				!currentPlexEvidence ||
+				!policySnapshot.plexTopologyFingerprint ||
+				currentPlexEvidence.topologyFingerprint !== policySnapshot.plexTopologyFingerprint
+			) {
+				throw new Error("Current Plex policy evidence did not match the authorized topology");
+			}
+			assertRefreshedPlexTargetMatchesPolicySnapshot(
+				policySnapshot.plexTargetRatingKeysByInstance,
+				currentPlexEvidence.ratingKeysByInstance,
+				targetKey,
+			);
+			currentPolicyCtx = {
+				...policySnapshot.ctx,
+				now: new Date(),
+				plexMap: currentPlexEvidence.plexMap,
+				plexSectionTitles: currentPlexEvidence.plexSectionTitles,
+				plexEpisodeMap: currentPlexEvidence.plexEpisodeMap,
+			};
+			currentFailedSources = new Set(policySnapshot.failedSources);
+			currentFailedSources.delete("plex");
 		}
+		const policy = evaluateItemPolicyState(
+			liveItem,
+			policySnapshot.rules,
+			instance.service,
+			currentPolicyCtx,
+			currentFailedSources,
+		);
+		if (
+			policy.kind !== "cleanup" ||
+			policy.match.ruleId !== expectedRule.matchedRuleId ||
+			policy.match.action !== expectedRule.action ||
+			(policy.match.scanMediaServerAfterDelete === true) !== expectedRule.scanMediaServerAfterDelete
+		) {
+			throw new Error("The exact matched cleanup policy is no longer authoritative");
+		}
+		await assertCurrentSeriesPolicySnapshotUnchanged(deps, userId, expectedRule, policySnapshot);
 		return { snapshot: policySnapshot, rawItem, policyItem: liveItem };
 	} catch (error) {
 		deps.log.warn(
