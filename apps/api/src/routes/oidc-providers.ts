@@ -386,10 +386,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 					// snapshot is installed with a replacement password.
 					const affectedUsers = await tx.user.findMany({
 						where: {
-							OR: [
-								{ id: request.currentUser!.id },
-								{ oidcAccounts: { some: {} } },
-							],
+							OR: [{ id: request.currentUser!.id }, { oidcAccounts: { some: {} } }],
 						},
 						select: { id: true, hashedPassword: true },
 					});
@@ -437,8 +434,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				}
 				if (error instanceof Error && error.message === OIDC_ADMIN_AUTH_CHANGED) {
 					return reply.status(409).send({
-						error:
-							"Your password changed while deletion was in progress. Sign in and try again.",
+						error: "Your password changed while deletion was in progress. Sign in and try again.",
 					});
 				}
 				throw error;
