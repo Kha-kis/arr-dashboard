@@ -13,9 +13,7 @@ Reference end state: `0bc77cd2` in
 
 Target stack:
 
-- `60749495` — `origin/next` audit base
-- `4cd0a921` — frozen Wave 1 shared-Plex ownership safety
-- `91523868` — isolated four-file format prerequisite
+- `d532fd15` — merged Wave 1 shared-Plex ownership safety on `origin/next`
 - `codex/next-episode-scope` — this Wave 2 implementation
 
 ## Scope boundary
@@ -322,7 +320,7 @@ pnpm run typecheck
 pnpm run test
 pnpm run lint
 pnpm run build
-git diff --check 91523868..HEAD
+git diff --check origin/next...HEAD
 ```
 
 The branch is complete only when the reported whole-series deletion scenario

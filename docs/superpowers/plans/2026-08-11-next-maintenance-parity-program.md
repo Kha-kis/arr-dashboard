@@ -188,7 +188,7 @@ confirmed from the live source paths and 3.0 architecture.
   Run the focused OIDC tests and the complete repository gauntlet. Confirm the
   final diff contains formatting changes only.
 
-- [ ] **Step 3: Publish the prerequisite**
+- [x] **Step 3: Publish the prerequisite**
 
   Commit, push, and open a focused PR against `next` after explicit publication
   authorization. Merge it before freezing the Wave 0 candidate.
@@ -244,7 +244,7 @@ confirmed from the live source paths and 3.0 architecture.
   Expected: all referenced skills/reviewers exist and no private machine path,
   endpoint, credential, or secret enters tracked files.
 
-- [ ] **Step 4: Validate and open the focused governance PR**
+- [x] **Step 4: Validate and open the focused governance PR**
 
   Run the project gauntlet. Open one documentation/workflow PR against `next`;
   do not mix runtime forward-port code into it.
