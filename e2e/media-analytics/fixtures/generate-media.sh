@@ -33,7 +33,10 @@ if [[ -n "$relative_output_dir" ]]; then
   container_output_dir="${container_output_dir}/${relative_output_dir}"
 fi
 
-docker compose \
+generator_uid="$(id -u)"
+generator_gid="$(id -g)"
+
+MEDIA_GENERATOR_UID="$generator_uid" MEDIA_GENERATOR_GID="$generator_gid" docker compose \
   --project-name "$COMPOSE_PROJECT" \
   --file "$COMPOSE_FILE" \
   --profile media-generator \

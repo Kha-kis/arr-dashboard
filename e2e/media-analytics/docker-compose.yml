@@ -138,6 +138,7 @@ services:
   media-generator:
     image: linuxserver/ffmpeg:8.1.2-cli-ls76
     profiles: [media-generator]
+    user: "${MEDIA_GENERATOR_UID:-1000}:${MEDIA_GENERATOR_GID:-1000}"
     entrypoint: ["/bin/sh", "-ec"]
     command: ["sleep infinity"]
     volumes:

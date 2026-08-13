@@ -130,7 +130,10 @@ test("pinned media generator creates a non-empty MP4 beneath the harness state r
 	try {
 		assert.equal(result.status, 0, result.stderr);
 		assert.equal(existsSync(outputFile), true);
-		assert.ok(statSync(outputFile).size > 0);
+		const outputStats = statSync(outputFile);
+		assert.ok(outputStats.size > 0);
+		assert.equal(outputStats.uid, process.getuid());
+		assert.equal(outputStats.gid, process.getgid());
 	} finally {
 		rmSync(outputDir, { recursive: true, force: true });
 	}
