@@ -43,15 +43,19 @@ function instance(id: string, enabled = true) {
 describe("tautulli cache scheduler", () => {
 	let app: ReturnType<typeof Fastify>;
 	let findMany: ReturnType<typeof vi.fn>;
+	let findUnique: ReturnType<typeof vi.fn>;
 
 	beforeEach(async () => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
 		findMany = vi.fn();
+		findUnique = vi.fn(({ where }: { where: { id: string } }) =>
+			Promise.resolve(instance(where.id)),
+		);
 		app = Fastify({ logger: false });
 		app.decorate("encryptor", {} as never);
 		app.decorate("prisma", {
-			serviceInstance: { findMany },
+			serviceInstance: { findMany, findUnique },
 		} as never);
 		await app.register(schedulerRegistryPlugin);
 		createTautulliClient.mockReturnValue({});
@@ -126,6 +130,54 @@ describe("tautulli cache scheduler", () => {
 		await vi.runAllTicks();
 	});
 
+	it("does not contact a queued instance that was disabled before its refresh began", async () => {
+		findMany.mockResolvedValue([instance("one"), instance("two")]);
+		let releaseFirst: (() => void) | undefined;
+		refreshTautulliCache.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					releaseFirst = () =>
+						resolve({ upserted: 1, errors: 0, errorMessages: [], complete: true });
+				}),
+		);
+		findUnique.mockResolvedValueOnce(instance("one")).mockResolvedValueOnce(instance("two", false));
+
+		await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
+		expect(createTautulliClient).toHaveBeenCalledTimes(1);
+
+		releaseFirst?.();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(findUnique).toHaveBeenCalledTimes(2);
+		expect(createTautulliClient).toHaveBeenCalledTimes(1);
+		expect(refreshTautulliCache).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not contact a queued instance whose connection changed before refresh", async () => {
+		findMany.mockResolvedValue([instance("one"), instance("two")]);
+		let releaseFirst: (() => void) | undefined;
+		refreshTautulliCache.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					releaseFirst = () =>
+						resolve({ upserted: 1, errors: 0, errorMessages: [], complete: true });
+				}),
+		);
+		findUnique.mockResolvedValueOnce(instance("one")).mockResolvedValueOnce({
+			...instance("two"),
+			connectionGeneration: 5,
+			baseUrl: "https://replacement-tautulli.example.test",
+		});
+
+		await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
+		releaseFirst?.();
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(findUnique).toHaveBeenCalledTimes(2);
+		expect(createTautulliClient).toHaveBeenCalledTimes(1);
+		expect(refreshTautulliCache).toHaveBeenCalledTimes(1);
+	});
+
 	it("marks the tracked tick failed after processing every current instance with a failure", async () => {
 		findMany.mockResolvedValue([instance("broken"), instance("healthy")]);
 		createTautulliClient
@@ -194,7 +246,9 @@ describe("tautulli cache scheduler", () => {
 		recordProviderCacheRefreshFailure.mockResolvedValue("recorded");
 		const schedulerApp = {
 			encryptor: {},
-			prisma: {},
+			prisma: {
+				serviceInstance: { findUnique: vi.fn().mockResolvedValue(instance("one")) },
+			},
 			log: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 		};
 

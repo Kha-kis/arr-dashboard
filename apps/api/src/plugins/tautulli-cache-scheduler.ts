@@ -34,8 +34,24 @@ export async function refreshScheduledTautulliCacheInstance(
 	if (!instance.enabled || instance.service !== "TAUTULLI") return "superseded";
 
 	const expectedConnection = providerConnectionIdentity(instance);
-	const tautulliInstance = instance as ServiceInstance & { service: "TAUTULLI" };
 	try {
+		const currentInstance = await app.prisma.serviceInstance.findUnique({
+			where: { id: instance.id },
+		});
+		if (!currentInstance?.enabled || currentInstance.service !== "TAUTULLI") {
+			return "superseded";
+		}
+		const currentConnection = providerConnectionIdentity(currentInstance);
+		if (
+			currentConnection.userId !== expectedConnection.userId ||
+			currentConnection.service !== expectedConnection.service ||
+			currentConnection.connectionGeneration !== expectedConnection.connectionGeneration ||
+			currentConnection.connectionFingerprint !== expectedConnection.connectionFingerprint
+		) {
+			return "superseded";
+		}
+
+		const tautulliInstance = currentInstance as ServiceInstance & { service: "TAUTULLI" };
 		const client = createTautulliClient(app.encryptor, tautulliInstance, app.log);
 		const result = await refreshTautulliCache(
 			client,
