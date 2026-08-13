@@ -1,4 +1,9 @@
-import type { ServiceInstanceSummary, ServiceResponse, ServicesResponse } from "@arr/shared";
+import type {
+	ArrServiceType,
+	ServiceInstanceSummary,
+	ServiceResponse,
+	ServicesResponse,
+} from "@arr/shared";
 import { apiRequest, UnauthorizedError } from "./base";
 
 export async function fetchServices(): Promise<ServiceInstanceSummary[]> {
@@ -19,18 +24,7 @@ export type CreateServicePayload = {
 	externalUrl?: string | null;
 	apiKey: string;
 	httpAuth?: { username: string; password: string } | null;
-	service:
-		| "sonarr"
-		| "radarr"
-		| "prowlarr"
-		| "lidarr"
-		| "readarr"
-		| "seerr"
-		| "plex"
-		| "jellyfin"
-		| "emby"
-		| "qui"
-		| "tracearr";
+	service: ArrServiceType;
 	enabled?: boolean;
 	isDefault?: boolean;
 	tags?: string[];
@@ -87,18 +81,7 @@ export async function testServiceConnection(
 export async function testConnectionBeforeAdd(
 	baseUrl: string,
 	apiKey: string,
-	service:
-		| "sonarr"
-		| "radarr"
-		| "prowlarr"
-		| "lidarr"
-		| "readarr"
-		| "seerr"
-		| "plex"
-		| "jellyfin"
-		| "emby"
-		| "qui"
-		| "tracearr",
+	service: ArrServiceType,
 	httpAuth?: { username: string; password: string },
 ): Promise<TestConnectionResponse> {
 	return await apiRequest<TestConnectionResponse>("/api/services/test-connection", {

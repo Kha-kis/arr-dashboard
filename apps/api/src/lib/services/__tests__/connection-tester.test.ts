@@ -259,3 +259,80 @@ describe("testServiceConnection — Tracearr health probe", () => {
 		expect(result.error).toMatch(/unexpected tracearr response/i);
 	});
 });
+
+describe("testServiceConnection — Tautulli information probe", () => {
+	let fetchSpy: FetchSpy;
+
+	beforeEach(() => {
+		fetchSpy = vi.fn();
+		vi.stubGlobal("fetch", fetchSpy);
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	it("uses Tautulli's query-authenticated get_tautulli_info command", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			jsonResponse({
+				response: {
+					result: "success",
+					message: null,
+					data: { tautulli_version: "2.15.1" },
+				},
+			}),
+		);
+
+		const result = await testServiceConnection(
+			"http://tautulli:8181/",
+			"tautulli-api-key",
+			"tautulli",
+			{ username: "proxy-user", password: "proxy-pass" },
+		);
+
+		expect(result).toMatchObject({
+			success: true,
+			version: "2.15.1",
+			message: "Successfully connected to Tautulli",
+		});
+		const requestUrl = new URL(fetchSpy.mock.calls[0]?.[0] as string);
+		expect(requestUrl.origin + requestUrl.pathname).toBe("http://tautulli:8181/api/v2");
+		expect(requestUrl.searchParams.get("apikey")).toBe("tautulli-api-key");
+		expect(requestUrl.searchParams.get("cmd")).toBe("get_tautulli_info");
+		const init = fetchSpy.mock.calls[0]?.[1] as RequestInit;
+		expect((init.headers as Record<string, string>).Authorization).toBe(
+			"Basic cHJveHktdXNlcjpwcm94eS1wYXNz",
+		);
+	});
+
+	it("rejects an API-level error returned with HTTP 200", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			jsonResponse({
+				response: { result: "error", message: "Invalid apikey", data: {} },
+			}),
+		);
+
+		const result = await testServiceConnection("http://tautulli:8181", "bad-key", "tautulli");
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/tautulli authentication failed/i);
+	});
+
+	it("rejects a success response that is not Tautulli information", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			jsonResponse({
+				response: { result: "success", message: null, data: { version: "not-tautulli" } },
+			}),
+		);
+
+		const result = await testServiceConnection(
+			"http://tautulli:8181",
+			"tautulli-api-key",
+			"tautulli",
+		);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toMatch(/unexpected tautulli response/i);
+	});
+});

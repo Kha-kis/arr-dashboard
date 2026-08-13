@@ -540,6 +540,7 @@ const COMPANION_PORTS: Record<string, number> = {
 	emby: 8096,
 	qui: 7476,
 	tracearr: 3000,
+	tautulli: 8181,
 };
 
 /**

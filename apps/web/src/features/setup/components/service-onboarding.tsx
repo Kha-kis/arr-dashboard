@@ -243,6 +243,10 @@ export const ServiceOnboarding = () => {
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">
+					<p className="text-sm text-muted-foreground">
+						Tracearr is recommended for new analytics setups. Tautulli remains a supported
+						alternative; you can connect either or both.
+					</p>
 					<div className="flex flex-wrap gap-2">
 						{SERVICE_TYPES.map((service) => (
 							<Button

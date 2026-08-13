@@ -2,32 +2,11 @@
  * Constants for settings feature
  */
 
-export type ServiceType =
-	| "sonarr"
-	| "radarr"
-	| "prowlarr"
-	| "lidarr"
-	| "readarr"
-	| "seerr"
-	| "plex"
-	| "jellyfin"
-	| "emby"
-	| "qui"
-	| "tracearr";
+import { ALL_SERVICES, type ArrServiceType } from "@arr/shared";
 
-export const SERVICE_TYPES: ServiceType[] = [
-	"sonarr",
-	"radarr",
-	"prowlarr",
-	"lidarr",
-	"readarr",
-	"seerr",
-	"plex",
-	"jellyfin",
-	"emby",
-	"qui",
-	"tracearr",
-];
+export type ServiceType = ArrServiceType;
+
+export const SERVICE_TYPES: ServiceType[] = [...ALL_SERVICES];
 
 export const OPTION_STYLE = {
 	backgroundColor: "hsl(var(--color-bg))",

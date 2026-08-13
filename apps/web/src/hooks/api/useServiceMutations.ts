@@ -1,8 +1,7 @@
 ﻿"use client";
 
-import type { ServiceInstanceSummary } from "@arr/shared";
+import type { ArrServiceType, ServiceInstanceSummary } from "@arr/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { libraryCleanupKeys, serviceKeys, systemKeys } from "../../lib/query-keys";
 import {
 	type CreateServicePayload,
 	createService,
@@ -10,6 +9,7 @@ import {
 	type UpdateServicePayload,
 	updateService,
 } from "../../lib/api-client/services";
+import { libraryCleanupKeys, serviceKeys, systemKeys } from "../../lib/query-keys";
 
 type UpdateVariables = {
 	id: string;
@@ -104,18 +104,7 @@ export const useTestConnectionBeforeAdd = () => {
 		{
 			baseUrl: string;
 			apiKey: string;
-			service:
-				| "sonarr"
-				| "radarr"
-				| "prowlarr"
-				| "lidarr"
-				| "readarr"
-				| "seerr"
-				| "plex"
-				| "jellyfin"
-				| "emby"
-				| "qui"
-				| "tracearr";
+			service: ArrServiceType;
 			httpAuth?: { username: string; password: string };
 		}
 	>({
