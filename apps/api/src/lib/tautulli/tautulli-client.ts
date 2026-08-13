@@ -127,16 +127,14 @@ export class TautulliClient {
 		options: TautulliHistorySnapshotOptions = {},
 	): Promise<TautulliHistorySnapshot> {
 		const pageSize = options.pageSize ?? DEFAULT_HISTORY_PAGE_SIZE;
-		const maxPages =
-			options.maxPages ?? Math.ceil(MAX_TAUTULLI_HISTORY_RESULTS / DEFAULT_HISTORY_PAGE_SIZE);
-		if (
-			!Number.isInteger(pageSize) ||
-			pageSize < 1 ||
-			pageSize > MAX_HISTORY_PAGE_SIZE ||
-			!Number.isInteger(maxPages) ||
-			maxPages < 1 ||
-			pageSize * maxPages > MAX_TAUTULLI_HISTORY_RESULTS
-		) {
+		if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > MAX_HISTORY_PAGE_SIZE) {
+			throw new Error(
+				`Tautulli history pagination must use positive integers, pages of at most ${MAX_HISTORY_PAGE_SIZE}, and scan at most ${MAX_TAUTULLI_HISTORY_RESULTS} rows`,
+			);
+		}
+		const maximumPagesForSize = Math.ceil(MAX_TAUTULLI_HISTORY_RESULTS / pageSize);
+		const maxPages = options.maxPages ?? maximumPagesForSize;
+		if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > maximumPagesForSize) {
 			throw new Error(
 				`Tautulli history pagination must use positive integers, pages of at most ${MAX_HISTORY_PAGE_SIZE}, and scan at most ${MAX_TAUTULLI_HISTORY_RESULTS} rows`,
 			);
@@ -148,6 +146,8 @@ export class TautulliClient {
 		let expectedFiltered: number | undefined;
 		let expectedTotal: number | undefined;
 		for (let page = 0; page < maxPages; page += 1) {
+			const pageStart = page * pageSize;
+			const pageLength = Math.min(pageSize, MAX_TAUTULLI_HISTORY_RESULTS - pageStart);
 			const data = await this.getHistory({
 				section_id: options.section_id,
 				grouping: 0,
@@ -156,8 +156,8 @@ export class TautulliClient {
 					draw: 1,
 					columns: [{ data: "row_id", orderable: true, searchable: false }],
 					order: [{ column: 0, dir: "asc" }],
-					start: page * pageSize,
-					length: pageSize,
+					start: pageStart,
+					length: pageLength,
 					search: { value: "" },
 				}),
 			});

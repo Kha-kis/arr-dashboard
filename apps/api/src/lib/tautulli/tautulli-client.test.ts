@@ -94,6 +94,19 @@ describe("TautulliClient", () => {
 		});
 	});
 
+	it("derives the default page limit from the selected page size", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(success(historyPage(0, 1, 1)));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new TautulliClient("http://tautulli.example", "api-key-value", log);
+
+		await expect(client.getHistorySnapshot({ pageSize: 1_000 })).resolves.toMatchObject({
+			complete: true,
+			recordsFiltered: 1,
+		});
+		const request = JSON.parse(new URL(fetchMock.mock.calls[0]![0]).searchParams.get("json_data")!);
+		expect(request).toMatchObject({ start: 0, length: 1_000 });
+	});
+
 	it("marks a history snapshot incomplete when an upstream page repeats row IDs", async () => {
 		const fetchMock = vi
 			.fn()
