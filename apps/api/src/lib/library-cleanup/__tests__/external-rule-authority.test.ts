@@ -103,14 +103,11 @@ describe("external parent-rule authority", () => {
 		expect(rawRequest).toHaveBeenCalledTimes(2);
 	});
 
-	it("rejects Seerr evidence when pagination reaches the safety cap", async () => {
-		const rawRequest = vi.fn(async (_instance: unknown, path: string) => {
-			const skip = Number(new URL(path, "http://seerr.invalid").searchParams.get("skip") ?? 0);
+	it("rejects Seerr evidence above the bounded snapshot limit", async () => {
+		const rawRequest = vi.fn(async () => {
 			return Response.json({
-				pageInfo: { pages: 101, pageSize: 50, results: 5_050, page: skip / 50 + 1 },
-				results: Array.from({ length: 50 }, (_, index) =>
-					seerrRequest(skip + index + 1, skip + index + 1),
-				),
+				pageInfo: { pages: 2, pageSize: 5_001, results: 5_050, page: 1 },
+				results: Array.from({ length: 5_001 }, (_, index) => seerrRequest(index + 1, index + 1)),
 			});
 		});
 		const deps = {
@@ -124,6 +121,52 @@ describe("external parent-rule authority", () => {
 		} as unknown as CleanupExecutorDeps;
 
 		await expect(prefetchSeerrRequests(deps, "user-1")).resolves.toBeUndefined();
-		expect(rawRequest).toHaveBeenCalledTimes(100);
+		expect(rawRequest).toHaveBeenCalledOnce();
+	});
+
+	it("accepts complete Seerr evidence with exactly 5,000 requests", async () => {
+		const rawRequest = vi.fn(async () => {
+			return Response.json({
+				pageInfo: { pages: 1, pageSize: 5_001, results: 5_000, page: 1 },
+				results: Array.from({ length: 5_000 }, (_, index) => seerrRequest(index + 1, index + 1)),
+			});
+		});
+		const deps = {
+			prisma: {
+				serviceInstance: {
+					findMany: vi.fn().mockResolvedValue([seerrInstance("seerr-a")]),
+				},
+			},
+			arrClientFactory: { rawRequest },
+			log,
+		} as unknown as CleanupExecutorDeps;
+
+		const result = await prefetchSeerrRequests(deps, "user-1");
+
+		expect(result).toHaveLength(5_000);
+		expect(result?.has("tv:1")).toBe(true);
+		expect(result?.has("tv:5000")).toBe(true);
+		expect(rawRequest).toHaveBeenCalledOnce();
+	});
+
+	it("rejects an incomplete Seerr snapshot", async () => {
+		const rawRequest = vi.fn(async () => {
+			return Response.json({
+				pageInfo: { pages: 1, pageSize: 5_001, results: 5_000, page: 1 },
+				results: Array.from({ length: 4_999 }, (_, index) => seerrRequest(index + 1, index + 1)),
+			});
+		});
+		const deps = {
+			prisma: {
+				serviceInstance: {
+					findMany: vi.fn().mockResolvedValue([seerrInstance("seerr-a")]),
+				},
+			},
+			arrClientFactory: { rawRequest },
+			log,
+		} as unknown as CleanupExecutorDeps;
+
+		await expect(prefetchSeerrRequests(deps, "user-1")).resolves.toBeUndefined();
+		expect(rawRequest).toHaveBeenCalledOnce();
 	});
 });

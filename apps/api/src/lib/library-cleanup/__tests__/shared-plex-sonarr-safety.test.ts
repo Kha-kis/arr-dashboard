@@ -375,6 +375,12 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			plexCache: {
 				findMany: vi.fn().mockResolvedValue([]),
 			},
+			tmdbListCache: {
+				findMany: vi.fn().mockResolvedValue([]),
+			},
+			traktListCache: {
+				findMany: vi.fn().mockResolvedValue([]),
+			},
 			libraryCleanupLog: {
 				create: vi.fn().mockResolvedValue({}),
 			},
@@ -2684,6 +2690,54 @@ describe("verified Sonarr mutation handoff", () => {
 		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
 
 		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("blocks an episode when a parent list rule has only cached non-match evidence", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		vi.mocked(fixture.deps.prisma.tmdbListCache.findMany).mockResolvedValue([
+			{ listId: "8068", tmdbId: 999 },
+		] as never);
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [
+				{
+					...episodeCleanupRule(),
+					id: "parent-list-rule",
+					priority: 0,
+					targetScope: "series",
+					ruleType: "tmdb_list_member",
+					parameters: JSON.stringify({ listId: "8068", operator: "is_in" }),
+				},
+				episodeCleanupRule(),
+			],
+		} as never);
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "expired" });
+		expect(fixture.deps.prisma.tmdbListCache.findMany).toHaveBeenCalled();
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 	});
 

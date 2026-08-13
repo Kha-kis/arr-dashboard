@@ -192,6 +192,36 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		});
 	});
 
+	it("discovers libraries visible only to a later Jellyfin user", async () => {
+		const restrictedUser = { id: "user-restricted", name: "Restricted" };
+		const libraryUser = { id: "user-library", name: "Library User" };
+		const client = {
+			...makeMockClient([]),
+			getUsers: vi.fn().mockResolvedValue([restrictedUser, libraryUser]),
+			getLibraries: vi.fn(async (userId: string) =>
+				userId === restrictedUser.id ? [] : oneLibrary,
+			),
+			getLibraryItems: vi.fn().mockResolvedValue([makeSeriesItem()]),
+		} as unknown as JellyfinClient;
+		const { stub, upserts } = makeMockPrisma();
+		stub.jellyfinCache.findMany.mockResolvedValue([
+			{ id: "stale-1", tmdbId: 1, mediaType: "series", libraryId: "old-lib" },
+		]);
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ upserted: 1, errors: 0 });
+		expect(client.getLibraries).toHaveBeenCalledWith(restrictedUser.id);
+		expect(client.getLibraries).toHaveBeenCalledWith(libraryUser.id);
+		expect(client.getLibraryItems).toHaveBeenCalledWith(libraryUser.id, "lib-1", {
+			includeItemTypes: "Series",
+		});
+		expect(upserts).toHaveLength(1);
+		expect(stub.jellyfinCache.deleteMany).toHaveBeenCalledWith({
+			where: { id: { in: ["stale-1"] } },
+		});
+	});
+
 	it("reports missing users as incomplete instead of authorizing an empty cache", async () => {
 		const client = {
 			...makeMockClient([]),

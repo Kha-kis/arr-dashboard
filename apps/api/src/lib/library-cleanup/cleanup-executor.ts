@@ -123,8 +123,7 @@ const PREVIEW_SAFETY_INSPECTION_LIMIT = 200;
 // Circuit breaker: abort after N consecutive ARR API failures
 const CIRCUIT_BREAKER_THRESHOLD = 3;
 
-const SEERR_PREFETCH_PAGE_SIZE = 50;
-const SEERR_PREFETCH_MAX_PAGES = 100;
+const SEERR_PREFETCH_MAX_REQUESTS = 5_000;
 
 export const CLEANUP_RUN_LEASE_MS = 2 * 60 * 60 * 1000;
 const CLEANUP_RUN_HEARTBEAT_MS = 60 * 1000;
@@ -2040,8 +2039,9 @@ function hasCompleteLiveSonarrEvidenceForRuleType(
 	}
 	if (ruleType === "jellyfin_episode_completion") return false;
 	if (ruleType.startsWith("jellyfin_")) return ctx.jellyfinMap !== undefined;
-	if (ruleType === "tmdb_list_member") return ctx.tmdbListMemberships !== undefined;
-	if (ruleType === "trakt_list_member") return ctx.traktListMemberships !== undefined;
+	// List memberships are background caches without a source-bound live
+	// refresh at this mutation boundary, so they cannot prove a non-match.
+	if (ruleType === "tmdb_list_member" || ruleType === "trakt_list_member") return false;
 	const statistics =
 		typeof rawSeries.statistics === "object" && rawSeries.statistics !== null
 			? (rawSeries.statistics as Record<string, unknown>)
@@ -3217,41 +3217,36 @@ export async function prefetchSeerrRequests(
 
 		for (const seerrInstance of seerrInstances) {
 			const client = new SeerrClient(arrClientFactory, seerrInstance, log);
-			let skip = 0;
-			let complete = false;
-
-			for (let page = 0; page < SEERR_PREFETCH_MAX_PAGES; page++) {
-				const result = await client.getRequests({ take: SEERR_PREFETCH_PAGE_SIZE, skip });
-
-				for (const req of result.results) {
-					const key = `${req.type}:${req.media.tmdbId}`;
-					const info: SeerrRequestInfo = {
-						requestId: req.id,
-						status: req.status,
-						requestedBy: req.requestedBy.displayName,
-						requestedByUserId: req.requestedBy.id,
-						createdAt: req.createdAt,
-						updatedAt: req.updatedAt,
-						modifiedBy: req.modifiedBy?.displayName ?? null,
-						is4k: req.is4k ?? false,
-					};
-
-					const existing = map.get(key);
-					if (existing) existing.push(info);
-					else map.set(key, [info]);
-				}
-
-				if (result.results.length < SEERR_PREFETCH_PAGE_SIZE) {
-					complete = true;
-					break;
-				}
-				skip += SEERR_PREFETCH_PAGE_SIZE;
+			// Seerr accepts an arbitrary `take` value. Fetching the bounded set in
+			// one request avoids offset-pagination drift while establishing a live
+			// destructive non-match. The extra sentinel item detects overflow.
+			const result = await client.getRequests({ take: SEERR_PREFETCH_MAX_REQUESTS + 1, skip: 0 });
+			if (
+				result.pageInfo.results > SEERR_PREFETCH_MAX_REQUESTS ||
+				result.results.length !== result.pageInfo.results ||
+				new Set(result.results.map((request) => request.id)).size !== result.results.length
+			) {
+				throw new Error(
+					`Seerr instance ${seerrInstance.id} did not return one complete bounded request snapshot`,
+				);
 			}
 
-			if (!complete) {
-				throw new Error(
-					`Seerr instance ${seerrInstance.id} exceeded the complete request prefetch limit`,
-				);
+			for (const req of result.results) {
+				const key = `${req.type}:${req.media.tmdbId}`;
+				const info: SeerrRequestInfo = {
+					requestId: req.id,
+					status: req.status,
+					requestedBy: req.requestedBy.displayName,
+					requestedByUserId: req.requestedBy.id,
+					createdAt: req.createdAt,
+					updatedAt: req.updatedAt,
+					modifiedBy: req.modifiedBy?.displayName ?? null,
+					is4k: req.is4k ?? false,
+				};
+
+				const existing = map.get(key);
+				if (existing) existing.push(info);
+				else map.set(key, [info]);
 			}
 		}
 
