@@ -688,6 +688,25 @@ export function buildRadarrCacheSafetyPlan(
 	return null;
 }
 
+export function radarrCachedFileIdentityMatches(
+	moviePath: unknown,
+	movieFile: Record<string, unknown> | undefined,
+	expected: VerifiedRadarrFileIdentity,
+): boolean {
+	if (!movieFile || movieFile.id !== expected.movieFileId || movieFile.size !== expected.size) {
+		return false;
+	}
+	try {
+		const fullPath =
+			typeof movieFile.path === "string" && movieFile.path.trim() !== ""
+				? movieFile.path
+				: joinMediaPath(moviePath, movieFile.relativePath, "RADARR");
+		return pathsEqual(normalizeMediaPath(fullPath), expected.fullPath);
+	} catch {
+		return false;
+	}
+}
+
 export function buildSonarrCacheSafetyPlan(
 	seriesPath: unknown,
 	externalId: unknown,
@@ -1866,6 +1885,20 @@ function radarrPeerFileCatalogWitness(
 	);
 }
 
+function radarrPeerInventoriesEqual(
+	left: StableRadarrPeerInventory,
+	right: StableRadarrPeerInventory,
+): boolean {
+	return (
+		radarrPeerMovieCatalogWitness(left.movieCatalog) ===
+			radarrPeerMovieCatalogWitness(right.movieCatalog) &&
+		radarrPeerNotificationCatalogWitness(left.notifications) ===
+			radarrPeerNotificationCatalogWitness(right.notifications) &&
+		radarrPeerFileCatalogWitness(left.filesByMovie) ===
+			radarrPeerFileCatalogWitness(right.filesByMovie)
+	);
+}
+
 function radarrPeerMovieFileId(movie: Movie): number | null {
 	const movieFileId = movie.movieFileId;
 	if (movie.hasFile === false && typeof movieFileId === "number" && movieFileId > 0) {
@@ -2494,6 +2527,22 @@ export async function findSharedPlexDeleteBlocks(
 		ownership: VerifiedSonarrPlexOwnership[];
 		targetDeleteNotifications: VerifiedSonarrTargetDeleteNotification[];
 	}> = [];
+	const pendingRadarrPlans: Array<{
+		target: CleanupDeleteTarget;
+		targetKey: string;
+		client: InstanceType<typeof RadarrClient>;
+		targetIdentity: VerifiedArrTargetIdentity;
+		targetFile: VerifiedRadarrFileIdentity;
+		peers: NonNullable<PlexVerificationInput["radarrPeers"]>;
+		peerCatalogs: Array<{
+			instanceId: string;
+			serviceFingerprint: string;
+			client: InstanceType<typeof RadarrClient>;
+			inventory: StableRadarrPeerInventory;
+		}>;
+		ownership: VerifiedRadarrPlexOwnership[];
+		targetDeleteNotifications: VerifiedRadarrTargetDeleteNotification[];
+	}> = [];
 
 	const getRadarrClient = (instance: ServiceInstance): InstanceType<typeof RadarrClient> => {
 		let client = radarrClients.get(instance.id);
@@ -2661,6 +2710,7 @@ export async function findSharedPlexDeleteBlocks(
 						continue;
 					}
 					if (verifiedPlan.kind === "verified_radarr") {
+						verifiedPlan.peerInventoryComplete = true;
 						context.verifiedRadarrFiles.set(targetKey, verifiedPlan.file);
 					}
 					context.plans.set(targetKey, verifiedPlan);
@@ -2711,9 +2761,21 @@ export async function findSharedPlexDeleteBlocks(
 				const radarrUntrackedPeerFiles: NonNullable<
 					PlexVerificationInput["radarrUntrackedPeerFiles"]
 				> = [];
+				const radarrPeerCatalogs: Array<{
+					instanceId: string;
+					serviceFingerprint: string;
+					client: InstanceType<typeof RadarrClient>;
+					inventory: StableRadarrPeerInventory;
+				}> = [];
 				for (const peerInstance of peerInstances) {
 					const peerClient = getRadarrClient(peerInstance);
 					const inventory = await getRadarrPeerInventory(peerInstance, peerClient);
+					radarrPeerCatalogs.push({
+						instanceId: peerInstance.id,
+						serviceFingerprint: createArrServiceFingerprint(peerInstance),
+						client: peerClient,
+						inventory,
+					});
 					const peerMovies = inventory.movieCatalog.filter(
 						(candidate) => candidate.tmdbId === tmdbId,
 					);
@@ -2789,18 +2851,20 @@ export async function findSharedPlexDeleteBlocks(
 					blocks.set(targetKey, verification.block);
 					context.plans.set(targetKey, { kind: "blocked", reason: verification.block });
 				} else {
-					context.verifiedRadarrFiles.set(targetKey, targetFile);
-					context.plans.set(targetKey, {
-						kind: "verified_radarr",
-						target: targetIdentity,
-						file: targetFile,
-						peers: radarrPeers.map((peer) => peer.identity),
-						peerInventoryComplete: true,
+					const targetDeleteNotifications = radarrTargetDeleteNotificationWitnesses(
+						plexNotifications,
+						movie,
+					);
+					pendingRadarrPlans.push({
+						target,
+						targetKey,
+						client: radarr,
+						targetIdentity,
+						targetFile,
+						peers: radarrPeers,
+						peerCatalogs: radarrPeerCatalogs,
 						ownership: verification.ownership,
-						targetDeleteNotifications: radarrTargetDeleteNotificationWitnesses(
-							plexNotifications,
-							movie,
-						),
+						targetDeleteNotifications,
 					});
 				}
 				continue;
@@ -2988,7 +3052,7 @@ export async function findSharedPlexDeleteBlocks(
 			}
 		} catch (error) {
 			const reason =
-				error instanceof ArrCrossInstanceOwnershipChangedDuringSafetyCheckError
+				error instanceof ArrFileChangedDuringSafetyCheckError
 					? error.message
 					: error instanceof FileMatchVerificationError
 						? fileMatchFailedReason(service)
@@ -3001,6 +3065,79 @@ export async function findSharedPlexDeleteBlocks(
 					instanceId: target.instanceId,
 					arrItemId: target.arrItemId,
 					service,
+				},
+				"Cleanup shared-Plex safety check failed closed",
+			);
+		}
+	}
+
+	const terminalRadarrPeerInventories = new Map<string, Promise<StableRadarrPeerInventory>>();
+	const terminalRadarrNotifications = new Map<string, Promise<RadarrNotification[]>>();
+	for (const pending of pendingRadarrPlans) {
+		try {
+			for (const peerCatalog of pending.peerCatalogs) {
+				const inventoryKey = `${peerCatalog.instanceId}:${peerCatalog.serviceFingerprint}`;
+				let inventoryPromise = terminalRadarrPeerInventories.get(inventoryKey);
+				if (!inventoryPromise) {
+					inventoryPromise = readStableRadarrPeerInventory(peerCatalog.client);
+					terminalRadarrPeerInventories.set(inventoryKey, inventoryPromise);
+				}
+				const freshInventory = await inventoryPromise;
+				if (!radarrPeerInventoriesEqual(peerCatalog.inventory, freshInventory)) {
+					throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+				}
+			}
+			let notificationsPromise = terminalRadarrNotifications.get(
+				pending.targetIdentity.serviceFingerprint,
+			);
+			if (!notificationsPromise) {
+				notificationsPromise = pending.client.notification.getAll();
+				terminalRadarrNotifications.set(
+					pending.targetIdentity.serviceFingerprint,
+					notificationsPromise,
+				);
+			}
+			const freshTargetDeleteNotifications = radarrTargetDeleteNotificationWitnesses(
+				await notificationsPromise,
+				await pending.client.movie.getById(pending.target.arrItemId),
+			);
+			if (
+				JSON.stringify(freshTargetDeleteNotifications) !==
+				JSON.stringify(pending.targetDeleteNotifications)
+			) {
+				throw new ArrTargetChangedDuringSafetyCheckError();
+			}
+			await assertVerifiedRadarrFileUnchanged(
+				pending.client,
+				pending.target.arrItemId,
+				pending.targetIdentity,
+				pending.targetFile,
+			);
+			context.verifiedRadarrFiles.set(pending.targetKey, pending.targetFile);
+			context.plans.set(pending.targetKey, {
+				kind: "verified_radarr",
+				target: pending.targetIdentity,
+				file: pending.targetFile,
+				peers: pending.peers.map((peer) => peer.identity),
+				peerInventoryComplete: true,
+				ownership: pending.ownership,
+				targetDeleteNotifications: pending.targetDeleteNotifications,
+			});
+		} catch (error) {
+			const reason =
+				error instanceof ArrFileChangedDuringSafetyCheckError
+					? error.message
+					: error instanceof FileMatchVerificationError
+						? fileMatchFailedReason("RADARR")
+						: verificationFailedReason("RADARR");
+			blocks.set(pending.targetKey, reason);
+			context.plans.set(pending.targetKey, { kind: "blocked", reason });
+			deps.log.warn(
+				{
+					err: getErrorMessage(error),
+					instanceId: pending.target.instanceId,
+					arrItemId: pending.target.arrItemId,
+					service: "RADARR",
 				},
 				"Cleanup shared-Plex safety check failed closed",
 			);
@@ -3139,6 +3276,10 @@ export async function assertVerifiedRadarrPeerOwnershipRetained(
 
 	const livePeers = new Map<string, NonNullable<PlexVerificationInput["radarrPeers"]>[number]>();
 	const untrackedPeerFiles: NonNullable<PlexVerificationInput["radarrUntrackedPeerFiles"]> = [];
+	const peerInventories: Array<{
+		client: InstanceType<typeof RadarrClient>;
+		inventory: StableRadarrPeerInventory;
+	}> = [];
 	for (const peer of plan.peers) {
 		const peerInstance = peerInstances.find((instance) => instance.id === peer.instanceId);
 		if (!peerInstance || createArrServiceFingerprint(peerInstance) !== peer.serviceFingerprint) {
@@ -3146,6 +3287,7 @@ export async function assertVerifiedRadarrPeerOwnershipRetained(
 		}
 		const client = deps.arrClientFactory.create(peerInstance) as InstanceType<typeof RadarrClient>;
 		const inventory = await readStableRadarrPeerInventory(client);
+		peerInventories.push({ client, inventory });
 		const movie = assertVerifiedRadarrPeerIdentityFromInventory(peer, inventory);
 		const trackedMovieId = peer.arrItemId;
 		for (const catalogMovie of inventory.movieCatalog) {
@@ -3249,6 +3391,22 @@ export async function assertVerifiedRadarrPeerOwnershipRetained(
 				}
 			}
 		}
+	}
+	for (const peerInventory of peerInventories) {
+		const freshInventory = await readStableRadarrPeerInventory(peerInventory.client);
+		if (!radarrPeerInventoriesEqual(peerInventory.inventory, freshInventory)) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+		}
+	}
+	const finalTargetDeleteNotifications = radarrTargetDeleteNotificationWitnesses(
+		await targetClient.notification.getAll(),
+		await targetClient.movie.getById(targetArrItemId),
+	);
+	if (
+		JSON.stringify(finalTargetDeleteNotifications) !==
+		JSON.stringify(plan.targetDeleteNotifications)
+	) {
+		throw new ArrTargetChangedDuringSafetyCheckError();
 	}
 	await assertVerifiedRadarrEmptyUnchanged(targetClient, targetArrItemId, plan.target);
 }

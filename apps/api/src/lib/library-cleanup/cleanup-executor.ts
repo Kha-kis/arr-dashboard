@@ -61,6 +61,7 @@ import {
 	executableSafetyPlansEqual,
 	findSharedPlexDeleteBlocks,
 	parseExecutableSafetyPlan,
+	radarrCachedFileIdentityMatches,
 	RadarrFileChangedDuringSafetyCheckError,
 	type SharedMediaSafetyPlan,
 	SonarrFilesChangedDuringSafetyCheckError,
@@ -654,6 +655,21 @@ async function loadCurrentMutationInstance(
 			: executablePlan.kind === "verified_sonarr"
 				? executablePlan.files.episodeFiles.length
 				: 0;
+	if (executablePlan.kind === "verified_radarr") {
+		const currentPeers = instances.filter(
+			(candidate) => candidate.id !== instance.id && candidate.service === "RADARR",
+		);
+		const verifiedPeers = new Map(
+			executablePlan.peers.map((peer) => [peer.instanceId, peer.serviceFingerprint]),
+		);
+		if (
+			executablePlan.peerInventoryComplete !== true ||
+			currentPeers.length !== verifiedPeers.size ||
+			currentPeers.some((peer) => verifiedPeers.get(peer.id) !== createArrServiceFingerprint(peer))
+		) {
+			throw new ArrCrossInstanceOwnershipChangedDuringSafetyCheckError("RADARR");
+		}
+	}
 	if (
 		verifiedFileCount > 0 &&
 		executablePlan.kind !== "verified_radarr" &&
@@ -885,9 +901,7 @@ function cacheRadarrEvaluationMatchesLiveProof(
 		source?.serviceFingerprint === livePlan.target.serviceFingerprint &&
 		remoteIds?.tmdbId === livePlan.target.externalId &&
 		data.path === livePlan.target.mediaPath.value &&
-		movieFile?.id === livePlan.file.movieFileId &&
-		movieFile.path === livePlan.file.fullPath.value &&
-		movieFile.size === livePlan.file.size
+		radarrCachedFileIdentityMatches(data.path, movieFile, livePlan.file)
 	);
 }
 
