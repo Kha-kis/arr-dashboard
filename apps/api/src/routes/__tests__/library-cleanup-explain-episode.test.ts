@@ -140,10 +140,13 @@ beforeEach(async () => {
 	} as never);
 	await app.register(registerLibraryCleanupRoutes);
 	await app.ready();
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(NOW);
 });
 
 afterEach(async () => {
 	await app.close();
+	vi.useRealTimers();
 });
 
 function explainEpisode() {
