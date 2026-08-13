@@ -13,7 +13,7 @@ require_command jq
 require_command openssl
 docker compose version >/dev/null
 
-mkdir -p "${HARNESS_DIR}/.state"
+mkdir -p "${HARNESS_DIR}/.state/media"
 chmod 0700 "${HARNESS_DIR}/.state"
 
 compose config --quiet
