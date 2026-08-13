@@ -2012,7 +2012,31 @@ function hasCompleteLiveSonarrTags(rawSeries: Record<string, unknown>): boolean 
 function hasCompleteLiveSonarrEvidenceForRuleType(
 	rawSeries: Record<string, unknown>,
 	ruleType: string,
+	ctx: EvalContext,
 ): boolean {
+	if (
+		ruleType.startsWith("seerr_") &&
+		ruleType !== "seerr_requester_watched" &&
+		ruleType !== "seerr_requester_not_watched"
+	) {
+		return ctx.seerrMap !== undefined;
+	}
+	if (ruleType === "seerr_requester_watched" || ruleType === "seerr_requester_not_watched") {
+		return ctx.seerrMap !== undefined && ctx.plexMap !== undefined;
+	}
+	if (ruleType === "plex_episode_completion") return ctx.plexEpisodeMap !== undefined;
+	if (
+		ruleType.startsWith("plex_") ||
+		ruleType === "user_retention" ||
+		ruleType === "staleness_score" ||
+		ruleType === "recently_active"
+	) {
+		return ctx.plexMap !== undefined;
+	}
+	if (ruleType === "jellyfin_episode_completion") return ctx.jellyfinEpisodeMap !== undefined;
+	if (ruleType.startsWith("jellyfin_")) return ctx.jellyfinMap !== undefined;
+	if (ruleType === "tmdb_list_member") return ctx.tmdbListMemberships !== undefined;
+	if (ruleType === "trakt_list_member") return ctx.traktListMemberships !== undefined;
 	const statistics =
 		typeof rawSeries.statistics === "object" && rawSeries.statistics !== null
 			? (rawSeries.statistics as Record<string, unknown>)
@@ -2113,6 +2137,7 @@ function assertCompleteLiveSonarrSeriesRuleEvidence(
 	rawSeries: Record<string, unknown>,
 	item: CacheItemForEval,
 	rules: LibraryCleanupRule[],
+	ctx: EvalContext,
 ): void {
 	if (typeof rawSeries.title !== "string" || rawSeries.title.trim().length === 0) {
 		throw new Error("Live Sonarr series title was unavailable");
@@ -2121,8 +2146,11 @@ function assertCompleteLiveSonarrSeriesRuleEvidence(
 		if (!liveSonarrRuleApplies(rawSeries, item, rule)) continue;
 		const ruleTypes = liveSonarrRuleTypes(rule);
 		if (
+			ruleUsesUnavailableData(rule, new Set()) ||
 			!ruleTypes ||
-			ruleTypes.some((ruleType) => !hasCompleteLiveSonarrEvidenceForRuleType(rawSeries, ruleType))
+			ruleTypes.some(
+				(ruleType) => !hasCompleteLiveSonarrEvidenceForRuleType(rawSeries, ruleType, ctx),
+			)
 		) {
 			throw new Error(`Current evidence was unavailable for series rule ${rule.id}`);
 		}
@@ -2165,7 +2193,9 @@ async function assertCurrentEpisodeMutationAuthority(
 
 	let item: CacheItemForEval;
 	let rawSeries: Record<string, unknown>;
+	let currentSeriesContext: EvalContext;
 	try {
+		currentSeriesContext = await buildEvalContext(deps, userId, currentSeriesRules);
 		const sonarr = deps.arrClientFactory.create(instance) as InstanceType<typeof SonarrClient>;
 		rawSeries = (await sonarr.series.getById(arrSeriesId)) as unknown as Record<string, unknown>;
 		const liveSeries = buildLibraryItem(instance, "sonarr", rawSeries);
@@ -2206,14 +2236,19 @@ async function assertCurrentEpisodeMutationAuthority(
 			infoHash: null,
 			torrentState: null,
 		};
-		assertCompleteLiveSonarrSeriesRuleEvidence(rawSeries, item, currentSeriesRules);
+		assertCompleteLiveSonarrSeriesRuleEvidence(
+			rawSeries,
+			item,
+			currentSeriesRules,
+			currentSeriesContext,
+		);
 		if (!liveSonarrRuleApplies(rawSeries, item, currentEpisodeRule)) {
 			throw new Error("The matched episode cleanup rule no longer applies to the live series");
 		}
 		const currentSeriesMatch = seriesCleanupRules.find(
 			(rule) =>
 				liveSonarrRuleApplies(rawSeries, item, rule) &&
-				evaluateRuleViaEngine(item, rule, "SONARR", { now: new Date() }) !== null,
+				evaluateRuleViaEngine(item, rule, "SONARR", currentSeriesContext) !== null,
 		);
 		if (currentSeriesMatch) {
 			throw new Error(
@@ -2253,7 +2288,7 @@ async function assertCurrentEpisodeMutationAuthority(
 		seriesRetentionProtectsEpisode(
 			item,
 			seriesRetentionRules,
-			{ now: new Date() },
+			currentSeriesContext,
 			new Set<DataSourceDependency>(),
 		)
 	) {

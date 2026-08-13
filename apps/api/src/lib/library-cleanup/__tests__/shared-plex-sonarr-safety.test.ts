@@ -360,6 +360,9 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 					sourceFingerprint: plexConnectionFingerprint(plexInstance),
 				}),
 			},
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue([]),
+			},
 			libraryCleanupLog: {
 				create: vi.fn().mockResolvedValue({}),
 			},
@@ -2421,6 +2424,129 @@ describe("verified Sonarr mutation handoff", () => {
 			expect(storedApproval).toMatchObject({ status: "expired" });
 			expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
 			expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		},
+	);
+
+	it("executes an episode when a current parent Plex rule is proven not to match", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [
+				{
+					...episodeCleanupRule(),
+					id: "parent-plex-rule",
+					priority: 0,
+					targetScope: "series",
+					ruleType: "plex_watch_count",
+					parameters: JSON.stringify({ operator: "greater_than", count: 10 }),
+				},
+				episodeCleanupRule(),
+			],
+		} as never);
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
+			removed: 1,
+			failed: 0,
+			errors: [],
+		});
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+	});
+
+	it.each(["matches", "unavailable"] as const)(
+		"blocks an episode when current parent Plex evidence %s",
+		async (mode) => {
+			const fixture = makeSonarrDeps();
+			const episodeTarget = exactEpisodeTarget();
+			const context = createSharedPlexSafetyContext();
+			await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+			const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+			if (plan?.kind !== "verified_sonarr_episode") {
+				throw new Error("Expected verified Sonarr episode plan");
+			}
+			const plexFindMany = vi.mocked(fixture.deps.prisma.plexCache.findMany);
+			if (mode === "matches") {
+				plexFindMany.mockImplementation(
+					(args) =>
+						Promise.resolve(
+							args?.cursor
+								? []
+								: [
+										{
+											id: "plex-series-456",
+											tmdbId: 456,
+											mediaType: "series",
+											sectionId: "tv",
+											sectionTitle: "TV",
+											lastWatchedAt: new Date(),
+											watchCount: 20,
+											watchedByUsers: "[]",
+											onDeck: false,
+											userRating: null,
+											collections: "[]",
+											labels: "[]",
+											addedAt: null,
+										},
+									],
+						) as never,
+				);
+			} else {
+				plexFindMany.mockRejectedValue(new Error("Plex evidence unavailable"));
+			}
+			vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+				id: "config-1",
+				respectQuiSeeding: true,
+				rules: [
+					{
+						...episodeCleanupRule(),
+						id: "parent-plex-rule",
+						priority: 0,
+						targetScope: "series",
+						ruleType: "plex_watch_count",
+						parameters: JSON.stringify({ operator: "greater_than", count: 10 }),
+					},
+					episodeCleanupRule(),
+				],
+			} as never);
+			const storedApproval = {
+				...approval(),
+				targetScope: "episode",
+				arrEpisodeId: 9_001,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				episodeTitle: "Episode 1",
+				matchedRuleId: "episode-rule",
+				matchedRuleName: "Remove watched episodes",
+				safetySnapshot: serializeExecutableSafetyPlan(plan),
+			} as unknown as Record<string, unknown>;
+			configureApprovalStore(fixture.deps, storedApproval);
+
+			const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+			expect(result).toMatchObject({ removed: 0, failed: 1 });
+			expect(storedApproval).toMatchObject({ status: "expired" });
+			expect(fixture.bulkDelete).not.toHaveBeenCalled();
+			expect(fixture.deleteSeries).not.toHaveBeenCalled();
 		},
 	);
 
