@@ -4,6 +4,7 @@ import type {
 	TautulliHomeStat,
 	TautulliInfo,
 	TautulliLibrary,
+	TautulliUser,
 	TautulliUserWatchTimeStat,
 } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
@@ -22,12 +23,14 @@ import {
 	tautulliMetadataSchema,
 	tautulliPlaysByDateDataSchema,
 	tautulliResponseWrapperSchema,
+	tautulliUserSchema,
 	tautulliUserWatchTimeStatsSchema,
 } from "./tautulli-schemas.js";
 
 const DEFAULT_TIMEOUT = 10_000;
 const DEFAULT_HISTORY_PAGE_SIZE = 500;
 const MAX_HISTORY_PAGE_SIZE = 1_000;
+export const MAX_TAUTULLI_HISTORY_PAGE_LENGTH = 500;
 export const MAX_TAUTULLI_HISTORY_RESULTS = 100_000;
 
 export interface TautulliHistoryData {
@@ -86,6 +89,12 @@ export interface TautulliHistorySnapshotOptions {
 	section_id?: string;
 }
 
+export interface TautulliHistoryPageOptions {
+	start: number;
+	length: number;
+	sectionId?: string;
+}
+
 export type TautulliClientInstanceData = Omit<ClientInstanceData, "service"> & {
 	service: "TAUTULLI";
 };
@@ -96,6 +105,7 @@ export class TautulliClient {
 	private readonly log: FastifyBaseLogger;
 	private readonly timeout: number;
 	private readonly httpAuthHeaders: Record<string, string>;
+	private readonly beforeRequest?: () => Promise<void>;
 
 	constructor(
 		baseUrl: string,
@@ -103,12 +113,14 @@ export class TautulliClient {
 		log: FastifyBaseLogger,
 		timeout = DEFAULT_TIMEOUT,
 		httpAuthHeaders: Record<string, string> = {},
+		beforeRequest?: () => Promise<void>,
 	) {
 		this.baseUrl = baseUrl.replace(/\/$/, "");
 		this.apiKey = apiKey;
 		this.log = log;
 		this.timeout = timeout;
 		this.httpAuthHeaders = httpAuthHeaders;
+		this.beforeRequest = beforeRequest;
 	}
 
 	getInfo(): Promise<TautulliInfo> {
@@ -121,6 +133,41 @@ export class TautulliClient {
 
 	getHistory(params?: Record<string, string | number | undefined>): Promise<TautulliHistoryData> {
 		return this.command("get_history", params, tautulliHistoryDataSchema);
+	}
+
+	/** User-facing history pages use Tautulli's documented date-descending order. */
+	getHistoryNewestPage(options: TautulliHistoryPageOptions): Promise<TautulliHistoryData> {
+		if (
+			!Number.isSafeInteger(options.start) ||
+			options.start < 0 ||
+			!Number.isSafeInteger(options.length) ||
+			options.length < 1 ||
+			options.length > MAX_TAUTULLI_HISTORY_PAGE_LENGTH
+		) {
+			throw new Error(
+				`Tautulli history pages require a non-negative start and a length from 1 to ${MAX_TAUTULLI_HISTORY_PAGE_LENGTH}`,
+			);
+		}
+
+		return this.getHistory({
+			section_id: options.sectionId,
+			grouping: 0,
+			include_activity: 0,
+			json_data: JSON.stringify({
+				draw: 1,
+				columns: [
+					{ data: "date", orderable: true, searchable: false },
+					{ data: "row_id", orderable: true, searchable: false },
+				],
+				order: [
+					{ column: 0, dir: "desc" },
+					{ column: 1, dir: "desc" },
+				],
+				start: options.start,
+				length: options.length,
+				search: { value: "" },
+			}),
+		});
 	}
 
 	async getHistorySnapshot(
@@ -252,7 +299,14 @@ export class TautulliClient {
 		);
 	}
 
-	getUserWatchTimeStats(userId: string, queryDays?: string): Promise<TautulliUserWatchTimeStat[]> {
+	getUsers(): Promise<TautulliUser[]> {
+		return this.command("get_users", undefined, tautulliUserSchema.array());
+	}
+
+	getUserWatchTimeStats(
+		userId: string,
+		queryDays?: string | number,
+	): Promise<TautulliUserWatchTimeStat[]> {
 		if (!userId.trim()) {
 			throw new Error("Tautulli user watch-time stats require a user id");
 		}
@@ -263,10 +317,10 @@ export class TautulliClient {
 		);
 	}
 
-	getHomeStats(timeRange = 30): Promise<TautulliHomeStat[]> {
+	getHomeStats(timeRange = 30, statsCount = 10): Promise<TautulliHomeStat[]> {
 		return this.command(
 			"get_home_stats",
-			{ time_range: timeRange },
+			{ time_range: timeRange, stats_count: statsCount },
 			tautulliHomeStatSchema.array(),
 		);
 	}
@@ -280,6 +334,7 @@ export class TautulliClient {
 		params: Record<string, string | number | undefined> | undefined,
 		schema: z.ZodType<T>,
 	): Promise<T> {
+		await this.beforeRequest?.();
 		const url = new URL(`${this.baseUrl}/api/v2`);
 		url.searchParams.set("apikey", this.apiKey);
 		url.searchParams.set("cmd", cmd);
@@ -327,6 +382,7 @@ export function createTautulliClient(
 	encryptor: Encryptor,
 	instance: TautulliClientInstanceData,
 	log: FastifyBaseLogger,
+	beforeRequest?: () => Promise<void>,
 ): TautulliClient {
 	if (instance.service !== "TAUTULLI") {
 		throw new Error("Instance is not a Tautulli service");
@@ -341,5 +397,6 @@ export function createTautulliClient(
 		log,
 		DEFAULT_TIMEOUT,
 		getStoredHttpAuthHeaders(encryptor, instance),
+		beforeRequest,
 	);
 }

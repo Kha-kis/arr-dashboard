@@ -146,6 +146,33 @@ function makeAtomicPrisma(options?: {
 }
 
 describe("refreshTautulliCache", () => {
+	it("records a durable pending attempt before contacting Tautulli", async () => {
+		const { prisma, state } = makeAtomicPrisma();
+		let releaseLibraries: (() => void) | undefined;
+		const client = completeClient();
+		client.getLibraries = vi.fn<TautulliClient["getLibraries"]>(
+			() =>
+				new Promise((resolve) => {
+					releaseLibraries = () =>
+						resolve([
+							{
+								section_id: "movies",
+								section_name: "Movies",
+								section_type: "movie",
+								count: "2",
+							},
+						]);
+				}),
+		);
+
+		const refresh = refreshTautulliCache(client, prisma, "tautulli-1", log, expectedConnection);
+		await vi.waitFor(() => expect(state.status.lastAttemptResult).toBe("pending"));
+		expect(client.getLibraries).toHaveBeenCalledTimes(1);
+
+		releaseLibraries?.();
+		await refresh;
+	});
+
 	it("publishes a complete staged generation and success attempt atomically", async () => {
 		const { prisma, state } = makeAtomicPrisma();
 
@@ -373,10 +400,11 @@ describe("refreshTautulliCache", () => {
 		const second = refreshTautulliCache(client, prisma, "tautulli-1", log, expectedConnection);
 
 		expect(first).toBe(second);
-		expect(client.getLibraries).toHaveBeenCalledTimes(1);
+		await vi.waitFor(() => expect(client.getLibraries).toHaveBeenCalledTimes(1));
 		release?.();
 		await expect(Promise.all([first, second])).resolves.toHaveLength(2);
-		expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+		// One transaction records the pending witness and one publishes the generation.
+		expect(prisma.$transaction).toHaveBeenCalledTimes(2);
 	});
 
 	it.each([

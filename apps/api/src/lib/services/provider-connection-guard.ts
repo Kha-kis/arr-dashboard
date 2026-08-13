@@ -33,6 +33,19 @@ export function providerConnectionIdentity(
 	};
 }
 
+export function matchesProviderConnectionIdentity(
+	instance: ProviderConnectionSource,
+	expected: ProviderConnectionIdentity,
+): boolean {
+	const current = providerConnectionIdentity(instance);
+	return (
+		current.userId === expected.userId &&
+		current.service === expected.service &&
+		current.connectionGeneration === expected.connectionGeneration &&
+		current.connectionFingerprint === expected.connectionFingerprint
+	);
+}
+
 export async function withCurrentProviderConnection<T>(
 	prisma: Pick<PrismaClient, "$transaction">,
 	instanceId: string,
@@ -62,13 +75,7 @@ export async function withCurrentProviderConnection<T>(
 						connectionGeneration: true,
 					},
 				});
-				if (
-					!current?.enabled ||
-					current.userId !== expected.userId ||
-					current.service !== expected.service ||
-					current.connectionGeneration !== expected.connectionGeneration ||
-					plexConnectionFingerprint(current) !== expected.connectionFingerprint
-				) {
+				if (!current?.enabled || !matchesProviderConnectionIdentity(current, expected)) {
 					return { matched: false };
 				}
 			}

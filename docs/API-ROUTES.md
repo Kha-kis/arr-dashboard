@@ -52,6 +52,7 @@ for the full rationale.
 | `/api/library-cleanup` | internal | Library cleanup rules, approvals, execution |
 | `/api/plex` | stable | Now playing, on-deck, history, analytics, forecasts |
 | `/api/jellyfin` | stable | Jellyfin activity and library data |
+| `/api/tautulli` | stable | Provider-specific Tautulli activity, historical analytics, and guarded cache refreshes |
 | `/api/label-sync` | operator | Generic any-to-any media-service tag/label sync rules (issue #384). Sub-arc 1 ships Sonarr/Radarr → Plex. |
 | `/api/auto-tag` | operator | Criteria-based auto-tagger — applies tags to LibraryCache items matching the rule's criteria DSL (genre, year, codec, watch state, …). Companion to Label Sync. Webhook config (secret read/rotate) lives here under session auth. |
 | `/api/auto-tag/webhook` | operator | Inbound Sonarr/Radarr Connect webhook for real-time auto-tagging. **Public route** (no session cookie); authenticates via per-user Bearer token (SHA-256 hash of the user's webhook secret). |
@@ -68,6 +69,23 @@ for the full rationale.
 > will fail loudly if either is missing.
 
 ## Per-group route detail
+
+## Tautulli Routes (`/api/tautulli`)
+
+Tautulli routes return only Tautulli-derived data. They do not read Tracearr
+or native live-session state. Titles, usernames, labels, and URLs remain
+sensitive client fields; incognito-aware consumers must use the existing
+incognito helpers before rendering them.
+
+| Method | Route | Auth | Purpose |
+|--------|-------|------|---------|
+| GET | `/api/tautulli/activity` | Yes | Source-scoped active sessions, bandwidth totals, and per-instance reachability |
+| GET | `/api/tautulli/stats?timeRange=` | Yes | Source-scoped Tautulli home rankings and user watch statistics with explicit ranking limits and completeness metadata |
+| GET | `/api/tautulli/stats/plays-by-date?timeRange=` | Yes | Source-scoped Tautulli play-count time series |
+| GET | `/api/tautulli/history?offset=&limit=` | Yes | Independently paginated newest-first history for each source; `offset + limit` is bounded to 5,000 records and completeness is explicit |
+| GET | `/api/tautulli/cache/:instanceId/status` | Yes | Owned-instance cache count and durable refresh witness |
+| GET | `/api/tautulli/cache/health` | Yes | Cache health for the current user's enabled Tautulli instances, including successful-generation and latest-attempt/effective-result metadata |
+| POST | `/api/tautulli/cache/:instanceId/refresh` | Yes | Rate-limited owned-instance refresh through the guarded cache refresher |
 
 ## Guided Setup Routes (`/api/setup`)
 

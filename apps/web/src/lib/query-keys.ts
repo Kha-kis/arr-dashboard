@@ -358,6 +358,20 @@ export const tracearrKeys = {
 };
 
 /* -------------------------------------------------------------------------- */
+/*  Tautulli                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export const tautulliKeys = {
+	all: ["tautulli"] as const,
+	activity: () => ["tautulli", "activity"] as const,
+	stats: (timeRange: number) => ["tautulli", "stats", timeRange] as const,
+	playsByDate: (timeRange: number) => ["tautulli", "plays-by-date", timeRange] as const,
+	history: (offset: number, limit: number) => ["tautulli", "history", offset, limit] as const,
+	cacheStatus: (instanceId: string) => ["tautulli", "cache", "status", instanceId] as const,
+	cacheHealth: () => ["tautulli", "cache", "health"] as const,
+};
+
+/* -------------------------------------------------------------------------- */
 /*  Jellyfin                                                                   */
 /* -------------------------------------------------------------------------- */
 

@@ -44,6 +44,7 @@ import { registerSeerrRoutes } from "./seerr/index.js";
 import { registerServiceRoutes } from "./services.js";
 import { registerSetupRoutes } from "./setup.js";
 import { registerSystemRoutes } from "./system.js";
+import { registerTautulliRoutes } from "./tautulli/index.js";
 import { registerTracearrRoutes } from "./tracearr.js";
 import { registerTrashGuidesRoutes } from "./trash-guides/index.js";
 
@@ -259,6 +260,14 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerJellyfinRoutes,
 		maturity: "stable",
 		summary: "Jellyfin activity and library data",
+	},
+	{
+		path: "/api/tautulli",
+		prefix: "/api/tautulli",
+		register: registerTautulliRoutes,
+		maturity: "stable",
+		summary:
+			"Provider-specific Tautulli activity, historical analytics, and guarded cache refreshes",
 	},
 	{
 		path: "/api/label-sync",
