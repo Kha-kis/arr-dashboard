@@ -8,7 +8,7 @@ import {
 	refreshTautulliCache,
 	STALE_EVICTION_CHUNK_SIZE,
 } from "./tautulli-cache-refresher.js";
-import type { TautulliClient } from "./tautulli-client.js";
+import { TautulliClient } from "./tautulli-client.js";
 
 const log = {
 	warn: vi.fn(),
@@ -18,6 +18,7 @@ const log = {
 } as unknown as FastifyBaseLogger;
 
 const tautulliConnection = {
+	userId: "user-1",
 	service: "TAUTULLI" as const,
 	baseUrl: "https://tautulli.example.test",
 	encryptedApiKey: "key",
@@ -32,7 +33,15 @@ const expectedConnection = providerConnectionIdentity(tautulliConnection);
 afterEach(() => {
 	clearTautulliCacheRefreshSingleFlightsForTests();
 	vi.clearAllMocks();
+	vi.unstubAllGlobals();
 });
+
+function tautulliSuccess(data: unknown): Response {
+	return new Response(JSON.stringify({ response: { result: "success", message: null, data } }), {
+		status: 200,
+		headers: { "content-type": "application/json" },
+	});
+}
 
 function historyRow(overrides: Partial<Record<string, unknown>> = {}) {
 	return {
@@ -375,6 +384,7 @@ describe("refreshTautulliCache", () => {
 		["disabled", { ...tautulliConnection, enabled: false }],
 		["service changed", { ...tautulliConnection, service: "PLEX" as const }],
 		["generation changed", { ...tautulliConnection, connectionGeneration: 8 }],
+		["owner changed", { ...tautulliConnection, userId: "user-2" }],
 	])(
 		"fails closed without recording stale failure status when the instance was %s",
 		async (_reason, current) => {
@@ -419,6 +429,84 @@ describe("refreshTautulliCache", () => {
 			generationId: "previous-generation",
 			lastAttemptResult: "error",
 		});
+	});
+
+	it("keeps the previous generation when upstream history totals are null", async () => {
+		const { prisma, state } = makeAtomicPrisma();
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (requestUrl: string) => {
+				const command = new URL(requestUrl).searchParams.get("cmd");
+				if (command === "get_libraries") {
+					return tautulliSuccess([
+						{ section_id: "movies", section_name: "Movies", section_type: "movie", count: "1" },
+					]);
+				}
+				if (command === "get_history") {
+					return tautulliSuccess({ data: [], recordsFiltered: null, recordsTotal: null });
+				}
+				throw new Error(`Unexpected Tautulli command: ${command}`);
+			}),
+		);
+
+		const result = await refreshTautulliCache(
+			new TautulliClient("http://tautulli.example", "api-key-value", log),
+			prisma,
+			"tautulli-1",
+			log,
+			expectedConnection,
+		);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(state.rows).toEqual([{ tmdbId: 99, mediaType: "movie", watchCount: 4 }]);
+		expect(state.status).toMatchObject({
+			generationId: "previous-generation",
+			lastAttemptResult: "error",
+		});
+	});
+
+	it("refreshes a 50001-row history through the default real-client pagination boundary", async () => {
+		const { prisma, state } = makeAtomicPrisma();
+		const fetchMock = vi.fn(async (requestUrl: string) => {
+			const url = new URL(requestUrl);
+			const command = url.searchParams.get("cmd");
+			if (command === "get_libraries") {
+				return tautulliSuccess([
+					{ section_id: "movies", section_name: "Movies", section_type: "movie", count: "1" },
+				]);
+			}
+			if (command === "get_history") {
+				const request = JSON.parse(url.searchParams.get("json_data")!) as {
+					start: number;
+					length: number;
+				};
+				const count = Math.min(request.length, 50_001 - request.start);
+				return tautulliSuccess({
+					data: Array.from({ length: count }, (_, index) =>
+						historyRow({ row_id: request.start + index + 1 }),
+					),
+					recordsFiltered: 50_001,
+					recordsTotal: 50_001,
+				});
+			}
+			if (command === "get_metadata") {
+				return tautulliSuccess({ guids: ["tmdb://42"], media_type: "movie", title: "A movie" });
+			}
+			throw new Error(`Unexpected Tautulli command: ${command}`);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const result = await refreshTautulliCache(
+			new TautulliClient("http://tautulli.example", "api-key-value", log),
+			prisma,
+			"tautulli-1",
+			log,
+			expectedConnection,
+		);
+
+		expect(result).toMatchObject({ complete: true, upserted: 1 });
+		expect(state.rows).toEqual([expect.objectContaining({ tmdbId: 42, watchCount: 50_001 })]);
+		expect(fetchMock).toHaveBeenCalledTimes(103);
 	});
 });
 

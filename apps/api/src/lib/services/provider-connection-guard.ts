@@ -3,6 +3,7 @@ import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.
 
 type ProviderConnectionSource = Pick<
 	ServiceInstance,
+	| "userId"
 	| "service"
 	| "baseUrl"
 	| "encryptedApiKey"
@@ -13,6 +14,7 @@ type ProviderConnectionSource = Pick<
 >;
 
 export type ProviderConnectionIdentity = {
+	userId: string;
 	service: ServiceType;
 	connectionGeneration: number;
 	connectionFingerprint: string;
@@ -24,6 +26,7 @@ export function providerConnectionIdentity(
 	instance: ProviderConnectionSource,
 ): ProviderConnectionIdentity {
 	return {
+		userId: instance.userId,
 		service: instance.service,
 		connectionGeneration: instance.connectionGeneration,
 		connectionFingerprint: plexConnectionFingerprint(instance),
@@ -48,6 +51,7 @@ export async function withCurrentProviderConnection<T>(
 				const current = await tx.serviceInstance.findUnique({
 					where: { id: instanceId },
 					select: {
+						userId: true,
 						service: true,
 						baseUrl: true,
 						encryptedApiKey: true,
@@ -60,6 +64,7 @@ export async function withCurrentProviderConnection<T>(
 				});
 				if (
 					!current?.enabled ||
+					current.userId !== expected.userId ||
 					current.service !== expected.service ||
 					current.connectionGeneration !== expected.connectionGeneration ||
 					plexConnectionFingerprint(current) !== expected.connectionFingerprint

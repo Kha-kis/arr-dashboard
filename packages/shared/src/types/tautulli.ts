@@ -53,8 +53,7 @@ export interface TautulliHomeStat {
 }
 
 export interface TautulliUserWatchTimeStat {
-	user_id: number;
-	friendly_name: string;
+	query_days: number;
 	total_plays: number;
-	total_duration: number;
+	total_time: number;
 }

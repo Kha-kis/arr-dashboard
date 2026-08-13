@@ -14,10 +14,9 @@ import {
 	withCurrentProviderConnection,
 } from "../services/provider-connection-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import type { TautulliClient } from "./tautulli-client.js";
+import { MAX_TAUTULLI_HISTORY_RESULTS, type TautulliClient } from "./tautulli-client.js";
 
 const CACHE_TYPE = "tautulli";
-const MAX_HISTORY_RESULTS = 100_000;
 const MAX_METADATA_LOOKUPS = 500;
 
 export const STALE_EVICTION_CHUNK_SIZE = 500;
@@ -62,7 +61,7 @@ export function refreshTautulliCache(
 	log: FastifyBaseLogger,
 	expectedConnection: ProviderConnectionIdentity,
 ): Promise<TautulliCacheRefreshResult> {
-	const key = `${instanceId}:${expectedConnection.service}:${expectedConnection.connectionGeneration}:${expectedConnection.connectionFingerprint}`;
+	const key = `${instanceId}:${expectedConnection.userId}:${expectedConnection.service}:${expectedConnection.connectionGeneration}:${expectedConnection.connectionFingerprint}`;
 	const existing = inFlightRefreshes.get(key);
 	if (existing) return existing;
 
@@ -193,8 +192,10 @@ async function gatherCompleteSnapshot(
 		const snapshot = await client.getHistorySnapshot({ section_id: section.section_id });
 		assertCompleteHistorySnapshot(snapshot, section.section_id);
 		expectedHistoryRows += snapshot.recordsFiltered;
-		if (expectedHistoryRows > MAX_HISTORY_RESULTS) {
-			throw new Error(`Tautulli history exceeds the safe ${MAX_HISTORY_RESULTS}-row refresh limit`);
+		if (expectedHistoryRows > MAX_TAUTULLI_HISTORY_RESULTS) {
+			throw new Error(
+				`Tautulli history exceeds the safe ${MAX_TAUTULLI_HISTORY_RESULTS}-row refresh limit`,
+			);
 		}
 		for (const item of snapshot.items) {
 			history.push({ item, sectionId: section.section_id });

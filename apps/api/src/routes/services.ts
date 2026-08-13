@@ -23,7 +23,7 @@ import { validateRequest } from "../lib/utils/validate.js";
 import { invalidatePulseCache } from "./pulse.js";
 
 const idParams = z.object({ id: z.string().min(1) });
-const CACHE_PROVIDER_SERVICES = new Set<ServiceType>(["PLEX", "JELLYFIN", "EMBY"]);
+const CACHE_PROVIDER_SERVICES = new Set<ServiceType>(["PLEX", "JELLYFIN", "EMBY", "TAUTULLI"]);
 
 const servicePayloadSchema = z.object({
 	label: z.string().min(1).max(120),
@@ -87,6 +87,7 @@ async function clearDurableProviderCacheState(
 		plexEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
 		jellyfinCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
 		jellyfinEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		tautulliCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
 		cacheRefreshStatus: {
 			deleteMany(args: { where: { instanceId: string } }): Promise<unknown>;
 			upsert(args: Record<string, unknown>): Promise<unknown>;
@@ -100,11 +101,16 @@ async function clearDurableProviderCacheState(
 	await prisma.plexEpisodeCache.deleteMany({ where: { instanceId } });
 	await prisma.jellyfinCache.deleteMany({ where: { instanceId } });
 	await prisma.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
+	await prisma.tautulliCache.deleteMany({ where: { instanceId } });
 	await prisma.cacheRefreshStatus.deleteMany({ where: { instanceId } });
 
 	if (!targetEnabled || !CACHE_PROVIDER_SERVICES.has(targetService)) return;
 	const cacheTypes =
-		targetService === "PLEX" ? ["plex", "plex_episode"] : ["jellyfin", "jellyfin_episode"];
+		targetService === "PLEX"
+			? ["plex", "plex_episode"]
+			: targetService === "TAUTULLI"
+				? ["tautulli"]
+				: ["jellyfin", "jellyfin_episode"];
 	const invalidatedAt = new Date();
 	const message = "Provider connection changed; refresh required";
 	for (const cacheType of cacheTypes) {

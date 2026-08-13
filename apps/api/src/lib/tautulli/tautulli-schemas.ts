@@ -19,6 +19,11 @@ export const tautulliLibrarySchema = z.looseObject({
 	count: z.coerce.string(),
 });
 
+const nonnegativeSafeIntegerFromStringOrNumber = z.preprocess((value) => {
+	if (typeof value === "string" && value.trim() !== "") return Number(value);
+	return value;
+}, z.number().int().nonnegative().safe());
+
 export const tautulliHistoryDataSchema = z.looseObject({
 	data: z.array(
 		z.looseObject({
@@ -35,8 +40,8 @@ export const tautulliHistoryDataSchema = z.looseObject({
 			group_count: z.coerce.number().int().positive().optional(),
 		}),
 	),
-	recordsFiltered: z.coerce.number().int().nonnegative(),
-	recordsTotal: z.coerce.number().int().nonnegative(),
+	recordsFiltered: nonnegativeSafeIntegerFromStringOrNumber,
+	recordsTotal: nonnegativeSafeIntegerFromStringOrNumber,
 });
 
 export const tautulliActivityDataSchema = z.looseObject({
@@ -95,10 +100,9 @@ export const tautulliHomeStatSchema = z.looseObject({
 });
 
 export const tautulliUserWatchTimeStatsSchema = z.looseObject({
-	user_id: z.coerce.number(),
-	friendly_name: z.string(),
-	total_plays: z.coerce.number(),
-	total_duration: z.coerce.number(),
+	query_days: z.coerce.number().int().nonnegative(),
+	total_plays: z.coerce.number().int().nonnegative(),
+	total_time: z.coerce.number().int().nonnegative(),
 });
 
 export const tautulliMetadataSchema = z.looseObject({

@@ -143,6 +143,43 @@ describe("TautulliClient", () => {
 		});
 	});
 
+	it("rejects null or blank history totals instead of coercing them to zero", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(success({ data: [], recordsFiltered: null, recordsTotal: "" })),
+		);
+		const client = new TautulliClient("http://tautulli.example", "api-key-value", log);
+
+		await expect(client.getHistory()).rejects.toThrow();
+	});
+
+	it("uses the documented user watch-time request and response contract", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			success([
+				{ query_days: 1, total_plays: 2, total_time: 120 },
+				{ query_days: 0, total_plays: 8, total_time: 960 },
+			]),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new TautulliClient("http://tautulli.example", "api-key-value", log);
+
+		await expect(client.getUserWatchTimeStats("42", "1,0")).resolves.toEqual([
+			{ query_days: 1, total_plays: 2, total_time: 120 },
+			{ query_days: 0, total_plays: 8, total_time: 960 },
+		]);
+		const requestUrl = new URL(fetchMock.mock.calls[0]![0]);
+		expect(requestUrl.searchParams.get("user_id")).toBe("42");
+		expect(requestUrl.searchParams.get("query_days")).toBe("1,0");
+	});
+
+	it("requires a user id for watch-time statistics", () => {
+		const client = new TautulliClient("http://tautulli.example", "api-key-value", log);
+
+		expect(() => client.getUserWatchTimeStats(" ")).toThrow(
+			"Tautulli user watch-time stats require a user id",
+		);
+	});
+
 	it("normalizes upstream failures without exposing sensitive values", async () => {
 		vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("nope", { status: 502 })));
 		const client = new TautulliClient("http://tautulli.example", "api-key-value", log);

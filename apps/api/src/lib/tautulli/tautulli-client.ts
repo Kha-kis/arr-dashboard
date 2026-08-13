@@ -27,7 +27,8 @@ import {
 
 const DEFAULT_TIMEOUT = 10_000;
 const DEFAULT_HISTORY_PAGE_SIZE = 500;
-const DEFAULT_HISTORY_MAX_PAGES = 100;
+const MAX_HISTORY_PAGE_SIZE = 1_000;
+export const MAX_TAUTULLI_HISTORY_RESULTS = 100_000;
 
 export interface TautulliHistoryData {
 	data: TautulliHistoryItem[];
@@ -126,14 +127,19 @@ export class TautulliClient {
 		options: TautulliHistorySnapshotOptions = {},
 	): Promise<TautulliHistorySnapshot> {
 		const pageSize = options.pageSize ?? DEFAULT_HISTORY_PAGE_SIZE;
-		const maxPages = options.maxPages ?? DEFAULT_HISTORY_MAX_PAGES;
+		const maxPages =
+			options.maxPages ?? Math.ceil(MAX_TAUTULLI_HISTORY_RESULTS / DEFAULT_HISTORY_PAGE_SIZE);
 		if (
 			!Number.isInteger(pageSize) ||
 			pageSize < 1 ||
+			pageSize > MAX_HISTORY_PAGE_SIZE ||
 			!Number.isInteger(maxPages) ||
-			maxPages < 1
+			maxPages < 1 ||
+			pageSize * maxPages > MAX_TAUTULLI_HISTORY_RESULTS
 		) {
-			throw new Error("Tautulli history pagination options must be positive integers");
+			throw new Error(
+				`Tautulli history pagination must use positive integers, pages of at most ${MAX_HISTORY_PAGE_SIZE}, and scan at most ${MAX_TAUTULLI_HISTORY_RESULTS} rows`,
+			);
 		}
 
 		const items: TautulliHistoryItem[] = [];
@@ -246,10 +252,13 @@ export class TautulliClient {
 		);
 	}
 
-	getUserWatchTimeStats(userId?: string): Promise<TautulliUserWatchTimeStat[]> {
+	getUserWatchTimeStats(userId: string, queryDays?: string): Promise<TautulliUserWatchTimeStat[]> {
+		if (!userId.trim()) {
+			throw new Error("Tautulli user watch-time stats require a user id");
+		}
 		return this.command(
 			"get_user_watch_time_stats",
-			{ user_id: userId },
+			{ user_id: userId, query_days: queryDays },
 			tautulliUserWatchTimeStatsSchema.array(),
 		);
 	}

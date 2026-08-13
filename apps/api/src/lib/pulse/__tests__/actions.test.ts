@@ -78,6 +78,7 @@ const fakeLog = {
 const markEnabled = vi.fn();
 const cacheStatusUpsert = vi.fn();
 const plexInstance = {
+	userId: "user-1",
 	service: "PLEX" as const,
 	baseUrl: "https://plex.example.test",
 	encryptedApiKey: "encrypted-key",

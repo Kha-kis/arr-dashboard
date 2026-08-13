@@ -3,6 +3,7 @@ import { providerConnectionIdentity } from "../services/provider-connection-guar
 import { refreshPlexEpisodeCache } from "./plex-episode-cache-refresher.js";
 
 const plexConnection = {
+	userId: "user-1",
 	service: "PLEX" as const,
 	baseUrl: "https://plex.example.test",
 	encryptedApiKey: "key",
