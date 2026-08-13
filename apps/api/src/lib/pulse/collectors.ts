@@ -609,7 +609,7 @@ const collectSeerrCircuitBreaker: Collector = async (app, userId) => {
 // cacheType values (e.g. "plex_episode", or pre-migration "tautulli" rows
 // that linger until the 3.0 dialog deletes their instances) still emit a
 // warning — just without an action button, so we don't ship a click the
-// backend can't fulfil.
+// backend can't fulfil. Tautulli is handled by its dedicated collector below.
 const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>(["plex", "jellyfin"]);
 
 function actionForCache(
@@ -645,6 +645,9 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 	const staleThreshold = Date.now() - STALE_CACHE_HOURS * 60 * 60 * 1000;
 
 	for (const status of cacheStatuses) {
+		// Tautulli has a dedicated collector below. Its status intentionally
+		// omits raw upstream error text and keys signals by instance identity.
+		if (status.cacheType === "tautulli") continue;
 		// Keep the enabled-state gate explicit as well as in the query. This is
 		// defensive against a service being disabled after the relation filter
 		// is planned and keeps fixture-backed collectors honest.
@@ -719,6 +722,73 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 			});
 		}
 	}
+	return items;
+};
+
+// ============================================================================
+// 4a. Tautulli Cache Health
+// ============================================================================
+//
+// Tautulli refresh errors may include upstream URLs, account names, titles, or
+// credential-shaped strings. Pulse therefore reports an actionable status from
+// the durable cache witness without rendering the upstream error itself.
+
+const collectTautulliCacheHealth: Collector = async (app, userId) => {
+	const statuses = await app.prisma.cacheRefreshStatus.findMany({
+		where: {
+			cacheType: "tautulli",
+			instance: { userId, service: "TAUTULLI", enabled: true },
+		},
+		include: { instance: { select: { enabled: true, service: true } } },
+	});
+
+	const items: PulseItem[] = [];
+	const staleThreshold = Date.now() - STALE_CACHE_HOURS * 60 * 60 * 1000;
+
+	for (const status of statuses) {
+		if (!status.instance.enabled || status.instance.service !== "TAUTULLI") continue;
+
+		const newerFailedAttempt =
+			status.lastAttemptResult === "error" &&
+			status.lastAttemptAt != null &&
+			status.lastAttemptAt.getTime() >= status.lastRefreshedAt.getTime();
+
+		if (status.lastResult === "error" || newerFailedAttempt) {
+			items.push({
+				id: `tautulli-cache-failure-${status.instanceId}`,
+				severity: "warning",
+				category: "health",
+				title: "Tautulli cache refresh failed",
+				detail:
+					status.lastResult === "error"
+						? "No successful Tautulli cache generation is available. Check the Tautulli connection and credentials in Settings."
+						: "The latest refresh attempt failed; the last successful cache generation is still available. Check the Tautulli connection and credentials in Settings.",
+				actionUrl: "/settings",
+				actionLabel: "Check Tautulli settings",
+				source: "tautulli",
+				timestamp: (status.lastAttemptAt ?? status.lastRefreshedAt).toISOString(),
+			});
+			continue;
+		}
+
+		if (status.lastRefreshedAt.getTime() < staleThreshold) {
+			const hoursAgo = Math.round(
+				(Date.now() - status.lastRefreshedAt.getTime()) / (60 * 60 * 1000),
+			);
+			items.push({
+				id: `tautulli-cache-stale-${status.instanceId}`,
+				severity: "warning",
+				category: "health",
+				title: "Tautulli cache is stale",
+				detail: `Last successful cache generation was published ${hoursAgo} hours ago. Check the Tautulli connection and credentials in Settings.`,
+				actionUrl: "/settings",
+				actionLabel: "Check Tautulli settings",
+				source: "tautulli",
+				timestamp: status.lastRefreshedAt.toISOString(),
+			});
+		}
+	}
+
 	return items;
 };
 
@@ -1228,6 +1298,7 @@ export {
 	collectLibrarySyncHealth,
 	collectMediaServerReachability,
 	collectSchedulerHealth,
+	collectTautulliCacheHealth,
 };
 
 // `collectQuiSignals` is declared after this block; re-exported below.
@@ -1385,6 +1456,7 @@ export const pulseCollectors: Collector[] = [
 	collectArrQueueFailures,
 	collectSeerrCircuitBreaker,
 	collectCacheStaleness,
+	collectTautulliCacheHealth,
 	collectLibrarySyncHealth,
 	collectValidationHealth,
 	collectLibraryInsightCounts,

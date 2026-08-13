@@ -1,15 +1,15 @@
 /**
- * Integration tests for cache.refresh action emission on GET /pulse.
+ * Integration tests for cache freshness signals on GET /pulse.
  *
- * Mirrors the structure of pulse-scheduler-health.test.ts: run the real
- * `collectCacheStaleness` against a stubbed Prisma surface and assert the
- * emission gate for each cacheType × status combination.
+ * Runs the real generic and Tautulli cache collectors against a stubbed Prisma
+ * surface, pinning their distinct action and stable-ID contracts.
  *
  * The emission rule under test:
  *   emit action iff
  *     status.lastResult !== "error"
  *     AND status.lastRefreshedAt < now - STALE_CACHE_HOURS
- *     AND status.cacheType ∈ {"plex", "jellyfin"}
+ *     AND status.cacheType ∈ {"plex", "jellyfin"}. Tautulli uses its own
+ *     supported instance-keyed collector and deliberately has no action.
  */
 
 import Fastify from "fastify";
@@ -19,7 +19,9 @@ vi.mock("../../lib/pulse/collectors.js", async () => {
 	const actual = await vi.importActual<typeof import("../../lib/pulse/collectors.js")>(
 		"../../lib/pulse/collectors.js",
 	);
-	return { pulseCollectors: [actual.collectCacheStaleness] };
+	return {
+		pulseCollectors: [actual.collectCacheStaleness, actual.collectTautulliCacheHealth],
+	};
 });
 
 import { registerPulseRoutes } from "../pulse.js";
@@ -100,18 +102,26 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		});
 	});
 
-	it("renders a lingering pre-3.0 tautulli cache row WITHOUT an action (ADR-0007)", async () => {
-		// Tautulli was removed in 3.0; CacheRefreshStatus rows with
-		// cacheType "tautulli" can linger until the migration dialog deletes
-		// their instances. They must still render (operator visibility) but
-		// must NOT carry a refresh button the dispatcher can no longer honor.
-		cacheStatuses = [makeRow({ id: "taut-row", cacheType: "tautulli", instanceId: "inst-taut" })];
+	it("renders a supported Tautulli stale signal with an instance-keyed id and no action", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "taut-row",
+				cacheType: "tautulli",
+				instanceId: "inst-taut",
+				instance: { label: "Private Tautulli", service: "TAUTULLI", enabled: true },
+			}),
+		];
 
 		const res = await injectAuthenticated("GET", "/pulse");
 		const body = JSON.parse(res.payload);
-		const item = body.items.find((i: { id: string }) => i.id === "cache-stale-taut-row");
+		const item = body.items.find((i: { id: string }) => i.id === "tautulli-cache-stale-inst-taut");
 
-		expect(item).toBeDefined();
+		expect(item).toMatchObject({
+			title: "Tautulli cache is stale",
+			source: "tautulli",
+			actionUrl: "/settings",
+			actionLabel: "Check Tautulli settings",
+		});
 		expect(item.action).toBeUndefined();
 	});
 

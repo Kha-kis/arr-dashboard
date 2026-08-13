@@ -18,6 +18,7 @@ import quiTorrentStateSchedulerPlugin from "../plugins/qui-torrent-state-schedul
 import seerrHealthSchedulerPlugin from "../plugins/seerr-health-scheduler.js";
 import sessionCleanupPlugin from "../plugins/session-cleanup.js";
 import sessionSnapshotSchedulerPlugin from "../plugins/session-snapshot-scheduler.js";
+import tautulliCacheSchedulerPlugin from "../plugins/tautulli-cache-scheduler.js";
 import tmdbListCacheSchedulerPlugin from "../plugins/tmdb-list-cache-scheduler.js";
 import traktListCacheSchedulerPlugin from "../plugins/trakt-list-cache-scheduler.js";
 import trashBackupCleanupPlugin from "../plugins/trash-backup-cleanup.js";
@@ -54,11 +55,12 @@ export function registerSchedulers(app: FastifyInstance): void {
 	app.register(trashUpdateSchedulerPlugin);
 	app.register(trashSyncSchedulerPlugin);
 
-	// Media server caches (Plex / Jellyfin / Emby)
+	// Media server caches (Plex / Jellyfin / Emby / Tautulli)
 	app.register(plexCacheSchedulerPlugin);
 	app.register(plexEpisodeCacheSchedulerPlugin);
 	app.register(jellyfinCacheSchedulerPlugin);
 	app.register(jellyfinEpisodeCacheSchedulerPlugin);
+	app.register(tautulliCacheSchedulerPlugin);
 
 	// Seerr health monitoring
 	app.register(seerrHealthSchedulerPlugin);
