@@ -59,38 +59,58 @@ export async function refreshJellyfinCache(
 		const users = await client.getUsers();
 		if (users.length === 0) {
 			log.warn({ instanceId }, "Jellyfin cache refresh: no users found");
-			return { upserted: 0, errors: 0, errorMessages: [] };
+			return {
+				upserted: 0,
+				errors: 1,
+				errorMessages: ["Jellyfin returned no users, so cache completeness could not be verified"],
+			};
 		}
 
-		// Use the first user (admin) for library enumeration
-		const primaryUserId = users[0]!.id;
+		// Step 2: Enumerate each user's visible media libraries. The first
+		// returned user is not guaranteed to be an administrator, so using only
+		// that account can make a populated server look empty.
+		const mediaLibrariesByUser = new Map<
+			string,
+			Awaited<ReturnType<JellyfinClient["getLibraries"]>>
+		>();
+		for (const user of users) {
+			try {
+				const libraries = await client.getLibraries(user.id);
+				mediaLibrariesByUser.set(
+					user.id,
+					libraries.filter(
+						(lib) =>
+							lib.collectionType === "movies" ||
+							lib.collectionType === "tvshows" ||
+							lib.collectionType === "CollectionFolder",
+					),
+				);
+			} catch (err) {
+				errors++;
+				const message = `Library enumeration failed for user ${user.name}: ${getErrorMessage(err, "unknown")}`;
+				errorMessages.push(message);
+				log.warn({ err, instanceId, userId: user.id }, message);
+			}
+		}
+		const mediaLibraryCount = new Set(
+			[...mediaLibrariesByUser.values()].flat().map((library) => library.id),
+		).size;
 
-		// Step 2: Get libraries and filter to movie/tvshow
-		const libraries = await client.getLibraries(primaryUserId);
-		const mediaLibraries = libraries.filter(
-			(lib) =>
-				lib.collectionType === "movies" ||
-				lib.collectionType === "tvshows" ||
-				lib.collectionType === "CollectionFolder",
-		);
-
-		if (mediaLibraries.length === 0) {
+		if (mediaLibraryCount === 0) {
 			log.info({ instanceId }, "Jellyfin cache refresh: no movie/TV libraries found");
-			return { upserted: 0, errors: 0, errorMessages: [] };
 		}
 
 		// Step 3: Aggregate items across all users
 		const aggregations = new Map<string, ItemAggregation>();
 
-		for (const library of mediaLibraries) {
-			const includeItemTypes =
-				library.collectionType === "movies"
-					? "Movie"
-					: library.collectionType === "tvshows"
-						? "Series"
-						: "Movie,Series"; // CollectionFolder or unknown — fetch both
-
-			for (const user of users) {
+		for (const user of users) {
+			for (const library of mediaLibrariesByUser.get(user.id) ?? []) {
+				const includeItemTypes =
+					library.collectionType === "movies"
+						? "Movie"
+						: library.collectionType === "tvshows"
+							? "Series"
+							: "Movie,Series"; // CollectionFolder or unknown — fetch both
 				try {
 					const items = await client.getLibraryItems(user.id, library.id, {
 						includeItemTypes,
@@ -155,23 +175,28 @@ export async function refreshJellyfinCache(
 			}
 		}
 
-		// Step 4: Get resume items to mark onDeck
-		try {
-			const resumeItems = await client.getResumeItems(primaryUserId);
-			const nextUp = await client.getNextUp(primaryUserId);
-			const onDeckIds = new Set([
-				...resumeItems.map((i) => i.tmdbId).filter(Boolean),
-				...nextUp.map((i) => i.tmdbId).filter(Boolean),
-			]);
-			for (const agg of aggregations.values()) {
-				if (onDeckIds.has(agg.tmdbId)) {
-					agg.onDeck = true;
+		// Step 4: Aggregate resume/next-up state across every user.
+		const onDeckIds = new Set<number>();
+		for (const user of users) {
+			try {
+				const resumeItems = await client.getResumeItems(user.id);
+				const nextUp = await client.getNextUp(user.id);
+				for (const item of [...resumeItems, ...nextUp]) {
+					if (item.tmdbId) onDeckIds.add(item.tmdbId);
 				}
+			} catch (err) {
+				errors++;
+				errorMessages.push(
+					`Resume/NextUp fetch failed for user ${user.name}: ${getErrorMessage(err, "unknown")}`,
+				);
+				log.warn(
+					{ err, instanceId, userId: user.id },
+					"Failed to fetch Jellyfin resume/nextUp for onDeck status",
+				);
 			}
-		} catch (err) {
-			errors++;
-			errorMessages.push(`Resume/NextUp fetch failed: ${getErrorMessage(err, "unknown")}`);
-			log.warn({ err, instanceId }, "Failed to fetch Jellyfin resume/nextUp for onDeck status");
+		}
+		for (const agg of aggregations.values()) {
+			if (onDeckIds.has(agg.tmdbId)) agg.onDeck = true;
 		}
 
 		// Step 5: Upsert into JellyfinCache in batches
@@ -250,12 +275,17 @@ export async function refreshJellyfinCache(
 					.map((row) => row.id);
 
 				if (staleIds.length > 0) {
-					await prisma.jellyfinCache.deleteMany({
-						where: { id: { in: staleIds } },
-					});
+					const DELETE_BATCH_SIZE = 500;
+					for (let i = 0; i < staleIds.length; i += DELETE_BATCH_SIZE) {
+						await prisma.jellyfinCache.deleteMany({
+							where: { id: { in: staleIds.slice(i, i + DELETE_BATCH_SIZE) } },
+						});
+					}
 					log.info({ instanceId, evicted: staleIds.length }, "Evicted stale Jellyfin cache rows");
 				}
 			} catch (err) {
+				errors++;
+				errorMessages.push(`Stale row eviction failed: ${getErrorMessage(err, "unknown")}`);
 				log.warn({ err, instanceId }, "Failed to evict stale Jellyfin cache rows");
 			}
 		}

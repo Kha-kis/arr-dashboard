@@ -140,8 +140,16 @@ export async function refreshPlexCache(
 		}
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
+		const HISTORY_CACHE_LIMIT = 5_000;
 		let history: Awaited<ReturnType<typeof client.getHistory>> | undefined =
-			await client.getHistory({ maxResults: 5000 });
+			await client.getHistory({ maxResults: HISTORY_CACHE_LIMIT + 1 });
+		if (history.length > HISTORY_CACHE_LIMIT) {
+			errors++;
+			errorMessages.push(
+				`Plex history exceeded ${HISTORY_CACHE_LIMIT} entries, so watch evidence is incomplete`,
+			);
+			history = history.slice(0, HISTORY_CACHE_LIMIT);
+		}
 		const historyCount = history.length;
 		const aggregations = new Map<string, ItemAggregation>();
 
@@ -234,6 +242,8 @@ export async function refreshPlexCache(
 				}
 			}
 		} catch (err) {
+			errors++;
+			errorMessages.push(`Plex on-deck fetch failed: ${getErrorMessage(err)}`);
 			log.warn({ err }, "Failed to fetch Plex on-deck items");
 		}
 
@@ -369,15 +379,15 @@ export async function refreshPlexCache(
 		// SQLite's default SQLITE_MAX_VARIABLE_NUMBER, surfacing as Prisma P2029 (issue #323).
 		// Instead we read the existing ids, compute the stale diff in memory, and delete in
 		// bounded chunks using `id: { in: chunk }` so each statement stays well under the limit.
-		if (upsertedIds.length > 0) {
+		if (errors === 0) {
 			const evictedCount = await evictStaleRows(prisma, instanceId, upsertedIds);
 			if (evictedCount > 0) {
 				log.info({ instanceId, evicted: evictedCount }, "Plex cache: evicted stale rows");
 			}
-		} else if (aggregationsArray.length > 0) {
+		} else {
 			log.warn(
 				{ instanceId, aggregationSize: aggregationsArray.length, errors },
-				"Plex cache: skipping eviction — all upserts failed, stale rows may accumulate",
+				"Plex cache: skipping eviction because the refresh was incomplete",
 			);
 		}
 

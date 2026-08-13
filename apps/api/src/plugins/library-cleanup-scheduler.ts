@@ -5,6 +5,10 @@ import {
 	buildFreshCompleteFileIdIndex,
 	getAllHashesForFileIdComplete,
 } from "../lib/library-sync/infohash-backfill-by-inode.js";
+import { refreshJellyfinCache } from "../lib/jellyfin/jellyfin-cache-refresher.js";
+import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
+import { refreshPlexCache } from "../lib/plex/plex-cache-refresher.js";
+import { createPlexClient } from "../lib/plex/plex-client.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
 import { runSchedulerInit } from "../lib/scheduler-registry/init-helpers.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
@@ -43,6 +47,25 @@ const libraryCleanupSchedulerPlugin = fastifyPlugin(
 								return {
 									resolve: (path) => getAllHashesForFileIdComplete(path, index),
 								};
+							},
+							externalRuleCacheRefresher: async (source, instance) => {
+								const result =
+									source === "plex"
+										? await refreshPlexCache(
+												createPlexClient(app.encryptor, instance, app.log),
+												app.prisma,
+												instance.id,
+												app.log,
+											)
+										: await refreshJellyfinCache(
+												createJellyfinClient(app.encryptor, instance, app.log),
+												app.prisma,
+												instance.id,
+												app.log,
+											);
+								if (result.errors > 0) {
+									throw new Error(`${source} evidence refresh completed with errors`);
+								}
 							},
 						},
 					);

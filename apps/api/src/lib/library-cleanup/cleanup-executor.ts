@@ -123,6 +123,8 @@ const PREVIEW_SAFETY_INSPECTION_LIMIT = 200;
 // Circuit breaker: abort after N consecutive ARR API failures
 const CIRCUIT_BREAKER_THRESHOLD = 3;
 
+const SEERR_PREFETCH_MAX_REQUESTS = 5_000;
+
 export const CLEANUP_RUN_LEASE_MS = 2 * 60 * 60 * 1000;
 const CLEANUP_RUN_HEARTBEAT_MS = 60 * 1000;
 
@@ -2012,7 +2014,34 @@ function hasCompleteLiveSonarrTags(rawSeries: Record<string, unknown>): boolean 
 function hasCompleteLiveSonarrEvidenceForRuleType(
 	rawSeries: Record<string, unknown>,
 	ruleType: string,
+	ctx: EvalContext,
 ): boolean {
+	if (
+		ruleType.startsWith("seerr_") &&
+		ruleType !== "seerr_requester_watched" &&
+		ruleType !== "seerr_requester_not_watched"
+	) {
+		return ctx.seerrMap !== undefined;
+	}
+	if (ruleType === "seerr_requester_watched" || ruleType === "seerr_requester_not_watched") {
+		return ctx.seerrMap !== undefined && ctx.plexMap !== undefined;
+	}
+	// Episode-completion caches are intentionally bounded background indexes,
+	// not complete live evidence for a destructive parent-policy decision.
+	if (ruleType === "plex_episode_completion") return false;
+	if (
+		ruleType.startsWith("plex_") ||
+		ruleType === "user_retention" ||
+		ruleType === "staleness_score" ||
+		ruleType === "recently_active"
+	) {
+		return ctx.plexMap !== undefined;
+	}
+	if (ruleType === "jellyfin_episode_completion") return false;
+	if (ruleType.startsWith("jellyfin_")) return ctx.jellyfinMap !== undefined;
+	// List memberships are background caches without a source-bound live
+	// refresh at this mutation boundary, so they cannot prove a non-match.
+	if (ruleType === "tmdb_list_member" || ruleType === "trakt_list_member") return false;
 	const statistics =
 		typeof rawSeries.statistics === "object" && rawSeries.statistics !== null
 			? (rawSeries.statistics as Record<string, unknown>)
@@ -2113,6 +2142,7 @@ function assertCompleteLiveSonarrSeriesRuleEvidence(
 	rawSeries: Record<string, unknown>,
 	item: CacheItemForEval,
 	rules: LibraryCleanupRule[],
+	ctx: EvalContext,
 ): void {
 	if (typeof rawSeries.title !== "string" || rawSeries.title.trim().length === 0) {
 		throw new Error("Live Sonarr series title was unavailable");
@@ -2121,8 +2151,11 @@ function assertCompleteLiveSonarrSeriesRuleEvidence(
 		if (!liveSonarrRuleApplies(rawSeries, item, rule)) continue;
 		const ruleTypes = liveSonarrRuleTypes(rule);
 		if (
+			ruleUsesUnavailableData(rule, new Set()) ||
 			!ruleTypes ||
-			ruleTypes.some((ruleType) => !hasCompleteLiveSonarrEvidenceForRuleType(rawSeries, ruleType))
+			ruleTypes.some(
+				(ruleType) => !hasCompleteLiveSonarrEvidenceForRuleType(rawSeries, ruleType, ctx),
+			)
 		) {
 			throw new Error(`Current evidence was unavailable for series rule ${rule.id}`);
 		}
@@ -2165,7 +2198,11 @@ async function assertCurrentEpisodeMutationAuthority(
 
 	let item: CacheItemForEval;
 	let rawSeries: Record<string, unknown>;
+	let currentSeriesContext: EvalContext;
 	try {
+		currentSeriesContext = await buildEvalContext(deps, userId, currentSeriesRules, {
+			destructiveAuthority: true,
+		});
 		const sonarr = deps.arrClientFactory.create(instance) as InstanceType<typeof SonarrClient>;
 		rawSeries = (await sonarr.series.getById(arrSeriesId)) as unknown as Record<string, unknown>;
 		const liveSeries = buildLibraryItem(instance, "sonarr", rawSeries);
@@ -2206,14 +2243,19 @@ async function assertCurrentEpisodeMutationAuthority(
 			infoHash: null,
 			torrentState: null,
 		};
-		assertCompleteLiveSonarrSeriesRuleEvidence(rawSeries, item, currentSeriesRules);
+		assertCompleteLiveSonarrSeriesRuleEvidence(
+			rawSeries,
+			item,
+			currentSeriesRules,
+			currentSeriesContext,
+		);
 		if (!liveSonarrRuleApplies(rawSeries, item, currentEpisodeRule)) {
 			throw new Error("The matched episode cleanup rule no longer applies to the live series");
 		}
 		const currentSeriesMatch = seriesCleanupRules.find(
 			(rule) =>
 				liveSonarrRuleApplies(rawSeries, item, rule) &&
-				evaluateRuleViaEngine(item, rule, "SONARR", { now: new Date() }) !== null,
+				evaluateRuleViaEngine(item, rule, "SONARR", currentSeriesContext) !== null,
 		);
 		if (currentSeriesMatch) {
 			throw new Error(
@@ -2253,7 +2295,7 @@ async function assertCurrentEpisodeMutationAuthority(
 		seriesRetentionProtectsEpisode(
 			item,
 			seriesRetentionRules,
-			{ now: new Date() },
+			currentSeriesContext,
 			new Set<DataSourceDependency>(),
 		)
 	) {
@@ -3143,18 +3185,19 @@ function collectActiveRuleTypes(
 }
 
 /**
- * Prefetch all Seerr requests and build a lookup map keyed by "movie:tmdbId" or "tv:tmdbId".
- * Returns undefined if no Seerr instance is configured (Seerr rules silently skip).
+ * Prefetch all requests from every enabled Seerr instance and build a lookup
+ * map keyed by "movie:tmdbId" or "tv:tmdbId". A capped or failed read returns
+ * undefined so mutation authority cannot treat an incomplete result as a
+ * proven non-match.
  */
-async function prefetchSeerrRequests(
+export async function prefetchSeerrRequests(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<SeerrRequestMap | undefined> {
 	const { prisma, arrClientFactory, log } = deps;
 
-	// Find user's Seerr instance
-	const seerrInstance = await prisma.serviceInstance.findFirst({
-		where: { userId, service: "SEERR" },
+	const seerrInstances = await prisma.serviceInstance.findMany({
+		where: { userId, service: "SEERR", enabled: true },
 		select: {
 			id: true,
 			baseUrl: true,
@@ -3167,17 +3210,26 @@ async function prefetchSeerrRequests(
 		},
 	});
 
-	if (!seerrInstance) return undefined;
+	if (seerrInstances.length === 0) return undefined;
 
 	try {
-		const client = new SeerrClient(arrClientFactory, seerrInstance, log);
 		const map: SeerrRequestMap = new Map();
-		const take = 50;
-		let skip = 0;
-		const maxPages = 100; // Up to 5,000 requests
 
-		for (let page = 0; page < maxPages; page++) {
-			const result = await client.getRequests({ take, skip });
+		for (const seerrInstance of seerrInstances) {
+			const client = new SeerrClient(arrClientFactory, seerrInstance, log);
+			// Seerr accepts an arbitrary `take` value. Fetching the bounded set in
+			// one request avoids offset-pagination drift while establishing a live
+			// destructive non-match. The extra sentinel item detects overflow.
+			const result = await client.getRequests({ take: SEERR_PREFETCH_MAX_REQUESTS + 1, skip: 0 });
+			if (
+				result.pageInfo.results > SEERR_PREFETCH_MAX_REQUESTS ||
+				result.results.length !== result.pageInfo.results ||
+				new Set(result.results.map((request) => request.id)).size !== result.results.length
+			) {
+				throw new Error(
+					`Seerr instance ${seerrInstance.id} did not return one complete bounded request snapshot`,
+				);
+			}
 
 			for (const req of result.results) {
 				const key = `${req.type}:${req.media.tmdbId}`;
@@ -3193,19 +3245,16 @@ async function prefetchSeerrRequests(
 				};
 
 				const existing = map.get(key);
-				if (existing) {
-					existing.push(info);
-				} else {
-					map.set(key, [info]);
-				}
+				if (existing) existing.push(info);
+				else map.set(key, [info]);
 			}
-
-			if (result.results.length < take) break;
-			skip += take;
 		}
 
 		log.info(
-			{ totalRequests: [...map.values()].reduce((sum, arr) => sum + arr.length, 0) },
+			{
+				instances: seerrInstances.length,
+				totalRequests: [...map.values()].reduce((sum, arr) => sum + arr.length, 0),
+			},
 			"Seerr request prefetch complete for cleanup",
 		);
 		return map;
@@ -3232,7 +3281,7 @@ export async function prefetchPlexData(
 	const { prisma, log } = deps;
 
 	const plexInstances = await prisma.serviceInstance.findMany({
-		where: { userId, service: "PLEX" },
+		where: { userId, service: "PLEX", enabled: true },
 		select: { id: true },
 	});
 
@@ -3374,7 +3423,7 @@ async function prefetchJellyfinData(
 	const { prisma, log } = deps;
 
 	const jellyfinInstances = await prisma.serviceInstance.findMany({
-		where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
+		where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 		select: { id: true },
 	});
 
@@ -3486,11 +3535,11 @@ async function prefetchJellyfinEpisodeData(
 
 	try {
 		const instances = await prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			select: { id: true },
 		});
 		const instanceIds = instances.map((i) => i.id);
-		if (instanceIds.length === 0) return new Map();
+		if (instanceIds.length === 0) return undefined;
 
 		const totalCounts = await prisma.jellyfinEpisodeCache.groupBy({
 			by: ["showTmdbId"],
@@ -3568,11 +3617,11 @@ async function prefetchPlexEpisodeData(
 
 	try {
 		const instances = await prisma.serviceInstance.findMany({
-			where: { userId },
+			where: { userId, service: "PLEX", enabled: true },
 			select: { id: true },
 		});
 		const instanceIds = instances.map((i) => i.id);
-		if (instanceIds.length === 0) return new Map();
+		if (instanceIds.length === 0) return undefined;
 
 		// Three groupBy queries: show-level totals, show-level watched, and per-season counts
 		const totalCounts = await prisma.plexEpisodeCache.groupBy({
@@ -6805,17 +6854,78 @@ async function deleteFilesFromArr(
 	}
 }
 
+function ruleTypeUsesPlexSeriesCache(ruleType: string): boolean {
+	return (
+		(ruleType.startsWith("plex_") && ruleType !== "plex_episode_completion") ||
+		ruleType === "user_retention" ||
+		ruleType === "staleness_score" ||
+		ruleType === "recently_active" ||
+		ruleType === "seerr_requester_watched" ||
+		ruleType === "seerr_requester_not_watched"
+	);
+}
+
+function ruleTypeUsesJellyfinSeriesCache(ruleType: string): boolean {
+	return ruleType.startsWith("jellyfin_") && ruleType !== "jellyfin_episode_completion";
+}
+
+async function refreshCurrentExternalRuleCaches(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	activeTypes: Set<string>,
+): Promise<void> {
+	const sources: Array<{
+		source: "plex" | "jellyfin";
+		services: Array<ServiceInstance["service"]>;
+		needed: boolean;
+	}> = [
+		{
+			source: "plex",
+			services: ["PLEX"],
+			needed: [...activeTypes].some(ruleTypeUsesPlexSeriesCache),
+		},
+		{
+			source: "jellyfin",
+			services: ["JELLYFIN", "EMBY"],
+			needed: [...activeTypes].some(ruleTypeUsesJellyfinSeriesCache),
+		},
+	];
+
+	for (const { source, services, needed } of sources) {
+		if (!needed) continue;
+		const instances = await deps.prisma.serviceInstance.findMany({
+			where: { userId, service: { in: services }, enabled: true },
+		});
+		if (instances.length === 0) {
+			throw new Error(`No enabled ${source} instance is available for current rule evidence`);
+		}
+
+		for (const instance of instances) {
+			if (!deps.externalRuleCacheRefresher) {
+				throw new Error(`No ${source} evidence refresher is available`);
+			}
+			await deps.externalRuleCacheRefresher(source, instance);
+		}
+	}
+}
+
 /**
  * Build a fully-populated EvalContext by running all relevant prefetch functions.
  * Used by the explain endpoint so it can evaluate rules with real external data
  * rather than an empty context that always returns "not matched" for external rules.
+ * Destructive episode authority refreshes cache-backed parent-series evidence
+ * from every enabled source before reading it.
  */
 export async function buildEvalContext(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	rules: Array<{ enabled: boolean; ruleType: string; conditions: string | null }>,
+	options: { destructiveAuthority?: boolean } = {},
 ): Promise<EvalContext> {
 	const activeTypes = collectActiveRuleTypes(rules);
+	if (options.destructiveAuthority) {
+		await refreshCurrentExternalRuleCaches(deps, userId, activeTypes);
+	}
 
 	const SEERR_RULE_TYPES = [
 		"seerr_requested_by",
