@@ -8,7 +8,10 @@ import { randomUUID } from "node:crypto";
 import type { TautulliHistoryItem, TautulliHistorySnapshot } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../prisma.js";
-import { recordProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
+import {
+	recordProviderCacheRefreshFailure,
+	recordProviderCacheRefreshPending,
+} from "../services/provider-cache-status.js";
 import {
 	type ProviderConnectionIdentity,
 	withCurrentProviderConnection,
@@ -82,6 +85,25 @@ async function performTautulliCacheRefresh(
 	log: FastifyBaseLogger,
 	expectedConnection: ProviderConnectionIdentity,
 ): Promise<TautulliCacheRefreshResult> {
+	const pending = await recordProviderCacheRefreshPending(
+		prisma,
+		instanceId,
+		CACHE_TYPE,
+		expectedConnection,
+		log,
+	);
+	if (pending !== "recorded") {
+		return {
+			upserted: 0,
+			errors: pending === "failed" ? 1 : 0,
+			errorMessages:
+				pending === "failed"
+					? ["Tautulli cache refresh could not record its pending attempt"]
+					: ["Tautulli service connection changed before refresh"],
+			complete: false,
+			superseded: pending === "superseded" || undefined,
+		};
+	}
 	try {
 		const staged = await gatherCompleteSnapshot(client, instanceId);
 		const completedAt = new Date();

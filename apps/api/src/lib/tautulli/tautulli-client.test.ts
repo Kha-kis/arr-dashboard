@@ -33,6 +33,24 @@ function historyPage(start: number, count: number, total = 3) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("TautulliClient", () => {
+	it("runs the current-connection guard before any provider request", async () => {
+		const fetchMock = vi.fn();
+		const beforeRequest = vi.fn().mockRejectedValue(new Error("connection changed"));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new TautulliClient(
+			"http://tautulli.example",
+			"api-key-value",
+			log,
+			10_000,
+			{},
+			beforeRequest,
+		);
+
+		await expect(client.getInfo()).rejects.toThrow("connection changed");
+		expect(beforeRequest).toHaveBeenCalledTimes(1);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
 	it("keeps API-key query authentication when optional HTTP Basic auth is used", async () => {
 		const fetchMock = vi.fn().mockResolvedValue(success({ tautulli_version: "2.15.1" }));
 		vi.stubGlobal("fetch", fetchMock);
@@ -46,6 +64,31 @@ describe("TautulliClient", () => {
 		expect(new URL(requestUrl).searchParams.get("apikey")).toBe("api-key-value");
 		expect(new URL(requestUrl).searchParams.get("cmd")).toBe("get_tautulli_info");
 		expect(new Headers(request.headers).get("authorization")).toBe("Basic cHJveHk6c2VjcmV0");
+	});
+
+	it("fetches documented provider user identities and preserves friendly names", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			success([
+				{
+					user_id: "133788",
+					username: "jon@example.test",
+					friendly_name: "Jon Snow",
+					is_active: 1,
+					ignored_future_field: true,
+				},
+			]),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new TautulliClient("http://tautulli.example", "api-key-value", log);
+
+		await expect(client.getUsers()).resolves.toEqual([
+			expect.objectContaining({
+				user_id: "133788",
+				username: "jon@example.test",
+				friendly_name: "Jon Snow",
+			}),
+		]);
+		expect(new URL(fetchMock.mock.calls[0]![0]).searchParams.get("cmd")).toBe("get_users");
 	});
 
 	it("rejects a non-Tautulli instance before decrypting its credentials", () => {
@@ -153,6 +196,28 @@ describe("TautulliClient", () => {
 			order: [{ column: 0, dir: "asc" }],
 			start: 0,
 			length: 2,
+		});
+	});
+
+	it("uses documented newest-first date ordering for a bounded user-facing history page", async () => {
+		const fetchMock = vi.fn().mockResolvedValue(success(historyPage(0, 1, 1)));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new TautulliClient("http://tautulli.example", "api-key-value", log);
+
+		await client.getHistoryNewestPage({ start: 0, length: 1 });
+
+		const request = new URL(fetchMock.mock.calls[0]![0]);
+		expect(JSON.parse(request.searchParams.get("json_data")!)).toMatchObject({
+			columns: [
+				{ data: "date", orderable: true, searchable: false },
+				{ data: "row_id", orderable: true, searchable: false },
+			],
+			order: [
+				{ column: 0, dir: "desc" },
+				{ column: 1, dir: "desc" },
+			],
+			start: 0,
+			length: 1,
 		});
 	});
 

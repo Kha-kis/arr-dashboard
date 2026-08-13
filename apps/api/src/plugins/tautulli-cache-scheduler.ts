@@ -14,7 +14,7 @@ import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
 import { recordProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
 import { refreshTautulliCache } from "../lib/tautulli/tautulli-cache-refresher.js";
-import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
+import { createCurrentTautulliClient } from "../lib/tautulli/current-tautulli-client.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -51,8 +51,7 @@ export async function refreshScheduledTautulliCacheInstance(
 			return "superseded";
 		}
 
-		const tautulliInstance = currentInstance as ServiceInstance & { service: "TAUTULLI" };
-		const client = createTautulliClient(app.encryptor, tautulliInstance, app.log);
+		const { client } = createCurrentTautulliClient(app, currentInstance);
 		const result = await refreshTautulliCache(
 			client,
 			app.prisma,

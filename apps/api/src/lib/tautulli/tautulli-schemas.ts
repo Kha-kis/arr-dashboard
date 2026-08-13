@@ -89,14 +89,30 @@ export const tautulliHomeStatSchema = z.looseObject({
 	stat_title: z.string(),
 	rows: z.array(
 		z.looseObject({
-			title: z.string(),
+			title: z.string().optional(),
 			friendly_name: z.string().optional(),
+			user: z.string().optional(),
+			user_id: z.coerce.string().optional(),
+			section_id: z.coerce.string().optional(),
+			section_name: z.string().optional(),
+			section_type: z.string().optional(),
 			total_plays: z.coerce.number().optional().default(0),
 			total_duration: z.coerce.number().optional().default(0),
 			platform: z.string().optional(),
+			count: z.coerce.number().int().nonnegative().optional(),
+			started: z.coerce.number().int().nonnegative().optional(),
+			stopped: z.coerce.number().int().nonnegative().optional(),
+			rating_key: z.coerce.string().optional(),
+			grandparent_rating_key: z.coerce.string().optional(),
 			thumb: z.string().optional(),
 		}),
 	),
+});
+
+export const tautulliUserSchema = z.looseObject({
+	user_id: z.coerce.string(),
+	username: z.string(),
+	friendly_name: z.string().optional(),
 });
 
 export const tautulliUserWatchTimeStatsSchema = z.looseObject({
