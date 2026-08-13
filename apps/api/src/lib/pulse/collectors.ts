@@ -609,7 +609,7 @@ const collectSeerrCircuitBreaker: Collector = async (app, userId) => {
 // cacheType values (e.g. "plex_episode", or pre-migration "tautulli" rows
 // that linger until the 3.0 dialog deletes their instances) still emit a
 // warning — just without an action button, so we don't ship a click the
-// backend can't fulfil.
+// backend can't fulfil. Tautulli is handled by its dedicated collector below.
 const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>(["plex", "jellyfin"]);
 
 function actionForCache(

@@ -10,6 +10,7 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import type { ServiceInstance } from "../lib/prisma.js";
+import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
 import { recordProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
 import { refreshTautulliCache } from "../lib/tautulli/tautulli-cache-refresher.js";
@@ -74,17 +75,19 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 			}
 			isRunning = true;
 			try {
-				const instances = await app.prisma.serviceInstance.findMany({
-					where: { service: "TAUTULLI", enabled: true },
-				});
-				if (instances.length === 0) {
-					app.log.debug("Tautulli cache refresh: no enabled Tautulli instances, skipping");
-					return;
-				}
+				await app.schedulerRegistry.track(JOB_ID.tautulliCache, async () => {
+					const instances = await app.prisma.serviceInstance.findMany({
+						where: { service: "TAUTULLI", enabled: true },
+					});
+					if (instances.length === 0) {
+						app.log.debug("Tautulli cache refresh: no enabled Tautulli instances, skipping");
+						return;
+					}
 
-				for (const instance of instances) {
-					await refreshScheduledTautulliCacheInstance(app, instance);
-				}
+					for (const instance of instances) {
+						await refreshScheduledTautulliCacheInstance(app, instance);
+					}
+				});
 			} finally {
 				isRunning = false;
 			}
@@ -109,7 +112,7 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 			if (intervalHandle) clearInterval(intervalHandle);
 		});
 	},
-	{ name: "tautulli-cache-scheduler" },
+	{ name: "tautulli-cache-scheduler", dependencies: ["scheduler-registry"] },
 );
 
 export default tautulliCacheSchedulerPlugin;

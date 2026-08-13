@@ -14,6 +14,9 @@ vi.mock("../../lib/services/provider-cache-status.js", () => ({
 	recordProviderCacheRefreshFailure,
 }));
 
+import { JOB_ID } from "../../lib/scheduler-registry/job-definitions.js";
+import { providerConnectionIdentity } from "../../lib/services/provider-connection-guard.js";
+import schedulerRegistryPlugin from "../scheduler-registry.js";
 import tautulliCacheSchedulerPlugin, {
 	refreshScheduledTautulliCacheInstance,
 } from "../tautulli-cache-scheduler.js";
@@ -24,12 +27,15 @@ const INTERVAL_MS = 6 * 60 * 60 * 1000;
 function instance(id: string, enabled = true) {
 	return {
 		id,
+		userId: "user-1",
 		label: `Tautulli ${id}`,
 		service: "TAUTULLI",
 		enabled,
 		connectionGeneration: 4,
 		encryptedApiKey: "encrypted-key",
 		encryptionIv: "key-iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
 		baseUrl: "https://tautulli.example.test",
 	};
 }
@@ -47,6 +53,7 @@ describe("tautulli cache scheduler", () => {
 		app.decorate("prisma", {
 			serviceInstance: { findMany },
 		} as never);
+		await app.register(schedulerRegistryPlugin);
 		createTautulliClient.mockReturnValue({});
 		refreshTautulliCache.mockResolvedValue({
 			upserted: 1,
@@ -79,7 +86,7 @@ describe("tautulli cache scheduler", () => {
 			app.prisma,
 			"one",
 			app.log,
-			{ service: "TAUTULLI", connectionGeneration: 4 },
+			providerConnectionIdentity(instance("one") as never),
 		);
 		expect(refreshTautulliCache).toHaveBeenNthCalledWith(
 			2,
@@ -87,8 +94,13 @@ describe("tautulli cache scheduler", () => {
 			app.prisma,
 			"two",
 			app.log,
-			{ service: "TAUTULLI", connectionGeneration: 4 },
+			providerConnectionIdentity(instance("two") as never),
 		);
+		expect(app.schedulerRegistry.getStatus(JOB_ID.tautulliCache)).toMatchObject({
+			totalRuns: 1,
+			totalFailures: 0,
+			state: "idle",
+		});
 	});
 
 	it("does not start an overlapping tick while an earlier refresh is in flight", async () => {
@@ -132,7 +144,7 @@ describe("tautulli cache scheduler", () => {
 			"one",
 			"tautulli",
 			"credential could not be decrypted",
-			{ service: "TAUTULLI", connectionGeneration: 4 },
+			providerConnectionIdentity(instance("one") as never),
 			schedulerApp.log,
 		);
 	});
