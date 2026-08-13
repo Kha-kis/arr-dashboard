@@ -62,7 +62,7 @@ export function refreshTautulliCache(
 	log: FastifyBaseLogger,
 	expectedConnection: ProviderConnectionIdentity,
 ): Promise<TautulliCacheRefreshResult> {
-	const key = `${instanceId}:${expectedConnection.service}:${expectedConnection.connectionGeneration}`;
+	const key = `${instanceId}:${expectedConnection.service}:${expectedConnection.connectionGeneration}:${expectedConnection.connectionFingerprint}`;
 	const existing = inFlightRefreshes.get(key);
 	if (existing) return existing;
 

@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../prisma.js";
+import { providerConnectionIdentity } from "../services/provider-connection-guard.js";
 import {
 	clearTautulliCacheRefreshSingleFlightsForTests,
 	evictStaleRows,
@@ -16,7 +17,17 @@ const log = {
 	debug: vi.fn(),
 } as unknown as FastifyBaseLogger;
 
-const expectedConnection = { service: "TAUTULLI" as const, connectionGeneration: 7 };
+const tautulliConnection = {
+	service: "TAUTULLI" as const,
+	baseUrl: "https://tautulli.example.test",
+	encryptedApiKey: "key",
+	encryptionIv: "iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	enabled: true,
+	connectionGeneration: 7,
+};
+const expectedConnection = providerConnectionIdentity(tautulliConnection);
 
 afterEach(() => {
 	clearTautulliCacheRefreshSingleFlightsForTests();
@@ -70,7 +81,7 @@ function completeClient(options?: {
 }
 
 function makeAtomicPrisma(options?: {
-	current?: { service: "TAUTULLI" | "PLEX"; enabled: boolean; connectionGeneration: number } | null;
+	current?: (Omit<typeof tautulliConnection, "service"> & { service: "TAUTULLI" | "PLEX" }) | null;
 	failPublication?: boolean;
 }) {
 	const state: {
@@ -85,10 +96,7 @@ function makeAtomicPrisma(options?: {
 			lastAttemptResult: "success",
 		},
 	};
-	const current =
-		options?.current === undefined
-			? { service: "TAUTULLI" as const, enabled: true, connectionGeneration: 7 }
-			: options.current;
+	const current = options?.current === undefined ? tautulliConnection : options.current;
 	let failPublication = options?.failPublication ?? false;
 
 	const prisma = {
@@ -364,12 +372,9 @@ describe("refreshTautulliCache", () => {
 
 	it.each([
 		["deleted", null],
-		["disabled", { service: "TAUTULLI" as const, enabled: false, connectionGeneration: 7 }],
-		["service changed", { service: "PLEX" as const, enabled: true, connectionGeneration: 7 }],
-		[
-			"generation changed",
-			{ service: "TAUTULLI" as const, enabled: true, connectionGeneration: 8 },
-		],
+		["disabled", { ...tautulliConnection, enabled: false }],
+		["service changed", { ...tautulliConnection, service: "PLEX" as const }],
+		["generation changed", { ...tautulliConnection, connectionGeneration: 8 }],
 	])(
 		"fails closed without recording stale failure status when the instance was %s",
 		async (_reason, current) => {
