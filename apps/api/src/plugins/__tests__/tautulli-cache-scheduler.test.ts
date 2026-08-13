@@ -61,6 +61,7 @@ describe("tautulli cache scheduler", () => {
 			errorMessages: [],
 			complete: true,
 		});
+		recordProviderCacheRefreshFailure.mockResolvedValue("recorded");
 		await app.register(tautulliCacheSchedulerPlugin);
 		await app.ready();
 	});
@@ -125,6 +126,66 @@ describe("tautulli cache scheduler", () => {
 		await vi.runAllTicks();
 	});
 
+	it("marks the tracked tick failed after processing every current instance with a failure", async () => {
+		findMany.mockResolvedValue([instance("broken"), instance("healthy")]);
+		createTautulliClient
+			.mockImplementationOnce(() => {
+				throw new Error("credential could not be decrypted");
+			})
+			.mockReturnValueOnce({});
+
+		await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
+
+		expect(createTautulliClient).toHaveBeenCalledTimes(2);
+		expect(refreshTautulliCache).toHaveBeenCalledTimes(1);
+		expect(recordProviderCacheRefreshFailure).toHaveBeenCalledTimes(1);
+		expect(app.schedulerRegistry.getStatus(JOB_ID.tautulliCache)).toMatchObject({
+			totalRuns: 1,
+			totalFailures: 1,
+			consecutiveFailures: 1,
+			lastError: "Tautulli cache refresh failed for 1 configured instance",
+		});
+	});
+
+	it("marks an incomplete current refresh failed without exposing its upstream error", async () => {
+		findMany.mockResolvedValue([instance("one")]);
+		refreshTautulliCache.mockResolvedValueOnce({
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["private upstream response"],
+			complete: false,
+		});
+
+		await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
+
+		expect(app.schedulerRegistry.getStatus(JOB_ID.tautulliCache)).toMatchObject({
+			totalFailures: 1,
+			lastError: "Tautulli cache refresh failed for 1 configured instance",
+		});
+		expect(app.schedulerRegistry.getStatus(JOB_ID.tautulliCache)?.lastError).not.toContain(
+			"private upstream response",
+		);
+	});
+
+	it("treats a superseded refresh as a neutral successful tick", async () => {
+		findMany.mockResolvedValue([instance("one")]);
+		refreshTautulliCache.mockResolvedValueOnce({
+			upserted: 0,
+			errors: 0,
+			errorMessages: ["Tautulli service connection changed during refresh"],
+			complete: false,
+			superseded: true,
+		});
+
+		await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
+
+		expect(app.schedulerRegistry.getStatus(JOB_ID.tautulliCache)).toMatchObject({
+			totalRuns: 1,
+			totalFailures: 0,
+			consecutiveFailures: 0,
+		});
+	});
+
 	it("records a failed attempt through the guarded status boundary without replacing a generation", async () => {
 		const failure = new Error("credential could not be decrypted");
 		createTautulliClient.mockImplementation(() => {
@@ -137,7 +198,9 @@ describe("tautulli cache scheduler", () => {
 			log: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 		};
 
-		await refreshScheduledTautulliCacheInstance(schedulerApp as never, instance("one") as never);
+		await expect(
+			refreshScheduledTautulliCacheInstance(schedulerApp as never, instance("one") as never),
+		).resolves.toBe("failed");
 
 		expect(recordProviderCacheRefreshFailure).toHaveBeenCalledWith(
 			schedulerApp.prisma,

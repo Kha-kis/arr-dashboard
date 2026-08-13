@@ -22,7 +22,6 @@
  *   action or page to link to.
  */
 
-import type { ServiceInstanceSummary } from "@arr/shared";
 import type { LucideIcon } from "lucide-react";
 import {
 	Archive,
@@ -103,9 +102,10 @@ export const CONSOLE_DOMAINS: readonly ConsoleDomain[] = [
 			"plex-episode-cache",
 			"jellyfin-cache",
 			"jellyfin-episode-cache",
+			"tautulli-cache",
 			"session-snapshot",
 		],
-		requiresService: ["plex", "jellyfin", "emby"],
+		requiresService: ["plex", "jellyfin", "emby", "tautulli"],
 	},
 	{
 		id: "automation",
@@ -235,7 +235,7 @@ export function deriveDomainTile(
  */
 export function buildDomainTiles(
 	jobs: readonly SystemJobStatus[],
-	services: readonly Pick<ServiceInstanceSummary, "service" | "enabled">[],
+	services: readonly { service: string; enabled: boolean }[],
 ): DomainTileModel[] {
 	const enabledServices = new Set(
 		services.filter((s) => s.enabled).map((s) => s.service.toLowerCase()),

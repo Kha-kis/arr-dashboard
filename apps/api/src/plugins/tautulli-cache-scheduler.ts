@@ -20,6 +20,8 @@ import { getErrorMessage } from "../lib/utils/error-message.js";
 const INTERVAL_MS = 6 * 60 * 60 * 1000;
 const STARTUP_DELAY_MS = 2 * 60_000;
 
+export type ScheduledTautulliRefreshOutcome = "success" | "superseded" | "failed";
+
 /**
  * Runs the reviewed cache-publication boundary for one current Tautulli
  * instance. A disabled or changed instance is skipped before client creation;
@@ -28,8 +30,8 @@ const STARTUP_DELAY_MS = 2 * 60_000;
 export async function refreshScheduledTautulliCacheInstance(
 	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
 	instance: ServiceInstance,
-): Promise<void> {
-	if (!instance.enabled || instance.service !== "TAUTULLI") return;
+): Promise<ScheduledTautulliRefreshOutcome> {
+	if (!instance.enabled || instance.service !== "TAUTULLI") return "superseded";
 
 	const expectedConnection = providerConnectionIdentity(instance);
 	const tautulliInstance = instance as ServiceInstance & { service: "TAUTULLI" };
@@ -46,19 +48,29 @@ export async function refreshScheduledTautulliCacheInstance(
 			{ instanceId: instance.id, complete: result.complete, superseded: result.superseded },
 			"Tautulli cache refresh completed for instance",
 		);
+		if (result.superseded) return "superseded";
+		return result.complete ? "success" : "failed";
 	} catch (error) {
 		app.log.error(
 			{ err: error, instanceId: instance.id },
 			"Tautulli cache refresh failed for instance",
 		);
-		await recordProviderCacheRefreshFailure(
-			app.prisma,
-			instance.id,
-			"tautulli",
-			getErrorMessage(error, "Tautulli cache refresh failed"),
-			expectedConnection,
-			app.log,
-		);
+		try {
+			await recordProviderCacheRefreshFailure(
+				app.prisma,
+				instance.id,
+				"tautulli",
+				getErrorMessage(error, "Tautulli cache refresh failed"),
+				expectedConnection,
+				app.log,
+			);
+		} catch (statusError) {
+			app.log.warn(
+				{ err: statusError, instanceId: instance.id },
+				"Failed to record Tautulli cache refresh failure status",
+			);
+		}
+		return "failed";
 	}
 }
 
@@ -84,8 +96,15 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 						return;
 					}
 
+					let failedInstances = 0;
 					for (const instance of instances) {
-						await refreshScheduledTautulliCacheInstance(app, instance);
+						const outcome = await refreshScheduledTautulliCacheInstance(app, instance);
+						if (outcome === "failed") failedInstances += 1;
+					}
+					if (failedInstances > 0) {
+						throw new Error(
+							`Tautulli cache refresh failed for ${failedInstances} configured instance${failedInstances === 1 ? "" : "s"}`,
+						);
 					}
 				});
 			} finally {

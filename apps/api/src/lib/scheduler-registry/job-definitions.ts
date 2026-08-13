@@ -152,7 +152,7 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		label: "Tautulli history cache",
 		description:
 			"Refreshes guarded Tautulli history cache generations for enabled instances every 6 hours. Ticks are serialized and each publication is bound to the current owner and provider connection.",
-		concurrency: "per-instance",
+		concurrency: "singleton",
 		intervalMs: 6 * 60 * 60 * 1000,
 	},
 	{

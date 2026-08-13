@@ -189,6 +189,20 @@ describe("buildDomainTiles — service gating by omission", () => {
 		expect(ids).not.toContain("requests");
 	});
 
+	it("includes Tautulli scheduler health for a Tautulli-only installation", () => {
+		const tiles = buildDomainTiles(
+			[makeJob({ id: "tautulli-cache", consecutiveFailures: 2 })],
+			[{ service: "tautulli", enabled: true }],
+		);
+
+		expect(tiles).toEqual([
+			expect.objectContaining({
+				domain: expect.objectContaining({ id: "media-caches" }),
+				status: "degraded",
+			}),
+		]);
+	});
+
 	it("a DISABLED instance does not satisfy the gate", () => {
 		const tiles = buildDomainTiles(ALL_JOBS, [{ service: "seerr", enabled: false }]);
 		expect(tiles.map((t) => t.domain.id)).not.toContain("requests");
