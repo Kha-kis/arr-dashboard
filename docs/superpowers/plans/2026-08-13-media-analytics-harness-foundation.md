@@ -268,21 +268,31 @@ Expected: FAIL because bootstrap scripts do not exist.
 
 - [ ] **Step 3: Implement generated state and readiness**
 
-Generate 64-hex Tracearr JWT/cookie secrets, a database password, an
-arr-dashboard administrator password, and API-test state with `openssl rand`.
+Generate 64-hex Tracearr JWT/cookie secrets, a database password, a 32-character
+Tautulli API key, a local-mode Plex test token, an arr-dashboard administrator
+password, and API-test state with `openssl rand`.
 Never echo values. Source `.state/runtime.env` only after validating owner-only
-permissions. Wait on Plex `/identity`, Tautulli `/status`, Tracearr `/api/health`
-or its documented current equivalent, and arr-dashboard `/health`, using a
+permissions. Wait on Plex `/identity`, Tautulli `/status`, Tracearr `/health`,
+and arr-dashboard `/health`, using a
 bounded loop whose timeout names the failed service.
 
 - [ ] **Step 4: Implement supported bootstrap flows and observe real behavior**
 
 Start the stack, inspect Plex `/identity`, and configure the synthetic library
-through Plex's HTTP setup flow. Configure Tautulli through its supported
-first-run endpoint and obtain its generated API key through the supported config
-surface. Configure Tracearr through its supported first-run HTTP/API surface,
-connect it to `http://plex:32400`, and obtain the application credential required
-by arr-dashboard. Do not edit SQLite or PostgreSQL files.
+through Plex's HTTP setup flow. Configure Tautulli non-interactively with its
+supported `TAUTULLI_FIRST_RUN_COMPLETE`, `TAUTULLI_PMS_TOKEN`,
+`TAUTULLI_PMS_IDENTIFIER`, `TAUTULLI_PMS_IP`, `TAUTULLI_PMS_PORT`,
+`TAUTULLI_PMS_URL_MANUAL`, `TAUTULLI_API_ENABLED`, and `TAUTULLI_API_KEY`
+environment overrides. Require
+`/api/v2?apikey=<key>&cmd=server_status` to report `connected: true`.
+
+For Tracearr, call unauthenticated `GET /api/v1/setup/status`, create the first
+owner through `POST /api/v1/auth/sign-up/email` while preserving its Better Auth
+session cookie, connect Plex through authenticated `POST /api/v1/servers`, and
+obtain arr-dashboard's read-only key through authenticated
+`POST /api/v1/settings/api-key/regenerate`. Require the key to start with
+`trr_pub_` and verify it against `GET /api/v2/public/docs` with an
+`Authorization: Bearer` header. Do not edit SQLite or PostgreSQL files.
 
 Register the arr-dashboard administrator through `/auth/register`, log in through
 the public auth route, create the three service instances with `/api/services`,
