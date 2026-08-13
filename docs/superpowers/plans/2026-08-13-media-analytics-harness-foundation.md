@@ -12,7 +12,7 @@
 
 - Use the exact Compose project name `arr-dashboard-media-analytics-e2e` for every Compose invocation.
 - Bind every published port to `127.0.0.1`; provider-to-provider traffic uses private Compose service names.
-- Use pinned image versions: Plex `plexinc/pms-docker:1.43.3.10861-07dfddaeb`, Tautulli `tautulli/tautulli:v2.17.2`, Tracearr `ghcr.io/connorgallopo/tracearr:v2.0.1`, TimescaleDB `timescale/timescaledb-ha:pg18.4-ts2.29.1`, Redis `redis:8.2.2-alpine`, and FFmpeg `linuxserver/ffmpeg:8.1.2-cli-ls76`.
+- Use pinned image versions: Plex `plexinc/pms-docker:1.43.3.10861-07dfddaeb`, Tautulli `tautulli/tautulli:v2.17.2`, Tracearr `ghcr.io/connorgallopo/tracearr:2.0.1`, TimescaleDB `timescale/timescaledb-ha:pg18.4-ts2.29.1`, Redis `redis:8.2.2-alpine`, and FFmpeg `linuxserver/ffmpeg:8.1.2-cli-ls76`.
 - Do not use `container_name`, `latest`, production endpoints, production credentials, or direct provider-database edits.
 - Generated credentials and artifacts live below gitignored `e2e/media-analytics/.state/` with owner-only permissions.
 - Destructive lifecycle operations resolve candidate resources immediately before mutation and reject any resource whose `com.docker.compose.project` label differs from the expected project.
