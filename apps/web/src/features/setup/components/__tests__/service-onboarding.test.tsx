@@ -144,7 +144,9 @@ describe("ServiceOnboarding", () => {
 	it("offers Tautulli as a manual analytics service and submits its connection details", async () => {
 		render(<ServiceOnboarding />);
 		expect(
-			screen.getByText(/Tracearr is recommended for new analytics setups/),
+			screen.getByText(
+				/Tracearr is recommended for new analytics setups.+Choose one historical analytics provider/,
+			),
 		).toBeInTheDocument();
 		fireEvent.click(screen.getByRole("button", { name: "tautulli" }));
 

@@ -245,7 +245,8 @@ export const ServiceOnboarding = () => {
 				<CardContent className="space-y-4">
 					<p className="text-sm text-muted-foreground">
 						Tracearr is recommended for new analytics setups. Tautulli remains a supported
-						alternative; you can connect either or both.
+						alternative for existing Plex analytics setups. Choose one historical analytics
+						provider.
 					</p>
 					<div className="flex flex-wrap gap-2">
 						{SERVICE_TYPES.map((service) => (
