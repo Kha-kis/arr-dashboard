@@ -235,6 +235,12 @@ describe("applyPathRewrite", () => {
 		);
 	});
 
+	it("does not rewrite a similarly prefixed path component", () => {
+		expect(applyPathRewrite("/downloads2/show.mkv", "/downloads>/qbit-data")).toBe(
+			"/downloads2/show.mkv",
+		);
+	});
+
 	it("treats malformed config (no '>') as a no-op", () => {
 		expect(applyPathRewrite("/downloads/x", "/downloads")).toBe("/downloads/x");
 	});

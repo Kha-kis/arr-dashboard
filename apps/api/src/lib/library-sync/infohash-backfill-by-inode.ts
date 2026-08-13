@@ -360,7 +360,17 @@ export function applyPathRewrite(quiPath: string, pathPrefix: string | null | un
 	const toPrefix = pathPrefix.slice(arrowIdx + 1);
 	if (!fromPrefix) return quiPath;
 	if (!quiPath.startsWith(fromPrefix)) return quiPath;
-	return toPrefix + quiPath.slice(fromPrefix.length);
+	const suffix = quiPath.slice(fromPrefix.length);
+	if (
+		suffix.length > 0 &&
+		!fromPrefix.endsWith("/") &&
+		!fromPrefix.endsWith("\\") &&
+		!suffix.startsWith("/") &&
+		!suffix.startsWith("\\")
+	) {
+		return quiPath;
+	}
+	return toPrefix + suffix;
 }
 
 /**

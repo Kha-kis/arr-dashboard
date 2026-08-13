@@ -397,6 +397,9 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			const episode = liveEpisodes.find((candidate) => candidate.id === episodeId);
 			if (episode) episode.monitored = monitored;
 		},
+		addLiveEpisode: (episode: (typeof liveEpisodes)[number]) => {
+			liveEpisodes.push(episode);
+		},
 		setLiveSeriesExists: (exists: boolean) => {
 			liveSeriesExists = exists;
 		},
@@ -512,6 +515,53 @@ describe("shared Plex deletion safety for Sonarr", () => {
 			selectedFile: { episodeFileId: 3_001 },
 			retainedTargetFiles: [{ episodeFileId: 3_002 }],
 		});
+	});
+
+	it("blocks when the selected file gains another episode consumer during Plex verification", async () => {
+		const fixture = makeSonarrDeps();
+		const plexSeries = await fixture.getSeriesEpisodeMediaPartsByTvdbId(123);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockImplementation(async () => {
+			fixture.addLiveEpisode({
+				id: 9_003,
+				seasonNumber: 1,
+				episodeNumber: 3,
+				episodeFileId: 3_001,
+				monitored: true,
+			});
+			return plexSeries;
+		});
+		const episodeTarget = exactEpisodeTarget();
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(episodeTarget))).toContain(
+			"could not verify the live Sonarr series",
+		);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("blocks when qUI becomes active during Plex verification", async () => {
+		const fixture = makeSonarrDeps();
+		const plexSeries = await fixture.getSeriesEpisodeMediaPartsByTvdbId(123);
+		let torrentState = "pausedUP";
+		vi.mocked(fixture.deps.quiClientFactory!).mockImplementation(
+			() =>
+				({
+					getTorrentsByHash: vi.fn(async () => [{ hash: "episode-hash", state: torrentState }]),
+				}) as never,
+		);
+		fixture.getSeriesEpisodeMediaPartsByTvdbId.mockImplementation(async () => {
+			torrentState = "stalledUP";
+			return plexSeries;
+		});
+		const episodeTarget = exactEpisodeTarget();
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(episodeTarget))).toContain(
+			"exact Sonarr episode files",
+		);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 	});
 
 	it("blocks an episode when its source-bound live Plex count no longer proves the candidate", async () => {

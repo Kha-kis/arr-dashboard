@@ -1316,7 +1316,10 @@ export async function assertVerifiedSonarrFilesUnchanged(
 export async function assertVerifiedSonarrEpisodeUnchanged(
 	sonarr: InstanceType<typeof SonarrClient>,
 	arrItemId: number,
-	plan: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr_episode" }>,
+	plan: Pick<
+		Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr_episode" }>,
+		"target" | "episode" | "selectedFile" | "retainedTargetFiles"
+	>,
 	options: {
 		monitoredMode?: "exact" | "allow_unmonitored" | "require_unmonitored";
 	} = {},
@@ -3041,11 +3044,19 @@ async function verifyFreshEpisodeQuiState(
 	context: SharedPlexSafetyContext,
 	userId: string,
 	filePath: string,
+	options: { refresh?: boolean } = {},
 ): Promise<void> {
-	context.quiInstances ??= deps.prisma.serviceInstance.findMany({
-		where: { userId, service: "QUI", enabled: true },
-	});
-	const quiInstances = await context.quiInstances;
+	let quiInstances: ServiceInstance[];
+	if (options.refresh) {
+		quiInstances = await deps.prisma.serviceInstance.findMany({
+			where: { userId, service: "QUI", enabled: true },
+		});
+	} else {
+		context.quiInstances ??= deps.prisma.serviceInstance.findMany({
+			where: { userId, service: "QUI", enabled: true },
+		});
+		quiInstances = await context.quiInstances;
+	}
 	if (quiInstances.length === 0) return;
 	if (!deps.quiClientFactory || !deps.quiFileHashIndexFactory) {
 		throw new FileMatchVerificationError(
@@ -3059,10 +3070,10 @@ async function verifyFreshEpisodeQuiState(
 				"Target Sonarr episode qUI state could not be verified live",
 			);
 		}
-		let index = context.quiFileIndexes.get(instance.id);
+		let index = options.refresh ? undefined : context.quiFileIndexes.get(instance.id);
 		if (!index) {
 			index = deps.quiFileHashIndexFactory(instance);
-			context.quiFileIndexes.set(instance.id, index);
+			if (!options.refresh) context.quiFileIndexes.set(instance.id, index);
 		}
 		try {
 			const resolution = await (await index).resolve(filePath);
@@ -3078,10 +3089,10 @@ async function verifyFreshEpisodeQuiState(
 	for (const hash of hashes) {
 		for (const instance of quiInstances) {
 			const cacheKey = `${instance.id}\0${hash}`;
-			let torrents = context.quiHashTorrents.get(cacheKey);
+			let torrents = options.refresh ? undefined : context.quiHashTorrents.get(cacheKey);
 			if (!torrents) {
 				torrents = deps.quiClientFactory(instance).getTorrentsByHash(hash);
-				context.quiHashTorrents.set(cacheKey, torrents);
+				if (!options.refresh) context.quiHashTorrents.set(cacheKey, torrents);
 			}
 			let exactResults: Awaited<typeof torrents>;
 			try {
@@ -3706,6 +3717,21 @@ export async function findSharedPlexDeleteBlocks(
 					context.plans.set(targetKey, { kind: "blocked", reason });
 					continue;
 				}
+				if (episodePlan) {
+					if (episodePlan.quiIdentity.enabled) {
+						await verifyFreshEpisodeQuiState(
+							deps,
+							context,
+							userId,
+							episodePlan.selectedFile.fullPath.value,
+							{ refresh: true },
+						);
+					}
+					await assertVerifiedSonarrEpisodeUnchanged(sonarr, target.arrItemId, {
+						target: targetIdentity,
+						...episodePlan,
+					});
+				}
 				context.verifiedSonarrFiles.set(targetKey, verifiedFiles);
 				context.plans.set(
 					targetKey,
@@ -4000,6 +4026,21 @@ export async function findSharedPlexDeleteBlocks(
 				JSON.stringify(pending.targetDeleteNotifications)
 			) {
 				throw new ArrTargetChangedDuringSafetyCheckError();
+			}
+			if (pending.episodePlan) {
+				if (pending.episodePlan.quiIdentity.enabled) {
+					await verifyFreshEpisodeQuiState(
+						deps,
+						context,
+						userId,
+						pending.episodePlan.selectedFile.fullPath.value,
+						{ refresh: true },
+					);
+				}
+				await assertVerifiedSonarrEpisodeUnchanged(pending.client, pending.target.arrItemId, {
+					target: pending.targetIdentity,
+					...pending.episodePlan,
+				});
 			}
 			context.verifiedSonarrFiles.set(pending.targetKey, pending.verifiedFiles);
 			context.plans.set(
