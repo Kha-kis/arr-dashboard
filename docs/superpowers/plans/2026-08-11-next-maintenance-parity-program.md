@@ -14,8 +14,9 @@ merging `main` wholesale or reintroducing behavior intentionally removed from
 reviewable pull requests. First install the project Codex controls on `next`,
 then port Library Cleanup and provider evidence in dependency order, add the
 live validation harness, and finally port the TRaSH deployment safety stack.
-Each wave adapts behavior to 3.0's unified rule engine, Composer, and Tautulli
-removal rather than cherry-picking stable files blindly.
+Each wave adapts behavior to 3.0's unified rule engine, Composer, and explicit
+Tracearr/Tautulli provider choice rather than cherry-picking stable files
+blindly.
 
 **Tech Stack:** TypeScript, Fastify 5, Prisma, Next.js 16, React 19, Vitest,
 Playwright, Docker Compose, SQLite, PostgreSQL, Sonarr, Radarr, Plex, Jellyfin,
@@ -28,9 +29,10 @@ Emby, qUI, GitHub Actions, and Codex project skills.
   fixed on `main` first, then forward-ported separately to `next`.
 - Never merge `main` into `next`. Port the verified behavior and tests, then
   adapt them to 3.0 architecture.
-- Do not restore Tautulli runtime, routes, cache refreshers, schedulers, UI, or
-  dependencies. Preserve migration and fail-closed handling for stored
-  Tautulli-origin rules.
+- Tracearr is the recommended/default historical analytics provider and
+  Tautulli is a supported alternative. Preserve existing Tautulli state,
+  restore it through the dedicated bounded plan, and never mix provider data
+  or silently fail over.
 - Keep 2.x version, changelog, README, Docker tag, and release metadata on
   `main`.
 - Prisma clients are regenerated from the resulting `next` schema. Generated
@@ -62,7 +64,7 @@ confirmed from the live source paths and 3.0 architecture.
 | Stable work | `next` evidence | Disposition |
 | --- | --- | --- |
 | #582, #583, #597, #598, #547, #603, #605, #607, #611 | #581, #584, #609, #610 and current workflow/schema-sync contracts | No port |
-| #600 reverse-proxy Basic Auth | #599 | No port; Tautulli-specific stable code remains 2.x-only |
+| #600 reverse-proxy Basic Auth | #599 plus Wave 4B | Port the supported Tautulli behavior into the restored 3.0 client |
 | #601 new-library notifications | #575 notification correction and current scheduler/executor | No port |
 | #604 flat Sonarr ratings | #608 | No port |
 | #612 torrent-file allowlist | #613 | No port |
@@ -101,7 +103,10 @@ confirmed from the live source paths and 3.0 architecture.
 | Existing `next` debt | Required outcome | Wave |
 | --- | --- | --- |
 | Four OIDC files introduced by #649/#652 fail the root Biome formatter | Restore a clean formatting baseline in a dedicated mechanical-only PR | -1 |
-| #689 durable upstream server identity is not represented by connection fingerprints alone | Persist and verify the provider-returned Plex/Jellyfin/Emby server identity before cache publication, cleanup evidence use, or mutation; add an explicit reviewed server-replacement path | 4A |
+| Prior beta Tautulli removal governance | Supersede ADR-0007, preserve Tautulli state, and replace destructive startup governance with non-blocking notices | 4A |
+| Stable Tautulli integration surface | Restore typed client, guarded cache, scheduler, routes, setup, Pulse, and rules on 3.0 primitives | 4B |
+| Tracearr/Tautulli provider choice | Persist deterministic selection; Tracearr recommended, Tautulli alternative; no mixing or failover | 4C |
+| #689 durable upstream server identity is not represented by connection fingerprints alone | Persist and verify provider-returned Plex/Jellyfin/Emby and provable Tautulli-associated Plex identity before cache publication, cleanup evidence use, or mutation; add an explicit reviewed server-replacement path | 4D |
 | #674's exact auto-sync-never-runs scenario remains unresolved; #686 proves only disabled-target safety | Make global update-driven auto-sync and per-link schedules observable, restart-safe, and exactly-once under deterministic SQLite/PostgreSQL fixtures | 11A |
 
 ### Open bug closure map
@@ -110,7 +115,7 @@ confirmed from the live source paths and 3.0 architecture.
 | --- | --- | --- |
 | #673 and #675 Plex HTTP 400 / degraded general cache | Wave 5 (#685, #693) | Plex 1.43-compatible movie/show and episode refreshes, plus the reported history-only-row case where current-library totals agree but the old generation was still rejected as incomplete |
 | #674 TRaSH auto-sync never runs | Waves 7-11, with #686 as partial evidence only | Reproduce or otherwise identify the exact scheduler path, verify a saved enabled target receives one current update, and separately retain disabled/re-enabled mutation safety; #686 alone does not close the reported scenario |
-| #689 wrong upstream behind a stable proxy | Wave 4A | Stable wrong-server proxy, between-read identity change, safe existing-instance enrollment, intentional replacement, and normal reverse-proxy coverage |
+| #689 wrong upstream behind a stable proxy | Wave 4D | Stable wrong-server proxy, between-read identity change, safe existing-instance enrollment, intentional replacement, and normal reverse-proxy coverage |
 
 ---
 
@@ -277,27 +282,61 @@ confirmed from the live source paths and 3.0 architecture.
   Sonarr episode identity, per-episode versus per-series mutation, qUI
   correlation, routes, shared types, and UI. Preserve unified-rule parity.
 
-- [ ] **Step 3: Port policy and recovery foundation (#668, #671)**
+  Completed on the frozen Wave 2 candidate at `201d1491`; exact episode
+  identity, Plex/qUI proof, API/UI authoring, retry behavior, independent
+  safety/regression review, and the complete repository gauntlet are green.
 
-  Add durable policy evidence, selection planning, audit events, run leases,
+- [x] **Step 3: Port policy and recovery foundation (#668, #671)**
+
+  Added durable policy evidence, selection planning, audit events, run leases,
   media-server rescan jobs, retry/idempotency, and IMDb-rating coverage behind
-  the unified cleanup adapter. Omit Tautulli runtime collectors while keeping
-  stored-rule migration fail closed.
+  the unified cleanup adapter. This was completed before the provider-choice
+  decision; Tautulli evidence is restored only through Waves 4A-4D.
 
-- [ ] **Step 4: Port provider cache correctness (#670)**
+  Execute this as three bounded, stacked review units: Wave 3A policy evidence,
+  recursive rule persistence, IMDb provenance, and deterministic selection;
+  Wave 3B append-only audit/activity; Wave 3C durable post-delete media-server
+  rescan and independent recovery. See
+  `2026-08-12-next-cleanup-policy-recovery-parity.md`.
+
+- [x] **Step 4: Port provider cache correctness (#670)**
 
   Add connection generations, guarded status/publication writes, Jellyfin
   single-flight refreshes, and actionable Pulse retries for Plex, Jellyfin, and
-  Emby. Do not restore Tautulli.
+  Emby. Completed before the provider-choice decision and reused by the
+  restoration waves.
 
-- [ ] **Step 4A: Bind evidence to durable upstream identity (#689)**
+- [ ] **Step 4A: Preserve Tautulli and supersede removal governance**
+
+  Supersede ADR-0007, preserve existing Tautulli instances and rules, retain
+  old migration reports only as audit evidence, and use user-scoped
+  non-blocking notices for the approved provider states. Execute
+  `2026-08-12-tautulli-preservation-migration.md`.
+
+- [ ] **Step 4B: Restore the Tautulli runtime**
+
+  Restore the typed client, guarded cache publication, scheduling, routes,
+  setup, Pulse, and unified-rule evidence on the current 3.0 primitives.
+  Tautulli without proven Plex identity remains analytics-only. Execute
+  `2026-08-12-tautulli-runtime-restoration.md`.
+
+- [ ] **Step 4C: Add deterministic analytics-provider selection**
+
+  Make Tracearr recommended/default and Tautulli an explicit alternative.
+  Preserve Tautulli-only upgrades, default both-configured upgrades to
+  Tracearr, and prohibit mixing or silent runtime failover. Native media-server
+  sessions remain independent. Execute
+  `2026-08-12-analytics-provider-selection.md`.
+
+- [ ] **Step 4D: Bind evidence to durable upstream identity (#689)**
 
   Extend the provider-generation contract with the immutable identity returned
-  by the configured Plex, Jellyfin, or Emby server. Existing instances require
-  explicit safe enrollment, and intentional replacement requires a reviewed
-  transition; a matching URL, credential fingerprint, or two matching reads is
-  not sufficient evidence of server identity. Tautulli remains excluded from
-  the 3.0 runtime.
+  by Plex, Jellyfin, or Emby, and with associated Plex identity only where
+  Tautulli can prove it unambiguously. Existing instances require explicit safe
+  enrollment, and intentional replacement requires a reviewed transition; a
+  matching URL, credential fingerprint, or two matching reads is not sufficient
+  evidence of server identity. Execute
+  `2026-08-12-durable-upstream-identity.md`.
 
 - [ ] **Step 5: Port Plex evidence correctness (#685, #688, #693)**
 
@@ -384,13 +423,14 @@ confirmed from the live source paths and 3.0 architecture.
 
 - Consumes: every merged parity PR and current GitHub issue/PR state.
 - Produces: zero unclassified main-only maintenance behavior and a deliberate
-  disposition for stale drafts.
+  disposition for stale drafts and provider-choice work.
 
 - [ ] **Step 1: Re-run the semantic audit**
 
   Repeat the commit ledger against the final `next`. Every applicable stable
   outcome must point to a merged `next` commit and regression evidence; release
-  metadata and superseded Tautulli runtime remain explicitly excluded.
+  metadata remains explicitly excluded; restored Tautulli behavior must point
+  to the bounded 3.0 implementation and regression evidence.
 
 - [ ] **Step 2: Run the complete 3.0 gauntlet**
 
@@ -414,8 +454,8 @@ confirmed from the live source paths and 3.0 architecture.
 ## Program Exit Gate
 
 - All 47 original `main`-only commits have a recorded disposition.
-- All 21 required commits have semantic `next` equivalents; partial commits
-  list intentionally omitted 2.x/Tautulli surfaces.
+- All required maintenance outcomes have semantic `next` equivalents, including
+  the approved Tracearr-primary/Tautulli-alternative provider model.
 - Issue #689 has a reviewed `next` implementation with safe existing-instance
   enrollment, intentional replacement, reverse-proxy mismatch, and
   mutation-boundary coverage.

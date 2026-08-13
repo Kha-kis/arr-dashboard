@@ -5,7 +5,7 @@
  * transactional updates, report contents, idempotent no-op).
  */
 
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -339,5 +339,61 @@ describe("runTautulliRulesPass", () => {
 			await readFile(path.join(backupDir, "library-cleanup.json"), "utf-8"),
 		);
 		expect(preserved).toEqual([{ marker: "true-original" }]); // untouched
+	});
+});
+
+describe("readTautulliPassReport", () => {
+	let dataDir: string;
+
+	beforeEach(async () => {
+		dataDir = await mkdtemp(path.join(tmpdir(), "tautulli-report-reader-"));
+		silentLog.warn.mockClear();
+	});
+
+	afterEach(async () => {
+		await rm(dataDir, { recursive: true, force: true });
+	});
+
+	it("returns null and logs safely when a persisted report is structurally partial", async () => {
+		const backupDir = path.join(dataDir, "rules-pre-3.0");
+		await mkdir(backupDir, { recursive: true });
+		await writeFile(
+			path.join(backupDir, TAUTULLI_PASS_REPORT_FILE),
+			JSON.stringify({
+				ranAt: "2026-06-10T00:00:00.000Z",
+				surfaces: {
+					"library-cleanup": {
+						rulesScanned: 1,
+						rulesDisabled: [],
+						rulesModified: [],
+						rulesUnparseable: [],
+					},
+				},
+				totalAffectedRules: 0,
+			}),
+			"utf-8",
+		);
+
+		await expect(readTautulliPassReport(dataDir, silentLog)).resolves.toBeNull();
+		expect(silentLog.warn).toHaveBeenCalledWith(
+			expect.not.objectContaining({ err: expect.anything() }),
+			expect.stringContaining("could not be read"),
+		);
+	});
+
+	it("returns null without logging report content when a persisted report is malformed", async () => {
+		const backupDir = path.join(dataDir, "rules-pre-3.0");
+		await mkdir(backupDir, { recursive: true });
+		await writeFile(
+			path.join(backupDir, TAUTULLI_PASS_REPORT_FILE),
+			'{"private rule label":',
+			"utf-8",
+		);
+
+		await expect(readTautulliPassReport(dataDir, silentLog)).resolves.toBeNull();
+		expect(silentLog.warn).toHaveBeenCalledWith(
+			expect.not.objectContaining({ err: expect.anything() }),
+			expect.stringContaining("could not be read"),
+		);
 	});
 });

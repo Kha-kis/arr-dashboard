@@ -161,7 +161,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		prefix: "/api/system",
 		register: registerSystemRoutes,
 		maturity: "operator",
-		summary: "Settings, restart, jobs, posture diagnostics, 3.0 migrations",
+		summary: "Settings, restart, jobs, posture diagnostics, provider notices",
 	},
 	{
 		path: "/api/backup",

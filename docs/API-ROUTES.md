@@ -200,3 +200,5 @@ Per-row sleep is 100ms regardless of phase — that's the politeness budget agai
 | PUT | `/system/settings` | Update system settings |
 | GET | `/system/info` | Get system info (version, database backend, runtime) |
 | POST | `/system/restart` | Trigger application restart |
+| GET | `/system/migrations/tautulli` | Get safe, non-blocking Tautulli provider notices |
+| POST | `/system/migrations/tautulli` | Dismiss a validated Tautulli provider notice for the current user |

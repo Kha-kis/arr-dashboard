@@ -8,7 +8,7 @@ vi.mock("../../../lib/api-client/system");
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import * as systemApi from "../../../lib/api-client/system";
-import { useUpdateSystemSettings } from "../useSystem";
+import { useDismissTautulliProviderNotice, useUpdateSystemSettings } from "../useSystem";
 
 function createWrapper(client: QueryClient) {
 	return ({ children }: { children: ReactNode }) => (
@@ -41,6 +41,37 @@ describe("useUpdateSystemSettings", () => {
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: systemKeys.settings });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: systemKeys.securityPosture });
+
+		client.clear();
+	});
+});
+
+describe("useDismissTautulliProviderNotice", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("sends the dismissed notice key and invalidates only the notice query", async () => {
+		const client = new QueryClient({
+			defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+		});
+		const invalidateQueries = vi.spyOn(client, "invalidateQueries");
+		vi.mocked(systemApi.dismissTautulliProviderNotice).mockResolvedValue({ success: true });
+
+		const { result } = renderHook(() => useDismissTautulliProviderNotice(), {
+			wrapper: createWrapper(client),
+		});
+
+		result.current.mutate("tautulli-both-configured");
+
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		expect(systemApi.dismissTautulliProviderNotice).toHaveBeenCalledWith(
+			"tautulli-both-configured",
+		);
+		expect(invalidateQueries).toHaveBeenCalledTimes(1);
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: systemKeys.tautulliProviderNotices,
+		});
 
 		client.clear();
 	});

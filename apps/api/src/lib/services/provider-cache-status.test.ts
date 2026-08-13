@@ -4,6 +4,7 @@ import { recordProviderCacheRefreshFailure } from "./provider-cache-status.js";
 import { providerConnectionIdentity } from "./provider-connection-guard.js";
 
 const plexConnection = {
+	userId: "user-1",
 	service: "PLEX" as const,
 	baseUrl: "https://plex.example.test",
 	encryptedApiKey: "key",

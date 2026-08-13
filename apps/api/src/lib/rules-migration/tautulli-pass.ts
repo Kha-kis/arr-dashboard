@@ -1,13 +1,18 @@
 /**
- * Tautulli rules pass — the one semantic stored-rule migration in 3.0.
+ * Historical Tautulli rules pass and report reader.
  *
  * ADR-0006 amendment 2 / ADR-0007 / docs/design/unified-rule-grammar.md §3.1.
  *
- * Tautulli support is removed in 3.0, which orphans the three
+ * This records the former removal pass for historical report reading. ADR-0009
+ * preserves Tautulli configuration and rules, so this pass is not registered
+ * or executed during startup. The report reader below remains observation-only
+ * for a later recovery notice.
+ *
+ * The former pass considered the three
  * Tautulli-typed condition kinds (`tautulli_last_watched`,
  * `tautulli_watch_count`, `tautulli_watched_by`) stored in
- * LibraryCleanupRule and AutoTagRule documents. This pass runs once at
- * first 3.0 boot, under the ADR-0006 5-point contract:
+ * LibraryCleanupRule and AutoTagRule documents. The retained historical pass
+ * used the ADR-0006 5-point contract:
  *
  *   1. Backup before mutation — original rows are written to
  *      `<dataDir>/rules-pre-3.0/<surface>.json` (first-write-wins so a
@@ -40,6 +45,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { FastifyBaseLogger } from "fastify";
+import { z } from "zod";
 import type { PrismaClient } from "../prisma.js";
 
 export const TAUTULLI_RULE_KINDS = new Set([
@@ -89,6 +95,30 @@ export interface TautulliPassReport {
 	 */
 	acknowledgedAt?: string;
 }
+
+const ruleChangeSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	reason: z.enum(["tautulli-orphaned", "tautulli-condition-dropped", "unparseable"]),
+	droppedConditionKinds: z.array(z.string()).optional(),
+});
+
+const surfaceReportSchema = z.object({
+	rulesScanned: z.number(),
+	rulesDisabled: z.array(ruleChangeSchema),
+	rulesModified: z.array(ruleChangeSchema),
+	rulesUnparseable: z.array(ruleChangeSchema),
+});
+
+const tautulliPassReportSchema = z.object({
+	ranAt: z.string(),
+	surfaces: z.object({
+		"library-cleanup": surfaceReportSchema,
+		"auto-tag": surfaceReportSchema,
+	}),
+	totalAffectedRules: z.number(),
+	acknowledgedAt: z.string().optional(),
+});
 
 interface PlannedUpdate {
 	id: string;
@@ -252,8 +282,7 @@ function mergeSurfaceReports(
 }
 
 /**
- * Run the pass. Safe to call on every boot — exits without side effects
- * when no Tautulli-typed conditions remain.
+ * Run the historical pass. It must never be registered or invoked at startup.
  */
 export async function runTautulliRulesPass(
 	prisma: PrismaClient,
@@ -378,11 +407,19 @@ export async function readTautulliPassReport(
 	const reportPath = path.join(dataDir, BACKUP_DIR_NAME, TAUTULLI_PASS_REPORT_FILE);
 	try {
 		const raw = await readFile(reportPath, "utf-8");
-		return JSON.parse(raw) as TautulliPassReport;
+		const parsed = tautulliPassReportSchema.safeParse(JSON.parse(raw));
+		if (!parsed.success) {
+			log?.warn(
+				{ reportPath },
+				"Tautulli pass report exists but could not be read — dialog disclosure degraded",
+			);
+			return null;
+		}
+		return parsed.data;
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
 			log?.warn(
-				{ err: error, reportPath },
+				{ reportPath },
 				"Tautulli pass report exists but could not be read — dialog disclosure degraded",
 			);
 		}

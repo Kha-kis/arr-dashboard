@@ -35,6 +35,7 @@ const silentLog = {
 } as unknown as FastifyBaseLogger;
 
 const plexConnection = {
+	userId: "user-1",
 	service: "PLEX" as const,
 	baseUrl: "https://plex.example.test",
 	encryptedApiKey: "key",

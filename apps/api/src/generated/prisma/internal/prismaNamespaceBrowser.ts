@@ -113,7 +113,8 @@ export const ModelName = {
   QuiActivityLog: 'QuiActivityLog',
   QuiActionLog: 'QuiActionLog',
   QuiEventLog: 'QuiEventLog',
-  PulseDismissal: 'PulseDismissal'
+  PulseDismissal: 'PulseDismissal',
+  SystemNoticeDismissal: 'SystemNoticeDismissal'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -1300,6 +1301,16 @@ export const PulseDismissalScalarFieldEnum = {
 } as const
 
 export type PulseDismissalScalarFieldEnum = (typeof PulseDismissalScalarFieldEnum)[keyof typeof PulseDismissalScalarFieldEnum]
+
+
+export const SystemNoticeDismissalScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  noticeKey: 'noticeKey',
+  dismissedAt: 'dismissedAt'
+} as const
+
+export type SystemNoticeDismissalScalarFieldEnum = (typeof SystemNoticeDismissalScalarFieldEnum)[keyof typeof SystemNoticeDismissalScalarFieldEnum]
 
 
 export const SortOrder = {

@@ -238,48 +238,27 @@ export interface QuarantineResponse {
 }
 
 // ============================================================================
-// Tautulli Removal Migration (3.0 — ADR-0007)
+// Tautulli Provider Notices (3.0)
 // ============================================================================
 
-export interface TautulliRuleChange {
-	id: string;
-	name: string;
-	reason: "tautulli-orphaned" | "tautulli-condition-dropped" | "unparseable";
-	droppedConditionKinds?: string[];
+export type TautulliNoticeKey = "tautulli-both-configured" | "tautulli-prior-removal";
+
+export interface TautulliProviderNotice {
+	key: TautulliNoticeKey;
+	kind: "both-configured" | "prior-removal";
+	actionUrl: "/settings/services";
 }
 
-export interface TautulliSurfaceReport {
-	rulesScanned: number;
-	rulesDisabled: TautulliRuleChange[];
-	rulesModified: TautulliRuleChange[];
-	rulesUnparseable: TautulliRuleChange[];
+export interface TautulliProviderNoticesResponse {
+	notices: TautulliProviderNotice[];
 }
 
-export interface TautulliPassReport {
-	ranAt: string;
-	surfaces: {
-		"library-cleanup": TautulliSurfaceReport;
-		"auto-tag": TautulliSurfaceReport;
-	};
-	totalAffectedRules: number;
-	acknowledgedAt?: string;
+export function fetchTautulliProviderNotices(): Promise<TautulliProviderNoticesResponse> {
+	return apiRequest<TautulliProviderNoticesResponse>("/api/system/migrations/tautulli");
 }
 
-export interface TautulliMigrationStatus {
-	needed: boolean;
-	instances: Array<{ id: string; label: string }>;
-	rulesReport: TautulliPassReport | null;
-}
-
-export function fetchTautulliMigrationStatus(): Promise<TautulliMigrationStatus> {
-	return apiRequest<TautulliMigrationStatus>("/api/system/migrations/tautulli");
-}
-
-export function completeTautulliMigration(): Promise<{
-	success: boolean;
-	removedInstances: number;
-}> {
-	return apiRequest("/api/system/migrations/tautulli", { method: "POST" });
+export function dismissTautulliProviderNotice(key: TautulliNoticeKey): Promise<{ success: true }> {
+	return apiRequest("/api/system/migrations/tautulli", { method: "POST", json: { key } });
 }
 
 // ============================================================================

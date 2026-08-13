@@ -459,7 +459,8 @@ export const ModelName = {
   QuiActivityLog: 'QuiActivityLog',
   QuiActionLog: 'QuiActionLog',
   QuiEventLog: 'QuiEventLog',
-  PulseDismissal: 'PulseDismissal'
+  PulseDismissal: 'PulseDismissal',
+  SystemNoticeDismissal: 'SystemNoticeDismissal'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -475,7 +476,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "runtimeLease" | "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "crossDomainRule" | "crossDomainRuleMatch" | "tmdbListCache" | "traktListCache" | "quiActivityLog" | "quiActionLog" | "quiEventLog" | "pulseDismissal"
+    modelProps: "runtimeLease" | "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupLog" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "crossDomainRule" | "crossDomainRuleMatch" | "tmdbListCache" | "traktListCache" | "quiActivityLog" | "quiActionLog" | "quiEventLog" | "pulseDismissal" | "systemNoticeDismissal"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -5141,6 +5142,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    SystemNoticeDismissal: {
+      payload: Prisma.$SystemNoticeDismissalPayload<ExtArgs>
+      fields: Prisma.SystemNoticeDismissalFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.SystemNoticeDismissalFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.SystemNoticeDismissalFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload>
+        }
+        findFirst: {
+          args: Prisma.SystemNoticeDismissalFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.SystemNoticeDismissalFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload>
+        }
+        findMany: {
+          args: Prisma.SystemNoticeDismissalFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload>[]
+        }
+        create: {
+          args: Prisma.SystemNoticeDismissalCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload>
+        }
+        createMany: {
+          args: Prisma.SystemNoticeDismissalCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.SystemNoticeDismissalCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload>[]
+        }
+        delete: {
+          args: Prisma.SystemNoticeDismissalDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload>
+        }
+        update: {
+          args: Prisma.SystemNoticeDismissalUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload>
+        }
+        deleteMany: {
+          args: Prisma.SystemNoticeDismissalDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.SystemNoticeDismissalUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.SystemNoticeDismissalUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload>[]
+        }
+        upsert: {
+          args: Prisma.SystemNoticeDismissalUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$SystemNoticeDismissalPayload>
+        }
+        aggregate: {
+          args: Prisma.SystemNoticeDismissalAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateSystemNoticeDismissal>
+        }
+        groupBy: {
+          args: Prisma.SystemNoticeDismissalGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SystemNoticeDismissalGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.SystemNoticeDismissalCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.SystemNoticeDismissalCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -6350,6 +6425,16 @@ export const PulseDismissalScalarFieldEnum = {
 export type PulseDismissalScalarFieldEnum = (typeof PulseDismissalScalarFieldEnum)[keyof typeof PulseDismissalScalarFieldEnum]
 
 
+export const SystemNoticeDismissalScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  noticeKey: 'noticeKey',
+  dismissedAt: 'dismissedAt'
+} as const
+
+export type SystemNoticeDismissalScalarFieldEnum = (typeof SystemNoticeDismissalScalarFieldEnum)[keyof typeof SystemNoticeDismissalScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -6655,6 +6740,7 @@ export type GlobalOmitConfig = {
   quiActionLog?: Prisma.QuiActionLogOmit
   quiEventLog?: Prisma.QuiEventLogOmit
   pulseDismissal?: Prisma.PulseDismissalOmit
+  systemNoticeDismissal?: Prisma.SystemNoticeDismissalOmit
 }
 
 /* Types for Logging */

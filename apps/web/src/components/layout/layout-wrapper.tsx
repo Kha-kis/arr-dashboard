@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { TautulliMigrationDialog } from "../../features/migrations/components/tautulli-migration-dialog";
+import { TautulliProviderNotice } from "../../features/migrations/components/tautulli-provider-notice";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { useColorTheme } from "../../providers/color-theme-provider";
 import { CommandPalette, useCommandPalette } from "./command-palette";
@@ -38,10 +38,6 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
 
 	return (
 		<div className="relative flex min-h-screen bg-background">
-			{/* 3.0 one-shot migration gate — blocks until lingering Tautulli
-			    instances are acknowledged and removed (ADR-0007) */}
-			<TautulliMigrationDialog />
-
 			{/* Command Palette - Cmd+K */}
 			<CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
 
@@ -66,7 +62,10 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
 			<Sidebar />
 			<div className="relative z-10 flex min-w-0 flex-1 flex-col">
 				<TopBar onOpenCommandPalette={() => setCommandPaletteOpen(true)} />
-				<div className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">{children}</div>
+				<div className="min-w-0 flex-1 px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+					<TautulliProviderNotice />
+					{children}
+				</div>
 			</div>
 		</div>
 	);

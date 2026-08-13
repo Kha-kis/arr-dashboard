@@ -4,11 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
-import {
-	acknowledgeTautulliPassReport,
-	readTautulliPassReport,
-	type TautulliPassReport,
-} from "../lib/rules-migration/tautulli-pass.js";
+import { readTautulliPassReport } from "../lib/rules-migration/tautulli-pass.js";
 import { evaluateSecurityPosture } from "../lib/security/security-posture.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 import { validateRequest } from "../lib/utils/validate.js";
@@ -93,6 +89,19 @@ const validationModeSchema = z.object({
 	mode: z.enum(["strict", "tolerant", "log-only", "disabled"], {
 		message: "Invalid mode. Must be one of: strict, tolerant, log-only, disabled",
 	}),
+});
+
+type TautulliNoticeKind = "both-configured" | "prior-removal";
+type TautulliNotice = {
+	key: string;
+	kind: TautulliNoticeKind;
+	actionUrl: "/settings/services";
+};
+
+const TAUTULLI_NOTICE_KEYS = ["tautulli-both-configured", "tautulli-prior-removal"] as const;
+
+const dismissTautulliNoticeSchema = z.object({
+	key: z.enum(TAUTULLI_NOTICE_KEYS),
 });
 
 /**
@@ -626,67 +635,64 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
 	 * GET /system/migrations/tautulli
 	 *
-	 * Tautulli removal migration status (3.0, ADR-0007). `needed` is true
-	 * while pre-3.0 TAUTULLI service instances linger, OR while the boot
-	 * rules-pass disabled/modified rules that nobody has acknowledged yet
-	 * (a 2.x user could hold tautulli_* rules with no configured instance —
-	 * their rules stopped firing and that deserves the same disclosure).
-	 * The frontend shows a blocking dialog until acknowledged.
+	 * Returns safe, non-blocking provider notices. Historical reports are
+	 * evidence only: a missing Tautulli row never proves a prior removal, and
+	 * report content is never returned because it may contain sensitive labels.
 	 */
 	app.get("/migrations/tautulli", async (request, reply) => {
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: {
-				userId: request.currentUser!.id, // preHandler guarantees auth
-				service: "TAUTULLI",
-			},
-			select: { id: true, label: true },
-		});
+		const userId = request.currentUser!.id;
+		const [tautulliInstances, tracearrInstances, dismissals] = await Promise.all([
+			app.prisma.serviceInstance.findMany({
+				where: { userId, service: "TAUTULLI" },
+				select: { id: true },
+			}),
+			app.prisma.serviceInstance.findMany({
+				where: { userId, service: "TRACEARR" },
+				select: { id: true },
+			}),
+			app.prisma.systemNoticeDismissal.findMany({
+				where: { userId },
+				select: { noticeKey: true },
+			}),
+		]);
 
-		// Report is disclosure-only for instance-holders, but gating for
-		// rules-only users. Missing/unreadable report degrades to "no rule
-		// details" (logged loudly in the reader), never blocks the dialog.
 		const dataDir = dirname(resolveSecretsPath(app.config.DATABASE_URL || "file:./dev.db"));
-		const rulesReport: TautulliPassReport | null = await readTautulliPassReport(
-			dataDir,
-			request.log,
-		);
+		// Retain the private report read as historical audit evidence, but it has
+		// no user or deleted-instance identity and therefore cannot establish a
+		// user-scoped provider removal.
+		await readTautulliPassReport(dataDir, request.log);
+		const dismissedKeys = new Set(dismissals.map((dismissal) => dismissal.noticeKey));
+		const notices: TautulliNotice[] = [];
 
-		const unacknowledgedRules =
-			rulesReport !== null && !rulesReport.acknowledgedAt && rulesReport.totalAffectedRules > 0;
+		if (tautulliInstances.length > 0 && tracearrInstances.length > 0) {
+			notices.push({
+				key: "tautulli-both-configured",
+				kind: "both-configured",
+				actionUrl: "/settings/services",
+			});
+		}
 
 		return reply.send({
-			needed: instances.length > 0 || unacknowledgedRules,
-			instances,
-			rulesReport,
+			notices: notices.filter((notice) => !dismissedKeys.has(notice.key)),
 		});
 	});
 
 	/**
 	 * POST /system/migrations/tautulli
 	 *
-	 * Acknowledge the Tautulli removal: deletes the lingering TAUTULLI
-	 * service instances (TautulliCache + CacheRefreshStatus rows cascade)
-	 * and stamps the rules-pass report acknowledged so rules-only users
-	 * resolve too. Idempotent — a second call removes nothing and still
-	 * succeeds.
+	 * Persist a current user's dismissal of a non-blocking Tautulli notice.
+	 * This intentionally never alters provider instances, caches, rules, or
+	 * historical reports.
 	 */
 	app.post("/migrations/tautulli", async (request, reply) => {
-		const result = await app.prisma.serviceInstance.deleteMany({
-			where: {
-				userId: request.currentUser!.id, // preHandler guarantees auth
-				service: "TAUTULLI",
-			},
+		const { key } = validateRequest(dismissTautulliNoticeSchema, request.body);
+		await app.prisma.systemNoticeDismissal.upsert({
+			where: { userId_noticeKey: { userId: request.currentUser!.id, noticeKey: key } },
+			update: {},
+			create: { userId: request.currentUser!.id, noticeKey: key },
 		});
 
-		const dataDir = dirname(resolveSecretsPath(app.config.DATABASE_URL || "file:./dev.db"));
-		await acknowledgeTautulliPassReport(dataDir, request.log);
-
-		request.log.info(
-			{ removedInstances: result.count },
-			"Tautulli migration acknowledged — lingering instances removed",
-		);
-
-		return reply.send({ success: true, removedInstances: result.count });
+		return reply.send({ success: true });
 	});
 
 	done();

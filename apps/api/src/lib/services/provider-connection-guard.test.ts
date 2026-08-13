@@ -11,6 +11,7 @@ describe("withCurrentProviderConnection", () => {
 		vi.stubEnv("DATABASE_URL", "postgresql://arr-dashboard.test/provider-cache");
 		const calls: string[] = [];
 		const connection = {
+			userId: "user-1",
 			service: "PLEX" as const,
 			baseUrl: "https://plex.example.test",
 			encryptedApiKey: "key",
@@ -61,6 +62,7 @@ describe("withCurrentProviderConnection", () => {
 
 	it("rejects a restored row that reuses the id and generation for a different connection", async () => {
 		const original = {
+			userId: "user-1",
 			service: "PLEX" as const,
 			baseUrl: "https://old-plex.example.test",
 			encryptedApiKey: "old-key",
@@ -76,6 +78,44 @@ describe("withCurrentProviderConnection", () => {
 					...original,
 					baseUrl: "https://restored-plex.example.test",
 					encryptedApiKey: "restored-key",
+					enabled: true,
+				}),
+			},
+		};
+		const prisma = {
+			$transaction: vi.fn(
+				async (callback: (transaction: typeof tx) => Promise<unknown>) => await callback(tx),
+			),
+		};
+
+		const result = await withCurrentProviderConnection(
+			prisma as never,
+			"plex-1",
+			providerConnectionIdentity(original),
+			write,
+		);
+
+		expect(result).toEqual({ matched: false });
+		expect(write).not.toHaveBeenCalled();
+	});
+
+	it("rejects a restored row that reuses the id and connection for a different owner", async () => {
+		const original = {
+			userId: "user-1",
+			service: "PLEX" as const,
+			baseUrl: "https://plex.example.test",
+			encryptedApiKey: "key",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			connectionGeneration: 4,
+		};
+		const write = vi.fn();
+		const tx = {
+			serviceInstance: {
+				findUnique: vi.fn().mockResolvedValue({
+					...original,
+					userId: "user-2",
 					enabled: true,
 				}),
 			},
