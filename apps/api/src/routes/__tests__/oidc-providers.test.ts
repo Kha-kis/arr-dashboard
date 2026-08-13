@@ -153,27 +153,24 @@ describe("POST /api/oidc-providers", () => {
 		"https://admin:secret@arr.example.com/",
 		"ftp://arr.example.com/",
 		"mailto:admin@example.com",
-	])(
-		"rejects an unsafe APP_URL when generating the admin callback: %s",
-		async (appUrl) => {
-			Object.assign(app.config, { APP_URL: appUrl });
+	])("rejects an unsafe APP_URL when generating the admin callback: %s", async (appUrl) => {
+		Object.assign(app.config, { APP_URL: appUrl });
 
-			const response = await app.inject({
-				method: "POST",
-				url: "/api/oidc-providers",
-				payload: {
-					displayName: "Authentik",
-					clientId: "arr-dashboard",
-					clientSecret: "secret",
-					issuer: "https://auth.example.com",
-				},
-			});
+		const response = await app.inject({
+			method: "POST",
+			url: "/api/oidc-providers",
+			payload: {
+				displayName: "Authentik",
+				clientId: "arr-dashboard",
+				clientSecret: "secret",
+				issuer: "https://auth.example.com",
+			},
+		});
 
-			expect(response.statusCode).toBe(400);
-			expect(JSON.parse(response.payload).error).toContain("APP_URL");
-			expect(findProvider).not.toHaveBeenCalled();
-		},
-	);
+		expect(response.statusCode).toBe(400);
+		expect(JSON.parse(response.payload).error).toContain("APP_URL");
+		expect(findProvider).not.toHaveBeenCalled();
+	});
 });
 
 describe("DELETE /api/oidc-providers", () => {

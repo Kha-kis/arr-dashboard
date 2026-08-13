@@ -282,27 +282,24 @@ describe("POST /auth/oidc/setup", () => {
 		"https://admin:secret@arr.example.com/",
 		"ftp://arr.example.com/",
 		"mailto:admin@example.com",
-	])(
-		"rejects an unsafe APP_URL when generating the setup callback: %s",
-		async (appUrl) => {
-			Object.assign(app.config, { APP_URL: appUrl });
+	])("rejects an unsafe APP_URL when generating the setup callback: %s", async (appUrl) => {
+		Object.assign(app.config, { APP_URL: appUrl });
 
-			const res = await app.inject({
-				method: "POST",
-				url: "/auth/oidc/setup",
-				payload: {
-					displayName: "My OIDC Provider",
-					clientId: "my-client-id",
-					clientSecret: "my-client-secret",
-					issuer: "https://provider.example.com",
-				},
-			});
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/setup",
+			payload: {
+				displayName: "My OIDC Provider",
+				clientId: "my-client-id",
+				clientSecret: "my-client-secret",
+				issuer: "https://provider.example.com",
+			},
+		});
 
-			expect(res.statusCode).toBe(400);
-			expect(JSON.parse(res.payload).error).toContain("APP_URL");
-			expect(mockPrisma.oIDCProvider.create).not.toHaveBeenCalled();
-		},
-	);
+		expect(res.statusCode).toBe(400);
+		expect(JSON.parse(res.payload).error).toContain("APP_URL");
+		expect(mockPrisma.oIDCProvider.create).not.toHaveBeenCalled();
+	});
 
 	it("returns 403 when users already exist", async () => {
 		// Make the transaction see existing users
