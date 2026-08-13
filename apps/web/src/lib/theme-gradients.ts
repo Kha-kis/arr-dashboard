@@ -70,6 +70,7 @@
  * - Semantic colors (SEMANTIC_COLORS): success=green, warning=amber, error=red
  */
 
+import type { ArrServiceType } from "@arr/shared";
 import type { ColorTheme } from "../providers/color-theme-provider";
 
 /**
@@ -324,18 +325,7 @@ export interface ServiceGradient {
 }
 
 /** Valid service types for gradient lookup */
-export type ServiceType =
-	| "sonarr"
-	| "radarr"
-	| "prowlarr"
-	| "lidarr"
-	| "readarr"
-	| "seerr"
-	| "plex"
-	| "jellyfin"
-	| "emby"
-	| "qui"
-	| "tracearr";
+export type ServiceType = ArrServiceType;
 
 /**
  * Service-specific gradients for visual distinction
@@ -403,6 +393,11 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		from: "#d946ef", // fuchsia-500 (analytics / insight — distinct from the blues)
 		to: "#6366f1", // indigo-500 (long magenta→indigo sweep, unused elsewhere)
 		glow: "rgba(217, 70, 239, 0.4)",
+	},
+	tautulli: {
+		from: "#ef4444", // red-500 (Tautulli analytics identity)
+		to: "#f59e0b", // amber-500
+		glow: "rgba(239, 68, 68, 0.4)",
 	},
 };
 

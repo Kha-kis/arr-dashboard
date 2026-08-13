@@ -18,6 +18,7 @@ export const INTEGRATION_SERVICES = [
 	"emby",
 	"qui",
 	"tracearr",
+	"tautulli",
 ] as const;
 
 /** All supported service types */
@@ -76,6 +77,8 @@ export const multiInstanceConfigSchema = z.object({
 	jellyfin: z.array(serviceInstanceSchema).default([]),
 	emby: z.array(serviceInstanceSchema).default([]),
 	qui: z.array(serviceInstanceSchema).default([]),
+	tracearr: z.array(serviceInstanceSchema).default([]),
+	tautulli: z.array(serviceInstanceSchema).default([]),
 });
 
 export type MultiInstanceConfig = z.infer<typeof multiInstanceConfigSchema>;

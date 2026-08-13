@@ -141,6 +141,46 @@ describe("ServiceOnboarding", () => {
 		).toBeInTheDocument();
 	});
 
+	it("offers Tautulli as a manual analytics service and submits its connection details", async () => {
+		render(<ServiceOnboarding />);
+		expect(
+			screen.getByText(
+				/Tracearr is recommended for new analytics setups.+Choose one historical analytics provider/,
+			),
+		).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "tautulli" }));
+
+		expect(screen.getByLabelText("Label")).toHaveValue("Primary Tautulli");
+		expect(screen.getByLabelText("Base URL")).toHaveAttribute(
+			"placeholder",
+			"http://localhost:8181",
+		);
+		expect(screen.getByRole("checkbox", { name: "Reverse proxy HTTP Basic Auth" })).toBeEnabled();
+
+		fireEvent.change(screen.getByLabelText("Base URL"), {
+			target: { value: "http://tautulli:8181" },
+		});
+		fireEvent.change(screen.getByLabelText("API key"), {
+			target: { value: "tautulli-api-key" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Test and add" }));
+
+		await waitFor(() => expect(mocks.createService).toHaveBeenCalledOnce());
+		expect(mocks.testConnection).toHaveBeenCalledWith({
+			service: "tautulli",
+			label: "Primary Tautulli",
+			baseUrl: "http://tautulli:8181",
+			apiKey: "tautulli-api-key",
+			httpAuth: undefined,
+		});
+		expect(mocks.createService).toHaveBeenCalledWith(
+			expect.objectContaining({
+				service: "tautulli",
+				isDefault: true,
+			}),
+		);
+	});
+
 	it("continues to the Console walkthrough without requiring a service", () => {
 		render(<ServiceOnboarding />);
 		fireEvent.click(screen.getByRole("button", { name: "Continue without services" }));

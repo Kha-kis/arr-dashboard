@@ -1,3 +1,4 @@
+import { tautulliInfoSchema, tautulliResponseWrapperSchema } from "../tautulli/tautulli-schemas.js";
 import { createHttpAuthHeaders, type HttpAuthCredentials } from "./http-auth.js";
 import { getHttpAuthConflict } from "./http-auth-validation.js";
 
@@ -105,6 +106,12 @@ export async function testServiceConnection(
 			return await testTracearrConnection(normalizedBaseUrl, apiKey);
 		}
 
+		// Tautulli uses query-parameter API-key authentication and wraps command
+		// results in its own response envelope.
+		if (service === "tautulli") {
+			return await testTautulliConnection(normalizedBaseUrl, apiKey, httpAuth);
+		}
+
 		// Seerr uses its own status endpoint; Prowlarr/Lidarr/Readarr use v1; Sonarr/Radarr use v3
 		const apiPath =
 			service === "seerr"
@@ -177,6 +184,101 @@ export async function testServiceConnection(
 	} catch (error: unknown) {
 		return handleConnectionError(error);
 	}
+}
+
+/** Tests Tautulli reachability and credentials with its lightweight info command. */
+async function testTautulliConnection(
+	baseUrl: string,
+	apiKey: string,
+	httpAuth: HttpAuthCredentials | null,
+): Promise<ConnectionTestResult> {
+	const url = new URL(`${baseUrl}/api/v2`);
+	url.searchParams.set("apikey", apiKey);
+	url.searchParams.set("cmd", "get_tautulli_info");
+	const testUrl = url.toString();
+
+	let response: Response;
+	try {
+		response = await fetch(testUrl, {
+			headers: {
+				Accept: "application/json",
+				...createHttpAuthHeaders(httpAuth),
+			},
+			signal: AbortSignal.timeout(5000),
+		});
+	} catch (error) {
+		return handleConnectionError(error);
+	}
+
+	const proxyDetected = detectAuthProxy(response, testUrl);
+	if (proxyDetected) {
+		return {
+			success: false,
+			error: "Authentication proxy detected",
+			details: `${proxyDetected}\n\n${AUTH_PROXY_ADVICE}`,
+		};
+	}
+
+	if (!response.ok) {
+		return handleHttpError(response, baseUrl);
+	}
+
+	const contentType = response.headers.get("content-type");
+	if (!contentType?.includes("application/json")) {
+		return {
+			success: false,
+			error: "Invalid response format",
+			details:
+				"Received a non-JSON response from Tautulli. Check that the base URL points at the Tautulli host and includes any configured URL base.",
+		};
+	}
+
+	let raw: unknown;
+	try {
+		raw = await response.json();
+	} catch {
+		return {
+			success: false,
+			error: "Invalid response format",
+			details: "Tautulli returned malformed JSON. Check the service and reverse-proxy logs.",
+		};
+	}
+
+	const wrapper = tautulliResponseWrapperSchema.safeParse(raw);
+	if (!wrapper.success) {
+		return {
+			success: false,
+			error: "Unexpected Tautulli response",
+			details:
+				"Reached the URL, but the response did not match Tautulli's API envelope. Check that the base URL points at a Tautulli instance.",
+		};
+	}
+
+	if (wrapper.data.response.result !== "success") {
+		return {
+			success: false,
+			error: "Tautulli authentication failed",
+			details:
+				wrapper.data.response.message ??
+				"Tautulli rejected the API request. Verify the configured API key.",
+		};
+	}
+
+	const info = tautulliInfoSchema.safeParse(wrapper.data.response.data);
+	if (!info.success) {
+		return {
+			success: false,
+			error: "Unexpected Tautulli response",
+			details:
+				"Tautulli reported success without its version information. Check that the URL points at a supported Tautulli instance.",
+		};
+	}
+
+	return {
+		success: true,
+		message: "Successfully connected to Tautulli",
+		version: info.data.tautulli_version,
+	};
 }
 
 /**

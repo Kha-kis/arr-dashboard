@@ -222,6 +222,24 @@ describe("POST /services", () => {
 		);
 	});
 
+	it("accepts Tautulli as a supported integration", async () => {
+		const res = await injectAuthenticated("POST", "/services", {
+			body: {
+				label: "Primary Tautulli",
+				baseUrl: "http://tautulli:8181",
+				apiKey: "tautulli-api-key",
+				service: "tautulli",
+			},
+		});
+
+		expect(res.statusCode).toBe(201);
+		expect(mockPrisma.serviceInstance.create).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ service: "TAUTULLI" }),
+			}),
+		);
+	});
+
 	it("demotes other instances when isDefault is true", async () => {
 		const res = await injectAuthenticated("POST", "/services", {
 			body: {
@@ -496,6 +514,23 @@ describe("POST /services/test-connection", () => {
 
 		expect(res.statusCode).toBe(200);
 		expect(mockTestConnection).toHaveBeenCalledWith("http://sonarr:8989", "test-key", "sonarr");
+	});
+
+	it("passes Tautulli through to its dedicated connection tester", async () => {
+		const res = await injectAuthenticated("POST", "/services/test-connection", {
+			body: {
+				baseUrl: "http://tautulli:8181",
+				apiKey: "tautulli-api-key",
+				service: "tautulli",
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockTestConnection).toHaveBeenCalledWith(
+			"http://tautulli:8181",
+			"tautulli-api-key",
+			"tautulli",
+		);
 	});
 
 	it("rejects non-http scheme (SSRF prevention)", async () => {
