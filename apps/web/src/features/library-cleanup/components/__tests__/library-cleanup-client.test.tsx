@@ -1,6 +1,11 @@
-import type { CleanupConfigResponse } from "@arr/shared";
+import type {
+	CleanupApprovalResponse,
+	CleanupConfigResponse,
+	CleanupExplainResponse,
+	CleanupPreviewItem,
+} from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
@@ -173,6 +178,7 @@ function makeConfig(overrides: Partial<CleanupConfigResponse> = {}): CleanupConf
 				name: "Old Movies",
 				enabled: true,
 				priority: 0,
+				targetScope: "series",
 				ruleType: "age",
 				parameters: { field: "arrAddedAt", operator: "older_than", days: 365 },
 				serviceFilter: null,
@@ -230,6 +236,81 @@ function setupDefaultMocks(configOverrides: Partial<CleanupConfigResponse> = {})
 		isError: false,
 		refetch: vi.fn(),
 	});
+}
+
+function makeEpisodePreviewItem(overrides: Partial<CleanupPreviewItem> = {}): CleanupPreviewItem {
+	return {
+		instanceId: "sonarr-main",
+		instanceLabel: "Main Sonarr",
+		arrItemId: 42,
+		itemType: "series",
+		targetScope: "episode",
+		arrEpisodeId: 9001,
+		seasonNumber: 1,
+		episodeNumber: 2,
+		seriesTitle: "Signal Harbor",
+		episodeTitle: "First Light",
+		title: "Legacy fallback title",
+		matchedRuleName: "Watched episodes",
+		reason: "Plex watch count 2 > 1",
+		action: "delete",
+		sizeOnDisk: "1073741824",
+		year: 2026,
+		rating: 8,
+		quiStatus: "no_signal",
+		...overrides,
+	};
+}
+
+function makeEpisodeApproval(
+	overrides: Partial<CleanupApprovalResponse> = {},
+): CleanupApprovalResponse {
+	return {
+		id: "approval-episode",
+		instanceId: "sonarr-main",
+		instanceLabel: "Main Sonarr",
+		arrItemId: 42,
+		itemType: "series",
+		targetScope: "episode",
+		arrEpisodeId: 9001,
+		seasonNumber: 1,
+		episodeNumber: 2,
+		seriesTitle: "Signal Harbor",
+		episodeTitle: "First Light",
+		title: "Legacy fallback title",
+		matchedRuleId: "rule-episode",
+		matchedRuleName: "Watched episodes",
+		reason: "Plex watch count 2 > 1",
+		action: "delete",
+		sizeOnDisk: "1073741824",
+		year: 2026,
+		rating: 8,
+		status: "retry_pending",
+		lastExecutionError: "Exact episode delete failed; retry is pending",
+		reviewedAt: null,
+		executedAt: null,
+		createdAt: "2026-08-12T12:00:00Z",
+		expiresAt: "2026-09-12T12:00:00Z",
+		...overrides,
+	};
+}
+
+function makeEpisodeExplain(): CleanupExplainResponse {
+	return {
+		item: {
+			title: "Signal Harbor",
+			year: 2026,
+			instanceId: "sonarr-main",
+			itemType: "series",
+			targetScope: "episode",
+			arrEpisodeId: 9001,
+			seasonNumber: 1,
+			episodeNumber: 2,
+			episodeTitle: "First Light",
+		},
+		results: [],
+		retentionProtected: false,
+	};
 }
 
 // ---------------------------------------------------------------------------
@@ -489,6 +570,197 @@ describe("LibraryCleanupClient", () => {
 			fireEvent.click((await screen.findAllByRole("button", { name: "Approve" }))[0]!);
 
 			expect(retryReset).toHaveBeenCalledOnce();
+		});
+	});
+
+	describe("episode identity", () => {
+		it("shows structured preview identity and explains the exact episode", () => {
+			const explainMutate = vi.fn();
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 1,
+						totalFlagged: 1,
+						items: [makeEpisodePreviewItem()],
+					},
+				}),
+			);
+			mockUseCleanupExplain.mockReturnValue(
+				defaultMutation({ mutate: explainMutate, data: makeEpisodeExplain() }),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getByText("Signal Harbor")).toBeInTheDocument();
+			expect(screen.getByText("S01E02 · First Light")).toBeInTheDocument();
+			fireEvent.click(screen.getByTitle("Explain why this item was flagged"));
+
+			expect(explainMutate).toHaveBeenCalledWith({
+				instanceId: "sonarr-main",
+				arrItemId: 42,
+				arrEpisodeId: 9001,
+			});
+			expect(
+				within(screen.getByRole("dialog")).getByText("S01E02 · First Light"),
+			).toBeInTheDocument();
+		});
+
+		it("keeps series Explain requests unchanged", () => {
+			const explainMutate = vi.fn();
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 1,
+						totalFlagged: 1,
+						items: [
+							makeEpisodePreviewItem({
+								targetScope: "series",
+								arrEpisodeId: null,
+								seasonNumber: null,
+								episodeNumber: null,
+								episodeTitle: null,
+								seriesTitle: "Signal Harbor",
+								title: "Signal Harbor",
+							}),
+						],
+					},
+				}),
+			);
+			mockUseCleanupExplain.mockReturnValue(defaultMutation({ mutate: explainMutate }));
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByTitle("Explain why this item was flagged"));
+
+			expect(explainMutate).toHaveBeenCalledWith({
+				instanceId: "sonarr-main",
+				arrItemId: 42,
+			});
+		});
+
+		it("shows structured identity with retry errors and explains approval episodes", async () => {
+			const explainMutate = vi.fn();
+			mockUseCleanupApprovalQueue.mockReturnValue({
+				data: {
+					items: [makeEpisodeApproval()],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+			mockUseCleanupExplain.mockReturnValue(defaultMutation({ mutate: explainMutate }));
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Approval Queue"));
+			fireEvent.click(await screen.findByRole("button", { name: "Retry pending" }));
+
+			expect(await screen.findByText("Signal Harbor")).toBeInTheDocument();
+			expect(screen.getByText("S01E02 · First Light")).toBeInTheDocument();
+			expect(
+				screen.getByText("Last execution attempt: Exact episode delete failed; retry is pending"),
+			).toBeInTheDocument();
+			fireEvent.click(screen.getByTitle("Explain why this item was flagged"));
+			expect(explainMutate).toHaveBeenCalledWith({
+				instanceId: "sonarr-main",
+				arrItemId: 42,
+				arrEpisodeId: 9001,
+			});
+		});
+
+		it("shows structured episode identity in cleanup log details", () => {
+			mockUseCleanupLogs.mockReturnValue({
+				data: {
+					items: [
+						{
+							id: "log-episode",
+							isDryRun: false,
+							status: "partial",
+							itemsEvaluated: 1,
+							itemsFlagged: 1,
+							itemsRemoved: 0,
+							itemsUnmonitored: 0,
+							itemsFilesDeleted: 0,
+							itemsSkipped: 0,
+							details: [
+								{
+									targetScope: "episode",
+									seriesTitle: "Signal Harbor",
+									title: "Legacy fallback title",
+									seasonNumber: 1,
+									episodeNumber: 2,
+									episodeTitle: "First Light",
+									rule: "Watched episodes",
+									reason: "Exact episode delete failed",
+									status: "error",
+								},
+							],
+							error: null,
+							durationMs: 500,
+							startedAt: "2026-08-12T12:00:00Z",
+							completedAt: "2026-08-12T12:00:00Z",
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Activity Log"));
+			fireEvent.click(screen.getByRole("button", { expanded: false }));
+
+			expect(screen.getByText("Signal Harbor")).toBeInTheDocument();
+			expect(screen.getByText("S01E02 · First Light")).toBeInTheDocument();
+		});
+
+		it("masks series and episode titles but keeps episode coordinates visible", async () => {
+			localStorage.setItem("arr-dashboard-incognito-mode", "true");
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 1,
+						totalFlagged: 1,
+						items: [makeEpisodePreviewItem()],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			await waitFor(() => {
+				expect(screen.queryByText("Signal Harbor")).not.toBeInTheDocument();
+				expect(screen.queryByText(/First Light/)).not.toBeInTheDocument();
+			});
+			expect(screen.getByText(/^S01E02 · .*\.iso$/)).toBeInTheDocument();
+		});
+
+		it("labels every cleanup rule with its target scope", () => {
+			const seriesRule = makeConfig().rules[0]!;
+			setupDefaultMocks({
+				rules: [
+					seriesRule,
+					{
+						...seriesRule,
+						id: "rule-episode",
+						name: "Watched episodes",
+						targetScope: "episode",
+						ruleType: "plex_watch_count",
+						parameters: { operator: "greater_than", count: 1 },
+						serviceFilter: ["sonarr"],
+					},
+				],
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getByText("Series target")).toBeInTheDocument();
+			expect(screen.getByText("Episode target")).toBeInTheDocument();
 		});
 	});
 

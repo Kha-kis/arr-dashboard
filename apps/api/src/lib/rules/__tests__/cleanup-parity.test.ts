@@ -243,6 +243,64 @@ describe("parity — single rules", () => {
 	});
 });
 
+describe("parity — unavailable retention safety", () => {
+	it("lets neither evaluator bypass an applicable unavailable retention rule", () => {
+		const retention = makeRule({
+			id: "retention-plex",
+			retentionMode: true,
+			ruleType: "plex_watch_count",
+			parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+		});
+		const cleanup = makeRule({
+			id: "cleanup-age",
+			retentionMode: false,
+			ruleType: "age",
+			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+		});
+		const failedSources = new Set<"plex" | null>(["plex"]);
+
+		expect(
+			evaluateItemAgainstRules(
+				makeCacheItem(),
+				[retention, cleanup],
+				"RADARR",
+				baseCtx(),
+				failedSources,
+			),
+		).toBeNull();
+		expect(
+			evaluateItemAgainstRulesViaEngine(
+				makeCacheItem(),
+				[retention, cleanup],
+				"RADARR",
+				baseCtx(),
+				failedSources,
+			),
+		).toBeNull();
+	});
+
+	it("keeps the no-runtime Tautulli fail-closed policy in both two-phase loops", () => {
+		const retention = makeRule({
+			id: "retention-tautulli",
+			retentionMode: true,
+			ruleType: "user_retention",
+			parameters: JSON.stringify({ source: "tautulli", mode: "watched_by_all", users: ["alice"] }),
+		});
+		const cleanup = makeRule({
+			id: "cleanup-age",
+			ruleType: "age",
+			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+		});
+
+		expect(
+			evaluateItemAgainstRules(makeCacheItem(), [retention, cleanup], "RADARR", baseCtx()),
+		).toBeNull();
+		expect(
+			evaluateItemAgainstRulesViaEngine(makeCacheItem(), [retention, cleanup], "RADARR", baseCtx()),
+		).toBeNull();
+	});
+});
+
 // ---------------------------------------------------------------------------
 // Composites
 // ---------------------------------------------------------------------------

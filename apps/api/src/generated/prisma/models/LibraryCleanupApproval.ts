@@ -28,6 +28,9 @@ export type AggregateLibraryCleanupApproval = {
 
 export type LibraryCleanupApprovalAvgAggregateOutputType = {
   arrItemId: number | null
+  arrEpisodeId: number | null
+  seasonNumber: number | null
+  episodeNumber: number | null
   sizeOnDisk: number | null
   year: number | null
   rating: number | null
@@ -35,6 +38,9 @@ export type LibraryCleanupApprovalAvgAggregateOutputType = {
 
 export type LibraryCleanupApprovalSumAggregateOutputType = {
   arrItemId: number | null
+  arrEpisodeId: number | null
+  seasonNumber: number | null
+  episodeNumber: number | null
   sizeOnDisk: bigint | null
   year: number | null
   rating: number | null
@@ -46,6 +52,11 @@ export type LibraryCleanupApprovalMinAggregateOutputType = {
   instanceId: string | null
   arrItemId: number | null
   itemType: $Enums.LibraryItemType | null
+  targetScope: string | null
+  arrEpisodeId: number | null
+  seasonNumber: number | null
+  episodeNumber: number | null
+  episodeTitle: string | null
   title: string | null
   matchedRuleId: string | null
   matchedRuleName: string | null
@@ -70,6 +81,11 @@ export type LibraryCleanupApprovalMaxAggregateOutputType = {
   instanceId: string | null
   arrItemId: number | null
   itemType: $Enums.LibraryItemType | null
+  targetScope: string | null
+  arrEpisodeId: number | null
+  seasonNumber: number | null
+  episodeNumber: number | null
+  episodeTitle: string | null
   title: string | null
   matchedRuleId: string | null
   matchedRuleName: string | null
@@ -94,6 +110,11 @@ export type LibraryCleanupApprovalCountAggregateOutputType = {
   instanceId: number
   arrItemId: number
   itemType: number
+  targetScope: number
+  arrEpisodeId: number
+  seasonNumber: number
+  episodeNumber: number
+  episodeTitle: number
   title: number
   matchedRuleId: number
   matchedRuleName: number
@@ -116,6 +137,9 @@ export type LibraryCleanupApprovalCountAggregateOutputType = {
 
 export type LibraryCleanupApprovalAvgAggregateInputType = {
   arrItemId?: true
+  arrEpisodeId?: true
+  seasonNumber?: true
+  episodeNumber?: true
   sizeOnDisk?: true
   year?: true
   rating?: true
@@ -123,6 +147,9 @@ export type LibraryCleanupApprovalAvgAggregateInputType = {
 
 export type LibraryCleanupApprovalSumAggregateInputType = {
   arrItemId?: true
+  arrEpisodeId?: true
+  seasonNumber?: true
+  episodeNumber?: true
   sizeOnDisk?: true
   year?: true
   rating?: true
@@ -134,6 +161,11 @@ export type LibraryCleanupApprovalMinAggregateInputType = {
   instanceId?: true
   arrItemId?: true
   itemType?: true
+  targetScope?: true
+  arrEpisodeId?: true
+  seasonNumber?: true
+  episodeNumber?: true
+  episodeTitle?: true
   title?: true
   matchedRuleId?: true
   matchedRuleName?: true
@@ -158,6 +190,11 @@ export type LibraryCleanupApprovalMaxAggregateInputType = {
   instanceId?: true
   arrItemId?: true
   itemType?: true
+  targetScope?: true
+  arrEpisodeId?: true
+  seasonNumber?: true
+  episodeNumber?: true
+  episodeTitle?: true
   title?: true
   matchedRuleId?: true
   matchedRuleName?: true
@@ -182,6 +219,11 @@ export type LibraryCleanupApprovalCountAggregateInputType = {
   instanceId?: true
   arrItemId?: true
   itemType?: true
+  targetScope?: true
+  arrEpisodeId?: true
+  seasonNumber?: true
+  episodeNumber?: true
+  episodeTitle?: true
   title?: true
   matchedRuleId?: true
   matchedRuleName?: true
@@ -293,6 +335,11 @@ export type LibraryCleanupApprovalGroupByOutputType = {
   instanceId: string
   arrItemId: number
   itemType: $Enums.LibraryItemType
+  targetScope: string
+  arrEpisodeId: number | null
+  seasonNumber: number | null
+  episodeNumber: number | null
+  episodeTitle: string | null
   title: string
   matchedRuleId: string
   matchedRuleName: string
@@ -340,6 +387,11 @@ export type LibraryCleanupApprovalWhereInput = {
   instanceId?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   arrItemId?: Prisma.IntFilter<"LibraryCleanupApproval"> | number
   itemType?: Prisma.EnumLibraryItemTypeFilter<"LibraryCleanupApproval"> | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
+  arrEpisodeId?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
+  seasonNumber?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
+  episodeNumber?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
+  episodeTitle?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   title?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   matchedRuleId?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   matchedRuleName?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
@@ -365,6 +417,11 @@ export type LibraryCleanupApprovalOrderByWithRelationInput = {
   instanceId?: Prisma.SortOrder
   arrItemId?: Prisma.SortOrder
   itemType?: Prisma.SortOrder
+  targetScope?: Prisma.SortOrder
+  arrEpisodeId?: Prisma.SortOrderInput | Prisma.SortOrder
+  seasonNumber?: Prisma.SortOrderInput | Prisma.SortOrder
+  episodeNumber?: Prisma.SortOrderInput | Prisma.SortOrder
+  episodeTitle?: Prisma.SortOrderInput | Prisma.SortOrder
   title?: Prisma.SortOrder
   matchedRuleId?: Prisma.SortOrder
   matchedRuleName?: Prisma.SortOrder
@@ -393,6 +450,11 @@ export type LibraryCleanupApprovalWhereUniqueInput = Prisma.AtLeast<{
   instanceId?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   arrItemId?: Prisma.IntFilter<"LibraryCleanupApproval"> | number
   itemType?: Prisma.EnumLibraryItemTypeFilter<"LibraryCleanupApproval"> | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
+  arrEpisodeId?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
+  seasonNumber?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
+  episodeNumber?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
+  episodeTitle?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   title?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   matchedRuleId?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   matchedRuleName?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
@@ -418,6 +480,11 @@ export type LibraryCleanupApprovalOrderByWithAggregationInput = {
   instanceId?: Prisma.SortOrder
   arrItemId?: Prisma.SortOrder
   itemType?: Prisma.SortOrder
+  targetScope?: Prisma.SortOrder
+  arrEpisodeId?: Prisma.SortOrderInput | Prisma.SortOrder
+  seasonNumber?: Prisma.SortOrderInput | Prisma.SortOrder
+  episodeNumber?: Prisma.SortOrderInput | Prisma.SortOrder
+  episodeTitle?: Prisma.SortOrderInput | Prisma.SortOrder
   title?: Prisma.SortOrder
   matchedRuleId?: Prisma.SortOrder
   matchedRuleName?: Prisma.SortOrder
@@ -450,6 +517,11 @@ export type LibraryCleanupApprovalScalarWhereWithAggregatesInput = {
   instanceId?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
   arrItemId?: Prisma.IntWithAggregatesFilter<"LibraryCleanupApproval"> | number
   itemType?: Prisma.EnumLibraryItemTypeWithAggregatesFilter<"LibraryCleanupApproval"> | $Enums.LibraryItemType
+  targetScope?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
+  arrEpisodeId?: Prisma.IntNullableWithAggregatesFilter<"LibraryCleanupApproval"> | number | null
+  seasonNumber?: Prisma.IntNullableWithAggregatesFilter<"LibraryCleanupApproval"> | number | null
+  episodeNumber?: Prisma.IntNullableWithAggregatesFilter<"LibraryCleanupApproval"> | number | null
+  episodeTitle?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupApproval"> | string | null
   title?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
   matchedRuleId?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
   matchedRuleName?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
@@ -473,6 +545,11 @@ export type LibraryCleanupApprovalCreateInput = {
   instanceId: string
   arrItemId: number
   itemType: $Enums.LibraryItemType
+  targetScope?: string
+  arrEpisodeId?: number | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
+  episodeTitle?: string | null
   title: string
   matchedRuleId: string
   matchedRuleName: string
@@ -498,6 +575,11 @@ export type LibraryCleanupApprovalUncheckedCreateInput = {
   instanceId: string
   arrItemId: number
   itemType: $Enums.LibraryItemType
+  targetScope?: string
+  arrEpisodeId?: number | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
+  episodeTitle?: string | null
   title: string
   matchedRuleId: string
   matchedRuleName: string
@@ -521,6 +603,11 @@ export type LibraryCleanupApprovalUpdateInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   arrItemId?: Prisma.IntFieldUpdateOperationsInput | number
   itemType?: Prisma.EnumLibraryItemTypeFieldUpdateOperationsInput | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFieldUpdateOperationsInput | string
+  arrEpisodeId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  seasonNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeTitle?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   title?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
@@ -546,6 +633,11 @@ export type LibraryCleanupApprovalUncheckedUpdateInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   arrItemId?: Prisma.IntFieldUpdateOperationsInput | number
   itemType?: Prisma.EnumLibraryItemTypeFieldUpdateOperationsInput | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFieldUpdateOperationsInput | string
+  arrEpisodeId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  seasonNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeTitle?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   title?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
@@ -570,6 +662,11 @@ export type LibraryCleanupApprovalCreateManyInput = {
   instanceId: string
   arrItemId: number
   itemType: $Enums.LibraryItemType
+  targetScope?: string
+  arrEpisodeId?: number | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
+  episodeTitle?: string | null
   title: string
   matchedRuleId: string
   matchedRuleName: string
@@ -593,6 +690,11 @@ export type LibraryCleanupApprovalUpdateManyMutationInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   arrItemId?: Prisma.IntFieldUpdateOperationsInput | number
   itemType?: Prisma.EnumLibraryItemTypeFieldUpdateOperationsInput | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFieldUpdateOperationsInput | string
+  arrEpisodeId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  seasonNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeTitle?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   title?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
@@ -617,6 +719,11 @@ export type LibraryCleanupApprovalUncheckedUpdateManyInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   arrItemId?: Prisma.IntFieldUpdateOperationsInput | number
   itemType?: Prisma.EnumLibraryItemTypeFieldUpdateOperationsInput | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFieldUpdateOperationsInput | string
+  arrEpisodeId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  seasonNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeTitle?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   title?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
@@ -651,6 +758,11 @@ export type LibraryCleanupApprovalCountOrderByAggregateInput = {
   instanceId?: Prisma.SortOrder
   arrItemId?: Prisma.SortOrder
   itemType?: Prisma.SortOrder
+  targetScope?: Prisma.SortOrder
+  arrEpisodeId?: Prisma.SortOrder
+  seasonNumber?: Prisma.SortOrder
+  episodeNumber?: Prisma.SortOrder
+  episodeTitle?: Prisma.SortOrder
   title?: Prisma.SortOrder
   matchedRuleId?: Prisma.SortOrder
   matchedRuleName?: Prisma.SortOrder
@@ -671,6 +783,9 @@ export type LibraryCleanupApprovalCountOrderByAggregateInput = {
 
 export type LibraryCleanupApprovalAvgOrderByAggregateInput = {
   arrItemId?: Prisma.SortOrder
+  arrEpisodeId?: Prisma.SortOrder
+  seasonNumber?: Prisma.SortOrder
+  episodeNumber?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
@@ -682,6 +797,11 @@ export type LibraryCleanupApprovalMaxOrderByAggregateInput = {
   instanceId?: Prisma.SortOrder
   arrItemId?: Prisma.SortOrder
   itemType?: Prisma.SortOrder
+  targetScope?: Prisma.SortOrder
+  arrEpisodeId?: Prisma.SortOrder
+  seasonNumber?: Prisma.SortOrder
+  episodeNumber?: Prisma.SortOrder
+  episodeTitle?: Prisma.SortOrder
   title?: Prisma.SortOrder
   matchedRuleId?: Prisma.SortOrder
   matchedRuleName?: Prisma.SortOrder
@@ -706,6 +826,11 @@ export type LibraryCleanupApprovalMinOrderByAggregateInput = {
   instanceId?: Prisma.SortOrder
   arrItemId?: Prisma.SortOrder
   itemType?: Prisma.SortOrder
+  targetScope?: Prisma.SortOrder
+  arrEpisodeId?: Prisma.SortOrder
+  seasonNumber?: Prisma.SortOrder
+  episodeNumber?: Prisma.SortOrder
+  episodeTitle?: Prisma.SortOrder
   title?: Prisma.SortOrder
   matchedRuleId?: Prisma.SortOrder
   matchedRuleName?: Prisma.SortOrder
@@ -726,6 +851,9 @@ export type LibraryCleanupApprovalMinOrderByAggregateInput = {
 
 export type LibraryCleanupApprovalSumOrderByAggregateInput = {
   arrItemId?: Prisma.SortOrder
+  arrEpisodeId?: Prisma.SortOrder
+  seasonNumber?: Prisma.SortOrder
+  episodeNumber?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
@@ -778,6 +906,11 @@ export type LibraryCleanupApprovalCreateWithoutConfigInput = {
   instanceId: string
   arrItemId: number
   itemType: $Enums.LibraryItemType
+  targetScope?: string
+  arrEpisodeId?: number | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
+  episodeTitle?: string | null
   title: string
   matchedRuleId: string
   matchedRuleName: string
@@ -801,6 +934,11 @@ export type LibraryCleanupApprovalUncheckedCreateWithoutConfigInput = {
   instanceId: string
   arrItemId: number
   itemType: $Enums.LibraryItemType
+  targetScope?: string
+  arrEpisodeId?: number | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
+  episodeTitle?: string | null
   title: string
   matchedRuleId: string
   matchedRuleName: string
@@ -853,6 +991,11 @@ export type LibraryCleanupApprovalScalarWhereInput = {
   instanceId?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   arrItemId?: Prisma.IntFilter<"LibraryCleanupApproval"> | number
   itemType?: Prisma.EnumLibraryItemTypeFilter<"LibraryCleanupApproval"> | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
+  arrEpisodeId?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
+  seasonNumber?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
+  episodeNumber?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
+  episodeTitle?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   title?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   matchedRuleId?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   matchedRuleName?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
@@ -876,6 +1019,11 @@ export type LibraryCleanupApprovalCreateManyConfigInput = {
   instanceId: string
   arrItemId: number
   itemType: $Enums.LibraryItemType
+  targetScope?: string
+  arrEpisodeId?: number | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
+  episodeTitle?: string | null
   title: string
   matchedRuleId: string
   matchedRuleName: string
@@ -899,6 +1047,11 @@ export type LibraryCleanupApprovalUpdateWithoutConfigInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   arrItemId?: Prisma.IntFieldUpdateOperationsInput | number
   itemType?: Prisma.EnumLibraryItemTypeFieldUpdateOperationsInput | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFieldUpdateOperationsInput | string
+  arrEpisodeId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  seasonNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeTitle?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   title?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
@@ -922,6 +1075,11 @@ export type LibraryCleanupApprovalUncheckedUpdateWithoutConfigInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   arrItemId?: Prisma.IntFieldUpdateOperationsInput | number
   itemType?: Prisma.EnumLibraryItemTypeFieldUpdateOperationsInput | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFieldUpdateOperationsInput | string
+  arrEpisodeId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  seasonNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeTitle?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   title?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
@@ -945,6 +1103,11 @@ export type LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   arrItemId?: Prisma.IntFieldUpdateOperationsInput | number
   itemType?: Prisma.EnumLibraryItemTypeFieldUpdateOperationsInput | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFieldUpdateOperationsInput | string
+  arrEpisodeId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  seasonNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeTitle?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   title?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
@@ -971,6 +1134,11 @@ export type LibraryCleanupApprovalSelect<ExtArgs extends runtime.Types.Extension
   instanceId?: boolean
   arrItemId?: boolean
   itemType?: boolean
+  targetScope?: boolean
+  arrEpisodeId?: boolean
+  seasonNumber?: boolean
+  episodeNumber?: boolean
+  episodeTitle?: boolean
   title?: boolean
   matchedRuleId?: boolean
   matchedRuleName?: boolean
@@ -996,6 +1164,11 @@ export type LibraryCleanupApprovalSelectCreateManyAndReturn<ExtArgs extends runt
   instanceId?: boolean
   arrItemId?: boolean
   itemType?: boolean
+  targetScope?: boolean
+  arrEpisodeId?: boolean
+  seasonNumber?: boolean
+  episodeNumber?: boolean
+  episodeTitle?: boolean
   title?: boolean
   matchedRuleId?: boolean
   matchedRuleName?: boolean
@@ -1021,6 +1194,11 @@ export type LibraryCleanupApprovalSelectUpdateManyAndReturn<ExtArgs extends runt
   instanceId?: boolean
   arrItemId?: boolean
   itemType?: boolean
+  targetScope?: boolean
+  arrEpisodeId?: boolean
+  seasonNumber?: boolean
+  episodeNumber?: boolean
+  episodeTitle?: boolean
   title?: boolean
   matchedRuleId?: boolean
   matchedRuleName?: boolean
@@ -1046,6 +1224,11 @@ export type LibraryCleanupApprovalSelectScalar = {
   instanceId?: boolean
   arrItemId?: boolean
   itemType?: boolean
+  targetScope?: boolean
+  arrEpisodeId?: boolean
+  seasonNumber?: boolean
+  episodeNumber?: boolean
+  episodeTitle?: boolean
   title?: boolean
   matchedRuleId?: boolean
   matchedRuleName?: boolean
@@ -1064,7 +1247,7 @@ export type LibraryCleanupApprovalSelectScalar = {
   createdAt?: boolean
 }
 
-export type LibraryCleanupApprovalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "instanceId" | "arrItemId" | "itemType" | "title" | "matchedRuleId" | "matchedRuleName" | "reason" | "action" | "sizeOnDisk" | "year" | "rating" | "status" | "executionToken" | "safetySnapshot" | "lastExecutionError" | "reviewedAt" | "executedAt" | "expiresAt" | "createdAt", ExtArgs["result"]["libraryCleanupApproval"]>
+export type LibraryCleanupApprovalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "instanceId" | "arrItemId" | "itemType" | "targetScope" | "arrEpisodeId" | "seasonNumber" | "episodeNumber" | "episodeTitle" | "title" | "matchedRuleId" | "matchedRuleName" | "reason" | "action" | "sizeOnDisk" | "year" | "rating" | "status" | "executionToken" | "safetySnapshot" | "lastExecutionError" | "reviewedAt" | "executedAt" | "expiresAt" | "createdAt", ExtArgs["result"]["libraryCleanupApproval"]>
 export type LibraryCleanupApprovalInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
 }
@@ -1086,6 +1269,11 @@ export type $LibraryCleanupApprovalPayload<ExtArgs extends runtime.Types.Extensi
     instanceId: string
     arrItemId: number
     itemType: $Enums.LibraryItemType
+    targetScope: string
+    arrEpisodeId: number | null
+    seasonNumber: number | null
+    episodeNumber: number | null
+    episodeTitle: string | null
     title: string
     matchedRuleId: string
     matchedRuleName: string
@@ -1531,6 +1719,11 @@ export interface LibraryCleanupApprovalFieldRefs {
   readonly instanceId: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly arrItemId: Prisma.FieldRef<"LibraryCleanupApproval", 'Int'>
   readonly itemType: Prisma.FieldRef<"LibraryCleanupApproval", 'LibraryItemType'>
+  readonly targetScope: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
+  readonly arrEpisodeId: Prisma.FieldRef<"LibraryCleanupApproval", 'Int'>
+  readonly seasonNumber: Prisma.FieldRef<"LibraryCleanupApproval", 'Int'>
+  readonly episodeNumber: Prisma.FieldRef<"LibraryCleanupApproval", 'Int'>
+  readonly episodeTitle: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly title: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly matchedRuleId: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly matchedRuleName: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>

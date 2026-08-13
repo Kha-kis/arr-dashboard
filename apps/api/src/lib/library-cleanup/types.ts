@@ -9,10 +9,16 @@ import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
 import type { PlexClient } from "../plex/plex-client.js";
 import type { LibraryItemType, PrismaClient, ServiceInstance } from "../prisma.js";
+import type { QuiClient } from "../qui/client-factory.js";
+import type { EpisodeTargetMetadata } from "./episode-scope.js";
 
 // ============================================================================
 // Dependencies
 // ============================================================================
+
+export interface CompleteQuiFileHashIndex {
+	resolve(path: string): Promise<{ hashes: string[]; complete: true }>;
+}
 
 export interface CleanupExecutorDeps {
 	prisma: PrismaClient;
@@ -24,7 +30,12 @@ export interface CleanupExecutorDeps {
 	) => Pick<
 		PlexClient,
 		"getAccounts" | "getMovieMediaPartsByTmdbId" | "getSeriesEpisodeMediaPartsByTvdbId"
-	>;
+	> &
+		Partial<Pick<PlexClient, "getEpisodeWatchCount">>;
+	/** Exact live qUI lookup used only after a complete inode inventory is available. */
+	quiClientFactory?: (instance: ServiceInstance) => Pick<QuiClient, "getTorrentsByHash">;
+	/** Build one fresh, complete qUI/filesystem inode snapshot for destructive authorization. */
+	quiFileHashIndexFactory?: (instance: ServiceInstance) => Promise<CompleteQuiFileHashIndex>;
 	log: FastifyBaseLogger;
 }
 
@@ -51,6 +62,9 @@ export interface CacheItemForEval {
 	cachedAt?: Date;
 	/** Full JSON data blob for extended lookups (e.g. tags, ratings) */
 	data: string;
+	/** Parent cache metadata; episode candidates use the exact file-cache row instead. */
+	torrentState?: string | null;
+	infoHash?: string | null;
 }
 
 /** Seerr request info, extracted from the bulk prefetch for rule evaluation */
@@ -195,6 +209,8 @@ export interface FlaggedItem {
 	match: RuleMatch;
 	/** Preferred available *arr rating from the data blob */
 	rating: number | null;
+	/** Exact Sonarr episode/file identity for a supported episode candidate. */
+	episodeTarget?: EpisodeTargetMetadata;
 }
 
 // ============================================================================
@@ -218,11 +234,18 @@ export interface CleanupRunResult {
 		instanceId: string;
 		arrItemId: number;
 		title: string;
+		seriesTitle?: string;
+		episodeTitle?: string;
 		ruleId: string;
 		rule: string;
 		reason: string;
 		action: DetailAction;
 		itemType?: string;
+		targetScope?: "series" | "episode";
+		arrEpisodeId?: number;
+		seasonNumber?: number;
+		episodeNumber?: number;
+		episodeFileId?: number;
 		sizeOnDisk?: string;
 		year?: number | null;
 		rating?: number | null;

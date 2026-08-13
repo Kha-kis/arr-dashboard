@@ -1,4 +1,5 @@
 import type {
+	CleanupExplainRequest,
 	CleanupExplainResponse,
 	CreateCleanupRule,
 	UpdateCleanupConfig,
@@ -68,13 +69,8 @@ export function useCleanupLogs(
 
 export function useCleanupExplain() {
 	return useMutation({
-		mutationFn: ({
-			instanceId,
-			arrItemId,
-		}: {
-			instanceId: string;
-			arrItemId: number;
-		}): Promise<CleanupExplainResponse> => libraryCleanupApi.explain(instanceId, arrItemId),
+		mutationFn: (request: CleanupExplainRequest): Promise<CleanupExplainResponse> =>
+			libraryCleanupApi.explain(request),
 	});
 }
 

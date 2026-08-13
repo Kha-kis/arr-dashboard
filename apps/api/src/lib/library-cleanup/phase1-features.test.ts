@@ -15,7 +15,11 @@
 import { ruleParamSchemaMap } from "@arr/shared";
 import { describe, expect, it } from "vitest";
 import type { LibraryCleanupRule } from "../prisma.js";
-import { evaluateItemAgainstRules, explainItemAgainstRules } from "./rule-evaluators.js";
+import {
+	evaluateItemAgainstRules,
+	explainItemAgainstRules,
+	ruleUsesUnavailableData,
+} from "./rule-evaluators.js";
 import type { CacheItemForEval, EvalContext, PlexWatchInfo, SeerrRequestInfo } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -347,9 +351,8 @@ describe("prefetch failure handling", () => {
 			ctx,
 			failedSources,
 		);
-		// Retention rule skipped (plex failed) → cleanup rule matches
-		expect(result).not.toBeNull();
-		expect(result!.ruleId).toBe("cleanup-age");
+		// Plex evidence cannot disprove retention, so cleanup is blocked.
+		expect(result).toBeNull();
 	});
 
 	it("no failedSources = normal evaluation", () => {
@@ -368,6 +371,74 @@ describe("prefetch failure handling", () => {
 			undefined,
 		);
 		expect(result).not.toBeNull();
+	});
+
+	it("does not let a filtered-out unavailable retention rule protect the item", () => {
+		const retention = makeRule({
+			retentionMode: true,
+			ruleType: "plex_watch_count",
+			parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+			instanceFilter: JSON.stringify(["other-instance"]),
+		});
+		const cleanup = makeRule({
+			id: "cleanup-age",
+			ruleType: "age",
+			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+		});
+
+		expect(
+			evaluateItemAgainstRules(
+				makeCacheItem(),
+				[retention, cleanup] as LibraryCleanupRule[],
+				"RADARR",
+				ctx,
+				new Set(["plex"]),
+			)?.ruleId,
+		).toBe("cleanup-age");
+	});
+
+	it("treats persisted Tautulli retention as unavailable without a Tautulli runtime", () => {
+		const retention = makeRule({
+			retentionMode: true,
+			ruleType: "user_retention",
+			parameters: JSON.stringify({ source: "tautulli", mode: "watched_by_all", users: ["alice"] }),
+		});
+		const cleanup = makeRule({
+			id: "cleanup-age",
+			ruleType: "age",
+			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+		});
+
+		expect(ruleUsesUnavailableData(retention as LibraryCleanupRule)).toBe(true);
+		expect(
+			evaluateItemAgainstRules(
+				makeCacheItem(),
+				[retention, cleanup] as LibraryCleanupRule[],
+				"RADARR",
+				ctx,
+			),
+		).toBeNull();
+	});
+
+	it("tracks Plex, requester, and composite dependencies", () => {
+		const either = makeRule({
+			ruleType: "user_retention",
+			parameters: JSON.stringify({ source: "either", mode: "watched_by_all", users: ["alice"] }),
+		});
+		const requester = makeRule({ ruleType: "seerr_requester_watched", parameters: "{}" });
+		const composite = makeRule({
+			ruleType: "composite",
+			operator: "AND",
+			conditions: JSON.stringify([
+				{ ruleType: "age", parameters: { operator: "older_than", days: 30 } },
+				{ ruleType: "seerr_requester_not_watched", parameters: {} },
+			]),
+		});
+
+		expect(ruleUsesUnavailableData(either as LibraryCleanupRule, new Set(["plex"]))).toBe(true);
+		expect(ruleUsesUnavailableData(requester as LibraryCleanupRule, new Set(["seerr"]))).toBe(true);
+		expect(ruleUsesUnavailableData(requester as LibraryCleanupRule, new Set(["plex"]))).toBe(true);
+		expect(ruleUsesUnavailableData(composite as LibraryCleanupRule, new Set(["plex"]))).toBe(true);
 	});
 });
 
@@ -637,7 +708,7 @@ describe("circuit breaker logic", () => {
 describe("retention + prefetch failure interaction", () => {
 	const ctx = baseCtx();
 
-	it("item is NOT protected when retention rule's data source failed", () => {
+	it("item is protected when retention rule's data source failed", () => {
 		// Retention: protect if plex watch count > 0 (but plex is down)
 		// Cleanup: remove if age > 30 days
 		const retRule = makeRule({
@@ -661,9 +732,8 @@ describe("retention + prefetch failure interaction", () => {
 			ctx,
 			failedSources,
 		);
-		// Retention is skipped (plex failed) → age rule matches → item flagged
-		expect(result).not.toBeNull();
-		expect(result!.ruleId).toBe("clean-age");
+		// Missing Plex evidence cannot disprove an applicable retention rule.
+		expect(result).toBeNull();
 	});
 
 	it("item is still protected by retention rule using healthy data source", () => {

@@ -185,6 +185,7 @@ export function CleanupRuleDialog({
 
 	// ── Retention mode ─────────────────────────────────────────────
 	const [retentionMode, setRetentionMode] = useState(false);
+	const [targetScope, setTargetScope] = useState<"series" | "episode">("series");
 
 	// ── Rejection-memory override (issue #474) ────────────────────
 	// When `useGlobalRejectionMemory` is true the rule inherits the config
@@ -208,6 +209,7 @@ export function CleanupRuleDialog({
 	useEffect(() => {
 		if (!open) return;
 		if (editRule) {
+			setTargetScope(editRule.targetScope);
 			setName(editRule.name);
 			setRuleType(editRule.ruleType);
 			setEnabled(editRule.enabled);
@@ -446,6 +448,7 @@ export function CleanupRuleDialog({
 		} else {
 			// Reset to defaults for create mode
 			setName("");
+			setTargetScope("series");
 			setRuleType("age");
 			setEnabled(true);
 			setExpandedCategories(new Set(["content"]));
@@ -551,6 +554,7 @@ export function CleanupRuleDialog({
 
 			// Overlay template data on top of defaults (create mode only)
 			if (templateData) {
+				setTargetScope(templateData.targetScope);
 				setName(templateData.name);
 				setAction((templateData.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
 				setRetentionMode(templateData.retentionMode ?? false);
@@ -677,15 +681,43 @@ export function CleanupRuleDialog({
 		behaviorParams,
 	};
 	const buildParams = () => buildParamsPure(buildParamsState);
+	const effectiveRuleType: CleanupRuleType =
+		targetScope === "episode" ? "plex_watch_count" : ruleType;
+	const visibleArrInstances =
+		targetScope === "episode"
+			? arrInstances.filter((instance) => instance.service === "sonarr")
+			: arrInstances;
+
+	const selectTargetScope = (scope: "series" | "episode") => {
+		if (isEdit || scope === targetScope) return;
+		setTargetScope(scope);
+		if (scope === "episode") {
+			setRuleType("plex_watch_count");
+			setPlexWatchCountOp("greater_than");
+			setServiceFilter(["sonarr"]);
+			setInstanceFilter((current) =>
+				current.filter((id) =>
+					arrInstances.some((instance) => instance.id === id && instance.service === "sonarr"),
+				),
+			);
+			setSelectedPlexLibraries([]);
+			setIsComposite(false);
+			setConditions([]);
+			setCompositeError(null);
+			setRetentionMode(false);
+			setExpandedCategories(new Set(["plex"]));
+		}
+	};
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
-		if (isComposite && conditions.length === 0) {
+		const isEpisodeScope = targetScope === "episode";
+		if (!isEpisodeScope && isComposite && conditions.length === 0) {
 			setCompositeError("Composite rules must have at least one condition");
 			return;
 		}
 		// Validate composite conditions have required fields filled in
-		if (isComposite) {
+		if (!isEpisodeScope && isComposite) {
 			for (const cond of conditions) {
 				const p = cond.params;
 				if (
@@ -712,14 +744,28 @@ export function CleanupRuleDialog({
 				: rejectionMode === "days"
 					? Math.max(1, Math.min(36500, Number(rejectionDays) || 30))
 					: 0;
-		const base = {
+		const effectiveInstanceFilter = isEpisodeScope
+			? instanceFilter.filter((id) =>
+					arrInstances.some((instance) => instance.id === id && instance.service === "sonarr"),
+				)
+			: instanceFilter;
+		const base: CreateCleanupRule = {
 			name,
-			ruleType: isComposite ? ("composite" as const) : ruleType,
+			targetScope,
+			ruleType: isEpisodeScope
+				? ("plex_watch_count" as const)
+				: isComposite
+					? ("composite" as const)
+					: ruleType,
 			enabled,
 			priority: editRule?.priority ?? 0,
-			parameters: isComposite ? {} : buildParams(),
+			parameters: isEpisodeScope
+				? { operator: "greater_than", count: plexWatchCountVal }
+				: isComposite
+					? {}
+					: buildParams(),
 			action,
-			retentionMode,
+			retentionMode: isEpisodeScope ? false : retentionMode,
 			useGlobalRejectionMemory,
 			// When override is off, omit `rejectionMemoryDays` from the payload
 			// entirely. The PATCH route's `!== undefined` discipline preserves
@@ -728,22 +774,24 @@ export function CleanupRuleDialog({
 			// the route defaults `undefined` to `0`, which is the right
 			// pre-#474 behavior when override is off.
 			...(useGlobalRejectionMemory ? {} : { rejectionMemoryDays: ruleRejectionDays }),
-			serviceFilter: serviceFilter.length > 0 ? serviceFilter : null,
-			instanceFilter: instanceFilter.length > 0 ? instanceFilter : null,
+			serviceFilter: isEpisodeScope ? ["sonarr"] : serviceFilter.length > 0 ? serviceFilter : null,
+			instanceFilter: effectiveInstanceFilter.length > 0 ? effectiveInstanceFilter : null,
 			excludeTags: excludeTags.length > 0 ? excludeTags : null,
 			excludeTitles: excludeTitles.trim() ? splitCsv(excludeTitles) : null,
-			plexLibraryFilter: selectedPlexLibraries.length > 0 ? selectedPlexLibraries : null,
-			operator: isComposite ? compositeOperator : null,
-			conditions: isComposite
-				? conditions
-						.filter((c) => c.ruleType !== "composite")
-						.map((c) => ({
-							ruleType: c.ruleType as Exclude<CleanupRuleType, "composite">,
-							parameters: c.params,
-						}))
-				: null,
+			plexLibraryFilter:
+				!isEpisodeScope && selectedPlexLibraries.length > 0 ? selectedPlexLibraries : null,
+			operator: !isEpisodeScope && isComposite ? compositeOperator : null,
+			conditions:
+				!isEpisodeScope && isComposite
+					? conditions
+							.filter((c) => c.ruleType !== "composite")
+							.map((c) => ({
+								ruleType: c.ruleType as Exclude<CleanupRuleType, "composite">,
+								parameters: c.params,
+							}))
+					: null,
 		};
-		onSave(base as CreateCleanupRule);
+		onSave(base);
 	};
 
 	const toggleService = (service: string) => {
@@ -831,23 +879,66 @@ export function CleanupRuleDialog({
 							/>
 						</div>
 
-						{/* ── Retention Mode toggle ────────────────── */}
-						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-2">
-								<ShieldOff className="h-4 w-4 text-emerald-400" />
-								<div>
-									<span className="text-sm font-medium">Retention Rule</span>
-									<p className="text-xs text-muted-foreground">
-										Protects matching items from other rules
-									</p>
-								</div>
+						<div>
+							<span className={labelClass}>Target</span>
+							<div className="mt-1.5 grid grid-cols-2 gap-2">
+								{(["series", "episode"] as const).map((scope) => (
+									<button
+										key={scope}
+										type="button"
+										onClick={() => selectTargetScope(scope)}
+										disabled={isEdit}
+										aria-pressed={targetScope === scope}
+										title={
+											isEdit ? "Target scope cannot be changed while editing a rule" : undefined
+										}
+										className="rounded-lg border px-3 py-2 text-left text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60"
+										style={
+											targetScope === scope
+												? {
+														borderColor: gradient.from,
+														backgroundColor: gradient.fromLight,
+														color: gradient.from,
+													}
+												: { borderColor: "var(--color-border)" }
+										}
+									>
+										{scope === "series" ? "Series" : "Episodes"}
+									</button>
+								))}
 							</div>
-							<Switch
-								checked={retentionMode}
-								onCheckedChange={setRetentionMode}
-								style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
-							/>
+							{isEdit && (
+								<p className="mt-2 text-xs text-muted-foreground">
+									Target scope cannot be changed while editing. Create a new rule to use a different
+									scope.
+								</p>
+							)}
+							<p className="mt-1 text-xs text-muted-foreground">
+								{targetScope === "episode"
+									? "Episode cleanup is a Sonarr-only workflow using Plex watch count."
+									: "Plex totals and destructive actions apply to the full series and its episode files."}
+							</p>
 						</div>
+
+						{/* ── Retention Mode toggle ────────────────── */}
+						{targetScope === "series" && (
+							<div className="flex items-center justify-between">
+								<div className="flex items-center gap-2">
+									<ShieldOff className="h-4 w-4 text-emerald-400" />
+									<div>
+										<span className="text-sm font-medium">Retention Rule</span>
+										<p className="text-xs text-muted-foreground">
+											Protects matching items from other rules
+										</p>
+									</div>
+								</div>
+								<Switch
+									checked={retentionMode}
+									onCheckedChange={setRetentionMode}
+									style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
+								/>
+							</div>
+						)}
 
 						{/* ── Rejection-memory override (issue #474) ───── */}
 						<div className="space-y-2">
@@ -923,59 +1014,84 @@ export function CleanupRuleDialog({
 								))}
 							</div>
 							<p className="text-xs text-muted-foreground mt-1">
-								{action === "delete"
-									? "Remove the item and its verified media files from the ARR instance. For Plex library updates, arr-dashboard applies the ARR connection's path mapping and matches exact live paths and sizes. Unverifiable media-server updates are blocked."
-									: action === "unmonitor"
-										? "Set the item as unmonitored (keeps files and data)."
-										: "Delete verified media files but keep the item in the ARR library. Exact live Plex matching blocks merged or unverifiable items, and other unverified media-server updates are blocked."}
+								{targetScope === "episode"
+									? action === "delete"
+										? "Unmonitor the exact Sonarr episode, then delete its verified episode file. The series and other episodes remain."
+										: action === "unmonitor"
+											? "Unmonitor only the exact Sonarr episode and keep its file."
+											: "Delete only the exact verified episode file. The episode remains monitored, so Sonarr may download it again."
+									: action === "delete"
+										? "Remove the item and its verified media files from the ARR instance. For Plex library updates, arr-dashboard applies the ARR connection's path mapping and matches exact live paths and sizes. Unverifiable media-server updates are blocked."
+										: action === "unmonitor"
+											? "Set the item as unmonitored (keeps files and data)."
+											: "Delete verified media files but keep the item in the ARR library. Exact live Plex matching blocks merged or unverifiable items, and other unverified media-server updates are blocked."}
 							</p>
 						</div>
 
 						{/* ── Rule Mode toggle ──────────────────────── */}
-						<div>
-							<span className={labelClass}>Rule Mode</span>
-							<div className="flex gap-2 mt-1.5">
-								<button
-									type="button"
-									onClick={() => {
-										setIsComposite(false);
-										setConditions([]);
-										setCompositeError(null);
-									}}
-									className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
-									style={
-										!isComposite
-											? {
-													borderColor: gradient.from,
-													backgroundColor: gradient.fromLight,
-													color: gradient.from,
-												}
-											: { borderColor: "var(--color-border)" }
-									}
-								>
-									Single Condition
-								</button>
-								<button
-									type="button"
-									onClick={() => setIsComposite(true)}
-									className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
-									style={
-										isComposite
-											? {
-													borderColor: gradient.from,
-													backgroundColor: gradient.fromLight,
-													color: gradient.from,
-												}
-											: { borderColor: "var(--color-border)" }
-									}
-								>
-									Composite Rule
-								</button>
+						{targetScope === "series" && (
+							<div>
+								<span className={labelClass}>Rule Mode</span>
+								<div className="flex gap-2 mt-1.5">
+									<button
+										type="button"
+										onClick={() => {
+											setIsComposite(false);
+											setConditions([]);
+											setCompositeError(null);
+										}}
+										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
+										style={
+											!isComposite
+												? {
+														borderColor: gradient.from,
+														backgroundColor: gradient.fromLight,
+														color: gradient.from,
+													}
+												: { borderColor: "var(--color-border)" }
+										}
+									>
+										Single Condition
+									</button>
+									<button
+										type="button"
+										onClick={() => setIsComposite(true)}
+										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
+										style={
+											isComposite
+												? {
+														borderColor: gradient.from,
+														backgroundColor: gradient.fromLight,
+														color: gradient.from,
+													}
+												: { borderColor: "var(--color-border)" }
+										}
+									>
+										Composite Rule
+									</button>
+								</div>
 							</div>
-						</div>
+						)}
 
 						{/* ── Rule Type Picker / Composite Builder ─── */}
-						{isComposite ? (
+						{targetScope === "episode" ? (
+							<div className="flex items-center gap-2">
+								<span className="text-xs text-muted-foreground">Rule Type:</span>
+								<span
+									className="rounded-full border px-3 py-1 text-sm font-medium"
+									style={{
+										borderColor: gradient.fromMuted,
+										backgroundColor: gradient.fromLight,
+										color: gradient.from,
+									}}
+								>
+									Plex Watch Count
+								</span>
+								<span className="text-xs text-muted-foreground">
+									Only Plex Watch Count is supported for episode targets.
+								</span>
+							</div>
+						) : isComposite ? (
 							<div className="space-y-4">
 								<div>
 									<span className={labelClass}>Operator</span>
@@ -1190,7 +1306,7 @@ export function CleanupRuleDialog({
 					</div>
 
 					{/* ── Parameters Section ───────────────────────── */}
-					{!isComposite && (
+					{(targetScope === "episode" || !isComposite) && (
 						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-3">
 							<div className="flex items-center gap-2 mb-2">
 								<SlidersHorizontal className="h-4 w-4" style={{ color: gradient.from }} />
@@ -1198,7 +1314,8 @@ export function CleanupRuleDialog({
 							</div>
 							<ParamsFields
 								model={{
-									ruleType,
+									ruleType: effectiveRuleType,
+									targetScope,
 									criteria: {
 										days,
 										setDays,
@@ -1394,14 +1511,17 @@ export function CleanupRuleDialog({
 						<div>
 							<span className={labelClass}>Service Filter</span>
 							<div className="flex gap-2 mt-1.5">
-								{(["sonarr", "radarr"] as const).map((svc) => {
+								{(targetScope === "episode"
+									? (["sonarr"] as const)
+									: (["sonarr", "radarr"] as const)
+								).map((svc) => {
 									const svcGradient = getServiceGradient(svc);
-									const isActive = serviceFilter.includes(svc);
+									const isActive = targetScope === "episode" || serviceFilter.includes(svc);
 									return (
 										<button
 											key={svc}
 											type="button"
-											onClick={() => toggleService(svc)}
+											onClick={() => targetScope === "series" && toggleService(svc)}
 											aria-pressed={isActive}
 											aria-label={`Filter by ${svc}`}
 											className="rounded-lg border px-3 py-1.5 text-sm font-medium capitalize transition-all duration-200"
@@ -1425,20 +1545,24 @@ export function CleanupRuleDialog({
 								})}
 							</div>
 							<p className="text-xs text-muted-foreground mt-1.5">
-								Leave unselected to apply to all services.
+								{targetScope === "episode"
+									? "Episode targets always apply to Sonarr."
+									: "Leave unselected to apply to all services."}
 							</p>
 						</div>
 
 						<div>
 							<span className={labelClass}>Instance Filter</span>
-							{arrInstances.length === 0 ? (
+							{visibleArrInstances.length === 0 ? (
 								<p className="text-xs text-muted-foreground mt-1">
-									No Sonarr/Radarr instances configured.
+									{targetScope === "episode"
+										? "No Sonarr instances configured."
+										: "No Sonarr/Radarr instances configured."}
 								</p>
 							) : (
 								<div className="mt-1.5 space-y-1.5">
-									{["sonarr", "radarr"].map((svc) => {
-										const instances = arrInstances.filter((i) => i.service === svc);
+									{(targetScope === "episode" ? ["sonarr"] : ["sonarr", "radarr"]).map((svc) => {
+										const instances = visibleArrInstances.filter((i) => i.service === svc);
 										if (instances.length === 0) return null;
 										return (
 											<div key={svc}>
@@ -1480,22 +1604,24 @@ export function CleanupRuleDialog({
 							)}
 						</div>
 
-						{fieldOptions?.plexLibraries && fieldOptions.plexLibraries.length > 0 && (
-							<div>
-								<MultiSelectField
-									label="Plex Library Filter"
-									options={fieldOptions.plexLibraries}
-									selected={selectedPlexLibraries}
-									onChange={setSelectedPlexLibraries}
-									loading={fieldOptionsLoading}
-									inputClass={inputClass}
-									labelClass={labelClass}
-								/>
-								<p className="text-xs text-muted-foreground mt-1.5">
-									Limit Plex rules to specific libraries. Leave empty for all.
-								</p>
-							</div>
-						)}
+						{targetScope === "series" &&
+							fieldOptions?.plexLibraries &&
+							fieldOptions.plexLibraries.length > 0 && (
+								<div>
+									<MultiSelectField
+										label="Plex Library Filter"
+										options={fieldOptions.plexLibraries}
+										selected={selectedPlexLibraries}
+										onChange={setSelectedPlexLibraries}
+										loading={fieldOptionsLoading}
+										inputClass={inputClass}
+										labelClass={labelClass}
+									/>
+									<p className="text-xs text-muted-foreground mt-1.5">
+										Limit Plex rules to specific libraries. Leave empty for all.
+									</p>
+								</div>
+							)}
 					</div>
 
 					{/* ── Exclusions Section ────────────────────────── */}

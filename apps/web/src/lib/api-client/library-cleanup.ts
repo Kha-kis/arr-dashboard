@@ -1,6 +1,7 @@
 import type {
 	CleanupApprovalResponse,
 	CleanupConfigResponse,
+	CleanupExplainRequest,
 	CleanupExplainResponse,
 	CleanupFieldOptionsResponse,
 	CleanupLogResponse,
@@ -166,10 +167,10 @@ export const libraryCleanupApi = {
 	},
 
 	// Explain
-	async explain(instanceId: string, arrItemId: number): Promise<CleanupExplainResponse> {
+	async explain(request: CleanupExplainRequest): Promise<CleanupExplainResponse> {
 		return apiRequest<CleanupExplainResponse>("/api/library-cleanup/explain", {
 			method: "POST",
-			json: { instanceId, arrItemId },
+			json: request,
 		});
 	},
 

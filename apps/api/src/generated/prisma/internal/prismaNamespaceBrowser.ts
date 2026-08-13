@@ -802,6 +802,7 @@ export const LibraryCleanupRuleScalarFieldEnum = {
   excludeTags: 'excludeTags',
   excludeTitles: 'excludeTitles',
   plexLibraryFilter: 'plexLibraryFilter',
+  targetScope: 'targetScope',
   action: 'action',
   operator: 'operator',
   conditions: 'conditions',
@@ -821,6 +822,11 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
   instanceId: 'instanceId',
   arrItemId: 'arrItemId',
   itemType: 'itemType',
+  targetScope: 'targetScope',
+  arrEpisodeId: 'arrEpisodeId',
+  seasonNumber: 'seasonNumber',
+  episodeNumber: 'episodeNumber',
+  episodeTitle: 'episodeTitle',
   title: 'title',
   matchedRuleId: 'matchedRuleId',
   matchedRuleName: 'matchedRuleName',
@@ -983,7 +989,10 @@ export const PlexEpisodeCacheScalarFieldEnum = {
   title: 'title',
   watched: 'watched',
   watchedByUsers: 'watchedByUsers',
-  lastWatchedAt: 'lastWatchedAt'
+  lastWatchedAt: 'lastWatchedAt',
+  watchCount: 'watchCount',
+  refreshedAt: 'refreshedAt',
+  sourceFingerprint: 'sourceFingerprint'
 } as const
 
 export type PlexEpisodeCacheScalarFieldEnum = (typeof PlexEpisodeCacheScalarFieldEnum)[keyof typeof PlexEpisodeCacheScalarFieldEnum]

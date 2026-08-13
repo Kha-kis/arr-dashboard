@@ -122,6 +122,8 @@ export function CleanupRuleComposerDialog({
 	const [enabled, setEnabled] = useState(true);
 	const [action, setAction] = useState<CleanupAction>("delete");
 	const [retentionMode, setRetentionMode] = useState(false);
+	const [targetScope, setTargetScope] = useState<"series" | "episode">("series");
+	const [episodeWatchCount, setEpisodeWatchCount] = useState(1);
 	const [editorState, setEditorState] = useState<CriteriaEditorState>(freshEditorState);
 	const [error, setError] = useState<string | null>(null);
 
@@ -136,6 +138,9 @@ export function CleanupRuleComposerDialog({
 		if (isEdit && !editDataReady) return;
 		setError(null);
 		if (isEdit) {
+			setTargetScope(configRule?.targetScope ?? "series");
+			const loadedEpisodeCount = configRule?.parameters.count;
+			setEpisodeWatchCount(typeof loadedEpisodeCount === "number" ? loadedEpisodeCount : 1);
 			setName(summary?.name ?? configRule?.name ?? "");
 			setEnabled(summary?.enabled ?? configRule?.enabled ?? true);
 			setAction((configRule?.action as CleanupAction) ?? "delete");
@@ -151,6 +156,8 @@ export function CleanupRuleComposerDialog({
 			setEnabled(true);
 			setAction("delete");
 			setRetentionMode(false);
+			setTargetScope("series");
+			setEpisodeWatchCount(1);
 			setEditorState(freshEditorState());
 		}
 	}, [open, isEdit, editDataReady, summary, configRule]);
@@ -160,6 +167,25 @@ export function CleanupRuleComposerDialog({
 	const labelClass = "mb-1 block text-xs text-muted-foreground";
 
 	const isSaving = createRule.isPending || updateRule.isPending;
+	const selectTargetScope = (scope: "series" | "episode") => {
+		if (isEdit || scope === targetScope) return;
+		setTargetScope(scope);
+		if (scope === "episode") {
+			setRetentionMode(false);
+			setEpisodeWatchCount(1);
+			setEditorState({
+				mode: "single",
+				operator: "all",
+				conditions: [
+					{
+						id: "episode-watch-count",
+						kind: "plex_watch_count",
+						params: { operator: "greater_than", count: 1 },
+					},
+				],
+			});
+		}
+	};
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -176,7 +202,21 @@ export function CleanupRuleComposerDialog({
 		// operator/conditions the engine's composite discriminator would honor.
 		// Not destructured: reading `.error`/`.payload` off the result preserves
 		// the discriminated-union narrowing (payload is defined after the guard).
-		const result = toCriteriaV0Payload(editorState, "library-cleanup");
+		const effectiveEditorState: CriteriaEditorState =
+			targetScope === "episode"
+				? {
+						mode: "single",
+						operator: "all",
+						conditions: [
+							{
+								id: "episode-watch-count",
+								kind: "plex_watch_count",
+								params: { operator: "greater_than", count: episodeWatchCount },
+							},
+						],
+					}
+				: editorState;
+		const result = toCriteriaV0Payload(effectiveEditorState, "library-cleanup");
 		if (!result.payload) {
 			setError(result.error ?? "This rule isn't valid yet.");
 			return;
@@ -207,6 +247,10 @@ export function CleanupRuleComposerDialog({
 			operator: payload.operator,
 			conditions: payload.conditions,
 		};
+		const episodeScopeFields =
+			targetScope === "episode"
+				? { targetScope, serviceFilter: ["sonarr"], plexLibraryFilter: null }
+				: { targetScope };
 
 		try {
 			if (isEdit && editRuleId && configRule) {
@@ -214,12 +258,13 @@ export function CleanupRuleComposerDialog({
 					name: name.trim(),
 					enabled,
 					action,
-					retentionMode,
+					retentionMode: targetScope === "episode" ? false : retentionMode,
 					// Echo back the defaulted fields the composer doesn't edit, so
 					// base.partial()'s re-injected defaults can't clobber them.
 					priority: configRule.priority,
 					useGlobalRejectionMemory: configRule.useGlobalRejectionMemory,
 					...conditionHalf,
+					...episodeScopeFields,
 				};
 				await updateRule.mutateAsync({ id: editRuleId, data: update as UpdateCleanupRule });
 			} else {
@@ -227,8 +272,9 @@ export function CleanupRuleComposerDialog({
 					name: name.trim(),
 					enabled,
 					action,
-					retentionMode,
+					retentionMode: targetScope === "episode" ? false : retentionMode,
 					...conditionHalf,
+					...episodeScopeFields,
 				};
 				await createRule.mutateAsync(create as CreateCleanupRule);
 			}
@@ -304,23 +350,66 @@ export function CleanupRuleComposerDialog({
 							/>
 						</div>
 
-						{/* Retention mode */}
-						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-2">
-								<ShieldOff className="h-4 w-4 text-emerald-400" />
-								<div>
-									<span className="text-sm font-medium">Retention rule</span>
-									<p className="text-xs text-muted-foreground">
-										Protects matching items from other rules
-									</p>
-								</div>
+						<div>
+							<span className={labelClass}>Target</span>
+							<div className="mt-1.5 grid grid-cols-2 gap-2">
+								{(["series", "episode"] as const).map((scope) => (
+									<button
+										key={scope}
+										type="button"
+										onClick={() => selectTargetScope(scope)}
+										disabled={isEdit}
+										aria-pressed={targetScope === scope}
+										title={
+											isEdit ? "Target scope cannot be changed while editing a rule" : undefined
+										}
+										className="rounded-lg border px-3 py-2 text-left text-sm font-medium transition-all disabled:cursor-not-allowed disabled:opacity-60"
+										style={
+											targetScope === scope
+												? {
+														borderColor: gradient.from,
+														backgroundColor: gradient.fromLight,
+														color: gradient.from,
+													}
+												: { borderColor: "var(--color-border)" }
+										}
+									>
+										{scope === "series" ? "Series" : "Episodes"}
+									</button>
+								))}
 							</div>
-							<Switch
-								checked={retentionMode}
-								onCheckedChange={setRetentionMode}
-								style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
-							/>
+							{isEdit && (
+								<p className="mt-2 text-xs text-muted-foreground">
+									Target scope cannot be changed while editing. Create a new rule to use a different
+									scope.
+								</p>
+							)}
+							{targetScope === "episode" && (
+								<p className="mt-1 text-xs text-muted-foreground">
+									Episodes are a Sonarr-only workflow using Plex watch count.
+								</p>
+							)}
 						</div>
+
+						{/* Retention mode */}
+						{targetScope === "series" && (
+							<div className="flex items-center justify-between">
+								<div className="flex items-center gap-2">
+									<ShieldOff className="h-4 w-4 text-emerald-400" />
+									<div>
+										<span className="text-sm font-medium">Retention rule</span>
+										<p className="text-xs text-muted-foreground">
+											Protects matching items from other rules
+										</p>
+									</div>
+								</div>
+								<Switch
+									checked={retentionMode}
+									onCheckedChange={setRetentionMode}
+									style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
+								/>
+							</div>
+						)}
 
 						{/* Action */}
 						<div>
@@ -347,23 +436,57 @@ export function CleanupRuleComposerDialog({
 								))}
 							</div>
 							<p className="mt-1 text-xs text-muted-foreground">
-								{ACTIONS.find((a) => a.value === action)?.hint}
+								{targetScope === "episode"
+									? action === "delete"
+										? "Unmonitor the exact Sonarr episode, then delete its verified episode file. The series and other episodes remain."
+										: action === "unmonitor"
+											? "Unmonitor only the exact Sonarr episode and keep its file."
+											: "Delete only the exact verified episode file. The episode remains monitored, so Sonarr may download it again."
+									: ACTIONS.find((a) => a.value === action)?.hint}
 							</p>
 						</div>
 
 						{/* Conditions */}
-						<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 p-4 backdrop-blur-sm">
-							<span className="text-sm font-medium">Conditions</span>
-							<CriteriaConditionEditor
-								state={editorState}
-								onChange={setEditorState}
-								legalKinds={legalKinds}
-								fieldOptions={fieldOptions}
-								fieldOptionsLoading={fieldOptionsLoading}
-								inputClass={inputClass}
-								labelClass={labelClass}
-							/>
-						</div>
+						{targetScope === "series" ? (
+							<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 p-4 backdrop-blur-sm">
+								<span className="text-sm font-medium">Conditions</span>
+								<CriteriaConditionEditor
+									state={editorState}
+									onChange={setEditorState}
+									legalKinds={legalKinds}
+									fieldOptions={fieldOptions}
+									fieldOptionsLoading={fieldOptionsLoading}
+									inputClass={inputClass}
+									labelClass={labelClass}
+								/>
+							</div>
+						) : (
+							<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 p-4 text-sm">
+								<span className="font-medium">Plex Watch Count</span>
+								<div className="flex gap-2">
+									<label className="block flex-1">
+										<span className={labelClass}>Operator</span>
+										<select value="greater_than" disabled className={inputClass}>
+											<option value="greater_than">Greater than</option>
+										</select>
+									</label>
+									<label className="block w-24">
+										<span className={labelClass}>Count</span>
+										<input
+											type="number"
+											value={episodeWatchCount}
+											onChange={(event) => setEpisodeWatchCount(Number(event.target.value))}
+											min={0}
+											className={inputClass}
+										/>
+									</label>
+								</div>
+								<p className="mt-1 text-xs text-muted-foreground">
+									Episode rules always use a greater-than Plex watch count and cannot be composite
+									or retention rules.
+								</p>
+							</div>
+						)}
 
 						{/* Advanced-filters disclosure (they live in the full surface) */}
 						<Link

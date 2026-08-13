@@ -3153,6 +3153,59 @@ describe("shared Plex deletion safety", () => {
 		});
 	});
 
+	it("persists exact single-episode Sonarr authority and rejects shared-file membership", () => {
+		const serialized = serializeExecutableSafetyPlan({
+			kind: "verified_sonarr_episode",
+			target: radarrTargetIdentity,
+			episode: {
+				arrEpisodeId: 9_001,
+				seasonNumber: 1,
+				episodeNumber: 2,
+				episodeFileId: 7_001,
+				episodeFileConsumerIds: [9_001],
+				monitored: true,
+			},
+			selectedFile: {
+				episodeFileId: 7_001,
+				fullPath: { value: "/shows/Example/Example.S01E02.mkv", windows: false },
+				size: 2_000,
+			},
+			retainedTargetFiles: [],
+			watchProof: {
+				plexInstanceId: "plex-1",
+				sourceFingerprint: "source-fingerprint",
+				plexServerUrl: "http://plex.internal:32400",
+				ratingKey: "episode-9001",
+				watchCount: 2,
+				refreshedAt: "2026-08-12T12:00:00.000Z",
+				fullPath: { value: "/plex/shows/Example/Example.S01E02.mkv", windows: false },
+				size: 2_000,
+				mapping: null,
+			},
+			quiIdentity: { enabled: false, infoHash: null, torrentState: null },
+			peers: [],
+			ownership: [],
+			targetDeleteNotifications: [],
+		});
+		const plan = parseExecutableSafetyPlan(serialized);
+
+		expect(plan).toMatchObject({
+			kind: "verified_sonarr_episode",
+			episode: { arrEpisodeId: 9_001, episodeFileConsumerIds: [9_001] },
+		});
+		expect(
+			parseExecutableSafetyPlan(
+				JSON.stringify({
+					...plan,
+					episode: {
+						...(plan as never as { episode: object }).episode,
+						episodeFileConsumerIds: [9_001, 9_002],
+					},
+				}),
+			),
+		).toBeNull();
+	});
+
 	it("accepts a persisted no-retained Radarr proof after Plex drops the deleted movie", async () => {
 		const fixture = makeDeps({ mediaPartCount: 1 });
 		const context = createSharedPlexSafetyContext();

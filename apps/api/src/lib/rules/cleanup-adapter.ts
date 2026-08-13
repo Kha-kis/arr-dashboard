@@ -28,11 +28,12 @@ import type { DataSourceDependency, RuleDocument } from "@arr/shared";
 import {
 	evaluateSingleCondition,
 	getFilterReason,
+	passesCleanupRuleFilters,
 	passesInstanceFilter,
 	passesServiceFilter,
 	passesTagExclusion,
 	passesTitleExclusion,
-	shouldSkipForFailedSource,
+	ruleUsesUnavailableData,
 } from "../library-cleanup/rule-evaluators.js";
 import type {
 	CacheItemForEval,
@@ -110,7 +111,8 @@ export function evaluateItemAgainstRulesViaEngine(
 	// Phase 1: retention rules — any match protects the item
 	for (const rule of rules) {
 		if (!rule.retentionMode) continue;
-		if (shouldSkipForFailedSource(rule, failedSources)) continue;
+		if (!passesCleanupRuleFilters(item, rule, instanceService)) continue;
+		if (ruleUsesUnavailableData(rule, failedSources)) return null;
 		const match = evaluateRuleViaEngine(item, rule, instanceService, ctx);
 		if (match) return null;
 	}
@@ -118,7 +120,7 @@ export function evaluateItemAgainstRulesViaEngine(
 	// Phase 2: cleanup rules — first match wins
 	for (const rule of rules) {
 		if (rule.retentionMode) continue;
-		if (shouldSkipForFailedSource(rule, failedSources)) continue;
+		if (ruleUsesUnavailableData(rule, failedSources)) continue;
 		const match = evaluateRuleViaEngine(item, rule, instanceService, ctx);
 		if (match) return match;
 	}

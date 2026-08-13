@@ -76,6 +76,35 @@ beforeEach(() => {
 });
 
 describe("CleanupRuleComposerDialog — create", () => {
+	it("defaults a new rule to series scope", () => {
+		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} />);
+
+		expect(screen.getByRole("button", { name: /^Series/ })).toHaveAttribute("aria-pressed", "true");
+	});
+
+	it("serializes the constrained episode payload", async () => {
+		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} />);
+		fireEvent.click(screen.getByRole("button", { name: /^Episodes/ }));
+		fireEvent.change(screen.getByPlaceholderText(/old low-rated movies/i), {
+			target: { value: "Watched episodes" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: /create rule/i }));
+
+		await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+		expect(createMutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				targetScope: "episode",
+				ruleType: "plex_watch_count",
+				parameters: { operator: "greater_than", count: 1 },
+				serviceFilter: ["sonarr"],
+				retentionMode: false,
+				plexLibraryFilter: null,
+				operator: null,
+				conditions: null,
+			}),
+		);
+	});
+
 	it("POSTs the merged core-action + serialized single-condition payload", async () => {
 		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} />);
 
@@ -90,6 +119,7 @@ describe("CleanupRuleComposerDialog — create", () => {
 			enabled: true,
 			action: "delete",
 			retentionMode: false,
+			targetScope: "series",
 			// Default seed condition is age; single → operator/conditions null.
 			ruleType: "age",
 			parameters: { operator: "older_than", days: 30 },
@@ -150,6 +180,7 @@ describe("CleanupRuleComposerDialog — edit", () => {
 					name: "Old unwatched",
 					enabled: true,
 					priority: 0,
+					targetScope: "series",
 					ruleType: "composite",
 					parameters: {},
 					serviceFilter: ["sonarr"],
@@ -182,6 +213,96 @@ describe("CleanupRuleComposerDialog — edit", () => {
 		expect(screen.getByText(/condition 2/i)).toBeTruthy();
 	});
 
+	it("round-trips an edited episode threshold and explains why scope is locked", async () => {
+		automationData = {
+			rules: [
+				{
+					id: "rule-episode",
+					name: "Watched episodes",
+					enabled: true,
+					context: "library-cleanup",
+					document: {
+						version: 1,
+						root: {
+							kind: "plex_watch_count",
+							params: { operator: "greater_than", count: 2 },
+						},
+					},
+					unavailableKinds: [],
+					unparseable: false,
+				},
+			],
+		};
+		configData = {
+			id: "cfg",
+			enabled: true,
+			intervalHours: 24,
+			lastRunAt: null,
+			nextRunAt: null,
+			dryRunMode: false,
+			maxRemovalsPerRun: 10,
+			requireApproval: true,
+			respectQuiSeeding: false,
+			rejectionMemoryDays: 0,
+			rules: [
+				{
+					id: "rule-episode",
+					name: "Watched episodes",
+					enabled: true,
+					priority: 0,
+					targetScope: "episode",
+					ruleType: "plex_watch_count",
+					parameters: { operator: "greater_than", count: 2 },
+					serviceFilter: ["sonarr"],
+					instanceFilter: null,
+					excludeTags: null,
+					excludeTitles: null,
+					plexLibraryFilter: null,
+					action: "delete",
+					operator: null,
+					conditions: null,
+					retentionMode: false,
+					useGlobalRejectionMemory: true,
+					rejectionMemoryDays: 0,
+					createdAt: "2026-01-01T00:00:00Z",
+					updatedAt: "2026-01-01T00:00:00Z",
+				},
+			],
+		};
+
+		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} editRuleId="rule-episode" />);
+
+		const episodeScope = await screen.findByRole("button", { name: /^Episodes/ });
+		expect(episodeScope).toHaveAttribute("aria-pressed", "true");
+		expect(episodeScope).toHaveAttribute(
+			"title",
+			"Target scope cannot be changed while editing a rule",
+		);
+		expect(
+			screen.getByText(
+				"Target scope cannot be changed while editing. Create a new rule to use a different scope.",
+			),
+		).toBeInTheDocument();
+		expect(screen.getByLabelText("Count")).toHaveValue(2);
+		fireEvent.change(screen.getByLabelText("Count"), { target: { value: "4" } });
+		fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+		await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+		expect(updateMutate).toHaveBeenCalledWith({
+			id: "rule-episode",
+			data: expect.objectContaining({
+				targetScope: "episode",
+				ruleType: "plex_watch_count",
+				parameters: { operator: "greater_than", count: 4 },
+				serviceFilter: ["sonarr"],
+				plexLibraryFilter: null,
+				retentionMode: false,
+				operator: null,
+				conditions: null,
+			}),
+		});
+	});
+
 	it("saves a PARTIAL update — composer-owned fields only, advanced filters omitted (preserved)", async () => {
 		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} editRuleId="rule-1" />);
 		await screen.findByDisplayValue("Old unwatched");
@@ -196,6 +317,7 @@ describe("CleanupRuleComposerDialog — edit", () => {
 			enabled: true,
 			action: "unmonitor",
 			retentionMode: true,
+			targetScope: "series",
 			// Defaulted fields the composer doesn't edit are ECHOED from the loaded
 			// rule — base.partial() re-injects their defaults, so omitting them would
 			// clobber the stored values (priority reset to 0, useGlobalRejectionMemory

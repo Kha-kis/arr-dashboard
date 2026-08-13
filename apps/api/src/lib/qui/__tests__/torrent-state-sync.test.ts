@@ -36,15 +36,23 @@ function makeApp(overrides: Record<string, unknown> = {}) {
 	// id batches. Default empty so tests that don't care about cleanup
 	// behavior keep working.
 	const libraryCacheFindMany = vi.fn().mockResolvedValue([]);
+	const episodeFileCacheUpdateMany = vi.fn().mockResolvedValue({ count: 0 });
+	const episodeFileCacheFindMany = vi.fn().mockResolvedValue([]);
 	return {
 		log: silentLog,
 		prisma: {
 			libraryCache: { updateMany, findMany: libraryCacheFindMany },
+			episodeFileCache: {
+				updateMany: episodeFileCacheUpdateMany,
+				findMany: episodeFileCacheFindMany,
+			},
 			serviceInstance: { findMany: serviceInstanceFindMany },
 		},
 		__updateMany: updateMany,
 		__findMany: serviceInstanceFindMany,
 		__libraryCacheFindMany: libraryCacheFindMany,
+		__episodeFileCacheUpdateMany: episodeFileCacheUpdateMany,
+		__episodeFileCacheFindMany: episodeFileCacheFindMany,
 		...overrides,
 	} as any;
 }
@@ -108,6 +116,139 @@ describe("runQuiTorrentStateSync", () => {
 			where: { infoHash: "bbbb", instance: { userId: "user-1" } },
 			data: expect.objectContaining({ torrentState: "stalled_dl", torrentRatio: 0.1 }),
 		});
+	});
+
+	it("updates and stale-clears user-scoped EpisodeFileCache state", async () => {
+		const app = makeApp();
+		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);
+		mockListQuiInstances.mockResolvedValue([{ id: "qui-1", userId: "user-1", label: "qUI" }]);
+		mockCreateQuiClient.mockReturnValue({
+			listTorrentInventory: vi.fn().mockResolvedValue({
+				torrents: [{ hash: "AAAA", state: "stalledUP", ratio: 1.25 }],
+				complete: true,
+			}),
+		});
+		app.__episodeFileCacheFindMany.mockResolvedValue([
+			{ id: "episode-current", infoHash: "aaaa" },
+			{ id: "episode-stale", infoHash: "bbbb" },
+		]);
+		app.__episodeFileCacheUpdateMany.mockResolvedValue({ count: 1 });
+
+		const result = await runQuiTorrentStateSync(app);
+
+		expect(app.__episodeFileCacheUpdateMany).toHaveBeenNthCalledWith(1, {
+			where: { infoHash: "aaaa", instance: { userId: "user-1" } },
+			data: expect.objectContaining({ torrentState: "seeding", torrentRatio: 1.25 }),
+		});
+		expect(app.__episodeFileCacheUpdateMany).toHaveBeenNthCalledWith(2, {
+			where: {
+				id: { in: ["episode-stale"] },
+				instance: { userId: "user-1" },
+				torrentSyncedAt: { lt: expect.any(Date) },
+			},
+			data: { torrentState: null, torrentRatio: null, torrentSyncedAt: null },
+		});
+		expect(result.rowsUpdated).toBe(2);
+		expect(result.rowsCleared).toBe(1);
+	});
+
+	it("stale-clears both caches after a complete empty inventory", async () => {
+		const app = makeApp();
+		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);
+		mockListQuiInstances.mockResolvedValue([{ id: "qui-1", userId: "user-1", label: "qUI" }]);
+		mockCreateQuiClient.mockReturnValue({
+			listTorrentInventory: vi.fn().mockResolvedValue({ torrents: [], complete: true }),
+		});
+		app.__libraryCacheFindMany.mockImplementation((args: { where?: { torrentState?: unknown } }) =>
+			Promise.resolve(args.where?.torrentState ? [{ id: "library-stale", infoHash: "aaaa" }] : []),
+		);
+		app.__episodeFileCacheFindMany.mockResolvedValue([{ id: "episode-stale", infoHash: "bbbb" }]);
+		app.__episodeFileCacheUpdateMany.mockResolvedValue({ count: 1 });
+
+		const result = await runQuiTorrentStateSync(app);
+
+		expect(app.__updateMany).toHaveBeenCalledWith({
+			where: {
+				id: { in: ["library-stale"] },
+				instance: { userId: "user-1" },
+				torrentSyncedAt: { lt: expect.any(Date) },
+			},
+			data: { torrentState: null, torrentRatio: null, torrentSyncedAt: null },
+		});
+		expect(app.__episodeFileCacheUpdateMany).toHaveBeenCalledWith({
+			where: {
+				id: { in: ["episode-stale"] },
+				instance: { userId: "user-1" },
+				torrentSyncedAt: { lt: expect.any(Date) },
+			},
+			data: { torrentState: null, torrentRatio: null, torrentSyncedAt: null },
+		});
+		expect(result).toMatchObject({ torrentsSeen: 0, rowsCleared: 2, errors: 0 });
+	});
+
+	it("does not stale-clear when no qUI instances, a scan fails, or inventory is incomplete", async () => {
+		const app = makeApp();
+		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);
+		mockListQuiInstances.mockResolvedValue([]);
+		await runQuiTorrentStateSync(app);
+		expect(app.__episodeFileCacheFindMany).not.toHaveBeenCalled();
+
+		mockListQuiInstances.mockResolvedValue([
+			{ id: "qui-empty", userId: "user-1", label: "empty" },
+			{ id: "qui-failed", userId: "user-1", label: "failed" },
+		]);
+		mockCreateQuiClient.mockImplementation((_app: unknown, instance: { id: string }) => ({
+			listTorrentInventory:
+				instance.id === "qui-empty"
+					? vi.fn().mockResolvedValue({ torrents: [], complete: true })
+					: vi.fn().mockRejectedValue(new Error("inventory failed")),
+		}));
+		await runQuiTorrentStateSync(app);
+		expect(app.__episodeFileCacheFindMany).not.toHaveBeenCalled();
+
+		mockListQuiInstances.mockResolvedValue([
+			{ id: "qui-legacy", userId: "user-1", label: "legacy" },
+		]);
+		mockCreateQuiClient.mockReturnValue({
+			listTorrentInventory: vi.fn().mockResolvedValue({
+				torrents: [{ hash: "AAAA", state: "pausedUP", ratio: 1.25 }],
+				complete: false,
+			}),
+		});
+		await runQuiTorrentStateSync(app);
+		expect(app.__episodeFileCacheFindMany).not.toHaveBeenCalled();
+	});
+
+	it("uses compare-and-set torrentSyncedAt guards and reports EpisodeFileCache clear failures", async () => {
+		const app = makeApp();
+		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);
+		mockListQuiInstances.mockResolvedValue([{ id: "qui-1", userId: "user-1", label: "qUI" }]);
+		mockCreateQuiClient.mockReturnValue({
+			listTorrentInventory: vi.fn().mockResolvedValue({
+				torrents: [{ hash: "AAAA", state: "pausedUP", ratio: 1.25 }],
+				complete: true,
+			}),
+		});
+		app.__libraryCacheFindMany.mockImplementation((args: { where?: { torrentState?: unknown } }) =>
+			Promise.resolve(args.where?.torrentState ? [{ id: "library-stale", infoHash: "bbbb" }] : []),
+		);
+		app.__episodeFileCacheFindMany.mockResolvedValue([{ id: "episode-stale", infoHash: "cccc" }]);
+		app.__episodeFileCacheUpdateMany
+			.mockResolvedValueOnce({ count: 1 })
+			.mockRejectedValueOnce(new Error("episode clear failed"));
+
+		const result = await runQuiTorrentStateSync(app);
+
+		const libraryClear = app.__updateMany.mock.calls.find(
+			(call: [{ where: Record<string, unknown> }]) =>
+				call[0] !== undefined && (call[0].where as { id?: unknown }).id !== undefined,
+		)?.[0];
+		expect(libraryClear?.where).toMatchObject({
+			id: { in: ["library-stale"] },
+			instance: { userId: "user-1" },
+			torrentSyncedAt: { lt: expect.any(Date) },
+		});
+		expect(result).toMatchObject({ errors: 1, rowsCleared: 0 });
 	});
 
 	it("isolates per-instance failures: one bad instance does not abort the run", async () => {
@@ -343,5 +484,40 @@ describe("runQuiTorrentStateSync", () => {
 			where: { infoHash: "eeee", instance: { userId: "user-1" } },
 			data: expect.objectContaining({ torrentRatio: null }),
 		});
+	});
+});
+
+describe("runQuiTorrentStateSync incomplete inventory compatibility", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("updates positive state from an incomplete inventory but never clears an absent cached state", async () => {
+		const app = makeApp();
+		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);
+		mockListQuiInstances.mockResolvedValue([
+			{ id: "qui-1", userId: "user-1", label: "main", baseUrl: "http://qui" },
+		]);
+		mockCreateQuiClient.mockReturnValue({
+			listTorrentInventory: vi.fn().mockResolvedValue({
+				torrents: [{ hash: "AAAA", state: "uploading", ratio: 1.5 }],
+				complete: false,
+			}),
+		});
+		app.prisma.libraryCache.findMany.mockResolvedValue([{ id: "row-bbbb", infoHash: "bbbb" }]);
+
+		const result = await runQuiTorrentStateSync(app);
+
+		expect(result.torrentsSeen).toBe(1);
+		expect(app.__updateMany).toHaveBeenCalledWith({
+			where: { infoHash: "aaaa", instance: { userId: "user-1" } },
+			data: expect.objectContaining({ torrentState: "seeding" }),
+		});
+		expect(
+			app.__updateMany.mock.calls.some(
+				(call: [{ where: Record<string, unknown> }]) =>
+					(call[0]?.where as { id?: { in?: unknown } })?.id?.in !== undefined,
+			),
+		).toBe(false);
 	});
 });
