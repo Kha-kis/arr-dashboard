@@ -1,27 +1,16 @@
 /**
  * Jellyfin Cache Refresher
  *
- * Fetches library items with watch data from Jellyfin and upserts into JellyfinCache.
- * Unlike Plex (which has a separate history endpoint), Jellyfin embeds UserData
- * directly on each item response per-user, so we iterate all users to aggregate.
- *
- * Strategy:
- * 1. Get users → iterate each user for watch data
- * 2. Get libraries (views) → filter to movie/tvshow libraries
- * 3. For each library: get items with ProviderIds + UserData
- * 4. Aggregate watch data across all users
- * 5. Get resume items → mark as onDeck
- * 6. Upsert into JellyfinCache
+ * Fetches library items with watch data from Jellyfin and replaces JellyfinCache
+ * only after a complete, internally consistent snapshot has been gathered.
  */
 
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
-import { getErrorMessage } from "../utils/error-message.js";
 import type { PrismaClient } from "../prisma.js";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
-
-// ============================================================================
-// Aggregation Types
-// ============================================================================
+import { withCurrentJellyfinConnection } from "./jellyfin-connection-guard.js";
 
 interface ItemAggregation {
 	tmdbId: number;
@@ -40,35 +29,39 @@ interface ItemAggregation {
 	thumb: string | null;
 }
 
-// ============================================================================
-// Main Refresh Function
-// ============================================================================
-
 export async function refreshJellyfinCache(
 	client: JellyfinClient,
 	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-): Promise<{ upserted: number; errors: number; errorMessages: string[] }> {
+	expectedConnectionFingerprint?: string,
+): Promise<{
+	upserted: number;
+	errors: number;
+	errorMessages: string[];
+	complete: boolean;
+	completedAt?: Date;
+	superseded?: boolean;
+}> {
 	let upserted = 0;
 	let errors = 0;
+	let complete = true;
 	const errorMessages: string[] = [];
 
 	try {
-		// Step 1: Get all users
 		const users = await client.getUsers();
 		if (users.length === 0) {
 			log.warn({ instanceId }, "Jellyfin cache refresh: no users found");
 			return {
 				upserted: 0,
 				errors: 1,
-				errorMessages: ["Jellyfin returned no users, so cache completeness could not be verified"],
+				errorMessages: ["Jellyfin returned no users"],
+				complete: false,
 			};
 		}
 
-		// Step 2: Enumerate each user's visible media libraries. The first
-		// returned user is not guaranteed to be an administrator, so using only
-		// that account can make a populated server look empty.
+		// Library visibility is user-specific. Enumerating only the first returned
+		// user can make a populated server look empty or omit a restricted library.
 		const mediaLibrariesByUser = new Map<
 			string,
 			Awaited<ReturnType<JellyfinClient["getLibraries"]>>
@@ -79,30 +72,35 @@ export async function refreshJellyfinCache(
 				mediaLibrariesByUser.set(
 					user.id,
 					libraries.filter(
-						(lib) =>
-							lib.collectionType === "movies" ||
-							lib.collectionType === "tvshows" ||
-							lib.collectionType === "CollectionFolder",
+						(library) =>
+							library.collectionType === "movies" ||
+							library.collectionType === "tvshows" ||
+							library.collectionType === "CollectionFolder",
 					),
 				);
-			} catch (err) {
+			} catch (error) {
+				complete = false;
 				errors++;
-				const message = `Library enumeration failed for user ${user.name}: ${getErrorMessage(err, "unknown")}`;
+				const message = `Library enumeration failed for user ${user.name}: ${getErrorMessage(error, "unknown")}`;
 				errorMessages.push(message);
-				log.warn({ err, instanceId, userId: user.id }, message);
+				log.warn({ err: error, instanceId, userId: user.id }, message);
 			}
 		}
+
 		const mediaLibraryCount = new Set(
 			[...mediaLibrariesByUser.values()].flat().map((library) => library.id),
 		).size;
-
 		if (mediaLibraryCount === 0) {
 			log.info({ instanceId }, "Jellyfin cache refresh: no movie/TV libraries found");
+			return {
+				upserted: 0,
+				errors: 1,
+				errorMessages: ["Jellyfin returned no movie or TV libraries"],
+				complete: false,
+			};
 		}
 
-		// Step 3: Aggregate items across all users
 		const aggregations = new Map<string, ItemAggregation>();
-
 		for (const user of users) {
 			for (const library of mediaLibrariesByUser.get(user.id) ?? []) {
 				const includeItemTypes =
@@ -110,23 +108,27 @@ export async function refreshJellyfinCache(
 						? "Movie"
 						: library.collectionType === "tvshows"
 							? "Series"
-							: "Movie,Series"; // CollectionFolder or unknown — fetch both
+							: "Movie,Series";
 				try {
-					const items = await client.getLibraryItems(user.id, library.id, {
-						includeItemTypes,
-					});
-
+					const items = await client.getLibraryItems(user.id, library.id, { includeItemTypes });
 					for (const item of items) {
-						if (!item.tmdbId) continue;
+						if (item.type !== "Movie" && item.type !== "Series") {
+							complete = false;
+							continue;
+						}
+						if (!item.tmdbId) {
+							complete = false;
+							errorMessages.push("Jellyfin returned a current library item without a TMDb mapping");
+							continue;
+						}
 
 						const mediaType = item.type === "Movie" ? "movie" : "series";
 						const key = `${item.tmdbId}:${mediaType}:${library.id}`;
-
-						let agg = aggregations.get(key);
-						if (!agg) {
-							agg = {
+						let aggregation = aggregations.get(key);
+						if (!aggregation) {
+							aggregation = {
 								tmdbId: item.tmdbId,
-								mediaType: mediaType as "movie" | "series",
+								mediaType,
 								libraryId: library.id,
 								libraryName: library.name,
 								title: item.name,
@@ -140,160 +142,160 @@ export async function refreshJellyfinCache(
 								addedAt: item.dateCreated ? new Date(item.dateCreated) : null,
 								thumb: item.imageTags?.Primary ? `/Items/${item.id}/Images/Primary` : null,
 							};
-							aggregations.set(key, agg);
+							aggregations.set(key, aggregation);
+						} else if (aggregation.jellyfinId !== item.id) {
+							complete = false;
 						}
 
-						// Merge user watch data
 						if (item.played) {
-							agg.watchedByUsers.add(user.name);
-							agg.watchCount = Math.max(agg.watchCount, item.playCount);
+							aggregation.watchedByUsers.add(user.name);
+							aggregation.watchCount = Math.max(aggregation.watchCount, item.playCount);
 						}
-						// Capture lastPlayedDate even for partially-watched items (e.g. a series
-						// where some but not all episodes are watched). Jellyfin sets
-						// UserData.LastPlayedDate on a Series whenever any episode is played, not
-						// only when the whole series is finished. Recording it here ensures the
-						// episode-cache refresher picks up in-progress series, which is required
-						// for the per-episode progress bar to populate on library cards.
 						if (item.lastPlayedDate) {
 							const playDate = new Date(item.lastPlayedDate);
-							if (!agg.lastWatchedAt || playDate > agg.lastWatchedAt) {
-								agg.lastWatchedAt = playDate;
+							if (!aggregation.lastWatchedAt || playDate > aggregation.lastWatchedAt) {
+								aggregation.lastWatchedAt = playDate;
 							}
 						}
-
-						if (item.isFavorite) {
-							// Map Jellyfin favorite to a 10.0 rating equivalent
-							agg.userRating = 10.0;
-						}
+						if (item.isFavorite) aggregation.userRating = 10;
 					}
-				} catch (err) {
-					const msg = `Library ${library.name} for user ${user.name}: ${getErrorMessage(err, "unknown")}`;
-					errorMessages.push(msg);
+				} catch (error) {
+					complete = false;
 					errors++;
-					log.warn({ err, libraryId: library.id, userId: user.id }, msg);
+					const message = `Library ${library.name} for user ${user.name}: ${getErrorMessage(error, "unknown")}`;
+					errorMessages.push(message);
+					log.warn({ err: error, libraryId: library.id, userId: user.id }, message);
 				}
 			}
 		}
 
-		// Step 4: Aggregate resume/next-up state across every user.
-		const onDeckIds = new Set<number>();
+		// Every user's in-progress inventory is required. Restricting this to the
+		// primary user can erase another user's active playback evidence.
 		for (const user of users) {
 			try {
-				const resumeItems = await client.getResumeItems(user.id);
-				const nextUp = await client.getNextUp(user.id);
+				const [resumeItems, nextUp] = await Promise.all([
+					client.getResumeItems(user.id),
+					client.getNextUp(user.id),
+				]);
 				for (const item of [...resumeItems, ...nextUp]) {
-					if (item.tmdbId) onDeckIds.add(item.tmdbId);
+					if (item.type !== "Movie" && item.type !== "Series" && item.type !== "Episode") continue;
+					const jellyfinId =
+						item.type === "Movie" || item.type === "Series" ? item.id : item.seriesId;
+					if (!jellyfinId) {
+						complete = false;
+						continue;
+					}
+					let matched = false;
+					for (const aggregation of aggregations.values()) {
+						if (aggregation.jellyfinId === jellyfinId) {
+							aggregation.onDeck = true;
+							matched = true;
+						}
+					}
+					if (!matched) {
+						complete = false;
+						errorMessages.push(
+							"Jellyfin resume item could not be attributed to the current library snapshot",
+						);
+					}
 				}
-			} catch (err) {
+			} catch (error) {
+				complete = false;
 				errors++;
-				errorMessages.push(
-					`Resume/NextUp fetch failed for user ${user.name}: ${getErrorMessage(err, "unknown")}`,
-				);
+				const message = `Resume/NextUp fetch failed for ${user.name}: ${getErrorMessage(error, "unknown")}`;
+				errorMessages.push(message);
 				log.warn(
-					{ err, instanceId, userId: user.id },
+					{ err: error, instanceId, userId: user.id },
 					"Failed to fetch Jellyfin resume/nextUp for onDeck status",
 				);
 			}
 		}
-		for (const agg of aggregations.values()) {
-			if (onDeckIds.has(agg.tmdbId)) agg.onDeck = true;
-		}
 
-		// Step 5: Upsert into JellyfinCache in batches
-		const BATCH_SIZE = 100;
 		const items = Array.from(aggregations.values());
-
-		for (let i = 0; i < items.length; i += BATCH_SIZE) {
-			const batch = items.slice(i, i + BATCH_SIZE);
-			try {
-				await prisma.$transaction(
-					batch.map((agg) =>
-						prisma.jellyfinCache.upsert({
-							where: {
-								instanceId_tmdbId_mediaType_libraryId: {
-									instanceId,
-									tmdbId: agg.tmdbId,
-									mediaType: agg.mediaType,
-									libraryId: agg.libraryId,
-								},
-							},
-							create: {
-								instanceId,
-								tmdbId: agg.tmdbId,
-								mediaType: agg.mediaType,
-								libraryId: agg.libraryId,
-								libraryName: agg.libraryName,
-								title: agg.title,
-								jellyfinId: agg.jellyfinId,
-								lastWatchedAt: agg.lastWatchedAt,
-								watchCount: agg.watchCount,
-								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-								onDeck: agg.onDeck,
-								userRating: agg.userRating,
-								collections: JSON.stringify(agg.collections),
-								addedAt: agg.addedAt,
-								thumb: agg.thumb,
-							},
-							update: {
-								libraryName: agg.libraryName,
-								title: agg.title,
-								jellyfinId: agg.jellyfinId,
-								lastWatchedAt: agg.lastWatchedAt,
-								watchCount: agg.watchCount,
-								watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-								onDeck: agg.onDeck,
-								userRating: agg.userRating,
-								collections: JSON.stringify(agg.collections),
-								addedAt: agg.addedAt,
-								thumb: agg.thumb,
-							},
-						}),
-					),
-				);
-				upserted += batch.length;
-			} catch (err) {
-				errors += batch.length;
-				const msg = `Batch upsert failed: ${getErrorMessage(err, "unknown")}`;
-				errorMessages.push(msg);
-				log.error({ err, batchStart: i, batchSize: batch.length }, msg);
-			}
+		let completedAt: Date | undefined;
+		if (errors !== 0 || !complete) {
+			log.warn({ instanceId, errors }, "Skipping cache publication due to incomplete refresh");
+			return { upserted, errors, errorMessages, complete: false };
 		}
 
-		// Step 6: Evict stale rows — only when refresh had no errors
-		// to prevent deleting valid data from libraries that failed to fetch
-		if (errors > 0) {
-			log.warn({ instanceId, errors }, "Skipping stale row eviction due to refresh errors");
-		} else {
-			const currentKeys = new Set(items.map((i) => `${i.tmdbId}:${i.mediaType}:${i.libraryId}`));
-			try {
-				const existingRows = await prisma.jellyfinCache.findMany({
-					where: { instanceId },
-					select: { id: true, tmdbId: true, mediaType: true, libraryId: true },
-				});
-				const staleIds = existingRows
-					.filter((row) => !currentKeys.has(`${row.tmdbId}:${row.mediaType}:${row.libraryId}`))
-					.map((row) => row.id);
-
-				if (staleIds.length > 0) {
-					const DELETE_BATCH_SIZE = 500;
-					for (let i = 0; i < staleIds.length; i += DELETE_BATCH_SIZE) {
-						await prisma.jellyfinCache.deleteMany({
-							where: { id: { in: staleIds.slice(i, i + DELETE_BATCH_SIZE) } },
+		completedAt = new Date();
+		const generationId = randomUUID();
+		try {
+			const publication = await withCurrentJellyfinConnection(
+				prisma,
+				instanceId,
+				expectedConnectionFingerprint,
+				async (tx) => {
+					await tx.jellyfinCache.deleteMany({ where: { instanceId } });
+					if (items.length > 0) {
+						await tx.jellyfinCache.createMany({
+							data: items.map((item) => ({
+								instanceId,
+								tmdbId: item.tmdbId,
+								mediaType: item.mediaType,
+								libraryId: item.libraryId,
+								libraryName: item.libraryName,
+								title: item.title,
+								jellyfinId: item.jellyfinId,
+								lastWatchedAt: item.lastWatchedAt,
+								watchCount: item.watchCount,
+								watchedByUsers: JSON.stringify([...item.watchedByUsers]),
+								onDeck: item.onDeck,
+								userRating: item.userRating,
+								collections: JSON.stringify(item.collections),
+								addedAt: item.addedAt,
+								thumb: item.thumb,
+							})),
 						});
 					}
-					log.info({ instanceId, evicted: staleIds.length }, "Evicted stale Jellyfin cache rows");
-				}
-			} catch (err) {
-				errors++;
-				errorMessages.push(`Stale row eviction failed: ${getErrorMessage(err, "unknown")}`);
-				log.warn({ err, instanceId }, "Failed to evict stale Jellyfin cache rows");
+					await tx.cacheRefreshStatus.upsert({
+						where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
+						create: {
+							instanceId,
+							cacheType: "jellyfin",
+							lastRefreshedAt: completedAt!,
+							lastResult: "success",
+							itemCount: items.length,
+							generationId,
+							lastAttemptAt: completedAt!,
+							lastAttemptResult: "success",
+						},
+						update: {
+							lastRefreshedAt: completedAt!,
+							lastResult: "success",
+							lastErrorMessage: null,
+							itemCount: items.length,
+							generationId,
+							generationMetadata: null,
+							lastAttemptAt: completedAt!,
+							lastAttemptResult: "success",
+							lastAttemptErrorMessage: null,
+						},
+					});
+				},
+			);
+			if (!publication.matched) {
+				log.warn({ instanceId }, "Discarding Jellyfin cache refresh from a superseded connection");
+				return {
+					upserted: 0,
+					errors: 0,
+					errorMessages: ["Jellyfin service connection changed during refresh"],
+					complete: false,
+					superseded: true,
+				};
 			}
+			upserted = items.length;
+			return { upserted, errors, errorMessages, complete: true, completedAt };
+		} catch (error) {
+			const message = `Atomic cache publication failed: ${getErrorMessage(error, "unknown")}`;
+			errorMessages.push(message);
+			log.error({ err: error, instanceId, itemCount: items.length }, message);
+			return { upserted: 0, errors: errors + 1, errorMessages, complete: false };
 		}
-	} catch (err) {
-		errors++;
-		errorMessages.push(getErrorMessage(err, "Top-level refresh failure"));
-		log.error({ err, instanceId }, "Jellyfin cache refresh failed");
+	} catch (error) {
+		const message = getErrorMessage(error, "Top-level refresh failure");
+		errorMessages.push(message);
+		log.error({ err: error, instanceId }, "Jellyfin cache refresh failed");
+		return { upserted: 0, errors: errors + 1, errorMessages, complete: false };
 	}
-
-	return { upserted, errors, errorMessages };
 }

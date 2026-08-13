@@ -140,6 +140,9 @@ model ServiceInstance {
   httpAuthEncryptionIv         String?
   isDefault       Boolean             @default(false)
   enabled         Boolean             @default(true)
+  // Increments only when a cache-provider connection changes. In-flight
+  // cache publications must match this generation before they can persist.
+  connectionGeneration Int            @default(0)
   storageGroupId  String?             // Group instances sharing same storage for accurate disk stats
   // qui-only: when true, arr-dashboard reads files directly to verify hardlink
   // correlations via (st_dev, st_ino) instead of relying on filename/size
@@ -1585,7 +1588,8 @@ model TautulliCache {
 
 // ============================================================================
 // Cache Refresh Status
-// Tracks the last refresh result for each cache type per instance
+// Tracks the last successfully published cache generation and the latest
+// refresh attempt independently, so a failed retry cannot erase good evidence.
 // ============================================================================
 
 model CacheRefreshStatus {
@@ -1596,6 +1600,11 @@ model CacheRefreshStatus {
   lastResult       String    // "success" | "error"
   lastErrorMessage String?
   itemCount        Int       @default(0)
+  generationId            String?
+  generationMetadata      String?
+  lastAttemptAt           DateTime?
+  lastAttemptResult       String?
+  lastAttemptErrorMessage String?
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 

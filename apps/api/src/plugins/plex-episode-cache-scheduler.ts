@@ -12,6 +12,11 @@ import { createPlexClient } from "../lib/plex/plex-client.js";
 import { refreshPlexEpisodeCache } from "../lib/plex/plex-episode-cache-refresher.js";
 import { plexConnectionFingerprint } from "../lib/plex/service-instance-fingerprint.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import { recordCacheRefreshFailure } from "../lib/cache-refresh-status.js";
+import {
+	providerConnectionIdentity,
+	withCurrentProviderConnection,
+} from "../lib/services/provider-connection-guard.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -58,6 +63,7 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
+						const expectedConnection = providerConnectionIdentity(instance);
 						try {
 							const client = createPlexClient(app.encryptor, instance, app.log);
 							const result = await refreshPlexEpisodeCache(
@@ -66,48 +72,26 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 								instance.id,
 								app.log,
 								plexConnectionFingerprint(instance),
+								expectedConnection,
 							);
 							app.log.info(
 								{ instanceId: instance.id, label: instance.label, ...result },
 								"Plex episode cache refresh completed for instance",
 							);
 
-							// Track refresh status — separate try so a DB failure
-							// doesn't masquerade as a refresh failure in the outer catch
-							try {
-								const coverageMessage = result.coverageIncomplete
-									? result.capacityDegraded
-										? `Capacity degraded: ${result.eligibleShows} watched shows exceed the 200-show/24-hour freshness capacity; only ${result.refreshedShows} were refreshed this cycle.`
-										: `Coverage incomplete: refreshed ${result.refreshedShows} of ${result.eligibleShows} watched shows; rotation will continue next run.`
-									: null;
-								const lastResult = plexEpisodeRefreshResultStatus(result);
-								const statusMessage =
-									result.errorMessages.length > 0
-										? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-										: coverageMessage;
-								await app.prisma.cacheRefreshStatus.upsert({
-									where: {
-										instanceId_cacheType: { instanceId: instance.id, cacheType: "plex_episode" },
-									},
-									create: {
-										instanceId: instance.id,
-										cacheType: "plex_episode",
-										lastRefreshedAt: new Date(),
-										lastResult,
-										lastErrorMessage: statusMessage,
-										itemCount: result.upserted,
-									},
-									update: {
-										lastRefreshedAt: new Date(),
-										lastResult,
-										lastErrorMessage: statusMessage,
-										itemCount: result.upserted,
-									},
-								});
-							} catch (trackErr) {
-								app.log.warn(
-									{ err: trackErr, instanceId: instance.id },
-									"Episode cache refreshed successfully but failed to record status",
+							if (!result.complete && !result.superseded) {
+								await withCurrentProviderConnection(
+									app.prisma,
+									instance.id,
+									expectedConnection,
+									async (tx) =>
+										await recordCacheRefreshFailure(
+											tx,
+											instance.id,
+											"plex_episode",
+											result.errorMessages.slice(0, 3).join("; ") ||
+												"Plex episode refresh did not publish a complete generation",
+										),
 								);
 							}
 						} catch (err) {
@@ -116,36 +100,18 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 								"Plex episode cache refresh failed for instance",
 							);
 
-							// Track failure
-							await app.prisma.cacheRefreshStatus
-								.upsert({
-									where: {
-										instanceId_cacheType: { instanceId: instance.id, cacheType: "plex_episode" },
-									},
-									create: {
-										instanceId: instance.id,
-										cacheType: "plex_episode",
-										lastRefreshedAt: new Date(),
-										lastResult: "error",
-										lastErrorMessage: getErrorMessage(err, "Unknown error"),
-										itemCount: 0,
-									},
-									update: {
-										lastRefreshedAt: new Date(),
-										lastResult: "error",
-										lastErrorMessage: getErrorMessage(err, "Unknown error"),
-									},
-								})
-								.catch((trackErr) => {
-									app.log.warn(
-										{
-											err: trackErr,
-											originalErr: getErrorMessage(err, "Unknown error"),
-											instanceId: instance.id,
-										},
-										"Failed to record episode cache refresh failure status",
-									);
-								});
+							await withCurrentProviderConnection(
+								app.prisma,
+								instance.id,
+								expectedConnection,
+								async (tx) =>
+									await recordCacheRefreshFailure(
+										tx,
+										instance.id,
+										"plex_episode",
+										getErrorMessage(err, "Unknown error"),
+									),
+							);
 						}
 					}
 

@@ -1,4 +1,6 @@
-import type { PrismaClient } from "../../lib/prisma.js";
+import type { Prisma, PrismaClient } from "../../lib/prisma.js";
+
+type TagManagerPrisma = PrismaClient | Prisma.TransactionClient;
 
 /**
  * Tag management utilities
@@ -8,7 +10,7 @@ import type { PrismaClient } from "../../lib/prisma.js";
  * Upserts tags and returns tag IDs
  */
 export async function upsertTags(
-	prisma: PrismaClient,
+	prisma: TagManagerPrisma,
 	tagNames: string[],
 ): Promise<Array<{ tagId: string }>> {
 	return await Promise.all(
@@ -27,7 +29,7 @@ export async function upsertTags(
  * Updates tags for a service instance
  */
 export async function updateInstanceTags(
-	prisma: PrismaClient,
+	prisma: TagManagerPrisma,
 	instanceId: string,
 	tagNames: string[],
 ): Promise<void> {

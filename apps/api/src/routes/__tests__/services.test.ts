@@ -11,12 +11,14 @@ const {
 	mockUpsertTags,
 	mockUpdateInstanceTags,
 	mockFormatServiceInstance,
+	mockInvalidatePulseCache,
 } = vi.hoisted(() => ({
 	mockRequireInstance: vi.fn(),
 	mockTestConnection: vi.fn().mockResolvedValue({ success: true, version: "4.0.0" }),
 	mockBuildUpdateData: vi.fn().mockReturnValue({}),
 	mockUpsertTags: vi.fn().mockResolvedValue([]),
 	mockUpdateInstanceTags: vi.fn().mockResolvedValue(undefined),
+	mockInvalidatePulseCache: vi.fn(),
 	mockFormatServiceInstance: vi.fn().mockImplementation((instance: any) => ({
 		id: instance.id,
 		service: instance.service?.toLowerCase?.() ?? "sonarr",
@@ -49,6 +51,10 @@ vi.mock("../../lib/services/tag-manager.js", () => ({
 
 vi.mock("../../lib/services/service-formatter.js", () => ({
 	formatServiceInstance: (instance: unknown) => mockFormatServiceInstance(instance),
+}));
+
+vi.mock("../pulse.js", () => ({
+	invalidatePulseCache: (...args: unknown[]) => mockInvalidatePulseCache(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -94,7 +100,7 @@ function makeInstance(overrides: Record<string, unknown> = {}) {
 // ---------------------------------------------------------------------------
 
 function createMockPrisma() {
-	return {
+	const prisma = {
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -123,6 +129,20 @@ function createMockPrisma() {
 		serviceInstanceTag: {
 			findFirst: vi.fn().mockResolvedValue(null),
 		},
+		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		cacheRefreshStatus: {
+			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			upsert: vi.fn().mockResolvedValue({}),
+		},
+	};
+	return {
+		...prisma,
+		$transaction: vi.fn(
+			async (callback: (transaction: typeof prisma) => Promise<unknown>) => await callback(prisma),
+		),
 	};
 }
 
@@ -260,6 +280,101 @@ describe("POST /services", () => {
 // ===========================================================================
 
 describe("PUT /services/:id", () => {
+	it("keeps default reassignment inside a provider connection transition transaction", async () => {
+		mockRequireInstance.mockResolvedValue(makeInstance({ service: "PLEX" }));
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+			makeInstance({ service: "PLEX", isDefault: true }),
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: {
+				baseUrl: "http://plex-new:32400",
+				isDefault: true,
+			},
+		});
+
+		expect(res.statusCode).toBe(200);
+		const transactionOrder = mockPrisma.$transaction.mock.invocationCallOrder[0]!;
+		const defaultResetOrder = mockPrisma.serviceInstance.updateMany.mock.invocationCallOrder[0]!;
+		expect(transactionOrder).toBeLessThan(defaultResetOrder);
+		expect(mockPrisma.serviceInstance.updateMany).toHaveBeenNthCalledWith(1, {
+			where: { service: "PLEX", userId: "user-1", NOT: { id: "inst-1" } },
+			data: { isDefault: false },
+		});
+	});
+
+	it("clears provider cache state sequentially in the connection-generation transaction", async () => {
+		mockRequireInstance.mockResolvedValue(makeInstance({ service: "PLEX" }));
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeInstance({ service: "PLEX" }));
+		const calls: string[] = [];
+		let plexCleared = false;
+		let plexEpisodesCleared = false;
+		let jellyfinCleared = false;
+		let jellyfinEpisodesCleared = false;
+		mockPrisma.plexCache.deleteMany.mockImplementation(async () => {
+			calls.push("plex");
+			await Promise.resolve();
+			plexCleared = true;
+		});
+		mockPrisma.plexEpisodeCache.deleteMany.mockImplementation(async () => {
+			if (!plexCleared) throw new Error("Plex cache must clear first");
+			calls.push("plex_episode");
+			await Promise.resolve();
+			plexEpisodesCleared = true;
+		});
+		mockPrisma.jellyfinCache.deleteMany.mockImplementation(async () => {
+			if (!plexEpisodesCleared) throw new Error("Plex episode cache must clear first");
+			calls.push("jellyfin");
+			await Promise.resolve();
+			jellyfinCleared = true;
+		});
+		mockPrisma.jellyfinEpisodeCache.deleteMany.mockImplementation(async () => {
+			if (!jellyfinCleared) throw new Error("Jellyfin cache must clear first");
+			calls.push("jellyfin_episode");
+			await Promise.resolve();
+			jellyfinEpisodesCleared = true;
+		});
+		mockPrisma.cacheRefreshStatus.deleteMany.mockImplementation(async () => {
+			if (!jellyfinEpisodesCleared) throw new Error("Jellyfin episode cache must clear first");
+			calls.push("status");
+		});
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { label: "Plex", baseUrl: "http://plex-new:32400" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.serviceInstance.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ connectionGeneration: { increment: 1 } }),
+			}),
+		);
+		expect(calls).toEqual(["plex", "plex_episode", "jellyfin", "jellyfin_episode", "status"]);
+		expect(mockPrisma.cacheRefreshStatus.upsert).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.cacheRefreshStatus.upsert).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				where: {
+					instanceId_cacheType: { instanceId: "inst-1", cacheType: "plex" },
+				},
+				create: expect.objectContaining({
+					lastResult: "error",
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: "Provider connection changed; refresh required",
+				}),
+			}),
+		);
+		expect(mockPrisma.cacheRefreshStatus.upsert).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				where: {
+					instanceId_cacheType: { instanceId: "inst-1", cacheType: "plex_episode" },
+				},
+			}),
+		);
+		expect(mockInvalidatePulseCache).toHaveBeenCalledWith("user-1");
+	});
+
 	it("calls buildUpdateData and updates the instance", async () => {
 		mockBuildUpdateData.mockReturnValue({ label: "Updated Label" });
 		mockPrisma.serviceInstance.findFirst.mockResolvedValue(

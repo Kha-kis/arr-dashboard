@@ -17,6 +17,7 @@ import {
 	dashboardKeys,
 	huntingKeys,
 	libraryKeys,
+	jellyfinKeys,
 	plexKeys,
 	pulseKeys,
 	queueCleanerKeys,
@@ -70,6 +71,12 @@ export const usePulseActionMutation = () => {
 					toast.success(successCopyForAction(action));
 					break;
 				case "cache.refresh":
+					if (action.target.cacheType === "jellyfin") {
+						queryClient.invalidateQueries({ queryKey: jellyfinKeys.cacheHealth() });
+						queryClient.invalidateQueries({ queryKey: jellyfinKeys.all });
+						toast.success(successCopyForAction(action));
+						break;
+					}
 					// Drop the cache health banner key plus the Plex domain
 					// root so downstream widgets that depend on the refreshed
 					// cache repaint on next mount without waiting for their
@@ -192,7 +199,9 @@ function successCopyForAction(action: PulseAction): string {
 				? "Hunt scheduler enabled"
 				: "Queue cleaner scheduler enabled";
 		case "cache.refresh":
-			return "Plex cache refresh triggered";
+			return action.target.cacheType === "jellyfin"
+				? "Media server cache refresh triggered"
+				: "Plex cache refresh triggered";
 		case "queue.retry":
 			return "Retry queued";
 		case "library.sync":

@@ -10,6 +10,8 @@ import fastifyPlugin from "fastify-plugin";
 import { refreshPlexCache } from "../lib/plex/plex-cache-refresher.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import { recordProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
+import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -47,44 +49,30 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
+						const expectedConnection = providerConnectionIdentity(instance);
 						try {
 							const client = createPlexClient(app.encryptor, instance, app.log);
-							const result = await refreshPlexCache(client, app.prisma, instance.id, app.log);
+							const result = await refreshPlexCache(
+								client,
+								app.prisma,
+								instance.id,
+								app.log,
+								expectedConnection,
+							);
 							app.log.info(
 								{ instanceId: instance.id, label: instance.label, ...result },
 								"Plex cache refresh completed for instance",
 							);
 
-							// Track refresh status — separate try so a DB failure
-							// doesn't masquerade as a refresh failure in the outer catch
-							try {
-								await app.prisma.cacheRefreshStatus.upsert({
-									where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
-									create: {
-										instanceId: instance.id,
-										cacheType: "plex",
-										lastRefreshedAt: new Date(),
-										lastResult: result.errors > 0 ? "error" : "success",
-										lastErrorMessage:
-											result.errorMessages.length > 0
-												? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-												: null,
-										itemCount: result.upserted,
-									},
-									update: {
-										lastRefreshedAt: new Date(),
-										lastResult: result.errors > 0 ? "error" : "success",
-										lastErrorMessage:
-											result.errorMessages.length > 0
-												? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-												: null,
-										itemCount: result.upserted,
-									},
-								});
-							} catch (trackErr) {
-								app.log.warn(
-									{ err: trackErr, instanceId: instance.id },
-									"Plex cache refreshed successfully but failed to record status",
+							if (!result.complete && !result.superseded) {
+								await recordProviderCacheRefreshFailure(
+									app.prisma,
+									instance.id,
+									"plex",
+									result.errorMessages.slice(0, 3).join("; ") ||
+										"Plex refresh did not produce a complete generation",
+									expectedConnection,
+									app.log,
 								);
 							}
 						} catch (err) {
@@ -93,34 +81,14 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 								"Plex cache refresh failed for instance",
 							);
 
-							// Track failure
-							await app.prisma.cacheRefreshStatus
-								.upsert({
-									where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
-									create: {
-										instanceId: instance.id,
-										cacheType: "plex",
-										lastRefreshedAt: new Date(),
-										lastResult: "error",
-										lastErrorMessage: getErrorMessage(err, "Unknown error"),
-										itemCount: 0,
-									},
-									update: {
-										lastRefreshedAt: new Date(),
-										lastResult: "error",
-										lastErrorMessage: getErrorMessage(err, "Unknown error"),
-									},
-								})
-								.catch((trackErr) => {
-									app.log.warn(
-										{
-											err: trackErr,
-											originalErr: getErrorMessage(err, "Unknown error"),
-											instanceId: instance.id,
-										},
-										"Failed to record cache refresh failure status",
-									);
-								});
+							await recordProviderCacheRefreshFailure(
+								app.prisma,
+								instance.id,
+								"plex",
+								getErrorMessage(err, "Unknown error"),
+								expectedConnection,
+								app.log,
+							);
 						}
 					}
 

@@ -12,14 +12,16 @@
  * behaviour so we don't regress it.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	clearPlexCacheRefreshSingleFlightsForTests,
 	evictStaleRows,
 	refreshPlexCache,
 	STALE_EVICTION_CHUNK_SIZE,
 } from "../plex-cache-refresher.js";
 import type { PlexClient } from "../plex-client.js";
 import type { PrismaClient } from "../../prisma.js";
+import { providerConnectionIdentity } from "../../services/provider-connection-guard.js";
 import type { FastifyBaseLogger } from "fastify";
 
 const silentLog = {
@@ -31,6 +33,19 @@ const silentLog = {
 	fatal: vi.fn(),
 	child: vi.fn(),
 } as unknown as FastifyBaseLogger;
+
+const plexConnection = {
+	service: "PLEX" as const,
+	baseUrl: "https://plex.example.test",
+	encryptedApiKey: "key",
+	encryptionIv: "iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	enabled: true,
+	connectionGeneration: 7,
+};
+
+afterEach(() => clearPlexCacheRefreshSingleFlightsForTests());
 
 /**
  * Build a minimal Prisma stub that records every `deleteMany` call so tests
@@ -114,15 +129,8 @@ describe("evictStaleRows", () => {
 		expect(deleteCalls.length).toBe(Math.ceil(TOTAL_EXISTING / STALE_EVICTION_CHUNK_SIZE));
 	});
 
-	it("large-library end-to-end: refreshPlexCache completes with zero errors and no oversized DELETE (#323 regression)", async () => {
-		// Stands in for "manual smoke on a Docker + SQLite deployment with a large
-		// Plex library" — runs the full refreshPlexCache path with >1,000 items
-		// and 1,500 pre-existing stale rows, then asserts:
-		//   1. the refresh returns errors: 0 (i.e. no P2029 leaked through)
-		//   2. every DELETE stays under the SQLite 999-parameter ceiling
-		//   3. upserts are actually issued (we didn't silently short-circuit)
+	it("publishes a >999-item library with one replacement, avoiding parameter-bound stale eviction (#323 regression)", async () => {
 		const LIBRARY_SIZE = 1_200;
-		const STALE_COUNT = 1_500;
 
 		const libraryItems = Array.from({ length: LIBRARY_SIZE }, (_, i) => ({
 			ratingKey: `rk-${i}`,
@@ -144,42 +152,22 @@ describe("evictStaleRows", () => {
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
 
-		// Pre-populate the "existing rows" list with the fresh upsert ids plus
-		// a large stale tail — enough that the old `notIn: upsertedIds` path
-		// would have been >999 params and tripped P2029.
-		const upsertedIds: string[] = [];
-		const existingIds: string[] = Array.from({ length: STALE_COUNT }, (_, i) => `stale-${i}`);
-
-		const deleteCalls: Array<{ idsInFilter: string[] }> = [];
-
-		const mockPrisma = {
+		const publishedRows: unknown[] = [];
+		const deleteMany = vi.fn().mockResolvedValue({ count: 1_500 });
+		const tx = {
 			plexCache: {
-				upsert: vi.fn(async () => {
-					const id = `fresh-${upsertedIds.length}`;
-					upsertedIds.push(id);
-					return { id };
-				}),
-				findMany: vi.fn(async () =>
-					// Reflects state after upserts: the original stale rows + the
-					// freshly-upserted rows. Eviction should keep the fresh set.
-					[...existingIds, ...upsertedIds].map((id) => ({ id })),
-				),
-				deleteMany: vi.fn(async (args: { where: { id?: { in?: string[]; notIn?: string[] } } }) => {
-					const inList = args.where.id?.in;
-					if (!inList) {
-						throw new Error(
-							"Regression: DELETE used something other than `id: { in: [...] }` — likely a reintroduced notIn.",
-						);
-					}
-					deleteCalls.push({ idsInFilter: inList });
-					return { count: inList.length };
+				deleteMany,
+				createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
+					publishedRows.push(...data);
+					return { count: data.length };
 				}),
 			},
-			$transaction: vi.fn(async (ops: Promise<unknown>[] | unknown[]) => {
-				const results: unknown[] = [];
-				for (const op of ops) results.push(await op);
-				return results;
-			}),
+			cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+		};
+		const mockPrisma = {
+			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+				callback(tx),
+			),
 		} as unknown as PrismaClient;
 
 		const result = await refreshPlexCache(mockClient, mockPrisma, "inst-1", silentLog);
@@ -187,26 +175,34 @@ describe("evictStaleRows", () => {
 		expect(result.errors).toBe(0);
 		expect(result.errorMessages).toEqual([]);
 		expect(result.upserted).toBe(LIBRARY_SIZE);
-
-		// Every eviction DELETE must stay safely under SQLite's parameter ceiling.
-		const SQLITE_PARAM_CEILING = 999;
-		expect(deleteCalls.length).toBeGreaterThan(0);
-		for (const call of deleteCalls) {
-			expect(call.idsInFilter.length).toBeLessThanOrEqual(STALE_EVICTION_CHUNK_SIZE);
-			expect(call.idsInFilter.length).toBeLessThan(SQLITE_PARAM_CEILING);
-		}
-
-		// Chunks should together wipe exactly the stale set, nothing more.
-		const deletedIds = deleteCalls.flatMap((c) => c.idsInFilter);
-		expect(deletedIds.length).toBe(STALE_COUNT);
-		expect(new Set(deletedIds)).toEqual(new Set(existingIds));
+		expect(deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
+		expect(publishedRows).toHaveLength(LIBRARY_SIZE);
+		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
+		const statusWrite = tx.cacheRefreshStatus.upsert.mock.calls[0]![0];
+		expect(statusWrite.create.generationId).toMatch(
+			/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+		);
+		expect(JSON.parse(statusWrite.create.generationMetadata)).toEqual({
+			sections: [{ key: "1", title: "Movies", type: "movie" }],
+		});
+		expect(statusWrite.update).toMatchObject({
+			generationId: statusWrite.create.generationId,
+			generationMetadata: statusWrite.create.generationMetadata,
+		});
 	});
 
-	it("evicts stale rows after a complete refresh finds an empty library", async () => {
+	it("keeps stale rows when Plex returns no media libraries", async () => {
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
-			getLibrarySections: vi.fn().mockResolvedValue([]),
-			getLibraryItems: vi.fn(),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "current-movie",
+					title: "Current Movie",
+					type: "movie",
+					Guid: [{ id: "tmdb://123" }],
+				},
+			]),
 			getHistory: vi.fn().mockResolvedValue([]),
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
@@ -214,8 +210,8 @@ describe("evictStaleRows", () => {
 
 		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
 
-		expect(result).toMatchObject({ upserted: 0, errors: 0 });
-		expect(deleteCalls.flatMap((call) => call.idsInFilter)).toEqual(["stale-1", "stale-2"]);
+		expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
+		expect(deleteCalls).toEqual([]);
 	});
 
 	it("does not evict cache rows after an incomplete library refresh", async () => {
@@ -246,8 +242,15 @@ describe("evictStaleRows", () => {
 		}));
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
-			getLibrarySections: vi.fn().mockResolvedValue([]),
-			getLibraryItems: vi.fn(),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "current-movie",
+					title: "Current Movie",
+					type: "movie",
+					Guid: [{ id: "tmdb://123" }],
+				},
+			]),
 			getHistory: vi.fn().mockResolvedValue(history),
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
@@ -264,8 +267,15 @@ describe("evictStaleRows", () => {
 	it("marks on-deck evidence incomplete when Plex cannot return it", async () => {
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
-			getLibrarySections: vi.fn().mockResolvedValue([]),
-			getLibraryItems: vi.fn(),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "current-movie",
+					title: "Current Movie",
+					type: "movie",
+					Guid: [{ id: "tmdb://123" }],
+				},
+			]),
 			getHistory: vi.fn().mockResolvedValue([]),
 			getOnDeck: vi.fn().mockRejectedValue(new Error("Plex on-deck unavailable")),
 		} as unknown as PlexClient;
@@ -274,7 +284,7 @@ describe("evictStaleRows", () => {
 		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
 
 		expect(result.errors).toBe(1);
-		expect(result.errorMessages).toContainEqual(expect.stringContaining("on-deck fetch failed"));
+		expect(result.errorMessages).toContainEqual(expect.stringContaining("on-deck items"));
 		expect(deleteCalls).toEqual([]);
 	});
 
@@ -292,5 +302,223 @@ describe("evictStaleRows", () => {
 			// switched back to `notIn`, this array would be undefined.
 			expect(Array.isArray(call.idsInFilter)).toBe(true);
 		}
+	});
+});
+
+function makeCompletePlexClient(): PlexClient {
+	return {
+		getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+		getLibrarySections: vi
+			.fn()
+			.mockResolvedValue([{ key: "movies", title: "Movies", type: "movie" }]),
+		getLibraryItems: vi.fn().mockResolvedValue([
+			{
+				ratingKey: "movie-1",
+				title: "The Current Movie",
+				type: "movie",
+				Guid: [{ id: "tmdb://42" }],
+				Collection: [],
+				Label: [],
+			},
+		]),
+		getHistory: vi.fn().mockResolvedValue([]),
+		getOnDeck: vi.fn().mockResolvedValue([]),
+	} as unknown as PlexClient;
+}
+
+function makeAtomicPlexPrisma(options?: {
+	current?: (Omit<typeof plexConnection, "service"> & { service: "PLEX" | "JELLYFIN" }) | null;
+	failNextPublication?: boolean;
+}) {
+	const state = {
+		rows: [{ title: "Previous generation" }],
+		status: "previous-success",
+	};
+	let failNextPublication = options?.failNextPublication ?? false;
+	const current = options && "current" in options ? options.current : plexConnection;
+
+	const prisma = {
+		$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
+			const nextRows = [...state.rows];
+			let nextStatus = state.status;
+			const tx = {
+				serviceInstance: { findUnique: vi.fn().mockResolvedValue(current) },
+				plexCache: {
+					deleteMany: vi.fn(async () => {
+						nextRows.length = 0;
+						return { count: 1 };
+					}),
+					createMany: vi.fn(async ({ data }: { data: Array<{ title: string }> }) => {
+						if (failNextPublication) {
+							failNextPublication = false;
+							throw new Error("database write failed");
+						}
+						nextRows.push(...data);
+						return { count: data.length };
+					}),
+				},
+				cacheRefreshStatus: {
+					upsert: vi.fn(async () => {
+						nextStatus = "fresh-success";
+						return {};
+					}),
+				},
+			};
+			const result = await callback(tx);
+			state.rows = nextRows;
+			state.status = nextStatus;
+			return result;
+		}),
+	};
+
+	return { prisma: prisma as unknown as PrismaClient, state };
+}
+
+describe("refreshPlexCache atomic publication", () => {
+	it("coalesces concurrent refreshes for the same provider generation", async () => {
+		const { prisma } = makeAtomicPlexPrisma();
+		const client = makeCompletePlexClient();
+		let releaseAccounts: (() => void) | undefined;
+		vi.mocked(client.getAccounts).mockImplementationOnce(async () => {
+			await new Promise<void>((resolve) => {
+				releaseAccounts = resolve;
+			});
+			return [{ id: 1, name: "Alice" }];
+		});
+		const expectedConnection = providerConnectionIdentity(plexConnection);
+
+		const first = refreshPlexCache(client, prisma, "inst-1", silentLog, expectedConnection);
+		const second = refreshPlexCache(client, prisma, "inst-1", silentLog, expectedConnection);
+
+		expect(first).toBe(second);
+		expect(client.getAccounts).toHaveBeenCalledTimes(1);
+		releaseAccounts?.();
+		const [firstResult, secondResult] = await Promise.all([first, second]);
+		expect(secondResult).toEqual(firstResult);
+		expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+	});
+
+	it("replaces a complete generation and its success status in one transaction", async () => {
+		const { prisma, state } = makeAtomicPlexPrisma();
+
+		const result = await refreshPlexCache(
+			makeCompletePlexClient(),
+			prisma,
+			"inst-1",
+			silentLog,
+			providerConnectionIdentity(plexConnection),
+		);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		expect(state.rows).toEqual([expect.objectContaining({ title: "The Current Movie" })]);
+		expect(state.status).toBe("fresh-success");
+	});
+
+	it("keeps the previous generation when a library snapshot is incomplete", async () => {
+		const { prisma, state } = makeAtomicPlexPrisma();
+		const client = makeCompletePlexClient();
+		vi.mocked(client.getLibraryItems).mockRejectedValueOnce(new Error("pagination stopped early"));
+
+		const result = await refreshPlexCache(client, prisma, "inst-1", silentLog);
+
+		expect(result.complete).toBe(false);
+		expect(result.errorMessages.join(" ")).toMatch(/pagination stopped early/i);
+		expect(state).toEqual({ rows: [{ title: "Previous generation" }], status: "previous-success" });
+	});
+
+	it("keeps the previous generation when current history cannot be attributed", async () => {
+		const { prisma, state } = makeAtomicPlexPrisma();
+		const client = makeCompletePlexClient();
+		vi.mocked(client.getHistory).mockResolvedValueOnce([
+			{
+				ratingKey: "missing-now",
+				title: "Missing movie",
+				type: "movie",
+				accountID: 1,
+				viewedAt: 1_700_000_000,
+			},
+		]);
+
+		const result = await refreshPlexCache(client, prisma, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/history item could not be mapped/i);
+		expect(state).toEqual({ rows: [{ title: "Previous generation" }], status: "previous-success" });
+	});
+
+	it("accepts exactly 5,000 Plex history rows when the one-row probe is not filled", async () => {
+		const { prisma, state } = makeAtomicPlexPrisma();
+		const client = makeCompletePlexClient();
+		vi.mocked(client.getHistory).mockResolvedValueOnce(
+			Array.from({ length: 5_000 }, (_, index) => ({
+				ratingKey: `unmapped-${index}`,
+				title: `Unmapped ${index}`,
+				type: "other",
+				accountID: 1,
+				viewedAt: index,
+			})),
+		);
+
+		const result = await refreshPlexCache(client, prisma, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		expect(client.getHistory).toHaveBeenCalledWith({ maxResults: 5001 });
+		expect(state).toEqual({
+			rows: [expect.objectContaining({ title: "The Current Movie" })],
+			status: "fresh-success",
+		});
+	});
+
+	it("keeps the previous generation when on-deck evidence is unavailable", async () => {
+		const { prisma, state } = makeAtomicPlexPrisma();
+		const client = makeCompletePlexClient();
+		vi.mocked(client.getOnDeck).mockRejectedValueOnce(new Error("on-deck unavailable"));
+
+		const result = await refreshPlexCache(client, prisma, "inst-1", silentLog);
+
+		expect(result.complete).toBe(false);
+		expect(result.errorMessages.join(" ")).toMatch(/on-deck unavailable/i);
+		expect(state).toEqual({ rows: [{ title: "Previous generation" }], status: "previous-success" });
+	});
+
+	it.each([
+		["deleted", null],
+		["disabled", { ...plexConnection, enabled: false }],
+		["service changed", { ...plexConnection, service: "JELLYFIN" }],
+		["generation changed", { ...plexConnection, connectionGeneration: 8 }],
+	] as const)(
+		"does not publish when the originating connection was %s",
+		async (_reason, current) => {
+			const { prisma, state } = makeAtomicPlexPrisma({ current });
+
+			const result = await refreshPlexCache(
+				makeCompletePlexClient(),
+				prisma,
+				"inst-1",
+				silentLog,
+				providerConnectionIdentity(plexConnection),
+			);
+
+			expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
+			expect(state).toEqual({
+				rows: [{ title: "Previous generation" }],
+				status: "previous-success",
+			});
+		},
+	);
+
+	it("preserves the old generation after a failed publication and succeeds on retry", async () => {
+		const { prisma, state } = makeAtomicPlexPrisma({ failNextPublication: true });
+		const client = makeCompletePlexClient();
+
+		const failed = await refreshPlexCache(client, prisma, "inst-1", silentLog);
+		expect(failed.complete).toBe(false);
+		expect(failed.errorMessages.join(" ")).toMatch(/atomic plex cache publication failed/i);
+		expect(state).toEqual({ rows: [{ title: "Previous generation" }], status: "previous-success" });
+
+		const retried = await refreshPlexCache(client, prisma, "inst-1", silentLog);
+		expect(retried).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		expect(state.rows).toEqual([expect.objectContaining({ title: "The Current Movie" })]);
+		expect(state.status).toBe("fresh-success");
 	});
 });

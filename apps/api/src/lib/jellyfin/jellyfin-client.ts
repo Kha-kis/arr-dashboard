@@ -95,6 +95,7 @@ export interface JellyfinSession {
 const DEFAULT_TIMEOUT = 15_000;
 const DEVICE_ID = "arr-dashboard-server";
 const CLIENT_NAME = "Arr Control Center";
+const LIBRARY_PAGE_SIZE = 1_000;
 
 export class JellyfinClient {
 	private readonly baseUrl: string;
@@ -180,23 +181,39 @@ export class JellyfinClient {
 		libraryId: string,
 		options?: { includeItemTypes?: string },
 	): Promise<JellyfinItem[]> {
-		const params = new URLSearchParams({
-			ParentId: libraryId,
-			Fields: "ProviderIds,DateCreated,ImageTags",
-			Recursive: "true",
-			Limit: "10000",
-		});
-		if (options?.includeItemTypes) {
-			params.set("IncludeItemTypes", options.includeItemTypes);
+		const items: JellyfinItem[] = [];
+		let startIndex = 0;
+		let expectedTotal: number | undefined;
+
+		while (expectedTotal === undefined || startIndex < expectedTotal) {
+			const params = new URLSearchParams({
+				ParentId: libraryId,
+				Fields: "ProviderIds,DateCreated,ImageTags",
+				Recursive: "true",
+				StartIndex: String(startIndex),
+				Limit: String(LIBRARY_PAGE_SIZE),
+			});
+			if (options?.includeItemTypes) {
+				params.set("IncludeItemTypes", options.includeItemTypes);
+			}
+
+			const data = await this.request(
+				`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
+				{ schema: jellyfinItemsResponseSchema },
+			);
+			if (expectedTotal === undefined) expectedTotal = data.TotalRecordCount;
+			if (data.TotalRecordCount !== expectedTotal) {
+				throw new Error("Jellyfin library changed while its inventory was being paged");
+			}
+			if (data.Items.length === 0 && startIndex < expectedTotal) {
+				throw new Error("Jellyfin library inventory ended before all reported items were returned");
+			}
+
+			items.push(...data.Items.map(mapItem));
+			startIndex += data.Items.length;
 		}
 
-		const data = await this.request(
-			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
-			{
-				schema: jellyfinItemsResponseSchema,
-			},
-		);
-		return data.Items.map(mapItem);
+		return items;
 	}
 
 	/**
@@ -266,11 +283,46 @@ export class JellyfinClient {
 	 * Get episodes for a series with watch status.
 	 */
 	async getEpisodes(userId: string, seriesId: string): Promise<JellyfinItem[]> {
-		const data = await this.request(
-			`/Shows/${encodeURIComponent(seriesId)}/Episodes?userId=${encodeURIComponent(userId)}&Fields=ProviderIds`,
-			{ schema: jellyfinEpisodesResponseSchema },
-		);
-		return data.Items.map(mapItem);
+		const episodes: JellyfinItem[] = [];
+		const seenIds = new Set<string>();
+		let startIndex = 0;
+		let expectedTotal: number | undefined;
+
+		while (expectedTotal === undefined || startIndex < expectedTotal) {
+			const params = new URLSearchParams({
+				userId,
+				Fields: "ProviderIds",
+				StartIndex: String(startIndex),
+				Limit: String(LIBRARY_PAGE_SIZE),
+			});
+			const data = await this.request(
+				`/Shows/${encodeURIComponent(seriesId)}/Episodes?${params.toString()}`,
+				{ schema: jellyfinEpisodesResponseSchema },
+			);
+			if (!Number.isSafeInteger(data.TotalRecordCount) || data.TotalRecordCount < 0) {
+				throw new Error("Jellyfin episode inventory returned an invalid total");
+			}
+			if (expectedTotal === undefined) expectedTotal = data.TotalRecordCount;
+			if (data.TotalRecordCount !== expectedTotal) {
+				throw new Error("Jellyfin episode inventory changed while it was being paged");
+			}
+			if (data.Items.length === 0 && startIndex < expectedTotal) {
+				throw new Error("Jellyfin episode inventory ended before all reported items were returned");
+			}
+			for (const episode of data.Items) {
+				if (seenIds.has(episode.Id)) {
+					throw new Error("Jellyfin episode inventory returned a duplicate item");
+				}
+				seenIds.add(episode.Id);
+				episodes.push(mapItem(episode));
+			}
+			startIndex += data.Items.length;
+		}
+
+		if (episodes.length !== expectedTotal) {
+			throw new Error("Jellyfin episode inventory did not match its reported total");
+		}
+		return episodes;
 	}
 
 	/**

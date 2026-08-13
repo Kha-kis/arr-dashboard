@@ -221,6 +221,10 @@ export interface CacheHealthItem {
 	/** `partial` means a bounded refresh persisted only a subset of its intended coverage. */
 	lastResult: "success" | "partial" | "error";
 	lastErrorMessage: string | null;
+	/** Latest attempt is separate from the last successfully published generation. */
+	lastAttemptAt?: string | null;
+	lastAttemptResult?: "success" | "partial" | "error" | null;
+	lastAttemptErrorMessage?: string | null;
 	itemCount: number;
 	isStale: boolean;
 }

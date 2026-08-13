@@ -17,6 +17,7 @@ import {
 	updateCleanupRuleSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { assertCompleteCacheRefresh } from "../lib/cache-refresh-status.js";
 import {
 	buildEvalContext,
 	CleanupPolicyMutationConflictError,
@@ -45,10 +46,13 @@ import {
 	getAllHashesForFileIdComplete,
 } from "../lib/library-sync/infohash-backfill-by-inode.js";
 import { refreshJellyfinCache } from "../lib/jellyfin/jellyfin-cache-refresher.js";
+import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-cache-singleflight.js";
 import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
+import { jellyfinConnectionFingerprint } from "../lib/jellyfin/service-instance-fingerprint.js";
 import { refreshPlexCache } from "../lib/plex/plex-cache-refresher.js";
 import { createPlexClient } from "../lib/plex/plex-client.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
+import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
 import { explainItemAgainstRulesViaEngine } from "../lib/rules/cleanup-adapter.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { safeJsonParse as utilSafeJsonParse } from "../lib/utils/json.js";
@@ -207,16 +211,22 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						app.prisma,
 						instance.id,
 						app.log,
+						providerConnectionIdentity(instance),
 					)
-				: await refreshJellyfinCache(
-						createJellyfinClient(app.encryptor, instance, app.log),
-						app.prisma,
+				: await runJellyfinCacheRefreshSingleFlight(
 						instance.id,
-						app.log,
+						jellyfinConnectionFingerprint(instance),
+						(expected) =>
+							refreshJellyfinCache(
+								createJellyfinClient(app.encryptor, instance, app.log),
+								app.prisma,
+								instance.id,
+								app.log,
+								expected,
+							),
+						{ prisma: app.prisma, log: app.log },
 					);
-		if (result.errors > 0) {
-			throw new Error(`${source} evidence refresh completed with errors`);
-		}
+		assertCompleteCacheRefresh(source, result);
 	};
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {

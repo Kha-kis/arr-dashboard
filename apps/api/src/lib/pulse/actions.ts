@@ -28,10 +28,20 @@ import { requireEnabledInstance } from "../arr/instance-helpers.js";
 import { parseQueueId } from "../dashboard/queue-utils.js";
 import { AppValidationError, ConflictError } from "../errors.js";
 import { getHuntingScheduler } from "../hunting/scheduler.js";
+import { refreshJellyfinCache } from "../jellyfin/jellyfin-cache-refresher.js";
+import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
+import { requireJellyfinClient } from "../jellyfin/jellyfin-helpers.js";
+import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
 import { getLibrarySyncScheduler } from "../library-sync/index.js";
 import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../plex/plex-helpers.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
+import { recordProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
+import {
+	type ProviderConnectionIdentity,
+	providerConnectionIdentity,
+} from "../services/provider-connection-guard.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 export interface PulseActionResult {
 	status: "ok";
@@ -132,19 +142,19 @@ async function dispatchSchedulerEnable(
 // 200 as soon as the refresh is *accepted* — not when it completes —
 // because:
 //
-//   1. Plex/Tautulli refreshes can run 30-60+ seconds on large libraries
-//      (observed: 1082 Tautulli history items = ~43s).
+//   1. Media-server refreshes can run 30-60+ seconds on large libraries.
 //   2. Next.js dev-server's proxy (and most reverse proxies) time out
 //      around 30s, returning a misleading 500 to the client even though
 //      the backend work is succeeding.
 //   3. The user-visible contract is already eventually-consistent:
-//      "row drops on next poll" depends on recordCacheRefreshSuccess
-//      bumping lastRefreshedAt, which happens when the background task
-//      resolves — no need to block the HTTP response on that.
+//      "row drops on next poll" depends on the refresher atomically
+//      publishing a complete cache generation — no need to block the HTTP
+//      response on that.
 //
-// Errors during background refresh are logged but **do not** write
-// through to CacheRefreshStatus, so the stale row correctly re-emits
-// on the next poll (trust invariant: failure → row stays).
+// Full refreshers atomically publish success themselves. Plex failures are
+// recorded as guarded attempts here; Jellyfin's single-flight owner records
+// its own failure attempts. Either way, failure never advances the last
+// successful generation (trust invariant: failure → row stays).
 //
 // The optional `backgroundTask` on the return is unused by the route
 // handler (fire-and-forget) but awaited by tests that want to verify
@@ -157,15 +167,35 @@ async function dispatchCacheRefresh(
 	cacheType: PulseCacheType,
 	log: FastifyBaseLogger,
 ): Promise<PulseActionResult> {
-	// "plex" is the only refreshable cache type since Tautulli's removal in
-	// 3.0 (ADR-0007); PulseCacheType narrowing keeps this exhaustive.
-	const { client } = await requirePlexClient(app, userId, instanceId);
+	if (cacheType === "jellyfin") {
+		const { client, instance } = await requireJellyfinClient(app, userId, instanceId);
+		const fingerprint = jellyfinConnectionFingerprint(instance);
+		const backgroundTask = runBackgroundCacheRefresh({
+			app,
+			log,
+			instanceId,
+			cacheType,
+			refresh: () =>
+				runJellyfinCacheRefreshSingleFlight(
+					instanceId,
+					fingerprint,
+					(expected) => refreshJellyfinCache(client, app.prisma, instanceId, log, expected),
+					{ prisma: app.prisma, log },
+				),
+			failureRecordedByRefresh: true,
+		});
+		log.info({ instanceId, cacheType }, "pulse-action: Jellyfin cache refresh dispatched");
+		return { status: "ok", backgroundTask };
+	}
+	const { client, instance } = await requirePlexClient(app, userId, instanceId);
+	const expectedConnection = providerConnectionIdentity(instance);
 	const backgroundTask = runBackgroundCacheRefresh({
 		app,
 		log,
 		instanceId,
 		cacheType: "plex",
-		refresh: () => refreshPlexCache(client, app.prisma, instanceId, log),
+		refresh: () => refreshPlexCache(client, app.prisma, instanceId, log, expectedConnection),
+		expectedConnection,
 	});
 	log.info({ instanceId, cacheType }, "pulse-action: plex cache refresh dispatched");
 	return { status: "ok", backgroundTask };
@@ -175,22 +205,54 @@ function runBackgroundCacheRefresh(opts: {
 	app: FastifyInstance;
 	log: FastifyBaseLogger;
 	instanceId: string;
-	cacheType: "plex" | "tautulli";
+	cacheType: PulseCacheType;
 	refresh: () => Promise<CacheRefreshResult>;
+	failureRecordedByRefresh?: boolean;
+	expectedConnection?: ProviderConnectionIdentity;
 }): Promise<void> {
-	const { app, log, instanceId, cacheType, refresh } = opts;
+	const {
+		app,
+		log,
+		instanceId,
+		cacheType,
+		refresh,
+		failureRecordedByRefresh = false,
+		expectedConnection,
+	} = opts;
 	return (async () => {
 		try {
 			const result = await refresh();
-			await recordCacheRefreshSuccess(app, instanceId, cacheType, result, log);
+			if (
+				(!result.complete || !result.completedAt) &&
+				!result.superseded &&
+				!failureRecordedByRefresh &&
+				expectedConnection
+			) {
+				await recordProviderCacheRefreshFailure(
+					app.prisma,
+					instanceId,
+					cacheType,
+					result.errorMessages?.slice(0, 3).join("; ").slice(0, 200) ||
+						`${cacheType} refresh did not publish a complete generation`,
+					expectedConnection,
+					log,
+				);
+			}
 			log.info(
 				{ instanceId, cacheType, upserted: result.upserted, errors: result.errors },
 				"pulse-action: cache refresh completed (background)",
 			);
 		} catch (err) {
-			// Do NOT write through on failure — the stale row must keep
-			// emitting so the operator sees the problem persists. The
-			// caller has already received 200; this error is logged only.
+			if (!failureRecordedByRefresh && expectedConnection) {
+				await recordProviderCacheRefreshFailure(
+					app.prisma,
+					instanceId,
+					cacheType,
+					getErrorMessage(err, `${cacheType} cache refresh failed`),
+					expectedConnection,
+					log,
+				);
+			}
 			log.error({ err, instanceId, cacheType }, "pulse-action: cache refresh failed (background)");
 		}
 	})();
@@ -335,63 +397,11 @@ async function dispatchLibrarySync(
 	return { status: "ok", backgroundTask };
 }
 
-// ---------------------------------------------------------------------------
-// CacheRefreshStatus write-through
-// ---------------------------------------------------------------------------
-//
-// Bumps the `lastRefreshedAt` timestamp (and result metadata) on the
-// `CacheRefreshStatus` row the collector reads from. Without this, a
-// successful dispatcher run would leave the row stale on the next GET
-// /pulse poll — the collector determines staleness from this table, not
-// from the refresher's return value.
-//
-// Mirrors the upsert already performed by the inline manual-refresh
-// route at apps/api/src/routes/plex/cache-routes.ts so the two paths
-// behave identically for operators. The status upsert is best-effort
-// (`.catch(...)`): a failure here must not fail the action itself, since
-// the refresh already succeeded.
-
 interface CacheRefreshResult {
 	upserted: number;
 	errors: number;
 	errorMessages?: readonly string[];
-}
-
-async function recordCacheRefreshSuccess(
-	app: FastifyInstance,
-	instanceId: string,
-	cacheType: "plex" | "tautulli",
-	result: CacheRefreshResult,
-	log: FastifyBaseLogger,
-): Promise<void> {
-	const now = new Date();
-	const errorMessages = result.errorMessages ?? [];
-	const lastErrorMessage =
-		errorMessages.length > 0 ? errorMessages.slice(0, 3).join("; ").slice(0, 200) : null;
-	const lastResult = result.errors > 0 ? "error" : "success";
-
-	await app.prisma.cacheRefreshStatus
-		.upsert({
-			where: { instanceId_cacheType: { instanceId, cacheType } },
-			create: {
-				instanceId,
-				cacheType,
-				lastRefreshedAt: now,
-				lastResult,
-				lastErrorMessage,
-				itemCount: result.upserted,
-			},
-			update: {
-				lastRefreshedAt: now,
-				lastResult,
-				lastErrorMessage,
-				itemCount: result.upserted,
-			},
-		})
-		.catch((err: unknown) => {
-			log.warn(
-				{ err, instanceId, cacheType },
-				"pulse-action: cache refreshed but failed to record status",
-			);
-		});
+	complete: boolean;
+	completedAt?: Date;
+	superseded?: boolean;
 }

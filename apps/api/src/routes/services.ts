@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
 import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
-import type { ServiceType } from "../lib/prisma.js";
+import type { ServiceInstance, ServiceType } from "../lib/prisma.js";
 import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
 import {
@@ -20,8 +20,10 @@ import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
 import { validateRequest } from "../lib/utils/validate.js";
+import { invalidatePulseCache } from "./pulse.js";
 
 const idParams = z.object({ id: z.string().min(1) });
+const CACHE_PROVIDER_SERVICES = new Set<ServiceType>(["PLEX", "JELLYFIN", "EMBY"]);
 
 const servicePayloadSchema = z.object({
 	label: z.string().min(1).max(120),
@@ -62,6 +64,77 @@ const serviceUpdateSchema = servicePayloadSchema
 	.refine((data) => Object.keys(data).length > 0, {
 		message: "At least one field must be provided",
 	});
+
+function changesCacheProviderConnection(
+	existing: Pick<ServiceInstance, "service" | "baseUrl" | "enabled">,
+	payload: z.infer<typeof serviceUpdateSchema>,
+): boolean {
+	const target = (payload.service ?? existing.service.toLowerCase()).toUpperCase() as ServiceType;
+	if (!CACHE_PROVIDER_SERVICES.has(existing.service) && !CACHE_PROVIDER_SERVICES.has(target))
+		return false;
+	return (
+		target !== existing.service ||
+		(payload.enabled !== undefined && payload.enabled !== existing.enabled) ||
+		(payload.baseUrl !== undefined && payload.baseUrl !== existing.baseUrl) ||
+		Object.hasOwn(payload, "apiKey") ||
+		Object.hasOwn(payload, "httpAuth")
+	);
+}
+
+async function clearDurableProviderCacheState(
+	prisma: {
+		plexCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		plexEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		jellyfinCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		jellyfinEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
+		cacheRefreshStatus: {
+			deleteMany(args: { where: { instanceId: string } }): Promise<unknown>;
+			upsert(args: Record<string, unknown>): Promise<unknown>;
+		};
+	},
+	instanceId: string,
+	targetService: ServiceType,
+	targetEnabled: boolean,
+): Promise<void> {
+	await prisma.plexCache.deleteMany({ where: { instanceId } });
+	await prisma.plexEpisodeCache.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinCache.deleteMany({ where: { instanceId } });
+	await prisma.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
+	await prisma.cacheRefreshStatus.deleteMany({ where: { instanceId } });
+
+	if (!targetEnabled || !CACHE_PROVIDER_SERVICES.has(targetService)) return;
+	const cacheTypes =
+		targetService === "PLEX" ? ["plex", "plex_episode"] : ["jellyfin", "jellyfin_episode"];
+	const invalidatedAt = new Date();
+	const message = "Provider connection changed; refresh required";
+	for (const cacheType of cacheTypes) {
+		await prisma.cacheRefreshStatus.upsert({
+			where: { instanceId_cacheType: { instanceId, cacheType } },
+			create: {
+				instanceId,
+				cacheType,
+				lastRefreshedAt: invalidatedAt,
+				lastResult: "error",
+				lastErrorMessage: message,
+				itemCount: 0,
+				lastAttemptAt: invalidatedAt,
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: message,
+			},
+			update: {
+				lastRefreshedAt: invalidatedAt,
+				lastResult: "error",
+				lastErrorMessage: message,
+				itemCount: 0,
+				generationId: null,
+				generationMetadata: null,
+				lastAttemptAt: invalidatedAt,
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: message,
+			},
+		});
+	}
+}
 
 const tagCreateSchema = z.object({
 	name: z.string().min(1).max(64),
@@ -158,38 +231,56 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			userId,
 			async () => {
 				const existing = await requireInstance(app, userId, id);
-				const targetService = payload.service ?? existing.service.toLowerCase();
+				const targetServiceName = payload.service ?? existing.service.toLowerCase();
 				const keepsExistingHttpAuth =
 					payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
 				const httpAuthConflict =
-					payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetService) : null;
+					payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetServiceName) : null;
 				if (httpAuthConflict) {
 					return reply.status(400).send({
-						error: `HTTP Basic Auth is not supported for ${targetService}`,
+						error: `HTTP Basic Auth is not supported for ${targetServiceName}`,
 						details: `${httpAuthConflict} Remove HTTP Basic Auth or configure a proxy bypass.`,
 					});
 				}
 
 				const updateData = buildUpdateData(payload, app.encryptor);
+				const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
+				const targetService = (
+					payload.service ?? existing.service.toLowerCase()
+				).toUpperCase() as ServiceType;
+				const shouldResetOtherDefaults = payload.isDefault === true || Boolean(payload.service);
 
-				if (payload.isDefault === true || payload.service) {
-					const targetService = (
-						payload.service ?? existing.service.toLowerCase()
-					).toUpperCase() as ServiceType;
-					await app.prisma.serviceInstance.updateMany({
-						where: { service: targetService, userId, NOT: { id } },
-						data: { isDefault: false },
+				if (providerConnectionChanged) {
+					await app.prisma.$transaction(async (tx) => {
+						if (shouldResetOtherDefaults) {
+							await tx.serviceInstance.updateMany({
+								where: { service: targetService, userId, NOT: { id } },
+								data: { isDefault: false },
+							});
+						}
+						await tx.serviceInstance.updateMany({
+							where: { id, userId },
+							data: { ...updateData, connectionGeneration: { increment: 1 } },
+						});
+						if (payload.tags) await updateInstanceTags(tx, id, payload.tags);
+						await clearDurableProviderCacheState(
+							tx,
+							id,
+							targetService,
+							payload.enabled ?? existing.enabled,
+						);
 					});
+				} else {
+					if (shouldResetOtherDefaults) {
+						await app.prisma.serviceInstance.updateMany({
+							where: { service: targetService, userId, NOT: { id } },
+							data: { isDefault: false },
+						});
+					}
+					await app.prisma.serviceInstance.updateMany({ where: { id, userId }, data: updateData });
+					if (payload.tags) await updateInstanceTags(app.prisma, id, payload.tags);
 				}
-
-				await app.prisma.serviceInstance.updateMany({
-					where: { id, userId },
-					data: updateData,
-				});
-
-				if (payload.tags) {
-					await updateInstanceTags(app.prisma, id, payload.tags);
-				}
+				if (providerConnectionChanged) invalidatePulseCache(userId);
 
 				// Drop process-local qui caches when a qui instance becomes
 				// unreachable from this app's perspective — either disabled

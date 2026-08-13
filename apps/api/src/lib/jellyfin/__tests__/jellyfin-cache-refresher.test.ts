@@ -6,7 +6,7 @@
  * lastPlayedDate is present, even if item.played === false.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { refreshJellyfinCache } from "../jellyfin-cache-refresher.js";
 import type {
 	JellyfinClient,
@@ -15,6 +15,7 @@ import type {
 	JellyfinUser,
 } from "../jellyfin-client.js";
 import type { FastifyBaseLogger } from "fastify";
+import { jellyfinConnectionFingerprint } from "../service-instance-fingerprint.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -66,23 +67,61 @@ function makeMockClient(items: JellyfinItem[]): JellyfinClient {
 /**
  * Build a minimal Prisma stub that captures upsert payloads.
  */
-function makeMockPrisma() {
+function makeMockPrisma(options?: {
+	current?: {
+		service: "JELLYFIN" | "EMBY" | "PLEX";
+		baseUrl: string;
+		encryptedApiKey: string;
+		encryptionIv: string;
+		encryptedHttpAuthCredentials: string | null;
+		httpAuthEncryptionIv: string | null;
+		enabled: boolean;
+		connectionGeneration: number;
+	} | null;
+	failTransactionOnce?: boolean;
+}) {
 	const upserts: unknown[] = [];
-	const stub = {
+	let failTransactionOnce = options?.failTransactionOnce ?? false;
+	const current =
+		options && "current" in options
+			? options.current
+			: {
+					service: "JELLYFIN" as const,
+					baseUrl: "https://jellyfin-current.example.com",
+					encryptedApiKey: "current-key",
+					encryptionIv: "current-iv",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
+					enabled: true,
+					connectionGeneration: 7,
+				};
+	const tx = {
+		$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+		serviceInstance: { findUnique: vi.fn().mockResolvedValue(current) },
 		jellyfinCache: {
-			upsert: vi.fn((args: unknown) => {
-				upserts.push(args);
-				return Promise.resolve({});
-			}),
-			findMany: vi.fn().mockResolvedValue([]),
 			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
+				upserts.push(...data.map((row) => ({ create: row })));
+				return { count: data.length };
+			}),
 		},
-		$transaction: vi.fn(async (ops: unknown[]) => {
-			for (const op of ops) await op;
+		cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+	};
+	const stub = {
+		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => {
+			if (failTransactionOnce) {
+				failTransactionOnce = false;
+				throw new Error("database unavailable");
+			}
+			return callback(tx);
 		}),
 	};
-	return { stub, upserts };
+	return { stub, upserts, tx };
 }
+
+afterEach(() => {
+	vi.unstubAllEnvs();
+});
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -174,24 +213,6 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(payload.lastWatchedAt).toEqual(new Date("2024-06-20T22:00:00Z"));
 	});
 
-	it("evicts stale rows when a complete refresh finds no media libraries", async () => {
-		const client = {
-			...makeMockClient([]),
-			getLibraries: vi.fn().mockResolvedValue([]),
-		} as unknown as JellyfinClient;
-		const { stub } = makeMockPrisma();
-		stub.jellyfinCache.findMany.mockResolvedValue([
-			{ id: "stale-1", tmdbId: 1, mediaType: "series", libraryId: "old-lib" },
-		]);
-
-		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
-
-		expect(result.errors).toBe(0);
-		expect(stub.jellyfinCache.deleteMany).toHaveBeenCalledWith({
-			where: { id: { in: ["stale-1"] } },
-		});
-	});
-
 	it("discovers libraries visible only to a later Jellyfin user", async () => {
 		const restrictedUser = { id: "user-restricted", name: "Restricted" };
 		const libraryUser = { id: "user-library", name: "Library User" };
@@ -204,34 +225,151 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 			getLibraryItems: vi.fn().mockResolvedValue([makeSeriesItem()]),
 		} as unknown as JellyfinClient;
 		const { stub, upserts } = makeMockPrisma();
-		stub.jellyfinCache.findMany.mockResolvedValue([
-			{ id: "stale-1", tmdbId: 1, mediaType: "series", libraryId: "old-lib" },
-		]);
 
 		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
 
-		expect(result).toMatchObject({ upserted: 1, errors: 0 });
+		expect(result).toMatchObject({ complete: true, upserted: 1, errors: 0 });
 		expect(client.getLibraries).toHaveBeenCalledWith(restrictedUser.id);
 		expect(client.getLibraries).toHaveBeenCalledWith(libraryUser.id);
 		expect(client.getLibraryItems).toHaveBeenCalledWith(libraryUser.id, "lib-1", {
 			includeItemTypes: "Series",
 		});
 		expect(upserts).toHaveLength(1);
-		expect(stub.jellyfinCache.deleteMany).toHaveBeenCalledWith({
-			where: { id: { in: ["stale-1"] } },
-		});
 	});
 
-	it("reports missing users as incomplete instead of authorizing an empty cache", async () => {
+	it("reports missing users as incomplete instead of publishing an empty cache", async () => {
 		const client = {
 			...makeMockClient([]),
 			getUsers: vi.fn().mockResolvedValue([]),
 		} as unknown as JellyfinClient;
-		const { stub } = makeMockPrisma();
+		const { stub, tx } = makeMockPrisma();
 
 		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
 
-		expect(result.errors).toBe(1);
-		expect(stub.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+		expect(result).toMatchObject({ complete: false, errors: 1, upserted: 0 });
+		expect(tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it("keeps the previous generation when a current library item cannot be mapped", async () => {
+		const client = makeMockClient([makeSeriesItem({ tmdbId: undefined })]);
+		const { stub, tx } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/without a tmdb mapping/i);
+		expect(tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it("keeps the previous generation when a resume item cannot be attributed", async () => {
+		const client = {
+			...makeMockClient([makeSeriesItem()]),
+			getResumeItems: vi.fn().mockResolvedValue([
+				{
+					id: "unmapped-episode",
+					seriesId: "another-series",
+					name: "Unmapped",
+					type: "Episode",
+					played: false,
+					playCount: 0,
+					lastPlayedDate: null,
+					isFavorite: false,
+				},
+			]),
+		} as unknown as JellyfinClient;
+		const { stub, tx } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/resume item could not be attributed/i);
+		expect(tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["deleted", null],
+		[
+			"disabled",
+			{
+				service: "JELLYFIN" as const,
+				baseUrl: "https://jellyfin-current.example.com",
+				encryptedApiKey: "current-key",
+				encryptionIv: "current-iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				enabled: false,
+				connectionGeneration: 7,
+			},
+		],
+		[
+			"service changed",
+			{
+				service: "PLEX" as const,
+				baseUrl: "https://jellyfin-current.example.com",
+				encryptedApiKey: "current-key",
+				encryptionIv: "current-iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				enabled: true,
+				connectionGeneration: 7,
+			},
+		],
+		[
+			"generation changed",
+			{
+				service: "JELLYFIN" as const,
+				baseUrl: "https://jellyfin-current.example.com",
+				encryptedApiKey: "current-key",
+				encryptionIv: "current-iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				enabled: true,
+				connectionGeneration: 8,
+			},
+		],
+	])(
+		"does not publish cache or success status after the originating connection was %s",
+		async (_reason, current) => {
+			const client = makeMockClient([]);
+			const { stub, tx } = makeMockPrisma({ current });
+			const expectedConnectionFingerprint = jellyfinConnectionFingerprint({
+				service: "JELLYFIN",
+				baseUrl: "https://jellyfin-current.example.com",
+				encryptedApiKey: "current-key",
+				encryptionIv: "current-iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				connectionGeneration: 7,
+			} as never);
+
+			const result = await refreshJellyfinCache(
+				client,
+				stub as never,
+				"inst-1",
+				silentLog,
+				expectedConnectionFingerprint,
+			);
+
+			expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
+			expect(tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
+			expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		},
+	);
+
+	it("leaves publication retryable after a database failure", async () => {
+		const client = makeMockClient([]);
+		const { stub, tx } = makeMockPrisma({ failTransactionOnce: true });
+
+		const failed = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+		expect(failed.complete).toBe(false);
+		expect(failed.errorMessages.join(" ")).toMatch(/atomic cache publication failed/i);
+		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+
+		const retried = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+		expect(retried).toMatchObject({ complete: true, errors: 0, upserted: 0 });
+		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 	});
 });
