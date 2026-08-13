@@ -21,6 +21,7 @@ import {
 } from "../plex-cache-refresher.js";
 import type { PlexClient } from "../plex-client.js";
 import type { PrismaClient } from "../../prisma.js";
+import { providerConnectionIdentity } from "../../services/provider-connection-guard.js";
 import type { FastifyBaseLogger } from "fastify";
 
 const silentLog = {
@@ -32,6 +33,17 @@ const silentLog = {
 	fatal: vi.fn(),
 	child: vi.fn(),
 } as unknown as FastifyBaseLogger;
+
+const plexConnection = {
+	service: "PLEX" as const,
+	baseUrl: "https://plex.example.test",
+	encryptedApiKey: "key",
+	encryptionIv: "iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	enabled: true,
+	connectionGeneration: 7,
+};
 
 afterEach(() => clearPlexCacheRefreshSingleFlightsForTests());
 
@@ -315,7 +327,7 @@ function makeCompletePlexClient(): PlexClient {
 }
 
 function makeAtomicPlexPrisma(options?: {
-	current?: { service: "PLEX" | "JELLYFIN"; enabled: boolean; connectionGeneration: number } | null;
+	current?: (Omit<typeof plexConnection, "service"> & { service: "PLEX" | "JELLYFIN" }) | null;
 	failNextPublication?: boolean;
 }) {
 	const state = {
@@ -323,14 +335,7 @@ function makeAtomicPlexPrisma(options?: {
 		status: "previous-success",
 	};
 	let failNextPublication = options?.failNextPublication ?? false;
-	const current =
-		options && "current" in options
-			? options.current
-			: {
-					service: "PLEX" as const,
-					enabled: true,
-					connectionGeneration: 7,
-				};
+	const current = options && "current" in options ? options.current : plexConnection;
 
 	const prisma = {
 		$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => {
@@ -380,7 +385,7 @@ describe("refreshPlexCache atomic publication", () => {
 			});
 			return [{ id: 1, name: "Alice" }];
 		});
-		const expectedConnection = { service: "PLEX" as const, connectionGeneration: 7 };
+		const expectedConnection = providerConnectionIdentity(plexConnection);
 
 		const first = refreshPlexCache(client, prisma, "inst-1", silentLog, expectedConnection);
 		const second = refreshPlexCache(client, prisma, "inst-1", silentLog, expectedConnection);
@@ -396,10 +401,13 @@ describe("refreshPlexCache atomic publication", () => {
 	it("replaces a complete generation and its success status in one transaction", async () => {
 		const { prisma, state } = makeAtomicPlexPrisma();
 
-		const result = await refreshPlexCache(makeCompletePlexClient(), prisma, "inst-1", silentLog, {
-			service: "PLEX",
-			connectionGeneration: 7,
-		});
+		const result = await refreshPlexCache(
+			makeCompletePlexClient(),
+			prisma,
+			"inst-1",
+			silentLog,
+			providerConnectionIdentity(plexConnection),
+		);
 
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
 		expect(state.rows).toEqual([expect.objectContaining({ title: "The Current Movie" })]);
@@ -475,18 +483,21 @@ describe("refreshPlexCache atomic publication", () => {
 
 	it.each([
 		["deleted", null],
-		["disabled", { service: "PLEX", enabled: false, connectionGeneration: 7 }],
-		["service changed", { service: "JELLYFIN", enabled: true, connectionGeneration: 7 }],
-		["generation changed", { service: "PLEX", enabled: true, connectionGeneration: 8 }],
+		["disabled", { ...plexConnection, enabled: false }],
+		["service changed", { ...plexConnection, service: "JELLYFIN" }],
+		["generation changed", { ...plexConnection, connectionGeneration: 8 }],
 	] as const)(
 		"does not publish when the originating connection was %s",
 		async (_reason, current) => {
 			const { prisma, state } = makeAtomicPlexPrisma({ current });
 
-			const result = await refreshPlexCache(makeCompletePlexClient(), prisma, "inst-1", silentLog, {
-				service: "PLEX",
-				connectionGeneration: 7,
-			});
+			const result = await refreshPlexCache(
+				makeCompletePlexClient(),
+				prisma,
+				"inst-1",
+				silentLog,
+				providerConnectionIdentity(plexConnection),
+			);
 
 			expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
 			expect(state).toEqual({

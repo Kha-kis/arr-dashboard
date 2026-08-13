@@ -97,7 +97,7 @@ export function refreshPlexCache(
 	log: FastifyBaseLogger,
 	expectedConnection?: ProviderConnectionIdentity,
 ): Promise<PlexCacheRefreshResult> {
-	const key = `${instanceId}:${expectedConnection?.service ?? "PLEX"}:${expectedConnection?.connectionGeneration ?? "unguarded"}`;
+	const key = `${instanceId}:${expectedConnection?.service ?? "PLEX"}:${expectedConnection?.connectionGeneration ?? "unguarded"}:${expectedConnection?.connectionFingerprint ?? "unguarded"}`;
 	const existing = inFlightRefreshes.get(key);
 	if (existing) return existing;
 

@@ -58,6 +58,7 @@ vi.mock("../../jellyfin/jellyfin-helpers.js", () => ({
 }));
 
 import { InstanceNotFoundError } from "../../errors.js";
+import { providerConnectionIdentity } from "../../services/provider-connection-guard.js";
 import { dispatchPulseAction } from "../actions.js";
 
 // -----------------------------------------------------------------------------
@@ -76,7 +77,15 @@ const fakeLog = {
 
 const markEnabled = vi.fn();
 const cacheStatusUpsert = vi.fn();
-const plexInstance = { service: "PLEX" as const, connectionGeneration: 7 };
+const plexInstance = {
+	service: "PLEX" as const,
+	baseUrl: "https://plex.example.test",
+	encryptedApiKey: "encrypted-key",
+	encryptionIv: "key-iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	connectionGeneration: 7,
+};
 const jellyfinInstance = {
 	service: "JELLYFIN" as const,
 	baseUrl: "https://jellyfin.example.test",
@@ -242,7 +251,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			fakeApp.prisma,
 			"inst-plex-1",
 			fakeLog,
-			plexInstance,
+			providerConnectionIdentity(plexInstance),
 		);
 		// The full refresher owns the atomic success publication; the action
 		// dispatcher must never reintroduce an unguarded stale write-through.

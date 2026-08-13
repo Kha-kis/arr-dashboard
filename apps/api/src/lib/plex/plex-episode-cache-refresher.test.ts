@@ -1,5 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import { providerConnectionIdentity } from "../services/provider-connection-guard.js";
 import { refreshPlexEpisodeCache } from "./plex-episode-cache-refresher.js";
+
+const plexConnection = {
+	service: "PLEX" as const,
+	baseUrl: "https://plex.example.test",
+	encryptedApiKey: "key",
+	encryptionIv: "iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	enabled: true,
+	connectionGeneration: 7,
+};
 
 describe("refreshPlexEpisodeCache watch count", () => {
 	it("does not publish a selected batch when one duplicate copy fails", async () => {
@@ -55,8 +67,7 @@ describe("refreshPlexEpisodeCache watch count", () => {
 				callback({
 					serviceInstance: {
 						findUnique: vi.fn().mockResolvedValue({
-							service: "PLEX",
-							enabled: true,
+							...plexConnection,
 							connectionGeneration: 8,
 						}),
 					},
@@ -85,7 +96,7 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			"plex-1",
 			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
 			"connection-fingerprint",
-			{ service: "PLEX", connectionGeneration: 7 },
+			providerConnectionIdentity(plexConnection),
 		);
 
 		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
@@ -105,11 +116,7 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
 				callback({
 					serviceInstance: {
-						findUnique: vi.fn().mockResolvedValue({
-							service: "PLEX",
-							enabled: true,
-							connectionGeneration: 7,
-						}),
+						findUnique: vi.fn().mockResolvedValue(plexConnection),
 					},
 					plexEpisodeCache: { upsert },
 					cacheRefreshStatus: {
@@ -139,7 +146,7 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			"plex-1",
 			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
 			"connection-fingerprint",
-			{ service: "PLEX", connectionGeneration: 7 },
+			providerConnectionIdentity(plexConnection),
 		);
 
 		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
@@ -163,11 +170,7 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
 				callback({
 					serviceInstance: {
-						findUnique: vi.fn().mockResolvedValue({
-							service: "PLEX",
-							enabled: true,
-							connectionGeneration: 7,
-						}),
+						findUnique: vi.fn().mockResolvedValue(plexConnection),
 					},
 					plexEpisodeCache: { deleteMany, createMany, upsert },
 					cacheRefreshStatus: {
@@ -196,7 +199,7 @@ describe("refreshPlexEpisodeCache watch count", () => {
 			"plex-1",
 			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
 			"connection-fingerprint",
-			{ service: "PLEX", connectionGeneration: 7 },
+			providerConnectionIdentity(plexConnection),
 		);
 
 		expect(result).toMatchObject({ complete: true, upserted: 1_500, errors: 0 });

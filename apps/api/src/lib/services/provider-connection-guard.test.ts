@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { withCurrentProviderConnection } from "./provider-connection-guard.js";
+import {
+	providerConnectionIdentity,
+	withCurrentProviderConnection,
+} from "./provider-connection-guard.js";
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -7,6 +10,16 @@ describe("withCurrentProviderConnection", () => {
 	it("locks the PostgreSQL service row before reading it or publishing a guarded write", async () => {
 		vi.stubEnv("DATABASE_URL", "postgresql://arr-dashboard.test/provider-cache");
 		const calls: string[] = [];
+		const connection = {
+			service: "PLEX" as const,
+			baseUrl: "https://plex.example.test",
+			encryptedApiKey: "key",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			enabled: true,
+			connectionGeneration: 4,
+		};
 		const tx = {
 			$queryRawUnsafe: vi.fn(async () => {
 				calls.push("lock");
@@ -15,7 +28,7 @@ describe("withCurrentProviderConnection", () => {
 			serviceInstance: {
 				findUnique: vi.fn(async () => {
 					calls.push("read");
-					return { service: "PLEX", enabled: true, connectionGeneration: 4 };
+					return connection;
 				}),
 			},
 		};
@@ -28,7 +41,7 @@ describe("withCurrentProviderConnection", () => {
 		const result = await withCurrentProviderConnection(
 			prisma as never,
 			"plex-1",
-			{ service: "PLEX", connectionGeneration: 4 },
+			providerConnectionIdentity(connection),
 			async () => {
 				calls.push("write");
 				return "published";
@@ -44,5 +57,43 @@ describe("withCurrentProviderConnection", () => {
 		expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
 			timeout: 120_000,
 		});
+	});
+
+	it("rejects a restored row that reuses the id and generation for a different connection", async () => {
+		const original = {
+			service: "PLEX" as const,
+			baseUrl: "https://old-plex.example.test",
+			encryptedApiKey: "old-key",
+			encryptionIv: "old-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			connectionGeneration: 4,
+		};
+		const write = vi.fn();
+		const tx = {
+			serviceInstance: {
+				findUnique: vi.fn().mockResolvedValue({
+					...original,
+					baseUrl: "https://restored-plex.example.test",
+					encryptedApiKey: "restored-key",
+					enabled: true,
+				}),
+			},
+		};
+		const prisma = {
+			$transaction: vi.fn(
+				async (callback: (transaction: typeof tx) => Promise<unknown>) => await callback(tx),
+			),
+		};
+
+		const result = await withCurrentProviderConnection(
+			prisma as never,
+			"plex-1",
+			providerConnectionIdentity(original),
+			write,
+		);
+
+		expect(result).toEqual({ matched: false });
+		expect(write).not.toHaveBeenCalled();
 	});
 });

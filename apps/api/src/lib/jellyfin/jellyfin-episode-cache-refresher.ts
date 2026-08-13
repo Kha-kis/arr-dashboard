@@ -92,32 +92,51 @@ async function refreshJellyfinEpisodeCacheInternal(
 			return { upserted: 0, errors: 1, complete: false };
 		}
 		const parentGenerationId = parentStatus.generationId;
-		const recentSeries = await prisma.jellyfinCache.findMany({
+		const recentSeriesGroups = await prisma.jellyfinCache.groupBy({
+			by: ["tmdbId"],
 			where: { instanceId, mediaType: "series", lastWatchedAt: { not: null } },
-			orderBy: { lastWatchedAt: "desc" },
+			_max: { lastWatchedAt: true },
+			orderBy: { _max: { lastWatchedAt: "desc" } },
 			take: JELLYFIN_EPISODE_MAX_SERIES + 1,
-			select: { tmdbId: true, jellyfinId: true, title: true },
 		});
-		if (recentSeries.length > JELLYFIN_EPISODE_MAX_SERIES) {
+		if (recentSeriesGroups.length > JELLYFIN_EPISODE_MAX_SERIES) {
 			log.warn(
 				{ instanceId, limit: JELLYFIN_EPISODE_MAX_SERIES },
 				"Jellyfin episode inventory exceeded its safe series limit",
 			);
 			return { upserted: 0, errors: 1, complete: false };
 		}
+		const recentSeries =
+			recentSeriesGroups.length === 0
+				? []
+				: await prisma.jellyfinCache.findMany({
+						where: {
+							instanceId,
+							mediaType: "series",
+							tmdbId: { in: recentSeriesGroups.map((series) => series.tmdbId) },
+						},
+						orderBy: [{ tmdbId: "asc" }, { jellyfinId: "asc" }],
+						select: { tmdbId: true, jellyfinId: true, title: true },
+					});
 
-		const seriesByTmdbId = new Map<number, (typeof recentSeries)[number]>();
+		const seriesByTmdbId = new Map<
+			number,
+			{ tmdbId: number; title: string; jellyfinIds: Set<string> }
+		>();
 		for (const series of recentSeries) {
 			if (!series.jellyfinId) {
 				log.warn({ instanceId, tmdbId: series.tmdbId }, "Jellyfin series lacked an item id");
 				return { upserted: 0, errors: 1, complete: false };
 			}
 			const existing = seriesByTmdbId.get(series.tmdbId);
-			if (existing && existing.jellyfinId !== series.jellyfinId) {
-				log.warn({ instanceId, tmdbId: series.tmdbId }, "Jellyfin series identity was ambiguous");
-				return { upserted: 0, errors: 1, complete: false };
+			if (existing) existing.jellyfinIds.add(series.jellyfinId);
+			else {
+				seriesByTmdbId.set(series.tmdbId, {
+					tmdbId: series.tmdbId,
+					title: series.title,
+					jellyfinIds: new Set([series.jellyfinId]),
+				});
 			}
-			seriesByTmdbId.set(series.tmdbId, series);
 		}
 
 		const rows: Array<{
@@ -145,55 +164,55 @@ async function refreshJellyfinEpisodeCacheInternal(
 				}
 			>();
 			for (const user of users) {
-				let episodes: Awaited<ReturnType<JellyfinClient["getEpisodes"]>>;
-				try {
-					episodes = await client.getEpisodes(user.id, series.jellyfinId!);
-				} catch (error) {
-					log.warn(
-						{ err: error, instanceId, seriesId: series.jellyfinId, userId: user.id },
-						"Failed to prove complete Jellyfin episode inventory",
-					);
-					return { upserted: 0, errors: 1, complete: false };
-				}
-				const seenCoordinates = new Set<string>();
-				for (const episode of episodes) {
-					const { seasonNumber, episodeNumber } = episode;
-					if (
-						!Number.isSafeInteger(seasonNumber) ||
-						seasonNumber === undefined ||
-						seasonNumber < 0 ||
-						!Number.isSafeInteger(episodeNumber) ||
-						episodeNumber === undefined ||
-						episodeNumber <= 0
-					)
+				for (const seriesId of [...series.jellyfinIds].sort()) {
+					let episodes: Awaited<ReturnType<JellyfinClient["getEpisodes"]>>;
+					try {
+						episodes = await client.getEpisodes(user.id, seriesId);
+					} catch (error) {
+						log.warn(
+							{ err: error, instanceId, seriesId, userId: user.id },
+							"Failed to prove complete Jellyfin episode inventory",
+						);
 						return { upserted: 0, errors: 1, complete: false };
-					const key = `${seasonNumber}:${episodeNumber}`;
-					if (seenCoordinates.has(key)) return { upserted: 0, errors: 1, complete: false };
-					seenCoordinates.add(key);
-					const entry = episodeMap.get(key);
-					if (entry && entry.jellyfinId !== episode.id)
-						return { upserted: 0, errors: 1, complete: false };
-					const current = entry ?? {
-						jellyfinId: episode.id,
-						seasonNumber,
-						episodeNumber,
-						title: episode.name,
-						watched: false,
-						watchedByUsers: new Set<string>(),
-						lastWatchedAt: null,
-					};
-					if (episode.played) {
-						current.watched = true;
-						current.watchedByUsers.add(user.name);
-						if (episode.lastPlayedDate) {
-							const playedAt = new Date(episode.lastPlayedDate);
-							if (Number.isNaN(playedAt.getTime()))
-								return { upserted: 0, errors: 1, complete: false };
-							if (!current.lastWatchedAt || playedAt > current.lastWatchedAt)
-								current.lastWatchedAt = playedAt;
-						}
 					}
-					episodeMap.set(key, current);
+					const seenCoordinates = new Set<string>();
+					for (const episode of episodes) {
+						const { seasonNumber, episodeNumber } = episode;
+						if (
+							!Number.isSafeInteger(seasonNumber) ||
+							seasonNumber === undefined ||
+							seasonNumber < 0 ||
+							!Number.isSafeInteger(episodeNumber) ||
+							episodeNumber === undefined ||
+							episodeNumber <= 0
+						)
+							return { upserted: 0, errors: 1, complete: false };
+						const key = `${seasonNumber}:${episodeNumber}`;
+						if (seenCoordinates.has(key)) return { upserted: 0, errors: 1, complete: false };
+						seenCoordinates.add(key);
+						const entry = episodeMap.get(key);
+						const current = entry ?? {
+							jellyfinId: episode.id,
+							seasonNumber,
+							episodeNumber,
+							title: episode.name,
+							watched: false,
+							watchedByUsers: new Set<string>(),
+							lastWatchedAt: null,
+						};
+						if (episode.played) {
+							current.watched = true;
+							current.watchedByUsers.add(user.name);
+							if (episode.lastPlayedDate) {
+								const playedAt = new Date(episode.lastPlayedDate);
+								if (Number.isNaN(playedAt.getTime()))
+									return { upserted: 0, errors: 1, complete: false };
+								if (!current.lastWatchedAt || playedAt > current.lastWatchedAt)
+									current.lastWatchedAt = playedAt;
+							}
+						}
+						episodeMap.set(key, current);
+					}
 				}
 			}
 			for (const episode of [...episodeMap.values()].sort(

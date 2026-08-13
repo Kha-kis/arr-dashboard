@@ -1,6 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import { recordCacheRefreshFailure } from "../cache-refresh-status.js";
 import { recordProviderCacheRefreshFailure } from "./provider-cache-status.js";
+import { providerConnectionIdentity } from "./provider-connection-guard.js";
+
+const plexConnection = {
+	service: "PLEX" as const,
+	baseUrl: "https://plex.example.test",
+	encryptedApiKey: "key",
+	encryptionIv: "iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	enabled: true,
+	connectionGeneration: 7,
+};
 
 describe("recordCacheRefreshFailure", () => {
 	it("records a failed attempt without replacing the last published generation", async () => {
@@ -44,8 +56,7 @@ describe("recordProviderCacheRefreshFailure", () => {
 				await callback({
 					serviceInstance: {
 						findUnique: async () => ({
-							service: "PLEX",
-							enabled: true,
+							...plexConnection,
 							connectionGeneration: 8,
 						}),
 					},
@@ -58,7 +69,7 @@ describe("recordProviderCacheRefreshFailure", () => {
 			"plex-1",
 			"plex",
 			"old connection failed",
-			{ service: "PLEX", connectionGeneration: 7 },
+			providerConnectionIdentity(plexConnection),
 			{ warn: vi.fn() },
 		);
 

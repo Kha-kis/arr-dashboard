@@ -1,13 +1,33 @@
-import type { Prisma, PrismaClient, ServiceType } from "../prisma.js";
+import type { Prisma, PrismaClient, ServiceInstance, ServiceType } from "../prisma.js";
+import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
 
-export type ProviderConnectionIdentity = { service: ServiceType; connectionGeneration: number };
+type ProviderConnectionSource = Pick<
+	ServiceInstance,
+	| "service"
+	| "baseUrl"
+	| "encryptedApiKey"
+	| "encryptionIv"
+	| "encryptedHttpAuthCredentials"
+	| "httpAuthEncryptionIv"
+	| "connectionGeneration"
+>;
+
+export type ProviderConnectionIdentity = {
+	service: ServiceType;
+	connectionGeneration: number;
+	connectionFingerprint: string;
+};
 
 export const PROVIDER_TRANSACTION_TIMEOUT_MS = 120_000;
 
 export function providerConnectionIdentity(
-	instance: ProviderConnectionIdentity,
+	instance: ProviderConnectionSource,
 ): ProviderConnectionIdentity {
-	return { service: instance.service, connectionGeneration: instance.connectionGeneration };
+	return {
+		service: instance.service,
+		connectionGeneration: instance.connectionGeneration,
+		connectionFingerprint: plexConnectionFingerprint(instance),
+	};
 }
 
 export async function withCurrentProviderConnection<T>(
@@ -27,12 +47,22 @@ export async function withCurrentProviderConnection<T>(
 				}
 				const current = await tx.serviceInstance.findUnique({
 					where: { id: instanceId },
-					select: { service: true, enabled: true, connectionGeneration: true },
+					select: {
+						service: true,
+						baseUrl: true,
+						encryptedApiKey: true,
+						encryptionIv: true,
+						encryptedHttpAuthCredentials: true,
+						httpAuthEncryptionIv: true,
+						enabled: true,
+						connectionGeneration: true,
+					},
 				});
 				if (
 					!current?.enabled ||
 					current.service !== expected.service ||
-					current.connectionGeneration !== expected.connectionGeneration
+					current.connectionGeneration !== expected.connectionGeneration ||
+					plexConnectionFingerprint(current) !== expected.connectionFingerprint
 				) {
 					return { matched: false };
 				}
