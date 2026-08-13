@@ -16,7 +16,7 @@
 - Do not use `container_name`, `latest`, production endpoints, production credentials, or direct provider-database edits.
 - Generated credentials and artifacts live below gitignored `e2e/media-analytics/.state/` with owner-only permissions.
 - Destructive lifecycle operations resolve candidate resources immediately before mutation and reject any resource whose `com.docker.compose.project` label differs from the expected project.
-- `PLEX_CLAIM` is optional, invocation-only, never written to disk, and never printed.
+- `PLEX_CLAIM` and `PLEX_TOKEN` are optional, invocation-only, never written to disk, and never printed. Claimed mode requires both because Plex does not expose a supported endpoint that recovers the server token produced by claim exchange.
 - Local Plex mode uses only the dedicated private Compose subnet. If supported connection APIs reject unclaimed Plex, fail with an actionable claimed-mode instruction; never fabricate success.
 - A running container is not proof of readiness. Each real service must answer its health or supported API check.
 - This plan does not add skipped or expected-failing provider-selection tests. Those land with the provider-selection runtime in the next focused plan.
@@ -269,7 +269,7 @@ Expected: FAIL because bootstrap scripts do not exist.
 - [ ] **Step 3: Implement generated state and readiness**
 
 Generate 64-hex Tracearr JWT/cookie secrets, a database password, a 32-character
-Tautulli API key, a local-mode Plex test token, an arr-dashboard administrator
+Tautulli API key, a local-mode Plex placeholder token, an arr-dashboard administrator
 password, and API-test state with `openssl rand`.
 Never echo values. Source `.state/runtime.env` only after validating owner-only
 permissions. Wait on Plex `/identity`, Tautulli `/status`, Tracearr `/health`,
@@ -278,8 +278,16 @@ bounded loop whose timeout names the failed service.
 
 - [ ] **Step 4: Implement supported bootstrap flows and observe real behavior**
 
-Start the stack, inspect Plex `/identity`, and configure the synthetic library
-through Plex's HTTP setup flow. Configure Tautulli non-interactively with its
+Start Plex first, inspect `/identity`, and use its observed machine identifier
+when starting downstream services. In local mode, probe from the dedicated
+allowed subnet without a token first; the generated placeholder is supplied only
+to clients whose schemas require a non-empty value, and success is treated as an
+observed local-mode compatibility result rather than a documented Plex token
+contract. In claimed mode, require invocation-only `PLEX_CLAIM` and `PLEX_TOKEN`
+before startup. Configure the synthetic library through Plex's supported HTTP
+setup flow only when the authenticated management call is available.
+
+Configure Tautulli non-interactively with its
 supported `TAUTULLI_FIRST_RUN_COMPLETE`, `TAUTULLI_PMS_TOKEN`,
 `TAUTULLI_PMS_IDENTIFIER`, `TAUTULLI_PMS_IP`, `TAUTULLI_PMS_PORT`,
 `TAUTULLI_PMS_URL_MANUAL`, `TAUTULLI_API_ENABLED`, and `TAUTULLI_API_KEY`
