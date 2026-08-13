@@ -89,7 +89,7 @@ export const tautulliHomeStatSchema = z.looseObject({
 	stat_title: z.string(),
 	rows: z.array(
 		z.looseObject({
-			title: z.string(),
+			title: z.string().optional(),
 			friendly_name: z.string().optional(),
 			user: z.string().optional(),
 			user_id: z.coerce.string().optional(),

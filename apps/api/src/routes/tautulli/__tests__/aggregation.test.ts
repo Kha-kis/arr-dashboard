@@ -365,7 +365,6 @@ describe("Tautulli provider routes", () => {
 						stat_title: "Most Active Platforms",
 						rows: [
 							{
-								title: "",
 								platform: instance.id === instanceOne.id ? "Chrome" : "Android",
 								total_plays: instance.id === instanceOne.id ? 2 : 3,
 								total_duration: 100,

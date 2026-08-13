@@ -38,7 +38,7 @@ export interface TautulliHistorySnapshot {
 }
 
 export interface TautulliHomeStatRow {
-	title: string;
+	title?: string;
 	friendly_name?: string;
 	user?: string;
 	user_id?: string;
