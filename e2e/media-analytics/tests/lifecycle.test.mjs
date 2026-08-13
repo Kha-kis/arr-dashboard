@@ -36,15 +36,23 @@ case "\${1:-}" in
   ps)
     awk -F: -v kind="container" '$1 == kind { print $2 }' <<< "$resources"
     ;;
-  network)
-    awk -F: -v kind="network" '$1 == kind { print $2 }' <<< "$resources"
-    ;;
-  volume)
-    awk -F: -v kind="volume" '$1 == kind { print $2 }' <<< "$resources"
+  network|volume)
+    resource_type="$1"
+    if [[ "\${2:-}" == "inspect" ]]; then
+      resource_id="\${@: -1}"
+      awk -F: -v kind="$resource_type" -v id="$resource_id" '$1 == kind && $2 == id { print $3; found = 1 } END { if (!found) exit 1 }' <<< "$resources"
+    else
+      awk -F: -v kind="$resource_type" '$1 == kind { print $2 }' <<< "$resources"
+    fi
     ;;
   inspect)
     resource_id="\${@: -1}"
     awk -F: -v id="$resource_id" '$2 == id { print $3; found = 1 } END { if (!found) exit 1 }' <<< "$resources"
+    ;;
+  container)
+    resource_type="$1"
+    resource_id="\${@: -1}"
+    awk -F: -v kind="$resource_type" -v id="$resource_id" '$1 == kind && $2 == id { print $3; found = 1 } END { if (!found) exit 1 }' <<< "$resources"
     ;;
   compose)
     exit 0
@@ -108,6 +116,16 @@ test("purge rejects a foreign labeled resource before compose down", () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /refusing to mutate/i);
   assert.doesNotMatch(readCalls(), /compose .* down/);
+});
+
+test("down revalidates every resource with its type-specific label field", () => {
+  const result = runScript("teardown.sh", { DOCKER_FAKE_RESOURCES: ownedFixture });
+  assert.equal(result.status, 0);
+
+  const calls = readCalls();
+  assert.match(calls, /container inspect --format \{\{ index \.Config\.Labels "com\.docker\.compose\.project" \}\} owned-container/);
+  assert.match(calls, /network inspect --format \{\{ index \.Labels "com\.docker\.compose\.project" \}\} owned-network/);
+  assert.match(calls, /volume inspect --format \{\{ index \.Labels "com\.docker\.compose\.project" \}\} owned-volume/);
 });
 
 test("preflight rejects a non-loopback dashboard URL", () => {
