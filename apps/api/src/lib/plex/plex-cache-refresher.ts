@@ -140,8 +140,16 @@ export async function refreshPlexCache(
 		}
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
+		const HISTORY_CACHE_LIMIT = 5_000;
 		let history: Awaited<ReturnType<typeof client.getHistory>> | undefined =
-			await client.getHistory({ maxResults: 5000 });
+			await client.getHistory({ maxResults: HISTORY_CACHE_LIMIT + 1 });
+		if (history.length > HISTORY_CACHE_LIMIT) {
+			errors++;
+			errorMessages.push(
+				`Plex history exceeded ${HISTORY_CACHE_LIMIT} entries, so watch evidence is incomplete`,
+			);
+			history = history.slice(0, HISTORY_CACHE_LIMIT);
+		}
 		const historyCount = history.length;
 		const aggregations = new Map<string, ItemAggregation>();
 
@@ -234,6 +242,8 @@ export async function refreshPlexCache(
 				}
 			}
 		} catch (err) {
+			errors++;
+			errorMessages.push(`Plex on-deck fetch failed: ${getErrorMessage(err)}`);
 			log.warn({ err }, "Failed to fetch Plex on-deck items");
 		}
 

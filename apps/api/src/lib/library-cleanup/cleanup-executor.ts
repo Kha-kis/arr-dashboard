@@ -1269,7 +1269,6 @@ function createSonarrEpisodeMutationAuthority(
 	assertExecutionAllowed?: () => Promise<void>,
 ): () => Promise<void> {
 	let revalidationCount = 0;
-	const seriesEvidence: EpisodeSeriesAuthorityEvidence = {};
 	return async () => {
 		await assertExecutionAllowed?.();
 		await assertCurrentEpisodeMutationAuthority(
@@ -1278,8 +1277,6 @@ function createSonarrEpisodeMutationAuthority(
 			instance,
 			target.arrItemId,
 			expectedRule,
-			undefined,
-			seriesEvidence,
 		);
 		const context = createSharedPlexSafetyContext();
 		const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
@@ -1331,7 +1328,6 @@ function createSonarrEpisodeMutationAuthority(
 			target.arrItemId,
 			expectedRule,
 			{ liveEpisodeWatchSources },
-			seriesEvidence,
 		);
 		await assertExecutionAllowed?.();
 	};
@@ -2166,10 +2162,6 @@ function assertCompleteLiveSonarrSeriesRuleEvidence(
 	}
 }
 
-interface EpisodeSeriesAuthorityEvidence {
-	context?: Promise<EvalContext>;
-}
-
 async function assertCurrentEpisodeMutationAuthority(
 	deps: CleanupExecutorDeps,
 	userId: string,
@@ -2177,7 +2169,6 @@ async function assertCurrentEpisodeMutationAuthority(
 	arrSeriesId: number,
 	expectedRule: { matchedRuleId: string; action: RuleAction },
 	evidence?: { liveEpisodeWatchSources: VerifiedEpisodePlexWatchSource[] },
-	seriesEvidence: EpisodeSeriesAuthorityEvidence = {},
 ): Promise<void> {
 	const config = await deps.prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
@@ -2209,10 +2200,9 @@ async function assertCurrentEpisodeMutationAuthority(
 	let rawSeries: Record<string, unknown>;
 	let currentSeriesContext: EvalContext;
 	try {
-		seriesEvidence.context ??= buildEvalContext(deps, userId, currentSeriesRules, {
+		currentSeriesContext = await buildEvalContext(deps, userId, currentSeriesRules, {
 			destructiveAuthority: true,
 		});
-		currentSeriesContext = await seriesEvidence.context;
 		const sonarr = deps.arrClientFactory.create(instance) as InstanceType<typeof SonarrClient>;
 		rawSeries = (await sonarr.series.getById(arrSeriesId)) as unknown as Record<string, unknown>;
 		const liveSeries = buildLibraryItem(instance, "sonarr", rawSeries);

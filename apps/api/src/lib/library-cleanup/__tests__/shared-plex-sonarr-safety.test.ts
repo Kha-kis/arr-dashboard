@@ -2492,6 +2492,81 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.deleteSeries).not.toHaveBeenCalled();
 	});
 
+	it("rechecks parent Plex evidence after unmonitoring and before file deletion", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		let parentMatches = false;
+		let refreshCount = 0;
+		vi.mocked(fixture.deps.externalRuleCacheRefresher!).mockImplementation(async () => {
+			refreshCount++;
+			if (refreshCount >= 3) parentMatches = true;
+		});
+		vi.mocked(fixture.deps.prisma.plexCache.findMany).mockImplementation(
+			(args) =>
+				Promise.resolve(
+					args?.cursor
+						? []
+						: [
+								{
+									id: "plex-series-456",
+									tmdbId: 456,
+									mediaType: "series",
+									sectionId: "tv",
+									sectionTitle: "TV",
+									lastWatchedAt: new Date(),
+									watchCount: parentMatches ? 20 : 0,
+									watchedByUsers: "[]",
+									onDeck: false,
+									userRating: null,
+									collections: "[]",
+									labels: "[]",
+									addedAt: null,
+								},
+							],
+				) as never,
+		);
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [
+				{
+					...episodeCleanupRule(),
+					id: "parent-plex-rule",
+					priority: 0,
+					targetScope: "series",
+					ruleType: "plex_watch_count",
+					parameters: JSON.stringify({ operator: "greater_than", count: 10 }),
+				},
+				episodeCleanupRule(),
+			],
+		} as never);
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(refreshCount).toBeGreaterThanOrEqual(3);
+	});
+
 	it.each(["matches", "unavailable"] as const)(
 		"blocks an episode when current parent Plex evidence %s",
 		async (mode) => {

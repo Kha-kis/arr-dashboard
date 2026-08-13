@@ -236,6 +236,48 @@ describe("evictStaleRows", () => {
 		expect(deleteCalls).toEqual([]);
 	});
 
+	it("marks history evidence incomplete when Plex exceeds the cache limit", async () => {
+		const history = Array.from({ length: 5_001 }, (_, index) => ({
+			ratingKey: `history-${index}`,
+			title: `History ${index}`,
+			type: "movie",
+			viewedAt: 1_700_000_000 + index,
+			accountID: 1,
+		}));
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([]),
+			getLibraryItems: vi.fn(),
+			getHistory: vi.fn().mockResolvedValue(history),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const { prisma, deleteCalls } = makeMockPrisma(["retained-1"]);
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+
+		expect(mockClient.getHistory).toHaveBeenCalledWith({ maxResults: 5_001 });
+		expect(result.errors).toBe(1);
+		expect(result.errorMessages).toContainEqual(expect.stringContaining("history exceeded 5000"));
+		expect(deleteCalls).toEqual([]);
+	});
+
+	it("marks on-deck evidence incomplete when Plex cannot return it", async () => {
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([]),
+			getLibraryItems: vi.fn(),
+			getHistory: vi.fn().mockResolvedValue([]),
+			getOnDeck: vi.fn().mockRejectedValue(new Error("Plex on-deck unavailable")),
+		} as unknown as PlexClient;
+		const { prisma, deleteCalls } = makeMockPrisma(["retained-1"]);
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+
+		expect(result.errors).toBe(1);
+		expect(result.errorMessages).toContainEqual(expect.stringContaining("on-deck fetch failed"));
+		expect(deleteCalls).toEqual([]);
+	});
+
 	it("never uses `notIn` — the original P2029 trigger", async () => {
 		// Guard against a future regression where someone re-introduces the
 		// oversized `notIn` query. The mock's deleteMany only accepts `id.in`,
