@@ -92,6 +92,7 @@ export class CleanupScheduler {
 	private trackTick: TickWrapper;
 	private quiClientFactory?: CleanupExecutorDeps["quiClientFactory"];
 	private quiFileHashIndexFactory?: CleanupExecutorDeps["quiFileHashIndexFactory"];
+	private externalRuleCacheRefresher?: CleanupExecutorDeps["externalRuleCacheRefresher"];
 
 	/** Whether a cleanup run is currently in progress */
 	get isRunning(): boolean {
@@ -108,12 +109,14 @@ export class CleanupScheduler {
 			trackTick?: TickWrapper;
 			quiClientFactory?: CleanupExecutorDeps["quiClientFactory"];
 			quiFileHashIndexFactory?: CleanupExecutorDeps["quiFileHashIndexFactory"];
+			externalRuleCacheRefresher?: CleanupExecutorDeps["externalRuleCacheRefresher"];
 		},
 	) {
 		this.notifyFn = notifyFn;
 		this.trackTick = options?.trackTick ?? passthroughTickWrapper;
 		this.quiClientFactory = options?.quiClientFactory;
 		this.quiFileHashIndexFactory = options?.quiFileHashIndexFactory;
+		this.externalRuleCacheRefresher = options?.externalRuleCacheRefresher;
 	}
 
 	/**
@@ -307,6 +310,7 @@ export class CleanupScheduler {
 							encryptor: this.encryptor,
 							quiClientFactory: this.quiClientFactory,
 							quiFileHashIndexFactory: this.quiFileHashIndexFactory,
+							externalRuleCacheRefresher: this.externalRuleCacheRefresher,
 							log: this.logger,
 						},
 						config.userId,

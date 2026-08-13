@@ -31,6 +31,7 @@ describe("library cleanup scheduler dependencies", () => {
 	it("passes complete qUI mutation-boundary factories to scheduled execution", async () => {
 		const quiClientFactory = vi.fn();
 		const quiFileHashIndexFactory = vi.fn();
+		const externalRuleCacheRefresher = vi.fn();
 		const prisma = {
 			libraryCleanupApproval: {
 				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
@@ -53,7 +54,7 @@ describe("library cleanup scheduler dependencies", () => {
 			{} as never,
 			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
 			undefined,
-			{ quiClientFactory, quiFileHashIndexFactory } as never,
+			{ quiClientFactory, quiFileHashIndexFactory, externalRuleCacheRefresher } as never,
 		);
 
 		await (
@@ -63,7 +64,11 @@ describe("library cleanup scheduler dependencies", () => {
 		).checkAndRun();
 
 		expect(executorMocks.executeCleanupRun).toHaveBeenCalledWith(
-			expect.objectContaining({ quiClientFactory, quiFileHashIndexFactory }),
+			expect.objectContaining({
+				quiClientFactory,
+				quiFileHashIndexFactory,
+				externalRuleCacheRefresher,
+			}),
 			"user-1",
 		);
 	});

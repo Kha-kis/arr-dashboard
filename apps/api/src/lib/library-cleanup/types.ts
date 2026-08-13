@@ -36,6 +36,14 @@ export interface CleanupExecutorDeps {
 	quiClientFactory?: (instance: ServiceInstance) => Pick<QuiClient, "getTorrentsByHash">;
 	/** Build one fresh, complete qUI/filesystem inode snapshot for destructive authorization. */
 	quiFileHashIndexFactory?: (instance: ServiceInstance) => Promise<CompleteQuiFileHashIndex>;
+	/**
+	 * Test seam for the authoritative Plex/Jellyfin cache refresh performed before
+	 * cache-backed parent-series rules can authorize an episode mutation.
+	 */
+	externalRuleCacheRefresher?: (
+		source: "plex" | "jellyfin",
+		instance: ServiceInstance,
+	) => Promise<void>;
 	log: FastifyBaseLogger;
 }
 

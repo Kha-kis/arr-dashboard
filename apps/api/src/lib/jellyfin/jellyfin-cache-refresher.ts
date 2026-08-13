@@ -59,7 +59,11 @@ export async function refreshJellyfinCache(
 		const users = await client.getUsers();
 		if (users.length === 0) {
 			log.warn({ instanceId }, "Jellyfin cache refresh: no users found");
-			return { upserted: 0, errors: 0, errorMessages: [] };
+			return {
+				upserted: 0,
+				errors: 1,
+				errorMessages: ["Jellyfin returned no users, so cache completeness could not be verified"],
+			};
 		}
 
 		// Use the first user (admin) for library enumeration
@@ -76,7 +80,6 @@ export async function refreshJellyfinCache(
 
 		if (mediaLibraries.length === 0) {
 			log.info({ instanceId }, "Jellyfin cache refresh: no movie/TV libraries found");
-			return { upserted: 0, errors: 0, errorMessages: [] };
 		}
 
 		// Step 3: Aggregate items across all users
@@ -250,12 +253,17 @@ export async function refreshJellyfinCache(
 					.map((row) => row.id);
 
 				if (staleIds.length > 0) {
-					await prisma.jellyfinCache.deleteMany({
-						where: { id: { in: staleIds } },
-					});
+					const DELETE_BATCH_SIZE = 500;
+					for (let i = 0; i < staleIds.length; i += DELETE_BATCH_SIZE) {
+						await prisma.jellyfinCache.deleteMany({
+							where: { id: { in: staleIds.slice(i, i + DELETE_BATCH_SIZE) } },
+						});
+					}
 					log.info({ instanceId, evicted: staleIds.length }, "Evicted stale Jellyfin cache rows");
 				}
 			} catch (err) {
+				errors++;
+				errorMessages.push(`Stale row eviction failed: ${getErrorMessage(err, "unknown")}`);
 				log.warn({ err, instanceId }, "Failed to evict stale Jellyfin cache rows");
 			}
 		}

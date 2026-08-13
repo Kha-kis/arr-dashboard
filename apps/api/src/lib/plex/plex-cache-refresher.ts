@@ -369,15 +369,15 @@ export async function refreshPlexCache(
 		// SQLite's default SQLITE_MAX_VARIABLE_NUMBER, surfacing as Prisma P2029 (issue #323).
 		// Instead we read the existing ids, compute the stale diff in memory, and delete in
 		// bounded chunks using `id: { in: chunk }` so each statement stays well under the limit.
-		if (upsertedIds.length > 0) {
+		if (errors === 0) {
 			const evictedCount = await evictStaleRows(prisma, instanceId, upsertedIds);
 			if (evictedCount > 0) {
 				log.info({ instanceId, evicted: evictedCount }, "Plex cache: evicted stale rows");
 			}
-		} else if (aggregationsArray.length > 0) {
+		} else {
 			log.warn(
 				{ instanceId, aggregationSize: aggregationsArray.length, errors },
-				"Plex cache: skipping eviction — all upserts failed, stale rows may accumulate",
+				"Plex cache: skipping eviction because the refresh was incomplete",
 			);
 		}
 

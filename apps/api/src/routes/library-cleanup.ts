@@ -39,11 +39,15 @@ import {
 	isSupportedEpisodeCleanupRule,
 } from "../lib/library-cleanup/episode-scope.js";
 import { getFilterReason } from "../lib/library-cleanup/rule-evaluators.js";
-import type { CacheItemForEval } from "../lib/library-cleanup/types.js";
+import type { CacheItemForEval, CleanupExecutorDeps } from "../lib/library-cleanup/types.js";
 import {
 	buildFreshCompleteFileIdIndex,
 	getAllHashesForFileIdComplete,
 } from "../lib/library-sync/infohash-backfill-by-inode.js";
+import { refreshJellyfinCache } from "../lib/jellyfin/jellyfin-cache-refresher.js";
+import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
+import { refreshPlexCache } from "../lib/plex/plex-cache-refresher.js";
+import { createPlexClient } from "../lib/plex/plex-client.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
 import { explainItemAgainstRulesViaEngine } from "../lib/rules/cleanup-adapter.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
@@ -191,6 +195,28 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		return {
 			resolve: (path: string) => getAllHashesForFileIdComplete(path, index),
 		};
+	};
+	const externalRuleCacheRefresher: CleanupExecutorDeps["externalRuleCacheRefresher"] = async (
+		source,
+		instance,
+	) => {
+		const result =
+			source === "plex"
+				? await refreshPlexCache(
+						createPlexClient(app.encryptor, instance, app.log),
+						app.prisma,
+						instance.id,
+						app.log,
+					)
+				: await refreshJellyfinCache(
+						createJellyfinClient(app.encryptor, instance, app.log),
+						app.prisma,
+						instance.id,
+						app.log,
+					);
+		if (result.errors > 0) {
+			throw new Error(`${source} evidence refresh completed with errors`);
+		}
 	};
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
@@ -763,6 +789,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						encryptor: app.encryptor,
 						quiClientFactory: (instance) => createQuiClient(app, instance),
 						quiFileHashIndexFactory,
+						externalRuleCacheRefresher,
 						log: request.log,
 					},
 					userId,
@@ -936,6 +963,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						encryptor: app.encryptor,
 						quiClientFactory: (instance) => createQuiClient(app, instance),
 						quiFileHashIndexFactory,
+						externalRuleCacheRefresher,
 						log: request.log,
 					},
 					userId,
@@ -1059,6 +1087,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 							encryptor: app.encryptor,
 							quiClientFactory: (instance) => createQuiClient(app, instance),
 							quiFileHashIndexFactory,
+							externalRuleCacheRefresher,
 							log: request.log,
 						},
 						userId,
@@ -1093,6 +1122,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						encryptor: app.encryptor,
 						quiClientFactory: (instance) => createQuiClient(app, instance),
 						quiFileHashIndexFactory,
+						externalRuleCacheRefresher,
 						log: request.log,
 					},
 					userId,
@@ -1175,6 +1205,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						encryptor: app.encryptor,
 						quiClientFactory: (instance) => createQuiClient(app, instance),
 						quiFileHashIndexFactory,
+						externalRuleCacheRefresher,
 						log: request.log,
 					},
 					userId,

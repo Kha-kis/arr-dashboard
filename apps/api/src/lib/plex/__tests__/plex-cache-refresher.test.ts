@@ -202,6 +202,40 @@ describe("evictStaleRows", () => {
 		expect(new Set(deletedIds)).toEqual(new Set(existingIds));
 	});
 
+	it("evicts stale rows after a complete refresh finds an empty library", async () => {
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([]),
+			getLibraryItems: vi.fn(),
+			getHistory: vi.fn().mockResolvedValue([]),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const { prisma, deleteCalls } = makeMockPrisma(["stale-1", "stale-2"]);
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ upserted: 0, errors: 0 });
+		expect(deleteCalls.flatMap((call) => call.idsInFilter)).toEqual(["stale-1", "stale-2"]);
+	});
+
+	it("does not evict cache rows after an incomplete library refresh", async () => {
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi
+				.fn()
+				.mockResolvedValue([{ key: "1", title: "Unavailable", type: "show" }]),
+			getLibraryItems: vi.fn().mockRejectedValue(new Error("Plex library unavailable")),
+			getHistory: vi.fn().mockResolvedValue([]),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+		const { prisma, deleteCalls } = makeMockPrisma(["retained-1"]);
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+
+		expect(result.errors).toBe(1);
+		expect(deleteCalls).toEqual([]);
+	});
+
 	it("never uses `notIn` — the original P2029 trigger", async () => {
 		// Guard against a future regression where someone re-introduces the
 		// oversized `notIn` query. The mock's deleteMany only accepts `id.in`,
