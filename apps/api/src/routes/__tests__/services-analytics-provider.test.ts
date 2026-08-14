@@ -205,6 +205,18 @@ describe("selected analytics-provider lifecycle guard", () => {
 		});
 	});
 
+	it("rejects a malformed deletion confirmation without deleting the service", async () => {
+		const response = await app.inject({
+			method: "DELETE",
+			url: "/services/tautulli-1?confirmAnalyticsUnavailable=invalid",
+			headers: { "x-test-auth": "1" },
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect((app as any).prisma.serviceInstance.delete).not.toHaveBeenCalled();
+		expect(instances.find((instance) => instance.id === "tautulli-1")).toBeDefined();
+	});
+
 	it("permits a confirmed selected-family update without persisting metadata or switching selection", async () => {
 		const response = await injectAuthenticated("PUT", "/services/tautulli-1", {
 			body: { enabled: false, confirmAnalyticsUnavailable: true },

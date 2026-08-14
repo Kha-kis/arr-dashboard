@@ -28,6 +28,7 @@ export const useCreateServiceMutation = () => {
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: serviceKeys.all });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
+			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
 			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});
@@ -54,6 +55,7 @@ export const useUpdateServiceMutation = () => {
 				});
 			});
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
+			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
 			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});
@@ -76,6 +78,7 @@ export const useDeleteServiceMutation = () => {
 				return prev.filter((service) => service.id !== id);
 			});
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
+			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
 			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});
