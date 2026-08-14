@@ -7,4 +7,4 @@ export type StatisticsTab =
 	| "readarr"
 	| "plex"
 	| "jellyfin"
-	| "tracearr";
+	| "analytics";

@@ -4,8 +4,12 @@ import type {
 	TracearrUsersBundle,
 	TracearrViolationsBundle,
 } from "@arr/shared";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
+import {
+	AnalyticsProviderSelectionMismatchError,
+	requireSelectedAnalyticsProvider,
+} from "../../lib/analytics/provider-selection.js";
 import { createTracearrClient } from "../../lib/tracearr/client-factory.js";
 import { resolveTracearrInstance } from "../../lib/tracearr/instance-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -63,6 +67,7 @@ export function registerTracearrAnalyticsRoutes(app: FastifyInstance): void {
 	app.get("/tracearr/stats", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { instanceId } = validateRequest(STATS_QUERY, request.query);
+		if (!(await requireTracearrAnalyticsProvider(app, userId, reply))) return;
 		const instance = await resolveTracearrInstance(app, userId, instanceId);
 		const client = createTracearrClient(app, instance);
 
@@ -81,6 +86,7 @@ export function registerTracearrAnalyticsRoutes(app: FastifyInstance): void {
 	app.get("/tracearr/activity", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { instanceId, period, timezone } = validateRequest(ACTIVITY_QUERY, request.query);
+		if (!(await requireTracearrAnalyticsProvider(app, userId, reply))) return;
 		const instance = await resolveTracearrInstance(app, userId, instanceId);
 		const client = createTracearrClient(app, instance);
 
@@ -91,6 +97,7 @@ export function registerTracearrAnalyticsRoutes(app: FastifyInstance): void {
 	app.get("/tracearr/history", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { instanceId, page, pageSize, mediaType } = validateRequest(HISTORY_QUERY, request.query);
+		if (!(await requireTracearrAnalyticsProvider(app, userId, reply))) return;
 		const instance = await resolveTracearrInstance(app, userId, instanceId);
 		const client = createTracearrClient(app, instance);
 
@@ -106,6 +113,7 @@ export function registerTracearrAnalyticsRoutes(app: FastifyInstance): void {
 	app.get("/tracearr/users", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { instanceId, page, pageSize } = validateRequest(USERS_QUERY, request.query);
+		if (!(await requireTracearrAnalyticsProvider(app, userId, reply))) return;
 		const instance = await resolveTracearrInstance(app, userId, instanceId);
 		const client = createTracearrClient(app, instance);
 
@@ -124,6 +132,7 @@ export function registerTracearrAnalyticsRoutes(app: FastifyInstance): void {
 			VIOLATIONS_QUERY,
 			request.query,
 		);
+		if (!(await requireTracearrAnalyticsProvider(app, userId, reply))) return;
 		const instance = await resolveTracearrInstance(app, userId, instanceId);
 		const client = createTracearrClient(app, instance);
 
@@ -135,4 +144,25 @@ export function registerTracearrAnalyticsRoutes(app: FastifyInstance): void {
 		};
 		return reply.send(bundle);
 	});
+}
+
+async function requireTracearrAnalyticsProvider(
+	app: FastifyInstance,
+	userId: string,
+	reply: FastifyReply,
+): Promise<boolean> {
+	try {
+		await requireSelectedAnalyticsProvider(app.prisma, userId, "tracearr");
+		return true;
+	} catch (error) {
+		if (error instanceof AnalyticsProviderSelectionMismatchError) {
+			reply.status(409).send({
+				error: "ANALYTICS_PROVIDER_NOT_SELECTED",
+				expected: error.expected,
+				actual: error.actual,
+			});
+			return false;
+		}
+		throw error;
+	}
 }

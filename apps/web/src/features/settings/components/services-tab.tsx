@@ -3,6 +3,7 @@
 import type { ServiceInstanceSummary } from "@arr/shared";
 import { Server } from "lucide-react";
 import { PremiumEmptyState, PremiumSection, PremiumSkeleton } from "../../../components/layout";
+import { AnalyticsProviderSection } from "./analytics-provider-section";
 import { ServiceInstanceCard } from "./service-instance-card";
 
 /**
@@ -58,65 +59,78 @@ export const ServicesTab = ({
 	// Loading state
 	if (isLoading) {
 		return (
-			<PremiumSection
-				title="Configured Instances"
-				description="Manage all Sonarr, Radarr, and Prowlarr connections"
-				icon={Server}
-			>
-				<div className="space-y-4">
-					{Array.from({ length: 3 }).map((_, i) => (
-						<PremiumSkeleton
-							key={i}
-							variant="card"
-							className="h-24"
-							style={{ animationDelay: `${i * 50}ms` }}
-						/>
-					))}
-				</div>
-			</PremiumSection>
+			<div className="space-y-6">
+				<AnalyticsProviderSection />
+				<PremiumSection
+					title="Configured Instances"
+					description="Manage all Sonarr, Radarr, and Prowlarr connections"
+					icon={Server}
+				>
+					<div className="space-y-4">
+						{["first", "second", "third"].map((key, i) => (
+							<PremiumSkeleton
+								key={key}
+								variant="card"
+								className="h-24"
+								style={{ animationDelay: `${i * 50}ms` }}
+							/>
+						))}
+					</div>
+				</PremiumSection>
+			</div>
 		);
 	}
 
 	// Empty state
 	if (services.length === 0) {
 		return (
-			<PremiumSection
-				title="Configured Instances"
-				description="Manage all Sonarr, Radarr, and Prowlarr connections"
-				icon={Server}
-			>
-				<PremiumEmptyState
-					icon={Server}
-					title="No services configured"
-					description="Add your first Sonarr, Radarr, or Prowlarr instance using the form on the right."
-				/>
-			</PremiumSection>
+			<div className="space-y-6">
+				<AnalyticsProviderSection />
+				<div id="services">
+					<PremiumSection
+						title="Configured Instances"
+						description="Manage all Sonarr, Radarr, and Prowlarr connections"
+						icon={Server}
+					>
+						<PremiumEmptyState
+							icon={Server}
+							title="No services configured"
+							description="Add your first Sonarr, Radarr, or Prowlarr instance using the form on the right."
+						/>
+					</PremiumSection>
+				</div>
+			</div>
 		);
 	}
 
 	return (
-		<PremiumSection
-			title="Configured Instances"
-			description="Manage all Sonarr, Radarr, and Prowlarr connections"
-			icon={Server}
-		>
-			<div className="space-y-4">
-				{services.map((instance, index) => (
-					<ServiceInstanceCard
-						key={instance.id}
-						instance={instance}
-						onTestConnection={onTestConnection}
-						onEdit={onEdit}
-						onToggleDefault={onToggleDefault}
-						onToggleEnabled={onToggleEnabled}
-						onDelete={onDelete}
-						isTesting={testingConnection === instance.id}
-						mutationPending={mutationPending}
-						testResult={testResult}
-						animationDelay={index * 50}
-					/>
-				))}
+		<div className="space-y-6">
+			<AnalyticsProviderSection />
+			<div id="services">
+				<PremiumSection
+					title="Configured Instances"
+					description="Manage all Sonarr, Radarr, and Prowlarr connections"
+					icon={Server}
+				>
+					<div className="space-y-4">
+						{services.map((instance, index) => (
+							<ServiceInstanceCard
+								key={instance.id}
+								instance={instance}
+								onTestConnection={onTestConnection}
+								onEdit={onEdit}
+								onToggleDefault={onToggleDefault}
+								onToggleEnabled={onToggleEnabled}
+								onDelete={onDelete}
+								isTesting={testingConnection === instance.id}
+								mutationPending={mutationPending}
+								testResult={testResult}
+								animationDelay={index * 50}
+							/>
+						))}
+					</div>
+				</PremiumSection>
 			</div>
-		</PremiumSection>
+		</div>
 	);
 };

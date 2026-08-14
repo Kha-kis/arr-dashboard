@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import type { ArrServiceType, ServiceInstanceSummary } from "@arr/shared";
+import type { AnalyticsProvider, ArrServiceType, ServiceInstanceSummary } from "@arr/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
 	type CreateServicePayload,
@@ -9,7 +9,13 @@ import {
 	type UpdateServicePayload,
 	updateService,
 } from "../../lib/api-client/services";
-import { libraryCleanupKeys, serviceKeys, systemKeys } from "../../lib/query-keys";
+import {
+	libraryCleanupKeys,
+	serviceKeys,
+	systemKeys,
+	tautulliKeys,
+	tracearrKeys,
+} from "../../lib/query-keys";
 
 type UpdateVariables = {
 	id: string;
@@ -18,7 +24,7 @@ type UpdateVariables = {
 
 type CreateVariables = CreateServicePayload;
 
-type DeleteVariables = string;
+type DeleteVariables = string | { id: string; confirmAnalyticsUnavailableFor?: AnalyticsProvider };
 
 export const useCreateServiceMutation = () => {
 	const queryClient = useQueryClient();
@@ -28,6 +34,9 @@ export const useCreateServiceMutation = () => {
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: serviceKeys.all });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
+			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
+			queryClient.invalidateQueries({ queryKey: tracearrKeys.all });
+			queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
 			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});
@@ -54,6 +63,9 @@ export const useUpdateServiceMutation = () => {
 				});
 			});
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
+			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
+			queryClient.invalidateQueries({ queryKey: tracearrKeys.all });
+			queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
 			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});
@@ -63,8 +75,12 @@ export const useDeleteServiceMutation = () => {
 	const queryClient = useQueryClient();
 
 	return useMutation<void, Error, DeleteVariables>({
-		mutationFn: removeService,
-		onSuccess: (_, id) => {
+		mutationFn: (input) =>
+			typeof input === "string"
+				? removeService(input)
+				: removeService(input.id, input.confirmAnalyticsUnavailableFor),
+		onSuccess: (_, input) => {
+			const id = typeof input === "string" ? input : input.id;
 			queryClient.setQueryData<ServiceInstanceSummary[]>(serviceKeys.all, (prev) => {
 				if (!prev) {
 					return prev;
@@ -72,6 +88,9 @@ export const useDeleteServiceMutation = () => {
 				return prev.filter((service) => service.id !== id);
 			});
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
+			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
+			queryClient.invalidateQueries({ queryKey: tracearrKeys.all });
+			queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
 			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});

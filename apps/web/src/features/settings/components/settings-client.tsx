@@ -21,6 +21,7 @@ import {
 } from "../hooks";
 import { TABS, type TabType } from "../lib/settings-constants";
 import { AccountTab } from "./account-tab";
+import { AnalyticsUnavailabilityConfirmationDialog } from "./analytics-unavailability-confirmation-dialog";
 import { AppearanceTab } from "./appearance-tab";
 import { BackupTab } from "./backup-tab";
 import { OIDCProviderSection } from "./oidc-provider-section";
@@ -112,6 +113,16 @@ export const SettingsClient = () => {
 
 	return (
 		<>
+			<AnalyticsUnavailabilityConfirmationDialog
+				selected={servicesManagement.analyticsUnavailableConfirmation?.selected ?? null}
+				alternativeEnabled={
+					servicesManagement.analyticsUnavailableConfirmation?.alternativeEnabled ?? false
+				}
+				onConfirm={
+					servicesManagement.analyticsUnavailableConfirmation?.onConfirm ?? (async () => undefined)
+				}
+				onCancel={servicesManagement.cancelAnalyticsUnavailableConfirmation}
+			/>
 			{/* Premium Header */}
 			<PremiumPageHeader
 				label="Configuration"

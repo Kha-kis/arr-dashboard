@@ -3,7 +3,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { libraryCleanupKeys, serviceKeys, systemKeys } from "../../../lib/query-keys";
+import {
+	libraryCleanupKeys,
+	serviceKeys,
+	systemKeys,
+	tautulliKeys,
+	tracearrKeys,
+} from "../../../lib/query-keys";
 
 vi.mock("../../../lib/api-client/services");
 
@@ -29,16 +35,29 @@ const tracearrService = {
 	isDefault: false,
 } as ServiceInstanceSummary;
 
+const analyticsProviderSelection = {
+	selected: "tracearr",
+	source: "explicit",
+	families: {
+		tracearr: { configuredCount: 1, enabledCount: 1 },
+		tautulli: { configuredCount: 0, enabledCount: 0 },
+	},
+	status: "configured",
+};
+
 describe("service mutations", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 	});
 
-	it("invalidates provider notices after adding a provider", async () => {
+	it("invalidates both analytics family caches after adding a provider", async () => {
 		const client = new QueryClient({
 			defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
 		});
 		const invalidateQueries = vi.spyOn(client, "invalidateQueries");
+		client.setQueryData(systemKeys.analyticsProvider, analyticsProviderSelection);
+		client.setQueryData(tracearrKeys.stats(), { totalPlays: 1 });
+		client.setQueryData(tautulliKeys.stats(30), { totalPlays: 1 });
 		vi.mocked(serviceApi.createService).mockResolvedValue(tracearrService);
 
 		const { result } = renderHook(() => useCreateServiceMutation(), {
@@ -52,7 +71,10 @@ describe("service mutations", () => {
 		});
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		expect(client.getQueryState(systemKeys.analyticsProvider)?.isInvalidated).toBe(true);
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: serviceKeys.all });
+		expect(client.getQueryState(tracearrKeys.stats())?.isInvalidated).toBe(true);
+		expect(client.getQueryState(tautulliKeys.stats(30))?.isInvalidated).toBe(true);
 		expect(invalidateQueries).toHaveBeenCalledWith({
 			queryKey: libraryCleanupKeys.fieldOptions,
 		});
@@ -62,12 +84,15 @@ describe("service mutations", () => {
 		client.clear();
 	});
 
-	it("invalidates provider notices after removing a provider", async () => {
+	it("invalidates both analytics family caches after removing a provider", async () => {
 		const client = new QueryClient({
 			defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
 		});
 		const invalidateQueries = vi.spyOn(client, "invalidateQueries");
 		client.setQueryData(serviceKeys.all, [tracearrService]);
+		client.setQueryData(systemKeys.analyticsProvider, analyticsProviderSelection);
+		client.setQueryData(tracearrKeys.stats(), { totalPlays: 1 });
+		client.setQueryData(tautulliKeys.stats(30), { totalPlays: 1 });
 		vi.mocked(serviceApi.removeService).mockResolvedValue(undefined);
 
 		const { result } = renderHook(() => useDeleteServiceMutation(), {
@@ -77,6 +102,9 @@ describe("service mutations", () => {
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 		expect(client.getQueryData(serviceKeys.all)).toEqual([]);
+		expect(client.getQueryState(systemKeys.analyticsProvider)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(tracearrKeys.stats())?.isInvalidated).toBe(true);
+		expect(client.getQueryState(tautulliKeys.stats(30))?.isInvalidated).toBe(true);
 		expect(invalidateQueries).toHaveBeenCalledWith({
 			queryKey: libraryCleanupKeys.fieldOptions,
 		});
@@ -86,12 +114,35 @@ describe("service mutations", () => {
 		client.clear();
 	});
 
-	it("invalidates provider notices after updating a provider", async () => {
+	it("passes explicit analytics-unavailability confirmation to a service removal", async () => {
+		const client = new QueryClient({
+			defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+		});
+		vi.mocked(serviceApi.removeService).mockResolvedValue(undefined);
+
+		const { result } = renderHook(() => useDeleteServiceMutation(), {
+			wrapper: createWrapper(client),
+		});
+		result.current.mutate({
+			id: tracearrService.id,
+			confirmAnalyticsUnavailableFor: "tracearr",
+		});
+
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		expect(serviceApi.removeService).toHaveBeenCalledWith(tracearrService.id, "tracearr");
+
+		client.clear();
+	});
+
+	it("invalidates both analytics family caches after updating a provider", async () => {
 		const client = new QueryClient({
 			defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
 		});
 		const invalidateQueries = vi.spyOn(client, "invalidateQueries");
 		client.setQueryData(serviceKeys.all, [tracearrService]);
+		client.setQueryData(systemKeys.analyticsProvider, analyticsProviderSelection);
+		client.setQueryData(tracearrKeys.stats(), { totalPlays: 1 });
+		client.setQueryData(tautulliKeys.stats(30), { totalPlays: 1 });
 		vi.mocked(serviceApi.updateService).mockResolvedValue({ ...tracearrService, enabled: false });
 
 		const { result } = renderHook(() => useUpdateServiceMutation(), {
@@ -101,6 +152,9 @@ describe("service mutations", () => {
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
 		expect(client.getQueryData(serviceKeys.all)).toEqual([{ ...tracearrService, enabled: false }]);
+		expect(client.getQueryState(systemKeys.analyticsProvider)?.isInvalidated).toBe(true);
+		expect(client.getQueryState(tracearrKeys.stats())?.isInvalidated).toBe(true);
+		expect(client.getQueryState(tautulliKeys.stats(30))?.isInvalidated).toBe(true);
 		expect(invalidateQueries).toHaveBeenCalledWith({
 			queryKey: libraryCleanupKeys.fieldOptions,
 		});

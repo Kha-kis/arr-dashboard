@@ -1,10 +1,13 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockCreateTautulliClient, mockRefreshTautulliCache } = vi.hoisted(() => ({
-	mockCreateTautulliClient: vi.fn(),
-	mockRefreshTautulliCache: vi.fn(),
-}));
+const { mockCreateTautulliClient, mockRefreshTautulliCache, mockCreateTracearrClient } = vi.hoisted(
+	() => ({
+		mockCreateTautulliClient: vi.fn(),
+		mockRefreshTautulliCache: vi.fn(),
+		mockCreateTracearrClient: vi.fn(),
+	}),
+);
 
 vi.mock("../../../lib/tautulli/tautulli-client.js", () => ({
 	createTautulliClient: (...args: unknown[]) => mockCreateTautulliClient(...args),
@@ -13,6 +16,10 @@ vi.mock("../../../lib/tautulli/tautulli-client.js", () => ({
 
 vi.mock("../../../lib/tautulli/tautulli-cache-refresher.js", () => ({
 	refreshTautulliCache: (...args: unknown[]) => mockRefreshTautulliCache(...args),
+}));
+
+vi.mock("../../../lib/tracearr/client-factory.js", () => ({
+	createTracearrClient: (...args: unknown[]) => mockCreateTracearrClient(...args),
 }));
 
 import { providerConnectionIdentity } from "../../../lib/services/provider-connection-guard.js";
@@ -198,10 +205,22 @@ function pagedHistory(instanceName: string, totalCount: number, firstDate: numbe
 let app: FastifyInstance;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 let prisma: any;
+let selectedProvider: "tracearr" | "tautulli";
 
 beforeEach(async () => {
 	vi.clearAllMocks();
+	selectedProvider = "tautulli";
 	prisma = {
+		$transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+			callback({
+				systemSettings: {
+					findUnique: vi.fn().mockImplementation(async () => ({
+						analyticsProvider: selectedProvider,
+						analyticsProviderSource: "explicit",
+					})),
+				},
+				serviceInstance: { count: vi.fn().mockResolvedValue(1) },
+			}),
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([instanceOne]),
 			findFirst: vi.fn().mockResolvedValue(instanceOne),
@@ -245,6 +264,7 @@ beforeEach(async () => {
 				: {},
 		),
 	);
+	mockCreateTracearrClient.mockReturnValue({});
 	mockRefreshTautulliCache.mockResolvedValue({
 		complete: true,
 		completedAt: new Date("2026-08-12T00:01:00.000Z"),
@@ -268,6 +288,43 @@ afterAll(async () => {
 });
 
 describe("Tautulli provider routes", () => {
+	it.each([
+		"/api/tautulli/activity",
+		"/api/tautulli/stats",
+		"/api/tautulli/stats/plays-by-date",
+		"/api/tautulli/history",
+	])("rejects %s before resolving Tautulli instances when Tracearr is selected", async (path) => {
+		selectedProvider = "tracearr";
+
+		const response = await injectAuthenticated("GET", path);
+
+		expect(response.statusCode).toBe(409);
+		expect(JSON.parse(response.payload)).toEqual({
+			error: "ANALYTICS_PROVIDER_NOT_SELECTED",
+			expected: "tautulli",
+			actual: "tracearr",
+		});
+		expect(prisma.serviceInstance.findMany).not.toHaveBeenCalled();
+		expect(mockCreateTautulliClient).not.toHaveBeenCalled();
+		expect(mockCreateTracearrClient).not.toHaveBeenCalled();
+	});
+
+	it("preserves a selected Tautulli outage without resolving another provider", async () => {
+		const client = makeClient({
+			getActivity: vi.fn().mockRejectedValue(new Error("Tautulli unavailable")),
+		});
+		mockCreateTautulliClient.mockReturnValue(client);
+
+		const response = await injectAuthenticated("GET", "/api/tautulli/activity");
+
+		expect(response.statusCode).toBe(200);
+		expect(JSON.parse(response.payload).sources).toEqual([
+			expect.objectContaining({ reachable: false, incompleteReason: "source_unreachable" }),
+		]);
+		expect(mockCreateTautulliClient).toHaveBeenCalledTimes(1);
+		expect(mockCreateTracearrClient).not.toHaveBeenCalled();
+	});
+
 	it("returns Tautulli-scoped activity with separately typed sensitive source fields", async () => {
 		const response = await injectAuthenticated("GET", "/api/tautulli/activity");
 		expect(response.statusCode).toBe(200);
@@ -353,6 +410,26 @@ describe("Tautulli provider routes", () => {
 		);
 		expect(body).not.toHaveProperty("homeStats");
 		expect(body).not.toHaveProperty("userStats");
+	});
+
+	it("keeps home statistics while skipping unused user enrichment when requested", async () => {
+		const client = makeClient();
+		mockCreateTautulliClient.mockReturnValue(client);
+
+		const response = await injectAuthenticated(
+			"GET",
+			"/api/tautulli/stats?timeRange=14&includeUserStats=false",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(JSON.parse(response.payload).sources[0]).toMatchObject({
+			homeStats: [expect.objectContaining({ stat_id: "top_movies" })],
+			userStats: [],
+			userStatsComplete: true,
+			failedUserCount: 0,
+		});
+		expect(client.getUsers).not.toHaveBeenCalled();
+		expect(client.getUserWatchTimeStats).not.toHaveBeenCalled();
 	});
 
 	it("preserves home rankings per source instead of claiming a truncated global aggregate", async () => {

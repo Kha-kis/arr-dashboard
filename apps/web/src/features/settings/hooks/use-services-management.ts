@@ -1,5 +1,5 @@
-import type { ServiceInstanceSummary } from "@arr/shared";
-import { useState } from "react";
+import type { AnalyticsProvider, ServiceInstanceSummary } from "@arr/shared";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	useCreateServiceMutation,
@@ -9,8 +9,32 @@ import {
 	useUpdateServiceMutation,
 } from "../../../hooks/api/useServiceMutations";
 import type { UpdateServicePayload } from "../../../lib/api-client/services";
+import { ApiError } from "../../../lib/api-client/base";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { supportsHttpBasicAuth, type ServiceFormState } from "../lib/settings-utils";
+
+type AnalyticsUnavailableConfirmation = {
+	selected: AnalyticsProvider;
+	alternativeEnabled: boolean;
+	onConfirm: () => Promise<void>;
+};
+
+function getAnalyticsUnavailableConfirmation(error: unknown): {
+	selected: AnalyticsProvider;
+	alternativeEnabled: boolean;
+} | null {
+	if (!(error instanceof ApiError) || error.status !== 409) return null;
+	if (!error.payload || typeof error.payload !== "object") return null;
+	const payload = error.payload as Record<string, unknown>;
+	if (
+		payload.code !== "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED" ||
+		(payload.selected !== "tracearr" && payload.selected !== "tautulli") ||
+		typeof payload.alternativeEnabled !== "boolean"
+	) {
+		return null;
+	}
+	return { selected: payload.selected, alternativeEnabled: payload.alternativeEnabled };
+}
 
 /**
  * Hook for managing service instances
@@ -36,6 +60,33 @@ export const useServicesManagement = () => {
 		error?: string;
 		details?: string;
 	} | null>(null);
+	const [analyticsUnavailableConfirmation, setAnalyticsUnavailableConfirmation] =
+		useState<AnalyticsUnavailableConfirmation | null>(null);
+	const confirmationRetryInFlight = useRef(false);
+
+	const requestAnalyticsUnavailableConfirmation = (
+		error: unknown,
+		retry: (selected: AnalyticsProvider) => Promise<void>,
+	): boolean => {
+		const confirmation = getAnalyticsUnavailableConfirmation(error);
+		if (!confirmation) return false;
+		setAnalyticsUnavailableConfirmation({
+			...confirmation,
+			onConfirm: async () => {
+				if (confirmationRetryInFlight.current) return;
+				confirmationRetryInFlight.current = true;
+				setAnalyticsUnavailableConfirmation(null);
+				try {
+					await retry(confirmation.selected);
+				} catch (retryError) {
+					toast.error(getErrorMessage(retryError, "Failed to update service"));
+				} finally {
+					confirmationRetryInFlight.current = false;
+				}
+			},
+		});
+		return true;
+	};
 
 	const handleSubmit = async (
 		formState: ServiceFormState,
@@ -111,11 +162,29 @@ export const useServicesManagement = () => {
 				if (!basePayload.apiKey) {
 					updatePayload.apiKey = undefined;
 				}
-
-				await updateServiceMutation.mutateAsync({
+				const updateVariables = {
 					id: selectedServiceForEdit.id,
 					payload: updatePayload,
-				});
+				};
+				try {
+					await updateServiceMutation.mutateAsync(updateVariables);
+				} catch (error) {
+					if (
+						requestAnalyticsUnavailableConfirmation(error, async (selected) => {
+							await updateServiceMutation.mutateAsync({
+								...updateVariables,
+								payload: {
+									...updateVariables.payload,
+									confirmAnalyticsUnavailableFor: selected,
+								},
+							});
+							resetForm(basePayload.service);
+						})
+					) {
+						return;
+					}
+					throw error;
+				}
 			} else {
 				await createServiceMutation.mutateAsync(basePayload);
 			}
@@ -137,6 +206,19 @@ export const useServicesManagement = () => {
 				resetForm(instance.service);
 			}
 		} catch (error) {
+			if (
+				requestAnalyticsUnavailableConfirmation(error, async (selected) => {
+					await deleteServiceMutation.mutateAsync({
+						id: instance.id,
+						confirmAnalyticsUnavailableFor: selected,
+					});
+					if (selectedServiceForEdit?.id === instance.id) {
+						resetForm(instance.service);
+					}
+				})
+			) {
+				return;
+			}
 			toast.error(getErrorMessage(error, "Failed to delete service"));
 		}
 	};
@@ -156,14 +238,28 @@ export const useServicesManagement = () => {
 	};
 
 	const toggleEnabled = async (instance: ServiceInstanceSummary) => {
+		const updateVariables = {
+			id: instance.id,
+			payload: {
+				enabled: !instance.enabled,
+			},
+		};
 		try {
-			await updateServiceMutation.mutateAsync({
-				id: instance.id,
-				payload: {
-					enabled: !instance.enabled,
-				},
-			});
+			await updateServiceMutation.mutateAsync(updateVariables);
 		} catch (error) {
+			if (
+				requestAnalyticsUnavailableConfirmation(error, async (selected) => {
+					await updateServiceMutation.mutateAsync({
+						...updateVariables,
+						payload: {
+							...updateVariables.payload,
+							confirmAnalyticsUnavailableFor: selected,
+						},
+					});
+				})
+			) {
+				return;
+			}
 			toast.error(getErrorMessage(error, "Failed to toggle service"));
 		}
 	};
@@ -310,6 +406,8 @@ export const useServicesManagement = () => {
 		testResult,
 		testingFormConnection,
 		formTestResult,
+		analyticsUnavailableConfirmation,
+		cancelAnalyticsUnavailableConfirmation: () => setAnalyticsUnavailableConfirmation(null),
 		handleSubmit,
 		handleDeleteService,
 		toggleDefault,

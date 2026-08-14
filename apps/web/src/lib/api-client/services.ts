@@ -1,4 +1,5 @@
 import type {
+	AnalyticsProvider,
 	ArrServiceType,
 	ServiceInstanceSummary,
 	ServiceResponse,
@@ -31,7 +32,9 @@ export type CreateServicePayload = {
 	storageGroupId?: string | null;
 };
 
-export type UpdateServicePayload = Partial<CreateServicePayload>;
+export type UpdateServicePayload = Partial<CreateServicePayload> & {
+	confirmAnalyticsUnavailableFor?: AnalyticsProvider;
+};
 
 export async function createService(
 	payload: CreateServicePayload,
@@ -54,8 +57,15 @@ export async function updateService(
 	return data.service;
 }
 
-export async function removeService(id: string): Promise<void> {
-	await apiRequest<void>(`/api/services/${id}`, {
+export async function removeService(
+	id: string,
+	confirmAnalyticsUnavailableFor?: AnalyticsProvider,
+): Promise<void> {
+	const query =
+		confirmAnalyticsUnavailableFor === undefined
+			? ""
+			: `?${new URLSearchParams({ confirmAnalyticsUnavailableFor })}`;
+	await apiRequest<void>(`/api/services/${id}${query}`, {
 		method: "DELETE",
 	});
 }

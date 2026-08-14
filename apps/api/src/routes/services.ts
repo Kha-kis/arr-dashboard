@@ -1,7 +1,13 @@
-import { ALL_SERVICES, arrServiceTypeSchema } from "@arr/shared";
+import {
+	ALL_SERVICES,
+	analyticsProviderSchema,
+	arrServiceTypeSchema,
+	type AnalyticsProvider,
+} from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
+import { resolveAnalyticsProviderSelection } from "../lib/analytics/provider-selection.js";
 import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
 import type { ServiceInstance, ServiceType } from "../lib/prisma.js";
@@ -24,6 +30,14 @@ import { invalidatePulseCache } from "./pulse.js";
 
 const idParams = z.object({ id: z.string().min(1) });
 const CACHE_PROVIDER_SERVICES = new Set<ServiceType>(["PLEX", "JELLYFIN", "EMBY", "TAUTULLI"]);
+const ANALYTICS_PROVIDER_SERVICES: Record<AnalyticsProvider, ServiceType> = {
+	tracearr: "TRACEARR",
+	tautulli: "TAUTULLI",
+};
+
+const serviceDeleteQuerySchema = z
+	.object({ confirmAnalyticsUnavailableFor: analyticsProviderSchema.optional() })
+	.strict();
 
 const servicePayloadSchema = z.object({
 	label: z.string().min(1).max(120),
@@ -50,20 +64,64 @@ const servicePayloadSchema = z.object({
 	pathPrefix: z.string().max(256).nullable().optional(),
 });
 
-const serviceUpdateSchema = servicePayloadSchema
-	.partial({
-		label: true,
-		baseUrl: true,
-		apiKey: true,
-		httpAuth: true,
-		service: true,
-		enabled: true,
-		isDefault: true,
-		tags: true,
+const serviceUpdateSchema = z
+	.object({
+		label: z.string().min(1).max(120).optional(),
+		baseUrl: credentialFreeUrlSchema.optional(),
+		externalUrl: credentialFreeUrlSchema.nullable().optional(),
+		apiKey: z.string().min(8).optional(),
+		httpAuth: httpAuthSchema.nullable().optional(),
+		service: arrServiceTypeSchema.optional(),
+		enabled: z.boolean().optional(),
+		isDefault: z.boolean().optional(),
+		tags: z.array(z.string().min(1).max(64)).optional(),
+		storageGroupId: z.string().min(1).max(64).nullable().optional(),
+		hasLocalFilesystemAccess: z.boolean().optional(),
+		pathPrefix: z.string().max(256).nullable().optional(),
+		confirmAnalyticsUnavailableFor: analyticsProviderSchema.optional(),
 	})
-	.refine((data) => Object.keys(data).length > 0, {
+	.refine((data) => Object.keys(data).some((key) => key !== "confirmAnalyticsUnavailableFor"), {
 		message: "At least one field must be provided",
 	});
+
+type AnalyticsProviderLifecycleChange =
+	| { kind: "delete" }
+	| { kind: "update"; targetService: ServiceType; targetEnabled: boolean };
+
+async function getAnalyticsProviderConfirmationRequirement(
+	prisma: Pick<import("../lib/prisma.js").PrismaClient, "$transaction" | "serviceInstance">,
+	userId: string,
+	existing: Pick<ServiceInstance, "service" | "enabled">,
+	change: AnalyticsProviderLifecycleChange,
+): Promise<{ selected: AnalyticsProvider; alternativeEnabled: boolean } | null> {
+	const existingProvider = Object.entries(ANALYTICS_PROVIDER_SERVICES).find(
+		([, service]) => service === existing.service,
+	)?.[0] as AnalyticsProvider | undefined;
+	if (!existing.enabled || !existingProvider) return null;
+
+	const selection = await resolveAnalyticsProviderSelection(prisma, userId);
+	if (selection.selected !== existingProvider) return null;
+	if (
+		change.kind === "update" &&
+		change.targetEnabled &&
+		change.targetService === existing.service
+	) {
+		return null;
+	}
+
+	const alternative = selection.selected === "tautulli" ? "tracearr" : "tautulli";
+	const [selectedEnabledCount, alternativeEnabledCount] = await Promise.all([
+		prisma.serviceInstance.count({
+			where: { userId, service: ANALYTICS_PROVIDER_SERVICES[selection.selected], enabled: true },
+		}),
+		prisma.serviceInstance.count({
+			where: { userId, service: ANALYTICS_PROVIDER_SERVICES[alternative], enabled: true },
+		}),
+	]);
+	if (selectedEnabledCount !== 1) return null;
+
+	return { selected: selection.selected, alternativeEnabled: alternativeEnabledCount > 0 };
+}
 
 function changesCacheProviderConnection(
 	existing: Pick<ServiceInstance, "service" | "baseUrl" | "enabled">,
@@ -229,7 +287,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.put("/services/:id", async (request, reply) => {
 		const { id } = validateRequest(idParams, request.params);
-		const payload = validateRequest(serviceUpdateSchema, request.body);
+		const { confirmAnalyticsUnavailableFor, ...payload } = validateRequest(
+			serviceUpdateSchema,
+			request.body,
+		);
 		const userId = request.currentUser!.id;
 
 		return await withCleanupTopologyMutationLease(
@@ -238,6 +299,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			async () => {
 				const existing = await requireInstance(app, userId, id);
 				const targetServiceName = payload.service ?? existing.service.toLowerCase();
+				const targetService = targetServiceName.toUpperCase() as ServiceType;
 				const keepsExistingHttpAuth =
 					payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
 				const httpAuthConflict =
@@ -248,12 +310,25 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						details: `${httpAuthConflict} Remove HTTP Basic Auth or configure a proxy bypass.`,
 					});
 				}
+				const confirmation = await getAnalyticsProviderConfirmationRequirement(
+					app.prisma,
+					userId,
+					existing,
+					{
+						kind: "update",
+						targetService,
+						targetEnabled: payload.enabled ?? existing.enabled,
+					},
+				);
+				if (confirmation && confirmAnalyticsUnavailableFor !== confirmation.selected) {
+					return reply.status(409).send({
+						code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
+						...confirmation,
+					});
+				}
 
 				const updateData = buildUpdateData(payload, app.encryptor);
 				const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
-				const targetService = (
-					payload.service ?? existing.service.toLowerCase()
-				).toUpperCase() as ServiceType;
 				const shouldResetOtherDefaults = payload.isDefault === true || Boolean(payload.service);
 
 				if (providerConnectionChanged) {
@@ -337,13 +412,29 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.delete("/services/:id", async (request, reply) => {
 		const { id } = validateRequest(idParams, request.params);
+		const { confirmAnalyticsUnavailableFor } = validateRequest(
+			serviceDeleteQuerySchema,
+			request.query,
+		);
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
 		return await withCleanupTopologyMutationLease(
 			{ prisma: app.prisma, log: request.log },
 			userId,
 			async () => {
-				await requireInstance(app, userId, id);
+				const existing = await requireInstance(app, userId, id);
+				const confirmation = await getAnalyticsProviderConfirmationRequirement(
+					app.prisma,
+					userId,
+					existing,
+					{ kind: "delete" },
+				);
+				if (confirmation && confirmAnalyticsUnavailableFor !== confirmation.selected) {
+					return reply.status(409).send({
+						code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
+						...confirmation,
+					});
+				}
 				await app.prisma.serviceInstance.delete({ where: { id, userId } });
 
 				// Free any process-local qui caches keyed to this instance. Both

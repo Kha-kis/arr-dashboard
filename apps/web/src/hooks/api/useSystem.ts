@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import {
 	clearValidationQuarantine,
 	dismissTautulliProviderNotice,
+	fetchAnalyticsProviderSelection,
 	fetchLogFiles,
 	fetchSecurityPosture,
 	fetchSystemInfo,
@@ -12,6 +13,7 @@ import {
 	fetchValidationHealth,
 	fetchValidationQuarantine,
 	type LogFilesResponse,
+	type AnalyticsProviderSelectionResponse,
 	type QuarantineResponse,
 	resetValidationHealth,
 	restartSystem,
@@ -22,12 +24,20 @@ import {
 	type TautulliNoticeKey,
 	type TautulliProviderNoticesResponse,
 	type UpdateSystemSettingsPayload,
+	type UpdateAnalyticsProviderSelectionPayload,
+	updateAnalyticsProviderSelection,
 	updateSystemSettings,
 	type ValidationHealthResponse,
 } from "../../lib/api-client/system";
 import { getErrorMessage } from "../../lib/error-utils";
 import { POLLING_STANDARD, POLLING_STATS } from "../../lib/polling-intervals";
-import { systemKeys, validationKeys } from "../../lib/query-keys";
+import {
+	serviceKeys,
+	systemKeys,
+	tautulliKeys,
+	tracearrKeys,
+	validationKeys,
+} from "../../lib/query-keys";
 
 // ============================================================================
 // System Settings
@@ -52,6 +62,32 @@ export function useUpdateSystemSettings() {
 		},
 		onError: (error) => {
 			toast.error(getErrorMessage(error, "Failed to save settings"));
+		},
+	});
+}
+
+export function useAnalyticsProviderSelection() {
+	return useQuery<AnalyticsProviderSelectionResponse>({
+		queryKey: systemKeys.analyticsProvider,
+		queryFn: fetchAnalyticsProviderSelection,
+	});
+}
+
+export function useUpdateAnalyticsProviderSelection() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (payload: UpdateAnalyticsProviderSelectionPayload) =>
+			updateAnalyticsProviderSelection(payload),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
+			queryClient.invalidateQueries({ queryKey: tracearrKeys.all });
+			queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
+			queryClient.invalidateQueries({ queryKey: serviceKeys.all });
+			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
+		},
+		onError: (error) => {
+			toast.error(getErrorMessage(error, "Failed to update analytics provider"));
 		},
 	});
 }

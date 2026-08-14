@@ -352,6 +352,11 @@ model SystemSettings {
   // Set explicitly when behind a reverse proxy (e.g., https://arr.example.com)
   externalUrl       String?
 
+  // Historical analytics provider family. These are materialized by the
+  // application so upgrades deterministically retain one selected family.
+  analyticsProvider       String?
+  analyticsProviderSource String?
+
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
