@@ -10,7 +10,6 @@
  */
 
 import type { SeerrRequest, SeerrServerWithDetails } from "@arr/shared";
-import { getLinuxSavePath, getLinuxServerName, useIncognitoMode } from "../../../lib/incognito";
 import { Loader2 } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -27,6 +26,7 @@ import {
 	SelectOption,
 } from "../../../components/ui";
 import { useApproveSeerrRequest, useSeerrRequestOptions } from "../../../hooks/api/useSeerr";
+import { getLinuxSavePath, getLinuxServerName, useIncognitoMode } from "../../../lib/incognito";
 
 interface ApproveWithOptionsDialogProps {
 	request: SeerrRequest;
@@ -80,6 +80,10 @@ export const ApproveWithOptionsDialog = ({
 		() => resolveSelectedServer(filteredServers, serverId),
 		[filteredServers, serverId],
 	);
+	const originalServer = useMemo(
+		() => resolveSelectedServer(filteredServers, request.serverId),
+		[filteredServers, request.serverId],
+	);
 
 	// When the dialog opens or servers load, default selection to the request's
 	// current values (or the server defaults if the request has none yet).
@@ -107,13 +111,13 @@ export const ApproveWithOptionsDialog = ({
 			profileId?: number;
 			rootFolder?: string;
 		} = {};
-		// Compare against the *effective* current values — the request's own fields
-		// when set, otherwise the selected server's defaults. This way a confirm
+		// Compare against the *effective* original values — the request's own fields
+		// when set, otherwise the request's original/default server values. This way a confirm
 		// without changes doesn't fire a pointless PUT or write `overridden: true`
 		// to the audit log for first-time-routed requests.
-		const effectiveServerId = request.serverId ?? selectedServer?.server.id;
-		const effectiveProfileId = request.profileId ?? selectedServer?.server.activeProfileId;
-		const effectiveRootFolder = request.rootFolder ?? selectedServer?.server.activeDirectory;
+		const effectiveServerId = request.serverId ?? originalServer?.server.id;
+		const effectiveProfileId = request.profileId ?? originalServer?.server.activeProfileId;
+		const effectiveRootFolder = request.rootFolder ?? originalServer?.server.activeDirectory;
 
 		if (serverId !== undefined && serverId !== effectiveServerId) {
 			overrides.serverId = serverId;
@@ -198,9 +202,11 @@ export const ApproveWithOptionsDialog = ({
 									value={serverId ?? ""}
 									onChange={(e) => handleServerChange(Number(e.target.value))}
 								>
-									{filteredServers.map((s) => (
+									{filteredServers.map((s, index) => (
 										<SelectOption key={s.server.id} value={s.server.id}>
-											{incognitoMode ? getLinuxServerName(s.server.name) : s.server.name}
+											{incognitoMode
+												? `${getLinuxServerName(s.server.name)} ${index + 1}`
+												: s.server.name}
 											{s.server.isDefault ? " (default)" : ""}
 										</SelectOption>
 									))}
@@ -241,9 +247,9 @@ export const ApproveWithOptionsDialog = ({
 								value={rootFolder ?? ""}
 								onChange={(e) => setRootFolder(e.target.value)}
 							>
-								{selectedServer.rootFolders.map((f) => (
+								{selectedServer.rootFolders.map((f, index) => (
 									<SelectOption key={f.id} value={f.path}>
-										{incognitoMode ? getLinuxSavePath(f.path) : f.path}
+										{incognitoMode ? `${getLinuxSavePath(f.path)} ${index + 1}` : f.path}
 										{f.path === selectedServer.server.activeDirectory ? " (server default)" : ""}
 									</SelectOption>
 								))}
