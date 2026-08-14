@@ -39,7 +39,8 @@ describe("Tautulli provider notice", () => {
 					{
 						key: "tautulli-both-configured",
 						kind: "both-configured",
-						actionUrl: "/settings/services",
+						selected: "tracearr",
+						actionUrl: "/settings/services#analytics-provider",
 					},
 				],
 			})
@@ -55,7 +56,7 @@ describe("Tautulli provider notice", () => {
 		expect(screen.getByRole("alert")).not.toHaveAttribute("aria-modal");
 		expect(document.querySelector("[class*='backdrop']")).toBeNull();
 		const settingsLink = screen.getByRole("link", { name: /review services/i });
-		expect(settingsLink).toHaveAttribute("href", "/settings/services");
+		expect(settingsLink).toHaveAttribute("href", "/settings/services#analytics-provider");
 
 		const dismiss = screen.getByRole("button", { name: /dismiss alert/i });
 		dismiss.focus();
@@ -75,7 +76,8 @@ describe("Tautulli provider notice", () => {
 				{
 					key: "tautulli-prior-removal",
 					kind: "prior-removal",
-					actionUrl: "/settings/services",
+					selected: "tracearr",
+					actionUrl: "/settings/services#analytics-provider",
 				},
 			],
 		});
@@ -87,7 +89,7 @@ describe("Tautulli provider notice", () => {
 		expect(screen.getByText(/cannot be reconstructed/i)).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: /review services/i })).toHaveAttribute(
 			"href",
-			"/settings/services",
+			"/settings/services#analytics-provider",
 		);
 	});
 

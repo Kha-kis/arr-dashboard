@@ -546,6 +546,7 @@ export const backupKeys = {
 
 export const systemKeys = {
 	settings: ["system-settings"] as const,
+	analyticsProvider: ["system-analytics-provider"] as const,
 	tautulliProviderNotices: ["system-tautulli-provider-notices"] as const,
 	info: ["system-info"] as const,
 	logs: ["system-logs"] as const,

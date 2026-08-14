@@ -31,7 +31,9 @@ export type CreateServicePayload = {
 	storageGroupId?: string | null;
 };
 
-export type UpdateServicePayload = Partial<CreateServicePayload>;
+export type UpdateServicePayload = Partial<CreateServicePayload> & {
+	confirmAnalyticsUnavailable?: boolean;
+};
 
 export async function createService(
 	payload: CreateServicePayload,
@@ -54,8 +56,15 @@ export async function updateService(
 	return data.service;
 }
 
-export async function removeService(id: string): Promise<void> {
-	await apiRequest<void>(`/api/services/${id}`, {
+export async function removeService(
+	id: string,
+	confirmAnalyticsUnavailable?: boolean,
+): Promise<void> {
+	const query =
+		confirmAnalyticsUnavailable === undefined
+			? ""
+			: `?${new URLSearchParams({ confirmAnalyticsUnavailable: String(confirmAnalyticsUnavailable) })}`;
+	await apiRequest<void>(`/api/services/${id}${query}`, {
 		method: "DELETE",
 	});
 }

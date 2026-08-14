@@ -105,7 +105,15 @@ function createMockPrisma() {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
+		systemSettings: {
+			findUnique: vi.fn().mockResolvedValue({
+				analyticsProvider: "tracearr",
+				analyticsProviderSource: "explicit",
+			}),
+			upsert: vi.fn(),
+		},
 		serviceInstance: {
+			count: vi.fn().mockResolvedValue(0),
 			findMany: vi.fn().mockResolvedValue([]),
 			findFirst: vi.fn().mockResolvedValue(null),
 			create: vi.fn().mockImplementation(({ data }: any) => ({

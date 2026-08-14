@@ -1,8 +1,14 @@
+import { analyticsProviderSchema } from "@arr/shared";
 import { createReadStream, existsSync } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
+import {
+	resolveAnalyticsProviderSelection,
+	selectAnalyticsProvider,
+} from "../lib/analytics/provider-selection.js";
+import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
 import { readTautulliPassReport } from "../lib/rules-migration/tautulli-pass.js";
 import { evaluateSecurityPosture } from "../lib/security/security-posture.js";
@@ -95,7 +101,8 @@ type TautulliNoticeKind = "both-configured" | "prior-removal";
 type TautulliNotice = {
 	key: string;
 	kind: TautulliNoticeKind;
-	actionUrl: "/settings/services";
+	selected: "tracearr" | "tautulli";
+	actionUrl: "/settings/services#analytics-provider";
 };
 
 const TAUTULLI_NOTICE_KEYS = ["tautulli-both-configured", "tautulli-prior-removal"] as const;
@@ -103,6 +110,8 @@ const TAUTULLI_NOTICE_KEYS = ["tautulli-both-configured", "tautulli-prior-remova
 const dismissTautulliNoticeSchema = z.object({
 	key: z.enum(TAUTULLI_NOTICE_KEYS),
 });
+
+const analyticsProviderSelectionSchema = z.object({ provider: analyticsProviderSchema }).strict();
 
 /**
  * Extract a safe display identifier for the database connection.
@@ -305,6 +314,24 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				? "Settings saved. Restart required for changes to take effect."
 				: "Settings saved successfully.",
 		});
+	});
+
+	app.get("/analytics-provider", async (request, reply) => {
+		return reply.send(await resolveAnalyticsProviderSelection(app.prisma, request.currentUser!.id));
+	});
+
+	app.put("/analytics-provider", async (request, reply) => {
+		const { provider } = validateRequest(analyticsProviderSelectionSchema, request.body);
+		const userId = request.currentUser!.id;
+
+		return await withCleanupTopologyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				await selectAnalyticsProvider(app.prisma, userId, provider);
+				return reply.send(await resolveAnalyticsProviderSelection(app.prisma, userId));
+			},
+		);
 	});
 
 	/**
@@ -641,15 +668,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.get("/migrations/tautulli", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const [tautulliInstances, tracearrInstances, dismissals] = await Promise.all([
-			app.prisma.serviceInstance.findMany({
-				where: { userId, service: "TAUTULLI" },
-				select: { id: true },
-			}),
-			app.prisma.serviceInstance.findMany({
-				where: { userId, service: "TRACEARR" },
-				select: { id: true },
-			}),
+		const [selection, dismissals] = await Promise.all([
+			resolveAnalyticsProviderSelection(app.prisma, userId),
 			app.prisma.systemNoticeDismissal.findMany({
 				where: { userId },
 				select: { noticeKey: true },
@@ -664,11 +684,16 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const dismissedKeys = new Set(dismissals.map((dismissal) => dismissal.noticeKey));
 		const notices: TautulliNotice[] = [];
 
-		if (tautulliInstances.length > 0 && tracearrInstances.length > 0) {
+		if (
+			selection.source === "migration-default" &&
+			selection.families.tautulli.configuredCount > 0 &&
+			selection.families.tracearr.configuredCount > 0
+		) {
 			notices.push({
 				key: "tautulli-both-configured",
 				kind: "both-configured",
-				actionUrl: "/settings/services",
+				selected: selection.selected,
+				actionUrl: "/settings/services#analytics-provider",
 			});
 		}
 

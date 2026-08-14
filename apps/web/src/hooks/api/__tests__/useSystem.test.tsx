@@ -2,13 +2,17 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { systemKeys } from "../../../lib/query-keys";
+import { serviceKeys, systemKeys, tautulliKeys, tracearrKeys } from "../../../lib/query-keys";
 
 vi.mock("../../../lib/api-client/system");
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import * as systemApi from "../../../lib/api-client/system";
-import { useDismissTautulliProviderNotice, useUpdateSystemSettings } from "../useSystem";
+import {
+	useDismissTautulliProviderNotice,
+	useUpdateAnalyticsProviderSelection,
+	useUpdateSystemSettings,
+} from "../useSystem";
 
 function createWrapper(client: QueryClient) {
 	return ({ children }: { children: ReactNode }) => (
@@ -69,6 +73,47 @@ describe("useDismissTautulliProviderNotice", () => {
 			"tautulli-both-configured",
 		);
 		expect(invalidateQueries).toHaveBeenCalledTimes(1);
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: systemKeys.tautulliProviderNotices,
+		});
+
+		client.clear();
+	});
+});
+
+describe("useUpdateAnalyticsProviderSelection", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("persists an explicit selection and refreshes provider-derived state", async () => {
+		const client = new QueryClient({
+			defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+		});
+		const invalidateQueries = vi.spyOn(client, "invalidateQueries");
+		vi.mocked(systemApi.updateAnalyticsProviderSelection).mockResolvedValue({
+			selected: "tautulli",
+			source: "explicit",
+			families: {
+				tracearr: { configuredCount: 1, enabledCount: 1 },
+				tautulli: { configuredCount: 1, enabledCount: 1 },
+			},
+			status: "configured",
+		});
+
+		const { result } = renderHook(() => useUpdateAnalyticsProviderSelection(), {
+			wrapper: createWrapper(client),
+		});
+		result.current.mutate({ provider: "tautulli" });
+
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		expect(systemApi.updateAnalyticsProviderSelection).toHaveBeenCalledWith({
+			provider: "tautulli",
+		});
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: systemKeys.analyticsProvider });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: tracearrKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: tautulliKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: serviceKeys.all });
 		expect(invalidateQueries).toHaveBeenCalledWith({
 			queryKey: systemKeys.tautulliProviderNotices,
 		});

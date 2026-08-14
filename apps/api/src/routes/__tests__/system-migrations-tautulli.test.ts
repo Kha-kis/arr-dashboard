@@ -27,11 +27,36 @@ type RuleRow = { id: string; userId: string; name: string };
 let instanceRows: InstanceRow[];
 let dismissalRows: DismissalRow[];
 let ruleRows: RuleRow[];
+let settings: {
+	analyticsProvider: "tracearr" | "tautulli" | null;
+	analyticsProviderSource: string | null;
+};
 
 const serviceInstanceFindMany = vi.fn(
 	async ({ where }: { where: { userId: string; service: "TAUTULLI" | "TRACEARR" } }) =>
 		instanceRows.filter((row) => row.userId === where.userId && row.service === where.service),
 );
+const serviceInstanceCount = vi.fn(
+	async ({
+		where,
+	}: {
+		where: { userId: string; service: "TAUTULLI" | "TRACEARR"; enabled?: boolean };
+	}) =>
+		instanceRows.filter(
+			(row) =>
+				row.userId === where.userId &&
+				row.service === where.service &&
+				(where.enabled === undefined || where.enabled === true),
+		).length,
+);
+const systemSettingsFindUnique = vi.fn(async () => ({ ...settings }));
+const systemSettingsUpsert = vi.fn(async ({ create, update }: any) => {
+	settings = {
+		analyticsProvider: update.analyticsProvider ?? create.analyticsProvider,
+		analyticsProviderSource: update.analyticsProviderSource ?? create.analyticsProviderSource,
+	};
+	return { ...settings };
+});
 const dismissalFindMany = vi.fn(async ({ where }: { where: { userId: string } }) =>
 	dismissalRows.filter((row) => row.userId === where.userId),
 );
@@ -70,18 +95,30 @@ beforeEach(async () => {
 	instanceRows = [];
 	dismissalRows = [];
 	ruleRows = [{ id: "rule-1", userId: "user-1", name: "Keep my Tautulli rule" }];
+	settings = { analyticsProvider: null, analyticsProviderSource: null };
 	serviceInstanceFindMany.mockClear();
+	serviceInstanceCount.mockClear();
+	systemSettingsFindUnique.mockClear();
+	systemSettingsUpsert.mockClear();
 	dismissalFindMany.mockClear();
 	dismissalUpsert.mockClear();
 	affectedRuleFindMany.mockClear();
 
 	app = Fastify();
-	app.decorate("prisma", {
-		systemSettings: { findUnique: vi.fn(), create: vi.fn(), upsert: vi.fn() },
-		serviceInstance: { findMany: serviceInstanceFindMany },
+	const prisma = {
+		systemSettings: {
+			findUnique: systemSettingsFindUnique,
+			create: vi.fn(),
+			upsert: systemSettingsUpsert,
+		},
+		serviceInstance: { findMany: serviceInstanceFindMany, count: serviceInstanceCount },
 		systemNoticeDismissal: { findMany: dismissalFindMany, upsert: dismissalUpsert },
 		libraryCleanupRule: { findMany: affectedRuleFindMany },
 		autoTagRule: { findMany: affectedRuleFindMany },
+	};
+	app.decorate("prisma", {
+		...prisma,
+		$transaction: async (callback: (transaction: typeof prisma) => unknown) => callback(prisma),
 	} as never);
 	app.decorate("config", {
 		TRUST_PROXY: false,
@@ -210,7 +247,8 @@ describe("GET /system/migrations/tautulli", () => {
 				{
 					key: "tautulli-both-configured",
 					kind: "both-configured",
-					actionUrl: "/settings/services",
+					selected: "tracearr",
+					actionUrl: "/settings/services#analytics-provider",
 				},
 			],
 		});
@@ -253,10 +291,21 @@ describe("GET /system/migrations/tautulli", () => {
 				{
 					key: "tautulli-both-configured",
 					kind: "both-configured",
-					actionUrl: "/settings/services",
+					selected: "tracearr",
+					actionUrl: "/settings/services#analytics-provider",
 				},
 			],
 		});
+	});
+
+	it("keeps the both-configured notice dormant after an explicit provider selection", async () => {
+		instanceRows = [
+			{ id: "ta-1", label: "Tautulli", userId: "user-1", service: "TAUTULLI" },
+			{ id: "tr-1", label: "Tracearr", userId: "user-1", service: "TRACEARR" },
+		];
+		settings = { analyticsProvider: "tautulli", analyticsProviderSource: "explicit" };
+
+		await expect(getNoticesForUser()).resolves.toEqual({ notices: [] });
 	});
 
 	it("hides only the current user's dismissed notice", async () => {
@@ -324,7 +373,8 @@ describe("POST /system/migrations/tautulli", () => {
 				{
 					key: "tautulli-both-configured",
 					kind: "both-configured",
-					actionUrl: "/settings/services",
+					selected: "tracearr",
+					actionUrl: "/settings/services#analytics-provider",
 				},
 			],
 		});

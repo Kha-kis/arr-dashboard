@@ -203,7 +203,7 @@ Per-row sleep is 100ms regardless of phase — that's the politeness budget agai
 | `/api/library-cleanup` | Library cleanup rules, approvals, execution |
 | `/api/manual-import` | Manual import candidates and submission |
 | `/api/backup` | Backup create, download, restore, scheduled backups |
-| `/api/system` | System settings, info, restart |
+| `/api/system` | System settings, analytics-provider selection, info, restart |
 | `/api/pulse` | System Pulse health signals and attention items |
 | `/api/notifications` | Channels, subscriptions, rules, delivery, aggregation |
 | `/api/oidc-providers` | OIDC provider admin configuration |
@@ -216,6 +216,8 @@ Per-row sleep is 100ms regardless of phase — that's the politeness budget agai
 |--------|-------|---------|
 | GET | `/system/settings` | Get system settings (ports, listen address) |
 | PUT | `/system/settings` | Update system settings |
+| GET | `/system/analytics-provider` | Get the user-scoped selected historical analytics provider with count-only family state |
+| PUT | `/system/analytics-provider` | Persist an explicit historical analytics provider selection |
 | GET | `/system/info` | Get system info (version, database backend, runtime) |
 | POST | `/system/restart` | Trigger application restart |
 | GET | `/system/migrations/tautulli` | Get safe, non-blocking Tautulli provider notices |

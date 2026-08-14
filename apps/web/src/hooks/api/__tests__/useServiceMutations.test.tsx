@@ -86,6 +86,23 @@ describe("service mutations", () => {
 		client.clear();
 	});
 
+	it("passes explicit analytics-unavailability confirmation to a service removal", async () => {
+		const client = new QueryClient({
+			defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+		});
+		vi.mocked(serviceApi.removeService).mockResolvedValue(undefined);
+
+		const { result } = renderHook(() => useDeleteServiceMutation(), {
+			wrapper: createWrapper(client),
+		});
+		result.current.mutate({ id: tracearrService.id, confirmAnalyticsUnavailable: true });
+
+		await waitFor(() => expect(result.current.isSuccess).toBe(true));
+		expect(serviceApi.removeService).toHaveBeenCalledWith(tracearrService.id, true);
+
+		client.clear();
+	});
+
 	it("invalidates provider notices after updating a provider", async () => {
 		const client = new QueryClient({
 			defaultOptions: { mutations: { retry: false }, queries: { retry: false } },

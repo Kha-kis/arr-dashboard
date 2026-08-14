@@ -1,3 +1,4 @@
+import type { AnalyticsProvider, AnalyticsProviderSelection } from "@arr/shared";
 import { apiRequest } from "./base";
 
 // ============================================================================
@@ -75,6 +76,12 @@ export interface UpdateSystemSettingsPayload {
 	secureCookies?: boolean | null;
 }
 
+export type AnalyticsProviderSelectionResponse = AnalyticsProviderSelection;
+
+export interface UpdateAnalyticsProviderSelectionPayload {
+	provider: AnalyticsProvider;
+}
+
 // ============================================================================
 // API Functions
 // ============================================================================
@@ -97,6 +104,19 @@ export function updateSystemSettings(
 	return apiRequest<SystemSettingsResponse>("/api/system/settings", {
 		method: "PUT",
 		json: data,
+	});
+}
+
+export function fetchAnalyticsProviderSelection(): Promise<AnalyticsProviderSelectionResponse> {
+	return apiRequest<AnalyticsProviderSelectionResponse>("/api/system/analytics-provider");
+}
+
+export function updateAnalyticsProviderSelection(
+	payload: UpdateAnalyticsProviderSelectionPayload,
+): Promise<AnalyticsProviderSelectionResponse> {
+	return apiRequest<AnalyticsProviderSelectionResponse>("/api/system/analytics-provider", {
+		method: "PUT",
+		json: payload,
 	});
 }
 
@@ -246,7 +266,8 @@ export type TautulliNoticeKey = "tautulli-both-configured" | "tautulli-prior-rem
 export interface TautulliProviderNotice {
 	key: TautulliNoticeKey;
 	kind: "both-configured" | "prior-removal";
-	actionUrl: "/settings/services";
+	selected: AnalyticsProvider;
+	actionUrl: "/settings/services#analytics-provider";
 }
 
 export interface TautulliProviderNoticesResponse {

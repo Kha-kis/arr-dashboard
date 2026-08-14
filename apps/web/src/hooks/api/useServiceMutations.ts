@@ -18,7 +18,7 @@ type UpdateVariables = {
 
 type CreateVariables = CreateServicePayload;
 
-type DeleteVariables = string;
+type DeleteVariables = string | { id: string; confirmAnalyticsUnavailable?: boolean };
 
 export const useCreateServiceMutation = () => {
 	const queryClient = useQueryClient();
@@ -63,8 +63,12 @@ export const useDeleteServiceMutation = () => {
 	const queryClient = useQueryClient();
 
 	return useMutation<void, Error, DeleteVariables>({
-		mutationFn: removeService,
-		onSuccess: (_, id) => {
+		mutationFn: (input) =>
+			typeof input === "string"
+				? removeService(input)
+				: removeService(input.id, input.confirmAnalyticsUnavailable),
+		onSuccess: (_, input) => {
+			const id = typeof input === "string" ? input : input.id;
 			queryClient.setQueryData<ServiceInstanceSummary[]>(serviceKeys.all, (prev) => {
 				if (!prev) {
 					return prev;
