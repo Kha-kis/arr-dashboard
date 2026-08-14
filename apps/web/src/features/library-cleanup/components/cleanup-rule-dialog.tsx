@@ -723,6 +723,7 @@ export function CleanupRuleDialog({
 				if (
 					(cond.ruleType === "seerr_requested_by" ||
 						cond.ruleType === "plex_watched_by" ||
+						cond.ruleType === "jellyfin_watched_by" ||
 						cond.ruleType === "seerr_modified_by") &&
 					Array.isArray(p.userNames) &&
 					p.userNames.length === 0
