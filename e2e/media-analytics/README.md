@@ -101,7 +101,12 @@ the checked-in Tautulli health check before the full selection run resumes.
 
 ```bash
 set -euo pipefail
-compose=(docker compose --project-name arr-dashboard-media-analytics-e2e \
+test -r e2e/media-analytics/.state/runtime.env
+compose=(docker compose --project-name arr-dashboard-media-analytics-e2e)
+if [[ -f e2e/media-analytics/.env ]]; then
+  compose+=(--env-file e2e/media-analytics/.env)
+fi
+compose+=(--env-file e2e/media-analytics/.state/runtime.env \
   --file e2e/media-analytics/docker-compose.yml)
 restore_tautulli() {
   "${compose[@]}" up -d --wait tautulli

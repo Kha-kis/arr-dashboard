@@ -54,6 +54,24 @@ async function openAnalytics(page: Page) {
 	await page.getByRole("button", { name: "Analytics", exact: true }).click();
 }
 
+async function openTautulliAnalytics(page: Page) {
+	await page.goto("/statistics");
+	await expect(page.getByRole("heading", { name: "Statistics", level: 1 })).toBeVisible();
+	const providerResponses = Promise.all(
+		["/api/tautulli/stats", "/api/tautulli/stats/plays-by-date", "/api/tautulli/history"].map(
+			(pathname) =>
+				page.waitForResponse(
+					(response) =>
+						new URL(response.url()).pathname === pathname && response.request().method() === "GET",
+				),
+		),
+	);
+	await page.getByRole("button", { name: "Analytics", exact: true }).click();
+	for (const response of await providerResponses) {
+		expect(response.status()).toBe(200);
+	}
+}
+
 function expectNoTracearrAnalytics(page: Page) {
 	return Promise.all([
 		expect(page.getByTestId("tracearr-stats-cards")).toHaveCount(0),
@@ -73,9 +91,15 @@ test("switches both configured analytics providers through Settings without mixi
 	).toBeChecked();
 
 	await selectProvider(page, "tautulli");
-	await openAnalytics(page);
-	await expect(page.getByTestId("tautulli-analytics")).toBeVisible();
+	await openTautulliAnalytics(page);
+	const tautulliAnalytics = page.getByTestId("tautulli-analytics");
+	await expect(tautulliAnalytics).toBeVisible();
 	await expect(page.getByRole("heading", { name: "E2E Tautulli", level: 2 })).toBeVisible();
+	await expect(
+		tautulliAnalytics.getByText(
+			/Statistics unavailable|Plays by date unavailable|History is incomplete/i,
+		),
+	).toHaveCount(0);
 	await expectNoTracearrAnalytics(page);
 
 	await page.goBack();

@@ -54,3 +54,12 @@ test("the media analytics Playwright project discovers the real provider selecti
 		/\bpage\.route\s*\(/,
 	);
 });
+
+test("the selected-provider outage sequence preserves the retained runtime environment", () => {
+	const readme = readFileSync("e2e/media-analytics/README.md", "utf8");
+	assert.match(
+		readme,
+		/--env-file e2e\/media-analytics\/\.state\/runtime\.env/,
+		"manual provider restoration must not recreate a provider with defaulted secrets",
+	);
+});
