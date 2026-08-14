@@ -21,6 +21,8 @@ import {
 	tautulliMetadataSchema,
 	tautulliPlaysByDateDataSchema,
 	tautulliResponseWrapperSchema,
+	tautulliServerInfoSchema,
+	tautulliServersInfoSchema,
 	tautulliUserWatchTimeStatsSchema,
 } from "./tautulli-schemas.js";
 
@@ -104,11 +106,21 @@ export interface TautulliHomeStat {
 	}>;
 }
 
+export interface TautulliServerIdentity {
+	identifier: string;
+	displayName?: string;
+}
+
 // ============================================================================
 // Client Implementation
 // ============================================================================
 
 const DEFAULT_TIMEOUT = 10_000;
+
+function normalizeDisplayName(value: string | undefined): string | undefined {
+	const displayName = value?.trim();
+	return displayName || undefined;
+}
 
 export class TautulliClient {
 	private readonly baseUrl: string;
@@ -136,6 +148,39 @@ export class TautulliClient {
 	 */
 	async getInfo(): Promise<TautulliInfo> {
 		return this.command("get_tautulli_info", undefined, tautulliInfoSchema);
+	}
+
+	/**
+	 * Read the linked Plex Media Server identity.
+	 *
+	 * `get_server_info.pms_identifier` is authoritative. Older Tautulli
+	 * versions may omit it, so a single non-empty `get_servers_info`
+	 * `machine_identifier` is accepted as a compatibility fallback only.
+	 */
+	async getServerIdentity(): Promise<TautulliServerIdentity> {
+		try {
+			const serverInfo = await this.command("get_server_info", undefined, tautulliServerInfoSchema);
+			const primaryIdentifier = serverInfo.pms_identifier.trim();
+			if (primaryIdentifier) {
+				return {
+					identifier: primaryIdentifier,
+					displayName: normalizeDisplayName(serverInfo.pms_name),
+				};
+			}
+
+			const servers = await this.command("get_servers_info", undefined, tautulliServersInfoSchema);
+			const candidates = servers
+				.map((server) => ({
+					identifier: server.machine_identifier.trim(),
+					displayName: normalizeDisplayName(server.pms_name),
+				}))
+				.filter((server) => server.identifier.length > 0);
+			if (candidates.length !== 1) throw new Error("ambiguous fallback identity");
+			return candidates[0]!;
+		} catch {
+			// The upstream identity and response details are intentionally internal.
+			throw new Error("Tautulli server identity is unavailable");
+		}
 	}
 
 	/**
