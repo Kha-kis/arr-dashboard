@@ -1,6 +1,11 @@
-import type { CleanupFieldOptionsResponse, CleanupRuleType } from "@arr/shared";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+	type CleanupFieldOptionsResponse,
+	type CleanupRuleType,
+	jellyfinEpisodeCompletionParamsSchema,
+} from "@arr/shared";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "@/contexts/IncognitoContext";
 
 vi.mock("@/hooks/useThemeGradient", () => ({
 	useThemeGradient: () => ({
@@ -36,24 +41,34 @@ const fieldOptions: CleanupFieldOptionsResponse = {
 	hasJellyfin: true,
 };
 
-function renderFields(ruleType: CleanupRuleType, params = getDefaultConditionParams(ruleType)) {
+function renderFields(
+	ruleType: CleanupRuleType,
+	params = getDefaultConditionParams(ruleType),
+	options = fieldOptions,
+) {
 	cleanup();
 	const onParamsChange = vi.fn();
 	render(
-		<ConditionParamsFields
-			ruleType={ruleType}
-			params={params}
-			onParamsChange={onParamsChange}
-			fieldOptions={fieldOptions}
-			fieldOptionsLoading={false}
-			inputClass="input"
-			labelClass="label"
-		/>,
+		<IncognitoProvider>
+			<ConditionParamsFields
+				ruleType={ruleType}
+				params={params}
+				onParamsChange={onParamsChange}
+				fieldOptions={options}
+				fieldOptionsLoading={false}
+				inputClass="input"
+				labelClass="label"
+			/>
+		</IncognitoProvider>,
 	);
 	return onParamsChange;
 }
 
 describe("ConditionParamsFields Jellyfin composite conditions", () => {
+	beforeEach(() => {
+		localStorage.setItem("arr-dashboard-incognito-mode", "false");
+	});
+
 	it.each([
 		["jellyfin_last_watched", { operator: "older_than", days: 90 }],
 		["jellyfin_watch_count", { operator: "less_than", count: 1 }],
@@ -115,5 +130,68 @@ describe("ConditionParamsFields Jellyfin composite conditions", () => {
 		const onParamsChange = renderFields("jellyfin_on_deck", { isDeck: false });
 		fireEvent.click(screen.getByRole("switch", { name: "Item is on Continue Watching" }));
 		expect(onParamsChange).toHaveBeenCalledWith({ isDeck: true });
+	});
+
+	it("keeps colliding masked Jellyfin users distinct while preserving raw values", async () => {
+		localStorage.setItem("arr-dashboard-incognito-mode", "true");
+		const onParamsChange = renderFields(
+			"jellyfin_watched_by",
+			{
+				operator: "includes_any",
+				userNames: [],
+			},
+			{ ...fieldOptions, jellyfinUsers: ["Alex", "B"] },
+		);
+
+		await waitFor(() => expect(screen.getByText("root 1")).toBeInTheDocument());
+		expect(screen.getByText("root 2")).toBeInTheDocument();
+		expect(screen.queryByText("Alex")).not.toBeInTheDocument();
+		expect(screen.queryByText("B")).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("checkbox", { name: "root 2" }));
+		expect(onParamsChange).toHaveBeenCalledWith({
+			operator: "includes_any",
+			userNames: ["B"],
+		});
+	});
+
+	it("preserves an unavailable selected user when its alias collides with an available user", async () => {
+		localStorage.setItem("arr-dashboard-incognito-mode", "true");
+		const onParamsChange = renderFields(
+			"jellyfin_watched_by",
+			{
+				operator: "includes_any",
+				userNames: ["B"],
+			},
+			{ ...fieldOptions, jellyfinUsers: ["Alex"] },
+		);
+
+		await waitFor(() => expect(screen.getByText("root 1")).toBeInTheDocument());
+		expect(screen.getByRole("checkbox", { name: "root 1" })).not.toBeChecked();
+		expect(screen.getByText("1 selected")).toBeInTheDocument();
+		expect(screen.queryByText("Alex")).not.toBeInTheDocument();
+		expect(screen.queryByText("B")).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "Select all" }));
+		expect(onParamsChange).toHaveBeenCalledWith({
+			operator: "includes_any",
+			userNames: ["B", "Alex"],
+		});
+	});
+
+	it("omits an empty Jellyfin minimum season instead of serializing zero", () => {
+		let onParamsChange = renderFields("jellyfin_episode_completion");
+		expect(screen.getByLabelText("Min Season")).toHaveValue(null);
+
+		onParamsChange = renderFields("jellyfin_episode_completion", {
+			operator: "less_than",
+			percentage: 10,
+			minSeason: 2,
+		});
+		fireEvent.change(screen.getByLabelText("Min Season"), { target: { value: "" } });
+
+		const updatedParams = onParamsChange.mock.calls[0]![0];
+		expect(updatedParams).toEqual({ operator: "less_than", percentage: 10 });
+		expect(jellyfinEpisodeCompletionParamsSchema.safeParse(updatedParams).success).toBe(true);
 	});
 });

@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "@/contexts/IncognitoContext";
 
 // ---------------------------------------------------------------------------
 // jsdom polyfills required by Radix UI
@@ -111,7 +112,9 @@ function createWrapper() {
 		defaultOptions: { queries: { retry: false, gcTime: 0 } },
 	});
 	return ({ children }: { children: ReactNode }) => (
-		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		<IncognitoProvider>
+			<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		</IncognitoProvider>
 	);
 }
 
@@ -163,6 +166,7 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 describe("CleanupRuleDialog", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		localStorage.setItem("arr-dashboard-incognito-mode", "false");
 		mockServicesQueryState.data = [];
 		mockServicesQueryState.isLoading = false;
 		mockServicesQueryState.isFetching = false;
@@ -987,6 +991,35 @@ describe("CleanupRuleDialog", () => {
 	// ================================================================
 
 	describe("composite validation", () => {
+		it("rejects a Jellyfin watched-by condition with no selected users", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					operator: "AND",
+					conditions: [
+						{
+							ruleType: "jellyfin_watched_by",
+							parameters: { operator: "includes_any", userNames: [] },
+						},
+					],
+				}),
+			});
+
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+
+			await waitFor(() =>
+				expect(
+					screen.getByText(
+						"Each condition that targets users must have at least one username selected.",
+					),
+				).toBeInTheDocument(),
+			);
+			expect(onSave).not.toHaveBeenCalled();
+		});
+
 		it("shows error when submitting composite with zero conditions", async () => {
 			const onSave = vi.fn();
 			renderDialog({ onSave });

@@ -3,6 +3,7 @@
 import type { CleanupFieldOptionsResponse, CleanupRuleType } from "@arr/shared";
 import { ToggleSwitch } from "@/components/layout/config-primitives";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { getLinuxUsername, useIncognitoMode } from "@/lib/incognito";
 import { MultiSelectField } from "./multi-select-field";
 
 // ============================================================================
@@ -152,8 +153,14 @@ export function ConditionParamsFields({
 	labelClass,
 }: ConditionParamsFieldsProps) {
 	const { gradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const get = <T,>(key: string, def: T): T => (params[key] as T) ?? def;
 	const set = (key: string, val: unknown) => onParamsChange({ ...params, [key]: val });
+	const unset = (key: string) => {
+		const nextParams = { ...params };
+		delete nextParams[key];
+		onParamsChange(nextParams);
+	};
 
 	switch (ruleType) {
 		case "age":
@@ -1453,7 +1460,32 @@ export function ConditionParamsFields({
 			);
 		}
 
-		case "jellyfin_watched_by":
+		case "jellyfin_watched_by": {
+			const rawUsers = fieldOptions?.jellyfinUsers ?? [];
+			const selectedRawUsers = get("userNames", []) as string[];
+			const allRawUsers = [...new Set([...rawUsers, ...selectedRawUsers])];
+			const aliasCounts = new Map<string, number>();
+			if (incognitoMode) {
+				for (const userName of allRawUsers) {
+					const alias = getLinuxUsername(userName);
+					aliasCounts.set(alias, (aliasCounts.get(alias) ?? 0) + 1);
+				}
+			}
+			const displayEntries = allRawUsers.map((rawUserName, index) => {
+				const alias = incognitoMode ? getLinuxUsername(rawUserName) : rawUserName;
+				return {
+					rawUserName,
+					displayUserName:
+						incognitoMode && (aliasCounts.get(alias) ?? 0) > 1 ? `${alias} ${index + 1}` : alias,
+				};
+			});
+			const displayByRaw = new Map(
+				displayEntries.map(({ rawUserName, displayUserName }) => [rawUserName, displayUserName]),
+			);
+			const rawByDisplay = new Map(
+				displayEntries.map(({ rawUserName, displayUserName }) => [displayUserName, rawUserName]),
+			);
+
 			return (
 				<div className="space-y-2">
 					<label className="block">
@@ -1469,9 +1501,20 @@ export function ConditionParamsFields({
 					</label>
 					<MultiSelectField
 						label="Jellyfin Users"
-						options={fieldOptions?.jellyfinUsers ?? []}
-						selected={get("userNames", []) as string[]}
-						onChange={(v) => set("userNames", v)}
+						options={rawUsers.map((rawUserName) => displayByRaw.get(rawUserName) ?? rawUserName)}
+						selected={selectedRawUsers.map(
+							(rawUserName) =>
+								displayByRaw.get(rawUserName) ??
+								(incognitoMode ? getLinuxUsername(rawUserName) : rawUserName),
+						)}
+						onChange={(displayUserNames) =>
+							set(
+								"userNames",
+								displayUserNames.map(
+									(displayUserName) => rawByDisplay.get(displayUserName) ?? displayUserName,
+								),
+							)
+						}
 						loading={fieldOptionsLoading}
 						inputClass={inputClass}
 						labelClass={labelClass}
@@ -1481,6 +1524,7 @@ export function ConditionParamsFields({
 					</p>
 				</div>
 			);
+		}
 
 		case "jellyfin_added_at":
 			return (
@@ -1544,16 +1588,27 @@ export function ConditionParamsFields({
 							<span className={labelClass}>Min Season</span>
 							<input
 								type="number"
-								value={get("minSeason", 0)}
-								onChange={(e) => set("minSeason", Number(e.target.value))}
-								min={0}
-								placeholder="0 = all"
+								value={
+									typeof params.minSeason === "number" && params.minSeason >= 1
+										? params.minSeason
+										: ""
+								}
+								onChange={(e) => {
+									const minSeason = Number(e.target.value);
+									if (e.target.value === "" || minSeason < 1) {
+										unset("minSeason");
+									} else {
+										set("minSeason", minSeason);
+									}
+								}}
+								min={1}
+								placeholder="All seasons"
 								className={inputClass}
 							/>
 						</label>
 					</div>
 					<p className="text-xs text-muted-foreground">
-						Only count episodes from this season onward. 0 or empty = all seasons.
+						Only count episodes from this season onward. Leave blank for all seasons.
 					</p>
 				</div>
 			);
