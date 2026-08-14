@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyRequest } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import schedulerRegistryPlugin from "../../plugins/scheduler-registry.js";
 import { registerSystemRoutes } from "../system.js";
@@ -16,10 +16,22 @@ let app: ReturnType<typeof Fastify>;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 let instances: InstanceRow[];
 let settings: { analyticsProvider: string | null; analyticsProviderSource: string | null };
+let prisma: ReturnType<typeof createPrisma>;
+let auditCalls: Array<[unknown, string | undefined]>;
 
 function createPrisma() {
 	const systemSettings = {
 		findUnique: vi.fn(async () => ({ ...settings })),
+		updateMany: vi.fn(async ({ data }: any) => {
+			if (settings.analyticsProvider !== null || settings.analyticsProviderSource !== null) {
+				return { count: 0 };
+			}
+			settings = {
+				analyticsProvider: data.analyticsProvider,
+				analyticsProviderSource: data.analyticsProviderSource,
+			};
+			return { count: 1 };
+		}),
 		upsert: vi.fn(async ({ create, update }: any) => {
 			settings = {
 				analyticsProvider: update.analyticsProvider ?? create.analyticsProvider ?? null,
@@ -59,8 +71,10 @@ function createPrisma() {
 beforeEach(async () => {
 	instances = [];
 	settings = { analyticsProvider: null, analyticsProviderSource: null };
+	auditCalls = [];
 	app = Fastify();
-	app.decorate("prisma", createPrisma() as never);
+	prisma = createPrisma();
+	app.decorate("prisma", prisma as never);
 	app.decorate("config", {
 		TRUST_PROXY: false,
 		COOKIE_SECURE: false,
@@ -69,6 +83,11 @@ beforeEach(async () => {
 	app.decorate("dbProvider", "sqlite" as never);
 	app.decorate("lifecycle", { getRestartMessage: () => "ok", restart: vi.fn() } as never);
 	setupAuthInjection(app);
+	app.addHook("onRequest", async (request: FastifyRequest) => {
+		vi.spyOn(request.log, "info").mockImplementation((object: unknown, message?: string) => {
+			auditCalls.push([object, message]);
+		});
+	});
 	app.addHook("preHandler", async (request: any) => {
 		if (request.headers[AUTH_HEADER] && request.headers["x-test-user"] === "user-2") {
 			request.currentUser = { id: "user-2", username: "other-admin" };
@@ -150,5 +169,40 @@ describe("PUT /system/analytics-provider", () => {
 				tautulli: { configuredCount: 0, enabledCount: 0 },
 			},
 		});
+	});
+
+	it("returns the committed selection snapshot without a second resolver transaction", async () => {
+		instances = [{ userId: "user-1", service: "TAUTULLI", enabled: true }];
+		const transaction = prisma.$transaction;
+
+		const response = await injectAuthenticated("PUT", "/system/analytics-provider", {
+			body: { provider: "tautulli" },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			selected: "tautulli",
+			source: "explicit",
+			families: {
+				tracearr: { configuredCount: 0, enabledCount: 0 },
+				tautulli: { configuredCount: 1, enabledCount: 1 },
+			},
+			status: "configured",
+		});
+		expect(transaction).toHaveBeenCalledTimes(1);
+	});
+
+	it("records only the safe provider transition after an explicit selection commits", async () => {
+		settings = { analyticsProvider: "tracearr", analyticsProviderSource: "explicit" };
+
+		const response = await injectAuthenticated("PUT", "/system/analytics-provider", {
+			body: { provider: "tautulli" },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(auditCalls).toContainEqual([
+			{ userId: "user-1", previousProvider: "tracearr", selectedProvider: "tautulli" },
+			"Historical analytics provider selection updated",
+		]);
 	});
 });

@@ -328,8 +328,20 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			{ prisma: app.prisma, log: request.log },
 			userId,
 			async () => {
-				await selectAnalyticsProvider(app.prisma, userId, provider);
-				return reply.send(await resolveAnalyticsProviderSelection(app.prisma, userId));
+				const { selection, previousProvider } = await selectAnalyticsProvider(
+					app.prisma,
+					userId,
+					provider,
+				);
+				request.log.info(
+					{
+						userId,
+						...(previousProvider ? { previousProvider } : {}),
+						selectedProvider: provider,
+					},
+					"Historical analytics provider selection updated",
+				);
+				return reply.send(selection);
 			},
 		);
 	});

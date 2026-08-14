@@ -7,7 +7,7 @@ vi.mock("../../../lib/api-client/tautulli");
 
 import * as tautulliApi from "../../../lib/api-client/tautulli";
 import { tautulliKeys } from "../../../lib/query-keys";
-import { useTautulliActivity, useTautulliCacheRefresh } from "../useTautulli";
+import { useTautulliActivity, useTautulliCacheRefresh, useTautulliStats } from "../useTautulli";
 
 function createWrapper() {
 	const queryClient = new QueryClient({
@@ -36,6 +36,21 @@ describe("Tautulli hooks", () => {
 		renderHook(() => useTautulliActivity(), { wrapper });
 		await waitFor(() => expect(tautulliApi.fetchTautulliActivity).toHaveBeenCalledOnce());
 		expect(queryClient.getQueryData(tautulliKeys.activity())).toBeDefined();
+	});
+
+	it("requests home statistics without the unused user enrichment fan-out", async () => {
+		vi.mocked(tautulliApi.fetchTautulliStats).mockResolvedValue({
+			provider: "tautulli",
+			configured: false,
+			sources: [],
+			timeRange: 30,
+		});
+		const { wrapper } = createWrapper();
+		renderHook(() => useTautulliStats(), { wrapper });
+
+		await waitFor(() =>
+			expect(tautulliApi.fetchTautulliStats).toHaveBeenCalledWith(30, { includeUserStats: false }),
+		);
 	});
 
 	it("invalidates every Tautulli cache family after a manual refresh", async () => {

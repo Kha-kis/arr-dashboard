@@ -412,6 +412,26 @@ describe("Tautulli provider routes", () => {
 		expect(body).not.toHaveProperty("userStats");
 	});
 
+	it("keeps home statistics while skipping unused user enrichment when requested", async () => {
+		const client = makeClient();
+		mockCreateTautulliClient.mockReturnValue(client);
+
+		const response = await injectAuthenticated(
+			"GET",
+			"/api/tautulli/stats?timeRange=14&includeUserStats=false",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(JSON.parse(response.payload).sources[0]).toMatchObject({
+			homeStats: [expect.objectContaining({ stat_id: "top_movies" })],
+			userStats: [],
+			userStatsComplete: true,
+			failedUserCount: 0,
+		});
+		expect(client.getUsers).not.toHaveBeenCalled();
+		expect(client.getUserWatchTimeStats).not.toHaveBeenCalled();
+	});
+
 	it("preserves home rankings per source instead of claiming a truncated global aggregate", async () => {
 		prisma.serviceInstance.findMany.mockResolvedValue([instanceOne, instanceTwo]);
 		mockCreateTautulliClient.mockImplementation((_encryptor, instance) =>

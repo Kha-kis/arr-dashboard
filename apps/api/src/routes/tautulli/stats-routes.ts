@@ -18,7 +18,13 @@ import type { TautulliClient } from "../../lib/tautulli/tautulli-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { runWithConcurrency } from "../seerr/lib/enrichment-helpers.js";
 
-const statsQuery = z.object({ timeRange: z.coerce.number().int().min(1).max(365).default(30) });
+const statsQuery = z.object({
+	timeRange: z.coerce.number().int().min(1).max(365).default(30),
+	includeUserStats: z
+		.enum(["true", "false"])
+		.optional()
+		.transform((value) => value !== "false"),
+});
 const TAUTULLI_USER_STATS_CONCURRENCY = 4;
 const TAUTULLI_HOME_STATS_LIMIT = 10;
 
@@ -30,7 +36,7 @@ type UserStatsStatus = {
 
 export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.get("/", async (request, reply) => {
-		const { timeRange } = validateRequest(statsQuery, request.query);
+		const { timeRange, includeUserStats } = validateRequest(statsQuery, request.query);
 		const userId = request.currentUser!.id;
 		if (!(await requireTautulliAnalyticsProvider(app, userId, reply))) return;
 		const instances = await app.prisma.serviceInstance.findMany({
@@ -42,7 +48,9 @@ export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPl
 				try {
 					const { client, ensureCurrent } = createCurrentTautulliClient(app, instance);
 					const homeStats = await client.getHomeStats(timeRange, TAUTULLI_HOME_STATS_LIMIT);
-					const userList = await getOptionalUsers(client, instance.id, request.log);
+					const userList = includeUserStats
+						? await getOptionalUsers(client, instance.id, request.log)
+						: { users: [], userStatsComplete: true };
 					await ensureCurrent();
 					return {
 						instance,

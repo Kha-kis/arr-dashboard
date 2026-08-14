@@ -34,7 +34,7 @@ export const useTautulliActivity = (enabled = true) =>
 export const useTautulliStats = (timeRange = 30, enabled = true) =>
 	useQuery<TautulliStatsResponse>({
 		queryKey: tautulliKeys.stats(timeRange),
-		queryFn: () => fetchTautulliStats(timeRange),
+		queryFn: () => fetchTautulliStats(timeRange, { includeUserStats: false }),
 		enabled,
 		staleTime: POLLING_STATS,
 	});

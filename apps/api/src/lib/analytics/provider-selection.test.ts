@@ -14,24 +14,37 @@ type Scenario = {
 	tracearrEnabled?: number;
 	tautulliEnabled?: number;
 	selected: Provider;
-	source: "explicit" | "migration-default";
+	source: "explicit" | "migration-default" | null;
 };
 
-function createPrisma({
-	stored,
-	tracearr,
-	tautulli,
-	tracearrEnabled,
-	tautulliEnabled,
-	source,
-}: Scenario) {
+function createPrisma(
+	{ stored, tracearr, tautulli, tracearrEnabled, tautulliEnabled, source }: Scenario,
+	options: {
+		onMigrationCompareAndSet?: () => Promise<{ count: number }>;
+	} = {},
+) {
 	let settings: { analyticsProvider: Provider | null; analyticsProviderSource: string | null } = {
 		analyticsProvider: stored,
-		analyticsProviderSource: source,
+		analyticsProviderSource: stored === null ? null : source,
 	};
 	const transaction = {
 		systemSettings: {
 			findUnique: vi.fn(async () => settings),
+			create: vi.fn(async ({ data }) => {
+				settings = {
+					analyticsProvider: data.analyticsProvider as Provider,
+					analyticsProviderSource: data.analyticsProviderSource,
+				};
+				return settings;
+			}),
+			updateMany: vi.fn(async ({ data }) => {
+				if (options.onMigrationCompareAndSet) return await options.onMigrationCompareAndSet();
+				settings = {
+					analyticsProvider: data.analyticsProvider as Provider,
+					analyticsProviderSource: data.analyticsProviderSource,
+				};
+				return { count: 1 };
+			}),
 			upsert: vi.fn(async ({ create, update }) => {
 				settings = {
 					analyticsProvider: (update.analyticsProvider ?? create.analyticsProvider) as Provider,
@@ -121,6 +134,64 @@ describe("resolveAnalyticsProviderSelection", () => {
 		});
 	});
 
+	it("returns the concurrent explicit choice when migration materialization loses its compare-and-set", async () => {
+		let compareAndSetReached!: () => void;
+		const compareAndSet = new Promise<void>((resolve) => {
+			compareAndSetReached = resolve;
+		});
+		let releaseCompareAndSet!: (result: { count: number }) => void;
+		const compareAndSetResult = new Promise<{ count: number }>((resolve) => {
+			releaseCompareAndSet = resolve;
+		});
+		let prisma: ReturnType<typeof createPrisma>;
+		prisma = createPrisma(
+			{
+				stored: null,
+				source: "migration-default",
+				tracearr: 1,
+				tautulli: 1,
+				selected: "tracearr",
+			},
+			{
+				onMigrationCompareAndSet: async () => {
+					compareAndSetReached();
+					return await compareAndSetResult;
+				},
+			},
+		);
+
+		const resolution = resolveAnalyticsProviderSelection(prisma, "user-1");
+		await compareAndSet;
+		await selectAnalyticsProvider(prisma, "user-1", "tautulli");
+		releaseCompareAndSet({ count: 0 });
+
+		await expect(resolution).resolves.toMatchObject({
+			selected: "tautulli",
+			source: "explicit",
+		});
+	});
+
+	it.each([
+		{ stored: "tracearr", source: null },
+		{ stored: "not-a-provider" as Provider, source: "explicit" },
+	] satisfies Array<Pick<Scenario, "stored" | "source">>)(
+		"fails closed for the invalid persisted provider pair %#",
+		async ({ stored, source }) => {
+			const prisma = createPrisma({
+				stored,
+				source,
+				tracearr: 1,
+				tautulli: 1,
+				selected: "tracearr",
+			});
+
+			await expect(resolveAnalyticsProviderSelection(prisma, "user-1")).rejects.toMatchObject({
+				name: "AnalyticsProviderSelectionInvalidStateError",
+			});
+			expect(prisma.transaction.systemSettings.upsert).not.toHaveBeenCalled();
+		},
+	);
+
 	it("stores an explicit choice even when that family is unconfigured", async () => {
 		const prisma = createPrisma({
 			stored: null,
@@ -130,7 +201,17 @@ describe("resolveAnalyticsProviderSelection", () => {
 			selected: "tracearr",
 		});
 
-		await selectAnalyticsProvider(prisma, "user-1", "tautulli");
+		await expect(selectAnalyticsProvider(prisma, "user-1", "tautulli")).resolves.toMatchObject({
+			selection: {
+				selected: "tautulli",
+				source: "explicit",
+				families: {
+					tracearr: { configuredCount: 1, enabledCount: 1 },
+					tautulli: { configuredCount: 0, enabledCount: 0 },
+				},
+				status: "unconfigured",
+			},
+		});
 
 		expect(prisma.settings()).toEqual({
 			analyticsProvider: "tautulli",

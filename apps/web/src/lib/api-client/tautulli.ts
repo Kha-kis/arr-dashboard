@@ -12,8 +12,14 @@ import { apiRequest } from "./base";
 export const fetchTautulliActivity = (): Promise<TautulliActivityResponse> =>
 	apiRequest("/api/tautulli/activity");
 
-export const fetchTautulliStats = (timeRange: number): Promise<TautulliStatsResponse> =>
-	apiRequest(`/api/tautulli/stats?timeRange=${encodeURIComponent(timeRange)}`);
+export const fetchTautulliStats = (
+	timeRange: number,
+	options: { includeUserStats?: boolean } = {},
+): Promise<TautulliStatsResponse> => {
+	const query = new URLSearchParams({ timeRange: String(timeRange) });
+	if (options.includeUserStats === false) query.set("includeUserStats", "false");
+	return apiRequest(`/api/tautulli/stats?${query.toString()}`);
+};
 
 export const fetchTautulliPlaysByDate = (timeRange: number): Promise<TautulliPlaysByDateResponse> =>
 	apiRequest(`/api/tautulli/stats/plays-by-date?timeRange=${encodeURIComponent(timeRange)}`);
