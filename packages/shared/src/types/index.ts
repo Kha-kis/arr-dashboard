@@ -1,4 +1,6 @@
 export * from "./api";
+
+export * from "./analytics-provider";
 export * from "./arr";
 export * from "./auto-tag";
 export * from "./automation";

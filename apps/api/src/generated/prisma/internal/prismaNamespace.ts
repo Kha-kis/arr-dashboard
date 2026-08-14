@@ -5421,6 +5421,8 @@ export const SystemSettingsScalarFieldEnum = {
   secureCookies: 'secureCookies',
   notificationLogRetentionDays: 'notificationLogRetentionDays',
   externalUrl: 'externalUrl',
+  analyticsProvider: 'analyticsProvider',
+  analyticsProviderSource: 'analyticsProviderSource',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
