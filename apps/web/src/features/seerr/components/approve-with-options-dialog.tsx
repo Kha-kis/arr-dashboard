@@ -105,13 +105,14 @@ export const ApproveWithOptionsDialog = ({
 			profileId?: number;
 			rootFolder?: string;
 		} = {};
-		// Compare against the *effective* current values — the request's own fields
-		// when set, otherwise the selected server's defaults. This way a confirm
+		// Compare against the request's original/default routing values — the request's own fields
+		// when set, otherwise the original server's defaults. This way a confirm
 		// without changes doesn't fire a pointless PUT or write `overridden: true`
 		// to the audit log for first-time-routed requests.
-		const effectiveServerId = request.serverId ?? selectedServer?.server.id;
-		const effectiveProfileId = request.profileId ?? selectedServer?.server.activeProfileId;
-		const effectiveRootFolder = request.rootFolder ?? selectedServer?.server.activeDirectory;
+		const originalServer = resolveSelectedServer(filteredServers, request.serverId);
+		const effectiveServerId = request.serverId ?? originalServer?.server.id;
+		const effectiveProfileId = request.profileId ?? originalServer?.server.activeProfileId;
+		const effectiveRootFolder = request.rootFolder ?? originalServer?.server.activeDirectory;
 
 		if (serverId !== undefined && serverId !== effectiveServerId) {
 			overrides.serverId = serverId;
