@@ -1,10 +1,6 @@
 "use client";
 
-import {
-	type CurrentUser,
-	deleteOidcProviderSchema,
-	type UpdateOIDCProvider,
-} from "@arr/shared";
+import { type CurrentUser, deleteOidcProviderSchema, type UpdateOIDCProvider } from "@arr/shared";
 import {
 	AlertCircle,
 	Check,
