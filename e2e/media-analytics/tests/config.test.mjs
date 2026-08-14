@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { resolveHarnessEndpoints } from "../ports.mjs";
 
@@ -24,4 +25,9 @@ test("non-default host ports resolve to one shared set of loopback endpoints", (
 test("invalid port overrides fail closed", () => {
 	assert.throws(() => resolveHarnessEndpoints({ DASHBOARD_PORT: "not-a-port" }), /DASHBOARD_PORT/);
 	assert.throws(() => resolveHarnessEndpoints({ TRACEARR_PORT: "70000" }), /TRACEARR_PORT/);
+});
+
+test("the root CI Playwright suite excludes the external media analytics harness", () => {
+	const rootPlaywrightConfig = readFileSync("playwright.config.ts", "utf8");
+	assert.match(rootPlaywrightConfig, /"\*\*\/media-analytics\/\*\*"/);
 });
