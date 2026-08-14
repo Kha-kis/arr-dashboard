@@ -28,15 +28,14 @@ import { OverviewTab } from "./overview-tab";
 import { PlexTab } from "./plex-tab";
 import { ProwlarrTab } from "./prowlarr-tab";
 import type { StatisticsTab } from "./statistics-tabs";
-import { TracearrTab } from "./tracearr-tab";
+import { AnalyticsTab } from "./analytics-tab";
 
 export const StatisticsClient = () => {
 	const [activeTab, setActiveTab] = useState<StatisticsTab>("overview");
 	const { gradient: themeGradient } = useThemeGradient();
 
-	// Detect media-server instances. All analytics flow from SessionSnapshot
-	// rows, which Plex/Jellyfin instances populate directly (Tautulli removed
-	// in 3.0 — ADR-0007).
+	// Media-server tabs remain separate from the explicitly selected historical
+	// analytics provider, which is rendered only through AnalyticsTab.
 	const { data: services = [] } = useServicesQuery();
 	const hasPlex = useMemo(
 		() => services.some((s) => s.service.toLowerCase() === "plex" && s.enabled),
@@ -48,10 +47,6 @@ export const StatisticsClient = () => {
 				const svc = s.service.toLowerCase();
 				return (svc === "jellyfin" || svc === "emby") && s.enabled;
 			}),
-		[services],
-	);
-	const hasTracearr = useMemo(
-		() => services.some((s) => s.service.toLowerCase() === "tracearr" && s.enabled),
 		[services],
 	);
 
@@ -140,16 +135,12 @@ export const StatisticsClient = () => {
 					},
 				]
 			: []),
-		...(hasTracearr
-			? [
-					{
-						id: "tracearr" as const,
-						label: "Tracearr",
-						icon: TrendingUp,
-						gradient: SERVICE_GRADIENTS.tracearr,
-					},
-				]
-			: []),
+		{
+			id: "analytics",
+			label: "Analytics",
+			icon: TrendingUp,
+			gradient: SERVICE_GRADIENTS.tracearr,
+		},
 	];
 
 	// Loading skeleton
@@ -379,7 +370,7 @@ export const StatisticsClient = () => {
 
 			{activeTab === "jellyfin" && <JellyfinTab />}
 
-			{activeTab === "tracearr" && hasTracearr && <TracearrTab />}
+			{activeTab === "analytics" && <AnalyticsTab />}
 		</>
 	);
 };

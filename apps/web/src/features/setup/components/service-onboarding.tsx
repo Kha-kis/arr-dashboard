@@ -21,6 +21,7 @@ import {
 } from "../../../hooks/api/useServiceMutations";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useSetupDiscovery } from "../../../hooks/api/useSetupDiscovery";
+import { useUpdateAnalyticsProviderSelection } from "../../../hooks/api/useSystem";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxServerName, getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
@@ -70,6 +71,7 @@ export const ServiceOnboarding = () => {
 	const [incognitoMode] = useIncognitoMode();
 	const discovery = useSetupDiscovery();
 	const createService = useCreateServiceMutation();
+	const updateAnalyticsProvider = useUpdateAnalyticsProviderSelection();
 	const testConnection = useTestConnectionBeforeAdd();
 	const { data: services = [], isLoading: servicesLoading } = useServicesQuery();
 	const [draft, setDraft] = useState<ServiceDraft | null>(null);
@@ -134,6 +136,9 @@ export const ServiceOnboarding = () => {
 				enabled: true,
 				isDefault: !services.some((service) => service.service === payload.service),
 			});
+			if (draft.service === "tautulli") {
+				await updateAnalyticsProvider.mutateAsync({ provider: "tautulli" });
+			}
 			setDraft(null);
 			setResult({ success: true, message: "Service connected successfully." });
 		} catch (error) {

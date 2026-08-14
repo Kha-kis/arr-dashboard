@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	testConnection: vi.fn(),
 	createService: vi.fn(),
 	push: vi.fn(),
+	updateAnalyticsProvider: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -50,6 +51,13 @@ vi.mock("../../../../hooks/api/useServiceMutations", () => ({
 	}),
 }));
 
+vi.mock("../../../../hooks/api/useSystem", () => ({
+	useUpdateAnalyticsProviderSelection: () => ({
+		mutateAsync: mocks.updateAnalyticsProvider,
+		isPending: false,
+	}),
+}));
+
 vi.mock("../../../../hooks/useThemeGradient", () => ({
 	useThemeGradient: () => ({
 		gradient: { from: "blue", to: "purple", glow: "blue" },
@@ -69,6 +77,7 @@ describe("ServiceOnboarding", () => {
 		vi.clearAllMocks();
 		mocks.testConnection.mockResolvedValue({ success: true, version: "10.9.0" });
 		mocks.createService.mockResolvedValue({ id: "service-1" });
+		mocks.updateAnalyticsProvider.mockResolvedValue({ selected: "tautulli" });
 	});
 
 	it("loads discovery automatically and pre-fills a candidate", () => {
@@ -179,6 +188,29 @@ describe("ServiceOnboarding", () => {
 				isDefault: true,
 			}),
 		);
+		await waitFor(() =>
+			expect(mocks.updateAnalyticsProvider).toHaveBeenCalledWith({ provider: "tautulli" }),
+		);
+		expect(mocks.createService.mock.invocationCallOrder[0]).toBeLessThan(
+			mocks.updateAnalyticsProvider.mock.invocationCallOrder[0]!,
+		);
+	});
+
+	it("does not select Tautulli when connection verification fails", async () => {
+		mocks.testConnection.mockResolvedValue({ success: false, error: "Unauthorized" });
+		render(<ServiceOnboarding />);
+		fireEvent.click(screen.getByRole("button", { name: "tautulli" }));
+		fireEvent.change(screen.getByLabelText("Base URL"), {
+			target: { value: "http://tautulli:8181" },
+		});
+		fireEvent.change(screen.getByLabelText("API key"), {
+			target: { value: "tautulli-api-key" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Test and add" }));
+
+		await screen.findByText("Unauthorized");
+		expect(mocks.createService).not.toHaveBeenCalled();
+		expect(mocks.updateAnalyticsProvider).not.toHaveBeenCalled();
 	});
 
 	it("continues to the Console walkthrough without requiring a service", () => {

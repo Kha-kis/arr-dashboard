@@ -32,7 +32,7 @@ describe("Tautulli provider notice", () => {
 		vi.clearAllMocks();
 	});
 
-	it("shows an ordinary, focusable, dismissible notice for both configured providers", async () => {
+	it("names the selected provider and sends both configured families to the selector", async () => {
 		vi.mocked(systemApi.fetchTautulliProviderNotices)
 			.mockResolvedValueOnce({
 				notices: [
@@ -50,12 +50,13 @@ describe("Tautulli provider notice", () => {
 		renderNotice();
 
 		await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-		expect(screen.getByText("Tautulli and Tracearr are both configured")).toBeInTheDocument();
+		expect(screen.getByText("Tracearr is selected for historical analytics")).toBeInTheDocument();
+		expect(screen.getByText(/Tautulli is also configured/i)).toBeInTheDocument();
 		expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 		expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
 		expect(screen.getByRole("alert")).not.toHaveAttribute("aria-modal");
 		expect(document.querySelector("[class*='backdrop']")).toBeNull();
-		const settingsLink = screen.getByRole("link", { name: /review services/i });
+		const settingsLink = screen.getByRole("link", { name: /review analytics provider/i });
 		expect(settingsLink).toHaveAttribute("href", "/settings/services#analytics-provider");
 
 		const dismiss = screen.getByRole("button", { name: /dismiss alert/i });
@@ -70,7 +71,7 @@ describe("Tautulli provider notice", () => {
 		await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
 	});
 
-	it("explains the limited recovery available after a prior removal", async () => {
+	it("keeps a prior removal notice selected-aware without promising recovery", async () => {
 		vi.mocked(systemApi.fetchTautulliProviderNotices).mockResolvedValue({
 			notices: [
 				{
@@ -85,9 +86,9 @@ describe("Tautulli provider notice", () => {
 		renderNotice();
 
 		await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-		expect(screen.getByText("A prior Tautulli removal needs review")).toBeInTheDocument();
-		expect(screen.getByText(/cannot be reconstructed/i)).toBeInTheDocument();
-		expect(screen.getByRole("link", { name: /review services/i })).toHaveAttribute(
+		expect(screen.getByText("Tracearr is selected for historical analytics")).toBeInTheDocument();
+		expect(screen.getByText(/does not restore a removed Tautulli connection/i)).toBeInTheDocument();
+		expect(screen.getByRole("link", { name: /review analytics provider/i })).toHaveAttribute(
 			"href",
 			"/settings/services#analytics-provider",
 		);

@@ -7,18 +7,18 @@ import {
 	useTautulliProviderNotices,
 } from "../../../hooks/api/useSystem";
 
-const NOTICE_CONTENT = {
+const noticeContent = (selected: "tracearr" | "tautulli") => ({
 	"both-configured": {
-		title: "Tautulli and Tracearr are both configured",
+		title: `${selected === "tracearr" ? "Tracearr" : "Tautulli"} is selected for historical analytics`,
 		description:
-			"Use one historical analytics provider at a time to avoid mixing data. Review your services before making changes.",
+			"Tautulli is also configured. Historical analytics stays with the selected provider until you explicitly switch it.",
 	},
 	"prior-removal": {
-		title: "A prior Tautulli removal needs review",
+		title: `${selected === "tracearr" ? "Tracearr" : "Tautulli"} is selected for historical analytics`,
 		description:
-			"Review your current services before making changes. Deleted configurations and credentials cannot be reconstructed.",
+			"Review the provider selector before making changes. It does not restore a removed Tautulli connection or historical data.",
 	},
-} as const;
+});
 
 export function TautulliProviderNotice() {
 	const { data } = useTautulliProviderNotices();
@@ -27,7 +27,7 @@ export function TautulliProviderNotice() {
 
 	if (!notice) return null;
 
-	const content = NOTICE_CONTENT[notice.kind];
+	const content = noticeContent(notice.selected)[notice.kind];
 
 	return (
 		<Alert variant="warning" dismissible onDismiss={() => dismissMutation.mutate(notice.key)}>
@@ -38,7 +38,7 @@ export function TautulliProviderNotice() {
 					href={notice.actionUrl}
 					className="mt-2 inline-flex font-medium underline underline-offset-4"
 				>
-					Review services
+					Review analytics provider
 				</Link>
 			</AlertDescription>
 		</Alert>
