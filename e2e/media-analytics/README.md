@@ -77,7 +77,53 @@ Focused harness tests can be run without changing the live stack:
 node --test e2e/media-analytics/tests/lifecycle.test.mjs
 node --test e2e/media-analytics/tests/compose.test.mjs
 node --test e2e/media-analytics/tests/bootstrap.test.mjs
+node --test e2e/media-analytics/tests/config.test.mjs
 ```
+
+## Provider selection and selected-provider outage
+
+The selection spec uses the disposable signed browser state and real provider
+responses. It starts from Tracearr when the retained state is at the migration
+default, switches through Settings to Tautulli, verifies Tautulli Statistics,
+then switches back and verifies Tracearr. On a retained rerun it first restores
+Tracearr through the same Settings control, so an earlier explicit selection
+does not make the result order-dependent.
+
+```bash
+pnpm exec playwright test --config=e2e/media-analytics/playwright.config.ts \
+  --trace=off provider-selection.spec.ts
+```
+
+To prove the selected Tautulli provider does not silently fail over, run this
+only against the retained harness. The trap is installed before the service is
+stopped and restores the same service on every exit path. `up --wait` waits for
+the checked-in Tautulli health check before the full selection run resumes.
+
+```bash
+set -euo pipefail
+compose=(docker compose --project-name arr-dashboard-media-analytics-e2e \
+  --file e2e/media-analytics/docker-compose.yml)
+restore_tautulli() {
+  "${compose[@]}" up -d --wait tautulli
+}
+trap restore_tautulli EXIT INT TERM
+"${compose[@]}" stop tautulli
+MEDIA_ANALYTICS_EXPECT_TAUTULLI_OUTAGE=1 \
+  pnpm exec playwright test --config=e2e/media-analytics/playwright.config.ts \
+  --trace=off \
+  --grep "selected Tautulli source is unreachable" provider-selection.spec.ts
+"${compose[@]}" up -d --wait tautulli
+trap - EXIT INT TERM
+pnpm exec playwright test --config=e2e/media-analytics/playwright.config.ts \
+  --trace=off provider-selection.spec.ts
+```
+
+Tautulli reports an honest provider-specific `source unreachable` state while
+its configured selection remains valid, so the outage assertion checks that
+state and the absence of Tracearr content. A second live Tracearr outage is not
+needed here: the focused Tracearr route tests already prove a selected Tracearr
+failure never constructs a Tautulli client, while this full spec re-verifies
+real Tracearr rendering after recovery.
 
 ## Stop, reset, and purge
 

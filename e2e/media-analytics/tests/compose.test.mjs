@@ -122,6 +122,13 @@ test("Compose model isolates every service and uses the required image pins", (t
 	assert.equal(config.services["arr-dashboard"].build.dockerfile, "Dockerfile");
 });
 
+test("the disposable dashboard raises only its E2E API rate limit", (t) => {
+	if (!requireCompose(t)) return;
+
+	const config = composeConfig();
+	assert.equal(config.services["arr-dashboard"].environment.API_RATE_LIMIT_MAX, "10000");
+});
+
 test("dashboard build context excludes harness secrets and pins both Node stages", () => {
 	const dockerignore = readFileSync(resolve(".dockerignore"), "utf8");
 	const dockerfile = readFileSync(resolve("Dockerfile"), "utf8");
@@ -135,7 +142,9 @@ test("dashboard build context excludes harness secrets and pins both Node stages
 	);
 });
 
-test("pinned media generator creates a non-empty MP4 beneath the harness state root", { timeout: 180_000 }, (t) => {
+test("pinned media generator creates a non-empty MP4 beneath the harness state root", {
+	timeout: 180_000,
+}, (t) => {
 	if (!requireCompose(t) || !hasDockerDaemon()) {
 		t.skip("Docker daemon is unavailable");
 		return;

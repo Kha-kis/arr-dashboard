@@ -123,6 +123,7 @@ services:
     environment:
       PORT: "3000"
       API_PORT: "3001"
+      API_RATE_LIMIT_MAX: "10000"
       HOSTNAME: 0.0.0.0
     ports:
       - target: 3000

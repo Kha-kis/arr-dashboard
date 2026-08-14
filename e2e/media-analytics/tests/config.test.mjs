@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { resolveHarnessEndpoints } from "../ports.mjs";
@@ -30,4 +31,26 @@ test("invalid port overrides fail closed", () => {
 test("the root CI Playwright suite excludes the external media analytics harness", () => {
 	const rootPlaywrightConfig = readFileSync("playwright.config.ts", "utf8");
 	assert.match(rootPlaywrightConfig, /"\*\*\/media-analytics\/\*\*"/);
+});
+
+test("the media analytics Playwright project discovers the real provider selection spec without interception", () => {
+	const result = spawnSync(
+		"pnpm",
+		[
+			"exec",
+			"playwright",
+			"test",
+			"--config=e2e/media-analytics/playwright.config.ts",
+			"--list",
+			"provider-selection.spec.ts",
+		],
+		{ encoding: "utf8" },
+	);
+
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(result.stdout, /provider-selection\.spec\.ts/);
+	assert.doesNotMatch(
+		readFileSync("e2e/media-analytics/specs/provider-selection.spec.ts", "utf8"),
+		/\bpage\.route\s*\(/,
+	);
 });
