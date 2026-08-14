@@ -86,8 +86,10 @@ current `origin/main`. The implementation follows this order:
 2. Reproduce the exact scenario or prove the defect through a faithful fixture.
 3. Add a regression test and observe it fail.
 4. Implement the smallest coherent correction.
-5. Run focused validation, the repository gauntlet, required independent
-   review, and live verification where the behavior is user-visible.
+5. Use the layered development loop: RED/GREEN focused tests, affected-path
+   integration checks, one required independent review and correction pass,
+   then the repository gauntlet once at the PR boundary. Add live verification
+   only where it supplies evidence the repository tests cannot.
 6. Open and merge one focused PR only when its frozen finding inventory is
    resolved.
 

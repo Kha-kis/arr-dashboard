@@ -16,6 +16,10 @@
 - Deletion, cache publication, upstream identity, and upstream mutation changes require an independent `data_safety_reviewer` pass.
 - Substantial data-dependent changes require a separate `regression_reviewer` pass.
 - Review each coherent issue diff once, freeze accepted findings, and use one correction batch; later observations become follow-up unless they invalidate safety or correctness.
+- Use the layered development loop for every issue: focused RED/GREEN tests,
+  affected-path integration checks, one coherent independent review and
+  correction batch, then one full gauntlet at the PR boundary. Repeat the full
+  gate only when the final diff, base, or release candidate changes materially.
 - Run GitHub issue replies through the `humanizer` skill and never `@`-mention users.
 - Do not close an issue without reproduced-and-verified behavior. Do not publish a release from an unreviewed SHA.
 - Preserve the existing cleanup Wave 3A, 3B, and 3C worktrees and all user-owned primary-checkout edits.
@@ -97,8 +101,9 @@
 - [ ] **Step 1: Execute the dedicated #706 plan on current `origin/main`**
 
   Follow `2026-08-14-issue-706-selected-sonarr-approval.md` through RED,
-  minimal correction, focused tests, root gauntlet, user-visible component
-  verification, and one task review.
+  minimal correction, focused integration checks, one task review and
+  correction batch, the root gauntlet, and user-visible component verification
+  where it adds evidence.
 
 - [ ] **Step 2: Publish the focused stable PR**
 

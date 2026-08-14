@@ -57,6 +57,25 @@ TRaSH deployment, and upstream write paths are safety-critical.
   data-dependent, or deletion-adjacent code changes. Do not spend subagents on
   trivial documentation-only changes.
 
+## Layered development loop
+
+Use the cheapest loop that can answer the current question. Do not run the
+entire repository gauntlet after every edit.
+
+1. Reproduce the defect and use RED/GREEN TDD with the narrowest test at the
+   real failure boundary.
+2. Run focused integration checks for the affected component, route, service,
+   and nearest callers.
+3. Assemble one coherent diff, then run the required independent regression
+   and data-safety reviews once.
+4. Resolve the recorded in-scope findings in one correction pass. Do not
+   restart whole-change review for each correction; unrelated discoveries are
+   follow-up work unless they prove the current change unsafe or invalid.
+5. Run the full verification gauntlet once at the PR boundary and again only
+   when the final diff, base, or release candidate changes materially.
+6. Add live browser, disposable integration, published-image, or soak evidence
+   only where it proves behavior that repository tests cannot.
+
 ## Verification gauntlet
 
 Run the narrowest useful test while iterating. Before every PR:
