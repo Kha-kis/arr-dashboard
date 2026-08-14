@@ -56,6 +56,60 @@ require_command() {
   fi
 }
 
+acquire_lifecycle_lock() {
+  local daemon_id inherited_fd lock_dir lock_file open_target
+
+  require_command flock
+  if ! daemon_id="$(docker info --format '{{.ID}}')" || [[ ! "$daemon_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    echo "unable to resolve a safe Docker engine identity for the media analytics lifecycle lock" >&2
+    return 1
+  fi
+  # The lock path deliberately ignores XDG_RUNTIME_DIR and other caller-specific
+  # environment so every worktree targeting this Docker engine contends on the
+  # same per-project, per-uid lock.
+  lock_dir="/tmp/${COMPOSE_PROJECT}-$(id -u)-${daemon_id}"
+  lock_file="${lock_dir}/lifecycle.lock"
+
+  if [[ -L "$lock_dir" ]]; then
+    echo "refusing unsafe media analytics lifecycle lock directory" >&2
+    return 1
+  fi
+  if ! mkdir -m 0700 "$lock_dir" 2>/dev/null && [[ ! -d "$lock_dir" ]]; then
+    echo "unable to create media analytics lifecycle lock directory" >&2
+    return 1
+  fi
+  if [[ "$(stat -c '%u' "$lock_dir")" != "$(id -u)" || "$(stat -c '%a' "$lock_dir")" != "700" ]]; then
+    echo "refusing unsafe media analytics lifecycle lock directory" >&2
+    return 1
+  fi
+
+  inherited_fd="${MEDIA_ANALYTICS_LIFECYCLE_LOCK_FD:-}"
+  if [[ -n "$inherited_fd" ]]; then
+    if [[ "$inherited_fd" != "9" || ! -e "/proc/$$/fd/${inherited_fd}" ]]; then
+      echo "refusing invalid inherited media analytics lifecycle lock" >&2
+      return 1
+    fi
+    open_target="$(readlink "/proc/$$/fd/${inherited_fd}")"
+    if [[ "$open_target" != "$lock_file" ]]; then
+      echo "refusing mismatched inherited media analytics lifecycle lock" >&2
+      return 1
+    fi
+    return 0
+  fi
+
+  if [[ -L "$lock_file" ]]; then
+    echo "refusing unsafe media analytics lifecycle lock file" >&2
+    return 1
+  fi
+  exec 9>"$lock_file"
+  chmod 0600 "$lock_file"
+  if ! flock -n 9; then
+    echo "media analytics lifecycle operation is already running" >&2
+    return 1
+  fi
+  export MEDIA_ANALYTICS_LIFECYCLE_LOCK_FD=9
+}
+
 assert_loopback_url() {
   local url="$1"
 
@@ -71,13 +125,19 @@ owned_resource_ids() {
   for resource_type in container network volume; do
     case "$resource_type" in
       container)
-        resource_ids="$(docker ps -aq --filter "label=${COMPOSE_PROJECT_LABEL}=${COMPOSE_PROJECT}")"
+        if ! resource_ids="$(docker ps -aq --filter "label=${COMPOSE_PROJECT_LABEL}=${COMPOSE_PROJECT}")"; then
+          return 1
+        fi
         ;;
       network)
-        resource_ids="$(docker network ls -q --filter "label=${COMPOSE_PROJECT_LABEL}=${COMPOSE_PROJECT}")"
+        if ! resource_ids="$(docker network ls -q --filter "label=${COMPOSE_PROJECT_LABEL}=${COMPOSE_PROJECT}")"; then
+          return 1
+        fi
         ;;
       volume)
-        resource_ids="$(docker volume ls -q --filter "label=${COMPOSE_PROJECT_LABEL}=${COMPOSE_PROJECT}")"
+        if ! resource_ids="$(docker volume ls -q --filter "label=${COMPOSE_PROJECT_LABEL}=${COMPOSE_PROJECT}")"; then
+          return 1
+        fi
         ;;
     esac
 

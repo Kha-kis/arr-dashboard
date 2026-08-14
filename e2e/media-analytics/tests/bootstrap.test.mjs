@@ -20,6 +20,7 @@ const FAKE_SCRIPT_TIMEOUT_MS = 3_000;
 
 let harnessDir;
 let sandboxDir;
+let fakeDaemonId;
 
 function writeFakeDocker(binDir) {
 	writeFileSync(
@@ -46,6 +47,11 @@ if [[ "\${1:-}" == "compose" ]]; then
     [[ "\${TAUTULLI_API_ENABLED:-}" == "1" ]]
     [[ "\${TAUTULLI_PMS_SSL:-}" == "0" ]]
   fi
+  exit 0
+fi
+
+if [[ "\${1:-}" == "info" ]]; then
+  printf '%s' "\${DOCKER_FAKE_DAEMON_ID:?}"
   exit 0
 fi
 
@@ -313,6 +319,7 @@ function scriptEnvironment(extraEnv = {}) {
 			...extraEnv,
 			CURL_CALL_LOG: join(sandboxDir, "curl-calls.log"),
 			DOCKER_CALL_LOG: join(sandboxDir, "docker-calls.log"),
+			DOCKER_FAKE_DAEMON_ID: fakeDaemonId,
 			PLEX_IDENTITY_SEQUENCE_STATE: join(sandboxDir, "plex-identity-sequence-state"),
 			TRACEARR_SETUP_SEQUENCE_STATE: join(sandboxDir, "tracearr-setup-sequence-state"),
 			CURL_SEQUENCE_STATE: join(sandboxDir, "curl-sequence-state"),
@@ -341,6 +348,7 @@ function runScriptAsyncAt(scriptHarnessDir, scriptName, extraEnv = {}) {
 
 test.beforeEach(() => {
 	sandboxDir = mkdtempSync(join(tmpdir(), "media-analytics-bootstrap-"));
+	fakeDaemonId = `fake-${process.pid}-${sandboxDir.slice(-6)}`;
 	const harnessParentDir = join(sandboxDir, "harness");
 	mkdirSync(harnessParentDir);
 	cpSync(sourceHarnessDir, harnessParentDir, {
@@ -359,6 +367,10 @@ test.beforeEach(() => {
 });
 
 test.afterEach(() => {
+	rmSync(`/tmp/arr-dashboard-media-analytics-e2e-${process.getuid()}-${fakeDaemonId}`, {
+		recursive: true,
+		force: true,
+	});
 	rmSync(sandboxDir, { recursive: true, force: true });
 });
 
@@ -665,13 +677,9 @@ test("bootstrap rejects a concurrent run before provider enrollment", { timeout:
 		PLEX_IDENTITY_INTERVAL_SECONDS: "0",
 	});
 	assert.notEqual(secondResult.status, 0);
-	assert.match(secondResult.stderr ?? "", /bootstrap is already running/i);
-	const lockDir = join(
-		sandboxDir,
-		"runtime",
-		`arr-dashboard-media-analytics-e2e-${process.getuid()}`,
-	);
+	assert.match(secondResult.stderr ?? "", /lifecycle operation is already running/i);
+	const lockDir = `/tmp/arr-dashboard-media-analytics-e2e-${process.getuid()}-${fakeDaemonId}`;
 	assert.equal(statSync(lockDir).mode & 0o777, 0o700);
-	assert.equal(statSync(join(lockDir, "bootstrap.lock")).mode & 0o777, 0o600);
+	assert.equal(statSync(join(lockDir, "lifecycle.lock")).mode & 0o777, 0o600);
 	await firstRun;
 });

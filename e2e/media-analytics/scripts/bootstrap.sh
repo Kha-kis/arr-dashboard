@@ -198,37 +198,7 @@ assert_dashboard_connection() {
 
 mkdir -p "$STATE_DIR"
 chmod 0700 "$STATE_DIR"
-require_command flock
-
-# Every checkout controls the same fixed Compose project, so the bootstrap lock
-# must live outside the worktree. Keep it in an owner-only runtime directory and
-# key it by project and uid so separate checkouts cannot enroll the same stack
-# concurrently.
-lock_parent="${XDG_RUNTIME_DIR:-/tmp}"
-lock_dir="${lock_parent%/}/${COMPOSE_PROJECT}-$(id -u)"
-lock_file="${lock_dir}/bootstrap.lock"
-if [[ -L "$lock_dir" ]]; then
-	echo "refusing unsafe media analytics bootstrap lock directory" >&2
-	exit 1
-fi
-if ! mkdir -m 0700 "$lock_dir" 2>/dev/null && [[ ! -d "$lock_dir" ]]; then
-	echo "unable to create media analytics bootstrap lock directory" >&2
-	exit 1
-fi
-if [[ "$(stat -c '%u' "$lock_dir")" != "$(id -u)" || "$(stat -c '%a' "$lock_dir")" != "700" ]]; then
-	echo "refusing unsafe media analytics bootstrap lock directory" >&2
-	exit 1
-fi
-if [[ -L "$lock_file" ]]; then
-	echo "refusing unsafe media analytics bootstrap lock file" >&2
-	exit 1
-fi
-exec 9>"$lock_file"
-chmod 0600 "$lock_file"
-if ! flock -n 9; then
-	echo "media analytics bootstrap is already running" >&2
-	exit 1
-fi
+acquire_lifecycle_lock
 
 claim_cleanup_required=false
 cleanup_bootstrap() {

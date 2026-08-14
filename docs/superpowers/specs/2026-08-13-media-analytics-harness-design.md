@@ -115,8 +115,10 @@ arr-dashboard container pattern. Generated state lives in a gitignored run
 directory beneath `e2e/media-analytics/`, has owner-only permissions, and is
 removed by the verified purge path.
 
-Bootstrap coordination uses a separate owner-only host runtime lock keyed by
-the fixed Compose project so two worktrees cannot enroll it concurrently.
+Lifecycle coordination uses a separate owner-only canonical host lock keyed by
+Docker engine, fixed Compose project, and UID. It ignores caller-specific
+runtime-directory environment and serializes bootstrap, teardown, purge, and
+the full reset teardown-to-bootstrap transition across worktrees.
 
 ## Credentials and Plex modes
 

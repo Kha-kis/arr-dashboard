@@ -11,6 +11,7 @@ if [[ "$purge_volumes" != "0" && "$purge_volumes" != "1" ]]; then
   exit 1
 fi
 
+acquire_lifecycle_lock
 assert_owned_resources
 
 if [[ "$purge_volumes" == "1" ]]; then

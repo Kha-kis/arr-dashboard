@@ -55,9 +55,9 @@ pnpm e2e:media-analytics
 `up` is idempotent. It signs in to existing fixture accounts, reuses only exact
 service identities, refreshes disposable provider credentials, and reruns all
 three arr-dashboard connection tests. A label or endpoint collision fails
-closed instead of creating another instance. An owner-only host runtime lock,
-keyed by the fixed Compose project, rejects concurrent bootstrap runs from any
-worktree before provider enrollment.
+closed instead of creating another instance. An owner-only canonical host lock,
+keyed by Docker engine, fixed Compose project, and UID, serializes bootstrap,
+teardown, purge, and the full reset transition across all worktrees.
 
 External service images and both Node base stages use reviewed tag-and-digest
 pairs. Updating an upstream version requires updating its expected digest in the
@@ -84,13 +84,13 @@ node --test e2e/media-analytics/tests/bootstrap.test.mjs
 ```bash
 pnpm e2e:media-analytics:down   # stop containers; retain volumes
 pnpm e2e:media-analytics:up     # resume retained state
-pnpm e2e:media-analytics:reset  # verify ownership, purge volumes, start fresh
+PLEX_CLAIM=claim-... pnpm e2e:media-analytics:reset  # purge volumes and start fresh
 pnpm e2e:media-analytics:purge  # verify ownership, remove stack and volumes
 ```
 
 `reset` and `purge` re-resolve and verify the Compose project label immediately
-before deletion. A reset removes the claimed Plex volume, so its first fresh run
-needs a new invocation-only claim.
+before deletion. Resource-enumeration failure aborts the mutation. A reset
+validates a new invocation-only claim before removing the claimed Plex volume.
 
 ## Diagnostics
 

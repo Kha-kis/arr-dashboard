@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 
 const harnessDir = resolve("e2e/media-analytics");
@@ -20,6 +20,7 @@ const foreignFixture = [
 
 let sandboxDir;
 let dockerCallLog;
+let fakeDaemonId;
 
 function writeFakeDocker(binDir) {
   const fakeDocker = join(binDir, "docker");
@@ -33,7 +34,11 @@ printf '\\n' >> "$DOCKER_CALL_LOG"
 resources="\${DOCKER_FAKE_RESOURCES:-}"
 
 case "\${1:-}" in
+  info)
+    printf '%s' "\${DOCKER_FAKE_DAEMON_ID:?}"
+    ;;
   ps)
+    [[ "\${DOCKER_FAIL_LIST_KIND:-}" != "container" ]] || exit 42
     awk -F: -v kind="container" '$1 == kind { print $2 }' <<< "$resources"
     ;;
   network|volume)
@@ -42,6 +47,7 @@ case "\${1:-}" in
       resource_id="\${@: -1}"
       awk -F: -v kind="$resource_type" -v id="$resource_id" '$1 == kind && $2 == id { print $3; found = 1 } END { if (!found) exit 1 }' <<< "$resources"
     else
+      [[ "\${DOCKER_FAIL_LIST_KIND:-}" != "$resource_type" ]] || exit 42
       awk -F: -v kind="$resource_type" '$1 == kind { print $2 }' <<< "$resources"
     fi
     ;;
@@ -74,6 +80,8 @@ function runScript(scriptName, extraEnv = {}) {
       ...process.env,
       ...extraEnv,
       DOCKER_CALL_LOG: dockerCallLog,
+      DOCKER_FAKE_DAEMON_ID: fakeDaemonId,
+      XDG_RUNTIME_DIR: join(sandboxDir, "runtime"),
       PATH: `${join(sandboxDir, "bin")}:${process.env.PATH}`,
     },
   });
@@ -87,14 +95,17 @@ function readCalls() {
 
 test.beforeEach(() => {
   sandboxDir = mkdtempSync(join(tmpdir(), "media-analytics-lifecycle-"));
+  fakeDaemonId = `fake-${process.pid}-${sandboxDir.slice(-6)}`;
   const binDir = join(sandboxDir, "bin");
   mkdirSync(binDir);
+  mkdirSync(join(sandboxDir, "runtime"), { mode: 0o700 });
   dockerCallLog = join(sandboxDir, "docker-calls.log");
   writeFileSync(dockerCallLog, "");
   writeFakeDocker(binDir);
 });
 
 test.afterEach(() => {
+  rmSync(`/tmp/${projectLabel}-${process.getuid()}-${fakeDaemonId}`, { recursive: true, force: true });
   rmSync(sandboxDir, { recursive: true, force: true });
 });
 
@@ -126,6 +137,93 @@ test("down revalidates every resource with its type-specific label field", () =>
   assert.match(calls, /container inspect --format \{\{ index \.Config\.Labels "com\.docker\.compose\.project" \}\} owned-container/);
   assert.match(calls, /network inspect --format \{\{ index \.Labels "com\.docker\.compose\.project" \}\} owned-network/);
   assert.match(calls, /volume inspect --format \{\{ index \.Labels "com\.docker\.compose\.project" \}\} owned-volume/);
+});
+
+for (const resourceType of ["container", "network", "volume"]) {
+  test(`down fails closed when ${resourceType} enumeration fails`, () => {
+    const result = runScript("teardown.sh", {
+      DOCKER_FAKE_RESOURCES: ownedFixture,
+      DOCKER_FAIL_LIST_KIND: resourceType,
+    });
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unable to list compose resources/i);
+    assert.doesNotMatch(readCalls(), /compose .* down/);
+  });
+}
+
+test("teardown cannot bypass another worktree lock with a different runtime environment", async () => {
+  const marker = join(sandboxDir, "lock-held");
+  const commonScript = join(scriptsDir, "common.sh");
+  const holder = spawn(
+    "bash",
+    ["-c", 'source "$1"; acquire_lifecycle_lock; : > "$2"; sleep 1', "holder", commonScript, marker],
+    {
+      cwd: harnessDir,
+      env: {
+        ...process.env,
+        DOCKER_CALL_LOG: dockerCallLog,
+        DOCKER_FAKE_DAEMON_ID: fakeDaemonId,
+        XDG_RUNTIME_DIR: "",
+        PATH: `${join(sandboxDir, "bin")}:${process.env.PATH}`,
+      },
+    },
+  );
+
+  for (let attempt = 0; attempt < 50 && !existsSync(marker); attempt += 1) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, 20));
+  }
+  assert.equal(existsSync(marker), true, "lifecycle lock holder did not start");
+
+  const result = runScript("teardown.sh", { DOCKER_FAKE_RESOURCES: ownedFixture });
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /lifecycle operation is already running/i);
+  assert.doesNotMatch(readCalls(), /compose .* down/);
+
+  await new Promise((resolveChild) => holder.on("close", resolveChild));
+});
+
+test("a reset can carry the lifecycle lock across nested scripts", () => {
+  const commonScript = join(scriptsDir, "common.sh");
+  const result = spawnSync(
+    "bash",
+    [
+      "-c",
+      'source "$1"; acquire_lifecycle_lock; bash -c \'source "$1"; acquire_lifecycle_lock\' nested "$1"',
+      "parent",
+      commonScript,
+    ],
+    {
+      cwd: harnessDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DOCKER_CALL_LOG: dockerCallLog,
+        DOCKER_FAKE_DAEMON_ID: fakeDaemonId,
+        XDG_RUNTIME_DIR: join(sandboxDir, "runtime"),
+        PATH: `${join(sandboxDir, "bin")}:${process.env.PATH}`,
+      },
+    },
+  );
+
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test("reset validates claim inputs before deleting retained volumes", () => {
+  const missingClaim = runScript("reset.sh", { DOCKER_FAKE_RESOURCES: ownedFixture });
+  assert.notEqual(missingClaim.status, 0);
+  assert.match(missingClaim.stderr, /requires.*PLEX_CLAIM/i);
+  assert.doesNotMatch(readCalls(), /compose .* down/);
+
+  writeFileSync(dockerCallLog, "");
+  const forbiddenToken = runScript("reset.sh", {
+    DOCKER_FAKE_RESOURCES: ownedFixture,
+    PLEX_CLAIM: "claim-test",
+    PLEX_TOKEN: "forbidden-token",
+  });
+  assert.notEqual(forbiddenToken.status, 0);
+  assert.match(forbiddenToken.stderr, /PLEX_TOKEN is not accepted/i);
+  assert.doesNotMatch(readCalls(), /compose .* down/);
 });
 
 test("preflight rejects a non-loopback dashboard URL", () => {
