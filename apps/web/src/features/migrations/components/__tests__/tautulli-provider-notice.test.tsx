@@ -94,6 +94,25 @@ describe("Tautulli provider notice", () => {
 		);
 	});
 
+	it("names Tracearr as the configured alternative when Tautulli is selected", async () => {
+		vi.mocked(systemApi.fetchTautulliProviderNotices).mockResolvedValue({
+			notices: [
+				{
+					key: "tautulli-both-configured",
+					kind: "both-configured",
+					selected: "tautulli",
+					actionUrl: "/settings/services#analytics-provider",
+				},
+			],
+		});
+
+		renderNotice();
+
+		await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+		expect(screen.getByText("Tautulli is selected for historical analytics")).toBeInTheDocument();
+		expect(screen.getByText(/Tracearr is also configured/i)).toBeInTheDocument();
+	});
+
 	it.each(["Tautulli only", "Tracearr only", "neither provider", "dismissed state"])(
 		"does not render a notice when the API reports no pending notice for %s",
 		async () => {

@@ -137,7 +137,17 @@ export const ServiceOnboarding = () => {
 				isDefault: !services.some((service) => service.service === payload.service),
 			});
 			if (draft.service === "tautulli") {
-				await updateAnalyticsProvider.mutateAsync({ provider: "tautulli" });
+				try {
+					await updateAnalyticsProvider.mutateAsync({ provider: "tautulli" });
+				} catch {
+					setDraft(null);
+					setResult({
+						success: true,
+						message:
+							"Tautulli service was connected but could not be selected. Complete analytics provider selection in Settings > Services.",
+					});
+					return;
+				}
 			}
 			setDraft(null);
 			setResult({ success: true, message: "Service connected successfully." });
@@ -146,7 +156,8 @@ export const ServiceOnboarding = () => {
 		}
 	};
 
-	const isSaving = testConnection.isPending || createService.isPending;
+	const isSaving =
+		testConnection.isPending || createService.isPending || updateAnalyticsProvider.isPending;
 
 	return (
 		<div className="w-full max-w-4xl space-y-6 py-8">
@@ -263,7 +274,16 @@ export const ServiceOnboarding = () => {
 								onClick={() => selectService(service)}
 								className="capitalize"
 							>
-								{service}
+								{service === "tracearr" || service === "tautulli" ? (
+									<span className="flex items-center gap-1.5">
+										{service}
+										<span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+											{service === "tracearr" ? "Recommended" : "Alternative"}
+										</span>
+									</span>
+								) : (
+									service
+								)}
 							</Button>
 						))}
 					</div>

@@ -10,8 +10,7 @@ import {
 const noticeContent = (selected: "tracearr" | "tautulli") => ({
 	"both-configured": {
 		title: `${selected === "tracearr" ? "Tracearr" : "Tautulli"} is selected for historical analytics`,
-		description:
-			"Tautulli is also configured. Historical analytics stays with the selected provider until you explicitly switch it.",
+		description: `${selected === "tracearr" ? "Tautulli" : "Tracearr"} is also configured. Historical analytics stays with the selected provider until you explicitly switch it.`,
 	},
 	"prior-removal": {
 		title: `${selected === "tracearr" ? "Tracearr" : "Tautulli"} is selected for historical analytics`,

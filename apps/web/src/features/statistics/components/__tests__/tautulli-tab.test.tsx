@@ -110,4 +110,120 @@ describe("TautulliTab", () => {
 		expect(screen.queryByText("Family Tautulli")).not.toBeInTheDocument();
 		expect(screen.getByTestId("tautulli-analytics")).toBeInTheDocument();
 	});
+
+	it("renders supplied empty states when all provider collections are empty", () => {
+		mocks.stats.mockReturnValue({ data: { ...response.stats, sources: [] }, isLoading: false });
+		mocks.plays.mockReturnValue({ data: { ...response.plays, sources: [] }, isLoading: false });
+		mocks.history.mockReturnValue({ data: { ...response.history, sources: [] }, isLoading: false });
+
+		render(<TautulliTab />, { wrapper: wrapper() });
+
+		expect(screen.getByText("No Tautulli statistics")).toBeInTheDocument();
+		expect(screen.getByText("No plays by date")).toBeInTheDocument();
+		expect(screen.getByText("No Tautulli watch history")).toBeInTheDocument();
+	});
+
+	it("distinguishes incomplete Tautulli statistics sources", () => {
+		mocks.stats.mockReturnValue({
+			data: {
+				...response.stats,
+				sources: [
+					{
+						...response.stats.sources[0],
+						incompleteReason: "source_unreachable",
+					},
+					{
+						...response.stats.sources[0],
+						instanceId: "tautulli-2",
+						incompleteReason: "connection_changed",
+					},
+					{
+						...response.stats.sources[0],
+						instanceId: "tautulli-3",
+						incompleteReason: "user_list_unavailable",
+					},
+					{
+						...response.stats.sources[0],
+						instanceId: "tautulli-4",
+						incompleteReason: "user_stats_partial",
+						failedUserCount: 2,
+					},
+				],
+			},
+			isLoading: false,
+		});
+
+		render(<TautulliTab />, { wrapper: wrapper() });
+
+		expect(screen.getByText(/Statistics unavailable: source unreachable/i)).toBeInTheDocument();
+		expect(screen.getByText(/Statistics unavailable: connection changed/i)).toBeInTheDocument();
+		expect(screen.getByText(/User statistics unavailable/i)).toBeInTheDocument();
+		expect(
+			screen.getByText(/User statistics are partial; 2 users could not be loaded/i),
+		).toBeInTheDocument();
+	});
+
+	it("surfaces per-source plays and history incompleteness without generic empty history", () => {
+		mocks.plays.mockReturnValue({
+			data: {
+				...response.plays,
+				sources: [
+					{
+						...response.plays.sources[0],
+						incompleteReason: "connection_changed",
+						series: [],
+					},
+				],
+			},
+			isLoading: false,
+		});
+		mocks.history.mockReturnValue({
+			data: {
+				...response.history,
+				pagination: { ...response.history.pagination, complete: false },
+				sources: [
+					{
+						...response.history.sources[0],
+						complete: false,
+						incompleteReason: "page_truncated",
+						history: [],
+					},
+				],
+			},
+			isLoading: false,
+		});
+
+		render(<TautulliTab />, { wrapper: wrapper() });
+
+		expect(screen.getByText(/Plays by date unavailable: connection changed/i)).toBeInTheDocument();
+		expect(screen.getByText(/History is incomplete: page truncated/i)).toBeInTheDocument();
+		expect(screen.getByText(/History pagination is incomplete/i)).toBeInTheDocument();
+		expect(screen.queryByText("No Tautulli watch history")).not.toBeInTheDocument();
+	});
+
+	it("keeps distinct users with the same history item and timestamp as separate rows", () => {
+		const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+		const historySource = response.history.sources[0]!;
+		const historyItem = historySource.history[0]!;
+		mocks.history.mockReturnValue({
+			data: {
+				...response.history,
+				sources: [
+					{
+						...historySource,
+						totalCount: 2,
+						history: [historyItem, { ...historyItem, user: "bob" }],
+					},
+				],
+			},
+			isLoading: false,
+		});
+
+		render(<TautulliTab />, { wrapper: wrapper() });
+
+		expect(screen.getByTestId("tautulli-analytics")).toHaveTextContent("alice");
+		expect(screen.getByTestId("tautulli-analytics")).toHaveTextContent("bob");
+		expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/same key|unique "key" prop/i);
+		consoleError.mockRestore();
+	});
 });

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
 	createService: vi.fn(),
 	push: vi.fn(),
 	updateAnalyticsProvider: vi.fn(),
+	analyticsProviderPending: false,
 }));
 
 vi.mock("next/navigation", () => ({
@@ -54,7 +55,7 @@ vi.mock("../../../../hooks/api/useServiceMutations", () => ({
 vi.mock("../../../../hooks/api/useSystem", () => ({
 	useUpdateAnalyticsProviderSelection: () => ({
 		mutateAsync: mocks.updateAnalyticsProvider,
-		isPending: false,
+		isPending: mocks.analyticsProviderPending,
 	}),
 }));
 
@@ -78,6 +79,7 @@ describe("ServiceOnboarding", () => {
 		mocks.testConnection.mockResolvedValue({ success: true, version: "10.9.0" });
 		mocks.createService.mockResolvedValue({ id: "service-1" });
 		mocks.updateAnalyticsProvider.mockResolvedValue({ selected: "tautulli" });
+		mocks.analyticsProviderPending = false;
 	});
 
 	it("loads discovery automatically and pre-fills a candidate", () => {
@@ -157,7 +159,7 @@ describe("ServiceOnboarding", () => {
 				/Tracearr is recommended for new analytics setups.+Choose one historical analytics provider/,
 			),
 		).toBeInTheDocument();
-		fireEvent.click(screen.getByRole("button", { name: "tautulli" }));
+		fireEvent.click(screen.getByRole("button", { name: /tautulli.*alternative/i }));
 
 		expect(screen.getByLabelText("Label")).toHaveValue("Primary Tautulli");
 		expect(screen.getByLabelText("Base URL")).toHaveAttribute(
@@ -196,10 +198,49 @@ describe("ServiceOnboarding", () => {
 		);
 	});
 
+	it("labels the analytics setup choices where operators select them", () => {
+		render(<ServiceOnboarding />);
+
+		expect(screen.getByRole("button", { name: /tracearr.*recommended/i })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /tautulli.*alternative/i })).toBeInTheDocument();
+	});
+
+	it("reports selection failure as partial success without leaving Tautulli resubmittable", async () => {
+		mocks.updateAnalyticsProvider.mockRejectedValueOnce(
+			new Error("Selection endpoint unavailable"),
+		);
+		render(<ServiceOnboarding />);
+		fireEvent.click(screen.getByRole("button", { name: /tautulli.*alternative/i }));
+		fireEvent.change(screen.getByLabelText("Base URL"), {
+			target: { value: "http://tautulli:8181" },
+		});
+		fireEvent.change(screen.getByLabelText("API key"), {
+			target: { value: "tautulli-api-key" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Test and add" }));
+
+		expect(
+			await screen.findByText(/Tautulli service was connected but could not be selected/i),
+		).toBeInTheDocument();
+		expect(screen.getByText(/Settings > Services/i)).toBeInTheDocument();
+		expect(screen.queryByText("Failed to add service")).not.toBeInTheDocument();
+		expect(mocks.createService).toHaveBeenCalledOnce();
+		expect(screen.queryByLabelText("Label")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Test and add" })).not.toBeInTheDocument();
+	});
+
+	it("disables Tautulli submission while provider selection is pending", () => {
+		mocks.analyticsProviderPending = true;
+		render(<ServiceOnboarding />);
+		fireEvent.click(screen.getByRole("button", { name: /tautulli.*alternative/i }));
+
+		expect(screen.getByRole("button", { name: "Test and add" })).toBeDisabled();
+	});
+
 	it("does not select Tautulli when connection verification fails", async () => {
 		mocks.testConnection.mockResolvedValue({ success: false, error: "Unauthorized" });
 		render(<ServiceOnboarding />);
-		fireEvent.click(screen.getByRole("button", { name: "tautulli" }));
+		fireEvent.click(screen.getByRole("button", { name: /tautulli.*alternative/i }));
 		fireEvent.change(screen.getByLabelText("Base URL"), {
 			target: { value: "http://tautulli:8181" },
 		});
