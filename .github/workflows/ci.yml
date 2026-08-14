@@ -3,6 +3,12 @@ name: CI
 on:
   push:
     branches: [main, "release/**"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".vscode/**"
+      - "LICENSE"
+      - ".gitignore"
   pull_request:
     branches: [main, "release/**"]
 
