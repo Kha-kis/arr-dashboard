@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-	AnalyticsProviderSelectionMismatchError,
+	type AnalyticsProviderSelectionMismatchError,
 	requireSelectedAnalyticsProvider,
 	resolveAnalyticsProviderSelection,
 	selectAnalyticsProvider,
@@ -17,7 +17,14 @@ type Scenario = {
 	source: "explicit" | "migration-default";
 };
 
-function createPrisma({ stored, tracearr, tautulli, tracearrEnabled, tautulliEnabled, source }: Scenario) {
+function createPrisma({
+	stored,
+	tracearr,
+	tautulli,
+	tracearrEnabled,
+	tautulliEnabled,
+	source,
+}: Scenario) {
 	let settings: { analyticsProvider: Provider | null; analyticsProviderSource: string | null } = {
 		analyticsProvider: stored,
 		analyticsProviderSource: source,
@@ -34,11 +41,13 @@ function createPrisma({ stored, tracearr, tautulli, tracearrEnabled, tautulliEna
 			}),
 		},
 		serviceInstance: {
-			count: vi.fn(async ({ where }: { where: { service: "TRACEARR" | "TAUTULLI"; enabled?: boolean } }) => {
-				const configured = where.service === "TRACEARR" ? tracearr : tautulli;
-				const enabled = where.service === "TRACEARR" ? tracearrEnabled : tautulliEnabled;
-				return where.enabled === true ? (enabled ?? configured) : configured;
-			}),
+			count: vi.fn(
+				async ({ where }: { where: { service: "TRACEARR" | "TAUTULLI"; enabled?: boolean } }) => {
+					const configured = where.service === "TRACEARR" ? tracearr : tautulli;
+					const enabled = where.service === "TRACEARR" ? tracearrEnabled : tautulliEnabled;
+					return where.enabled === true ? (enabled ?? configured) : configured;
+				},
+			),
 		},
 	};
 	return {

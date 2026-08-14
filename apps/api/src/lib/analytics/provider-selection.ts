@@ -32,7 +32,10 @@ function resolveStatus(family: AnalyticsProviderFamilyState): AnalyticsProviderS
 	return "configured";
 }
 
-function inferProvider(tracearr: AnalyticsProviderFamilyState, tautulli: AnalyticsProviderFamilyState) {
+function inferProvider(
+	tracearr: AnalyticsProviderFamilyState,
+	tautulli: AnalyticsProviderFamilyState,
+) {
 	return tracearr.configuredCount === 0 && tautulli.configuredCount > 0 ? "tautulli" : "tracearr";
 }
 
@@ -41,18 +44,23 @@ export async function resolveAnalyticsProviderSelection(
 	userId: string,
 ): Promise<AnalyticsProviderSelection> {
 	return await prisma.$transaction(async (tx) => {
-		const [settings, tracearrConfiguredCount, tracearrEnabledCount, tautulliConfiguredCount, tautulliEnabledCount] =
-			await Promise.all([
-				tx.systemSettings.findUnique({ where: { id: 1 } }),
-				tx.serviceInstance.count({ where: { userId, service: PROVIDER_SERVICES.tracearr } }),
-				tx.serviceInstance.count({
-					where: { userId, service: PROVIDER_SERVICES.tracearr, enabled: true },
-				}),
-				tx.serviceInstance.count({ where: { userId, service: PROVIDER_SERVICES.tautulli } }),
-				tx.serviceInstance.count({
-					where: { userId, service: PROVIDER_SERVICES.tautulli, enabled: true },
-				}),
-			]);
+		const [
+			settings,
+			tracearrConfiguredCount,
+			tracearrEnabledCount,
+			tautulliConfiguredCount,
+			tautulliEnabledCount,
+		] = await Promise.all([
+			tx.systemSettings.findUnique({ where: { id: 1 } }),
+			tx.serviceInstance.count({ where: { userId, service: PROVIDER_SERVICES.tracearr } }),
+			tx.serviceInstance.count({
+				where: { userId, service: PROVIDER_SERVICES.tracearr, enabled: true },
+			}),
+			tx.serviceInstance.count({ where: { userId, service: PROVIDER_SERVICES.tautulli } }),
+			tx.serviceInstance.count({
+				where: { userId, service: PROVIDER_SERVICES.tautulli, enabled: true },
+			}),
+		]);
 
 		const families = {
 			tracearr: { configuredCount: tracearrConfiguredCount, enabledCount: tracearrEnabledCount },
@@ -62,7 +70,12 @@ export async function resolveAnalyticsProviderSelection(
 		const source = analyticsProviderSourceSchema.safeParse(settings?.analyticsProviderSource);
 
 		if (selected.success && source.success) {
-			return { selected: selected.data, source: source.data, families, status: resolveStatus(families[selected.data]) };
+			return {
+				selected: selected.data,
+				source: source.data,
+				families,
+				status: resolveStatus(families[selected.data]),
+			};
 		}
 
 		const inferred = inferProvider(families.tracearr, families.tautulli);
