@@ -143,8 +143,7 @@ describe("resolveAnalyticsProviderSelection", () => {
 		const compareAndSetResult = new Promise<{ count: number }>((resolve) => {
 			releaseCompareAndSet = resolve;
 		});
-		let prisma: ReturnType<typeof createPrisma>;
-		prisma = createPrisma(
+		const prisma: ReturnType<typeof createPrisma> = createPrisma(
 			{
 				stored: null,
 				source: "migration-default",
