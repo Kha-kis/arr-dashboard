@@ -6,9 +6,47 @@ readonly HARNESS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 readonly COMPOSE_PROJECT="arr-dashboard-media-analytics-e2e"
 readonly COMPOSE_FILE="${HARNESS_DIR}/docker-compose.yml"
 readonly COMPOSE_PROJECT_LABEL="com.docker.compose.project"
+readonly HARNESS_ENV_FILE="${HARNESS_DIR}/.env"
+
+load_harness_ports() {
+  local key value
+
+  if [[ -f "$HARNESS_ENV_FILE" ]]; then
+    while IFS='=' read -r key value || [[ -n "$key" || -n "$value" ]]; do
+      key="${key%$'\r'}"
+      value="${value%$'\r'}"
+      [[ -z "$key" || "$key" == \#* ]] && continue
+      case "$key" in
+        PLEX_PORT|TAUTULLI_PORT|TRACEARR_PORT|DASHBOARD_PORT|DASHBOARD_API_PORT)
+          if [[ -z "${!key+x}" ]]; then
+            export "$key=$value"
+          fi
+          ;;
+      esac
+    done < "$HARNESS_ENV_FILE"
+  fi
+
+  : "${PLEX_PORT:=32400}" "${TAUTULLI_PORT:=38181}" "${TRACEARR_PORT:=33000}"
+  : "${DASHBOARD_PORT:=33030}" "${DASHBOARD_API_PORT:=33031}"
+  export PLEX_PORT TAUTULLI_PORT TRACEARR_PORT DASHBOARD_PORT DASHBOARD_API_PORT
+
+  for key in PLEX_PORT TAUTULLI_PORT TRACEARR_PORT DASHBOARD_PORT DASHBOARD_API_PORT; do
+    value="${!key}"
+    if [[ ! "$value" =~ ^[0-9]+$ ]] || ((value < 1 || value > 65535)); then
+      echo "$key must be a numeric TCP port between 1 and 65535" >&2
+      return 1
+    fi
+  done
+}
+
+load_harness_ports
 
 compose() {
-  docker compose --project-name "$COMPOSE_PROJECT" --file "$COMPOSE_FILE" "$@"
+  local compose_args=(compose --project-name "$COMPOSE_PROJECT" --file "$COMPOSE_FILE")
+  if [[ -f "$HARNESS_ENV_FILE" ]]; then
+    compose_args=(compose --project-name "$COMPOSE_PROJECT" --env-file "$HARNESS_ENV_FILE" --file "$COMPOSE_FILE")
+  fi
+  docker "${compose_args[@]}" "$@"
 }
 
 require_command() {

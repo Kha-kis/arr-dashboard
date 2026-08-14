@@ -12,11 +12,11 @@
 
 - Use the exact Compose project name `arr-dashboard-media-analytics-e2e` for every Compose invocation.
 - Bind every published port to `127.0.0.1`; provider-to-provider traffic uses private Compose service names.
-- Use pinned image versions: Plex `plexinc/pms-docker:1.43.3.10861-07dfddaeb`, Tautulli `tautulli/tautulli:v2.17.2`, Tracearr `ghcr.io/connorgallopo/tracearr:2.0.1`, TimescaleDB `timescale/timescaledb-ha:pg18.4-ts2.29.1`, Redis `redis:8.2.2-alpine`, and FFmpeg `linuxserver/ffmpeg:8.1.2-cli-ls76`.
+- Use pinned image versions and reviewed immutable digests: Plex `plexinc/pms-docker:1.43.3.10861-07dfddaeb`, Tautulli `tautulli/tautulli:v2.17.2`, Tracearr `ghcr.io/connorgallopo/tracearr:2.0.1`, TimescaleDB `timescale/timescaledb-ha:pg18.4-ts2.29.1`, Redis `redis:8.2.2-alpine`, and FFmpeg `linuxserver/ffmpeg:8.1.2-cli-ls76`. The parsed Compose test is the source of truth for each tag-and-digest pair.
 - Do not use `container_name`, `latest`, production endpoints, production credentials, or direct provider-database edits.
 - Generated credentials and artifacts live below gitignored `e2e/media-analytics/.state/` with owner-only permissions.
 - Destructive lifecycle operations resolve candidate resources immediately before mutation and reject any resource whose `com.docker.compose.project` label differs from the expected project.
-- `PLEX_CLAIM` and `PLEX_TOKEN` are optional, invocation-only, never written to disk, and never printed. Claimed mode requires both because Plex does not expose a supported endpoint that recovers the server token produced by claim exchange.
+- `PLEX_CLAIM` is optional and invocation-only; it is never written to harness state or printed. `PLEX_TOKEN` is rejected. After claim exchange, bootstrap reads Plex's server-issued token from the owner-only container configuration, keeps it in memory, and scrubs the one-time claim from subsequent container metadata.
 - Local Plex mode uses only the dedicated private Compose subnet. If supported connection APIs reject unclaimed Plex, fail with an actionable claimed-mode instruction; never fabricate success.
 - A running container is not proof of readiness. Each real service must answer its health or supported API check.
 - This plan does not add skipped or expected-failing provider-selection tests. Those land with the provider-selection runtime in the next focused plan.
@@ -283,9 +283,11 @@ when starting downstream services. In local mode, probe from the dedicated
 allowed subnet without a token first; the generated placeholder is supplied only
 to clients whose schemas require a non-empty value, and success is treated as an
 observed local-mode compatibility result rather than a documented Plex token
-contract. In claimed mode, require invocation-only `PLEX_CLAIM` and `PLEX_TOKEN`
-before startup. Configure the synthetic library through Plex's supported HTTP
-setup flow only when the authenticated management call is available.
+contract. In claimed mode, accept only invocation-only `PLEX_CLAIM`, then read
+the server-issued token from Plex's owner-only container configuration after the
+claim exchange. Never print or persist either value in harness state. Configure
+the synthetic library through Plex's supported HTTP setup flow only when the
+authenticated management call is available.
 
 Configure Tautulli non-interactively with its
 supported `TAUTULLI_FIRST_RUN_COMPLETE`, `TAUTULLI_PMS_TOKEN`,

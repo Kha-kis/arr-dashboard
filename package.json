@@ -17,6 +17,8 @@
 		"e2e:authentik:up": "cd e2e/authentik-test && docker compose --project-name arr-dashboard-authentik-e2e down -v --remove-orphans && docker compose --project-name arr-dashboard-authentik-e2e up -d --build && bash bootstrap.sh",
 		"e2e:authentik": "playwright test --config=e2e/authentik-test/playwright.config.ts",
 		"e2e:authentik:down": "cd e2e/authentik-test && docker compose --project-name arr-dashboard-authentik-e2e down -v --remove-orphans",
+		"e2e:media-analytics": "playwright test --config=e2e/media-analytics/playwright.config.ts",
+		"e2e:media-analytics:up": "bash e2e/media-analytics/scripts/preflight.sh && bash e2e/media-analytics/scripts/bootstrap.sh",
 		"e2e:media-analytics:lifecycle-test": "node --test e2e/media-analytics/tests/lifecycle.test.mjs",
 		"e2e:media-analytics:reset": "bash e2e/media-analytics/scripts/reset.sh",
 		"e2e:media-analytics:down": "bash e2e/media-analytics/scripts/teardown.sh",

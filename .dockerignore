@@ -29,6 +29,7 @@
 
 # Testing
 coverage
+e2e/media-analytics/.state/
 *.test.ts
 *.test.tsx
 *.spec.ts

@@ -35,6 +35,7 @@ wait_for_media_analytics_services() {
 	wait_for_http "Plex" "http://127.0.0.1:${plex_port}/identity" 200 "$attempts" "$interval_seconds"
 	wait_for_http "Tautulli" "http://127.0.0.1:${tautulli_port}/status" 200 "$attempts" "$interval_seconds"
 	wait_for_http "Tracearr" "http://127.0.0.1:${tracearr_port}/health" 200 "$attempts" "$interval_seconds"
+	wait_for_http "Tracearr setup API" "http://127.0.0.1:${tracearr_port}/api/v1/setup/status" 200 "$attempts" "$interval_seconds"
 	wait_for_http "arr-dashboard" "http://127.0.0.1:${dashboard_port}/health" 200 "$attempts" "$interval_seconds"
 }
 

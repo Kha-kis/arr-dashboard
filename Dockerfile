@@ -3,7 +3,7 @@
 # syntax=docker/dockerfile:1
 
 # ===== BUILD BASE =====
-FROM node:22-alpine3.21 AS build-base
+FROM node:22-alpine3.21@sha256:af8023ec879993821f6d5b21382ed915622a1b0f1cc03dbeb6804afaf01f8885 AS build-base
 ENV NEXT_TELEMETRY_DISABLED=1
 # python3, make, and g++ are required for native module compilation (better-sqlite3 node-gyp)
 # Alpine has no prebuilt musl binaries for better-sqlite3, so it must compile from source
@@ -70,7 +70,7 @@ RUN cd /app/apps/web/.next/standalone/node_modules && \
     done
 
 # ===== RUNTIME STAGE =====
-FROM node:22-alpine3.21 AS runner
+FROM node:22-alpine3.21@sha256:af8023ec879993821f6d5b21382ed915622a1b0f1cc03dbeb6804afaf01f8885 AS runner
 
 # Build arguments for version injection (set by CI)
 ARG VERSION=dev

@@ -39,7 +39,7 @@ TRACEARR_COOKIE_SECRET=$(openssl rand -hex 32)
 TRACEARR_DB_PASSWORD=$(openssl rand -hex 24)
 TAUTULLI_API_KEY=$(openssl rand -hex 16)
 PLEX_LOCAL_TOKEN=$(openssl rand -hex 32)
-DASHBOARD_ADMIN_PASSWORD=$(openssl rand -hex 24)
+DASHBOARD_ADMIN_PASSWORD=Aa1!$(openssl rand -hex 22)
 API_TEST_STATE=$(openssl rand -hex 16)
 EOF
 

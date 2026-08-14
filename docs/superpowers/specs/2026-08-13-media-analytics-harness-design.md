@@ -96,7 +96,7 @@ The stack contains:
 - Tracearr with its documented TimescaleDB and Redis dependencies; and
 - a pinned media-generation container used as a one-shot job.
 
-Images use immutable version tags or digests recorded in `.env.example`; no
+Images use reviewed tag-and-digest pairs asserted by the parsed Compose test; no
 service uses `latest`. Renovation is an intentional dependency change with a
 focused harness run. Host ports are loopback-bound and overridable. Containers
 communicate through Compose service names on a private network, and the Compose
@@ -114,6 +114,9 @@ read-only except for the application development mount required by the existing
 arr-dashboard container pattern. Generated state lives in a gitignored run
 directory beneath `e2e/media-analytics/`, has owner-only permissions, and is
 removed by the verified purge path.
+
+Bootstrap coordination uses a separate owner-only host runtime lock keyed by
+the fixed Compose project so two worktrees cannot enroll it concurrently.
 
 ## Credentials and Plex modes
 
@@ -138,10 +141,13 @@ scope or fabricating success.
 Claimed mode is opt-in for history-generation behavior that requires a Plex
 account. The operator provides `PLEX_CLAIM` at invocation time. The short-lived
 claim value is passed to the first container start, is never copied into the
-run-state file, and is unset from subsequent Compose invocations. Any durable
-Plex token needed by the clients must be supplied through an owner-only local
-environment file or obtained through a supported Plex flow; the harness does
-not scrape or edit Plex's private database.
+run-state file, and is unset from subsequent Compose invocations. After the
+claim exchange, the harness reads the server-issued token from Plex's owner-only
+container configuration and keeps it in process memory while enrolling the
+other disposable services. It never prints that token or copies it into harness
+run state; downstream services retain it only through their normal private
+credential stores. The harness does not edit Plex's configuration or private
+database.
 
 Startup rejects claimed mode when the required value is absent and rejects any
 pre-existing Plex configuration that does not carry the expected Compose project
