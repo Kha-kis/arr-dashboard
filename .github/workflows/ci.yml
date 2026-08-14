@@ -85,6 +85,9 @@ jobs:
       - name: Run tests
         run: pnpm run test
 
+      - name: Run provider cache heap regression
+        run: pnpm --filter @arr/api run test:provider-cache-heap
+
   # End-to-End Tests with Playwright (sharded for parallelism)
   # Uses production builds for faster, more realistic testing
   e2e:

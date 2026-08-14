@@ -5,6 +5,11 @@ type GuardPrisma = Pick<PrismaClient, "$transaction">;
 
 type GuardResult<T> = { matched: true; value: T } | { matched: false };
 
+export type JellyfinConnectionTransactionOptions = {
+	maxWait?: number;
+	timeout?: number;
+};
+
 /**
  * Run a cache/status write only while the originating Jellyfin/Emby
  * connection is still current.
@@ -18,11 +23,13 @@ export async function withCurrentJellyfinConnection<T>(
 	instanceId: string,
 	expectedConnectionFingerprint: string | undefined,
 	action: (tx: Prisma.TransactionClient) => Promise<T>,
+	options?: JellyfinConnectionTransactionOptions,
 ): Promise<GuardResult<T>> {
+	const postgresql = isPostgresqlDatabase();
 	return await prisma.$transaction(
 		async (tx) => {
 			if (expectedConnectionFingerprint) {
-				if (isPostgresqlDatabase()) {
+				if (postgresql) {
 					await tx.$queryRawUnsafe(
 						'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
 						instanceId,
@@ -52,7 +59,7 @@ export async function withCurrentJellyfinConnection<T>(
 
 			return { matched: true, value: await action(tx) };
 		},
-		isPostgresqlDatabase() ? undefined : { isolationLevel: "Serializable" },
+		postgresql ? options : { isolationLevel: "Serializable", ...options },
 	);
 }
 

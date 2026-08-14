@@ -7,7 +7,11 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { refreshJellyfinCache } from "../jellyfin-cache-refresher.js";
+import {
+	JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE,
+	JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
+	refreshJellyfinCache,
+} from "../jellyfin-cache-refresher.js";
 import type {
 	JellyfinClient,
 	JellyfinItem,
@@ -111,6 +115,31 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
+	it("publishes a large cache through bounded createMany calls", async () => {
+		const itemCount = JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE * 2 + 17;
+		const items = Array.from({ length: itemCount }, (_, index) =>
+			makeSeriesItem({
+				id: `jf-series-${index}`,
+				name: `Series ${index}`,
+				tmdbId: 100_000 + index,
+			}),
+		);
+		const client = makeMockClient(items);
+		const { stub, tx } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: itemCount });
+		expect(tx.jellyfinCache.createMany).toHaveBeenCalledTimes(3);
+		for (const [call] of tx.jellyfinCache.createMany.mock.calls) {
+			expect(call.data.length).toBeLessThanOrEqual(JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE);
+		}
+		expect(stub.$transaction).toHaveBeenCalledWith(
+			expect.any(Function),
+			expect.objectContaining({ timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS }),
+		);
+	});
+
 	it("sets lastWatchedAt for a fully-watched series (item.played === true)", async () => {
 		const item = makeSeriesItem({
 			played: true,
@@ -445,6 +474,7 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 		expect(stub.$transaction).toHaveBeenCalledWith(expect.any(Function), {
 			isolationLevel: "Serializable",
+			timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
 		});
 	});
 
@@ -553,6 +583,8 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 			'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
 			"inst-1",
 		);
-		expect(stub.$transaction).toHaveBeenCalledWith(expect.any(Function), undefined);
+		expect(stub.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+			timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
+		});
 	});
 });

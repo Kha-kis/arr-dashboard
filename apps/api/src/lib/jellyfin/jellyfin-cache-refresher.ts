@@ -21,6 +21,10 @@ import { withCurrentJellyfinConnection } from "./jellyfin-connection-guard.js";
 import type { JellyfinClient, JellyfinLibrary, JellyfinUser } from "./jellyfin-client.js";
 
 export const JELLYFIN_STALE_EVICTION_CHUNK_SIZE = 500;
+/** Bound Prisma's cached createMany query plans for production-sized libraries. */
+export const JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE = 100;
+/** Allow bounded publication batches to complete on higher-latency databases. */
+export const JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS = 60_000;
 
 // ============================================================================
 // Aggregation Types
@@ -277,27 +281,27 @@ export async function refreshJellyfinCache(
 		// Step 5: Publish a complete replacement atomically. An incomplete scan
 		// must leave the previous successful generation untouched.
 		const items = Array.from(aggregations.values());
-		const rows: JellyfinCacheSnapshotRow[] = items.map((agg) => ({
-			instanceId,
-			tmdbId: agg.tmdbId,
-			mediaType: agg.mediaType,
-			libraryId: agg.libraryId,
-			libraryName: agg.libraryName,
-			title: agg.title,
-			jellyfinId: agg.jellyfinId,
-			lastWatchedAt: agg.lastWatchedAt,
-			watchCount: agg.watchCount,
-			watchedByUsers: JSON.stringify([...agg.watchedByUsers].sort()),
-			onDeck: agg.onDeck,
-			userRating: agg.userRating,
-			collections: JSON.stringify([...agg.collections].sort()),
-			addedAt: agg.addedAt,
-			thumb: agg.thumb,
-		}));
 		let completedAt: Date | undefined;
 		if (errors === 0 && complete) {
 			completedAt = new Date();
 			if (options.publish === false) {
+				const rows: JellyfinCacheSnapshotRow[] = items.map((agg) => ({
+					instanceId,
+					tmdbId: agg.tmdbId,
+					mediaType: agg.mediaType,
+					libraryId: agg.libraryId,
+					libraryName: agg.libraryName,
+					title: agg.title,
+					jellyfinId: agg.jellyfinId,
+					lastWatchedAt: agg.lastWatchedAt,
+					watchCount: agg.watchCount,
+					watchedByUsers: JSON.stringify([...agg.watchedByUsers].sort()),
+					onDeck: agg.onDeck,
+					userRating: agg.userRating,
+					collections: JSON.stringify([...agg.collections].sort()),
+					addedAt: agg.addedAt,
+					thumb: agg.thumb,
+				}));
 				return {
 					upserted: 0,
 					errors: 0,
@@ -334,25 +338,32 @@ export async function refreshJellyfinCache(
 					async (tx) => {
 						await tx.jellyfinCache.deleteMany({ where: { instanceId } });
 						if (items.length > 0) {
-							await tx.jellyfinCache.createMany({
-								data: items.map((agg) => ({
-									instanceId,
-									tmdbId: agg.tmdbId,
-									mediaType: agg.mediaType,
-									libraryId: agg.libraryId,
-									libraryName: agg.libraryName,
-									title: agg.title,
-									jellyfinId: agg.jellyfinId,
-									lastWatchedAt: agg.lastWatchedAt,
-									watchCount: agg.watchCount,
-									watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-									onDeck: agg.onDeck,
-									userRating: agg.userRating,
-									collections: JSON.stringify(agg.collections),
-									addedAt: agg.addedAt,
-									thumb: agg.thumb,
-								})),
-							});
+							for (
+								let start = 0;
+								start < items.length;
+								start += JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE
+							) {
+								const chunk = items.slice(start, start + JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE);
+								await tx.jellyfinCache.createMany({
+									data: chunk.map((agg) => ({
+										instanceId,
+										tmdbId: agg.tmdbId,
+										mediaType: agg.mediaType,
+										libraryId: agg.libraryId,
+										libraryName: agg.libraryName,
+										title: agg.title,
+										jellyfinId: agg.jellyfinId,
+										lastWatchedAt: agg.lastWatchedAt,
+										watchCount: agg.watchCount,
+										watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
+										onDeck: agg.onDeck,
+										userRating: agg.userRating,
+										collections: JSON.stringify(agg.collections),
+										addedAt: agg.addedAt,
+										thumb: agg.thumb,
+									})),
+								});
+							}
 						}
 						await tx.cacheRefreshStatus.upsert({
 							where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
@@ -376,6 +387,7 @@ export async function refreshJellyfinCache(
 							},
 						});
 					},
+					{ timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS },
 				);
 				if (!publication.matched) throw new JellyfinRefreshSupersededError();
 				upserted = items.length;
