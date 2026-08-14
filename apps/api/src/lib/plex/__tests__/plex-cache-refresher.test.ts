@@ -16,6 +16,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	clearPlexCacheRefreshSingleFlightsForTests,
 	evictStaleRows,
+	PLEX_CACHE_PUBLICATION_CHUNK_SIZE,
 	refreshPlexCache,
 	STALE_EVICTION_CHUNK_SIZE,
 } from "../plex-cache-refresher.js";
@@ -178,6 +179,12 @@ describe("evictStaleRows", () => {
 		expect(result.upserted).toBe(LIBRARY_SIZE);
 		expect(deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
 		expect(publishedRows).toHaveLength(LIBRARY_SIZE);
+		expect(tx.plexCache.createMany).toHaveBeenCalledTimes(
+			Math.ceil(LIBRARY_SIZE / PLEX_CACHE_PUBLICATION_CHUNK_SIZE),
+		);
+		for (const [call] of tx.plexCache.createMany.mock.calls) {
+			expect(call.data.length).toBeLessThanOrEqual(PLEX_CACHE_PUBLICATION_CHUNK_SIZE);
+		}
 		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 		const statusWrite = tx.cacheRefreshStatus.upsert.mock.calls[0]![0];
 		expect(statusWrite.create.generationId).toMatch(

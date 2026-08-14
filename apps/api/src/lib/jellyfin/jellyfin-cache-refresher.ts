@@ -12,6 +12,9 @@ import { getErrorMessage } from "../utils/error-message.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
 import { withCurrentJellyfinConnection } from "./jellyfin-connection-guard.js";
 
+/** Bound Prisma's cached createMany query plans for production-sized libraries. */
+export const JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE = 100;
+
 interface ItemAggregation {
 	tmdbId: number;
 	mediaType: "movie" | "series";
@@ -228,25 +231,32 @@ export async function refreshJellyfinCache(
 				async (tx) => {
 					await tx.jellyfinCache.deleteMany({ where: { instanceId } });
 					if (items.length > 0) {
-						await tx.jellyfinCache.createMany({
-							data: items.map((item) => ({
-								instanceId,
-								tmdbId: item.tmdbId,
-								mediaType: item.mediaType,
-								libraryId: item.libraryId,
-								libraryName: item.libraryName,
-								title: item.title,
-								jellyfinId: item.jellyfinId,
-								lastWatchedAt: item.lastWatchedAt,
-								watchCount: item.watchCount,
-								watchedByUsers: JSON.stringify([...item.watchedByUsers]),
-								onDeck: item.onDeck,
-								userRating: item.userRating,
-								collections: JSON.stringify(item.collections),
-								addedAt: item.addedAt,
-								thumb: item.thumb,
-							})),
-						});
+						for (
+							let start = 0;
+							start < items.length;
+							start += JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE
+						) {
+							const chunk = items.slice(start, start + JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE);
+							await tx.jellyfinCache.createMany({
+								data: chunk.map((item) => ({
+									instanceId,
+									tmdbId: item.tmdbId,
+									mediaType: item.mediaType,
+									libraryId: item.libraryId,
+									libraryName: item.libraryName,
+									title: item.title,
+									jellyfinId: item.jellyfinId,
+									lastWatchedAt: item.lastWatchedAt,
+									watchCount: item.watchCount,
+									watchedByUsers: JSON.stringify([...item.watchedByUsers]),
+									onDeck: item.onDeck,
+									userRating: item.userRating,
+									collections: JSON.stringify(item.collections),
+									addedAt: item.addedAt,
+									thumb: item.thumb,
+								})),
+							});
+						}
 					}
 					await tx.cacheRefreshStatus.upsert({
 						where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
