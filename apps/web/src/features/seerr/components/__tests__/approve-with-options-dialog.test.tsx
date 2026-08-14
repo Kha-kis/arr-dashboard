@@ -1,6 +1,8 @@
 import type { SeerrRequest } from "@arr/shared";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
+import { getLinuxSavePath, getLinuxServerName } from "../../../../lib/incognito";
 
 const mockUseSeerrRequestOptions = vi.fn();
 const mockUseApproveSeerrRequest = vi.fn();
@@ -71,7 +73,14 @@ const defaultMutation = {
 
 function renderDialog() {
 	return render(
-		<ApproveWithOptionsDialog request={request} instanceId="seerr-1" open onOpenChange={vi.fn()} />,
+		<IncognitoProvider>
+			<ApproveWithOptionsDialog
+				request={request}
+				instanceId="seerr-1"
+				open
+				onOpenChange={vi.fn()}
+			/>
+		</IncognitoProvider>,
 	);
 }
 
@@ -80,6 +89,7 @@ describe("ApproveWithOptionsDialog", () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		localStorage.clear();
 		mutate = vi.fn();
 		mockUseSeerrRequestOptions.mockReturnValue({
 			data: { servers: [defaultServer, alternateServer] },
@@ -122,5 +132,80 @@ describe("ApproveWithOptionsDialog", () => {
 			},
 			expect.any(Object),
 		);
+	});
+
+	it("masks Sonarr server names and root folders in incognito mode", async () => {
+		localStorage.setItem("arr-dashboard-incognito-mode", "true");
+
+		renderDialog();
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("option", {
+					name: `${getLinuxServerName("Sonarr A")} 1 (default)`,
+				}),
+			).toBeInTheDocument();
+		});
+		expect(
+			screen.getByRole("option", { name: `${getLinuxServerName("Sonarr B")} 2` }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("option", {
+				name: `${getLinuxSavePath("/tv-a")} 1 (server default)`,
+			}),
+		).toBeInTheDocument();
+		expect(screen.queryByText("Sonarr A (default)")).not.toBeInTheDocument();
+		expect(screen.queryByText("/tv-a (server default)")).not.toBeInTheDocument();
+	});
+
+	it("keeps colliding incognito aliases distinguishable", async () => {
+		localStorage.setItem("arr-dashboard-incognito-mode", "true");
+		expect(getLinuxServerName("Main")).toBe(getLinuxServerName("Default"));
+		expect(getLinuxSavePath("/media/tv")).toBe(getLinuxSavePath("/media/tv4k"));
+		mockUseSeerrRequestOptions.mockReturnValue({
+			data: {
+				servers: [
+					{
+						...defaultServer,
+						server: {
+							...defaultServer.server,
+							name: "Main",
+							activeDirectory: "/media/tv",
+						},
+						rootFolders: [
+							{ id: 100, path: "/media/tv" },
+							{ id: 101, path: "/media/tv4k" },
+						],
+					},
+					{
+						...alternateServer,
+						server: { ...alternateServer.server, name: "Default" },
+					},
+				],
+			},
+			isLoading: false,
+			isError: false,
+		});
+
+		renderDialog();
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("option", {
+					name: `${getLinuxServerName("Main")} 1 (default)`,
+				}),
+			).toBeInTheDocument();
+		});
+		expect(
+			screen.getByRole("option", { name: `${getLinuxServerName("Default")} 2` }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("option", {
+				name: `${getLinuxSavePath("/media/tv")} 1 (server default)`,
+			}),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("option", { name: `${getLinuxSavePath("/media/tv4k")} 2` }),
+		).toBeInTheDocument();
 	});
 });
