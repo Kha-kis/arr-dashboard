@@ -51,9 +51,12 @@ diagnostic information. They are not silently treated as fixed.
 - `#694`: application becomes unavailable after extended runtime; diagnose
   from the supplied log before deciding whether a code change is justified.
 - `#689`: cleanup evidence can be accepted from the wrong upstream behind a
-  stable proxy unless it is bound to durable server identity. The stable line
-  needs either the complete safe lifecycle or an explicit fail-closed
-  containment; 3.0 receives the semantically equivalent authority rule.
+  stable proxy unless it is bound to durable server identity. Plex,
+  Jellyfin/Emby, and the configured Plex server reported by Tautulli all expose
+  usable identifiers, although the current Tautulli client does not consume
+  its identity endpoint. The stable line needs the complete safe lifecycle or
+  an explicit fail-closed containment; 3.0 receives the semantically equivalent
+  authority rule.
 
 ### Verification and disposition
 
@@ -178,4 +181,3 @@ After the stabilization release:
   target.
 - If a release candidate fails its soak, open one regression issue tied to the
   candidate SHA and return only the invalidating change to implementation.
-

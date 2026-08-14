@@ -209,11 +209,12 @@ proxy routing every read to the same wrong physical server.
 
 - [ ] **Step 1: Freeze provider identity capabilities**
 
-  Use Plex `MediaContainer.machineIdentifier` and Jellyfin/Emby
-  `/System/Info(.Public).Id` as the server-derived identities. Tautulli has no
-  reliable Plex identity in the current contract; deny Tautulli-dependent
-  cleanup authority until a documented server-side identity read or deliberate
-  operator association can be verified against Plex.
+  Use Plex `MediaContainer.machineIdentifier`, Jellyfin/Emby
+  `/System/Info(.Public).Id`, and Tautulli's documented
+  `get_server_info.pms_identifier` or `get_servers_info.machine_identifier` as
+  server-derived identities. Add the missing typed Tautulli client/schema
+  support and verify that its reported identifier matches the intended Plex
+  association before Tautulli evidence can authorize cleanup.
 
 - [ ] **Step 2: Choose the stable delivery boundary**
 
