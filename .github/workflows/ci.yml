@@ -3,20 +3,8 @@ name: CI
 on:
   push:
     branches: [main, "release/**"]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".vscode/**"
-      - "LICENSE"
-      - ".gitignore"
   pull_request:
     branches: [main, "release/**"]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - ".vscode/**"
-      - "LICENSE"
-      - ".gitignore"
 
 # Cancel in-progress runs when a new push arrives (saves runner minutes)
 concurrency:
