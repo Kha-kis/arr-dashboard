@@ -10,6 +10,10 @@ reviews, integration changes, PR preparation, and releases. Project reviewers
 live in `.codex/agents/`. `.claude/` files are compatibility material, not the
 canonical Codex workflow.
 
+Keep durable contributor guidance and reusable project skills tracked here.
+Store temporary agent execution plans, parity ledgers, worktree state, and
+maintainer-only coordination outside the public repository.
+
 ## Branch and issue discipline
 
 - `main` is stable 2.x maintenance. Limit it to security fixes, data-safety
