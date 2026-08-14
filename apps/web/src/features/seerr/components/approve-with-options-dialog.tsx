@@ -202,9 +202,11 @@ export const ApproveWithOptionsDialog = ({
 									value={serverId ?? ""}
 									onChange={(e) => handleServerChange(Number(e.target.value))}
 								>
-									{filteredServers.map((s) => (
+									{filteredServers.map((s, index) => (
 										<SelectOption key={s.server.id} value={s.server.id}>
-											{incognitoMode ? getLinuxServerName(s.server.name) : s.server.name}
+											{incognitoMode
+												? `${getLinuxServerName(s.server.name)} ${index + 1}`
+												: s.server.name}
 											{s.server.isDefault ? " (default)" : ""}
 										</SelectOption>
 									))}
@@ -245,9 +247,9 @@ export const ApproveWithOptionsDialog = ({
 								value={rootFolder ?? ""}
 								onChange={(e) => setRootFolder(e.target.value)}
 							>
-								{selectedServer.rootFolders.map((f) => (
+								{selectedServer.rootFolders.map((f, index) => (
 									<SelectOption key={f.id} value={f.path}>
-										{incognitoMode ? getLinuxSavePath(f.path) : f.path}
+										{incognitoMode ? `${getLinuxSavePath(f.path)} ${index + 1}` : f.path}
 										{f.path === selectedServer.server.activeDirectory ? " (server default)" : ""}
 									</SelectOption>
 								))}
