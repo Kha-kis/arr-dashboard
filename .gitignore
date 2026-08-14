@@ -58,6 +58,7 @@ apps/api/backups/
 backups/
 
 # Playwright / E2E
+/e2e/media-analytics/.state/
 /test-results/
 /playwright-report/
 /playwright-report-integration/

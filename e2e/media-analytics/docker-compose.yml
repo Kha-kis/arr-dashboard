@@ -1,0 +1,170 @@
+services:
+  plex:
+    image: plexinc/pms-docker:1.43.3.10861-07dfddaeb@sha256:5bc1d13f48da6366f46aaf2a3ce1a6292897eadc1f8efcbbd7321d30e94f2ed4
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      PLEX_CLAIM: ${PLEX_CLAIM:-}
+      ADVERTISE_IP: http://127.0.0.1:${PLEX_PORT:-32400}/
+      ALLOWED_NETWORKS: 172.30.0.0/24
+    ports:
+      - target: 32400
+        published: "${PLEX_PORT:-32400}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - plex-config:/config
+      - ./.state/media:/data:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:32400/identity >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - media-analytics
+
+  tautulli:
+    image: tautulli/tautulli:v2.17.2@sha256:864245fb24830ef6516b5f383bf4d8ba37939ae2f0574dc0217ca02fba4301ff
+    environment:
+      TZ: ${TZ:-Etc/UTC}
+      TAUTULLI_FIRST_RUN_COMPLETE: ${TAUTULLI_FIRST_RUN_COMPLETE:-1}
+      TAUTULLI_PMS_TOKEN: ${TAUTULLI_PMS_TOKEN:-}
+      TAUTULLI_PMS_IDENTIFIER: ${TAUTULLI_PMS_IDENTIFIER:-}
+      TAUTULLI_PMS_IP: ${TAUTULLI_PMS_IP:-plex}
+      TAUTULLI_PMS_PORT: ${TAUTULLI_PMS_PORT:-32400}
+      TAUTULLI_PMS_URL_MANUAL: ${TAUTULLI_PMS_URL_MANUAL:-1}
+      TAUTULLI_PMS_SSL: ${TAUTULLI_PMS_SSL:-0}
+      TAUTULLI_API_ENABLED: ${TAUTULLI_API_ENABLED:-1}
+      TAUTULLI_API_KEY: ${TAUTULLI_API_KEY:-}
+    ports:
+      - target: 8181
+        published: "${TAUTULLI_PORT:-38181}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - tautulli-config:/config
+    depends_on:
+      plex:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8181/status >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - media-analytics
+
+  tracearr:
+    image: ghcr.io/connorgallopo/tracearr:2.0.1@sha256:3d57d9b032b4a57919c48c919c16c3d6640b83f9116feb2c2cdf907747702ec8
+    environment:
+      DATABASE_URL: postgresql://tracearr:${TRACEARR_DB_PASSWORD:-tracearr-e2e-only}@tracearr-db:5432/tracearr
+      REDIS_URL: redis://tracearr-redis:6379
+      JWT_SECRET: ${TRACEARR_JWT_SECRET:-tracearr-e2e-jwt-secret}
+      COOKIE_SECRET: ${TRACEARR_COOKIE_SECRET:-tracearr-e2e-cookie-secret}
+      BACKUP_PATH: /backups
+    ports:
+      - target: 3000
+        published: "${TRACEARR_PORT:-33000}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - tracearr-backups:/backups
+    depends_on:
+      plex:
+        condition: service_healthy
+      tracearr-db:
+        condition: service_healthy
+      tracearr-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3000/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - media-analytics
+
+  tracearr-db:
+    image: timescale/timescaledb-ha:pg18.4-ts2.29.1@sha256:14980f339e6339aca3f53e89b442cf55c6328557589f8d3608963fa30e002bc3
+    environment:
+      POSTGRES_DB: tracearr
+      POSTGRES_USER: tracearr
+      POSTGRES_PASSWORD: ${TRACEARR_DB_PASSWORD:-tracearr-e2e-only}
+    volumes:
+      - tracearr-db-data:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tracearr -d tracearr"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - media-analytics
+
+  tracearr-redis:
+    image: redis:8.2.2-alpine@sha256:59b6e694653476de2c992937ebe1c64182af4728e54bb49e9b7a6c26614d8933
+    volumes:
+      - tracearr-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks:
+      - media-analytics
+
+  arr-dashboard:
+    image: arr-dashboard-media-analytics:local
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      PORT: "3000"
+      API_PORT: "3001"
+      HOSTNAME: 0.0.0.0
+    ports:
+      - target: 3000
+        published: "${DASHBOARD_PORT:-33030}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+      - target: 3001
+        published: "${DASHBOARD_API_PORT:-33031}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - arr-dashboard-config:/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - media-analytics
+
+  media-generator:
+    image: linuxserver/ffmpeg:8.1.2-cli-ls76@sha256:2e7000921be8de2704a4f27dfd3d988562697a346eaabb937a81046c306f0af7
+    profiles: [media-generator]
+    user: "${MEDIA_GENERATOR_UID:-1000}:${MEDIA_GENERATOR_GID:-1000}"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["sleep infinity"]
+    volumes:
+      - ./.state/media:/data
+    networks:
+      - media-analytics
+
+volumes:
+  plex-config:
+  tautulli-config:
+  tracearr-backups:
+  tracearr-db-data:
+  tracearr-redis-data:
+  arr-dashboard-config:
+
+networks:
+  media-analytics:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
