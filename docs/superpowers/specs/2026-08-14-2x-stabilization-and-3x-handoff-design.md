@@ -90,15 +90,20 @@ current `origin/main`. The implementation follows this order:
    integration checks, one required independent review and correction pass,
    then the repository gauntlet once at the PR boundary. Add live verification
    only where it supplies evidence the repository tests cannot.
-6. Open and merge one focused PR only when its frozen finding inventory is
-   resolved.
+6. Before merge, audit submitted reviews, inline comments, unresolved review
+   threads, and the reviewed commit against the current head. Open and merge
+   one focused PR only when every in-scope finding has an explicit disposition
+   and every actionable thread is resolved. The configured GitHub Codex result
+   and every PR-triggered check must finish before merge, even when GitHub
+   already reports the minimum branch-protection checks as mergeable.
 
 Deletion, cleanup, cache publication, identity, and upstream writes always
 receive an independent data-safety review. Substantial data-dependent changes
 also receive one regression review. Reviewers inspect the coherent diff once;
 accepted findings enter one correction batch. A new observation after that
 batch becomes follow-up work unless it proves the current change unsafe or
-invalid.
+invalid. A comment attached to an older commit still requires an applicability
+check; it is not implicitly superseded by a later push.
 
 ### Immediate semantic forward-port
 
