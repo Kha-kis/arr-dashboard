@@ -9,7 +9,13 @@ import {
 	type UpdateServicePayload,
 	updateService,
 } from "../../lib/api-client/services";
-import { libraryCleanupKeys, serviceKeys, systemKeys } from "../../lib/query-keys";
+import {
+	libraryCleanupKeys,
+	serviceKeys,
+	systemKeys,
+	tautulliKeys,
+	tracearrKeys,
+} from "../../lib/query-keys";
 
 type UpdateVariables = {
 	id: string;
@@ -29,6 +35,8 @@ export const useCreateServiceMutation = () => {
 			queryClient.invalidateQueries({ queryKey: serviceKeys.all });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
 			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
+			queryClient.invalidateQueries({ queryKey: tracearrKeys.all });
+			queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
 			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});
@@ -56,6 +64,8 @@ export const useUpdateServiceMutation = () => {
 			});
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
 			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
+			queryClient.invalidateQueries({ queryKey: tracearrKeys.all });
+			queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
 			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});
@@ -79,6 +89,8 @@ export const useDeleteServiceMutation = () => {
 			});
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
 			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
+			queryClient.invalidateQueries({ queryKey: tracearrKeys.all });
+			queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
 			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
 		},
 	});

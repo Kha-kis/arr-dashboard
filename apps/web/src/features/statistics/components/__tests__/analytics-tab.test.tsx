@@ -1,5 +1,5 @@
 import type { AnalyticsProviderSelection } from "@arr/shared";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
@@ -14,10 +14,17 @@ const mocks = vi.hoisted(() => ({
 			tautulli: { configuredCount: 1, enabledCount: 1 },
 		},
 	} as AnalyticsProviderSelection,
+	refetch: vi.fn(),
+	isError: false,
 }));
 
 vi.mock("../../../../hooks/api/useSystem", () => ({
-	useAnalyticsProviderSelection: () => ({ data: mocks.selection, isLoading: false }),
+	useAnalyticsProviderSelection: () => ({
+		data: mocks.selection,
+		isLoading: false,
+		isError: mocks.isError,
+		refetch: mocks.refetch,
+	}),
 	useUpdateAnalyticsProviderSelection: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 vi.mock("../tracearr-tab", () => ({ TracearrTab: () => <div data-testid="tracearr-analytics" /> }));
@@ -35,6 +42,8 @@ function renderTab() {
 
 describe("AnalyticsTab", () => {
 	beforeEach(() => {
+		mocks.refetch.mockReset();
+		mocks.isError = false;
 		mocks.selection = {
 			selected: "tautulli",
 			source: "explicit",
@@ -88,5 +97,13 @@ describe("AnalyticsTab", () => {
 		).toBeInTheDocument();
 		expect(screen.getByRole("link", { name: /configure selected provider/i })).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: /switch to tautulli/i })).not.toBeInTheDocument();
+	});
+
+	it("renders an accessible retry action when provider selection cannot load", () => {
+		mocks.isError = true;
+		renderTab();
+
+		fireEvent.click(screen.getByRole("button", { name: /retry analytics provider selection/i }));
+		expect(mocks.refetch).toHaveBeenCalledOnce();
 	});
 });

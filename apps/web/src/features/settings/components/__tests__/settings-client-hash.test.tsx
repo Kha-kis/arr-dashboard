@@ -10,9 +10,13 @@
  * exercises the hash → activeTab wiring.
  */
 
-import { render } from "@testing-library/react";
+import { fireEvent, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
+
+const serviceManagementMocks = vi.hoisted(() => ({
+	cancelAnalyticsUnavailableConfirmation: vi.fn(),
+}));
 
 // --- Stub every hook the SettingsClient touches -----------------------------
 vi.mock("../../../../hooks/api/useAuth", () => ({
@@ -48,6 +52,13 @@ vi.mock("../../hooks", () => ({
 		formTestResult: null,
 		createServiceMutation: { isPending: false },
 		updateServiceMutation: { isPending: false },
+		analyticsUnavailableConfirmation: {
+			selected: "tracearr",
+			alternativeEnabled: true,
+			onConfirm: vi.fn(),
+		},
+		cancelAnalyticsUnavailableConfirmation:
+			serviceManagementMocks.cancelAnalyticsUnavailableConfirmation,
 	}),
 	useTagsManagement: () => ({}),
 	useAccountManagement: () => ({}),
@@ -91,6 +102,7 @@ import { SettingsClient } from "../settings-client";
 describe("SettingsClient — URL hash deep-link", () => {
 	beforeEach(() => {
 		window.location.hash = "";
+		serviceManagementMocks.cancelAnalyticsUnavailableConfirmation.mockReset();
 	});
 
 	it("defaults to the services tab when no hash is present", () => {
@@ -110,5 +122,13 @@ describe("SettingsClient — URL hash deep-link", () => {
 		window.location.hash = "#not-a-tab";
 		const { queryByTestId } = render(<SettingsClient />);
 		expect(queryByTestId("tab-services")).not.toBeNull();
+	});
+
+	it("renders the analytics-unavailability confirmation without instance details", () => {
+		const { getByRole, queryByText } = render(<SettingsClient />);
+		expect(getByRole("dialog")).toHaveTextContent(/tracearr will remain selected/i);
+		expect(queryByText(/op@example\.com/i)).toBeNull();
+		fireEvent.click(getByRole("button", { name: /cancel/i }));
+		expect(serviceManagementMocks.cancelAnalyticsUnavailableConfirmation).toHaveBeenCalledOnce();
 	});
 });

@@ -3,7 +3,7 @@
 import type { AnalyticsProvider } from "@arr/shared";
 import { BarChart3, Check, Settings2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
 	Button,
 	Dialog,
@@ -35,9 +35,33 @@ const providerLabel = (provider: AnalyticsProvider) =>
 	PROVIDERS.find((candidate) => candidate.id === provider)?.label ?? provider;
 
 export function AnalyticsProviderSection() {
-	const { data: selection, isLoading } = useAnalyticsProviderSelection();
+	const { data: selection, isError, isLoading, refetch } = useAnalyticsProviderSelection();
 	const updateSelection = useUpdateAnalyticsProviderSelection();
 	const [pendingProvider, setPendingProvider] = useState<AnalyticsProvider | null>(null);
+	const radioRefs = useRef<Partial<Record<AnalyticsProvider, HTMLInputElement | null>>>({});
+
+	if (isError) {
+		return (
+			<section
+				className="rounded-xl border border-destructive/50 bg-destructive/10 p-5"
+				role="alert"
+			>
+				<h2 className="font-semibold">Historical analytics provider is unavailable</h2>
+				<p className="mt-1 text-sm text-muted-foreground">
+					The provider selection could not be loaded. Retry to choose which provider family controls
+					historical analytics.
+				</p>
+				<Button
+					className="mt-4"
+					variant="secondary"
+					onClick={() => void refetch()}
+					aria-label="Retry analytics provider selection"
+				>
+					Retry
+				</Button>
+			</section>
+		);
+	}
 
 	if (isLoading || !selection) {
 		return <div className="h-40 animate-pulse rounded-xl border border-border/50 bg-card/30" />;
@@ -88,11 +112,14 @@ export function AnalyticsProviderSection() {
 					return (
 						<label
 							key={provider.id}
-							className={`rounded-xl border p-4 text-left transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring ${
+							className={`rounded-xl border p-4 text-left transition-colors has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-ring ${
 								selected ? "border-primary bg-primary/10" : "border-border/50 hover:border-border"
 							}`}
 						>
 							<input
+								ref={(node) => {
+									radioRefs.current[provider.id] = node;
+								}}
 								className="sr-only"
 								type="radio"
 								name="analytics-provider"
@@ -105,7 +132,8 @@ export function AnalyticsProviderSection() {
 									const direction = event.key === "ArrowRight" ? 1 : -1;
 									const next =
 										PROVIDERS[(index + direction + PROVIDERS.length) % PROVIDERS.length]!;
-									requestSelection(next.id);
+									radioRefs.current[next.id]?.focus();
+									queueMicrotask(() => requestSelection(next.id));
 								}}
 							/>
 							<div className="flex items-center justify-between gap-2">

@@ -1,5 +1,5 @@
 import type { AnalyticsProviderSelection } from "@arr/shared";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
@@ -15,10 +15,17 @@ const mocks = vi.hoisted(() => ({
 		},
 	} as AnalyticsProviderSelection,
 	update: vi.fn(),
+	refetch: vi.fn(),
+	isError: false,
 }));
 
 vi.mock("../../../../hooks/api/useSystem", () => ({
-	useAnalyticsProviderSelection: () => ({ data: mocks.selection, isLoading: false }),
+	useAnalyticsProviderSelection: () => ({
+		data: mocks.selection,
+		isLoading: false,
+		isError: mocks.isError,
+		refetch: mocks.refetch,
+	}),
 	useUpdateAnalyticsProviderSelection: () => ({ mutate: mocks.update, isPending: false }),
 }));
 
@@ -35,6 +42,8 @@ function renderSection() {
 describe("AnalyticsProviderSection", () => {
 	beforeEach(() => {
 		mocks.update.mockReset();
+		mocks.refetch.mockReset();
+		mocks.isError = false;
 		mocks.selection = {
 			selected: "tracearr",
 			source: "migration-default",
@@ -55,20 +64,33 @@ describe("AnalyticsProviderSection", () => {
 		expect(screen.getByRole("radio", { name: /tautulli alternative/i })).toBeInTheDocument();
 	});
 
-	it("requires an explicit keyboard-confirmed switch for a configured provider", () => {
+	it("moves focus to a keyboard-selected provider before requiring confirmation", async () => {
 		renderSection();
 		const tracearr = screen.getByRole("radio", { name: /tracearr recommended/i });
+		const tautulli = screen.getByRole("radio", { name: /tautulli alternative/i });
 
 		tracearr.focus();
 		fireEvent.keyDown(tracearr, { key: "ArrowRight" });
 
-		expect(screen.getByRole("dialog")).toHaveTextContent(/historical analytics will change/i);
+		expect(tautulli).toHaveFocus();
+		expect(tracearr.closest("label")).toHaveClass("has-[input:focus-visible]:ring-2");
+		await waitFor(() =>
+			expect(screen.getByRole("dialog")).toHaveTextContent(/historical analytics will change/i),
+		);
 		expect(screen.getByRole("dialog")).toHaveTextContent(
 			/native media-server live sessions do not/i,
 		);
 		expect(mocks.update).not.toHaveBeenCalled();
 		fireEvent.click(screen.getByRole("button", { name: /switch to tautulli/i }));
 		expect(mocks.update).toHaveBeenCalledWith({ provider: "tautulli" });
+	});
+
+	it("renders a retry action rather than a permanent loading placeholder after selection failure", () => {
+		mocks.isError = true;
+		renderSection();
+
+		fireEvent.click(screen.getByRole("button", { name: /retry analytics provider selection/i }));
+		expect(mocks.refetch).toHaveBeenCalledOnce();
 	});
 
 	it("does not claim an automatic fallback when the selected provider is unavailable", () => {

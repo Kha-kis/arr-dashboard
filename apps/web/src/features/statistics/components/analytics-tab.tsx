@@ -15,8 +15,27 @@ const providerLabel = (provider: AnalyticsProvider) =>
 	provider === "tracearr" ? "Tracearr" : "Tautulli";
 
 export function AnalyticsTab() {
-	const { data: selection, isLoading } = useAnalyticsProviderSelection();
+	const { data: selection, isError, isLoading, refetch } = useAnalyticsProviderSelection();
 	const updateSelection = useUpdateAnalyticsProviderSelection();
+
+	if (isError) {
+		return (
+			<div className="rounded-xl border border-destructive/50 bg-destructive/10 p-6" role="alert">
+				<h2 className="font-semibold">Historical analytics provider is unavailable</h2>
+				<p className="mt-1 text-sm text-muted-foreground">
+					The provider selection could not be loaded. Retry before viewing historical analytics.
+				</p>
+				<Button
+					className="mt-4"
+					variant="secondary"
+					onClick={() => void refetch()}
+					aria-label="Retry analytics provider selection"
+				>
+					Retry
+				</Button>
+			</div>
+		);
+	}
 
 	if (isLoading || !selection) {
 		return <div className="h-56 animate-pulse rounded-xl border border-border/50 bg-card/30" />;

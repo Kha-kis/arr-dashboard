@@ -135,10 +135,12 @@ incognito helpers before rendering them.
 |--------|-------|---------|
 | GET | `/services` | List all instances |
 | POST | `/services` | Add instance |
-| PUT | `/services/:id` | Update instance |
-| DELETE | `/services/:id` | Remove instance |
+| PUT | `/services/:id` | Update instance; accepts body field `confirmAnalyticsUnavailable: true` only when confirming selected-provider unavailability |
+| DELETE | `/services/:id` | Remove instance; accepts `?confirmAnalyticsUnavailable=true` only when confirming selected-provider unavailability |
 | POST | `/services/test-connection` | Test before saving |
 | POST | `/services/:id/test` | Test existing |
+
+When an update or deletion would leave the selected historical analytics provider family unavailable, the route returns HTTP 409 with exactly `{ code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED", selected, alternativeEnabled }`. Clients may retry the identical lifecycle change once with `confirmAnalyticsUnavailable: true`; the selected provider family remains selected and no automatic switch occurs.
 
 ## QUI Routes (`/api/qui`) — experimental
 
