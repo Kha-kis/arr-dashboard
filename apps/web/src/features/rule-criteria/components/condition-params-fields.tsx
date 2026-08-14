@@ -3,6 +3,7 @@
 import type { CleanupFieldOptionsResponse, CleanupRuleType } from "@arr/shared";
 import { ToggleSwitch } from "@/components/layout/config-primitives";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { getLinuxUsername, useIncognitoMode } from "@/lib/incognito";
 import { MultiSelectField } from "./multi-select-field";
 
 // ============================================================================
@@ -106,6 +107,20 @@ export function getDefaultConditionParams(ruleType: CleanupRuleType): Record<str
 			return { operator: "older_than", days: 90 };
 		case "plex_episode_completion":
 			return { operator: "less_than", percentage: 10 };
+		case "jellyfin_last_watched":
+			return { operator: "older_than", days: 90 };
+		case "jellyfin_watch_count":
+			return { operator: "less_than", count: 1 };
+		case "jellyfin_on_deck":
+			return { isDeck: false };
+		case "jellyfin_user_rating":
+			return { operator: "less_than", rating: 5 };
+		case "jellyfin_watched_by":
+			return { operator: "includes_any", userNames: [] };
+		case "jellyfin_added_at":
+			return { operator: "older_than", days: 90 };
+		case "jellyfin_episode_completion":
+			return { operator: "less_than", percentage: 10 };
 		case "user_retention":
 			return { operator: "watched_by_none", source: "plex" };
 		case "staleness_score":
@@ -138,8 +153,14 @@ export function ConditionParamsFields({
 	labelClass,
 }: ConditionParamsFieldsProps) {
 	const { gradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const get = <T,>(key: string, def: T): T => (params[key] as T) ?? def;
 	const set = (key: string, val: unknown) => onParamsChange({ ...params, [key]: val });
+	const unset = (key: string) => {
+		const nextParams = { ...params };
+		delete nextParams[key];
+		onParamsChange(nextParams);
+	};
 
 	switch (ruleType) {
 		case "age":
@@ -1310,6 +1331,284 @@ export function ConditionParamsFields({
 					</div>
 					<p className="text-xs text-muted-foreground">
 						Only count episodes from this season onward. 0 or empty = all seasons.
+					</p>
+				</div>
+			);
+
+		case "jellyfin_last_watched": {
+			const jellyfinLastWatchedOp = get<string>("operator", "older_than");
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={jellyfinLastWatchedOp}
+								onChange={(e) => set("operator", e.target.value)}
+								className={inputClass}
+							>
+								<option value="older_than">Last watched older than</option>
+								<option value="never">Never watched</option>
+							</select>
+						</label>
+						{jellyfinLastWatchedOp !== "never" && (
+							<label className="block w-24">
+								<span className={labelClass}>Days</span>
+								<input
+									type="number"
+									value={get("days", 90)}
+									onChange={(e) => set("days", Number(e.target.value))}
+									min={1}
+									className={inputClass}
+								/>
+							</label>
+						)}
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Requires a Jellyfin instance to be configured.
+					</p>
+				</div>
+			);
+		}
+
+		case "jellyfin_watch_count":
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={get("operator", "less_than")}
+								onChange={(e) => set("operator", e.target.value)}
+								className={inputClass}
+							>
+								<option value="less_than">Less than</option>
+								<option value="greater_than">Greater than</option>
+							</select>
+						</label>
+						<label className="block w-24">
+							<span className={labelClass}>Count</span>
+							<input
+								type="number"
+								value={get("count", 1)}
+								onChange={(e) => set("count", Number(e.target.value))}
+								min={0}
+								className={inputClass}
+							/>
+						</label>
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Flag items by total play count from Jellyfin.
+					</p>
+				</div>
+			);
+
+		case "jellyfin_on_deck": {
+			const isDeck = get("isDeck", false);
+			return (
+				<div className="space-y-2">
+					<ToggleSwitch
+						label="Item is on Continue Watching"
+						checked={isDeck}
+						onChange={(v) => set("isDeck", v)}
+					/>
+					<p className="text-xs text-muted-foreground">
+						{isDeck
+							? "Matches items currently on Jellyfin's Continue Watching."
+							: "Matches items NOT on Jellyfin's Continue Watching."}
+					</p>
+				</div>
+			);
+		}
+
+		case "jellyfin_user_rating": {
+			const jellyfinRatingOp = get<string>("operator", "less_than");
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={jellyfinRatingOp}
+								onChange={(e) => set("operator", e.target.value)}
+								className={inputClass}
+							>
+								<option value="less_than">Less than</option>
+								<option value="greater_than">Greater than</option>
+								<option value="unrated">Unrated</option>
+							</select>
+						</label>
+						{jellyfinRatingOp !== "unrated" && (
+							<label className="block w-24">
+								<span className={labelClass}>Rating</span>
+								<input
+									type="number"
+									value={get("rating", 5)}
+									onChange={(e) => set("rating", Number(e.target.value))}
+									min={0}
+									max={10}
+									step={0.5}
+									className={inputClass}
+								/>
+							</label>
+						)}
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Flag items by user rating in Jellyfin (0-10; favorites = 10).
+					</p>
+				</div>
+			);
+		}
+
+		case "jellyfin_watched_by": {
+			const rawUsers = fieldOptions?.jellyfinUsers ?? [];
+			const selectedRawUsers = get("userNames", []) as string[];
+			const allRawUsers = [...new Set([...rawUsers, ...selectedRawUsers])];
+			const aliasCounts = new Map<string, number>();
+			if (incognitoMode) {
+				for (const userName of allRawUsers) {
+					const alias = getLinuxUsername(userName);
+					aliasCounts.set(alias, (aliasCounts.get(alias) ?? 0) + 1);
+				}
+			}
+			const displayEntries = allRawUsers.map((rawUserName, index) => {
+				const alias = incognitoMode ? getLinuxUsername(rawUserName) : rawUserName;
+				return {
+					rawUserName,
+					displayUserName:
+						incognitoMode && (aliasCounts.get(alias) ?? 0) > 1 ? `${alias} ${index + 1}` : alias,
+				};
+			});
+			const displayByRaw = new Map(
+				displayEntries.map(({ rawUserName, displayUserName }) => [rawUserName, displayUserName]),
+			);
+			const rawByDisplay = new Map(
+				displayEntries.map(({ rawUserName, displayUserName }) => [displayUserName, rawUserName]),
+			);
+
+			return (
+				<div className="space-y-2">
+					<label className="block">
+						<span className={labelClass}>Operator</span>
+						<select
+							value={get("operator", "includes_any")}
+							onChange={(e) => set("operator", e.target.value)}
+							className={inputClass}
+						>
+							<option value="includes_any">Watched by any of</option>
+							<option value="excludes_all">Not watched by any of</option>
+						</select>
+					</label>
+					<MultiSelectField
+						label="Jellyfin Users"
+						options={rawUsers.map((rawUserName) => displayByRaw.get(rawUserName) ?? rawUserName)}
+						selected={selectedRawUsers.map(
+							(rawUserName) =>
+								displayByRaw.get(rawUserName) ??
+								(incognitoMode ? getLinuxUsername(rawUserName) : rawUserName),
+						)}
+						onChange={(displayUserNames) =>
+							set(
+								"userNames",
+								displayUserNames.map(
+									(displayUserName) => rawByDisplay.get(displayUserName) ?? displayUserName,
+								),
+							)
+						}
+						loading={fieldOptionsLoading}
+						inputClass={inputClass}
+						labelClass={labelClass}
+					/>
+					<p className="text-xs text-muted-foreground">
+						Flag items based on which Jellyfin users have watched them.
+					</p>
+				</div>
+			);
+		}
+
+		case "jellyfin_added_at":
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={get("operator", "older_than")}
+								onChange={(e) => set("operator", e.target.value)}
+								className={inputClass}
+							>
+								<option value="older_than">Added more than</option>
+								<option value="newer_than">Added less than</option>
+							</select>
+						</label>
+						<label className="block w-24">
+							<span className={labelClass}>Days</span>
+							<input
+								type="number"
+								value={get("days", 90)}
+								onChange={(e) => set("days", Number(e.target.value))}
+								min={1}
+								className={inputClass}
+							/>
+						</label>
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Flag items by when they were added to Jellyfin. Requires a Jellyfin instance.
+					</p>
+				</div>
+			);
+
+		case "jellyfin_episode_completion":
+			return (
+				<div className="space-y-2">
+					<div className="flex gap-2">
+						<label className="block flex-1">
+							<span className={labelClass}>Operator</span>
+							<select
+								value={get("operator", "less_than")}
+								onChange={(e) => set("operator", e.target.value)}
+								className={inputClass}
+							>
+								<option value="less_than">Less than</option>
+								<option value="greater_than">Greater than</option>
+							</select>
+						</label>
+						<label className="block w-24">
+							<span className={labelClass}>Percent</span>
+							<input
+								type="number"
+								value={get("percentage", 10)}
+								onChange={(e) => set("percentage", Number(e.target.value))}
+								min={0}
+								max={100}
+								className={inputClass}
+							/>
+						</label>
+						<label className="block w-28">
+							<span className={labelClass}>Min Season</span>
+							<input
+								type="number"
+								value={
+									typeof params.minSeason === "number" && params.minSeason >= 1
+										? params.minSeason
+										: ""
+								}
+								onChange={(e) => {
+									const minSeason = Number(e.target.value);
+									if (e.target.value === "" || minSeason < 1) {
+										unset("minSeason");
+									} else {
+										set("minSeason", minSeason);
+									}
+								}}
+								min={1}
+								placeholder="All seasons"
+								className={inputClass}
+							/>
+						</label>
+					</div>
+					<p className="text-xs text-muted-foreground">
+						Only count episodes from this season onward. Leave blank for all seasons.
 					</p>
 				</div>
 			);
