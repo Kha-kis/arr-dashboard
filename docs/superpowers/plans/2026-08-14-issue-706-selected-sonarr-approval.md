@@ -1,6 +1,11 @@
 # Selected Sonarr Approval Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** Completed on 2026-08-14 through PRs #710, #711, and #712. This
+> file is retained as historical execution evidence and must not be rerun.
+>
+> **For agentic workers:** REQUIRED PROJECT SKILLS: Use `arr-fix-issue` for
+> issue work and `arr-validate` at the PR boundary. Checkboxes record the
+> completed execution.
 
 **Goal:** Ensure approving a Seerr request with a selected non-default Sonarr server sends that server and its selected defaults to the existing approval API.
 
@@ -28,7 +33,7 @@
 - Consumes: `resolveSelectedServer(servers, serverId)`, `useSeerrRequestOptions(instanceId, mediaType)`, and `useApproveSeerrRequest()`.
 - Produces: `approveMutation.mutate({ instanceId, requestId, overrides })` with explicit overrides whenever the final selection differs from the request's original/default routing state.
 
-- [ ] **Step 1: Add the failing non-default-server test**
+- [x] **Step 1: Add the failing non-default-server test**
 
   Mock `useSeerrRequestOptions` with two non-4K Sonarr servers:
 
@@ -78,13 +83,13 @@
   );
   ```
 
-- [ ] **Step 2: Add the no-change control test**
+- [x] **Step 2: Add the no-change control test**
 
   Render the same request and servers, leave `Sonarr A` selected, click
   `Approve`, and assert the mutation receives `overrides: undefined`. This
   preserves the existing audit behavior for an unchanged first-time route.
 
-- [ ] **Step 3: Run the new test and observe RED**
+- [x] **Step 3: Run the new test and observe RED**
 
   Run:
 
@@ -96,7 +101,7 @@
   Expected result: the non-default test fails because `serverId` is omitted
   when `effectiveServerId` is derived from `selectedServer`.
 
-- [ ] **Step 4: Compute the original routing baseline**
+- [x] **Step 4: Compute the original routing baseline**
 
   In `handleApprove`, resolve the original/default server independently of the
   current selection:
@@ -112,7 +117,7 @@
   from Sonarr A to Sonarr B to send all three values while unchanged approval
   remains update-free.
 
-- [ ] **Step 5: Run focused tests and confirm GREEN**
+- [x] **Step 5: Run focused tests and confirm GREEN**
 
   Run:
 
@@ -125,7 +130,7 @@
 
   Expected result: all selected tests pass.
 
-- [ ] **Step 6: Commit the stable correction**
+- [x] **Step 6: Commit the stable correction**
 
   ```bash
   git add \
@@ -143,7 +148,7 @@
 - Consumes: Task 1 commit and focused test evidence.
 - Produces: one frozen review inventory and a PR-ready stable branch.
 
-- [ ] **Step 1: Run the repository gauntlet**
+- [x] **Step 1: Run the repository gauntlet**
 
   Run:
 
@@ -157,19 +162,19 @@
   git diff --check origin/main...HEAD
   ```
 
-- [ ] **Step 2: Verify the rendered interaction**
+- [x] **Step 2: Verify the rendered interaction**
 
   Use a local populated fixture with two Sonarr choices. Confirm the visible
   selection changes to Sonarr B and the submitted mutation contains server ID
   `2`; do not approve a real production request.
 
-- [ ] **Step 3: Run one independent regression review**
+- [x] **Step 3: Run one independent regression review**
 
   Review no-change behavior, ID `0` handling, server/profile/root-folder
   consistency, dialog reopen state, and the exact test assertion. Freeze the
   accepted findings and use at most one correction batch.
 
-- [ ] **Step 4: Prepare the focused PR**
+- [x] **Step 4: Prepare the focused PR**
 
   Use `Related to #706` until the exact two-server scenario has been verified.
   Apply one release bucket and record the PR in the stabilization ledger.
@@ -184,21 +189,20 @@
 - Consumes: the stable behavioral test and current 3.0 dialog implementation.
 - Produces: the same selected-server behavior without importing unrelated stable changes.
 
-- [ ] **Step 1: Create a clean `next` worktree after the stable PR merges**
+- [x] **Step 1: Create a clean `next` worktree after the stable PR merges**
 
   Branch `codex/fix-706-selected-sonarr-next` from current `origin/next`.
 
-- [ ] **Step 2: Reproduce RED on `next`**
+- [x] **Step 2: Reproduce RED on `next`**
 
   Port only the two-server behavioral test and observe the same omitted override.
 
-- [ ] **Step 3: Apply the native minimal correction and run GREEN**
+- [x] **Step 3: Apply the native minimal correction and run GREEN**
 
   Use the original/default routing baseline while preserving 3.0-specific
   incognito rendering and component structure.
 
-- [ ] **Step 4: Run the `next` gauntlet and open a separate PR**
+- [x] **Step 4: Run the `next` gauntlet and open a separate PR**
 
   Run format, shared build, root typecheck, tests, lint, build, and rendered
   fixture verification. Record the stable and 3.0 PRs as one parity row.
-

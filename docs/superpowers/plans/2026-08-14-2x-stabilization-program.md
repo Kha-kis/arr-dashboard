@@ -1,6 +1,8 @@
 # 2.x Stabilization Program Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED PROJECT SKILLS: Use `arr-fix-issue`
+> for issue work, `arr-validate` at each PR boundary, and `arr-release` for the
+> release task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a bounded final 2.x stabilization release, prove every stable blocker has an explicit 3.0 parity disposition, and return active development to `next`.
 
@@ -41,7 +43,7 @@
 - Consumes: GitHub issues `#706`, `#703`, `#694`, `#689`, `#675`, `#674`, `#673`, and `#427`; merged `main` PRs after `v2.23.0`; `docs/RELEASING.md`.
 - Produces: one row per issue and post-`v2.23.0` stable PR with stable status, stable evidence, parity classification, `next` evidence, release bucket, and disposition.
 
-- [ ] **Step 1: Create the ledger schema and frozen issue rows**
+- [x] **Step 1: Create the ledger schema and frozen issue rows**
 
   Use these exact columns:
 
@@ -55,7 +57,7 @@
   enhancement rows for `#664`, `#632`, `#627`, `#624`, `#623`, `#622`, and
   `#487`.
 
-- [ ] **Step 2: Inventory the stable commit range**
+- [x] **Step 2: Inventory the stable commit range**
 
   Run:
 
@@ -69,12 +71,12 @@
   Add one ledger row per merged PR. Record `required`, `already equivalent`, or
   `not applicable`; do not infer parity from matching commit subjects alone.
 
-- [ ] **Step 3: Audit release labels**
+- [x] **Step 3: Audit release labels**
 
   Record PRs missing exactly one `release:*` label. This step is read-only;
   applying labels occurs only after reviewing the proposed classification.
 
-- [ ] **Step 4: Validate and commit the ledger**
+- [x] **Step 4: Validate and commit the ledger**
 
   Run:
 
@@ -135,20 +137,20 @@
 - Consumes: existing Jellyfin cleanup schemas, field metadata, and the single-condition Jellyfin controls.
 - Produces: composite conditions for `jellyfin_last_watched`, `jellyfin_watch_count`, `jellyfin_user_rating`, `jellyfin_watched_by`, `jellyfin_added_at`, and `jellyfin_episode_completion` render their valid operators and parameter controls; `jellyfin_on_deck` remains boolean.
 
-- [ ] **Step 1: Write the stable regression test**
+- [x] **Step 1: Write the stable regression test**
 
   Extend the cleanup dialog test to enter Composite Rule mode, add a condition,
   select `jellyfin_last_watched`, and assert that the `Operator` select exposes
   the operator set required by the shared schema. Add a separate assertion that
   `jellyfin_on_deck` renders its boolean control without an operator select.
 
-- [ ] **Step 2: Run the test and observe RED**
+- [x] **Step 2: Run the test and observe RED**
 
   Run the exact test file with the web Vitest command. Expected result: the
   operator assertion fails because `ConditionParamsFields` currently returns
   `null` for Jellyfin kinds.
 
-- [ ] **Step 3: Add Jellyfin composite rendering**
+- [x] **Step 3: Add Jellyfin composite rendering**
 
   Add explicit Jellyfin defaults and cases to `ConditionParamsFields`, reusing
   the established Plex-shaped controls where the shared schemas are aliases.

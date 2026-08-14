@@ -54,8 +54,11 @@ non-applicability evidence has been inspected.
 | [#688](https://github.com/Kha-kis/arr-dashboard/pull/688) | Merged | Refresh current watch evidence before selection | Already equivalent | PR #699 requires external evidence refresh before authority reads | `release:patch-now` | Verified equivalent |
 | [#691](https://github.com/Kha-kis/arr-dashboard/pull/691) | Merged | Deterministic cleanup E2E/Compose harness | Required | No merged `next` parity for Compose ownership, bootstrap, isolation, and live scripts | `release:defer` | Port as a focused harness change |
 | [#693](https://github.com/Kha-kis/arr-dashboard/pull/693) | Merged | Ignore stale Plex history outside current library | Already equivalent | PR #700 current-library map and incomplete-history generation-retention tests | `release:patch-now` | Verified equivalent |
+| [#709](https://github.com/Kha-kis/arr-dashboard/pull/709) | Merged | Restore the stable formatter baseline for existing OIDC files | Not applicable | Formatter-only stable-line cleanup with no runtime behavior to forward-port | No release bucket | No code port or release note required |
+| [#710](https://github.com/Kha-kis/arr-dashboard/pull/710) | Merged | Honor the selected Sonarr approval server and its defaults | Already equivalent | PR #712 contains the native `next` routing correction and regression coverage | `release:patch-now` | Verified equivalent |
+| [#711](https://github.com/Kha-kis/arr-dashboard/pull/711) | Merged | Mask approval routing labels and distinguish colliding aliases | Already equivalent | PR #712 contains the same privacy and alias-collision behavior | `release:patch-now` | Verified equivalent |
 
-Parity summary: **19 already equivalent, 13 required, 0 not applicable**.
+Parity summary: **21 already equivalent, 13 required, 1 not applicable**.
 None of these stable PRs currently carries a forward-looking `release:*` label;
 the proposed buckets above must be reviewed before labels are applied.
 
