@@ -7,6 +7,7 @@ import test from "node:test";
 
 const harnessDir = resolve("e2e/media-analytics");
 const scriptsDir = join(harnessDir, "scripts");
+const lockFixture = join(harnessDir, "tests/fixtures/lifecycle-lock.sh");
 const projectLabel = "arr-dashboard-media-analytics-e2e";
 const ownedFixture = [
   `container:owned-container:${projectLabel}`,
@@ -154,21 +155,16 @@ for (const resourceType of ["container", "network", "volume"]) {
 
 test("teardown cannot bypass another worktree lock with a different runtime environment", async () => {
   const marker = join(sandboxDir, "lock-held");
-  const commonScript = join(scriptsDir, "common.sh");
-  const holder = spawn(
-    "bash",
-    ["-c", 'source "$1"; acquire_lifecycle_lock; : > "$2"; sleep 1', "holder", commonScript, marker],
-    {
-      cwd: harnessDir,
-      env: {
-        ...process.env,
-        DOCKER_CALL_LOG: dockerCallLog,
-        DOCKER_FAKE_DAEMON_ID: fakeDaemonId,
-        XDG_RUNTIME_DIR: "",
-        PATH: `${join(sandboxDir, "bin")}:${process.env.PATH}`,
-      },
+  const holder = spawn("bash", [lockFixture, "hold", marker], {
+    cwd: harnessDir,
+    env: {
+      ...process.env,
+      DOCKER_CALL_LOG: dockerCallLog,
+      DOCKER_FAKE_DAEMON_ID: fakeDaemonId,
+      XDG_RUNTIME_DIR: "",
+      PATH: `${join(sandboxDir, "bin")}:${process.env.PATH}`,
     },
-  );
+  });
 
   for (let attempt = 0; attempt < 50 && !existsSync(marker); attempt += 1) {
     await new Promise((resolveWait) => setTimeout(resolveWait, 20));
@@ -184,27 +180,17 @@ test("teardown cannot bypass another worktree lock with a different runtime envi
 });
 
 test("a reset can carry the lifecycle lock across nested scripts", () => {
-  const commonScript = join(scriptsDir, "common.sh");
-  const result = spawnSync(
-    "bash",
-    [
-      "-c",
-      'source "$1"; acquire_lifecycle_lock; bash -c \'source "$1"; acquire_lifecycle_lock\' nested "$1"',
-      "parent",
-      commonScript,
-    ],
-    {
-      cwd: harnessDir,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        DOCKER_CALL_LOG: dockerCallLog,
-        DOCKER_FAKE_DAEMON_ID: fakeDaemonId,
-        XDG_RUNTIME_DIR: join(sandboxDir, "runtime"),
-        PATH: `${join(sandboxDir, "bin")}:${process.env.PATH}`,
-      },
+  const result = spawnSync("bash", [lockFixture, "nested-parent"], {
+    cwd: harnessDir,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      DOCKER_CALL_LOG: dockerCallLog,
+      DOCKER_FAKE_DAEMON_ID: fakeDaemonId,
+      XDG_RUNTIME_DIR: join(sandboxDir, "runtime"),
+      PATH: `${join(sandboxDir, "bin")}:${process.env.PATH}`,
     },
-  );
+  });
 
   assert.equal(result.status, 0, result.stderr);
 });
