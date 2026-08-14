@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
+import { getLinuxSavePath, getLinuxServerName } from "../../../../lib/incognito";
 
 const mockUseApproveSeerrRequest = vi.fn();
 const mockUseSeerrRequestOptions = vi.fn();
@@ -44,7 +45,15 @@ const request: SeerrRequest = {
 	},
 	createdAt: "2026-08-14T00:00:00.000Z",
 	updatedAt: "2026-08-14T00:00:00.000Z",
-	requestedBy: { id: 1, displayName: "Requester" },
+	requestedBy: {
+		id: 1,
+		displayName: "Requester",
+		createdAt: "2026-08-14T00:00:00.000Z",
+		updatedAt: "2026-08-14T00:00:00.000Z",
+		permissions: 0,
+		requestCount: 1,
+		userType: 1,
+	},
 	is4k: false,
 };
 
@@ -91,6 +100,7 @@ function renderDialog(children: ReactNode) {
 describe("ApproveWithOptionsDialog", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		localStorage.clear();
 		mockUseApproveSeerrRequest.mockReturnValue(mutation);
 		mockUseSeerrRequestOptions.mockReturnValue({
 			data: { servers: sonarrServers },
@@ -139,5 +149,36 @@ describe("ApproveWithOptionsDialog", () => {
 			{ instanceId: "seerr-1", requestId: 706, overrides: undefined },
 			expect.any(Object),
 		);
+	});
+
+	it("masks Sonarr server names and root folders in incognito mode", async () => {
+		localStorage.setItem("arr-dashboard-incognito-mode", "true");
+
+		renderDialog(
+			<ApproveWithOptionsDialog
+				request={request}
+				instanceId="seerr-1"
+				open
+				onOpenChange={vi.fn()}
+			/>,
+		);
+
+		await waitFor(() => {
+			expect(
+				screen.getByRole("option", {
+					name: `${getLinuxServerName("Sonarr A")} (default)`,
+				}),
+			).toBeInTheDocument();
+		});
+		expect(
+			screen.getByRole("option", { name: getLinuxServerName("Sonarr B") }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("option", {
+				name: `${getLinuxSavePath("/tv-a")} (server default)`,
+			}),
+		).toBeInTheDocument();
+		expect(screen.queryByText("Sonarr A (default)")).not.toBeInTheDocument();
+		expect(screen.queryByText("/tv-a (server default)")).not.toBeInTheDocument();
 	});
 });
