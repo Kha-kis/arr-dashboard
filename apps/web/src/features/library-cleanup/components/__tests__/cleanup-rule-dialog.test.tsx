@@ -152,6 +152,7 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 describe("CleanupRuleDialog", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		localStorage.setItem("arr-dashboard-incognito-mode", "false");
 		mockUseServicesQuery.mockReturnValue({ data: [] });
 	});
 
@@ -547,6 +548,35 @@ describe("CleanupRuleDialog", () => {
 	// ================================================================
 
 	describe("composite validation", () => {
+		it("rejects a Jellyfin watched-by condition with no selected users", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					operator: "AND",
+					conditions: [
+						{
+							ruleType: "jellyfin_watched_by",
+							parameters: { operator: "includes_any", userNames: [] },
+						},
+					],
+				}),
+			});
+
+			fireEvent.click(screen.getByText("Save Changes").closest("button")!);
+
+			await waitFor(() =>
+				expect(
+					screen.getByText(
+						"Each condition that targets users must have at least one username selected.",
+					),
+				).toBeInTheDocument(),
+			);
+			expect(onSave).not.toHaveBeenCalled();
+		});
+
 		it("shows error when submitting composite with zero conditions", async () => {
 			const onSave = vi.fn();
 			renderDialog({ onSave });
