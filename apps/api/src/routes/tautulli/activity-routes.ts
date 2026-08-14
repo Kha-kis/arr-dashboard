@@ -1,5 +1,9 @@
 import type { TautulliActivityResponse, TautulliActivitySession } from "@arr/shared";
-import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import type { FastifyInstance, FastifyPluginOptions, FastifyReply } from "fastify";
+import {
+	AnalyticsProviderSelectionMismatchError,
+	requireSelectedAnalyticsProvider,
+} from "../../lib/analytics/provider-selection.js";
 import {
 	createCurrentTautulliClient,
 	isTautulliConnectionChanged,
@@ -13,8 +17,10 @@ const activityLocation = (location: string): TautulliActivitySession["location"]
 
 export async function registerActivityRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.get("/", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		if (!(await requireTautulliAnalyticsProvider(app, userId, reply))) return;
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser!.id, service: "TAUTULLI", enabled: true },
+			where: { userId, service: "TAUTULLI", enabled: true },
 			orderBy: { label: "asc" },
 		});
 		const results = await Promise.all(
@@ -86,4 +92,25 @@ export async function registerActivityRoutes(app: FastifyInstance, _opts: Fastif
 		};
 		return reply.send(response);
 	});
+}
+
+async function requireTautulliAnalyticsProvider(
+	app: FastifyInstance,
+	userId: string,
+	reply: FastifyReply,
+): Promise<boolean> {
+	try {
+		await requireSelectedAnalyticsProvider(app.prisma, userId, "tautulli");
+		return true;
+	} catch (error) {
+		if (error instanceof AnalyticsProviderSelectionMismatchError) {
+			reply.status(409).send({
+				error: "ANALYTICS_PROVIDER_NOT_SELECTED",
+				expected: error.expected,
+				actual: error.actual,
+			});
+			return false;
+		}
+		throw error;
+	}
 }

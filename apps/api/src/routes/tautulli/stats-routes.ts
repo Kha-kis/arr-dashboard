@@ -4,8 +4,12 @@ import type {
 	TautulliStatsResponse,
 	TautulliStatsSource,
 } from "@arr/shared";
-import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import type { FastifyInstance, FastifyPluginOptions, FastifyReply } from "fastify";
 import { z } from "zod";
+import {
+	AnalyticsProviderSelectionMismatchError,
+	requireSelectedAnalyticsProvider,
+} from "../../lib/analytics/provider-selection.js";
 import {
 	createCurrentTautulliClient,
 	isTautulliConnectionChanged,
@@ -27,8 +31,10 @@ type UserStatsStatus = {
 export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.get("/", async (request, reply) => {
 		const { timeRange } = validateRequest(statsQuery, request.query);
+		const userId = request.currentUser!.id;
+		if (!(await requireTautulliAnalyticsProvider(app, userId, reply))) return;
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser!.id, service: "TAUTULLI", enabled: true },
+			where: { userId, service: "TAUTULLI", enabled: true },
 			orderBy: { label: "asc" },
 		});
 		const results = await Promise.all(
@@ -158,8 +164,10 @@ export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPl
 
 	app.get("/plays-by-date", async (request, reply) => {
 		const { timeRange } = validateRequest(statsQuery, request.query);
+		const userId = request.currentUser!.id;
+		if (!(await requireTautulliAnalyticsProvider(app, userId, reply))) return;
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser!.id, service: "TAUTULLI", enabled: true },
+			where: { userId, service: "TAUTULLI", enabled: true },
 			orderBy: { label: "asc" },
 		});
 		const sources = await Promise.all(
@@ -201,6 +209,27 @@ export async function registerStatsRoutes(app: FastifyInstance, _opts: FastifyPl
 		};
 		return reply.send(response);
 	});
+}
+
+async function requireTautulliAnalyticsProvider(
+	app: FastifyInstance,
+	userId: string,
+	reply: FastifyReply,
+): Promise<boolean> {
+	try {
+		await requireSelectedAnalyticsProvider(app.prisma, userId, "tautulli");
+		return true;
+	} catch (error) {
+		if (error instanceof AnalyticsProviderSelectionMismatchError) {
+			reply.status(409).send({
+				error: "ANALYTICS_PROVIDER_NOT_SELECTED",
+				expected: error.expected,
+				actual: error.actual,
+			});
+			return false;
+		}
+		throw error;
+	}
 }
 
 function unavailableStatsSource(

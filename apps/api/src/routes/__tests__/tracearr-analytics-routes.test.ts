@@ -20,6 +20,7 @@ vi.mock("../../lib/tracearr/instance-helpers.js", () => ({
 }));
 
 const {
+	mockCreateTracearrClient,
 	mockGetStats,
 	mockGetStatsToday,
 	mockGetActivity,
@@ -27,6 +28,7 @@ const {
 	mockGetUsers,
 	mockGetViolations,
 } = vi.hoisted(() => ({
+	mockCreateTracearrClient: vi.fn(),
 	mockGetStats: vi.fn(),
 	mockGetStatsToday: vi.fn(),
 	mockGetActivity: vi.fn(),
@@ -36,14 +38,7 @@ const {
 }));
 
 vi.mock("../../lib/tracearr/client-factory.js", () => ({
-	createTracearrClient: vi.fn(() => ({
-		getStats: mockGetStats,
-		getStatsToday: mockGetStatsToday,
-		getActivity: mockGetActivity,
-		getHistory: mockGetHistory,
-		getUsers: mockGetUsers,
-		getViolations: mockGetViolations,
-	})),
+	createTracearrClient: (...args: unknown[]) => mockCreateTracearrClient(...args),
 }));
 
 const emptyPage = { data: [], meta: { total: 0, page: 1, pageSize: 25 } };
@@ -78,10 +73,20 @@ function makeInstance(overrides: Record<string, unknown> = {}) {
 
 let app: FastifyInstance;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
+let selectedProvider: "tracearr" | "tautulli";
 
 beforeEach(async () => {
 	vi.clearAllMocks();
+	selectedProvider = "tracearr";
 	mockResolveTracearrInstance.mockResolvedValue(makeInstance());
+	mockCreateTracearrClient.mockReturnValue({
+		getStats: mockGetStats,
+		getStatsToday: mockGetStatsToday,
+		getActivity: mockGetActivity,
+		getHistory: mockGetHistory,
+		getUsers: mockGetUsers,
+		getViolations: mockGetViolations,
+	});
 	mockGetStats.mockResolvedValue({
 		activeStreams: 1,
 		totalUsers: 5,
@@ -119,7 +124,18 @@ beforeEach(async () => {
 	mockGetViolations.mockResolvedValue(emptyPage);
 
 	app = Fastify();
-	app.decorate("prisma", {} as never);
+	app.decorate("prisma", {
+		$transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+			callback({
+				systemSettings: {
+					findUnique: vi.fn().mockResolvedValue({
+						analyticsProvider: selectedProvider,
+						analyticsProviderSource: "explicit",
+					}),
+				},
+				serviceInstance: { count: vi.fn().mockResolvedValue(1) },
+			}),
+	} as never);
 	setupAuthInjection(app);
 	registerTestErrorHandler(app);
 
@@ -156,6 +172,38 @@ describe("GET /tracearr/stats", () => {
 	it("forwards a caller-specified instanceId to the resolver", async () => {
 		await injectAuthenticated("GET", "/tracearr/stats?instanceId=trr-2");
 		expect(mockResolveTracearrInstance).toHaveBeenCalledWith(expect.anything(), "user-1", "trr-2");
+	});
+
+	it.each([
+		"/tracearr/stats",
+		"/tracearr/activity",
+		"/tracearr/history",
+		"/tracearr/users",
+		"/tracearr/violations",
+	])("rejects %s before resolving a Tracearr client when Tautulli is selected", async (path) => {
+		selectedProvider = "tautulli";
+
+		const response = await injectAuthenticated("GET", path);
+
+		expect(response.statusCode).toBe(409);
+		expect(JSON.parse(response.payload)).toEqual({
+			error: "ANALYTICS_PROVIDER_NOT_SELECTED",
+			expected: "tracearr",
+			actual: "tautulli",
+		});
+		expect(mockResolveTracearrInstance).not.toHaveBeenCalled();
+		expect(mockCreateTracearrClient).not.toHaveBeenCalled();
+	});
+
+	it("preserves a selected Tracearr outage without resolving another provider", async () => {
+		mockGetStats.mockRejectedValueOnce(new Error("Tracearr unavailable"));
+
+		const response = await injectAuthenticated("GET", "/tracearr/stats");
+
+		expect(response.statusCode).toBe(500);
+		expect(mockResolveTracearrInstance).toHaveBeenCalledTimes(1);
+		expect(mockCreateTracearrClient).toHaveBeenCalledTimes(1);
+		expect(mockGetStatsToday).toHaveBeenCalledTimes(1);
 	});
 });
 

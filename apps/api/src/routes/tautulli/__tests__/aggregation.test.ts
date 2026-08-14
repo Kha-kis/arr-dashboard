@@ -198,10 +198,22 @@ function pagedHistory(instanceName: string, totalCount: number, firstDate: numbe
 let app: FastifyInstance;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 let prisma: any;
+let selectedProvider: "tracearr" | "tautulli";
 
 beforeEach(async () => {
 	vi.clearAllMocks();
+	selectedProvider = "tautulli";
 	prisma = {
+		$transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+			callback({
+				systemSettings: {
+					findUnique: vi.fn().mockImplementation(async () => ({
+						analyticsProvider: selectedProvider,
+						analyticsProviderSource: "explicit",
+					})),
+				},
+				serviceInstance: { count: vi.fn().mockResolvedValue(1) },
+			}),
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([instanceOne]),
 			findFirst: vi.fn().mockResolvedValue(instanceOne),
@@ -268,6 +280,41 @@ afterAll(async () => {
 });
 
 describe("Tautulli provider routes", () => {
+	it.each([
+		"/api/tautulli/activity",
+		"/api/tautulli/stats",
+		"/api/tautulli/stats/plays-by-date",
+		"/api/tautulli/history",
+	])("rejects %s before resolving Tautulli instances when Tracearr is selected", async (path) => {
+		selectedProvider = "tracearr";
+
+		const response = await injectAuthenticated("GET", path);
+
+		expect(response.statusCode).toBe(409);
+		expect(JSON.parse(response.payload)).toEqual({
+			error: "ANALYTICS_PROVIDER_NOT_SELECTED",
+			expected: "tautulli",
+			actual: "tracearr",
+		});
+		expect(prisma.serviceInstance.findMany).not.toHaveBeenCalled();
+		expect(mockCreateTautulliClient).not.toHaveBeenCalled();
+	});
+
+	it("preserves a selected Tautulli outage without resolving another provider", async () => {
+		const client = makeClient({
+			getActivity: vi.fn().mockRejectedValue(new Error("Tautulli unavailable")),
+		});
+		mockCreateTautulliClient.mockReturnValue(client);
+
+		const response = await injectAuthenticated("GET", "/api/tautulli/activity");
+
+		expect(response.statusCode).toBe(200);
+		expect(JSON.parse(response.payload).sources).toEqual([
+			expect.objectContaining({ reachable: false, incompleteReason: "source_unreachable" }),
+		]);
+		expect(mockCreateTautulliClient).toHaveBeenCalledTimes(1);
+	});
+
 	it("returns Tautulli-scoped activity with separately typed sensitive source fields", async () => {
 		const response = await injectAuthenticated("GET", "/api/tautulli/activity");
 		expect(response.statusCode).toBe(200);

@@ -4,8 +4,12 @@ import type {
 	TautulliWatchHistoryItem,
 	TautulliWatchHistoryResponse,
 } from "@arr/shared";
-import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import type { FastifyInstance, FastifyPluginOptions, FastifyReply } from "fastify";
 import { z } from "zod";
+import {
+	AnalyticsProviderSelectionMismatchError,
+	requireSelectedAnalyticsProvider,
+} from "../../lib/analytics/provider-selection.js";
 import {
 	type TautulliClient,
 	MAX_TAUTULLI_HISTORY_PAGE_LENGTH,
@@ -37,8 +41,10 @@ const historyQuery = z
 export async function registerHistoryRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.get("/", async (request, reply) => {
 		const { offset, limit } = validateRequest(historyQuery, request.query);
+		const userId = request.currentUser!.id;
+		if (!(await requireTautulliAnalyticsProvider(app, userId, reply))) return;
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser!.id, service: "TAUTULLI", enabled: true },
+			where: { userId, service: "TAUTULLI", enabled: true },
 			orderBy: { label: "asc" },
 		});
 		const requestedDepth = offset + limit;
@@ -107,6 +113,27 @@ export async function registerHistoryRoutes(app: FastifyInstance, _opts: Fastify
 		};
 		return reply.send(response);
 	});
+}
+
+async function requireTautulliAnalyticsProvider(
+	app: FastifyInstance,
+	userId: string,
+	reply: FastifyReply,
+): Promise<boolean> {
+	try {
+		await requireSelectedAnalyticsProvider(app.prisma, userId, "tautulli");
+		return true;
+	} catch (error) {
+		if (error instanceof AnalyticsProviderSelectionMismatchError) {
+			reply.status(409).send({
+				error: "ANALYTICS_PROVIDER_NOT_SELECTED",
+				expected: error.expected,
+				actual: error.actual,
+			});
+			return false;
+		}
+		throw error;
+	}
 }
 
 type TautulliHistoryPage = Awaited<ReturnType<TautulliClient["getHistoryNewestPage"]>>;
