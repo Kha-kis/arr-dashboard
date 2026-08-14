@@ -190,7 +190,7 @@ describe("selected analytics-provider lifecycle guard", () => {
 	it("permits a confirmed deletion without silently switching the selected family", async () => {
 		const deleted = await app.inject({
 			method: "DELETE",
-			url: "/services/tautulli-1?confirmAnalyticsUnavailable=true",
+			url: "/services/tautulli-1?confirmAnalyticsUnavailableFor=tautulli",
 			headers: { "x-test-auth": "1" },
 		});
 
@@ -208,7 +208,7 @@ describe("selected analytics-provider lifecycle guard", () => {
 	it("rejects a malformed deletion confirmation without deleting the service", async () => {
 		const response = await app.inject({
 			method: "DELETE",
-			url: "/services/tautulli-1?confirmAnalyticsUnavailable=invalid",
+			url: "/services/tautulli-1?confirmAnalyticsUnavailableFor=invalid",
 			headers: { "x-test-auth": "1" },
 		});
 
@@ -219,7 +219,7 @@ describe("selected analytics-provider lifecycle guard", () => {
 
 	it("permits a confirmed selected-family update without persisting metadata or switching selection", async () => {
 		const response = await injectAuthenticated("PUT", "/services/tautulli-1", {
-			body: { enabled: false, confirmAnalyticsUnavailable: true },
+			body: { enabled: false, confirmAnalyticsUnavailableFor: "tautulli" },
 		});
 
 		expect(response.statusCode).toBe(200);
@@ -227,7 +227,7 @@ describe("selected analytics-provider lifecycle guard", () => {
 			enabled: false,
 		});
 		expect(instances.find((instance) => instance.id === "tautulli-1")).not.toHaveProperty(
-			"confirmAnalyticsUnavailable",
+			"confirmAnalyticsUnavailableFor",
 		);
 		const selection = await injectAuthenticated("GET", "/system/analytics-provider");
 		expect(selection.statusCode).toBe(200);
@@ -236,7 +236,7 @@ describe("selected analytics-provider lifecycle guard", () => {
 
 	it("rejects confirmation metadata without a lifecycle update", async () => {
 		const response = await injectAuthenticated("PUT", "/services/tautulli-1", {
-			body: { confirmAnalyticsUnavailable: true },
+			body: { confirmAnalyticsUnavailableFor: "tautulli" },
 		});
 
 		expect(response.statusCode).toBe(400);
@@ -246,6 +246,42 @@ describe("selected analytics-provider lifecycle guard", () => {
 		});
 		expect((app as any).prisma.serviceInstance.updateMany).not.toHaveBeenCalled();
 	});
+
+	it.each([
+		[
+			"update",
+			"PUT",
+			"/services/tautulli-1",
+			{ enabled: false, confirmAnalyticsUnavailableFor: "tautulli" },
+		],
+		[
+			"deletion",
+			"DELETE",
+			"/services/tautulli-1?confirmAnalyticsUnavailableFor=tautulli",
+			undefined,
+		],
+	] as const)(
+		"rejects a stale provider-bound %s confirmation after the selected topology changes",
+		async (_operation, method, url, body) => {
+			instances[0]!.service = "TRACEARR";
+			instances[1]!.enabled = false;
+			settings = { analyticsProvider: "tracearr", analyticsProviderSource: "explicit" };
+
+			const response = await injectAuthenticated(method, url, body === undefined ? {} : { body });
+
+			expect(response.statusCode).toBe(409);
+			expect(response.json()).toEqual({
+				code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
+				selected: "tracearr",
+				alternativeEnabled: false,
+			});
+			expect(instances.find((instance) => instance.id === "tautulli-1")).toMatchObject({
+				service: "TRACEARR",
+				enabled: true,
+			});
+			expect((app as any).prisma.serviceInstance.delete).not.toHaveBeenCalled();
+		},
+	);
 
 	it("does not require confirmation for an unselected-family lifecycle mutation", async () => {
 		const response = await injectAuthenticated("PUT", "/services/tracearr-1", {

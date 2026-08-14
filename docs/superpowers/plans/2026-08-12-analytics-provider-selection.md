@@ -107,7 +107,7 @@ git commit -m "feat: resolve historical analytics provider"
 **Interfaces:**
 - Produces authenticated `GET /api/system/analytics-provider` returning `AnalyticsProviderSelection`.
 - Produces authenticated `PUT /api/system/analytics-provider` accepting exactly `{ provider: AnalyticsProvider }`.
-- Extends service update payloads and delete query parameters with `confirmAnalyticsUnavailable?: boolean`.
+- Extends service update payloads and delete query parameters with `confirmAnalyticsUnavailableFor?: AnalyticsProvider`.
 - A blocked last-instance mutation returns HTTP 409 with code `ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED`, the selected family, and whether the other family has an enabled instance. It contains no service label or URL.
 
 - [ ] **Step 1: Write failing route and lifecycle tests**
@@ -124,7 +124,7 @@ expect(blocked.json()).toMatchObject({
 expect(deleteService).not.toHaveBeenCalled();
 ```
 
-Repeat with `confirmAnalyticsUnavailable: true`; the mutation succeeds and a following selection read still reports the same selected family as unavailable. Verify an unselected-family mutation needs no provider confirmation.
+Repeat with `confirmAnalyticsUnavailableFor` set to the provider returned by the 409; the mutation succeeds and a following selection read still reports the same selected family as unavailable. Verify a stale provider-bound confirmation receives a fresh 409 and an unselected-family mutation needs no provider confirmation.
 
 - [ ] **Step 2: Run RED**
 

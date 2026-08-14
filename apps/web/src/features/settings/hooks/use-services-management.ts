@@ -66,7 +66,7 @@ export const useServicesManagement = () => {
 
 	const requestAnalyticsUnavailableConfirmation = (
 		error: unknown,
-		retry: () => Promise<void>,
+		retry: (selected: AnalyticsProvider) => Promise<void>,
 	): boolean => {
 		const confirmation = getAnalyticsUnavailableConfirmation(error);
 		if (!confirmation) return false;
@@ -77,7 +77,7 @@ export const useServicesManagement = () => {
 				confirmationRetryInFlight.current = true;
 				setAnalyticsUnavailableConfirmation(null);
 				try {
-					await retry();
+					await retry(confirmation.selected);
 				} catch (retryError) {
 					toast.error(getErrorMessage(retryError, "Failed to update service"));
 				} finally {
@@ -170,10 +170,13 @@ export const useServicesManagement = () => {
 					await updateServiceMutation.mutateAsync(updateVariables);
 				} catch (error) {
 					if (
-						requestAnalyticsUnavailableConfirmation(error, async () => {
+						requestAnalyticsUnavailableConfirmation(error, async (selected) => {
 							await updateServiceMutation.mutateAsync({
 								...updateVariables,
-								payload: { ...updateVariables.payload, confirmAnalyticsUnavailable: true },
+								payload: {
+									...updateVariables.payload,
+									confirmAnalyticsUnavailableFor: selected,
+								},
 							});
 							resetForm(basePayload.service);
 						})
@@ -204,10 +207,10 @@ export const useServicesManagement = () => {
 			}
 		} catch (error) {
 			if (
-				requestAnalyticsUnavailableConfirmation(error, async () => {
+				requestAnalyticsUnavailableConfirmation(error, async (selected) => {
 					await deleteServiceMutation.mutateAsync({
 						id: instance.id,
-						confirmAnalyticsUnavailable: true,
+						confirmAnalyticsUnavailableFor: selected,
 					});
 					if (selectedServiceForEdit?.id === instance.id) {
 						resetForm(instance.service);
@@ -245,10 +248,13 @@ export const useServicesManagement = () => {
 			await updateServiceMutation.mutateAsync(updateVariables);
 		} catch (error) {
 			if (
-				requestAnalyticsUnavailableConfirmation(error, async () => {
+				requestAnalyticsUnavailableConfirmation(error, async (selected) => {
 					await updateServiceMutation.mutateAsync({
 						...updateVariables,
-						payload: { ...updateVariables.payload, confirmAnalyticsUnavailable: true },
+						payload: {
+							...updateVariables.payload,
+							confirmAnalyticsUnavailableFor: selected,
+						},
 					});
 				})
 			) {

@@ -123,10 +123,13 @@ describe("service mutations", () => {
 		const { result } = renderHook(() => useDeleteServiceMutation(), {
 			wrapper: createWrapper(client),
 		});
-		result.current.mutate({ id: tracearrService.id, confirmAnalyticsUnavailable: true });
+		result.current.mutate({
+			id: tracearrService.id,
+			confirmAnalyticsUnavailableFor: "tracearr",
+		});
 
 		await waitFor(() => expect(result.current.isSuccess).toBe(true));
-		expect(serviceApi.removeService).toHaveBeenCalledWith(tracearrService.id, true);
+		expect(serviceApi.removeService).toHaveBeenCalledWith(tracearrService.id, "tracearr");
 
 		client.clear();
 	});

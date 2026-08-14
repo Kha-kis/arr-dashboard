@@ -62,7 +62,7 @@ describe("useServicesManagement analytics lifecycle confirmation", () => {
 		expect(mocks.deleteMutateAsync).toHaveBeenNthCalledWith(1, "tracearr-1");
 		expect(mocks.deleteMutateAsync).toHaveBeenNthCalledWith(2, {
 			id: "tracearr-1",
-			confirmAnalyticsUnavailable: true,
+			confirmAnalyticsUnavailableFor: "tracearr",
 		});
 		expect(result.current.analyticsUnavailableConfirmation).toBeNull();
 	});
@@ -93,7 +93,7 @@ describe("useServicesManagement analytics lifecycle confirmation", () => {
 		});
 		expect(mocks.updateMutateAsync).toHaveBeenNthCalledWith(2, {
 			id: "tracearr-1",
-			payload: { enabled: false, confirmAnalyticsUnavailable: true },
+			payload: { enabled: false, confirmAnalyticsUnavailableFor: "tracearr" },
 		});
 	});
 

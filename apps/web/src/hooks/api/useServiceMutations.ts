@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import type { ArrServiceType, ServiceInstanceSummary } from "@arr/shared";
+import type { AnalyticsProvider, ArrServiceType, ServiceInstanceSummary } from "@arr/shared";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
 	type CreateServicePayload,
@@ -24,7 +24,7 @@ type UpdateVariables = {
 
 type CreateVariables = CreateServicePayload;
 
-type DeleteVariables = string | { id: string; confirmAnalyticsUnavailable?: boolean };
+type DeleteVariables = string | { id: string; confirmAnalyticsUnavailableFor?: AnalyticsProvider };
 
 export const useCreateServiceMutation = () => {
 	const queryClient = useQueryClient();
@@ -78,7 +78,7 @@ export const useDeleteServiceMutation = () => {
 		mutationFn: (input) =>
 			typeof input === "string"
 				? removeService(input)
-				: removeService(input.id, input.confirmAnalyticsUnavailable),
+				: removeService(input.id, input.confirmAnalyticsUnavailableFor),
 		onSuccess: (_, input) => {
 			const id = typeof input === "string" ? input : input.id;
 			queryClient.setQueryData<ServiceInstanceSummary[]>(serviceKeys.all, (prev) => {

@@ -1,4 +1,5 @@
 import type {
+	AnalyticsProvider,
 	ArrServiceType,
 	ServiceInstanceSummary,
 	ServiceResponse,
@@ -32,7 +33,7 @@ export type CreateServicePayload = {
 };
 
 export type UpdateServicePayload = Partial<CreateServicePayload> & {
-	confirmAnalyticsUnavailable?: boolean;
+	confirmAnalyticsUnavailableFor?: AnalyticsProvider;
 };
 
 export async function createService(
@@ -58,12 +59,12 @@ export async function updateService(
 
 export async function removeService(
 	id: string,
-	confirmAnalyticsUnavailable?: boolean,
+	confirmAnalyticsUnavailableFor?: AnalyticsProvider,
 ): Promise<void> {
 	const query =
-		confirmAnalyticsUnavailable === undefined
+		confirmAnalyticsUnavailableFor === undefined
 			? ""
-			: `?${new URLSearchParams({ confirmAnalyticsUnavailable: String(confirmAnalyticsUnavailable) })}`;
+			: `?${new URLSearchParams({ confirmAnalyticsUnavailableFor })}`;
 	await apiRequest<void>(`/api/services/${id}${query}`, {
 		method: "DELETE",
 	});

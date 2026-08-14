@@ -1,4 +1,9 @@
-import { ALL_SERVICES, arrServiceTypeSchema, type AnalyticsProvider } from "@arr/shared";
+import {
+	ALL_SERVICES,
+	analyticsProviderSchema,
+	arrServiceTypeSchema,
+	type AnalyticsProvider,
+} from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
@@ -30,12 +35,8 @@ const ANALYTICS_PROVIDER_SERVICES: Record<AnalyticsProvider, ServiceType> = {
 	tautulli: "TAUTULLI",
 };
 
-const confirmationSchema = z
-	.union([z.boolean(), z.enum(["true", "false"])])
-	.transform((value) => value === true || value === "true");
-
 const serviceDeleteQuerySchema = z
-	.object({ confirmAnalyticsUnavailable: confirmationSchema.optional() })
+	.object({ confirmAnalyticsUnavailableFor: analyticsProviderSchema.optional() })
 	.strict();
 
 const servicePayloadSchema = z.object({
@@ -77,9 +78,9 @@ const serviceUpdateSchema = z
 		storageGroupId: z.string().min(1).max(64).nullable().optional(),
 		hasLocalFilesystemAccess: z.boolean().optional(),
 		pathPrefix: z.string().max(256).nullable().optional(),
-		confirmAnalyticsUnavailable: z.boolean().optional(),
+		confirmAnalyticsUnavailableFor: analyticsProviderSchema.optional(),
 	})
-	.refine((data) => Object.keys(data).some((key) => key !== "confirmAnalyticsUnavailable"), {
+	.refine((data) => Object.keys(data).some((key) => key !== "confirmAnalyticsUnavailableFor"), {
 		message: "At least one field must be provided",
 	});
 
@@ -286,7 +287,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.put("/services/:id", async (request, reply) => {
 		const { id } = validateRequest(idParams, request.params);
-		const { confirmAnalyticsUnavailable, ...payload } = validateRequest(
+		const { confirmAnalyticsUnavailableFor, ...payload } = validateRequest(
 			serviceUpdateSchema,
 			request.body,
 		);
@@ -319,7 +320,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						targetEnabled: payload.enabled ?? existing.enabled,
 					},
 				);
-				if (confirmation && !confirmAnalyticsUnavailable) {
+				if (confirmation && confirmAnalyticsUnavailableFor !== confirmation.selected) {
 					return reply.status(409).send({
 						code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
 						...confirmation,
@@ -411,7 +412,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.delete("/services/:id", async (request, reply) => {
 		const { id } = validateRequest(idParams, request.params);
-		const { confirmAnalyticsUnavailable } = validateRequest(
+		const { confirmAnalyticsUnavailableFor } = validateRequest(
 			serviceDeleteQuerySchema,
 			request.query,
 		);
@@ -428,7 +429,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					existing,
 					{ kind: "delete" },
 				);
-				if (confirmation && !confirmAnalyticsUnavailable) {
+				if (confirmation && confirmAnalyticsUnavailableFor !== confirmation.selected) {
 					return reply.status(409).send({
 						code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
 						...confirmation,
