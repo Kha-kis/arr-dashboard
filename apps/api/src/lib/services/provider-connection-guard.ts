@@ -17,17 +17,24 @@ export function providerConnectionIdentity(
 type GuardPrisma = Pick<PrismaClient, "$transaction">;
 type GuardResult<T> = { matched: true; value: T } | { matched: false };
 
+export type ProviderConnectionTransactionOptions = {
+	maxWait?: number;
+	timeout?: number;
+};
+
 /** Keep provider cache/status writes bound to the service generation that produced them. */
 export async function withCurrentProviderConnection<T>(
 	prisma: GuardPrisma,
 	instanceId: string,
 	expected: ProviderConnectionIdentity | undefined,
 	action: (tx: Prisma.TransactionClient) => Promise<T>,
+	options?: ProviderConnectionTransactionOptions,
 ): Promise<GuardResult<T>> {
+	const postgresql = isPostgresqlDatabase();
 	return await prisma.$transaction(
 		async (tx) => {
 			if (expected) {
-				if (isPostgresqlDatabase()) {
+				if (postgresql) {
 					await tx.$queryRawUnsafe(
 						'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
 						instanceId,
@@ -48,7 +55,7 @@ export async function withCurrentProviderConnection<T>(
 
 			return { matched: true, value: await action(tx) };
 		},
-		isPostgresqlDatabase() ? undefined : { isolationLevel: "Serializable" },
+		postgresql ? options : { isolationLevel: "Serializable", ...options },
 	);
 }
 

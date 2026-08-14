@@ -24,6 +24,11 @@ import {
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PlexClient } from "./plex-client.js";
 
+/** Bound Prisma's cached createMany query plans for production-sized libraries. */
+export const PLEX_CACHE_PUBLICATION_CHUNK_SIZE = 100;
+/** Allow bounded publication batches to complete on higher-latency databases. */
+export const PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS = 60_000;
+
 // ============================================================================
 // GUID Parsing
 // ============================================================================
@@ -546,26 +551,36 @@ export async function refreshPlexCache(
 					async (tx) => {
 						await tx.plexCache.deleteMany({ where: { instanceId } });
 						if (aggregationsArray.length > 0) {
-							await tx.plexCache.createMany({
-								data: aggregationsArray.map((agg) => ({
-									instanceId,
-									tmdbId: agg.tmdbId,
-									mediaType: agg.mediaType,
-									sectionId: agg.sectionId,
-									sectionTitle: agg.sectionTitle,
-									title: agg.title,
-									ratingKey: agg.ratingKey,
-									lastWatchedAt: agg.lastWatchedAt,
-									watchCount: agg.watchCount,
-									watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-									onDeck: agg.onDeck,
-									userRating: agg.userRating,
-									collections: JSON.stringify(agg.collections),
-									labels: JSON.stringify(agg.labels),
-									addedAt: agg.addedAt,
-									thumb: agg.thumb,
-								})),
-							});
+							for (
+								let start = 0;
+								start < aggregationsArray.length;
+								start += PLEX_CACHE_PUBLICATION_CHUNK_SIZE
+							) {
+								const chunk = aggregationsArray.slice(
+									start,
+									start + PLEX_CACHE_PUBLICATION_CHUNK_SIZE,
+								);
+								await tx.plexCache.createMany({
+									data: chunk.map((agg) => ({
+										instanceId,
+										tmdbId: agg.tmdbId,
+										mediaType: agg.mediaType,
+										sectionId: agg.sectionId,
+										sectionTitle: agg.sectionTitle,
+										title: agg.title,
+										ratingKey: agg.ratingKey,
+										lastWatchedAt: agg.lastWatchedAt,
+										watchCount: agg.watchCount,
+										watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
+										onDeck: agg.onDeck,
+										userRating: agg.userRating,
+										collections: JSON.stringify(agg.collections),
+										labels: JSON.stringify(agg.labels),
+										addedAt: agg.addedAt,
+										thumb: agg.thumb,
+									})),
+								});
+							}
 						}
 						await tx.cacheRefreshStatus.upsert({
 							where: { instanceId_cacheType: { instanceId, cacheType: "plex" } },
@@ -593,6 +608,7 @@ export async function refreshPlexCache(
 							},
 						});
 					},
+					{ timeout: PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS },
 				);
 				if (publication.matched) {
 					upserted = aggregationsArray.length;

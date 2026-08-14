@@ -17,6 +17,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
 import {
 	evictStaleRows,
+	PLEX_CACHE_PUBLICATION_CHUNK_SIZE,
+	PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
 	refreshPlexCache,
 	STALE_EVICTION_CHUNK_SIZE,
 } from "../plex-cache-refresher.js";
@@ -175,7 +177,20 @@ describe("evictStaleRows", () => {
 
 		expect(replacementDelete).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
 		expect(publishedRows).toHaveLength(LIBRARY_SIZE);
+		expect(tx.plexCache.createMany).toHaveBeenCalledTimes(
+			Math.ceil(LIBRARY_SIZE / PLEX_CACHE_PUBLICATION_CHUNK_SIZE),
+		);
+		let chunkedRows = 0;
+		for (const [call] of tx.plexCache.createMany.mock.calls) {
+			expect(call.data.length).toBeLessThanOrEqual(PLEX_CACHE_PUBLICATION_CHUNK_SIZE);
+			chunkedRows += call.data.length;
+		}
+		expect(chunkedRows).toBe(LIBRARY_SIZE);
 		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
+		expect(mockPrisma.$transaction).toHaveBeenCalledWith(
+			expect.any(Function),
+			expect.objectContaining({ timeout: PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS }),
+		);
 	});
 
 	it("never uses `notIn` — the original P2029 trigger", async () => {
