@@ -20,6 +20,12 @@
   affected-path integration checks, one coherent independent review and
   correction batch, then one full gauntlet at the PR boundary. Repeat the full
   gate only when the final diff, base, or release candidate changes materially.
+- Before merge, audit submitted reviews, inline comments, unresolved review
+  threads, and the reviewed commit against the current head. Every in-scope
+  finding needs an explicit disposition and every actionable thread must be
+  resolved; an older-commit comment is not automatically obsolete. Wait for
+  the configured GitHub Codex result and all PR-triggered checks, not only the
+  minimum branch-protection checks.
 - Run GitHub issue replies through the `humanizer` skill and never `@`-mention users.
 - Do not close an issue without reproduced-and-verified behavior. Do not publish a release from an unreviewed SHA.
 - Preserve the existing cleanup Wave 3A, 3B, and 3C worktrees and all user-owned primary-checkout edits.
@@ -98,20 +104,20 @@
 - Consumes: `ApproveWithOptionsDialog` and the existing Seerr approval mutation contract.
 - Produces: the selected non-default Seerr Sonarr server, profile, and root-folder overrides reach the existing API route on both release lines.
 
-- [ ] **Step 1: Execute the dedicated #706 plan on current `origin/main`**
+- [x] **Step 1: Execute the dedicated #706 plan on current `origin/main`**
 
   Follow `2026-08-14-issue-706-selected-sonarr-approval.md` through RED,
   minimal correction, focused integration checks, one task review and
   correction batch, the root gauntlet, and user-visible component verification
   where it adds evidence.
 
-- [ ] **Step 2: Publish the focused stable PR**
+- [x] **Step 2: Publish the focused stable PR**
 
   Use `Related to #706` until the exact two-server scenario is verified. Apply
   one reviewed release bucket. Merge only after required checks and review are
   green.
 
-- [ ] **Step 3: Forward-port from current `origin/next`**
+- [x] **Step 3: Forward-port from current `origin/next`**
 
   Reproduce the same failing component test on `next`, make the native minimal
   correction, run the same focused test plus the `next` gauntlet, and open a
