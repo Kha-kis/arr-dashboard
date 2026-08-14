@@ -57,6 +57,16 @@ const systemSettingsUpsert = vi.fn(async ({ create, update }: any) => {
 	};
 	return { ...settings };
 });
+const systemSettingsUpdateMany = vi.fn(async ({ data }: any) => {
+	if (settings.analyticsProvider !== null || settings.analyticsProviderSource !== null) {
+		return { count: 0 };
+	}
+	settings = {
+		analyticsProvider: data.analyticsProvider,
+		analyticsProviderSource: data.analyticsProviderSource,
+	};
+	return { count: 1 };
+});
 const dismissalFindMany = vi.fn(async ({ where }: { where: { userId: string } }) =>
 	dismissalRows.filter((row) => row.userId === where.userId),
 );
@@ -100,6 +110,7 @@ beforeEach(async () => {
 	serviceInstanceCount.mockClear();
 	systemSettingsFindUnique.mockClear();
 	systemSettingsUpsert.mockClear();
+	systemSettingsUpdateMany.mockClear();
 	dismissalFindMany.mockClear();
 	dismissalUpsert.mockClear();
 	affectedRuleFindMany.mockClear();
@@ -110,6 +121,7 @@ beforeEach(async () => {
 			findUnique: systemSettingsFindUnique,
 			create: vi.fn(),
 			upsert: systemSettingsUpsert,
+			updateMany: systemSettingsUpdateMany,
 		},
 		serviceInstance: { findMany: serviceInstanceFindMany, count: serviceInstanceCount },
 		systemNoticeDismissal: { findMany: dismissalFindMany, upsert: dismissalUpsert },
