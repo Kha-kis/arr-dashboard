@@ -1,10 +1,13 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockCreateTautulliClient, mockRefreshTautulliCache } = vi.hoisted(() => ({
-	mockCreateTautulliClient: vi.fn(),
-	mockRefreshTautulliCache: vi.fn(),
-}));
+const { mockCreateTautulliClient, mockRefreshTautulliCache, mockCreateTracearrClient } = vi.hoisted(
+	() => ({
+		mockCreateTautulliClient: vi.fn(),
+		mockRefreshTautulliCache: vi.fn(),
+		mockCreateTracearrClient: vi.fn(),
+	}),
+);
 
 vi.mock("../../../lib/tautulli/tautulli-client.js", () => ({
 	createTautulliClient: (...args: unknown[]) => mockCreateTautulliClient(...args),
@@ -13,6 +16,10 @@ vi.mock("../../../lib/tautulli/tautulli-client.js", () => ({
 
 vi.mock("../../../lib/tautulli/tautulli-cache-refresher.js", () => ({
 	refreshTautulliCache: (...args: unknown[]) => mockRefreshTautulliCache(...args),
+}));
+
+vi.mock("../../../lib/tracearr/client-factory.js", () => ({
+	createTracearrClient: (...args: unknown[]) => mockCreateTracearrClient(...args),
 }));
 
 import { providerConnectionIdentity } from "../../../lib/services/provider-connection-guard.js";
@@ -257,6 +264,7 @@ beforeEach(async () => {
 				: {},
 		),
 	);
+	mockCreateTracearrClient.mockReturnValue({});
 	mockRefreshTautulliCache.mockResolvedValue({
 		complete: true,
 		completedAt: new Date("2026-08-12T00:01:00.000Z"),
@@ -298,6 +306,7 @@ describe("Tautulli provider routes", () => {
 		});
 		expect(prisma.serviceInstance.findMany).not.toHaveBeenCalled();
 		expect(mockCreateTautulliClient).not.toHaveBeenCalled();
+		expect(mockCreateTracearrClient).not.toHaveBeenCalled();
 	});
 
 	it("preserves a selected Tautulli outage without resolving another provider", async () => {
@@ -313,6 +322,7 @@ describe("Tautulli provider routes", () => {
 			expect.objectContaining({ reachable: false, incompleteReason: "source_unreachable" }),
 		]);
 		expect(mockCreateTautulliClient).toHaveBeenCalledTimes(1);
+		expect(mockCreateTracearrClient).not.toHaveBeenCalled();
 	});
 
 	it("returns Tautulli-scoped activity with separately typed sensitive source fields", async () => {

@@ -9,14 +9,20 @@
 
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockResolveTracearrInstance } = vi.hoisted(() => ({
+const { mockResolveTracearrInstance, mockCreateCurrentTautulliClient } = vi.hoisted(() => ({
 	mockResolveTracearrInstance: vi.fn(),
+	mockCreateCurrentTautulliClient: vi.fn(),
 }));
 
 vi.mock("../../lib/tracearr/instance-helpers.js", () => ({
 	resolveTracearrInstance: (...args: unknown[]) => mockResolveTracearrInstance(...args),
 	requireTracearrInstance: vi.fn(),
 	listTracearrInstances: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("../../lib/tautulli/current-tautulli-client.js", () => ({
+	createCurrentTautulliClient: (...args: unknown[]) => mockCreateCurrentTautulliClient(...args),
+	isTautulliConnectionChanged: vi.fn(),
 }));
 
 const {
@@ -79,6 +85,10 @@ beforeEach(async () => {
 	vi.clearAllMocks();
 	selectedProvider = "tracearr";
 	mockResolveTracearrInstance.mockResolvedValue(makeInstance());
+	mockCreateCurrentTautulliClient.mockReturnValue({
+		client: {},
+		ensureCurrent: vi.fn(),
+	});
 	mockCreateTracearrClient.mockReturnValue({
 		getStats: mockGetStats,
 		getStatsToday: mockGetStatsToday,
@@ -193,6 +203,7 @@ describe("GET /tracearr/stats", () => {
 		});
 		expect(mockResolveTracearrInstance).not.toHaveBeenCalled();
 		expect(mockCreateTracearrClient).not.toHaveBeenCalled();
+		expect(mockCreateCurrentTautulliClient).not.toHaveBeenCalled();
 	});
 
 	it("preserves a selected Tracearr outage without resolving another provider", async () => {
@@ -203,6 +214,7 @@ describe("GET /tracearr/stats", () => {
 		expect(response.statusCode).toBe(500);
 		expect(mockResolveTracearrInstance).toHaveBeenCalledTimes(1);
 		expect(mockCreateTracearrClient).toHaveBeenCalledTimes(1);
+		expect(mockCreateCurrentTautulliClient).not.toHaveBeenCalled();
 		expect(mockGetStatsToday).toHaveBeenCalledTimes(1);
 	});
 });
