@@ -7,7 +7,10 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { refreshJellyfinCache } from "../jellyfin-cache-refresher.js";
+import {
+	JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE,
+	refreshJellyfinCache,
+} from "../jellyfin-cache-refresher.js";
 import type {
 	JellyfinClient,
 	JellyfinItem,
@@ -128,6 +131,27 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
+	it("publishes a large cache through bounded createMany calls", async () => {
+		const itemCount = JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE * 2 + 17;
+		const items = Array.from({ length: itemCount }, (_, index) =>
+			makeSeriesItem({
+				id: `jf-series-${index}`,
+				name: `Series ${index}`,
+				tmdbId: 100_000 + index,
+			}),
+		);
+		const client = makeMockClient(items);
+		const { stub, tx } = makeMockPrisma();
+
+		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: itemCount });
+		expect(tx.jellyfinCache.createMany).toHaveBeenCalledTimes(3);
+		for (const [call] of tx.jellyfinCache.createMany.mock.calls) {
+			expect(call.data.length).toBeLessThanOrEqual(JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE);
+		}
+	});
+
 	it("sets lastWatchedAt for a fully-watched series (item.played === true)", async () => {
 		const item = makeSeriesItem({
 			played: true,
