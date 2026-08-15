@@ -169,14 +169,16 @@ export class TautulliClient {
 			}
 
 			const servers = await this.command("get_servers_info", undefined, tautulliServersInfoSchema);
-			const candidates = servers
-				.map((server) => ({
-					identifier: server.machine_identifier.trim(),
-					displayName: normalizeDisplayName(server.name) ?? normalizeDisplayName(server.pms_name),
-				}))
-				.filter((server) => server.identifier.length > 0);
-			if (candidates.length !== 1) throw new Error("ambiguous fallback identity");
-			return candidates[0]!;
+			if (servers.length !== 1) throw new Error("ambiguous fallback identity");
+			const fallbackServer = servers[0]!;
+			const fallbackIdentifier = fallbackServer.machine_identifier.trim();
+			if (!fallbackIdentifier) throw new Error("ambiguous fallback identity");
+			return {
+				identifier: fallbackIdentifier,
+				displayName:
+					normalizeDisplayName(fallbackServer.name) ??
+					normalizeDisplayName(fallbackServer.pms_name),
+			};
 		} catch {
 			// The upstream identity and response details are intentionally internal.
 			throw new Error("Tautulli server identity is unavailable");

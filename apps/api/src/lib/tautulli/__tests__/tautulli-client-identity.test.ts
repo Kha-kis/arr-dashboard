@@ -66,6 +66,7 @@ describe("TautulliClient server identity", () => {
 	it.each([
 		[[]],
 		[[{ machine_identifier: "" }]],
+		[[{ machine_identifier: "" }, { machine_identifier: "only" }]],
 		[[{ machine_identifier: "one" }, { machine_identifier: "two" }]],
 		[[{ machine_identifier: "same" }, { machine_identifier: "same" }]],
 		[[{ machine_identifier: 42 }]],
