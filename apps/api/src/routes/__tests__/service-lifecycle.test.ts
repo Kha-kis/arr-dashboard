@@ -681,6 +681,56 @@ describe("Service instance lifecycle", () => {
 		});
 	});
 
+	it("resets provider identity authority when changing service families so it can be enrolled again", async () => {
+		const id = await createExistingVerifiedProvider();
+
+		const switchedAway = await inject("PUT", `/services/${id}`, {
+			body: { service: "sonarr" },
+		});
+
+		expect(switchedAway.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			service: "SONARR",
+			expectedIdentity: null,
+			identityKind: null,
+			identityStatus: "UNVERIFIED",
+			identityGeneration: 4,
+			identityVerifiedAt: null,
+			identityLastCheckedAt: null,
+			connectionGeneration: 1,
+		});
+
+		const observation = {
+			service: "PLEX" as const,
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "re-enrolled-plex-machine",
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValue(observation);
+		const switchedBack = await inject("PUT", `/services/${id}`, {
+			body: { service: "plex" },
+		});
+		expect(switchedBack.statusCode).toBe(200);
+
+		const inspected = await inject("POST", `/services/${id}/identity/inspect`, { body: {} });
+		const verified = await inject("POST", `/services/${id}/identity/verify`, {
+			body: {
+				confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
+				expectedConnectionGeneration: 2,
+				expectedIdentityGeneration: 4,
+			},
+		});
+
+		expect(verified.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			service: "PLEX",
+			expectedIdentity: "re-enrolled-plex-machine",
+			identityStatus: "VERIFIED",
+			identityGeneration: 5,
+		});
+	});
+
 	it("keeps an existing unverified provider unverified after an ordinary same-server update", async () => {
 		const id = await createExistingUnverifiedProvider();
 		mockReadProviderIdentity.mockResolvedValueOnce({

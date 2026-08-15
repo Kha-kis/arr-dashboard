@@ -645,6 +645,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const quiTopologyChanged = changesQuiTopology(existing.service, payload);
 			const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
 			const serviceTypeChanged = targetService !== existing.service;
+			const leavesProviderIdentityFamily =
+				serviceTypeChanged &&
+				isProviderIdentityService(existing.service) &&
+				!isProviderIdentityService(targetService);
 			const providerIdentityReadRequired =
 				providerConnectionChanged &&
 				isProviderIdentityService(targetService) &&
@@ -744,13 +748,24 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							connectionGeneration: { increment: 1 },
 						}
 					: updateData;
+			const updateDataWithResetProviderIdentity = leavesProviderIdentityFamily
+				? {
+						...serviceUpdateData,
+						expectedIdentity: null,
+						identityKind: null,
+						identityStatus: "UNVERIFIED" as const,
+						identityGeneration: { increment: 1 },
+						identityVerifiedAt: null,
+						identityLastCheckedAt: null,
+					}
+				: serviceUpdateData;
 			if (quiTopologyChanged) {
 				await withQuiObservationTopologyGuard(userId, async () => {
 					await app.prisma.$transaction(async (tx) => {
 						await resetOtherDefaults(tx);
 						await tx.serviceInstance.updateMany({
 							where: { id, userId },
-							data: serviceUpdateData,
+							data: updateDataWithResetProviderIdentity,
 						});
 						if (payload.tags !== undefined) {
 							await updateInstanceTags(tx, id, payload.tags);
@@ -771,7 +786,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					await resetOtherDefaults(tx);
 					await tx.serviceInstance.updateMany({
 						where: { id, userId },
-						data: serviceUpdateData,
+						data: updateDataWithResetProviderIdentity,
 					});
 					if (payload.tags !== undefined) {
 						await updateInstanceTags(tx, id, payload.tags);
@@ -782,7 +797,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				await resetOtherDefaults(app.prisma);
 				await app.prisma.serviceInstance.updateMany({
 					where: { id, userId },
-					data: serviceUpdateData,
+					data: updateDataWithResetProviderIdentity,
 				});
 				if (payload.tags !== undefined) {
 					await updateInstanceTags(app.prisma, id, payload.tags);

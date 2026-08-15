@@ -1120,7 +1120,7 @@ describe("shared Plex deletion safety", () => {
 			providerEvidenceAuthorityChecker: vi.fn(
 				async (_userId, _evidence, assertLease?: () => Promise<void>) => await assertLease?.(),
 			),
-			providerScanAuthorityCreator: vi.fn(
+			providerScanAuthorityCapturer: vi.fn(
 				async (target: {
 					instanceId: string;
 					service: "PLEX" | "JELLYFIN" | "EMBY";
@@ -1264,7 +1264,7 @@ describe("shared Plex deletion safety", () => {
 			providerEvidenceAuthorityChecker: vi.fn(
 				async (_userId, _evidence, assertLease?: () => Promise<void>) => await assertLease?.(),
 			),
-			providerScanAuthorityCreator: vi.fn(
+			providerScanAuthorityCapturer: vi.fn(
 				async (target: {
 					instanceId: string;
 					service: "PLEX" | "JELLYFIN" | "EMBY";

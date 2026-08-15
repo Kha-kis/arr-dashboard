@@ -16,9 +16,8 @@ import {
 } from "./cleanup-run-lease.js";
 import {
 	assertCurrentProviderScanAuthority,
-	createCurrentProviderScanAuthority,
+	captureCurrentProviderScanAuthority,
 	ProviderExecutionAuthorityChangedError,
-	parseExecutableSafetyEnvelope,
 	parseProviderScanAuthority,
 } from "./shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "./types.js";
@@ -523,10 +522,6 @@ export async function prepareMediaServerRescans(
 	mediaType: RescanMediaType,
 ): Promise<number> {
 	if (!approval.scanMediaServerAfterDelete) return 0;
-	const approvalEnvelope = parseExecutableSafetyEnvelope(approval.safetySnapshot);
-	if (!approvalEnvelope || approvalEnvelope.providerEvidence.sources.length === 0) {
-		throw new Error("Requested media-server scan provider authority is unavailable");
-	}
 	const instances = await deps.prisma.serviceInstance.findMany({
 		where: {
 			userId,
@@ -552,12 +547,11 @@ export async function prepareMediaServerRescans(
 		let plannedSectionIds: string | null;
 		try {
 			({ plannedSectionIds } = await readMediaServerTarget(deps, instance, mediaType));
-			serverIdentity = await createCurrentProviderScanAuthority(
-				deps,
-				userId,
-				{ instanceId: instance.id, service: instance.service as RescanService, mediaType },
-				approvalEnvelope.providerEvidence,
-			);
+			serverIdentity = await captureCurrentProviderScanAuthority(deps, userId, {
+				instanceId: instance.id,
+				service: instance.service as RescanService,
+				mediaType,
+			});
 			expectedTargets.set(targetKey, { serverIdentity, plannedSectionIds });
 		} catch (error) {
 			deps.log.warn(

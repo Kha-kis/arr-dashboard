@@ -288,12 +288,11 @@ function deps(
 			plexCacheClientFactory: vi.fn(() => plexClient),
 			jellyfinCacheClientFactory: vi.fn(() => jellyfinClient),
 			providerEvidenceAuthorityChecker: vi.fn().mockResolvedValue(undefined),
-			providerScanAuthorityCreator: vi.fn(
-				async (
-					target: Parameters<typeof serializeProviderScanAuthority>[0],
-					evidence: Parameters<typeof serializeProviderScanAuthority>[1],
-				) => {
-					const sources = evidence.sources.filter((source) => source.service === target.service);
+			providerScanAuthorityCapturer: vi.fn(
+				async (target: Parameters<typeof serializeProviderScanAuthority>[0]) => {
+					const sources = testMediaEvidence.sources.filter(
+						(source) => source.service === target.service,
+					);
 					return serializeProviderScanAuthority(
 						target,
 						createSanitizedProviderEvidence(
@@ -559,17 +558,48 @@ describe("durable media-server rescans", () => {
 		});
 	});
 
-	it("rejects scan preparation when cleanup recorded no provider dependency", async () => {
-		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+	it("captures scan authority when cleanup recorded no provider dependency", async () => {
+		const plex = instance("plex-1", "PLEX");
+		const refreshedAt = new Date();
+		plex.identityVerifiedAt = new Date(refreshedAt.getTime() - 120_000);
+		plex.updatedAt = new Date(refreshedAt.getTime() - 60_000);
+		const fixture = deps({ instances: [plex] });
+		delete (fixture.deps as { providerScanAuthorityCapturer?: unknown })
+			.providerScanAuthorityCapturer;
+		Object.assign(fixture.prisma, {
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "plex-1",
+						cacheType: "plex",
+						lastRefreshedAt: refreshedAt,
+						lastResult: "success",
+						lastErrorMessage: null,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
+						itemCount: 0,
+						connectionGeneration: 3,
+						identityGeneration: 7,
+						generationId: "plex-generation-1",
+						generationMetadata: '{"version":1}',
+					},
+				]),
+			},
+			plexCache: { findMany: vi.fn().mockResolvedValue([]) },
+		});
 		const storedApproval = approval({ safetySnapshot: providerIndependentSafetySnapshot });
 
 		await expect(
 			prepareMediaServerRescans(fixture.deps, "user-1", storedApproval as never, "movie"),
-		).rejects.toThrow("provider authority");
-		expect(fixture.prisma.libraryCleanupMediaServerScan.create).not.toHaveBeenCalled();
+		).resolves.toBe(1);
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).toHaveBeenCalledOnce();
+		const persisted = fixture.prisma.libraryCleanupMediaServerScan.create.mock.calls[0]?.[0].data
+			.serverIdentity as string;
+		expect(persisted).toContain('"cacheType":"plex"');
+		expect(persisted).not.toContain("plex-machine");
 	});
 
-	it("rejects Tautulli-only authority for a Plex scan target", async () => {
+	it("captures Plex scan authority independently of Tautulli-only cleanup evidence", async () => {
 		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
 		const storedApproval = approval({
 			safetySnapshot: providerSafetySnapshot(testTautulliEvidence),
@@ -577,8 +607,16 @@ describe("durable media-server rescans", () => {
 
 		await expect(
 			prepareMediaServerRescans(fixture.deps, "user-1", storedApproval as never, "movie"),
-		).rejects.toThrow("provider authority");
-		expect(fixture.prisma.libraryCleanupMediaServerScan.create).not.toHaveBeenCalled();
+		).resolves.toBe(1);
+		expect(
+			(fixture.deps as unknown as { providerScanAuthorityCapturer: ReturnType<typeof vi.fn> })
+				.providerScanAuthorityCapturer,
+		).toHaveBeenCalledWith({
+			instanceId: "plex-1",
+			service: "PLEX",
+			mediaType: "movie",
+		});
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).toHaveBeenCalledOnce();
 	});
 
 	it("stores canonical target-bound scan authority without a raw identity", async () => {

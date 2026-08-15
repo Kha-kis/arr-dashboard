@@ -365,8 +365,12 @@ export const useServicesManagement = () => {
 
 	const inspectIdentity = async (instance: ServiceInstanceSummary) => {
 		try {
-			const inspection = await inspectServiceIdentity(instance.id);
 			const priorFlow = identityFlow?.instanceId === instance.id ? identityFlow : null;
+			const stagedReplacementCandidate =
+				priorFlow?.mode === "replace" && priorFlow.requiresReinspection
+					? priorFlow.replacementPayload
+					: undefined;
+			const inspection = await inspectServiceIdentity(instance.id, stagedReplacementCandidate);
 			setIdentityFlow({
 				instanceId: instance.id,
 				mode: priorFlow?.mode ?? (instance.identity.status === "mismatch" ? "replace" : "verify"),

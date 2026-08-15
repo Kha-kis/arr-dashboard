@@ -1300,19 +1300,21 @@ function isCurrentProviderExecutionInstance(instance: ServiceInstance): boolean 
 	);
 }
 
-async function loadCurrentProviderExecutionEvidence(
+async function loadProviderExecutionEvidence(
 	prisma: CleanupExecutorDeps["prisma"],
 	userId: string,
-	accepted: SanitizedProviderEvidence,
+	dependencies: string[],
+	cacheTypes: ProviderCacheType[],
 	now: Date,
 	target?: Pick<ProviderScanTarget, "instanceId" | "service">,
 ): Promise<{ evidence: SanitizedProviderEvidence; instances: ServiceInstance[] }> {
-	const services = providerCacheServicesForDependencies(accepted.dependencies);
-	const cacheTypes = [...new Set(accepted.sources.map((source) => source.cacheType))];
+	const services = providerCacheServicesForDependencies(dependencies);
+	const uniqueCacheTypes = [...new Set(cacheTypes)];
 	if (
 		!services ||
 		services.length === 0 ||
-		cacheTypes.some((cacheType) => !isProviderCacheType(cacheType))
+		uniqueCacheTypes.length === 0 ||
+		uniqueCacheTypes.some((cacheType) => !isProviderCacheType(cacheType))
 	) {
 		throw new ProviderExecutionAuthorityChangedError();
 	}
@@ -1334,7 +1336,7 @@ async function loadCurrentProviderExecutionEvidence(
 	const statuses = await prisma.cacheRefreshStatus.findMany({
 		where: {
 			instanceId: { in: instances.map((instance) => instance.id) },
-			cacheType: { in: cacheTypes },
+			cacheType: { in: uniqueCacheTypes },
 		},
 		select: {
 			instanceId: true,
@@ -1355,7 +1357,7 @@ async function loadCurrentProviderExecutionEvidence(
 		statuses.map((status) => [`${status.instanceId}:${status.cacheType}`, status]),
 	);
 	const rowsByType = new Map<ProviderCacheType, Map<string, unknown[]>>();
-	for (const cacheType of cacheTypes as ProviderCacheType[]) {
+	for (const cacheType of uniqueCacheTypes) {
 		rowsByType.set(
 			cacheType,
 			await loadExactProviderCacheRows(
@@ -1368,7 +1370,7 @@ async function loadCurrentProviderExecutionEvidence(
 	const freshnessThreshold = now.getTime() - PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS;
 	const sources: Array<Omit<SanitizedProviderEvidenceSource, "fingerprint">> = [];
 	for (const instance of instances) {
-		const applicableTypes = cacheTypes.filter((cacheType) =>
+		const applicableTypes = uniqueCacheTypes.filter((cacheType) =>
 			providerServiceUsesCacheType(
 				instance.service as SanitizedProviderEvidenceSource["service"],
 				cacheType as ProviderCacheType,
@@ -1432,7 +1434,60 @@ async function loadCurrentProviderExecutionEvidence(
 			});
 		}
 	}
-	return { evidence: createSanitizedProviderEvidence(accepted.dependencies, sources), instances };
+	return { evidence: createSanitizedProviderEvidence(dependencies, sources), instances };
+}
+
+async function loadCurrentProviderExecutionEvidence(
+	prisma: CleanupExecutorDeps["prisma"],
+	userId: string,
+	accepted: SanitizedProviderEvidence,
+	now: Date,
+	target?: Pick<ProviderScanTarget, "instanceId" | "service">,
+): Promise<{ evidence: SanitizedProviderEvidence; instances: ServiceInstance[] }> {
+	const cacheTypes = [...new Set(accepted.sources.map((source) => source.cacheType))];
+	if (cacheTypes.some((cacheType) => !isProviderCacheType(cacheType))) {
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+	return loadProviderExecutionEvidence(
+		prisma,
+		userId,
+		accepted.dependencies,
+		cacheTypes as ProviderCacheType[],
+		now,
+		target,
+	);
+}
+
+export async function captureCurrentProviderScanAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	target: ProviderScanTarget,
+): Promise<string> {
+	try {
+		const testCapturer = (
+			deps as unknown as {
+				providerScanAuthorityCapturer?: (target: ProviderScanTarget) => Promise<string>;
+			}
+		).providerScanAuthorityCapturer;
+		if (testCapturer) return await testCapturer(target);
+
+		const cacheType: ProviderCacheType = target.service === "PLEX" ? "plex" : "jellyfin";
+		const current = await loadProviderExecutionEvidence(
+			deps.prisma,
+			userId,
+			[cacheType],
+			[cacheType],
+			new Date(),
+			target,
+		);
+		if (current.evidence.sources.length === 0) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		return serializeProviderScanAuthority(target, current.evidence);
+	} catch (error) {
+		if (error instanceof ProviderExecutionAuthorityChangedError) throw error;
+		throw new ProviderExecutionAuthorityChangedError();
+	}
 }
 
 export async function createCurrentProviderScanAuthority(

@@ -3,8 +3,10 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../../../lib/api-client/base";
 
-const { inspectServiceIdentity, verifyMutate } = vi.hoisted(() => ({
+const { inspectServiceIdentity, replaceMutate, updateMutate, verifyMutate } = vi.hoisted(() => ({
 	inspectServiceIdentity: vi.fn(),
+	replaceMutate: vi.fn(),
+	updateMutate: vi.fn(),
 	verifyMutate: vi.fn(),
 }));
 const mutation = (mutateAsync = vi.fn()) => ({ mutateAsync, isPending: false });
@@ -14,8 +16,8 @@ vi.mock("../../../../hooks/api/useServiceMutations", () => ({
 	useDeleteServiceMutation: () => mutation(),
 	useTestConnectionBeforeAdd: () => mutation(),
 	useTestServiceConnection: () => mutation(),
-	useUpdateServiceMutation: () => mutation(),
-	useReplaceServiceIdentityMutation: () => mutation(),
+	useUpdateServiceMutation: () => mutation(updateMutate),
+	useReplaceServiceIdentityMutation: () => mutation(replaceMutate),
 	useVerifyServiceIdentityMutation: () => mutation(verifyMutate),
 }));
 vi.mock("../../../../lib/api-client/services", async (importOriginal) => ({
@@ -129,4 +131,77 @@ describe("useServicesManagement identity conflicts", () => {
 			requiresReinspection: false,
 		});
 	});
+
+	it.each(["IDENTITY_CANDIDATE_CHANGED", "IDENTITY_GENERATION_STALE"] as const)(
+		"reinspects a %s replacement using its staged connection",
+		async (code) => {
+			const stagedConnection = {
+				label: "Replacement Plex",
+				baseUrl: "http://replacement-plex.test",
+				externalUrl: null,
+				apiKey: "replacement-api-key",
+				httpAuth: undefined,
+				service: "plex" as const,
+				enabled: true,
+				isDefault: false,
+				tags: [],
+				storageGroupId: null,
+			};
+			const stagedForm = {
+				label: "Replacement Plex",
+				baseUrl: "http://replacement-plex.test",
+				externalUrl: "",
+				apiKey: "replacement-api-key",
+				service: "plex" as const,
+				enabled: true,
+				isDefault: false,
+				tags: "",
+				storageGroupId: "",
+				httpAuthEnabled: false,
+				httpAuthUsername: "",
+				httpAuthPassword: "",
+				hasLocalFilesystemAccess: false,
+				pathPrefix: "",
+			};
+			updateMutate.mockRejectedValueOnce(
+				new ApiError("replacement required", 409, {
+					details: {
+						code: "IDENTITY_REPLACEMENT_REQUIRED",
+						candidate,
+						connectionGeneration: 4,
+						identityGeneration: 2,
+					},
+				}),
+			);
+			replaceMutate.mockRejectedValueOnce(
+				new ApiError("stale replacement", 409, {
+					details: {
+						code,
+						connectionGeneration: 5,
+						identityGeneration: 2,
+					},
+				}),
+			);
+			inspectServiceIdentity.mockResolvedValueOnce({
+				candidate,
+				connectionGeneration: 5,
+				identityGeneration: 2,
+			});
+			const { result } = renderHook(() => useServicesManagement());
+
+			await act(async () => {
+				await result.current.handleSubmit(stagedForm, service, vi.fn());
+			});
+			await act(async () => {
+				await result.current.confirmIdentity();
+			});
+			await waitFor(() => expect(result.current.identityFlow?.requiresReinspection).toBe(true));
+
+			await act(async () => {
+				await result.current.inspectIdentity(service);
+			});
+
+			expect(inspectServiceIdentity).toHaveBeenLastCalledWith(service.id, stagedConnection);
+		},
+	);
 });
