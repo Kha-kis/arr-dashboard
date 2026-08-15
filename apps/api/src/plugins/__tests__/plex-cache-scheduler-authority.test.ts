@@ -17,6 +17,7 @@ vi.mock("../../lib/plex/plex-episode-cache-refresher.js", () => ({
 	refreshPlexEpisodeCache: mocks.refreshEpisodes,
 }));
 vi.mock("../../lib/services/provider-cache-status.js", () => ({
+	recordPlexCacheRefreshFailure: mocks.recordFailure,
 	recordProviderCacheRefreshFailure: mocks.recordFailure,
 }));
 
@@ -127,5 +128,32 @@ describe("Plex scheduler publication authority", () => {
 		expect(mocks.createSnapshot).toHaveBeenCalledTimes(4);
 		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(2);
 		expect(mocks.refreshEpisodes).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not record superseded library or episode refreshes as failures", async () => {
+		mocks.refreshLibrary.mockResolvedValue({
+			complete: false,
+			upserted: 0,
+			errors: 0,
+			errorMessages: [],
+			superseded: true,
+		});
+		mocks.refreshEpisodes.mockResolvedValue({
+			complete: false,
+			upserted: 0,
+			errors: 0,
+			errorMessages: [],
+			eligibleShows: 0,
+			refreshedShows: 0,
+			coverageIncomplete: true,
+			capacityDegraded: false,
+			superseded: true,
+		});
+
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(1);
+		expect(mocks.refreshEpisodes).toHaveBeenCalledTimes(1);
+		expect(mocks.recordFailure).not.toHaveBeenCalled();
 	});
 });

@@ -12,8 +12,7 @@ import {
 	refreshPlexCache,
 } from "../lib/plex/plex-cache-refresher.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import { recordProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
-import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
+import { recordPlexCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -51,11 +50,14 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
-						const expectedConnection = providerConnectionIdentity(instance);
+						let publicationInstance:
+							| ReturnType<typeof createOwnedPlexPublicationSnapshot>
+							| undefined;
 						try {
+							publicationInstance = createOwnedPlexPublicationSnapshot(app.encryptor, instance);
 							const result = await refreshPlexCache({
 								prisma: app.prisma,
-								instance: createOwnedPlexPublicationSnapshot(app.encryptor, instance),
+								instance: publicationInstance,
 								log: app.log,
 							});
 							app.log.info(
@@ -64,14 +66,13 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 							);
 
 							try {
-								if (!result.complete || !result.completedAt) {
-									await recordProviderCacheRefreshFailure(
+								if ((!result.complete || !result.completedAt) && !result.superseded) {
+									await recordPlexCacheRefreshFailure(
 										app.prisma,
-										instance.id,
 										"plex",
 										result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
 											"Plex refresh did not produce a complete generation",
-										expectedConnection,
+										publicationInstance,
 										app.log,
 									);
 								}
@@ -88,14 +89,15 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 							);
 
 							// Track failure
-							await recordProviderCacheRefreshFailure(
-								app.prisma,
-								instance.id,
-								"plex",
-								getErrorMessage(err, "Unknown error"),
-								expectedConnection,
-								app.log,
-							);
+							if (publicationInstance) {
+								await recordPlexCacheRefreshFailure(
+									app.prisma,
+									"plex",
+									getErrorMessage(err, "Unknown error"),
+									publicationInstance,
+									app.log,
+								);
+							}
 						}
 					}
 

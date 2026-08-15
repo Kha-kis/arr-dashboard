@@ -1,13 +1,14 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { Prisma, PrismaClient } from "../prisma.js";
 import {
-	readProviderIdentity,
 	type DecryptedOwnedServiceSnapshot,
 	type ProviderIdentityObservation,
 	type ProviderIdentityService,
+	readProviderIdentity,
 } from "./service-identity.js";
 
 type GuardPrisma = Pick<PrismaClient, "$transaction">;
+type PublicationAuthorityResult<T> = { matched: true; value: T } | { matched: false };
 
 /** A provider connection already scoped to the current authenticated owner. */
 export type OwnedProviderPublicationSnapshot = DecryptedOwnedServiceSnapshot & {
@@ -69,6 +70,33 @@ export async function withGuardedProviderPublication<TSnapshot, TResult>(
 	const after = await observeIdentity(instance, log);
 	await ensureExpectedIdentity(prisma, instance, after, options.now);
 
+	const publication = await withCurrentProviderPublicationAuthority(
+		prisma,
+		instance,
+		async (tx) => await publish(tx, snapshot),
+		options,
+	);
+	if (!publication.matched) {
+		throw new ProviderIdentityGuardError(
+			"PUBLICATION_SUPERSEDED",
+			"Provider cache publication was superseded by a service change.",
+		);
+	}
+	return publication.value;
+}
+
+/**
+ * Run a status/cache write only while the complete stored publication snapshot
+ * remains current. This performs no upstream read, so dependency failures can
+ * be recorded without weakening the database authority fence.
+ */
+export async function withCurrentProviderPublicationAuthority<T>(
+	prisma: GuardPrisma,
+	instance: OwnedProviderPublicationSnapshot,
+	action: (tx: Prisma.TransactionClient) => Promise<T>,
+	options: ProviderIdentityGuardOptions = {},
+): Promise<PublicationAuthorityResult<T>> {
+	assertVerified(instance);
 	const postgresql = isPostgresqlDatabase();
 	return await prisma.$transaction(
 		async (tx) => {
@@ -81,13 +109,8 @@ export async function withGuardedProviderPublication<TSnapshot, TResult>(
 			const current = await tx.serviceInstance.findFirst({
 				where: providerPublicationPredicate(instance),
 			});
-			if (!current) {
-				throw new ProviderIdentityGuardError(
-					"PUBLICATION_SUPERSEDED",
-					"Provider cache publication was superseded by a service change.",
-				);
-			}
-			return await publish(tx, snapshot);
+			if (!current) return { matched: false };
+			return { matched: true, value: await action(tx) };
 		},
 		postgresql
 			? transactionOptions(options)

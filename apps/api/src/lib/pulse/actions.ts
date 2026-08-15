@@ -37,11 +37,15 @@ import {
 } from "../plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../plex/plex-helpers.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
-import { recordProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
+import {
+	recordPlexCacheRefreshFailure,
+	recordProviderCacheRefreshFailure,
+} from "../services/provider-cache-status.js";
 import {
 	type ProviderConnectionIdentity,
 	providerConnectionIdentity,
 } from "../services/provider-connection-guard.js";
+import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
 import { refreshTautulliCache } from "../tautulli/tautulli-cache-refresher.js";
 import { requireTautulliClient } from "../tautulli/tautulli-helpers.js";
 
@@ -167,7 +171,6 @@ async function dispatchCacheRefresh(
 ): Promise<PulseActionResult> {
 	if (cacheType === "plex") {
 		const { instance } = await requirePlexClient(app, userId, instanceId);
-		const expectedConnection = providerConnectionIdentity(instance);
 		const publicationInstance = createOwnedPlexPublicationSnapshot(app.encryptor, instance);
 		const backgroundTask = runBackgroundCacheRefresh({
 			app,
@@ -175,7 +178,7 @@ async function dispatchCacheRefresh(
 			instanceId,
 			cacheType: "plex",
 			refresh: () => refreshPlexCache({ prisma: app.prisma, instance: publicationInstance, log }),
-			expectedConnection,
+			publicationAuthority: publicationInstance,
 		});
 		log.info({ instanceId, cacheType }, "pulse-action: plex cache refresh dispatched");
 		return { status: "ok", backgroundTask };
@@ -231,15 +234,16 @@ function runBackgroundCacheRefresh(opts: {
 	refresh: () => Promise<CacheRefreshResult>;
 	failureRecordedByRefresh?: boolean;
 	expectedConnection?: ProviderConnectionIdentity;
+	publicationAuthority?: OwnedProviderPublicationSnapshot;
 }): Promise<void> {
 	const {
-		app,
 		log,
 		instanceId,
 		cacheType,
 		refresh,
 		failureRecordedByRefresh = false,
 		expectedConnection,
+		publicationAuthority,
 	} = opts;
 	return (async () => {
 		try {
@@ -248,16 +252,12 @@ function runBackgroundCacheRefresh(opts: {
 				(!result.complete || !result.completedAt) &&
 				!result.superseded &&
 				!failureRecordedByRefresh &&
-				expectedConnection
+				(expectedConnection || publicationAuthority)
 			) {
-				await recordProviderCacheRefreshFailure(
-					app.prisma,
-					instanceId,
-					cacheType,
+				await recordBackgroundCacheRefreshFailure(
+					opts,
 					result.errorMessages?.slice(0, 3).join("; ").slice(0, 200) ||
 						`${cacheType} refresh did not publish a complete generation`,
-					expectedConnection,
-					log,
 				);
 			}
 			log.info(
@@ -265,19 +265,48 @@ function runBackgroundCacheRefresh(opts: {
 				"pulse-action: cache refresh completed (background)",
 			);
 		} catch (err) {
-			if (!failureRecordedByRefresh && expectedConnection) {
-				await recordProviderCacheRefreshFailure(
-					app.prisma,
-					instanceId,
-					cacheType,
+			if (!failureRecordedByRefresh && (expectedConnection || publicationAuthority)) {
+				await recordBackgroundCacheRefreshFailure(
+					opts,
 					err instanceof Error ? err.message : String(err),
-					expectedConnection,
-					log,
 				);
 			}
 			log.error({ err, instanceId, cacheType }, "pulse-action: cache refresh failed (background)");
 		}
 	})();
+}
+
+async function recordBackgroundCacheRefreshFailure(
+	opts: {
+		app: FastifyInstance;
+		log: FastifyBaseLogger;
+		instanceId: string;
+		cacheType: PulseCacheType;
+		expectedConnection?: ProviderConnectionIdentity;
+		publicationAuthority?: OwnedProviderPublicationSnapshot;
+	},
+	message: string,
+): Promise<void> {
+	if (opts.cacheType === "plex" && opts.publicationAuthority) {
+		await recordPlexCacheRefreshFailure(
+			opts.app.prisma,
+			"plex",
+			message,
+			opts.publicationAuthority,
+			opts.log,
+		);
+		return;
+	}
+	if (opts.expectedConnection) {
+		await recordProviderCacheRefreshFailure(
+			opts.app.prisma,
+			opts.instanceId,
+			opts.cacheType,
+			message,
+			opts.expectedConnection,
+			opts.log,
+		);
+	}
 }
 
 // ---------------------------------------------------------------------------

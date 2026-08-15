@@ -17,6 +17,7 @@ vi.mock("../../../lib/plex/plex-helpers.js", () => ({
 	requirePlexClient: mocks.requireClient,
 }));
 vi.mock("../../../lib/services/provider-cache-status.js", () => ({
+	recordPlexCacheRefreshFailure: mocks.recordFailure,
 	recordProviderCacheRefreshFailure: mocks.recordFailure,
 }));
 
@@ -64,5 +65,25 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 			log: expect.anything(),
 		});
 		expect(mocks.refresh.mock.calls[0]).not.toContainEqual({ server: "caller-controlled" });
+	});
+
+	it("records an incomplete attempt only through its full publication snapshot", async () => {
+		mocks.refresh.mockResolvedValue({
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["identity unavailable"],
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
+
+		expect(response.statusCode).toBe(200);
+		expect(mocks.recordFailure).toHaveBeenCalledWith(
+			app.prisma,
+			"plex",
+			"identity unavailable",
+			{ sealed: instance },
+			expect.anything(),
+		);
 	});
 });

@@ -34,10 +34,27 @@ vi.mock("../../queue-cleaner/scheduler.js", () => ({
 }));
 
 const refreshPlexCache = vi.fn();
-const createOwnedPlexPublicationSnapshot = vi.fn((_encryptor, instance) => ({
-	sealed: true,
-	instance,
-}));
+const plexPublicationInstance = {
+	id: "inst-plex-1",
+	userId: "user-1",
+	service: "PLEX" as const,
+	label: "Primary Plex",
+	baseUrl: "https://plex.invalid",
+	apiKey: "decrypted-token",
+	httpAuthHeaders: {},
+	enabled: true,
+	encryptedApiKey: "encrypted-token",
+	encryptionIv: "token-iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	expectedIdentity: "plex-a",
+	identityStatus: "VERIFIED" as const,
+	connectionGeneration: 7,
+	identityGeneration: 3,
+};
+const createOwnedPlexPublicationSnapshot = vi.fn(
+	(_encryptor: unknown, _instance: unknown) => plexPublicationInstance,
+);
 const refreshTautulliCache = vi.fn();
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
 	createOwnedPlexPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
@@ -85,6 +102,7 @@ const fakeApp = {
 			callback({
 				$queryRawUnsafe: vi.fn().mockResolvedValue([]),
 				serviceInstance: {
+					findFirst: vi.fn().mockResolvedValue({ id: "inst-plex-1" }),
 					findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
 						where.id === "inst-plex-1"
 							? { ...plexInstance, enabled: true }
@@ -92,6 +110,7 @@ const fakeApp = {
 					),
 				},
 				cacheRefreshStatus: {
+					findUnique: vi.fn().mockResolvedValue(null),
 					upsert: (...args: unknown[]) => cacheStatusUpsert(...args),
 				},
 			}),
@@ -248,7 +267,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 		expect(refreshPlexCache).toHaveBeenCalledWith({
 			prisma: fakeApp.prisma,
-			instance: { sealed: true, instance: plexInstance },
+			instance: plexPublicationInstance,
 			log: fakeLog,
 		});
 		expect(createOwnedPlexPublicationSnapshot).toHaveBeenCalledWith(
@@ -303,10 +322,30 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 		expect(cacheStatusUpsert).toHaveBeenCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({ lastResult: "error" }),
+				create: expect.objectContaining({
+					lastResult: "error",
+					connectionGeneration: 7,
+					identityGeneration: 3,
+				}),
 				update: expect.objectContaining({ lastAttemptResult: "error" }),
 			}),
 		);
+	});
+
+	it("does not record a superseded Plex refresh as a failure", async () => {
+		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
+		refreshPlexCache.mockResolvedValue({
+			upserted: 0,
+			errors: 0,
+			errorMessages: [],
+			complete: false,
+			superseded: true,
+		});
+
+		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
+		await result.backgroundTask;
+
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("returns 200 immediately even when the refresher is slow — fire-and-forget contract", async () => {

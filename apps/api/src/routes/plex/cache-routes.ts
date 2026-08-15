@@ -13,8 +13,7 @@ import {
 	refreshPlexCache,
 } from "../../lib/plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
-import { recordProviderCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
-import { providerConnectionIdentity } from "../../lib/services/provider-connection-guard.js";
+import { recordPlexCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { buildCacheHealthItems } from "./lib/cache-health-helpers.js";
@@ -61,23 +60,22 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const userId = request.currentUser!.id;
 
 			const { instance } = await requirePlexClient(app, userId, instanceId);
-			const expectedConnection = providerConnectionIdentity(instance);
+			const publicationInstance = createOwnedPlexPublicationSnapshot(app.encryptor, instance);
 
 			try {
 				const result = await refreshPlexCache({
 					prisma: app.prisma,
-					instance: createOwnedPlexPublicationSnapshot(app.encryptor, instance),
+					instance: publicationInstance,
 					log: request.log,
 				});
 
 				if ((!result.complete || !result.completedAt) && !result.superseded) {
-					await recordProviderCacheRefreshFailure(
+					await recordPlexCacheRefreshFailure(
 						app.prisma,
-						instanceId,
 						"plex",
 						result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
 							"Plex refresh did not publish a complete generation",
-						expectedConnection,
+						publicationInstance,
 						request.log,
 					);
 				}
@@ -89,12 +87,11 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 				});
 			} catch (err) {
 				// Track failure in status table
-				await recordProviderCacheRefreshFailure(
+				await recordPlexCacheRefreshFailure(
 					app.prisma,
-					instanceId,
 					"plex",
 					getErrorMessage(err, "Unknown error"),
-					expectedConnection,
+					publicationInstance,
 					request.log,
 				);
 
