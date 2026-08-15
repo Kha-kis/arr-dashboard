@@ -755,7 +755,7 @@ describe("durable media-server rescans", () => {
 		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledTimes(2);
 	});
 
-	it("keeps a post-delete scan retryable when live provider identity changed", async () => {
+	it("binds post-delete scan retries to stable identity rather than cache generations", async () => {
 		const now = new Date();
 		const plexInstance = {
 			...instance("plex-1", "PLEX"),
@@ -893,6 +893,56 @@ describe("durable media-server rescans", () => {
 		expect(result).toMatchObject({ targets: 1, triggered: 0, failed: 1 });
 		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
 		expect(rows[0]).toMatchObject({ status: "failed", executionToken: null });
+
+		const retryRows = [
+			scan("scan-2", plexInstance.id, "PLEX", {
+				serverIdentity: serializeProviderScanAuthority(
+					{ instanceId: plexInstance.id, service: "PLEX", mediaType: "movie" },
+					evidence,
+				),
+			}),
+		];
+		const retryFixture = deps({
+			instances: [plexInstance],
+			scans: retryRows,
+			approval: storedApproval,
+		});
+		Object.assign(retryFixture.deps, {
+			encryptor: { decrypt: vi.fn(() => "decrypted") },
+			providerEvidenceAuthorityChecker: undefined,
+			providerIdentityReader: vi.fn(async () => ({
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				rawIdentity: plexInstance.expectedIdentity,
+				confirmationDigest: "safe",
+				fingerprint: "safe",
+			})),
+		});
+		Object.assign(retryFixture.prisma, {
+			cacheRefreshStatus: {
+				findMany: vi.fn(async () => [
+					{
+						...status,
+						lastRefreshedAt: new Date(status.lastRefreshedAt.getTime() + 60_000),
+						generationId: "generation-b",
+					},
+				]),
+			},
+			plexCache: { findMany: vi.fn(async () => [{ ...row, watchCount: row.watchCount + 1 }]) },
+			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+				callback(retryFixture.prisma),
+			),
+		});
+
+		const retryResult = await triggerMediaServerRescansForApproval(
+			retryFixture.deps,
+			"user-1",
+			storedApproval.id,
+		);
+
+		expect(retryResult).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
+		expect(retryFixture.plexClient.refreshSection).toHaveBeenCalledWith("movies");
+		expect(retryRows[0]).toMatchObject({ status: "triggered", executionToken: null });
 	});
 
 	it("reissues the full Plex plan after a partial attempt", async () => {

@@ -11,7 +11,11 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import type { CleanupRuleExpression, DataSourceDependency } from "@arr/shared";
+import {
+	ruleDataSourceMap,
+	type CleanupRuleExpression,
+	type DataSourceDependency,
+} from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
@@ -107,11 +111,11 @@ import {
 import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
 import {
 	type ConditionEvidenceAvailability,
-	evaluateItemAgainstRules,
 	evaluateItemPolicyState,
 	evaluateRuleState,
 	extractRating,
 	normalizeStoredCleanupRuleExpression,
+	type RuleEvidenceCondition,
 	passesCleanupRuleFilters,
 	ruleUsesUnavailableData,
 } from "./rule-evaluators.js";
@@ -215,6 +219,12 @@ interface ProviderCacheSnapshot<T> {
 		generations: Map<string, ProviderCacheGeneration>;
 		rows: Map<string, ProviderCacheRowAuthority>;
 	};
+}
+
+interface MatchedRuleProviderAuthority {
+	evidence: SanitizedProviderEvidence;
+	authorities: Array<ProviderCacheSnapshot<unknown>["authority"]>;
+	complete: boolean;
 }
 
 export function mergeSanitizedProviderEvidence(
@@ -2316,6 +2326,7 @@ async function executeCleanupRunGuarded(
 			warnings,
 			providerEvidence,
 			providerAuthorities,
+			providerAuthoritiesByTarget,
 		} = await evaluateAllItems(deps, config, config.rules);
 		// Real execution
 		if (config.requireApproval) {
@@ -2356,8 +2367,7 @@ async function executeCleanupRunGuarded(
 				allWarnings,
 				sharedPlexBlocks,
 				safetyContext.plans,
-				providerEvidence,
-				providerAuthorities,
+				providerAuthoritiesByTarget,
 				approvalSelection.skippedDetails,
 				approvalSelection,
 			);
@@ -2378,6 +2388,7 @@ async function executeCleanupRunGuarded(
 			providerEvidence,
 			providerAuthorities,
 			runLease.claimToken,
+			providerAuthoritiesByTarget,
 		);
 	} finally {
 		await runLease.release();
@@ -3054,6 +3065,7 @@ interface ExpectedCleanupRule {
 	matchedRuleId: string;
 	action: RuleAction;
 	scanMediaServerAfterDelete: boolean;
+	providerDependencies?: string[];
 }
 
 export async function assertCurrentSeriesPolicySnapshotUnchanged(
@@ -3225,6 +3237,7 @@ function plexRulesCapableOfAffectingExpectedSeriesPolicy(
 	rules: LibraryCleanupRule[],
 	service: "RADARR" | "SONARR",
 	expectedRuleId: string,
+	expectedProviderDependencies?: Set<string>,
 ): LibraryCleanupRule[] {
 	const expectedRule = rules.find((rule) => rule.id === expectedRuleId);
 	if (!expectedRule || expectedRule.retentionMode) {
@@ -3232,6 +3245,13 @@ function plexRulesCapableOfAffectingExpectedSeriesPolicy(
 	}
 	const plexDependency = new Set<DataSourceDependency>(["plex"]);
 	return rules.filter((rule) => {
+		if (
+			rule.id === expectedRuleId &&
+			expectedProviderDependencies !== undefined &&
+			!expectedProviderDependencies.has("plex")
+		) {
+			return false;
+		}
 		const canAffectExpectedWinner =
 			rule.retentionMode ||
 			rule.priority < expectedRule.priority ||
@@ -3242,6 +3262,19 @@ function plexRulesCapableOfAffectingExpectedSeriesPolicy(
 			ruleUsesUnavailableData(rule, plexDependency)
 		);
 	});
+}
+
+function providerDependenciesForMatchedEvidence(
+	rule: LibraryCleanupRule,
+	evidenceConditions: RuleEvidenceCondition[],
+): Set<string> {
+	return new Set(
+		[...providerCacheTypesForEvidence(rule, evidenceConditions)].map((cacheType) => {
+			if (cacheType === "tautulli") return "tautulli";
+			if (cacheType === "jellyfin" || cacheType === "jellyfin_episode") return "jellyfin";
+			return "plex";
+		}),
+	);
 }
 
 /**
@@ -3285,6 +3318,7 @@ export async function assertCurrentSeriesMutationAuthority(
 			policySnapshot.rules,
 			instance.service,
 			expectedRule.matchedRuleId,
+			expectedRule.providerDependencies ? new Set(expectedRule.providerDependencies) : undefined,
 		);
 		let currentPolicyCtx = policySnapshot.ctx;
 		let currentFailedSources = policySnapshot.failedSources;
@@ -3389,6 +3423,7 @@ export async function assertCurrentSeriesMutationAuthority(
 				policySnapshot.rules,
 				instance.service,
 				expectedRule.matchedRuleId,
+				expectedRule.providerDependencies ? new Set(expectedRule.providerDependencies) : undefined,
 			);
 			const refreshedRuleIds = new Set(refreshedPlexPolicyRules.map((rule) => rule.id));
 			if (refreshedRuleIds.size > plexPolicyRules.length) {
@@ -3414,6 +3449,28 @@ export async function assertCurrentSeriesMutationAuthority(
 			(policy.match.scanMediaServerAfterDelete === true) !== expectedRule.scanMediaServerAfterDelete
 		) {
 			throw new Error("The exact matched cleanup policy is no longer authoritative");
+		}
+		if (expectedRule.providerDependencies !== undefined) {
+			const currentRule = policySnapshot.rules.find(
+				(rule) => rule.id === expectedRule.matchedRuleId,
+			);
+			if (!currentRule) {
+				throw new Error("The matched cleanup rule disappeared during policy revalidation");
+			}
+			const expectedProviderDependencies = new Set(expectedRule.providerDependencies);
+			const currentProviderDependencies = providerDependenciesForMatchedEvidence(
+				currentRule,
+				policy.evidenceConditions,
+			);
+			if (
+				[...currentProviderDependencies].some(
+					(dependency) => !expectedProviderDependencies.has(dependency),
+				)
+			) {
+				throw new Error(
+					"The current cleanup match requires provider evidence that was not bound to the durable selection",
+				);
+			}
 		}
 		await assertCurrentSeriesPolicySnapshotUnchanged(deps, userId, expectedRule, policySnapshot);
 		return {
@@ -3972,26 +4029,6 @@ async function executeQueuedCleanupItemsCore(
 				unclaimedIds.push(approval.id);
 				continue;
 			}
-			if (providerAuthorityFailed) {
-				failed++;
-				errors.push(
-					"Cleanup item was deferred because provider authority changed for an earlier target.",
-				);
-				await updateClaimedCleanupApproval(
-					prisma,
-					userId,
-					approval.id,
-					options.executeStatus,
-					claimedExecutionToken,
-					{
-						status: options.retryStatus,
-						executionToken: null,
-						lastExecutionError:
-							"Provider authority changed for an earlier cleanup target; this target was not inspected or mutated.",
-					},
-				);
-				continue;
-			}
 			const auditCorrelationId = auditCorrelationIds.get(approval.id);
 			if (auditCorrelationId) {
 				await runCleanupAuditBestEffort(
@@ -4082,19 +4119,6 @@ async function executeQueuedCleanupItemsCore(
 			const approvedEnvelope = parseExecutableSafetyEnvelope(approval.safetySnapshot);
 			let approvedPlan = approvedEnvelope?.plan ?? null;
 			const approvedProviderEvidence = approvedEnvelope?.providerEvidence;
-			const approvedRule = currentConfig.rules.find(
-				(rule) =>
-					rule.id === approval.matchedRuleId &&
-					(approval.targetScope === "episode"
-						? rule.targetScope === "episode"
-						: rule.targetScope !== "episode"),
-			);
-			const recordedSelectionRequiresProviderEvidence =
-				approvedRule !== undefined &&
-				ruleUsesUnavailableData(
-					approvedRule,
-					new Set<DataSourceDependency>(["plex", "jellyfin", "tautulli"]),
-				);
 			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
 			let recoveringEpisodeUnmonitorPartial =
 				approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE;
@@ -4104,16 +4128,23 @@ async function executeQueuedCleanupItemsCore(
 				recoveringEpisodeUnmonitorPartial;
 			if (
 				!approvedPlan ||
-				(recordedSelectionRequiresProviderEvidence &&
-					approvedProviderEvidence?.dependencies.length === 0) ||
 				approvedPlan.target.serviceFingerprint !== createArrServiceFingerprint(instance)
 			) {
-				if (recordedSelectionRequiresProviderEvidence) {
-					providerAuthorityFailed = true;
-				}
 				approvalIdentityChanged = true;
 				sharedPlexBlock =
 					"Skipped for safety: the ARR target identity changed after this cleanup item was queued. Run cleanup again and review a new approval.";
+			}
+			if (
+				!sharedPlexBlock &&
+				approvedPlan?.kind === "verified_sonarr_episode" &&
+				!approvedProviderEvidence?.dependencies.some(
+					(dependency) => dependency === "plex_episode" || dependency === "plex",
+				)
+			) {
+				providerAuthorityFailed = true;
+				approvalIdentityChanged = true;
+				sharedPlexBlock =
+					"Skipped for safety: the approved episode cleanup intent did not retain its required Plex evidence.";
 			}
 			if (!sharedPlexBlock && approvedProviderEvidence) {
 				try {
@@ -4442,6 +4473,7 @@ async function executeQueuedCleanupItemsCore(
 									matchedRuleId: approval.matchedRuleId,
 									action,
 									scanMediaServerAfterDelete: approval.scanMediaServerAfterDelete === true,
+									providerDependencies: approvedProviderEvidence?.dependencies,
 								},
 								snapshot,
 								options.cleanupRunClaimToken,
@@ -4456,6 +4488,7 @@ async function executeQueuedCleanupItemsCore(
 									matchedRuleId: approval.matchedRuleId,
 									action,
 									scanMediaServerAfterDelete: approval.scanMediaServerAfterDelete === true,
+									providerDependencies: approvedProviderEvidence?.dependencies,
 								},
 								authorizedSeriesPolicy,
 								evidence.seriesTransition,
@@ -4981,6 +5014,71 @@ function collectActiveRuleTypes(
 		}
 	}
 	return types;
+}
+
+export function providerCacheTypesForEvidence(
+	rule: LibraryCleanupRule,
+	evidenceConditions: RuleEvidenceCondition[],
+): Set<ProviderCacheType> {
+	const cacheTypes = new Set<ProviderCacheType>();
+	if (isSupportedEpisodeCleanupRule(rule)) {
+		cacheTypes.add("plex_episode");
+		return cacheTypes;
+	}
+
+	for (const condition of evidenceConditions) {
+		if (condition.ruleType === "user_retention") {
+			const source = condition.parameters.source;
+			if (source === "tautulli" || source === "either") cacheTypes.add("tautulli");
+			if (source === "plex" || source === "either" || source === undefined) {
+				cacheTypes.add("plex");
+			}
+			continue;
+		}
+		if (
+			condition.ruleType === "seerr_requester_watched" ||
+			condition.ruleType === "seerr_requester_not_watched"
+		) {
+			cacheTypes.add("plex");
+			continue;
+		}
+		if (condition.ruleType === "recently_active" && condition.parameters.requireActivity !== true) {
+			continue;
+		}
+
+		const dependency = ruleDataSourceMap[condition.ruleType];
+		if (dependency === "plex") {
+			cacheTypes.add(condition.ruleType === "plex_episode_completion" ? "plex_episode" : "plex");
+		} else if (dependency === "jellyfin") {
+			cacheTypes.add(
+				condition.ruleType === "jellyfin_episode_completion" ? "jellyfin_episode" : "jellyfin",
+			);
+		} else if (dependency === "tautulli") {
+			cacheTypes.add("tautulli");
+		}
+	}
+	return cacheTypes;
+}
+
+function buildMatchedProviderAuthority(
+	rule: LibraryCleanupRule,
+	evidenceConditions: RuleEvidenceCondition[],
+	snapshotsByCacheType: Map<ProviderCacheType, ProviderCacheSnapshot<unknown>>,
+): MatchedRuleProviderAuthority {
+	const requiredCacheTypes = providerCacheTypesForEvidence(rule, evidenceConditions);
+	const matchedSnapshots = [...requiredCacheTypes]
+		.map((cacheType) => snapshotsByCacheType.get(cacheType))
+		.filter((snapshot): snapshot is ProviderCacheSnapshot<unknown> => snapshot !== undefined);
+	return {
+		evidence: createSanitizedProviderEvidence(
+			matchedSnapshots.flatMap((snapshot) => snapshot.evidence.dependencies),
+			matchedSnapshots.flatMap((snapshot) =>
+				snapshot.evidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+			),
+		),
+		authorities: matchedSnapshots.map((snapshot) => snapshot.authority),
+		complete: matchedSnapshots.length === requiredCacheTypes.size,
+	};
 }
 
 /**
@@ -5976,6 +6074,7 @@ async function evaluateAllItems(
 	warnings: string[];
 	providerEvidence: SanitizedProviderEvidence;
 	providerAuthorities: Array<ProviderCacheSnapshot<unknown>["authority"]>;
+	providerAuthoritiesByTarget: Map<string, MatchedRuleProviderAuthority>;
 }> {
 	const { prisma, log } = deps;
 	const now = new Date();
@@ -6152,6 +6251,11 @@ async function evaluateAllItems(
 			snapshot.evidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
 		),
 	);
+	const snapshotsByCacheType = new Map(
+		contributingSnapshots.map((snapshot) => [snapshot.authority.cacheType, snapshot]),
+	);
+	const rulesById = new Map(rules.map((rule) => [rule.id, rule]));
+	const providerAuthoritiesByTarget = new Map<string, MatchedRuleProviderAuthority>();
 
 	// Check for failed prefetches that have dependent rules — generate warnings
 	const failedSources = new Set<DataSourceDependency>();
@@ -6245,17 +6349,30 @@ async function evaluateAllItems(
 			const instanceService = instanceServiceMap.get(item.instanceId);
 			if (!instanceService) continue; // Skip orphaned cache items with no matching instance
 
-			const match =
+			const policy =
 				useCachedQuiSeedingGate && isQuiSeedingState(item.torrentState)
-					? null
-					: evaluateItemAgainstRules(item, seriesRules, instanceService, ctx, failedSources);
-			if (match) {
-				flagged.push({
+					? { kind: "no_match" as const }
+					: evaluateItemPolicyState(item, seriesRules, instanceService, ctx, failedSources);
+			const match = policy.kind === "cleanup" ? policy.match : null;
+			if (policy.kind === "cleanup") {
+				const flaggedItem: FlaggedItem = {
 					cacheItem: item,
-					match,
+					match: policy.match,
 					rating: extractRating(item),
 					respectQuiSeeding,
-				});
+				};
+				flagged.push(flaggedItem);
+				const matchedRule = rulesById.get(policy.match.ruleId);
+				if (matchedRule) {
+					providerAuthoritiesByTarget.set(
+						cleanupDeleteTargetKey(flaggedDeleteTarget(flaggedItem)),
+						buildMatchedProviderAuthority(
+							matchedRule,
+							policy.evidenceConditions,
+							snapshotsByCacheType,
+						),
+					);
+				}
 			}
 			if (
 				instanceService === "SONARR" &&
@@ -6278,6 +6395,14 @@ async function evaluateAllItems(
 				);
 				totalEvaluated += episodeMatches.evaluated;
 				flagged.push(...episodeMatches.flagged);
+				for (const episodeItem of episodeMatches.flagged) {
+					const matchedRule = rulesById.get(episodeItem.match.ruleId);
+					if (!matchedRule) continue;
+					providerAuthoritiesByTarget.set(
+						cleanupDeleteTargetKey(flaggedDeleteTarget(episodeItem)),
+						buildMatchedProviderAuthority(matchedRule, [], snapshotsByCacheType),
+					);
+				}
 			}
 		}
 
@@ -6292,6 +6417,7 @@ async function evaluateAllItems(
 		warnings,
 		providerEvidence: providerEvidence,
 		providerAuthorities: contributingSnapshots.map((snapshot) => snapshot.authority),
+		providerAuthoritiesByTarget,
 	};
 }
 
@@ -7013,8 +7139,7 @@ async function executeWithApproval(
 	warnings?: string[],
 	sharedPlexBlocks: Map<string, string> = new Map(),
 	safetyPlans: Map<string, SharedMediaSafetyPlan> = new Map(),
-	providerEvidence?: SanitizedProviderEvidence,
-	providerAuthorities: Array<ProviderCacheSnapshot<unknown>["authority"]> = [],
+	providerAuthoritiesByTarget: Map<string, MatchedRuleProviderAuthority> = new Map(),
 	preSkippedDetails: CleanupRunResult["details"] = [],
 	selectionState?: ApprovalSelectionState,
 ): Promise<CleanupRunResult> {
@@ -7047,36 +7172,48 @@ async function executeWithApproval(
 		}
 
 		try {
-			const approval = await createApprovalWithProviderCacheAuthority(deps, providerAuthorities, {
-				configId: config.id,
-				instanceId: item.cacheItem.instanceId,
-				arrItemId: item.cacheItem.arrItemId,
-				itemType: item.cacheItem.itemType,
-				targetScope: item.episodeTarget ? "episode" : "series",
-				arrEpisodeId: item.episodeTarget?.arrEpisodeId,
-				episodeFileId: item.episodeTarget?.episodeFileId,
-				seasonNumber: item.episodeTarget?.seasonNumber,
-				episodeNumber: item.episodeTarget?.episodeNumber,
-				title: item.cacheItem.title,
-				episodeTitle: item.episodeTarget?.episodeTitle,
-				matchedRuleId: item.match.ruleId,
-				matchedRuleName: item.match.ruleName,
-				reason: item.match.reason,
-				action: item.match.action,
-				scanMediaServerAfterDelete: item.match.scanMediaServerAfterDelete,
-				sizeOnDisk: item.cacheItem.sizeOnDisk,
-				year: item.cacheItem.year,
-				rating: item.rating,
-				status: "pending",
-				safetySnapshot: serializeExecutableSafetyPlan(
-					asExecutableSafetyPlan(safetyPlans.get(targetKey)) ??
-						(() => {
-							throw new Error("No executable cleanup safety plan was produced");
-						})(),
-					providerEvidence,
-				),
-				expiresAt,
-			});
+			const matchedRuleAuthority = providerAuthoritiesByTarget.get(targetKey) ?? {
+				evidence: createSanitizedProviderEvidence([], []),
+				authorities: [],
+				complete: false,
+			};
+			if (!matchedRuleAuthority.complete) {
+				throw new ProviderCacheAuthorityChangedError();
+			}
+			const approval = await createApprovalWithProviderCacheAuthority(
+				deps,
+				matchedRuleAuthority.authorities,
+				{
+					configId: config.id,
+					instanceId: item.cacheItem.instanceId,
+					arrItemId: item.cacheItem.arrItemId,
+					itemType: item.cacheItem.itemType,
+					targetScope: item.episodeTarget ? "episode" : "series",
+					arrEpisodeId: item.episodeTarget?.arrEpisodeId,
+					episodeFileId: item.episodeTarget?.episodeFileId,
+					seasonNumber: item.episodeTarget?.seasonNumber,
+					episodeNumber: item.episodeTarget?.episodeNumber,
+					title: item.cacheItem.title,
+					episodeTitle: item.episodeTarget?.episodeTitle,
+					matchedRuleId: item.match.ruleId,
+					matchedRuleName: item.match.ruleName,
+					reason: item.match.reason,
+					action: item.match.action,
+					scanMediaServerAfterDelete: item.match.scanMediaServerAfterDelete,
+					sizeOnDisk: item.cacheItem.sizeOnDisk,
+					year: item.cacheItem.year,
+					rating: item.rating,
+					status: "pending",
+					safetySnapshot: serializeExecutableSafetyPlan(
+						asExecutableSafetyPlan(safetyPlans.get(targetKey)) ??
+							(() => {
+								throw new Error("No executable cleanup safety plan was produced");
+							})(),
+						matchedRuleAuthority.evidence,
+					),
+					expiresAt,
+				},
+			);
 
 			details.push(
 				buildDetail(item, "queued_for_approval", undefined, {
@@ -7087,13 +7224,15 @@ async function executeWithApproval(
 		} catch (error) {
 			if (error instanceof ProviderCacheAuthorityChangedError) {
 				const reason =
-					"Provider cache authority changed after cleanup selection; this and later approvals were not queued.";
-				const remaining = flagged.slice(itemIndex);
-				details.push(...remaining.map((candidate) => buildDetail(candidate, "skipped", reason)));
-				approvalQueueFailures += remaining.length;
+					"Provider cache authority changed after cleanup selection; approval was not queued.";
+				details.push(buildDetail(item, "skipped", reason));
+				approvalQueueFailures++;
 				resultWarnings.push(reason);
-				log.warn({ remainingApprovals: remaining.length }, reason);
-				break;
+				log.warn(
+					{ instanceId: item.cacheItem.instanceId, arrItemId: item.cacheItem.arrItemId },
+					reason,
+				);
+				continue;
 			}
 			log.error(
 				{ err: error, title: item.cacheItem.title },
@@ -7152,6 +7291,7 @@ export async function executeDirectRemoval(
 	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
 	providerAuthorities: Array<ProviderCacheSnapshot<unknown>["authority"]> = [],
 	cleanupRunClaimToken?: string,
+	providerAuthoritiesByTarget: Map<string, MatchedRuleProviderAuthority> = new Map(),
 ): Promise<CleanupRunResult> {
 	const { prisma, arrClientFactory, log } = deps;
 
@@ -7180,7 +7320,6 @@ export async function executeDirectRemoval(
 	let retriedFilesDeleted = 0;
 	const mediaServerRescanWarnings: string[] = [];
 	const mediaServerRescanApprovalIds = new Set<string>();
-	let providerAuthorityFailed = false;
 	const sharedPlexSafetyContext = createSharedPlexSafetyContext();
 	const configuredRunLimit =
 		Number.isSafeInteger(config.maxRemovalsPerRun) &&
@@ -7217,17 +7356,6 @@ export async function executeDirectRemoval(
 	const deferredSelectionDetailCount = details.length;
 
 	for (const retry of directRetries) {
-		if (providerAuthorityFailed) {
-			directRetryFailures++;
-			details.push(
-				buildRetryDetail(
-					retry,
-					"skipped",
-					"Deferred because provider authority changed for an earlier cleanup target",
-				),
-			);
-			continue;
-		}
 		try {
 			const retryResult = await executeQueuedCleanupItems(deps, userId, [retry.id], {
 				claimStatus: "retry_pending",
@@ -7243,7 +7371,6 @@ export async function executeDirectRemoval(
 			for (const approvalId of retryResult.rescanApprovalIds) {
 				mediaServerRescanApprovalIds.add(approvalId);
 			}
-			if (retryResult.providerAuthorityFailed) providerAuthorityFailed = true;
 			if (retryResult.unclaimedIds.includes(retry.id)) {
 				directRetryConcurrent++;
 				details.push(
@@ -7361,16 +7488,6 @@ export async function executeDirectRemoval(
 	const budgetDeferredItems = directSelection.plan.counts.deferredBudget;
 
 	for (const item of freshItems) {
-		if (providerAuthorityFailed) {
-			details.push(
-				buildDetail(
-					item,
-					"skipped",
-					"Skipped because provider authority changed for an earlier cleanup target",
-				),
-			);
-			continue;
-		}
 		if (directRetryLoadFailures > 0) {
 			details.push(
 				buildDetail(
@@ -7478,14 +7595,30 @@ export async function executeDirectRemoval(
 			continue;
 		}
 
+		const matchedRuleAuthority = providerAuthoritiesByTarget.get(
+			cleanupDeleteTargetKey(flaggedDeleteTarget(item)),
+		);
+		if (matchedRuleAuthority && !matchedRuleAuthority.complete) {
+			runtimeSafetyBlocks++;
+			details.push(
+				buildDetail(
+					item,
+					"skipped",
+					"Skipped for safety: provider evidence required by the matched cleanup path was incomplete.",
+				),
+			);
+			continue;
+		}
+		const itemProviderEvidence = matchedRuleAuthority?.evidence ?? providerEvidence;
+		const itemProviderAuthorities = matchedRuleAuthority?.authorities ?? providerAuthorities;
 		let directMutationIntentId: string;
 		let directMutationExecutionToken: string;
-		let directProviderEvidence = providerEvidence;
+		let directProviderEvidence = itemProviderEvidence;
 		try {
 			if (
 				!(
 					await Promise.all(
-						providerAuthorities.map((authority) =>
+						itemProviderAuthorities.map((authority) =>
 							revalidateProviderCacheAuthority(deps, authority),
 						),
 					)
@@ -7499,7 +7632,7 @@ export async function executeDirectRemoval(
 				userId,
 				item,
 				safetyPlan!,
-				providerEvidence,
+				itemProviderEvidence,
 			);
 			if (!intent.claimed) {
 				directIntentConcurrent++;
@@ -7515,29 +7648,11 @@ export async function executeDirectRemoval(
 			directMutationIntentId = intent.id;
 			directMutationExecutionToken = intent.executionToken;
 			const durableEnvelope = parseExecutableSafetyEnvelope(intent.safetySnapshot);
-			const directRule = config.rules.find(
-				(rule) =>
-					rule.id === item.match.ruleId &&
-					(item.episodeTarget ? rule.targetScope === "episode" : rule.targetScope !== "episode"),
-			);
-			const directSelectionRequiresProviderEvidence =
-				directRule !== undefined &&
-				ruleUsesUnavailableData(
-					directRule,
-					new Set<DataSourceDependency>(["plex", "jellyfin", "tautulli"]),
-				);
-			if (
-				!durableEnvelope ||
-				(directSelectionRequiresProviderEvidence &&
-					durableEnvelope.providerEvidence.dependencies.length === 0)
-			) {
+			if (!durableEnvelope) {
 				throw new ProviderExecutionAuthorityChangedError();
 			}
 			directProviderEvidence = durableEnvelope.providerEvidence;
 		} catch (error) {
-			if (isProviderExecutionAuthorityFailure(error)) {
-				providerAuthorityFailed = true;
-			}
 			directRetryPersistenceFailures++;
 			log.error(
 				{
@@ -7679,6 +7794,7 @@ export async function executeDirectRemoval(
 								matchedRuleId: item.match.ruleId,
 								action: ruleAction,
 								scanMediaServerAfterDelete: item.match.scanMediaServerAfterDelete === true,
+								providerDependencies: directProviderEvidence.dependencies,
 							},
 							snapshot,
 							cleanupRunClaimToken,
@@ -7693,6 +7809,7 @@ export async function executeDirectRemoval(
 								matchedRuleId: item.match.ruleId,
 								action: ruleAction,
 								scanMediaServerAfterDelete: item.match.scanMediaServerAfterDelete === true,
+								providerDependencies: directProviderEvidence.dependencies,
 							},
 							authorizedSeriesPolicy,
 							evidence.seriesTransition,
@@ -8011,9 +8128,6 @@ export async function executeDirectRemoval(
 						);
 					});
 				throw error;
-			}
-			if (isProviderExecutionAuthorityFailure(error)) {
-				providerAuthorityFailed = true;
 			}
 			if (error instanceof SonarrEpisodeUnmonitorPartialError) {
 				partialArrDeletes++;

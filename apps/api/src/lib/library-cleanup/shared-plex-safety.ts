@@ -1710,7 +1710,90 @@ export async function assertCurrentProviderScanAuthority(
 ): Promise<void> {
 	const providerEvidence = parseProviderScanAuthority(serializedAuthority, target);
 	if (!providerEvidence) throw new ProviderExecutionAuthorityChangedError();
-	await assertProviderEvidenceAuthority(deps, userId, providerEvidence, assertLease, target);
+	const testAuthorityChecker = (
+		deps as unknown as {
+			providerEvidenceAuthorityChecker?: (
+				userId: string,
+				evidence: SanitizedProviderEvidence,
+				assertLease?: () => Promise<void>,
+			) => Promise<void>;
+		}
+	).providerEvidenceAuthorityChecker;
+	if (testAuthorityChecker) {
+		await testAuthorityChecker(userId, providerEvidence, assertLease);
+		return;
+	}
+	try {
+		// Cache generations authorize the pre-delete capture, but normal cache
+		// publications must not invalidate an already-durable post-delete retry.
+		// Retry authority stays bound to the owned instance and enrolled identity.
+		const matchesStableAuthority = (instance: ServiceInstance): boolean =>
+			isCurrentProviderExecutionInstance(instance) &&
+			instance.id === target.instanceId &&
+			instance.userId === userId &&
+			instance.service === target.service &&
+			providerEvidence.sources.every(
+				(source) =>
+					source.service === instance.service &&
+					(source.instanceFingerprint === undefined ||
+						source.instanceFingerprint === providerInstanceAuthorityFingerprint(instance.id)) &&
+					source.identityKind === instance.identityKind &&
+					source.identityFingerprint === providerIdentityAuthorityFingerprint(instance) &&
+					source.connectionGeneration === instance.connectionGeneration &&
+					source.identityGeneration === instance.identityGeneration &&
+					source.verifiedAt === instance.identityVerifiedAt?.toISOString(),
+			);
+		await assertLease?.();
+		const instance = (await deps.prisma.serviceInstance.findFirst({
+			where: { id: target.instanceId, userId, service: target.service, enabled: true },
+		})) as ServiceInstance | null;
+		if (!instance || !matchesStableAuthority(instance)) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		if (!deps.encryptor) throw new ProviderExecutionAuthorityChangedError();
+		const identityReader =
+			(deps as unknown as { providerIdentityReader?: typeof readProviderIdentity })
+				.providerIdentityReader ?? readProviderIdentity;
+		const owned =
+			instance.service === "PLEX"
+				? createOwnedPlexPublicationSnapshot(deps.encryptor, instance)
+				: createOwnedJellyfinPublicationSnapshot(deps.encryptor, instance);
+		const observation = await identityReader(owned, deps.log);
+		if (
+			observation.service !== instance.service ||
+			toPersistedIdentityKind(observation.identityKind) !== instance.identityKind ||
+			observation.rawIdentity !== instance.expectedIdentity
+		) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		await assertLease?.();
+		const expectedInstanceFingerprint = providerExecutionInstanceFingerprint(instance);
+		const postgresql = /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
+		await deps.prisma.$transaction(
+			async (tx) => {
+				if (postgresql) {
+					await tx.$queryRawUnsafe(
+						'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+						target.instanceId,
+					);
+				}
+				const current = (await tx.serviceInstance.findFirst({
+					where: { id: target.instanceId, userId, service: target.service, enabled: true },
+				})) as ServiceInstance | null;
+				if (
+					!current ||
+					!matchesStableAuthority(current) ||
+					providerExecutionInstanceFingerprint(current) !== expectedInstanceFingerprint
+				) {
+					throw new ProviderExecutionAuthorityChangedError();
+				}
+			},
+			postgresql ? undefined : { isolationLevel: "Serializable" },
+		);
+	} catch (error) {
+		if (error instanceof ProviderExecutionAuthorityChangedError) throw error;
+		throw new ProviderExecutionAuthorityChangedError();
+	}
 }
 
 function emptyProviderEvidence(): SanitizedProviderEvidence {

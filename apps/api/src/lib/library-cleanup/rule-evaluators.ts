@@ -2389,9 +2389,15 @@ function evaluateRuleLegacy(
 
 export type RuleEvaluationState = "true" | "false" | "unknown";
 
+export interface RuleEvidenceCondition {
+	ruleType: string;
+	parameters: Record<string, unknown>;
+}
+
 export interface RuleEvaluation {
 	state: RuleEvaluationState;
 	match: RuleMatch | null;
+	evidenceConditions: RuleEvidenceCondition[];
 }
 
 export type ConditionEvidenceAvailability = (
@@ -2705,7 +2711,11 @@ function evaluateExpressionNode(
 	plexLibFilter: string[] | null,
 	failedSources?: Set<DataSourceDependency>,
 	evidenceAvailability?: ConditionEvidenceAvailability,
-): { state: RuleEvaluationState; reasons: string[] } {
+): {
+	state: RuleEvaluationState;
+	reasons: string[];
+	evidenceConditions: RuleEvidenceCondition[];
+} {
 	if (node.type === "condition") {
 		if (
 			!conditionEvidenceAvailable(
@@ -2718,7 +2728,7 @@ function evaluateExpressionNode(
 				evidenceAvailability,
 			)
 		) {
-			return { state: "unknown", reasons: [] };
+			return { state: "unknown", reasons: [], evidenceConditions: [] };
 		}
 		const reason = evaluateSingleCondition(
 			item,
@@ -2727,7 +2737,10 @@ function evaluateExpressionNode(
 			ctx,
 			plexLibFilter,
 		);
-		return reason ? { state: "true", reasons: [reason] } : { state: "false", reasons: [] };
+		const evidenceConditions = [{ ruleType: node.ruleType, parameters: node.parameters }];
+		return reason
+			? { state: "true", reasons: [reason], evidenceConditions }
+			: { state: "false", reasons: [], evidenceConditions };
 	}
 	if (node.type === "not") {
 		const child = evaluateExpressionNode(
@@ -2739,27 +2752,42 @@ function evaluateExpressionNode(
 			evidenceAvailability,
 		);
 		if (child.state === "unknown") return child;
-		if (child.state === "true") return { state: "false", reasons: [] };
-		return { state: "true", reasons: ["NOT condition matched"] };
+		if (child.state === "true") {
+			return { state: "false", reasons: [], evidenceConditions: child.evidenceConditions };
+		}
+		return {
+			state: "true",
+			reasons: ["NOT condition matched"],
+			evidenceConditions: child.evidenceConditions,
+		};
 	}
 	const children = node.children.map((child) =>
 		evaluateExpressionNode(child, item, ctx, plexLibFilter, failedSources, evidenceAvailability),
 	);
 	if (node.operator === "AND") {
-		if (children.some((child) => child.state === "false")) {
-			return { state: "false", reasons: [] };
+		const failed = children.find((child) => child.state === "false");
+		if (failed) {
+			return { state: "false", reasons: [], evidenceConditions: failed.evidenceConditions };
 		}
 		if (children.some((child) => child.state === "unknown")) {
-			return { state: "unknown", reasons: [] };
+			return { state: "unknown", reasons: [], evidenceConditions: [] };
 		}
-		return { state: "true", reasons: children.flatMap((child) => child.reasons) };
+		return {
+			state: "true",
+			reasons: children.flatMap((child) => child.reasons),
+			evidenceConditions: children.flatMap((child) => child.evidenceConditions),
+		};
 	}
 	const matched = children.find((child) => child.state === "true");
 	if (matched) return matched;
 	if (children.some((child) => child.state === "unknown")) {
-		return { state: "unknown", reasons: [] };
+		return { state: "unknown", reasons: [], evidenceConditions: [] };
 	}
-	return { state: "false", reasons: [] };
+	return {
+		state: "false",
+		reasons: [],
+		evidenceConditions: children.flatMap((child) => child.evidenceConditions),
+	};
 }
 
 /** Canonical three-valued evaluator used by execution, preview, and explain. */
@@ -2771,16 +2799,18 @@ export function evaluateRuleState(
 	failedSources?: Set<DataSourceDependency>,
 	evidenceAvailability?: ConditionEvidenceAvailability,
 ): RuleEvaluation {
-	if (!rule.enabled) return { state: "false", match: null };
+	if (!rule.enabled) return { state: "false", match: null, evidenceConditions: [] };
 	if (!passesServiceFilter(instanceService, rule.serviceFilter))
-		return { state: "false", match: null };
+		return { state: "false", match: null, evidenceConditions: [] };
 	if (!passesInstanceFilter(item.instanceId, rule.instanceFilter))
-		return { state: "false", match: null };
-	if (!passesTagExclusion(item, rule.excludeTags)) return { state: "false", match: null };
-	if (!passesTitleExclusion(item.title, rule.excludeTitles)) return { state: "false", match: null };
+		return { state: "false", match: null, evidenceConditions: [] };
+	if (!passesTagExclusion(item, rule.excludeTags))
+		return { state: "false", match: null, evidenceConditions: [] };
+	if (!passesTitleExclusion(item.title, rule.excludeTitles))
+		return { state: "false", match: null, evidenceConditions: [] };
 
 	const expression = normalizeStoredCleanupRuleExpression(rule);
-	if (!expression) return { state: "unknown", match: null };
+	if (!expression) return { state: "unknown", match: null, evidenceConditions: [] };
 	const plexLibFilter = safeJsonParse(rule.plexLibraryFilter) as string[] | null;
 	const result = evaluateExpressionNode(
 		expression.root,
@@ -2790,12 +2820,19 @@ export function evaluateRuleState(
 		failedSources,
 		evidenceAvailability,
 	);
-	if (result.state !== "true") return { state: result.state, match: null };
+	if (result.state !== "true") {
+		return {
+			state: result.state,
+			match: null,
+			evidenceConditions: result.evidenceConditions,
+		};
+	}
 	// Preserve the established reason wording for legacy rows while the
 	// recursive evaluator remains the sole authority for truth/unknown state.
 	const legacyMatch = evaluateRuleLegacy(item, rule, instanceService, ctx);
 	return {
 		state: "true",
+		evidenceConditions: result.evidenceConditions,
 		match: {
 			ruleId: rule.id,
 			ruleName: rule.name,
@@ -2842,7 +2879,7 @@ export function evaluateItemAgainstRules(
 }
 
 export type ItemPolicyState =
-	| { kind: "cleanup"; match: RuleMatch }
+	| { kind: "cleanup"; match: RuleMatch; evidenceConditions: RuleEvidenceCondition[] }
 	| { kind: "retained"; ruleId: string; evidence: "true" | "unknown" }
 	| { kind: "no_match" };
 
@@ -2875,8 +2912,14 @@ export function evaluateItemPolicyState(
 	// Phase 2: Check cleanup rules — first match wins
 	for (const rule of orderedRules) {
 		if (rule.retentionMode) continue;
-		const match = evaluateRule(item, rule, instanceService, ctx, failedSources);
-		if (match) return { kind: "cleanup", match };
+		const evaluation = evaluateRuleState(item, rule, instanceService, ctx, failedSources);
+		if (evaluation.match) {
+			return {
+				kind: "cleanup",
+				match: evaluation.match,
+				evidenceConditions: evaluation.evidenceConditions,
+			};
+		}
 	}
 	return { kind: "no_match" };
 }
@@ -2997,13 +3040,13 @@ export function explainItemAgainstRules(
 		let evaluation: RuleEvaluation;
 		if (targetsEpisode) {
 			if (episodeEvidence?.watchCount === null || episodeEvidence?.watchCount === undefined) {
-				evaluation = { state: "unknown", match: null };
+				evaluation = { state: "unknown", match: null, evidenceConditions: [] };
 			} else {
 				const match = evaluateEpisodeWatchCountRule(
 					{ watchCount: episodeEvidence.watchCount },
 					rule,
 				);
-				evaluation = { state: match ? "true" : "false", match };
+				evaluation = { state: match ? "true" : "false", match, evidenceConditions: [] };
 			}
 		} else {
 			evaluation = evaluateRuleState(item, rule, instanceService, ctx, failedSources);
