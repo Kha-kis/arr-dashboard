@@ -115,6 +115,15 @@ function prisma(
 	currentConnection = { service: "PLEX", enabled: true, connectionGeneration: 7 },
 ) {
 	const published: unknown[] = [];
+	const parentGeneration = {
+		generationId: "plex-generation-1",
+		lastResult: "success",
+		lastErrorMessage: null,
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		connectionGeneration: 7,
+		identityGeneration: 11,
+	};
 	const tx = {
 		serviceInstance: { findUnique: vi.fn().mockResolvedValue(currentConnection) },
 		plexEpisodeCache: {
@@ -124,10 +133,14 @@ function prisma(
 				return { count: data.length };
 			}),
 		},
-		cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+		cacheRefreshStatus: {
+			findFirst: vi.fn().mockResolvedValue(parentGeneration),
+			upsert: vi.fn().mockResolvedValue({}),
+		},
 	};
 	const db = {
 		plexCache: { findMany: vi.fn().mockResolvedValue(shows) },
+		cacheRefreshStatus: { findUnique: vi.fn().mockResolvedValue(parentGeneration) },
 		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
 			callback(tx),
 		),
@@ -163,9 +176,32 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		]);
 		expect(fixture.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({ lastRefreshedAt: result.completedAt, itemCount: 1 }),
+				create: expect.objectContaining({
+					lastRefreshedAt: result.completedAt,
+					itemCount: 1,
+					generationId: expect.any(String),
+					generationMetadata: JSON.stringify({ parentGenerationId: "plex-generation-1" }),
+				}),
 			}),
 		);
+	});
+
+	it("keeps the previous episode generation when the parent Plex generation changes", async () => {
+		const fixture = prisma();
+		fixture.tx.cacheRefreshStatus.findFirst.mockResolvedValue(null);
+
+		const result = await refreshPlexEpisodeCache(
+			client(),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("publishes a complete eligible-empty inventory and evicts stale rows", async () => {

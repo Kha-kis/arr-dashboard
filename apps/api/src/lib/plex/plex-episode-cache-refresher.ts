@@ -4,6 +4,7 @@
  * proves complete.
  */
 
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { Prisma, PrismaClientInstance } from "../prisma.js";
 import {
@@ -33,6 +34,7 @@ export interface PlexEpisodeRefreshResult {
 	capacityDegraded: boolean;
 	complete: boolean;
 	completedAt?: Date;
+	generationId?: string;
 	superseded?: boolean;
 }
 
@@ -53,6 +55,7 @@ type PlexEpisodeRow = {
 
 type CollectedPlexEpisodeRefresh = PlexEpisodeRefreshResult & {
 	rows?: PlexEpisodeRow[];
+	parentGenerationId?: string;
 };
 
 function failedResult(
@@ -82,6 +85,31 @@ async function collectPlexEpisodeCache(
 	connectionGeneration: number,
 	identityGeneration: number,
 ): Promise<CollectedPlexEpisodeRefresh> {
+	const parentGeneration = await prisma.cacheRefreshStatus.findUnique({
+		where: { instanceId_cacheType: { instanceId, cacheType: "plex" } },
+		select: {
+			generationId: true,
+			lastResult: true,
+			lastErrorMessage: true,
+			lastAttemptResult: true,
+			lastAttemptErrorMessage: true,
+			connectionGeneration: true,
+			identityGeneration: true,
+		},
+	});
+	if (
+		!parentGeneration?.generationId ||
+		parentGeneration.lastResult !== "success" ||
+		parentGeneration.lastErrorMessage != null ||
+		parentGeneration.lastAttemptErrorMessage != null ||
+		(parentGeneration.lastAttemptResult != null &&
+			parentGeneration.lastAttemptResult !== "success") ||
+		parentGeneration.connectionGeneration !== connectionGeneration ||
+		parentGeneration.identityGeneration !== identityGeneration
+	) {
+		return failedResult(["Current Plex inventory generation was unavailable"], 0, 0);
+	}
+	const parentGenerationId = parentGeneration.generationId;
 	const recentlyWatchedShows = await prisma.plexCache.findMany({
 		where: {
 			instanceId,
@@ -243,6 +271,7 @@ async function collectPlexEpisodeCache(
 		complete: true,
 		completedAt,
 		rows,
+		parentGenerationId,
 	};
 }
 
@@ -303,8 +332,40 @@ async function publishPlexEpisodeCache(
 	instance: PlexPublicationContext["instance"],
 	collected: CollectedPlexEpisodeRefresh,
 ): Promise<PlexEpisodeRefreshResult> {
-	if (!collected.complete || !collected.completedAt || !collected.rows) return collected;
+	if (
+		!collected.complete ||
+		!collected.completedAt ||
+		!collected.rows ||
+		!collected.parentGenerationId
+	) {
+		return collected;
+	}
+	const currentParent = await tx.cacheRefreshStatus.findFirst({
+		where: {
+			instanceId: instance.id,
+			cacheType: "plex",
+			generationId: collected.parentGenerationId,
+			lastResult: "success",
+			lastErrorMessage: null,
+			lastAttemptErrorMessage: null,
+			OR: [{ lastAttemptResult: null }, { lastAttemptResult: "success" }],
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		},
+		select: { generationId: true },
+	});
+	if (!currentParent) {
+		return failedResult(
+			["Plex inventory changed before episode cache publication"],
+			collected.eligibleShows,
+			collected.refreshedShows,
+		);
+	}
 	const rows = collected.rows;
+	const generationId = randomUUID();
+	const generationMetadata = JSON.stringify({
+		parentGenerationId: collected.parentGenerationId,
+	});
 	await tx.plexEpisodeCache.deleteMany({ where: { instanceId: instance.id } });
 	for (let start = 0; start < rows.length; start += PLEX_CACHE_PUBLICATION_CHUNK_SIZE) {
 		await tx.plexEpisodeCache.createMany({
@@ -323,6 +384,8 @@ async function publishPlexEpisodeCache(
 			lastRefreshedAt: collected.completedAt,
 			lastResult: "success",
 			itemCount: rows.length,
+			generationId,
+			generationMetadata,
 			lastAttemptAt: collected.completedAt,
 			lastAttemptResult: "success",
 			connectionGeneration: instance.connectionGeneration,
@@ -333,6 +396,8 @@ async function publishPlexEpisodeCache(
 			lastResult: "success",
 			lastErrorMessage: null,
 			itemCount: rows.length,
+			generationId,
+			generationMetadata,
 			lastAttemptAt: collected.completedAt,
 			lastAttemptResult: "success",
 			lastAttemptErrorMessage: null,
@@ -340,5 +405,5 @@ async function publishPlexEpisodeCache(
 			identityGeneration: instance.identityGeneration,
 		},
 	});
-	return { ...collected, upserted: rows.length };
+	return { ...collected, upserted: rows.length, generationId };
 }

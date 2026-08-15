@@ -104,6 +104,15 @@ function dataClient(itemCount = 1): PlexClient {
 
 function prisma(finalPredicateMatches = true) {
 	const rows: unknown[] = [];
+	const parentGeneration = {
+		generationId: "plex-generation-1",
+		lastResult: "success",
+		lastErrorMessage: null,
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		connectionGeneration: 4,
+		identityGeneration: 9,
+	};
 	const tx = {
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
@@ -132,6 +141,7 @@ function prisma(finalPredicateMatches = true) {
 			createMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
 		cacheRefreshStatus: {
+			findFirst: vi.fn().mockResolvedValue(parentGeneration),
 			upsert: vi.fn(async () => {
 				authority.events.push("status");
 				return {};
@@ -139,6 +149,7 @@ function prisma(finalPredicateMatches = true) {
 		},
 	};
 	const db = {
+		cacheRefreshStatus: { findUnique: vi.fn().mockResolvedValue(parentGeneration) },
 		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
 			callback(tx),
 		),
