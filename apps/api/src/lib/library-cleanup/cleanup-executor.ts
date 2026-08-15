@@ -3834,26 +3834,21 @@ async function prefetchPlexEpisodeData(
 			where: { instanceId: { in: instanceIds } },
 			select: { instanceId: true, refreshedAt: true, sourceFingerprint: true },
 		});
-		const rowCounts = new Map<string, number>();
+		const freshnessThreshold = Date.now() - PROVIDER_EVIDENCE_FRESHNESS_MS;
 		for (const row of generationRows) {
 			const generation = generations.get(row.instanceId);
 			const instance = instances.find((candidate) => candidate.id === row.instanceId);
 			if (
 				!generation ||
 				!instance ||
-				row.refreshedAt?.getTime() !== generation.completedAt.getTime() ||
+				row.refreshedAt === null ||
+				row.refreshedAt.getTime() > generation.completedAt.getTime() ||
+				row.refreshedAt.getTime() < freshnessThreshold ||
+				row.refreshedAt.getTime() < instance.updatedAt.getTime() ||
 				row.sourceFingerprint !== plexConnectionFingerprint(instance as ServiceInstance)
 			) {
 				return undefined;
 			}
-			rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
-		}
-		if (
-			instances.some(
-				(instance) => (rowCounts.get(instance.id) ?? 0) !== generations.get(instance.id)!.itemCount,
-			)
-		) {
-			return undefined;
 		}
 
 		// Three groupBy queries: show-level totals, show-level watched, and per-season counts

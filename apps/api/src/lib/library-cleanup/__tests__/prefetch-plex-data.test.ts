@@ -248,7 +248,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		);
 	});
 
-	it("blocks Plex episode cleanup when the episode cache row count mismatches", async () => {
+	it("keeps fresh retained episode rows from earlier incremental refreshes", async () => {
 		const instance = {
 			id: "plex-inst-1",
 			updatedAt: new Date(0),
@@ -263,7 +263,20 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		};
 		const completedAt = new Date();
 		const normalStatus = completeStatus(instance.id, completedAt, 1);
-		const episodeStatus = completeStatus(instance.id, completedAt, 2);
+		const retainedAt = new Date(completedAt.getTime() - 6 * 60 * 60 * 1000);
+		const episodeStatus = completeStatus(instance.id, completedAt, 1);
+		const episodeGroupBy = vi
+			.fn()
+			.mockResolvedValueOnce([
+				{ showTmdbId: 42, _count: { id: 1 } },
+				{ showTmdbId: 84, _count: { id: 1 } },
+			])
+			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
+			.mockResolvedValueOnce([
+				{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } },
+				{ showTmdbId: 84, seasonNumber: 1, _count: { id: 1 } },
+			])
+			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }]);
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 			cacheRefreshStatus: {
@@ -283,11 +296,18 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 				findMany: vi.fn().mockResolvedValue([
 					{
 						instanceId: instance.id,
+						showTmdbId: 42,
 						refreshedAt: completedAt,
 						sourceFingerprint: plexConnectionFingerprint(instance as never),
 					},
+					{
+						instanceId: instance.id,
+						showTmdbId: 84,
+						refreshedAt: retainedAt,
+						sourceFingerprint: plexConnectionFingerprint(instance as never),
+					},
 				]),
-				groupBy: vi.fn().mockResolvedValue([]),
+				groupBy: episodeGroupBy,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -297,17 +317,10 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			[plexCleanupRule("plex_episode_completion")],
 		);
 
-		expect(result.ctx.plexEpisodeMap).toBeUndefined();
-		expect(result.failedSources).toContain("plex");
-		expect(
-			evaluateItemAgainstRules(
-				plexDecisionItem,
-				[plexCleanupRule("plex_episode_completion")],
-				"SONARR",
-				result.ctx,
-				result.failedSources,
-			),
-		).toBeNull();
+		expect(result.failedSources).not.toContain("plex");
+		expect(result.ctx.plexEpisodeMap?.get(42)).toMatchObject({ total: 1, watched: 1 });
+		expect(result.ctx.plexEpisodeMap?.get(84)).toMatchObject({ total: 1, watched: 0 });
+		expect(episodeGroupBy).toHaveBeenCalledTimes(4);
 	});
 
 	it("rejects an interleaved map/section generation", async () => {
