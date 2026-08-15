@@ -23,6 +23,24 @@ import {
 
 const log = loggers.deployment;
 
+type BeforeQualityProfileCreate = (
+	intendedProfile: Record<string, unknown>,
+) => void | Promise<void>;
+
+async function submitPreparedProfile(
+	client: SonarrClient | RadarrClient,
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile payload
+	profileToCreate: Record<string, any>,
+	schemaSupportsLanguage: boolean,
+	beforeCreate?: BeforeQualityProfileCreate,
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile response
+): Promise<any> {
+	const { id: _schemaId, ...submittedProfile } = profileToCreate;
+	const { language: _unsupportedLanguage, ...profileWithoutLanguage } = submittedProfile;
+	await beforeCreate?.(schemaSupportsLanguage ? submittedProfile : profileWithoutLanguage);
+	return submitNewProfile(client, submittedProfile);
+}
+
 /**
  * Creates a quality profile from schema with template configuration.
  * Supports both TRaSH Guides profiles (qualityProfile) and cloned instance profiles (completeQualityProfile).
@@ -35,6 +53,7 @@ export async function createQualityProfileFromSchema(
 	templateCFs: TemplateCF[],
 	profileName: string,
 	effectiveQualityConfig?: CustomQualityConfig,
+	beforeCreate?: BeforeQualityProfileCreate,
 	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile response
 ): Promise<any> {
 	try {
@@ -47,6 +66,7 @@ export async function createQualityProfileFromSchema(
 				templateConfig,
 				templateCFs,
 				profileName,
+				beforeCreate,
 			);
 		}
 
@@ -61,6 +81,7 @@ export async function createQualityProfileFromSchema(
 				templateCFs,
 				profileName,
 				customQualityConfig,
+				beforeCreate,
 			);
 		}
 
@@ -191,7 +212,12 @@ export async function createQualityProfileFromSchema(
 					}),
 		};
 
-		return await submitNewProfile(client, profileToCreate);
+		return await submitPreparedProfile(
+			client,
+			profileToCreate,
+			Object.hasOwn(schema, "language"),
+			beforeCreate,
+		);
 	} catch (createError) {
 		log.error({ err: createError }, "Failed to create quality profile");
 		throw new Error(
@@ -212,6 +238,7 @@ export async function createQualityProfileFromClonedProfile(
 	templateConfig: Record<string, any>,
 	templateCFs: TemplateCF[],
 	profileName: string,
+	beforeCreate?: BeforeQualityProfileCreate,
 	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile response
 ): Promise<any> {
 	const clonedProfile = templateConfig.completeQualityProfile;
@@ -313,7 +340,12 @@ export async function createQualityProfileFromClonedProfile(
 		}),
 	};
 
-	return await submitNewProfile(client, profileToCreate);
+	return await submitPreparedProfile(
+		client,
+		profileToCreate,
+		Object.hasOwn(schema, "language"),
+		beforeCreate,
+	);
 }
 
 /**
@@ -329,6 +361,7 @@ export async function createQualityProfileFromCustomConfig(
 	templateCFs: TemplateCF[],
 	profileName: string,
 	customQualityConfig: CustomQualityConfig,
+	beforeCreate?: BeforeQualityProfileCreate,
 	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile response
 ): Promise<any> {
 	const { byName: qualitiesByName } = extractQualitiesFromSchema(schema.items);
@@ -415,5 +448,10 @@ export async function createQualityProfileFromCustomConfig(
 		formatItems: formatItemsWithScores,
 	};
 
-	return await submitNewProfile(client, profileToCreate);
+	return await submitPreparedProfile(
+		client,
+		profileToCreate,
+		Object.hasOwn(schema, "language"),
+		beforeCreate,
+	);
 }

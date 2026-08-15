@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import { getPasswordSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { parseUserAgent } from "../lib/auth/user-agent-parser.js";
+import { ConflictError } from "../lib/errors.js";
+import { withExclusiveCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 const loginSchema = z.object({
@@ -655,10 +656,20 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const userId = request.currentUser.id;
 
-		return await withCleanupTopologyMutationLease(
+		return await withExclusiveCleanupTopologyMutationLease(
 			{ prisma: app.prisma, log: request.log },
 			userId,
 			async () => {
+				const ownedInstances = await app.prisma.serviceInstance.findMany({
+					where: { userId },
+					select: { id: true },
+				});
+				if (ownedInstances.length > 0) {
+					throw new ConflictError(
+						"Remove all service connections before deleting the account so upstream deployment ownership can be resolved safely.",
+					);
+				}
+
 				// Check for any authentication methods while cleanup and database
 				// restore are excluded, so the decision cannot go stale before
 				// the cascading topology deletion.

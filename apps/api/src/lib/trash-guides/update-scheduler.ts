@@ -8,6 +8,7 @@
 import { createHash } from "node:crypto";
 import {
 	type NamingSelectedPresets,
+	type NotificationEventType,
 	TRASH_CONFIG_TYPES,
 	type TrashNamingData,
 	type TrashQualitySize,
@@ -15,10 +16,17 @@ import {
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import { z } from "zod";
-import type { PrismaClient } from "../../lib/prisma.js";
+import type { PrismaClient, ServiceInstance } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
+import { assertNoPendingDeploymentOperation } from "./deployment-operation-gate.js";
+import {
+	createDeploymentConnectionStateToken,
+	createDeploymentEndpointKey,
+	getEquivalentServiceInstanceIds,
+} from "./deployment-target.js";
 import { createTrashFetcher } from "./github-fetcher.js";
 import { trashQualitySizeSchema } from "./github-schemas.js";
 import { computeNamingHash, resolvePayload } from "./naming-deployer.js";
@@ -61,6 +69,7 @@ export interface SchedulerStats {
 		templatesNeedingAttention: number;
 		templatesNeedingApproval: number; // Templates with CF Group additions needing user approval
 		templatesWithScoreConflicts: number; // Templates where score updates were skipped due to user overrides
+		templatesWithUncertainDeployments: number;
 		cachesRefreshed: number;
 		cachesFailed: number;
 		qualitySizeAutoSynced: number;
@@ -99,6 +108,7 @@ export class UpdateScheduler {
 	private deploymentExecutor?: import("./deployment-executor.js").DeploymentExecutorService;
 	private notifyFn?: (
 		payload: import("../notifications/types.js").NotificationPayload,
+		options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
 	) => Promise<void>;
 	private trackTick: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 
@@ -114,6 +124,7 @@ export class UpdateScheduler {
 			deploymentExecutor?: import("./deployment-executor.js").DeploymentExecutorService;
 			notifyFn?: (
 				payload: import("../notifications/types.js").NotificationPayload,
+				options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
 			) => Promise<void>;
 			trackTick?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 		},
@@ -243,6 +254,10 @@ export class UpdateScheduler {
 	 * Check for updates and process them
 	 */
 	private async checkForUpdates(): Promise<void> {
+		return withCleanupOperationGuard(() => this.checkForUpdatesGuarded());
+	}
+
+	private async checkForUpdatesGuarded(): Promise<void> {
 		// Prevent concurrent checks
 		if (this.isCheckInProgress) {
 			this.logger.warn("Update check already in progress, skipping");
@@ -262,6 +277,7 @@ export class UpdateScheduler {
 		let templatesNeedingAttention = 0;
 		let templatesNeedingApproval = 0;
 		let templatesWithScoreConflicts = 0;
+		let templatesWithUncertainDeployments = 0;
 		let qualitySizeAutoSynced = 0;
 		let qualitySizeUpdatesPending = 0;
 		let namingAutoSynced = 0;
@@ -366,6 +382,26 @@ export class UpdateScheduler {
 					templatesAutoSynced += autoSyncResult.successful;
 					templatesNeedingApproval += autoSyncResult.skippedForApproval;
 					templatesWithScoreConflicts += autoSyncResult.templatesWithScoreConflicts;
+					templatesWithUncertainDeployments += autoSyncResult.uncertain;
+					for (const outcome of autoSyncResult.uncertainDeployments) {
+						this.notifyFn?.(
+							{
+								eventType: "TRASH_DEPLOY_UNCERTAIN",
+								title: `Automatic TRaSH deployment needs review on ${outcome.instanceLabel}`,
+								body: outcome.errors.join("; "),
+								url: "/trash-guides",
+								metadata: {
+									templateId: outcome.templateId,
+									instanceId: outcome.instanceId,
+									endpointKey: outcome.endpointKey,
+									reason: "uncertain_result",
+								},
+							},
+							{ userId: user.id, fallbackEventTypes: ["TRASH_SYNC_ERROR"] },
+						).catch((err) => {
+							this.logger.debug({ err }, "Automatic deployment review notification failed");
+						});
+					}
 
 					if (autoSyncResult.failed > 0) {
 						const failedResults = autoSyncResult.results.filter((r: SyncResult) => !r.success);
@@ -413,6 +449,7 @@ export class UpdateScheduler {
 					templatesNeedingAttention: 0,
 					templatesNeedingApproval: 0,
 					templatesWithScoreConflicts: 0,
+					templatesWithUncertainDeployments: 0,
 					cachesRefreshed: totalCachesRefreshed,
 					cachesFailed: totalCacheFailed,
 					qualitySizeAutoSynced,
@@ -445,6 +482,7 @@ export class UpdateScheduler {
 				templatesNeedingAttention,
 				templatesNeedingApproval,
 				templatesWithScoreConflicts,
+				templatesWithUncertainDeployments,
 				cachesRefreshed: totalCachesRefreshed,
 				cachesFailed: totalCacheFailed,
 				qualitySizeAutoSynced,
@@ -495,6 +533,7 @@ export class UpdateScheduler {
 				templatesNeedingAttention: 0,
 				templatesNeedingApproval: 0,
 				templatesWithScoreConflicts: 0,
+				templatesWithUncertainDeployments: 0,
 				cachesRefreshed: 0,
 				cachesFailed: 0,
 				qualitySizeAutoSynced: 0,
@@ -522,6 +561,62 @@ export class UpdateScheduler {
 		} finally {
 			this.isCheckInProgress = false;
 		}
+	}
+
+	private async runWithScheduledEndpointMutation<T>(
+		instance: ServiceInstance,
+		operation: string,
+		action: (verifiedInstance: ServiceInstance) => Promise<T>,
+	): Promise<T> {
+		if (!this.deploymentExecutor || !this.arrClientFactory) {
+			throw new Error(`${operation} requires deployment endpoint coordination`);
+		}
+
+		return this.deploymentExecutor.runWithEndpointMutation(
+			instance.userId,
+			instance,
+			operation,
+			async (endpointKey) => {
+				const aliases = await this.prisma.serviceInstance.findMany({
+					where: { userId: instance.userId, service: instance.service },
+				});
+				const currentInstance = aliases.find((alias) => alias.id === instance.id);
+				if (!currentInstance) {
+					throw new Error(`${operation} target was removed before execution`);
+				}
+				const currentCredentialIdentity =
+					this.arrClientFactory!.createConnectionCredentialIdentity(currentInstance);
+				if (
+					createDeploymentEndpointKey(instance.userId, {
+						...currentInstance,
+						credentialIdentity: currentCredentialIdentity,
+					}) !== endpointKey ||
+					createDeploymentConnectionStateToken(currentInstance) !==
+						createDeploymentConnectionStateToken(instance)
+				) {
+					throw new Error(`${operation} target connection changed before execution`);
+				}
+
+				const aliasesWithIdentity = aliases.map((alias) => ({
+					...alias,
+					credentialIdentity: this.arrClientFactory!.createConnectionCredentialIdentity(alias),
+				}));
+				const target = aliasesWithIdentity.find((alias) => alias.id === instance.id);
+				if (!target) {
+					throw new Error(`${operation} could not resolve the target ARR endpoint`);
+				}
+				const equivalentInstanceIds = getEquivalentServiceInstanceIds(aliasesWithIdentity, target);
+				if (!equivalentInstanceIds.includes(instance.id)) {
+					equivalentInstanceIds.push(instance.id);
+				}
+				await assertNoPendingDeploymentOperation(
+					this.prisma,
+					instance.userId,
+					equivalentInstanceIds,
+				);
+				return action(currentInstance);
+			},
+		);
 	}
 
 	/**
@@ -609,68 +704,71 @@ export class UpdateScheduler {
 					continue;
 				}
 
-				// Reset to factory defaults before applying (matches manual apply flow)
-				const resetResponse = await this.arrClientFactory.rawRequest(
+				await this.runWithScheduledEndpointMutation(
 					mapping.instance,
-					"/api/v3/qualitydefinition/reset",
-					{ method: "PUT" },
-				);
-				if (!resetResponse.ok) {
-					throw new Error(
-						`Failed to reset quality definitions: ${resetResponse.status} ${resetResponse.statusText}`,
-					);
-				}
-
-				// Apply preset on top of factory defaults
-				try {
-					const client = this.arrClientFactory.create(mapping.instance) as
-						| SonarrClient
-						| RadarrClient;
-					const definitions = await client.qualityDefinition.getAll();
-					const { updated, appliedCount } = applyQualitySizeToDefinitions(
-						preset.qualities,
-						definitions,
-					);
-
-					// biome-ignore lint/suspicious/noExplicitAny: arr-sdk types are loosely typed from OpenAPI specs
-					await client.qualityDefinition.updateAll(updated as any[]);
-
-					// Update the mapping with new hash
-					await this.prisma.qualitySizeMapping.update({
-						where: { id: mapping.id },
-						data: {
-							appliedDataHash: currentHash,
-							lastAppliedAt: new Date(),
-						},
-					});
-
-					result.autoSynced++;
-					this.logger.info(
-						`Auto-synced quality size for ${mapping.instance.label} (${appliedCount} qualities updated)`,
-					);
-				} catch (applyError) {
-					// Reset succeeded but apply failed — instance is at factory defaults.
-					// Null out the hash so the next run detects the mismatch and retries.
-					let hashCleanupFailed = false;
-					await this.prisma.qualitySizeMapping
-						.update({
-							where: { id: mapping.id },
-							data: { appliedDataHash: null },
-						})
-						.catch((cleanupErr) => {
-							hashCleanupFailed = true;
-							this.logger.warn(
-								{
-									err: cleanupErr instanceof Error ? cleanupErr : new Error(String(cleanupErr)),
-									mappingId: mapping.id,
-								},
-								"Failed to null appliedDataHash after apply failure — retry logic may be impaired",
+					"Scheduled quality-size sync",
+					async (verifiedInstance) => {
+						// Reset to factory defaults before applying (matches manual apply flow)
+						const resetResponse = await this.arrClientFactory!.rawRequest(
+							verifiedInstance,
+							"/api/v3/qualitydefinition/reset",
+							{ method: "PUT" },
+						);
+						if (!resetResponse.ok) {
+							throw new Error(
+								`Failed to reset quality definitions: ${resetResponse.status} ${resetResponse.statusText}`,
 							);
-						});
-					throw new Error(
-						`Apply failed after reset (instance at factory defaults)${hashCleanupFailed ? " [hash cleanup also failed, auto-retry may not work]" : ""}: ${getErrorMessage(applyError)}`,
-					);
-				}
+						}
+
+						// Apply preset on top of factory defaults
+						try {
+							const client = this.arrClientFactory!.create(verifiedInstance) as
+								| SonarrClient
+								| RadarrClient;
+							const definitions = await client.qualityDefinition.getAll();
+							const { updated, appliedCount } = applyQualitySizeToDefinitions(
+								preset.qualities,
+								definitions,
+							);
+
+							// biome-ignore lint/suspicious/noExplicitAny: arr-sdk types are loosely typed from OpenAPI specs
+							await client.qualityDefinition.updateAll(updated as any[]);
+
+							await this.prisma.qualitySizeMapping.update({
+								where: { id: mapping.id },
+								data: {
+									appliedDataHash: currentHash,
+									lastAppliedAt: new Date(),
+								},
+							});
+
+							result.autoSynced++;
+							this.logger.info(
+								`Auto-synced quality size for ${mapping.instance.label} (${appliedCount} qualities updated)`,
+							);
+						} catch (applyError) {
+							let hashCleanupFailed = false;
+							await this.prisma.qualitySizeMapping
+								.update({
+									where: { id: mapping.id },
+									data: { appliedDataHash: null },
+								})
+								.catch((cleanupErr) => {
+									hashCleanupFailed = true;
+									this.logger.warn(
+										{
+											err: cleanupErr instanceof Error ? cleanupErr : new Error(String(cleanupErr)),
+											mappingId: mapping.id,
+										},
+										"Failed to null appliedDataHash after apply failure — retry logic may be impaired",
+									);
+								});
+							throw new Error(
+								`Apply failed after reset (instance at factory defaults)${hashCleanupFailed ? " [hash cleanup also failed, auto-retry may not work]" : ""}: ${getErrorMessage(applyError)}`,
+							);
+						}
+					},
+				);
 			} catch (error) {
 				result.errors.push(
 					`Quality size sync failed for instance ${mapping.instance?.label ?? mapping.instanceId}: ${getErrorMessage(error)}`,
@@ -771,43 +869,44 @@ export class UpdateScheduler {
 					continue;
 				}
 
-				// Both Radarr and Sonarr use the same naming config endpoint
-				const apiPath = "/api/v3/config/naming";
+				await this.runWithScheduledEndpointMutation(
+					config.instance,
+					"Scheduled naming sync",
+					async (verifiedInstance) => {
+						const apiPath = "/api/v3/config/naming";
+						const currentResponse = await this.arrClientFactory!.rawRequest(
+							verifiedInstance,
+							apiPath,
+							{ method: "GET" },
+						);
+						if (!currentResponse.ok) {
+							throw new Error(`Failed to get current naming config: ${currentResponse.status}`);
+						}
+						const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
+						const mergedConfig = { ...currentConfig, ...payload };
+						const applyResponse = await this.arrClientFactory!.rawRequest(
+							verifiedInstance,
+							apiPath,
+							{ method: "PUT", body: mergedConfig },
+						);
+						if (!applyResponse.ok) {
+							throw new Error(
+								`Failed to apply naming config: ${applyResponse.status} ${applyResponse.statusText}`,
+							);
+						}
 
-				// Get current config first (need to preserve id and other fields)
-				const currentResponse = await this.arrClientFactory.rawRequest(config.instance, apiPath, {
-					method: "GET",
-				});
-				if (!currentResponse.ok) {
-					throw new Error(`Failed to get current naming config: ${currentResponse.status}`);
-				}
-				const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
+						await this.prisma.namingConfig.update({
+							where: { id: config.id },
+							data: {
+								lastDeployedHash: currentHash,
+								lastDeployedAt: new Date(),
+							},
+						});
 
-				// Merge payload onto current config
-				const mergedConfig = { ...currentConfig, ...payload };
-
-				const applyResponse = await this.arrClientFactory.rawRequest(config.instance, apiPath, {
-					method: "PUT",
-					body: mergedConfig,
-				});
-
-				if (!applyResponse.ok) {
-					throw new Error(
-						`Failed to apply naming config: ${applyResponse.status} ${applyResponse.statusText}`,
-					);
-				}
-
-				// Update the config with new hash
-				await this.prisma.namingConfig.update({
-					where: { id: config.id },
-					data: {
-						lastDeployedHash: currentHash,
-						lastDeployedAt: new Date(),
+						result.autoSynced++;
+						this.logger.info(`Auto-synced naming config for ${config.instance.label}`);
 					},
-				});
-
-				result.autoSynced++;
-				this.logger.info(`Auto-synced naming config for ${config.instance.label}`);
+				);
 			} catch (error) {
 				result.errors.push(
 					`Naming sync failed for instance ${config.instance?.label ?? config.instanceId}: ${getErrorMessage(error)}`,
@@ -979,7 +1078,10 @@ export function createUpdateScheduler(
 	options?: {
 		repoConfigResolver?: RepoConfigResolver;
 		deploymentExecutor?: import("./deployment-executor.js").DeploymentExecutorService;
-		notifyFn?: (payload: import("../notifications/types.js").NotificationPayload) => Promise<void>;
+		notifyFn?: (
+			payload: import("../notifications/types.js").NotificationPayload,
+			options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
+		) => Promise<void>;
 		trackTick?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 	},
 ): UpdateScheduler {

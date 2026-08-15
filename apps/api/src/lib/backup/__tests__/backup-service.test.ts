@@ -281,6 +281,571 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		expect(() => validateBackup(validBackup)).not.toThrow();
 	});
 
+	it("accepts the current 1.1 payload format", () => {
+		const currentBackup = {
+			version: "1.1",
+			appVersion: "3.0.0-beta",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(currentBackup)).not.toThrow();
+	});
+
+	it("applies coordination evidence requirements according to backup version", () => {
+		const legacyBackup = {
+			version: "1.0",
+			appVersion: "2.23.0",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashTemplates: [{ id: "template-1", userId: "user-1" }],
+				templateDeploymentHistory: [
+					{
+						id: "legacy-partial-undeploy",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						status: "PARTIAL_UNDEPLOY",
+					},
+				],
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(legacyBackup)).not.toThrow();
+		expect(() => validateBackup({ ...legacyBackup, version: "1.1" })).toThrow(
+			"missing backup snapshot reference",
+		);
+	});
+
+	it.each(["1.0", "1.1"])(
+		"accepts a valid %s payload with authoritative coordination ownership",
+		(version) => {
+			const validBackup = {
+				version,
+				appVersion: "3.0.0-beta",
+				timestamp: new Date().toISOString(),
+				data: {
+					users: [],
+					sessions: [],
+					serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+					serviceTags: [],
+					serviceInstanceTags: [],
+					oidcAccounts: [],
+					webAuthnCredentials: [],
+					trashTemplates: [{ id: "template-1", userId: "user-1" }],
+					trashSyncHistory: [
+						{
+							id: "rollback-1",
+							instanceId: "instance-1",
+							templateId: "template-1",
+							userId: "user-1",
+							rollbackStatus: "IN_PROGRESS",
+							backupId: "snapshot-1",
+						},
+					],
+					templateDeploymentHistory: [
+						{
+							id: "undeploy-1",
+							instanceId: "instance-1",
+							templateId: "template-1",
+							userId: "user-1",
+							undeployStatus: "IN_PROGRESS",
+							backupId: "snapshot-1",
+						},
+					],
+					trashBackups: [
+						{
+							id: "snapshot-1",
+							instanceId: "instance-1",
+							userId: "user-1",
+							backupData: JSON.stringify([]),
+						},
+					],
+				},
+				secrets: {
+					encryptionKey: "test-encryption-key-32-bytes-hex",
+					sessionCookieSecret: "test-session-cookie-secret",
+				},
+			};
+
+			expect(() => validateBackup(validBackup)).not.toThrow();
+		},
+	);
+
+	it.each([
+		{
+			name: "missing backupId",
+			history: {
+				trashSyncHistory: [
+					{
+						id: "rollback-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						rollbackStatus: "IN_PROGRESS",
+						backupId: null,
+					},
+				],
+				trashBackups: [],
+			},
+		},
+		{
+			name: "missing referenced snapshot",
+			history: {
+				trashSyncHistory: [
+					{
+						id: "rollback-2",
+						instanceId: "instance-1",
+						userId: "user-1",
+						rollbackStatus: "PARTIAL",
+						backupId: "snapshot-missing",
+					},
+				],
+				trashBackups: [],
+			},
+		},
+		{
+			name: "mismatched snapshot ownership",
+			history: {
+				serviceInstances: [
+					{ id: "instance-1", userId: "user-1" },
+					{ id: "instance-2", userId: "user-1" },
+				],
+				templateDeploymentHistory: [
+					{
+						id: "undeploy-1",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						undeployStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-2",
+						userId: "user-1",
+						backupData: "wrong-instance-evidence",
+					},
+				],
+			},
+		},
+		{
+			name: "empty snapshot payload",
+			history: {
+				templateDeploymentHistory: [
+					{
+						id: "undeploy-2",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						status: "PARTIAL_UNDEPLOY",
+						backupId: "snapshot-2",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-2",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "",
+					},
+				],
+			},
+		},
+	])("fails closed before restore when coordination evidence is $name", ({ history }) => {
+		const unsafeBackup = {
+			version: "1.1",
+			appVersion: "3.0.0-beta",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashTemplates: [{ id: "template-1", userId: "user-1" }],
+				...history,
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(unsafeBackup)).toThrow("coordination evidence");
+	});
+
+	it.each([
+		{
+			name: "snapshot references a missing service instance",
+			history: {
+				trashBackups: [
+					{
+						id: "snapshot-missing-instance",
+						instanceId: "instance-missing",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "referenced service instance instance-missing is missing",
+		},
+		{
+			name: "snapshot owner differs from its service instance owner",
+			history: {
+				trashBackups: [
+					{
+						id: "snapshot-cross-owner",
+						instanceId: "instance-1",
+						userId: "user-2",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "owner does not match service instance instance-1",
+		},
+		{
+			name: "journal references a missing service instance",
+			history: {
+				trashSyncHistory: [
+					{
+						id: "rollback-missing-instance",
+						instanceId: "instance-missing",
+						userId: "user-1",
+						rollbackStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "referenced service instance instance-missing is missing",
+		},
+		{
+			name: "journal owner differs from its service instance owner",
+			history: {
+				trashSyncHistory: [
+					{
+						id: "rollback-cross-owner",
+						instanceId: "instance-1",
+						userId: "user-2",
+						rollbackStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "owner does not match service instance instance-1",
+		},
+		{
+			name: "undeploy journal references a missing template",
+			history: {
+				templateDeploymentHistory: [
+					{
+						id: "undeploy-missing-template",
+						instanceId: "instance-1",
+						templateId: "template-missing",
+						userId: "user-1",
+						undeployStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "referenced template template-missing is missing",
+		},
+		{
+			name: "undeploy journal omits its template reference",
+			history: {
+				templateDeploymentHistory: [
+					{
+						id: "undeploy-without-template",
+						instanceId: "instance-1",
+						userId: "user-1",
+						undeployStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "missing template reference",
+		},
+		{
+			name: "undeploy journal owner differs from its template owner",
+			history: {
+				trashTemplates: [{ id: "template-1", userId: "user-2" }],
+				templateDeploymentHistory: [
+					{
+						id: "undeploy-cross-owner-template",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						undeployStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "owner does not match template template-1",
+		},
+		{
+			name: "rollback journal owner differs from its referenced template owner",
+			history: {
+				trashTemplates: [{ id: "template-1", userId: "user-2" }],
+				trashSyncHistory: [
+					{
+						id: "rollback-cross-owner-template",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						rollbackStatus: "IN_PROGRESS",
+						backupId: "snapshot-1",
+					},
+				],
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "recovery-evidence",
+					},
+				],
+			},
+			message: "owner does not match template template-1",
+		},
+		{
+			name: "authoritative service identities are duplicated",
+			history: {
+				serviceInstances: [
+					{ id: "instance-1", userId: "user-1" },
+					{ id: "instance-1", userId: "user-2" },
+				],
+			},
+			message: "duplicate service instance identity instance-1",
+		},
+		{
+			name: "recovery snapshot identities are duplicated",
+			history: {
+				trashBackups: [
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "first",
+					},
+					{
+						id: "snapshot-1",
+						instanceId: "instance-1",
+						userId: "user-1",
+						backupData: "second",
+					},
+				],
+			},
+			message: "duplicate backup snapshot identity snapshot-1",
+		},
+		{
+			name: "authoritative template identities are duplicated",
+			history: {
+				trashTemplates: [
+					{ id: "template-1", userId: "user-1" },
+					{ id: "template-1", userId: "user-2" },
+				],
+			},
+			message: "duplicate template identity template-1",
+		},
+	])("rejects $name before restore", ({ history, message }) => {
+		const unsafeBackup = {
+			version: "1.1",
+			appVersion: "3.0.0-beta",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashTemplates: [{ id: "template-1", userId: "user-1" }],
+				...history,
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(unsafeBackup)).toThrow(message);
+	});
+
+	it("does not require snapshots for completed coordination", () => {
+		const completedBackup = {
+			version: "1.1",
+			appVersion: "3.0.0-beta",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashSyncHistory: [{ id: "done", rollbackStatus: "COMPLETED" }],
+				templateDeploymentHistory: [
+					{
+						id: "legacy-rolled-back",
+						status: "PARTIAL_UNDEPLOY",
+						rolledBack: true,
+					},
+					{
+						id: "legacy-undeploy-completed",
+						status: "PARTIAL_UNDEPLOY",
+						undeployStatus: "COMPLETED",
+					},
+				],
+				trashBackups: [],
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(completedBackup)).not.toThrow();
+	});
+
+	it.each(["IN_PROGRESS", "RUNNING"])(
+		"requires recovery evidence for ordinary sync status %s",
+		(status) => {
+			const backup = {
+				version: "1.1",
+				appVersion: "3.0.0-beta",
+				timestamp: new Date().toISOString(),
+				data: {
+					users: [],
+					sessions: [],
+					serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+					serviceTags: [],
+					serviceInstanceTags: [],
+					oidcAccounts: [],
+					webAuthnCredentials: [],
+					trashSyncHistory: [
+						{
+							id: `sync-${status.toLowerCase()}`,
+							instanceId: "instance-1",
+							userId: "user-1",
+							status,
+							backupId: null,
+						},
+					],
+					trashBackups: [],
+				},
+				secrets: {
+					encryptionKey: "test-encryption-key-32-bytes-hex",
+					sessionCookieSecret: "test-session-cookie-secret",
+				},
+			};
+
+			expect(() => validateBackup(backup)).toThrow("missing backup snapshot reference");
+		},
+	);
+
+	it("requires recovery evidence for an ordinary in-progress template deployment", () => {
+		const backup = {
+			version: "1.1",
+			appVersion: "3.0.0-beta",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashTemplates: [{ id: "template-1", userId: "user-1" }],
+				templateDeploymentHistory: [
+					{
+						id: "deployment-in-progress",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						status: "IN_PROGRESS",
+						backupId: null,
+					},
+				],
+				trashBackups: [],
+			},
+			secrets: {
+				encryptionKey: "test-encryption-key-32-bytes-hex",
+				sessionCookieSecret: "test-session-cookie-secret",
+			},
+		};
+
+		expect(() => validateBackup(backup)).toThrow("missing backup snapshot reference");
+	});
+
 	it("should reject invalid backup version", () => {
 		const invalidBackup = {
 			version: "999.0",
@@ -317,6 +882,87 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		expect(() => validateBackup(invalidBackup)).toThrow(
 			"Invalid backup format: missing or invalid version",
 		);
+	});
+});
+
+describe("BackupService - legacy restore normalization", () => {
+	it("restores a v1.0 snapshotless partial undeploy as snapshot-free uncertain audit history", async () => {
+		const restoreSpy = vi.fn().mockResolvedValue(undefined);
+		vi.doMock("../backup-database.js", () => ({
+			exportDatabase: vi.fn(),
+			restoreDatabase: restoreSpy,
+		}));
+		vi.resetModules();
+		const { BackupService: IsolatedBackupService } = await import("../backup-service.js");
+		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "legacy-restore-normalize-"));
+		const secretsPath = path.join(tempDir, "secrets.json");
+		await fs.writeFile(
+			secretsPath,
+			JSON.stringify({
+				encryptionKey: "current-encryption-key",
+				sessionCookieSecret: "current-session-secret",
+			}),
+		);
+		const legacyBackup = {
+			version: "1.0",
+			appVersion: "2.23.0",
+			timestamp: new Date().toISOString(),
+			data: {
+				users: [],
+				sessions: [],
+				serviceInstances: [{ id: "instance-1", userId: "user-1" }],
+				serviceTags: [],
+				serviceInstanceTags: [],
+				oidcAccounts: [],
+				webAuthnCredentials: [],
+				trashTemplates: [{ id: "template-1", userId: "user-1" }],
+				templateDeploymentHistory: [
+					{
+						id: "legacy-partial-undeploy",
+						instanceId: "instance-1",
+						templateId: "template-1",
+						userId: "user-1",
+						status: "PARTIAL_UNDEPLOY",
+						rolledBack: false,
+						undeployStatus: "PARTIAL",
+						backupId: "missing-snapshot",
+						canRollback: true,
+					},
+				],
+				trashBackups: [],
+			},
+			secrets: {
+				encryptionKey: "restored-encryption-key",
+				sessionCookieSecret: "restored-session-secret",
+			},
+		};
+
+		try {
+			const service = new IsolatedBackupService({} as PrismaClient, secretsPath);
+			await service.restoreBackup(JSON.stringify(legacyBackup));
+
+			const restoredData = restoreSpy.mock.calls[0]?.[1];
+			expect(restoredData.templateDeploymentHistory).toEqual([
+				expect.objectContaining({
+					id: "legacy-partial-undeploy",
+					status: "UNCERTAIN",
+					undeployStatus: null,
+					backupId: null,
+					canRollback: false,
+				}),
+			]);
+			expect(() =>
+				validateBackup({
+					...legacyBackup,
+					version: "1.1",
+					data: restoredData,
+				}),
+			).not.toThrow();
+		} finally {
+			await fs.rm(tempDir, { recursive: true, force: true });
+			vi.doUnmock("../backup-database.js");
+			vi.resetModules();
+		}
 	});
 });
 

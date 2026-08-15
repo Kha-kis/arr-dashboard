@@ -27,6 +27,11 @@ import { TemplateNotFoundError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
+import {
+	assertEquivalentDeploymentMappingAuthority,
+	createDeploymentConnectionBindingCandidates,
+	createUpstreamResourceStateToken,
+} from "./deployment-target.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
 import { trashCustomFormatGroupSchema, trashCustomFormatSchema } from "./github-schemas.js";
 
@@ -56,6 +61,16 @@ import type {
 	TemplateUpdateInfo,
 	UpdateCheckResult,
 } from "./template-updater-types.js";
+
+interface AutomationDeploymentOutcome {
+	templateId: string;
+	endpointKey: string;
+	instanceId: string;
+	instanceLabel: string;
+	success: boolean;
+	status: "SUCCESS" | "FAILED" | "UNCERTAIN";
+	errors: string[];
+}
 
 // ============================================================================
 // Template Updater Class
@@ -742,6 +757,8 @@ export class TemplateUpdater {
 		processed: number;
 		successful: number;
 		failed: number;
+		uncertain: number;
+		uncertainDeployments: AutomationDeploymentOutcome[];
 		results: SyncResult[];
 		skippedForApproval: number;
 		templatesWithScoreConflicts: number;
@@ -757,6 +774,8 @@ export class TemplateUpdater {
 		const results: SyncResult[] = [];
 		let successful = 0;
 		let failed = 0;
+		let uncertain = 0;
+		const uncertainDeployments: AutomationDeploymentOutcome[] = [];
 		let templatesWithScoreConflicts = 0;
 
 		for (const template of autoSyncTemplates) {
@@ -773,23 +792,55 @@ export class TemplateUpdater {
 			results.push(result);
 
 			if (result.success) {
-				successful++;
-
 				if (result.scoreConflicts && result.scoreConflicts.length > 0) {
 					templatesWithScoreConflicts++;
 				}
 
 				try {
-					await this.deployToMappedInstances(template.templateId);
+					const deploymentOutcomes = await this.deployToMappedInstances(template.templateId);
+					const failedDeployments = deploymentOutcomes.filter(
+						(outcome) => outcome.status === "FAILED",
+					);
+					const uncertainOutcomes = deploymentOutcomes.filter(
+						(outcome) => outcome.status === "UNCERTAIN",
+					);
+					if (uncertainOutcomes.length > 0) {
+						uncertain++;
+						uncertainDeployments.push(...uncertainOutcomes);
+					}
+					if (failedDeployments.length > 0) {
+						const deploymentErrors = failedDeployments.flatMap((outcome) =>
+							outcome.errors.length > 0
+								? outcome.errors
+								: [`Auto-deploy to "${outcome.instanceLabel}" failed without an error message.`],
+						);
+						result.success = false;
+						result.errors = [
+							...(result.errors ?? []),
+							...deploymentErrors,
+							...uncertainOutcomes.flatMap((outcome) => outcome.errors),
+						];
+						failed++;
+					} else if (uncertainOutcomes.length > 0) {
+						result.success = false;
+						result.errors = [
+							...(result.errors ?? []),
+							...uncertainOutcomes.flatMap((outcome) => outcome.errors),
+						];
+					} else {
+						successful++;
+					}
 				} catch (error) {
 					log.error(
 						{ err: error, templateId: template.templateId },
 						"Auto-deploy failed for template",
 					);
-					if (!result.errors) {
-						result.errors = [];
-					}
-					result.errors.push(`Auto-deploy failed: ${getErrorMessage(error)}`);
+					result.success = false;
+					result.errors = [
+						...(result.errors ?? []),
+						`Auto-deploy failed before endpoint execution: ${getErrorMessage(error)}`,
+					];
+					failed++;
 				}
 			} else {
 				failed++;
@@ -800,6 +851,8 @@ export class TemplateUpdater {
 			processed: autoSyncTemplates.length,
 			successful,
 			failed,
+			uncertain,
+			uncertainDeployments,
 			results,
 			skippedForApproval,
 			templatesWithScoreConflicts,
@@ -810,22 +863,24 @@ export class TemplateUpdater {
 	 * Deploy template to all mapped instances
 	 * @private
 	 */
-	private async deployToMappedInstances(templateId: string): Promise<void> {
+	private async deployToMappedInstances(
+		templateId: string,
+	): Promise<AutomationDeploymentOutcome[]> {
 		if (!this.deploymentExecutor) {
-			return;
+			return [];
 		}
 
 		const template = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId },
-			select: { userId: true, name: true },
+			select: { userId: true, name: true, instanceOverrides: true },
 		});
 
 		if (!template) {
 			log.error({ templateId }, "Cannot auto-deploy: template not found");
-			return;
+			return [];
 		}
 
-		const mappings = await this.prisma.templateQualityProfileMapping.findMany({
+		const candidateMappings = await this.prisma.templateQualityProfileMapping.findMany({
 			where: {
 				templateId,
 				syncStrategy: "auto",
@@ -834,20 +889,173 @@ export class TemplateUpdater {
 				instance: true,
 			},
 		});
-
-		if (mappings.length === 0) {
-			return;
+		if (candidateMappings.length === 0) {
+			return [];
 		}
 
-		for (const mapping of mappings) {
+		let instanceOverrides: Record<string, unknown> = {};
+		let instanceOverridesError: string | undefined;
+		try {
+			const parsed = template.instanceOverrides ? JSON.parse(template.instanceOverrides) : {};
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+				throw new Error("instance overrides must be an object");
+			}
+			instanceOverrides = parsed as Record<string, unknown>;
+		} catch (error) {
+			instanceOverridesError = `Automatic deployment blocked because the template's instance overrides could not be validated: ${getErrorMessage(error)}`;
+			log.error({ err: error, templateId }, "Auto-deploy blocked by invalid instance overrides");
+		}
+
+		const endpointMappings = new Map<string, typeof candidateMappings>();
+		for (const mapping of candidateMappings) {
+			const endpointKey = this.deploymentExecutor.createEndpointMutationKey(
+				template.userId,
+				mapping.instance,
+			);
+			const grouped = endpointMappings.get(endpointKey) ?? [];
+			grouped.push(mapping);
+			endpointMappings.set(endpointKey, grouped);
+		}
+
+		const outcomes: AutomationDeploymentOutcome[] = [];
+		for (const [endpointKey, endpointGroup] of [...endpointMappings.entries()].sort(
+			([left], [right]) => left.localeCompare(right),
+		)) {
+			const mapping = [...endpointGroup].sort((left, right) =>
+				left.instanceId.localeCompare(right.instanceId),
+			)[0]!;
+			const outcomeTarget = {
+				templateId,
+				endpointKey,
+				instanceId: mapping.instanceId,
+				instanceLabel: mapping.instance.label,
+			};
+			if (instanceOverridesError) {
+				outcomes.push({
+					...outcomeTarget,
+					success: false,
+					status: "FAILED",
+					errors: [instanceOverridesError],
+				});
+				continue;
+			}
+			const staleMappings = endpointGroup.filter(
+				(candidate) =>
+					!createDeploymentConnectionBindingCandidates(candidate.instance).some(
+						(binding) =>
+							binding.instanceId === candidate.instanceId &&
+							binding.connectionGeneration === candidate.connectionGeneration &&
+							binding.connectionStateToken === candidate.connectionStateToken,
+					),
+			);
+			if (staleMappings.length > 0) {
+				const error = `Auto-deploy to "${mapping.instance.label}" blocked: one or more mappings use a stale or legacy ARR connection binding. Unlink the stale deployment mapping and review a fresh preview.`;
+				log.warn(
+					{
+						templateId,
+						endpointKey,
+						mappingIds: endpointGroup.map((candidate) => candidate.id),
+						staleMappingIds: staleMappings.map((candidate) => candidate.id),
+					},
+					"Auto-deploy blocked for endpoint with a stale or legacy ARR mapping",
+				);
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [error] });
+				continue;
+			}
+			if (new Set(endpointGroup.map((mapping) => mapping.qualityProfileId)).size > 1) {
+				const error = `Auto-deploy to "${mapping.instance.label}" blocked: equivalent ARR aliases have conflicting quality profile mappings. Unlink the conflicting deployment mapping and review a fresh preview.`;
+				log.error(
+					{
+						templateId,
+						endpointKey,
+						mappingIds: endpointGroup.map((mapping) => mapping.id),
+					},
+					"Auto-deploy blocked by conflicting alias mappings for one ARR endpoint",
+				);
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [error] });
+				continue;
+			}
+			const invalidOverrideMapping = endpointGroup.find((candidate) => {
+				const value = instanceOverrides[candidate.instanceId];
+				return (
+					value !== undefined &&
+					value !== null &&
+					(typeof value !== "object" || Array.isArray(value))
+				);
+			});
+			if (invalidOverrideMapping) {
+				const error = `Auto-deploy to "${mapping.instance.label}" blocked: instance overrides for ARR alias "${invalidOverrideMapping.instance.label}" are invalid. Review and save the template overrides before continuing.`;
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [error] });
+				continue;
+			}
+			const aliasOverrides = endpointGroup.map(
+				(candidate) => instanceOverrides[candidate.instanceId] ?? {},
+			);
+			const overrideStates = new Set(
+				aliasOverrides.map((value) => createUpstreamResourceStateToken(value)),
+			);
+			if (overrideStates.size > 1) {
+				const error = `Auto-deploy to "${mapping.instance.label}" blocked: equivalent ARR aliases have conflicting instance overrides. Reconcile the per-instance Custom Format and quality settings before continuing.`;
+				log.error(
+					{
+						templateId,
+						endpointKey,
+						mappingIds: endpointGroup.map((candidate) => candidate.id),
+					},
+					"Auto-deploy blocked by conflicting alias instance overrides",
+				);
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [error] });
+				continue;
+			}
 			try {
-				const result = await this.deploymentExecutor.deploySingleInstance(
+				assertEquivalentDeploymentMappingAuthority(endpointGroup);
+			} catch (error) {
+				const message = `Auto-deploy to "${mapping.instance.label}" blocked: ${getErrorMessage(error)}`;
+				log.error(
+					{ err: error, templateId, endpointKey },
+					"Auto-deploy blocked by conflicting alias deployment authority",
+				);
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [message] });
+				continue;
+			}
+			if (endpointGroup.length > 1) {
+				log.info(
+					{
+						templateId,
+						instanceId: mapping.instanceId,
+						deduplicatedMappingIds: endpointGroup.map((candidate) => candidate.id),
+					},
+					"Auto-deploy consolidated equivalent ARR instance mappings",
+				);
+			}
+			try {
+				const result = await this.deploymentExecutor.deploySingleInstanceFromAutomation(
 					templateId,
 					mapping.instanceId,
 					template.userId,
 				);
 
-				if (!result.success) {
+				if (result.status === "UNCERTAIN") {
+					const errors =
+						result.errors.length > 0
+							? result.errors.map(
+									(error) => `Auto-deploy to "${mapping.instance.label}" needs review: ${error}`,
+								)
+							: [
+									`Auto-deploy to "${mapping.instance.label}" needs review because ARR may have applied changes that could not be verified.`,
+								];
+					log.warn(
+						{ templateId, instanceLabel: mapping.instance.label, errors: result.errors },
+						"Auto-deploy result is uncertain and requires reconciliation",
+					);
+					outcomes.push({ ...outcomeTarget, success: false, status: "UNCERTAIN", errors });
+				} else if (!result.success) {
+					const errors =
+						result.errors.length > 0
+							? result.errors.map(
+									(error) => `Auto-deploy to "${mapping.instance.label}" failed: ${error}`,
+								)
+							: [`Auto-deploy to "${mapping.instance.label}" failed without an error message.`];
 					log.error(
 						{
 							templateId,
@@ -857,15 +1065,21 @@ export class TemplateUpdater {
 						},
 						"Failed to auto-deploy template to instance",
 					);
+					outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors });
+				} else {
+					outcomes.push({ ...outcomeTarget, success: true, status: "SUCCESS", errors: [] });
 				}
 			} catch (error) {
+				const message = `Auto-deploy to "${mapping.instance.label}" failed: ${getErrorMessage(error)}`;
 				log.error(
 					{ err: error, templateId, templateName: template.name, instanceId: mapping.instanceId },
 					"Error auto-deploying template to instance",
 				);
-				throw error;
+				outcomes.push({ ...outcomeTarget, success: false, status: "FAILED", errors: [message] });
 			}
 		}
+
+		return outcomes;
 	}
 
 	/**

@@ -194,12 +194,13 @@ export const DeploymentPreviewModal = ({
 	const deploymentMutation = useExecuteDeployment();
 
 	const handleDeploy = () => {
-		if (!templateId || !instanceId) return;
+		if (!templateId || !instanceId || !data?.data.executionToken) return;
 
 		deploymentMutation.mutate(
 			{
 				templateId,
 				instanceId,
+				executionToken: data.data.executionToken,
 				syncStrategy,
 				conflictResolutions:
 					Object.keys(conflictResolutions).length > 0 ? conflictResolutions : undefined,
@@ -215,8 +216,9 @@ export const DeploymentPreviewModal = ({
 		);
 	};
 
-	// Derive error message from mutation state
-	const deploymentError = deploymentMutation.isError
+	const deploymentUncertain = deploymentMutation.data?.result?.status === "UNCERTAIN";
+	// Derive terminal message from mutation state
+	const deploymentMessage = deploymentMutation.isError
 		? getErrorMessage(deploymentMutation.error, "Failed to execute deployment")
 		: deploymentMutation.data && !deploymentMutation.data.success
 			? Array.isArray(deploymentMutation.data.result?.errors) &&
@@ -699,8 +701,43 @@ export const DeploymentPreviewModal = ({
 							</div>
 						)}
 
+						{/* Previously Managed Custom Formats */}
+						{data.data.orphanedCustomFormats.length > 0 && (
+							<div className="space-y-3">
+								<h3 className="text-sm font-medium text-foreground">
+									Managed Custom Formats Reset to Zero ({data.data.orphanedCustomFormats.length})
+								</h3>
+								<p className="text-xs text-muted-foreground">
+									These formats are no longer in the template. Deployment will reset their scores to
+									0.
+								</p>
+								<div className="max-h-48 space-y-2 overflow-y-auto">
+									{data.data.orphanedCustomFormats.map((orphan) => (
+										<div
+											key={orphan.instanceId}
+											className="flex items-center justify-between gap-4 rounded-xl border p-3"
+											style={{
+												backgroundColor: SEMANTIC_COLORS.warning.bg,
+												borderColor: SEMANTIC_COLORS.warning.border,
+											}}
+										>
+											<span className="min-w-0 truncate text-sm font-medium text-foreground">
+												{orphan.name}
+											</span>
+											<span
+												className="shrink-0 font-mono text-sm"
+												style={{ color: SEMANTIC_COLORS.warning.text }}
+											>
+												{orphan.score} → 0
+											</span>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+
 						{/* No Changes Message */}
-						{data.data.summary.totalItems === 0 && (
+						{data.data.summary.totalItems === 0 && data.data.orphanedCustomFormats.length === 0 && (
 							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-8 text-center">
 								<CheckCircle2
 									className="h-12 w-12 mx-auto mb-3"
@@ -717,21 +754,29 @@ export const DeploymentPreviewModal = ({
 			</LegacyDialogContent>
 
 			<LegacyDialogFooter>
-				{deploymentError && (
+				{deploymentMessage && (
 					<div
 						className="flex items-start gap-2 rounded-xl p-3 mr-auto"
 						style={{
-							backgroundColor: SEMANTIC_COLORS.error.bg,
-							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+							backgroundColor: deploymentUncertain
+								? SEMANTIC_COLORS.warning.bg
+								: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${deploymentUncertain ? SEMANTIC_COLORS.warning.border : SEMANTIC_COLORS.error.border}`,
 						}}
 					>
-						<AlertCircle
+						<AlertTriangle
 							className="h-5 w-5 mt-0.5 shrink-0"
-							style={{ color: SEMANTIC_COLORS.error.from }}
+							style={{
+								color: deploymentUncertain
+									? SEMANTIC_COLORS.warning.from
+									: SEMANTIC_COLORS.error.from,
+							}}
 						/>
 						<div>
-							<p className="text-sm font-medium text-foreground">Deployment Failed</p>
-							<p className="text-sm text-muted-foreground mt-1">{deploymentError}</p>
+							<p className="text-sm font-medium text-foreground">
+								{deploymentUncertain ? "Deployment Result Needs Review" : "Deployment Failed"}
+							</p>
+							<p className="text-sm text-muted-foreground mt-1">{deploymentMessage}</p>
 						</div>
 					</div>
 				)}

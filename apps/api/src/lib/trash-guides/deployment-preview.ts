@@ -11,8 +11,9 @@ import type {
 	CustomFormatSpecification,
 	DeploymentAction,
 	DeploymentPreview,
-	TrashConflictGroup,
+	NamingSelectedPresets,
 	TemplateCustomFormat,
+	TrashConflictGroup,
 	UnmatchedCustomFormat,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
@@ -22,7 +23,36 @@ import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { AppValidationError, InstanceNotFoundError, TemplateNotFoundError } from "../errors.js";
 import { createCacheManager } from "./cache-manager.js";
+import { buildCustomFormatIdentityIndex } from "./cf-field-utils.js";
 import { checkMutualExclusions } from "./conflict-checker.js";
+import {
+	type ManagedCustomFormatIdentity,
+	readPersistedManagedCustomFormatIdentities,
+	resolveOrphanedManagedCustomFormats,
+} from "./deployment-managed-format-state.js";
+import { prepareNamingDeployment } from "./deployment-naming-state.js";
+import {
+	assertDeploymentTargetOwnership,
+	assertEquivalentDeploymentMappingAuthority,
+	createDeploymentConnectionBindingCandidates,
+	createDeploymentConnectionStateToken,
+	createDeploymentMappingAuthorityState,
+	createDeploymentStateToken,
+	getEquivalentServiceInstanceIds,
+	isCurrentDeploymentConnectionMapping,
+	isLegacyDeploymentConnectionMapping,
+	isVerifiedClonedProfileSourceConnection,
+	resolveDeploymentTarget,
+} from "./deployment-target.js";
+
+function createCredentialIdentity(
+	factory: ArrClientFactory,
+	instance: Parameters<ArrClientFactory["createConnectionCredentialIdentity"]>[0],
+): string {
+	return typeof factory.createConnectionCredentialIdentity === "function"
+		? factory.createConnectionCredentialIdentity(instance)
+		: createDeploymentConnectionStateToken(instance);
+}
 
 // SDK type aliases
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -59,9 +89,15 @@ interface InstanceOverridesMap {
  */
 interface ParsedTemplateConfig {
 	customFormats?: TemplateCustomFormat[];
+	completeQualityProfile?: {
+		sourceInstanceId?: string;
+		sourceConnectionStateToken?: string;
+		sourceProfileId?: number;
+	};
 	qualityProfile?: {
 		trash_score_set?: string;
 	};
+	namingSelection?: NamingSelectedPresets;
 }
 
 // ============================================================================
@@ -372,83 +408,262 @@ export class DeploymentPreviewService {
 					scoreOverride: effectiveScore,
 				};
 			});
+		const warnings: string[] = [];
+
+		if (!instanceReachable) {
+			const deploymentItems: CustomFormatDeploymentItem[] = templateCFs.map((cf) => ({
+				trashId: cf.trashId,
+				name: cf.name,
+				action: "skip",
+				defaultScore: cf.defaultScore,
+				instanceOverrideScore: cf.instanceOverrideScore,
+				scoreOverride: cf.scoreOverride,
+				templateData: cf.originalConfig,
+				conflicts: [],
+				hasConflicts: false,
+			}));
+			return {
+				templateId,
+				templateName: template.name,
+				instanceId,
+				instanceLabel: instance.label,
+				instanceServiceType: instance.service.toUpperCase() as "RADARR" | "SONARR",
+				summary: {
+					totalItems: deploymentItems.length,
+					newCustomFormats: 0,
+					updatedCustomFormats: 0,
+					deletedCustomFormats: 0,
+					skippedCustomFormats: skipCount + deploymentItems.length,
+					totalConflicts: 0,
+					unresolvedConflicts: 0,
+					unmatchedCustomFormats: 0,
+					orphanedCustomFormats: 0,
+				},
+				customFormats: deploymentItems,
+				unmatchedCustomFormats: [],
+				orphanedCustomFormats: [],
+				canDeploy: false,
+				requiresConflictResolution: false,
+				instanceReachable: false,
+				instanceVersion,
+				executionToken: "",
+				warnings: ["Instance is unreachable. Verify the service connection before deploying."],
+			};
+		}
+
+		const namingState = templateConfig.namingSelection
+			? await prepareNamingDeployment(
+					this.prisma,
+					this.clientFactory,
+					instance,
+					templateConfig.namingSelection,
+				)
+			: undefined;
+		if (namingState?.changedFields.length) {
+			warnings.push(`Naming settings will update: ${namingState.changedFields.join(", ")}.`);
+		}
 
 		// Build instance CF maps for matching
 		// We need both trashId-based matching (ideal) and name-based matching (fallback)
 		// since Radarr doesn't natively store trash_id
-		const instanceCFByTrashId = new Map<string, SdkCustomFormat>();
-		const instanceCFByName = new Map<string, SdkCustomFormat>();
-
-		for (const instanceCF of instanceCustomFormats) {
-			// Try to extract trash_id from specifications (rare - Radarr doesn't store this)
-			const trashId = this.extractTrashIdFromSpecs(instanceCF);
-			if (trashId) {
-				instanceCFByTrashId.set(trashId, instanceCF);
-			}
-			// Always map by name for fallback matching
-			if (instanceCF.name) {
-				instanceCFByName.set(instanceCF.name, instanceCF);
-			}
+		const customFormatIndex = buildCustomFormatIdentityIndex(instanceCustomFormats);
+		if (customFormatIndex.collisions.length > 0) {
+			throw new AppValidationError(
+				`ARR returned ambiguous Custom Format identities (${customFormatIndex.collisions.join(", ")}). Resolve the duplicates before previewing this deployment.`,
+			);
 		}
-
-		// Initialize warnings array early so we can add warnings during profile matching
-		const warnings: string[] = [];
+		const instanceCFByTrashId = customFormatIndex.byTrashId;
+		const instanceCFByName = customFormatIndex.byName;
 
 		// Build map of CF scores from the target quality profile in the instance
 		// This allows us to detect score conflicts (when instance score differs from template)
 		// Prefer matching by quality profile ID from mapping, fall back to name-based matching
 		const instanceCFScoreMap = new Map<number, number>(); // CF ID -> score
 		let targetProfile: (typeof instanceQualityProfiles)[0] | undefined;
-
-		// Strategy 1: Try to find quality profile by ID from TemplateQualityProfileMapping
-		// This is the most reliable method as it uses the actual instance profile ID
-		const qualityProfileMapping = await this.prisma.templateQualityProfileMapping.findFirst({
-			where: {
-				templateId,
-				instanceId,
+		const serviceAliases = await this.prisma.serviceInstance.findMany({
+			where: { userId, service: instance.service },
+			select: {
+				id: true,
+				service: true,
+				baseUrl: true,
+				encryptedApiKey: true,
+				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
+				connectionGeneration: true,
 			},
+		});
+		const aliases = serviceAliases.some((alias) => alias.id === instance.id)
+			? serviceAliases
+			: [...serviceAliases, instance];
+		const credentialIdentity = createCredentialIdentity(this.clientFactory, instance);
+		const equivalentInstanceIds = getEquivalentServiceInstanceIds(
+			aliases.map((alias) => ({
+				...alias,
+				credentialIdentity: createCredentialIdentity(this.clientFactory, alias),
+			})),
+			{ ...instance, credentialIdentity },
+		);
+		if (!equivalentInstanceIds.includes(instanceId)) equivalentInstanceIds.push(instanceId);
+		const connectionBindings = aliases
+			.filter((alias) => equivalentInstanceIds.includes(alias.id))
+			.flatMap((alias) =>
+				createDeploymentConnectionBindingCandidates(
+					alias,
+					createCredentialIdentity(this.clientFactory, alias),
+				),
+			);
+		const qualityProfileMappings = await this.prisma.templateQualityProfileMapping.findMany({
+			where: { instanceId: { in: equivalentInstanceIds } },
 			orderBy: { updatedAt: "desc" },
 		});
-
-		if (qualityProfileMapping) {
-			targetProfile = instanceQualityProfiles.find(
-				(p) => p.id === qualityProfileMapping.qualityProfileId,
+		if (
+			qualityProfileMappings.some(
+				(mapping) =>
+					!isLegacyDeploymentConnectionMapping(mapping) &&
+					!isCurrentDeploymentConnectionMapping(mapping, connectionBindings),
+			)
+		) {
+			throw new AppValidationError(
+				"This ARR endpoint has a deployment mapping bound to an older connection. Unlink or reconcile the stale mapping before previewing another deployment.",
 			);
-			if (targetProfile) {
-				// Successfully matched by ID - this is the preferred method
-				for (const formatItem of targetProfile.formatItems || []) {
-					instanceCFScoreMap.set(formatItem.format, formatItem.score);
-				}
-			}
 		}
-
-		// Strategy 2: Fall back to name-based matching if ID-based matching failed
-		if (!targetProfile) {
-			// Try sourceQualityProfileName first (more reliable than template.name)
-			const profileNameToMatch =
-				template.sourceQualityProfileName || template.name || "TRaSH Guides HD/UHD";
-			targetProfile = instanceQualityProfiles.find((p) => p.name === profileNameToMatch);
-
-			if (targetProfile) {
-				// Profile recovered by name — ID changed (e.g., profile was recreated)
-				if (qualityProfileMapping) {
-					warnings.push(
-						`Quality profile "${qualityProfileMapping.qualityProfileName}" (ID: ${qualityProfileMapping.qualityProfileId}) was recreated in the instance (now ID: ${targetProfile.id}). The stored mapping will be updated on deploy.`,
-					);
-				} else {
-					warnings.push(
-						`Quality profile matched by name ("${profileNameToMatch}") rather than stored ID. Score conflict detection is based on name match.`,
-					);
-				}
-				for (const formatItem of targetProfile.formatItems || []) {
-					instanceCFScoreMap.set(formatItem.format, formatItem.score);
-				}
-			} else {
-				// No profile found at all — deployment will create the profile
-				warnings.push(
-					`Quality profile "${profileNameToMatch}" not found in instance. Deploying will create it with the template's quality settings and Custom Format scores.`,
+		const templateMappings = qualityProfileMappings.filter(
+			(mapping) => mapping.templateId === templateId,
+		);
+		if (new Set(templateMappings.map((mapping) => mapping.qualityProfileId)).size > 1) {
+			throw new AppValidationError(
+				"This template has conflicting quality-profile mappings for duplicate records of the same ARR instance. Unlink the stale deployment before continuing.",
+			);
+		}
+		assertEquivalentDeploymentMappingAuthority(templateMappings);
+		const qualityProfileMapping =
+			templateMappings.find((mapping) => mapping.instanceId === instanceId) ?? templateMappings[0];
+		const selectedMappingIsLegacy = Boolean(
+			qualityProfileMapping && isLegacyDeploymentConnectionMapping(qualityProfileMapping),
+		);
+		if (selectedMappingIsLegacy) {
+			warnings.push(
+				"This 2.x deployment mapping is not yet bound to a verified ARR connection. Executing this exact preview will bind it to the current connection only after the reviewed deployment succeeds.",
+			);
+		}
+		const isVerifiedSourceInstance = qualityProfileMapping
+			? false
+			: isVerifiedClonedProfileSourceConnection({
+					sourceInstanceId: templateConfig.completeQualityProfile?.sourceInstanceId,
+					sourceConnectionStateToken:
+						templateConfig.completeQualityProfile?.sourceConnectionStateToken,
+					equivalentInstanceIds,
+					sourceInstance: aliases.find(
+						(alias) => alias.id === templateConfig.completeQualityProfile?.sourceInstanceId,
+					),
+				});
+		const resolvedTarget = resolveDeploymentTarget({
+			profiles: instanceQualityProfiles,
+			mapping: qualityProfileMapping,
+			sourceProfileId: templateConfig.completeQualityProfile?.sourceProfileId,
+			isSourceInstance: isVerifiedSourceInstance,
+			sourceProfileName: template.sourceQualityProfileName,
+			templateName: template.name,
+		});
+		assertDeploymentTargetOwnership({
+			target: resolvedTarget,
+			templateId,
+			existingMappings: qualityProfileMappings,
+		});
+		if (resolvedTarget.profile?.id !== undefined) {
+			const fullProfile = await client.qualityProfile.getById(resolvedTarget.profile.id);
+			if (fullProfile.id !== resolvedTarget.profile.id) {
+				throw new AppValidationError(
+					"The target quality profile identity changed while the preview was loading.",
 				);
 			}
+			resolvedTarget.profile = fullProfile;
+		}
+		targetProfile = resolvedTarget.profile;
+		const savedScoreOverrides = new Map<number, number>();
+		if (targetProfile?.id !== undefined) {
+			const savedOverrides = await this.prisma.instanceQualityProfileOverride.findMany({
+				where: {
+					userId,
+					status: "APPLIED",
+					qualityProfileId: targetProfile.id,
+					instanceId: { in: equivalentInstanceIds },
+				},
+			});
+			for (const override of savedOverrides) {
+				const currentOverride = isCurrentDeploymentConnectionMapping(override, connectionBindings);
+				const liveScore = targetProfile.formatItems?.find(
+					(item: { format?: number; score?: number }) => item.format === override.customFormatId,
+				)?.score;
+				const verifiedLegacyOverride =
+					isLegacyDeploymentConnectionMapping(override) && liveScore === override.score;
+				if (!currentOverride && !verifiedLegacyOverride) {
+					throw new AppValidationError(
+						"This ARR endpoint has an unverified saved score override. Restore its recorded score on the current profile or remove the override before deploying.",
+					);
+				}
+				const existingScore = savedScoreOverrides.get(override.customFormatId);
+				if (existingScore !== undefined && existingScore !== override.score) {
+					throw new AppValidationError(
+						"Duplicate records for this ARR instance have conflicting saved Custom Format score overrides. Resolve the duplicate instance settings before deploying.",
+					);
+				}
+				savedScoreOverrides.set(override.customFormatId, override.score);
+			}
+		}
+		let previousManagedFormats: ManagedCustomFormatIdentity[];
+		try {
+			previousManagedFormats =
+				selectedMappingIsLegacy && !qualityProfileMapping?.managedCustomFormatsCaptured
+					? []
+					: readPersistedManagedCustomFormatIdentities(qualityProfileMapping);
+		} catch {
+			throw new AppValidationError(
+				"The previous deployment has invalid Custom Format identity metadata and cannot be previewed safely.",
+			);
+		}
+		const orphanResolution = await resolveOrphanedManagedCustomFormats(
+			client,
+			templateCFs,
+			previousManagedFormats,
+			resolvedTarget.profile,
+		);
+		warnings.push(...orphanResolution.warnings);
+		const currentProfileScores = new Map<number, number>(
+			(targetProfile?.formatItems ?? []).flatMap(
+				(item: { format?: number; score?: number }): Array<[number, number]> =>
+					typeof item.format === "number" && typeof item.score === "number"
+						? [[item.format, item.score]]
+						: [],
+			),
+		);
+		const orphanedCustomFormats = orphanResolution.formats.map((format) => ({
+			instanceId: format.resourceId,
+			name: format.name,
+			score:
+				currentProfileScores.get(format.resourceId) ??
+				savedScoreOverrides.get(format.resourceId) ??
+				0,
+		}));
+
+		if (targetProfile) {
+			if (resolvedTarget.matchedBy !== "mapping_id") {
+				warnings.push(
+					qualityProfileMapping
+						? `Quality profile "${qualityProfileMapping.qualityProfileName}" (ID: ${qualityProfileMapping.qualityProfileId}) was recovered as "${resolvedTarget.profileName}" (ID: ${targetProfile.id}). The stored mapping will be updated on deploy.`
+						: resolvedTarget.matchedBy === "source_id"
+							? `Quality profile matched by cloned source ID ("${resolvedTarget.profileName}", ID: ${targetProfile.id}) rather than a stored deployment mapping.`
+							: `Quality profile matched by name ("${resolvedTarget.profileName}") rather than stored ID. Score conflict detection is based on name match.`,
+				);
+			}
+			for (const formatItem of targetProfile.formatItems || []) {
+				instanceCFScoreMap.set(formatItem.format, formatItem.score);
+			}
+		} else {
+			warnings.push(
+				`Quality profile "${resolvedTarget.profileName}" not found in instance. Deploying will create it with the template's quality settings and Custom Format scores.`,
+			);
 		}
 
 		// Track which instance CFs are matched by template CFs
@@ -510,7 +725,10 @@ export class DeploymentPreviewService {
 				// score for this CF than what the template expects
 				if (instanceCF.id !== undefined && targetProfile) {
 					const instanceScore = instanceCFScoreMap.get(instanceCF.id);
-					const expectedScore = calculateExpectedScore(templateCF, scoreSet);
+					const expectedScore =
+						savedScoreOverrides.get(instanceCF.id) ??
+						templateCF.instanceOverrideScore ??
+						calculateExpectedScore(templateCF, scoreSet);
 
 					// Only flag as conflict if instance has a score AND it differs from template
 					// (instanceScore of 0 is valid and should be compared)
@@ -540,8 +758,14 @@ export class DeploymentPreviewService {
 				name: templateCF.name,
 				action,
 				defaultScore: templateCF.defaultScore,
-				instanceOverrideScore: templateCF.instanceOverrideScore,
-				scoreOverride: templateCF.scoreOverride ?? 0,
+				instanceOverrideScore:
+					instanceCF?.id !== undefined
+						? (savedScoreOverrides.get(instanceCF.id) ?? templateCF.instanceOverrideScore)
+						: templateCF.instanceOverrideScore,
+				scoreOverride:
+					instanceCF?.id !== undefined
+						? (savedScoreOverrides.get(instanceCF.id) ?? templateCF.scoreOverride ?? 0)
+						: (templateCF.scoreOverride ?? 0),
 				templateData: templateCF.originalConfig,
 				instanceData: instanceCF,
 				conflicts,
@@ -610,7 +834,7 @@ export class DeploymentPreviewService {
 			instanceServiceType: instance.service.toUpperCase() as "RADARR" | "SONARR",
 
 			summary: {
-				totalItems: deploymentItems.length,
+				totalItems: deploymentItems.length + orphanedCustomFormats.length,
 				newCustomFormats: newCount,
 				updatedCustomFormats: updateCount,
 				deletedCustomFormats: 0, // Not implementing deletion for safety
@@ -618,57 +842,54 @@ export class DeploymentPreviewService {
 				totalConflicts,
 				unresolvedConflicts,
 				unmatchedCustomFormats: unmatchedCFs.length,
+				orphanedCustomFormats: orphanedCustomFormats.length,
 			},
 
 			customFormats: deploymentItems,
 			unmatchedCustomFormats: unmatchedCFs,
+			orphanedCustomFormats,
 
 			canDeploy,
 			requiresConflictResolution,
 			instanceReachable,
 			instanceVersion,
+			executionToken: createDeploymentStateToken({
+				template: {
+					id: template.id,
+					name: template.name,
+					configData: template.configData,
+					instanceOverrides: template.instanceOverrides,
+					sourceQualityProfileName: template.sourceQualityProfileName,
+				},
+				instanceId,
+				connection: {
+					service: instance.service,
+					baseUrl: instance.baseUrl,
+					credentialIdentity: [
+						instance.encryptedApiKey,
+						instance.encryptionIv,
+						instance.encryptedHttpAuthCredentials,
+						instance.httpAuthEncryptionIv,
+					].join(":"),
+				},
+				target: resolvedTarget,
+				customFormats: instanceCustomFormats,
+				namingConfig: namingState?.currentConfig,
+				namingPayload: namingState?.mergedConfig,
+				mappingAuthority: createDeploymentMappingAuthorityState(templateMappings),
+				savedScoreOverrides: [...savedScoreOverrides.entries()].sort(
+					([left], [right]) => left - right,
+				),
+				orphanedFormatScoreChanges: orphanedCustomFormats,
+			}),
+			namingChanges: namingState?.changedFields,
+			existingSyncStrategy: qualityProfileMapping?.syncStrategy as
+				| "auto"
+				| "manual"
+				| "notify"
+				| undefined,
 			warnings,
 		};
-	}
-
-	/**
-	 * Extract trash_id from Custom Format specifications only
-	 * Returns null if no trash_id found (Radarr doesn't natively store trash_id)
-	 * Name-based matching is handled separately in generatePreview
-	 */
-	private extractTrashIdFromSpecs(cf: SdkCustomFormat): string | null {
-		// Strategy 1: Check specifications for trash_id in fields
-		// TRaSH Guides may store metadata in specification fields (rare)
-		for (const spec of cf.specifications || []) {
-			if (spec.fields) {
-				// Handle both array format (Radarr API) and object format
-				if (Array.isArray(spec.fields)) {
-					const trashIdField = spec.fields.find((f) => f.name === "trash_id");
-					if (trashIdField) {
-						return String(trashIdField.value).toLowerCase();
-					}
-				} else if (typeof spec.fields === "object") {
-					// Check common field patterns for trash_id
-					const fields = spec.fields as Record<string, unknown>;
-					const trashIdValue = fields.trash_id || fields.trashId;
-					if (typeof trashIdValue === "string" && trashIdValue.length > 0) {
-						return trashIdValue.toLowerCase();
-					}
-				}
-			}
-		}
-
-		// Strategy 2: Check for TRaSH ID pattern in CF name
-		// TRaSH Guides CFs may have format: "CF Name [trash_id]" or similar
-		if (cf.name) {
-			const trashIdMatch = cf.name.match(/\[([a-f0-9-]{36})\]$/i);
-			if (trashIdMatch?.[1]) {
-				return trashIdMatch[1].toLowerCase();
-			}
-		}
-
-		// No trash_id found - name-based matching is handled separately
-		return null;
 	}
 }
 

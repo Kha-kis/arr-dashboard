@@ -23,6 +23,27 @@ interface DeploymentHistoryDetailsModalProps {
 	onUndeploy?: (historyId: string) => void;
 }
 
+type AppliedConfig = {
+	name: string;
+	action: string;
+};
+
+type AppliedConfigGroupKey = "custom_format" | "quality_profile" | "naming" | "other";
+
+const APPLIED_CONFIG_GROUPS: Array<{ key: AppliedConfigGroupKey; label: string }> = [
+	{ key: "custom_format", label: "Applied Custom Formats" },
+	{ key: "quality_profile", label: "Applied Quality Profiles" },
+	{ key: "naming", label: "Applied Naming Configurations" },
+	{ key: "other", label: "Applied Configurations" },
+];
+
+function getAppliedConfigGroup(config: AppliedConfig): AppliedConfigGroupKey {
+	const type = Reflect.get(config, "type");
+	if (type === undefined || type === "custom_format") return "custom_format";
+	if (type === "quality_profile" || type === "naming") return type;
+	return "other";
+}
+
 export function DeploymentHistoryDetailsModal({
 	historyId,
 	onClose,
@@ -31,6 +52,12 @@ export function DeploymentHistoryDetailsModal({
 	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const { data, isLoading, error } = useDeploymentHistoryDetail(historyId);
+	const appliedConfigGroups = APPLIED_CONFIG_GROUPS.map((group) => ({
+		...group,
+		configs: (data?.data.appliedConfigs ?? []).filter(
+			(config) => getAppliedConfigGroup(config) === group.key,
+		),
+	}));
 
 	return (
 		<LegacyDialog open={true} onOpenChange={onClose} size="lg">
@@ -180,47 +207,16 @@ export function DeploymentHistoryDetailsModal({
 							</div>
 						</div>
 
-						{/* Applied Configs Section */}
-						{data.data.appliedConfigs && data.data.appliedConfigs.length > 0 && (
-							<div className="space-y-3">
-								<h3 className="text-sm font-medium text-foreground">
-									Applied Custom Formats ({data.data.appliedConfigs.length})
-								</h3>
-								<div
-									className="rounded-xl divide-y max-h-48 overflow-y-auto"
-									style={{
-										backgroundColor: SEMANTIC_COLORS.success.bg,
-										border: `1px solid ${SEMANTIC_COLORS.success.border}`,
-									}}
-								>
-									{data.data.appliedConfigs.map((config, index) => (
-										<div
-											key={index}
-											className="px-3 py-2 text-sm flex items-center justify-between"
-											style={{
-												borderColor: SEMANTIC_COLORS.success.border,
-											}}
-										>
-											<div className="flex items-center gap-2">
-												<CheckCircle2
-													className="h-3.5 w-3.5"
-													style={{ color: SEMANTIC_COLORS.success.from }}
-												/>
-												<span className="text-foreground">{config.name}</span>
-											</div>
-											<span
-												className="px-2 py-0.5 rounded-full text-xs font-medium capitalize"
-												style={{
-													backgroundColor: `${SEMANTIC_COLORS.success.from}15`,
-													color: SEMANTIC_COLORS.success.text,
-												}}
-											>
-												{config.action}
-											</span>
-										</div>
-									))}
-								</div>
-							</div>
+						{/* Applied Configs Sections */}
+						{appliedConfigGroups.map(
+							(group) =>
+								group.configs.length > 0 && (
+									<AppliedConfigSection
+										key={group.key}
+										label={group.label}
+										configs={group.configs}
+									/>
+								),
 						)}
 
 						{/* Failed Configs Section */}
@@ -236,9 +232,9 @@ export function DeploymentHistoryDetailsModal({
 										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 									}}
 								>
-									{data.data.failedConfigs.map((config, index) => (
+									{data.data.failedConfigs.map((config) => (
 										<div
-											key={index}
+											key={`${config.name}-${config.error ?? "unknown"}`}
 											className="px-3 py-2 text-sm"
 											style={{
 												borderColor: SEMANTIC_COLORS.error.border,
@@ -365,6 +361,50 @@ function InfoField({ label, value }: { label: string; value: string }) {
 		<div>
 			<div className="text-xs text-muted-foreground mb-1">{label}</div>
 			<div className="text-sm font-medium text-foreground">{value}</div>
+		</div>
+	);
+}
+
+function AppliedConfigSection({ label, configs }: { label: string; configs: AppliedConfig[] }) {
+	return (
+		<div className="space-y-3">
+			<h3 className="text-sm font-medium text-foreground">
+				{label} ({configs.length})
+			</h3>
+			<div
+				className="rounded-xl divide-y max-h-48 overflow-y-auto"
+				style={{
+					backgroundColor: SEMANTIC_COLORS.success.bg,
+					border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+				}}
+			>
+				{configs.map((config) => (
+					<div
+						key={`${config.name}-${config.action}`}
+						className="px-3 py-2 text-sm flex items-center justify-between"
+						style={{
+							borderColor: SEMANTIC_COLORS.success.border,
+						}}
+					>
+						<div className="flex items-center gap-2">
+							<CheckCircle2
+								className="h-3.5 w-3.5"
+								style={{ color: SEMANTIC_COLORS.success.from }}
+							/>
+							<span className="text-foreground">{config.name}</span>
+						</div>
+						<span
+							className="px-2 py-0.5 rounded-full text-xs font-medium capitalize"
+							style={{
+								backgroundColor: `${SEMANTIC_COLORS.success.from}15`,
+								color: SEMANTIC_COLORS.success.text,
+							}}
+						>
+							{config.action}
+						</span>
+					</div>
+				))}
+			</div>
 		</div>
 	);
 }

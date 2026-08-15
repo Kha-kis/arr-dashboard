@@ -7,12 +7,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
+	type AcknowledgeSyncReviewResult,
+	acknowledgeSyncReview,
 	createSyncProgressStream,
 	executeSync,
+	fetchSyncsNeedingReview,
 	getSyncProgress,
 	type SyncExecuteRequest,
 	type SyncProgress,
 	type SyncResult,
+	type SyncReviewNeededResponse,
 	type SyncValidationRequest,
 	type ValidationResult,
 	validateSync,
@@ -234,6 +238,26 @@ export function useExecuteSync() {
 	});
 }
 
+export function useSyncsNeedingReview() {
+	return useQuery<SyncReviewNeededResponse, Error>({
+		queryKey: trashGuidesKeys.sync.reviewNeeded,
+		queryFn: fetchSyncsNeedingReview,
+	});
+}
+
+export function useAcknowledgeSyncReview() {
+	const queryClient = useQueryClient();
+
+	return useMutation<AcknowledgeSyncReviewResult, Error, string>({
+		mutationFn: acknowledgeSyncReview,
+		onSuccess: async () => {
+			await queryClient.invalidateQueries({
+				queryKey: trashGuidesKeys.sync.reviewNeeded,
+			});
+		},
+	});
+}
+
 // ============================================================================
 // Progress Streaming Hook with SSE and Polling Fallback
 // ============================================================================
@@ -282,7 +306,11 @@ export function useSyncProgress(syncId: string | null, enabled = true) {
 		refetchInterval: (query) => {
 			const data = query.state.data;
 			// Stop polling when completed or failed
-			if (data?.status === "COMPLETED" || data?.status === "FAILED") {
+			if (
+				data?.status === "COMPLETED" ||
+				data?.status === "FAILED" ||
+				data?.status === "UNCERTAIN"
+			) {
 				return false;
 			}
 			return 2000; // Poll every 2 seconds

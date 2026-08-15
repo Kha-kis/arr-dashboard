@@ -40,6 +40,7 @@ export const TRASH_SYNC_STATUS = {
 	SUCCESS: "SUCCESS",
 	PARTIAL_SUCCESS: "PARTIAL_SUCCESS",
 	FAILED: "FAILED",
+	UNCERTAIN: "UNCERTAIN",
 	IN_PROGRESS: "IN_PROGRESS",
 	CANCELLED: "CANCELLED",
 } as const;
@@ -757,6 +758,7 @@ export interface CompleteQualityProfile {
 	// Source information
 	sourceInstanceId: string; // Instance this was imported from
 	sourceInstanceLabel?: string; // Friendly name of source instance
+	sourceConnectionStateToken?: string; // Exact ARR connection reviewed during cloning
 	sourceProfileId: number; // *arr quality profile ID
 	sourceProfileName: string; // Original profile name
 	importedAt: string; // When it was imported
@@ -1484,6 +1486,8 @@ export interface DeploymentPreview {
 	instanceId: string;
 	instanceLabel: string;
 	instanceServiceType: "RADARR" | "SONARR";
+	/** Opaque 64-character token binding execution to this exact preview state. */
+	executionToken: string;
 
 	// Deployment statistics
 	summary: {
@@ -1495,6 +1499,7 @@ export interface DeploymentPreview {
 		totalConflicts: number;
 		unresolvedConflicts: number;
 		unmatchedCustomFormats: number; // CFs in instance that couldn't be matched to a trash_id
+		orphanedCustomFormats: number;
 	};
 
 	// Deployment items
@@ -1502,6 +1507,16 @@ export interface DeploymentPreview {
 
 	// Unmatched CFs in instance (couldn't extract trash_id)
 	unmatchedCustomFormats: UnmatchedCustomFormat[];
+
+	// Previously managed CFs no longer present in the template
+	orphanedCustomFormats: Array<{
+		instanceId: number;
+		name: string;
+		score: number;
+	}>;
+
+	// Naming fields whose deployed values differ from the instance
+	namingChanges?: string[];
 
 	// Instance state
 	canDeploy: boolean; // False if instance unreachable or conflicts unresolved

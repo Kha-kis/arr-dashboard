@@ -5,6 +5,7 @@
  */
 
 import { apiRequest } from "../base";
+import type { DeploymentPreview } from "./types";
 
 // ============================================================================
 // Types
@@ -27,12 +28,15 @@ export interface ValidationResult {
 	conflicts: ConflictInfo[];
 	errors: string[];
 	warnings: string[];
+	executionToken?: string;
+	preview?: DeploymentPreview;
 }
 
 export interface SyncExecuteRequest {
 	templateId: string;
 	instanceId: string;
-	syncType: "MANUAL" | "SCHEDULED";
+	syncType: "MANUAL";
+	executionToken: string;
 	conflictResolutions?: Record<string, "REPLACE" | "SKIP">;
 }
 
@@ -45,7 +49,7 @@ export interface SyncError {
 export interface SyncResult {
 	syncId: string;
 	success: boolean;
-	status: "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
+	status: "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED" | "UNCERTAIN";
 	duration: number;
 	configsApplied: number;
 	configsFailed: number;
@@ -60,7 +64,8 @@ export type SyncProgressStatus =
 	| "BACKING_UP"
 	| "APPLYING"
 	| "COMPLETED"
-	| "FAILED";
+	| "FAILED"
+	| "UNCERTAIN";
 
 export interface SyncProgress {
 	syncId: string;
@@ -71,6 +76,26 @@ export interface SyncProgress {
 	appliedConfigs: number;
 	failedConfigs: number;
 	errors: SyncError[];
+}
+
+export interface SyncReviewNeeded {
+	id: string;
+	templateId: string;
+	templateName: string;
+	instanceId: string;
+	instanceName: string;
+	startedAt: string;
+	errorLog: string | null;
+}
+
+export interface SyncReviewNeededResponse {
+	syncs: SyncReviewNeeded[];
+}
+
+export interface AcknowledgeSyncReviewResult {
+	success: boolean;
+	status: "FAILED";
+	message: string;
 }
 
 // ============================================================================
@@ -110,6 +135,21 @@ export async function getSyncProgress(syncId: string): Promise<SyncProgress> {
 	return await apiRequest<SyncProgress>(`/api/trash-guides/sync/${syncId}/progress`);
 }
 
+export async function fetchSyncsNeedingReview(): Promise<SyncReviewNeededResponse> {
+	return await apiRequest<SyncReviewNeededResponse>("/api/trash-guides/sync/review-needed");
+}
+
+/**
+ * Record that an administrator reviewed a backup-less uncertain sync.
+ * This does not mutate the ARR service or claim that a rollback occurred.
+ */
+export async function acknowledgeSyncReview(syncId: string): Promise<AcknowledgeSyncReviewResult> {
+	return await apiRequest<AcknowledgeSyncReviewResult>(
+		`/api/trash-guides/sync/${syncId}/acknowledge-review`,
+		{ method: "POST" },
+	);
+}
+
 /**
  * Create EventSource for SSE progress streaming
  */
@@ -140,7 +180,7 @@ export function createSyncProgressStream(
 			onProgress(data);
 
 			// Close on completion
-			if (data.status === "COMPLETED" || data.status === "FAILED") {
+			if (data.status === "COMPLETED" || data.status === "FAILED" || data.status === "UNCERTAIN") {
 				setTimeout(() => {
 					eventSource.close();
 				}, 1000);

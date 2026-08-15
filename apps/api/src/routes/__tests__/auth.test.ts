@@ -114,6 +114,15 @@ function createMockPrisma() {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
+		serviceInstance: {
+			findMany: vi.fn().mockResolvedValue([]),
+		},
+		trashSyncHistory: {
+			findMany: vi.fn().mockResolvedValue([]),
+		},
+		templateDeploymentHistory: {
+			findMany: vi.fn().mockResolvedValue([]),
+		},
 		oIDCAccount: oidcAccountMock,
 		webAuthnCredential: {
 			count: vi.fn().mockResolvedValue(0),
@@ -560,6 +569,22 @@ describe("DELETE /auth/account", () => {
 		const res = await injectAuthenticated("DELETE", "/auth/account");
 
 		expect(res.statusCode).toBe(409);
+		expect(mockPrisma.user.delete).not.toHaveBeenCalled();
+	});
+
+	it("refuses to cascade an account while service connections still exist", async () => {
+		mockPrisma.user.findUnique.mockResolvedValue(makeUser({ hashedPassword: null }));
+		mockPrisma.serviceInstance.findMany.mockResolvedValueOnce([{ id: "instance-1" }]);
+
+		const res = await injectAuthenticated("DELETE", "/auth/account");
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain("Remove all service connections");
+		expect(mockPrisma.trashSyncHistory.findMany).not.toHaveBeenCalled();
+		expect(mockPrisma.templateDeploymentHistory.findMany).not.toHaveBeenCalled();
+		expect(mockPrisma.libraryCleanupConfig.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+			mockPrisma.serviceInstance.findMany.mock.invocationCallOrder[0]!,
+		);
 		expect(mockPrisma.user.delete).not.toHaveBeenCalled();
 	});
 });

@@ -70,6 +70,7 @@ export {
 export type {
 	BulkDeleteOverridesPayload,
 	BulkDeleteOverridesResponse,
+	BulkOverridesResponse,
 	CFMatchDetails,
 	CFMatchResult,
 	CFValidationResponse,
@@ -92,6 +93,7 @@ export type {
 	QualityProfileDetailsResponse,
 	// Profile matching types
 	RecommendedCF,
+	ScoreRecoveryPlan,
 	// Score update types
 	ScoreUpdate,
 	UpdateProfileScoresPayload,
@@ -256,18 +258,23 @@ export {
 // ============================================================================
 
 export type {
+	AcknowledgeSyncReviewResult,
 	ConflictInfo,
 	SyncError,
 	SyncExecuteRequest,
 	SyncProgress,
 	SyncProgressStatus,
 	SyncResult,
+	SyncReviewNeeded,
+	SyncReviewNeededResponse,
 	SyncValidationRequest,
 	ValidationResult,
 } from "./sync";
 export {
+	acknowledgeSyncReview,
 	createSyncProgressStream,
 	executeSync,
+	fetchSyncsNeedingReview,
 	getSyncProgress,
 	validateSync,
 } from "./sync";

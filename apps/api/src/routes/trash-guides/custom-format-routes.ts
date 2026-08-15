@@ -15,6 +15,7 @@ import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { runWithManualArrWriterGuard } from "./manual-arr-writer-guard.js";
 
 // ============================================================================
 // Validation Schemas
@@ -85,13 +86,14 @@ export async function registerCustomFormatRoutes(
 			request.body,
 		);
 
-		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
+		const userId = request.currentUser!.id;
+		const initialInstance = await requireInstance(app, userId, instanceId);
 
 		// Verify service type matches (case-insensitive)
-		if (instance.service.toUpperCase() !== serviceType) {
+		if (initialInstance.service.toUpperCase() !== serviceType) {
 			return reply.status(400).send({
 				error: "SERVICE_MISMATCH",
-				message: `Instance is ${instance.service}, but trying to deploy ${serviceType} custom formats`,
+				message: `Instance is ${initialInstance.service}, but trying to deploy ${serviceType} custom formats`,
 			});
 		}
 
@@ -119,139 +121,160 @@ export async function registerCustomFormatRoutes(
 			});
 		}
 
-		// Create SDK client using factory
-		const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
-
-		// Get existing Custom Formats from instance
-		const existingFormats = await client.customFormat.getAll();
-		const existingByName = new Map<string, (typeof existingFormats)[number]>();
-		for (const cf of existingFormats) {
-			if (cf.name) {
-				existingByName.set(cf.name, cf);
-			}
-		}
-
-		// Get the commit hash from cache for tracking
-		const cacheEntry = await app.prisma.trashCache.findFirst({
-			where: {
-				serviceType,
-				configType: "CUSTOM_FORMATS",
-			},
-			select: { commitHash: true },
-		});
-		const commitHash = cacheEntry?.commitHash ?? "unknown";
-
-		// Deploy each custom format
-		const results = {
-			created: [] as string[],
-			updated: [] as string[],
-			failed: [] as Array<{ name: string; error: string }>,
-		};
-
-		// Track successful deployments for recording
-		const successfulDeployments: Array<{ trashId: string; name: string }> = [];
-
-		// Loop-level error collection — KEEP
-		for (const customFormat of customFormats) {
-			try {
-				// Check if custom format already exists by name
-				const existing = existingByName.get(customFormat.name);
-
-				// Transform specifications: convert fields from object to array format
-				const specifications = (customFormat.specifications || []).map(
-					(spec: CustomFormatSpecification) => {
-						const transformedFields = transformFieldsToArray(spec.fields);
-						return {
-							...spec,
-							fields: transformedFields,
-						};
-					},
-				);
-
-				if (existing?.id) {
-					// Update existing custom format
-					// Note: The ARR API expects fields as array, but TRaSH format uses object
-					// Using double type assertion to bridge the gap between TRaSH format and SDK types
-					const updatedCF = {
-						...existing,
-						name: customFormat.name,
-						specifications,
-					};
-					await client.customFormat.update(
-						existing.id,
-						updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
-					);
-					results.updated.push(customFormat.name);
-					successfulDeployments.push({ trashId: customFormat.trash_id, name: customFormat.name });
-				} else {
-					// Create new custom format
-					// Note: The ARR API expects fields as array, but TRaSH format uses object
-					// Using double type assertion to bridge the gap between TRaSH format and SDK types
-					const newCF = {
-						name: customFormat.name,
-						includeCustomFormatWhenRenaming: customFormat.includeCustomFormatWhenRenaming ?? false,
-						specifications,
-					};
-					await client.customFormat.create(
-						newCF as unknown as Parameters<typeof client.customFormat.create>[0],
-					);
-					results.created.push(customFormat.name);
-					successfulDeployments.push({ trashId: customFormat.trash_id, name: customFormat.name });
+		return runWithManualArrWriterGuard(
+			app,
+			userId,
+			instanceId,
+			"Manual standalone Custom Format deployment",
+			async (verifiedInstance) => {
+				if (verifiedInstance.service.toUpperCase() !== serviceType) {
+					return reply.status(409).send({
+						error: "SERVICE_CHANGED",
+						message: `Instance service changed from ${serviceType} to ${verifiedInstance.service} before deployment`,
+					});
 				}
-			} catch (error) {
-				results.failed.push({
-					name: customFormat.name,
-					error: getErrorMessage(error, "Unknown error"),
+				// Create SDK client using the instance revalidated under the endpoint lock.
+				const client = app.arrClientFactory.create(verifiedInstance) as SonarrClient | RadarrClient;
+
+				// Get existing Custom Formats from instance
+				const existingFormats = await client.customFormat.getAll();
+				const existingByName = new Map<string, (typeof existingFormats)[number]>();
+				for (const cf of existingFormats) {
+					if (cf.name) {
+						existingByName.set(cf.name, cf);
+					}
+				}
+
+				// Get the commit hash from cache for tracking
+				const cacheEntry = await app.prisma.trashCache.findFirst({
+					where: {
+						serviceType,
+						configType: "CUSTOM_FORMATS",
+					},
+					select: { commitHash: true },
 				});
-			}
-		}
+				const commitHash = cacheEntry?.commitHash ?? "unknown";
 
-		// Record successful deployments for update tracking
-		if (successfulDeployments.length > 0) {
-			const userId = request.currentUser!.id; // preHandler guarantees auth
-			await Promise.all(
-				successfulDeployments.map((deployment) =>
-					app.prisma.standaloneCFDeployment.upsert({
-						where: {
-							instanceId_cfTrashId: {
-								instanceId,
-								cfTrashId: deployment.trashId,
+				// Deploy each custom format
+				const results = {
+					created: [] as string[],
+					updated: [] as string[],
+					failed: [] as Array<{ name: string; error: string }>,
+				};
+
+				// Track successful deployments for recording
+				const successfulDeployments: Array<{ trashId: string; name: string }> = [];
+
+				// Loop-level error collection — KEEP
+				for (const customFormat of customFormats) {
+					try {
+						// Check if custom format already exists by name
+						const existing = existingByName.get(customFormat.name);
+
+						// Transform specifications: convert fields from object to array format
+						const specifications = (customFormat.specifications || []).map(
+							(spec: CustomFormatSpecification) => {
+								const transformedFields = transformFieldsToArray(spec.fields);
+								return {
+									...spec,
+									fields: transformedFields,
+								};
 							},
-						},
-						update: {
-							cfName: deployment.name,
-							commitHash,
-							deployedAt: new Date(),
-						},
-						create: {
-							userId,
-							instanceId,
-							cfTrashId: deployment.trashId,
-							cfName: deployment.name,
-							serviceType,
-							commitHash,
-						},
-					}),
-				),
-			);
-		}
+						);
 
-		const success = results.failed.length === 0;
+						if (existing?.id) {
+							// Update existing custom format
+							// Note: The ARR API expects fields as array, but TRaSH format uses object
+							// Using double type assertion to bridge the gap between TRaSH format and SDK types
+							const updatedCF = {
+								...existing,
+								name: customFormat.name,
+								specifications,
+							};
+							await client.customFormat.update(
+								existing.id,
+								updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
+							);
+							results.updated.push(customFormat.name);
+							successfulDeployments.push({
+								trashId: customFormat.trash_id,
+								name: customFormat.name,
+							});
+						} else {
+							// Create new custom format
+							// Note: The ARR API expects fields as array, but TRaSH format uses object
+							// Using double type assertion to bridge the gap between TRaSH format and SDK types
+							const newCF = {
+								name: customFormat.name,
+								includeCustomFormatWhenRenaming:
+									customFormat.includeCustomFormatWhenRenaming ?? false,
+								specifications,
+							};
+							await client.customFormat.create(
+								newCF as unknown as Parameters<typeof client.customFormat.create>[0],
+							);
+							results.created.push(customFormat.name);
+							successfulDeployments.push({
+								trashId: customFormat.trash_id,
+								name: customFormat.name,
+							});
+						}
+					} catch (error) {
+						results.failed.push({
+							name: customFormat.name,
+							error: getErrorMessage(error, "Unknown error"),
+						});
+					}
+				}
 
-		if (success) {
-			return reply.send({
-				success: true,
-				created: results.created,
-				updated: results.updated,
-				failed: results.failed,
-			});
-		}
-		return reply.status(400).send({
-			success: false,
-			created: results.created,
-			updated: results.updated,
-			failed: results.failed,
-		});
+				// Record successful deployments for update tracking
+				if (successfulDeployments.length > 0) {
+					const userId = request.currentUser!.id; // preHandler guarantees auth
+					await Promise.all(
+						successfulDeployments.map((deployment) =>
+							app.prisma.standaloneCFDeployment.upsert({
+								where: {
+									instanceId_cfTrashId: {
+										instanceId,
+										cfTrashId: deployment.trashId,
+									},
+								},
+								update: {
+									cfName: deployment.name,
+									commitHash,
+									deployedAt: new Date(),
+								},
+								create: {
+									userId,
+									instanceId,
+									cfTrashId: deployment.trashId,
+									cfName: deployment.name,
+									serviceType,
+									commitHash,
+								},
+							}),
+						),
+					);
+				}
+
+				const success = results.failed.length === 0;
+
+				if (success) {
+					return reply.send({
+						success: true,
+						created: results.created,
+						updated: results.updated,
+						failed: results.failed,
+					});
+				}
+				return reply.status(400).send({
+					success: false,
+					created: results.created,
+					updated: results.updated,
+					failed: results.failed,
+				});
+			},
+		);
 	});
 
 	/**

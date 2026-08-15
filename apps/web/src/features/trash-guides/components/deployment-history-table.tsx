@@ -58,6 +58,7 @@ const DEPLOYMENT_STATUS_CONFIG: Record<
 > = {
 	SUCCESS: { label: "Success", icon: CheckCircle2, variant: "success" },
 	PARTIAL_SUCCESS: { label: "Partial", icon: AlertTriangle, variant: "warning" },
+	UNCERTAIN: { label: "Needs Review", icon: AlertTriangle, variant: "warning" },
 	FAILED: { label: "Failed", icon: XCircle, variant: "error" },
 	IN_PROGRESS: { label: "In Progress", icon: Clock, variant: "info" },
 };

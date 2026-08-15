@@ -74,8 +74,10 @@ export const restoreBackupFromFileRequestSchema = z.object({
 export type RestoreBackupFromFileRequest = z.infer<typeof restoreBackupFromFileRequestSchema>;
 
 // Backup structure (internal, not exposed via API)
+export type BackupFormatVersion = "1.0" | "1.1";
+
 export interface BackupData {
-	version: string;
+	version: BackupFormatVersion;
 	appVersion: string;
 	timestamp: string;
 	data: {
@@ -103,10 +105,11 @@ export interface BackupData {
 		// TRaSH Guides history/audit (useful for tracking)
 		trashSyncHistory?: unknown[];
 		templateDeploymentHistory?: unknown[];
+		namingDeployHistory?: unknown[];
 
-		// TRaSH instance backups (ARR config snapshots) - optional, can be large
-		// Only included when BackupSettings.includeTrashBackups is true
-		// Limited to non-expired backups from last 7 days
+		// TRaSH instance backups (ARR config snapshots) - optional, can be large.
+		// Recent snapshots follow BackupSettings.includeTrashBackups; snapshots
+		// referenced by nonterminal rollback/undeploy coordination are mandatory.
 		trashBackups?: unknown[];
 
 		// Quality size preset mappings

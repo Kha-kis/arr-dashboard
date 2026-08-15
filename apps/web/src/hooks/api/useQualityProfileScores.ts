@@ -11,21 +11,31 @@ import { bulkScoreKeys, qualityProfileKeys } from "../../lib/query-keys";
  * Entry for bulk score update operations
  */
 export type BulkScoreUpdateEntry = {
+	entryKey: string;
 	profileId: number;
 	instanceId: string;
 	changes: Array<{ cfTrashId: string; score: number }>;
+	recoveryToken?: string;
 };
 
 /**
  * Result from a single profile score update
  */
-export type ProfileUpdateResult = {
+type ProfileUpdateResultBase = {
+	entryKey: string;
 	profileId: number;
 	instanceId: string;
-	success: boolean;
-	response?: UpdateProfileScoresResponse;
-	error?: Error;
 };
+
+export type ProfileUpdateResult =
+	| (ProfileUpdateResultBase & {
+			success: true;
+			response: UpdateProfileScoresResponse;
+	  })
+	| (ProfileUpdateResultBase & {
+			success: false;
+			error: Error;
+	  });
 
 /**
  * Result from bulk score update mutation
@@ -36,6 +46,40 @@ export type BulkUpdateScoresResult = {
 	failureCount: number;
 	results: ProfileUpdateResult[];
 };
+
+export class BulkUpdateScoresError extends Error {
+	readonly result: BulkUpdateScoresResult;
+
+	constructor(message: string, result: BulkUpdateScoresResult) {
+		super(message);
+		this.name = "BulkUpdateScoresError";
+		this.result = result;
+	}
+}
+
+type PreparedBulkScoreUpdateEntry = BulkScoreUpdateEntry & {
+	scoreUpdates: UpdateProfileScoresPayload["scoreUpdates"];
+	validationError?: Error;
+};
+
+function prepareBulkScoreUpdateEntry(entry: BulkScoreUpdateEntry): PreparedBulkScoreUpdateEntry {
+	const scoreUpdates: UpdateProfileScoresPayload["scoreUpdates"] = [];
+	let validationError: Error | undefined;
+
+	for (const { cfTrashId, score } of entry.changes) {
+		const match = /^cf-(\d+)$/.exec(cfTrashId);
+		const customFormatId = match?.[1] === undefined ? Number.NaN : Number(match[1]);
+		if (!Number.isSafeInteger(customFormatId) || customFormatId <= 0) {
+			validationError ??= new Error(
+				`Invalid Custom Format ID "${cfTrashId}"; expected "cf-{positive integer}".`,
+			);
+			continue;
+		}
+		scoreUpdates.push({ customFormatId, score });
+	}
+
+	return { ...entry, scoreUpdates, validationError };
+}
 
 /**
  * Hook to update scores for a single quality profile
@@ -68,8 +112,7 @@ export function useUpdateProfileScores() {
 /**
  * Hook to bulk update scores across multiple quality profiles
  *
- * Accepts an array of { profileId, instanceId, changes } and calls the
- * updateQualityProfileScores API for each entry via Promise.all
+ * Accepts an array of profile score changes and updates each profile in order.
  */
 export function useBulkUpdateScores() {
 	const queryClient = useQueryClient();
@@ -77,55 +120,60 @@ export function useBulkUpdateScores() {
 	return useMutation<BulkUpdateScoresResult, Error, BulkScoreUpdateEntry[]>({
 		mutationFn: async (entries) => {
 			const results: ProfileUpdateResult[] = [];
+			const preparedEntries = entries.map(prepareBulkScoreUpdateEntry);
+			const invalidEntries = preparedEntries.filter(
+				(entry): entry is PreparedBulkScoreUpdateEntry & { validationError: Error } =>
+					entry.validationError !== undefined,
+			);
 
-			// Process all profile updates in parallel
-			const updatePromises = entries.map(async (entry) => {
-				const { profileId, instanceId, changes } = entry;
+			if (invalidEntries.length > 0) {
+				const validationResults: ProfileUpdateResult[] = preparedEntries.map((entry) => ({
+					entryKey: entry.entryKey,
+					profileId: entry.profileId,
+					instanceId: entry.instanceId,
+					success: false,
+					error:
+						entry.validationError ??
+						new Error("Not attempted because another submitted Custom Format ID was invalid."),
+				}));
+				throw new BulkUpdateScoresError(
+					`Score updates were not started: ${invalidEntries.map((entry) => entry.validationError.message).join(" ")}`,
+					{
+						totalProfiles: entries.length,
+						successCount: 0,
+						failureCount: entries.length,
+						results: validationResults,
+					},
+				);
+			}
 
-				// Convert changes to API format (extract CF ID from trashId format "cf-{id}")
-				// Validate cfTrashId format and filter out invalid entries
-				const scoreUpdates = changes
-					.map(({ cfTrashId, score }) => {
-						// Validate format: must be "cf-" followed by digits
-						const match = cfTrashId.match(/^cf-(\d+)$/);
-						if (!match || !match[1]) {
-							console.warn(
-								`Invalid cfTrashId format: "${cfTrashId}" - expected "cf-{number}", skipping`,
-							);
-							return null;
-						}
-						const customFormatId = parseInt(match[1], 10);
-						if (!Number.isFinite(customFormatId)) {
-							console.warn(`Failed to parse customFormatId from "${cfTrashId}", skipping`);
-							return null;
-						}
-						return { customFormatId, score };
-					})
-					.filter((entry): entry is { customFormatId: number; score: number } => entry !== null);
+			for (const entry of preparedEntries) {
+				const { entryKey, profileId, instanceId, recoveryToken, scoreUpdates } = entry;
 
 				try {
-					const response = await updateQualityProfileScores(instanceId, profileId, {
-						scoreUpdates,
-					});
+					const response = await updateQualityProfileScores(
+						instanceId,
+						profileId,
+						recoveryToken ? { recoveryToken, scoreUpdates } : { scoreUpdates },
+					);
 
-					return {
+					results.push({
+						entryKey,
 						profileId,
 						instanceId,
 						success: true,
 						response,
-					} as ProfileUpdateResult;
+					});
 				} catch (error) {
-					return {
+					results.push({
+						entryKey,
 						profileId,
 						instanceId,
 						success: false,
 						error: error instanceof Error ? error : new Error(String(error)),
-					} as ProfileUpdateResult;
+					});
 				}
-			});
-
-			const settledResults = await Promise.all(updatePromises);
-			results.push(...settledResults);
+			}
 
 			const successCount = results.filter((r) => r.success).length;
 			const failureCount = results.filter((r) => !r.success).length;
@@ -137,18 +185,15 @@ export function useBulkUpdateScores() {
 					.map((r) => r.error?.message || "Unknown error")
 					.join(", ");
 
-				const error = Object.assign(
-					new Error(`Failed to update ${failureCount} quality profile(s): ${errorMessages}`),
+				throw new BulkUpdateScoresError(
+					`Failed to update ${failureCount} quality profile(s): ${errorMessages}`,
 					{
-						results: {
-							totalProfiles: entries.length,
-							successCount,
-							failureCount,
-							results,
-						},
+						totalProfiles: entries.length,
+						successCount,
+						failureCount,
+						results,
 					},
 				);
-				throw error;
 			}
 
 			return {
@@ -159,9 +204,8 @@ export function useBulkUpdateScores() {
 			};
 		},
 		onSuccess: (result) => {
-			// Show success toast
 			toast.success(
-				`Successfully saved ${result.successCount} custom format score change${result.successCount === 1 ? "" : "s"}`,
+				`Saved scores for ${result.successCount} quality profile${result.successCount === 1 ? "" : "s"}`,
 			);
 
 			// Invalidate cache keys for all successfully updated profiles
@@ -182,7 +226,29 @@ export function useBulkUpdateScores() {
 			}
 		},
 		onError: (error) => {
-			toast.error("Failed to update custom format scores", {
+			if (error instanceof BulkUpdateScoresError && error.result.successCount > 0) {
+				queryClient.invalidateQueries({
+					queryKey: bulkScoreKeys.all,
+				});
+				for (const profileResult of error.result.results) {
+					if (profileResult.success) {
+						queryClient.invalidateQueries({
+							queryKey: qualityProfileKeys.overrides(
+								profileResult.instanceId,
+								profileResult.profileId,
+							),
+						});
+					}
+				}
+				toast.warning(
+					`Saved scores for ${error.result.successCount} of ${error.result.totalProfiles} quality profiles`,
+					{
+						description: `${error.result.failureCount} quality profile${error.result.failureCount === 1 ? "" : "s"} failed. Failed edits were kept for retry.`,
+					},
+				);
+				return;
+			}
+			toast.error("No quality profile scores were saved", {
 				description: error.message,
 			});
 		},

@@ -17,6 +17,40 @@ import { validateRequest } from "../../lib/utils/validate.js";
 // Request Schemas
 // ============================================================================
 
+const executeTemplateDeploymentSchema = z.object({
+	templateId: z.string().min(1),
+	instanceId: z.string().min(1),
+	executionToken: z.string().length(64),
+});
+
+const executeTemplateBulkDeploymentSchema = z
+	.object({
+		templateId: z.string().min(1),
+		instanceIds: z.array(z.string().min(1)).min(1),
+		executionTokens: z.record(z.string(), z.string().length(64)),
+	})
+	.superRefine((body, context) => {
+		const selected = new Set(body.instanceIds);
+		for (const instanceId of body.instanceIds) {
+			if (!body.executionTokens[instanceId]) {
+				context.addIssue({
+					code: "custom",
+					path: ["executionTokens", instanceId],
+					message: "A fresh execution token is required for every selected instance",
+				});
+			}
+		}
+		for (const instanceId of Object.keys(body.executionTokens)) {
+			if (!selected.has(instanceId)) {
+				context.addIssue({
+					code: "custom",
+					path: ["executionTokens", instanceId],
+					message: "Execution tokens may only be provided for selected instances",
+				});
+			}
+		}
+	});
+
 // Custom Format Specification schema (validates TRaSH CF structure)
 const customFormatSpecificationSchema = z.object({
 	name: z.string(),
@@ -638,17 +672,13 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		Body: {
 			templateId: string;
 			instanceId: string;
+			executionToken: string;
 		};
 	}>("/deployment/execute", async (request, reply) => {
-		const { templateId, instanceId } = request.body;
-
-		if (!templateId || !instanceId) {
-			return reply.status(400).send({
-				statusCode: 400,
-				error: "BadRequest",
-				message: "templateId and instanceId are required",
-			});
-		}
+		const { templateId, instanceId, executionToken } = validateRequest(
+			executeTemplateDeploymentSchema,
+			request.body,
+		);
 
 		await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 		await requireInstance(app, request.currentUser!.id, instanceId);
@@ -658,6 +688,9 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			templateId,
 			instanceId,
 			request.currentUser!.id,
+			undefined,
+			undefined,
+			executionToken,
 		);
 
 		return reply.send({
@@ -674,25 +707,13 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		Body: {
 			templateId: string;
 			instanceIds: string[];
+			executionTokens: Record<string, string>;
 		};
 	}>("/deployment/bulk", async (request, reply) => {
-		const { templateId, instanceIds } = request.body;
-
-		if (!templateId || !instanceIds || !Array.isArray(instanceIds)) {
-			return reply.status(400).send({
-				statusCode: 400,
-				error: "BadRequest",
-				message: "templateId and instanceIds array are required",
-			});
-		}
-
-		if (instanceIds.length === 0) {
-			return reply.status(400).send({
-				statusCode: 400,
-				error: "BadRequest",
-				message: "At least one instance ID is required",
-			});
-		}
+		const { templateId, instanceIds, executionTokens } = validateRequest(
+			executeTemplateBulkDeploymentSchema,
+			request.body,
+		);
 
 		await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
@@ -717,10 +738,14 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			templateId,
 			instanceIds,
 			request.currentUser!.id,
+			undefined,
+			undefined,
+			executionTokens,
 		);
 
 		return reply.send({
-			success: result.successfulInstances > 0,
+			success:
+				result.successfulInstances === result.totalInstances && result.uncertainInstances === 0,
 			result,
 		});
 	});

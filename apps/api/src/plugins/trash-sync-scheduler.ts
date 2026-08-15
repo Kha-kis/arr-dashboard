@@ -32,7 +32,7 @@ const trashSyncSchedulerPlugin = fastifyPlugin(
 						app.log,
 						app.deploymentExecutor,
 						app.arrClientFactory,
-						(payload) => app.notificationService.notify(payload),
+						(payload, options) => app.notificationService.notify(payload, options),
 						{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashSync, fn) },
 					);
 

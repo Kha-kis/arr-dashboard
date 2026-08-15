@@ -24,10 +24,12 @@ import {
 	resolvePayload,
 	validateSelectedPresets,
 } from "../../lib/trash-guides/naming-deployer.js";
+import { createDeploymentConnectionStateToken } from "../../lib/trash-guides/deployment-target.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { delay } from "../../lib/utils/delay.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { runWithManualArrWriterGuard } from "./manual-arr-writer-guard.js";
 
 // ============================================================================
 // Request Schemas
@@ -390,220 +392,232 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			});
 		}
 
-		// GET current config (pre-deploy snapshot)
-		let getResponse: Response;
-		try {
-			getResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming");
-		} catch (error) {
-			request.log.error(
-				{ err: error, instanceId },
-				"Network error fetching naming config from instance",
-			);
-			return reply.status(502).send({
-				success: false,
-				error: `Failed to connect to ${instance.label}: ${getErrorMessage(error, "Network error")}`,
-			});
-		}
-
-		if (!getResponse.ok) {
-			return reply.status(502).send({
-				success: false,
-				error: `Failed to fetch naming config from ${instance.label}: HTTP ${getResponse.status}`,
-			});
-		}
-
-		const currentConfig = await parseAndValidateArrNamingConfig(
-			getResponse,
-			instance.label,
-			request,
-			reply,
+		return runWithManualArrWriterGuard(
+			app,
+			userId,
 			instanceId,
-		);
-		if (!currentConfig) return;
+			"Manual naming apply",
+			async (instance) => {
+				const connectionGeneration = instance.connectionGeneration ?? 0;
+				const connectionStateToken = createDeploymentConnectionStateToken(instance);
+				// GET current config (pre-deploy snapshot)
+				let getResponse: Response;
+				try {
+					getResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming");
+				} catch (error) {
+					request.log.error(
+						{ err: error, instanceId },
+						"Network error fetching naming config from instance",
+					);
+					return reply.status(502).send({
+						success: false,
+						error: `Failed to connect to ${instance.label}: ${getErrorMessage(error, "Network error")}`,
+					});
+				}
 
-		// Merge patch onto current config
-		const merged = { ...currentConfig, ...patch };
+				if (!getResponse.ok) {
+					return reply.status(502).send({
+						success: false,
+						error: `Failed to fetch naming config from ${instance.label}: HTTP ${getResponse.status}`,
+					});
+				}
 
-		// Compute hash and field counts before PUT
-		const deployedHash = computeNamingHash(patch);
-		const fieldCount = Object.keys(patch).filter(
-			(k) => k !== "renameMovies" && k !== "renameEpisodes",
-		).length;
-		const totalFields = Object.keys(patch).length;
-
-		// Create deploy history record as PENDING — updated to SUCCESS or FAILED after PUT
-		const historyRecord = await app.prisma.namingDeployHistory.create({
-			data: {
-				instanceId,
-				userId,
-				status: "PENDING",
-				selectedPresets: JSON.stringify(selectedPresets),
-				resolvedPayload: JSON.stringify(patch),
-				deployedHash,
-				previousConfig: JSON.stringify(currentConfig),
-				changedFields: fieldCount,
-				totalFields,
-			},
-		});
-
-		// PUT merged config back — retry once on network failure
-		let putResponse: Response;
-		try {
-			putResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming", {
-				method: "PUT",
-				body: merged,
-			});
-		} catch (firstError) {
-			// Only retry on network errors (fetch failures, connection resets)
-			const isNetwork =
-				firstError instanceof Error &&
-				/fetch failed|econnrefused|econnreset|etimedout|enetunreach|abort/i.test(
-					firstError.message,
+				const currentConfig = await parseAndValidateArrNamingConfig(
+					getResponse,
+					instance.label,
+					request,
+					reply,
+					instanceId,
 				);
-			if (!isNetwork) throw firstError;
+				if (!currentConfig) return;
 
-			request.log.warn(
-				{ err: firstError, instanceId },
-				"First PUT attempt failed with network error, retrying in 1s",
-			);
-			try {
-				await delay(1000);
-				putResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming", {
-					method: "PUT",
-					body: merged,
-				});
-			} catch (retryError) {
-				request.log.error(
-					{ err: retryError, instanceId },
-					"Retry PUT also failed — marking deploy as FAILED",
-				);
-				const errorMsg = getErrorMessage(retryError, "Network error");
-				await app.prisma.namingDeployHistory.update({
-					where: { id: historyRecord.id },
-					data: { status: "FAILED", errorMessage: errorMsg },
-				});
-				await app.prisma.namingConfig.upsert({
-					where: { instanceId },
-					create: {
+				// Merge patch onto current config
+				const merged = { ...currentConfig, ...patch };
+
+				// Compute hash and field counts before PUT
+				const deployedHash = computeNamingHash(patch);
+				const fieldCount = Object.keys(patch).filter(
+					(k) => k !== "renameMovies" && k !== "renameEpisodes",
+				).length;
+				const totalFields = Object.keys(patch).length;
+
+				// Create deploy history record as PENDING — updated to SUCCESS or FAILED after PUT
+				const historyRecord = await app.prisma.namingDeployHistory.create({
+					data: {
 						instanceId,
 						userId,
-						serviceType,
+						status: "PENDING",
 						selectedPresets: JSON.stringify(selectedPresets),
-						lastDeployStatus: "FAILED",
-						lastDeployError: errorMsg,
+						resolvedPayload: JSON.stringify(patch),
+						deployedHash,
+						previousConfig: JSON.stringify(currentConfig),
+						changedFields: fieldCount,
+						totalFields,
+						connectionGeneration,
+						connectionStateToken,
 					},
-					update: { lastDeployStatus: "FAILED", lastDeployError: errorMsg },
 				});
-				return reply.status(502).send({
-					success: false,
-					error: `Failed to connect to ${instance.label}: ${errorMsg}`,
-				});
-			}
-		}
 
-		if (!putResponse.ok) {
-			const errorText = await putResponse.text().catch(() => "Unknown error");
-			request.log.error(
-				{ instanceId, status: putResponse.status, errorText },
-				"Failed to apply naming config to instance",
-			);
-			const errorMsg = `HTTP ${putResponse.status}: ${errorText}`;
-			await app.prisma.namingDeployHistory.update({
-				where: { id: historyRecord.id },
-				data: { status: "FAILED", errorMessage: errorMsg },
-			});
-			await app.prisma.namingConfig.upsert({
-				where: { instanceId },
-				create: {
-					instanceId,
-					userId,
-					serviceType,
-					selectedPresets: JSON.stringify(selectedPresets),
-					lastDeployStatus: "FAILED",
-					lastDeployError: errorMsg,
-				},
-				update: { lastDeployStatus: "FAILED", lastDeployError: errorMsg },
-			});
-			return reply.status(502).send({
-				success: false,
-				error: `Failed to apply naming config to ${instance.label}: HTTP ${putResponse.status}`,
-			});
-		}
+				// PUT merged config back — retry once on network failure
+				let putResponse: Response;
+				try {
+					putResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming", {
+						method: "PUT",
+						body: merged,
+					});
+				} catch (firstError) {
+					// Only retry on network errors (fetch failures, connection resets)
+					const isNetwork =
+						firstError instanceof Error &&
+						/fetch failed|econnrefused|econnreset|etimedout|enetunreach|abort/i.test(
+							firstError.message,
+						);
+					if (!isNetwork) throw firstError;
 
-		// Mark deploy as SUCCESS now that the PUT confirmed
-		let historySaved = true;
-		try {
-			await app.prisma.namingDeployHistory.update({
-				where: { id: historyRecord.id },
-				data: { status: "SUCCESS" },
-			});
-		} catch (historyError) {
-			historySaved = false;
-			request.log.error(
-				{ err: historyError, historyId: historyRecord.id },
-				"Failed to mark deploy history as SUCCESS — record stuck at PENDING",
-			);
-		}
+					request.log.warn(
+						{ err: firstError, instanceId },
+						"First PUT attempt failed with network error, retrying in 1s",
+					);
+					try {
+						await delay(1000);
+						putResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming", {
+							method: "PUT",
+							body: merged,
+						});
+					} catch (retryError) {
+						request.log.error(
+							{ err: retryError, instanceId },
+							"Retry PUT also failed — keeping deploy PENDING because the upstream result is uncertain",
+						);
+						const errorMsg = getErrorMessage(retryError, "Network error");
+						await app.prisma.namingDeployHistory.update({
+							where: { id: historyRecord.id },
+							data: { status: "PENDING", errorMessage: errorMsg },
+						});
+						await app.prisma.namingConfig.upsert({
+							where: { instanceId },
+							create: {
+								instanceId,
+								userId,
+								serviceType,
+								selectedPresets: JSON.stringify(selectedPresets),
+								lastDeployStatus: "PENDING",
+								lastDeployError: errorMsg,
+							},
+							update: { lastDeployStatus: "PENDING", lastDeployError: errorMsg },
+						});
+						return reply.status(502).send({
+							success: false,
+							error: `The naming update result on ${instance.label} is uncertain: ${errorMsg}. Roll back or resolve this history before making another change.`,
+						});
+					}
+				}
 
-		// Upsert NamingConfig record with success status
-		let configSaved = true;
-		try {
-			await app.prisma.namingConfig.upsert({
-				where: { instanceId },
-				create: {
-					instanceId,
-					userId,
-					serviceType,
-					selectedPresets: JSON.stringify(selectedPresets),
-					lastDeployedAt: new Date(),
-					lastDeployedHash: deployedHash,
-					lastDeployStatus: "SUCCESS",
-					lastDeployError: null,
-				},
-				update: {
-					selectedPresets: JSON.stringify(selectedPresets),
-					lastDeployedAt: new Date(),
-					lastDeployedHash: deployedHash,
-					lastDeployStatus: "SUCCESS",
-					lastDeployError: null,
-				},
-			});
-		} catch (configError) {
-			// P2002 = unique constraint race (concurrent upserts) — safe to swallow.
-			if ((configError as { code?: string }).code === "P2002") {
-				configSaved = false;
-				request.log.warn(
-					{ err: configError, instanceId },
-					"Naming config upsert hit unique constraint race — config not saved",
+				if (!putResponse.ok) {
+					const errorText = await putResponse.text().catch(() => "Unknown error");
+					request.log.error(
+						{ instanceId, status: putResponse.status, errorText },
+						"Failed to apply naming config to instance",
+					);
+					const errorMsg = `HTTP ${putResponse.status}: ${errorText}`;
+					await app.prisma.namingDeployHistory.update({
+						where: { id: historyRecord.id },
+						data: { status: "FAILED", errorMessage: errorMsg },
+					});
+					await app.prisma.namingConfig.upsert({
+						where: { instanceId },
+						create: {
+							instanceId,
+							userId,
+							serviceType,
+							selectedPresets: JSON.stringify(selectedPresets),
+							lastDeployStatus: "FAILED",
+							lastDeployError: errorMsg,
+						},
+						update: { lastDeployStatus: "FAILED", lastDeployError: errorMsg },
+					});
+					return reply.status(502).send({
+						success: false,
+						error: `Failed to apply naming config to ${instance.label}: HTTP ${putResponse.status}`,
+					});
+				}
+
+				// Mark deploy as SUCCESS now that the PUT confirmed
+				let historySaved = true;
+				try {
+					await app.prisma.namingDeployHistory.update({
+						where: { id: historyRecord.id },
+						data: { status: "SUCCESS" },
+					});
+				} catch (historyError) {
+					historySaved = false;
+					request.log.error(
+						{ err: historyError, historyId: historyRecord.id },
+						"Failed to mark deploy history as SUCCESS — record stuck at PENDING",
+					);
+				}
+
+				// Upsert NamingConfig record with success status
+				let configSaved = true;
+				try {
+					await app.prisma.namingConfig.upsert({
+						where: { instanceId },
+						create: {
+							instanceId,
+							userId,
+							serviceType,
+							selectedPresets: JSON.stringify(selectedPresets),
+							lastDeployedAt: new Date(),
+							lastDeployedHash: deployedHash,
+							lastDeployStatus: "SUCCESS",
+							lastDeployError: null,
+						},
+						update: {
+							selectedPresets: JSON.stringify(selectedPresets),
+							lastDeployedAt: new Date(),
+							lastDeployedHash: deployedHash,
+							lastDeployStatus: "SUCCESS",
+							lastDeployError: null,
+						},
+					});
+				} catch (configError) {
+					// P2002 = unique constraint race (concurrent upserts) — safe to swallow.
+					if ((configError as { code?: string }).code === "P2002") {
+						configSaved = false;
+						request.log.warn(
+							{ err: configError, instanceId },
+							"Naming config upsert hit unique constraint race — config not saved",
+						);
+					} else {
+						throw configError;
+					}
+				}
+
+				const bookkeepingOk = historySaved && configSaved;
+
+				app.log.info(
+					{
+						instanceId,
+						serviceType,
+						fieldCount,
+						configSaved,
+						historySaved,
+						historyId: historyRecord.id,
+					},
+					"Applied naming presets to instance",
 				);
-			} else {
-				throw configError;
-			}
-		}
 
-		const bookkeepingOk = historySaved && configSaved;
-
-		app.log.info(
-			{
-				instanceId,
-				serviceType,
-				fieldCount,
-				configSaved,
-				historySaved,
-				historyId: historyRecord.id,
+				return reply.send({
+					success: true,
+					fieldCount,
+					historyId: historyRecord.id,
+					message: bookkeepingOk
+						? `Applied ${fieldCount} naming format(s) to ${instance.label}`
+						: `Applied ${fieldCount} naming format(s) to ${instance.label}, but some tracking records could not be saved.`,
+					...(!bookkeepingOk ? { warning: "BOOKKEEPING_INCOMPLETE" } : {}),
+				});
 			},
-			"Applied naming presets to instance",
 		);
-
-		return reply.send({
-			success: true,
-			fieldCount,
-			historyId: historyRecord.id,
-			message: bookkeepingOk
-				? `Applied ${fieldCount} naming format(s) to ${instance.label}`
-				: `Applied ${fieldCount} naming format(s) to ${instance.label}, but some tracking records could not be saved.`,
-			...(!bookkeepingOk ? { warning: "BOOKKEEPING_INCOMPLETE" } : {}),
-		});
 	});
 
 	/**
@@ -640,9 +654,6 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			});
 		}
 
-		// Load the instance
-		const instance = await requireInstance(app, userId, history.instanceId);
-
 		// Parse the previous config snapshot
 		let previousConfig: Record<string, unknown>;
 		try {
@@ -658,82 +669,116 @@ export async function namingRoutes(app: FastifyInstance, _opts: FastifyPluginOpt
 			});
 		}
 
-		// PUT the previous config back to the instance
-		let putResponse: Response;
-		try {
-			putResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming", {
-				method: "PUT",
-				body: previousConfig,
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, historyId, instanceId: instance.id },
-				"Network error during rollback PUT",
-			);
-			return reply.status(502).send({
-				success: false,
-				error: `Failed to connect to ${instance.label}: ${getErrorMessage(error, "Network error")}`,
-			});
-		}
+		return runWithManualArrWriterGuard(
+			app,
+			userId,
+			history.instanceId,
+			"Manual naming rollback",
+			async (instance) => {
+				if (
+					history.connectionGeneration === null ||
+					history.connectionGeneration === undefined ||
+					!history.connectionStateToken
+				) {
+					return reply.status(409).send({
+						success: false,
+						error:
+							"This rollback snapshot is not bound to a verified ARR connection and cannot be applied safely.",
+					});
+				}
+				const connectionGeneration = instance.connectionGeneration ?? 0;
+				const connectionStateToken = createDeploymentConnectionStateToken(instance);
+				if (
+					history.connectionGeneration !== connectionGeneration ||
+					history.connectionStateToken !== connectionStateToken
+				) {
+					return reply.status(409).send({
+						success: false,
+						error:
+							"The ARR connection changed after this rollback snapshot was captured. Restore the original connection or resolve the history without applying it.",
+					});
+				}
+				// PUT the previous config back to the instance
+				let putResponse: Response;
+				try {
+					putResponse = await app.arrClientFactory.rawRequest(instance, "/api/v3/config/naming", {
+						method: "PUT",
+						body: previousConfig,
+					});
+				} catch (error) {
+					request.log.error(
+						{ err: error, historyId, instanceId: instance.id },
+						"Network error during rollback PUT",
+					);
+					return reply.status(502).send({
+						success: false,
+						error: `Failed to connect to ${instance.label}: ${getErrorMessage(error, "Network error")}`,
+					});
+				}
 
-		if (!putResponse.ok) {
-			const errorText = await putResponse.text().catch(() => "Unknown error");
-			request.log.error(
-				{ historyId, instanceId: instance.id, status: putResponse.status, errorText },
-				"Rollback PUT failed",
-			);
-			return reply.status(502).send({
-				success: false,
-				error: `Failed to restore naming config on ${instance.label}: HTTP ${putResponse.status}`,
-			});
-		}
+				if (!putResponse.ok) {
+					const errorText = await putResponse.text().catch(() => "Unknown error");
+					request.log.error(
+						{ historyId, instanceId: instance.id, status: putResponse.status, errorText },
+						"Rollback PUT failed",
+					);
+					return reply.status(502).send({
+						success: false,
+						error: `Failed to restore naming config on ${instance.label}: HTTP ${putResponse.status}`,
+					});
+				}
 
-		// Record rollback in database — all three writes are bookkeeping;
-		// the actual rollback (PUT) already succeeded above.
-		let bookkeepingOk = true;
-		try {
-			await app.prisma.$transaction([
-				app.prisma.namingDeployHistory.update({
-					where: { id: historyId },
-					data: { rolledBack: true, rolledBackAt: new Date() },
-				}),
-				app.prisma.namingDeployHistory.create({
-					data: {
-						instanceId: history.instanceId,
-						userId,
-						status: "ROLLED_BACK",
-						selectedPresets: history.selectedPresets,
-						resolvedPayload: JSON.stringify(previousConfig),
-						changedFields: history.changedFields,
-						totalFields: history.totalFields,
-					},
-				}),
-				app.prisma.namingConfig.updateMany({
-					where: { instanceId: history.instanceId },
-					data: { lastDeployStatus: "ROLLED_BACK" },
-				}),
-			]);
-		} catch (dbError) {
-			bookkeepingOk = false;
-			request.log.error(
-				{ err: dbError, historyId },
-				"Rollback PUT succeeded but database bookkeeping failed",
-			);
-		}
+				// Record rollback in database — all three writes are bookkeeping;
+				// the actual rollback (PUT) already succeeded above.
+				let bookkeepingOk = true;
+				try {
+					await app.prisma.$transaction([
+						app.prisma.namingDeployHistory.update({
+							where: { id: historyId },
+							data: { rolledBack: true, rolledBackAt: new Date() },
+						}),
+						app.prisma.namingDeployHistory.create({
+							data: {
+								instanceId: history.instanceId,
+								userId,
+								status: "ROLLED_BACK",
+								selectedPresets: history.selectedPresets,
+								resolvedPayload: JSON.stringify(previousConfig),
+								changedFields: history.changedFields,
+								totalFields: history.totalFields,
+								connectionGeneration,
+								connectionStateToken,
+							},
+						}),
+						app.prisma.namingConfig.updateMany({
+							where: { instanceId: history.instanceId },
+							data: { lastDeployStatus: "ROLLED_BACK" },
+						}),
+					]);
+				} catch (dbError) {
+					bookkeepingOk = false;
+					request.log.error(
+						{ err: dbError, historyId },
+						"Rollback PUT succeeded but database bookkeeping failed",
+					);
+				}
 
-		app.log.info(
-			{ historyId, instanceId: history.instanceId, bookkeepingOk },
-			"Rolled back naming config to previous snapshot",
+				app.log.info(
+					{ historyId, instanceId: history.instanceId, bookkeepingOk },
+					"Rolled back naming config to previous snapshot",
+				);
+
+				return reply.send({
+					success: true,
+					message: bookkeepingOk
+						? `Rolled back naming config on ${instance.label} to previous state`
+						: `Rolled back naming config on ${instance.label}, but history tracking could not be saved.`,
+					fieldCount: history.changedFields,
+					...(!bookkeepingOk ? { warning: "BOOKKEEPING_INCOMPLETE" } : {}),
+				});
+			},
+			{ excludedNamingHistoryId: historyId },
 		);
-
-		return reply.send({
-			success: true,
-			message: bookkeepingOk
-				? `Rolled back naming config on ${instance.label} to previous state`
-				: `Rolled back naming config on ${instance.label}, but history tracking could not be saved.`,
-			fieldCount: history.changedFields,
-			...(!bookkeepingOk ? { warning: "BOOKKEEPING_INCOMPLETE" } : {}),
-		});
 	});
 
 	/**

@@ -83,6 +83,7 @@ export type DeploymentResult = {
 	instanceId: string;
 	instanceLabel: string;
 	success: boolean;
+	status: "SUCCESS" | "FAILED" | "UNCERTAIN";
 	customFormatsCreated: number;
 	customFormatsUpdated: number;
 	customFormatsSkipped: number;
@@ -100,12 +101,14 @@ export type BulkDeploymentResult = {
 	totalInstances: number;
 	successfulInstances: number;
 	failedInstances: number;
+	uncertainInstances: number;
 	results: DeploymentResult[];
 };
 
 export type ExecuteDeploymentPayload = {
 	templateId: string;
 	instanceId: string;
+	executionToken: string;
 	syncStrategy?: SyncStrategy;
 	/** Conflict resolutions: trashId -> resolution (use_template, keep_existing) */
 	conflictResolutions?: Record<string, ConflictResolution>;
@@ -119,6 +122,7 @@ export type ExecuteDeploymentResponse = {
 export type ExecuteBulkDeploymentPayload = {
 	templateId: string;
 	instanceIds: string[];
+	executionTokens: Record<string, string>;
 	syncStrategy?: SyncStrategy;
 	/** Per-instance sync strategies - overrides global syncStrategy for specific instances */
 	instanceSyncStrategies?: Record<string, SyncStrategy>;

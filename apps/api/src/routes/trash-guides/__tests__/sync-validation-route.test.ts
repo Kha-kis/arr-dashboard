@@ -1,0 +1,185 @@
+import Fastify, { type FastifyInstance } from "fastify";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	createInjectAuthenticated,
+	registerTestErrorHandler,
+	setupAuthInjection,
+} from "../../__tests__/test-helpers.js";
+
+const mocks = vi.hoisted(() => ({
+	validate: vi.fn(),
+	execute: vi.fn(),
+	syncTemplate: vi.fn(),
+	generatePreview: vi.fn(),
+}));
+
+vi.mock("../../../lib/trash-guides/cache-manager.js", () => ({
+	createCacheManager: vi.fn(() => ({})),
+}));
+vi.mock("../../../lib/trash-guides/github-fetcher.js", () => ({
+	createTrashFetcher: vi.fn(() => ({})),
+}));
+vi.mock("../../../lib/trash-guides/repo-config.js", () => ({
+	getRepoConfig: vi.fn(async () => ({})),
+}));
+vi.mock("../../../lib/trash-guides/version-tracker.js", () => ({
+	createVersionTracker: vi.fn(() => ({})),
+}));
+vi.mock("../../../lib/trash-guides/template-updater.js", () => ({
+	createTemplateUpdater: vi.fn(() => ({ syncTemplate: mocks.syncTemplate })),
+}));
+vi.mock("../../../lib/trash-guides/sync-engine.js", () => ({
+	createSyncEngine: vi.fn(() => ({
+		validate: mocks.validate,
+		execute: mocks.execute,
+	})),
+}));
+vi.mock("../../../lib/trash-guides/deployment-preview.js", () => ({
+	createDeploymentPreviewService: vi.fn(() => ({ generatePreview: mocks.generatePreview })),
+}));
+
+import { registerSyncRoutes } from "../sync-routes.js";
+
+const templateId = "cdef0123456789abcdef01234";
+const instanceId = "cdef0123456789abcdef01235";
+const executionToken = "a".repeat(64);
+
+async function createApp(): Promise<FastifyInstance> {
+	const app = Fastify({ logger: false });
+	setupAuthInjection(app);
+	registerTestErrorHandler(app);
+	app.decorate("prisma", {
+		trashTemplate: { findFirst: vi.fn().mockResolvedValue({ id: templateId }) },
+		serviceInstance: { findFirst: vi.fn().mockResolvedValue({ id: instanceId }) },
+	} as never);
+	app.decorate("arrClientFactory", {} as never);
+	app.decorate("deploymentExecutor", {} as never);
+	await app.register(registerSyncRoutes);
+	await app.ready();
+	return app;
+}
+
+describe("manual sync review authority", () => {
+	let app: FastifyInstance | undefined;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mocks.syncTemplate.mockResolvedValue({ success: true, errors: [] });
+		mocks.validate.mockResolvedValue({ valid: true, conflicts: [], errors: [], warnings: [] });
+		mocks.generatePreview.mockResolvedValue({
+			templateId,
+			instanceId,
+			canDeploy: true,
+			executionToken,
+			summary: { updatedCustomFormats: 1, orphanedCustomFormats: 1 },
+			customFormats: [{ name: "HDR", action: "update", scoreOverride: 500 }],
+			orphanedCustomFormats: [{ name: "Old format", score: 100 }],
+			namingChanges: ["movieFolderFormat"],
+			warnings: ["A legacy mapping will be rebound during execution."],
+		});
+		mocks.execute.mockResolvedValue({
+			syncId: "sync-1",
+			status: "SUCCESS",
+			configsApplied: 1,
+			configsFailed: 0,
+			configsSkipped: 0,
+			errors: [],
+			warnings: [],
+		});
+	});
+
+	afterEach(async () => {
+		await app?.close();
+		app = undefined;
+	});
+
+	it("keeps validation read-only while issuing a plan for the persisted template", async () => {
+		app = await createApp();
+		const response = await createInjectAuthenticated(app)("POST", "/validate", {
+			body: { templateId, instanceId },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(mocks.syncTemplate).not.toHaveBeenCalled();
+		expect(mocks.validate.mock.invocationCallOrder[0]).toBeLessThan(
+			mocks.generatePreview.mock.invocationCallOrder[0]!,
+		);
+		expect(response.json()).toMatchObject({
+			valid: true,
+			executionToken,
+			preview: {
+				summary: { updatedCustomFormats: 1, orphanedCustomFormats: 1 },
+				customFormats: [{ name: "HDR", action: "update", scoreOverride: 500 }],
+				namingChanges: ["movieFolderFormat"],
+			},
+		});
+	});
+
+	it("does not refresh or persist the template when validation is rejected", async () => {
+		mocks.validate.mockResolvedValueOnce({
+			valid: false,
+			conflicts: [],
+			errors: ["ARR target is unavailable"],
+			warnings: [],
+		});
+		app = await createApp();
+
+		const response = await createInjectAuthenticated(app)("POST", "/validate", {
+			body: { templateId, instanceId },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({
+			valid: false,
+			conflicts: [],
+			errors: ["ARR target is unavailable"],
+			warnings: [],
+		});
+		expect(mocks.syncTemplate).not.toHaveBeenCalled();
+		expect(mocks.generatePreview).not.toHaveBeenCalled();
+	});
+
+	it("executes only as manual and forwards the reviewed token", async () => {
+		app = await createApp();
+		const response = await createInjectAuthenticated(app)("POST", "/execute", {
+			body: { templateId, instanceId, executionToken },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(mocks.execute).toHaveBeenCalledWith(
+			{ templateId, instanceId, userId: "user-1", syncType: "MANUAL" },
+			undefined,
+			executionToken,
+		);
+		expect(mocks.syncTemplate).not.toHaveBeenCalled();
+	});
+
+	it("exposes partial success as non-success terminal progress", async () => {
+		mocks.execute.mockResolvedValueOnce({
+			syncId: "sync-partial",
+			success: false,
+			status: "PARTIAL_SUCCESS",
+			configsApplied: 2,
+			configsFailed: 1,
+			configsSkipped: 0,
+			errors: [{ configName: "HDR", error: "Update failed", retryable: true }],
+			warnings: [],
+		});
+		app = await createApp();
+
+		const executeResponse = await createInjectAuthenticated(app)("POST", "/execute", {
+			body: { templateId, instanceId, executionToken },
+		});
+		const progressResponse = await createInjectAuthenticated(app)("GET", "/sync-partial/progress");
+
+		expect(executeResponse.statusCode).toBe(200);
+		expect(progressResponse.statusCode).toBe(200);
+		expect(progressResponse.json()).toMatchObject({
+			syncId: "sync-partial",
+			status: "FAILED",
+			progress: 100,
+			appliedConfigs: 2,
+			failedConfigs: 1,
+		});
+	});
+});

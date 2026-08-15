@@ -62,6 +62,18 @@ jobs:
       - name: Generate Prisma Client
         run: cd apps/api && pnpm exec prisma generate
 
+      - name: Initialize deployment-state contract database
+        run: pnpm exec prisma db push --schema prisma/schema.prisma
+        working-directory: apps/api
+        env:
+          DATABASE_URL: file:./prisma/test-integration.db
+
+      - name: Run deployment-state persistence contract
+        run: pnpm exec vitest run src/lib/trash-guides/__tests__/deployment-state-persistence.test.ts
+        working-directory: apps/api
+        env:
+          TEST_DB: "true"
+
       - name: Build shared package
         run: pnpm --filter @arr/shared run build
 

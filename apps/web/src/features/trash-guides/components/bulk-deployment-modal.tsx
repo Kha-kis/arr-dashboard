@@ -67,6 +67,7 @@ interface InstancePreview {
 		updatedCustomFormats: number;
 		conflicts: number;
 		canDeploy: boolean;
+		executionToken: string;
 	};
 	loading: boolean;
 	error?: Error;
@@ -216,6 +217,7 @@ export const BulkDeploymentModal = ({
 							updatedCustomFormats: preview.summary.updatedCustomFormats,
 							conflicts: preview.summary.totalConflicts,
 							canDeploy: preview.canDeploy,
+							executionToken: preview.executionToken,
 						}
 					: undefined,
 			};
@@ -294,14 +296,18 @@ export const BulkDeploymentModal = ({
 
 		// Build per-instance sync strategies map
 		const instanceSyncStrategies: Record<string, SyncStrategy> = {};
+		const executionTokens: Record<string, string> = {};
 		for (const inst of deployableInstances) {
+			if (!inst.preview?.executionToken) return;
 			instanceSyncStrategies[inst.instanceId] = inst.syncStrategy;
+			executionTokens[inst.instanceId] = inst.preview.executionToken;
 		}
 
 		bulkDeployMutation.mutate(
 			{
 				templateId,
 				instanceIds: deployableInstances.map((inst) => inst.instanceId),
+				executionTokens,
 				instanceSyncStrategies,
 			},
 			{
@@ -577,29 +583,61 @@ export const BulkDeploymentModal = ({
 						</div>
 					</div>
 				)}
-				{bulkDeployMutation.isSuccess && !bulkDeployMutation.data?.success && (
-					<div
-						className="flex items-start gap-2 rounded-xl p-3 mr-auto"
-						style={{
-							backgroundColor: SEMANTIC_COLORS.error.bg,
-							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
-						}}
-					>
-						<AlertCircle
-							className="h-5 w-5 mt-0.5 shrink-0"
-							style={{ color: SEMANTIC_COLORS.error.from }}
-						/>
-						<div>
-							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
-								Deployment Partially Failed
-							</p>
-							<p className="text-sm mt-1 opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
-								{bulkDeployMutation.data?.result.failedInstances} of{" "}
-								{bulkDeployMutation.data?.result.totalInstances} deployments failed
-							</p>
+				{bulkDeployMutation.isSuccess &&
+					(bulkDeployMutation.data?.result.uncertainInstances ?? 0) > 0 && (
+						<div
+							className="flex items-start gap-2 rounded-xl p-3 mr-auto"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.warning.bg,
+								border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+							}}
+						>
+							<AlertCircle
+								className="h-5 w-5 mt-0.5 shrink-0"
+								style={{ color: SEMANTIC_COLORS.warning.from }}
+							/>
+							<div>
+								<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
+									Deployment Result Uncertain
+								</p>
+								<p
+									className="text-sm mt-1 opacity-80"
+									style={{ color: SEMANTIC_COLORS.warning.text }}
+								>
+									{bulkDeployMutation.data?.result.uncertainInstances} of{" "}
+									{bulkDeployMutation.data?.result.totalInstances} deployments require review or
+									rollback before retrying
+								</p>
+							</div>
 						</div>
-					</div>
-				)}
+					)}
+				{bulkDeployMutation.isSuccess &&
+					(bulkDeployMutation.data?.result.failedInstances ?? 0) > 0 && (
+						<div
+							className="flex items-start gap-2 rounded-xl p-3 mr-auto"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.error.bg,
+								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+							}}
+						>
+							<AlertCircle
+								className="h-5 w-5 mt-0.5 shrink-0"
+								style={{ color: SEMANTIC_COLORS.error.from }}
+							/>
+							<div>
+								<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+									Deployment Partially Failed
+								</p>
+								<p
+									className="text-sm mt-1 opacity-80"
+									style={{ color: SEMANTIC_COLORS.error.text }}
+								>
+									{bulkDeployMutation.data?.result.failedInstances} of{" "}
+									{bulkDeployMutation.data?.result.totalInstances} deployments failed
+								</p>
+							</div>
+						</div>
+					)}
 				{bulkDeployMutation.isSuccess && bulkDeployMutation.data?.success && (
 					<div
 						className="flex items-start gap-2 rounded-xl p-3 mr-auto"

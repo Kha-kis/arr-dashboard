@@ -126,7 +126,15 @@ beforeEach(async () => {
 			delete: vi.fn(),
 		},
 		serviceInstanceTag: { findFirst: vi.fn().mockResolvedValue(null) },
+		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		instanceQualityProfileOverride: {
+			findMany: vi.fn().mockResolvedValue([]),
+		},
 	};
+	mockPrisma.$transaction = vi.fn(async (operation: (tx: typeof mockPrisma) => Promise<unknown>) =>
+		operation(mockPrisma),
+	);
 
 	mockRequireInstance.mockResolvedValue(makeInstanceRow());
 	mockBuildUpdateData.mockReturnValue({});
@@ -139,6 +147,16 @@ beforeEach(async () => {
 		decrypt: vi.fn().mockReturnValue(SECRET_KEY),
 	});
 	app.decorate("notificationService", { notify: vi.fn().mockResolvedValue(undefined) } as never);
+	app.decorate("arrClientFactory", {
+		createConnectionCredentialIdentity: vi.fn((instance: any) =>
+			JSON.stringify([
+				instance.encryptedApiKey,
+				instance.encryptionIv,
+				instance.encryptedHttpAuthCredentials ?? null,
+				instance.httpAuthEncryptionIv ?? null,
+			]),
+		),
+	});
 
 	setupAuthInjection(app);
 	registerTestErrorHandler(app);

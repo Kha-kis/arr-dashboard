@@ -11,14 +11,14 @@ import {
 	Sparkles,
 	Zap,
 } from "lucide-react";
-import { Suspense, lazy } from "react";
+import { lazy, Suspense } from "react";
 import { ErrorBoundary } from "../../../components/error-boundary";
 import { PremiumEmptyState } from "../../../components/layout";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
+import { useCacheHealth } from "../../../hooks/api/useTrashCache";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useCacheHealth } from "../../../hooks/api/useTrashCache";
 import { useTrashGuidesActions } from "../hooks/use-trash-guides-actions";
 import { useTrashGuidesData } from "../hooks/use-trash-guides-data";
 import { useTrashGuidesModals } from "../hooks/use-trash-guides-modals";
@@ -28,13 +28,16 @@ import { BulkScoreManager } from "./bulk-score-manager";
 import { CacheStatusSection } from "./cache-status-section";
 import { CustomFormatsBrowser } from "./custom-formats-browser";
 import { DeploymentHistoryTable } from "./deployment-history-table";
+
 const NamingManager = lazy(() =>
 	import("./naming-manager").then((m) => ({ default: m.NamingManager })),
 );
+
 import { QualityProfileWizard } from "./quality-profile-wizard";
 import { QualitySizeManager } from "./quality-size-manager";
 import { RepoSettingsSection } from "./repo-settings-section";
 import { SchedulerStatusDashboard } from "./scheduler-status-dashboard";
+import { SyncReviewNeededPanel } from "./sync-review-needed-panel";
 import { TemplateEditor } from "./template-editor";
 import { TemplateImportDialog } from "./template-import-dialog";
 import { TemplateList } from "./template-list";
@@ -254,6 +257,7 @@ export function TrashGuidesClient() {
 			case "history":
 				return (
 					<div className="space-y-6">
+						<SyncReviewNeededPanel />
 						<div
 							className="group relative rounded-xl overflow-hidden"
 							style={{ border: `1px solid ${themeGradient.from}10` }}

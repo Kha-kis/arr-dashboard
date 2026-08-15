@@ -120,6 +120,11 @@ export const trashGuidesKeys = {
 		previewAll: ["trash-guides", "deployment", "preview"] as const,
 	},
 
+	// Sync recovery
+	sync: {
+		reviewNeeded: ["trash-guides", "sync", "review-needed"] as const,
+	},
+
 	// Per-service prefix used by useTrashCache invalidation. NOTE: this
 	// prefix-matches nothing in this file's standard keys (they nest as
 	// ["trash-guides","<group>",...]) — preserved byte-identically by the
@@ -175,6 +180,10 @@ export const qualityProfileKeys = {
 		["profile-match", profileName, serviceType] as const,
 	clone: {
 		profiles: (instanceId: string | null) => ["profile-clone", "profiles", instanceId] as const,
+		configuration: (trashId: string) =>
+			["cloned-profile-details", "configuration", trashId] as const,
+		sourceReview: (trashId: string) =>
+			["cloned-profile-details", "source-review", trashId] as const,
 	},
 };
 
