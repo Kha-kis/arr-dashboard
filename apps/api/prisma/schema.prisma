@@ -1591,11 +1591,15 @@ model PlexCache {
   labels         String // JSON array of label names
   addedAt        DateTime?
   thumb          String? // Plex thumbnail path for poster art
+  // Null on legacy rows: readable for UI, never cleanup-authoritative.
+  connectionGeneration Int?
+  identityGeneration   Int?
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   @@unique([instanceId, tmdbId, mediaType, sectionId])
   @@index([instanceId])
+  @@index([instanceId, connectionGeneration, identityGeneration])
   @@map("plex_cache")
 }
 
@@ -1619,11 +1623,15 @@ model PlexEpisodeCache {
   /// SHA-256 digest of the Plex connection snapshot that produced this row.
   /// Null means the row predates connection-bound refresh evidence.
   sourceFingerprint String?
+  // Null on legacy rows: readable for UI, never cleanup-authoritative.
+  connectionGeneration Int?
+  identityGeneration   Int?
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   @@unique([instanceId, showTmdbId, seasonNumber, episodeNumber])
   @@index([instanceId])
+  @@index([instanceId, connectionGeneration, identityGeneration])
   @@map("plex_episode_cache")
 }
 
@@ -1650,11 +1658,15 @@ model JellyfinCache {
   collections    String // JSON array of collection names
   addedAt        DateTime?
   thumb          String? // Jellyfin image path
+  // Null on legacy rows: readable for UI, never cleanup-authoritative.
+  connectionGeneration Int?
+  identityGeneration   Int?
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   @@unique([instanceId, tmdbId, mediaType, libraryId])
   @@index([instanceId])
+  @@index([instanceId, connectionGeneration, identityGeneration])
   @@map("jellyfin_cache")
 }
 
@@ -1670,11 +1682,15 @@ model JellyfinEpisodeCache {
   watched        Boolean
   watchedByUsers String // JSON array of usernames
   lastWatchedAt  DateTime?
+  // Null on legacy rows: readable for UI, never cleanup-authoritative.
+  connectionGeneration Int?
+  identityGeneration   Int?
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   @@unique([instanceId, showTmdbId, seasonNumber, episodeNumber])
   @@index([instanceId])
+  @@index([instanceId, connectionGeneration, identityGeneration])
   @@map("jellyfin_episode_cache")
 }
 
@@ -1692,11 +1708,15 @@ model TautulliCache {
   lastWatchedAt  DateTime?
   watchCount     Int
   watchedByUsers String // JSON array of usernames
+  // Null on legacy rows: readable for UI, never cleanup-authoritative.
+  connectionGeneration Int?
+  identityGeneration   Int?
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   @@unique([instanceId, tmdbId, mediaType])
   @@index([instanceId])
+  @@index([instanceId, connectionGeneration, identityGeneration])
   @@map("tautulli_cache")
 }
 
@@ -1718,10 +1738,14 @@ model CacheRefreshStatus {
   lastAttemptAt           DateTime?
   lastAttemptResult       String?
   lastAttemptErrorMessage String?
+  // Null on legacy rows: readable for UI, never cleanup-authoritative.
+  connectionGeneration Int?
+  identityGeneration   Int?
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   @@unique([instanceId, cacheType])
+  @@index([instanceId, connectionGeneration, identityGeneration])
   @@map("cache_refresh_status")
 }
 
