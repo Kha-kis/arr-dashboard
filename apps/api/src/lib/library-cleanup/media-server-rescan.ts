@@ -900,6 +900,7 @@ export async function triggerMediaServerRescansForApproval(
 					{ err: error, scanId: scan.id, service: scan.service },
 					"Cleanup media-server scan dispatch has an ambiguous durable outcome",
 				);
+				if (providerAuthorityFailed) break;
 				continue;
 			}
 			const ownedTargets = await deps.prisma.libraryCleanupMediaServerScan.findMany({

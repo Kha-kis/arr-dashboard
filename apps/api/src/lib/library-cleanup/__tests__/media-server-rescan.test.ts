@@ -1257,6 +1257,66 @@ describe("durable media-server rescans", () => {
 		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
 	});
 
+	it("fail-stops later operations when Plex authority changes after a partial section dispatch", async () => {
+		const rows = [
+			scan("scan-movies", "plex-1", "PLEX", {
+				plannedSectionIds: '["movies","movies-2"]',
+			}),
+			scan("scan-shows", "plex-1", "PLEX", {
+				mediaType: "show",
+				plannedSectionIds: '["shows"]',
+				targetKey: "PLEX:plex-1:show",
+			}),
+		];
+		const storedApproval = approval({ safetySnapshot: providerSafetySnapshot() });
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")], approval: storedApproval });
+		installStatefulScanStore(fixture, rows, [storedApproval]);
+		fixture.plexClient.getLibrarySections.mockResolvedValue([
+			{ key: "movies", title: "Movies", type: "movie" },
+			{ key: "movies-2", title: "More Movies", type: "movie" },
+			{ key: "shows", title: "Shows", type: "show" },
+		]);
+		const authorityChecker = vi
+			.fn()
+			.mockResolvedValueOnce(undefined)
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(new ProviderExecutionAuthorityChangedError())
+			.mockResolvedValue(undefined);
+		Object.assign(fixture.deps, { providerEvidenceAuthorityChecker: authorityChecker });
+		const releaseLease = vi.fn().mockResolvedValue({ count: 1 });
+		Object.assign(fixture.prisma, {
+			libraryCleanupMediaServerScanLease: {
+				create: vi.fn().mockResolvedValue({}),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				deleteMany: releaseLease,
+			},
+		});
+
+		const result = await triggerMediaServerRescansForApproval(
+			fixture.deps,
+			"user-1",
+			storedApproval.id,
+		);
+
+		expect(result).toMatchObject({
+			targets: 2,
+			triggered: 0,
+			failed: 0,
+			providerAuthorityFailed: true,
+		});
+		expect(result.warnings).toContainEqual(expect.stringContaining("may have completed"));
+		expect(fixture.plexClient.refreshSection.mock.calls).toEqual([["movies"]]);
+		expect(rows[0]).toMatchObject({
+			status: "triggering",
+			executionToken: expect.any(String),
+			requestStartedAt: expect.any(Date),
+			lastError: null,
+		});
+		expect(rows[1]?.status).toBe("pending");
+		expect(authorityChecker).toHaveBeenCalledTimes(3);
+		expect(releaseLease).not.toHaveBeenCalled();
+	});
+
 	it("atomically claims equivalent rows so concurrent callers issue one physical refresh", async () => {
 		const rows = [
 			scan("scan-1", "jellyfin-1", "JELLYFIN"),
