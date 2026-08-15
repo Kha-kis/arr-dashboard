@@ -1,9 +1,41 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	prepareMediaServerRescans,
 	triggerCoalescedMediaServerRescans,
 	triggerMediaServerRescansForApproval,
 } from "../media-server-rescan.js";
+import {
+	createSanitizedProviderEvidence,
+	serializeExecutableSafetyPlan,
+} from "../shared-plex-safety.js";
+
+function authorityFingerprint(value: unknown): string {
+	const canonicalize = (input: unknown): unknown => {
+		if (input instanceof Date) return input.toISOString();
+		if (Array.isArray(input)) return input.map(canonicalize);
+		if (typeof input === "object" && input !== null) {
+			return Object.fromEntries(
+				Object.entries(input as Record<string, unknown>)
+					.sort(([left], [right]) => left.localeCompare(right))
+					.map(([key, entry]) => [key, canonicalize(entry)]),
+			);
+		}
+		return input;
+	};
+	return createHash("sha256")
+		.update(JSON.stringify(canonicalize(value)))
+		.digest("hex");
+}
+
+const providerIndependentSafetySnapshot = serializeExecutableSafetyPlan({
+	kind: "verified_arr_target",
+	target: {
+		serviceFingerprint: "a".repeat(64),
+		externalId: 42,
+		mediaPath: { value: "/movies/Movie", windows: false },
+	},
+});
 
 function approval(overrides: Record<string, unknown> = {}) {
 	return {
@@ -29,7 +61,7 @@ function approval(overrides: Record<string, unknown> = {}) {
 		rating: null,
 		status: "executed",
 		executionToken: null,
-		safetySnapshot: null,
+		safetySnapshot: providerIndependentSafetySnapshot,
 		lastExecutionError: null,
 		reviewedAt: null,
 		executedAt: new Date(),
@@ -432,6 +464,138 @@ describe("durable media-server rescans", () => {
 		expect(fixture.plexClient.refreshSection).toHaveBeenCalledOnce();
 		expect(fixture.plexClient.refreshSection).toHaveBeenCalledWith("movies");
 		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledTimes(2);
+	});
+
+	it("keeps a post-delete scan retryable when live provider identity changed", async () => {
+		const now = new Date();
+		const plexInstance = {
+			...instance("plex-1", "PLEX"),
+			expectedIdentity: "plex-machine-a",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date(now.getTime() - 5_000),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			updatedAt: new Date(now.getTime() - 10_000),
+		};
+		const status = {
+			instanceId: plexInstance.id,
+			cacheType: "plex",
+			lastRefreshedAt: now,
+			lastResult: "success",
+			lastErrorMessage: null,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			itemCount: 1,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			generationId: "generation-a",
+			generationMetadata: "{}",
+		};
+		const row = {
+			id: "plex-row-1",
+			instanceId: plexInstance.id,
+			tmdbId: 42,
+			mediaType: "movie",
+			sectionId: "movies",
+			sectionTitle: "Movies",
+			lastWatchedAt: now,
+			watchCount: 2,
+			watchedByUsers: "[]",
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			labels: "[]",
+			addedAt: null,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		};
+		const statusPayload = {
+			instanceId: status.instanceId,
+			lastRefreshedAt: status.lastRefreshedAt,
+			lastResult: status.lastResult,
+			lastErrorMessage: status.lastErrorMessage,
+			lastAttemptResult: status.lastAttemptResult,
+			lastAttemptErrorMessage: status.lastAttemptErrorMessage,
+			itemCount: status.itemCount,
+			connectionGeneration: status.connectionGeneration,
+			identityGeneration: status.identityGeneration,
+			generationId: status.generationId,
+			generationMetadata: status.generationMetadata,
+		};
+		const evidence = createSanitizedProviderEvidence(
+			["plex"],
+			[
+				{
+					service: "PLEX",
+					identityKind: plexInstance.identityKind,
+					identityFingerprint: authorityFingerprint({
+						service: plexInstance.service,
+						identityKind: plexInstance.identityKind,
+						expectedIdentity: plexInstance.expectedIdentity,
+					}),
+					connectionGeneration: 3,
+					identityGeneration: 7,
+					cacheType: "plex",
+					completedAt: now.toISOString(),
+					itemCount: 1,
+					verifiedAt: plexInstance.identityVerifiedAt.toISOString(),
+					statusFingerprint: authorityFingerprint({
+						instance: {
+							id: plexInstance.id,
+							expectedIdentity: plexInstance.expectedIdentity,
+							identityKind: plexInstance.identityKind,
+							identityVerifiedAt: plexInstance.identityVerifiedAt,
+							connectionGeneration: 3,
+							identityGeneration: 7,
+							updatedAt: plexInstance.updatedAt,
+						},
+						status: statusPayload,
+					}),
+					rowFingerprint: authorityFingerprint([row]),
+				},
+			],
+		);
+		const storedApproval = approval({
+			safetySnapshot: serializeExecutableSafetyPlan(
+				{
+					kind: "verified_arr_target",
+					target: {
+						serviceFingerprint: "a".repeat(64),
+						externalId: 42,
+						mediaPath: { value: "/movies/Movie", windows: false },
+					},
+				},
+				evidence,
+			),
+		});
+		const rows = [scan("scan-1", plexInstance.id, "PLEX")];
+		const fixture = deps({ instances: [plexInstance], scans: rows, approval: storedApproval });
+		Object.assign(fixture.deps, {
+			encryptor: { decrypt: vi.fn(() => "decrypted") },
+			providerIdentityReader: vi.fn(async () => ({
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				rawIdentity: "plex-machine-b",
+				confirmationDigest: "safe",
+				fingerprint: "safe",
+			})),
+		});
+		Object.assign(fixture.prisma, {
+			cacheRefreshStatus: { findMany: vi.fn(async () => [status]) },
+			plexCache: { findMany: vi.fn(async () => [row]) },
+			$transaction: vi.fn(),
+		});
+
+		const result = await triggerMediaServerRescansForApproval(
+			fixture.deps,
+			"user-1",
+			storedApproval.id,
+		);
+
+		expect(result).toMatchObject({ targets: 1, triggered: 0, failed: 1 });
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+		expect(rows[0]).toMatchObject({ status: "failed", executionToken: null });
 	});
 
 	it("reissues the full Plex plan after a partial attempt", async () => {

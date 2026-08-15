@@ -9,6 +9,10 @@ import {
 	recordApprovalMediaRescanEvent,
 	runCleanupAuditBestEffort,
 } from "./cleanup-audit.js";
+import {
+	assertCurrentProviderEvidenceAuthority,
+	parseExecutableSafetyEnvelope,
+} from "./shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "./types.js";
 
 const RESCAN_RETRY_BASE_MS = 60 * 1000;
@@ -780,6 +784,21 @@ export async function triggerMediaServerRescansForApproval(
 			if (claimedTargets.length !== claim.count || claimedTargets.length === 0) {
 				throw new Error("Media-server scan claim could not be verified");
 			}
+			const authorityApprovals = await deps.prisma.libraryCleanupApproval.findMany({
+				where: {
+					id: { in: [...new Set(claimedTargets.map((target) => target.approvalId))] },
+					config: { userId },
+					status: "executed",
+				},
+				select: { id: true, safetySnapshot: true },
+				orderBy: { id: "asc" },
+			});
+			if (
+				authorityApprovals.length !==
+				new Set(claimedTargets.map((target) => target.approvalId)).size
+			) {
+				throw new Error("Media-server scan provider authority was unavailable");
+			}
 			claimed += claimedTargets.length;
 			for (const target of claimedTargets) affectedApprovalIds.add(target.approvalId);
 			const requestProofCount = await recordDatabaseRequestStart(deps, targetIds, executionToken);
@@ -791,6 +810,19 @@ export async function triggerMediaServerRescansForApproval(
 			);
 			for (const candidate of claimedTargets) {
 				try {
+					for (const authorityApproval of authorityApprovals) {
+						const envelope = parseExecutableSafetyEnvelope(authorityApproval.safetySnapshot);
+						if (!envelope) {
+							throw new Error("Media-server scan provider authority was unavailable");
+						}
+						await assertCurrentProviderEvidenceAuthority(
+							deps,
+							userId,
+							envelope.providerEvidence,
+							async () =>
+								await assertRescanOperationLease(deps, userId, operationKey, executionToken),
+						);
+					}
 					physicalOutcome = await triggerClaimedRescan(
 						deps,
 						userId,

@@ -11,6 +11,8 @@ import type {
 	SonarrClient,
 	Notification as SonarrNotification,
 } from "arr-sdk/sonarr";
+import { createOwnedJellyfinPublicationSnapshot } from "../jellyfin/jellyfin-cache-refresher.js";
+import { createOwnedPlexPublicationSnapshot } from "../plex/plex-cache-refresher.js";
 import {
 	createPlexClient,
 	type PlexClient,
@@ -20,6 +22,9 @@ import {
 } from "../plex/plex-client.js";
 import { plexConnectionFingerprint as plexEvidenceSourceFingerprint } from "../plex/service-instance-fingerprint.js";
 import type { ServiceInstance } from "../prisma.js";
+import { readProviderIdentity } from "../services/service-identity.js";
+import { toPersistedIdentityKind } from "../services/service-identity-lifecycle.js";
+import { createOwnedTautulliPublicationSnapshot } from "../tautulli/tautulli-cache-refresher.js";
 
 export { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
 
@@ -1132,6 +1137,476 @@ export function createSanitizedProviderEvidence(
 			sources: orderedSources,
 		}),
 	};
+}
+
+const PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
+const PROVIDER_EXECUTION_CACHE_TYPES = new Set([
+	"plex",
+	"plex_episode",
+	"jellyfin",
+	"jellyfin_episode",
+	"tautulli",
+]);
+
+const PROVIDER_EXECUTION_ROW_SELECTS = {
+	plex: {
+		id: true,
+		instanceId: true,
+		tmdbId: true,
+		mediaType: true,
+		sectionId: true,
+		sectionTitle: true,
+		lastWatchedAt: true,
+		watchCount: true,
+		watchedByUsers: true,
+		onDeck: true,
+		userRating: true,
+		collections: true,
+		labels: true,
+		addedAt: true,
+		connectionGeneration: true,
+		identityGeneration: true,
+	},
+	plex_episode: {
+		id: true,
+		instanceId: true,
+		showTmdbId: true,
+		seasonNumber: true,
+		episodeNumber: true,
+		ratingKey: true,
+		watched: true,
+		watchedByUsers: true,
+		lastWatchedAt: true,
+		watchCount: true,
+		refreshedAt: true,
+		sourceFingerprint: true,
+		connectionGeneration: true,
+		identityGeneration: true,
+	},
+	jellyfin: {
+		id: true,
+		instanceId: true,
+		tmdbId: true,
+		mediaType: true,
+		libraryId: true,
+		libraryName: true,
+		jellyfinId: true,
+		lastWatchedAt: true,
+		watchCount: true,
+		watchedByUsers: true,
+		onDeck: true,
+		userRating: true,
+		collections: true,
+		addedAt: true,
+		connectionGeneration: true,
+		identityGeneration: true,
+	},
+	jellyfin_episode: {
+		id: true,
+		instanceId: true,
+		showTmdbId: true,
+		seasonNumber: true,
+		episodeNumber: true,
+		jellyfinId: true,
+		watched: true,
+		watchedByUsers: true,
+		lastWatchedAt: true,
+		connectionGeneration: true,
+		identityGeneration: true,
+	},
+	tautulli: {
+		id: true,
+		instanceId: true,
+		tmdbId: true,
+		mediaType: true,
+		lastWatchedAt: true,
+		watchCount: true,
+		watchedByUsers: true,
+		connectionGeneration: true,
+		identityGeneration: true,
+	},
+} as const;
+
+type ProviderExecutionCacheType = keyof typeof PROVIDER_EXECUTION_ROW_SELECTS;
+
+function providerExecutionServices(
+	dependencies: SanitizedProviderEvidence["dependencies"],
+): Array<SanitizedProviderEvidenceSource["service"]> {
+	const services = new Set<SanitizedProviderEvidenceSource["service"]>();
+	for (const dependency of dependencies) {
+		if (dependency === "plex") services.add("PLEX");
+		else if (dependency === "tautulli") services.add("TAUTULLI");
+		else if (dependency === "jellyfin") {
+			services.add("JELLYFIN");
+			services.add("EMBY");
+		} else {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+	}
+	return [...services];
+}
+
+function providerServiceUsesCacheType(
+	service: SanitizedProviderEvidenceSource["service"],
+	cacheType: ProviderExecutionCacheType,
+): boolean {
+	if (service === "PLEX") return cacheType === "plex" || cacheType === "plex_episode";
+	if (service === "TAUTULLI") return cacheType === "tautulli";
+	return cacheType === "jellyfin" || cacheType === "jellyfin_episode";
+}
+
+export class ProviderExecutionAuthorityChangedError extends Error {
+	readonly code = "PROVIDER_EXECUTION_AUTHORITY_CHANGED";
+
+	constructor() {
+		super("Provider execution authority changed");
+		this.name = "ProviderExecutionAuthorityChangedError";
+	}
+}
+
+function providerExecutionFingerprint(value: unknown): string {
+	const canonicalize = (input: unknown): unknown => {
+		if (input instanceof Date) return input.toISOString();
+		if (Array.isArray(input)) return input.map(canonicalize);
+		if (typeof input === "object" && input !== null) {
+			return Object.fromEntries(
+				Object.entries(input as Record<string, unknown>)
+					.sort(([left], [right]) => left.localeCompare(right))
+					.map(([key, entry]) => [key, canonicalize(entry)]),
+			);
+		}
+		return input;
+	};
+	return createHash("sha256")
+		.update(JSON.stringify(canonicalize(value)))
+		.digest("hex");
+}
+
+function providerExecutionInstanceFingerprint(instance: ServiceInstance): string {
+	return providerExecutionFingerprint({
+		id: instance.id,
+		userId: instance.userId,
+		service: instance.service,
+		baseUrl: instance.baseUrl,
+		enabled: instance.enabled,
+		encryptedApiKey: instance.encryptedApiKey,
+		encryptionIv: instance.encryptionIv,
+		encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
+		httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
+		expectedIdentity: instance.expectedIdentity,
+		identityKind: instance.identityKind,
+		identityStatus: instance.identityStatus,
+		identityVerifiedAt: instance.identityVerifiedAt,
+		connectionGeneration: instance.connectionGeneration,
+		identityGeneration: instance.identityGeneration,
+		updatedAt: instance.updatedAt,
+	});
+}
+
+function isCurrentProviderExecutionInstance(instance: ServiceInstance): boolean {
+	return (
+		instance.enabled &&
+		(instance.service === "PLEX" ||
+			instance.service === "JELLYFIN" ||
+			instance.service === "EMBY" ||
+			instance.service === "TAUTULLI") &&
+		instance.identityStatus === "VERIFIED" &&
+		typeof instance.expectedIdentity === "string" &&
+		instance.expectedIdentity.trim() !== "" &&
+		instance.identityKind !== null &&
+		instance.identityVerifiedAt !== null &&
+		Number.isSafeInteger(instance.connectionGeneration) &&
+		instance.connectionGeneration >= 0 &&
+		Number.isSafeInteger(instance.identityGeneration) &&
+		instance.identityGeneration > 0
+	);
+}
+
+async function loadProviderExecutionRows(
+	prisma: CleanupExecutorDeps["prisma"],
+	cacheType: ProviderExecutionCacheType,
+	instanceIds: string[],
+): Promise<Array<Record<string, unknown>>> {
+	const where = { instanceId: { in: instanceIds } };
+	switch (cacheType) {
+		case "plex":
+			return (await prisma.plexCache.findMany({
+				where,
+				select: PROVIDER_EXECUTION_ROW_SELECTS.plex,
+				orderBy: { id: "asc" },
+			})) as Array<Record<string, unknown>>;
+		case "plex_episode":
+			return (await prisma.plexEpisodeCache.findMany({
+				where,
+				select: PROVIDER_EXECUTION_ROW_SELECTS.plex_episode,
+				orderBy: { id: "asc" },
+			})) as Array<Record<string, unknown>>;
+		case "jellyfin":
+			return (await prisma.jellyfinCache.findMany({
+				where,
+				select: PROVIDER_EXECUTION_ROW_SELECTS.jellyfin,
+				orderBy: { id: "asc" },
+			})) as Array<Record<string, unknown>>;
+		case "jellyfin_episode":
+			return (await prisma.jellyfinEpisodeCache.findMany({
+				where,
+				select: PROVIDER_EXECUTION_ROW_SELECTS.jellyfin_episode,
+				orderBy: { id: "asc" },
+			})) as Array<Record<string, unknown>>;
+		case "tautulli":
+			return (await prisma.tautulliCache.findMany({
+				where,
+				select: PROVIDER_EXECUTION_ROW_SELECTS.tautulli,
+				orderBy: { id: "asc" },
+			})) as Array<Record<string, unknown>>;
+	}
+}
+
+async function loadCurrentProviderExecutionEvidence(
+	prisma: CleanupExecutorDeps["prisma"],
+	userId: string,
+	accepted: SanitizedProviderEvidence,
+	now: Date,
+): Promise<{ evidence: SanitizedProviderEvidence; instances: ServiceInstance[] }> {
+	const services = providerExecutionServices(accepted.dependencies);
+	const cacheTypes = [...new Set(accepted.sources.map((source) => source.cacheType))];
+	if (
+		services.length === 0 ||
+		cacheTypes.some((cacheType) => !PROVIDER_EXECUTION_CACHE_TYPES.has(cacheType))
+	) {
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+	const instances = (await prisma.serviceInstance.findMany({
+		where: { userId, service: { in: services }, enabled: true },
+		orderBy: { id: "asc" },
+	})) as ServiceInstance[];
+	if (
+		instances.length === 0 ||
+		instances.some((instance) => !isCurrentProviderExecutionInstance(instance))
+	) {
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+	const statuses = await prisma.cacheRefreshStatus.findMany({
+		where: {
+			instanceId: { in: instances.map((instance) => instance.id) },
+			cacheType: { in: cacheTypes },
+		},
+		select: {
+			instanceId: true,
+			cacheType: true,
+			lastRefreshedAt: true,
+			lastResult: true,
+			lastErrorMessage: true,
+			lastAttemptResult: true,
+			lastAttemptErrorMessage: true,
+			itemCount: true,
+			connectionGeneration: true,
+			identityGeneration: true,
+			generationId: true,
+			generationMetadata: true,
+		},
+	});
+	const statusesByKey = new Map(
+		statuses.map((status) => [`${status.instanceId}:${status.cacheType}`, status]),
+	);
+	const rowsByType = new Map<ProviderExecutionCacheType, Array<Record<string, unknown>>>();
+	for (const cacheType of cacheTypes as ProviderExecutionCacheType[]) {
+		rowsByType.set(
+			cacheType,
+			await loadProviderExecutionRows(
+				prisma,
+				cacheType,
+				instances.map((instance) => instance.id),
+			),
+		);
+	}
+	const freshnessThreshold = now.getTime() - PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS;
+	const sources: Array<Omit<SanitizedProviderEvidenceSource, "fingerprint">> = [];
+	for (const instance of instances) {
+		const applicableTypes = cacheTypes.filter((cacheType) =>
+			providerServiceUsesCacheType(
+				instance.service as SanitizedProviderEvidenceSource["service"],
+				cacheType as ProviderExecutionCacheType,
+			),
+		) as ProviderExecutionCacheType[];
+		for (const cacheType of applicableTypes) {
+			const status = statusesByKey.get(`${instance.id}:${cacheType}`);
+			if (
+				!status ||
+				instance.identityVerifiedAt === null ||
+				status.lastResult !== "success" ||
+				status.lastErrorMessage !== null ||
+				status.lastAttemptErrorMessage !== null ||
+				(status.lastAttemptResult !== null && status.lastAttemptResult !== "success") ||
+				status.lastRefreshedAt.getTime() < freshnessThreshold ||
+				status.lastRefreshedAt.getTime() < instance.updatedAt.getTime() ||
+				status.lastRefreshedAt.getTime() < instance.identityVerifiedAt.getTime() ||
+				status.connectionGeneration !== instance.connectionGeneration ||
+				status.identityGeneration !== instance.identityGeneration
+			) {
+				throw new ProviderExecutionAuthorityChangedError();
+			}
+			const rows = (rowsByType.get(cacheType) ?? [])
+				.filter((row) => row.instanceId === instance.id)
+				.sort((left, right) => String(left.id).localeCompare(String(right.id)));
+			if (rows.length !== status.itemCount) throw new ProviderExecutionAuthorityChangedError();
+			sources.push({
+				service: instance.service as SanitizedProviderEvidenceSource["service"],
+				identityKind: instance.identityKind!,
+				identityFingerprint: providerExecutionFingerprint({
+					service: instance.service,
+					identityKind: instance.identityKind,
+					expectedIdentity: instance.expectedIdentity,
+				}),
+				connectionGeneration: status.connectionGeneration!,
+				identityGeneration: status.identityGeneration!,
+				cacheType,
+				completedAt: status.lastRefreshedAt.toISOString(),
+				itemCount: status.itemCount,
+				verifiedAt: instance.identityVerifiedAt.toISOString(),
+				statusFingerprint: providerExecutionFingerprint({
+					instance: {
+						id: instance.id,
+						expectedIdentity: instance.expectedIdentity,
+						identityKind: instance.identityKind,
+						identityVerifiedAt: instance.identityVerifiedAt,
+						connectionGeneration: instance.connectionGeneration,
+						identityGeneration: instance.identityGeneration,
+						updatedAt: instance.updatedAt,
+					},
+					status: {
+						instanceId: status.instanceId,
+						lastRefreshedAt: status.lastRefreshedAt,
+						lastResult: status.lastResult,
+						lastErrorMessage: status.lastErrorMessage,
+						lastAttemptResult: status.lastAttemptResult,
+						lastAttemptErrorMessage: status.lastAttemptErrorMessage,
+						itemCount: status.itemCount,
+						connectionGeneration: status.connectionGeneration,
+						identityGeneration: status.identityGeneration,
+						generationId: status.generationId,
+						generationMetadata: status.generationMetadata,
+					},
+				}),
+				rowFingerprint: providerExecutionFingerprint(rows),
+			});
+		}
+	}
+	return { evidence: createSanitizedProviderEvidence(accepted.dependencies, sources), instances };
+}
+
+function currentEvidenceMatches(
+	accepted: SanitizedProviderEvidence,
+	current: SanitizedProviderEvidence,
+): boolean {
+	return (
+		accepted.fingerprint === current.fingerprint &&
+		accepted.sources.length === current.sources.length &&
+		accepted.sources.every(
+			(source, index) => source.fingerprint === current.sources[index]?.fingerprint,
+		)
+	);
+}
+
+/**
+ * Re-authorize every provider-dependent target from the durable Task 6 evidence.
+ * Live network identity reads happen before the final database transaction; the
+ * transaction then locks and rechecks the exact stored status/rows snapshot.
+ */
+export async function assertCurrentProviderEvidenceAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	accepted: SanitizedProviderEvidence,
+	assertLease?: () => Promise<void>,
+): Promise<void> {
+	if (accepted.dependencies.length === 0 && accepted.sources.length === 0) return;
+	const testAuthorityChecker = (
+		deps as unknown as {
+			providerEvidenceAuthorityChecker?: (
+				userId: string,
+				evidence: SanitizedProviderEvidence,
+				assertLease?: () => Promise<void>,
+			) => Promise<void>;
+		}
+	).providerEvidenceAuthorityChecker;
+	if (testAuthorityChecker) {
+		await testAuthorityChecker(userId, accepted, assertLease);
+		return;
+	}
+	try {
+		const canonicalAccepted = createSanitizedProviderEvidence(
+			accepted.dependencies,
+			accepted.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		);
+		if (!currentEvidenceMatches(accepted, canonicalAccepted)) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		await assertLease?.();
+		const before = await loadCurrentProviderExecutionEvidence(
+			deps.prisma,
+			userId,
+			accepted,
+			new Date(),
+		);
+		if (!currentEvidenceMatches(accepted, before.evidence)) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		if (!deps.encryptor) throw new ProviderExecutionAuthorityChangedError();
+		const identityReader =
+			(deps as unknown as { providerIdentityReader?: typeof readProviderIdentity })
+				.providerIdentityReader ?? readProviderIdentity;
+		for (const instance of before.instances) {
+			const owned =
+				instance.service === "PLEX"
+					? createOwnedPlexPublicationSnapshot(deps.encryptor, instance)
+					: instance.service === "TAUTULLI"
+						? createOwnedTautulliPublicationSnapshot(deps.encryptor, instance)
+						: createOwnedJellyfinPublicationSnapshot(deps.encryptor, instance);
+			const observation = await identityReader(owned, deps.log);
+			if (
+				observation.service !== instance.service ||
+				toPersistedIdentityKind(observation.identityKind) !== instance.identityKind ||
+				observation.rawIdentity !== instance.expectedIdentity
+			) {
+				throw new ProviderExecutionAuthorityChangedError();
+			}
+		}
+		await assertLease?.();
+		const expectedInstanceFingerprint = providerExecutionFingerprint(
+			before.instances.map(providerExecutionInstanceFingerprint),
+		);
+		const postgresql = /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
+		await deps.prisma.$transaction(
+			async (tx) => {
+				if (postgresql) {
+					for (const instanceId of before.instances.map((instance) => instance.id).sort()) {
+						await tx.$queryRawUnsafe(
+							'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+							instanceId,
+						);
+					}
+				}
+				const current = await loadCurrentProviderExecutionEvidence(
+					tx as unknown as CleanupExecutorDeps["prisma"],
+					userId,
+					accepted,
+					new Date(),
+				);
+				if (
+					!currentEvidenceMatches(accepted, current.evidence) ||
+					providerExecutionFingerprint(
+						current.instances.map(providerExecutionInstanceFingerprint),
+					) !== expectedInstanceFingerprint
+				) {
+					throw new ProviderExecutionAuthorityChangedError();
+				}
+			},
+			postgresql ? undefined : { isolationLevel: "Serializable" },
+		);
+	} catch (error) {
+		if (error instanceof ProviderExecutionAuthorityChangedError) throw error;
+		throw new ProviderExecutionAuthorityChangedError();
+	}
 }
 
 function emptyProviderEvidence(): SanitizedProviderEvidence {

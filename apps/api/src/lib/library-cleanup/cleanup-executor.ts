@@ -103,6 +103,7 @@ import {
 	ArrFileChangedDuringSafetyCheckError,
 	ArrMutationAuthorityChangedDuringSafetyCheckError,
 	ArrTargetChangedDuringSafetyCheckError,
+	assertCurrentProviderEvidenceAuthority,
 	assertVerifiedArrTargetUnchanged,
 	assertVerifiedRadarrEmptyUnchanged,
 	assertVerifiedRadarrFileUnchanged,
@@ -122,6 +123,7 @@ import {
 	type ExecutableSharedMediaSafetyPlan,
 	executableSafetyPlansEqual,
 	findSharedPlexDeleteBlocks,
+	ProviderExecutionAuthorityChangedError,
 	parseExecutableSafetyEnvelope,
 	parseExecutableSafetyPlan,
 	RadarrFileChangedDuringSafetyCheckError,
@@ -587,6 +589,15 @@ class ProviderCacheAuthorityChangedError extends Error {
 		super("Provider cache authority changed after cleanup selection");
 		this.name = "ProviderCacheAuthorityChangedError";
 	}
+}
+
+function isProviderExecutionAuthorityFailure(error: unknown): boolean {
+	let current = error;
+	for (let depth = 0; depth < 4 && current instanceof Error; depth++) {
+		if (current instanceof ProviderExecutionAuthorityChangedError) return true;
+		current = current.cause;
+	}
+	return false;
 }
 
 async function createApprovalWithProviderCacheAuthority(
@@ -1670,15 +1681,21 @@ async function persistAndClaimDirectMutationIntent(
 	item: FlaggedItem,
 	safetyPlan: SharedMediaSafetyPlan,
 	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
-): Promise<{ id: string; claimed: boolean; executionToken: string }> {
+): Promise<{
+	id: string;
+	claimed: boolean;
+	executionToken: string;
+	safetySnapshot: string | null;
+}> {
 	const executablePlan = asExecutableSafetyPlan(safetyPlan);
 	if (!executablePlan) {
 		throw new Error("No executable cleanup safety plan was available for the mutation intent");
 	}
+	const safetySnapshot = serializeExecutableSafetyPlan(executablePlan, providerEvidence);
 	const retryEventFingerprint = createHash("sha256")
 		.update(
 			JSON.stringify([
-				serializeExecutableSafetyPlan(executablePlan, providerEvidence),
+				safetySnapshot,
 				item.cacheItem.cachedAt?.toISOString() ?? null,
 				item.match.action,
 				item.match.scanMediaServerAfterDelete,
@@ -1697,6 +1714,7 @@ async function persistAndClaimDirectMutationIntent(
 	const now = new Date();
 	const executionToken = randomUUID();
 
+	let created = false;
 	try {
 		await deps.prisma.libraryCleanupApproval.create({
 			data: {
@@ -1721,11 +1739,12 @@ async function persistAndClaimDirectMutationIntent(
 				year: item.cacheItem.year,
 				rating: item.rating,
 				status: "retry_pending",
-				safetySnapshot: serializeExecutableSafetyPlan(executablePlan, providerEvidence),
+				safetySnapshot,
 				lastExecutionError: null,
 				expiresAt: new Date(now.getTime() + APPROVAL_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
 			},
 		});
+		created = true;
 	} catch (error) {
 		if ((error as { code?: string }).code !== "P2002") throw error;
 	}
@@ -1744,7 +1763,27 @@ async function persistAndClaimDirectMutationIntent(
 			terminalAuditRecordedAt: null,
 		},
 	});
-	return { id: intentId, claimed: claim.count === 1, executionToken };
+	const claimedIntent =
+		claim.count === 1 && !created
+			? await deps.prisma.libraryCleanupApproval.findFirst({
+					where: {
+						id: intentId,
+						config: { userId },
+						status: "retry_executing",
+						executionToken,
+					},
+					select: { safetySnapshot: true },
+				})
+			: null;
+	if (claim.count === 1 && !created && !claimedIntent) {
+		throw new Error("Claimed cleanup mutation intent could not be reloaded");
+	}
+	return {
+		id: intentId,
+		claimed: claim.count === 1,
+		executionToken,
+		safetySnapshot: created ? safetySnapshot : (claimedIntent?.safetySnapshot ?? null),
+	};
 }
 
 async function buildEvaluatedCacheSafetyPlan(
@@ -2754,6 +2793,7 @@ interface QueuedCleanupExecutionResult {
 	mutationAttemptedIds: string[];
 	warnings?: string[];
 	rescanApprovalIds: string[];
+	providerAuthorityFailed: boolean;
 }
 
 async function retryTargetRecordIsAbsent(
@@ -4124,6 +4164,7 @@ async function executeQueuedCleanupItemsCore(
 			auditPreparedIds: [],
 			mutationAttemptedIds: [],
 			rescanApprovalIds: [],
+			providerAuthorityFailed: false,
 		};
 	}
 
@@ -4148,11 +4189,32 @@ async function executeQueuedCleanupItemsCore(
 		const recordingFailureIds: string[] = [];
 		const reconciledIds: string[] = [];
 		const sharedPlexSafetyContext = createSharedPlexSafetyContext();
+		let providerAuthorityFailed = false;
 
 		for (const approval of approvals) {
 			const claimedExecutionToken = claimedApprovalTokens.get(approval.id);
 			if (!claimedExecutionToken) {
 				unclaimedIds.push(approval.id);
+				continue;
+			}
+			if (providerAuthorityFailed) {
+				failed++;
+				errors.push(
+					"Cleanup item was deferred because provider authority changed for an earlier target.",
+				);
+				await updateClaimedCleanupApproval(
+					prisma,
+					userId,
+					approval.id,
+					options.executeStatus,
+					claimedExecutionToken,
+					{
+						status: options.retryStatus,
+						executionToken: null,
+						lastExecutionError:
+							"Provider authority changed for an earlier cleanup target; this target was not inspected or mutated.",
+					},
+				);
 				continue;
 			}
 			const auditCorrelationId = auditCorrelationIds.get(approval.id);
@@ -4271,9 +4333,28 @@ async function executeQueuedCleanupItemsCore(
 					approvedProviderEvidence?.dependencies.length === 0) ||
 				approvedPlan.target.serviceFingerprint !== createArrServiceFingerprint(instance)
 			) {
+				if (recordedSelectionRequiresProviderEvidence) {
+					providerAuthorityFailed = true;
+				}
 				approvalIdentityChanged = true;
 				sharedPlexBlock =
 					"Skipped for safety: the ARR target identity changed after this cleanup item was queued. Run cleanup again and review a new approval.";
+			}
+			if (!sharedPlexBlock && approvedProviderEvidence) {
+				try {
+					await assertCurrentProviderEvidenceAuthority(
+						deps,
+						userId,
+						approvedProviderEvidence,
+						options.assertExecutionAllowed,
+					);
+				} catch (error) {
+					if (error instanceof CleanupRunLeaseLostError) throw error;
+					providerAuthorityFailed = true;
+					approvalIdentityChanged = true;
+					sharedPlexBlock =
+						"Skipped for safety: provider execution authority changed after this cleanup item was queued. Run cleanup again and review a new approval.";
+				}
 			}
 			if (
 				approvedPlan?.kind === "verified_sonarr_episode" &&
@@ -4544,6 +4625,12 @@ async function executeQueuedCleanupItemsCore(
 				let authorizedSeriesPolicy: AuthorizedSeriesMutationPolicy | undefined;
 				const assertExecutionAuthority: MutationAuthorityCheck = async (evidence) => {
 					await options.assertExecutionAllowed?.();
+					await assertCurrentProviderEvidenceAuthority(
+						deps,
+						userId,
+						approvedProviderEvidence!,
+						options.assertExecutionAllowed,
+					);
 					if (safetyPlan!.kind === "verified_sonarr_episode") {
 						await assertCurrentEpisodeMutationAuthority(
 							deps,
@@ -4920,6 +5007,9 @@ async function executeQueuedCleanupItemsCore(
 					}
 					continue;
 				}
+				if (isProviderExecutionAuthorityFailure(error)) {
+					providerAuthorityFailed = true;
+				}
 				const preserveEpisodeUnmonitorPartial =
 					recoveringEpisodeUnmonitorPartial &&
 					error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError;
@@ -4936,8 +5026,10 @@ async function executeQueuedCleanupItemsCore(
 						? error.message
 						: "Cleanup item could not be executed. Review the API logs for details.";
 				const mutationAuthorityChanged =
-					error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError &&
-					!preserveEpisodeUnmonitorPartial;
+					(error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError ||
+						isProviderExecutionAuthorityFailure(error)) &&
+					!preserveEpisodeUnmonitorPartial &&
+					!(error instanceof ArrDeletePartialError);
 				errors.push(executionError);
 				failed++;
 				const postPartialRetrySnapshot =
@@ -5037,6 +5129,7 @@ async function executeQueuedCleanupItemsCore(
 			auditPreparedIds: [...auditPreparedApprovalIds],
 			mutationAttemptedIds: [...mutationAttemptedApprovalIds],
 			rescanApprovalIds: [...rescanApprovalIds],
+			providerAuthorityFailed,
 		};
 	} finally {
 		for (const [approvalId, executionToken] of claimedApprovalTokens) {
@@ -7309,6 +7402,7 @@ export async function executeDirectRemoval(
 	let retriedFilesDeleted = 0;
 	const mediaServerRescanWarnings: string[] = [];
 	const mediaServerRescanApprovalIds = new Set<string>();
+	let providerAuthorityFailed = false;
 	const sharedPlexSafetyContext = createSharedPlexSafetyContext();
 	const configuredRunLimit =
 		Number.isSafeInteger(config.maxRemovalsPerRun) &&
@@ -7344,6 +7438,17 @@ export async function executeDirectRemoval(
 	const deferredSelectionDetailCount = details.length;
 
 	for (const retry of directRetries) {
+		if (providerAuthorityFailed) {
+			directRetryFailures++;
+			details.push(
+				buildRetryDetail(
+					retry,
+					"skipped",
+					"Deferred because provider authority changed for an earlier cleanup target",
+				),
+			);
+			continue;
+		}
 		try {
 			const retryResult = await executeQueuedCleanupItems(deps, userId, [retry.id], {
 				claimStatus: "retry_pending",
@@ -7358,6 +7463,7 @@ export async function executeDirectRemoval(
 			for (const approvalId of retryResult.rescanApprovalIds) {
 				mediaServerRescanApprovalIds.add(approvalId);
 			}
+			if (retryResult.providerAuthorityFailed) providerAuthorityFailed = true;
 			if (retryResult.unclaimedIds.includes(retry.id)) {
 				directRetryConcurrent++;
 				details.push(
@@ -7475,6 +7581,16 @@ export async function executeDirectRemoval(
 	const budgetDeferredItems = directSelection.plan.counts.deferredBudget;
 
 	for (const item of freshItems) {
+		if (providerAuthorityFailed) {
+			details.push(
+				buildDetail(
+					item,
+					"skipped",
+					"Skipped because provider authority changed for an earlier cleanup target",
+				),
+			);
+			continue;
+		}
 		if (directRetryLoadFailures > 0) {
 			details.push(
 				buildDetail(
@@ -7584,6 +7700,7 @@ export async function executeDirectRemoval(
 
 		let directMutationIntentId: string;
 		let directMutationExecutionToken: string;
+		let directProviderEvidence = providerEvidence;
 		try {
 			if (
 				!(
@@ -7617,7 +7734,30 @@ export async function executeDirectRemoval(
 			}
 			directMutationIntentId = intent.id;
 			directMutationExecutionToken = intent.executionToken;
+			const durableEnvelope = parseExecutableSafetyEnvelope(intent.safetySnapshot);
+			const directRule = config.rules.find(
+				(rule) =>
+					rule.id === item.match.ruleId &&
+					(item.episodeTarget ? rule.targetScope === "episode" : rule.targetScope !== "episode"),
+			);
+			const directSelectionRequiresProviderEvidence =
+				directRule !== undefined &&
+				ruleUsesUnavailableData(
+					directRule,
+					new Set<DataSourceDependency>(["plex", "jellyfin", "tautulli"]),
+				);
+			if (
+				!durableEnvelope ||
+				(directSelectionRequiresProviderEvidence &&
+					durableEnvelope.providerEvidence.dependencies.length === 0)
+			) {
+				throw new ProviderExecutionAuthorityChangedError();
+			}
+			directProviderEvidence = durableEnvelope.providerEvidence;
 		} catch (error) {
+			if (isProviderExecutionAuthorityFailure(error)) {
+				providerAuthorityFailed = true;
+			}
 			directRetryPersistenceFailures++;
 			log.error(
 				{
@@ -7717,6 +7857,12 @@ export async function executeDirectRemoval(
 			let authorizedSeriesPolicy: AuthorizedSeriesMutationPolicy | undefined;
 			const assertDirectExecutionAuthority: MutationAuthorityCheck = async (evidence) => {
 				await assertRunLease?.();
+				await assertCurrentProviderEvidenceAuthority(
+					deps,
+					userId,
+					directProviderEvidence,
+					assertRunLease,
+				);
 				if (safetyPlan!.kind === "verified_sonarr_episode") {
 					await assertCurrentEpisodeMutationAuthority(
 						deps,
@@ -8084,6 +8230,9 @@ export async function executeDirectRemoval(
 					});
 				throw error;
 			}
+			if (isProviderExecutionAuthorityFailure(error)) {
+				providerAuthorityFailed = true;
+			}
 			if (error instanceof SonarrEpisodeUnmonitorPartialError) {
 				partialArrDeletes++;
 				try {
@@ -8129,7 +8278,7 @@ export async function executeDirectRemoval(
 					safetyPlan,
 					error,
 					item.match.action,
-					providerEvidence,
+					directProviderEvidence,
 				);
 				let retryPersistenceSucceeded = true;
 				try {
@@ -8517,6 +8666,7 @@ async function deleteVerifiedRadarrFile(
 		mutationAudit?.attempted(step);
 		await radarr.movieFile.delete(expected.movieFileId);
 	} catch (error) {
+		if (isProviderExecutionAuthorityFailure(error)) throw error;
 		deleteError = error;
 	}
 
@@ -8601,6 +8751,17 @@ async function deleteRadarrRecordWithoutFiles(
 			});
 			return;
 		} catch (error) {
+			if (isProviderExecutionAuthorityFailure(error)) {
+				if (deletedFileIds.length === 0) throw error;
+				throw new ArrDeletePartialError({
+					cause: error,
+					service: "RADARR",
+					deletedFileIds,
+					hasRemainingFiles: false,
+					message:
+						"Partial cleanup: the verified Radarr movie file was deleted, but provider authority changed before the movie record could be removed.",
+				});
+			}
 			if (error instanceof CleanupRunLeaseLostError) {
 				if (deletedFileIds.length === 0) throw error;
 				throw new ArrDeletePartialError({
@@ -8658,6 +8819,7 @@ async function deleteVerifiedSonarrFiles(
 		mutationAudit?.attempted(step);
 		await sonarr.episodeFile.bulkDelete(expectedIds);
 	} catch (error) {
+		if (isProviderExecutionAuthorityFailure(error)) throw error;
 		bulkError = error;
 	}
 
@@ -8849,6 +9011,17 @@ async function deleteSonarrRecordWithoutFiles(
 			});
 			return;
 		} catch (error) {
+			if (isProviderExecutionAuthorityFailure(error)) {
+				if (deletedFileIds.length === 0) throw error;
+				throw new ArrDeletePartialError({
+					cause: error,
+					service: "SONARR",
+					deletedFileIds,
+					hasRemainingFiles: false,
+					message:
+						"Partial cleanup: the verified Sonarr episode files were deleted, but provider authority changed before the series record could be removed.",
+				});
+			}
 			if (error instanceof CleanupRunLeaseLostError) {
 				if (deletedFileIds.length === 0) throw error;
 				throw new ArrDeletePartialError({
