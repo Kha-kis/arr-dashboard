@@ -565,11 +565,12 @@ function evaluateSeerrRequesterWatched(
 	seerrMap: SeerrRequestMap | undefined,
 	plexMap: PlexWatchMap | undefined,
 	plexLibraryFilter?: string[] | null,
+	plexSectionTitles?: Set<string>,
 ): string | null {
 	const requests = lookupSeerrRequests(item, seerrMap);
 	if (!requests || requests.length === 0) return null;
 
-	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter, plexSectionTitles);
 	if (!watch) return null;
 
 	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
@@ -595,12 +596,13 @@ function evaluateSeerrRequesterNotWatched(
 	seerrMap: SeerrRequestMap | undefined,
 	plexMap: PlexWatchMap | undefined,
 	plexLibraryFilter?: string[] | null,
+	plexSectionTitles?: Set<string>,
 ): string | null {
 	const requests = lookupSeerrRequests(item, seerrMap);
 	if (!requests || requests.length === 0) return null;
 
 	// Require Plex data — without it we can't distinguish "not watched" from "unknown"
-	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, plexMap, plexLibraryFilter, plexSectionTitles);
 	if (!watch) return null;
 
 	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
@@ -1289,9 +1291,21 @@ export function evaluateSingleCondition(
 
 		// ── Phase 4: Requester-aware cross-service rules ─────────────
 		case "seerr_requester_watched":
-			return evaluateSeerrRequesterWatched(item, ctx.seerrMap, ctx.plexMap, plexLibFilter);
+			return evaluateSeerrRequesterWatched(
+				item,
+				ctx.seerrMap,
+				ctx.plexMap,
+				plexLibFilter,
+				ctx.plexSectionTitles,
+			);
 		case "seerr_requester_not_watched":
-			return evaluateSeerrRequesterNotWatched(item, ctx.seerrMap, ctx.plexMap, plexLibFilter);
+			return evaluateSeerrRequesterNotWatched(
+				item,
+				ctx.seerrMap,
+				ctx.plexMap,
+				plexLibFilter,
+				ctx.plexSectionTitles,
+			);
 
 		case "tmdb_list_member":
 			return evaluateListMembership(item, params, ctx.tmdbListMemberships, "listId", "TMDb list");

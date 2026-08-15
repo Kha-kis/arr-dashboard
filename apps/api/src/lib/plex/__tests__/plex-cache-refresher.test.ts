@@ -12,7 +12,9 @@
  * behaviour so we don't regress it.
  */
 
+import type { FastifyBaseLogger } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { PrismaClient } from "../../prisma.js";
 import {
 	clearPlexCacheRefreshSingleFlightsForTests,
 	evictStaleRows,
@@ -21,9 +23,7 @@ import {
 	STALE_EVICTION_CHUNK_SIZE,
 } from "../plex-cache-refresher.js";
 import type { PlexClient } from "../plex-client.js";
-import type { PrismaClient } from "../../prisma.js";
 import { providerConnectionIdentity } from "../../services/provider-connection-guard.js";
-import type { FastifyBaseLogger } from "fastify";
 
 const silentLog = {
 	warn: vi.fn(),
@@ -151,6 +151,7 @@ describe("evictStaleRows", () => {
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 			getLibraryItems: vi.fn().mockResolvedValue(libraryItems),
 			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
 
@@ -241,13 +242,6 @@ describe("evictStaleRows", () => {
 	});
 
 	it("marks history evidence incomplete when Plex exceeds the cache limit", async () => {
-		const history = Array.from({ length: 5_001 }, (_, index) => ({
-			ratingKey: `history-${index}`,
-			title: `History ${index}`,
-			type: "movie",
-			viewedAt: 1_700_000_000 + index,
-			accountID: 1,
-		}));
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
@@ -259,16 +253,23 @@ describe("evictStaleRows", () => {
 					Guid: [{ id: "tmdb://123" }],
 				},
 			]),
-			getHistory: vi.fn().mockResolvedValue(history),
+			getHistory: vi
+				.fn()
+				.mockRejectedValue(new Error("Plex history exceeded the safe 100000-row limit")),
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
 		const { prisma, deleteCalls } = makeMockPrisma(["retained-1"]);
 
 		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
 
-		expect(mockClient.getHistory).toHaveBeenCalledWith({ maxResults: 5_001 });
+		expect(mockClient.getHistory).toHaveBeenCalledWith({
+			maxResults: 100_000,
+			requireComplete: true,
+		});
 		expect(result.errors).toBe(1);
-		expect(result.errorMessages).toContainEqual(expect.stringContaining("history exceeded 5000"));
+		expect(result.errorMessages).toContainEqual(
+			expect.stringContaining("history exceeded the safe 100000-row limit"),
+		);
 		expect(deleteCalls).toEqual([]);
 	});
 
@@ -330,6 +331,7 @@ function makeCompletePlexClient(): PlexClient {
 			},
 		]),
 		getHistory: vi.fn().mockResolvedValue([]),
+		verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 		getOnDeck: vi.fn().mockResolvedValue([]),
 	} as unknown as PlexClient;
 }
@@ -454,27 +456,65 @@ describe("refreshPlexCache atomic publication", () => {
 		expect(state).toEqual({ rows: [{ title: "Previous generation" }], status: "previous-success" });
 	});
 
-	it("accepts exactly 5,000 Plex history rows when the one-row probe is not filled", async () => {
-		const { prisma, state } = makeAtomicPlexPrisma();
-		const client = makeCompletePlexClient();
-		vi.mocked(client.getHistory).mockResolvedValueOnce(
-			Array.from({ length: 5_000 }, (_, index) => ({
-				ratingKey: `unmapped-${index}`,
-				title: `Unmapped ${index}`,
-				type: "other",
-				accountID: 1,
-				viewedAt: index,
-			})),
-		);
+	it.each([
+		["bounded history", "Plex history exceeded the safe 100000-row limit"],
+		["repeated page", "Plex history returned a duplicate row while paging"],
+	] as const)(
+		"rejects incomplete %s history before publishing a cache generation",
+		async (_caseName, message) => {
+			const getHistory = vi.fn().mockRejectedValue(new Error(message));
+			const cacheDelete = vi.fn();
+			const statusUpsert = vi.fn();
+			const tx = {
+				plexCache: { deleteMany: cacheDelete, createMany: vi.fn() },
+				cacheRefreshStatus: { upsert: statusUpsert },
+			};
+			const prisma = {
+				$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+					callback(tx),
+				),
+			} as unknown as PrismaClient;
+			const client = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi
+					.fn()
+					.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+				getLibraryItems: vi.fn().mockResolvedValue([]),
+				getHistory,
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
 
-		const result = await refreshPlexCache(client, prisma, "inst-1", silentLog);
+			const result = await refreshPlexCache(client, prisma, "inst-1", silentLog, undefined);
 
-		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
-		expect(client.getHistory).toHaveBeenCalledWith({ maxResults: 5001 });
-		expect(state).toEqual({
-			rows: [expect.objectContaining({ title: "The Current Movie" })],
-			status: "fresh-success",
-		});
+			expect(getHistory).toHaveBeenCalledWith({ maxResults: 100_000, requireComplete: true });
+			expect(result.complete).toBe(false);
+			expect(prisma.$transaction).not.toHaveBeenCalled();
+			expect(cacheDelete).not.toHaveBeenCalled();
+			expect(statusUpsert).not.toHaveBeenCalled();
+		},
+	);
+
+	it("keeps the previous generation when playback starts during history verification", async () => {
+		const getOnDeck = vi
+			.fn()
+			.mockResolvedValueOnce([])
+			.mockResolvedValueOnce([{ ratingKey: "rk-1", type: "movie" }]);
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([]),
+			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck,
+		} as unknown as PlexClient;
+		const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/on-deck state changed/i);
+		expect(getOnDeck).toHaveBeenCalledTimes(2);
+		expect(prisma.$transaction).not.toHaveBeenCalled();
 	});
 
 	it("keeps the previous generation when on-deck evidence is unavailable", async () => {

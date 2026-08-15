@@ -52,6 +52,11 @@ import {
 	isSupportedEpisodeCleanupRule,
 	toEpisodeTargetMetadata,
 } from "./episode-scope.js";
+import {
+	prepareMediaServerRescans,
+	rescanMediaType,
+	triggerCoalescedMediaServerRescans,
+} from "./media-server-rescan.js";
 import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
 import {
 	evaluateSingleCondition,
@@ -118,6 +123,49 @@ const APPROVAL_EXPIRY_DAYS = 7;
 
 // Batch size for LibraryCache queries
 const CACHE_QUERY_BATCH_SIZE = 500;
+const PROVIDER_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
+
+async function loadCompleteCacheGenerations(
+	deps: CleanupExecutorDeps,
+	instances: Array<{ id: string; updatedAt: Date }>,
+	cacheType: string,
+	now: Date = new Date(),
+): Promise<Map<string, { completedAt: Date; itemCount: number }> | undefined> {
+	if (instances.length === 0) return undefined;
+	const statuses = await deps.prisma.cacheRefreshStatus.findMany({
+		where: { instanceId: { in: instances.map((instance) => instance.id) }, cacheType },
+		select: {
+			instanceId: true,
+			lastRefreshedAt: true,
+			lastResult: true,
+			lastErrorMessage: true,
+			lastAttemptResult: true,
+			lastAttemptErrorMessage: true,
+			itemCount: true,
+		},
+	});
+	const byInstance = new Map(statuses.map((status) => [status.instanceId, status]));
+	const freshnessThreshold = now.getTime() - PROVIDER_EVIDENCE_FRESHNESS_MS;
+	const generations = new Map<string, { completedAt: Date; itemCount: number }>();
+	for (const instance of instances) {
+		const status = byInstance.get(instance.id);
+		if (
+			status?.lastResult !== "success" ||
+			status.lastErrorMessage != null ||
+			status.lastAttemptErrorMessage != null ||
+			(status.lastAttemptResult != null && status.lastAttemptResult !== "success") ||
+			status.lastRefreshedAt.getTime() < freshnessThreshold ||
+			status.lastRefreshedAt.getTime() < instance.updatedAt.getTime()
+		) {
+			return undefined;
+		}
+		generations.set(instance.id, {
+			completedAt: status.lastRefreshedAt,
+			itemCount: status.itemCount,
+		});
+	}
+	return generations;
+}
 
 // The route returns at most 200 preview rows; avoid live safety I/O for rows
 // the caller cannot inspect.
@@ -3308,12 +3356,16 @@ export async function prefetchPlexData(
 
 	const plexInstances = await prisma.serviceInstance.findMany({
 		where: { userId, service: "PLEX", enabled: true },
-		select: { id: true },
+		orderBy: { id: "asc" },
+		select: { id: true, updatedAt: true },
 	});
 
 	if (plexInstances.length === 0) return undefined;
 
 	try {
+		if (!(await loadCompleteCacheGenerations(deps, plexInstances, "plex"))) {
+			throw new Error("Plex cache did not have a complete fresh generation for every instance");
+		}
 		const map: PlexWatchMap = new Map();
 		const instanceIds = plexInstances.map((i) => i.id);
 		let cursor: string | undefined;
@@ -3434,6 +3486,127 @@ export async function prefetchPlexData(
 			{ err: error },
 			"Failed to prefetch Plex data for cleanup — Plex rules will be skipped",
 		);
+		return undefined;
+	}
+}
+
+interface PublishedPlexPolicyEvidence {
+	plexMap: PlexWatchMap;
+	plexSectionTitles: Set<string>;
+}
+
+function parsePublishedPlexSections(metadata: string | null): Array<{
+	key: string;
+	title: string;
+	type: "movie" | "show";
+}> | null {
+	const parsed = safeJsonParse(metadata);
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+	const sections = (parsed as Record<string, unknown>).sections;
+	if (!Array.isArray(sections)) return null;
+	const normalized: Array<{ key: string; title: string; type: "movie" | "show" }> = [];
+	for (const section of sections) {
+		if (typeof section !== "object" || section === null || Array.isArray(section)) return null;
+		const row = section as Record<string, unknown>;
+		if (
+			typeof row.key !== "string" ||
+			row.key.length === 0 ||
+			typeof row.title !== "string" ||
+			row.title.length === 0 ||
+			(row.type !== "movie" && row.type !== "show")
+		) {
+			return null;
+		}
+		normalized.push({ key: row.key, title: row.title, type: row.type });
+	}
+	return normalized;
+}
+
+function collectConfiguredPlexSectionTitles(
+	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
+): Set<string> {
+	const titles = new Set<string>();
+	for (const rule of rules) {
+		if (!rule.enabled || !rule.plexLibraryFilter) continue;
+		const configured = safeJsonParse(rule.plexLibraryFilter);
+		if (!Array.isArray(configured)) continue;
+		for (const value of configured) {
+			if (typeof value === "string" && value.length > 0) titles.add(value);
+		}
+	}
+	return titles;
+}
+
+async function loadPublishedPlexPolicyEvidence(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
+): Promise<PublishedPlexPolicyEvidence | undefined> {
+	try {
+		const instances = await deps.prisma.serviceInstance.findMany({
+			where: { userId, service: "PLEX", enabled: true },
+			orderBy: { id: "asc" },
+			select: { id: true, updatedAt: true },
+		});
+		if (instances.length === 0) return undefined;
+		const instanceIds = instances.map((instance) => instance.id);
+		const readStatuses = async () =>
+			await deps.prisma.cacheRefreshStatus.findMany({
+				where: { instanceId: { in: instanceIds }, cacheType: "plex" },
+				orderBy: { instanceId: "asc" },
+				select: {
+					instanceId: true,
+					lastRefreshedAt: true,
+					lastResult: true,
+					itemCount: true,
+					generationId: true,
+					generationMetadata: true,
+					lastErrorMessage: true,
+					lastAttemptResult: true,
+					lastAttemptErrorMessage: true,
+				},
+			});
+		const before = await readStatuses();
+		if (
+			before.length !== instances.length ||
+			before.some((status) => {
+				const instance = instances.find((candidate) => candidate.id === status.instanceId);
+				return (
+					!instance ||
+					status.lastResult !== "success" ||
+					status.lastErrorMessage != null ||
+					status.lastAttemptErrorMessage != null ||
+					(status.lastAttemptResult != null && status.lastAttemptResult !== "success") ||
+					!status.generationId ||
+					!status.generationMetadata ||
+					Date.now() - status.lastRefreshedAt.getTime() > PROVIDER_EVIDENCE_FRESHNESS_MS ||
+					status.lastRefreshedAt.getTime() < instance.updatedAt.getTime()
+				);
+			})
+		) {
+			return undefined;
+		}
+
+		const sectionTitles = new Set<string>();
+		for (const status of before) {
+			const sections = parsePublishedPlexSections(status.generationMetadata);
+			if (!sections || sections.length === 0) return undefined;
+			for (const section of sections) sectionTitles.add(section.title);
+			const count = await deps.prisma.plexCache.count({
+				where: { instanceId: status.instanceId },
+			});
+			if (count !== status.itemCount) return undefined;
+		}
+		for (const title of collectConfiguredPlexSectionTitles(rules)) {
+			if (!sectionTitles.has(title)) return undefined;
+		}
+		const plexMap = await prefetchPlexData(deps, userId);
+		if (!plexMap) return undefined;
+		const after = await readStatuses();
+		if (JSON.stringify(before) !== JSON.stringify(after)) return undefined;
+		return { plexMap, plexSectionTitles: sectionTitles };
+	} catch (error) {
+		deps.log.warn({ err: error }, "Published Plex policy evidence was unavailable");
 		return undefined;
 	}
 }
@@ -3644,10 +3817,49 @@ async function prefetchPlexEpisodeData(
 	try {
 		const instances = await prisma.serviceInstance.findMany({
 			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true },
+			orderBy: { id: "asc" },
+			select: {
+				id: true,
+				updatedAt: true,
+				baseUrl: true,
+				encryptedApiKey: true,
+				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
+				service: true,
+				label: true,
+				enabled: true,
+			},
 		});
 		const instanceIds = instances.map((i) => i.id);
 		if (instanceIds.length === 0) return undefined;
+		const generations = await loadCompleteCacheGenerations(deps, instances, "plex_episode");
+		if (!generations) return undefined;
+		const generationRows = await prisma.plexEpisodeCache.findMany({
+			where: { instanceId: { in: instanceIds } },
+			select: { instanceId: true, refreshedAt: true, sourceFingerprint: true },
+		});
+		const rowCounts = new Map<string, number>();
+		for (const row of generationRows) {
+			const generation = generations.get(row.instanceId);
+			const instance = instances.find((candidate) => candidate.id === row.instanceId);
+			if (
+				!generation ||
+				!instance ||
+				row.refreshedAt?.getTime() !== generation.completedAt.getTime() ||
+				row.sourceFingerprint !== plexConnectionFingerprint(instance as ServiceInstance)
+			) {
+				return undefined;
+			}
+			rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
+		}
+		if (
+			instances.some(
+				(instance) => (rowCounts.get(instance.id) ?? 0) !== generations.get(instance.id)!.itemCount,
+			)
+		) {
+			return undefined;
+		}
 
 		// Three groupBy queries: show-level totals, show-level watched, and per-season counts
 		const totalCounts = await prisma.plexEpisodeCache.groupBy({
@@ -6945,7 +7157,12 @@ async function refreshCurrentExternalRuleCaches(
 export async function buildEvalContext(
 	deps: CleanupExecutorDeps,
 	userId: string,
-	rules: Array<{ enabled: boolean; ruleType: string; conditions: string | null }>,
+	rules: Array<{
+		enabled: boolean;
+		ruleType: string;
+		conditions: string | null;
+		plexLibraryFilter?: string | null;
+	}>,
 	options: { destructiveAuthority?: boolean } = {},
 ): Promise<EvalContext> {
 	const activeTypes = collectActiveRuleTypes(rules);
@@ -6991,21 +7208,26 @@ export async function buildEvalContext(
 		"jellyfin_added_at",
 	];
 
-	const [seerrMap, plexMap, plexEpisodeMap, jellyfinMap, jellyfinEpisodeMap] = await Promise.all([
-		SEERR_RULE_TYPES.some((t) => activeTypes.has(t))
-			? prefetchSeerrRequests(deps, userId)
-			: undefined,
-		PLEX_RULE_TYPES_LIST.some((t) => activeTypes.has(t))
-			? prefetchPlexData(deps, userId)
-			: undefined,
-		activeTypes.has("plex_episode_completion") ? prefetchPlexEpisodeData(deps, userId) : undefined,
-		JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t))
-			? prefetchJellyfinData(deps, userId)
-			: undefined,
-		activeTypes.has("jellyfin_episode_completion")
-			? prefetchJellyfinEpisodeData(deps, userId)
-			: undefined,
-	]);
+	const needsPlex = PLEX_RULE_TYPES_LIST.some((type) => activeTypes.has(type));
+	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(rules).size > 0;
+	const [seerrMap, plexEvidence, plexEpisodeMap, jellyfinMap, jellyfinEpisodeMap] =
+		await Promise.all([
+			SEERR_RULE_TYPES.some((t) => activeTypes.has(t))
+				? prefetchSeerrRequests(deps, userId)
+				: undefined,
+			needsPlex || needsPlexSectionInventory
+				? loadPublishedPlexPolicyEvidence(deps, userId, rules)
+				: undefined,
+			activeTypes.has("plex_episode_completion")
+				? prefetchPlexEpisodeData(deps, userId)
+				: undefined,
+			JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t))
+				? prefetchJellyfinData(deps, userId)
+				: undefined,
+			activeTypes.has("jellyfin_episode_completion")
+				? prefetchJellyfinEpisodeData(deps, userId)
+				: undefined,
+		]);
 	const tmdbListMemberships = activeTypes.has("tmdb_list_member")
 		? await prefetchCleanupListMemberships(deps, userId, rules, "tmdb")
 		: undefined;
@@ -7016,7 +7238,8 @@ export async function buildEvalContext(
 	return {
 		now: new Date(),
 		seerrMap: seerrMap ?? undefined,
-		plexMap: plexMap ?? undefined,
+		plexMap: plexEvidence?.plexMap,
+		plexSectionTitles: plexEvidence?.plexSectionTitles,
 		plexEpisodeMap: plexEpisodeMap ?? undefined,
 		jellyfinMap: jellyfinMap ?? undefined,
 		jellyfinEpisodeMap: jellyfinEpisodeMap ?? undefined,

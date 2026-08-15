@@ -96,6 +96,7 @@ export class PlexSeriesNotFoundError extends Error {
 }
 
 export interface PlexHistoryItem {
+	historyKey?: string;
 	ratingKey: string;
 	parentRatingKey?: string;
 	grandparentRatingKey?: string;
@@ -151,6 +152,7 @@ export interface PlexEpisodeItem {
 const DEFAULT_TIMEOUT = 15_000;
 const SAFETY_PAGE_SIZE = 200;
 const SAFETY_MAX_ITEMS = 100_000;
+const HISTORY_SORT = "viewedAt:desc";
 
 /**
  * Extract a ratingKey from a Plex path like "/library/metadata/65486".
@@ -398,24 +400,71 @@ export class PlexClient {
 	 * Get watch history across all users.
 	 * Uses /status/sessions/history/all for multi-user history.
 	 */
-	async getHistory(options?: { maxResults?: number }): Promise<PlexHistoryItem[]> {
+	async getHistory(options?: {
+		maxResults?: number;
+		requireComplete?: boolean;
+	}): Promise<PlexHistoryItem[]> {
+		return this.getHistoryPass(options);
+	}
+
+	private async getHistoryPass(options?: {
+		maxResults?: number;
+		requireComplete?: boolean;
+	}): Promise<PlexHistoryItem[]> {
 		const allItems: PlexHistoryItem[] = [];
 		const pageSize = 200;
 		const maxResults = options?.maxResults ?? 5000;
+		const requireComplete = options?.requireComplete ?? false;
+		const seenHistoryRows = new Set<string>();
+		let expectedTotal: number | undefined;
 		let offset = 0;
 
-		while (allItems.length < maxResults) {
-			const remaining = maxResults - allItems.length;
+		while (
+			allItems.length < maxResults &&
+			(expectedTotal === undefined || allItems.length < expectedTotal)
+		) {
+			const remaining =
+				expectedTotal === undefined
+					? maxResults - allItems.length
+					: Math.min(maxResults, expectedTotal) - allItems.length;
 			const take = Math.min(pageSize, remaining);
 
 			const data = await this.request(
-				`/status/sessions/history/all?sort=viewedAt:desc&X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${take}`,
+				`/status/sessions/history/all?sort=${HISTORY_SORT}&X-Plex-Container-Start=${offset}&X-Plex-Container-Size=${take}`,
 				{ schema: plexHistoryResponseSchema },
 			);
 
-			const items = data.MediaContainer.Metadata ?? [];
+			const container = data.MediaContainer;
+			const items = container.Metadata ?? [];
+			if (container.offset !== offset || container.size !== items.length) {
+				throw new Error("Plex history pagination metadata did not match the returned page");
+			}
+			if (expectedTotal === undefined) {
+				expectedTotal = container.totalSize;
+				if (requireComplete && expectedTotal > maxResults) {
+					throw new Error(
+						`Plex history contains ${expectedTotal} rows, exceeding the safe ${maxResults}-row limit`,
+					);
+				}
+			} else if (container.totalSize !== expectedTotal) {
+				throw new Error("Plex history changed while it was being paged");
+			}
+			if (offset + items.length > expectedTotal) {
+				throw new Error("Plex history pagination exceeded its declared total");
+			}
+			if (items.length === 0 && offset < Math.min(expectedTotal, maxResults)) {
+				throw new Error("Plex history pagination stopped before the declared total");
+			}
 			for (const item of items) {
+				if (requireComplete && !item.historyKey) {
+					throw new Error("Plex history did not provide a stable row identity");
+				}
+				if (item.historyKey && seenHistoryRows.has(item.historyKey)) {
+					throw new Error("Plex history returned a duplicate row while paging");
+				}
+				if (item.historyKey) seenHistoryRows.add(item.historyKey);
 				allItems.push({
+					historyKey: item.historyKey,
 					ratingKey: item.ratingKey,
 					parentRatingKey: item.parentRatingKey ?? extractRatingKey(item.parentKey),
 					grandparentRatingKey: item.grandparentRatingKey ?? extractRatingKey(item.grandparentKey),
@@ -427,11 +476,41 @@ export class PlexClient {
 				});
 			}
 
-			if (items.length < take) break;
-			offset += take;
+			offset += items.length;
 		}
 
+		if (requireComplete && (expectedTotal === undefined || allItems.length !== expectedTotal)) {
+			throw new Error("Plex history inventory could not be verified as complete");
+		}
 		return allItems;
+	}
+
+	/** Re-read and compare every watch-relevant field before publication. */
+	async verifyHistorySnapshot(history: readonly PlexHistoryItem[]): Promise<void> {
+		const verification = await this.getHistoryPass({
+			maxResults: SAFETY_MAX_ITEMS,
+			requireComplete: true,
+		});
+		const signatures = (items: readonly PlexHistoryItem[]) =>
+			items
+				.map((item) =>
+					JSON.stringify([
+						item.historyKey,
+						item.ratingKey,
+						item.parentRatingKey ?? null,
+						item.grandparentRatingKey ?? null,
+						item.type,
+						item.viewedAt,
+						item.accountID,
+					]),
+				)
+				.sort();
+		if (
+			verification.length !== history.length ||
+			JSON.stringify(signatures(verification)) !== JSON.stringify(signatures(history))
+		) {
+			throw new Error("Plex history changed before its complete snapshot could be verified");
+		}
 	}
 
 	/**

@@ -13,7 +13,12 @@
 import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import { plexConnectionFingerprint } from "../../plex/service-instance-fingerprint.js";
-import { prefetchFreshPlexEpisodeWatchData, prefetchPlexData } from "../cleanup-executor.js";
+import {
+	buildEvalContext,
+	prefetchFreshPlexEpisodeWatchData,
+	prefetchPlexData,
+} from "../cleanup-executor.js";
+import { evaluateItemAgainstRules } from "../rule-evaluators.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
 function makePlexRow(overrides: {
@@ -58,7 +63,305 @@ const log = {
 	fatal: vi.fn(),
 } as unknown as FastifyBaseLogger;
 
+async function buildPlexEvalContextWithHealth(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	rules: Array<{
+		enabled: boolean;
+		ruleType: string;
+		conditions: string | null;
+		plexLibraryFilter?: string | null;
+	}>,
+) {
+	const ctx = await buildEvalContext(deps, userId, rules);
+	const failedSources = new Set<"plex">();
+	const needsEpisodeEvidence = rules.some(
+		(rule) => rule.enabled && rule.ruleType === "plex_episode_completion",
+	);
+	if (!ctx.plexMap || (needsEpisodeEvidence && !ctx.plexEpisodeMap)) {
+		failedSources.add("plex");
+	}
+	return { ctx, failedSources };
+}
+
+function completeStatus(instanceId: string, completedAt = new Date(), itemCount = 0) {
+	return {
+		instanceId,
+		lastRefreshedAt: completedAt,
+		lastResult: "success",
+		itemCount,
+		generationId: `generation-${instanceId}`,
+		generationMetadata: JSON.stringify({
+			sections: [{ key: "1", title: "Movies", type: "movie" }],
+		}),
+		lastErrorMessage: null,
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+	};
+}
+
+function plexCleanupRule(ruleType = "plex_watch_count") {
+	return {
+		id: `rule-${ruleType}`,
+		configId: "config-1",
+		name: ruleType,
+		enabled: true,
+		priority: 1,
+		ruleType,
+		parameters: JSON.stringify(
+			ruleType === "plex_episode_completion"
+				? { operator: "less_than", percent: 100 }
+				: { operator: "greater_than", count: 0 },
+		),
+		serviceFilter: null,
+		instanceFilter: null,
+		excludeTags: null,
+		excludeTitles: null,
+		plexLibraryFilter: null,
+		targetScope: "series",
+		action: "delete",
+		scanMediaServerAfterDelete: false,
+		scanMediaServerInstanceIds: null,
+		operator: null,
+		conditions: null,
+		retentionMode: false,
+		useGlobalRejectionMemory: true,
+		rejectionMemoryDays: 0,
+		createdAt: new Date("2026-08-10T00:00:00.000Z"),
+		updatedAt: new Date("2026-08-10T00:00:00.000Z"),
+	};
+}
+
+const plexDecisionItem = {
+	id: "library-1",
+	instanceId: "sonarr-1",
+	arrItemId: 42,
+	itemType: "series" as const,
+	title: "Example Series",
+	year: 2020,
+	monitored: true,
+	hasFile: true,
+	status: "ended",
+	qualityProfileId: 1,
+	qualityProfileName: "Default",
+	sizeOnDisk: 1n,
+	arrAddedAt: new Date("2026-01-01T00:00:00.000Z"),
+	data: JSON.stringify({ remoteIds: { tmdbId: 42 } }),
+};
+
+type PlexStatusOverride =
+	| Partial<{
+			lastRefreshedAt: Date;
+			lastResult: string;
+			lastAttemptResult: string;
+			lastErrorMessage: string | null;
+			lastAttemptErrorMessage: string | null;
+			itemCount: number;
+	  }>
+	| undefined;
+
+const unavailablePlexEvidenceCases = [
+	["missing status", () => undefined],
+	["stale timestamp", () => ({ lastRefreshedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })],
+	["failed result", () => ({ lastResult: "error" })],
+	["failed latest attempt", () => ({ lastAttemptResult: "error" })],
+	["completed-generation error", () => ({ lastErrorMessage: "refresh failed" })],
+	["latest-attempt error", () => ({ lastAttemptErrorMessage: "refresh failed" })],
+	["connection repoint", () => ({ lastRefreshedAt: new Date("2026-08-10T10:00:00.000Z") })],
+	["normal cache row-count mismatch", () => ({ itemCount: 2 })],
+] satisfies ReadonlyArray<readonly [string, () => PlexStatusOverride]>;
+
 describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
+	it.each(unavailablePlexEvidenceCases)(
+		"blocks Plex cleanup evidence for %s",
+		async (caseName, overrides) => {
+			const instance = {
+				id: "plex-inst-1",
+				updatedAt:
+					caseName === "connection repoint"
+						? new Date("2026-08-10T11:00:00.000Z")
+						: new Date("2026-08-10T00:00:00.000Z"),
+			};
+			const baseStatus = completeStatus(instance.id, new Date(), 1);
+			const statusOverride = overrides();
+			const status = statusOverride ? { ...baseStatus, ...statusOverride } : undefined;
+			const prisma = {
+				serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+				cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue(status ? [status] : []) },
+				plexCache: {
+					count: vi.fn().mockResolvedValue(1),
+					findMany: vi
+						.fn()
+						.mockResolvedValue([
+							makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+						]),
+				},
+			} as unknown as CleanupExecutorDeps["prisma"];
+			const rule = plexCleanupRule();
+
+			const result = await buildPlexEvalContextWithHealth(
+				{ prisma, log } as CleanupExecutorDeps,
+				"user-1",
+				[rule],
+			);
+
+			expect(result.ctx.plexMap).toBeUndefined();
+			expect(result.failedSources).toContain("plex");
+			expect(
+				evaluateItemAgainstRules(
+					plexDecisionItem,
+					[rule],
+					"SONARR",
+					result.ctx,
+					result.failedSources,
+				),
+			).toBeNull();
+		},
+	);
+
+	it("keeps a complete Plex generation available for cleanup evaluation", async () => {
+		const completedAt = new Date();
+		const instance = { id: "plex-inst-1", updatedAt: new Date(0) };
+		const status = completeStatus(instance.id, completedAt, 1);
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildPlexEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[plexCleanupRule()],
+		);
+
+		expect(result.failedSources).not.toContain("plex");
+		expect(result.ctx.plexMap?.get("series:42")).toEqual(
+			expect.objectContaining({ watchCount: 0 }),
+		);
+	});
+
+	it("blocks Plex episode cleanup when the episode cache row count mismatches", async () => {
+		const instance = {
+			id: "plex-inst-1",
+			updatedAt: new Date(0),
+			service: "PLEX",
+			enabled: true,
+			baseUrl: "http://plex.internal:32400",
+			encryptedApiKey: "encrypted-token",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			label: null,
+		};
+		const completedAt = new Date();
+		const normalStatus = completeStatus(instance.id, completedAt, 1);
+		const episodeStatus = completeStatus(instance.id, completedAt, 2);
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn(({ where }: { where: { cacheType: string } }) =>
+					Promise.resolve([where.cacheType === "plex_episode" ? episodeStatus : normalStatus]),
+				),
+			},
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
+			},
+			plexEpisodeCache: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: instance.id,
+						refreshedAt: completedAt,
+						sourceFingerprint: plexConnectionFingerprint(instance as never),
+					},
+				]),
+				groupBy: vi.fn().mockResolvedValue([]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildPlexEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[plexCleanupRule("plex_episode_completion")],
+		);
+
+		expect(result.ctx.plexEpisodeMap).toBeUndefined();
+		expect(result.failedSources).toContain("plex");
+		expect(
+			evaluateItemAgainstRules(
+				plexDecisionItem,
+				[plexCleanupRule("plex_episode_completion")],
+				"SONARR",
+				result.ctx,
+				result.failedSources,
+			),
+		).toBeNull();
+	});
+
+	it("rejects an interleaved map/section generation", async () => {
+		const instance = { id: "plex-inst-1", updatedAt: new Date(0) };
+		const completedAt = new Date();
+		const status = (generationId: string, includeNewSection: boolean) => ({
+			...completeStatus(instance.id, completedAt, 1),
+			generationId,
+			generationMetadata: JSON.stringify({
+				sections: [
+					{ key: "1", title: "Movies", type: "movie" },
+					...(includeNewSection ? [{ key: "2", title: "New Movies", type: "movie" }] : []),
+				],
+			}),
+			lastErrorMessage: null,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+		});
+		const statusReads = vi
+			.fn()
+			.mockResolvedValueOnce([status("generation-1", false)])
+			.mockResolvedValueOnce([status("generation-2", true)])
+			.mockResolvedValueOnce([status("generation-2", true)]);
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: { findMany: statusReads },
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi
+					.fn()
+					.mockResolvedValueOnce([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "movie", sectionId: "1" }),
+					]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildPlexEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[
+				{
+					enabled: true,
+					ruleType: "age",
+					conditions: null,
+					plexLibraryFilter: JSON.stringify(["Movies"]),
+				},
+			],
+		);
+
+		expect(statusReads).toHaveBeenCalledTimes(3);
+		expect(result.failedSources).toContain("plex");
+		expect(result.ctx.plexMap).toBeUndefined();
+		expect(result.ctx.plexSectionTitles).toBeUndefined();
+	});
 	it("merges watch data when the same tmdbId appears across two batches", async () => {
 		// Batch 1: 500 unique rows (forces a second findMany call). Last row is
 		// movie tmdbId=42 in section "lib-1" with one user watch.
@@ -106,7 +409,10 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 		const prisma = {
 			serviceInstance: {
-				findMany: vi.fn().mockResolvedValue([{ id: "plex-inst-1" }]),
+				findMany: vi.fn().mockResolvedValue([{ id: "plex-inst-1", updatedAt: new Date(0) }]),
+			},
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 501)]),
 			},
 			plexCache: { findMany: findManySpy },
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -146,7 +452,12 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			]);
 
 		const prisma = {
-			serviceInstance: { findMany: vi.fn().mockResolvedValue([{ id: "plex-inst-1" }]) },
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([{ id: "plex-inst-1", updatedAt: new Date(0) }]),
+			},
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 1)]),
+			},
 			plexCache: { findMany: findManySpy },
 		} as unknown as CleanupExecutorDeps["prisma"];
 

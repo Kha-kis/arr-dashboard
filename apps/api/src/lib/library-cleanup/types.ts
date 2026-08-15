@@ -167,6 +167,8 @@ export interface EvalContext {
 	now: Date;
 	seerrMap?: SeerrRequestMap;
 	plexMap?: PlexWatchMap;
+	/** Complete, current Plex movie/show section-title inventory across enabled instances. */
+	plexSectionTitles?: Set<string>;
 	plexEpisodeMap?: PlexEpisodeMap;
 	jellyfinMap?: JellyfinWatchMap;
 	/** Reuses PlexEpisodeMap shape — same total/watched/seasons structure */

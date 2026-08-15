@@ -129,10 +129,11 @@ export const plexEpisodeMediaItemsResponseSchema = z.looseObject({
 /** /status/sessions/history/all endpoint (paginated) */
 export const plexHistoryResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
-		size: z.number().optional(),
+		...plexSafetyPaginationFields,
 		Metadata: z
 			.array(
 				z.looseObject({
+					historyKey: z.string().min(1).optional(),
 					ratingKey: z.string().optional().default(""),
 					parentRatingKey: z.string().optional(),
 					parentKey: z.string().optional(),
