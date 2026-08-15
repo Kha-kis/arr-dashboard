@@ -46,16 +46,16 @@ const baseService: ServiceInstanceSummary = {
 	tags: [],
 };
 
-function Fixture() {
+function Fixture({ fallback = baseService }: { fallback?: ServiceInstanceSummary }) {
 	const management = useServicesManagement();
 	const { data = [] } = useQuery({
 		queryKey: serviceKeys.all,
 		queryFn: async (): Promise<ServiceInstanceSummary[]> => [],
 		enabled: false,
 	});
-	const service = data[0] ?? baseService;
+	const service = data[0] ?? fallback;
 	const [form, setForm] = useState<ServiceFormState>({
-		...defaultFormState("jellyfin"),
+		...defaultFormState(service.service),
 		label: service.label,
 		baseUrl: service.baseUrl,
 		apiKey: "",
@@ -97,16 +97,16 @@ function Fixture() {
 	);
 }
 
-function renderFixture() {
+function renderFixture(service = baseService) {
 	const client = new QueryClient({
 		defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
 	});
-	client.setQueryData(serviceKeys.all, [baseService]);
+	client.setQueryData(serviceKeys.all, [service]);
 	return render(
 		<QueryClientProvider client={client}>
 			<ColorThemeProvider>
 				<IncognitoProvider>
-					<Fixture />
+					<Fixture fallback={service} />
 				</IncognitoProvider>
 			</ColorThemeProvider>
 		</QueryClientProvider>,
@@ -180,6 +180,75 @@ describe("provider identity rendered administrator flow", () => {
 			expect(screen.getByText(/Verified jellyfin-server-id/i)).toBeInTheDocument(),
 		);
 		expect(container.textContent).not.toContain("submitted-api-key");
+	});
+
+	it("renders mismatch before inspecting and explicitly replaces it with a verified provider", async () => {
+		const mismatched = {
+			...baseService,
+			identity: { ...baseService.identity, status: "mismatch" as const },
+		};
+		vi.mocked(api.inspectServiceIdentity).mockResolvedValue({
+			candidate,
+			connectionGeneration: 4,
+			identityGeneration: 2,
+		});
+		vi.mocked(api.replaceServiceIdentity).mockResolvedValue({
+			...mismatched,
+			identity: {
+				status: "verified",
+				kind: candidate.identityKind,
+				fingerprint: candidate.fingerprint,
+				verifiedAt: "2026-08-14T01:00:00.000Z",
+				lastCheckedAt: "2026-08-14T01:00:00.000Z",
+			},
+		});
+		renderFixture(mismatched);
+		expect(screen.getByText(/Provider identity mismatch/i)).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: /verify identity/i }));
+		await screen.findByRole("button", { name: /confirm replacement/i });
+		fireEvent.click(screen.getByRole("button", { name: /confirm replacement/i }));
+		await waitFor(() =>
+			expect(screen.getByText(/Verified jellyfin-server-id/i)).toBeInTheDocument(),
+		);
+	});
+
+	it("keeps submitted API and proxy credentials out of replacement confirmation and status text", async () => {
+		const tautulli = { ...baseService, id: "tautulli-1", service: "tautulli" as const };
+		const tautulliCandidate = {
+			service: "TAUTULLI" as const,
+			identityKind: "tautulli-pms-identifier",
+			fingerprint: "222222222222",
+			confirmationDigest: "c".repeat(64),
+		};
+		const apiKey = "submitted-api-key-unique";
+		const username = "proxy-user-unique";
+		const password = "proxy-password-unique";
+		vi.mocked(api.updateService).mockRejectedValue(
+			new ApiError("replace", 409, {
+				details: {
+					code: "IDENTITY_REPLACEMENT_REQUIRED",
+					candidate: tautulliCandidate,
+					connectionGeneration: 4,
+					identityGeneration: 2,
+				},
+			}),
+		);
+		renderFixture(tautulli);
+		fireEvent.change(document.getElementById("service-apikey")!, { target: { value: apiKey } });
+		fireEvent.click(screen.getByLabelText(/Reverse proxy HTTP Basic Auth/i));
+		fireEvent.change(document.getElementById("service-http-username")!, {
+			target: { value: username },
+		});
+		fireEvent.change(document.getElementById("service-http-password")!, {
+			target: { value: password },
+		});
+		fireEvent.submit(screen.getByRole("button", { name: /save changes/i }).closest("form")!);
+		await screen.findByRole("button", { name: /confirm replacement/i });
+		const rendered = document.body.textContent ?? "";
+		expect(rendered).not.toContain(apiKey);
+		expect(rendered).not.toContain(username);
+		expect(rendered).not.toContain(password);
+		expect(rendered).not.toContain("raw-upstream-identity-unique");
 	});
 
 	it.each(["IDENTITY_CANDIDATE_CHANGED", "IDENTITY_GENERATION_STALE"])(
