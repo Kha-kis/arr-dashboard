@@ -38,6 +38,7 @@ vi.mock("../../lib/queue-cleaner/scheduler.js", () => ({
 	}),
 }));
 vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
+	createOwnedPlexPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshPlexCache: vi.fn(),
 }));
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({

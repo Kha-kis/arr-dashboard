@@ -16,6 +16,8 @@ const refreshMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
+	collectPlexCacheLiveEvidence: refreshMocks.plex,
+	createOwnedPlexPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshPlexCache: refreshMocks.plex,
 }));
 vi.mock("../../plex/plex-episode-cache-refresher.js", () => ({
@@ -68,6 +70,20 @@ function instance(service: "PLEX" | "TAUTULLI" | "JELLYFIN") {
 		createdAt: new Date("2026-07-31T12:00:00.000Z"),
 		updatedAt: new Date("2026-07-31T12:00:00.000Z"),
 	};
+}
+
+function plexRefreshInstanceId(args: unknown[]): string {
+	const [first, second, positionalInstanceId] = args;
+	if (
+		typeof first === "object" &&
+		first !== null &&
+		"instance" in first &&
+		typeof (first as { instance?: { id?: unknown } }).instance?.id === "string"
+	) {
+		return (first as { instance: { id: string } }).instance.id;
+	}
+	if (typeof second === "string") return second;
+	return String(positionalInstanceId);
 }
 
 function makeDeps(
@@ -135,6 +151,7 @@ function makeDeps(
 			jellyfinEpisodeCache: { findMany: vi.fn(), groupBy: vi.fn().mockResolvedValue([]) },
 		},
 		arrClientFactory: vi.fn(),
+		encryptor: { decrypt: vi.fn().mockReturnValue("decrypted") },
 		plexCacheClientFactory: vi.fn(() => ({}) as never),
 		tautulliCacheClientFactory: vi.fn(() => ({}) as never),
 		jellyfinCacheClientFactory: vi.fn(() => ({}) as never),
@@ -146,13 +163,13 @@ function makeDeps(
 describe("authoritative mutation policy snapshots", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		refreshMocks.plex.mockImplementation(async (_client, _prisma, instanceId: string) => ({
+		refreshMocks.plex.mockImplementation(async (...args: unknown[]) => ({
 			upserted: 0,
 			errors: 0,
 			errorMessages: [],
 			complete: true,
 			completedAt: new Date(),
-			generationId: `generation-${instanceId}`,
+			generationId: `generation-${plexRefreshInstanceId(args)}`,
 			inventoryTargets: [],
 		}));
 		refreshMocks.plexEpisodes.mockResolvedValue({
@@ -591,7 +608,8 @@ describe("authoritative mutation policy snapshots", () => {
 					lastAttemptResult: "success",
 					lastAttemptErrorMessage: null,
 				}))) as never);
-			refreshMocks.plex.mockImplementation(async (_client, _prisma, instanceId: string) => {
+			refreshMocks.plex.mockImplementation(async (...args: unknown[]) => {
+				const instanceId = plexRefreshInstanceId(args);
 				const pass = Math.floor(refreshCallCount / 2) + 1;
 				refreshCallCount++;
 				const generationId = `generation-${pass}-${instanceId}`;

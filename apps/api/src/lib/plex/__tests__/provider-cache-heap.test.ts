@@ -16,6 +16,44 @@ import type { PrismaClient } from "../../prisma.js";
 import { refreshPlexCache } from "../plex-cache-refresher.js";
 import type { PlexClient, PlexLibraryItem } from "../plex-client.js";
 
+const publication = vi.hoisted(() => ({ client: undefined as PlexClient | undefined }));
+
+vi.mock("../plex-client.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../plex-client.js")>();
+	return {
+		...actual,
+		PlexClient: class {
+			constructor() {
+				if (!publication.client) throw new Error("Plex heap client was not configured");
+				Object.assign(this, publication.client);
+			}
+		},
+	};
+});
+
+vi.mock("../../services/provider-identity-guard.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../services/provider-identity-guard.js")>();
+	return {
+		...actual,
+		withGuardedProviderPublication: vi.fn(
+			async (
+				prisma: PrismaClient,
+				_instance: unknown,
+				_log: unknown,
+				collect: () => Promise<unknown>,
+				publish: (tx: unknown, snapshot: unknown) => Promise<unknown>,
+				options: unknown,
+			) => {
+				const snapshot = await collect();
+				return await prisma.$transaction(
+					async (tx) => await publish(tx, snapshot),
+					options as never,
+				);
+			},
+		),
+	};
+});
+
 const RUN_HEAP_TESTS = process.env.TEST_HEAP === "true";
 const MIB = 1024 * 1024;
 const PLEX_ITEMS = 15_000;
@@ -127,7 +165,29 @@ function reportHeap(message: string): void {
 		});
 
 		async function refreshPlexAndAssert(): Promise<void> {
-			const plex = await refreshPlexCache(plexClient, prisma, "heap-plex", silentLog, undefined);
+			publication.client = plexClient;
+			const plex = await refreshPlexCache({
+				prisma,
+				instance: {
+					id: "heap-plex",
+					userId: "heap-user",
+					service: "PLEX",
+					label: "Heap Plex",
+					baseUrl: "http://plex.invalid",
+					apiKey: "token",
+					httpAuthHeaders: {},
+					enabled: true,
+					encryptedApiKey: "x",
+					encryptionIv: "y",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
+					expectedIdentity: "plex-a",
+					identityStatus: "VERIFIED",
+					connectionGeneration: 0,
+					identityGeneration: 0,
+				},
+				log: silentLog,
+			});
 			expect(plex).toMatchObject({ complete: true, errors: 0, upserted: PLEX_ITEMS });
 		}
 
@@ -194,13 +254,29 @@ function reportHeap(message: string): void {
 			`);
 
 			try {
-				const result = await refreshPlexCache(
-					plexClient,
+				publication.client = plexClient;
+				const result = await refreshPlexCache({
 					prisma,
-					"heap-plex",
-					silentLog,
-					undefined,
-				);
+					instance: {
+						id: "heap-plex",
+						userId: "heap-user",
+						service: "PLEX",
+						label: "Heap Plex",
+						baseUrl: "http://plex.invalid",
+						apiKey: "token",
+						httpAuthHeaders: {},
+						enabled: true,
+						encryptedApiKey: "x",
+						encryptionIv: "y",
+						encryptedHttpAuthCredentials: null,
+						httpAuthEncryptionIv: null,
+						expectedIdentity: "plex-a",
+						identityStatus: "VERIFIED",
+						connectionGeneration: 0,
+						identityGeneration: 0,
+					},
+					log: silentLog,
+				});
 				expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
 				expect(result.errorMessages.join(" ")).toMatch(
 					/Atomic Plex cache publication failed:.*constraint/is,
@@ -210,6 +286,66 @@ function reportHeap(message: string): void {
 				]);
 			} finally {
 				await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS fail_plex_second_chunk");
+			}
+		}, 120_000);
+
+		it("rolls back Plex rows when the success-status write fails", async () => {
+			await prisma.plexCache.deleteMany({ where: { instanceId: "heap-plex" } });
+			await prisma.plexCache.create({
+				data: {
+					instanceId: "heap-plex",
+					tmdbId: 100_000,
+					mediaType: "movie",
+					sectionId: "1",
+					sectionTitle: "Movies",
+					title: "Preserved before status failure",
+					ratingKey: "old-status-plex",
+					watchedByUsers: "[]",
+					collections: "[]",
+					labels: "[]",
+				},
+			});
+			const previousStatusAt = new Date("2026-01-01T00:00:00.000Z");
+			await prisma.cacheRefreshStatus.upsert({
+				where: { instanceId_cacheType: { instanceId: "heap-plex", cacheType: "plex" } },
+				create: {
+					instanceId: "heap-plex",
+					cacheType: "plex",
+					lastRefreshedAt: previousStatusAt,
+					lastResult: "success",
+					itemCount: 1,
+				},
+				update: {
+					lastRefreshedAt: previousStatusAt,
+					lastResult: "success",
+					itemCount: 1,
+				},
+			});
+			await prisma.$executeRawUnsafe(`
+				CREATE TRIGGER fail_plex_success_status
+				BEFORE UPDATE ON cache_refresh_status
+				WHEN NEW.instanceId = 'heap-plex' AND NEW.cacheType = 'plex'
+				BEGIN
+					SELECT RAISE(ABORT, 'injected Plex status failure');
+				END
+			`);
+
+			try {
+				await expect(refreshPlexAndAssert()).rejects.toThrow();
+				const rows = await prisma.plexCache.findMany({ where: { instanceId: "heap-plex" } });
+				expect(rows).toEqual([
+					expect.objectContaining({
+						title: "Preserved before status failure",
+						ratingKey: "old-status-plex",
+					}),
+				]);
+				expect(
+					await prisma.cacheRefreshStatus.findUnique({
+						where: { instanceId_cacheType: { instanceId: "heap-plex", cacheType: "plex" } },
+					}),
+				).toEqual(expect.objectContaining({ lastRefreshedAt: previousStatusAt, itemCount: 1 }));
+			} finally {
+				await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS fail_plex_success_status");
 			}
 		}, 120_000);
 

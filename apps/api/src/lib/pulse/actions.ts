@@ -31,7 +31,10 @@ import { refreshJellyfinCache } from "../jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
 import { requireJellyfinClient } from "../jellyfin/jellyfin-helpers.js";
 import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
-import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
+import {
+	createOwnedPlexPublicationSnapshot,
+	refreshPlexCache,
+} from "../plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../plex/plex-helpers.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
 import { recordProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
@@ -163,14 +166,15 @@ async function dispatchCacheRefresh(
 	log: FastifyBaseLogger,
 ): Promise<PulseActionResult> {
 	if (cacheType === "plex") {
-		const { client, instance } = await requirePlexClient(app, userId, instanceId);
+		const { instance } = await requirePlexClient(app, userId, instanceId);
 		const expectedConnection = providerConnectionIdentity(instance);
+		const publicationInstance = createOwnedPlexPublicationSnapshot(app.encryptor, instance);
 		const backgroundTask = runBackgroundCacheRefresh({
 			app,
 			log,
 			instanceId,
 			cacheType: "plex",
-			refresh: () => refreshPlexCache(client, app.prisma, instanceId, log, expectedConnection),
+			refresh: () => refreshPlexCache({ prisma: app.prisma, instance: publicationInstance, log }),
 			expectedConnection,
 		});
 		log.info({ instanceId, cacheType }, "pulse-action: plex cache refresh dispatched");

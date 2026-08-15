@@ -34,8 +34,14 @@ vi.mock("../../queue-cleaner/scheduler.js", () => ({
 }));
 
 const refreshPlexCache = vi.fn();
+const createOwnedPlexPublicationSnapshot = vi.fn((_encryptor, instance) => ({
+	sealed: true,
+	instance,
+}));
 const refreshTautulliCache = vi.fn();
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
+	createOwnedPlexPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
+		createOwnedPlexPublicationSnapshot(encryptor, instance),
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
@@ -104,6 +110,7 @@ beforeEach(() => {
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
 	refreshPlexCache.mockReset();
+	createOwnedPlexPublicationSnapshot.mockClear();
 	refreshTautulliCache.mockReset();
 	requirePlexClient.mockReset();
 	requireTautulliClient.mockReset();
@@ -239,11 +246,13 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// this; the HTTP client has already received 200.
 		await result.backgroundTask;
 
-		expect(refreshPlexCache).toHaveBeenCalledWith(
-			fakeClient,
-			fakeApp.prisma,
-			"inst-plex-1",
-			fakeLog,
+		expect(refreshPlexCache).toHaveBeenCalledWith({
+			prisma: fakeApp.prisma,
+			instance: { sealed: true, instance: plexInstance },
+			log: fakeLog,
+		});
+		expect(createOwnedPlexPublicationSnapshot).toHaveBeenCalledWith(
+			fakeApp.encryptor,
 			plexInstance,
 		);
 		// The refresher transaction is the sole successful-generation publisher.

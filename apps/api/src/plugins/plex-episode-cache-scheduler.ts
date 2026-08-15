@@ -8,9 +8,8 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { createPlexClient } from "../lib/plex/plex-client.js";
+import { createOwnedPlexPublicationSnapshot } from "../lib/plex/plex-cache-refresher.js";
 import { refreshPlexEpisodeCache } from "../lib/plex/plex-episode-cache-refresher.js";
-import { plexConnectionFingerprint } from "../lib/plex/service-instance-fingerprint.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { recordProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
 import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
@@ -62,15 +61,11 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					for (const instance of instances) {
 						const expectedConnection = providerConnectionIdentity(instance);
 						try {
-							const client = createPlexClient(app.encryptor, instance, app.log);
-							const result = await refreshPlexEpisodeCache(
-								client,
-								app.prisma,
-								instance.id,
-								app.log,
-								plexConnectionFingerprint(instance),
-								expectedConnection,
-							);
+							const result = await refreshPlexEpisodeCache({
+								prisma: app.prisma,
+								instance: createOwnedPlexPublicationSnapshot(app.encryptor, instance),
+								log: app.log,
+							});
 							app.log.info(
 								{ instanceId: instance.id, label: instance.label, ...result },
 								"Plex episode cache refresh completed for instance",

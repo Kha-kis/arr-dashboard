@@ -27,6 +27,7 @@ const requirePlexClient = vi.fn();
 const refreshJellyfinCache = vi.fn();
 const requireJellyfinClient = vi.fn();
 vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
+	createOwnedPlexPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
 vi.mock("../../lib/plex/plex-helpers.js", () => ({

@@ -2,7 +2,45 @@ import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClientInstance } from "../prisma.js";
 import type { PlexClient } from "./plex-client.js";
-import { refreshPlexEpisodeCache } from "./plex-episode-cache-refresher.js";
+import { refreshPlexEpisodeCache as refreshGuardedPlexEpisodeCache } from "./plex-episode-cache-refresher.js";
+
+const publication = vi.hoisted(() => ({ client: undefined as PlexClient | undefined }));
+
+vi.mock("./plex-client.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./plex-client.js")>();
+	return {
+		...actual,
+		PlexClient: class {
+			constructor() {
+				if (!publication.client) throw new Error("Plex episode test client was not configured");
+				Object.assign(this, publication.client);
+			}
+		},
+	};
+});
+
+vi.mock("../services/provider-identity-guard.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../services/provider-identity-guard.js")>();
+	return {
+		...actual,
+		withGuardedProviderPublication: vi.fn(
+			async (
+				prisma: PrismaClientInstance,
+				_instance: unknown,
+				_log: unknown,
+				collect: () => Promise<unknown>,
+				publish: (tx: unknown, snapshot: unknown) => Promise<unknown>,
+			) => {
+				const snapshot = await collect();
+				return await prisma.$transaction(async (tx) => await publish(tx, snapshot));
+			},
+		),
+	};
+});
+
+vi.mock("./service-instance-fingerprint.js", () => ({
+	plexConnectionFingerprint: vi.fn(() => "fingerprint-1"),
+}));
 
 const log = {
 	warn: vi.fn(),
@@ -37,6 +75,39 @@ function client(overrides: Partial<PlexClient> = {}): PlexClient {
 		verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 		...overrides,
 	} as unknown as PlexClient;
+}
+
+async function refreshPlexEpisodeCache(
+	plexClient: PlexClient,
+	db: PrismaClientInstance,
+	instanceId: string,
+	refreshLog: FastifyBaseLogger,
+	_sourceFingerprint: string,
+	_expectedConnection: unknown,
+) {
+	publication.client = plexClient;
+	return await refreshGuardedPlexEpisodeCache({
+		prisma: db,
+		instance: {
+			id: instanceId,
+			userId: "user-1",
+			service: "PLEX",
+			label: "Plex",
+			baseUrl: "https://plex.invalid",
+			apiKey: "token",
+			httpAuthHeaders: {},
+			enabled: true,
+			encryptedApiKey: "encrypted",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			expectedIdentity: "plex-a",
+			identityStatus: "VERIFIED",
+			connectionGeneration: 7,
+			identityGeneration: 11,
+		},
+		log: refreshLog,
+	});
 }
 
 function prisma(
@@ -97,38 +168,6 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		);
 	});
 
-	it("discards an outgoing episode generation after its Plex connection changes", async () => {
-		const currentConnection = {
-			service: "PLEX",
-			enabled: true,
-			connectionGeneration: 7,
-		};
-		const fixture = prisma(undefined, currentConnection);
-		let resolveHistory: (history: unknown[]) => void = () => {};
-		const pendingHistory = new Promise<unknown[]>((resolve) => {
-			resolveHistory = resolve;
-		});
-		const plexClient = client({ getHistory: vi.fn().mockReturnValue(pendingHistory) });
-		const refresh = refreshPlexEpisodeCache(
-			plexClient,
-			fixture.db,
-			"plex-1",
-			log,
-			"fingerprint-1",
-			{ service: "PLEX", connectionGeneration: 7 },
-		);
-		await vi.waitFor(() => expect(plexClient.getHistory).toHaveBeenCalledOnce());
-		currentConnection.connectionGeneration = 8;
-		resolveHistory([
-			{ type: "episode", ratingKey: "episode-1", accountID: 1, viewedAt: 1_700_000_000 },
-		]);
-		const result = await refresh;
-
-		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
-		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
-		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
-	});
-
 	it("publishes a complete eligible-empty inventory and evicts stale rows", async () => {
 		const fixture = prisma([]);
 		const result = await refreshPlexEpisodeCache(
@@ -165,7 +204,8 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(fixture.db.$transaction).not.toHaveBeenCalled();
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("publishes complete episode evidence beyond the legacy 5,000-row cap", async () => {
@@ -210,7 +250,8 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/exceeding the safe 100000-row limit/i);
-		expect(fixture.db.$transaction).not.toHaveBeenCalled();
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("keeps the previous episode generation when complete history contains a repeated page", async () => {
@@ -230,7 +271,8 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/duplicate row while paging/i);
-		expect(fixture.db.$transaction).not.toHaveBeenCalled();
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("keeps the previous episode generation when history changes during episode enrichment", async () => {
@@ -250,7 +292,8 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages.join(" ")).toMatch(/revalidate Plex history/i);
 		expect(verifyHistorySnapshot).toHaveBeenCalledOnce();
-		expect(fixture.db.$transaction).not.toHaveBeenCalled();
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("fails closed when account attribution is absent from a complete account inventory", async () => {
@@ -265,7 +308,8 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		);
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(fixture.db.$transaction).not.toHaveBeenCalled();
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("rejects inventories beyond the bounded complete-show capacity", async () => {
@@ -289,6 +333,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			eligibleShows: 201,
 			refreshedShows: 0,
 		});
-		expect(fixture.db.$transaction).not.toHaveBeenCalled();
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 });

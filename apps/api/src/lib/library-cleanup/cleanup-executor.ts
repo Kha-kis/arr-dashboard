@@ -25,6 +25,8 @@ import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-
 import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import {
+	collectPlexCacheLiveEvidence,
+	createOwnedPlexPublicationSnapshot,
 	type PlexCacheSnapshotRow,
 	type PlexInventoryTarget,
 	refreshPlexCache,
@@ -8990,14 +8992,7 @@ async function collectLivePlexPolicyEvidence(
 					deps.plexCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createPlexClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Plex credentials were unavailable");
-				const collected = await refreshPlexCache(
-					client,
-					deps.prisma,
-					instance.id,
-					deps.log,
-					providerConnectionIdentity(instance),
-					{ publish: false },
-				);
+				const collected = await collectPlexCacheLiveEvidence(client, instance.id, deps.log);
 				if (
 					collected.errors > 0 ||
 					collected.complete !== true ||
@@ -9195,18 +9190,13 @@ async function refreshPlexMutationEvidence(
 				initial.map((instance) => [instance.id, new Map<string, Set<string>>()]),
 			);
 			for (const instance of initial) {
-				const client =
-					deps.plexCacheClientFactory?.(instance) ??
-					(deps.encryptor ? createPlexClient(deps.encryptor, instance, deps.log) : null);
-				if (!client) throw new Error("Plex credentials were unavailable");
-				const expectedConnection = providerConnectionIdentity(instance);
-				const refreshed = await refreshPlexCache(
-					client,
-					deps.prisma,
-					instance.id,
-					deps.log,
-					expectedConnection,
-				);
+				if (!deps.encryptor) throw new Error("Plex credentials were unavailable");
+				const publicationInstance = createOwnedPlexPublicationSnapshot(deps.encryptor, instance);
+				const refreshed = await refreshPlexCache({
+					prisma: deps.prisma,
+					instance: publicationInstance,
+					log: deps.log,
+				});
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Plex cache refresh was incomplete");
 				}
@@ -9227,14 +9217,11 @@ async function refreshPlexMutationEvidence(
 					}
 				}
 				if (includeEpisodes) {
-					const episodes = await refreshPlexEpisodeCache(
-						client,
-						deps.prisma,
-						instance.id,
-						deps.log,
-						plexConnectionFingerprint(instance),
-						expectedConnection,
-					);
+					const episodes = await refreshPlexEpisodeCache({
+						prisma: deps.prisma,
+						instance: publicationInstance,
+						log: deps.log,
+					});
 					if (episodes.errors > 0 || episodes.complete !== true) {
 						throw new Error("Plex episode evidence refresh was incomplete");
 					}

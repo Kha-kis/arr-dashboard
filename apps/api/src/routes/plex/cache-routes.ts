@@ -8,7 +8,10 @@
 import type { CacheHealthResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { refreshPlexCache } from "../../lib/plex/plex-cache-refresher.js";
+import {
+	createOwnedPlexPublicationSnapshot,
+	refreshPlexCache,
+} from "../../lib/plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
 import { recordProviderCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
 import { providerConnectionIdentity } from "../../lib/services/provider-connection-guard.js";
@@ -57,17 +60,15 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
 
-			const { client, instance } = await requirePlexClient(app, userId, instanceId);
+			const { instance } = await requirePlexClient(app, userId, instanceId);
 			const expectedConnection = providerConnectionIdentity(instance);
 
 			try {
-				const result = await refreshPlexCache(
-					client,
-					app.prisma,
-					instanceId,
-					request.log,
-					expectedConnection,
-				);
+				const result = await refreshPlexCache({
+					prisma: app.prisma,
+					instance: createOwnedPlexPublicationSnapshot(app.encryptor, instance),
+					log: request.log,
+				});
 
 				if ((!result.complete || !result.completedAt) && !result.superseded) {
 					await recordProviderCacheRefreshFailure(
