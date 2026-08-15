@@ -16,8 +16,9 @@ const SUPPORTED_BACKUP_VERSIONS = new Set([LEGACY_BACKUP_VERSION, BACKUP_VERSION
 
 type CoordinationRecord = Record<string, unknown>;
 
-type CoordinationState = {
+export type CoordinationState = {
 	backupId?: unknown;
+	canRollback?: unknown;
 	rollbackStatus?: unknown;
 	undeployStatus?: unknown;
 	status?: unknown;
@@ -34,9 +35,33 @@ function isNonterminalStatus(value: unknown): boolean {
 
 const NONTERMINAL_SYNC_STATUSES = new Set(["IN_PROGRESS", "RUNNING"]);
 const NONTERMINAL_DEPLOYMENT_STATUSES = new Set(["PARTIAL_UNDEPLOY", "IN_PROGRESS"]);
+const ACTIVE_SYNC_OWNER_STATUSES = new Set(["SUCCESS", "PARTIAL_SUCCESS", "UNCERTAIN"]);
+const ACTIVE_DEPLOYMENT_OWNER_STATUSES = new Set(["SUCCESS", "PARTIAL_SUCCESS", "UNCERTAIN"]);
+
+export function isAuditOnlyUncertainSync(record: CoordinationState): boolean {
+	return (
+		record.status === "UNCERTAIN" &&
+		record.rollbackStatus == null &&
+		record.backupId == null &&
+		record.rolledBack !== true
+	);
+}
+
+export function isAuditOnlyUncertainDeployment(record: CoordinationState): boolean {
+	return (
+		record.status === "UNCERTAIN" &&
+		record.undeployStatus == null &&
+		record.backupId == null &&
+		record.rolledBack === false &&
+		record.canRollback === false
+	);
+}
 
 export function isNonterminalRollback(record: CoordinationState): boolean {
 	if (isManuallyResolvedSyncHistory(record)) {
+		return false;
+	}
+	if (isAuditOnlyUncertainSync(record)) {
 		return false;
 	}
 	if (record.rolledBack === true || record.rollbackStatus === "COMPLETED") {
@@ -45,18 +70,27 @@ export function isNonterminalRollback(record: CoordinationState): boolean {
 
 	return (
 		isNonterminalStatus(record.rollbackStatus) ||
-		(typeof record.status === "string" && NONTERMINAL_SYNC_STATUSES.has(record.status))
+		(typeof record.status === "string" && NONTERMINAL_SYNC_STATUSES.has(record.status)) ||
+		(record.rolledBack === false &&
+			typeof record.status === "string" &&
+			ACTIVE_SYNC_OWNER_STATUSES.has(record.status))
 	);
 }
 
 export function isNonterminalUndeploy(record: CoordinationState): boolean {
+	if (isAuditOnlyUncertainDeployment(record)) {
+		return false;
+	}
 	if (record.rolledBack === true || record.undeployStatus === "COMPLETED") {
 		return false;
 	}
 
 	return (
 		isNonterminalStatus(record.undeployStatus) ||
-		(typeof record.status === "string" && NONTERMINAL_DEPLOYMENT_STATUSES.has(record.status))
+		(typeof record.status === "string" && NONTERMINAL_DEPLOYMENT_STATUSES.has(record.status)) ||
+		(record.rolledBack === false &&
+			typeof record.status === "string" &&
+			ACTIVE_DEPLOYMENT_OWNER_STATUSES.has(record.status))
 	);
 }
 

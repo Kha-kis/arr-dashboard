@@ -93,17 +93,14 @@ describe("manual sync review authority", () => {
 		app = undefined;
 	});
 
-	it("refreshes persisted template data before validating and issuing the reviewed plan", async () => {
+	it("keeps validation read-only while issuing a plan for the persisted template", async () => {
 		app = await createApp();
 		const response = await createInjectAuthenticated(app)("POST", "/validate", {
 			body: { templateId, instanceId },
 		});
 
 		expect(response.statusCode).toBe(200);
-		expect(mocks.syncTemplate).toHaveBeenCalledWith(templateId, undefined, "user-1");
-		expect(mocks.syncTemplate.mock.invocationCallOrder[0]).toBeLessThan(
-			mocks.validate.mock.invocationCallOrder[0]!,
-		);
+		expect(mocks.syncTemplate).not.toHaveBeenCalled();
 		expect(mocks.validate.mock.invocationCallOrder[0]).toBeLessThan(
 			mocks.generatePreview.mock.invocationCallOrder[0]!,
 		);
@@ -118,10 +115,12 @@ describe("manual sync review authority", () => {
 		});
 	});
 
-	it("does not issue a review token when the template refresh fails", async () => {
-		mocks.syncTemplate.mockResolvedValueOnce({
-			success: false,
-			errors: ["GitHub unavailable"],
+	it("does not refresh or persist the template when validation is rejected", async () => {
+		mocks.validate.mockResolvedValueOnce({
+			valid: false,
+			conflicts: [],
+			errors: ["ARR target is unavailable"],
+			warnings: [],
 		});
 		app = await createApp();
 
@@ -133,10 +132,10 @@ describe("manual sync review authority", () => {
 		expect(response.json()).toEqual({
 			valid: false,
 			conflicts: [],
-			errors: ["Template sync failed: GitHub unavailable"],
+			errors: ["ARR target is unavailable"],
 			warnings: [],
 		});
-		expect(mocks.validate).not.toHaveBeenCalled();
+		expect(mocks.syncTemplate).not.toHaveBeenCalled();
 		expect(mocks.generatePreview).not.toHaveBeenCalled();
 	});
 

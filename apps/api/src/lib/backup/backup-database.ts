@@ -9,6 +9,9 @@ import type { BackupData } from "@arr/shared";
 import { loggers } from "../logger.js";
 import type { Prisma, PrismaClient, TrashBackup } from "../prisma.js";
 import {
+	type CoordinationState,
+	isAuditOnlyUncertainDeployment,
+	isAuditOnlyUncertainSync,
 	isNonterminalRollback,
 	isNonterminalUndeploy,
 	validateCoordinationEvidence,
@@ -36,16 +39,7 @@ export interface ExportDatabaseOptions {
 }
 
 type CoordinationKind = "rollback" | "undeploy";
-type CoordinationRow = Record<string, unknown> & { id: string };
-
-function isAuditOnlyUncertainSync(record: Record<string, unknown>): boolean {
-	return (
-		record.status === "UNCERTAIN" &&
-		record.rollbackStatus == null &&
-		record.backupId == null &&
-		record.rolledBack !== true
-	);
-}
+type CoordinationRow = CoordinationState & Record<string, unknown> & { id: string };
 
 function isUnrolledDeploymentOwner(record: Record<string, unknown>): boolean {
 	return (
@@ -62,7 +56,11 @@ function shouldPreserveSyncHistory(record: Record<string, unknown>): boolean {
 }
 
 function shouldPreserveDeploymentHistory(record: Record<string, unknown>): boolean {
-	return isUnrolledDeploymentOwner(record) || isNonterminalUndeploy(record);
+	return (
+		isUnrolledDeploymentOwner(record) ||
+		isNonterminalUndeploy(record) ||
+		isAuditOnlyUncertainDeployment(record)
+	);
 }
 
 const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
@@ -218,7 +216,7 @@ async function validateCurrentCoordinationPreserved(
 		await tx.trashSyncHistory.findMany({
 			where: {
 				OR: [
-					{ rolledBack: false, backupId: { not: null } },
+					{ rolledBack: false },
 					{ rollbackStatus: { not: "COMPLETED" } },
 					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
 					{ status: "UNCERTAIN", rollbackStatus: null, backupId: null },
@@ -230,7 +228,7 @@ async function validateCurrentCoordinationPreserved(
 		await tx.templateDeploymentHistory.findMany({
 			where: {
 				OR: [
-					{ rolledBack: false, backupId: { not: null } },
+					{ rolledBack: false },
 					{ undeployStatus: { not: "COMPLETED" } },
 					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
 				],
@@ -263,7 +261,7 @@ async function validateCurrentCoordinationPreserved(
 
 	const currentRecoveryRows = [
 		...currentRollbackRows.filter((row) => !isAuditOnlyUncertainSync(row)),
-		...currentUndeployRows,
+		...currentUndeployRows.filter((row) => !isAuditOnlyUncertainDeployment(row)),
 	];
 	const requiredSnapshotIds = currentRecoveryRows.map((row) => {
 		if (typeof row.backupId !== "string" || row.backupId.length === 0) {

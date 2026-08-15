@@ -923,6 +923,7 @@ describe("BackupService - legacy restore normalization", () => {
 						templateId: "template-1",
 						userId: "user-1",
 						status: "PARTIAL_UNDEPLOY",
+						rolledBack: false,
 						undeployStatus: "PARTIAL",
 						backupId: "missing-snapshot",
 						canRollback: true,

@@ -245,16 +245,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			});
 		}
 
-		const { syncEngine, templateUpdater } = await getServices(userId);
-		const templateSync = await templateUpdater.syncTemplate(body.templateId, undefined, userId);
-		if (!templateSync.success) {
-			return reply.send({
-				valid: false,
-				conflicts: [],
-				errors: [`Template sync failed: ${templateSync.errors?.join(", ") || "Unknown error"}`],
-				warnings: [],
-			});
-		}
+		const { syncEngine } = await getServices(userId);
 		const validation = await syncEngine.validate({
 			templateId: body.templateId,
 			instanceId: body.instanceId,

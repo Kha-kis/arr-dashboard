@@ -61,6 +61,47 @@ function makeMockPrisma(rows: Partial<Record<TableName, unknown[]>> = {}): {
 }
 
 describe("exportDatabase — operational history exclusion", () => {
+	it.each([
+		{
+			kind: "sync",
+			table: "trashSyncHistory" as const,
+			row: {
+				id: "snapshotless-sync-owner",
+				instanceId: "instance-1",
+				templateId: "template-1",
+				userId: "user-1",
+				status: "SUCCESS",
+				rolledBack: false,
+				rollbackStatus: null,
+				backupId: null,
+			},
+		},
+		{
+			kind: "deployment",
+			table: "templateDeploymentHistory" as const,
+			row: {
+				id: "snapshotless-deployment-owner",
+				instanceId: "instance-1",
+				templateId: "template-1",
+				userId: "user-1",
+				status: "SUCCESS",
+				rolledBack: false,
+				undeployStatus: null,
+				backupId: null,
+			},
+		},
+	])("fails backup creation for a snapshotless active $kind owner", async ({ table, row }) => {
+		const { prisma, mock } = makeMockPrisma();
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce(table === "trashSyncHistory" ? [row] : []);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce(
+			table === "templateDeploymentHistory" ? [row] : [],
+		);
+
+		await expect(exportDatabase(prisma, { excludeOperationalHistory: true })).rejects.toThrow(
+			row.id,
+		);
+	});
+
 	it("preserves a successful unrolled deployment owner and its snapshot", async () => {
 		const { prisma, mock } = makeMockPrisma({
 			serviceInstance: [{ id: "instance-1", userId: "user-1" }],
@@ -327,6 +368,29 @@ describe("exportDatabase — operational history exclusion", () => {
 		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
 
 		expect(result.trashSyncHistory).toEqual([interruptedAudit]);
+		expect(result.trashBackups).toEqual([]);
+		expect(mock.trashBackup.findMany).not.toHaveBeenCalled();
+	});
+
+	it("preserves legacy snapshotless undeploy audits without inventing recovery authority", async () => {
+		const { prisma, mock } = makeMockPrisma();
+		const interruptedAudit = {
+			id: "legacy-undeploy-audit",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "UNCERTAIN",
+			backupId: null,
+			undeployStatus: null,
+			rolledBack: false,
+			canRollback: false,
+		};
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce([]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([interruptedAudit]);
+
+		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
+
+		expect(result.templateDeploymentHistory).toEqual([interruptedAudit]);
 		expect(result.trashBackups).toEqual([]);
 		expect(mock.trashBackup.findMany).not.toHaveBeenCalled();
 	});
@@ -663,9 +727,31 @@ describe("restoreDatabase — current coordination preservation", () => {
 		);
 		expect(tx.trashSyncHistory.findMany).toHaveBeenCalledWith({
 			where: {
-				OR: expect.arrayContaining([{ rolledBack: false, backupId: { not: null } }]),
+				OR: expect.arrayContaining([{ rolledBack: false }]),
 			},
 		});
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a current snapshotless successful sync owner before restore deletion", async () => {
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentSync: [
+				{
+					id: "snapshotless-successful-sync",
+					instanceId: "instance-1",
+					templateId: "template-1",
+					userId: "user-1",
+					status: "SUCCESS",
+					rolledBack: false,
+					rollbackStatus: null,
+					backupId: null,
+				},
+			],
+		});
+
+		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+			"snapshotless-successful-sync",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
@@ -748,10 +834,33 @@ describe("restoreDatabase — current coordination preservation", () => {
 		);
 		expect(tx.templateDeploymentHistory.findMany).toHaveBeenCalledWith({
 			where: {
-				OR: expect.arrayContaining([{ rolledBack: false, backupId: { not: null } }]),
+				OR: expect.arrayContaining([{ rolledBack: false }]),
 			},
 			include: expect.any(Object),
 		});
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a current snapshotless successful deployment owner before restore deletion", async () => {
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentDeployments: [
+				{
+					id: "snapshotless-successful-deployment",
+					instanceId: "instance-1",
+					templateId: "template-1",
+					userId: "user-1",
+					status: "SUCCESS",
+					rolledBack: false,
+					undeployStatus: null,
+					templateSnapshot: "{}",
+					backupId: null,
+				},
+			],
+		});
+
+		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+			"snapshotless-successful-deployment",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
