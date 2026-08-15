@@ -16,11 +16,11 @@ import {
 	getExpectedSharedDeploymentStateToken,
 	resolveActiveDeploymentOwnership,
 } from "../../lib/trash-guides/deployment-active-ownership.js";
-import { parseDeploymentBackupState } from "../../lib/trash-guides/deployment-backup-state.js";
 import {
-	type CustomFormatRollbackState,
-	rollbackCustomFormatDeployment,
-} from "../../lib/trash-guides/deployment-custom-format-state.js";
+	type DeploymentBackupState,
+	parseDeploymentBackupState,
+} from "../../lib/trash-guides/deployment-backup-state.js";
+import { rollbackCustomFormatDeployment } from "../../lib/trash-guides/deployment-custom-format-state.js";
 import { restoreNamingDeployment } from "../../lib/trash-guides/deployment-naming-state.js";
 import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
 import { MANUALLY_RESOLVED_ROLLBACK_STATUS } from "../../lib/trash-guides/deployment-recovery-state.js";
@@ -821,8 +821,11 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 							// Parse backup data (contains the pre-sync state)
 							let backupEndpointKey = "";
 							let backupConnectionStateToken = "";
-							let backupCustomFormatDeployments: CustomFormatRollbackState[] = [];
+							let backupCustomFormatDeployments: DeploymentBackupState["customFormatDeployments"] =
+								[];
 							let backupQualityProfileDeployment: QualityProfileRollbackState | null = null;
+							let backupState: DeploymentBackupState | null = null;
+							let persistedBackupData = backup.backupData;
 							let backupNamingDeployment: {
 								beforeConfig: Record<string, unknown>;
 								postStateToken: string;
@@ -830,10 +833,10 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 							let hasUnknownNamingDeployment = false;
 							try {
 								const parsed = parseDeploymentBackupState(backup.backupData);
+								backupState = parsed;
 								backupEndpointKey = parsed.endpointKey;
 								backupConnectionStateToken = parsed.connectionStateToken;
-								backupCustomFormatDeployments =
-									parsed.customFormatDeployments as CustomFormatRollbackState[];
+								backupCustomFormatDeployments = parsed.customFormatDeployments;
 								if (parsed.qualityProfileDeployment.status !== "not_started") {
 									backupQualityProfileDeployment =
 										parsed.qualityProfileDeployment as QualityProfileRollbackState;
@@ -978,6 +981,49 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								);
 							};
 							const rollbackAttemptedAt = new Date();
+							const persistRecoveredBackupState = async (
+								nextState: DeploymentBackupState,
+							): Promise<void> => {
+								const nextBackupData = JSON.stringify(nextState);
+								const updated = await app.prisma.trashBackup.updateMany({
+									where: { id: backup.id, userId, backupData: persistedBackupData },
+									data: { backupData: nextBackupData },
+								});
+								if (updated.count !== 1) {
+									throw new Error(
+										"Deployment recovery evidence changed before the recovered resource identity could be saved.",
+									);
+								}
+								persistedBackupData = nextBackupData;
+								backupState = nextState;
+							};
+							const persistRecoveredQualityProfileIdentity = async (identity: {
+								profileId: number;
+								postStateToken: string;
+							}): Promise<void> => {
+								if (!backupState) throw new Error("Deployment recovery evidence is unavailable.");
+								const nextProfile = { ...backupState.qualityProfileDeployment, ...identity };
+								await persistRecoveredBackupState({
+									...backupState,
+									qualityProfileDeployment: nextProfile,
+								});
+								backupQualityProfileDeployment = nextProfile as QualityProfileRollbackState;
+							};
+							const persistRecoveredCustomFormatIdentity = async (
+								target: DeploymentBackupState["customFormatDeployments"][number],
+								identity: { resourceId: number; postStateToken: string },
+							): Promise<void> => {
+								if (!backupState) throw new Error("Deployment recovery evidence is unavailable.");
+								const index = backupState.customFormatDeployments.indexOf(target);
+								if (index < 0) throw new Error("Custom Format recovery evidence is unavailable.");
+								const nextDeployments = [...backupState.customFormatDeployments];
+								nextDeployments[index] = { ...target, ...identity };
+								await persistRecoveredBackupState({
+									...backupState,
+									customFormatDeployments: nextDeployments,
+								});
+								backupCustomFormatDeployments = nextDeployments;
+							};
 							const persistRollbackProgress = async (
 								rollbackStatus: "IN_PROGRESS" | "PARTIAL",
 							): Promise<void> => {
@@ -1122,7 +1168,11 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								!isFinished(profileStepKey, "quality_profile", profileStepName)
 							) {
 								try {
-									await rollbackQualityProfileDeployment(client, backupQualityProfileDeployment);
+									await rollbackQualityProfileDeployment(
+										client,
+										backupQualityProfileDeployment,
+										persistRecoveredQualityProfileIdentity,
+									);
 									request.log.info(
 										{
 											profileId: backupQualityProfileDeployment.profileId,
@@ -1228,7 +1278,9 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 									continue;
 								}
 								try {
-									const result = await rollbackCustomFormatDeployment(client, state);
+									const result = await rollbackCustomFormatDeployment(client, state, (identity) =>
+										persistRecoveredCustomFormatIdentity(state, identity),
+									);
 									if (result === "restored") {
 										setStep({
 											key: stepKey,

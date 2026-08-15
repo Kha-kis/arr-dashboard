@@ -257,6 +257,7 @@ interface QualityProfileBackupState {
 	profileName: string;
 	postStateToken: string | null;
 	intendedPostStateToken: string | null;
+	intendedPostState: Record<string, unknown> | null;
 }
 
 interface DeploymentBackupData {
@@ -533,6 +534,7 @@ export class DeploymentExecutorService {
 				profileName: preDeploymentQP?.name ?? "Pending quality profile",
 				postStateToken: null,
 				intendedPostStateToken: null,
+				intendedPostState: null,
 			},
 			namingDeployment:
 				preDeploymentNaming && preDeploymentNaming.changedFields.length > 0
@@ -872,7 +874,7 @@ export class DeploymentExecutorService {
 					templateCFs,
 					profileName,
 					effectiveQualityConfig,
-					async () => {
+					async (intendedProfile) => {
 						await persistProfileState({
 							beforeProfile: null,
 							status: "pending",
@@ -880,7 +882,8 @@ export class DeploymentExecutorService {
 							profileId: null,
 							profileName,
 							postStateToken: null,
-							intendedPostStateToken: null,
+							intendedPostStateToken: createQualityProfileStateToken(intendedProfile),
+							intendedPostState: intendedProfile,
 						});
 						upstreamMutationStarted = true;
 					},
@@ -903,6 +906,7 @@ export class DeploymentExecutorService {
 					profileName: targetProfile.name ?? profileName,
 					postStateToken: createdProfileStateToken,
 					intendedPostStateToken: null,
+					intendedPostState: null,
 				});
 			}
 
@@ -1232,6 +1236,7 @@ export class DeploymentExecutorService {
 					profileName: targetProfile.name ?? profileName,
 					postStateToken: createdProfile ? createQualityProfileStateToken(targetProfile) : null,
 					intendedPostStateToken: createQualityProfileStateToken(updatedProfile),
+					intendedPostState: updatedProfile,
 				});
 				upstreamMutationStarted = true;
 				// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr profile types differ but are runtime-compatible
@@ -1260,6 +1265,7 @@ export class DeploymentExecutorService {
 					profileName: mutation.profileName,
 					postStateToken: mutation.postStateToken,
 					intendedPostStateToken: createQualityProfileStateToken(updatedProfile),
+					intendedPostState: updatedProfile,
 				});
 				if (orphanedManagedFormats.length > 0) {
 					orphanedOverrideCleanup = {

@@ -38,7 +38,7 @@ describe("rollbackQualityProfileDeployment", () => {
 				postStateToken: createQualityProfileStateToken(deployed),
 				intendedPostStateToken: null,
 			}),
-		).rejects.toThrow("cannot be deleted safely");
+		).rejects.toThrow("ARR ID: 7");
 		expect(remove).not.toHaveBeenCalled();
 	});
 
@@ -425,5 +425,82 @@ describe("rollbackQualityProfileDeployment", () => {
 				intendedPostStateToken: null,
 			}),
 		).rejects.toThrow("ID is unknown");
+	});
+
+	it("recovers one exact unknown-ID create before requiring manual removal", async () => {
+		const intendedPostState = {
+			name: "Created profile",
+			upgradeAllowed: true,
+			cutoff: 1,
+			items: [],
+			minFormatScore: 0,
+			cutoffFormatScore: 10_000,
+			minUpgradeFormatScore: 1,
+			formatItems: [],
+		};
+		const created = { id: 12, ...intendedPostState, implementation: "QualityProfile" };
+		const recovered = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([created]),
+				getById: vi.fn().mockResolvedValue(created),
+			},
+		};
+
+		await expect(
+			rollbackQualityProfileDeployment(
+				client as never,
+				{
+					beforeProfile: null,
+					action: "created",
+					status: "pending",
+					profileId: null,
+					profileName: "Created profile",
+					postStateToken: null,
+					intendedPostStateToken: createQualityProfileStateToken(intendedPostState),
+					intendedPostState,
+				},
+				recovered,
+			),
+		).rejects.toThrow("ARR ID: 12");
+		expect(recovered).toHaveBeenCalledWith({
+			profileId: 12,
+			postStateToken: createQualityProfileStateToken(created),
+		});
+	});
+
+	it("does not recover an ambiguous unknown-ID create", async () => {
+		const intendedPostState = {
+			name: "Created profile",
+			upgradeAllowed: true,
+			cutoff: 1,
+			items: [],
+			minFormatScore: 0,
+			cutoffFormatScore: 10_000,
+			minUpgradeFormatScore: 1,
+			formatItems: [],
+		};
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([
+					{ id: 12, name: "Created profile" },
+					{ id: 13, name: "Created profile" },
+				]),
+				getById: vi.fn().mockImplementation(async (id: number) => ({ id, ...intendedPostState })),
+			},
+		};
+
+		await expect(
+			rollbackQualityProfileDeployment(client as never, {
+				beforeProfile: null,
+				action: "created",
+				status: "pending",
+				profileId: null,
+				profileName: "Created profile",
+				postStateToken: null,
+				intendedPostStateToken: createQualityProfileStateToken(intendedPostState),
+				intendedPostState,
+			}),
+		).rejects.toThrow("could not be recovered exactly");
 	});
 });

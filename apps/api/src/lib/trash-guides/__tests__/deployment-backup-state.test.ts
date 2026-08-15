@@ -77,6 +77,33 @@ describe("parseDeploymentBackupState", () => {
 		});
 	});
 
+	it("preserves the intended quality-profile state used to recover a timed-out create", () => {
+		const backup = validBackup();
+		backup.qualityProfileDeployment = {
+			beforeProfile: null,
+			action: "created",
+			profileId: null,
+			profileName: "Any",
+			status: "pending",
+			postStateToken: null,
+			intendedPostStateToken: "intended-profile-token",
+			intendedPostState: {
+				name: "Any",
+				upgradeAllowed: true,
+				cutoff: 1,
+				items: [],
+				formatItems: [],
+			},
+		} as never;
+
+		expect(
+			parseDeploymentBackupState(JSON.stringify(backup)).qualityProfileDeployment,
+		).toMatchObject({
+			intendedPostStateToken: "intended-profile-token",
+			intendedPostState: { name: "Any", cutoff: 1 },
+		});
+	});
+
 	it.each([0, -1, 7.5, "7"])("rejects invalid resource ID %s", (resourceId) => {
 		const backup = validBackup();
 		backup.customFormatDeployments = [

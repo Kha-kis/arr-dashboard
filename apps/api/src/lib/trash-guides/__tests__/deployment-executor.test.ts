@@ -10,6 +10,10 @@ import { ConflictError } from "../../errors.js";
 import { extractTrashId } from "../cf-field-utils.js";
 import { DeploymentExecutorService } from "../deployment-executor.js";
 import {
+	type QualityProfileRollbackState,
+	rollbackQualityProfileDeployment,
+} from "../deployment-profile-state.js";
+import {
 	createDeploymentEndpointKey,
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
@@ -1316,6 +1320,92 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		expect(result.errors).toEqual([expect.stringContaining("schema read failed")]);
 		expect(persistProfileState).not.toHaveBeenCalled();
 		expect(client.qualityProfile.create).not.toHaveBeenCalled();
+	});
+
+	it("persists the intended profile before a create response can be lost", async () => {
+		const persistProfileState = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			customFormat: { getAll: vi.fn().mockResolvedValue([]) },
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([]),
+				getSchema: vi.fn().mockResolvedValue({ id: 0, items: [], formatItems: [] }),
+				create: vi.fn().mockRejectedValue(new Error("create response lost")),
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const syncQualityProfile = (
+			executor as unknown as {
+				syncQualityProfile: (...args: unknown[]) => Promise<{ errors: string[] }>;
+			}
+		).syncQualityProfile.bind(executor);
+
+		let error: unknown;
+		try {
+			await syncQualityProfile(
+				client,
+				{},
+				[],
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				"Any",
+				undefined,
+				undefined,
+				[],
+				new Map(),
+				["instance-1"],
+				undefined,
+				persistProfileState,
+			);
+		} catch (caughtError) {
+			error = caughtError;
+		}
+
+		expect(error).toMatchObject({ deploymentResultUncertain: true });
+		expect(persistProfileState).toHaveBeenCalledTimes(1);
+		expect(persistProfileState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				status: "pending",
+				action: "created",
+				profileId: null,
+				intendedPostStateToken: expect.any(String),
+				intendedPostState: expect.objectContaining({
+					name: "Any",
+					items: [],
+					formatItems: [],
+				}),
+			}),
+		);
+		expect(persistProfileState.mock.calls[0]![0].intendedPostState).not.toHaveProperty("id");
+		expect(persistProfileState.mock.calls[0]![0].intendedPostState).not.toHaveProperty("language");
+		expect(client.qualityProfile.create).toHaveBeenCalledWith(
+			expect.objectContaining({ language: { id: -2, name: "Original" } }),
+		);
+
+		const persistedState = persistProfileState.mock.calls[0]![0] as QualityProfileRollbackState;
+		const recoveredProfile = {
+			id: 12,
+			...(persistedState.intendedPostState as Record<string, unknown>),
+		};
+		const recovered = vi.fn().mockResolvedValue(undefined);
+		await expect(
+			rollbackQualityProfileDeployment(
+				{
+					qualityProfile: {
+						getAll: vi.fn().mockResolvedValue([{ id: 12, name: "Any" }]),
+						getById: vi.fn().mockResolvedValue(recoveredProfile),
+					},
+				} as never,
+				persistedState,
+				recovered,
+			),
+		).rejects.toThrow("ARR ID: 12");
+		expect(recovered).toHaveBeenCalledWith({
+			profileId: 12,
+			postStateToken: createQualityProfileStateToken(recoveredProfile),
+		});
 	});
 
 	it("retains the created-state token while a later profile update is pending", async () => {

@@ -56,6 +56,8 @@ describe("sync rollback route", () => {
 	const formatGetById = vi.fn();
 	const formatUpdate = vi.fn();
 	const profileGetById = vi.fn();
+	const profileGetAll = vi.fn();
+	const backupUpdateMany = vi.fn();
 	const rawRequest = vi.fn();
 	let syncRecord: Record<string, unknown>;
 
@@ -119,7 +121,9 @@ describe("sync rollback route", () => {
 		syncFindFirst.mockResolvedValue(syncRecord);
 		const client = {
 			qualityProfile: {
-				getAll: vi.fn().mockResolvedValueOnce([deployedProfile]).mockResolvedValue([beforeProfile]),
+				getAll: profileGetAll
+					.mockResolvedValueOnce([deployedProfile])
+					.mockResolvedValue([beforeProfile]),
 				getById: profileGetById
 					.mockResolvedValueOnce(deployedProfile)
 					.mockResolvedValue(beforeProfile),
@@ -149,6 +153,7 @@ describe("sync rollback route", () => {
 				update: syncUpdate,
 				updateMany: syncUpdate,
 			},
+			trashBackup: { updateMany: backupUpdateMany.mockResolvedValue({ count: 1 }) },
 			templateDeploymentHistory: {
 				findMany: deploymentFindMany.mockResolvedValue([
 					{
@@ -243,6 +248,61 @@ describe("sync rollback route", () => {
 		expect(profileUpdate).not.toHaveBeenCalled();
 		expect(formatUpdate).not.toHaveBeenCalled();
 		expect(formatDelete).not.toHaveBeenCalled();
+	});
+
+	it("persists a recovered quality-profile identity before returning manual cleanup", async () => {
+		const intendedProfile = {
+			name: "Recovered profile",
+			upgradeAllowed: true,
+			cutoff: 1,
+			items: [],
+			minFormatScore: 0,
+			cutoffFormatScore: 0,
+			minUpgradeFormatScore: 0,
+			formatItems: [],
+		};
+		const createdProfile = { id: 12, ...intendedProfile };
+		const data = JSON.stringify({
+			schemaVersion: 2,
+			endpointKey: createDeploymentEndpointKey(userId, instance),
+			connectionStateToken: createDeploymentConnectionStateToken(instance),
+			customFormats: [],
+			customFormatDeployments: [],
+			managedCustomFormats: [],
+			managedCustomFormatsCaptured: false,
+			qualityProfileDeployment: {
+				beforeProfile: null,
+				status: "pending",
+				action: "created",
+				profileId: null,
+				profileName: intendedProfile.name,
+				postStateToken: null,
+				intendedPostStateToken: createQualityProfileStateToken(intendedProfile),
+				intendedPostState: intendedProfile,
+			},
+			namingDeployment: null,
+		});
+		syncRecord = {
+			...syncRecord,
+			backup: { id: "backup-1", backupData: data },
+		};
+		syncFindFirst.mockResolvedValue(syncRecord);
+		profileGetAll.mockReset().mockResolvedValue([createdProfile]);
+		profileGetById.mockReset().mockResolvedValue(createdProfile);
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json()).toMatchObject({ success: false });
+		expect(response.json().errors[0]).toContain("cannot be deleted safely");
+		expect(response.json().errors[0]).toContain("ARR ID: 12");
+		expect(backupUpdateMany).toHaveBeenCalledTimes(1);
+		const update = backupUpdateMany.mock.calls[0]![0];
+		expect(update.where).toEqual({ id: "backup-1", userId, backupData: data });
+		expect(JSON.parse(update.data.backupData).qualityProfileDeployment).toMatchObject({
+			profileId: 12,
+			postStateToken: createQualityProfileStateToken(createdProfile),
+		});
 	});
 
 	it("lists only backup-less uncertain syncs that require administrator review", async () => {

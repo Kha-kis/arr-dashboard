@@ -577,6 +577,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					}
 
 					let backupState: DeploymentBackupState;
+					let persistedBackupData = deploymentBackup.backupData;
 					try {
 						backupState = parseDeploymentBackupState(deploymentBackup.backupData);
 					} catch (error) {
@@ -638,7 +639,61 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					const stepByKey = new Map(existingProgress.map((step) => [step.key, step]));
 					const attemptedAt = undeployAttemptedAt;
 					const setStep = (step: UndeployStep): void => {
+						for (const [existingKey, existing] of stepByKey) {
+							if (
+								existingKey !== step.key &&
+								existing.kind === step.kind &&
+								existing.name === step.name
+							) {
+								stepByKey.delete(existingKey);
+							}
+						}
 						stepByKey.set(step.key, step);
+					};
+					const persistRecoveredBackupState = async (
+						nextState: DeploymentBackupState,
+					): Promise<void> => {
+						const nextBackupData = JSON.stringify(nextState);
+						const updated = await app.prisma.trashBackup.updateMany({
+							where: {
+								id: deploymentBackup.id,
+								userId,
+								backupData: persistedBackupData,
+							},
+							data: { backupData: nextBackupData },
+						});
+						if (updated.count !== 1) {
+							throw new Error(
+								"Deployment recovery evidence changed before the recovered resource identity could be saved.",
+							);
+						}
+						persistedBackupData = nextBackupData;
+						backupState = nextState;
+					};
+					const persistRecoveredQualityProfileIdentity = async (identity: {
+						profileId: number;
+						postStateToken: string;
+					}): Promise<void> => {
+						await persistRecoveredBackupState({
+							...backupState,
+							qualityProfileDeployment: {
+								...backupState.qualityProfileDeployment,
+								...identity,
+							},
+						});
+					};
+					const persistRecoveredCustomFormatIdentity = async (
+						target: DeploymentBackupState["customFormatDeployments"][number],
+						identity: { resourceId: number; postStateToken: string },
+					): Promise<void> => {
+						const index = backupState.customFormatDeployments.indexOf(target);
+						if (index < 0) throw new Error("Custom Format recovery evidence is unavailable.");
+						const nextDeployments = [...backupState.customFormatDeployments];
+						nextDeployments[index] = { ...target, ...identity };
+						await persistRecoveredBackupState({
+							...backupState,
+							customFormatDeployments: nextDeployments,
+						});
 					};
 					const persistProgress = async (undeployStatus: "IN_PROGRESS" | "PARTIAL") => {
 						const progress = [...stepByKey.values()];
@@ -755,10 +810,14 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 							} else {
 								try {
 									upstreamMutationAttempted = true;
-									await rollbackQualityProfileDeployment(client, {
-										...profileState,
-										status: profileStatus,
-									});
+									await rollbackQualityProfileDeployment(
+										client,
+										{
+											...profileState,
+											status: profileStatus,
+										},
+										persistRecoveredQualityProfileIdentity,
+									);
 									setStep({
 										key,
 										kind: "quality_profile",
@@ -850,7 +909,9 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						}
 						try {
 							upstreamMutationAttempted = true;
-							const result = await rollbackCustomFormatDeployment(client, state);
+							const result = await rollbackCustomFormatDeployment(client, state, (identity) =>
+								persistRecoveredCustomFormatIdentity(state, identity),
+							);
 							setStep({
 								key,
 								kind: "custom_format",

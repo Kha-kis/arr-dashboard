@@ -92,6 +92,7 @@ describe("deployment history undeploy", () => {
 	const historyUpdateMany = vi.fn();
 	const syncUpdateMany = vi.fn();
 	const syncFindMany = vi.fn();
+	const backupUpdateMany = vi.fn();
 	const instanceFindFirst = vi.fn();
 	const instanceFindMany = vi.fn();
 	const deleteFormat = vi.fn();
@@ -128,6 +129,7 @@ describe("deployment history undeploy", () => {
 				updateMany: historyUpdateMany,
 			},
 			trashSyncHistory: { findMany: syncFindMany, updateMany: syncUpdateMany },
+			trashBackup: { updateMany: backupUpdateMany },
 			serviceInstance: {
 				findFirst: instanceFindFirst,
 				findMany: instanceFindMany,
@@ -172,6 +174,7 @@ describe("deployment history undeploy", () => {
 		historyUpdate.mockResolvedValue({});
 		historyUpdateMany.mockResolvedValue({ count: 1 });
 		syncUpdateMany.mockResolvedValue({ count: 1 });
+		backupUpdateMany.mockResolvedValue({ count: 1 });
 		await app.register(deploymentHistoryRoutes);
 		await app.ready();
 	});
@@ -260,6 +263,51 @@ describe("deployment history undeploy", () => {
 		expect(response.statusCode).toBe(409);
 		expect(systemGet).not.toHaveBeenCalled();
 		expect(historyFindFirst).toHaveBeenCalledOnce();
+	});
+
+	it("durably binds a recovered quality-profile create before requiring manual removal", async () => {
+		const intendedProfile = {
+			name: "Recovered profile",
+			upgradeAllowed: true,
+			cutoff: 1,
+			items: [],
+			minFormatScore: 0,
+			cutoffFormatScore: 0,
+			minUpgradeFormatScore: 0,
+			formatItems: [],
+		};
+		const createdProfile = { id: 12, ...intendedProfile };
+		const data = backupData({
+			qualityProfileDeployment: {
+				beforeProfile: null,
+				status: "pending",
+				action: "created",
+				profileId: null,
+				profileName: intendedProfile.name,
+				postStateToken: null,
+				intendedPostStateToken: createQualityProfileStateToken(intendedProfile),
+				intendedPostState: intendedProfile,
+			},
+		});
+		const history = currentHistory(data);
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+		getAllProfiles.mockResolvedValue([createdProfile]);
+		getProfileById.mockResolvedValue(createdProfile);
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json()).toMatchObject({ success: false });
+		expect(response.json().data.errors[0]).toContain("cannot be deleted safely");
+		expect(response.json().data.errors[0]).toContain("ARR ID: 12");
+		expect(backupUpdateMany).toHaveBeenCalledTimes(1);
+		const update = backupUpdateMany.mock.calls[0]![0];
+		expect(update.where).toEqual({ id: "backup-1", userId, backupData: data });
+		expect(JSON.parse(update.data.backupData).qualityProfileDeployment).toMatchObject({
+			profileId: 12,
+			postStateToken: createQualityProfileStateToken(createdProfile),
+		});
 	});
 
 	it("releases the claim as retryable when ARR validation fails unexpectedly", async () => {

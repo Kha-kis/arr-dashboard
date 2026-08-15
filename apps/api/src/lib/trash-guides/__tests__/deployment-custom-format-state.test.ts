@@ -350,7 +350,7 @@ describe("rollbackCustomFormatDeployment", () => {
 					postStateToken: createUpstreamResourceStateToken(created),
 				}),
 			),
-		).rejects.toThrow("cannot be deleted safely");
+		).rejects.toThrow("ARR ID: 7");
 		expect(remove).not.toHaveBeenCalled();
 	});
 
@@ -364,13 +364,14 @@ describe("rollbackCustomFormatDeployment", () => {
 		const remove = vi.fn();
 		const client = {
 			customFormat: {
-				getAll: vi.fn().mockResolvedValue([created]),
+				getAll: vi.fn().mockResolvedValue([{ id: 12, name: "Created CF" }]),
 				getById: vi.fn().mockResolvedValue(created),
 				delete: remove,
 			},
 			qualityProfile: { getAll: vi.fn().mockResolvedValue([]) },
 		};
 
+		const recovered = vi.fn().mockResolvedValue(undefined);
 		await expect(
 			rollbackCustomFormatDeployment(
 				client as never,
@@ -382,9 +383,14 @@ describe("rollbackCustomFormatDeployment", () => {
 					postStateToken: null,
 					intendedPostState,
 				}),
+				recovered,
 			),
-		).rejects.toThrow("cannot be deleted safely");
+		).rejects.toThrow("ARR ID: 12");
 		expect(client.customFormat.getById).toHaveBeenCalledWith(12);
+		expect(recovered).toHaveBeenCalledWith({
+			resourceId: 12,
+			postStateToken: createUpstreamResourceStateToken(created),
+		});
 		expect(remove).not.toHaveBeenCalled();
 	});
 

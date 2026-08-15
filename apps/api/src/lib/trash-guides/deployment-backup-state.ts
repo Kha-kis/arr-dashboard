@@ -42,6 +42,7 @@ const qualityProfileStateSchema = z
 		profileName: z.string().min(1).nullable().optional().default(null),
 		postStateToken: stateToken.nullable(),
 		intendedPostStateToken: stateToken.nullable().optional().default(null),
+		intendedPostState: recordState.nullable().optional().default(null),
 	})
 	.superRefine((state, ctx) => {
 		if (state.status !== "not_started" && state.action === "updated" && !state.beforeProfile) {

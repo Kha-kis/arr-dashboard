@@ -38,6 +38,11 @@ export interface CustomFormatRollbackState {
 	intendedPostState?: Record<string, unknown> | null;
 }
 
+export interface RecoveredCustomFormatIdentity {
+	resourceId: number;
+	postStateToken: string;
+}
+
 function projectActualToIntendedShape(actualValue: unknown, intendedValue: unknown): unknown {
 	if (Array.isArray(intendedValue)) {
 		if (!Array.isArray(actualValue)) return actualValue;
@@ -78,6 +83,7 @@ export function matchesIntendedWritableState(
 export async function rollbackCustomFormatDeployment(
 	client: ArrClient,
 	state: CustomFormatRollbackState,
+	onRecoveredIdentity?: (identity: RecoveredCustomFormatIdentity) => void | Promise<void>,
 ): Promise<"noop" | "restored" | "deleted"> {
 	let resourceId = state.resourceId;
 	let recoveredPostStateToken: string | null = null;
@@ -88,20 +94,28 @@ export async function rollbackCustomFormatDeployment(
 				`Custom Format "${state.name}" may have been created, but its ID is unknown.`,
 			);
 		}
-		const candidates = listed.filter(
+		const namedCandidates = listed.filter(
 			(format) =>
-				Number.isSafeInteger(format.id) &&
-				(format.id ?? 0) > 0 &&
-				format.name === state.name &&
-				matchesIntendedWritableState(format, state.intendedPostState!),
+				Number.isSafeInteger(format.id) && (format.id ?? 0) > 0 && format.name === state.name,
 		);
-		if (candidates.length !== 1) {
+		const exactCandidates: Array<{ id: number; format: Record<string, unknown> }> = [];
+		for (const candidate of namedCandidates) {
+			const fullFormat = await client.customFormat.getById(candidate.id!);
+			if (matchesIntendedWritableState(fullFormat, state.intendedPostState)) {
+				exactCandidates.push({
+					id: candidate.id!,
+					format: fullFormat as Record<string, unknown>,
+				});
+			}
+		}
+		if (exactCandidates.length !== 1) {
 			throw new Error(
 				`Custom Format "${state.name}" may have been created, but its ID could not be recovered exactly.`,
 			);
 		}
-		resourceId = candidates[0]!.id!;
-		recoveredPostStateToken = createUpstreamResourceStateToken(candidates[0]);
+		resourceId = exactCandidates[0]!.id;
+		recoveredPostStateToken = createUpstreamResourceStateToken(exactCandidates[0]!.format);
+		await onRecoveredIdentity?.({ resourceId, postStateToken: recoveredPostStateToken });
 	}
 	let beforeFormat: Record<string, unknown> | null = null;
 	if (state.action === "updated") {
@@ -195,7 +209,7 @@ export async function rollbackCustomFormatDeployment(
 			);
 		}
 		throw new Error(
-			`Custom Format "${state.name}" cannot be deleted safely because the upstream API has no conditional delete. Verify that it is unused, then remove it manually.`,
+			`Custom Format "${state.name}" (ARR ID: ${resourceId}) cannot be deleted safely because the upstream API has no conditional delete. Verify that exact ID is unused, then remove it manually.`,
 		);
 	}
 
@@ -209,6 +223,6 @@ export async function rollbackCustomFormatDeployment(
 		);
 	}
 	throw new Error(
-		`Custom Format "${state.name}" cannot be restored safely because the upstream API has no conditional update. Its current state still matches this deployment; restore the recorded pre-deployment configuration manually.`,
+		`Custom Format "${state.name}" (ARR ID: ${resourceId}) cannot be restored safely because the upstream API has no conditional update. Its current state still matches this deployment; restore the recorded pre-deployment configuration for that exact ID manually.`,
 	);
 }
