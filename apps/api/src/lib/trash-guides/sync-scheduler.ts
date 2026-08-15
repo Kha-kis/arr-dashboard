@@ -9,6 +9,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { NotificationPayload } from "../notifications/types.js";
 import type { PrismaClient } from "../prisma.js";
+import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import {
 	passthroughTickWrapper,
 	type TickWrapper,
@@ -70,6 +71,10 @@ export class TrashSyncScheduler {
 	}
 
 	private async checkAndRunSchedules() {
+		return withCleanupOperationGuard(() => this.checkAndRunSchedulesGuarded());
+	}
+
+	private async checkAndRunSchedulesGuarded() {
 		if (this.isRunning) {
 			this.logger.debug("TRaSH sync scheduler already processing, skipping");
 			return;

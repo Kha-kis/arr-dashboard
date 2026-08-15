@@ -3,6 +3,7 @@ import {
 	createDecipheriv,
 	createHash,
 	randomBytes,
+	scryptSync,
 	timingSafeEqual,
 } from "node:crypto";
 
@@ -83,5 +84,10 @@ export class Encryptor {
 		const hashA = createHash("sha256").update(a).digest();
 		const hashB = createHash("sha256").update(b).digest();
 		return timingSafeEqual(hashA, hashB);
+	}
+
+	/** Create a deterministic, non-reversible identity without exposing plaintext. */
+	fingerprint(value: string): string {
+		return scryptSync(value, this.key, 32).toString("hex");
 	}
 }

@@ -140,6 +140,8 @@ function createMockPrisma() {
 			delete: vi.fn(),
 		},
 		serviceInstanceTag: { findFirst: vi.fn().mockResolvedValue(null) },
+		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 	};
 }
 

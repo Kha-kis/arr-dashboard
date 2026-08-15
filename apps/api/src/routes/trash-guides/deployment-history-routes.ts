@@ -7,6 +7,7 @@
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginAsync } from "fastify";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { isNonterminalUndeploy } from "../../lib/backup/backup-validation.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
@@ -311,11 +312,40 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			});
 		}
 
-		// Delete the deployment history entry
-		// Note: Associated backup will be cascade deleted if configured, otherwise it remains
-		await app.prisma.templateDeploymentHistory.delete({
-			where: { id: historyId },
+		if (isNonterminalUndeploy(history)) {
+			return reply.status(409).send({
+				statusCode: 409,
+				error: "Conflict",
+				message:
+					"Complete or explicitly resolve the undeploy before deleting its deployment history.",
+			});
+		}
+
+		// Delete only if ownership and terminal undeploy state still match at mutation time.
+		// Note: Associated backup will be cascade deleted if configured, otherwise it remains.
+		const deletion = await app.prisma.templateDeploymentHistory.deleteMany({
+			where: {
+				id: historyId,
+				userId,
+				OR: [
+					{ rolledBack: true },
+					{ undeployStatus: "COMPLETED" },
+					{
+						undeployStatus: null,
+						NOT: { status: "PARTIAL_UNDEPLOY" },
+					},
+				],
+			},
 		});
+
+		if (deletion.count !== 1) {
+			return reply.status(409).send({
+				statusCode: 409,
+				error: "Conflict",
+				message:
+					"Complete or explicitly resolve the undeploy before deleting its deployment history.",
+			});
+		}
 
 		return reply.send({
 			success: true,
@@ -407,187 +437,287 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			});
 		}
 
-		// Get all OTHER templates deployed to this instance to find shared CFs
-		const otherDeployments = await app.prisma.templateDeploymentHistory.findMany({
+		const undeployAttemptedAt = new Date();
+		const claim = await app.prisma.templateDeploymentHistory.updateMany({
 			where: {
-				instanceId: history.instanceId,
-				id: { not: historyId },
-				rolledBack: false, // Only consider active deployments
+				id: historyId,
+				userId,
+				rolledBack: false,
+				OR: [{ undeployStatus: null }, { undeployStatus: "PARTIAL" }],
 			},
-			include: {
-				template: {
-					select: {
-						configData: true,
+			data: {
+				undeployStatus: "IN_PROGRESS",
+				undeployAttemptedAt,
+				undeployProgress: JSON.stringify([
+					{
+						step: "remove-custom-formats",
+						status: "IN_PROGRESS",
+						attemptedAt: undeployAttemptedAt.toISOString(),
 					},
-				},
+				]),
 			},
 		});
 
-		// Build a set of CF names used by other templates on this instance
-		const sharedCFNames = new Set<string>();
-		for (const deployment of otherDeployments) {
-			const configData = deployment.templateSnapshot || deployment.template?.configData;
-			if (configData) {
-				try {
-					const config = JSON.parse(configData);
-					for (const cf of config.customFormats || []) {
-						if (deployedCFNames.includes(cf.name)) {
-							sharedCFNames.add(cf.name);
-						}
-					}
-				} catch {
-					// Skip deployments with invalid config
-				}
-			}
-		}
-
-		// Create SDK client using factory
-		const client = app.arrClientFactory.create(history.instance) as SonarrClient | RadarrClient;
-
-		// Test connection
-		try {
-			await client.system.get();
-		} catch (error) {
-			return reply.status(503).send({
-				statusCode: 503,
-				error: "ServiceUnavailable",
-				message: `Instance unreachable: ${getErrorMessage(error, "Unknown error")}`,
+		if (claim.count !== 1) {
+			return reply.status(409).send({
+				statusCode: 409,
+				error: "Conflict",
+				message: "An undeploy is already active or requires explicit recovery resolution.",
 			});
 		}
 
-		// Get current Custom Formats from instance
-		const currentCFs = await client.customFormat.getAll();
-		const currentCFMap = new Map(currentCFs.map((cf) => [cf.name, cf]));
-
-		// Delete only CFs that:
-		// 1. Were part of this deployment
-		// 2. Are NOT shared with other templates
-		// 3. Currently exist on the instance
-		const deletedCFs: string[] = [];
-		const skippedShared: string[] = [];
-		const notFound: string[] = [];
-		const deletionErrors: string[] = [];
-
-		for (const cfName of deployedCFNames) {
-			if (sharedCFNames.has(cfName)) {
-				skippedShared.push(cfName);
-				continue;
-			}
-
-			const currentCF = currentCFMap.get(cfName);
-			if (!currentCF?.id) {
-				notFound.push(cfName);
-				continue;
-			}
-
-			try {
-				await client.customFormat.delete(currentCF.id);
-				deletedCFs.push(cfName);
-			} catch (error) {
-				deletionErrors.push(
-					`Failed to delete CF "${cfName}": ${getErrorMessage(error, "Unknown error")}`,
-				);
-			}
-		}
-
-		// Update deployment status based on undeploy result
-		const isFullSuccess = deletionErrors.length === 0;
-		const now = new Date();
-
-		// Attempt to update the database to reflect the current state
-		let dbUpdateSucceeded = false;
-		let dbUpdateError: string | null = null;
-
-		try {
-			if (isFullSuccess) {
-				// Full success: mark as rolled back
-				await app.prisma.templateDeploymentHistory.update({
-					where: { id: historyId },
-					data: {
-						rolledBack: true,
-						rolledBackAt: now,
-						rolledBackBy: request.currentUser!.id,
-						errors: JSON.stringify({
-							undeploySucceeded: true,
-							deletedCFs,
-							skippedShared,
-							notFound,
-							completedAt: now.toISOString(),
-						}),
-					},
-				});
-			} else {
-				// Partial failure: update status and store errors for investigation/retry
-				await app.prisma.templateDeploymentHistory.update({
-					where: { id: historyId },
-					data: {
-						status: "PARTIAL_UNDEPLOY",
-						errors: JSON.stringify({
-							undeployErrors: deletionErrors,
-							undeployAttemptedAt: now.toISOString(),
-							deletedCFs,
-							deletedCount: deletedCFs.length,
-							failedCount: deletionErrors.length,
-							skippedShared,
-							notFound,
-						}),
-					},
-				});
-			}
-			dbUpdateSucceeded = true;
-		} catch (error) {
-			dbUpdateError = getErrorMessage(error, "Database update failed");
-			app.log.error(
-				{
-					err: error,
-					historyId,
-					deletedCFs,
-					deletionErrors,
+		const persistPartialUndeploy = async (
+			errors: string[],
+			progress: Record<string, unknown> = {},
+		) => {
+			const result = await app.prisma.templateDeploymentHistory.updateMany({
+				where: {
+					id: historyId,
+					userId,
+					undeployStatus: "IN_PROGRESS",
+					undeployAttemptedAt,
 				},
-				"Failed to update deployment history after undeploy - database state may be inconsistent",
-			);
-		}
-
-		// Build response based on actual outcome
-		const responseData = {
-			deleted: deletedCFs.length,
-			deletedCFs,
-			skippedShared,
-			skippedSharedCount: skippedShared.length,
-			notFound,
-			notFoundCount: notFound.length,
-			errors: deletionErrors,
-			totalInTemplate: deployedCFNames.length,
-			dbUpdateSucceeded,
-			...(dbUpdateError && { dbUpdateError }),
+				data: {
+					status: "PARTIAL_UNDEPLOY",
+					undeployStatus: "PARTIAL",
+					undeployProgress: JSON.stringify([
+						{ step: "remove-custom-formats", status: "PARTIAL", errors, ...progress },
+					]),
+					errors: JSON.stringify({
+						undeployErrors: errors,
+						undeployAttemptedAt: undeployAttemptedAt.toISOString(),
+						...progress,
+					}),
+				},
+			});
+			if (result.count !== 1) {
+				throw new Error("Undeploy recovery state changed before progress could be persisted");
+			}
 		};
 
-		// If DB update failed but deletions occurred, return partial success with warning
-		if (!dbUpdateSucceeded && deletedCFs.length > 0) {
-			return reply.status(207).send({
-				success: false,
-				message: `Deleted ${deletedCFs.length} Custom Format(s) but failed to update database. Manual cleanup may be required.`,
-				warning:
-					"Database state may not reflect actual changes. Please verify and retry if needed.",
+		try {
+			// Get all OTHER templates deployed to this instance to find shared CFs
+			const otherDeployments = await app.prisma.templateDeploymentHistory.findMany({
+				where: {
+					instanceId: history.instanceId,
+					userId,
+					id: { not: historyId },
+					rolledBack: false, // Only consider active deployments
+				},
+				include: {
+					template: {
+						select: {
+							configData: true,
+						},
+					},
+				},
+			});
+
+			// Build a set of CF names used by other templates on this instance
+			const sharedCFNames = new Set<string>();
+			for (const deployment of otherDeployments) {
+				const configData = deployment.templateSnapshot || deployment.template?.configData;
+				if (configData) {
+					try {
+						const config = JSON.parse(configData);
+						for (const cf of config.customFormats || []) {
+							if (deployedCFNames.includes(cf.name)) {
+								sharedCFNames.add(cf.name);
+							}
+						}
+					} catch (error) {
+						throw new Error(
+							`Cannot safely undeploy because another active deployment has invalid configuration: ${getErrorMessage(error, "invalid configuration")}`,
+						);
+					}
+				}
+			}
+
+			// Create SDK client using factory
+			const client = app.arrClientFactory.create(history.instance) as SonarrClient | RadarrClient;
+
+			// Test connection
+			try {
+				await client.system.get();
+			} catch (error) {
+				const errorMessage = getErrorMessage(error, "Unknown error");
+				await persistPartialUndeploy([errorMessage], { step: "connect" });
+				return reply.status(503).send({
+					statusCode: 503,
+					error: "ServiceUnavailable",
+					message: `Instance unreachable: ${errorMessage}`,
+				});
+			}
+
+			// Get current Custom Formats from instance
+			const currentCFs = await client.customFormat.getAll();
+			const currentCFMap = new Map(currentCFs.map((cf) => [cf.name, cf]));
+
+			// Delete only CFs that:
+			// 1. Were part of this deployment
+			// 2. Are NOT shared with other templates
+			// 3. Currently exist on the instance
+			const deletedCFs: string[] = [];
+			const skippedShared: string[] = [];
+			const notFound: string[] = [];
+			const deletionErrors: string[] = [];
+
+			for (const cfName of deployedCFNames) {
+				if (sharedCFNames.has(cfName)) {
+					skippedShared.push(cfName);
+					continue;
+				}
+
+				const currentCF = currentCFMap.get(cfName);
+				if (!currentCF?.id) {
+					notFound.push(cfName);
+					continue;
+				}
+
+				try {
+					await client.customFormat.delete(currentCF.id);
+					deletedCFs.push(cfName);
+				} catch (error) {
+					deletionErrors.push(
+						`Failed to delete CF "${cfName}": ${getErrorMessage(error, "Unknown error")}`,
+					);
+				}
+			}
+
+			// Update deployment status based on undeploy result
+			const isFullSuccess = deletionErrors.length === 0;
+			const now = new Date();
+
+			// Attempt to update the database to reflect the current state
+			let dbUpdateSucceeded = false;
+			let dbUpdateError: string | null = null;
+
+			try {
+				if (isFullSuccess) {
+					// Full success: mark as rolled back
+					const completion = await app.prisma.templateDeploymentHistory.updateMany({
+						where: {
+							id: historyId,
+							userId,
+							undeployStatus: "IN_PROGRESS",
+							undeployAttemptedAt,
+						},
+						data: {
+							rolledBack: true,
+							rolledBackAt: now,
+							rolledBackBy: request.currentUser!.id,
+							undeployStatus: "COMPLETED",
+							undeployProgress: JSON.stringify([
+								{
+									step: "remove-custom-formats",
+									status: "COMPLETED",
+									deletedCFs,
+									skippedShared,
+									notFound,
+								},
+							]),
+							errors: JSON.stringify({
+								undeploySucceeded: true,
+								deletedCFs,
+								skippedShared,
+								notFound,
+								completedAt: now.toISOString(),
+							}),
+						},
+					});
+					if (completion.count !== 1) {
+						throw new Error("Undeploy recovery ownership changed before completion");
+					}
+				} else {
+					// Partial failure: update status and store errors for investigation/retry
+					await persistPartialUndeploy(deletionErrors, {
+						deletedCFs,
+						deletedCount: deletedCFs.length,
+						failedCount: deletionErrors.length,
+						skippedShared,
+						notFound,
+					});
+				}
+				dbUpdateSucceeded = true;
+			} catch (error) {
+				dbUpdateError = getErrorMessage(error, "Database update failed");
+				await persistPartialUndeploy([dbUpdateError], {
+					deletedCFs,
+					deletedCount: deletedCFs.length,
+					failedCount: deletionErrors.length,
+					skippedShared,
+					notFound,
+				}).catch((stateError) => {
+					request.log.error(
+						{ err: stateError, historyId },
+						"Failed to preserve retryable undeploy state after terminal persistence failed",
+					);
+				});
+				app.log.error(
+					{
+						err: error,
+						historyId,
+						deletedCFs,
+						deletionErrors,
+					},
+					"Failed to update deployment history after undeploy - database state may be inconsistent",
+				);
+			}
+
+			// Build response based on actual outcome
+			const responseData = {
+				deleted: deletedCFs.length,
+				deletedCFs,
+				skippedShared,
+				skippedSharedCount: skippedShared.length,
+				notFound,
+				notFoundCount: notFound.length,
+				errors: deletionErrors,
+				totalInTemplate: deployedCFNames.length,
+				dbUpdateSucceeded,
+				...(dbUpdateError && { dbUpdateError }),
+			};
+
+			// If DB update failed but deletions occurred, return partial success with warning
+			if (!dbUpdateSucceeded && deletedCFs.length > 0) {
+				return reply.status(207).send({
+					success: false,
+					message: `Deleted ${deletedCFs.length} Custom Format(s) but failed to update database. Manual cleanup may be required.`,
+					warning:
+						"Database state may not reflect actual changes. Please verify and retry if needed.",
+					data: responseData,
+				});
+			}
+
+			// If DB update failed and no deletions occurred (or only errors), return error
+			if (!dbUpdateSucceeded) {
+				return reply.status(500).send({
+					success: false,
+					message: `Undeploy operation encountered errors: ${dbUpdateError}`,
+					data: responseData,
+				});
+			}
+
+			return reply.send({
+				success: isFullSuccess,
+				message: isFullSuccess
+					? `Successfully undeployed ${deletedCFs.length} Custom Format(s)`
+					: `Undeploy completed with ${deletionErrors.length} error(s)`,
 				data: responseData,
 			});
-		}
-
-		// If DB update failed and no deletions occurred (or only errors), return error
-		if (!dbUpdateSucceeded) {
+		} catch (error) {
+			const errorMessage = getErrorMessage(error, "Undeploy failed");
+			await persistPartialUndeploy([errorMessage]).catch((stateError) => {
+				request.log.error(
+					{ err: stateError, historyId },
+					"Failed to persist retryable undeploy state after an unexpected failure",
+				);
+			});
+			request.log.error({ err: error, historyId }, "Undeploy failed");
 			return reply.status(500).send({
 				success: false,
-				message: `Undeploy operation encountered errors: ${dbUpdateError}`,
-				data: responseData,
+				message: errorMessage,
 			});
 		}
-
-		return reply.send({
-			success: isFullSuccess,
-			message: isFullSuccess
-				? `Successfully undeployed ${deletedCFs.length} Custom Format(s)`
-				: `Undeploy completed with ${deletionErrors.length} error(s)`,
-			data: responseData,
-		});
 	});
 };

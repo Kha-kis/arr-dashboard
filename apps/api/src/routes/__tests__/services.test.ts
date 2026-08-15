@@ -62,6 +62,7 @@ vi.mock("../pulse.js", () => ({
 // ---------------------------------------------------------------------------
 
 import Fastify from "fastify";
+import { acquireCleanupOperationGuard } from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { registerServiceRoutes } from "../services.js";
 import { InstanceNotFoundError } from "../../lib/errors.js";
 import {
@@ -137,6 +138,8 @@ function createMockPrisma() {
 		serviceInstanceTag: {
 			findFirst: vi.fn().mockResolvedValue(null),
 		},
+		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -503,6 +506,28 @@ describe("DELETE /services/:id", () => {
 
 		expect(res.statusCode).toBe(404);
 		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
+	it("refuses to erase an instance with active TRaSH recovery evidence", async () => {
+		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValueOnce([
+			{ id: "deployment-1", status: "PARTIAL_UNDEPLOY", undeployStatus: "PARTIAL", rolledBack: false },
+		]);
+
+		const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+		expect(res.statusCode).toBe(409);
+		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
+	it("refuses to race an ARR deletion with active cleanup work", async () => {
+		const releaseMutation = acquireCleanupOperationGuard();
+		try {
+			const res = await injectAuthenticated("DELETE", "/services/inst-1");
+			expect(res.statusCode).toBe(409);
+			expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+		} finally {
+			releaseMutation();
+		}
 	});
 });
 

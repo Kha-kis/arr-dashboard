@@ -19,7 +19,10 @@ export class TemplateNotFoundError extends Error {
 /** Thrown when creating a resource that already exists. Maps to HTTP 409. */
 export class ConflictError extends Error {
 	readonly statusCode = 409;
-	constructor(message: string) {
+	constructor(
+		message: string,
+		public readonly details?: unknown,
+	) {
 		super(message);
 		this.name = "ConflictError";
 	}
