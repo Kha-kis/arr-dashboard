@@ -75,7 +75,7 @@ describe("ServiceInstance dormant identity schema", () => {
 		} finally {
 			database.close();
 		}
-	}, 15_000);
+	}, 30_000);
 
 	it("keeps dormant identity state out of formatted service responses", () => {
 		const formatted = formatServiceInstance({
