@@ -19,6 +19,7 @@ const customFormatStateSchema = z
 		status: z.enum(["pending", "applied"]),
 		postStateToken: stateToken.nullable(),
 		intendedPostStateToken: stateToken.nullable().optional().default(null),
+		intendedPostState: recordState.nullable().optional().default(null),
 	})
 	.superRefine((state, ctx) => {
 		if (state.action === "updated" && !state.beforeFormat) {

@@ -48,6 +48,35 @@ describe("parseDeploymentBackupState", () => {
 		).toMatchObject({ intendedPostStateToken: "intended-token" });
 	});
 
+	it("preserves the intended writable state used to recover a timed-out create", () => {
+		const backup = validBackup();
+		backup.customFormatDeployments = [
+			{
+				beforeFormat: null,
+				action: "created",
+				resourceId: null,
+				name: "Foo",
+				status: "pending",
+				postStateToken: null,
+				intendedPostState: {
+					name: "Foo",
+					includeCustomFormatWhenRenaming: false,
+					specifications: [],
+				},
+			},
+		] as never;
+
+		expect(
+			parseDeploymentBackupState(JSON.stringify(backup)).customFormatDeployments[0],
+		).toMatchObject({
+			intendedPostState: {
+				name: "Foo",
+				includeCustomFormatWhenRenaming: false,
+				specifications: [],
+			},
+		});
+	});
+
 	it.each([0, -1, 7.5, "7"])("rejects invalid resource ID %s", (resourceId) => {
 		const backup = validBackup();
 		backup.customFormatDeployments = [

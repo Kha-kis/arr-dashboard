@@ -26,6 +26,7 @@ import { readPersistedManagedCustomFormatIdentities } from "./deployment-managed
 import {
 	assertNoLegacyDeploymentConnectionMappings,
 	createDeploymentConnectionBindingCandidates,
+	createDeploymentConnectionPersistenceBindings,
 	getEquivalentServiceInstanceIds,
 } from "./deployment-target.js";
 
@@ -170,7 +171,7 @@ export class BulkScoreManager {
 		// Resolve management through every current alias for the physical ARR endpoint.
 		const templateMappings = await this.prisma.templateQualityProfileMapping.findMany({
 			where: {
-				OR: connectionBindings,
+				OR: createDeploymentConnectionPersistenceBindings(connectionBindings),
 				template: { userId },
 			},
 			select: {

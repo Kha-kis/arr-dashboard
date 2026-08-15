@@ -35,6 +35,40 @@ export interface CustomFormatRollbackState {
 	status: "pending" | "applied";
 	postStateToken: string | null;
 	intendedPostStateToken?: string | null;
+	intendedPostState?: Record<string, unknown> | null;
+}
+
+function projectActualToIntendedShape(actualValue: unknown, intendedValue: unknown): unknown {
+	if (Array.isArray(intendedValue)) {
+		if (!Array.isArray(actualValue)) return actualValue;
+		return actualValue.map((item, index) =>
+			projectActualToIntendedShape(item, intendedValue[index]),
+		);
+	}
+	if (intendedValue && typeof intendedValue === "object") {
+		if (!actualValue || typeof actualValue !== "object" || Array.isArray(actualValue)) {
+			return actualValue;
+		}
+		const actualRecord = actualValue as Record<string, unknown>;
+		return Object.fromEntries(
+			Object.entries(intendedValue as Record<string, unknown>).map(([key, value]) => [
+				key,
+				projectActualToIntendedShape(actualRecord[key], value),
+			]),
+		);
+	}
+	return actualValue;
+}
+
+export function matchesIntendedWritableState(
+	actual: unknown,
+	intended: Record<string, unknown>,
+): boolean {
+	if (!actual || typeof actual !== "object" || Array.isArray(actual)) return false;
+	return (
+		createUpstreamResourceStateToken(projectActualToIntendedShape(actual, intended)) ===
+		createUpstreamResourceStateToken(intended)
+	);
 }
 
 /**
@@ -45,13 +79,34 @@ export async function rollbackCustomFormatDeployment(
 	client: ArrClient,
 	state: CustomFormatRollbackState,
 ): Promise<"noop" | "restored" | "deleted"> {
-	if (state.resourceId === null) {
-		throw new Error(`Custom Format "${state.name}" may have been created, but its ID is unknown.`);
+	let resourceId = state.resourceId;
+	let recoveredPostStateToken: string | null = null;
+	const listed = await client.customFormat.getAll();
+	if (resourceId === null) {
+		if (state.action !== "created" || !state.intendedPostState) {
+			throw new Error(
+				`Custom Format "${state.name}" may have been created, but its ID is unknown.`,
+			);
+		}
+		const candidates = listed.filter(
+			(format) =>
+				Number.isSafeInteger(format.id) &&
+				(format.id ?? 0) > 0 &&
+				format.name === state.name &&
+				matchesIntendedWritableState(format, state.intendedPostState!),
+		);
+		if (candidates.length !== 1) {
+			throw new Error(
+				`Custom Format "${state.name}" may have been created, but its ID could not be recovered exactly.`,
+			);
+		}
+		resourceId = candidates[0]!.id!;
+		recoveredPostStateToken = createUpstreamResourceStateToken(candidates[0]);
 	}
 	let beforeFormat: Record<string, unknown> | null = null;
 	if (state.action === "updated") {
 		const parsed = restorableCustomFormatSchema.safeParse(state.beforeFormat);
-		if (!parsed.success || parsed.data.id !== state.resourceId) {
+		if (!parsed.success || parsed.data.id !== resourceId) {
 			throw new Error(
 				`Custom Format "${state.name}" has an incomplete or mismatched pre-deployment state and was not restored.`,
 			);
@@ -59,13 +114,12 @@ export async function rollbackCustomFormatDeployment(
 		beforeFormat = parsed.data;
 	}
 
-	const listed = await client.customFormat.getAll();
-	const listedCurrent = listed.find((format) => format.id === state.resourceId);
+	const listedCurrent = listed.find((format) => format.id === resourceId);
 	if (!listedCurrent) {
 		if (state.action === "created") return "noop";
 		throw new Error(`Custom Format "${state.name}" no longer exists.`);
 	}
-	const current = await client.customFormat.getById(state.resourceId);
+	const current = await client.customFormat.getById(resourceId);
 	const currentToken = createUpstreamResourceStateToken(current);
 
 	let verifiedPostStateToken = state.postStateToken;
@@ -81,6 +135,14 @@ export async function rollbackCustomFormatDeployment(
 			verifiedPostStateToken = state.postStateToken;
 		} else if (state.intendedPostStateToken && currentToken === state.intendedPostStateToken) {
 			verifiedPostStateToken = state.intendedPostStateToken;
+		} else if (
+			state.action === "created" &&
+			recoveredPostStateToken &&
+			currentToken === recoveredPostStateToken &&
+			state.intendedPostState &&
+			matchesIntendedWritableState(current, state.intendedPostState)
+		) {
+			verifiedPostStateToken = recoveredPostStateToken;
 		} else {
 			throw new Error(
 				`Custom Format "${state.name}" has an unverified deployment state and was not changed.`,
@@ -115,7 +177,7 @@ export async function rollbackCustomFormatDeployment(
 					);
 				}
 			}
-			if (formatItems.some((item) => item.format === state.resourceId)) {
+			if (formatItems.some((item) => item.format === resourceId)) {
 				referencingProfiles.push(profile);
 			}
 		}
@@ -126,7 +188,7 @@ export async function rollbackCustomFormatDeployment(
 					.join(", ")} and was not deleted.`,
 			);
 		}
-		const rechecked = await client.customFormat.getById(state.resourceId);
+		const rechecked = await client.customFormat.getById(resourceId);
 		if (createUpstreamResourceStateToken(rechecked) !== verifiedPostStateToken) {
 			throw new Error(
 				`Custom Format "${state.name}" changed after deployment and was not deleted.`,

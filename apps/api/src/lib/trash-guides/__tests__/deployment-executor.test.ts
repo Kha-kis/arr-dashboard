@@ -317,6 +317,19 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 			),
 		).rejects.toThrow("post-write state could not be verified");
 		expect(persistMutationState).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				resourceId: null,
+				status: "pending",
+				intendedPostState: {
+					name: "Test CF",
+					includeCustomFormatWhenRenaming: false,
+					specifications: [],
+				},
+			}),
+			true,
+		);
+		expect(persistMutationState).toHaveBeenNthCalledWith(
 			2,
 			expect.objectContaining({
 				resourceId: 7,
@@ -2231,6 +2244,45 @@ describe("DeploymentExecutorService - legacy override finalization", () => {
 		);
 		expect(deleteMany).not.toHaveBeenCalled();
 		expect(create).not.toHaveBeenCalled();
+	});
+
+	it("projects credential evidence out of orphaned override finalization filters", async () => {
+		const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
+		const executor = new DeploymentExecutorService({} as never, {} as never) as unknown as {
+			finalizeOrphanedOverrideCleanup: (database: unknown, cleanup: unknown) => Promise<void>;
+		};
+
+		await executor.finalizeOrphanedOverrideCleanup(
+			{ instanceQualityProfileOverride: { deleteMany } },
+			{
+				userId: "user-1",
+				qualityProfileId: 7,
+				customFormatIds: [42],
+				connectionReadBindings: [
+					{
+						instanceId: "instance-1",
+						connectionGeneration: 2,
+						connectionStateToken: "connection-token",
+						credentialIdentity: "runtime-only-credential-evidence",
+					},
+				],
+			},
+		);
+
+		expect(deleteMany).toHaveBeenCalledWith({
+			where: {
+				userId: "user-1",
+				qualityProfileId: 7,
+				customFormatId: { in: [42] },
+				OR: [
+					{
+						instanceId: "instance-1",
+						connectionGeneration: 2,
+						connectionStateToken: "connection-token",
+					},
+				],
+			},
+		});
 	});
 });
 

@@ -811,6 +811,9 @@ describe("instance quality profile score persistence", () => {
 				}),
 			}),
 		);
+		expect(findOverrides.mock.calls[0]?.[0].where.OR[0].OR[0]).not.toHaveProperty(
+			"credentialIdentity",
+		);
 	});
 
 	it("exposes retryable uncertain intent without treating it as an applied override", async () => {

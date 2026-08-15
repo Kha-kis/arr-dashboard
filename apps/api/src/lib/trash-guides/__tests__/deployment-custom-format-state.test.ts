@@ -354,7 +354,41 @@ describe("rollbackCustomFormatDeployment", () => {
 		expect(remove).not.toHaveBeenCalled();
 	});
 
-	it("keeps an unknown-ID create unresolved when the resource may have been renamed", async () => {
+	it("recovers an unknown created ID from one exact intended writable state", async () => {
+		const intendedPostState = {
+			name: "Created CF",
+			includeCustomFormatWhenRenaming: false,
+			specifications: [],
+		};
+		const created = { id: 12, ...intendedPostState, implementation: "CustomFormat" };
+		const remove = vi.fn();
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([created]),
+				getById: vi.fn().mockResolvedValue(created),
+				delete: remove,
+			},
+			qualityProfile: { getAll: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			rollbackCustomFormatDeployment(
+				client as never,
+				appliedState({
+					action: "created",
+					resourceId: null,
+					name: "Created CF",
+					status: "pending",
+					postStateToken: null,
+					intendedPostState,
+				}),
+			),
+		).rejects.toThrow("cannot be deleted safely");
+		expect(client.customFormat.getById).toHaveBeenCalledWith(12);
+		expect(remove).not.toHaveBeenCalled();
+	});
+
+	it("keeps an unknown-ID create unresolved when no exact intended state remains", async () => {
 		const client = {
 			customFormat: {
 				getAll: vi.fn().mockResolvedValue([{ id: 12, name: "Renamed after create" }]),
@@ -370,8 +404,13 @@ describe("rollbackCustomFormatDeployment", () => {
 					name: "Created CF",
 					status: "pending",
 					postStateToken: null,
+					intendedPostState: {
+						name: "Created CF",
+						includeCustomFormatWhenRenaming: false,
+						specifications: [],
+					},
 				}),
 			),
-		).rejects.toThrow("ID is unknown");
+		).rejects.toThrow("could not be recovered exactly");
 	});
 });

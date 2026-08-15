@@ -5,16 +5,17 @@ import {
 	assertNoLegacyDeploymentConnectionMappings,
 	createDeploymentConnectionBinding,
 	createDeploymentConnectionBindingCandidates,
+	createDeploymentConnectionPersistenceBindings,
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
 	createDeploymentStateToken,
 	createLegacyDeploymentConnectionBindings,
 	createQualityProfileStateToken,
+	type DeploymentProfileMapping,
 	getEquivalentServiceInstanceIds,
 	isDeploymentBackupEndpointIdentityCurrent,
 	isVerifiedClonedProfileSourceConnection,
 	resolveDeploymentTarget,
-	type DeploymentProfileMapping,
 } from "../deployment-target.js";
 
 const profiles = [
@@ -655,6 +656,25 @@ describe("getEquivalentServiceInstanceIds", () => {
 
 		expect(createDeploymentConnectionBindingCandidates(connection)).toEqual([
 			createDeploymentConnectionBinding(connection),
+		]);
+	});
+
+	it("removes credential-only evidence before using connection bindings in persistence filters", () => {
+		expect(
+			createDeploymentConnectionPersistenceBindings([
+				{
+					instanceId: "radarr-1",
+					connectionGeneration: 2,
+					connectionStateToken: "state-token",
+					credentialIdentity: "credential-only-evidence",
+				},
+			]),
+		).toEqual([
+			{
+				instanceId: "radarr-1",
+				connectionGeneration: 2,
+				connectionStateToken: "state-token",
+			},
 		]);
 	});
 

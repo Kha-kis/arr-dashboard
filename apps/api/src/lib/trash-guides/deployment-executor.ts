@@ -32,7 +32,10 @@ import {
 	transformFieldsToArray,
 } from "./cf-field-utils.js";
 import { checkMutualExclusions } from "./conflict-checker.js";
-import type { CustomFormatRollbackState } from "./deployment-custom-format-state.js";
+import {
+	type CustomFormatRollbackState,
+	matchesIntendedWritableState,
+} from "./deployment-custom-format-state.js";
 import {
 	finalizeDeploymentHistory,
 	finalizeDeploymentHistoryWithFailure,
@@ -55,6 +58,7 @@ import {
 	assertDeploymentTargetOwnership,
 	assertEquivalentDeploymentMappingAuthority,
 	createDeploymentConnectionBindingCandidates,
+	createDeploymentConnectionPersistenceBindings,
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
 	createDeploymentMappingAuthorityState,
@@ -227,35 +231,7 @@ function assertIntendedWritableState(
 	intended: Record<string, unknown>,
 	resourceLabel: string,
 ): void {
-	if (!actual || typeof actual !== "object" || Array.isArray(actual)) {
-		throw new ConflictError(`${resourceLabel} returned an invalid post-write state.`);
-	}
-	const projectActualToIntendedShape = (actualValue: unknown, intendedValue: unknown): unknown => {
-		if (Array.isArray(intendedValue)) {
-			if (!Array.isArray(actualValue)) return actualValue;
-			return actualValue.map((item, index) =>
-				projectActualToIntendedShape(item, intendedValue[index]),
-			);
-		}
-		if (intendedValue && typeof intendedValue === "object") {
-			if (!actualValue || typeof actualValue !== "object" || Array.isArray(actualValue)) {
-				return actualValue;
-			}
-			const actualRecord = actualValue as Record<string, unknown>;
-			return Object.fromEntries(
-				Object.entries(intendedValue as Record<string, unknown>).map(([key, value]) => [
-					key,
-					projectActualToIntendedShape(actualRecord[key], value),
-				]),
-			);
-		}
-		return actualValue;
-	};
-	const actualProjection = projectActualToIntendedShape(actual, intended);
-	if (
-		createUpstreamResourceStateToken(actualProjection) !==
-		createUpstreamResourceStateToken(intended)
-	) {
+	if (!matchesIntendedWritableState(actual, intended)) {
 		throw new ConflictError(
 			`${resourceLabel} did not match the intended post-write state. Resolve or roll back the interrupted deployment before retrying.`,
 		);
@@ -717,7 +693,7 @@ export class DeploymentExecutorService {
 						postStateToken: null,
 						intendedPostStateToken: createUpstreamResourceStateToken(updatedCF),
 					};
-					await persistMutationState(mutationState, true);
+					await persistMutationState({ ...mutationState }, true);
 
 					upstreamMutationStarted = true;
 					await client.customFormat.update(
@@ -732,7 +708,7 @@ export class DeploymentExecutorService {
 					);
 					mutationState.status = "applied";
 					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
-					await persistMutationState(mutationState, false);
+					await persistMutationState({ ...mutationState }, false);
 					updated++;
 					details.updated.push(templateCF.name);
 				} else {
@@ -764,9 +740,10 @@ export class DeploymentExecutorService {
 						name: templateCF.name,
 						status: "pending",
 						postStateToken: null,
-						intendedPostStateToken: null,
+						intendedPostStateToken: createUpstreamResourceStateToken(newCF),
+						intendedPostState: newCF,
 					};
-					await persistMutationState(mutationState, true);
+					await persistMutationState({ ...mutationState }, true);
 
 					upstreamMutationStarted = true;
 					const createdFormat = await client.customFormat.create(
@@ -777,7 +754,7 @@ export class DeploymentExecutorService {
 					}
 					mutationState.resourceId = createdFormat.id;
 					mutationState.postStateToken = createUpstreamResourceStateToken(createdFormat);
-					await persistMutationState(mutationState, false);
+					await persistMutationState({ ...mutationState }, false);
 					const postWriteFormat = await client.customFormat.getById(createdFormat.id);
 					assertIntendedWritableState(
 						postWriteFormat,
@@ -788,7 +765,7 @@ export class DeploymentExecutorService {
 					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
 					created++;
 					details.created.push(templateCF.name);
-					await persistMutationState(mutationState, false);
+					await persistMutationState({ ...mutationState }, false);
 					resolvedResourceIds.set(templateCF.trashId, createdFormat.id);
 				}
 			} catch (error) {
@@ -1464,6 +1441,20 @@ export class DeploymentExecutorService {
 				});
 			}
 		}
+	}
+
+	private async finalizeOrphanedOverrideCleanup(
+		database: PrismaClient,
+		cleanup: NonNullable<SyncQualityProfileResult["orphanedOverrideCleanup"]>,
+	): Promise<void> {
+		await database.instanceQualityProfileOverride.deleteMany({
+			where: {
+				userId: cleanup.userId,
+				qualityProfileId: cleanup.qualityProfileId,
+				customFormatId: { in: cleanup.customFormatIds },
+				OR: createDeploymentConnectionPersistenceBindings(cleanup.connectionReadBindings),
+			},
+		});
 	}
 
 	private async finalizeQualityProfileMappingState(
@@ -2285,14 +2276,7 @@ export class DeploymentExecutorService {
 									});
 								}
 								if (!orphanedOverrideCleanup) return;
-								await database.instanceQualityProfileOverride.deleteMany({
-									where: {
-										userId: orphanedOverrideCleanup.userId,
-										qualityProfileId: orphanedOverrideCleanup.qualityProfileId,
-										customFormatId: { in: orphanedOverrideCleanup.customFormatIds },
-										OR: orphanedOverrideCleanup.connectionReadBindings,
-									},
-								});
+								await this.finalizeOrphanedOverrideCleanup(database, orphanedOverrideCleanup);
 							}
 						: undefined,
 				);
