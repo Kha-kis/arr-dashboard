@@ -2828,6 +2828,7 @@ async function verifyEpisodePlexWatchProof(
 			row.refreshedAt === null ||
 			row.sourceFingerprint !== sourceFingerprint ||
 			!Number.isFinite(sourceUpdatedAt) ||
+			row.refreshedAt.getTime() > Date.now() ||
 			row.refreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000 ||
 			row.refreshedAt.getTime() < sourceUpdatedAt!
 		) {
@@ -2987,7 +2988,13 @@ async function verifyEpisodePlexWatchProof(
 		const plexUpdatedAt = plexInstance.updatedAt.getTime();
 		const currentPlexFingerprint = plexEvidenceSourceFingerprint(plexInstance);
 		if (evidence.sourceFingerprint !== currentPlexFingerprint) continue;
-		if (!Number.isFinite(plexUpdatedAt) || approvedRefreshedAt.getTime() < plexUpdatedAt) continue;
+		if (
+			!Number.isFinite(plexUpdatedAt) ||
+			approvedRefreshedAt.getTime() > Date.now() ||
+			approvedRefreshedAt.getTime() < plexUpdatedAt
+		) {
+			continue;
+		}
 		const currentEvidence = await deps.prisma.plexEpisodeCache.findFirst({
 			where: {
 				instanceId: plexInstance.id,
@@ -3004,6 +3011,7 @@ async function verifyEpisodePlexWatchProof(
 			currentEvidence.refreshedAt === null ||
 			currentEvidence.sourceFingerprint !== currentPlexFingerprint ||
 			currentEvidence.watchCount < evidence.watchCount ||
+			currentEvidence.refreshedAt.getTime() > Date.now() ||
 			currentEvidence.refreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000 ||
 			currentEvidence.refreshedAt.getTime() < plexUpdatedAt
 		) {

@@ -618,6 +618,35 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 	});
 
+	it("blocks future-dated episode evidence at the mutation boundary", async () => {
+		const fixture = makeSonarrDeps();
+		const futureAt = new Date(Date.now() + 60 * 1000);
+		vi.mocked(fixture.deps.prisma.plexEpisodeCache.findMany).mockResolvedValue([
+			{
+				instanceId: fixture.plexInstance.id,
+				ratingKey: "episode-1",
+				watchCount: 1,
+				refreshedAt: futureAt,
+				sourceFingerprint: PLEX_SOURCE_FINGERPRINT,
+			},
+		] as never);
+		vi.mocked(fixture.deps.prisma.plexEpisodeCache.findFirst).mockResolvedValue({
+			watchCount: 1,
+			refreshedAt: futureAt,
+			sourceFingerprint: PLEX_SOURCE_FINGERPRINT,
+		} as never);
+		const episodeTarget = exactEpisodeTarget();
+
+		const blocks = await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget]);
+
+		expect(blocks.get(cleanupDeleteTargetKey(episodeTarget))).toContain(
+			"watched Plex episode could not be mapped",
+		);
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+	});
+
 	it("blocks episode evidence whose Plex rating key resolves to another physical copy", async () => {
 		const fixture = makeSonarrDeps({
 			plexSeries: [
@@ -2403,6 +2432,43 @@ describe("verified Sonarr mutation handoff", () => {
 			matchedRuleId: "episode-rule",
 			matchedRuleName: "Remove watched episodes",
 			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "expired" });
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("expires an episode approval whose watch proof is future-dated", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const futurePlan = {
+			...plan,
+			watchProof: {
+				...plan.watchProof,
+				refreshedAt: new Date(Date.now() + 60 * 1000).toISOString(),
+			},
+		};
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(futurePlan),
 		} as unknown as Record<string, unknown>;
 		configureApprovalStore(fixture.deps, storedApproval);
 

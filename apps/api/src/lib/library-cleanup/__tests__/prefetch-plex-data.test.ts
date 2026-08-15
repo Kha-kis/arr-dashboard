@@ -163,6 +163,7 @@ type PlexStatusOverride =
 const unavailablePlexEvidenceCases = [
 	["missing status", () => undefined],
 	["stale timestamp", () => ({ lastRefreshedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })],
+	["future timestamp", () => ({ lastRefreshedAt: new Date(Date.now() + 60 * 1000) })],
 	["failed result", () => ({ lastResult: "error" })],
 	["failed latest attempt", () => ({ lastAttemptResult: "error" })],
 	["completed-generation error", () => ({ lastErrorMessage: "refresh failed" })],
@@ -322,6 +323,70 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		expect(result.ctx.plexEpisodeMap?.get(84)).toMatchObject({ total: 1, watched: 0 });
 		expect(episodeGroupBy).toHaveBeenCalledTimes(4);
 	});
+
+	it.each(["generation", "row"] as const)(
+		"rejects a future-dated Plex episode %s",
+		async (futureTarget) => {
+			const instance = {
+				id: "plex-inst-1",
+				updatedAt: new Date(0),
+				service: "PLEX",
+				enabled: true,
+				baseUrl: "http://plex.internal:32400",
+				encryptedApiKey: "encrypted-token",
+				encryptionIv: "iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				label: null,
+			};
+			const completedAt = new Date();
+			const futureAt = new Date(completedAt.getTime() + 60 * 1000);
+			const normalStatus = completeStatus(instance.id, completedAt, 1);
+			const episodeStatus = completeStatus(
+				instance.id,
+				futureTarget === "generation" ? futureAt : completedAt,
+				1,
+			);
+			const episodeGroupBy = vi.fn().mockResolvedValue([]);
+			const prisma = {
+				serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+				cacheRefreshStatus: {
+					findMany: vi.fn(({ where }: { where: { cacheType: string } }) =>
+						Promise.resolve([where.cacheType === "plex_episode" ? episodeStatus : normalStatus]),
+					),
+				},
+				plexCache: {
+					count: vi.fn().mockResolvedValue(1),
+					findMany: vi
+						.fn()
+						.mockResolvedValue([
+							makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+						]),
+				},
+				plexEpisodeCache: {
+					findMany: vi.fn().mockResolvedValue([
+						{
+							instanceId: instance.id,
+							showTmdbId: 42,
+							refreshedAt: futureTarget === "row" ? futureAt : completedAt,
+							sourceFingerprint: plexConnectionFingerprint(instance as never),
+						},
+					]),
+					groupBy: episodeGroupBy,
+				},
+			} as unknown as CleanupExecutorDeps["prisma"];
+
+			const result = await buildPlexEvalContextWithHealth(
+				{ prisma, log } as CleanupExecutorDeps,
+				"user-1",
+				[plexCleanupRule("plex_episode_completion")],
+			);
+
+			expect(result.ctx.plexEpisodeMap).toBeUndefined();
+			expect(result.failedSources).toContain("plex");
+			expect(episodeGroupBy).not.toHaveBeenCalled();
+		},
+	);
 
 	it("rejects an interleaved map/section generation", async () => {
 		const instance = { id: "plex-inst-1", updatedAt: new Date(0) };
@@ -524,6 +589,50 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 		const result = await prefetchFreshPlexEpisodeWatchData(
 			{ prisma, log } as CleanupExecutorDeps,
 			[currentInstance] as never,
+			now,
+			warnings,
+		);
+
+		expect(result).toEqual(new Map());
+		expect(warnings).toContainEqual(expect.stringContaining("stale Plex episode watch"));
+	});
+
+	it("rejects future-dated episode-scoped watch evidence", async () => {
+		const now = new Date("2026-07-30T12:00:00.000Z");
+		const warnings: string[] = [];
+		const instance = {
+			id: "plex-inst-1",
+			service: "PLEX",
+			enabled: true,
+			baseUrl: "http://plex.internal:32400",
+			encryptedApiKey: "encrypted-token",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			updatedAt: new Date("2026-07-30T11:30:00.000Z"),
+		};
+		const prisma = {
+			plexEpisodeCache: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: instance.id,
+						showTmdbId: 42,
+						seasonNumber: 1,
+						episodeNumber: 2,
+						watchCount: 1,
+						lastWatchedAt: now,
+						watchedByUsers: "[]",
+						ratingKey: "episode-123",
+						refreshedAt: new Date("2026-07-30T12:01:00.000Z"),
+						sourceFingerprint: plexConnectionFingerprint(instance as never),
+					},
+				]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await prefetchFreshPlexEpisodeWatchData(
+			{ prisma, log } as CleanupExecutorDeps,
+			[instance] as never,
 			now,
 			warnings,
 		);

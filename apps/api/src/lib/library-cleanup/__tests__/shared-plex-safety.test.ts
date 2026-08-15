@@ -2176,6 +2176,81 @@ describe("shared Plex deletion safety", () => {
 		expect(fixture.deleteMovie).not.toHaveBeenCalled();
 	});
 
+	it("reports Plex unavailable when episode-completion evidence fails", async () => {
+		const fixture = makeDeps();
+		Object.assign(fixture.plexInstance, {
+			enabled: true,
+			updatedAt: new Date(0),
+		});
+		const config = dryRunConfig();
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...config,
+			rules: [
+				{
+					...config.rules[0]!,
+					name: "Retain incomplete series",
+					ruleType: "plex_episode_completion",
+					parameters: JSON.stringify({ operator: "less_than", percentage: 100 }),
+					retentionMode: true,
+				},
+			],
+		} as never);
+		const completedAt = new Date();
+		const normalStatus = {
+			instanceId: fixture.plexInstance.id,
+			lastRefreshedAt: completedAt,
+			lastResult: "success",
+			lastErrorMessage: null,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			itemCount: 1,
+			generationId: "plex-generation-1",
+			generationMetadata: JSON.stringify({
+				sections: [{ key: "1", title: "TV Shows", type: "show" }],
+			}),
+		};
+		Object.assign(fixture.deps.prisma, {
+			cacheRefreshStatus: {
+				findMany: vi.fn(({ where }: { where: { cacheType: string } }) =>
+					Promise.resolve(
+						where.cacheType === "plex_episode"
+							? [{ ...normalStatus, lastResult: "error", lastErrorMessage: "refresh failed" }]
+							: [normalStatus],
+					),
+				),
+			},
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi.fn().mockResolvedValue([
+					{
+						id: "plex-cache-1",
+						tmdbId: 42,
+						mediaType: "series",
+						sectionId: "1",
+						sectionTitle: "TV Shows",
+						lastWatchedAt: null,
+						watchCount: 0,
+						watchedByUsers: "[]",
+						onDeck: false,
+						userRating: null,
+						collections: "[]",
+						labels: "[]",
+						addedAt: null,
+					},
+				]),
+			},
+			plexEpisodeCache: {
+				findMany: vi.fn().mockResolvedValue([]),
+				groupBy: vi.fn().mockResolvedValue([]),
+			},
+		});
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result.prefetchHealth).toMatchObject({ plex: "failed" });
+		expect(result.warnings).toContainEqual(expect.stringContaining("plex data unavailable"));
+	});
+
 	it("does not count a rule match twice when a durable retry already represents its target", async () => {
 		const { deps } = makeDeps({ mediaPartCount: 1 });
 		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(

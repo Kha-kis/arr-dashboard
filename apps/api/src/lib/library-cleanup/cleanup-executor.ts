@@ -124,7 +124,6 @@ async function loadCompleteCacheGenerations(
 	deps: CleanupExecutorDeps,
 	instances: Array<{ id: string; updatedAt: Date }>,
 	cacheType: string,
-	now: Date = new Date(),
 ): Promise<Map<string, { completedAt: Date; itemCount: number }> | undefined> {
 	if (instances.length === 0) return undefined;
 	const statuses = await deps.prisma.cacheRefreshStatus.findMany({
@@ -140,7 +139,8 @@ async function loadCompleteCacheGenerations(
 		},
 	});
 	const byInstance = new Map(statuses.map((status) => [status.instanceId, status]));
-	const freshnessThreshold = now.getTime() - PROVIDER_EVIDENCE_FRESHNESS_MS;
+	const nowMs = Date.now();
+	const freshnessThreshold = nowMs - PROVIDER_EVIDENCE_FRESHNESS_MS;
 	const generations = new Map<string, { completedAt: Date; itemCount: number }>();
 	for (const instance of instances) {
 		const status = byInstance.get(instance.id);
@@ -149,6 +149,7 @@ async function loadCompleteCacheGenerations(
 			status.lastErrorMessage != null ||
 			status.lastAttemptErrorMessage != null ||
 			(status.lastAttemptResult != null && status.lastAttemptResult !== "success") ||
+			status.lastRefreshedAt.getTime() > nowMs ||
 			status.lastRefreshedAt.getTime() < freshnessThreshold ||
 			status.lastRefreshedAt.getTime() < instance.updatedAt.getTime()
 		) {
@@ -2551,10 +2552,17 @@ async function executeQueuedCleanupItems(
 				sharedPlexBlock =
 					"Skipped for safety: the ARR target identity changed after this cleanup item was queued. Run cleanup again and review a new approval.";
 			}
+			const approvedEpisodeRefreshTime =
+				approvedPlan?.kind === "verified_sonarr_episode"
+					? Date.parse(approvedPlan.watchProof.refreshedAt)
+					: null;
 			if (
 				approvedPlan?.kind === "verified_sonarr_episode" &&
 				!recoveringInterruptedMutation &&
-				Date.parse(approvedPlan.watchProof.refreshedAt) < now.getTime() - PLEX_EPISODE_FRESHNESS_MS
+				(approvedEpisodeRefreshTime === null ||
+					!Number.isFinite(approvedEpisodeRefreshTime) ||
+					approvedEpisodeRefreshTime > now.getTime() ||
+					approvedEpisodeRefreshTime < now.getTime() - PLEX_EPISODE_FRESHNESS_MS)
 			) {
 				approvalIdentityChanged = true;
 				sharedPlexBlock =
@@ -3562,6 +3570,7 @@ async function loadPublishedPlexPolicyEvidence(
 				},
 			});
 		const before = await readStatuses();
+		const nowMs = Date.now();
 		if (
 			before.length !== instances.length ||
 			before.some((status) => {
@@ -3574,7 +3583,8 @@ async function loadPublishedPlexPolicyEvidence(
 					(status.lastAttemptResult != null && status.lastAttemptResult !== "success") ||
 					!status.generationId ||
 					!status.generationMetadata ||
-					Date.now() - status.lastRefreshedAt.getTime() > PROVIDER_EVIDENCE_FRESHNESS_MS ||
+					status.lastRefreshedAt.getTime() > nowMs ||
+					nowMs - status.lastRefreshedAt.getTime() > PROVIDER_EVIDENCE_FRESHNESS_MS ||
 					status.lastRefreshedAt.getTime() < instance.updatedAt.getTime()
 				);
 			})
@@ -3834,7 +3844,8 @@ async function prefetchPlexEpisodeData(
 			where: { instanceId: { in: instanceIds } },
 			select: { instanceId: true, refreshedAt: true, sourceFingerprint: true },
 		});
-		const freshnessThreshold = Date.now() - PROVIDER_EVIDENCE_FRESHNESS_MS;
+		const nowMs = Date.now();
+		const freshnessThreshold = nowMs - PROVIDER_EVIDENCE_FRESHNESS_MS;
 		for (const row of generationRows) {
 			const generation = generations.get(row.instanceId);
 			const instance = instances.find((candidate) => candidate.id === row.instanceId);
@@ -4538,7 +4549,12 @@ async function evaluateAllItems(
 	// Build prefetch health status
 	const prefetchHealth: PrefetchResults = {
 		seerr: hasSeerrRules ? (seerrMap ? "ok" : "failed") : "skipped",
-		plex: hasPlexRules || needsPlexSectionInventory ? (plexEvidence ? "ok" : "failed") : "skipped",
+		plex:
+			hasPlexRules || needsPlexSectionInventory
+				? plexEvidence && (!hasEpisodeRules || plexEpisodeMap)
+					? "ok"
+					: "failed"
+				: "skipped",
 		jellyfin: hasJellyfinRules ? (jellyfinMap ? "ok" : "failed") : "skipped",
 	};
 
@@ -4785,6 +4801,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 				!Number.isFinite(sourceUpdatedAt) ||
 				!sourceFingerprint ||
 				row.sourceFingerprint !== sourceFingerprint ||
+				row.refreshedAt.getTime() > now.getTime() ||
 				row.refreshedAt.getTime() < freshnessThreshold ||
 				row.refreshedAt.getTime() < sourceUpdatedAt
 			) {
