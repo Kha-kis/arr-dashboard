@@ -106,6 +106,10 @@ const fakeApp = {
 		$transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
 			callback({
 				$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+				libraryCleanupConfig: {
+					upsert: vi.fn().mockResolvedValue({ id: "cleanup-user-1" }),
+					findUnique: vi.fn().mockResolvedValue({ id: "cleanup-user-1", runClaimToken: null }),
+				},
 				serviceInstance: {
 					findFirst: vi.fn().mockResolvedValue({ id: "inst-plex-1" }),
 					findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>

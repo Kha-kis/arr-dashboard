@@ -41,6 +41,10 @@ export function watchSchedulerDecryptFailureFixture(service: WatchService) {
 		identityGeneration: 9,
 	};
 	const tx = {
+		libraryCleanupConfig: {
+			upsert: vi.fn(async () => ({ id: "cleanup-user-1" })),
+			findUnique: vi.fn(async () => ({ id: "cleanup-user-1", runClaimToken: null })),
+		},
 		serviceInstance: {
 			findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
 				Object.entries(where).every(

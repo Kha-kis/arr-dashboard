@@ -139,6 +139,10 @@ function prisma(finalPredicateMatches = true) {
 	const rows: unknown[] = [];
 	const predicates: Array<Record<string, unknown>> = [];
 	const tx = {
+		libraryCleanupConfig: {
+			upsert: vi.fn(async () => ({ id: "cleanup-user-1" })),
+			findUnique: vi.fn(async () => ({ id: "cleanup-user-1", runClaimToken: null })),
+		},
 		serviceInstance: {
 			findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
 				authority.events.push("predicate");
@@ -284,7 +288,7 @@ describe("watch-provider publication authority", () => {
 			});
 
 			expect(result).toMatchObject({ complete: false, upserted: 0 });
-			expect(authority.events).toEqual(["identity", "collect", "identity"]);
+			expect(authority.events).toEqual(["identity", "collect", "identity", "predicate"]);
 			expect(state.tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
 		},
 	);
@@ -366,7 +370,7 @@ describe("watch-provider publication authority", () => {
 		});
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(authority.events).toEqual(["identity", "collect", "identity"]);
+		expect(authority.events).toEqual(["identity", "collect", "identity", "predicate"]);
 		expect(state.tx.tautulliCache.deleteMany).not.toHaveBeenCalled();
 	});
 
