@@ -6,11 +6,11 @@ import {
 	type CreateServicePayload,
 	createService,
 	removeService,
+	replaceServiceIdentity,
+	type ServiceIdentityConfirmation,
 	type UpdateServicePayload,
 	updateService,
-	replaceServiceIdentity,
 	verifyServiceIdentity,
-	type ServiceIdentityConfirmation,
 } from "../../lib/api-client/services";
 import {
 	jellyfinKeys,
@@ -35,10 +35,7 @@ type DeleteVariables = string;
 type IdentityVariables = ServiceIdentityConfirmation & { id: string };
 type ReplaceIdentityVariables = IdentityVariables & { payload: UpdateServicePayload };
 
-function applyServiceSummary(
-	queryClient: ReturnType<typeof useQueryClient>,
-	updated: ServiceInstanceSummary,
-) {
+function invalidateServiceDependencies(queryClient: ReturnType<typeof useQueryClient>) {
 	queryClient.invalidateQueries({ queryKey: SERVICES_QUERY_KEY });
 	queryClient.invalidateQueries({ queryKey: trashCacheKeys.cacheHealth });
 	queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });
@@ -48,6 +45,13 @@ function applyServiceSummary(
 	queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
 	queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
 	queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+}
+
+function applyServiceSummary(
+	queryClient: ReturnType<typeof useQueryClient>,
+	updated: ServiceInstanceSummary,
+) {
+	invalidateServiceDependencies(queryClient);
 	queryClient.setQueryData<ServiceInstanceSummary[]>(SERVICES_QUERY_KEY, (previous) =>
 		previous?.map((service) => (service.id === updated.id ? updated : service)),
 	);
@@ -71,6 +75,7 @@ export const useUpdateServiceMutation = () => {
 	return useMutation<ServiceInstanceSummary, Error, UpdateVariables>({
 		mutationFn: ({ id, payload }) => updateService(id, payload),
 		onSuccess: (updated) => {
+			invalidateServiceDependencies(queryClient);
 			queryClient.setQueryData<ServiceInstanceSummary[]>(SERVICES_QUERY_KEY, (prev) => {
 				if (!prev) {
 					return prev;

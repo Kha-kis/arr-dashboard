@@ -17,6 +17,7 @@ vi.mock("../../../lib/api-client/services");
 import * as servicesApi from "../../../lib/api-client/services";
 import {
 	useReplaceServiceIdentityMutation,
+	useUpdateServiceMutation,
 	useVerifyServiceIdentityMutation,
 } from "../useServiceMutations";
 
@@ -52,6 +53,34 @@ function wrapper(client: QueryClient) {
 }
 
 describe("service identity mutations", () => {
+	it("invalidates provider and cleanup evidence after an ordinary service update", async () => {
+		const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+		client.setQueryData(serviceKeys.all, [unverifiedService]);
+		const invalidateQueries = vi.spyOn(client, "invalidateQueries");
+		const updated = { ...unverifiedService, enabled: false };
+		vi.mocked(servicesApi.updateService).mockResolvedValue(updated);
+		const mutation = renderHook(() => useUpdateServiceMutation(), {
+			wrapper: wrapper(client),
+		});
+
+		mutation.result.current.mutate({ id: "plex-1", payload: { enabled: false } });
+
+		await waitFor(() =>
+			expect(client.getQueryData<ServiceInstanceSummary[]>(serviceKeys.all)?.[0]?.enabled).toBe(
+				false,
+			),
+		);
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: trashCacheKeys.cacheHealth });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: plexKeys.cacheHealth() });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: jellyfinKeys.cacheHealth() });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: plexKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: jellyfinKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: tautulliKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.status });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.approvals });
+		client.clear();
+	});
+
 	it("updates a mounted service consumer after verification and invalidates dependent health", async () => {
 		const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
 		client.setQueryData(serviceKeys.all, [unverifiedService]);

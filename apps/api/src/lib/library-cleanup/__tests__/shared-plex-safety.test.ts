@@ -1063,7 +1063,7 @@ function tiedPriorityConfig(options: { dryRunMode: boolean; requireApproval: boo
 }
 
 describe("shared Plex deletion safety", () => {
-	it("records and triggers a queued post-delete media-server scan without reopening deletion", async () => {
+	it("blocks a queued post-delete media-server scan when the cleanup lease is lost", async () => {
 		const fixture = makeDeps({ action: "delete", mediaPartCount: 1 });
 		const auditEvents: Array<Record<string, unknown>> = [];
 		Object.assign(fixture.deps.prisma, {
@@ -1103,7 +1103,9 @@ describe("shared Plex deletion safety", () => {
 			identityGeneration: 7,
 		};
 		Object.assign(fixture.deps, {
-			providerEvidenceAuthorityChecker: vi.fn().mockResolvedValue(undefined),
+			providerEvidenceAuthorityChecker: vi.fn(
+				async (_userId, _evidence, assertLease?: () => Promise<void>) => await assertLease?.(),
+			),
 			providerScanAuthorityCreator: vi.fn(
 				async (target: {
 					instanceId: string;
@@ -1173,7 +1175,10 @@ describe("shared Plex deletion safety", () => {
 			findMany: vi.fn().mockImplementation(async ({ where, select }) => {
 				const approvalFilter = where?.approvalId as { in?: string[] } | string | undefined;
 				if (typeof approvalFilter === "object" && approvalFilter.in?.length === 0) return [];
-				if (select?.status) return [scanRow];
+				if (select?.status) {
+					const statuses = where?.status?.in as string[] | undefined;
+					return statuses && !statuses.includes(scanRow.status) ? [] : [scanRow];
+				}
 				return scanRow.status === "triggered" ? [] : [scanRow];
 			}),
 			updateMany: vi
@@ -1186,14 +1191,25 @@ describe("shared Plex deletion safety", () => {
 				}),
 			deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
 		};
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.updateMany).mockImplementation((async ({
+			where,
+			data,
+		}: {
+			where: { OR?: unknown[] };
+			data: { runClaimToken?: string | null };
+		}) => {
+			if (where.OR) return { count: 1 };
+			if (data.runClaimToken === null) return { count: 1 };
+			return { count: fixture.deleteMovie.mock.calls.length > 0 ? 0 : 1 };
+		}) as never);
 
 		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
 
 		expect(result).toMatchObject({ removed: 1, failed: 0 });
 		expect(fixture.deleteMovieFile).toHaveBeenCalledOnce();
 		expect(fixture.deleteMovie).toHaveBeenCalledOnce();
-		expect(refreshSection).toHaveBeenCalledWith("movies");
-		expect(scanRow.status).toBe("triggered");
+		expect(refreshSection).not.toHaveBeenCalled();
+		expect(scanRow.status).not.toBe("triggered");
 		expect(storedApproval.status).toBe("executed");
 		const terminalIndex = auditEvents.findIndex(
 			(event) => event.eventType === "terminal_succeeded",
@@ -1202,10 +1218,13 @@ describe("shared Plex deletion safety", () => {
 			(event) => event.eventType === "media_rescan_triggered",
 		);
 		expect(terminalIndex).toBeGreaterThanOrEqual(0);
-		expect(scanIndex).toBeGreaterThan(terminalIndex);
+		expect(scanIndex).toBe(-1);
+		expect(result.warnings).toContain(
+			"Plex library scan request failed; arr-dashboard will retry it without repeating the cleanup deletion.",
+		);
 	});
 
-	it("records and triggers a direct post-delete media-server scan", async () => {
+	it("blocks a direct post-delete media-server scan when the cleanup lease is lost", async () => {
 		const fixture = makeDeps({ action: "delete", mediaPartCount: 1 });
 		const auditEvents: Array<Record<string, unknown>> = [];
 		Object.assign(fixture.deps.prisma, {
@@ -1228,7 +1247,9 @@ describe("shared Plex deletion safety", () => {
 			identityGeneration: 7,
 		};
 		Object.assign(fixture.deps, {
-			providerEvidenceAuthorityChecker: vi.fn().mockResolvedValue(undefined),
+			providerEvidenceAuthorityChecker: vi.fn(
+				async (_userId, _evidence, assertLease?: () => Promise<void>) => await assertLease?.(),
+			),
 			providerScanAuthorityCreator: vi.fn(
 				async (target: {
 					instanceId: string;
@@ -1296,7 +1317,10 @@ describe("shared Plex deletion safety", () => {
 			findMany: vi.fn().mockImplementation(async ({ where, select }) => {
 				const approvalFilter = where?.approvalId as { in?: string[] } | string | undefined;
 				if (typeof approvalFilter === "object" && approvalFilter.in?.length === 0) return [];
-				if (select?.status) return [scanRow];
+				if (select?.status) {
+					const statuses = where?.status?.in as string[] | undefined;
+					return statuses && !statuses.includes(scanRow.status) ? [] : [scanRow];
+				}
 				return scanRow.status === "triggered" ? [] : [scanRow];
 			}),
 			updateMany: vi
@@ -1333,6 +1357,9 @@ describe("shared Plex deletion safety", () => {
 			},
 			rating: 8,
 		} as never;
+		const assertRunLease = vi.fn(async () => {
+			if (fixture.deleteMovie.mock.calls.length > 0) throw new CleanupRunLeaseLostError();
+		});
 
 		const result = await executeDirectRemoval(
 			fixture.deps,
@@ -1353,13 +1380,13 @@ describe("shared Plex deletion safety", () => {
 			undefined,
 			undefined,
 			new Map(),
-			undefined,
+			assertRunLease,
 			TEST_PLEX_SCAN_EVIDENCE,
 		);
 
-		expect(result).toMatchObject({ itemsRemoved: 1, status: "completed" });
-		expect(refreshSection).toHaveBeenCalledWith("movies");
-		expect(scanRow.status).toBe("triggered");
+		expect(result).toMatchObject({ itemsRemoved: 1, status: "partial" });
+		expect(refreshSection).not.toHaveBeenCalled();
+		expect(scanRow.status).not.toBe("triggered");
 		expect(retries).toContainEqual(expect.objectContaining({ status: "executed" }));
 		const terminalIndex = auditEvents.findIndex(
 			(event) => event.eventType === "terminal_succeeded",
@@ -1368,7 +1395,10 @@ describe("shared Plex deletion safety", () => {
 			(event) => event.eventType === "media_rescan_triggered",
 		);
 		expect(terminalIndex).toBeGreaterThanOrEqual(0);
-		expect(scanIndex).toBeGreaterThan(terminalIndex);
+		expect(scanIndex).toBe(-1);
+		expect(result.warnings).toContain(
+			"Plex library scan request failed; arr-dashboard will retry it without repeating the cleanup deletion.",
+		);
 	});
 
 	it.each(["delete", "delete_files"] as const)(

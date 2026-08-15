@@ -996,6 +996,9 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					...(connectionChanged ? { connectionGeneration: existing.connectionGeneration + 1 } : {}),
 					...replacementIdentityData(existing, observation),
 				};
+				const replacementService = (
+					candidate.service ?? existing.service
+				).toUpperCase() as ServiceType;
 				const replaced = await app.prisma.$transaction(async (tx) => {
 					const updated = await tx.serviceInstance.updateMany({
 						where: {
@@ -1007,6 +1010,15 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						data: replacementData,
 					});
 					if (updated.count !== 1) return false;
+					if (candidate.isDefault === true || candidate.service !== undefined) {
+						await tx.serviceInstance.updateMany({
+							where: { service: replacementService, userId, NOT: { id } },
+							data: { isDefault: false },
+						});
+					}
+					if (candidate.tags !== undefined) {
+						await updateInstanceTags(tx, id, candidate.tags);
+					}
 					await clearDurableProviderCacheState(tx, id);
 					await expireApprovalsForProviderReplacement(
 						tx,

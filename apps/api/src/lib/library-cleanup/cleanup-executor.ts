@@ -3792,6 +3792,7 @@ async function executeQueuedCleanupItems(
 					deps,
 					userId,
 					result.rescanApprovalIds,
+					options.assertExecutionAllowed,
 				);
 				rescanWarnings.push(...scanResult.warnings);
 			} catch (error) {
@@ -8168,9 +8169,12 @@ export async function executeDirectRemoval(
 
 	if (mediaServerRescanApprovalIds.size > 0) {
 		try {
-			const scanResult = await triggerCoalescedMediaServerRescans(deps, userId, [
-				...mediaServerRescanApprovalIds,
-			]);
+			const scanResult = await triggerCoalescedMediaServerRescans(
+				deps,
+				userId,
+				[...mediaServerRescanApprovalIds],
+				assertRunLease,
+			);
 			mediaServerRescanWarnings.push(...scanResult.warnings);
 		} catch (error) {
 			mediaServerRescanWarnings.push(

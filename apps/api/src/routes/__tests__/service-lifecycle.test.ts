@@ -168,7 +168,7 @@ function createPrismaStub() {
 		serviceInstance,
 		serviceTag: {
 			findMany: vi.fn().mockResolvedValue([]),
-			upsert: vi.fn(),
+			upsert: vi.fn(async ({ where }: any) => ({ id: `tag-${where.name}`, name: where.name })),
 			delete: vi.fn(),
 		},
 		serviceInstanceTag: {
@@ -730,8 +730,14 @@ describe("Service instance lifecycle", () => {
 		});
 	});
 
-	it("replaces a verified provider atomically, invalidating caches and affected approvals", async () => {
+	it("replaces a verified provider atomically, preserving submitted tags and one default", async () => {
 		const id = await createExistingVerifiedProvider();
+		prisma._instances.set("other-plex", {
+			id: "other-plex",
+			userId: USER_ID,
+			service: "PLEX",
+			isDefault: true,
+		});
 		prisma._approvals.set("untagged-approval", {
 			id: "untagged-approval",
 			config: { userId: USER_ID },
@@ -766,11 +772,21 @@ describe("Service instance lifecycle", () => {
 		mockReadProviderIdentity.mockResolvedValueOnce(replacement).mockResolvedValueOnce(replacement);
 
 		const inspected = await inject("POST", `/services/${id}/identity/inspect`, {
-			body: { candidate: { baseUrl: "http://replacement-provider.test" } },
+			body: {
+				candidate: {
+					baseUrl: "http://replacement-provider.test",
+					isDefault: true,
+					tags: ["movies"],
+				},
+			},
 		});
 		const response = await inject("POST", `/services/${id}/identity/replace`, {
 			body: {
-				candidate: { baseUrl: "http://replacement-provider.test" },
+				candidate: {
+					baseUrl: "http://replacement-provider.test",
+					isDefault: true,
+					tags: ["movies"],
+				},
 				confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
 				expectedConnectionGeneration: 0,
 				expectedIdentityGeneration: 3,
@@ -783,8 +799,21 @@ describe("Service instance lifecycle", () => {
 			expectedIdentity: "replacement-plex-machine",
 			identityKind: "PLEX_MACHINE_IDENTIFIER",
 			identityStatus: "VERIFIED",
+			isDefault: true,
 			connectionGeneration: 1,
 			identityGeneration: 4,
+		});
+		expect(prisma._instances.get("other-plex")).toMatchObject({ isDefault: false });
+		expect(prisma.serviceInstanceTag.deleteMany).toHaveBeenCalledWith({
+			where: { instanceId: id },
+		});
+		expect(prisma.serviceTag.upsert).toHaveBeenCalledWith({
+			where: { name: "movies" },
+			update: {},
+			create: { name: "movies" },
+		});
+		expect(prisma.serviceInstanceTag.createMany).toHaveBeenCalledWith({
+			data: [{ instanceId: id, tagId: "tag-movies" }],
 		});
 		for (const cache of [
 			prisma.plexCache,
@@ -799,6 +828,45 @@ describe("Service instance lifecycle", () => {
 		expect(prisma._approvals.get("untagged-approval")).toMatchObject({ status: "expired" });
 		expect(prisma._approvals.get("tagged-approval")).toMatchObject({ status: "expired" });
 		expect(prisma._approvals.get("unrelated-approval")).toMatchObject({ status: "pending" });
+	});
+
+	it("preserves defaults and tags when a replacement loses its generation race", async () => {
+		const id = await createExistingVerifiedProvider();
+		prisma._instances.set("other-plex", {
+			id: "other-plex",
+			userId: USER_ID,
+			service: "PLEX",
+			isDefault: true,
+		});
+		const updateMany = prisma.serviceInstance.updateMany;
+		const originalUpdateMany = updateMany.getMockImplementation();
+		updateMany.mockImplementation(async (args: any) => {
+			if (args.where.id === id && args.where.identityGeneration === 3) return { count: 0 };
+			return await originalUpdateMany!(args);
+		});
+		mockReadProviderIdentity.mockResolvedValueOnce({
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		});
+
+		const response = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: { isDefault: true, tags: ["movies"] },
+				confirmationDigest: "a".repeat(64),
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(prisma._instances.get(id)).toMatchObject({ isDefault: false, identityGeneration: 3 });
+		expect(prisma._instances.get("other-plex")).toMatchObject({ isDefault: true });
+		expect(prisma.serviceInstanceTag.deleteMany).not.toHaveBeenCalled();
+		expect(prisma.serviceTag.upsert).not.toHaveBeenCalled();
+		expect(prisma.serviceInstanceTag.createMany).not.toHaveBeenCalled();
 	});
 
 	it("rejects a replacement that is no longer owned before reading a provider", async () => {
