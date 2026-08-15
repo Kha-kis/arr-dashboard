@@ -822,7 +822,6 @@ describe("buildEvalContextWithHealth", () => {
 		expect(serviceInstanceFindMany).toHaveBeenCalledWith({
 			where: { userId: "user-1", service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			orderBy: { id: "asc" },
-			select: { id: true, updatedAt: true },
 		});
 		expect(ctx.jellyfinMap).toBeUndefined();
 		expect(failedSources).toEqual(new Set(["jellyfin"]));
@@ -931,7 +930,6 @@ describe("buildEvalContextWithHealth", () => {
 		expect(serviceInstanceFindMany).toHaveBeenCalledWith({
 			where: { userId: "user-1", service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 			orderBy: { id: "asc" },
-			select: { id: true, updatedAt: true },
 		});
 		expect(failedSources).toEqual(new Set(["jellyfin"]));
 	});
