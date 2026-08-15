@@ -5,6 +5,7 @@
  * Plex returns JSON when Accept: application/json is set.
  */
 
+import { createHash } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { z } from "zod";
 import type { ClientInstanceData } from "../arr/client-factory.js";
@@ -153,6 +154,42 @@ const DEFAULT_TIMEOUT = 15_000;
 const SAFETY_PAGE_SIZE = 200;
 const SAFETY_MAX_ITEMS = 100_000;
 const HISTORY_SORT = "viewedAt:desc";
+const UINT64_MASK = (1n << 64n) - 1n;
+
+function createHistoryProofAccumulator() {
+	let count = 0;
+	const sums = [0n, 0n, 0n, 0n];
+	return {
+		add(item: PlexHistoryItem) {
+			const digest = createHash("sha256")
+				.update(
+					JSON.stringify([
+						item.historyKey,
+						item.ratingKey,
+						item.parentRatingKey ?? null,
+						item.grandparentRatingKey ?? null,
+						item.type,
+						item.viewedAt,
+						item.accountID,
+					]),
+				)
+				.digest();
+			for (let index = 0; index < sums.length; index += 1) {
+				sums[index] = (sums[index]! + digest.readBigUInt64BE(index * 8)) & UINT64_MASK;
+			}
+			count += 1;
+		},
+		value() {
+			return `${count}:${sums.map((sum) => sum.toString(16).padStart(16, "0")).join("")}`;
+		},
+	};
+}
+
+function historyProof(items: readonly PlexHistoryItem[]): string {
+	const proof = createHistoryProofAccumulator();
+	for (const item of items) proof.add(item);
+	return proof.value();
+}
 
 /**
  * Extract a ratingKey from a Plex path like "/library/metadata/65486".
@@ -404,30 +441,33 @@ export class PlexClient {
 		maxResults?: number;
 		requireComplete?: boolean;
 	}): Promise<PlexHistoryItem[]> {
-		return this.getHistoryPass(options);
+		return (await this.getHistoryPass(options)).items;
 	}
 
-	private async getHistoryPass(options?: {
-		maxResults?: number;
-		requireComplete?: boolean;
-	}): Promise<PlexHistoryItem[]> {
+	private async getHistoryPass(
+		options?: {
+			maxResults?: number;
+			requireComplete?: boolean;
+		},
+		collectItems = true,
+	): Promise<{ items: PlexHistoryItem[]; count: number; proof: string }> {
 		const allItems: PlexHistoryItem[] = [];
+		const proof = createHistoryProofAccumulator();
 		const pageSize = 200;
 		const maxResults = options?.maxResults ?? 5000;
 		const requireComplete = options?.requireComplete ?? false;
 		const seenHistoryRows = new Set<string>();
+		const seenMetadataLightPages = new Set<string>();
 		let expectedTotal: number | undefined;
 		let metadataLightSnapshot = false;
+		let itemCount = 0;
 		let offset = 0;
 
-		while (
-			allItems.length < maxResults &&
-			(expectedTotal === undefined || allItems.length < expectedTotal)
-		) {
+		while (itemCount < maxResults && (expectedTotal === undefined || itemCount < expectedTotal)) {
 			const remaining =
 				expectedTotal === undefined
-					? maxResults - allItems.length
-					: Math.min(maxResults, expectedTotal) - allItems.length;
+					? maxResults - itemCount
+					: Math.min(maxResults, expectedTotal) - itemCount;
 			const take = Math.min(pageSize, remaining);
 
 			const data = await this.request(
@@ -442,45 +482,15 @@ export class PlexClient {
 				container.size !== undefined &&
 				container.totalSize !== undefined;
 			if (requireComplete && !hasCompletePaginationMetadata) {
-				if (offset !== 0 || items.length >= take) {
-					throw new Error("Plex history could not prove a bounded metadata-light inventory");
-				}
-				if (
-					(container.offset !== undefined && container.offset !== 0) ||
-					(container.size !== undefined && container.size !== items.length) ||
-					(container.totalSize !== undefined && container.totalSize !== items.length)
-				) {
-					throw new Error("Plex history returned contradictory pagination metadata");
-				}
-				const terminalProbe = await this.request(
-					`/status/sessions/history/all?sort=${HISTORY_SORT}&X-Plex-Container-Start=${items.length}&X-Plex-Container-Size=1`,
-					{ schema: plexHistoryResponseSchema },
-				);
-				const terminalItems = terminalProbe.MediaContainer.Metadata ?? [];
-				const terminalContainer = terminalProbe.MediaContainer;
-				if (
-					terminalItems.length !== 0 ||
-					(terminalContainer.offset !== undefined && terminalContainer.offset !== items.length) ||
-					(terminalContainer.size !== undefined && terminalContainer.size !== 0) ||
-					(terminalContainer.totalSize !== undefined &&
-						terminalContainer.totalSize !== items.length)
-				) {
-					throw new Error("Plex history could not prove a bounded metadata-light inventory");
-				}
 				metadataLightSnapshot = true;
-				expectedTotal = items.length;
 			}
 			if (
 				(container.offset !== undefined && container.offset !== offset) ||
 				(container.size !== undefined && container.size !== items.length)
 			) {
-				throw new Error("Plex history pagination metadata did not match the returned page");
+				throw new Error("Plex history returned contradictory pagination metadata");
 			}
-			if (
-				!metadataLightSnapshot &&
-				expectedTotal === undefined &&
-				container.totalSize !== undefined
-			) {
+			if (expectedTotal === undefined && container.totalSize !== undefined) {
 				expectedTotal = container.totalSize;
 				if (requireComplete && expectedTotal > maxResults) {
 					throw new Error(
@@ -488,8 +498,8 @@ export class PlexClient {
 					);
 				}
 			} else if (
-				!metadataLightSnapshot &&
 				expectedTotal !== undefined &&
+				container.totalSize !== undefined &&
 				container.totalSize !== expectedTotal
 			) {
 				throw new Error("Plex history changed while it was being paged");
@@ -504,6 +514,7 @@ export class PlexClient {
 			) {
 				throw new Error("Plex history pagination stopped before the declared total");
 			}
+			const normalizedItems: PlexHistoryItem[] = [];
 			for (const item of items) {
 				if (requireComplete && !metadataLightSnapshot && !item.historyKey) {
 					throw new Error("Plex history did not provide a stable row identity");
@@ -512,7 +523,7 @@ export class PlexClient {
 					throw new Error("Plex history returned a duplicate row while paging");
 				}
 				if (item.historyKey) seenHistoryRows.add(item.historyKey);
-				allItems.push({
+				normalizedItems.push({
 					historyKey: item.historyKey,
 					ratingKey: item.ratingKey,
 					parentRatingKey: item.parentRatingKey ?? extractRatingKey(item.parentKey),
@@ -524,42 +535,70 @@ export class PlexClient {
 					accountID: item.accountID,
 				});
 			}
+			if (metadataLightSnapshot && normalizedItems.length > 0) {
+				const pageProof = historyProof(normalizedItems);
+				if (seenMetadataLightPages.has(pageProof)) {
+					throw new Error("Plex history repeated a metadata-light page while paging");
+				}
+				seenMetadataLightPages.add(pageProof);
+			}
+			for (const item of normalizedItems) {
+				proof.add(item);
+				if (collectItems) allItems.push(item);
+			}
 
 			offset += items.length;
-			if (metadataLightSnapshot) break;
+			itemCount += items.length;
+			if (metadataLightSnapshot) {
+				if (expectedTotal !== undefined) {
+					if (itemCount > expectedTotal) {
+						throw new Error("Plex history pagination exceeded its declared total");
+					}
+					if (itemCount === expectedTotal) break;
+					if (items.length < take) {
+						throw new Error("Plex history returned contradictory pagination metadata");
+					}
+					continue;
+				}
+				if (items.length < take) {
+					const terminalProbe = await this.request(
+						`/status/sessions/history/all?sort=${HISTORY_SORT}&X-Plex-Container-Start=${itemCount}&X-Plex-Container-Size=1`,
+						{ schema: plexHistoryResponseSchema },
+					);
+					const terminalItems = terminalProbe.MediaContainer.Metadata ?? [];
+					const terminalContainer = terminalProbe.MediaContainer;
+					if (
+						terminalItems.length !== 0 ||
+						(terminalContainer.offset !== undefined && terminalContainer.offset !== itemCount) ||
+						(terminalContainer.size !== undefined && terminalContainer.size !== 0) ||
+						(terminalContainer.totalSize !== undefined && terminalContainer.totalSize !== itemCount)
+					) {
+						throw new Error("Plex history could not prove a bounded metadata-light inventory");
+					}
+					expectedTotal = itemCount;
+					break;
+				}
+				continue;
+			}
 			if (!requireComplete && expectedTotal === undefined && items.length < take) break;
 		}
 
-		if (requireComplete && (expectedTotal === undefined || allItems.length !== expectedTotal)) {
+		if (requireComplete && (expectedTotal === undefined || itemCount !== expectedTotal)) {
 			throw new Error("Plex history inventory could not be verified as complete");
 		}
-		return allItems;
+		return { items: allItems, count: itemCount, proof: proof.value() };
 	}
 
 	/** Re-read and compare every watch-relevant field before publication. */
 	async verifyHistorySnapshot(history: readonly PlexHistoryItem[]): Promise<void> {
-		const verification = await this.getHistoryPass({
-			maxResults: SAFETY_MAX_ITEMS,
-			requireComplete: true,
-		});
-		const signatures = (items: readonly PlexHistoryItem[]) =>
-			items
-				.map((item) =>
-					JSON.stringify([
-						item.historyKey,
-						item.ratingKey,
-						item.parentRatingKey ?? null,
-						item.grandparentRatingKey ?? null,
-						item.type,
-						item.viewedAt,
-						item.accountID,
-					]),
-				)
-				.sort();
-		if (
-			verification.length !== history.length ||
-			JSON.stringify(signatures(verification)) !== JSON.stringify(signatures(history))
-		) {
+		const verification = await this.getHistoryPass(
+			{
+				maxResults: SAFETY_MAX_ITEMS,
+				requireComplete: true,
+			},
+			false,
+		);
+		if (verification.count !== history.length || verification.proof !== historyProof(history)) {
 			throw new Error("Plex history changed before its complete snapshot could be verified");
 		}
 	}

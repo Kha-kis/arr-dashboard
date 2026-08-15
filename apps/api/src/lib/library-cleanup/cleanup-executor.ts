@@ -4578,9 +4578,10 @@ async function evaluateAllItems(
 
 	// Prefetch Plex episode data if episode completion rule is active
 	const hasEpisodeRules = activeTypes.has("plex_episode_completion");
-	const plexEpisodeMap = hasEpisodeRules
-		? await prefetchPlexEpisodeData(deps, config.userId)
-		: undefined;
+	const plexEpisodeMap =
+		hasEpisodeRules && plexEvidence
+			? await prefetchPlexEpisodeData(deps, config.userId)
+			: undefined;
 
 	const hasJellyfinEpisodeRules = activeTypes.has("jellyfin_episode_completion");
 	const jellyfinEpisodeMap = hasJellyfinEpisodeRules
@@ -7274,7 +7275,7 @@ export async function buildEvalContext(
 
 	const needsPlex = PLEX_RULE_TYPES_LIST.some((type) => activeTypes.has(type));
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(rules).size > 0;
-	const [seerrMap, plexEvidence, plexEpisodeMap, jellyfinMap, jellyfinEpisodeMap] =
+	const [seerrMap, plexEvidence, prefetchedPlexEpisodeMap, jellyfinMap, jellyfinEpisodeMap] =
 		await Promise.all([
 			SEERR_RULE_TYPES.some((t) => activeTypes.has(t))
 				? prefetchSeerrRequests(deps, userId)
@@ -7304,7 +7305,7 @@ export async function buildEvalContext(
 		seerrMap: seerrMap ?? undefined,
 		plexMap: plexEvidence?.plexMap,
 		plexSectionTitles: plexEvidence?.plexSectionTitles,
-		plexEpisodeMap: plexEpisodeMap ?? undefined,
+		plexEpisodeMap: plexEvidence ? (prefetchedPlexEpisodeMap ?? undefined) : undefined,
 		jellyfinMap: jellyfinMap ?? undefined,
 		jellyfinEpisodeMap: jellyfinEpisodeMap ?? undefined,
 		tmdbListMemberships,

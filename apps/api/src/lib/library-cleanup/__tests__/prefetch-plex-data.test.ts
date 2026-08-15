@@ -220,6 +220,65 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		},
 	);
 
+	it("withholds episode evidence when the normal Plex inventory is rejected", async () => {
+		const instance = {
+			id: "plex-inst-1",
+			updatedAt: new Date(0),
+			service: "PLEX",
+			enabled: true,
+			baseUrl: "http://plex.internal:32400",
+			encryptedApiKey: "encrypted-token",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			label: null,
+		};
+		const completedAt = new Date();
+		const rejectedNormalStatus = {
+			...completeStatus(instance.id, completedAt, 2),
+			generationId: "normal-generation",
+		};
+		const episodeStatus = {
+			...completeStatus(instance.id, completedAt, 1),
+			generationId: "episode-generation",
+		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn(({ where }: { where: { cacheType: string } }) =>
+					Promise.resolve([
+						where.cacheType === "plex_episode" ? episodeStatus : rejectedNormalStatus,
+					]),
+				),
+			},
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				groupBy: vi.fn().mockResolvedValue([{ instanceId: instance.id, tmdbId: 42 }]),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
+			},
+			plexEpisodeCache: {
+				count: vi.fn().mockResolvedValue(1),
+				groupBy: vi
+					.fn()
+					.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
+					.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
+					.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }])
+					.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const ctx = await buildEvalContext({ prisma, log } as CleanupExecutorDeps, "user-1", [
+			plexCleanupRule("plex_episode_completion"),
+		]);
+
+		expect(ctx.plexMap).toBeUndefined();
+		expect(ctx.plexEpisodeMap).toBeUndefined();
+	});
+
 	it("keeps a complete Plex generation available for cleanup evaluation", async () => {
 		const completedAt = new Date();
 		const instance = { id: "plex-inst-1", updatedAt: new Date(0) };
@@ -377,7 +436,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			const where = JSON.stringify(call[0]?.where);
 			expect(where).toContain(`"instanceId":"${instance.id}"`);
 			expect(where).toContain('"showTmdbId":{"in":[42]}');
-			expect(where).not.toContain("84");
+			expect(where).not.toContain('"showTmdbId":{"in":[84]}');
 		}
 	});
 

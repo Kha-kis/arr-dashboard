@@ -93,26 +93,27 @@ describe("PlexClient complete history authority", () => {
 		).rejects.toThrow(/contradictory pagination metadata/i);
 	});
 
-	it("rejects a full metadata-light page at the complete-history safety boundary", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn().mockResolvedValue(
-				response({
-					size: 200,
-					Metadata: Array.from({ length: 200 }, (_, index) => ({
-						...historyItem(index),
-						historyKey: undefined,
-					})),
-				}),
-			),
-		);
+	it("pages a metadata-light history beyond the first full page", async () => {
+		const history = Array.from({ length: 201 }, (_, index) => ({
+			...historyItem(index),
+			historyKey: undefined,
+		}));
+		const fetchMock = vi.fn(async (input: string | URL | Request) => {
+			const url = new URL(input instanceof Request ? input.url : input.toString());
+			const offset = Number(url.searchParams.get("X-Plex-Container-Start") ?? "0");
+			const size = Number(url.searchParams.get("X-Plex-Container-Size") ?? "200");
+			const page = history.slice(offset, offset + size);
+			return response({ size: page.length, Metadata: page });
+		});
+		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(
 			new PlexClient("http://plex.test", "token", log).getHistory({
 				maxResults: 100_000,
 				requireComplete: true,
 			}),
-		).rejects.toThrow(/bounded metadata-light/i);
+		).resolves.toHaveLength(201);
+		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 
 	it("rejects a declared history inventory larger than the safety cap", async () => {
