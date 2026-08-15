@@ -436,6 +436,7 @@ async function safeBuildContext(
 				enabled: true,
 				ruleType: r.ruleType,
 				conditions: r.conditions,
+				plexLibraryFilter: r.plexLibraryFilter,
 			})),
 			{ requireAvailableEvidence: true },
 		);

@@ -19,10 +19,12 @@ const mockState: {
 	evaluateReason: string | null;
 	evaluateCalls: number;
 	buildContextThrows: boolean;
+	lastBuildRules: Array<Record<string, unknown>> | null;
 } = {
 	evaluateReason: "matched",
 	evaluateCalls: 0,
 	buildContextThrows: false,
+	lastBuildRules: null,
 };
 
 vi.mock("../../library-cleanup/rule-evaluators.js", () => ({
@@ -33,7 +35,8 @@ vi.mock("../../library-cleanup/rule-evaluators.js", () => ({
 }));
 
 vi.mock("../../library-cleanup/cleanup-executor.js", () => ({
-	buildEvalContext: vi.fn(async () => {
+	buildEvalContext: vi.fn(async (_deps, _userId, rules) => {
+		mockState.lastBuildRules = rules;
 		if (mockState.buildContextThrows) {
 			throw new Error("prefetch failed");
 		}
@@ -180,6 +183,7 @@ describe("executeAutoTagRule (orchestration)", () => {
 		mockState.evaluateReason = "matched";
 		mockState.evaluateCalls = 0;
 		mockState.buildContextThrows = false;
+		mockState.lastBuildRules = null;
 
 		// Restore the default mock implementation — individual tests sometimes
 		// override `evaluateSingleCondition.mockImplementation(...)` and the
@@ -459,6 +463,29 @@ describe("executeAutoTagRule (orchestration)", () => {
 		expect(prisma.libraryCache.findMany).not.toHaveBeenCalled();
 		expect(arrClient.tag.getAll).not.toHaveBeenCalled();
 		expect(arrClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("forwards the Plex library filter into evidence validation", async () => {
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([makeInstance()]) },
+			libraryCache: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await executeAutoTagRule({
+			rule: makeRule({
+				ruleType: "plex_user_rating",
+				parameters: { operator: "unrated" },
+				plexLibraryFilter: ["Movies"],
+			}),
+			prisma: prisma as never,
+			arrClientFactory: { create: vi.fn() } as never,
+			encryptor: {} as never,
+			log,
+		});
+
+		expect(mockState.lastBuildRules).toEqual([
+			expect.objectContaining({ plexLibraryFilter: JSON.stringify(["Movies"]) }),
+		]);
 	});
 
 	// ── Edge cases (PR C — defensive coverage) ────────────────────────

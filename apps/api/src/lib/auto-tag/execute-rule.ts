@@ -122,6 +122,7 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 					enabled: true,
 					ruleType: rule.ruleType,
 					conditions: rule.conditions ? JSON.stringify(rule.conditions) : null,
+					plexLibraryFilter: rule.plexLibraryFilter ? JSON.stringify(rule.plexLibraryFilter) : null,
 				},
 			],
 			{ requireAvailableEvidence: true },

@@ -1,4 +1,18 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const executorMocks = vi.hoisted(() => ({
+	scanCrossDomainRule: vi.fn(),
+	executeAutoTagRule: vi.fn(),
+}));
+
+vi.mock("../cross-domain-rules.js", () => ({
+	scanCrossDomainRule: executorMocks.scanCrossDomainRule,
+}));
+
+vi.mock("../../auto-tag/execute-rule.js", () => ({
+	executeAutoTagRule: executorMocks.executeAutoTagRule,
+}));
+
 import { executeCrossDomainRule } from "../cross-domain-executor.js";
 
 const document = {
@@ -7,6 +21,26 @@ const document = {
 };
 
 describe("executeCrossDomainRule", () => {
+	beforeEach(() => {
+		executorMocks.scanCrossDomainRule.mockReset();
+		executorMocks.executeAutoTagRule.mockReset();
+		executorMocks.scanCrossDomainRule.mockResolvedValue({
+			itemsEvaluated: 1,
+			matches: [
+				{
+					cacheId: "cache-1",
+					instanceId: "radarr-1",
+					instanceName: "Radarr",
+					arrItemId: 42,
+					itemType: "movie",
+					title: "Old Movie",
+					year: 1999,
+					reason: "Matched age condition",
+				},
+			],
+		});
+	});
+
 	it("delivers a one-shot action only once per item and deployment", async () => {
 		let ledgerRow: Record<string, unknown> | null = null;
 		const notify = vi.fn(async () => undefined);
@@ -93,5 +127,61 @@ describe("executeCrossDomainRule", () => {
 			{ userId: "user-1" },
 		);
 		expect(ledgerRow).toMatchObject({ completedActions: '["send_notification"]' });
+	});
+
+	it("records a retryable context failure instead of claiming the item disappeared", async () => {
+		const upsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			crossDomainRuleMatch: {
+				findMany: vi.fn().mockResolvedValue([]),
+				upsert,
+			},
+		};
+		executorMocks.executeAutoTagRule.mockResolvedValue({
+			status: "failed",
+			message: "Evaluation context could not be built; no tags were changed.",
+			totals: {
+				instancesScanned: 0,
+				itemsScanned: 0,
+				itemsMatched: 0,
+				tagsApplied: 0,
+				failures: 0,
+			},
+			itemOutcomes: [],
+		});
+		const deps = {
+			prisma: prisma as never,
+			arrClientFactory: {} as never,
+			encryptor: {} as never,
+			notificationService: {} as never,
+			log: {} as never,
+		};
+		const rule = {
+			id: "rule-1",
+			userId: "user-1",
+			deployedName: "Archive workflow",
+			deployedDocument: JSON.stringify(document),
+			deployedScope: JSON.stringify({ serviceTypes: ["RADARR"], instanceIds: [] }),
+			deployedActions: JSON.stringify([{ type: "apply_tag", tagName: "archive" }]),
+			deploymentVersion: 1,
+		};
+
+		const result = await executeCrossDomainRule(deps, rule);
+
+		expect(result.status).toBe("failed");
+		expect(upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					lastError: "Evaluation context could not be built; no tags were changed.",
+				}),
+			}),
+		);
+		expect(upsert).not.toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					lastError: "Matched item disappeared before tag action",
+				}),
+			}),
+		);
 	});
 });
