@@ -7237,6 +7237,7 @@ export async function executeDirectRemoval(
 				assertExecutionAllowed: assertRunLease,
 				getMutationPolicySnapshot,
 				deferMediaServerRescans: true,
+				cleanupRunClaimToken,
 			});
 			mediaServerRescanWarnings.push(...(retryResult.warnings ?? []));
 			for (const approvalId of retryResult.rescanApprovalIds) {
