@@ -585,14 +585,40 @@ export async function prepareMediaServerRescans(
 				where: { approvalId_targetKey: { approvalId: approval.id, targetKey } },
 				select: { serverIdentity: true, plannedSectionIds: true },
 			});
-			if (
-				!existing ||
-				existing.serverIdentity !== serverIdentity ||
-				existing.plannedSectionIds !== plannedSectionIds
-			) {
+			if (!existing || existing.plannedSectionIds !== plannedSectionIds) {
 				throw new Error(
 					"A requested media-server scan target or section plan changed before cleanup could be retried.",
 				);
+			}
+			try {
+				await assertCurrentProviderScanAuthority(deps, userId, existing.serverIdentity, {
+					instanceId: instance.id,
+					service: instance.service as RescanService,
+					mediaType,
+				});
+			} catch (authorityError) {
+				if (authorityError instanceof ProviderExecutionAuthorityChangedError) {
+					throw new Error(
+						"A requested media-server scan target identity changed before cleanup could be retried.",
+					);
+				}
+				throw authorityError;
+			}
+			if (existing.serverIdentity !== serverIdentity) {
+				const renewed = await deps.prisma.libraryCleanupMediaServerScan.updateMany({
+					where: {
+						approvalId: approval.id,
+						targetKey,
+						serverIdentity: existing.serverIdentity,
+						plannedSectionIds: existing.plannedSectionIds,
+					},
+					data: { serverIdentity },
+				});
+				if (renewed.count !== 1) {
+					throw new Error(
+						"A requested media-server scan target changed while its retry authority was renewed.",
+					);
+				}
 			}
 		}
 	}

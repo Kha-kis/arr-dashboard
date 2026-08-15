@@ -7016,6 +7016,57 @@ describe("shared Plex deletion safety", () => {
 		expect(storedApproval).toMatchObject({ status: "expired" });
 	});
 
+	it("renews volatile provider evidence before a record-only Radarr retry", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const originalEvidence = TEST_PLEX_SCAN_EVIDENCE;
+		const refreshedEvidence = createSanitizedProviderEvidence(
+			["plex"],
+			originalEvidence.sources.map(({ fingerprint: _fingerprint, ...source }) => ({
+				...source,
+				completedAt: "2026-08-15T00:05:00.000Z",
+				statusFingerprint: "d".repeat(64),
+				rowFingerprint: "e".repeat(64),
+			})),
+		);
+		const strictAuthorityChecker = vi.fn().mockResolvedValue(undefined);
+		const retryAuthorityRenewer = vi.fn().mockResolvedValue(refreshedEvidence);
+		Object.assign(deps, {
+			providerEvidenceAuthorityChecker: strictAuthorityChecker,
+			providerRetryAuthorityRenewer: retryAuthorityRenewer,
+		});
+		const storedRetry = approvalRecord({
+			safetySnapshot: radarrSafetySnapshot(undefined, undefined, originalEvidence),
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedRetry);
+		deleteMovie
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"))
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"));
+
+		await executeApprovedItems(deps, "user-1", ["approval-1"]);
+		expect(storedRetry).toMatchObject({ status: "pending", executionToken: null });
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		strictAuthorityChecker.mockImplementation(
+			async (_userId: string, evidence: typeof originalEvidence) => {
+				if (evidence.fingerprint !== refreshedEvidence.fingerprint) {
+					throw new Error("volatile provider evidence changed");
+				}
+			},
+		);
+		storedRetry.status = "approved";
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toEqual({ removed: 1, failed: 0, errors: [] });
+		expect(retryAuthorityRenewer).toHaveBeenCalledWith(
+			"user-1",
+			originalEvidence,
+			expect.any(Function),
+		);
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledTimes(3);
+		expect(storedRetry).toMatchObject({ status: "executed", executionToken: null });
+	});
+
 	it("expires an approved Radarr mutation when the service is repointed after preflight", async () => {
 		const { deps, targetInstance, plexInstance, deleteMovie, deleteMovieFile } = makeDeps({
 			mediaPartCount: 1,

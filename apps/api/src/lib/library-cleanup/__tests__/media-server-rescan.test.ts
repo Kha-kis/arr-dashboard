@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { withCurrentProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
+import { providerInstanceAuthorityFingerprint } from "../../services/service-identity.js";
 import {
 	prepareMediaServerRescans,
 	retryAllPendingMediaServerRescans,
@@ -10,6 +11,7 @@ import {
 import {
 	createSanitizedProviderEvidence,
 	ProviderExecutionAuthorityChangedError,
+	renewCurrentProviderRetryAuthority,
 	serializeExecutableSafetyPlan,
 	serializeProviderScanAuthority,
 } from "../shared-plex-safety.js";
@@ -710,6 +712,53 @@ describe("durable media-server rescans", () => {
 		).rejects.toThrow("section plan changed");
 	});
 
+	it("renews volatile scan authority when a pre-deletion retry keeps the same target plan", async () => {
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		await prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie");
+		const storedAuthority =
+			fixture.prisma.libraryCleanupMediaServerScan.create.mock.calls[0]![0].data.serverIdentity;
+		const refreshedEvidence = createSanitizedProviderEvidence(
+			["plex"],
+			testPlexEvidence.sources.map(({ fingerprint: _fingerprint, ...source }) => ({
+				...source,
+				completedAt: "2026-08-15T00:05:00.000Z",
+				statusFingerprint: "d".repeat(64),
+				rowFingerprint: "e".repeat(64),
+			})),
+		);
+		const refreshedAuthority = serializeProviderScanAuthority(
+			{ instanceId: "plex-1", service: "PLEX", mediaType: "movie" },
+			refreshedEvidence,
+		);
+		(
+			fixture.deps as unknown as {
+				providerScanAuthorityCapturer: ReturnType<typeof vi.fn>;
+			}
+		).providerScanAuthorityCapturer.mockResolvedValue(refreshedAuthority);
+		fixture.prisma.libraryCleanupMediaServerScan.create.mockRejectedValue(
+			Object.assign(new Error("duplicate"), { code: "P2002" }),
+		);
+		Object.assign(fixture.prisma.libraryCleanupMediaServerScan, {
+			findUnique: vi.fn().mockResolvedValue({
+				serverIdentity: storedAuthority,
+				plannedSectionIds: '["movies"]',
+			}),
+		});
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie"),
+		).resolves.toBe(1);
+		expect(fixture.prisma.libraryCleanupMediaServerScan.updateMany).toHaveBeenCalledWith({
+			where: {
+				approvalId: "approval-1",
+				targetKey: "PLEX:plex-1:movie",
+				serverIdentity: storedAuthority,
+				plannedSectionIds: '["movies"]',
+			},
+			data: { serverIdentity: refreshedAuthority },
+		});
+	});
+
 	it("blocks a pre-deletion retry when an earlier media-server target was removed", async () => {
 		const plex = instance("plex-1", "PLEX");
 		const jellyfin = instance("jellyfin-1", "JELLYFIN");
@@ -943,6 +992,107 @@ describe("durable media-server rescans", () => {
 		expect(retryResult).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
 		expect(retryFixture.plexClient.refreshSection).toHaveBeenCalledWith("movies");
 		expect(retryRows[0]).toMatchObject({ status: "triggered", executionToken: null });
+	});
+
+	it("renews record-only retry evidence from current cache data under stable provider identity", async () => {
+		const capturedAt = new Date("2026-08-15T00:00:00.000Z");
+		const refreshedAt = new Date("2026-08-15T00:05:00.000Z");
+		const plexInstance = {
+			...instance("plex-1", "PLEX"),
+			expectedIdentity: "plex-machine",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date("2026-08-14T23:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			updatedAt: new Date("2026-08-14T23:30:00.000Z"),
+		};
+		const accepted = createSanitizedProviderEvidence(
+			["plex"],
+			[
+				{
+					service: "PLEX",
+					instanceFingerprint: providerInstanceAuthorityFingerprint(plexInstance.id),
+					identityKind: plexInstance.identityKind,
+					identityFingerprint: authorityFingerprint({
+						service: plexInstance.service,
+						identityKind: plexInstance.identityKind,
+						expectedIdentity: plexInstance.expectedIdentity,
+					}),
+					connectionGeneration: 3,
+					identityGeneration: 7,
+					cacheType: "plex",
+					completedAt: capturedAt.toISOString(),
+					itemCount: 1,
+					verifiedAt: plexInstance.identityVerifiedAt.toISOString(),
+					statusFingerprint: "a".repeat(64),
+					rowFingerprint: "b".repeat(64),
+				},
+			],
+		);
+		const row = {
+			id: "plex-row-1",
+			instanceId: plexInstance.id,
+			tmdbId: 42,
+			mediaType: "movie",
+			sectionId: "movies",
+			sectionTitle: "Movies",
+			lastWatchedAt: refreshedAt,
+			watchCount: 3,
+			watchedByUsers: "[]",
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			labels: "[]",
+			addedAt: null,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		};
+		const fixture = deps({ instances: [plexInstance] });
+		Object.assign(fixture.deps, {
+			encryptor: { decrypt: vi.fn(() => "decrypted") },
+			providerEvidenceAuthorityChecker: undefined,
+			providerIdentityReader: vi.fn(async () => ({
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				rawIdentity: plexInstance.expectedIdentity,
+				confirmationDigest: "safe",
+				fingerprint: "safe",
+			})),
+		});
+		Object.assign(fixture.prisma, {
+			cacheRefreshStatus: {
+				findMany: vi.fn(async () => [
+					{
+						instanceId: plexInstance.id,
+						cacheType: "plex",
+						lastRefreshedAt: refreshedAt,
+						lastResult: "success",
+						lastErrorMessage: null,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
+						itemCount: 1,
+						connectionGeneration: 3,
+						identityGeneration: 7,
+						generationId: "generation-b",
+						generationMetadata: "{}",
+					},
+				]),
+			},
+			plexCache: { findMany: vi.fn(async () => [row]) },
+			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+				callback(fixture.prisma),
+			),
+		});
+
+		const renewed = await renewCurrentProviderRetryAuthority(fixture.deps, "user-1", accepted);
+
+		expect(renewed.fingerprint).not.toBe(accepted.fingerprint);
+		expect(renewed.sources[0]).toMatchObject({
+			instanceFingerprint: providerInstanceAuthorityFingerprint(plexInstance.id),
+			completedAt: refreshedAt.toISOString(),
+			itemCount: 1,
+		});
 	});
 
 	it("reissues the full Plex plan after a partial attempt", async () => {

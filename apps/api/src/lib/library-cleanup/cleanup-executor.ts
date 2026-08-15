@@ -149,6 +149,7 @@ import {
 	parseExecutableSafetyEnvelope,
 	parseExecutableSafetyPlan,
 	RadarrFileChangedDuringSafetyCheckError,
+	renewCurrentProviderRetryAuthority,
 	type SanitizedProviderEvidence,
 	type SanitizedProviderEvidenceSource,
 	type SharedMediaSafetyPlan,
@@ -4118,7 +4119,7 @@ async function executeQueuedCleanupItemsCore(
 			let approvalIdentityChanged = false;
 			const approvedEnvelope = parseExecutableSafetyEnvelope(approval.safetySnapshot);
 			let approvedPlan = approvedEnvelope?.plan ?? null;
-			const approvedProviderEvidence = approvedEnvelope?.providerEvidence;
+			let approvedProviderEvidence = approvedEnvelope?.providerEvidence;
 			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
 			let recoveringEpisodeUnmonitorPartial =
 				approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE;
@@ -4148,12 +4149,25 @@ async function executeQueuedCleanupItemsCore(
 			}
 			if (!sharedPlexBlock && approvedProviderEvidence) {
 				try {
-					await assertCurrentProviderEvidenceAuthority(
-						deps,
-						userId,
-						approvedProviderEvidence,
-						options.assertExecutionAllowed,
-					);
+					const recordOnlyRetry =
+						approvedPlan?.kind === "verified_radarr_empty" ||
+						(approvedPlan?.kind === "verified_sonarr" &&
+							approvedPlan.files.episodeFiles.length === 0);
+					if (recordOnlyRetry) {
+						approvedProviderEvidence = await renewCurrentProviderRetryAuthority(
+							deps,
+							userId,
+							approvedProviderEvidence,
+							options.assertExecutionAllowed,
+						);
+					} else {
+						await assertCurrentProviderEvidenceAuthority(
+							deps,
+							userId,
+							approvedProviderEvidence,
+							options.assertExecutionAllowed,
+						);
+					}
 				} catch (error) {
 					if (error instanceof CleanupRunLeaseLostError) throw error;
 					providerAuthorityFailed = true;

@@ -1553,6 +1553,41 @@ function currentEvidenceMatches(
 	);
 }
 
+function stableProviderEvidenceMatches(
+	accepted: SanitizedProviderEvidence,
+	current: SanitizedProviderEvidence,
+): boolean {
+	if (
+		accepted.sources.some((source) => source.instanceFingerprint === undefined) ||
+		current.sources.some((source) => source.instanceFingerprint === undefined)
+	) {
+		return currentEvidenceMatches(accepted, current);
+	}
+	if (
+		JSON.stringify(accepted.dependencies) !== JSON.stringify(current.dependencies) ||
+		accepted.sources.length !== current.sources.length
+	) {
+		return false;
+	}
+	const remaining = [...current.sources];
+	for (const acceptedSource of accepted.sources) {
+		const matchIndex = remaining.findIndex(
+			(currentSource) =>
+				acceptedSource.service === currentSource.service &&
+				acceptedSource.instanceFingerprint === currentSource.instanceFingerprint &&
+				acceptedSource.identityKind === currentSource.identityKind &&
+				acceptedSource.identityFingerprint === currentSource.identityFingerprint &&
+				acceptedSource.connectionGeneration === currentSource.connectionGeneration &&
+				acceptedSource.identityGeneration === currentSource.identityGeneration &&
+				acceptedSource.cacheType === currentSource.cacheType &&
+				acceptedSource.verifiedAt === currentSource.verifiedAt,
+		);
+		if (matchIndex < 0) return false;
+		remaining.splice(matchIndex, 1);
+	}
+	return true;
+}
+
 function providerEvidenceSourcesMatch(
 	accepted: SanitizedProviderEvidenceSource[],
 	current: SanitizedProviderEvidenceSource[],
@@ -1596,19 +1631,48 @@ export async function assertCurrentProviderEvidenceAuthority(
 	accepted: SanitizedProviderEvidence,
 	assertLease?: () => Promise<void>,
 ): Promise<void> {
-	return await assertProviderEvidenceAuthority(deps, userId, accepted, assertLease);
+	await authorizeProviderEvidence(deps, userId, accepted, assertLease, currentEvidenceMatches);
 }
 
-async function assertProviderEvidenceAuthority(
+export async function renewCurrentProviderRetryAuthority(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	accepted: SanitizedProviderEvidence,
 	assertLease?: () => Promise<void>,
+): Promise<SanitizedProviderEvidence> {
+	const testRenewer = (
+		deps as unknown as {
+			providerRetryAuthorityRenewer?: (
+				userId: string,
+				evidence: SanitizedProviderEvidence,
+				assertLease?: () => Promise<void>,
+			) => Promise<SanitizedProviderEvidence>;
+		}
+	).providerRetryAuthorityRenewer;
+	if (testRenewer) return await testRenewer(userId, accepted, assertLease);
+	return await authorizeProviderEvidence(
+		deps,
+		userId,
+		accepted,
+		assertLease,
+		stableProviderEvidenceMatches,
+	);
+}
+
+async function authorizeProviderEvidence(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	accepted: SanitizedProviderEvidence,
+	assertLease?: () => Promise<void>,
+	evidenceMatches: (
+		accepted: SanitizedProviderEvidence,
+		current: SanitizedProviderEvidence,
+	) => boolean = currentEvidenceMatches,
 	target?: Pick<ProviderScanTarget, "instanceId" | "service">,
-): Promise<void> {
+): Promise<SanitizedProviderEvidence> {
 	if (accepted.dependencies.length === 0 && accepted.sources.length === 0) {
 		if (target) throw new ProviderExecutionAuthorityChangedError();
-		return;
+		return accepted;
 	}
 	const testAuthorityChecker = (
 		deps as unknown as {
@@ -1621,7 +1685,7 @@ async function assertProviderEvidenceAuthority(
 	).providerEvidenceAuthorityChecker;
 	if (testAuthorityChecker) {
 		await testAuthorityChecker(userId, accepted, assertLease);
-		return;
+		return accepted;
 	}
 	try {
 		const canonicalAccepted = createSanitizedProviderEvidence(
@@ -1639,7 +1703,7 @@ async function assertProviderEvidenceAuthority(
 			new Date(),
 			target,
 		);
-		if (!currentEvidenceMatches(accepted, before.evidence)) {
+		if (!evidenceMatches(accepted, before.evidence)) {
 			throw new ProviderExecutionAuthorityChangedError();
 		}
 		if (!deps.encryptor) throw new ProviderExecutionAuthorityChangedError();
@@ -1685,7 +1749,7 @@ async function assertProviderEvidenceAuthority(
 					target,
 				);
 				if (
-					!currentEvidenceMatches(accepted, current.evidence) ||
+					!currentEvidenceMatches(before.evidence, current.evidence) ||
 					providerExecutionFingerprint(
 						current.instances.map(providerExecutionInstanceFingerprint),
 					) !== expectedInstanceFingerprint
@@ -1695,6 +1759,7 @@ async function assertProviderEvidenceAuthority(
 			},
 			postgresql ? undefined : { isolationLevel: "Serializable" },
 		);
+		return before.evidence;
 	} catch (error) {
 		if (error instanceof ProviderExecutionAuthorityChangedError) throw error;
 		throw new ProviderExecutionAuthorityChangedError();
