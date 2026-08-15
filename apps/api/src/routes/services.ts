@@ -23,7 +23,10 @@ import {
 	httpAuthSchema,
 } from "../lib/services/http-auth-validation.js";
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
-import { readProviderIdentity } from "../lib/services/service-identity.js";
+import {
+	type ProviderIdentityObservation,
+	readProviderIdentity,
+} from "../lib/services/service-identity.js";
 import {
 	clearDurableProviderCacheState,
 	confirmsIdentityCandidate,
@@ -37,7 +40,6 @@ import {
 } from "../lib/services/service-identity-lifecycle.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
-import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { assertNoActiveDeploymentOwnership } from "../lib/trash-guides/deployment-operation-gate.js";
 import {
 	assertEquivalentDeploymentMappingAuthority,
@@ -48,6 +50,7 @@ import {
 	isCurrentDeploymentConnectionMapping,
 	normalizeDeploymentBaseUrl,
 } from "../lib/trash-guides/deployment-target.js";
+import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { validateRequest } from "../lib/utils/validate.js";
 import { invalidatePulseCache } from "./pulse.js";
 
@@ -649,7 +652,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					payload.apiKey !== undefined ||
 					payload.httpAuth !== undefined);
 			if (providerIdentityReadRequired) {
-				let observation;
+				let observation: ProviderIdentityObservation;
 				try {
 					observation = await readProviderIdentity(
 						buildIdentityCandidateSnapshot(existing, payload, app.encryptor),
