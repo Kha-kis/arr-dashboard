@@ -265,6 +265,8 @@ export type {
 	SyncProgress,
 	SyncProgressStatus,
 	SyncResult,
+	SyncReviewNeeded,
+	SyncReviewNeededResponse,
 	SyncValidationRequest,
 	ValidationResult,
 } from "./sync";
@@ -272,6 +274,7 @@ export {
 	acknowledgeSyncReview,
 	createSyncProgressStream,
 	executeSync,
+	fetchSyncsNeedingReview,
 	getSyncProgress,
 	validateSync,
 } from "./sync";

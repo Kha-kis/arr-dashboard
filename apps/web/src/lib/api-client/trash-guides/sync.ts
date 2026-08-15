@@ -78,6 +78,20 @@ export interface SyncProgress {
 	errors: SyncError[];
 }
 
+export interface SyncReviewNeeded {
+	id: string;
+	templateId: string;
+	templateName: string;
+	instanceId: string;
+	instanceName: string;
+	startedAt: string;
+	errorLog: string | null;
+}
+
+export interface SyncReviewNeededResponse {
+	syncs: SyncReviewNeeded[];
+}
+
 export interface AcknowledgeSyncReviewResult {
 	success: boolean;
 	status: "FAILED";
@@ -119,6 +133,10 @@ export async function executeSync(request: SyncExecuteRequest): Promise<SyncResu
  */
 export async function getSyncProgress(syncId: string): Promise<SyncProgress> {
 	return await apiRequest<SyncProgress>(`/api/trash-guides/sync/${syncId}/progress`);
+}
+
+export async function fetchSyncsNeedingReview(): Promise<SyncReviewNeededResponse> {
+	return await apiRequest<SyncReviewNeededResponse>("/api/trash-guides/sync/review-needed");
 }
 
 /**

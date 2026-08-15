@@ -11,10 +11,12 @@ import {
 	acknowledgeSyncReview,
 	createSyncProgressStream,
 	executeSync,
+	fetchSyncsNeedingReview,
 	getSyncProgress,
 	type SyncExecuteRequest,
 	type SyncProgress,
 	type SyncResult,
+	type SyncReviewNeededResponse,
 	type SyncValidationRequest,
 	type ValidationResult,
 	validateSync,
@@ -236,6 +238,26 @@ export function useExecuteSync() {
 	});
 }
 
+export function useSyncsNeedingReview() {
+	return useQuery<SyncReviewNeededResponse, Error>({
+		queryKey: trashGuidesKeys.sync.reviewNeeded,
+		queryFn: fetchSyncsNeedingReview,
+	});
+}
+
+export function useAcknowledgeSyncReview() {
+	const queryClient = useQueryClient();
+
+	return useMutation<AcknowledgeSyncReviewResult, Error, string>({
+		mutationFn: acknowledgeSyncReview,
+		onSuccess: async () => {
+			await queryClient.invalidateQueries({
+				queryKey: trashGuidesKeys.sync.reviewNeeded,
+			});
+		},
+	});
+}
+
 // ============================================================================
 // Progress Streaming Hook with SSE and Polling Fallback
 // ============================================================================
@@ -309,10 +331,4 @@ export function useSyncProgress(syncId: string | null, enabled = true) {
 		isLoading: usePolling ? pollingQuery.isLoading : !progress && !error,
 		isPolling: usePolling,
 	};
-}
-
-export function useAcknowledgeSyncReview() {
-	return useMutation<AcknowledgeSyncReviewResult, Error, { syncId: string }>({
-		mutationFn: ({ syncId }) => acknowledgeSyncReview(syncId),
-	});
 }
