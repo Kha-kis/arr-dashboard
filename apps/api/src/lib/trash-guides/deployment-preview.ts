@@ -41,6 +41,7 @@ import {
 	getEquivalentServiceInstanceIds,
 	isCurrentDeploymentConnectionMapping,
 	isLegacyDeploymentConnectionMapping,
+	isVerifiedClonedProfileSourceConnection,
 	resolveDeploymentTarget,
 } from "./deployment-target.js";
 
@@ -90,6 +91,7 @@ interface ParsedTemplateConfig {
 	customFormats?: TemplateCustomFormat[];
 	completeQualityProfile?: {
 		sourceInstanceId?: string;
+		sourceConnectionStateToken?: string;
 		sourceProfileId?: number;
 	};
 	qualityProfile?: {
@@ -545,13 +547,22 @@ export class DeploymentPreviewService {
 				"This 2.x deployment mapping is not yet bound to a verified ARR connection. Executing this exact preview will bind it to the current connection only after the reviewed deployment succeeds.",
 			);
 		}
+		const isVerifiedSourceInstance = qualityProfileMapping
+			? false
+			: isVerifiedClonedProfileSourceConnection({
+					sourceInstanceId: templateConfig.completeQualityProfile?.sourceInstanceId,
+					sourceConnectionStateToken:
+						templateConfig.completeQualityProfile?.sourceConnectionStateToken,
+					equivalentInstanceIds,
+					sourceInstance: aliases.find(
+						(alias) => alias.id === templateConfig.completeQualityProfile?.sourceInstanceId,
+					),
+				});
 		const resolvedTarget = resolveDeploymentTarget({
 			profiles: instanceQualityProfiles,
 			mapping: qualityProfileMapping,
 			sourceProfileId: templateConfig.completeQualityProfile?.sourceProfileId,
-			isSourceInstance: equivalentInstanceIds.includes(
-				templateConfig.completeQualityProfile?.sourceInstanceId ?? "",
-			),
+			isSourceInstance: isVerifiedSourceInstance,
 			sourceProfileName: template.sourceQualityProfileName,
 			templateName: template.name,
 		});
@@ -641,7 +652,9 @@ export class DeploymentPreviewService {
 				warnings.push(
 					qualityProfileMapping
 						? `Quality profile "${qualityProfileMapping.qualityProfileName}" (ID: ${qualityProfileMapping.qualityProfileId}) was recovered as "${resolvedTarget.profileName}" (ID: ${targetProfile.id}). The stored mapping will be updated on deploy.`
-						: `Quality profile matched by name ("${resolvedTarget.profileName}") rather than stored ID. Score conflict detection is based on name match.`,
+						: resolvedTarget.matchedBy === "source_id"
+							? `Quality profile matched by cloned source ID ("${resolvedTarget.profileName}", ID: ${targetProfile.id}) rather than a stored deployment mapping.`
+							: `Quality profile matched by name ("${resolvedTarget.profileName}") rather than stored ID. Score conflict detection is based on name match.`,
 				);
 			}
 			for (const formatItem of targetProfile.formatItems || []) {

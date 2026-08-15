@@ -66,6 +66,7 @@ import {
 	getEquivalentServiceInstanceIds,
 	isCurrentDeploymentConnectionMapping,
 	isLegacyDeploymentConnectionMapping,
+	isVerifiedClonedProfileSourceConnection,
 	resolveDeploymentTarget,
 } from "./deployment-target.js";
 import { createQualityProfileFromSchema } from "./profile-creation-strategies.js";
@@ -1869,13 +1870,22 @@ export class DeploymentExecutorService {
 					);
 				}
 			}
+			const isVerifiedSourceInstance = qualityProfileMapping
+				? false
+				: isVerifiedClonedProfileSourceConnection({
+						sourceInstanceId: templateConfig.completeQualityProfile?.sourceInstanceId,
+						sourceConnectionStateToken:
+							templateConfig.completeQualityProfile?.sourceConnectionStateToken,
+						equivalentInstanceIds,
+						sourceInstance: serviceAliases.find(
+							(alias) => alias.id === templateConfig.completeQualityProfile?.sourceInstanceId,
+						),
+					});
 			const resolvedTarget = resolveDeploymentTarget({
 				profiles: allProfiles,
 				mapping: qualityProfileMapping,
 				sourceProfileId: templateConfig.completeQualityProfile?.sourceProfileId,
-				isSourceInstance: equivalentInstanceIds.includes(
-					templateConfig.completeQualityProfile?.sourceInstanceId ?? "",
-				),
+				isSourceInstance: isVerifiedSourceInstance,
 				sourceProfileName: template.sourceQualityProfileName,
 				templateName: template.name,
 			});

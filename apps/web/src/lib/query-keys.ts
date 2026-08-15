@@ -175,6 +175,10 @@ export const qualityProfileKeys = {
 		["profile-match", profileName, serviceType] as const,
 	clone: {
 		profiles: (instanceId: string | null) => ["profile-clone", "profiles", instanceId] as const,
+		configuration: (trashId: string) =>
+			["cloned-profile-details", "configuration", trashId] as const,
+		sourceReview: (trashId: string) =>
+			["cloned-profile-details", "source-review", trashId] as const,
 	},
 };
 

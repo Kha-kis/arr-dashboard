@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api-client/base";
 import type { QualityProfileSummary } from "../../lib/api-client/trash-guides";
+import { qualityProfileKeys } from "../../lib/query-keys";
 import type {
 	WizardAvailableFormat,
+	WizardClonedSourceReview,
 	WizardCFConfigurationResult,
 	WizardCFGroup,
 	WizardCustomFormat,
@@ -116,7 +118,7 @@ export function useCFConfiguration({
 		queryKey: isEditMode
 			? ["template-edit-data", editingTemplate?.id]
 			: isCloned
-				? ["cloned-profile-details", qualityProfile.trashId]
+				? qualityProfileKeys.clone.configuration(qualityProfile.trashId ?? "")
 				: ["quality-profile-details", serviceType, qualityProfile.trashId],
 		queryFn: async () => {
 			if (isEditMode && editingTemplate) {
@@ -398,12 +400,14 @@ async function fetchClonedProfileData(trashId: string) {
 		upgradeAllowed?: boolean;
 		cutoff?: number;
 		minFormatScore?: number;
+		cutoffFormatScore?: number;
 		items?: Array<{
 			name?: string;
 			allowed?: boolean;
 			quality?: { name?: string; source?: string; resolution?: number };
 			items?: Array<string | { name?: string; quality?: { name?: string } }>;
 		}>;
+		language?: unknown;
 	}
 
 	// Fetch profile details from the source instance
@@ -411,6 +415,7 @@ async function fetchClonedProfileData(trashId: string) {
 		success: boolean;
 		error?: string;
 		data?: {
+			sourceStateToken: string;
 			profile: InstanceProfile;
 			customFormats: InstanceCF[];
 			allCustomFormats: InstanceCF[];
@@ -422,7 +427,10 @@ async function fetchClonedProfileData(trashId: string) {
 		throw new Error(response.error || "Failed to fetch profile details from instance");
 	}
 
-	const { profile, customFormats, allCustomFormats } = response.data;
+	const { sourceStateToken, profile, customFormats, allCustomFormats } = response.data;
+	if (!sourceStateToken) {
+		throw new Error("The cloned profile source review is unavailable. Refresh and try again.");
+	}
 
 	// Detect service type from instance for description enrichment
 	// Instance response may include serviceType; fall back to inferring from trashId
@@ -477,6 +485,20 @@ async function fetchClonedProfileData(trashId: string) {
 			items: item.items?.map((q) => (typeof q === "string" ? q : q.name || q.quality?.name || "")),
 		})) || [];
 
+	const clonedSourceReview: WizardClonedSourceReview = {
+		sourceStateToken,
+		profile: {
+			name: profile.name,
+			upgradeAllowed: profile.upgradeAllowed,
+			cutoff: profile.cutoff,
+			minFormatScore: profile.minFormatScore,
+			cutoffFormatScore: profile.cutoffFormatScore,
+			items: profile.items,
+			language: profile.language,
+		},
+		mandatoryCFTrashIds: customFormats.map((cf) => cf.trash_id),
+	};
+
 	return {
 		cfGroups: [], // Cloned profiles don't have CF groups
 		mandatoryCFs,
@@ -493,6 +515,7 @@ async function fetchClonedProfileData(trashId: string) {
 			totalOptionalCFs: allCustomFormats.length,
 		},
 		isClonedProfile: true,
+		clonedSourceReview,
 		qualityItems,
 	};
 }

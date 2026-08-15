@@ -112,6 +112,21 @@ export interface WizardProfileSummary {
 	minUpgradeFormatScore?: number;
 }
 
+/** Exact ARR source snapshot reviewed before creating a cloned template. */
+export interface WizardClonedSourceReview {
+	sourceStateToken: string;
+	profile: {
+		name: string;
+		upgradeAllowed?: boolean;
+		cutoff?: number;
+		minFormatScore?: number;
+		cutoffFormatScore?: number;
+		items?: unknown[];
+		language?: unknown;
+	};
+	mandatoryCFTrashIds: string[];
+}
+
 /**
  * The full result returned by useCFConfiguration's queryFn.
  * This is the union of all three modes (edit, cloned, normal).
@@ -126,6 +141,8 @@ export interface WizardCFConfigurationResult {
 	profile?: WizardProfileSummary;
 	/** Present in cloned mode */
 	isClonedProfile?: boolean;
+	/** Present in cloned mode and carried unchanged through final creation. */
+	clonedSourceReview?: WizardClonedSourceReview;
 	/** Present in normal mode — TRaSH-specific fields */
 	trashScoreSet?: string;
 	cfDescriptions?: Record<string, { description: string; displayName: string }>;

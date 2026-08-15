@@ -1122,6 +1122,89 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		).rejects.toThrow("appeared during deployment");
 	});
 
+	it.each(["RADARR", "SONARR"] as const)(
+		"updates the cloned source profile instead of creating the renamed template for %s",
+		async (serviceType) => {
+			const profile = {
+				id: 7,
+				name: "Any",
+				upgradeAllowed: true,
+				cutoff: 1,
+				minFormatScore: 0,
+				formatItems: [],
+				items: [],
+			};
+			const postWriteProfile = {
+				...profile,
+				formatItems: [{ format: 42, score: 20 }],
+			};
+			const create = vi.fn();
+			const update = vi.fn().mockResolvedValue(postWriteProfile);
+			const client = {
+				serviceType,
+				customFormat: { getAll: vi.fn().mockResolvedValue([]) },
+				qualityProfile: {
+					create,
+					getById: vi
+						.fn()
+						.mockResolvedValueOnce(profile)
+						.mockResolvedValueOnce(profile)
+						.mockResolvedValueOnce(postWriteProfile),
+					update,
+				},
+			};
+			const prisma = {
+				instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+			};
+			const executor = new DeploymentExecutorService(prisma as never, {} as never);
+			const syncQualityProfile = (
+				executor as unknown as {
+					syncQualityProfile: (...args: unknown[]) => Promise<{ errors: string[] }>;
+				}
+			).syncQualityProfile.bind(executor);
+
+			const result = await syncQualityProfile(
+				client,
+				{ qualityProfile: { trash_score_set: "default" } },
+				[
+					{
+						trashId: "managed-cf",
+						name: "Managed CF",
+						originalConfig: { trash_scores: { default: 20 } },
+					},
+				],
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				"Any",
+				profile,
+				createQualityProfileStateToken(profile),
+				[],
+				new Map(),
+				["instance-1"],
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				[],
+				new Map([["managed-cf", 42]]),
+			);
+
+			expect(result.errors).toEqual([]);
+			expect(update).toHaveBeenCalledWith(
+				7,
+				expect.objectContaining({
+					id: 7,
+					name: "Any",
+					formatItems: [{ format: 42, score: 20 }],
+				}),
+			);
+			expect(create).not.toHaveBeenCalled();
+		},
+	);
+
 	it("persists the exact created profile state before later preparation can fail", async () => {
 		const createdProfile = {
 			id: 9,

@@ -36,7 +36,11 @@ import { CFConfigurationCloned } from "./cf-configuration-cloned";
 import { CFConfigurationEdit } from "./cf-configuration-edit";
 import type { CFSelectionState, ConditionEditorTarget } from "./cf-configuration-types";
 import type { ResolvedCF } from "./cf-resolution";
-import type { WizardEditingTemplate, ResolveScoreFn } from "../../types/wizard-types";
+import type {
+	ResolveScoreFn,
+	WizardClonedSourceReview,
+	WizardEditingTemplate,
+} from "../../types/wizard-types";
 
 /**
  * Wizard-specific profile type that allows undefined trashId for edit mode.
@@ -50,7 +54,10 @@ interface CFConfigurationProps {
 	serviceType: "RADARR" | "SONARR";
 	qualityProfile: WizardSelectedProfile;
 	initialSelections: Record<string, CFSelectionState>;
-	onNext: (selections: Record<string, CFSelectionState>) => void;
+	onNext: (
+		selections: Record<string, CFSelectionState>,
+		clonedSourceReview?: WizardClonedSourceReview,
+	) => void;
 	onBack?: () => void; // Optional - undefined means hide back button
 	isEditMode?: boolean; // Edit mode flag to skip API call
 	editingTemplate?: WizardEditingTemplate; // Template being edited (contains all CF data)
@@ -288,11 +295,10 @@ export const CFConfiguration = ({
 	const handleNext = () => {
 		// Pass selections to the next step (Summary/Review)
 		// Template naming is now handled in the Review step
-		onNext(selections);
+		onNext(selections, data?.clonedSourceReview);
 	};
 
-	// For cloned profile mode, skip loading state (we have cfResolutions)
-	if (!isClonedProfileMode && isLoading) {
+	if (isLoading) {
 		return (
 			<div className="space-y-6 animate-in fade-in duration-300">
 				{/* Header Skeleton */}
@@ -360,13 +366,18 @@ export const CFConfiguration = ({
 		);
 	}
 
-	if (!isClonedProfileMode && error) {
+	if (error || (isClonedProfileMode && !data?.clonedSourceReview)) {
 		return (
 			<div className="animate-in fade-in duration-300">
 				<Alert variant="danger">
 					<AlertCircle className="h-4 w-4" />
 					<AlertDescription>
-						{getErrorMessage(error, "Failed to load quality profile details")}
+						{getErrorMessage(
+							error,
+							isClonedProfileMode
+								? "The cloned profile review is unavailable. Refresh and try again."
+								: "Failed to load quality profile details",
+						)}
 					</AlertDescription>
 				</Alert>
 			</div>

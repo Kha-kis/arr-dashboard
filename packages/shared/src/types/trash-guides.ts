@@ -758,6 +758,7 @@ export interface CompleteQualityProfile {
 	// Source information
 	sourceInstanceId: string; // Instance this was imported from
 	sourceInstanceLabel?: string; // Friendly name of source instance
+	sourceConnectionStateToken?: string; // Exact ARR connection reviewed during cloning
 	sourceProfileId: number; // *arr quality profile ID
 	sourceProfileName: string; // Original profile name
 	importedAt: string; // When it was imported
