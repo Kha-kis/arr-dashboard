@@ -56,7 +56,7 @@ function instance(overrides: Record<string, unknown> = {}) {
 
 function prismaFor(
 	row: Record<string, unknown> | undefined,
-	options: { runClaimToken?: string | null; lockOrder?: string[] } = {},
+	options: { runClaimToken?: string | null; lockOrder?: string[]; lockedQueries?: string[] } = {},
 ) {
 	let runClaimToken = options.runClaimToken ?? null;
 	const tx = {
@@ -78,7 +78,8 @@ function prismaFor(
 			),
 		},
 		$queryRawUnsafe: vi.fn(async (query: string) => {
-			options.lockOrder?.push(query.includes("LibraryCleanupConfig") ? "cleanup" : "service");
+			options.lockedQueries?.push(query);
+			options.lockOrder?.push(query.includes("library_cleanup_configs") ? "cleanup" : "service");
 			return [];
 		}),
 	};
@@ -180,7 +181,8 @@ describe("withGuardedProviderPublication", () => {
 		vi.stubEnv("DATABASE_URL", "postgresql://publication-lock-test");
 		const row = instance();
 		const lockOrder: string[] = [];
-		const prisma = prismaFor(row, { lockOrder });
+		const lockedQueries: string[] = [];
+		const prisma = prismaFor(row, { lockOrder, lockedQueries });
 		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
 
 		try {
@@ -193,6 +195,10 @@ describe("withGuardedProviderPublication", () => {
 			);
 
 			expect(lockOrder).toEqual(["cleanup", "service"]);
+			expect(lockedQueries).toEqual([
+				'SELECT "id" FROM "library_cleanup_configs" WHERE "id" = $1 FOR UPDATE',
+				'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+			]);
 		} finally {
 			vi.unstubAllEnvs();
 		}

@@ -137,7 +137,7 @@ export async function withCurrentProviderPublicationAuthority<T>(
 			});
 			if (postgresql) {
 				await tx.$queryRawUnsafe(
-					'SELECT "id" FROM "LibraryCleanupConfig" WHERE "id" = $1 FOR UPDATE',
+					'SELECT "id" FROM "library_cleanup_configs" WHERE "id" = $1 FOR UPDATE',
 					cleanupConfig.id,
 				);
 			}
