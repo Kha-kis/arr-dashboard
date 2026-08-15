@@ -512,6 +512,9 @@ export async function deploymentRoutes(app: FastifyInstance) {
 					await transaction.instanceQualityProfileOverride.deleteMany({
 						where: {
 							userId,
+							// Pending and uncertain rows are durable upstream-write intents. Keep
+							// them available for exact retry/reconciliation after unlinking.
+							status: "APPLIED",
 							OR: equivalentMappings.map((candidate) => ({
 								instanceId: candidate.instanceId,
 								qualityProfileId: candidate.qualityProfileId,

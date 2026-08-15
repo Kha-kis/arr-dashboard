@@ -49,6 +49,7 @@ describe("sync rollback route", () => {
 	const formatDelete = vi.fn();
 	const syncUpdate = vi.fn().mockResolvedValue({});
 	const syncFindFirst = vi.fn();
+	const syncFindMany = vi.fn();
 	const deploymentFindMany = vi.fn();
 	const deploymentUpdateMany = vi.fn();
 	const formatGetAll = vi.fn();
@@ -144,7 +145,7 @@ describe("sync rollback route", () => {
 			},
 			trashSyncHistory: {
 				findFirst: syncFindFirst,
-				findMany: vi.fn().mockResolvedValue([]),
+				findMany: syncFindMany.mockResolvedValue([]),
 				update: syncUpdate,
 				updateMany: syncUpdate,
 			},
@@ -237,6 +238,51 @@ describe("sync rollback route", () => {
 		expect(profileUpdate).not.toHaveBeenCalled();
 		expect(formatUpdate).not.toHaveBeenCalled();
 		expect(formatDelete).not.toHaveBeenCalled();
+	});
+
+	it("lists only backup-less uncertain syncs that require administrator review", async () => {
+		const startedAt = new Date("2026-08-15T10:00:00.000Z");
+		syncFindMany.mockResolvedValue([
+			{
+				id: "sync-review-1",
+				templateId: "template-1",
+				instanceId: instance.id,
+				startedAt,
+				errorLog: "The application restarted before a deployment ledger was linked.",
+				template: { name: "HD Bluray" },
+				instance: { label: "Radarr" },
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)("GET", "/review-needed");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(syncFindMany).toHaveBeenCalledWith({
+			where: { userId, status: "UNCERTAIN", backupId: null },
+			select: {
+				id: true,
+				templateId: true,
+				instanceId: true,
+				startedAt: true,
+				errorLog: true,
+				template: { select: { name: true } },
+				instance: { select: { label: true } },
+			},
+			orderBy: { startedAt: "asc" },
+		});
+		expect(response.json()).toEqual({
+			syncs: [
+				{
+					id: "sync-review-1",
+					templateId: "template-1",
+					templateName: "HD Bluray",
+					instanceId: instance.id,
+					instanceName: "Radarr",
+					startedAt: startedAt.toISOString(),
+					errorLog: "The application restarted before a deployment ledger was linked.",
+				},
+			],
+		});
 	});
 
 	it("refuses to acknowledge a sync that has rollback evidence", async () => {

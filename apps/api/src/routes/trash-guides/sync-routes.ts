@@ -488,6 +488,39 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	});
 
 	/**
+	 * List backup-less uncertain syncs that require explicit administrator review.
+	 * These rows survive restarts and continue to block ARR writes until reviewed.
+	 */
+	app.get("/review-needed", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const syncs = await app.prisma.trashSyncHistory.findMany({
+			where: { userId, status: "UNCERTAIN", backupId: null },
+			select: {
+				id: true,
+				templateId: true,
+				instanceId: true,
+				startedAt: true,
+				errorLog: true,
+				template: { select: { name: true } },
+				instance: { select: { label: true } },
+			},
+			orderBy: { startedAt: "asc" },
+		});
+
+		return reply.send({
+			syncs: syncs.map((sync) => ({
+				id: sync.id,
+				templateId: sync.templateId,
+				templateName: sync.template?.name || "",
+				instanceId: sync.instanceId,
+				instanceName: sync.instance?.label || "",
+				startedAt: sync.startedAt.toISOString(),
+				errorLog: sync.errorLog,
+			})),
+		});
+	});
+
+	/**
 	 * Get sync details
 	 * GET /api/trash-guides/sync/:syncId
 	 */

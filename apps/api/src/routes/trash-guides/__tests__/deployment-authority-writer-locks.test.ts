@@ -320,6 +320,7 @@ describe("deployment authority writer locking", () => {
 		expect(deleteOverrides).toHaveBeenCalledWith(
 			expect.objectContaining({
 				where: expect.objectContaining({
+					status: "APPLIED",
 					OR: expect.arrayContaining([
 						expect.objectContaining({ instanceId: instance.id, qualityProfileId: 4 }),
 						expect.objectContaining({ instanceId: aliasInstance.id, qualityProfileId: 4 }),
