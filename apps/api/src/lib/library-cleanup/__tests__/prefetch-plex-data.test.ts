@@ -264,7 +264,6 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		};
 		const completedAt = new Date();
 		const normalStatus = completeStatus(instance.id, completedAt, 1);
-		const retainedAt = new Date(completedAt.getTime() - 6 * 60 * 60 * 1000);
 		const episodeStatus = completeStatus(instance.id, completedAt, 1);
 		const episodeGroupBy = vi
 			.fn()
@@ -287,6 +286,10 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			},
 			plexCache: {
 				count: vi.fn().mockResolvedValue(1),
+				groupBy: vi.fn().mockResolvedValue([
+					{ instanceId: instance.id, tmdbId: 42 },
+					{ instanceId: instance.id, tmdbId: 84 },
+				]),
 				findMany: vi
 					.fn()
 					.mockResolvedValue([
@@ -294,20 +297,10 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 					]),
 			},
 			plexEpisodeCache: {
-				findMany: vi.fn().mockResolvedValue([
-					{
-						instanceId: instance.id,
-						showTmdbId: 42,
-						refreshedAt: completedAt,
-						sourceFingerprint: plexConnectionFingerprint(instance as never),
-					},
-					{
-						instanceId: instance.id,
-						showTmdbId: 84,
-						refreshedAt: retainedAt,
-						sourceFingerprint: plexConnectionFingerprint(instance as never),
-					},
-				]),
+				findMany: vi.fn(() => {
+					throw new Error("episode evidence validation must stay database-bounded");
+				}),
+				count: vi.fn().mockResolvedValue(2),
 				groupBy: episodeGroupBy,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -322,6 +315,70 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		expect(result.ctx.plexEpisodeMap?.get(42)).toMatchObject({ total: 1, watched: 1 });
 		expect(result.ctx.plexEpisodeMap?.get(84)).toMatchObject({ total: 1, watched: 0 });
 		expect(episodeGroupBy).toHaveBeenCalledTimes(4);
+	});
+
+	it("ignores episode rows orphaned from the current eligible Plex inventory", async () => {
+		const instance = {
+			id: "plex-inst-1",
+			updatedAt: new Date(0),
+			service: "PLEX",
+			enabled: true,
+			baseUrl: "http://plex.internal:32400",
+			encryptedApiKey: "encrypted-token",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			label: null,
+		};
+		const completedAt = new Date();
+		const normalStatus = completeStatus(instance.id, completedAt, 1);
+		const episodeStatus = completeStatus(instance.id, completedAt, 1);
+		const episodeGroupBy = vi
+			.fn()
+			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
+			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
+			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }])
+			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }]);
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn(({ where }: { where: { cacheType: string } }) =>
+					Promise.resolve([where.cacheType === "plex_episode" ? episodeStatus : normalStatus]),
+				),
+			},
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				groupBy: vi.fn().mockResolvedValue([{ instanceId: instance.id, tmdbId: 42 }]),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
+			},
+			plexEpisodeCache: {
+				findMany: vi.fn(() => {
+					throw new Error("orphan rows must not be materialized for validation");
+				}),
+				count: vi.fn().mockResolvedValue(1),
+				groupBy: episodeGroupBy,
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildPlexEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[plexCleanupRule("plex_episode_completion")],
+		);
+
+		expect(result.failedSources).not.toContain("plex");
+		expect(result.ctx.plexEpisodeMap?.get(42)).toMatchObject({ total: 1, watched: 1 });
+		expect(result.ctx.plexEpisodeMap?.has(84)).toBe(false);
+		for (const call of episodeGroupBy.mock.calls) {
+			const where = JSON.stringify(call[0]?.where);
+			expect(where).toContain(`"instanceId":"${instance.id}"`);
+			expect(where).toContain('"showTmdbId":{"in":[42]}');
+			expect(where).not.toContain("84");
+		}
 	});
 
 	it.each(["generation", "row"] as const)(
@@ -357,6 +414,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 				},
 				plexCache: {
 					count: vi.fn().mockResolvedValue(1),
+					groupBy: vi.fn().mockResolvedValue([{ instanceId: instance.id, tmdbId: 42 }]),
 					findMany: vi
 						.fn()
 						.mockResolvedValue([
@@ -364,14 +422,13 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 						]),
 				},
 				plexEpisodeCache: {
-					findMany: vi.fn().mockResolvedValue([
-						{
-							instanceId: instance.id,
-							showTmdbId: 42,
-							refreshedAt: futureTarget === "row" ? futureAt : completedAt,
-							sourceFingerprint: plexConnectionFingerprint(instance as never),
-						},
-					]),
+					findMany: vi.fn(() => {
+						throw new Error("episode evidence validation must stay database-bounded");
+					}),
+					count: vi
+						.fn()
+						.mockResolvedValueOnce(1)
+						.mockResolvedValueOnce(futureTarget === "row" ? 0 : 1),
 					groupBy: episodeGroupBy,
 				},
 			} as unknown as CleanupExecutorDeps["prisma"];
@@ -387,6 +444,69 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			expect(episodeGroupBy).not.toHaveBeenCalled();
 		},
 	);
+
+	it("rejects episode aggregates interleaved with a newer cache generation", async () => {
+		const instance = {
+			id: "plex-inst-1",
+			updatedAt: new Date(0),
+			service: "PLEX",
+			enabled: true,
+			baseUrl: "http://plex.internal:32400",
+			encryptedApiKey: "encrypted-token",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			label: null,
+		};
+		const completedAt = new Date();
+		const normalStatus = completeStatus(instance.id, completedAt, 1);
+		const episodeStatus = completeStatus(instance.id, completedAt, 1);
+		let episodeStatusReads = 0;
+		const episodeGroupBy = vi
+			.fn()
+			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 100 } }])
+			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
+			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 100 } }])
+			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }]);
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn(({ where }: { where: { cacheType: string } }) => {
+					if (where.cacheType !== "plex_episode") return Promise.resolve([normalStatus]);
+					episodeStatusReads += 1;
+					return Promise.resolve([
+						episodeStatusReads === 1
+							? episodeStatus
+							: { ...episodeStatus, generationId: "generation-plex-inst-2" },
+					]);
+				}),
+			},
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				groupBy: vi.fn().mockResolvedValue([{ instanceId: instance.id, tmdbId: 42 }]),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
+			},
+			plexEpisodeCache: {
+				count: vi.fn().mockResolvedValue(1),
+				groupBy: episodeGroupBy,
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildPlexEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[plexCleanupRule("plex_episode_completion")],
+		);
+
+		expect(episodeGroupBy).toHaveBeenCalledTimes(4);
+		expect(episodeStatusReads).toBe(2);
+		expect(result.ctx.plexEpisodeMap).toBeUndefined();
+		expect(result.failedSources).toContain("plex");
+	});
 
 	it("rejects an interleaved map/section generation", async () => {
 		const instance = { id: "plex-inst-1", updatedAt: new Date(0) };

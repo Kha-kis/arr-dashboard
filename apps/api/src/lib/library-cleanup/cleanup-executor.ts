@@ -124,7 +124,9 @@ async function loadCompleteCacheGenerations(
 	deps: CleanupExecutorDeps,
 	instances: Array<{ id: string; updatedAt: Date }>,
 	cacheType: string,
-): Promise<Map<string, { completedAt: Date; itemCount: number }> | undefined> {
+): Promise<
+	Map<string, { completedAt: Date; itemCount: number; generationId: string | null }> | undefined
+> {
 	if (instances.length === 0) return undefined;
 	const statuses = await deps.prisma.cacheRefreshStatus.findMany({
 		where: { instanceId: { in: instances.map((instance) => instance.id) }, cacheType },
@@ -136,12 +138,16 @@ async function loadCompleteCacheGenerations(
 			lastAttemptResult: true,
 			lastAttemptErrorMessage: true,
 			itemCount: true,
+			generationId: true,
 		},
 	});
 	const byInstance = new Map(statuses.map((status) => [status.instanceId, status]));
 	const nowMs = Date.now();
 	const freshnessThreshold = nowMs - PROVIDER_EVIDENCE_FRESHNESS_MS;
-	const generations = new Map<string, { completedAt: Date; itemCount: number }>();
+	const generations = new Map<
+		string,
+		{ completedAt: Date; itemCount: number; generationId: string | null }
+	>();
 	for (const instance of instances) {
 		const status = byInstance.get(instance.id);
 		if (
@@ -158,6 +164,7 @@ async function loadCompleteCacheGenerations(
 		generations.set(instance.id, {
 			completedAt: status.lastRefreshedAt,
 			itemCount: status.itemCount,
+			generationId: status.generationId,
 		});
 	}
 	return generations;
@@ -3840,53 +3847,98 @@ async function prefetchPlexEpisodeData(
 		if (instanceIds.length === 0) return undefined;
 		const generations = await loadCompleteCacheGenerations(deps, instances, "plex_episode");
 		if (!generations) return undefined;
-		const generationRows = await prisma.plexEpisodeCache.findMany({
-			where: { instanceId: { in: instanceIds } },
-			select: { instanceId: true, refreshedAt: true, sourceFingerprint: true },
+		const eligibleShowRows = await prisma.plexCache.groupBy({
+			by: ["instanceId", "tmdbId"],
+			where: {
+				instanceId: { in: instanceIds },
+				mediaType: "series",
+				ratingKey: { not: null },
+				watchCount: { gt: 0 },
+			},
 		});
+		const eligibleShowsByInstance = new Map<string, number[]>();
+		for (const row of eligibleShowRows) {
+			const showIds = eligibleShowsByInstance.get(row.instanceId) ?? [];
+			showIds.push(row.tmdbId);
+			eligibleShowsByInstance.set(row.instanceId, showIds);
+		}
 		const nowMs = Date.now();
 		const freshnessThreshold = nowMs - PROVIDER_EVIDENCE_FRESHNESS_MS;
-		for (const row of generationRows) {
-			const generation = generations.get(row.instanceId);
-			const instance = instances.find((candidate) => candidate.id === row.instanceId);
-			if (
-				!generation ||
-				!instance ||
-				row.refreshedAt === null ||
-				row.refreshedAt.getTime() > generation.completedAt.getTime() ||
-				row.refreshedAt.getTime() < freshnessThreshold ||
-				row.refreshedAt.getTime() < instance.updatedAt.getTime() ||
-				row.sourceFingerprint !== plexConnectionFingerprint(instance as ServiceInstance)
-			) {
+		const currentEpisodeSources: Prisma.PlexEpisodeCacheWhereInput[] = [];
+		for (const instance of instances) {
+			const showTmdbIds = eligibleShowsByInstance.get(instance.id) ?? [];
+			if (showTmdbIds.length === 0) continue;
+			const generation = generations.get(instance.id);
+			if (!generation?.generationId) return undefined;
+			const sourceWhere: Prisma.PlexEpisodeCacheWhereInput = {
+				instanceId: instance.id,
+				showTmdbId: { in: showTmdbIds },
+			};
+			const validatedSourceWhere: Prisma.PlexEpisodeCacheWhereInput = {
+				...sourceWhere,
+				refreshedAt: {
+					not: null,
+					gte: new Date(Math.max(freshnessThreshold, instance.updatedAt.getTime())),
+					lte: generation.completedAt,
+				},
+				sourceFingerprint: plexConnectionFingerprint(instance as ServiceInstance),
+			};
+			const totalRows = await prisma.plexEpisodeCache.count({ where: sourceWhere });
+			const validRows = await prisma.plexEpisodeCache.count({
+				where: validatedSourceWhere,
+			});
+			if (totalRows !== validRows) {
 				return undefined;
 			}
+			currentEpisodeSources.push(validatedSourceWhere);
 		}
+		if (currentEpisodeSources.length === 0) return new Map();
+		const currentEpisodeWhere: Prisma.PlexEpisodeCacheWhereInput = {
+			OR: currentEpisodeSources,
+		};
 
-		// Three groupBy queries: show-level totals, show-level watched, and per-season counts
+		// Four bounded groupBy queries: show and season totals plus their watched subsets.
 		const totalCounts = await prisma.plexEpisodeCache.groupBy({
 			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds } },
+			where: currentEpisodeWhere,
 			_count: { id: true },
 		});
 
 		const watchedCounts = await prisma.plexEpisodeCache.groupBy({
 			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds }, watched: true },
+			where: { AND: [currentEpisodeWhere, { watched: true }] },
 			_count: { id: true },
 		});
 
 		// Per-season counts for minSeason filtering
 		const seasonTotals = await prisma.plexEpisodeCache.groupBy({
 			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds } },
+			where: currentEpisodeWhere,
 			_count: { id: true },
 		});
 
 		const seasonWatched = await prisma.plexEpisodeCache.groupBy({
 			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds }, watched: true },
+			where: { AND: [currentEpisodeWhere, { watched: true }] },
 			_count: { id: true },
 		});
+		const finalGenerations = await loadCompleteCacheGenerations(deps, instances, "plex_episode");
+		if (
+			!finalGenerations ||
+			instances.some((instance) => {
+				const before = generations.get(instance.id);
+				const after = finalGenerations.get(instance.id);
+				return (
+					!before?.generationId ||
+					!after?.generationId ||
+					before.generationId !== after.generationId ||
+					before.completedAt.getTime() !== after.completedAt.getTime() ||
+					before.itemCount !== after.itemCount
+				);
+			})
+		) {
+			return undefined;
+		}
 
 		// Build per-season watched lookup: "showTmdbId:seasonNumber" → count
 		const seasonWatchedMap = new Map(

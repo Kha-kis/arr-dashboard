@@ -55,21 +55,56 @@ describe("PlexClient complete history authority", () => {
 		}
 	});
 
-	it("supports bounded compatibility reads when Plex omits pagination metadata", async () => {
-		vi.stubGlobal(
-			"fetch",
-			vi.fn().mockResolvedValue(response({ size: 1, Metadata: [historyItem(1)] })),
-		);
+	it("supports bounded complete reads when Plex omits pagination metadata and row keys", async () => {
+		const metadataLightItem = { ...historyItem(1), historyKey: undefined };
+		const fetchMock = vi.fn(async (input: string | URL | Request) => {
+			const url = new URL(input instanceof Request ? input.url : input.toString());
+			const offset = Number(url.searchParams.get("X-Plex-Container-Start") ?? "0");
+			return offset === 0
+				? response({ size: 1, Metadata: [metadataLightItem] })
+				: response({ size: 0, Metadata: [] });
+		});
+		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(
-			new PlexClient("http://plex.test", "token", log).getHistory({ maxResults: 200 }),
+			new PlexClient("http://plex.test", "token", log).getHistory({
+				maxResults: 100_000,
+				requireComplete: true,
+			}),
 		).resolves.toHaveLength(1);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 
-	it("rejects missing pagination metadata at the complete-history safety boundary", async () => {
+	it("rejects contradictory fields in a partially metadata-light inventory", async () => {
+		const fetchMock = vi.fn(async (input: string | URL | Request) => {
+			const url = new URL(input instanceof Request ? input.url : input.toString());
+			const offset = Number(url.searchParams.get("X-Plex-Container-Start") ?? "0");
+			return offset === 0
+				? response({ totalSize: 2, Metadata: [historyItem(1)] })
+				: response({ size: 0, Metadata: [] });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(
+			new PlexClient("http://plex.test", "token", log).getHistory({
+				maxResults: 100_000,
+				requireComplete: true,
+			}),
+		).rejects.toThrow(/contradictory pagination metadata/i);
+	});
+
+	it("rejects a full metadata-light page at the complete-history safety boundary", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn().mockResolvedValue(response({ size: 1, Metadata: [historyItem(1)] })),
+			vi.fn().mockResolvedValue(
+				response({
+					size: 200,
+					Metadata: Array.from({ length: 200 }, (_, index) => ({
+						...historyItem(index),
+						historyKey: undefined,
+					})),
+				}),
+			),
 		);
 
 		await expect(
@@ -77,7 +112,7 @@ describe("PlexClient complete history authority", () => {
 				maxResults: 100_000,
 				requireComplete: true,
 			}),
-		).rejects.toThrow(/complete pagination metadata/i);
+		).rejects.toThrow(/bounded metadata-light/i);
 	});
 
 	it("rejects a declared history inventory larger than the safety cap", async () => {
