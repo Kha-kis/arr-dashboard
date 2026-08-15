@@ -155,7 +155,10 @@ describe("deployment authority writer locking", () => {
 					return { count: 1 };
 				}),
 			},
-			instanceQualityProfileOverride: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+			instanceQualityProfileOverride: {
+				findFirst: vi.fn().mockResolvedValue(null),
+				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
 		};
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
@@ -289,7 +292,10 @@ describe("deployment authority writer locking", () => {
 		const deleteOverrides = vi.fn().mockResolvedValue({ count: 2 });
 		const transaction = {
 			templateQualityProfileMapping: { deleteMany: deleteMappings },
-			instanceQualityProfileOverride: { deleteMany: deleteOverrides },
+			instanceQualityProfileOverride: {
+				findFirst: vi.fn().mockResolvedValue(null),
+				deleteMany: deleteOverrides,
+			},
 		};
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance, aliasInstance]) },
@@ -330,6 +336,50 @@ describe("deployment authority writer locking", () => {
 		);
 	});
 
+	it("refuses to unlink while an unresolved reset intent still needs the mapping", async () => {
+		const deleteMappings = vi.fn();
+		const deleteOverrides = vi.fn();
+		const unresolvedIntent = {
+			id: "override-reset-1",
+			status: "UNCERTAIN",
+			intentOperation: "RESET_SCORE",
+		};
+		const findUnresolvedIntent = vi.fn().mockResolvedValue(unresolvedIntent);
+		const transaction = {
+			templateQualityProfileMapping: { deleteMany: deleteMappings },
+			instanceQualityProfileOverride: {
+				findFirst: findUnresolvedIntent,
+				deleteMany: deleteOverrides,
+			},
+		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue(mapping),
+				findMany: vi.fn().mockResolvedValue([mapping]),
+			},
+			$transaction: vi.fn().mockImplementation((action) => action(transaction)),
+		};
+		app = await createApp(prisma, createSerializedExecutor());
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/unlink", {
+			body: { templateId: mapping.templateId, instanceId: mapping.instanceId },
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("score change");
+		expect(findUnresolvedIntent).toHaveBeenCalledWith({
+			where: {
+				userId: "user-1",
+				status: { in: ["PENDING", "UNCERTAIN"] },
+				OR: [{ instanceId: instance.id, qualityProfileId: mapping.qualityProfileId }],
+			},
+			select: { id: true },
+		});
+		expect(deleteMappings).not.toHaveBeenCalled();
+		expect(deleteOverrides).not.toHaveBeenCalled();
+	});
+
 	it("refuses to unlink aliases with conflicting deployment ownership", async () => {
 		const aliasInstance = { ...instance, id: "instance-alias", label: "Radarr alias" };
 		const aliasMapping = {
@@ -350,7 +400,10 @@ describe("deployment authority writer locking", () => {
 			$transaction: vi.fn().mockImplementation((action) =>
 				action({
 					templateQualityProfileMapping: { deleteMany: deleteMappings },
-					instanceQualityProfileOverride: { deleteMany: deleteOverrides },
+					instanceQualityProfileOverride: {
+						findFirst: vi.fn().mockResolvedValue(null),
+						deleteMany: deleteOverrides,
+					},
 				}),
 			),
 		};
@@ -387,7 +440,10 @@ describe("deployment authority writer locking", () => {
 				$transaction: vi.fn().mockImplementation(async (action) =>
 					action({
 						templateQualityProfileMapping: { deleteMany: deleteMappings },
-						instanceQualityProfileOverride: { deleteMany: vi.fn() },
+						instanceQualityProfileOverride: {
+							findFirst: vi.fn().mockResolvedValue(null),
+							deleteMany: vi.fn(),
+						},
 					}),
 				),
 			};

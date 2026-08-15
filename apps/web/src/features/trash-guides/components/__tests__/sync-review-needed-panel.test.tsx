@@ -94,6 +94,32 @@ describe("SyncReviewNeededPanel", () => {
 		expect(screen.getByText("Recovery API unavailable")).toBeInTheDocument();
 	});
 
+	it.each([false, true])(
+		"distinguishes same-name reviews and repeats the stable reference in confirmation (incognito=%s)",
+		async (incognitoMode) => {
+			localStorage.setItem("arr-dashboard-incognito-mode", String(incognitoMode));
+			vi.mocked(fetchSyncsNeedingReview).mockResolvedValue({
+				syncs: [
+					reviewNeededSync,
+					{
+						...secondReviewNeededSync,
+						templateName: reviewNeededSync.templateName,
+						instanceName: reviewNeededSync.instanceName,
+						startedAt: reviewNeededSync.startedAt,
+					},
+				],
+			});
+
+			renderPanel();
+
+			expect(await screen.findByText("Review CERTAIN1 · Endpoint NSTANCE1")).toBeInTheDocument();
+			expect(screen.getByText("Review CERTAIN2 · Endpoint NSTANCE2")).toBeInTheDocument();
+
+			fireEvent.click(screen.getAllByRole("button", { name: "Acknowledge review" })[0]!);
+			expect(screen.getAllByText("Review CERTAIN1 · Endpoint NSTANCE1")).toHaveLength(2);
+		},
+	);
+
 	it("removes an acknowledged sync after refetching the review-needed query", async () => {
 		vi.mocked(fetchSyncsNeedingReview)
 			.mockResolvedValueOnce({ syncs: [reviewNeededSync] })

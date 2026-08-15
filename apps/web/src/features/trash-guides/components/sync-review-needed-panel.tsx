@@ -9,6 +9,15 @@ import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
+function identityToken(value: string): string {
+	const normalized = value.replace(/[^a-zA-Z0-9]/g, "");
+	return (normalized.slice(-8) || value.slice(-8)).toUpperCase();
+}
+
+function reviewReference(syncId: string, instanceId: string): string {
+	return `Review ${identityToken(syncId)} · Endpoint ${identityToken(instanceId)}`;
+}
+
 export function SyncReviewNeededPanel() {
 	const [incognitoMode] = useIncognitoMode();
 	const [confirmingSyncId, setConfirmingSyncId] = useState<string | null>(null);
@@ -87,6 +96,7 @@ export function SyncReviewNeededPanel() {
 					const displayInstance = incognitoMode
 						? getLinuxInstanceName(sync.instanceName)
 						: sync.instanceName;
+					const stableReference = reviewReference(sync.id, sync.instanceId);
 
 					return (
 						<div
@@ -99,6 +109,7 @@ export function SyncReviewNeededPanel() {
 									<p className="text-sm text-muted-foreground">
 										{displayInstance} · {format(new Date(sync.startedAt), "MMM d, yyyy h:mm a")}
 									</p>
+									<p className="mt-1 font-mono text-xs text-muted-foreground">{stableReference}</p>
 								</div>
 								{!isConfirming && (
 									<Button
@@ -120,6 +131,7 @@ export function SyncReviewNeededPanel() {
 										I have inspected the current ARR state and accept it. This only releases the
 										local recovery gate.
 									</p>
+									<p className="font-mono text-xs text-foreground">{stableReference}</p>
 									<div className="flex flex-wrap gap-2">
 										<Button
 											type="button"

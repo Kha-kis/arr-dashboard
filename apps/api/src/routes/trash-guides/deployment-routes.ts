@@ -494,6 +494,22 @@ export async function deploymentRoutes(app: FastifyInstance) {
 					})),
 				);
 				await prisma.$transaction(async (transaction) => {
+					const unresolvedScoreIntent = await transaction.instanceQualityProfileOverride.findFirst({
+						where: {
+							userId,
+							status: { in: ["PENDING", "UNCERTAIN"] },
+							OR: equivalentMappings.map((candidate) => ({
+								instanceId: candidate.instanceId,
+								qualityProfileId: candidate.qualityProfileId,
+							})),
+						},
+						select: { id: true },
+					});
+					if (unresolvedScoreIntent) {
+						throw new ConflictError(
+							"Resolve the pending or uncertain score change before unlinking this template",
+						);
+					}
 					const deleted = await transaction.templateQualityProfileMapping.deleteMany({
 						where: {
 							templateId,
