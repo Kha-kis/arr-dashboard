@@ -96,6 +96,26 @@ export function confirmProviderIdentity(expected: string, actual: string): boole
 	return timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(actual, "hex"));
 }
 
+/** Stable derived identity used in persisted safety evidence without exposing the raw provider id. */
+export function providerIdentityAuthorityFingerprint(input: {
+	service: string;
+	identityKind: string | null;
+	expectedIdentity: string | null;
+}): string {
+	return digest(
+		JSON.stringify({
+			expectedIdentity: input.expectedIdentity,
+			identityKind: input.identityKind,
+			service: input.service,
+		}),
+	);
+}
+
+/** Stable per-record discriminator that does not persist the raw service instance id. */
+export function providerInstanceAuthorityFingerprint(instanceId: string): string {
+	return digest(JSON.stringify({ instanceId }));
+}
+
 function observe(
 	service: ProviderIdentityService,
 	identityKind: ProviderIdentityObservation["identityKind"],

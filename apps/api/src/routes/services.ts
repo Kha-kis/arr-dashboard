@@ -8,7 +8,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { resolveAnalyticsProviderSelection } from "../lib/analytics/provider-selection.js";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
-import { ConflictError } from "../lib/errors.js";
+import { AppValidationError, ConflictError } from "../lib/errors.js";
 import {
 	withCleanupTopologyMutationLease,
 	withExclusiveCleanupTopologyMutationLease,
@@ -19,6 +19,7 @@ import { withQuiObservationTopologyGuard } from "../lib/qui/observation-topology
 import { invalidateTorrentListCache } from "../lib/qui/torrent-list-cache.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
 import {
+	createHttpAuthHeaders,
 	decryptHttpAuthCredentials,
 	encryptHttpAuthCredentials,
 } from "../lib/services/http-auth.js";
@@ -28,6 +29,22 @@ import {
 	httpAuthSchema,
 } from "../lib/services/http-auth-validation.js";
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
+import {
+	type ProviderIdentityObservation,
+	readProviderIdentity,
+} from "../lib/services/service-identity.js";
+import {
+	clearDurableProviderCacheState,
+	confirmsIdentityCandidate,
+	createProviderReplacementAuthority,
+	expireApprovalsForProviderReplacement,
+	initialVerifiedIdentityData,
+	isProviderIdentityService,
+	replacementIdentityData,
+	toPersistedIdentityKind,
+	toSafeIdentityCandidate,
+	verifiedIdentityData,
+} from "../lib/services/service-identity-lifecycle.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
 import { assertNoActiveDeploymentOwnership } from "../lib/trash-guides/deployment-operation-gate.js";
@@ -45,7 +62,6 @@ import { validateRequest } from "../lib/utils/validate.js";
 import { invalidatePulseCache } from "./pulse.js";
 
 const idParams = z.object({ id: z.string().min(1) });
-const CACHE_PROVIDER_SERVICES = new Set<ServiceType>(["PLEX", "JELLYFIN", "EMBY", "TAUTULLI"]);
 const ANALYTICS_PROVIDER_SERVICES: Record<AnalyticsProvider, ServiceType> = {
 	tracearr: "TRACEARR",
 	tautulli: "TAUTULLI",
@@ -80,20 +96,14 @@ const servicePayloadSchema = z.object({
 	pathPrefix: z.string().max(256).nullable().optional(),
 });
 
-const serviceUpdateSchema = z
-	.object({
-		label: z.string().min(1).max(120).optional(),
-		baseUrl: credentialFreeUrlSchema.optional(),
-		externalUrl: credentialFreeUrlSchema.nullable().optional(),
-		apiKey: z.string().min(8).optional(),
-		httpAuth: httpAuthSchema.nullable().optional(),
-		service: arrServiceTypeSchema.optional(),
+const serviceUpdateSchema = servicePayloadSchema
+	.partial()
+	.extend({
+		// Override create-time defaults so omitted update fields remain omitted.
 		enabled: z.boolean().optional(),
 		isDefault: z.boolean().optional(),
 		tags: z.array(z.string().min(1).max(64)).optional(),
-		storageGroupId: z.string().min(1).max(64).nullable().optional(),
 		hasLocalFilesystemAccess: z.boolean().optional(),
-		pathPrefix: z.string().max(256).nullable().optional(),
 		confirmAnalyticsUnavailableFor: analyticsProviderSchema.optional(),
 	})
 	.refine((data) => Object.keys(data).some((key) => key !== "confirmAnalyticsUnavailableFor"), {
@@ -139,6 +149,27 @@ async function getAnalyticsProviderConfirmationRequirement(
 	return { selected: selection.selected, alternativeEnabled: alternativeEnabledCount > 0 };
 }
 
+const serviceCandidateSchema = servicePayloadSchema.partial().extend({
+	enabled: z.boolean().optional(),
+	isDefault: z.boolean().optional(),
+	tags: z.array(z.string().min(1).max(64)).optional(),
+	hasLocalFilesystemAccess: z.boolean().optional(),
+});
+
+const identityInspectSchema = z.object({
+	candidate: serviceCandidateSchema.optional(),
+});
+
+const identityConfirmationSchema = z.object({
+	confirmationDigest: z.string().regex(/^[a-f0-9]{64}$/i),
+	expectedConnectionGeneration: z.number().int().nonnegative(),
+	expectedIdentityGeneration: z.number().int().nonnegative(),
+});
+
+const identityReplaceSchema = identityConfirmationSchema.extend({
+	candidate: serviceCandidateSchema.default({}),
+});
+
 const tagCreateSchema = z.object({
 	name: z.string().min(1).max(64),
 });
@@ -152,15 +183,16 @@ const QUI_TOPOLOGY_UPDATE_FIELDS = [
 	"hasLocalFilesystemAccess",
 	"pathPrefix",
 ] as const;
+const CACHE_PROVIDER_SERVICES = new Set<ServiceType>(["PLEX", "TAUTULLI", "JELLYFIN", "EMBY"]);
+
+type ServiceUpdatePayload = z.infer<typeof serviceUpdateSchema>;
+type ServiceCandidatePayload = z.infer<typeof serviceCandidateSchema>;
 
 function isArrService(service: ServiceType): boolean {
 	return service === "RADARR" || service === "SONARR";
 }
 
-function changesQuiTopology(
-	existingService: ServiceType,
-	payload: z.infer<typeof serviceUpdateSchema>,
-): boolean {
+function changesQuiTopology(existingService: ServiceType, payload: ServiceUpdatePayload): boolean {
 	const targetService = (payload.service ?? existingService.toLowerCase()).toUpperCase();
 	if (existingService !== "QUI" && targetService !== "QUI") return false;
 	return QUI_TOPOLOGY_UPDATE_FIELDS.some((field) => Object.hasOwn(payload, field));
@@ -188,65 +220,49 @@ function changesCacheProviderConnection(
 	return false;
 }
 
-async function clearDurableProviderCacheState(
-	prisma: {
-		plexCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
-		plexEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
-		tautulliCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
-		jellyfinCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
-		jellyfinEpisodeCache: { deleteMany(args: { where: { instanceId: string } }): Promise<unknown> };
-		cacheRefreshStatus: {
-			deleteMany(args: { where: { instanceId: string } }): Promise<unknown>;
-			upsert(args: Record<string, unknown>): Promise<unknown>;
-		};
-	},
-	instanceId: string,
-	targetService: ServiceType,
-	targetEnabled: boolean,
-): Promise<void> {
-	await prisma.plexCache.deleteMany({ where: { instanceId } });
-	await prisma.plexEpisodeCache.deleteMany({ where: { instanceId } });
-	await prisma.jellyfinCache.deleteMany({ where: { instanceId } });
-	await prisma.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
-	await prisma.tautulliCache.deleteMany({ where: { instanceId } });
-	await prisma.cacheRefreshStatus.deleteMany({ where: { instanceId } });
+function createIdentityConflict(
+	code:
+		| "IDENTITY_CANDIDATE_CHANGED"
+		| "IDENTITY_GENERATION_STALE"
+		| "IDENTITY_REPLACEMENT_REQUIRED",
+	message: string,
+	instance: Pick<ServiceInstance, "connectionGeneration" | "identityGeneration">,
+	candidate?: ReturnType<typeof toSafeIdentityCandidate>,
+): ConflictError {
+	return new ConflictError(message, {
+		code,
+		...(candidate ? { candidate } : {}),
+		connectionGeneration: instance.connectionGeneration,
+		identityGeneration: instance.identityGeneration,
+	});
+}
 
-	if (!targetEnabled || !CACHE_PROVIDER_SERVICES.has(targetService)) return;
-	const cacheTypes =
-		targetService === "PLEX"
-			? ["plex", "plex_episode"]
-			: targetService === "TAUTULLI"
-				? ["tautulli"]
-				: ["jellyfin", "jellyfin_episode"];
-	const invalidatedAt = new Date();
-	const message = "Provider connection changed; refresh required";
-	for (const cacheType of cacheTypes) {
-		await prisma.cacheRefreshStatus.upsert({
-			where: { instanceId_cacheType: { instanceId, cacheType } },
-			create: {
-				instanceId,
-				cacheType,
-				lastRefreshedAt: invalidatedAt,
-				lastResult: "error",
-				lastErrorMessage: message,
-				itemCount: 0,
-				lastAttemptAt: invalidatedAt,
-				lastAttemptResult: "error",
-				lastAttemptErrorMessage: message,
-			},
-			update: {
-				lastRefreshedAt: invalidatedAt,
-				lastResult: "error",
-				lastErrorMessage: message,
-				itemCount: 0,
-				generationId: null,
-				generationMetadata: null,
-				lastAttemptAt: invalidatedAt,
-				lastAttemptResult: "error",
-				lastAttemptErrorMessage: message,
-			},
-		});
+function buildIdentityCandidateSnapshot(
+	instance: ServiceInstance,
+	candidate: ServiceCandidatePayload,
+	encryptor: { decrypt(input: { value: string; iv: string }): string },
+) {
+	const service = (candidate.service ?? instance.service.toLowerCase()).toUpperCase();
+	if (!isProviderIdentityService(service)) {
+		throw new AppValidationError(
+			"Provider identity verification is not supported for this service.",
+		);
 	}
+	const storedHttpAuth = decryptHttpAuthCredentials(encryptor, instance);
+	const httpAuth = candidate.httpAuth === undefined ? storedHttpAuth : candidate.httpAuth;
+	const httpAuthConflict = httpAuth ? getHttpAuthConflict(service) : null;
+	if (httpAuthConflict) {
+		throw new AppValidationError(`${httpAuthConflict} Configure a proxy bypass for arr-dashboard.`);
+	}
+	return {
+		service,
+		baseUrl: candidate.baseUrl ?? instance.baseUrl,
+		apiKey:
+			candidate.apiKey ??
+			encryptor.decrypt({ value: instance.encryptedApiKey, iv: instance.encryptionIv }),
+		httpAuthHeaders: createHttpAuthHeaders(httpAuth),
+		label: candidate.label ?? instance.label,
+	};
 }
 
 async function clearDurableQuiObservations(
@@ -568,6 +584,26 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		const serviceEnum = service.toUpperCase() as ServiceType;
 		const userId = request.currentUser!.id;
+		let identityData = {};
+		if (isProviderIdentityService(serviceEnum)) {
+			try {
+				const observation = await readProviderIdentity(
+					{
+						service: serviceEnum,
+						baseUrl: rest.baseUrl,
+						apiKey,
+						httpAuthHeaders: createHttpAuthHeaders(httpAuth ?? null),
+						label: rest.label,
+					},
+					request.log,
+				);
+				identityData = initialVerifiedIdentityData(observation);
+			} catch {
+				throw new AppValidationError(
+					"The provider identity could not be verified, so the service was not added.",
+				);
+			}
+		}
 
 		return await withCleanupTopologyMutationLease(
 			{ prisma: app.prisma, log: request.log },
@@ -590,6 +626,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							encryptedApiKey: encrypted.value,
 							encryptionIv: encrypted.iv,
 							...encryptedHttpAuth,
+							...identityData,
 							isDefault,
 							...rest,
 							tags: {
@@ -632,260 +669,508 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		);
 		const userId = request.currentUser!.id;
 
-		return await withCleanupTopologyMutationLease(
-			{ prisma: app.prisma, log: request.log },
-			userId,
-			async () => {
-				const existing = await requireInstance(app, userId, id);
-				const targetServiceName = payload.service ?? existing.service.toLowerCase();
-				const targetService = targetServiceName.toUpperCase() as ServiceType;
-				const keepsExistingHttpAuth =
-					payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
-				const httpAuthConflict =
-					payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetServiceName) : null;
-				if (httpAuthConflict) {
-					return reply.status(400).send({
-						error: `HTTP Basic Auth is not supported for ${targetServiceName}`,
-						details: `${httpAuthConflict} Remove HTTP Basic Auth or configure a proxy bypass.`,
+		const withTopologyLease =
+			payload.enabled === false
+				? withExclusiveCleanupTopologyMutationLease
+				: withCleanupTopologyMutationLease;
+		return await withTopologyLease({ prisma: app.prisma, log: request.log }, userId, async () => {
+			const existing = await requireInstance(app, userId, id);
+			const targetServiceName = payload.service ?? existing.service.toLowerCase();
+			const keepsExistingHttpAuth =
+				payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
+			const httpAuthConflict =
+				payload.httpAuth || keepsExistingHttpAuth ? getHttpAuthConflict(targetServiceName) : null;
+			if (httpAuthConflict) {
+				return reply.status(400).send({
+					error: `HTTP Basic Auth is not supported for ${targetServiceName}`,
+					details: `${httpAuthConflict} Remove HTTP Basic Auth or configure a proxy bypass.`,
+				});
+			}
+
+			const updateData = buildUpdateData(payload, app.encryptor);
+
+			const targetService = (
+				payload.service ?? existing.service.toLowerCase()
+			).toUpperCase() as ServiceType;
+			const confirmation = await getAnalyticsProviderConfirmationRequirement(
+				app.prisma,
+				userId,
+				existing,
+				{
+					kind: "update",
+					targetService,
+					targetEnabled: payload.enabled ?? existing.enabled,
+				},
+			);
+			if (confirmation && confirmAnalyticsUnavailableFor !== confirmation.selected) {
+				return reply.status(409).send({
+					code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
+					...confirmation,
+				});
+			}
+			const resetOtherDefaults = async (
+				prisma: Pick<typeof app.prisma, "serviceInstance">,
+			): Promise<void> => {
+				if (payload.isDefault === true || payload.service) {
+					await prisma.serviceInstance.updateMany({
+						where: { service: targetService, userId, NOT: { id } },
+						data: { isDefault: false },
 					});
 				}
-				const confirmation = await getAnalyticsProviderConfirmationRequirement(
-					app.prisma,
-					userId,
-					existing,
-					{
-						kind: "update",
-						targetService,
-						targetEnabled: payload.enabled ?? existing.enabled,
-					},
-				);
-				if (confirmation && confirmAnalyticsUnavailableFor !== confirmation.selected) {
-					return reply.status(409).send({
-						code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
-						...confirmation,
+			};
+
+			const quiTopologyChanged = changesQuiTopology(existing.service, payload);
+			const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
+			const serviceTypeChanged = targetService !== existing.service;
+			const leavesProviderIdentityFamily =
+				serviceTypeChanged &&
+				isProviderIdentityService(existing.service) &&
+				!isProviderIdentityService(targetService);
+			const providerIdentityReadRequired =
+				providerConnectionChanged &&
+				isProviderIdentityService(targetService) &&
+				(serviceTypeChanged ||
+					payload.baseUrl !== undefined ||
+					payload.apiKey !== undefined ||
+					payload.httpAuth !== undefined);
+			if (providerIdentityReadRequired) {
+				let observation: ProviderIdentityObservation;
+				try {
+					observation = await readProviderIdentity(
+						buildIdentityCandidateSnapshot(existing, payload, app.encryptor),
+						request.log,
+					);
+				} catch {
+					throw new AppValidationError(
+						"The provider identity could not be verified, so the service connection was not changed.",
+					);
+				}
+				if (
+					existing.expectedIdentity !== null &&
+					(existing.expectedIdentity !== observation.rawIdentity ||
+						existing.identityKind !== toPersistedIdentityKind(observation.identityKind))
+				) {
+					throw createIdentityConflict(
+						"IDENTITY_REPLACEMENT_REQUIRED",
+						"The provider identity differs from the enrolled server. Replace the server explicitly.",
+						existing,
+						toSafeIdentityCandidate(observation),
+					);
+				}
+			}
+			const targetConnection = {
+				...existing,
+				...updateData,
+				service: targetService,
+			};
+			const arrConnectionInvolved = isArrService(existing.service) || isArrService(targetService);
+			const arrCredentialFieldsSubmitted =
+				payload.apiKey !== undefined || payload.httpAuth !== undefined;
+			const arrCredentialsChanged =
+				arrConnectionInvolved &&
+				arrCredentialFieldsSubmitted &&
+				app.arrClientFactory.createConnectionCredentialIdentity(existing) !==
+					app.arrClientFactory.createConnectionCredentialIdentity(targetConnection);
+			if (arrConnectionInvolved && arrCredentialFieldsSubmitted && !arrCredentialsChanged) {
+				if (payload.apiKey !== undefined) {
+					delete updateData.encryptedApiKey;
+					delete updateData.encryptionIv;
+				}
+				if (payload.httpAuth !== undefined) {
+					delete updateData.encryptedHttpAuthCredentials;
+					delete updateData.httpAuthEncryptionIv;
+				}
+			}
+			const arrConnectionFieldsSubmitted =
+				serviceTypeChanged || payload.baseUrl !== undefined || arrCredentialFieldsSubmitted;
+			const arrConnectionChanged =
+				arrConnectionInvolved &&
+				arrConnectionFieldsSubmitted &&
+				(serviceTypeChanged ||
+					normalizeDeploymentBaseUrl(existing.baseUrl) !==
+						normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
+					arrCredentialsChanged);
+			const executeUpdate = async () => {
+				if (arrConnectionChanged && isArrService(existing.service)) {
+					const aliases = await app.prisma.serviceInstance.findMany({
+						where: { userId, service: existing.service },
 					});
+					const currentEndpoint = normalizeDeploymentBaseUrl(existing.baseUrl);
+					const equivalentInstanceIds = aliases
+						.filter(
+							(alias) =>
+								alias.userId === userId &&
+								alias.service === existing.service &&
+								normalizeDeploymentBaseUrl(alias.baseUrl) === currentEndpoint,
+						)
+						.map((alias) => alias.id);
+					if (!equivalentInstanceIds.includes(id)) equivalentInstanceIds.push(id);
+					const unresolvedIntents = await app.prisma.instanceQualityProfileOverride.findMany({
+						where: {
+							userId,
+							instanceId: { in: equivalentInstanceIds },
+							status: { in: ["PENDING", "UNCERTAIN"] },
+						},
+					});
+					if (unresolvedIntents.length > 0) {
+						throw new ConflictError(
+							"This ARR endpoint has unresolved score intent. Reconcile it before changing the connection.",
+						);
+					}
+					await assertNoActiveDeploymentOwnership(app.prisma, userId, equivalentInstanceIds);
 				}
-
-				const updateData = buildUpdateData(payload, app.encryptor);
-				const resetOtherDefaults = async (
-					prisma: Pick<typeof app.prisma, "serviceInstance">,
-				): Promise<void> => {
-					if (payload.isDefault === true || payload.service) {
-						await prisma.serviceInstance.updateMany({
-							where: { service: targetService, userId, NOT: { id } },
-							data: { isDefault: false },
-						});
-					}
-				};
-
-				const quiTopologyChanged = changesQuiTopology(existing.service, payload);
-				const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
-				const serviceTypeChanged = targetService !== existing.service;
-				const targetConnection = {
-					...existing,
-					...updateData,
-					service: targetService,
-				};
-				const arrConnectionInvolved = isArrService(existing.service) || isArrService(targetService);
-				const arrCredentialFieldsSubmitted =
-					payload.apiKey !== undefined || payload.httpAuth !== undefined;
-				const arrCredentialsChanged =
-					arrConnectionInvolved &&
-					arrCredentialFieldsSubmitted &&
-					app.arrClientFactory.createConnectionCredentialIdentity(existing) !==
-						app.arrClientFactory.createConnectionCredentialIdentity(targetConnection);
-				if (arrConnectionInvolved && arrCredentialFieldsSubmitted && !arrCredentialsChanged) {
-					if (payload.apiKey !== undefined) {
-						delete updateData.encryptedApiKey;
-						delete updateData.encryptionIv;
-					}
-					if (payload.httpAuth !== undefined) {
-						delete updateData.encryptedHttpAuthCredentials;
-						delete updateData.httpAuthEncryptionIv;
-					}
-				}
-				const arrConnectionFieldsSubmitted =
-					serviceTypeChanged || payload.baseUrl !== undefined || arrCredentialFieldsSubmitted;
-				const arrConnectionChanged =
-					arrConnectionInvolved &&
-					arrConnectionFieldsSubmitted &&
-					(serviceTypeChanged ||
-						normalizeDeploymentBaseUrl(existing.baseUrl) !==
-							normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
-						arrCredentialsChanged);
-				const executeUpdate = async () => {
-					if (arrConnectionChanged && isArrService(existing.service)) {
-						const aliases = await app.prisma.serviceInstance.findMany({
-							where: { userId, service: existing.service },
-						});
-						const currentEndpoint = normalizeDeploymentBaseUrl(existing.baseUrl);
-						const equivalentInstanceIds = aliases
-							.filter(
-								(alias) =>
-									alias.userId === userId &&
-									alias.service === existing.service &&
-									normalizeDeploymentBaseUrl(alias.baseUrl) === currentEndpoint,
-							)
-							.map((alias) => alias.id);
-						if (!equivalentInstanceIds.includes(id)) equivalentInstanceIds.push(id);
-						const unresolvedIntents = await app.prisma.instanceQualityProfileOverride.findMany({
-							where: {
-								userId,
-								instanceId: { in: equivalentInstanceIds },
-								status: { in: ["PENDING", "UNCERTAIN"] },
-							},
-						});
-						if (unresolvedIntents.length > 0) {
-							throw new ConflictError(
-								"This ARR endpoint has unresolved score intent. Reconcile it before changing the connection.",
-							);
+				const serviceUpdateData =
+					arrConnectionChanged || providerConnectionChanged
+						? {
+								...updateData,
+								connectionGeneration: { increment: 1 },
+							}
+						: updateData;
+				const updateDataWithResetProviderIdentity = leavesProviderIdentityFamily
+					? {
+							...serviceUpdateData,
+							expectedIdentity: null,
+							identityKind: null,
+							identityStatus: "UNVERIFIED" as const,
+							identityGeneration: { increment: 1 },
+							identityVerifiedAt: null,
+							identityLastCheckedAt: null,
 						}
-						await assertNoActiveDeploymentOwnership(app.prisma, userId, equivalentInstanceIds);
-					}
-					const serviceUpdateData =
-						arrConnectionChanged || providerConnectionChanged
-							? {
-									...updateData,
-									connectionGeneration: { increment: 1 },
-								}
-							: updateData;
-					if (quiTopologyChanged) {
-						await withQuiObservationTopologyGuard(userId, async () => {
-							await app.prisma.$transaction(async (tx) => {
-								await resetOtherDefaults(tx);
-								await tx.serviceInstance.updateMany({
-									where: { id, userId },
-									data: serviceUpdateData,
-								});
-								if (payload.tags !== undefined) {
-									await updateInstanceTags(tx, id, payload.tags);
-								}
-								if (providerConnectionChanged) {
-									await clearDurableProviderCacheState(
-										tx,
-										id,
-										targetService,
-										payload.enabled ?? existing.enabled,
-									);
-								}
-								await clearDurableQuiObservations(tx, userId);
-							});
-							// Keep process-local evidence in the same guarded topology
-							// transition. Releasing the guard first would allow another
-							// observer to reuse the previous endpoint's inode inventory.
-							invalidateTorrentListCache(id);
-							clearFileIdIndexCache(id);
-						});
-					} else if (providerConnectionChanged || serviceTypeChanged || arrConnectionChanged) {
+					: serviceUpdateData;
+				if (quiTopologyChanged) {
+					await withQuiObservationTopologyGuard(userId, async () => {
 						await app.prisma.$transaction(async (tx) => {
 							await resetOtherDefaults(tx);
 							await tx.serviceInstance.updateMany({
 								where: { id, userId },
-								data: serviceUpdateData,
+								data: updateDataWithResetProviderIdentity,
 							});
 							if (payload.tags !== undefined) {
 								await updateInstanceTags(tx, id, payload.tags);
 							}
 							if (providerConnectionChanged) {
-								await clearDurableProviderCacheState(
-									tx,
-									id,
-									targetService,
-									payload.enabled ?? existing.enabled,
-								);
+								await clearDurableProviderCacheState(tx, id);
 							}
+							await clearDurableQuiObservations(tx, userId);
 						});
-					} else {
-						await resetOtherDefaults(app.prisma);
-						await app.prisma.serviceInstance.updateMany({
+						// Keep process-local evidence in the same guarded topology
+						// transition. Releasing the guard first would allow another
+						// observer to reuse the previous endpoint's inode inventory.
+						invalidateTorrentListCache(id);
+						clearFileIdIndexCache(id);
+					});
+				} else if (providerConnectionChanged || serviceTypeChanged || arrConnectionChanged) {
+					await app.prisma.$transaction(async (tx) => {
+						await resetOtherDefaults(tx);
+						await tx.serviceInstance.updateMany({
 							where: { id, userId },
-							data: serviceUpdateData,
+							data: updateDataWithResetProviderIdentity,
 						});
 						if (payload.tags !== undefined) {
-							await updateInstanceTags(app.prisma, id, payload.tags);
+							await updateInstanceTags(tx, id, payload.tags);
 						}
-					}
-					if (providerConnectionChanged || serviceTypeChanged) {
-						invalidatePulseCache(userId);
-					}
-
-					// A qUI topology change invalidates both durable observations
-					// (inside the transaction above) and process-local data keyed
-					// by this instance. Connection, credential, enabled-state, and
-					// filesystem/path-mapping changes participate in one conservative
-					// topology generation so no observer can reuse evidence produced
-					// before a concurrent physical-evidence mutation.
-					const wasQui = existing.service === "QUI";
-					const nowDisabled = payload.enabled === false && existing.enabled === true;
-					const switchedAwayFromQui =
-						payload.service !== undefined && payload.service.toLowerCase() !== "qui";
-					if (quiTopologyChanged) {
-						request.log.info(
-							{
-								instanceId: id,
-								reason: nowDisabled
-									? "disabled"
-									: switchedAwayFromQui
-										? "service-changed"
-										: wasQui
-											? "connection-changed"
-											: "qui-enabled",
-							},
-							"qui caches dropped after instance update",
-						);
-					}
-
-					// Fetch updated instance - include userId to ensure we only get owned instances
-					const fresh = await app.prisma.serviceInstance.findFirst({
-						where: {
-							id,
-							userId,
-						},
-						include: { tags: { include: { tag: true } } },
+						if (providerConnectionChanged) {
+							await clearDurableProviderCacheState(tx, id);
+						}
 					});
-
-					if (!fresh) {
-						return reply.status(404).send({ error: "Service instance not found" });
+				} else {
+					await resetOtherDefaults(app.prisma);
+					await app.prisma.serviceInstance.updateMany({
+						where: { id, userId },
+						data: updateDataWithResetProviderIdentity,
+					});
+					if (payload.tags !== undefined) {
+						await updateInstanceTags(app.prisma, id, payload.tags);
 					}
+				}
+				if (providerConnectionChanged || serviceTypeChanged) {
+					invalidatePulseCache(userId);
+				}
 
+				// A qUI topology change invalidates both durable observations
+				// (inside the transaction above) and process-local data keyed
+				// by this instance. Connection, credential, enabled-state, and
+				// filesystem/path-mapping changes participate in one conservative
+				// topology generation so no observer can reuse evidence produced
+				// before a concurrent physical-evidence mutation.
+				const wasQui = existing.service === "QUI";
+				const nowDisabled = payload.enabled === false && existing.enabled === true;
+				const switchedAwayFromQui =
+					payload.service !== undefined && payload.service.toLowerCase() !== "qui";
+				if (quiTopologyChanged) {
 					request.log.info(
-						{ service: fresh.service, label: fresh.label, instanceId: id },
-						"Service instance updated",
-					);
-
-					return reply.send({
-						service: formatServiceInstance(fresh),
-					});
-				};
-
-				if (arrConnectionChanged && isArrService(existing.service)) {
-					return await app.deploymentExecutor.runWithEndpointMutation(
-						userId,
-						existing,
-						"ARR connection replacement",
-						async (expectedEndpointKey) => {
-							const current = await requireInstance(app, userId, id);
-							const currentEndpointKey = createDeploymentEndpointKey(userId, {
-								service: current.service,
-								baseUrl: current.baseUrl,
-								credentialIdentity:
-									app.arrClientFactory.createConnectionCredentialIdentity(current),
-							});
-							if (
-								currentEndpointKey !== expectedEndpointKey ||
-								createDeploymentConnectionStateToken(current) !==
-									createDeploymentConnectionStateToken(existing)
-							) {
-								throw new ConflictError(
-									"The ARR connection changed while the replacement was starting. Review it and try again.",
-								);
-							}
-							return await executeUpdate();
+						{
+							instanceId: id,
+							reason: nowDisabled
+								? "disabled"
+								: switchedAwayFromQui
+									? "service-changed"
+									: wasQui
+										? "connection-changed"
+										: "qui-enabled",
 						},
+						"qui caches dropped after instance update",
 					);
 				}
 
-				return await executeUpdate();
+				// Fetch updated instance - include userId to ensure we only get owned instances
+				const fresh = await app.prisma.serviceInstance.findFirst({
+					where: {
+						id,
+						userId,
+					},
+					include: { tags: { include: { tag: true } } },
+				});
+
+				if (!fresh) {
+					return reply.status(404).send({ error: "Service instance not found" });
+				}
+
+				request.log.info(
+					{ service: fresh.service, label: fresh.label, instanceId: id },
+					"Service instance updated",
+				);
+
+				return reply.send({
+					service: formatServiceInstance(fresh),
+				});
+			};
+
+			if (arrConnectionChanged && isArrService(existing.service)) {
+				return await app.deploymentExecutor.runWithEndpointMutation(
+					userId,
+					existing,
+					"ARR connection replacement",
+					async (expectedEndpointKey) => {
+						const current = await requireInstance(app, userId, id);
+						const currentEndpointKey = createDeploymentEndpointKey(userId, {
+							service: current.service,
+							baseUrl: current.baseUrl,
+							credentialIdentity: app.arrClientFactory.createConnectionCredentialIdentity(current),
+						});
+						if (
+							currentEndpointKey !== expectedEndpointKey ||
+							createDeploymentConnectionStateToken(current) !==
+								createDeploymentConnectionStateToken(existing)
+						) {
+							throw new ConflictError(
+								"The ARR connection changed while the replacement was starting. Review it and try again.",
+							);
+						}
+						return await executeUpdate();
+					},
+				);
+			}
+
+			return await executeUpdate();
+		});
+	});
+
+	app.post("/services/:id/identity/inspect", async (request, reply) => {
+		const { id } = validateRequest(idParams, request.params);
+		const { candidate = {} } = validateRequest(identityInspectSchema, request.body ?? {});
+		const userId = request.currentUser!.id;
+		const existing = await requireInstance(app, userId, id);
+		const snapshot = buildIdentityCandidateSnapshot(existing, candidate, app.encryptor);
+		const observation = await readProviderIdentity(snapshot, request.log);
+
+		return reply.send({
+			candidate: toSafeIdentityCandidate(observation),
+			connectionGeneration: existing.connectionGeneration,
+			identityGeneration: existing.identityGeneration,
+		});
+	});
+
+	app.post("/services/:id/identity/verify", async (request, reply) => {
+		const { id } = validateRequest(idParams, request.params);
+		const confirmation = validateRequest(identityConfirmationSchema, request.body);
+		const userId = request.currentUser!.id;
+
+		return await withExclusiveCleanupTopologyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				const existing = await requireInstance(app, userId, id);
+				if (
+					existing.connectionGeneration !== confirmation.expectedConnectionGeneration ||
+					existing.identityGeneration !== confirmation.expectedIdentityGeneration
+				) {
+					throw createIdentityConflict(
+						"IDENTITY_GENERATION_STALE",
+						"The service changed after identity inspection. Inspect it again before verifying.",
+						existing,
+					);
+				}
+				const observation = await readProviderIdentity(
+					buildIdentityCandidateSnapshot(existing, {}, app.encryptor),
+					request.log,
+				);
+				const safeCandidate = toSafeIdentityCandidate(observation);
+				if (!confirmsIdentityCandidate(observation, confirmation.confirmationDigest)) {
+					throw createIdentityConflict(
+						"IDENTITY_CANDIDATE_CHANGED",
+						"The provider identity changed after inspection. Inspect it again before verifying.",
+						existing,
+						safeCandidate,
+					);
+				}
+				if (existing.expectedIdentity && existing.expectedIdentity !== observation.rawIdentity) {
+					throw createIdentityConflict(
+						"IDENTITY_REPLACEMENT_REQUIRED",
+						"The provider identity differs from the enrolled server. Replace the server explicitly.",
+						existing,
+						safeCandidate,
+					);
+				}
+
+				const verified = verifiedIdentityData(existing, observation);
+				const updated = await app.prisma.$transaction(async (tx) =>
+					tx.serviceInstance.updateMany({
+						where: {
+							id,
+							userId,
+							connectionGeneration: confirmation.expectedConnectionGeneration,
+							identityGeneration: confirmation.expectedIdentityGeneration,
+						},
+						data: verified,
+					}),
+				);
+				if (updated.count !== 1) {
+					const current = await requireInstance(app, userId, id);
+					throw createIdentityConflict(
+						"IDENTITY_GENERATION_STALE",
+						"The service changed while identity verification was being saved.",
+						current,
+					);
+				}
+
+				const fresh = await app.prisma.serviceInstance.findFirst({
+					where: { id, userId },
+					include: { tags: { include: { tag: true } } },
+				});
+				if (!fresh) return reply.status(404).send({ error: "Service instance not found" });
+				return reply.send({ service: formatServiceInstance(fresh) });
+			},
+		);
+	});
+
+	app.post("/services/:id/identity/replace", async (request, reply) => {
+		const { id } = validateRequest(idParams, request.params);
+		const { candidate, ...confirmation } = validateRequest(identityReplaceSchema, request.body);
+		const userId = request.currentUser!.id;
+
+		return await withExclusiveCleanupTopologyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				const existing = await requireInstance(app, userId, id);
+				const authorityIsCurrent =
+					existing.connectionGeneration === confirmation.expectedConnectionGeneration &&
+					existing.identityGeneration === confirmation.expectedIdentityGeneration;
+				const mayBeIdempotentRetry =
+					existing.identityGeneration === confirmation.expectedIdentityGeneration + 1 &&
+					(existing.connectionGeneration === confirmation.expectedConnectionGeneration ||
+						existing.connectionGeneration === confirmation.expectedConnectionGeneration + 1);
+				if (!authorityIsCurrent && !mayBeIdempotentRetry) {
+					throw createIdentityConflict(
+						"IDENTITY_GENERATION_STALE",
+						"The service changed after identity inspection. Inspect it again before replacing.",
+						existing,
+					);
+				}
+				const observation = await readProviderIdentity(
+					buildIdentityCandidateSnapshot(existing, candidate, app.encryptor),
+					request.log,
+				);
+				const safeCandidate = toSafeIdentityCandidate(observation);
+				if (!confirmsIdentityCandidate(observation, confirmation.confirmationDigest)) {
+					throw createIdentityConflict(
+						"IDENTITY_CANDIDATE_CHANGED",
+						"The provider identity changed after inspection. Inspect it again before replacing.",
+						existing,
+						safeCandidate,
+					);
+				}
+
+				const alreadyReplaced =
+					mayBeIdempotentRetry &&
+					existing.identityStatus === "VERIFIED" &&
+					existing.expectedIdentity === observation.rawIdentity &&
+					existing.identityKind === toPersistedIdentityKind(observation.identityKind) &&
+					existing.identityGeneration === confirmation.expectedIdentityGeneration + 1;
+				if (alreadyReplaced) {
+					const fresh = await app.prisma.serviceInstance.findFirst({
+						where: { id, userId },
+						include: { tags: { include: { tag: true } } },
+					});
+					if (!fresh) return reply.status(404).send({ error: "Service instance not found" });
+					return reply.send({ service: formatServiceInstance(fresh) });
+				}
+				if (!authorityIsCurrent) {
+					throw createIdentityConflict(
+						"IDENTITY_GENERATION_STALE",
+						"The service changed after identity inspection. Inspect it again before replacing.",
+						existing,
+						safeCandidate,
+					);
+				}
+
+				const connectionChanged = changesCacheProviderConnection(existing, candidate);
+				const replacedProviderAuthority = createProviderReplacementAuthority(existing);
+				if (!replacedProviderAuthority) {
+					throw new ConflictError(
+						"The existing provider identity is unavailable; inspect the service again before replacing.",
+					);
+				}
+				const replacementData = {
+					...buildUpdateData(candidate, app.encryptor),
+					...(connectionChanged ? { connectionGeneration: existing.connectionGeneration + 1 } : {}),
+					...replacementIdentityData(existing, observation),
+				};
+				const replacementService = (
+					candidate.service ?? existing.service
+				).toUpperCase() as ServiceType;
+				const replaced = await app.prisma.$transaction(async (tx) => {
+					const updated = await tx.serviceInstance.updateMany({
+						where: {
+							id,
+							userId,
+							connectionGeneration: confirmation.expectedConnectionGeneration,
+							identityGeneration: confirmation.expectedIdentityGeneration,
+						},
+						data: replacementData,
+					});
+					if (updated.count !== 1) return false;
+					if (candidate.isDefault === true || candidate.service !== undefined) {
+						await tx.serviceInstance.updateMany({
+							where: { service: replacementService, userId, NOT: { id } },
+							data: { isDefault: false },
+						});
+					}
+					if (candidate.tags !== undefined) {
+						await updateInstanceTags(tx, id, candidate.tags);
+					}
+					await clearDurableProviderCacheState(tx, id);
+					await expireApprovalsForProviderReplacement(tx, userId, replacedProviderAuthority);
+					return true;
+				});
+				if (!replaced) {
+					const current = await requireInstance(app, userId, id);
+					throw createIdentityConflict(
+						"IDENTITY_GENERATION_STALE",
+						"The service changed while replacement was being saved.",
+						current,
+						safeCandidate,
+					);
+				}
+
+				invalidatePulseCache(userId);
+				const fresh = await app.prisma.serviceInstance.findFirst({
+					where: { id, userId },
+					include: { tags: { include: { tag: true } } },
+				});
+				if (!fresh) return reply.status(404).send({ error: "Service instance not found" });
+				return reply.send({ service: formatServiceInstance(fresh) });
 			},
 		);
 	});

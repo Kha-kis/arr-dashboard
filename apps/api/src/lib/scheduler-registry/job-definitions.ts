@@ -29,9 +29,9 @@ export const JOB_ID = {
 	trashSync: "trash-sync",
 	plexCache: "plex-cache",
 	plexEpisodeCache: "plex-episode-cache",
+	tautulliCache: "tautulli-cache",
 	jellyfinCache: "jellyfin-cache",
 	jellyfinEpisodeCache: "jellyfin-episode-cache",
-	tautulliCache: "tautulli-cache",
 	seerrHealth: "seerr-health",
 	labelSync: "label-sync",
 	autoTag: "auto-tag",
@@ -131,6 +131,13 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		id: JOB_ID.plexEpisodeCache,
 		label: "Plex episode cache",
 		description: "Refreshes Plex episode metadata used by session views. Per-instance serial.",
+		concurrency: "per-instance",
+	},
+	{
+		id: JOB_ID.tautulliCache,
+		label: "Tautulli cache",
+		description:
+			"Refreshes watch-history evidence for configured Tautulli alternatives. Per-instance serial with provider publication fencing.",
 		concurrency: "per-instance",
 	},
 	{

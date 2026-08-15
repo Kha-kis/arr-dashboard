@@ -419,7 +419,7 @@ export class TautulliClient {
 
 export function createTautulliClient(
 	encryptor: Encryptor,
-	instance: TautulliClientInstanceData,
+	instance: ClientInstanceData,
 	log: FastifyBaseLogger,
 	beforeRequest?: () => Promise<void>,
 ): TautulliClient {

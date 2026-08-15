@@ -204,6 +204,7 @@ function makeDeps(options: TestOptions = {}) {
 		enabled: false,
 		encryptedApiKey: "encrypted",
 		encryptionIv: "iv",
+		updatedAt: new Date("2026-07-27T12:00:00.000Z"),
 	};
 
 	let liveMovieExists = true;
@@ -349,6 +350,19 @@ function makeDeps(options: TestOptions = {}) {
 			serviceInstance: {
 				findMany: serviceInstanceFindMany,
 				findFirst: vi.fn().mockResolvedValue(targetInstance),
+			},
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "plex-1",
+						lastRefreshedAt: new Date(),
+						lastResult: "success",
+						lastErrorMessage: null,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
+						itemCount: 1,
+					},
+				]),
 			},
 			crossDomainRule: {
 				findMany: vi.fn().mockResolvedValue([]),
@@ -886,7 +900,7 @@ describe("shared Plex deletion safety", () => {
 			itemsRemoved: 0,
 		});
 		expect(deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
-		expect(deps.prisma.libraryCleanupLog.create).toHaveBeenCalledOnce();
+		expect(deps.prisma.libraryCleanupLog.create).not.toHaveBeenCalled();
 	});
 
 	it.each(["retry_pending", "retry_executing"])(

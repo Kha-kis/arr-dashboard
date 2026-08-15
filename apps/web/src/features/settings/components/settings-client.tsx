@@ -24,10 +24,10 @@ import { AccountTab } from "./account-tab";
 import { AnalyticsUnavailabilityConfirmationDialog } from "./analytics-unavailability-confirmation-dialog";
 import { AppearanceTab } from "./appearance-tab";
 import { BackupTab } from "./backup-tab";
+import { GettingStartedBanner } from "./getting-started-banner";
 import { OIDCProviderSection } from "./oidc-provider-section";
 import { PasskeySection } from "./passkey-section";
 import { PasswordSection } from "./password-section";
-import { GettingStartedBanner } from "./getting-started-banner";
 import { ServiceForm } from "./service-form";
 import { ServicesTab } from "./services-tab";
 import { SessionsSection } from "./sessions-section";
@@ -165,6 +165,10 @@ export const SettingsClient = () => {
 								onToggleDefault={servicesManagement.toggleDefault}
 								onToggleEnabled={servicesManagement.toggleEnabled}
 								onDelete={handleDeleteService}
+								onInspectIdentity={(instance) => {
+									serviceFormState.handleEdit(instance);
+									void servicesManagement.inspectIdentity(instance);
+								}}
 								testingConnection={servicesManagement.testingConnection}
 								testResult={servicesManagement.testResult}
 								mutationPending={servicesManagement.updateServiceMutation.isPending}
@@ -188,6 +192,16 @@ export const SettingsClient = () => {
 								isUpdating={servicesManagement.updateServiceMutation.isPending}
 								isTesting={servicesManagement.testingFormConnection}
 								testResult={servicesManagement.formTestResult}
+								identityFlow={servicesManagement.identityFlow}
+								onConfirmIdentity={() => void servicesManagement.confirmIdentity()}
+								onDismissIdentityFlow={servicesManagement.dismissIdentityFlow}
+								onInspectIdentity={() => {
+									if (serviceFormState.selectedServiceForEdit) {
+										void servicesManagement.inspectIdentity(
+											serviceFormState.selectedServiceForEdit,
+										);
+									}
+								}}
 							/>
 						</div>
 					</div>

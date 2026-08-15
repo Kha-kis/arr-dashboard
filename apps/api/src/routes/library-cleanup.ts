@@ -45,14 +45,15 @@ import {
 	buildFreshCompleteFileIdIndex,
 	getAllHashesForFileIdComplete,
 } from "../lib/library-sync/infohash-backfill-by-inode.js";
-import { refreshJellyfinCache } from "../lib/jellyfin/jellyfin-cache-refresher.js";
-import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-cache-singleflight.js";
-import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
-import { jellyfinConnectionFingerprint } from "../lib/jellyfin/service-instance-fingerprint.js";
-import { refreshPlexCache } from "../lib/plex/plex-cache-refresher.js";
-import { createPlexClient } from "../lib/plex/plex-client.js";
+import {
+	createOwnedJellyfinPublicationSnapshot,
+	refreshJellyfinCache,
+} from "../lib/jellyfin/jellyfin-cache-refresher.js";
+import {
+	createOwnedPlexPublicationSnapshot,
+	refreshPlexCache,
+} from "../lib/plex/plex-cache-refresher.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
-import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
 import { explainItemAgainstRulesViaEngine } from "../lib/rules/cleanup-adapter.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { safeJsonParse as utilSafeJsonParse } from "../lib/utils/json.js";
@@ -206,26 +207,16 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	) => {
 		const result =
 			source === "plex"
-				? await refreshPlexCache(
-						createPlexClient(app.encryptor, instance, app.log),
-						app.prisma,
-						instance.id,
-						app.log,
-						providerConnectionIdentity(instance),
-					)
-				: await runJellyfinCacheRefreshSingleFlight(
-						instance.id,
-						jellyfinConnectionFingerprint(instance),
-						(expected) =>
-							refreshJellyfinCache(
-								createJellyfinClient(app.encryptor, instance, app.log),
-								app.prisma,
-								instance.id,
-								app.log,
-								expected,
-							),
-						{ prisma: app.prisma, log: app.log },
-					);
+				? await refreshPlexCache({
+						prisma: app.prisma,
+						instance: createOwnedPlexPublicationSnapshot(app.encryptor, instance),
+						log: app.log,
+					})
+				: await refreshJellyfinCache({
+						prisma: app.prisma,
+						instance: createOwnedJellyfinPublicationSnapshot(app.encryptor, instance),
+						log: app.log,
+					});
 		assertCompleteCacheRefresh(source, result);
 	};
 	app.addHook("preHandler", async (request, reply) => {

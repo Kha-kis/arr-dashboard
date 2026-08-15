@@ -12,6 +12,7 @@ const {
 	mockUpdateInstanceTags,
 	mockFormatServiceInstance,
 	mockInvalidatePulseCache,
+	mockReadProviderIdentity,
 } = vi.hoisted(() => ({
 	mockRequireInstance: vi.fn(),
 	mockTestConnection: vi.fn().mockResolvedValue({ success: true, version: "4.0.0" }),
@@ -30,6 +31,7 @@ const {
 		storageGroupId: instance.storageGroupId ?? null,
 	})),
 	mockInvalidatePulseCache: vi.fn(),
+	mockReadProviderIdentity: vi.fn(),
 }));
 
 vi.mock("../pulse.js", () => ({
@@ -55,6 +57,10 @@ vi.mock("../../lib/services/tag-manager.js", () => ({
 
 vi.mock("../../lib/services/service-formatter.js", () => ({
 	formatServiceInstance: (instance: unknown) => mockFormatServiceInstance(instance),
+}));
+
+vi.mock("../../lib/services/service-identity.js", () => ({
+	readProviderIdentity: (...args: unknown[]) => mockReadProviderIdentity(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -95,6 +101,12 @@ function makeInstance(overrides: Record<string, unknown> = {}) {
 		createdAt: new Date("2024-01-01T00:00:00Z"),
 		updatedAt: new Date("2024-01-01T00:00:00Z"),
 		connectionGeneration: 0,
+		expectedIdentity: null,
+		identityKind: null,
+		identityStatus: "UNVERIFIED",
+		identityGeneration: 0,
+		identityVerifiedAt: null,
+		identityLastCheckedAt: null,
 		storageGroupId: null,
 		tags: [],
 		...overrides,
@@ -214,6 +226,21 @@ let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 
 beforeEach(async () => {
 	vi.clearAllMocks();
+	mockReadProviderIdentity.mockImplementation(async ({ service }: { service: string }) => {
+		const identities = {
+			PLEX: "plex-machine-identifier",
+			JELLYFIN: "jellyfin-server-id",
+			EMBY: "emby-server-id",
+			TAUTULLI: "tautulli-pms-identifier",
+		} as const;
+		return {
+			service,
+			identityKind: identities[service as keyof typeof identities],
+			rawIdentity: `${service}-identity`,
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+	});
 
 	mockPrisma = createMockPrisma();
 

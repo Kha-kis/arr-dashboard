@@ -2,6 +2,8 @@
  * Service instance formatting utilities
  */
 
+import { createHash } from "node:crypto";
+
 interface ServiceInstanceWithTags {
 	id: string;
 	service: string;
@@ -21,6 +23,16 @@ interface ServiceInstanceWithTags {
 	// the API-facing types in the formatter below.
 	hasLocalFilesystemAccess: boolean | null;
 	pathPrefix: string | null;
+	expectedIdentity?: string | null;
+	identityKind?:
+		| "PLEX_MACHINE_IDENTIFIER"
+		| "JELLYFIN_SERVER_ID"
+		| "EMBY_SERVER_ID"
+		| "TAUTULLI_PMS_IDENTIFIER"
+		| null;
+	identityStatus?: "UNVERIFIED" | "VERIFIED" | "MISMATCH";
+	identityVerifiedAt?: Date | null;
+	identityLastCheckedAt?: Date | null;
 	tags: Array<{
 		tag: {
 			id: string;
@@ -47,6 +59,13 @@ export interface FormattedServiceInstance {
 	// fields for non-qui instances.
 	hasLocalFilesystemAccess: boolean;
 	pathPrefix: string | null;
+	identity: {
+		status: "unverified" | "verified" | "mismatch";
+		kind: string | null;
+		fingerprint: string | null;
+		verifiedAt: Date | null;
+		lastCheckedAt: Date | null;
+	};
 	tags: Array<{ id: string; name: string }>;
 }
 
@@ -72,6 +91,26 @@ export function formatServiceInstance(instance: ServiceInstanceWithTags): Format
 		// booleans, but our API contract is "false when unset."
 		hasLocalFilesystemAccess: instance.hasLocalFilesystemAccess === true,
 		pathPrefix: instance.pathPrefix,
+		identity: formatIdentity(instance),
 		tags: instance.tags.map(({ tag }) => ({ id: tag.id, name: tag.name })),
+	};
+}
+
+function formatIdentity(instance: ServiceInstanceWithTags): FormattedServiceInstance["identity"] {
+	const kind = instance.identityKind?.toLowerCase().replaceAll("_", "-") ?? null;
+	const fingerprint =
+		instance.expectedIdentity && kind
+			? createHash("sha256")
+					.update(`display:${instance.service}:${kind}:${instance.expectedIdentity.trim()}`)
+					.digest("hex")
+					.slice(0, 12)
+			: null;
+	return {
+		status: (instance.identityStatus?.toLowerCase() ??
+			"unverified") as FormattedServiceInstance["identity"]["status"],
+		kind,
+		fingerprint,
+		verifiedAt: instance.identityVerifiedAt ?? null,
+		lastCheckedAt: instance.identityLastCheckedAt ?? null,
 	};
 }

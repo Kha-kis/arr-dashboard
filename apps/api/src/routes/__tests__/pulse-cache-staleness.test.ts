@@ -8,8 +8,7 @@
  *   emit action iff
  *     status.lastResult !== "error"
  *     AND status.lastRefreshedAt < now - STALE_CACHE_HOURS
- *     AND status.cacheType ∈ {"plex", "jellyfin"}. Tautulli uses its own
- *     supported instance-keyed collector and deliberately has no action.
+ *     AND status.cacheType ∈ {"plex", "tautulli", "jellyfin"}
  */
 
 import Fastify from "fastify";
@@ -102,27 +101,22 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		});
 	});
 
-	it("renders a supported Tautulli stale signal with an instance-keyed id and no action", async () => {
-		cacheStatuses = [
-			makeRow({
-				id: "taut-row",
-				cacheType: "tautulli",
-				instanceId: "inst-taut",
-				instance: { label: "Private Tautulli", service: "TAUTULLI", enabled: true },
-			}),
-		];
+	it("emits a cache.refresh action on a stale Tautulli cache row", async () => {
+		// Tracearr is the primary 3.0 watch provider, while Tautulli remains a
+		// supported alternative whose cache can be refreshed by the dispatcher.
+		cacheStatuses = [makeRow({ id: "taut-row", cacheType: "tautulli", instanceId: "inst-taut" })];
 
 		const res = await injectAuthenticated("GET", "/pulse");
 		const body = JSON.parse(res.payload);
 		const item = body.items.find((i: { id: string }) => i.id === "tautulli-cache-stale-inst-taut");
 
-		expect(item).toMatchObject({
-			title: "Tautulli cache is stale",
-			source: "tautulli",
-			actionUrl: "/settings",
-			actionLabel: "Check Tautulli settings",
+		expect(item).toBeDefined();
+		expect(item.action).toEqual({
+			kind: "cache.refresh",
+			target: { instanceId: "inst-taut", cacheType: "tautulli" },
+			label: "Refresh now",
+			destructive: false,
 		});
-		expect(item.action).toBeUndefined();
 	});
 
 	it("does NOT emit an action for unsupported cacheType (plex_episode)", async () => {

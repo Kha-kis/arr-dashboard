@@ -374,6 +374,11 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		to: "#e5a336", // warm amber
 		glow: "rgba(204, 123, 25, 0.35)",
 	},
+	tautulli: {
+		from: "#e5a00d", // Tautulli gold
+		to: "#d97706", // amber-600
+		glow: "rgba(229, 160, 13, 0.35)",
+	},
 	jellyfin: {
 		from: "#00a4dc", // Jellyfin brand blue
 		to: "#6c47ff", // purple accent
@@ -393,11 +398,6 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		from: "#d946ef", // fuchsia-500 (analytics / insight — distinct from the blues)
 		to: "#6366f1", // indigo-500 (long magenta→indigo sweep, unused elsewhere)
 		glow: "rgba(217, 70, 239, 0.4)",
-	},
-	tautulli: {
-		from: "#ef4444", // red-500 (Tautulli analytics identity)
-		to: "#f59e0b", // amber-500
-		glow: "rgba(239, 68, 68, 0.4)",
 	},
 };
 

@@ -3236,7 +3236,8 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(storedApproval).toMatchObject({
 			status: "pending",
 		});
-		expect(JSON.parse(storedApproval.safetySnapshot as string)).toMatchObject({
+		const retryEnvelope = JSON.parse(storedApproval.safetySnapshot as string);
+		expect(retryEnvelope.plan).toMatchObject({
 			kind: "verified_sonarr",
 			files: { episodeFiles: [] },
 			peerInventoryComplete: true,
@@ -3287,7 +3288,8 @@ describe("verified Sonarr mutation handoff", () => {
 		const firstResult = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
 
 		expect(firstResult).toMatchObject({ removed: 0, failed: 1 });
-		expect(JSON.parse(storedApproval.safetySnapshot as string)).toMatchObject({
+		const sharedRetryEnvelope = JSON.parse(storedApproval.safetySnapshot as string);
+		expect(sharedRetryEnvelope.plan).toMatchObject({
 			kind: "verified_sonarr",
 			files: { episodeFiles: [] },
 			peers: [expect.objectContaining({ instanceId: "sonarr-hd", arrItemId: null })],
@@ -3403,7 +3405,8 @@ describe("verified Sonarr mutation handoff", () => {
 		});
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 		expect(fixture.deleteSeries).toHaveBeenCalledOnce();
-		expect(JSON.parse(storedApproval.safetySnapshot as string)).toMatchObject({
+		const recoveredEnvelope = JSON.parse(storedApproval.safetySnapshot as string);
+		expect(recoveredEnvelope.plan).toMatchObject({
 			kind: "verified_sonarr",
 			files: { episodeFiles: [] },
 			ownership: [
@@ -3439,7 +3442,8 @@ describe("verified Sonarr mutation handoff", () => {
 			deleteFiles: false,
 			addImportListExclusion: false,
 		});
-		expect(JSON.parse(storedApproval.safetySnapshot as string)).toMatchObject({
+		const noPeerRecoveryEnvelope = JSON.parse(storedApproval.safetySnapshot as string);
+		expect(noPeerRecoveryEnvelope.plan).toMatchObject({
 			kind: "verified_sonarr",
 			files: { episodeFiles: [] },
 			peers: [],
@@ -3641,7 +3645,8 @@ describe("verified Sonarr mutation handoff", () => {
 			status: "executed",
 			safetySnapshot: expect.any(String),
 		});
-		expect(JSON.parse(retries[0]!.safetySnapshot as string)).toMatchObject({
+		const directRetryEnvelope = JSON.parse(retries[0]!.safetySnapshot as string);
+		expect(directRetryEnvelope.plan).toMatchObject({
 			kind: "verified_sonarr",
 			files: { episodeFiles: [] },
 			peers: [expect.objectContaining({ instanceId: "sonarr-hd" })],
@@ -3714,7 +3719,8 @@ describe("verified Sonarr mutation handoff", () => {
 
 		expect(firstResult).toMatchObject({ status: "partial", itemsFilesDeleted: 1 });
 		expect(retries).toHaveLength(1);
-		expect(JSON.parse(retries[0]!.safetySnapshot as string)).toMatchObject({
+		const directNoPeerRetryEnvelope = JSON.parse(retries[0]!.safetySnapshot as string);
+		expect(directNoPeerRetryEnvelope.plan).toMatchObject({
 			kind: "verified_sonarr",
 			files: { episodeFiles: [] },
 			peers: [],

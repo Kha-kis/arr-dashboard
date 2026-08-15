@@ -15,6 +15,8 @@ vi.mock("../../../../hooks/api/useServiceMutations", () => ({
 	useTestConnectionBeforeAdd: () => ({ mutateAsync: vi.fn() }),
 	useTestServiceConnection: () => ({ mutateAsync: vi.fn() }),
 	useUpdateServiceMutation: () => ({ mutateAsync: mocks.updateMutateAsync, isPending: false }),
+	useReplaceServiceIdentityMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
+	useVerifyServiceIdentityMutation: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 

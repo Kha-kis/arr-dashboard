@@ -25,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const refreshPlexCache = vi.fn();
 const requirePlexClient = vi.fn();
 vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
+	createOwnedPlexPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
 vi.mock("../../lib/plex/plex-helpers.js", () => ({
@@ -33,10 +34,18 @@ vi.mock("../../lib/plex/plex-helpers.js", () => ({
 // Tautulli helpers are not exercised by this file but need stubs because
 // the dispatcher module imports them at top level.
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
+	createOwnedTautulliPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshTautulliCache: vi.fn(),
 }));
 vi.mock("../../lib/tautulli/tautulli-helpers.js", () => ({
 	requireTautulliClient: vi.fn(),
+}));
+vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
+	createOwnedJellyfinPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
+	refreshJellyfinCache: vi.fn(),
+}));
+vi.mock("../../lib/jellyfin/jellyfin-helpers.js", () => ({
+	requireJellyfinClient: vi.fn(),
 }));
 
 // Run only the staleness collector — keeps other collectors (ARR health,

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { normalizeTorrentState } from "@arr/shared";
 import type {
 	Movie,
@@ -11,6 +12,8 @@ import type {
 	SonarrClient,
 	Notification as SonarrNotification,
 } from "arr-sdk/sonarr";
+import { createOwnedJellyfinPublicationSnapshot } from "../jellyfin/jellyfin-cache-refresher.js";
+import { createOwnedPlexPublicationSnapshot } from "../plex/plex-cache-refresher.js";
 import {
 	createPlexClient,
 	type PlexClient,
@@ -21,6 +24,20 @@ import {
 } from "../plex/plex-client.js";
 import { plexConnectionFingerprint as plexEvidenceSourceFingerprint } from "../plex/service-instance-fingerprint.js";
 import type { ServiceInstance } from "../prisma.js";
+import {
+	providerIdentityAuthorityFingerprint,
+	providerInstanceAuthorityFingerprint,
+	readProviderIdentity,
+} from "../services/service-identity.js";
+import { toPersistedIdentityKind } from "../services/service-identity-lifecycle.js";
+import { createOwnedTautulliPublicationSnapshot } from "../tautulli/tautulli-cache-refresher.js";
+import {
+	isProviderCacheType,
+	loadExactProviderCacheRows,
+	type ProviderCacheType,
+	providerCacheServicesForDependencies,
+	providerServiceUsesCacheType,
+} from "./provider-cache-evidence.js";
 
 export { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
 
@@ -281,6 +298,42 @@ export type ExecutableSharedMediaSafetyPlan = Extract<
 			| "verified_sonarr_episode";
 	}
 >;
+
+/**
+ * Provider authority captured with a cleanup selection. These fields are
+ * deliberately derived-only: no URLs, labels, titles, credentials, raw
+ * expected identities, or upstream identifiers belong in approval JSON.
+ */
+export interface SanitizedProviderEvidenceSource {
+	service: "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI";
+	/** Added after evidence v1 shipped; absent sources remain parseable as conservative legacy evidence. */
+	instanceFingerprint?: string;
+	identityKind: string;
+	identityFingerprint: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+	cacheType: string;
+	completedAt: string;
+	itemCount: number;
+	verifiedAt: string;
+	statusFingerprint: string;
+	rowFingerprint: string;
+	fingerprint: string;
+}
+
+export interface SanitizedProviderEvidence {
+	version: 1;
+	dependencies: string[];
+	fingerprint: string;
+	sources: SanitizedProviderEvidenceSource[];
+}
+
+export interface ExecutableSafetyEnvelope {
+	version: 2;
+	plan: ExecutableSharedMediaSafetyPlan;
+	providerEvidence: SanitizedProviderEvidence;
+	fingerprint: string;
+}
 
 function requiredPositiveSafeInteger(value: unknown, label: string): number {
 	if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
@@ -871,17 +924,884 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 	throw new FileMatchVerificationError("Cleanup safety snapshot is not executable");
 }
 
-export function serializeExecutableSafetyPlan(plan: ExecutableSharedMediaSafetyPlan): string {
-	return JSON.stringify(canonicalExecutableSafetyPlan(plan));
+function canonicalFingerprint(value: unknown): string {
+	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-export function parseExecutableSafetyPlan(value: unknown): ExecutableSharedMediaSafetyPlan | null {
-	if (typeof value !== "string" || value.trim() === "") return null;
+function providerSourcePayload(source: Omit<SanitizedProviderEvidenceSource, "fingerprint">) {
+	return {
+		service: source.service,
+		...(source.instanceFingerprint === undefined
+			? {}
+			: { instanceFingerprint: source.instanceFingerprint }),
+		identityKind: source.identityKind,
+		identityFingerprint: source.identityFingerprint,
+		connectionGeneration: source.connectionGeneration,
+		identityGeneration: source.identityGeneration,
+		cacheType: source.cacheType,
+		completedAt: source.completedAt,
+		itemCount: source.itemCount,
+		verifiedAt: source.verifiedAt,
+		statusFingerprint: source.statusFingerprint,
+		rowFingerprint: source.rowFingerprint,
+	};
+}
+
+export function createSanitizedProviderEvidence(
+	dependencies: string[],
+	sources: Array<Omit<SanitizedProviderEvidenceSource, "fingerprint">>,
+): SanitizedProviderEvidence {
+	const orderedDependencies = [...new Set(dependencies)].sort();
+	const orderedSources = sources
+		.map((source) => ({
+			...providerSourcePayload(source),
+			fingerprint: canonicalFingerprint(providerSourcePayload(source)),
+		}))
+		.sort(
+			(left, right) =>
+				left.service.localeCompare(right.service) ||
+				left.cacheType.localeCompare(right.cacheType) ||
+				left.identityFingerprint.localeCompare(right.identityFingerprint),
+		);
+	if ((orderedDependencies.length === 0) !== (orderedSources.length === 0)) {
+		throw new FileMatchVerificationError(
+			"Cleanup provider dependencies and evidence sources are inconsistent",
+		);
+	}
+	return {
+		version: 1,
+		dependencies: orderedDependencies,
+		sources: orderedSources,
+		fingerprint: canonicalFingerprint({
+			dependencies: orderedDependencies,
+			sources: orderedSources,
+		}),
+	};
+}
+
+export interface SanitizedProviderScanAuthority {
+	version: 1;
+	providerEvidence: SanitizedProviderEvidence;
+	fingerprint: string;
+}
+
+type ProviderScanTarget = {
+	instanceId: string;
+	service: "PLEX" | "JELLYFIN" | "EMBY";
+	mediaType: "movie" | "show";
+};
+
+export function serializeProviderScanAuthority(
+	target: ProviderScanTarget,
+	providerEvidence: SanitizedProviderEvidence,
+): string {
+	const canonicalEvidence = canonicalProviderEvidence(providerEvidence);
+	if (
+		canonicalEvidence.sources.length === 0 ||
+		canonicalEvidence.sources.some(
+			(source) =>
+				source.service !== target.service ||
+				!isProviderCacheType(source.cacheType) ||
+				!providerServiceUsesCacheType(target.service, source.cacheType),
+		)
+	) {
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+	const services = providerCacheServicesForDependencies(canonicalEvidence.dependencies);
+	if (!services?.includes(target.service)) throw new ProviderExecutionAuthorityChangedError();
+	return JSON.stringify({
+		version: 1,
+		providerEvidence: canonicalEvidence,
+		fingerprint: canonicalFingerprint({
+			instanceId: target.instanceId,
+			service: target.service,
+			mediaType: target.mediaType,
+			providerEvidenceFingerprint: canonicalEvidence.fingerprint,
+		}),
+	} satisfies SanitizedProviderScanAuthority);
+}
+
+export function parseProviderScanAuthority(
+	value: string | null,
+	target: ProviderScanTarget,
+): SanitizedProviderEvidence | null {
+	if (!value) return null;
 	try {
-		return canonicalExecutableSafetyPlan(JSON.parse(value));
+		const candidate = JSON.parse(value) as Partial<SanitizedProviderScanAuthority>;
+		if (candidate.version !== 1 || typeof candidate.fingerprint !== "string") return null;
+		const providerEvidence = canonicalProviderEvidence(candidate.providerEvidence);
+		if (
+			providerEvidence.sources.length === 0 ||
+			providerEvidence.sources.some(
+				(source) =>
+					source.service !== target.service ||
+					!isProviderCacheType(source.cacheType) ||
+					!providerServiceUsesCacheType(target.service, source.cacheType),
+			)
+		) {
+			return null;
+		}
+		const services = providerCacheServicesForDependencies(providerEvidence.dependencies);
+		if (!services?.includes(target.service)) return null;
+		const fingerprint = canonicalFingerprint({
+			instanceId: target.instanceId,
+			service: target.service,
+			mediaType: target.mediaType,
+			providerEvidenceFingerprint: providerEvidence.fingerprint,
+		});
+		return candidate.fingerprint === fingerprint ? providerEvidence : null;
 	} catch {
 		return null;
 	}
+}
+
+const PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
+
+export class ProviderExecutionAuthorityChangedError extends Error {
+	readonly code = "PROVIDER_EXECUTION_AUTHORITY_CHANGED";
+
+	constructor() {
+		super("Provider execution authority changed");
+		this.name = "ProviderExecutionAuthorityChangedError";
+	}
+}
+
+function providerExecutionFingerprint(value: unknown): string {
+	const canonicalize = (input: unknown): unknown => {
+		if (input instanceof Date) return input.toISOString();
+		if (Array.isArray(input)) return input.map(canonicalize);
+		if (typeof input === "object" && input !== null) {
+			return Object.fromEntries(
+				Object.entries(input as Record<string, unknown>)
+					.sort(([left], [right]) => left.localeCompare(right))
+					.map(([key, entry]) => [key, canonicalize(entry)]),
+			);
+		}
+		return input;
+	};
+	return createHash("sha256")
+		.update(JSON.stringify(canonicalize(value)))
+		.digest("hex");
+}
+
+function providerExecutionInstanceFingerprint(instance: ServiceInstance): string {
+	return providerExecutionFingerprint({
+		id: instance.id,
+		userId: instance.userId,
+		service: instance.service,
+		baseUrl: instance.baseUrl,
+		enabled: instance.enabled,
+		encryptedApiKey: instance.encryptedApiKey,
+		encryptionIv: instance.encryptionIv,
+		encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
+		httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
+		expectedIdentity: instance.expectedIdentity,
+		identityKind: instance.identityKind,
+		identityStatus: instance.identityStatus,
+		identityVerifiedAt: instance.identityVerifiedAt,
+		connectionGeneration: instance.connectionGeneration,
+		identityGeneration: instance.identityGeneration,
+		updatedAt: instance.updatedAt,
+	});
+}
+
+function isCurrentProviderExecutionInstance(instance: ServiceInstance): boolean {
+	return (
+		instance.enabled &&
+		(instance.service === "PLEX" ||
+			instance.service === "JELLYFIN" ||
+			instance.service === "EMBY" ||
+			instance.service === "TAUTULLI") &&
+		instance.identityStatus === "VERIFIED" &&
+		typeof instance.expectedIdentity === "string" &&
+		instance.expectedIdentity.trim() !== "" &&
+		instance.identityKind !== null &&
+		instance.identityVerifiedAt !== null &&
+		Number.isSafeInteger(instance.connectionGeneration) &&
+		instance.connectionGeneration >= 0 &&
+		Number.isSafeInteger(instance.identityGeneration) &&
+		instance.identityGeneration > 0
+	);
+}
+
+async function loadProviderExecutionEvidence(
+	prisma: CleanupExecutorDeps["prisma"],
+	userId: string,
+	dependencies: string[],
+	cacheTypes: ProviderCacheType[],
+	now: Date,
+	target?: Pick<ProviderScanTarget, "instanceId" | "service">,
+): Promise<{ evidence: SanitizedProviderEvidence; instances: ServiceInstance[] }> {
+	const services = providerCacheServicesForDependencies(dependencies);
+	const uniqueCacheTypes = [...new Set(cacheTypes)];
+	if (
+		!services ||
+		services.length === 0 ||
+		uniqueCacheTypes.length === 0 ||
+		uniqueCacheTypes.some((cacheType) => !isProviderCacheType(cacheType))
+	) {
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+	if (target && !services.includes(target.service)) {
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+	const instances = (await prisma.serviceInstance.findMany({
+		where: target
+			? { id: target.instanceId, userId, service: target.service, enabled: true }
+			: { userId, service: { in: services }, enabled: true },
+		orderBy: { id: "asc" },
+	})) as ServiceInstance[];
+	if (
+		instances.length === 0 ||
+		instances.some((instance) => !isCurrentProviderExecutionInstance(instance))
+	) {
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+	const statuses = await prisma.cacheRefreshStatus.findMany({
+		where: {
+			instanceId: { in: instances.map((instance) => instance.id) },
+			cacheType: { in: uniqueCacheTypes },
+		},
+		select: {
+			instanceId: true,
+			cacheType: true,
+			lastRefreshedAt: true,
+			lastResult: true,
+			lastErrorMessage: true,
+			lastAttemptResult: true,
+			lastAttemptErrorMessage: true,
+			itemCount: true,
+			connectionGeneration: true,
+			identityGeneration: true,
+			generationId: true,
+			generationMetadata: true,
+		},
+	});
+	const statusesByKey = new Map(
+		statuses.map((status) => [`${status.instanceId}:${status.cacheType}`, status]),
+	);
+	const rowsByType = new Map<ProviderCacheType, Map<string, unknown[]>>();
+	for (const cacheType of uniqueCacheTypes) {
+		rowsByType.set(
+			cacheType,
+			await loadExactProviderCacheRows(
+				prisma as never,
+				cacheType,
+				instances.map((instance) => instance.id),
+			),
+		);
+	}
+	const freshnessThreshold = now.getTime() - PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS;
+	const sources: Array<Omit<SanitizedProviderEvidenceSource, "fingerprint">> = [];
+	for (const instance of instances) {
+		const applicableTypes = uniqueCacheTypes.filter((cacheType) =>
+			providerServiceUsesCacheType(
+				instance.service as SanitizedProviderEvidenceSource["service"],
+				cacheType as ProviderCacheType,
+			),
+		) as ProviderCacheType[];
+		for (const cacheType of applicableTypes) {
+			const status = statusesByKey.get(`${instance.id}:${cacheType}`);
+			if (
+				!status ||
+				instance.identityVerifiedAt === null ||
+				status.lastResult !== "success" ||
+				status.lastErrorMessage !== null ||
+				status.lastAttemptErrorMessage !== null ||
+				(status.lastAttemptResult !== null && status.lastAttemptResult !== "success") ||
+				status.lastRefreshedAt.getTime() < freshnessThreshold ||
+				status.lastRefreshedAt.getTime() < instance.updatedAt.getTime() ||
+				status.lastRefreshedAt.getTime() < instance.identityVerifiedAt.getTime() ||
+				status.connectionGeneration !== instance.connectionGeneration ||
+				status.identityGeneration !== instance.identityGeneration
+			) {
+				throw new ProviderExecutionAuthorityChangedError();
+			}
+			const rows = rowsByType.get(cacheType)?.get(instance.id) ?? [];
+			if (rows.length !== status.itemCount) throw new ProviderExecutionAuthorityChangedError();
+			sources.push({
+				service: instance.service as SanitizedProviderEvidenceSource["service"],
+				instanceFingerprint: providerInstanceAuthorityFingerprint(instance.id),
+				identityKind: instance.identityKind!,
+				identityFingerprint: providerIdentityAuthorityFingerprint(instance),
+				connectionGeneration: status.connectionGeneration!,
+				identityGeneration: status.identityGeneration!,
+				cacheType,
+				completedAt: status.lastRefreshedAt.toISOString(),
+				itemCount: status.itemCount,
+				verifiedAt: instance.identityVerifiedAt.toISOString(),
+				statusFingerprint: providerExecutionFingerprint({
+					instance: {
+						id: instance.id,
+						expectedIdentity: instance.expectedIdentity,
+						identityKind: instance.identityKind,
+						identityVerifiedAt: instance.identityVerifiedAt,
+						connectionGeneration: instance.connectionGeneration,
+						identityGeneration: instance.identityGeneration,
+						updatedAt: instance.updatedAt,
+					},
+					status: {
+						instanceId: status.instanceId,
+						lastRefreshedAt: status.lastRefreshedAt,
+						lastResult: status.lastResult,
+						lastErrorMessage: status.lastErrorMessage,
+						lastAttemptResult: status.lastAttemptResult,
+						lastAttemptErrorMessage: status.lastAttemptErrorMessage,
+						itemCount: status.itemCount,
+						connectionGeneration: status.connectionGeneration,
+						identityGeneration: status.identityGeneration,
+						generationId: status.generationId,
+						generationMetadata: status.generationMetadata,
+					},
+				}),
+				rowFingerprint: providerExecutionFingerprint(rows),
+			});
+		}
+	}
+	return { evidence: createSanitizedProviderEvidence(dependencies, sources), instances };
+}
+
+async function loadCurrentProviderExecutionEvidence(
+	prisma: CleanupExecutorDeps["prisma"],
+	userId: string,
+	accepted: SanitizedProviderEvidence,
+	now: Date,
+	target?: Pick<ProviderScanTarget, "instanceId" | "service">,
+): Promise<{ evidence: SanitizedProviderEvidence; instances: ServiceInstance[] }> {
+	const cacheTypes = [...new Set(accepted.sources.map((source) => source.cacheType))];
+	if (cacheTypes.some((cacheType) => !isProviderCacheType(cacheType))) {
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+	return loadProviderExecutionEvidence(
+		prisma,
+		userId,
+		accepted.dependencies,
+		cacheTypes as ProviderCacheType[],
+		now,
+		target,
+	);
+}
+
+export async function captureCurrentProviderScanAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	target: ProviderScanTarget,
+): Promise<string> {
+	try {
+		const testCapturer = (
+			deps as unknown as {
+				providerScanAuthorityCapturer?: (target: ProviderScanTarget) => Promise<string>;
+			}
+		).providerScanAuthorityCapturer;
+		if (testCapturer) return await testCapturer(target);
+
+		const cacheType: ProviderCacheType = target.service === "PLEX" ? "plex" : "jellyfin";
+		const current = await loadProviderExecutionEvidence(
+			deps.prisma,
+			userId,
+			[cacheType],
+			[cacheType],
+			new Date(),
+			target,
+		);
+		if (current.evidence.sources.length === 0) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		return serializeProviderScanAuthority(target, current.evidence);
+	} catch (error) {
+		if (error instanceof ProviderExecutionAuthorityChangedError) throw error;
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+}
+
+export async function createCurrentProviderScanAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	target: ProviderScanTarget,
+	accepted: SanitizedProviderEvidence,
+): Promise<string> {
+	try {
+		const canonicalAccepted = canonicalProviderEvidence(accepted);
+		const acceptedSources = canonicalAccepted.sources.filter(
+			(source) =>
+				source.service === target.service &&
+				isProviderCacheType(source.cacheType) &&
+				providerServiceUsesCacheType(target.service, source.cacheType),
+		);
+		if (acceptedSources.length === 0) throw new ProviderExecutionAuthorityChangedError();
+		const testCreator = (
+			deps as unknown as {
+				providerScanAuthorityCreator?: (
+					target: ProviderScanTarget,
+					evidence: SanitizedProviderEvidence,
+				) => Promise<string>;
+			}
+		).providerScanAuthorityCreator;
+		if (testCreator) return await testCreator(target, canonicalAccepted);
+		const targetRequest = createSanitizedProviderEvidence(
+			[...new Set(acceptedSources.map((source) => source.cacheType))],
+			acceptedSources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		);
+		const current = await loadCurrentProviderExecutionEvidence(
+			deps.prisma,
+			userId,
+			targetRequest,
+			new Date(),
+			target,
+		);
+		if (
+			current.evidence.sources.length === 0 ||
+			!current.evidence.sources.every((currentSource) =>
+				acceptedSources.some((acceptedSource) =>
+					providerEvidenceSourceMatches(acceptedSource, currentSource),
+				),
+			)
+		) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		return serializeProviderScanAuthority(target, current.evidence);
+	} catch (error) {
+		if (error instanceof ProviderExecutionAuthorityChangedError) throw error;
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+}
+
+function currentEvidenceMatches(
+	accepted: SanitizedProviderEvidence,
+	current: SanitizedProviderEvidence,
+): boolean {
+	if (accepted.fingerprint === current.fingerprint) return true;
+	return (
+		JSON.stringify(accepted.dependencies) === JSON.stringify(current.dependencies) &&
+		providerEvidenceSourcesMatch(accepted.sources, current.sources)
+	);
+}
+
+function stableProviderEvidenceMatches(
+	accepted: SanitizedProviderEvidence,
+	current: SanitizedProviderEvidence,
+): boolean {
+	if (
+		accepted.sources.some((source) => source.instanceFingerprint === undefined) ||
+		current.sources.some((source) => source.instanceFingerprint === undefined)
+	) {
+		return currentEvidenceMatches(accepted, current);
+	}
+	if (
+		JSON.stringify(accepted.dependencies) !== JSON.stringify(current.dependencies) ||
+		accepted.sources.length !== current.sources.length
+	) {
+		return false;
+	}
+	const remaining = [...current.sources];
+	for (const acceptedSource of accepted.sources) {
+		const matchIndex = remaining.findIndex(
+			(currentSource) =>
+				acceptedSource.service === currentSource.service &&
+				acceptedSource.instanceFingerprint === currentSource.instanceFingerprint &&
+				acceptedSource.identityKind === currentSource.identityKind &&
+				acceptedSource.identityFingerprint === currentSource.identityFingerprint &&
+				acceptedSource.connectionGeneration === currentSource.connectionGeneration &&
+				acceptedSource.identityGeneration === currentSource.identityGeneration &&
+				acceptedSource.cacheType === currentSource.cacheType &&
+				acceptedSource.verifiedAt === currentSource.verifiedAt,
+		);
+		if (matchIndex < 0) return false;
+		remaining.splice(matchIndex, 1);
+	}
+	return true;
+}
+
+function providerEvidenceSourcesMatch(
+	accepted: SanitizedProviderEvidenceSource[],
+	current: SanitizedProviderEvidenceSource[],
+): boolean {
+	if (accepted.length !== current.length) return false;
+	const remaining = [...current];
+	for (const acceptedSource of accepted) {
+		const matchIndex = remaining.findIndex((currentSource) =>
+			providerEvidenceSourceMatches(acceptedSource, currentSource),
+		);
+		if (matchIndex < 0) return false;
+		remaining.splice(matchIndex, 1);
+	}
+	return true;
+}
+
+function providerEvidenceSourceMatches(
+	accepted: SanitizedProviderEvidenceSource,
+	current: SanitizedProviderEvidenceSource,
+): boolean {
+	if (accepted.instanceFingerprint !== undefined) {
+		return accepted.fingerprint === current.fingerprint;
+	}
+	const {
+		instanceFingerprint: _currentInstanceFingerprint,
+		fingerprint: _currentFingerprint,
+		...currentLegacyPayload
+	} = current;
+	const { fingerprint: _acceptedFingerprint, ...acceptedLegacyPayload } = accepted;
+	return JSON.stringify(acceptedLegacyPayload) === JSON.stringify(currentLegacyPayload);
+}
+
+/**
+ * Re-authorize every provider-dependent target from the durable Task 6 evidence.
+ * Live network identity reads happen before the final database transaction; the
+ * transaction then locks and rechecks the exact stored status/rows snapshot.
+ */
+export async function assertCurrentProviderEvidenceAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	accepted: SanitizedProviderEvidence,
+	assertLease?: () => Promise<void>,
+): Promise<void> {
+	await authorizeProviderEvidence(deps, userId, accepted, assertLease, currentEvidenceMatches);
+}
+
+export async function renewCurrentProviderRetryAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	accepted: SanitizedProviderEvidence,
+	assertLease?: () => Promise<void>,
+): Promise<SanitizedProviderEvidence> {
+	const testRenewer = (
+		deps as unknown as {
+			providerRetryAuthorityRenewer?: (
+				userId: string,
+				evidence: SanitizedProviderEvidence,
+				assertLease?: () => Promise<void>,
+			) => Promise<SanitizedProviderEvidence>;
+		}
+	).providerRetryAuthorityRenewer;
+	if (testRenewer) return await testRenewer(userId, accepted, assertLease);
+	return await authorizeProviderEvidence(
+		deps,
+		userId,
+		accepted,
+		assertLease,
+		stableProviderEvidenceMatches,
+	);
+}
+
+async function authorizeProviderEvidence(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	accepted: SanitizedProviderEvidence,
+	assertLease?: () => Promise<void>,
+	evidenceMatches: (
+		accepted: SanitizedProviderEvidence,
+		current: SanitizedProviderEvidence,
+	) => boolean = currentEvidenceMatches,
+	target?: Pick<ProviderScanTarget, "instanceId" | "service">,
+): Promise<SanitizedProviderEvidence> {
+	if (accepted.dependencies.length === 0 && accepted.sources.length === 0) {
+		if (target) throw new ProviderExecutionAuthorityChangedError();
+		return accepted;
+	}
+	const testAuthorityChecker = (
+		deps as unknown as {
+			providerEvidenceAuthorityChecker?: (
+				userId: string,
+				evidence: SanitizedProviderEvidence,
+				assertLease?: () => Promise<void>,
+			) => Promise<void>;
+		}
+	).providerEvidenceAuthorityChecker;
+	if (testAuthorityChecker) {
+		await testAuthorityChecker(userId, accepted, assertLease);
+		return accepted;
+	}
+	try {
+		const canonicalAccepted = createSanitizedProviderEvidence(
+			accepted.dependencies,
+			accepted.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		);
+		if (!currentEvidenceMatches(accepted, canonicalAccepted)) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		await assertLease?.();
+		const before = await loadCurrentProviderExecutionEvidence(
+			deps.prisma,
+			userId,
+			accepted,
+			new Date(),
+			target,
+		);
+		if (!evidenceMatches(accepted, before.evidence)) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		if (!deps.encryptor) throw new ProviderExecutionAuthorityChangedError();
+		const identityReader =
+			(deps as unknown as { providerIdentityReader?: typeof readProviderIdentity })
+				.providerIdentityReader ?? readProviderIdentity;
+		for (const instance of before.instances) {
+			const owned =
+				instance.service === "PLEX"
+					? createOwnedPlexPublicationSnapshot(deps.encryptor, instance)
+					: instance.service === "TAUTULLI"
+						? createOwnedTautulliPublicationSnapshot(deps.encryptor, instance)
+						: createOwnedJellyfinPublicationSnapshot(deps.encryptor, instance);
+			const observation = await identityReader(owned, deps.log);
+			if (
+				observation.service !== instance.service ||
+				toPersistedIdentityKind(observation.identityKind) !== instance.identityKind ||
+				observation.rawIdentity !== instance.expectedIdentity
+			) {
+				throw new ProviderExecutionAuthorityChangedError();
+			}
+		}
+		await assertLease?.();
+		const expectedInstanceFingerprint = providerExecutionFingerprint(
+			before.instances.map(providerExecutionInstanceFingerprint),
+		);
+		const postgresql = /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
+		await deps.prisma.$transaction(
+			async (tx) => {
+				if (postgresql) {
+					for (const instanceId of before.instances.map((instance) => instance.id).sort()) {
+						await tx.$queryRawUnsafe(
+							'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+							instanceId,
+						);
+					}
+				}
+				const current = await loadCurrentProviderExecutionEvidence(
+					tx as unknown as CleanupExecutorDeps["prisma"],
+					userId,
+					accepted,
+					new Date(),
+					target,
+				);
+				if (
+					!currentEvidenceMatches(before.evidence, current.evidence) ||
+					providerExecutionFingerprint(
+						current.instances.map(providerExecutionInstanceFingerprint),
+					) !== expectedInstanceFingerprint
+				) {
+					throw new ProviderExecutionAuthorityChangedError();
+				}
+			},
+			postgresql ? undefined : { isolationLevel: "Serializable" },
+		);
+		return before.evidence;
+	} catch (error) {
+		if (error instanceof ProviderExecutionAuthorityChangedError) throw error;
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+}
+
+export async function assertCurrentProviderScanAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	serializedAuthority: string | null,
+	target: ProviderScanTarget,
+	assertLease?: () => Promise<void>,
+): Promise<void> {
+	const providerEvidence = parseProviderScanAuthority(serializedAuthority, target);
+	if (!providerEvidence) throw new ProviderExecutionAuthorityChangedError();
+	const testAuthorityChecker = (
+		deps as unknown as {
+			providerEvidenceAuthorityChecker?: (
+				userId: string,
+				evidence: SanitizedProviderEvidence,
+				assertLease?: () => Promise<void>,
+			) => Promise<void>;
+		}
+	).providerEvidenceAuthorityChecker;
+	if (testAuthorityChecker) {
+		await testAuthorityChecker(userId, providerEvidence, assertLease);
+		return;
+	}
+	try {
+		// Cache generations authorize the pre-delete capture, but normal cache
+		// publications must not invalidate an already-durable post-delete retry.
+		// Retry authority stays bound to the owned instance and enrolled identity.
+		const matchesStableAuthority = (instance: ServiceInstance): boolean =>
+			isCurrentProviderExecutionInstance(instance) &&
+			instance.id === target.instanceId &&
+			instance.userId === userId &&
+			instance.service === target.service &&
+			providerEvidence.sources.every(
+				(source) =>
+					source.service === instance.service &&
+					(source.instanceFingerprint === undefined ||
+						source.instanceFingerprint === providerInstanceAuthorityFingerprint(instance.id)) &&
+					source.identityKind === instance.identityKind &&
+					source.identityFingerprint === providerIdentityAuthorityFingerprint(instance) &&
+					source.connectionGeneration === instance.connectionGeneration &&
+					source.identityGeneration === instance.identityGeneration &&
+					source.verifiedAt === instance.identityVerifiedAt?.toISOString(),
+			);
+		await assertLease?.();
+		const instance = (await deps.prisma.serviceInstance.findFirst({
+			where: { id: target.instanceId, userId, service: target.service, enabled: true },
+		})) as ServiceInstance | null;
+		if (!instance || !matchesStableAuthority(instance)) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		if (!deps.encryptor) throw new ProviderExecutionAuthorityChangedError();
+		const identityReader =
+			(deps as unknown as { providerIdentityReader?: typeof readProviderIdentity })
+				.providerIdentityReader ?? readProviderIdentity;
+		const owned =
+			instance.service === "PLEX"
+				? createOwnedPlexPublicationSnapshot(deps.encryptor, instance)
+				: createOwnedJellyfinPublicationSnapshot(deps.encryptor, instance);
+		const observation = await identityReader(owned, deps.log);
+		if (
+			observation.service !== instance.service ||
+			toPersistedIdentityKind(observation.identityKind) !== instance.identityKind ||
+			observation.rawIdentity !== instance.expectedIdentity
+		) {
+			throw new ProviderExecutionAuthorityChangedError();
+		}
+		await assertLease?.();
+		const expectedInstanceFingerprint = providerExecutionInstanceFingerprint(instance);
+		const postgresql = /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
+		await deps.prisma.$transaction(
+			async (tx) => {
+				if (postgresql) {
+					await tx.$queryRawUnsafe(
+						'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+						target.instanceId,
+					);
+				}
+				const current = (await tx.serviceInstance.findFirst({
+					where: { id: target.instanceId, userId, service: target.service, enabled: true },
+				})) as ServiceInstance | null;
+				if (
+					!current ||
+					!matchesStableAuthority(current) ||
+					providerExecutionInstanceFingerprint(current) !== expectedInstanceFingerprint
+				) {
+					throw new ProviderExecutionAuthorityChangedError();
+				}
+			},
+			postgresql ? undefined : { isolationLevel: "Serializable" },
+		);
+	} catch (error) {
+		if (error instanceof ProviderExecutionAuthorityChangedError) throw error;
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+}
+
+function emptyProviderEvidence(): SanitizedProviderEvidence {
+	return createSanitizedProviderEvidence([], []);
+}
+
+function canonicalProviderEvidence(value: unknown): SanitizedProviderEvidence {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new FileMatchVerificationError("Cleanup provider evidence is unavailable");
+	}
+	const candidate = value as Record<string, unknown>;
+	if (
+		candidate.version !== 1 ||
+		typeof candidate.fingerprint !== "string" ||
+		!Array.isArray(candidate.sources) ||
+		!Array.isArray(candidate.dependencies)
+	) {
+		throw new FileMatchVerificationError("Cleanup provider evidence is invalid");
+	}
+	const sources = candidate.sources.map((source) => {
+		if (!source || typeof source !== "object" || Array.isArray(source)) {
+			throw new FileMatchVerificationError("Cleanup provider evidence source is invalid");
+		}
+		const row = source as Record<string, unknown>;
+		if (
+			(row.service !== "PLEX" &&
+				row.service !== "JELLYFIN" &&
+				row.service !== "EMBY" &&
+				row.service !== "TAUTULLI") ||
+			typeof row.identityKind !== "string" ||
+			!isSha256(row.identityFingerprint) ||
+			(row.instanceFingerprint !== undefined && !isSha256(row.instanceFingerprint)) ||
+			!Number.isSafeInteger(row.connectionGeneration) ||
+			!Number.isSafeInteger(row.identityGeneration) ||
+			typeof row.cacheType !== "string" ||
+			typeof row.completedAt !== "string" ||
+			!Number.isSafeInteger(row.itemCount) ||
+			typeof row.verifiedAt !== "string" ||
+			!isSha256(row.statusFingerprint) ||
+			!isSha256(row.rowFingerprint) ||
+			!isSha256(row.fingerprint)
+		) {
+			throw new FileMatchVerificationError("Cleanup provider evidence source is invalid");
+		}
+		const canonical = {
+			service: row.service as SanitizedProviderEvidenceSource["service"],
+			...(row.instanceFingerprint === undefined
+				? {}
+				: { instanceFingerprint: row.instanceFingerprint as string }),
+			identityKind: row.identityKind as string,
+			identityFingerprint: row.identityFingerprint as string,
+			connectionGeneration: row.connectionGeneration as number,
+			identityGeneration: row.identityGeneration as number,
+			cacheType: row.cacheType as string,
+			completedAt: row.completedAt as string,
+			itemCount: row.itemCount as number,
+			verifiedAt: row.verifiedAt as string,
+			statusFingerprint: row.statusFingerprint as string,
+			rowFingerprint: row.rowFingerprint as string,
+		};
+		if (canonicalFingerprint(canonical) !== row.fingerprint) {
+			throw new FileMatchVerificationError("Cleanup provider evidence source was tampered");
+		}
+		return { ...canonical, fingerprint: row.fingerprint as string };
+	});
+	const dependencies = candidate.dependencies.map((dependency) => {
+		if (typeof dependency !== "string" || dependency.trim() === "") {
+			throw new FileMatchVerificationError("Cleanup provider dependency is invalid");
+		}
+		return dependency;
+	});
+	const canonical = createSanitizedProviderEvidence(dependencies, sources);
+	if (candidate.fingerprint !== canonical.fingerprint) {
+		throw new FileMatchVerificationError("Cleanup provider evidence was tampered");
+	}
+	return canonical;
+}
+
+function isSha256(value: unknown): value is string {
+	return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
+}
+
+export function serializeExecutableSafetyPlan(
+	plan: ExecutableSharedMediaSafetyPlan,
+	providerEvidence: SanitizedProviderEvidence = emptyProviderEvidence(),
+): string {
+	const canonicalPlan = canonicalExecutableSafetyPlan(plan);
+	const canonicalEvidence = canonicalProviderEvidence(providerEvidence);
+	return JSON.stringify({
+		version: 2,
+		plan: canonicalPlan,
+		providerEvidence: canonicalEvidence,
+		fingerprint: canonicalFingerprint({
+			plan: canonicalPlan,
+			providerEvidenceFingerprint: canonicalEvidence.fingerprint,
+		}),
+	});
+}
+
+export function parseExecutableSafetyEnvelope(value: unknown): ExecutableSafetyEnvelope | null {
+	if (typeof value !== "string" || value.trim() === "") return null;
+	try {
+		const snapshot = JSON.parse(value) as Record<string, unknown>;
+		if (snapshot?.version !== 2 || !isSha256(snapshot.fingerprint)) return null;
+		const providerEvidence = canonicalProviderEvidence(snapshot.providerEvidence);
+		const plan = canonicalExecutableSafetyPlan(snapshot.plan);
+		const fingerprint = canonicalFingerprint({
+			plan,
+			providerEvidenceFingerprint: providerEvidence.fingerprint,
+		});
+		if (snapshot.fingerprint !== fingerprint) return null;
+		return { version: 2, plan, providerEvidence, fingerprint };
+	} catch {
+		return null;
+	}
+}
+
+export function parseExecutableSafetyPlan(value: unknown): ExecutableSharedMediaSafetyPlan | null {
+	return parseExecutableSafetyEnvelope(value)?.plan ?? null;
 }
 
 export function executableSafetyPlansEqual(

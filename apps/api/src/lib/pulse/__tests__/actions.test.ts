@@ -34,31 +34,79 @@ vi.mock("../../queue-cleaner/scheduler.js", () => ({
 }));
 
 const refreshPlexCache = vi.fn();
+const plexPublicationInstance = {
+	id: "inst-plex-1",
+	userId: "user-1",
+	service: "PLEX" as const,
+	label: "Primary Plex",
+	baseUrl: "https://plex.invalid",
+	apiKey: "decrypted-token",
+	httpAuthHeaders: {},
+	enabled: true,
+	encryptedApiKey: "encrypted-token",
+	encryptionIv: "token-iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	expectedIdentity: "plex-a",
+	identityStatus: "VERIFIED" as const,
+	connectionGeneration: 7,
+	identityGeneration: 3,
+};
+const createOwnedPlexPublicationSnapshot = vi.fn(
+	(_encryptor: unknown, _instance: unknown) => plexPublicationInstance,
+);
+const refreshTautulliCache = vi.fn();
+const createOwnedTautulliPublicationSnapshot = vi.fn(
+	(_encryptor: unknown, instance: unknown) => instance,
+);
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
+	createOwnedPlexPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
+		createOwnedPlexPublicationSnapshot(encryptor, instance),
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
-
 const refreshJellyfinCache = vi.fn();
 const runJellyfinCacheRefreshSingleFlight = vi.fn();
+const jellyfinPublicationInstance = {
+	...plexPublicationInstance,
+	id: "inst-jellyfin-1",
+	service: "JELLYFIN" as const,
+	baseUrl: "https://jellyfin.invalid",
+	expectedIdentity: "jellyfin-a",
+	connectionGeneration: 3,
+	identityGeneration: 2,
+};
+const createOwnedJellyfinPublicationSnapshot = vi.fn(
+	(_encryptor: unknown, _instance: unknown) => jellyfinPublicationInstance,
+);
 vi.mock("../../jellyfin/jellyfin-cache-refresher.js", () => ({
+	createOwnedJellyfinPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
+		createOwnedJellyfinPublicationSnapshot(encryptor, instance),
 	refreshJellyfinCache: (...args: unknown[]) => refreshJellyfinCache(...args),
 }));
 vi.mock("../../jellyfin/jellyfin-cache-singleflight.js", () => ({
 	runJellyfinCacheRefreshSingleFlight: (...args: unknown[]) =>
 		runJellyfinCacheRefreshSingleFlight(...args),
 }));
+vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
+	createOwnedTautulliPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
+		createOwnedTautulliPublicationSnapshot(encryptor, instance),
+	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
+}));
 
 const requirePlexClient = vi.fn();
 const requireJellyfinClient = vi.fn();
+const requireTautulliClient = vi.fn();
 vi.mock("../../plex/plex-helpers.js", () => ({
 	requirePlexClient: (...args: unknown[]) => requirePlexClient(...args),
 }));
 vi.mock("../../jellyfin/jellyfin-helpers.js", () => ({
 	requireJellyfinClient: (...args: unknown[]) => requireJellyfinClient(...args),
 }));
+vi.mock("../../tautulli/tautulli-helpers.js", () => ({
+	requireTautulliClient: (...args: unknown[]) => requireTautulliClient(...args),
+}));
 
 import { InstanceNotFoundError } from "../../errors.js";
-import { providerConnectionIdentity } from "../../services/provider-connection-guard.js";
 import { dispatchPulseAction } from "../actions.js";
 
 // -----------------------------------------------------------------------------
@@ -77,15 +125,14 @@ const fakeLog = {
 
 const markEnabled = vi.fn();
 const cacheStatusUpsert = vi.fn();
-const plexInstance = {
-	userId: "user-1",
-	service: "PLEX" as const,
-	baseUrl: "https://plex.example.test",
-	encryptedApiKey: "encrypted-key",
-	encryptionIv: "key-iv",
-	encryptedHttpAuthCredentials: null,
-	httpAuthEncryptionIv: null,
-	connectionGeneration: 7,
+const plexInstance = { service: "PLEX" as const, connectionGeneration: 7 };
+const tautulliInstance = {
+	...plexInstance,
+	id: "inst-tautulli-1",
+	service: "TAUTULLI" as const,
+	expectedIdentity: "tautulli-a",
+	identityStatus: "VERIFIED" as const,
+	identityGeneration: 4,
 };
 const jellyfinInstance = {
 	service: "JELLYFIN" as const,
@@ -97,6 +144,26 @@ const jellyfinInstance = {
 
 const fakeApp = {
 	prisma: {
+		$transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+			callback({
+				$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+				libraryCleanupConfig: {
+					upsert: vi.fn().mockResolvedValue({ id: "cleanup-user-1" }),
+					findUnique: vi.fn().mockResolvedValue({ id: "cleanup-user-1", runClaimToken: null }),
+				},
+				serviceInstance: {
+					findFirst: vi.fn().mockResolvedValue({ id: "inst-plex-1" }),
+					findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
+						where.id === "inst-plex-1"
+							? { ...plexInstance, enabled: true }
+							: { ...tautulliInstance, enabled: true },
+					),
+				},
+				cacheRefreshStatus: {
+					findUnique: vi.fn().mockResolvedValue(null),
+					upsert: (...args: unknown[]) => cacheStatusUpsert(...args),
+				},
+			}),
 		cacheRefreshStatus: {
 			upsert: (...args: unknown[]) => cacheStatusUpsert(...args),
 		},
@@ -114,8 +181,12 @@ beforeEach(() => {
 	refreshPlexCache.mockReset();
 	refreshJellyfinCache.mockReset();
 	runJellyfinCacheRefreshSingleFlight.mockReset();
+	createOwnedJellyfinPublicationSnapshot.mockClear();
+	createOwnedPlexPublicationSnapshot.mockClear();
+	refreshTautulliCache.mockReset();
 	requirePlexClient.mockReset();
 	requireJellyfinClient.mockReset();
+	requireTautulliClient.mockReset();
 	markEnabled.mockReset();
 	cacheStatusUpsert.mockReset();
 	cacheStatusUpsert.mockResolvedValue({});
@@ -220,6 +291,10 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		...plexAction,
 		target: { instanceId: "inst-jellyfin-1", cacheType: "jellyfin" },
 	};
+	const tautulliAction: PulseAction = {
+		...plexAction,
+		target: { instanceId: "inst-tautulli-1", cacheType: "tautulli" },
+	};
 
 	it("passes the owned Plex connection identity to its atomic refresher", async () => {
 		const fakeClient = { id: "plex-client" };
@@ -247,12 +322,14 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// this; the HTTP client has already received 200.
 		await result.backgroundTask;
 
-		expect(refreshPlexCache).toHaveBeenCalledWith(
-			fakeClient,
-			fakeApp.prisma,
-			"inst-plex-1",
-			fakeLog,
-			providerConnectionIdentity(plexInstance),
+		expect(refreshPlexCache).toHaveBeenCalledWith({
+			prisma: fakeApp.prisma,
+			instance: plexPublicationInstance,
+			log: fakeLog,
+		});
+		expect(createOwnedPlexPublicationSnapshot).toHaveBeenCalledWith(
+			fakeApp.encryptor,
+			plexInstance,
 		);
 		// The full refresher owns the atomic success publication; the action
 		// dispatcher must never reintroduce an unguarded stale write-through.
@@ -274,15 +351,83 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		await result.backgroundTask;
 
 		expect(requireJellyfinClient).toHaveBeenCalledWith(fakeApp, "user-1", "inst-jellyfin-1");
+		expect(createOwnedJellyfinPublicationSnapshot).toHaveBeenCalledWith(
+			fakeApp.encryptor,
+			jellyfinInstance,
+		);
 		expect(runJellyfinCacheRefreshSingleFlight).toHaveBeenCalledWith(
-			"inst-jellyfin-1",
-			expect.any(String),
+			jellyfinPublicationInstance,
 			expect.any(Function),
 			{ prisma: fakeApp.prisma, log: fakeLog },
 		);
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
+	it("refreshes Tautulli from the owned snapshot without forwarding the helper client", async () => {
+		const fakeClient = { id: "tautulli-client" };
+		requireTautulliClient.mockResolvedValue({ client: fakeClient, instance: tautulliInstance });
+		refreshTautulliCache.mockResolvedValue({
+			upserted: 7,
+			errors: 0,
+			errorMessages: [],
+			complete: true,
+			completedAt: new Date(),
+		});
+
+		const result = await dispatchPulseAction(fakeApp, "user-1", tautulliAction, fakeLog);
+		await result.backgroundTask;
+
+		expect(createOwnedTautulliPublicationSnapshot).toHaveBeenCalledWith(
+			fakeApp.encryptor,
+			tautulliInstance,
+		);
+		expect(refreshTautulliCache).toHaveBeenCalledWith({
+			prisma: fakeApp.prisma,
+			instance: tautulliInstance,
+			log: fakeLog,
+		});
+		expect(refreshTautulliCache.mock.calls[0]).not.toContain(fakeClient);
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+	});
+	it("records an errors-zero incomplete refresh as failed instead of publishing success", async () => {
+		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
+		refreshPlexCache.mockResolvedValue({
+			upserted: 42,
+			errors: 0,
+			errorMessages: [],
+			complete: false,
+		});
+
+		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
+		await result.backgroundTask;
+
+		expect(cacheStatusUpsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					lastResult: "error",
+					connectionGeneration: 7,
+					identityGeneration: 3,
+				}),
+				update: expect.objectContaining({ lastAttemptResult: "error" }),
+			}),
+		);
+	});
+
+	it("does not record a superseded Plex refresh as a failure", async () => {
+		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
+		refreshPlexCache.mockResolvedValue({
+			upserted: 0,
+			errors: 0,
+			errorMessages: [],
+			complete: false,
+			superseded: true,
+		});
+
+		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
+		await result.backgroundTask;
+
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+	});
 	it("returns 200 immediately even when the refresher is slow — fire-and-forget contract", async () => {
 		// Regression guard for the Next.js proxy timeout issue. If this
 		// test times out or returns after the refresher resolves, someone
@@ -333,10 +478,17 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(result.status).toBe("ok");
 
 		// Background task runs; it should swallow the error (logged) and
-		// deliberately NOT call cacheStatusUpsert.
+		// record a failed attempt without advancing the successful generation.
 		await result.backgroundTask;
 
-		expect(cacheStatusUpsert).not.toHaveBeenCalled();
+		expect(cacheStatusUpsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.objectContaining({
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: "upstream Plex timeout",
+				}),
+			}),
+		);
 	});
 
 	it("does NOT call cacheRefreshStatus.upsert when the refresher rejects before completing", async () => {
