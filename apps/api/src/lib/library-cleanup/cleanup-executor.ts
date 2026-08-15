@@ -125,7 +125,16 @@ async function loadCompleteCacheGenerations(
 	instances: Array<{ id: string; updatedAt: Date }>,
 	cacheType: string,
 ): Promise<
-	Map<string, { completedAt: Date; itemCount: number; generationId: string | null }> | undefined
+	| Map<
+			string,
+			{
+				completedAt: Date;
+				itemCount: number;
+				generationId: string | null;
+				generationMetadata: string | null;
+			}
+	  >
+	| undefined
 > {
 	if (instances.length === 0) return undefined;
 	const statuses = await deps.prisma.cacheRefreshStatus.findMany({
@@ -139,6 +148,7 @@ async function loadCompleteCacheGenerations(
 			lastAttemptErrorMessage: true,
 			itemCount: true,
 			generationId: true,
+			generationMetadata: true,
 		},
 	});
 	const byInstance = new Map(statuses.map((status) => [status.instanceId, status]));
@@ -146,7 +156,12 @@ async function loadCompleteCacheGenerations(
 	const freshnessThreshold = nowMs - PROVIDER_EVIDENCE_FRESHNESS_MS;
 	const generations = new Map<
 		string,
-		{ completedAt: Date; itemCount: number; generationId: string | null }
+		{
+			completedAt: Date;
+			itemCount: number;
+			generationId: string | null;
+			generationMetadata: string | null;
+		}
 	>();
 	for (const instance of instances) {
 		const status = byInstance.get(instance.id);
@@ -165,9 +180,19 @@ async function loadCompleteCacheGenerations(
 			completedAt: status.lastRefreshedAt,
 			itemCount: status.itemCount,
 			generationId: status.generationId,
+			generationMetadata: status.generationMetadata,
 		});
 	}
 	return generations;
+}
+
+function parseEpisodeParentGenerationId(metadata: string | null): string | undefined {
+	const parsed = safeJsonParse(metadata);
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return undefined;
+	const parentGenerationId = (parsed as Record<string, unknown>).parentGenerationId;
+	return typeof parentGenerationId === "string" && parentGenerationId.length > 0
+		? parentGenerationId
+		: undefined;
 }
 
 // The route returns at most 200 preview rows; avoid live safety I/O for rows
@@ -3503,6 +3528,7 @@ export async function prefetchPlexData(
 interface PublishedPlexPolicyEvidence {
 	plexMap: PlexWatchMap;
 	plexSectionTitles: Set<string>;
+	generationIds: Map<string, string>;
 }
 
 function parsePublishedPlexSections(metadata: string | null): Array<{
@@ -3616,7 +3642,11 @@ async function loadPublishedPlexPolicyEvidence(
 		if (!plexMap) return undefined;
 		const after = await readStatuses();
 		if (JSON.stringify(before) !== JSON.stringify(after)) return undefined;
-		return { plexMap, plexSectionTitles: sectionTitles };
+		return {
+			plexMap,
+			plexSectionTitles: sectionTitles,
+			generationIds: new Map(before.map((status) => [status.instanceId, status.generationId!])),
+		};
 	} catch (error) {
 		deps.log.warn({ err: error }, "Published Plex policy evidence was unavailable");
 		return undefined;
@@ -3823,6 +3853,7 @@ async function prefetchJellyfinEpisodeData(
 async function prefetchPlexEpisodeData(
 	deps: CleanupExecutorDeps,
 	userId: string,
+	acceptedPlexGenerations: ReadonlyMap<string, string>,
 ): Promise<PlexEpisodeMap | undefined> {
 	const { prisma, log } = deps;
 
@@ -3845,8 +3876,9 @@ async function prefetchPlexEpisodeData(
 		});
 		const instanceIds = instances.map((i) => i.id);
 		if (instanceIds.length === 0) return undefined;
-		const generations = await loadCompleteCacheGenerations(deps, instances, "plex_episode");
-		if (!generations) return undefined;
+		const episodeGenerations = await loadCompleteCacheGenerations(deps, instances, "plex_episode");
+		const plexGenerations = await loadCompleteCacheGenerations(deps, instances, "plex");
+		if (!episodeGenerations || !plexGenerations) return undefined;
 		const eligibleShowRows = await prisma.plexCache.groupBy({
 			by: ["instanceId", "tmdbId"],
 			where: {
@@ -3866,10 +3898,21 @@ async function prefetchPlexEpisodeData(
 		const freshnessThreshold = nowMs - PROVIDER_EVIDENCE_FRESHNESS_MS;
 		const currentEpisodeSources: Prisma.PlexEpisodeCacheWhereInput[] = [];
 		for (const instance of instances) {
+			const episodeGeneration = episodeGenerations.get(instance.id);
+			const plexGeneration = plexGenerations.get(instance.id);
+			const acceptedPlexGenerationId = acceptedPlexGenerations.get(instance.id);
+			if (
+				!episodeGeneration?.generationId ||
+				!plexGeneration?.generationId ||
+				!acceptedPlexGenerationId ||
+				plexGeneration.generationId !== acceptedPlexGenerationId ||
+				parseEpisodeParentGenerationId(episodeGeneration.generationMetadata) !==
+					acceptedPlexGenerationId
+			) {
+				return undefined;
+			}
 			const showTmdbIds = eligibleShowsByInstance.get(instance.id) ?? [];
 			if (showTmdbIds.length === 0) continue;
-			const generation = generations.get(instance.id);
-			if (!generation?.generationId) return undefined;
 			const sourceWhere: Prisma.PlexEpisodeCacheWhereInput = {
 				instanceId: instance.id,
 				showTmdbId: { in: showTmdbIds },
@@ -3879,7 +3922,7 @@ async function prefetchPlexEpisodeData(
 				refreshedAt: {
 					not: null,
 					gte: new Date(Math.max(freshnessThreshold, instance.updatedAt.getTime())),
-					lte: generation.completedAt,
+					lte: episodeGeneration.completedAt,
 				},
 				sourceFingerprint: plexConnectionFingerprint(instance as ServiceInstance),
 			};
@@ -3887,7 +3930,7 @@ async function prefetchPlexEpisodeData(
 			const validRows = await prisma.plexEpisodeCache.count({
 				where: validatedSourceWhere,
 			});
-			if (totalRows !== validRows) {
+			if (totalRows === 0 || totalRows !== validRows) {
 				return undefined;
 			}
 			currentEpisodeSources.push(validatedSourceWhere);
@@ -3898,11 +3941,25 @@ async function prefetchPlexEpisodeData(
 		};
 
 		// Four bounded groupBy queries: show and season totals plus their watched subsets.
-		const totalCounts = await prisma.plexEpisodeCache.groupBy({
-			by: ["showTmdbId"],
+		const sourceTotalCounts = await prisma.plexEpisodeCache.groupBy({
+			by: ["instanceId", "showTmdbId"],
 			where: currentEpisodeWhere,
 			_count: { id: true },
 		});
+		const coveredSources = new Set(
+			sourceTotalCounts.map((group) => `${group.instanceId}:${group.showTmdbId}`),
+		);
+		if (eligibleShowRows.some((row) => !coveredSources.has(`${row.instanceId}:${row.tmdbId}`))) {
+			return undefined;
+		}
+		const totalByShow = new Map<number, number>();
+		for (const group of sourceTotalCounts) {
+			totalByShow.set(group.showTmdbId, (totalByShow.get(group.showTmdbId) ?? 0) + group._count.id);
+		}
+		const totalCounts = [...totalByShow].map(([showTmdbId, count]) => ({
+			showTmdbId,
+			_count: { id: count },
+		}));
 
 		const watchedCounts = await prisma.plexEpisodeCache.groupBy({
 			by: ["showTmdbId"],
@@ -3922,18 +3979,36 @@ async function prefetchPlexEpisodeData(
 			where: { AND: [currentEpisodeWhere, { watched: true }] },
 			_count: { id: true },
 		});
-		const finalGenerations = await loadCompleteCacheGenerations(deps, instances, "plex_episode");
+		const finalEpisodeGenerations = await loadCompleteCacheGenerations(
+			deps,
+			instances,
+			"plex_episode",
+		);
+		const finalPlexGenerations = await loadCompleteCacheGenerations(deps, instances, "plex");
 		if (
-			!finalGenerations ||
+			!finalEpisodeGenerations ||
+			!finalPlexGenerations ||
 			instances.some((instance) => {
-				const before = generations.get(instance.id);
-				const after = finalGenerations.get(instance.id);
+				const beforeEpisode = episodeGenerations.get(instance.id);
+				const afterEpisode = finalEpisodeGenerations.get(instance.id);
+				const beforePlex = plexGenerations.get(instance.id);
+				const afterPlex = finalPlexGenerations.get(instance.id);
+				const acceptedPlexGenerationId = acceptedPlexGenerations.get(instance.id);
 				return (
-					!before?.generationId ||
-					!after?.generationId ||
-					before.generationId !== after.generationId ||
-					before.completedAt.getTime() !== after.completedAt.getTime() ||
-					before.itemCount !== after.itemCount
+					!beforeEpisode?.generationId ||
+					!afterEpisode?.generationId ||
+					!beforePlex?.generationId ||
+					!afterPlex?.generationId ||
+					!acceptedPlexGenerationId ||
+					beforeEpisode.generationId !== afterEpisode.generationId ||
+					beforeEpisode.completedAt.getTime() !== afterEpisode.completedAt.getTime() ||
+					beforeEpisode.itemCount !== afterEpisode.itemCount ||
+					beforePlex.generationId !== acceptedPlexGenerationId ||
+					afterPlex.generationId !== acceptedPlexGenerationId ||
+					beforePlex.completedAt.getTime() !== afterPlex.completedAt.getTime() ||
+					beforePlex.itemCount !== afterPlex.itemCount ||
+					parseEpisodeParentGenerationId(afterEpisode.generationMetadata) !==
+						acceptedPlexGenerationId
 				);
 			})
 		) {
@@ -4580,7 +4655,7 @@ async function evaluateAllItems(
 	const hasEpisodeRules = activeTypes.has("plex_episode_completion");
 	const plexEpisodeMap =
 		hasEpisodeRules && plexEvidence
-			? await prefetchPlexEpisodeData(deps, config.userId)
+			? await prefetchPlexEpisodeData(deps, config.userId, plexEvidence.generationIds)
 			: undefined;
 
 	const hasJellyfinEpisodeRules = activeTypes.has("jellyfin_episode_completion");
@@ -7275,24 +7350,24 @@ export async function buildEvalContext(
 
 	const needsPlex = PLEX_RULE_TYPES_LIST.some((type) => activeTypes.has(type));
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(rules).size > 0;
-	const [seerrMap, plexEvidence, prefetchedPlexEpisodeMap, jellyfinMap, jellyfinEpisodeMap] =
-		await Promise.all([
-			SEERR_RULE_TYPES.some((t) => activeTypes.has(t))
-				? prefetchSeerrRequests(deps, userId)
-				: undefined,
-			needsPlex || needsPlexSectionInventory
-				? loadPublishedPlexPolicyEvidence(deps, userId, rules)
-				: undefined,
-			activeTypes.has("plex_episode_completion")
-				? prefetchPlexEpisodeData(deps, userId)
-				: undefined,
-			JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t))
-				? prefetchJellyfinData(deps, userId)
-				: undefined,
-			activeTypes.has("jellyfin_episode_completion")
-				? prefetchJellyfinEpisodeData(deps, userId)
-				: undefined,
-		]);
+	const plexEvidence =
+		needsPlex || needsPlexSectionInventory
+			? await loadPublishedPlexPolicyEvidence(deps, userId, rules)
+			: undefined;
+	const [seerrMap, prefetchedPlexEpisodeMap, jellyfinMap, jellyfinEpisodeMap] = await Promise.all([
+		SEERR_RULE_TYPES.some((t) => activeTypes.has(t))
+			? prefetchSeerrRequests(deps, userId)
+			: undefined,
+		activeTypes.has("plex_episode_completion") && plexEvidence
+			? prefetchPlexEpisodeData(deps, userId, plexEvidence.generationIds)
+			: undefined,
+		JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t))
+			? prefetchJellyfinData(deps, userId)
+			: undefined,
+		activeTypes.has("jellyfin_episode_completion")
+			? prefetchJellyfinEpisodeData(deps, userId)
+			: undefined,
+	]);
 	const tmdbListMemberships = activeTypes.has("tmdb_list_member")
 		? await prefetchCleanupListMemberships(deps, userId, rules, "tmdb")
 		: undefined;

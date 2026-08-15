@@ -93,6 +93,7 @@ function completeStatus(instanceId: string, completedAt = new Date(), itemCount 
 		generationId: `generation-${instanceId}`,
 		generationMetadata: JSON.stringify({
 			sections: [{ key: "1", title: "Movies", type: "movie" }],
+			parentGenerationId: `generation-${instanceId}`,
 		}),
 		lastErrorMessage: null,
 		lastAttemptResult: "success",
@@ -327,8 +328,8 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		const episodeGroupBy = vi
 			.fn()
 			.mockResolvedValueOnce([
-				{ showTmdbId: 42, _count: { id: 1 } },
-				{ showTmdbId: 84, _count: { id: 1 } },
+				{ instanceId: instance.id, showTmdbId: 42, _count: { id: 1 } },
+				{ instanceId: instance.id, showTmdbId: 84, _count: { id: 1 } },
 			])
 			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
 			.mockResolvedValueOnce([
@@ -394,7 +395,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		const episodeStatus = completeStatus(instance.id, completedAt, 1);
 		const episodeGroupBy = vi
 			.fn()
-			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
+			.mockResolvedValueOnce([{ instanceId: instance.id, showTmdbId: 42, _count: { id: 1 } }])
 			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
 			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }])
 			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }]);
@@ -523,7 +524,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		let episodeStatusReads = 0;
 		const episodeGroupBy = vi
 			.fn()
-			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 100 } }])
+			.mockResolvedValueOnce([{ instanceId: instance.id, showTmdbId: 42, _count: { id: 100 } }])
 			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
 			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 100 } }])
 			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }]);
@@ -566,6 +567,81 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		expect(result.ctx.plexEpisodeMap).toBeUndefined();
 		expect(result.failedSources).toContain("plex");
 	});
+
+	it.each(["missing coverage", "parent mismatch"] as const)(
+		"rejects Plex episode evidence with %s",
+		async (failure) => {
+			const instance = {
+				id: "plex-inst-1",
+				updatedAt: new Date(0),
+				service: "PLEX",
+				enabled: true,
+				baseUrl: "http://plex.internal:32400",
+				encryptedApiKey: "encrypted-token",
+				encryptionIv: "iv",
+				encryptedHttpAuthCredentials: null,
+				httpAuthEncryptionIv: null,
+				label: null,
+			};
+			const completedAt = new Date();
+			const normalStatus = completeStatus(instance.id, completedAt, 1);
+			const episodeStatus = {
+				...completeStatus(instance.id, completedAt, 1),
+				generationId: "episode-generation",
+				generationMetadata: JSON.stringify({
+					parentGenerationId:
+						failure === "parent mismatch" ? "old-plex-generation" : normalStatus.generationId,
+				}),
+			};
+			const episodeGroupBy = vi
+				.fn()
+				.mockResolvedValueOnce(
+					failure === "missing coverage"
+						? [{ instanceId: instance.id, showTmdbId: 42, _count: { id: 1 } }]
+						: [],
+				);
+			const prisma = {
+				serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+				cacheRefreshStatus: {
+					findMany: vi.fn(({ where }: { where: { cacheType: string } }) =>
+						Promise.resolve([where.cacheType === "plex_episode" ? episodeStatus : normalStatus]),
+					),
+				},
+				plexCache: {
+					count: vi.fn().mockResolvedValue(1),
+					groupBy: vi.fn().mockResolvedValue(
+						failure === "missing coverage"
+							? [
+									{ instanceId: instance.id, tmdbId: 42 },
+									{ instanceId: instance.id, tmdbId: 84 },
+								]
+							: [{ instanceId: instance.id, tmdbId: 42 }],
+					),
+					findMany: vi
+						.fn()
+						.mockResolvedValue([
+							makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+						]),
+				},
+				plexEpisodeCache: {
+					count: vi.fn().mockResolvedValue(failure === "missing coverage" ? 1 : 0),
+					groupBy: episodeGroupBy,
+				},
+			} as unknown as CleanupExecutorDeps["prisma"];
+
+			const ctx = await buildEvalContext({ prisma, log } as CleanupExecutorDeps, "user-1", [
+				plexCleanupRule("plex_episode_completion"),
+			]);
+
+			expect(ctx.plexMap).toBeDefined();
+			expect(ctx.plexEpisodeMap).toBeUndefined();
+			if (failure === "missing coverage") {
+				expect(episodeGroupBy).toHaveBeenCalledOnce();
+			} else {
+				expect(episodeGroupBy).not.toHaveBeenCalled();
+			}
+		},
+	);
 
 	it("rejects an interleaved map/section generation", async () => {
 		const instance = { id: "plex-inst-1", updatedAt: new Date(0) };
