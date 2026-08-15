@@ -936,6 +936,20 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			userId,
 			async () => {
 				const existing = await requireInstance(app, userId, id);
+				const authorityIsCurrent =
+					existing.connectionGeneration === confirmation.expectedConnectionGeneration &&
+					existing.identityGeneration === confirmation.expectedIdentityGeneration;
+				const mayBeIdempotentRetry =
+					existing.identityGeneration === confirmation.expectedIdentityGeneration + 1 &&
+					(existing.connectionGeneration === confirmation.expectedConnectionGeneration ||
+						existing.connectionGeneration === confirmation.expectedConnectionGeneration + 1);
+				if (!authorityIsCurrent && !mayBeIdempotentRetry) {
+					throw createIdentityConflict(
+						"IDENTITY_GENERATION_STALE",
+						"The service changed after identity inspection. Inspect it again before replacing.",
+						existing,
+					);
+				}
 				const observation = await readProviderIdentity(
 					buildIdentityCandidateSnapshot(existing, candidate, app.encryptor),
 					request.log,
@@ -951,12 +965,11 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				}
 
 				const alreadyReplaced =
+					mayBeIdempotentRetry &&
 					existing.identityStatus === "VERIFIED" &&
 					existing.expectedIdentity === observation.rawIdentity &&
 					existing.identityKind === toPersistedIdentityKind(observation.identityKind) &&
-					existing.identityGeneration === confirmation.expectedIdentityGeneration + 1 &&
-					(existing.connectionGeneration === confirmation.expectedConnectionGeneration ||
-						existing.connectionGeneration === confirmation.expectedConnectionGeneration + 1);
+					existing.identityGeneration === confirmation.expectedIdentityGeneration + 1;
 				if (alreadyReplaced) {
 					const fresh = await app.prisma.serviceInstance.findFirst({
 						where: { id, userId },
@@ -965,10 +978,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					if (!fresh) return reply.status(404).send({ error: "Service instance not found" });
 					return reply.send({ service: formatServiceInstance(fresh) });
 				}
-				if (
-					existing.connectionGeneration !== confirmation.expectedConnectionGeneration ||
-					existing.identityGeneration !== confirmation.expectedIdentityGeneration
-				) {
+				if (!authorityIsCurrent) {
 					throw createIdentityConflict(
 						"IDENTITY_GENERATION_STALE",
 						"The service changed after identity inspection. Inspect it again before replacing.",

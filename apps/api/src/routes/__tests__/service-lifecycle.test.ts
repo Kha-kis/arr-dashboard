@@ -835,7 +835,7 @@ describe("Service instance lifecycle", () => {
 
 			const response = await inject("POST", `/services/${id}/identity/replace`, {
 				body: {
-					candidate: {},
+					candidate: { baseUrl: "http://stale-candidate-provider.test" },
 					confirmationDigest: "a".repeat(64),
 					expectedConnectionGeneration,
 					expectedIdentityGeneration,
@@ -852,6 +852,7 @@ describe("Service instance lifecycle", () => {
 				expectedIdentity: "enrolled-plex-machine",
 				identityGeneration: 3,
 			});
+			expect(mockReadProviderIdentity).not.toHaveBeenCalled();
 		},
 	);
 
