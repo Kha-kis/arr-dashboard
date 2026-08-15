@@ -160,6 +160,83 @@ const APPROVAL_EXPIRY_DAYS = 7;
 const CACHE_QUERY_BATCH_SIZE = 500;
 const PROVIDER_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
 
+const TAUTULLI_EVIDENCE_ROW_SELECT = {
+	id: true,
+	instanceId: true,
+	tmdbId: true,
+	mediaType: true,
+	lastWatchedAt: true,
+	watchCount: true,
+	watchedByUsers: true,
+	connectionGeneration: true,
+	identityGeneration: true,
+} as const;
+
+const PLEX_EVIDENCE_ROW_SELECT = {
+	id: true,
+	instanceId: true,
+	tmdbId: true,
+	mediaType: true,
+	sectionId: true,
+	sectionTitle: true,
+	lastWatchedAt: true,
+	watchCount: true,
+	watchedByUsers: true,
+	onDeck: true,
+	userRating: true,
+	collections: true,
+	labels: true,
+	addedAt: true,
+	connectionGeneration: true,
+	identityGeneration: true,
+} as const;
+
+const JELLYFIN_EVIDENCE_ROW_SELECT = {
+	id: true,
+	instanceId: true,
+	tmdbId: true,
+	mediaType: true,
+	lastWatchedAt: true,
+	watchCount: true,
+	watchedByUsers: true,
+	onDeck: true,
+	userRating: true,
+	addedAt: true,
+	connectionGeneration: true,
+	identityGeneration: true,
+} as const;
+
+const PLEX_EPISODE_EVIDENCE_ROW_SELECT = {
+	id: true,
+	instanceId: true,
+	showTmdbId: true,
+	seasonNumber: true,
+	episodeNumber: true,
+	ratingKey: true,
+	watched: true,
+	watchedByUsers: true,
+	lastWatchedAt: true,
+	watchCount: true,
+	refreshedAt: true,
+	sourceFingerprint: true,
+	connectionGeneration: true,
+	identityGeneration: true,
+} as const;
+
+const JELLYFIN_EPISODE_EVIDENCE_ROW_SELECT = {
+	id: true,
+	instanceId: true,
+	showTmdbId: true,
+	seasonNumber: true,
+	episodeNumber: true,
+	jellyfinId: true,
+	watched: true,
+	watchedByUsers: true,
+	lastWatchedAt: true,
+	connectionGeneration: true,
+	identityGeneration: true,
+} as const;
+
 type CleanupRunResultWithProviderEvidence = CleanupRunResult & {
 	providerEvidence?: SanitizedProviderEvidence;
 };
@@ -172,13 +249,21 @@ interface ProviderCacheGeneration {
 	statusFingerprint: string;
 }
 
+interface ProviderCacheRowAuthority {
+	rowCount: number;
+	rowFingerprint: string;
+}
+
+type ProviderCacheType = "plex" | "plex_episode" | "jellyfin" | "jellyfin_episode" | "tautulli";
+
 interface ProviderCacheSnapshot<T> {
 	value: T;
 	evidence: SanitizedProviderEvidence;
 	authority: {
-		cacheType: string;
+		cacheType: ProviderCacheType;
 		instances: ServiceInstance[];
 		generations: Map<string, ProviderCacheGeneration>;
+		rows: Map<string, ProviderCacheRowAuthority>;
 	};
 }
 
@@ -238,7 +323,7 @@ async function loadCompleteCacheGenerations(
 			| "identityGeneration"
 		>
 	>,
-	cacheType: string,
+	cacheType: ProviderCacheType,
 	now: Date = new Date(),
 ): Promise<Map<string, ProviderCacheGeneration> | undefined> {
 	if (instances.length === 0) return undefined;
@@ -335,11 +420,24 @@ async function revalidateProviderCacheAuthority(
 
 function createProviderCacheSnapshot<T>(
 	value: T,
-	cacheType: string,
+	cacheType: ProviderCacheType,
 	instances: ServiceInstance[],
 	generations: Map<string, ProviderCacheGeneration>,
 	rowsByInstance: Map<string, unknown[]>,
 ): ProviderCacheSnapshot<T> {
+	const rowAuthorities = new Map(
+		instances.map((instance) => {
+			const rows = [...(rowsByInstance.get(instance.id) ?? [])].sort((left, right) =>
+				String((left as { id?: unknown }).id ?? "").localeCompare(
+					String((right as { id?: unknown }).id ?? ""),
+				),
+			);
+			return [
+				instance.id,
+				{ rowCount: rows.length, rowFingerprint: evidenceFingerprint(rows) },
+			] as const;
+		}),
+	);
 	return {
 		value,
 		evidence: createSanitizedProviderEvidence(
@@ -361,12 +459,170 @@ function createProviderCacheSnapshot<T>(
 					itemCount: generation.itemCount,
 					verifiedAt: instance.identityVerifiedAt!.toISOString(),
 					statusFingerprint: generation.statusFingerprint,
-					rowFingerprint: evidenceFingerprint(rowsByInstance.get(instance.id) ?? []),
+					rowFingerprint: rowAuthorities.get(instance.id)!.rowFingerprint,
 				};
 			}),
 		),
-		authority: { cacheType, instances, generations },
+		authority: { cacheType, instances, generations, rows: rowAuthorities },
 	};
+}
+
+function groupProviderRowsByInstance(
+	instanceIds: string[],
+	rows: Array<{ id: string; instanceId: string }>,
+): Map<string, unknown[]> {
+	const grouped = new Map<string, unknown[]>(instanceIds.map((instanceId) => [instanceId, []]));
+	for (const row of rows) grouped.get(row.instanceId)?.push(row);
+	return grouped;
+}
+
+async function loadExactProviderCacheRows(
+	tx: Prisma.TransactionClient,
+	cacheType: ProviderCacheType,
+	instanceIds: string[],
+): Promise<Map<string, unknown[]> | undefined> {
+	switch (cacheType) {
+		case "plex":
+			return groupProviderRowsByInstance(
+				instanceIds,
+				await tx.plexCache.findMany({
+					where: { instanceId: { in: instanceIds } },
+					select: PLEX_EVIDENCE_ROW_SELECT,
+					orderBy: { id: "asc" },
+				}),
+			);
+		case "plex_episode":
+			return groupProviderRowsByInstance(
+				instanceIds,
+				await tx.plexEpisodeCache.findMany({
+					where: { instanceId: { in: instanceIds } },
+					select: PLEX_EPISODE_EVIDENCE_ROW_SELECT,
+					orderBy: { id: "asc" },
+				}),
+			);
+		case "jellyfin":
+			return groupProviderRowsByInstance(
+				instanceIds,
+				await tx.jellyfinCache.findMany({
+					where: { instanceId: { in: instanceIds } },
+					select: JELLYFIN_EVIDENCE_ROW_SELECT,
+					orderBy: { id: "asc" },
+				}),
+			);
+		case "jellyfin_episode":
+			return groupProviderRowsByInstance(
+				instanceIds,
+				await tx.jellyfinEpisodeCache.findMany({
+					where: { instanceId: { in: instanceIds } },
+					select: JELLYFIN_EPISODE_EVIDENCE_ROW_SELECT,
+					orderBy: { id: "asc" },
+				}),
+			);
+		case "tautulli":
+			return groupProviderRowsByInstance(
+				instanceIds,
+				await tx.tautulliCache.findMany({
+					where: { instanceId: { in: instanceIds } },
+					select: TAUTULLI_EVIDENCE_ROW_SELECT,
+					orderBy: { id: "asc" },
+				}),
+			);
+		default:
+			return undefined;
+	}
+}
+
+async function revalidateExactProviderCacheAuthority(
+	deps: CleanupExecutorDeps,
+	tx: Prisma.TransactionClient,
+	authority: ProviderCacheSnapshot<unknown>["authority"],
+	now: Date,
+): Promise<boolean> {
+	const transactionDeps = {
+		...deps,
+		prisma: tx as unknown as CleanupExecutorDeps["prisma"],
+	};
+	const currentInstances = await loadProviderInstances(
+		transactionDeps,
+		authority.instances[0]!.userId,
+		[...new Set(authority.instances.map((instance) => instance.service))],
+	);
+	if (
+		providerTopologyFingerprint(currentInstances) !==
+		providerTopologyFingerprint(authority.instances)
+	) {
+		return false;
+	}
+	const currentGenerations = await loadCompleteCacheGenerations(
+		transactionDeps,
+		currentInstances,
+		authority.cacheType,
+		now,
+	);
+	if (!currentGenerations || currentGenerations.size !== authority.generations.size) return false;
+	if (
+		![...authority.generations].every(
+			([instanceId, generation]) =>
+				currentGenerations.get(instanceId)?.statusFingerprint === generation.statusFingerprint,
+		)
+	) {
+		return false;
+	}
+	const instanceIds = authority.instances.map((instance) => instance.id);
+	const currentRows = await loadExactProviderCacheRows(tx, authority.cacheType, instanceIds);
+	if (!currentRows) return false;
+	return instanceIds.every((instanceId) => {
+		const expected = authority.rows.get(instanceId);
+		const rows = currentRows.get(instanceId) ?? [];
+		return (
+			expected !== undefined &&
+			expected.rowCount === rows.length &&
+			expected.rowFingerprint === evidenceFingerprint(rows)
+		);
+	});
+}
+
+class ProviderCacheAuthorityChangedError extends Error {
+	constructor() {
+		super("Provider cache authority changed after cleanup selection");
+		this.name = "ProviderCacheAuthorityChangedError";
+	}
+}
+
+async function createApprovalWithProviderCacheAuthority(
+	deps: CleanupExecutorDeps,
+	authorities: Array<ProviderCacheSnapshot<unknown>["authority"]>,
+	data: Prisma.LibraryCleanupApprovalUncheckedCreateInput,
+): Promise<LibraryCleanupApproval> {
+	if (authorities.length === 0) {
+		return await deps.prisma.libraryCleanupApproval.create({ data });
+	}
+	const postgresql = /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
+	return await deps.prisma.$transaction(
+		async (tx) => {
+			const instanceIds = [
+				...new Set(
+					authorities.flatMap((authority) => authority.instances.map((instance) => instance.id)),
+				),
+			].sort();
+			if (postgresql) {
+				for (const instanceId of instanceIds) {
+					await tx.$queryRawUnsafe(
+						'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+						instanceId,
+					);
+				}
+			}
+			const now = new Date();
+			for (const authority of authorities) {
+				if (!(await revalidateExactProviderCacheAuthority(deps, tx, authority, now))) {
+					throw new ProviderCacheAuthorityChangedError();
+				}
+			}
+			return await tx.libraryCleanupApproval.create({ data });
+		},
+		postgresql ? undefined : { isolationLevel: "Serializable" },
+	);
 }
 
 // The route returns at most 200 preview rows; avoid live safety I/O for rows
@@ -5254,17 +5510,7 @@ async function loadTautulliDataSnapshot(
 		while (true) {
 			const batch = await prisma.tautulliCache.findMany({
 				where: { instanceId: { in: tautulliInstances.map((instance) => instance.id) } },
-				select: {
-					id: true,
-					instanceId: true,
-					tmdbId: true,
-					mediaType: true,
-					lastWatchedAt: true,
-					watchCount: true,
-					watchedByUsers: true,
-					connectionGeneration: true,
-					identityGeneration: true,
-				},
+				select: TAUTULLI_EVIDENCE_ROW_SELECT,
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 				orderBy: { id: "asc" },
@@ -5391,24 +5637,7 @@ async function loadPlexDataSnapshot(
 		while (true) {
 			const batch = await prisma.plexCache.findMany({
 				where: { instanceId: { in: instanceIds } },
-				select: {
-					id: true,
-					instanceId: true,
-					tmdbId: true,
-					mediaType: true,
-					sectionId: true,
-					sectionTitle: true,
-					lastWatchedAt: true,
-					watchCount: true,
-					watchedByUsers: true,
-					onDeck: true,
-					userRating: true,
-					collections: true,
-					labels: true,
-					addedAt: true,
-					connectionGeneration: true,
-					identityGeneration: true,
-				},
+				select: PLEX_EVIDENCE_ROW_SELECT,
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 				orderBy: { id: "asc" },
@@ -5574,20 +5803,7 @@ async function loadJellyfinDataSnapshot(
 		while (true) {
 			const batch = await prisma.jellyfinCache.findMany({
 				where: { instanceId: { in: instanceIds } },
-				select: {
-					id: true,
-					instanceId: true,
-					tmdbId: true,
-					mediaType: true,
-					lastWatchedAt: true,
-					watchCount: true,
-					watchedByUsers: true,
-					onDeck: true,
-					userRating: true,
-					addedAt: true,
-					connectionGeneration: true,
-					identityGeneration: true,
-				},
+				select: JELLYFIN_EVIDENCE_ROW_SELECT,
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 				orderBy: { id: "asc" },
@@ -5715,15 +5931,8 @@ async function loadJellyfinEpisodeDataSnapshot(
 		if (!generations) return undefined;
 		const generationRows = await prisma.jellyfinEpisodeCache.findMany({
 			where: { instanceId: { in: instanceIds } },
-			select: {
-				id: true,
-				instanceId: true,
-				showTmdbId: true,
-				seasonNumber: true,
-				watched: true,
-				connectionGeneration: true,
-				identityGeneration: true,
-			},
+			select: JELLYFIN_EPISODE_EVIDENCE_ROW_SELECT,
+			orderBy: { id: "asc" },
 		});
 		const countByInstance = new Map<string, number>();
 		const rowsByInstance = new Map<string, unknown[]>();
@@ -5808,17 +6017,8 @@ async function loadPlexEpisodeDataSnapshot(
 		if (!generations) return undefined;
 		const generationRows = await prisma.plexEpisodeCache.findMany({
 			where: { instanceId: { in: instanceIds } },
-			select: {
-				id: true,
-				instanceId: true,
-				showTmdbId: true,
-				seasonNumber: true,
-				watched: true,
-				refreshedAt: true,
-				sourceFingerprint: true,
-				connectionGeneration: true,
-				identityGeneration: true,
-			},
+			select: PLEX_EPISODE_EVIDENCE_ROW_SELECT,
+			orderBy: { id: "asc" },
 		});
 		const rowCounts = new Map<string, number>();
 		const rowsByInstance = new Map<string, unknown[]>();
@@ -6948,38 +7148,14 @@ async function executeWithApproval(
 	preSkippedDetails: CleanupRunResult["details"] = [],
 	selectionState?: ApprovalSelectionState,
 ): Promise<CleanupRunResult> {
-	const { prisma, log } = deps;
+	const { log } = deps;
 	const now = new Date();
 	const expiresAt = new Date(now.getTime() + APPROVAL_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
 	const details: CleanupRunResult["details"] = [];
 	const deferredDetails = preSkippedDetails.slice(0, CLEANUP_DETAIL_LIMIT);
+	const resultWarnings = [...(warnings ?? [])];
 	let approvalQueueFailures = 0;
-	const providerAuthorityCurrent = (
-		await Promise.all(
-			providerAuthorities.map((authority) => revalidateProviderCacheAuthority(deps, authority)),
-		)
-	).every(Boolean);
-	if (!providerAuthorityCurrent) {
-		const reason =
-			"Provider cache authority changed after cleanup selection; no approvals were queued.";
-		const result: CleanupRunResult = {
-			isDryRun: false,
-			status: "partial",
-			itemsEvaluated: totalEvaluated,
-			itemsFlagged: totalFlaggedBeforeLimit,
-			itemsRemoved: 0,
-			itemsUnmonitored: 0,
-			itemsFilesDeleted: 0,
-			itemsSkipped: totalFlaggedBeforeLimit,
-			details: flagged.map((item) => buildDetail(item, "skipped", reason)),
-			durationMs: Date.now() - startTime,
-			prefetchHealth,
-			warnings: [...(warnings ?? []), reason],
-		};
-		await createRunLog(deps, config.id, result);
-		return result;
-	}
 
 	// Approval and retry ownership was loaded once, before any queue write, by
 	// loadApprovalSelectionState. The operation guard prevents another cleanup
@@ -6987,7 +7163,8 @@ async function executeWithApproval(
 	// per target. Keeping reads before writes means a storage read failure can
 	// defer the whole run instead of being discovered after an earlier item was
 	// already queued.
-	for (const item of flagged) {
+	for (let itemIndex = 0; itemIndex < flagged.length; itemIndex++) {
+		const item = flagged[itemIndex]!;
 		const targetKey = cleanupDeleteTargetKey(flaggedDeleteTarget(item));
 		const sharedPlexBlock = sharedPlexBlocks.get(targetKey);
 		if (sharedPlexBlock) {
@@ -7000,37 +7177,35 @@ async function executeWithApproval(
 		}
 
 		try {
-			const approval = await prisma.libraryCleanupApproval.create({
-				data: {
-					configId: config.id,
-					instanceId: item.cacheItem.instanceId,
-					arrItemId: item.cacheItem.arrItemId,
-					itemType: item.cacheItem.itemType,
-					targetScope: item.episodeTarget ? "episode" : "series",
-					arrEpisodeId: item.episodeTarget?.arrEpisodeId,
-					episodeFileId: item.episodeTarget?.episodeFileId,
-					seasonNumber: item.episodeTarget?.seasonNumber,
-					episodeNumber: item.episodeTarget?.episodeNumber,
-					title: item.cacheItem.title,
-					episodeTitle: item.episodeTarget?.episodeTitle,
-					matchedRuleId: item.match.ruleId,
-					matchedRuleName: item.match.ruleName,
-					reason: item.match.reason,
-					action: item.match.action,
-					scanMediaServerAfterDelete: item.match.scanMediaServerAfterDelete,
-					sizeOnDisk: item.cacheItem.sizeOnDisk,
-					year: item.cacheItem.year,
-					rating: item.rating,
-					status: "pending",
-					safetySnapshot: serializeExecutableSafetyPlan(
-						asExecutableSafetyPlan(safetyPlans.get(targetKey)) ??
-							(() => {
-								throw new Error("No executable cleanup safety plan was produced");
-							})(),
-						providerEvidence,
-					),
-					expiresAt,
-				},
+			const approval = await createApprovalWithProviderCacheAuthority(deps, providerAuthorities, {
+				configId: config.id,
+				instanceId: item.cacheItem.instanceId,
+				arrItemId: item.cacheItem.arrItemId,
+				itemType: item.cacheItem.itemType,
+				targetScope: item.episodeTarget ? "episode" : "series",
+				arrEpisodeId: item.episodeTarget?.arrEpisodeId,
+				episodeFileId: item.episodeTarget?.episodeFileId,
+				seasonNumber: item.episodeTarget?.seasonNumber,
+				episodeNumber: item.episodeTarget?.episodeNumber,
+				title: item.cacheItem.title,
+				episodeTitle: item.episodeTarget?.episodeTitle,
+				matchedRuleId: item.match.ruleId,
+				matchedRuleName: item.match.ruleName,
+				reason: item.match.reason,
+				action: item.match.action,
+				scanMediaServerAfterDelete: item.match.scanMediaServerAfterDelete,
+				sizeOnDisk: item.cacheItem.sizeOnDisk,
+				year: item.cacheItem.year,
+				rating: item.rating,
+				status: "pending",
+				safetySnapshot: serializeExecutableSafetyPlan(
+					asExecutableSafetyPlan(safetyPlans.get(targetKey)) ??
+						(() => {
+							throw new Error("No executable cleanup safety plan was produced");
+						})(),
+					providerEvidence,
+				),
+				expiresAt,
 			});
 
 			details.push(
@@ -7040,6 +7215,16 @@ async function executeWithApproval(
 				}),
 			);
 		} catch (error) {
+			if (error instanceof ProviderCacheAuthorityChangedError) {
+				const reason =
+					"Provider cache authority changed after cleanup selection; this and later approvals were not queued.";
+				const remaining = flagged.slice(itemIndex);
+				details.push(...remaining.map((candidate) => buildDetail(candidate, "skipped", reason)));
+				approvalQueueFailures += remaining.length;
+				resultWarnings.push(reason);
+				log.warn({ remainingApprovals: remaining.length }, reason);
+				break;
+			}
 			log.error(
 				{ err: error, title: item.cacheItem.title },
 				"Failed to create cleanup approval entry",
@@ -7049,7 +7234,7 @@ async function executeWithApproval(
 		}
 	}
 
-	const hasFailedPrefetch = warnings && warnings.length > 0;
+	const hasFailedPrefetch = resultWarnings.length > 0;
 	const result: CleanupRunResult = {
 		isDryRun: false,
 		status: hasFailedPrefetch || approvalQueueFailures > 0 ? "partial" : "completed",
@@ -7071,7 +7256,7 @@ async function executeWithApproval(
 		details: [...details, ...deferredDetails].slice(0, CLEANUP_DETAIL_LIMIT),
 		durationMs: Date.now() - startTime,
 		prefetchHealth,
-		warnings,
+		warnings: resultWarnings.length > 0 ? resultWarnings : undefined,
 	};
 
 	await createRunLog(deps, config.id, result);

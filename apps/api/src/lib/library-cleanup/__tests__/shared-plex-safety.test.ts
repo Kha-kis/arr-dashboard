@@ -895,6 +895,139 @@ function matchingDryRunCacheItem(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function configurePlexApprovalAuthority(
+	fixture: ReturnType<typeof makeDeps>,
+	options: {
+		items?: Array<{ id: string; arrItemId: number; title: string }>;
+		driftBeforeApproval?: boolean;
+		driftAfterFirstApproval?: "rows" | "rows_and_status";
+	} = {},
+) {
+	const providerInstance = {
+		...fixture.plexInstance,
+		enabled: true,
+		expectedIdentity: "private-plex-machine-id",
+		identityKind: "PLEX_MACHINE_IDENTIFIER",
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date("2026-08-14T00:00:00.000Z"),
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		updatedAt: new Date("2026-08-14T00:00:00.000Z"),
+	};
+	const completedAt = new Date();
+	let statusVersion = 1;
+	let rows = [
+		{
+			id: "plex-cache-1",
+			instanceId: providerInstance.id,
+			tmdbId: 42,
+			mediaType: "movie",
+			sectionId: "movies",
+			sectionTitle: "Movies",
+			lastWatchedAt: completedAt,
+			watchCount: 5,
+			watchedByUsers: JSON.stringify(["owner"]),
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			labels: "[]",
+			addedAt: new Date("2026-01-01T00:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		},
+	];
+	const currentStatus = () => ({
+		instanceId: providerInstance.id,
+		lastRefreshedAt: completedAt,
+		lastResult: "success",
+		lastErrorMessage: null,
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		itemCount: rows.length,
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		generationId: `plex-generation-${statusVersion}`,
+		generationMetadata: JSON.stringify({ version: statusVersion }),
+	});
+	const items = options.items ?? [
+		{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" },
+		{ id: "cache-provider-2", arrItemId: 102, title: "Fresh rule match" },
+	];
+
+	vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+		...dryRunConfig(items.length),
+		dryRunMode: false,
+		requireApproval: true,
+		rules: [
+			{
+				...dryRunConfig().rules[0]!,
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+			},
+		],
+	} as never);
+	vi.mocked(fixture.deps.prisma.libraryCache.findMany)
+		.mockResolvedValueOnce(
+			items.map((item) =>
+				matchingDryRunCacheItem({
+					...item,
+					data: radarrCachedFileIdentity.data,
+					sizeOnDisk: 2_000n,
+				}),
+			) as never,
+		)
+		.mockResolvedValue([] as never);
+	vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation((async ({
+		where,
+	}: {
+		where: { service?: string | { in?: string[] } };
+	}) => {
+		const services =
+			typeof where.service === "string" ? [where.service] : (where.service?.in ?? []);
+		if (services.includes("PLEX")) return [providerInstance];
+		return [fixture.targetInstance, providerInstance];
+	}) as never);
+
+	const plexFindMany = vi.fn(async () => rows.map((row) => ({ ...row })));
+	Object.assign(fixture.deps.prisma, {
+		cacheRefreshStatus: { findMany: vi.fn(async () => [currentStatus()]) },
+		plexCache: { findMany: plexFindMany },
+	});
+
+	const rootCreate = vi.mocked(fixture.deps.prisma.libraryCleanupApproval.create);
+	const transactionCreate = vi.fn(async () => {
+		const ordinal = transactionCreate.mock.calls.length;
+		if (ordinal === 1 && options.driftAfterFirstApproval) {
+			rows = [{ ...rows[0]!, watchCount: rows[0]!.watchCount + 1 }];
+			if (options.driftAfterFirstApproval === "rows_and_status") statusVersion++;
+		}
+		return { id: `approval-transaction-${ordinal}` };
+	});
+	const rowLock = vi.fn().mockResolvedValue([]);
+	const transactionClient = {
+		...fixture.deps.prisma,
+		libraryCleanupApproval: {
+			...fixture.deps.prisma.libraryCleanupApproval,
+			create: transactionCreate,
+		},
+		$queryRawUnsafe: rowLock,
+	};
+	const transaction = vi.fn(
+		async (callback: (tx: typeof transactionClient) => Promise<unknown>, _options?: unknown) =>
+			callback(transactionClient),
+	);
+	Object.assign(fixture.deps.prisma, { $transaction: transaction });
+
+	if (options.driftBeforeApproval) {
+		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async () => {
+			rows = [{ ...rows[0]!, watchCount: rows[0]!.watchCount + 1 }];
+			return [];
+		}) as never);
+	}
+
+	return { plexFindMany, rootCreate, rowLock, transactionCreate, transaction };
+}
+
 function tiedPriorityConfig(options: { dryRunMode: boolean; requireApproval: boolean }) {
 	return {
 		...dryRunConfig(10),
@@ -1565,6 +1698,86 @@ describe("shared Plex deletion safety", () => {
 			"candidate_selected",
 			"approval_pending",
 		]);
+	});
+
+	it("rejects row drift even while the accepted provider status token is lagging", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture, {
+			items: [{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" }],
+			driftBeforeApproval: true,
+		});
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result.itemsFlagged).toBe(1);
+		expect(authority.transaction).toHaveBeenCalledOnce();
+		expect(authority.transactionCreate).not.toHaveBeenCalled();
+		expect(authority.rootCreate).not.toHaveBeenCalled();
+		expect(result).toMatchObject({ itemsSkipped: 1, itemsRemoved: 0, status: "partial" });
+	});
+
+	it("stops before a later approval when provider rows and status drift between targets", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture, {
+			driftAfterFirstApproval: "rows_and_status",
+		});
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(authority.transaction).toHaveBeenCalledTimes(2);
+		expect(authority.transaction).toHaveBeenNthCalledWith(1, expect.any(Function), {
+			isolationLevel: "Serializable",
+		});
+		expect(authority.transaction).toHaveBeenNthCalledWith(2, expect.any(Function), {
+			isolationLevel: "Serializable",
+		});
+		expect(authority.transactionCreate).toHaveBeenCalledOnce();
+		expect(authority.rootCreate).not.toHaveBeenCalled();
+		expect(result.details).toEqual([
+			expect.objectContaining({ arrItemId: 101, action: "queued_for_approval" }),
+			expect.objectContaining({ arrItemId: 102, action: "skipped" }),
+		]);
+	});
+
+	it("revalidates unchanged provider rows inside each approval write transaction", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture);
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(authority.transaction).toHaveBeenCalledTimes(2);
+		expect(authority.transactionCreate).toHaveBeenCalledTimes(2);
+		expect(authority.rootCreate).not.toHaveBeenCalled();
+		expect(result.details).toEqual([
+			expect.objectContaining({ arrItemId: 101, action: "queued_for_approval" }),
+			expect.objectContaining({ arrItemId: 102, action: "queued_for_approval" }),
+		]);
+	});
+
+	it("locks provider publication authority before row validation and approval creation", async () => {
+		vi.stubEnv("DATABASE_URL", "postgresql://localhost/arr_test");
+		try {
+			const fixture = makeDeps({ mediaPartCount: 1 });
+			const authority = configurePlexApprovalAuthority(fixture, {
+				items: [{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" }],
+			});
+
+			await executeCleanupRun(fixture.deps, "user-1");
+
+			expect(authority.rowLock).toHaveBeenCalledWith(
+				'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+				"plex-1",
+			);
+			expect(authority.rowLock.mock.invocationCallOrder[0]).toBeLessThan(
+				authority.plexFindMany.mock.invocationCallOrder.at(-1)!,
+			);
+			expect(authority.plexFindMany.mock.invocationCallOrder.at(-1)).toBeLessThan(
+				authority.transactionCreate.mock.invocationCallOrder[0]!,
+			);
+			expect(authority.rootCreate).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it.each([
