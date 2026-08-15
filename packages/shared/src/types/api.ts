@@ -22,9 +22,18 @@ export interface ServiceInstanceSummary {
 	// `null` for non-qui instances.
 	hasLocalFilesystemAccess: boolean;
 	pathPrefix: string | null;
+	identity: ServiceIdentitySummary;
 	createdAt: string;
 	updatedAt: string;
 	tags: ServiceTagResponse[];
+}
+
+export interface ServiceIdentitySummary {
+	status: "unverified" | "verified" | "mismatch";
+	kind: string | null;
+	fingerprint: string | null;
+	verifiedAt: string | null;
+	lastCheckedAt: string | null;
 }
 
 export interface ServicesResponse {

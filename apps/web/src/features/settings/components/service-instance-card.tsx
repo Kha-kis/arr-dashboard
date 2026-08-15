@@ -10,6 +10,7 @@ import {
 	Power,
 	Star,
 	Trash2,
+	ShieldCheck,
 	Zap,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -40,6 +41,8 @@ interface ServiceInstanceCardProps {
 	onToggleEnabled: (instance: ServiceInstanceSummary) => void;
 	/** Handler for delete button */
 	onDelete: (instance: ServiceInstanceSummary) => void;
+	/** Opens the explicit identity inspection/confirmation flow. */
+	onInspectIdentity?: (instance: ServiceInstanceSummary) => void;
 	/** Whether the connection test is currently running for this instance */
 	isTesting: boolean;
 	/** Whether mutations are pending */
@@ -70,6 +73,7 @@ export const ServiceInstanceCard = ({
 	onToggleDefault,
 	onToggleEnabled,
 	onDelete,
+	onInspectIdentity,
 	isTesting,
 	mutationPending,
 	testResult,
@@ -114,6 +118,14 @@ export const ServiceInstanceCard = ({
 		hasApiKey: instance.hasApiKey,
 		testResult: hasTestResult ? { success: testResult.success } : null,
 	});
+	const supportsIdentity = ["plex", "jellyfin", "emby", "tautulli"].includes(instance.service);
+	const identity = instance.identity;
+	const identityStatusText =
+		identity.status === "verified"
+			? `Verified ${identity.kind ?? "provider"}`
+			: identity.status === "mismatch"
+				? "Provider identity mismatch — inspect before replacing"
+				: "Provider identity verification required";
 
 	return (
 		<div
@@ -191,6 +203,15 @@ export const ServiceInstanceCard = ({
 								))}
 							</div>
 						)}
+						{supportsIdentity && (
+							<div className="rounded-lg border border-border/50 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+								<p className="font-medium text-foreground">{identityStatusText}</p>
+								{identity.fingerprint && <p>Fingerprint: {identity.fingerprint}</p>}
+								{identity.verifiedAt && (
+									<p>Last verified: {new Date(identity.verifiedAt).toLocaleString()}</p>
+								)}
+							</div>
+						)}
 					</div>
 
 					{/* Right: Action buttons */}
@@ -216,6 +237,18 @@ export const ServiceInstanceCard = ({
 							<Pencil className="h-3.5 w-3.5" />
 							<span className="hidden sm:inline">Edit</span>
 						</Button>
+						{supportsIdentity && onInspectIdentity && (
+							<Button
+								variant="ghost"
+								size="sm"
+								onClick={() => onInspectIdentity(instance)}
+								disabled={mutationPending}
+								className="gap-1.5"
+							>
+								<ShieldCheck className="h-3.5 w-3.5" />
+								<span className="hidden sm:inline">Verify identity</span>
+							</Button>
+						)}
 
 						{/* Set Default button */}
 						{!instance.isDefault && (

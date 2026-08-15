@@ -154,6 +154,10 @@ export const SettingsClient = () => {
 								onToggleDefault={servicesManagement.toggleDefault}
 								onToggleEnabled={servicesManagement.toggleEnabled}
 								onDelete={handleDeleteService}
+								onInspectIdentity={(instance) => {
+									serviceFormState.handleEdit(instance);
+									void servicesManagement.inspectIdentity(instance);
+								}}
 								testingConnection={servicesManagement.testingConnection}
 								testResult={servicesManagement.testResult}
 								mutationPending={servicesManagement.updateServiceMutation.isPending}
@@ -177,6 +181,16 @@ export const SettingsClient = () => {
 								isUpdating={servicesManagement.updateServiceMutation.isPending}
 								isTesting={servicesManagement.testingFormConnection}
 								testResult={servicesManagement.formTestResult}
+								identityFlow={servicesManagement.identityFlow}
+								onConfirmIdentity={() => void servicesManagement.confirmIdentity()}
+								onDismissIdentityFlow={servicesManagement.dismissIdentityFlow}
+								onInspectIdentity={() => {
+									if (serviceFormState.selectedServiceForEdit) {
+										void servicesManagement.inspectIdentity(
+											serviceFormState.selectedServiceForEdit,
+										);
+									}
+								}}
 							/>
 						</div>
 					</div>

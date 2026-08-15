@@ -18,6 +18,7 @@ import { getLinuxUrl, useIncognitoMode } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
 import { SERVICE_TYPES } from "../lib/settings-constants";
 import type { ServiceFormState } from "../lib/settings-utils";
+import type { IdentityFlow } from "../hooks/use-services-management";
 import {
 	getServicePlaceholders,
 	supportsHttpBasicAuth,
@@ -60,6 +61,11 @@ interface ServiceFormProps {
 		error?: string;
 		details?: string;
 	} | null;
+	/** Pending safe candidate requiring explicit identity confirmation. */
+	identityFlow: IdentityFlow | null;
+	onConfirmIdentity: () => void;
+	onDismissIdentityFlow: () => void;
+	onInspectIdentity: () => void;
 }
 
 /**
@@ -78,6 +84,10 @@ export const ServiceForm = ({
 	isUpdating,
 	isTesting,
 	testResult,
+	identityFlow,
+	onConfirmIdentity,
+	onDismissIdentityFlow,
+	onInspectIdentity,
 }: ServiceFormProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const placeholders = getServicePlaceholders(formState.service);
@@ -92,6 +102,7 @@ export const ServiceForm = ({
 					password: formState.httpAuthPassword,
 				}
 			: undefined;
+	const activeIdentityFlow = identityFlow?.instanceId === selectedService?.id ? identityFlow : null;
 
 	return (
 		<Card>
@@ -105,6 +116,52 @@ export const ServiceForm = ({
 			</CardHeader>
 			<CardContent>
 				<form className="space-y-3 sm:space-y-4" onSubmit={onSubmit} autoComplete="off">
+					{selectedService &&
+						["plex", "jellyfin", "emby", "tautulli"].includes(selectedService.service) && (
+							<Alert variant={selectedService.identity.status === "mismatch" ? "danger" : "info"}>
+								<AlertDescription>
+									{selectedService.identity.status === "verified"
+										? `Provider identity verified${selectedService.identity.kind ? ` (${selectedService.identity.kind})` : ""}${selectedService.identity.fingerprint ? ` · ${selectedService.identity.fingerprint}` : ""}.`
+										: selectedService.identity.status === "mismatch"
+											? "Provider identity differs from the enrolled server. Inspect and explicitly replace it before saving this connection."
+											: "Provider identity has not been verified yet. Use Verify identity on the service card."}
+								</AlertDescription>
+							</Alert>
+						)}
+					{activeIdentityFlow && (
+						<Alert variant={activeIdentityFlow.mode === "replace" ? "danger" : "warning"}>
+							<AlertDescription>
+								<div className="space-y-2">
+									<p>{activeIdentityFlow.message}</p>
+									<p>
+										Candidate: {activeIdentityFlow.candidate.identityKind} ·{" "}
+										{activeIdentityFlow.candidate.fingerprint}
+									</p>
+									{activeIdentityFlow.mode === "replace" && (
+										<p>
+											Replacing invalidates provider cache data and affected pending cleanup
+											approvals.
+										</p>
+									)}
+									<div className="flex gap-2">
+										<Button type="button" variant="secondary" onClick={onConfirmIdentity}>
+											{activeIdentityFlow.mode === "replace"
+												? "Confirm replacement"
+												: "Confirm verification"}
+										</Button>
+										<Button type="button" variant="ghost" onClick={onDismissIdentityFlow}>
+											Keep editing
+										</Button>
+										{activeIdentityFlow.message.includes("Inspect it again") && (
+											<Button type="button" variant="ghost" onClick={onInspectIdentity}>
+												Inspect again
+											</Button>
+										)}
+									</div>
+								</div>
+							</AlertDescription>
+						</Alert>
+					)}
 					<div className="space-y-2">
 						<label className="text-xs uppercase text-muted-foreground">Service</label>
 						<div className="grid grid-cols-4 gap-1.5 sm:gap-2 lg:grid-cols-8 xl:grid-cols-4">

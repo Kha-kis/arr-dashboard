@@ -77,7 +77,7 @@ describe("ServiceInstance dormant identity schema", () => {
 		}
 	}, 30_000);
 
-	it("keeps dormant identity state out of formatted service responses", () => {
+	it("exposes a safe provider identity summary without raw identity or credentials", () => {
 		const formatted = formatServiceInstance({
 			id: "instance-1",
 			service: "PLEX",
@@ -94,12 +94,27 @@ describe("ServiceInstance dormant identity schema", () => {
 			storageGroupId: null,
 			hasLocalFilesystemAccess: false,
 			pathPrefix: null,
+			expectedIdentity: "plex-machine-123",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityGeneration: 3,
+			identityVerifiedAt: new Date("2026-08-14T01:00:00.000Z"),
+			identityLastCheckedAt: new Date("2026-08-14T02:00:00.000Z"),
 			tags: [],
-		});
+		} as never);
 
-		expect(JSON.stringify(formatted)).toBe(
-			'{"id":"instance-1","service":"plex","label":"Living Room","baseUrl":"http://plex.test","externalUrl":null,"enabled":true,"isDefault":false,"createdAt":"2026-08-14T00:00:00.000Z","updatedAt":"2026-08-14T00:00:00.000Z","hasApiKey":true,"hasHttpAuth":false,"storageGroupId":null,"hasLocalFilesystemAccess":false,"pathPrefix":null,"tags":[]}',
-		);
+		expect(formatted).toMatchObject({
+			identity: {
+				status: "verified",
+				kind: "plex-machine-identifier",
+				fingerprint: expect.stringMatching(/^[a-f0-9]{12}$/),
+				verifiedAt: new Date("2026-08-14T01:00:00.000Z"),
+				lastCheckedAt: new Date("2026-08-14T02:00:00.000Z"),
+			},
+		});
+		const serialized = JSON.stringify(formatted);
+		expect(serialized).not.toContain("plex-machine-123");
+		expect(serialized).not.toContain("ciphertext");
 	});
 });
 
