@@ -583,7 +583,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 			),
 		} as unknown as PrismaClient;
 
-		return { prisma, firstDelete };
+		return { prisma, firstDelete, tx };
 	}
 
 	function incomingData(overrides: Record<string, unknown> = {}) {
@@ -627,6 +627,41 @@ describe("restoreDatabase — current coordination preservation", () => {
 		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
 			"current nonterminal coordination row current-sync",
 		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a restore that omits a successful unrolled sync owner", async () => {
+		const { prisma, firstDelete, tx } = makeRestorePrisma({
+			currentSync: [
+				{
+					id: "successful-sync-owner",
+					instanceId: "instance-1",
+					templateId: "template-1",
+					userId: "user-1",
+					status: "SUCCESS",
+					rolledBack: false,
+					rollbackStatus: null,
+					backupId: "snapshot-sync-owner",
+				},
+			],
+			currentSnapshots: [
+				{
+					id: "snapshot-sync-owner",
+					instanceId: "instance-1",
+					userId: "user-1",
+					backupData: "successful-sync-evidence",
+				},
+			],
+		});
+
+		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+			"current nonterminal coordination row successful-sync-owner",
+		);
+		expect(tx.trashSyncHistory.findMany).toHaveBeenCalledWith({
+			where: {
+				OR: expect.arrayContaining([{ rolledBack: false, backupId: { not: null } }]),
+			},
+		});
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
@@ -676,6 +711,43 @@ describe("restoreDatabase — current coordination preservation", () => {
 		await expect(
 			restoreDatabase(prisma, incomingData({ templateDeploymentHistory: [currentDeployment] })),
 		).rejects.toThrow("current recovery snapshot snapshot-deployment");
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a restore that omits a successful unrolled deployment owner", async () => {
+		const { prisma, firstDelete, tx } = makeRestorePrisma({
+			currentDeployments: [
+				{
+					id: "successful-deployment-owner",
+					instanceId: "instance-1",
+					templateId: "template-1",
+					userId: "user-1",
+					status: "SUCCESS",
+					rolledBack: false,
+					undeployStatus: null,
+					templateSnapshot: "{}",
+					backupId: "snapshot-deployment-owner",
+				},
+			],
+			currentSnapshots: [
+				{
+					id: "snapshot-deployment-owner",
+					instanceId: "instance-1",
+					userId: "user-1",
+					backupData: "successful-deployment-evidence",
+				},
+			],
+		});
+
+		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+			"current nonterminal coordination row successful-deployment-owner",
+		);
+		expect(tx.templateDeploymentHistory.findMany).toHaveBeenCalledWith({
+			where: {
+				OR: expect.arrayContaining([{ rolledBack: false, backupId: { not: null } }]),
+			},
+			include: expect.any(Object),
+		});
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 

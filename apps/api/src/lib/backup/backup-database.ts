@@ -179,6 +179,7 @@ async function validateCurrentCoordinationPreserved(
 		await tx.trashSyncHistory.findMany({
 			where: {
 				OR: [
+					{ rolledBack: false, backupId: { not: null } },
 					{ rollbackStatus: { not: "COMPLETED" } },
 					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
 					{ status: "UNCERTAIN", rollbackStatus: null, backupId: null },
@@ -190,6 +191,7 @@ async function validateCurrentCoordinationPreserved(
 		await tx.templateDeploymentHistory.findMany({
 			where: {
 				OR: [
+					{ rolledBack: false, backupId: { not: null } },
 					{ undeployStatus: { not: "COMPLETED" } },
 					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
 				],
@@ -200,7 +202,7 @@ async function validateCurrentCoordinationPreserved(
 				},
 			},
 		})
-	).filter(isNonterminalUndeploy) as CoordinationRow[];
+	).filter(shouldPreserveDeploymentHistory) as CoordinationRow[];
 	const incomingRollbackRows = recordsById(data.trashSyncHistory);
 	const incomingUndeployRows = recordsById(data.templateDeploymentHistory);
 	const incomingTemplates = recordsById(data.trashTemplates);
@@ -214,13 +216,7 @@ async function validateCurrentCoordinationPreserved(
 	}
 
 	const currentRecoveryRows = [
-		...currentRollbackRows.filter((row) =>
-			isNonterminalRollback({
-				status: row.status,
-				rolledBack: row.rolledBack,
-				rollbackStatus: row.rollbackStatus,
-			}),
-		),
+		...currentRollbackRows.filter((row) => !isAuditOnlyUncertainSync(row)),
 		...currentUndeployRows,
 	];
 	const requiredSnapshotIds = currentRecoveryRows.map((row) => {
