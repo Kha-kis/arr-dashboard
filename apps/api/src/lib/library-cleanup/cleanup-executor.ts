@@ -74,6 +74,15 @@ import {
 	withExclusiveCleanupOperationGuard,
 } from "./cleanup-maintenance-gate.js";
 import {
+	acquireCleanupRunLease,
+	CLEANUP_RUN_LEASE_MS,
+	CleanupRunAlreadyInProgressError,
+	CleanupRunLeaseLostError,
+	releaseCleanupRunLease,
+	renewCleanupRunLease,
+	startCleanupRunLease,
+} from "./cleanup-run-lease.js";
+import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
 	evaluateEpisodeWatchCountRule,
@@ -159,6 +168,15 @@ import type {
 	TautulliWatchMap,
 } from "./types.js";
 import { type ListMembershipKey, listMembershipKey } from "./types.js";
+
+export {
+	acquireCleanupRunLease,
+	CLEANUP_RUN_LEASE_MS,
+	CleanupRunAlreadyInProgressError,
+	CleanupRunLeaseLostError,
+	releaseCleanupRunLease,
+	renewCleanupRunLease,
+};
 
 // Default approval expiry: 7 days
 const APPROVAL_EXPIRY_DAYS = 7;
@@ -504,25 +522,8 @@ export const CLEANUP_DETAIL_LIMIT = 200;
 // Circuit breaker: abort after N consecutive ARR API failures
 const CIRCUIT_BREAKER_THRESHOLD = 3;
 
-export const CLEANUP_RUN_LEASE_MS = 2 * 60 * 60 * 1000;
-const CLEANUP_RUN_HEARTBEAT_MS = 60 * 1000;
-
 export const INTERRUPTED_CLEANUP_RECOVERY_MESSAGE =
 	"Recovered after an interrupted cleanup. Review and approve again to reconcile the verified ARR state.";
-
-export class CleanupRunAlreadyInProgressError extends Error {
-	constructor() {
-		super("A cleanup operation is already in progress");
-		this.name = "CleanupRunAlreadyInProgressError";
-	}
-}
-
-export class CleanupRunLeaseLostError extends Error {
-	constructor() {
-		super("The cleanup run lost its database execution lease");
-		this.name = "CleanupRunLeaseLostError";
-	}
-}
 
 export class CleanupTopologyMutationConflictError extends Error {
 	readonly statusCode = 409;
@@ -540,55 +541,6 @@ export class CleanupPolicyMutationConflictError extends Error {
 		super("Library cleanup settings cannot be changed while a cleanup operation is in progress");
 		this.name = "CleanupPolicyMutationConflictError";
 	}
-}
-
-export async function acquireCleanupRunLease(
-	prisma: CleanupExecutorDeps["prisma"],
-	userId: string,
-	configId: string,
-	now: Date = new Date(),
-	runClaimToken: string = randomUUID(),
-): Promise<string | null> {
-	const claim = await prisma.libraryCleanupConfig.updateMany({
-		where: {
-			id: configId,
-			userId,
-			OR: [
-				{ runClaimToken: null },
-				{ runClaimedAt: null },
-				{ runClaimedAt: { lt: new Date(now.getTime() - CLEANUP_RUN_LEASE_MS) } },
-			],
-		},
-		data: { runClaimToken, runClaimedAt: now },
-	});
-	return claim.count === 1 ? runClaimToken : null;
-}
-
-export async function releaseCleanupRunLease(
-	prisma: CleanupExecutorDeps["prisma"],
-	userId: string,
-	configId: string,
-	runClaimToken: string,
-): Promise<boolean> {
-	const release = await prisma.libraryCleanupConfig.updateMany({
-		where: { id: configId, userId, runClaimToken },
-		data: { runClaimToken: null, runClaimedAt: null },
-	});
-	return release.count === 1;
-}
-
-export async function renewCleanupRunLease(
-	prisma: CleanupExecutorDeps["prisma"],
-	userId: string,
-	configId: string,
-	runClaimToken: string,
-	now: Date = new Date(),
-): Promise<boolean> {
-	const renewal = await prisma.libraryCleanupConfig.updateMany({
-		where: { id: configId, userId, runClaimToken },
-		data: { runClaimedAt: now },
-	});
-	return renewal.count === 1;
 }
 
 async function withCleanupMutationLease<T>(
@@ -687,66 +639,6 @@ export async function withCleanupPolicyMutationLease<T>(
 		() => new CleanupPolicyMutationConflictError(),
 		options,
 	);
-}
-
-async function startCleanupRunLease(
-	deps: CleanupExecutorDeps,
-	userId: string,
-	configId: string,
-): Promise<{
-	assertOwnership: () => Promise<void>;
-	release: () => Promise<void>;
-}> {
-	const { prisma, log } = deps;
-	const runClaimToken = await acquireCleanupRunLease(prisma, userId, configId);
-	if (!runClaimToken) throw new CleanupRunAlreadyInProgressError();
-
-	let runLeaseLost = false;
-	const assertOwnership = async () => {
-		if (runLeaseLost) throw new CleanupRunLeaseLostError();
-		try {
-			if (!(await renewCleanupRunLease(prisma, userId, configId, runClaimToken))) {
-				runLeaseLost = true;
-				throw new CleanupRunLeaseLostError();
-			}
-		} catch (error) {
-			runLeaseLost = true;
-			if (error instanceof CleanupRunLeaseLostError) throw error;
-			log.error({ err: error, configId }, "Library cleanup could not renew its database run lease");
-			throw new CleanupRunLeaseLostError();
-		}
-	};
-	const heartbeat = setInterval(() => {
-		assertOwnership().catch((error) => {
-			log.error(
-				{ err: error, configId },
-				"Library cleanup database run lease heartbeat failed; mutations will stop",
-			);
-		});
-	}, CLEANUP_RUN_HEARTBEAT_MS);
-	heartbeat.unref();
-
-	return {
-		assertOwnership,
-		release: async () => {
-			clearInterval(heartbeat);
-			await releaseCleanupRunLease(prisma, userId, configId, runClaimToken)
-				.then((released) => {
-					if (!released) {
-						log.warn(
-							{ configId },
-							"Library cleanup finished after its database run lease ownership changed",
-						);
-					}
-				})
-				.catch((error) => {
-					log.error(
-						{ err: error, configId },
-						"Library cleanup finished but its database run lease could not be released",
-					);
-				});
-		},
-	};
 }
 
 class ArrDeletePartialError extends Error {
@@ -2387,7 +2279,11 @@ async function executeCleanupRunGuarded(
 		let priorRescanWarnings: string[] = [];
 		if (!deps.skipPendingMediaServerRescanRetry) {
 			try {
-				const retryResult = await retryPendingMediaServerRescans(deps, userId);
+				const retryResult = await retryPendingMediaServerRescans(
+					deps,
+					userId,
+					runLease.assertOwnership,
+				);
 				priorRescanWarnings = retryResult.warnings;
 			} catch (error) {
 				priorRescanWarnings = [

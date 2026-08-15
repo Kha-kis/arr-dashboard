@@ -10,6 +10,11 @@ import {
 	runCleanupAuditBestEffort,
 } from "./cleanup-audit.js";
 import {
+	CleanupRunAlreadyInProgressError,
+	CleanupRunLeaseLostError,
+	startCleanupRunLease,
+} from "./cleanup-run-lease.js";
+import {
 	assertCurrentProviderScanAuthority,
 	createCurrentProviderScanAuthority,
 	ProviderExecutionAuthorityChangedError,
@@ -660,6 +665,7 @@ async function triggerClaimedRescan(
 	executionToken: string,
 	operationKey: string,
 	onUpstreamDispatch: () => void,
+	assertExecutionLease?: () => Promise<void>,
 ): Promise<"triggered" | "skipped"> {
 	const service = scan.service as RescanService;
 	if (!isRescanService(service as ServiceInstance["service"])) {
@@ -678,12 +684,16 @@ async function triggerClaimedRescan(
 		service,
 		mediaType: scan.mediaType as RescanMediaType,
 	};
+	const assertLeases = async () => {
+		await assertExecutionLease?.();
+		await assertRescanOperationLease(deps, userId, operationKey, executionToken);
+	};
 	await assertCurrentProviderScanAuthority(
 		deps,
 		userId,
 		scan.serverIdentity,
 		authorityTarget,
-		async () => await assertRescanOperationLease(deps, userId, operationKey, executionToken),
+		assertLeases,
 	);
 
 	if (service === "PLEX") {
@@ -718,7 +728,7 @@ async function triggerClaimedRescan(
 				userId,
 				scan.serverIdentity,
 				authorityTarget,
-				async () => await assertRescanOperationLease(deps, userId, operationKey, executionToken),
+				assertLeases,
 			);
 			await client.refreshSection(section.key);
 			onUpstreamDispatch();
@@ -746,6 +756,7 @@ export async function triggerMediaServerRescansForApproval(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	approvalId: string,
+	assertExecutionLease?: () => Promise<void>,
 ): Promise<MediaServerRescanResult> {
 	const approval = await deps.prisma.libraryCleanupApproval.findFirst({
 		where: { id: approvalId, config: { userId }, status: "executed" },
@@ -852,6 +863,7 @@ export async function triggerMediaServerRescansForApproval(
 						() => {
 							upstreamDispatchStarted = true;
 						},
+						assertExecutionLease,
 					);
 					break;
 				} catch (error) {
@@ -865,6 +877,7 @@ export async function triggerMediaServerRescansForApproval(
 				}
 			}
 			if (!physicalOutcome) throw lastCandidateError;
+			await assertExecutionLease?.();
 			await assertRescanOperationLease(deps, userId, operationKey, executionToken);
 			const completedAt = new Date();
 			const completed = await deps.prisma.libraryCleanupMediaServerScan.updateMany({
@@ -997,6 +1010,7 @@ export async function triggerCoalescedMediaServerRescans(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	approvalIds: string[],
+	assertExecutionLease?: () => Promise<void>,
 ): Promise<MediaServerRescanResult> {
 	const uniqueApprovalIds = [...new Set(approvalIds)].sort();
 	if (uniqueApprovalIds.length === 0) {
@@ -1058,6 +1072,7 @@ export async function triggerCoalescedMediaServerRescans(
 			deps,
 			userId,
 			representativeApprovalId,
+			assertExecutionLease,
 		);
 		combined.triggered += result.triggered;
 		combined.skipped = (combined.skipped ?? 0) + (result.skipped ?? 0);
@@ -1078,6 +1093,7 @@ export async function triggerCoalescedMediaServerRescans(
 export async function retryPendingMediaServerRescans(
 	deps: CleanupExecutorDeps,
 	userId: string,
+	assertExecutionLease?: () => Promise<void>,
 ): Promise<MediaServerRescanResult> {
 	const scanDelegate = (
 		deps.prisma as unknown as {
@@ -1105,9 +1121,12 @@ export async function retryPendingMediaServerRescans(
 		...candidates.filter((row) => row.status === "triggered" || row.status === "skipped"),
 		...eligibleWork,
 	];
-	return await triggerCoalescedMediaServerRescans(deps, userId, [
-		...new Set(pending.map(({ approvalId }) => approvalId)),
-	]);
+	return await triggerCoalescedMediaServerRescans(
+		deps,
+		userId,
+		[...new Set(pending.map(({ approvalId }) => approvalId))],
+		assertExecutionLease,
+	);
 }
 
 /** Retry ancillary scan work for every owner, independent of cleanup enablement or due time. */
@@ -1133,7 +1152,7 @@ export async function retryAllPendingMediaServerRescans(
 			id: true,
 			status: true,
 			nextAttemptAt: true,
-			approval: { select: { config: { select: { userId: true } } } },
+			approval: { select: { config: { select: { id: true, userId: true } } } },
 		},
 	});
 	const eligibleWork = await filterDatabaseEligibleScans(
@@ -1144,9 +1163,12 @@ export async function retryAllPendingMediaServerRescans(
 		...candidates.filter((row) => row.status === "triggered" || row.status === "skipped"),
 		...eligibleWork,
 	];
-	const userIds = [
-		...new Set(pending.map((row) => row.approval.config.userId).filter(Boolean)),
-	].sort();
+	const configIdByUserId = new Map<string, string>();
+	for (const row of pending) {
+		const { id, userId } = row.approval.config;
+		if (id && userId && !configIdByUserId.has(userId)) configIdByUserId.set(userId, id);
+	}
+	const userIds = [...configIdByUserId.keys()].sort();
 	const combined: MediaServerRescanResult = {
 		targets: 0,
 		triggered: 0,
@@ -1155,12 +1177,38 @@ export async function retryAllPendingMediaServerRescans(
 		warnings: [],
 	};
 	for (const userId of userIds) {
-		const result = await retryPendingMediaServerRescans(deps, userId);
-		combined.targets += result.targets;
-		combined.triggered += result.triggered;
-		combined.skipped = (combined.skipped ?? 0) + (result.skipped ?? 0);
-		combined.failed += result.failed;
-		combined.warnings.push(...result.warnings);
+		const configId = configIdByUserId.get(userId)!;
+		let runLease: Awaited<ReturnType<typeof startCleanupRunLease>>;
+		try {
+			runLease = await startCleanupRunLease(deps, userId, configId);
+		} catch (error) {
+			if (error instanceof CleanupRunAlreadyInProgressError) {
+				combined.warnings.push(
+					"Pending media-server scan recovery was deferred while another cleanup operation was active.",
+				);
+				continue;
+			}
+			throw error;
+		}
+		try {
+			await runLease.assertOwnership();
+			const result = await retryPendingMediaServerRescans(deps, userId, runLease.assertOwnership);
+			combined.targets += result.targets;
+			combined.triggered += result.triggered;
+			combined.skipped = (combined.skipped ?? 0) + (result.skipped ?? 0);
+			combined.failed += result.failed;
+			combined.warnings.push(...result.warnings);
+		} catch (error) {
+			if (error instanceof CleanupRunLeaseLostError) {
+				combined.warnings.push(
+					"Pending media-server scan recovery was deferred after its cleanup execution lease changed.",
+				);
+				continue;
+			}
+			throw error;
+		} finally {
+			await runLease.release();
+		}
 	}
 	combined.warnings = [...new Set(combined.warnings)];
 	return combined;

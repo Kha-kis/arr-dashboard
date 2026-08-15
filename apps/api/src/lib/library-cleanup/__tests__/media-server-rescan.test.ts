@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCurrentProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import {
 	prepareMediaServerRescans,
+	retryAllPendingMediaServerRescans,
 	triggerCoalescedMediaServerRescans,
 	triggerMediaServerRescansForApproval,
 } from "../media-server-rescan.js";
@@ -436,6 +438,96 @@ function installStatefulScanStore(
 		}),
 		deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 	});
+}
+
+function installRecoveryRunClaimStore(
+	fixture: ReturnType<typeof deps>,
+	configs: Array<{
+		id: string;
+		userId: string;
+		runClaimToken: string | null;
+		runClaimedAt: Date | null;
+	}>,
+) {
+	const updateMany = vi.fn(
+		async ({
+			where,
+			data,
+		}: {
+			where: { id: string; userId: string; runClaimToken?: string; OR?: unknown[] };
+			data: { runClaimToken?: string | null; runClaimedAt: Date | null };
+		}) => {
+			const config = configs.find(
+				(candidate) => candidate.id === where.id && candidate.userId === where.userId,
+			);
+			if (!config) return { count: 0 };
+			if (data.runClaimToken === null) {
+				if (where.runClaimToken !== config.runClaimToken) return { count: 0 };
+				config.runClaimToken = null;
+				config.runClaimedAt = null;
+				return { count: 1 };
+			}
+			if (where.OR) {
+				if (config.runClaimToken !== null) return { count: 0 };
+				config.runClaimToken = data.runClaimToken ?? null;
+				config.runClaimedAt = data.runClaimedAt;
+				return { count: 1 };
+			}
+			if (where.runClaimToken !== config.runClaimToken) return { count: 0 };
+			config.runClaimedAt = data.runClaimedAt;
+			return { count: 1 };
+		},
+	);
+	const transactionState = { depth: 0 };
+	Object.assign(fixture.prisma, {
+		libraryCleanupConfig: {
+			upsert: vi.fn(async ({ where }: { where: { userId: string } }) => ({
+				id: configs.find((config) => config.userId === where.userId)?.id,
+			})),
+			findUnique: vi.fn(async ({ where }: { where: { id?: string; userId?: string } }) =>
+				configs.find((config) => config.id === where.id || config.userId === where.userId),
+			),
+			updateMany,
+		},
+		$transaction: vi.fn(async (callback: (tx: typeof fixture.prisma) => Promise<unknown>) => {
+			transactionState.depth++;
+			try {
+				return await callback(fixture.prisma);
+			} finally {
+				transactionState.depth--;
+			}
+		}),
+	});
+	return { configs, transactionState, updateMany };
+}
+
+function installRecoveryCandidateProjection(
+	fixture: ReturnType<typeof deps>,
+	rows: ReturnType<typeof scan>[],
+	configByApprovalId: Record<string, { id: string; userId: string }>,
+) {
+	const statefulFind =
+		fixture.prisma.libraryCleanupMediaServerScan.findMany.getMockImplementation()!;
+	fixture.prisma.libraryCleanupMediaServerScan.findMany.mockImplementation(
+		async (args: {
+			where: { approval?: { config?: { userId?: string } } };
+			select?: { approval?: unknown };
+		}) => {
+			if (args.select?.approval) {
+				return rows.map((row) => ({
+					id: row.id,
+					status: row.status,
+					nextAttemptAt: row.nextAttemptAt,
+					approval: { config: configByApprovalId[row.approvalId] },
+				}));
+			}
+			const matches = (await statefulFind(args as never)) as ReturnType<typeof scan>[];
+			const userId = args.where.approval?.config?.userId;
+			return userId
+				? matches.filter((row) => configByApprovalId[row.approvalId]?.userId === userId)
+				: matches;
+		},
+	);
 }
 
 describe("durable media-server rescans", () => {
@@ -1681,6 +1773,153 @@ describe("durable media-server rescans", () => {
 
 		expect(result).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
 		expect(fixture.plexClient.refreshSection).toHaveBeenCalledWith("movies");
+	});
+
+	it("holds the cleanup run claim across scheduled scan validation and dispatch", async () => {
+		const plex = instance("plex-1", "PLEX");
+		const rows = [scan("scan-plex", plex.id, "PLEX")];
+		const storedApproval = approval();
+		const fixture = deps({ instances: [plex], scans: rows, approval: storedApproval });
+		const claimStore = installRecoveryRunClaimStore(fixture, [
+			{
+				id: "config-1",
+				userId: "user-1",
+				runClaimToken: null,
+				runClaimedAt: null,
+			},
+		]);
+		installRecoveryCandidateProjection(fixture, rows, {
+			[storedApproval.id]: { id: "config-1", userId: "user-1" },
+		});
+		const publicationWrites: string[] = [];
+		const publish = async (label: string) =>
+			await withCurrentProviderPublicationAuthority(
+				fixture.prisma as never,
+				plex as never,
+				async () => {
+					publicationWrites.push(label);
+					return label;
+				},
+			);
+		await expect(publish("before-recovery")).resolves.toMatchObject({ matched: true });
+		const observedClaimTokens: Array<string | null> = [];
+		const duringPublicationResults: boolean[] = [];
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi.fn(
+				async (_userId: string, _evidence: unknown, assertLease?: () => Promise<void>) => {
+					await assertLease?.();
+					observedClaimTokens.push(claimStore.configs[0]!.runClaimToken);
+					duringPublicationResults.push((await publish("during-recovery")).matched);
+				},
+			),
+		});
+		const networkTransactionDepth: number[] = [];
+		fixture.plexClient.refreshSection.mockImplementation(async () => {
+			networkTransactionDepth.push(claimStore.transactionState.depth);
+		});
+
+		const result = await retryAllPendingMediaServerRescans(fixture.deps);
+
+		expect(result).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
+		expect(observedClaimTokens).toEqual([expect.any(String), expect.any(String)]);
+		expect(duringPublicationResults).toEqual([false, false]);
+		expect(publicationWrites).toEqual(["before-recovery"]);
+		expect(networkTransactionDepth).toEqual([0]);
+		expect(claimStore.configs[0]?.runClaimToken).toBeNull();
+		await expect(publish("after-recovery")).resolves.toMatchObject({ matched: true });
+		expect(publicationWrites).toEqual(["before-recovery", "after-recovery"]);
+	});
+
+	it("defers an actively claimed recovery owner without blocking another user", async () => {
+		const userOnePlex = instance("plex-user-1", "PLEX");
+		const userTwoPlex = { ...instance("plex-user-2", "PLEX"), userId: "user-2" };
+		const approvals = [
+			approval({ id: "approval-user-1", configId: "config-user-1" }),
+			approval({ id: "approval-user-2", configId: "config-user-2" }),
+		];
+		const rows = [
+			scan("scan-user-1", userOnePlex.id, "PLEX", { approvalId: approvals[0]!.id }),
+			scan("scan-user-2", userTwoPlex.id, "PLEX", { approvalId: approvals[1]!.id }),
+		];
+		const fixture = deps({ instances: [userOnePlex, userTwoPlex] });
+		installStatefulScanStore(fixture, rows, approvals);
+		const claimStore = installRecoveryRunClaimStore(fixture, [
+			{
+				id: "config-user-1",
+				userId: "user-1",
+				runClaimToken: "normal-cleanup-owner",
+				runClaimedAt: new Date(),
+			},
+			{
+				id: "config-user-2",
+				userId: "user-2",
+				runClaimToken: null,
+				runClaimedAt: null,
+			},
+		]);
+		installRecoveryCandidateProjection(fixture, rows, {
+			[approvals[0]!.id]: { id: "config-user-1", userId: "user-1" },
+			[approvals[1]!.id]: { id: "config-user-2", userId: "user-2" },
+		});
+		const validatedUsers: string[] = [];
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi.fn(
+				async (userId: string, _evidence: unknown, assertLease?: () => Promise<void>) => {
+					await assertLease?.();
+					validatedUsers.push(userId);
+				},
+			),
+		});
+
+		const result = await retryAllPendingMediaServerRescans(fixture.deps);
+
+		expect(result).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
+		expect(validatedUsers).toEqual(["user-2", "user-2"]);
+		expect(rows[0]?.status).toBe("pending");
+		expect(rows[1]?.status).toBe("triggered");
+		expect(claimStore.configs[0]?.runClaimToken).toBe("normal-cleanup-owner");
+		expect(claimStore.configs[1]?.runClaimToken).toBeNull();
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledOnce();
+	});
+
+	it("stops scheduled recovery before dispatch when its cleanup claim is lost", async () => {
+		const plex = instance("plex-1", "PLEX");
+		const rows = [scan("scan-plex", plex.id, "PLEX")];
+		const storedApproval = approval();
+		const fixture = deps({ instances: [plex], scans: rows, approval: storedApproval });
+		const claimStore = installRecoveryRunClaimStore(fixture, [
+			{
+				id: "config-1",
+				userId: "user-1",
+				runClaimToken: null,
+				runClaimedAt: null,
+			},
+		]);
+		installRecoveryCandidateProjection(fixture, rows, {
+			[storedApproval.id]: { id: "config-1", userId: "user-1" },
+		});
+		const updateClaim = claimStore.updateMany.getMockImplementation()!;
+		claimStore.updateMany.mockImplementation(async (args) => {
+			if (!args.where.OR && args.where.runClaimToken && args.data.runClaimToken === undefined) {
+				claimStore.configs[0]!.runClaimToken = "replacement-owner";
+				return { count: 0 };
+			}
+			return await updateClaim(args);
+		});
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi.fn(
+				async (_userId: string, _evidence: unknown, assertLease?: () => Promise<void>) => {
+					await assertLease?.();
+				},
+			),
+		});
+
+		const result = await retryAllPendingMediaServerRescans(fixture.deps);
+
+		expect(result).toMatchObject({ targets: 0, triggered: 0, failed: 0 });
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+		expect(rows[0]).toMatchObject({ status: "pending", executionToken: null });
+		expect(claimStore.configs[0]?.runClaimToken).toBe("replacement-owner");
 	});
 
 	it("reclaims a fast-worker crash using only database eligibility and lease clocks", async () => {
