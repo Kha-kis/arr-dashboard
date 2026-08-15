@@ -52,7 +52,7 @@ describe("TautulliClient server identity", () => {
 		const fetchMock = vi
 			.fn()
 			.mockResolvedValueOnce(success({ pms_name: "Plex" }))
-			.mockResolvedValueOnce(success([{ machine_identifier: "fallback-id", pms_name: "Plex" }]));
+			.mockResolvedValueOnce(success([{ machine_identifier: "fallback-id", name: "Plex" }]));
 		vi.stubGlobal("fetch", fetchMock);
 
 		await expect(

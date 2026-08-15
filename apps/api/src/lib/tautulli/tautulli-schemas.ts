@@ -32,6 +32,7 @@ export const tautulliServerInfoSchema = z.looseObject({
 export const tautulliServersInfoSchema = z.array(
 	z.looseObject({
 		machine_identifier: z.string(),
+		name: z.string().optional(),
 		pms_name: z.string().optional(),
 	}),
 );

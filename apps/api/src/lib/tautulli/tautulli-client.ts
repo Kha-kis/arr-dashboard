@@ -172,7 +172,7 @@ export class TautulliClient {
 			const candidates = servers
 				.map((server) => ({
 					identifier: server.machine_identifier.trim(),
-					displayName: normalizeDisplayName(server.pms_name),
+					displayName: normalizeDisplayName(server.name) ?? normalizeDisplayName(server.pms_name),
 				}))
 				.filter((server) => server.identifier.length > 0);
 			if (candidates.length !== 1) throw new Error("ambiguous fallback identity");
