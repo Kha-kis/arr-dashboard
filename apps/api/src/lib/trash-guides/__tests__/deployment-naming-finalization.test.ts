@@ -22,6 +22,7 @@ describe("DeploymentExecutorService naming finalization", () => {
 			userId: "user-1",
 			label: "Radarr",
 			service: "RADARR",
+			enabled: true,
 			baseUrl: "http://radarr:7878",
 			encryptedApiKey: "encrypted-key",
 			encryptionIv: "iv",

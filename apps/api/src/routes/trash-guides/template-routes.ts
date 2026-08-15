@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { requireTemplate } from "../../lib/trash-guides/template-helpers.js";
+import { withTrashTemplateMutationGuard } from "../../lib/trash-guides/template-mutation-guard.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { parseInstanceOverrides } from "../../lib/trash-guides/utils.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -569,60 +570,62 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			return reply.status(400).send({ error: "Invalid instance ID format" });
 		}
 		const { scoreOverrides, cfOverrides, qualityConfigOverride } = request.body;
-		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
+		return withTrashTemplateMutationGuard(request.currentUser!.id, async () => {
+			const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
-		// Parse existing overrides with error handling for malformed JSON
-		const instanceOverrides = parseInstanceOverrides(
-			template.instanceOverrides,
-			{ templateId, operation: "update" },
-			app.log,
-		);
+			// Parse existing overrides with error handling for malformed JSON
+			const instanceOverrides = parseInstanceOverrides(
+				template.instanceOverrides,
+				{ templateId, operation: "update" },
+				app.log,
+			);
 
-		// Get existing override for this instance to preserve fields not being updated
-		const existingOverride = (instanceOverrides[instanceId] as Record<string, unknown>) || {};
+			// Get existing override for this instance to preserve fields not being updated
+			const existingOverride = (instanceOverrides[instanceId] as Record<string, unknown>) || {};
 
-		// Update overrides for this instance (merge with existing)
-		const updatedOverride: Record<string, unknown> = {
-			...existingOverride,
-			instanceId,
-			lastModifiedAt: new Date().toISOString(),
-			lastModifiedBy: request.currentUser!.id,
-		};
+			// Update overrides for this instance (merge with existing)
+			const updatedOverride: Record<string, unknown> = {
+				...existingOverride,
+				instanceId,
+				lastModifiedAt: new Date().toISOString(),
+				lastModifiedBy: request.currentUser!.id,
+			};
 
-		// Update score overrides if provided
-		if (scoreOverrides !== undefined) {
-			updatedOverride.cfScoreOverrides = scoreOverrides;
-		}
-
-		// Update CF selection overrides if provided
-		if (cfOverrides !== undefined) {
-			updatedOverride.cfSelectionOverrides = cfOverrides;
-		}
-
-		// Update quality config override if provided (null clears it)
-		if (qualityConfigOverride !== undefined) {
-			if (qualityConfigOverride === null) {
-				updatedOverride.qualityConfigOverride = undefined;
-			} else {
-				updatedOverride.qualityConfigOverride = qualityConfigOverride;
+			// Update score overrides if provided
+			if (scoreOverrides !== undefined) {
+				updatedOverride.cfScoreOverrides = scoreOverrides;
 			}
-		}
 
-		instanceOverrides[instanceId] = updatedOverride;
+			// Update CF selection overrides if provided
+			if (cfOverrides !== undefined) {
+				updatedOverride.cfSelectionOverrides = cfOverrides;
+			}
 
-		// Save back to database
-		await app.prisma.trashTemplate.update({
-			where: { id: templateId },
-			data: {
-				instanceOverrides: JSON.stringify(instanceOverrides),
-				updatedAt: new Date(),
-			},
-		});
+			// Update quality config override if provided (null clears it)
+			if (qualityConfigOverride !== undefined) {
+				if (qualityConfigOverride === null) {
+					updatedOverride.qualityConfigOverride = undefined;
+				} else {
+					updatedOverride.qualityConfigOverride = qualityConfigOverride;
+				}
+			}
 
-		return reply.send({
-			success: true,
-			message: "Instance overrides updated successfully",
-			overrides: instanceOverrides[instanceId],
+			instanceOverrides[instanceId] = updatedOverride;
+
+			// Save back to database
+			await app.prisma.trashTemplate.update({
+				where: { id: templateId },
+				data: {
+					instanceOverrides: JSON.stringify(instanceOverrides),
+					updatedAt: new Date(),
+				},
+			});
+
+			return reply.send({
+				success: true,
+				message: "Instance overrides updated successfully",
+				overrides: instanceOverrides[instanceId],
+			});
 		});
 	});
 
@@ -638,29 +641,31 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		if (!/^[a-z0-9]+$/.test(instanceId)) {
 			return reply.status(400).send({ error: "Invalid instance ID format" });
 		}
-		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
+		return withTrashTemplateMutationGuard(request.currentUser!.id, async () => {
+			const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
-		const instanceOverrides = parseInstanceOverrides(
-			template.instanceOverrides,
-			{ templateId, operation: "delete" },
-			app.log,
-		);
+			const instanceOverrides = parseInstanceOverrides(
+				template.instanceOverrides,
+				{ templateId, operation: "delete" },
+				app.log,
+			);
 
-		// Remove overrides for this instance
-		delete instanceOverrides[instanceId];
+			// Remove overrides for this instance
+			delete instanceOverrides[instanceId];
 
-		// Save back to database
-		await app.prisma.trashTemplate.update({
-			where: { id: templateId },
-			data: {
-				instanceOverrides: JSON.stringify(instanceOverrides),
-				updatedAt: new Date(),
-			},
-		});
+			// Save back to database
+			await app.prisma.trashTemplate.update({
+				where: { id: templateId },
+				data: {
+					instanceOverrides: JSON.stringify(instanceOverrides),
+					updatedAt: new Date(),
+				},
+			});
 
-		return reply.send({
-			success: true,
-			message: "Instance overrides removed successfully",
+			return reply.send({
+				success: true,
+				message: "Instance overrides removed successfully",
+			});
 		});
 	});
 
