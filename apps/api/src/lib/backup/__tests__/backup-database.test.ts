@@ -61,6 +61,114 @@ function makeMockPrisma(rows: Partial<Record<TableName, unknown[]>> = {}): {
 }
 
 describe("exportDatabase — operational history exclusion", () => {
+	it("preserves a successful unrolled deployment owner and its snapshot", async () => {
+		const { prisma, mock } = makeMockPrisma({
+			serviceInstance: [{ id: "instance-1", userId: "user-1" }],
+			trashTemplate: [{ id: "template-1", userId: "user-1" }],
+		});
+		const deploymentOwner = {
+			id: "deployment-owner",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "SUCCESS",
+			rolledBack: false,
+			undeployStatus: null,
+			backupId: "snapshot-deployment-owner",
+		};
+		const terminalDeploymentAudit = {
+			id: "deployment-terminal-audit",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "SUCCESS",
+			rolledBack: true,
+			undeployStatus: null,
+			backupId: "snapshot-terminal-deployment-audit",
+		};
+		const snapshots = [
+			{
+				id: "snapshot-deployment-owner",
+				instanceId: "instance-1",
+				userId: "user-1",
+				backupData: "deployment-owner-evidence",
+			},
+		];
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce([]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([
+			deploymentOwner,
+			terminalDeploymentAudit,
+		]);
+		mock.trashBackup.findMany.mockResolvedValueOnce(snapshots);
+
+		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
+
+		expect(result.trashSyncHistory).toEqual([]);
+		expect(result.templateDeploymentHistory).toEqual([deploymentOwner]);
+		expect(result.trashBackups).toEqual(snapshots);
+		expect(mock.templateDeploymentHistory.findMany).toHaveBeenCalledWith({
+			where: {
+				OR: [
+					{ rolledBack: false },
+					{ undeployStatus: { not: "COMPLETED" } },
+					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
+				],
+			},
+		});
+	});
+
+	it("preserves a successful unrolled sync owner and its snapshot", async () => {
+		const { prisma, mock } = makeMockPrisma({
+			serviceInstance: [{ id: "instance-1", userId: "user-1" }],
+			trashTemplate: [{ id: "template-1", userId: "user-1" }],
+		});
+		const syncOwner = {
+			id: "sync-owner",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "SUCCESS",
+			rolledBack: false,
+			rollbackStatus: null,
+			backupId: "snapshot-sync-owner",
+		};
+		const terminalSyncAudit = {
+			id: "sync-terminal-audit",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "SUCCESS",
+			rolledBack: true,
+			rollbackStatus: null,
+			backupId: "snapshot-terminal-sync-audit",
+		};
+		const snapshot = {
+			id: "snapshot-sync-owner",
+			instanceId: "instance-1",
+			userId: "user-1",
+			backupData: "sync-owner-evidence",
+		};
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce([syncOwner, terminalSyncAudit]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([]);
+		mock.trashBackup.findMany.mockResolvedValueOnce([snapshot]);
+
+		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
+
+		expect(result.trashSyncHistory).toEqual([syncOwner]);
+		expect(result.templateDeploymentHistory).toEqual([]);
+		expect(result.trashBackups).toEqual([snapshot]);
+		expect(mock.trashSyncHistory.findMany).toHaveBeenCalledWith({
+			where: {
+				OR: [
+					{ rolledBack: false },
+					{ rollbackStatus: { not: "COMPLETED" } },
+					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
+					{ status: "UNCERTAIN", rollbackStatus: null, backupId: null },
+				],
+			},
+		});
+	});
+
 	it("skips disposable history but preserves nonterminal rollback and undeploy coordination", async () => {
 		const { prisma, mock } = makeMockPrisma({
 			serviceInstance: [{ id: "instance-1", userId: "user-1" }],
@@ -117,6 +225,7 @@ describe("exportDatabase — operational history exclusion", () => {
 		expect(mock.trashSyncHistory.findMany).toHaveBeenCalledWith({
 			where: {
 				OR: [
+					{ rolledBack: false },
 					{ rollbackStatus: { not: "COMPLETED" } },
 					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
 					{ status: "UNCERTAIN", rollbackStatus: null, backupId: null },
@@ -126,6 +235,7 @@ describe("exportDatabase — operational history exclusion", () => {
 		expect(mock.templateDeploymentHistory.findMany).toHaveBeenCalledWith({
 			where: {
 				OR: [
+					{ rolledBack: false },
 					{ undeployStatus: { not: "COMPLETED" } },
 					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
 				],
@@ -182,6 +292,7 @@ describe("exportDatabase — operational history exclusion", () => {
 		expect(mock.trashSyncHistory.findMany).toHaveBeenCalledWith({
 			where: {
 				OR: [
+					{ rolledBack: false },
 					{ rollbackStatus: { not: "COMPLETED" } },
 					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
 					{ status: "UNCERTAIN", rollbackStatus: null, backupId: null },
@@ -191,6 +302,7 @@ describe("exportDatabase — operational history exclusion", () => {
 		expect(mock.templateDeploymentHistory.findMany).toHaveBeenCalledWith({
 			where: {
 				OR: [
+					{ rolledBack: false },
 					{ undeployStatus: { not: "COMPLETED" } },
 					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
 				],

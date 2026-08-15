@@ -47,8 +47,22 @@ function isAuditOnlyUncertainSync(record: Record<string, unknown>): boolean {
 	);
 }
 
+function isUnrolledDeploymentOwner(record: Record<string, unknown>): boolean {
+	return (
+		record.rolledBack === false && typeof record.backupId === "string" && record.backupId.length > 0
+	);
+}
+
 function shouldPreserveSyncHistory(record: Record<string, unknown>): boolean {
-	return isNonterminalRollback(record) || isAuditOnlyUncertainSync(record);
+	return (
+		isUnrolledDeploymentOwner(record) ||
+		isNonterminalRollback(record) ||
+		isAuditOnlyUncertainSync(record)
+	);
+}
+
+function shouldPreserveDeploymentHistory(record: Record<string, unknown>): boolean {
+	return isUnrolledDeploymentOwner(record) || isNonterminalUndeploy(record);
 }
 
 const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
@@ -318,6 +332,7 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		await prisma.trashSyncHistory.findMany({
 			where: {
 				OR: [
+					{ rolledBack: false },
 					{ rollbackStatus: { not: "COMPLETED" } },
 					{ status: { in: ["IN_PROGRESS", "RUNNING"] } },
 					{ status: "UNCERTAIN", rollbackStatus: null, backupId: null },
@@ -329,12 +344,13 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		await prisma.templateDeploymentHistory.findMany({
 			where: {
 				OR: [
+					{ rolledBack: false },
 					{ undeployStatus: { not: "COMPLETED" } },
 					{ status: { in: ["PARTIAL_UNDEPLOY", "IN_PROGRESS"] } },
 				],
 			},
 		})
-	).filter(isNonterminalUndeploy);
+	).filter(shouldPreserveDeploymentHistory);
 
 	const cappedTrashSyncHistory = skipHistory
 		? []
@@ -392,8 +408,12 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 	}
 
 	const requiredBackupIds = [
-		...nonterminalRollbackHistory.filter(isNonterminalRollback),
-		...nonterminalUndeployHistory,
+		...nonterminalRollbackHistory.filter(
+			(row) => isUnrolledDeploymentOwner(row) || isNonterminalRollback(row),
+		),
+		...nonterminalUndeployHistory.filter(
+			(row) => isUnrolledDeploymentOwner(row) || isNonterminalUndeploy(row),
+		),
 	].map((row) => {
 		if (typeof row.backupId !== "string" || row.backupId.length === 0) {
 			throw new Error(
