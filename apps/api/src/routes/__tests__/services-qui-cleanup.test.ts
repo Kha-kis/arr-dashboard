@@ -122,7 +122,7 @@ function makeSonarrInstance(overrides: Record<string, unknown> = {}) {
 }
 
 function createMockPrisma() {
-	return {
+	const prisma = {
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -143,6 +143,11 @@ function createMockPrisma() {
 		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 	};
+	return Object.assign(prisma, {
+		$transaction: vi.fn(async (operation: (tx: typeof prisma) => Promise<unknown>) =>
+			operation(prisma),
+		),
+	});
 }
 
 // ----------------------------------------------------------------------

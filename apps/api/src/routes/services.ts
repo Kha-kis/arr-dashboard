@@ -393,12 +393,14 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							data: { ...updateData, connectionGeneration: { increment: 1 } },
 						});
 						if (payload.tags) await updateInstanceTags(tx, id, payload.tags);
-						await clearDurableProviderCacheState(
-							tx,
-							id,
-							targetService,
-							payload.enabled ?? existing.enabled,
-						);
+						if (providerConnectionChanged) {
+							await clearDurableProviderCacheState(
+								tx,
+								id,
+								targetService,
+								payload.enabled ?? existing.enabled,
+							);
+						}
 					});
 				} else {
 					if (shouldResetOtherDefaults) {

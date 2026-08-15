@@ -114,7 +114,7 @@ function createPrismaStub() {
 		}),
 	};
 
-	return {
+	const prisma = {
 		_instances: instances,
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
@@ -134,6 +134,11 @@ function createPrismaStub() {
 		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 	};
+	return Object.assign(prisma, {
+		$transaction: vi.fn(async (operation: (tx: typeof prisma) => Promise<unknown>) =>
+			operation(prisma),
+		),
+	});
 }
 
 /**

@@ -126,7 +126,12 @@ beforeEach(async () => {
 			delete: vi.fn(),
 		},
 		serviceInstanceTag: { findFirst: vi.fn().mockResolvedValue(null) },
+		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 	};
+	mockPrisma.$transaction = vi.fn(async (operation: (tx: typeof mockPrisma) => Promise<unknown>) =>
+		operation(mockPrisma),
+	);
 
 	mockRequireInstance.mockResolvedValue(makeInstanceRow());
 	mockBuildUpdateData.mockReturnValue({});
