@@ -436,23 +436,37 @@ export class PlexClient {
 
 			const container = data.MediaContainer;
 			const items = container.Metadata ?? [];
-			if (container.offset !== offset || container.size !== items.length) {
+			const hasCompletePaginationMetadata =
+				container.offset !== undefined &&
+				container.size !== undefined &&
+				container.totalSize !== undefined;
+			if (requireComplete && !hasCompletePaginationMetadata) {
+				throw new Error("Plex history did not provide complete pagination metadata");
+			}
+			if (
+				(container.offset !== undefined && container.offset !== offset) ||
+				(container.size !== undefined && container.size !== items.length)
+			) {
 				throw new Error("Plex history pagination metadata did not match the returned page");
 			}
-			if (expectedTotal === undefined) {
+			if (expectedTotal === undefined && container.totalSize !== undefined) {
 				expectedTotal = container.totalSize;
 				if (requireComplete && expectedTotal > maxResults) {
 					throw new Error(
 						`Plex history contains ${expectedTotal} rows, exceeding the safe ${maxResults}-row limit`,
 					);
 				}
-			} else if (container.totalSize !== expectedTotal) {
+			} else if (expectedTotal !== undefined && container.totalSize !== expectedTotal) {
 				throw new Error("Plex history changed while it was being paged");
 			}
-			if (offset + items.length > expectedTotal) {
+			if (expectedTotal !== undefined && offset + items.length > expectedTotal) {
 				throw new Error("Plex history pagination exceeded its declared total");
 			}
-			if (items.length === 0 && offset < Math.min(expectedTotal, maxResults)) {
+			if (
+				expectedTotal !== undefined &&
+				items.length === 0 &&
+				offset < Math.min(expectedTotal, maxResults)
+			) {
 				throw new Error("Plex history pagination stopped before the declared total");
 			}
 			for (const item of items) {
@@ -477,6 +491,7 @@ export class PlexClient {
 			}
 
 			offset += items.length;
+			if (!requireComplete && expectedTotal === undefined && items.length < take) break;
 		}
 
 		if (requireComplete && (expectedTotal === undefined || allItems.length !== expectedTotal)) {

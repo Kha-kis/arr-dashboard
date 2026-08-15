@@ -55,6 +55,31 @@ describe("PlexClient complete history authority", () => {
 		}
 	});
 
+	it("supports bounded compatibility reads when Plex omits pagination metadata", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(response({ size: 1, Metadata: [historyItem(1)] })),
+		);
+
+		await expect(
+			new PlexClient("http://plex.test", "token", log).getHistory({ maxResults: 200 }),
+		).resolves.toHaveLength(1);
+	});
+
+	it("rejects missing pagination metadata at the complete-history safety boundary", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValue(response({ size: 1, Metadata: [historyItem(1)] })),
+		);
+
+		await expect(
+			new PlexClient("http://plex.test", "token", log).getHistory({
+				maxResults: 100_000,
+				requireComplete: true,
+			}),
+		).rejects.toThrow(/complete pagination metadata/i);
+	});
+
 	it("rejects a declared history inventory larger than the safety cap", async () => {
 		vi.stubGlobal(
 			"fetch",
