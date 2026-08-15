@@ -7,6 +7,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import {
+	type AcknowledgeSyncReviewResult,
+	acknowledgeSyncReview,
 	createSyncProgressStream,
 	executeSync,
 	getSyncProgress,
@@ -282,7 +284,11 @@ export function useSyncProgress(syncId: string | null, enabled = true) {
 		refetchInterval: (query) => {
 			const data = query.state.data;
 			// Stop polling when completed or failed
-			if (data?.status === "COMPLETED" || data?.status === "FAILED") {
+			if (
+				data?.status === "COMPLETED" ||
+				data?.status === "FAILED" ||
+				data?.status === "UNCERTAIN"
+			) {
 				return false;
 			}
 			return 2000; // Poll every 2 seconds
@@ -303,4 +309,10 @@ export function useSyncProgress(syncId: string | null, enabled = true) {
 		isLoading: usePolling ? pollingQuery.isLoading : !progress && !error,
 		isPolling: usePolling,
 	};
+}
+
+export function useAcknowledgeSyncReview() {
+	return useMutation<AcknowledgeSyncReviewResult, Error, { syncId: string }>({
+		mutationFn: ({ syncId }) => acknowledgeSyncReview(syncId),
+	});
 }

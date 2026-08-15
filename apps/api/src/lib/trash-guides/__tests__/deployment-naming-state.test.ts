@@ -123,7 +123,12 @@ describe("restoreNamingDeployment", () => {
 				status: 200,
 				json: vi.fn().mockResolvedValue(deployedConfig),
 			})
-			.mockResolvedValueOnce({ ok: true, status: 202 });
+			.mockResolvedValueOnce({ ok: true, status: 202 })
+			.mockResolvedValueOnce({
+				ok: true,
+				status: 200,
+				json: vi.fn().mockResolvedValue(snapshot),
+			});
 
 		await expect(
 			restoreNamingDeployment(

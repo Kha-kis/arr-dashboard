@@ -13,6 +13,7 @@
 import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../../lib/__tests__/test-prisma.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getCreatedCustomFormatNamesForRollback } from "../sync-routes.js";
 
 // Check if we should run integration tests (requires writable test database)
 const RUN_DB_TESTS = process.env.TEST_DB === "true";
@@ -73,6 +74,18 @@ describe("Sync Rollback Logic Tests", () => {
 	});
 
 	describe("Applied Configs Parsing", () => {
+		it("never treats a created quality profile as permission to delete a same-name CF", () => {
+			const createdNames = getCreatedCustomFormatNamesForRollback([
+				{ name: "Any", action: "created", type: "quality_profile", id: 9 },
+				{ name: "Naming configuration", action: "updated", type: "naming" },
+				{ name: "Managed CF", action: "created", type: "custom_format" },
+				{ name: "Legacy CF", action: "created" },
+			]);
+
+			expect(createdNames).toEqual(new Set(["Managed CF", "Legacy CF"]));
+			expect(createdNames).not.toContain("Any");
+		});
+
 		it("should identify CFs created by sync", () => {
 			const appliedConfigs = JSON.stringify([
 				{ name: "Created CF 1", action: "created" },

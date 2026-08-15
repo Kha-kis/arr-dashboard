@@ -171,7 +171,7 @@ describe("rollbackCustomFormatDeployment", () => {
 		const client = {
 			customFormat: {
 				getAll: vi.fn().mockResolvedValue([deployed]),
-				getById: vi.fn().mockResolvedValue(deployed),
+				getById: vi.fn().mockResolvedValueOnce(deployed).mockResolvedValueOnce(before),
 				update,
 			},
 		};
@@ -308,7 +308,7 @@ describe("rollbackCustomFormatDeployment", () => {
 		const client = {
 			customFormat: {
 				getAll: vi.fn().mockResolvedValue([intended]),
-				getById: vi.fn().mockResolvedValue(intended),
+				getById: vi.fn().mockResolvedValueOnce(intended).mockResolvedValueOnce(before),
 				update,
 			},
 		};

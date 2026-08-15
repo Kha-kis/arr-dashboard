@@ -52,6 +52,24 @@ const executeBulkSchema = z.object({
 export async function deploymentRoutes(app: FastifyInstance) {
 	const { prisma, deploymentExecutor } = app;
 	const deploymentPreview = createDeploymentPreviewService(prisma, app.arrClientFactory, app.log);
+	const notifyUncertainDeployment = async (
+		userId: string,
+		title: string,
+		body: string,
+		metadata: Record<string, unknown>,
+	): Promise<void> => {
+		if (!app.notificationService) return;
+		await app.notificationService.notify(
+			{
+				eventType: "TRASH_DEPLOY_UNCERTAIN",
+				title,
+				body,
+				url: "/trash-guides",
+				metadata: { ...metadata, reason: "uncertain_result" },
+			},
+			{ userId, fallbackEventTypes: ["TRASH_DEPLOY_FAILED"] },
+		);
+	};
 
 	/**
 	 * POST /api/trash-guides/deployment/preview
@@ -114,6 +132,40 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			return reply.send({
 				success: true,
 				result: result,
+			});
+		}
+
+		if (result.status === "UNCERTAIN") {
+			request.log.warn(
+				{ templateId, instanceId },
+				"Deployment result is uncertain and requires reconciliation",
+			);
+			notifyUncertainDeployment(
+				userId,
+				`TRaSH deployment needs review on ${result.instanceLabel}`,
+				result.errors?.join("; ") ??
+					"ARR may have applied changes, but the result could not be verified.",
+				{ instance: result.instanceLabel, templateId, instanceId },
+			).catch((err) => {
+				request.log.warn({ err }, "Deployment review notification dispatch failed");
+			});
+			return reply.send({
+				success: false,
+				error: "Deployment result is uncertain",
+				result,
+			});
+		}
+
+		const partiallyApplied =
+			result.customFormatsCreated > 0 ||
+			result.customFormatsUpdated > 0 ||
+			Boolean(result.qualityProfileApplied) ||
+			(result.namingFieldsApplied ?? 0) > 0;
+		if (partiallyApplied) {
+			return reply.send({
+				success: false,
+				error: "Deployment partially applied",
+				result,
 			});
 		}
 
@@ -358,14 +410,17 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		// success: true only when all deployments succeeded
 		// Check both failedInstances count and individual result.success flags
 		const hasFailures =
-			result.failedInstances > 0 || result.results.some((deployment) => !deployment.success);
+			result.failedInstances > 0 ||
+			result.results.some((deployment) => deployment.status === "FAILED");
+		const hasUncertain =
+			result.uncertainInstances > 0 ||
+			result.results.some((deployment) => deployment.status === "UNCERTAIN");
+		const failedNames = result.results
+			.filter((deployment) => deployment.status === "FAILED")
+			.map((deployment) => deployment.instanceLabel)
+			.join(", ");
 
-		if (hasFailures) {
-			const failedNames = result.results
-				.filter((r) => !r.success)
-				.map((r) => r.instanceLabel)
-				.join(", ");
-
+		if (hasFailures && !hasUncertain) {
 			app.notificationService
 				?.notify({
 					eventType: "TRASH_DEPLOY_FAILED",
@@ -383,8 +438,30 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				});
 		}
 
+		if (hasUncertain) {
+			const uncertainNames = result.results
+				.filter((deployment) => deployment.status === "UNCERTAIN")
+				.map((deployment) => deployment.instanceLabel)
+				.join(", ");
+			void notifyUncertainDeployment(
+				userId,
+				hasFailures
+					? "TRaSH bulk deployment had failures and needs review"
+					: "TRaSH bulk deployment needs review",
+				`${hasFailures ? `Failed on: ${failedNames || "unknown instances"}. ` : ""}Unverified result on: ${uncertainNames || "unknown instances"}`,
+				{
+					totalInstances: instanceIds.length,
+					failedInstances: result.failedInstances,
+					uncertainInstances: result.uncertainInstances,
+					templateId,
+				},
+			).catch((err) => {
+				request.log.warn({ err }, "Bulk deployment review notification dispatch failed");
+			});
+		}
+
 		return reply.send({
-			success: !hasFailures,
+			success: !hasFailures && !hasUncertain,
 			result: result,
 		});
 	});

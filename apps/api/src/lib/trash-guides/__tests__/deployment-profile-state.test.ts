@@ -23,7 +23,7 @@ describe("rollbackQualityProfileDeployment", () => {
 		const remove = vi.fn().mockResolvedValue(undefined);
 		const client = {
 			qualityProfile: {
-				getAll: vi.fn().mockResolvedValue([deployed]),
+				getAll: vi.fn().mockResolvedValueOnce([deployed]).mockResolvedValueOnce([]),
 				getById: vi.fn().mockResolvedValue(deployed),
 				delete: remove,
 			},
@@ -47,7 +47,7 @@ describe("rollbackQualityProfileDeployment", () => {
 		const remove = vi.fn().mockResolvedValue(undefined);
 		const client = {
 			qualityProfile: {
-				getAll: vi.fn().mockResolvedValue([created]),
+				getAll: vi.fn().mockResolvedValueOnce([created]).mockResolvedValueOnce([]),
 				getById: vi.fn().mockResolvedValue(created),
 				delete: remove,
 			},
@@ -64,6 +64,30 @@ describe("rollbackQualityProfileDeployment", () => {
 			}),
 		).rejects.toThrow("cannot be deleted safely");
 
+		expect(remove).not.toHaveBeenCalled();
+	});
+
+	it("does not delete an unchanged created profile without conditional ARR deletion", async () => {
+		const deployed = { id: 7, name: "Created profile", formatItems: [] };
+		const remove = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([deployed]),
+				getById: vi.fn().mockResolvedValue(deployed),
+				delete: remove,
+			},
+		};
+
+		await expect(
+			rollbackQualityProfileDeployment(client as never, {
+				beforeProfile: null,
+				action: "created",
+				status: "applied",
+				profileId: 7,
+				postStateToken: createQualityProfileStateToken(deployed),
+				intendedPostStateToken: null,
+			}),
+		).rejects.toThrow("cannot be deleted safely");
 		expect(remove).not.toHaveBeenCalled();
 	});
 
@@ -105,7 +129,7 @@ describe("rollbackQualityProfileDeployment", () => {
 		const client = {
 			qualityProfile: {
 				getAll: vi.fn().mockResolvedValue([deployed]),
-				getById: vi.fn().mockResolvedValue(deployed),
+				getById: vi.fn().mockResolvedValueOnce(deployed).mockResolvedValueOnce(before),
 				update,
 			},
 		};
@@ -141,7 +165,7 @@ describe("rollbackQualityProfileDeployment", () => {
 		const client = {
 			qualityProfile: {
 				getAll: vi.fn().mockResolvedValue([deployed]),
-				getById: vi.fn().mockResolvedValue(deployed),
+				getById: vi.fn().mockResolvedValueOnce(deployed).mockResolvedValueOnce(before),
 				update,
 			},
 		};
@@ -156,6 +180,44 @@ describe("rollbackQualityProfileDeployment", () => {
 				intendedPostStateToken: null,
 			}),
 		).rejects.toThrow("cannot be restored safely");
+		expect(update).not.toHaveBeenCalled();
+	});
+
+	it("retains a Radarr profile whose leaf items keep identity inside quality", async () => {
+		const before = completeProfile({
+			items: [
+				{
+					quality: { id: 0, name: "Unknown" },
+					items: [],
+					allowed: false,
+				},
+			],
+			formatItems: [{ format: 7, name: "Managed CF", score: 0 }],
+		});
+		const deployed = {
+			...before,
+			formatItems: [{ format: 7, name: "Managed CF", score: 100 }],
+		};
+		const update = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			qualityProfile: {
+				getAll: vi.fn().mockResolvedValue([deployed]),
+				getById: vi.fn().mockResolvedValueOnce(deployed).mockResolvedValueOnce(before),
+				update,
+			},
+		};
+
+		await expect(
+			rollbackQualityProfileDeployment(client as never, {
+				beforeProfile: before,
+				action: "updated",
+				status: "applied",
+				profileId: 4,
+				postStateToken: createQualityProfileStateToken(deployed),
+				intendedPostStateToken: null,
+			}),
+		).rejects.toThrow("cannot be restored safely");
+
 		expect(update).not.toHaveBeenCalled();
 	});
 
@@ -289,7 +351,11 @@ describe("rollbackQualityProfileDeployment", () => {
 		const client = {
 			qualityProfile: {
 				getAll: vi.fn().mockResolvedValue([intended]),
-				getById: vi.fn().mockResolvedValue(intended),
+				getById: vi
+					.fn()
+					.mockResolvedValueOnce(intended)
+					.mockResolvedValueOnce(intended)
+					.mockResolvedValueOnce(before),
 				update,
 			},
 		};
@@ -318,7 +384,11 @@ describe("rollbackQualityProfileDeployment", () => {
 		const client = {
 			qualityProfile: {
 				getAll: vi.fn().mockResolvedValue([normalized]),
-				getById: vi.fn().mockResolvedValue(normalized),
+				getById: vi
+					.fn()
+					.mockResolvedValueOnce(normalized)
+					.mockResolvedValueOnce(normalized)
+					.mockResolvedValueOnce(before),
 				update,
 			},
 		};

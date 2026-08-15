@@ -233,6 +233,29 @@ describe("assertNoPendingDeploymentOperation", () => {
 		).rejects.toThrow("uncertain upstream result");
 	});
 
+	it("excludes the wrapper sync that initiated the current deployment", async () => {
+		const findSyncRows = vi.fn().mockResolvedValue([]);
+		const prisma = {
+			trashSyncHistory: { findMany: findSyncRows },
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(
+				prisma as never,
+				"user-1",
+				["instance-1"],
+				undefined,
+				"sync-current",
+			),
+		).resolves.toBeUndefined();
+		expect(findSyncRows).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: { not: "sync-current" } }),
+			}),
+		);
+	});
+
 	it("blocks a transient deployment whose backup relation is missing", async () => {
 		const prisma = {
 			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
@@ -518,6 +541,143 @@ describe("assertNoPendingDeploymentOperation", () => {
 	});
 });
 
+describe("reconcileInterruptedDeploymentHistories identified pending mutations", () => {
+	it("preserves identified CF creation and verified profile update audit evidence", async () => {
+		const createdProfileBackup = {
+			id: "backup-created-profile",
+			backupData: JSON.stringify({
+				schemaVersion: 2,
+				endpointKey: "user-1:RADARR:http://radarr:7878/",
+				connectionStateToken: "connection",
+				customFormats: [],
+				customFormatDeployments: [
+					{
+						beforeFormat: null,
+						action: "created",
+						resourceId: 7,
+						name: "Created CF",
+						status: "pending",
+						postStateToken: "exact-created-format-token",
+						intendedPostStateToken: "different-intended-token",
+					},
+				],
+				managedCustomFormats: [],
+				managedCustomFormatsCaptured: false,
+				qualityProfileDeployment: {
+					beforeProfile: { id: 42, name: "HD-1080p", formatItems: [] },
+					status: "pending",
+					action: "updated",
+					profileId: 42,
+					profileName: "HD-1080p",
+					postStateToken: "exact-created-profile-token",
+					intendedPostStateToken: "different-intended-token",
+				},
+				namingDeployment: null,
+			}),
+		};
+		const deploymentRecord = {
+			id: "deployment-created-profile",
+			backupId: createdProfileBackup.id,
+			status: "IN_PROGRESS",
+			undeployStatus: null,
+			backup: createdProfileBackup,
+		};
+		const syncRecord = {
+			id: "sync-created-profile",
+			backupId: createdProfileBackup.id,
+			status: "RUNNING",
+			rollbackStatus: null,
+			backup: createdProfileBackup,
+		};
+		const deploymentUpdateMany = vi.fn(
+			async (args: { where: { status: string }; data: { status: string } }) => {
+				if (args.where.status !== deploymentRecord.status) return { count: 0 };
+				deploymentRecord.status = args.data.status;
+				return { count: 1 };
+			},
+		);
+		const syncUpdateMany = vi.fn(
+			async (args: { where: { status: { in: string[] } | string }; data: { status: string } }) => {
+				const expectedStatuses =
+					typeof args.where.status === "string" ? [args.where.status] : args.where.status.in;
+				if (!expectedStatuses.includes(syncRecord.status)) return { count: 0 };
+				syncRecord.status = args.data.status;
+				return { count: 1 };
+			},
+		);
+		const prisma = {
+			templateDeploymentHistory: {
+				findMany: vi.fn().mockImplementation(async () => [deploymentRecord]),
+			},
+			trashSyncHistory: {
+				findMany: vi.fn().mockImplementation(async () => [syncRecord]),
+			},
+			$transaction: vi.fn(async (callback) =>
+				callback({
+					templateDeploymentHistory: { updateMany: deploymentUpdateMany },
+					trashSyncHistory: { updateMany: syncUpdateMany },
+				}),
+			),
+		};
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
+		const appliedFormat = {
+			name: "Created CF",
+			action: "created",
+			type: "custom_format",
+		};
+		const appliedProfile = {
+			name: "HD-1080p",
+			action: "updated",
+			type: "quality_profile",
+			id: 42,
+		};
+		expect(deploymentUpdateMany).toHaveBeenCalledWith({
+			where: { id: "deployment-created-profile", status: "IN_PROGRESS" },
+			data: expect.objectContaining({
+				status: "UNCERTAIN",
+				appliedCFs: 1,
+				appliedConfigs: JSON.stringify([appliedFormat, appliedProfile]),
+			}),
+		});
+		expect(syncUpdateMany).toHaveBeenCalledWith({
+			where: {
+				backupId: createdProfileBackup.id,
+				status: { in: ["IN_PROGRESS", "RUNNING"] },
+			},
+			data: expect.objectContaining({
+				status: "UNCERTAIN",
+				configsApplied: 2,
+				configsFailed: 0,
+				appliedConfigs: JSON.stringify([appliedFormat, appliedProfile]),
+			}),
+		});
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(0);
+		expect(deploymentUpdateMany).toHaveBeenCalledTimes(2);
+		expect(syncUpdateMany).toHaveBeenCalledOnce();
+
+		await expect(
+			assertNoPendingDeploymentOperation(
+				{
+					trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+					templateDeploymentHistory: {
+						findMany: vi.fn().mockResolvedValue([
+							{
+								status: "UNCERTAIN",
+								backup: createdProfileBackup,
+							},
+						]),
+					},
+					instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
+				} as never,
+				"user-1",
+				["instance-1"],
+			),
+		).rejects.toThrow("uncertain upstream result");
+	});
+});
+
 describe("assertNoActiveDeploymentOwnership", () => {
 	it("blocks a connection change that would strand an applied deployment", async () => {
 		const prisma = {
@@ -688,7 +848,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		});
 	});
 
-	it("atomically marks paired pending histories uncertain while preserving the safety gate", async () => {
+	it("atomically marks paired histories uncertain while preserving applied audit evidence", async () => {
 		const deploymentUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const transaction = vi.fn(async (callback) =>
@@ -762,7 +922,9 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				}),
 			),
 		};
-		const appliedConfigs = [{ name: "Applied CF", action: "updated" }];
+		const appliedConfigs = [
+			{ name: "Applied CF", action: "updated", type: "custom_format" },
+		];
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
 		expect(deploymentUpdateMany).toHaveBeenCalledWith(
@@ -808,7 +970,9 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 				}),
 			),
 		};
-		const appliedConfigs = [{ name: "Applied CF", action: "updated" }];
+		const appliedConfigs = [
+			{ name: "Applied CF", action: "updated", type: "custom_format" },
+		];
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
 		expect(deploymentUpdateMany).toHaveBeenCalledWith(
@@ -852,7 +1016,35 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 					status: "PARTIAL_SUCCESS",
 					configsApplied: 1,
 					configsFailed: 1,
-					appliedConfigs: JSON.stringify([{ name: "Foo", action: "updated" }]),
+					appliedConfigs: JSON.stringify([
+						{ name: "Foo", action: "updated", type: "custom_format" },
+					]),
+				}),
+			}),
+		);
+	});
+
+	it("keeps orphan pending-ledger counters uncertain instead of failed", async () => {
+		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const prisma = {
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			trashSyncHistory: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([{ id: "sync-1", backupId: "backup-1", backup: backup("pending") }]),
+				updateMany: syncUpdateMany,
+			},
+			$transaction: vi.fn(),
+		};
+
+		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
+		expect(syncUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "UNCERTAIN",
+					configsApplied: 0,
+					configsFailed: 0,
+					appliedConfigs: "[]",
 				}),
 			}),
 		);
@@ -882,15 +1074,15 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 			$transaction: transaction,
 		};
 		const appliedConfigs = [
-			{ name: "Created CF", action: "created" },
-			{ name: "Updated CF", action: "updated" },
+			{ name: "Created CF", action: "created", type: "custom_format" },
+			{ name: "Updated CF", action: "updated", type: "custom_format" },
 			{
 				name: "HD-1080p",
 				action: "updated",
 				type: "quality_profile",
 				id: 9,
 			},
-			{ name: "Naming configuration", action: "updated" },
+			{ name: "Naming configuration", action: "updated", type: "naming" },
 		];
 
 		await expect(reconcileInterruptedDeploymentHistories(prisma as never)).resolves.toBe(1);
@@ -916,11 +1108,11 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 		});
 	});
 
-	it("reconciles a RUNNING sync without a deployment backup", async () => {
+	it("keeps a legacy RUNNING sync without a linked ledger uncertain", async () => {
 		const syncUpdateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const findMany = vi
 			.fn()
-			.mockResolvedValue([{ id: "sync-running", backupId: null, backup: null }]);
+			.mockResolvedValue([{ id: "sync-running", status: "RUNNING", backupId: null, backup: null }]);
 		const prisma = {
 			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 			trashSyncHistory: { findMany, updateMany: syncUpdateMany },
@@ -940,7 +1132,7 @@ describe("reconcileInterruptedDeploymentHistories", () => {
 			data: expect.objectContaining({
 				status: "UNCERTAIN",
 				completedAt: expect.any(Date),
-				errorLog: expect.stringContaining("uncertain"),
+				errorLog: expect.stringContaining("upstream result is uncertain"),
 			}),
 		});
 	});

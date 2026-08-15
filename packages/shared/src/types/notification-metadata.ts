@@ -277,6 +277,52 @@ export const NOTIFICATION_EVENT_METADATA: Record<
 			description: "Instances that failed (bulk deployments only)",
 		},
 	],
+	TRASH_DEPLOY_UNCERTAIN: [
+		{ key: "templateId", type: "string", description: "Template with an uncertain result" },
+		{
+			key: "instance",
+			type: "string",
+			optional: true,
+			description: "Instance label (single-instance deployments only)",
+		},
+		{
+			key: "instanceId",
+			type: "string",
+			optional: true,
+			description: "Target instance id (single or scheduled deployments only)",
+		},
+		{
+			key: "syncId",
+			type: "string",
+			optional: true,
+			description: "Sync history id (scheduled deployments only)",
+		},
+		{
+			key: "totalInstances",
+			type: "number",
+			optional: true,
+			description: "Instances attempted (bulk deployments only)",
+		},
+		{
+			key: "failedInstances",
+			type: "number",
+			optional: true,
+			description: "Instances that failed (bulk deployments only)",
+		},
+		{
+			key: "uncertainInstances",
+			type: "number",
+			optional: true,
+			description: "Instances requiring review (bulk deployments only)",
+		},
+		{ key: "reason", type: "string", description: "Reason the result requires review" },
+		{
+			key: "scheduleAdvanceFailed",
+			type: "boolean",
+			optional: true,
+			description: "Whether the scheduled run time also failed to advance",
+		},
+	],
 
 	// Backup — apps/api/src/lib/backup/backup-scheduler.ts
 	BACKUP_COMPLETED: [

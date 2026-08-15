@@ -256,6 +256,7 @@ export {
 // ============================================================================
 
 export type {
+	AcknowledgeSyncReviewResult,
 	ConflictInfo,
 	SyncError,
 	SyncExecuteRequest,
@@ -266,6 +267,7 @@ export type {
 	ValidationResult,
 } from "./sync";
 export {
+	acknowledgeSyncReview,
 	createSyncProgressStream,
 	executeSync,
 	getSyncProgress,

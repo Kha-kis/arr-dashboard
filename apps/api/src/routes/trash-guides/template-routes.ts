@@ -720,7 +720,8 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		);
 
 		return reply.send({
-			success: result.successfulInstances > 0,
+			success:
+				result.successfulInstances === result.totalInstances && result.uncertainInstances === 0,
 			result,
 		});
 	});

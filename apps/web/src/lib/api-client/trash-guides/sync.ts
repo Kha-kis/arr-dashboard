@@ -45,7 +45,7 @@ export interface SyncError {
 export interface SyncResult {
 	syncId: string;
 	success: boolean;
-	status: "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
+	status: "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED" | "UNCERTAIN";
 	duration: number;
 	configsApplied: number;
 	configsFailed: number;
@@ -60,7 +60,8 @@ export type SyncProgressStatus =
 	| "BACKING_UP"
 	| "APPLYING"
 	| "COMPLETED"
-	| "FAILED";
+	| "FAILED"
+	| "UNCERTAIN";
 
 export interface SyncProgress {
 	syncId: string;
@@ -71,6 +72,12 @@ export interface SyncProgress {
 	appliedConfigs: number;
 	failedConfigs: number;
 	errors: SyncError[];
+}
+
+export interface AcknowledgeSyncReviewResult {
+	success: boolean;
+	status: "FAILED";
+	message: string;
 }
 
 // ============================================================================
@@ -111,6 +118,17 @@ export async function getSyncProgress(syncId: string): Promise<SyncProgress> {
 }
 
 /**
+ * Record that an administrator reviewed a backup-less uncertain sync.
+ * This does not mutate the ARR service or claim that a rollback occurred.
+ */
+export async function acknowledgeSyncReview(syncId: string): Promise<AcknowledgeSyncReviewResult> {
+	return await apiRequest<AcknowledgeSyncReviewResult>(
+		`/api/trash-guides/sync/${syncId}/acknowledge-review`,
+		{ method: "POST" },
+	);
+}
+
+/**
  * Create EventSource for SSE progress streaming
  */
 export function createSyncProgressStream(
@@ -140,7 +158,7 @@ export function createSyncProgressStream(
 			onProgress(data);
 
 			// Close on completion
-			if (data.status === "COMPLETED" || data.status === "FAILED") {
+			if (data.status === "COMPLETED" || data.status === "FAILED" || data.status === "UNCERTAIN") {
 				setTimeout(() => {
 					eventSource.close();
 				}, 1000);

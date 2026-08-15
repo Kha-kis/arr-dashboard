@@ -33,6 +33,7 @@ const EVENT_LABELS: Record<string, string> = {
 	TRASH_PROFILE_UPDATED: "Profile Updated",
 	TRASH_SYNC_ERROR: "Sync Error",
 	TRASH_DEPLOY_FAILED: "Deploy Failed",
+	TRASH_DEPLOY_UNCERTAIN: "Deploy Needs Review",
 	BACKUP_COMPLETED: "Backup Completed",
 	BACKUP_FAILED: "Backup Failed",
 	LIBRARY_NEW_CONTENT: "New Content",
@@ -69,7 +70,12 @@ const EVENT_GROUPS: Array<{ label: string; events: NotificationEventType[] }> = 
 	},
 	{
 		label: "TRaSH Guides",
-		events: ["TRASH_PROFILE_UPDATED", "TRASH_SYNC_ERROR", "TRASH_DEPLOY_FAILED"],
+		events: [
+			"TRASH_PROFILE_UPDATED",
+			"TRASH_SYNC_ERROR",
+			"TRASH_DEPLOY_FAILED",
+			"TRASH_DEPLOY_UNCERTAIN",
+		],
 	},
 	{
 		label: "Backup",
