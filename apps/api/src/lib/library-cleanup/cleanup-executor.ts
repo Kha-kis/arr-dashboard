@@ -41,16 +41,6 @@ import {
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
-import { deriveArrPolicyEvidence } from "./arr-policy-evidence.js";
-import {
-	appendCleanupAuditEvent,
-	appendCleanupTerminalAuditEvent,
-	createCleanupAuditEventKey,
-	createCleanupTerminalAuditState,
-	type AppendCleanupAuditEventInput,
-	type CleanupAuditActorType,
-	type CleanupAuditTrigger,
-} from "./cleanup-audit.js";
 import {
 	withCleanupOperationGuard,
 	withExclusiveCleanupOperationGuard,

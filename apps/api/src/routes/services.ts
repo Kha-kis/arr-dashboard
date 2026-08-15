@@ -28,6 +28,8 @@ import {
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
+import { assertNoActiveDeploymentOwnership } from "../lib/trash-guides/deployment-operation-gate.js";
+import { normalizeDeploymentBaseUrl } from "../lib/trash-guides/deployment-target.js";
 import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { validateRequest } from "../lib/utils/validate.js";
 import { invalidatePulseCache } from "./pulse.js";
@@ -141,6 +143,28 @@ function changesCacheProviderConnection(
 		Object.hasOwn(payload, "apiKey") ||
 		Object.hasOwn(payload, "httpAuth")
 	);
+}
+
+function isArrService(service: ServiceType): boolean {
+	return service === "RADARR" || service === "SONARR";
+}
+
+function changesArrConnection(
+	existing: Pick<ServiceInstance, "service" | "baseUrl">,
+	payload: z.infer<typeof serviceUpdateSchema>,
+): boolean {
+	const targetService = (
+		payload.service ?? existing.service.toLowerCase()
+	).toUpperCase() as ServiceType;
+	if (!isArrService(existing.service) && !isArrService(targetService)) return false;
+	if (targetService !== existing.service) return true;
+	if (
+		payload.baseUrl !== undefined &&
+		normalizeDeploymentBaseUrl(payload.baseUrl) !== normalizeDeploymentBaseUrl(existing.baseUrl)
+	) {
+		return true;
+	}
+	return Object.hasOwn(payload, "apiKey") || Object.hasOwn(payload, "httpAuth");
 }
 
 async function clearDurableProviderCacheState(
@@ -333,9 +357,30 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 				const updateData = buildUpdateData(payload, app.encryptor);
 				const providerConnectionChanged = changesCacheProviderConnection(existing, payload);
+				const arrConnectionChanged = changesArrConnection(existing, payload);
 				const shouldResetOtherDefaults = payload.isDefault === true || Boolean(payload.service);
+				if (arrConnectionChanged && isArrService(existing.service)) {
+					const aliases = await app.prisma.serviceInstance.findMany({
+						where: { userId, service: existing.service },
+					});
+					const currentEndpoint = normalizeDeploymentBaseUrl(existing.baseUrl);
+					const equivalentInstanceIds = aliases
+						.filter(
+							(alias) =>
+								alias.userId === userId &&
+								alias.service === existing.service &&
+								normalizeDeploymentBaseUrl(alias.baseUrl) === currentEndpoint,
+						)
+						.map((alias) => alias.id);
+					if (!equivalentInstanceIds.includes(id)) equivalentInstanceIds.push(id);
+					for (const instanceId of equivalentInstanceIds) {
+						await assertNoActiveTrashRecoveryForInstance(app.prisma, userId, instanceId);
+					}
+					await assertNoActiveDeploymentOwnership(app.prisma, userId, equivalentInstanceIds);
+				}
+				const connectionChanged = providerConnectionChanged || arrConnectionChanged;
 
-				if (providerConnectionChanged) {
+				if (connectionChanged) {
 					await app.prisma.$transaction(async (tx) => {
 						if (shouldResetOtherDefaults) {
 							await tx.serviceInstance.updateMany({

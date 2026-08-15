@@ -96,6 +96,38 @@ function makeInstance(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function makeAppliedDeploymentBackup() {
+	return {
+		id: "backup-active",
+		backupData: JSON.stringify({
+			schemaVersion: 2,
+			endpointKey: "endpoint",
+			connectionStateToken: "connection",
+			customFormats: [],
+			customFormatDeployments: [
+				{
+					beforeFormat: null,
+					action: "created",
+					resourceId: 7,
+					name: "Created CF",
+					status: "applied",
+					postStateToken: "created-post",
+				},
+			],
+			managedCustomFormats: [],
+			managedCustomFormatsCaptured: true,
+			qualityProfileDeployment: {
+				beforeProfile: null,
+				status: "not_started",
+				action: "updated",
+				profileId: null,
+				postStateToken: null,
+			},
+			namingDeployment: null,
+		}),
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Mock Prisma client
 // ---------------------------------------------------------------------------
@@ -481,6 +513,50 @@ describe("PUT /services/:id", () => {
 		expect(res.statusCode).toBe(404);
 		expect(JSON.parse(res.payload).message).toContain("not found");
 	});
+
+	it("advances generation for an ARR endpoint replacement", async () => {
+		const existing = makeInstance({ service: "RADARR", baseUrl: "http://radarr:7878" });
+		mockRequireInstance.mockResolvedValue(existing);
+		mockBuildUpdateData.mockReturnValue({ baseUrl: "http://replacement-radarr:7878" });
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([existing]);
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+			makeInstance({ service: "RADARR", baseUrl: "http://replacement-radarr:7878" }),
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { baseUrl: "http://replacement-radarr:7878" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect(mockPrisma.serviceInstance.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "inst-1", userId: "user-1" },
+				data: expect.objectContaining({ connectionGeneration: { increment: 1 } }),
+			}),
+		);
+	});
+
+	it("blocks an ARR endpoint replacement while a deployment still owns upstream state", async () => {
+		const existing = makeInstance({ service: "RADARR", baseUrl: "http://radarr:7878" });
+		mockRequireInstance.mockResolvedValue(existing);
+		mockBuildUpdateData.mockReturnValue({ baseUrl: "http://replacement-radarr:7878" });
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([existing]);
+		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+			{
+				status: "SUCCESS",
+				backupId: "backup-active",
+				backup: makeAppliedDeploymentBackup(),
+			},
+		]);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { baseUrl: "http://replacement-radarr:7878" },
+		});
+
+		expect(res.statusCode).toBe(400);
+		expect(JSON.parse(res.payload).message).toContain("active deployment ownership");
+		expect(mockPrisma.serviceInstance.updateMany).not.toHaveBeenCalled();
+	});
 });
 
 // ===========================================================================
@@ -510,7 +586,12 @@ describe("DELETE /services/:id", () => {
 
 	it("refuses to erase an instance with active TRaSH recovery evidence", async () => {
 		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValueOnce([
-			{ id: "deployment-1", status: "PARTIAL_UNDEPLOY", undeployStatus: "PARTIAL", rolledBack: false },
+			{
+				id: "deployment-1",
+				status: "PARTIAL_UNDEPLOY",
+				undeployStatus: "PARTIAL",
+				rolledBack: false,
+			},
 		]);
 
 		const res = await injectAuthenticated("DELETE", "/services/inst-1");
