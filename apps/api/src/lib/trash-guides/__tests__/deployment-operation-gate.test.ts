@@ -155,6 +155,45 @@ describe("assertNoPendingDeploymentOperation", () => {
 		).rejects.toThrow("uncertain upstream result");
 	});
 
+	it("blocks a new mutation while a manual naming write remains pending", async () => {
+		const prisma = {
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			namingDeployHistory: {
+				findMany: vi.fn().mockResolvedValue([{ id: "naming-history-1" }]),
+			},
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(prisma as never, "user-1", ["instance-1"]),
+		).rejects.toThrow("previous naming write");
+	});
+
+	it("allows rollback of the exact pending naming history", async () => {
+		const findMany = vi.fn().mockResolvedValue([]);
+		const prisma = {
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			namingDeployHistory: { findMany },
+		};
+
+		await expect(
+			assertNoPendingDeploymentOperation(
+				prisma as never,
+				"user-1",
+				["instance-1"],
+				undefined,
+				undefined,
+				"naming-history-1",
+			),
+		).resolves.toBeUndefined();
+		expect(findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: { not: "naming-history-1" } }),
+			}),
+		);
+	});
+
 	it("allows a fully verified operation", async () => {
 		const prisma = {
 			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([{ backup: backup("applied") }]) },

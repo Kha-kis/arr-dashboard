@@ -240,7 +240,7 @@ export function normalizeDeploymentBaseUrl(baseUrl: string): string {
 	}
 }
 
-/** Resolve every local service record that represents the same upstream ARR endpoint. */
+/** Resolve every local service record that can mutate the same physical ARR endpoint. */
 export function getEquivalentServiceInstanceIds(
 	instances: DeploymentServiceInstance[],
 	target: DeploymentServiceInstance,
@@ -251,8 +251,7 @@ export function getEquivalentServiceInstanceIds(
 		.filter(
 			(instance) =>
 				instance.service.toUpperCase() === targetService &&
-				normalizeDeploymentBaseUrl(instance.baseUrl) === targetBaseUrl &&
-				instance.credentialIdentity === target.credentialIdentity,
+				normalizeDeploymentBaseUrl(instance.baseUrl) === targetBaseUrl,
 		)
 		.map((instance) => instance.id);
 }
@@ -262,7 +261,7 @@ export function createDeploymentEndpointKey(
 	userId: string,
 	instance: Pick<DeploymentServiceInstance, "service" | "baseUrl" | "credentialIdentity">,
 ): string {
-	return `${userId}:${instance.service.toUpperCase()}:${normalizeDeploymentBaseUrl(instance.baseUrl)}:${instance.credentialIdentity}`;
+	return `${userId}:${instance.service.toUpperCase()}:${normalizeDeploymentBaseUrl(instance.baseUrl)}`;
 }
 
 /** Accept pre-URL endpoint keys only when the exact connection token still matches. */
@@ -281,8 +280,13 @@ export function isDeploymentBackupEndpointIdentityCurrent(args: {
 		baseUrl: args.instance.baseUrl,
 		credentialIdentity: args.credentialIdentity,
 	});
+	const credentialBoundUrlKey = `${currentKey}:${args.credentialIdentity}`;
 	const legacyKey = `${args.userId}:${args.instance.service.toUpperCase()}:${args.credentialIdentity}`;
-	return args.backupEndpointKey === currentKey || args.backupEndpointKey === legacyKey;
+	return (
+		args.backupEndpointKey === currentKey ||
+		args.backupEndpointKey === credentialBoundUrlKey ||
+		args.backupEndpointKey === legacyKey
+	);
 }
 
 /** Bind rollback metadata to both the normalized endpoint and configured credentials. */

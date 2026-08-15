@@ -1705,6 +1705,8 @@ model NamingDeployHistory {
   errorMessage     String?
   rolledBack       Boolean   @default(false)
   rolledBackAt     DateTime?
+  connectionGeneration Int?                      // Connection generation that authorized the snapshot
+  connectionStateToken String?                   // Exact credentialed connection that authorized the snapshot
 
   instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)

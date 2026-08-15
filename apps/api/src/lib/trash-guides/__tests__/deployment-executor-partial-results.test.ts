@@ -671,4 +671,30 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			),
 		).resolves.toBe("completed");
 	});
+
+	it("serializes aliases for one physical endpoint even when proxy credentials differ", async () => {
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		let releaseFirst!: () => void;
+		const firstAction = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		const first = executor.runWithEndpointMutation(
+			"user-1",
+			{ service: "RADARR", baseUrl: "http://radarr:7878", credentialIdentity: "proxy-a" },
+			"Deployment",
+			async () => firstAction,
+		);
+
+		await expect(
+			executor.runWithEndpointMutation(
+				"user-1",
+				{ service: "RADARR", baseUrl: "http://radarr:7878", credentialIdentity: "proxy-b" },
+				"Manual naming write",
+				async () => undefined,
+			),
+		).rejects.toThrow("another deployment or rollback is active");
+
+		releaseFirst();
+		await first;
+	});
 });

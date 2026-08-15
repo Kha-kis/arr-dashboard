@@ -33,6 +33,7 @@ import type { TrashCFWithScores } from "../../lib/trash-guides/template-score-ut
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { findCutoffQualityName } from "../../lib/utils/quality-utils.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { runWithManualArrWriterGuard } from "./manual-arr-writer-guard.js";
 
 // ============================================================================
 // Validation Schemas
@@ -266,31 +267,39 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const validated = validateRequest(profileDeploySchema, request.body);
 
-		const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
-		const result = await profileCloner.deployCompleteProfile(
-			validated.instanceId,
+		return runWithManualArrWriterGuard(
+			app,
 			userId,
-			validated.profile as unknown as CompleteQualityProfile,
-			validated.customFormats,
-			{
-				profileName: validated.profileName,
-				existingProfileId: validated.existingProfileId,
+			validated.instanceId,
+			"Manual profile-clone deployment",
+			async () => {
+				const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
+				const result = await profileCloner.deployCompleteProfile(
+					validated.instanceId,
+					userId,
+					validated.profile as unknown as CompleteQualityProfile,
+					validated.customFormats,
+					{
+						profileName: validated.profileName,
+						existingProfileId: validated.existingProfileId,
+					},
+				);
+
+				if (!result.success) {
+					return reply.status(400).send({
+						success: false,
+						error: result.error,
+					});
+				}
+
+				return reply.status(200).send({
+					success: true,
+					data: {
+						profileId: result.profileId,
+					},
+				});
 			},
 		);
-
-		if (!result.success) {
-			return reply.status(400).send({
-				success: false,
-				error: result.error,
-			});
-		}
-
-		return reply.status(200).send({
-			success: true,
-			data: {
-				profileId: result.profileId,
-			},
-		});
 	});
 
 	/**

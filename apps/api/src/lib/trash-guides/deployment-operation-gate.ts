@@ -27,8 +27,9 @@ export async function assertNoPendingDeploymentOperation(
 	instanceIds: string[],
 	overrideRetry?: ScoreIntentRetry,
 	excludedSyncHistoryId?: string,
+	excludedNamingHistoryId?: string,
 ): Promise<void> {
-	const [syncRows, deploymentRows, uncertainOverrides] = await Promise.all([
+	const [syncRows, deploymentRows, uncertainOverrides, pendingNamingRows] = await Promise.all([
 		prisma.trashSyncHistory.findMany({
 			where: {
 				userId,
@@ -74,7 +75,24 @@ export async function assertNoPendingDeploymentOperation(
 					},
 				})
 			: [],
+		typeof prisma.namingDeployHistory?.findMany === "function"
+			? prisma.namingDeployHistory.findMany({
+					where: {
+						userId,
+						instanceId: { in: instanceIds },
+						status: "PENDING",
+						rolledBack: false,
+						...(excludedNamingHistoryId ? { id: { not: excludedNamingHistoryId } } : {}),
+					},
+					select: { id: true },
+				})
+			: [],
 	]);
+	if (pendingNamingRows.length > 0) {
+		throw new AppValidationError(
+			"A previous naming write has an uncertain upstream result. Roll back or resolve that history before changing this ARR endpoint.",
+		);
+	}
 	const retryScores = new Map(
 		overrideRetry?.scoreUpdates.map((update) => [update.customFormatId, update.score]) ?? [],
 	);

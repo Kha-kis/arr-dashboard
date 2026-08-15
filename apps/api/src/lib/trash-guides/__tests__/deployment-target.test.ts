@@ -510,7 +510,7 @@ describe("createDeploymentStateToken", () => {
 });
 
 describe("getEquivalentServiceInstanceIds", () => {
-	it("groups aliases only when service, normalized URL, and credentials match", () => {
+	it("groups every alias that can mutate the same normalized physical endpoint", () => {
 		const target = {
 			id: "radarr-1",
 			service: "RADARR",
@@ -549,10 +549,10 @@ describe("getEquivalentServiceInstanceIds", () => {
 				],
 				target,
 			),
-		).toEqual(["radarr-1", "radarr-2"]);
+		).toEqual(["radarr-1", "radarr-2", "radarr-other-credentials"]);
 	});
 
-	it("binds lock identity to the normalized URL as well as credentials", () => {
+	it("binds physical mutation locks to the normalized URL independently of credentials", () => {
 		expect(
 			createDeploymentEndpointKey("user-1", {
 				service: "RADARR",
@@ -572,7 +572,7 @@ describe("getEquivalentServiceInstanceIds", () => {
 				baseUrl: "http://radarr",
 				credentialIdentity: "other-credentials",
 			}),
-		).not.toBe(
+		).toBe(
 			createDeploymentEndpointKey("user-1", {
 				service: "RADARR",
 				baseUrl: "http://radarr",

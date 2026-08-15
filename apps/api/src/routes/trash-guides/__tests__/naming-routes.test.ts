@@ -11,17 +11,19 @@ import { vi, describe, it, expect, beforeEach, afterAll } from "vitest";
 // Module-level mocks
 // ---------------------------------------------------------------------------
 
-const { mockRequireInstance, mockCacheManager, mockFetcher } = vi.hoisted(() => ({
-	mockRequireInstance: vi.fn(),
-	mockCacheManager: {
-		isFresh: vi.fn(),
-		get: vi.fn(),
-		set: vi.fn(),
-	},
-	mockFetcher: {
-		fetchNamingData: vi.fn(),
-	},
-}));
+const { mockRequireInstance, mockCacheManager, mockFetcher, mockRunWithManualArrWriterGuard } =
+	vi.hoisted(() => ({
+		mockRequireInstance: vi.fn(),
+		mockCacheManager: {
+			isFresh: vi.fn(),
+			get: vi.fn(),
+			set: vi.fn(),
+		},
+		mockFetcher: {
+			fetchNamingData: vi.fn(),
+		},
+		mockRunWithManualArrWriterGuard: vi.fn(),
+	}));
 
 vi.mock("../../../lib/arr/instance-helpers.js", () => ({
 	requireInstance: mockRequireInstance,
@@ -40,11 +42,16 @@ vi.mock("../../../lib/trash-guides/repo-config.js", () => ({
 	getRepoConfig: vi.fn().mockResolvedValue({}),
 }));
 
+vi.mock("../manual-arr-writer-guard.js", () => ({
+	runWithManualArrWriterGuard: mockRunWithManualArrWriterGuard,
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
 import Fastify from "fastify";
+import { createDeploymentConnectionStateToken } from "../../../lib/trash-guides/deployment-target.js";
 import { namingRoutes } from "../naming-routes.js";
 
 // ---------------------------------------------------------------------------
@@ -57,6 +64,11 @@ const RADARR_INSTANCE = {
 	service: "RADARR",
 	label: "My Radarr",
 	baseUrl: "http://localhost:7878",
+	encryptedApiKey: "encrypted-api-key",
+	encryptionIv: "api-key-iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	connectionGeneration: 3,
 };
 
 const RADARR_NAMING_DATA = {
@@ -84,6 +96,15 @@ beforeEach(async () => {
 
 	mockRawRequest = vi.fn();
 	mockRequireInstance.mockResolvedValue(RADARR_INSTANCE);
+	mockRunWithManualArrWriterGuard.mockImplementation(
+		async (
+			_app: unknown,
+			_userId: string,
+			_instanceId: string,
+			_operation: string,
+			action: (instance: typeof RADARR_INSTANCE) => Promise<unknown>,
+		) => action(RADARR_INSTANCE),
+	);
 	mockCacheManager.isFresh.mockResolvedValue(true);
 	mockCacheManager.get.mockResolvedValue([RADARR_NAMING_DATA]);
 
@@ -277,6 +298,13 @@ describe("POST /apply", () => {
 		});
 
 		expect(res.statusCode).toBe(200);
+		expect(mockRunWithManualArrWriterGuard).toHaveBeenCalledWith(
+			expect.anything(),
+			"user-1",
+			"inst-radarr",
+			"Manual naming apply",
+			expect.any(Function),
+		);
 		const body = JSON.parse(res.payload);
 		expect(body.success).toBe(true);
 		expect(body.fieldCount).toBe(1);
@@ -290,6 +318,8 @@ describe("POST /apply", () => {
 					userId: "user-1",
 					status: "PENDING",
 					previousConfig: expect.any(String),
+					connectionGeneration: 3,
+					connectionStateToken: createDeploymentConnectionStateToken(RADARR_INSTANCE),
 				}),
 			}),
 		);
@@ -343,7 +373,7 @@ describe("POST /apply", () => {
 		expect(mockRawRequest).toHaveBeenCalledTimes(3); // GET + 2 PUTs
 	});
 
-	it("records FAILED when both PUT attempts fail", async () => {
+	it("keeps an uncertain history blocking when both PUT responses are lost", async () => {
 		mockRawRequest
 			.mockResolvedValueOnce(makeJsonResponse(VALID_ARR_NAMING_CONFIG)) // GET
 			.mockRejectedValueOnce(new Error("ECONNRESET")) // First PUT
@@ -358,7 +388,13 @@ describe("POST /apply", () => {
 		expect(res.statusCode).toBe(502);
 		expect((app as any).prisma.namingDeployHistory.update).toHaveBeenCalledWith(
 			expect.objectContaining({
-				data: expect.objectContaining({ status: "FAILED" }),
+				data: expect.objectContaining({ status: "PENDING" }),
+			}),
+		);
+		expect((app as any).prisma.namingConfig.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({ lastDeployStatus: "PENDING" }),
+				update: expect.objectContaining({ lastDeployStatus: "PENDING" }),
 			}),
 		);
 	});
@@ -424,6 +460,8 @@ describe("POST /rollback", () => {
 			changedFields: 1,
 			totalFields: 1,
 			selectedPresets: JSON.stringify(radarrSelectedPresets),
+			connectionGeneration: RADARR_INSTANCE.connectionGeneration,
+			connectionStateToken: createDeploymentConnectionStateToken(RADARR_INSTANCE),
 		};
 
 		(app as any).prisma.namingDeployHistory.findFirst.mockResolvedValueOnce(historyRecord);
@@ -436,6 +474,14 @@ describe("POST /rollback", () => {
 		});
 
 		expect(res.statusCode).toBe(200);
+		expect(mockRunWithManualArrWriterGuard).toHaveBeenCalledWith(
+			expect.anything(),
+			"user-1",
+			"inst-radarr",
+			"Manual naming rollback",
+			expect.any(Function),
+			{ excludedNamingHistoryId: "history-1" },
+		);
 		const body = JSON.parse(res.payload);
 		expect(body.success).toBe(true);
 		expect(body.fieldCount).toBe(1);
@@ -451,9 +497,65 @@ describe("POST /rollback", () => {
 		// Verify a new ROLLED_BACK history was created
 		expect((app as any).prisma.namingDeployHistory.create).toHaveBeenCalledWith(
 			expect.objectContaining({
-				data: expect.objectContaining({ status: "ROLLED_BACK" }),
+				data: expect.objectContaining({
+					status: "ROLLED_BACK",
+					connectionGeneration: RADARR_INSTANCE.connectionGeneration,
+					connectionStateToken: createDeploymentConnectionStateToken(RADARR_INSTANCE),
+				}),
 			}),
 		);
+	});
+
+	it("fails closed when legacy rollback history is not bound to a connection", async () => {
+		(app as any).prisma.namingDeployHistory.findFirst.mockResolvedValueOnce({
+			id: "history-legacy",
+			instanceId: "inst-radarr",
+			userId: "user-1",
+			status: "PENDING",
+			previousConfig: JSON.stringify(VALID_ARR_NAMING_CONFIG),
+			rolledBack: false,
+			changedFields: 1,
+			totalFields: 1,
+			selectedPresets: JSON.stringify(radarrSelectedPresets),
+			connectionGeneration: null,
+			connectionStateToken: null,
+		});
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/trash-guides/naming/rollback",
+			payload: { historyId: "history-legacy" },
+		});
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).error).toContain("not bound");
+		expect(mockRawRequest).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when the rollback target connection changed", async () => {
+		(app as any).prisma.namingDeployHistory.findFirst.mockResolvedValueOnce({
+			id: "history-old-connection",
+			instanceId: "inst-radarr",
+			userId: "user-1",
+			status: "PENDING",
+			previousConfig: JSON.stringify(VALID_ARR_NAMING_CONFIG),
+			rolledBack: false,
+			changedFields: 1,
+			totalFields: 1,
+			selectedPresets: JSON.stringify(radarrSelectedPresets),
+			connectionGeneration: RADARR_INSTANCE.connectionGeneration,
+			connectionStateToken: "different-connection",
+		});
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/api/trash-guides/naming/rollback",
+			payload: { historyId: "history-old-connection" },
+		});
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).error).toContain("connection changed");
+		expect(mockRawRequest).not.toHaveBeenCalled();
 	});
 
 	it("returns 400 when already rolled back", async () => {

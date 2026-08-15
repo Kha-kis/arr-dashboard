@@ -16,6 +16,7 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { runWithManualArrWriterGuard } from "./manual-arr-writer-guard.js";
 import { z } from "zod";
 
 const deployUserCFsSchema = z.object({
@@ -392,8 +393,6 @@ export async function registerUserCustomFormatRoutes(
 		const userId = request.currentUser!.id;
 		const { userCFIds, instanceId } = validateRequest(deployUserCFsSchema, request.body);
 
-		const instance = await requireInstance(app, userId, instanceId);
-
 		// Fetch user custom formats
 		const userCFs = await app.prisma.userCustomFormat.findMany({
 			where: {
@@ -409,71 +408,79 @@ export async function registerUserCustomFormatRoutes(
 			});
 		}
 
-		const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
+		return runWithManualArrWriterGuard(
+			app,
+			userId,
+			instanceId,
+			"Manual user Custom Format deployment",
+			async (instance) => {
+				const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
 
-		// Get existing CFs for dedup by name
-		const existingFormats = await client.customFormat.getAll();
-		const existingByName = new Map<string, (typeof existingFormats)[number]>();
-		for (const cf of existingFormats) {
-			if (cf.name) existingByName.set(cf.name, cf);
-		}
-
-		const results = {
-			created: [] as string[],
-			updated: [] as string[],
-			failed: [] as Array<{ name: string; error: string }>,
-		};
-
-		// Loop-level error collection — KEEP
-		for (const userCF of userCFs) {
-			try {
-				const specs: Array<Record<string, unknown>> = JSON.parse(userCF.specifications);
-
-				// Transform fields from object to array format for the ARR API
-				const transformedSpecs = specs.map((spec) => ({
-					...spec,
-					fields: Object.entries((spec.fields as Record<string, unknown>) || {}).map(
-						([name, value]) => ({ name, value }),
-					),
-				}));
-
-				const existing = existingByName.get(userCF.name);
-
-				if (existing?.id) {
-					const updatedCF = {
-						...existing,
-						name: userCF.name,
-						includeCustomFormatWhenRenaming: userCF.includeCustomFormatWhenRenaming,
-						specifications: transformedSpecs,
-					};
-					await client.customFormat.update(
-						existing.id,
-						updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
-					);
-					results.updated.push(userCF.name);
-				} else {
-					const newCF = {
-						name: userCF.name,
-						includeCustomFormatWhenRenaming: userCF.includeCustomFormatWhenRenaming,
-						specifications: transformedSpecs,
-					};
-					await client.customFormat.create(
-						newCF as unknown as Parameters<typeof client.customFormat.create>[0],
-					);
-					results.created.push(userCF.name);
+				// Get existing CFs for dedup by name
+				const existingFormats = await client.customFormat.getAll();
+				const existingByName = new Map<string, (typeof existingFormats)[number]>();
+				for (const cf of existingFormats) {
+					if (cf.name) existingByName.set(cf.name, cf);
 				}
-			} catch (error) {
-				results.failed.push({
-					name: userCF.name,
-					error: getErrorMessage(error, "Unknown error"),
-				});
-			}
-		}
 
-		return reply.send({
-			success: results.failed.length === 0,
-			...results,
-		});
+				const results = {
+					created: [] as string[],
+					updated: [] as string[],
+					failed: [] as Array<{ name: string; error: string }>,
+				};
+
+				// Loop-level error collection — KEEP
+				for (const userCF of userCFs) {
+					try {
+						const specs: Array<Record<string, unknown>> = JSON.parse(userCF.specifications);
+
+						// Transform fields from object to array format for the ARR API
+						const transformedSpecs = specs.map((spec) => ({
+							...spec,
+							fields: Object.entries((spec.fields as Record<string, unknown>) || {}).map(
+								([name, value]) => ({ name, value }),
+							),
+						}));
+
+						const existing = existingByName.get(userCF.name);
+
+						if (existing?.id) {
+							const updatedCF = {
+								...existing,
+								name: userCF.name,
+								includeCustomFormatWhenRenaming: userCF.includeCustomFormatWhenRenaming,
+								specifications: transformedSpecs,
+							};
+							await client.customFormat.update(
+								existing.id,
+								updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
+							);
+							results.updated.push(userCF.name);
+						} else {
+							const newCF = {
+								name: userCF.name,
+								includeCustomFormatWhenRenaming: userCF.includeCustomFormatWhenRenaming,
+								specifications: transformedSpecs,
+							};
+							await client.customFormat.create(
+								newCF as unknown as Parameters<typeof client.customFormat.create>[0],
+							);
+							results.created.push(userCF.name);
+						}
+					} catch (error) {
+						results.failed.push({
+							name: userCF.name,
+							error: getErrorMessage(error, "Unknown error"),
+						});
+					}
+				}
+
+				return reply.send({
+					success: results.failed.length === 0,
+					...results,
+				});
+			},
+		);
 	});
 
 	/**

@@ -15,6 +15,7 @@ vi.mock("../client-factory.js", () => ({
 }));
 
 import { runQuiTorrentStateSync } from "../torrent-state-sync.js";
+import { withQuiObservationTopologyGuard } from "../observation-topology-guard.js";
 
 const silentLog: FastifyBaseLogger = {
 	info: vi.fn(),
@@ -57,6 +58,14 @@ function makeApp(overrides: Record<string, unknown> = {}) {
 	} as any;
 }
 
+function deferred() {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
+
 describe("runQuiTorrentStateSync", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -72,6 +81,42 @@ describe("runQuiTorrentStateSync", () => {
 		expect(result.instancesScanned).toBe(0);
 		expect(mockListQuiInstances).not.toHaveBeenCalled();
 		expect(app.__updateMany).not.toHaveBeenCalled();
+	});
+
+	it("holds the user topology guard across the complete fetch-and-write slice", async () => {
+		const app = makeApp();
+		app.prisma.serviceInstance.findMany.mockResolvedValue([{ userId: "user-1" }]);
+		mockListQuiInstances.mockResolvedValue([
+			{ id: "qui-1", userId: "user-1", label: "main qui", baseUrl: "http://qui" },
+		]);
+		const fetchStarted = deferred();
+		const releaseFetch = deferred();
+		mockCreateQuiClient.mockReturnValue({
+			listTorrentInventory: vi.fn(async () => {
+				fetchStarted.resolve();
+				await releaseFetch.promise;
+				return {
+					torrents: [{ hash: "AAAA", state: "uploading", ratio: 1 }],
+					complete: true,
+				};
+			}),
+		});
+
+		const sync = runQuiTorrentStateSync(app);
+		await fetchStarted.promise;
+
+		const topologyMutation = vi.fn(async () => "topology-updated");
+		const mutation = withQuiObservationTopologyGuard("user-1", topologyMutation);
+		await Promise.resolve();
+		expect(topologyMutation).not.toHaveBeenCalled();
+
+		releaseFetch.resolve();
+		await sync;
+		await expect(mutation).resolves.toBe("topology-updated");
+		expect(app.__updateMany).toHaveBeenCalledWith({
+			where: { infoHash: "aaaa", instance: { userId: "user-1" } },
+			data: expect.objectContaining({ torrentState: "seeding" }),
+		});
 	});
 
 	it("normalizes states and updates LibraryCache rows by infoHash", async () => {
