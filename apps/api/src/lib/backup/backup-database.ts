@@ -94,6 +94,21 @@ const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
 	],
 };
 
+const SCORE_INTENT_FIELDS = [
+	"userId",
+	"instanceId",
+	"qualityProfileId",
+	"customFormatId",
+	"score",
+	"status",
+	"intentOperation",
+	"intendedScore",
+	"connectionGeneration",
+	"connectionStateToken",
+	"createdAt",
+	"updatedAt",
+] as const;
+
 function recordsById(value: unknown): Map<string, CoordinationRow> {
 	const records = new Map<string, CoordinationRow>();
 	if (!Array.isArray(value)) return records;
@@ -171,6 +186,28 @@ function assertCurrentRowPreserved(
 	}
 }
 
+function assertCurrentScoreIntentPreserved(
+	current: CoordinationRow,
+	incomingRows: Map<string, CoordinationRow>,
+): void {
+	const incoming = incomingRows.get(current.id);
+	if (!incoming) {
+		throw new Error(
+			`Cannot restore backup: current unresolved score intent ${current.id} is missing from incoming data`,
+		);
+	}
+
+	for (const field of SCORE_INTENT_FIELDS) {
+		if (
+			comparableCoordinationValue(incoming[field]) !== comparableCoordinationValue(current[field])
+		) {
+			throw new Error(
+				`Cannot restore backup: current unresolved score intent ${current.id} changed ${field}`,
+			);
+		}
+	}
+}
+
 async function validateCurrentCoordinationPreserved(
 	tx: Prisma.TransactionClient,
 	data: BackupData["data"],
@@ -203,9 +240,13 @@ async function validateCurrentCoordinationPreserved(
 			},
 		})
 	).filter(shouldPreserveDeploymentHistory) as CoordinationRow[];
+	const currentScoreIntents = (await tx.instanceQualityProfileOverride.findMany({
+		where: { status: { in: ["PENDING", "UNCERTAIN"] } },
+	})) as CoordinationRow[];
 	const incomingRollbackRows = recordsById(data.trashSyncHistory);
 	const incomingUndeployRows = recordsById(data.templateDeploymentHistory);
 	const incomingTemplates = recordsById(data.trashTemplates);
+	const incomingScoreIntents = recordsById(data.instanceQualityProfileOverrides);
 
 	for (const row of currentRollbackRows) {
 		assertCurrentRowPreserved("rollback", row, incomingRollbackRows);
@@ -213,6 +254,9 @@ async function validateCurrentCoordinationPreserved(
 	for (const row of currentUndeployRows) {
 		assertCurrentRowPreserved("undeploy", row, incomingUndeployRows);
 		assertCurrentUndeployFallbackPreserved(row, incomingTemplates);
+	}
+	for (const intent of currentScoreIntents) {
+		assertCurrentScoreIntentPreserved(intent, incomingScoreIntents);
 	}
 
 	const currentRecoveryRows = [

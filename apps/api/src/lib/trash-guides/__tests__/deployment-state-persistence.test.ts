@@ -270,6 +270,28 @@ const ids = {
 		);
 	});
 
+	it("detects an unresolved score intent before an older restore can erase it", async () => {
+		await prisma.instanceQualityProfileOverride.create({
+			data: {
+				id: ids.override,
+				instanceId: ids.instance,
+				qualityProfileId: 42,
+				customFormatId: 1001,
+				score: 0,
+				status: "UNCERTAIN",
+				intentOperation: "SET_SCORE",
+				intendedScore: 15,
+				userId: ids.user,
+				connectionGeneration: 3,
+				connectionStateToken: "state-before-score",
+			},
+		});
+
+		await expect(restoreDatabase(prisma, olderBackupData())).rejects.toThrow(
+			`current unresolved score intent ${ids.override}`,
+		);
+	});
+
 	it("cascades terminal recovery audits so the service and account remain deletable", async () => {
 		await createRecoverySnapshot();
 		await prisma.trashSyncHistory.create({

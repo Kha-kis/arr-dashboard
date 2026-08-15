@@ -560,6 +560,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 		currentSync?: Array<Record<string, unknown>>;
 		currentDeployments?: Array<Record<string, unknown>>;
 		currentSnapshots?: Array<Record<string, unknown>>;
+		currentOverrides?: Array<Record<string, unknown>>;
 	}) {
 		const firstDelete = vi.fn().mockResolvedValue({ count: 0 });
 		const tx = {
@@ -570,6 +571,9 @@ describe("restoreDatabase — current coordination preservation", () => {
 			templateDeploymentHistory: {
 				findMany: vi.fn().mockResolvedValue(options.currentDeployments ?? []),
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue(options.currentOverrides ?? []),
 			},
 			trashBackup: {
 				findMany: vi.fn().mockResolvedValue(options.currentSnapshots ?? []),
@@ -970,6 +974,61 @@ describe("restoreDatabase — current coordination preservation", () => {
 				}),
 			),
 		).rejects.toThrow("current nonterminal coordination row current-sync changed appliedConfigs");
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a restore that omits a current unresolved score intent", async () => {
+		const currentOverride = {
+			id: "pending-score-intent",
+			userId: "user-1",
+			instanceId: "instance-1",
+			qualityProfileId: 4,
+			customFormatId: 7,
+			score: 0,
+			status: "PENDING",
+			intentOperation: "SET_SCORE",
+			intendedScore: 15,
+			connectionGeneration: 3,
+			connectionStateToken: "connection-state",
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentOverrides: [currentOverride],
+		});
+
+		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+			"current unresolved score intent pending-score-intent",
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
+	it("rejects a restore that changes a current unresolved score intent", async () => {
+		const currentOverride = {
+			id: "uncertain-score-intent",
+			userId: "user-1",
+			instanceId: "instance-1",
+			qualityProfileId: 4,
+			customFormatId: 7,
+			score: 0,
+			status: "UNCERTAIN",
+			intentOperation: "SET_SCORE",
+			intendedScore: 15,
+			connectionGeneration: 3,
+			connectionStateToken: "connection-state",
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentOverrides: [currentOverride],
+		});
+
+		await expect(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					instanceQualityProfileOverrides: [{ ...currentOverride, intendedScore: 20 }],
+				}),
+			),
+		).rejects.toThrow(
+			"current unresolved score intent uncertain-score-intent changed intendedScore",
+		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 });
