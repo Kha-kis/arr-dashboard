@@ -22,6 +22,21 @@ export const tautulliInfoSchema = z.looseObject({
 	tautulli_version: z.string(),
 });
 
+/** get_server_info — the linked Plex Media Server identity. */
+export const tautulliServerInfoSchema = z.looseObject({
+	pms_identifier: z.string().optional(),
+	pms_name: z.string().optional(),
+});
+
+/** get_servers_info — compatibility identity fallback for older Tautulli versions. */
+export const tautulliServersInfoSchema = z.array(
+	z.looseObject({
+		machine_identifier: z.string(),
+		name: z.string().optional(),
+		pms_name: z.string().optional(),
+	}),
+);
+
 /** get_libraries — array item */
 export const tautulliLibrarySchema = z.looseObject({
 	section_id: z.string(),

@@ -21,6 +21,19 @@ enum ServiceType {
   QUI
 }
 
+enum ProviderIdentityKind {
+  PLEX_MACHINE_IDENTIFIER @map("plex-machine-identifier")
+  JELLYFIN_SERVER_ID      @map("jellyfin-server-id")
+  EMBY_SERVER_ID          @map("emby-server-id")
+  TAUTULLI_PMS_IDENTIFIER @map("tautulli-pms-identifier")
+}
+
+enum ProviderIdentityStatus {
+  UNVERIFIED @map("unverified")
+  VERIFIED   @map("verified")
+  MISMATCH   @map("mismatch")
+}
+
 // Library item type enum - uses lowercase to match Zod schema in shared package
 enum LibraryItemType {
   movie
@@ -139,6 +152,13 @@ model ServiceInstance {
   // Monotonic generation for Jellyfin/Emby connection identity. Unlike
   // updatedAt, unrelated label/default/tag edits must not supersede refreshes.
   connectionGeneration         Int         @default(0)
+  // Durable provider-identity state. Lifecycle activation is intentionally deferred.
+  expectedIdentity             String?
+  identityKind                 ProviderIdentityKind?
+  identityStatus               ProviderIdentityStatus @default(UNVERIFIED)
+  identityGeneration           Int                    @default(0)
+  identityVerifiedAt           DateTime?
+  identityLastCheckedAt        DateTime?
   createdAt                    DateTime    @default(now())
   updatedAt                    DateTime    @updatedAt
 
@@ -177,6 +197,7 @@ model ServiceInstance {
 
   @@index([service])
   @@index([userId])
+  @@index([service, enabled, identityStatus])
 }
 
 // Persisted inode-index snapshot per qui instance — eliminates the
