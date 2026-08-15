@@ -1,13 +1,17 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockCreateTautulliClient, mockRefreshTautulliCache, mockCreateTracearrClient } = vi.hoisted(
-	() => ({
-		mockCreateTautulliClient: vi.fn(),
-		mockRefreshTautulliCache: vi.fn(),
-		mockCreateTracearrClient: vi.fn(),
-	}),
-);
+const {
+	mockCreateTautulliClient,
+	mockCreateTautulliPublicationSnapshot,
+	mockRefreshTautulliCache,
+	mockCreateTracearrClient,
+} = vi.hoisted(() => ({
+	mockCreateTautulliClient: vi.fn(),
+	mockCreateTautulliPublicationSnapshot: vi.fn(),
+	mockRefreshTautulliCache: vi.fn(),
+	mockCreateTracearrClient: vi.fn(),
+}));
 
 vi.mock("../../../lib/tautulli/tautulli-client.js", () => ({
 	createTautulliClient: (...args: unknown[]) => mockCreateTautulliClient(...args),
@@ -15,6 +19,8 @@ vi.mock("../../../lib/tautulli/tautulli-client.js", () => ({
 }));
 
 vi.mock("../../../lib/tautulli/tautulli-cache-refresher.js", () => ({
+	createOwnedTautulliPublicationSnapshot: (...args: unknown[]) =>
+		mockCreateTautulliPublicationSnapshot(...args),
 	refreshTautulliCache: (...args: unknown[]) => mockRefreshTautulliCache(...args),
 }));
 
@@ -22,13 +28,12 @@ vi.mock("../../../lib/tracearr/client-factory.js", () => ({
 	createTracearrClient: (...args: unknown[]) => mockCreateTracearrClient(...args),
 }));
 
-import { providerConnectionIdentity } from "../../../lib/services/provider-connection-guard.js";
-import { registerTautulliRoutes } from "../index.js";
 import {
 	createInjectAuthenticated,
 	registerTestErrorHandler,
 	setupAuthInjection,
 } from "../../__tests__/test-helpers.js";
+import { registerTautulliRoutes } from "../index.js";
 
 const instanceOne = {
 	id: "tautulli-one",
@@ -265,6 +270,7 @@ beforeEach(async () => {
 		),
 	);
 	mockCreateTracearrClient.mockReturnValue({});
+	mockCreateTautulliPublicationSnapshot.mockReturnValue(instanceOne);
 	mockRefreshTautulliCache.mockResolvedValue({
 		complete: true,
 		completedAt: new Date("2026-08-12T00:01:00.000Z"),
@@ -1007,7 +1013,7 @@ describe("Tautulli provider routes", () => {
 		]);
 	});
 
-	it("refreshes only an owned current Tautulli instance through the guarded refresher", async () => {
+	it("refreshes only an owned Tautulli publication snapshot through the guarded refresher", async () => {
 		const response = await injectAuthenticated("POST", "/api/tautulli/cache/tautulli-one/refresh");
 		expect(response.statusCode).toBe(200);
 		expect(JSON.parse(response.payload)).toMatchObject({
@@ -1015,12 +1021,12 @@ describe("Tautulli provider routes", () => {
 			complete: true,
 			upserted: 3,
 		});
+		expect(mockCreateTautulliPublicationSnapshot).toHaveBeenCalledWith(app.encryptor, instanceOne);
 		expect(mockRefreshTautulliCache).toHaveBeenCalledWith(
-			expect.anything(),
-			prisma,
-			"tautulli-one",
-			expect.anything(),
-			providerConnectionIdentity(instanceOne as never),
+			expect.objectContaining({
+				prisma,
+				instance: instanceOne,
+			}),
 		);
 	});
 });
