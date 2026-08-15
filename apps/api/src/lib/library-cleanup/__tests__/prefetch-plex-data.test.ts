@@ -327,6 +327,29 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		);
 	});
 
+	it("rejects a Plex map when its published generation changes while rows are read", async () => {
+		const instance = verifiedPlexInstance();
+		const first = completeStatus(instance.id, new Date(), 1);
+		const second = { ...first, identityGeneration: 8 };
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValueOnce([first]).mockResolvedValueOnce([second]),
+			},
+			plexCache: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		await expect(
+			prefetchPlexData({ prisma, log } as CleanupExecutorDeps, "user-1"),
+		).resolves.toBeUndefined();
+	});
+
 	it("blocks Plex episode cleanup when the episode cache row count mismatches", async () => {
 		const instance = {
 			id: "plex-inst-1",
@@ -443,7 +466,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			],
 		);
 
-		expect(statusReads).toHaveBeenCalledTimes(3);
+		expect(statusReads).toHaveBeenCalledTimes(4);
 		expect(result.failedSources).toContain("plex");
 		expect(result.ctx.plexMap).toBeUndefined();
 		expect(result.ctx.plexSectionTitles).toBeUndefined();

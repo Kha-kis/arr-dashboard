@@ -355,12 +355,23 @@ export interface SanitizedProviderEvidenceSource {
 	completedAt: string;
 	itemCount: number;
 	verifiedAt: string;
+	statusFingerprint: string;
+	rowFingerprint: string;
+	fingerprint: string;
 }
 
 export interface SanitizedProviderEvidence {
 	version: 1;
+	dependencies: string[];
 	fingerprint: string;
 	sources: SanitizedProviderEvidenceSource[];
+}
+
+export interface ExecutableSafetyEnvelope {
+	version: 2;
+	plan: ExecutableSharedMediaSafetyPlan;
+	providerEvidence: SanitizedProviderEvidence;
+	fingerprint: string;
 }
 
 function requiredPositiveSafeInteger(value: unknown, label: string): number {
@@ -1071,13 +1082,60 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 	throw new FileMatchVerificationError("Cleanup safety snapshot is not executable");
 }
 
-function emptyProviderEvidence(): SanitizedProviderEvidence {
-	const sources: SanitizedProviderEvidenceSource[] = [];
+function canonicalFingerprint(value: unknown): string {
+	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function providerSourcePayload(source: Omit<SanitizedProviderEvidenceSource, "fingerprint">) {
+	return {
+		service: source.service,
+		identityKind: source.identityKind,
+		identityFingerprint: source.identityFingerprint,
+		connectionGeneration: source.connectionGeneration,
+		identityGeneration: source.identityGeneration,
+		cacheType: source.cacheType,
+		completedAt: source.completedAt,
+		itemCount: source.itemCount,
+		verifiedAt: source.verifiedAt,
+		statusFingerprint: source.statusFingerprint,
+		rowFingerprint: source.rowFingerprint,
+	};
+}
+
+export function createSanitizedProviderEvidence(
+	dependencies: string[],
+	sources: Array<Omit<SanitizedProviderEvidenceSource, "fingerprint">>,
+): SanitizedProviderEvidence {
+	const orderedDependencies = [...new Set(dependencies)].sort();
+	const orderedSources = sources
+		.map((source) => ({
+			...providerSourcePayload(source),
+			fingerprint: canonicalFingerprint(providerSourcePayload(source)),
+		}))
+		.sort(
+			(left, right) =>
+				left.service.localeCompare(right.service) ||
+				left.cacheType.localeCompare(right.cacheType) ||
+				left.identityFingerprint.localeCompare(right.identityFingerprint),
+		);
+	if ((orderedDependencies.length === 0) !== (orderedSources.length === 0)) {
+		throw new FileMatchVerificationError(
+			"Cleanup provider dependencies and evidence sources are inconsistent",
+		);
+	}
 	return {
 		version: 1,
-		fingerprint: createHash("sha256").update(JSON.stringify(sources)).digest("hex"),
-		sources,
+		dependencies: orderedDependencies,
+		sources: orderedSources,
+		fingerprint: canonicalFingerprint({
+			dependencies: orderedDependencies,
+			sources: orderedSources,
+		}),
 	};
+}
+
+function emptyProviderEvidence(): SanitizedProviderEvidence {
+	return createSanitizedProviderEvidence([], []);
 }
 
 function canonicalProviderEvidence(value: unknown): SanitizedProviderEvidence {
@@ -1088,7 +1146,8 @@ function canonicalProviderEvidence(value: unknown): SanitizedProviderEvidence {
 	if (
 		candidate.version !== 1 ||
 		typeof candidate.fingerprint !== "string" ||
-		!Array.isArray(candidate.sources)
+		!Array.isArray(candidate.sources) ||
+		!Array.isArray(candidate.dependencies)
 	) {
 		throw new FileMatchVerificationError("Cleanup provider evidence is invalid");
 	}
@@ -1109,11 +1168,14 @@ function canonicalProviderEvidence(value: unknown): SanitizedProviderEvidence {
 			typeof row.cacheType !== "string" ||
 			typeof row.completedAt !== "string" ||
 			!Number.isSafeInteger(row.itemCount) ||
-			typeof row.verifiedAt !== "string"
+			typeof row.verifiedAt !== "string" ||
+			!isSha256(row.statusFingerprint) ||
+			!isSha256(row.rowFingerprint) ||
+			!isSha256(row.fingerprint)
 		) {
 			throw new FileMatchVerificationError("Cleanup provider evidence source is invalid");
 		}
-		return {
+		const canonical = {
 			service: row.service as SanitizedProviderEvidenceSource["service"],
 			identityKind: row.identityKind as string,
 			identityFingerprint: row.identityFingerprint as string,
@@ -1123,9 +1185,25 @@ function canonicalProviderEvidence(value: unknown): SanitizedProviderEvidence {
 			completedAt: row.completedAt as string,
 			itemCount: row.itemCount as number,
 			verifiedAt: row.verifiedAt as string,
+			statusFingerprint: row.statusFingerprint as string,
+			rowFingerprint: row.rowFingerprint as string,
 		};
+		if (canonicalFingerprint(canonical) !== row.fingerprint) {
+			throw new FileMatchVerificationError("Cleanup provider evidence source was tampered");
+		}
+		return { ...canonical, fingerprint: row.fingerprint as string };
 	});
-	return { version: 1, fingerprint: candidate.fingerprint, sources };
+	const dependencies = candidate.dependencies.map((dependency) => {
+		if (typeof dependency !== "string" || dependency.trim() === "") {
+			throw new FileMatchVerificationError("Cleanup provider dependency is invalid");
+		}
+		return dependency;
+	});
+	const canonical = createSanitizedProviderEvidence(dependencies, sources);
+	if (candidate.fingerprint !== canonical.fingerprint) {
+		throw new FileMatchVerificationError("Cleanup provider evidence was tampered");
+	}
+	return canonical;
 }
 
 function isSha256(value: unknown): value is string {
@@ -1136,23 +1214,39 @@ export function serializeExecutableSafetyPlan(
 	plan: ExecutableSharedMediaSafetyPlan,
 	providerEvidence: SanitizedProviderEvidence = emptyProviderEvidence(),
 ): string {
+	const canonicalPlan = canonicalExecutableSafetyPlan(plan);
+	const canonicalEvidence = canonicalProviderEvidence(providerEvidence);
 	return JSON.stringify({
 		version: 2,
-		plan: canonicalExecutableSafetyPlan(plan),
-		providerEvidence: canonicalProviderEvidence(providerEvidence),
+		plan: canonicalPlan,
+		providerEvidence: canonicalEvidence,
+		fingerprint: canonicalFingerprint({
+			plan: canonicalPlan,
+			providerEvidenceFingerprint: canonicalEvidence.fingerprint,
+		}),
 	});
 }
 
-export function parseExecutableSafetyPlan(value: unknown): ExecutableSharedMediaSafetyPlan | null {
+export function parseExecutableSafetyEnvelope(value: unknown): ExecutableSafetyEnvelope | null {
 	if (typeof value !== "string" || value.trim() === "") return null;
 	try {
 		const snapshot = JSON.parse(value) as Record<string, unknown>;
-		if (snapshot?.version !== 2) return null;
-		canonicalProviderEvidence(snapshot.providerEvidence);
-		return canonicalExecutableSafetyPlan(snapshot.plan);
+		if (snapshot?.version !== 2 || !isSha256(snapshot.fingerprint)) return null;
+		const providerEvidence = canonicalProviderEvidence(snapshot.providerEvidence);
+		const plan = canonicalExecutableSafetyPlan(snapshot.plan);
+		const fingerprint = canonicalFingerprint({
+			plan,
+			providerEvidenceFingerprint: providerEvidence.fingerprint,
+		});
+		if (snapshot.fingerprint !== fingerprint) return null;
+		return { version: 2, plan, providerEvidence, fingerprint };
 	} catch {
 		return null;
 	}
+}
+
+export function parseExecutableSafetyPlan(value: unknown): ExecutableSharedMediaSafetyPlan | null {
+	return parseExecutableSafetyEnvelope(value)?.plan ?? null;
 }
 
 export function executableSafetyPlansEqual(

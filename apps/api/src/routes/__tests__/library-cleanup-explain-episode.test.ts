@@ -219,6 +219,9 @@ describe("POST /library-cleanup/explain episode scope", () => {
 				},
 			],
 			retentionProtected: false,
+			providerEvidence: {
+				sources: [expect.objectContaining({ cacheType: "plex_episode" })],
+			},
 		});
 		expect(plexEpisodeCacheFindMany).toHaveBeenCalledWith(
 			expect.objectContaining({

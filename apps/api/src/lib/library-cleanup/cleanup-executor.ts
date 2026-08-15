@@ -117,10 +117,12 @@ import {
 	type CleanupDeleteTarget,
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
+	createSanitizedProviderEvidence,
 	createSharedPlexSafetyContext,
 	type ExecutableSharedMediaSafetyPlan,
 	executableSafetyPlansEqual,
 	findSharedPlexDeleteBlocks,
+	parseExecutableSafetyEnvelope,
 	parseExecutableSafetyPlan,
 	RadarrFileChangedDuringSafetyCheckError,
 	type SanitizedProviderEvidence,
@@ -161,6 +163,38 @@ const PROVIDER_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
 type CleanupRunResultWithProviderEvidence = CleanupRunResult & {
 	providerEvidence?: SanitizedProviderEvidence;
 };
+
+interface ProviderCacheGeneration {
+	completedAt: Date;
+	itemCount: number;
+	connectionGeneration: number;
+	identityGeneration: number;
+	statusFingerprint: string;
+}
+
+interface ProviderCacheSnapshot<T> {
+	value: T;
+	evidence: SanitizedProviderEvidence;
+	authority: {
+		cacheType: string;
+		instances: ServiceInstance[];
+		generations: Map<string, ProviderCacheGeneration>;
+	};
+}
+
+export function mergeSanitizedProviderEvidence(
+	...evidenceSets: Array<SanitizedProviderEvidence | undefined>
+): SanitizedProviderEvidence {
+	const available = evidenceSets.filter(
+		(evidence): evidence is SanitizedProviderEvidence => evidence !== undefined,
+	);
+	return createSanitizedProviderEvidence(
+		available.flatMap((evidence) => evidence.dependencies),
+		available.flatMap((evidence) =>
+			evidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		),
+	);
+}
 
 function isVerifiedProviderCacheSource(
 	instance: Pick<
@@ -206,18 +240,7 @@ async function loadCompleteCacheGenerations(
 	>,
 	cacheType: string,
 	now: Date = new Date(),
-): Promise<
-	| Map<
-			string,
-			{
-				completedAt: Date;
-				itemCount: number;
-				connectionGeneration: number;
-				identityGeneration: number;
-			}
-	  >
-	| undefined
-> {
+): Promise<Map<string, ProviderCacheGeneration> | undefined> {
 	if (instances.length === 0) return undefined;
 	const statuses = await deps.prisma.cacheRefreshStatus.findMany({
 		where: { instanceId: { in: instances.map((instance) => instance.id) }, cacheType },
@@ -231,19 +254,13 @@ async function loadCompleteCacheGenerations(
 			itemCount: true,
 			connectionGeneration: true,
 			identityGeneration: true,
+			generationId: true,
+			generationMetadata: true,
 		},
 	});
 	const byInstance = new Map(statuses.map((status) => [status.instanceId, status]));
 	const freshnessThreshold = now.getTime() - PROVIDER_EVIDENCE_FRESHNESS_MS;
-	const generations = new Map<
-		string,
-		{
-			completedAt: Date;
-			itemCount: number;
-			connectionGeneration: number;
-			identityGeneration: number;
-		}
-	>();
+	const generations = new Map<string, ProviderCacheGeneration>();
 	for (const instance of instances) {
 		const status = byInstance.get(instance.id);
 		if (
@@ -268,9 +285,88 @@ async function loadCompleteCacheGenerations(
 			itemCount: status.itemCount,
 			connectionGeneration: status.connectionGeneration,
 			identityGeneration: status.identityGeneration,
+			statusFingerprint: evidenceFingerprint({
+				instance: {
+					id: instance.id,
+					expectedIdentity: instance.expectedIdentity,
+					identityKind: instance.identityKind,
+					identityVerifiedAt: instance.identityVerifiedAt,
+					connectionGeneration: instance.connectionGeneration,
+					identityGeneration: instance.identityGeneration,
+					updatedAt: instance.updatedAt,
+				},
+				status,
+			}),
 		});
 	}
 	return generations;
+}
+
+async function revalidateProviderCacheAuthority(
+	deps: CleanupExecutorDeps,
+	authority: ProviderCacheSnapshot<unknown>["authority"],
+	revalidateTopology = true,
+	now = new Date(),
+): Promise<boolean> {
+	let currentInstances = authority.instances;
+	if (revalidateTopology) {
+		currentInstances = await loadProviderInstances(deps, authority.instances[0]!.userId, [
+			...new Set(authority.instances.map((instance) => instance.service)),
+		]);
+		if (
+			providerTopologyFingerprint(currentInstances) !==
+			providerTopologyFingerprint(authority.instances)
+		) {
+			return false;
+		}
+	}
+	const current = await loadCompleteCacheGenerations(
+		deps,
+		currentInstances,
+		authority.cacheType,
+		now,
+	);
+	if (!current || current.size !== authority.generations.size) return false;
+	return [...authority.generations].every(
+		([instanceId, generation]) =>
+			current.get(instanceId)?.statusFingerprint === generation.statusFingerprint,
+	);
+}
+
+function createProviderCacheSnapshot<T>(
+	value: T,
+	cacheType: string,
+	instances: ServiceInstance[],
+	generations: Map<string, ProviderCacheGeneration>,
+	rowsByInstance: Map<string, unknown[]>,
+): ProviderCacheSnapshot<T> {
+	return {
+		value,
+		evidence: createSanitizedProviderEvidence(
+			[cacheType],
+			instances.map((instance) => {
+				const generation = generations.get(instance.id)!;
+				return {
+					service: instance.service as SanitizedProviderEvidenceSource["service"],
+					identityKind: instance.identityKind!,
+					identityFingerprint: evidenceFingerprint({
+						service: instance.service,
+						identityKind: instance.identityKind,
+						expectedIdentity: instance.expectedIdentity,
+					}),
+					connectionGeneration: generation.connectionGeneration,
+					identityGeneration: generation.identityGeneration,
+					cacheType,
+					completedAt: generation.completedAt.toISOString(),
+					itemCount: generation.itemCount,
+					verifiedAt: instance.identityVerifiedAt!.toISOString(),
+					statusFingerprint: generation.statusFingerprint,
+					rowFingerprint: evidenceFingerprint(rowsByInstance.get(instance.id) ?? []),
+				};
+			}),
+		),
+		authority: { cacheType, instances, generations },
+	};
 }
 
 // The route returns at most 200 preview rows; avoid live safety I/O for rows
@@ -600,6 +696,7 @@ function buildPostPartialRetrySnapshot(
 	safetyPlan: SharedMediaSafetyPlan | undefined,
 	error: ArrDeletePartialError,
 	action: RuleAction,
+	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
 ): string | undefined {
 	if (error.hasRemainingFiles || error.deletedFileIds.length === 0) return undefined;
 
@@ -611,10 +708,13 @@ function buildPostPartialRetrySnapshot(
 		) {
 			return undefined;
 		}
-		return serializeExecutableSafetyPlan({
-			kind: "verified_radarr_empty",
-			target: safetyPlan.target,
-		});
+		return serializeExecutableSafetyPlan(
+			{
+				kind: "verified_radarr_empty",
+				target: safetyPlan.target,
+			},
+			providerEvidence,
+		);
 	}
 
 	if (safetyPlan?.kind !== "verified_sonarr") return undefined;
@@ -627,17 +727,20 @@ function buildPostPartialRetrySnapshot(
 	) {
 		return undefined;
 	}
-	return serializeExecutableSafetyPlan({
-		kind: "verified_sonarr",
-		target: safetyPlan.target,
-		files: {
-			seriesPath: safetyPlan.files.seriesPath,
-			episodeFiles: [],
+	return serializeExecutableSafetyPlan(
+		{
+			kind: "verified_sonarr",
+			target: safetyPlan.target,
+			files: {
+				seriesPath: safetyPlan.files.seriesPath,
+				episodeFiles: [],
+			},
+			peers: safetyPlan.peers,
+			ownership: action === "delete" ? safetyPlan.ownership : [],
+			targetDeleteNotifications: safetyPlan.targetDeleteNotifications,
 		},
-		peers: safetyPlan.peers,
-		ownership: action === "delete" ? safetyPlan.ownership : [],
-		targetDeleteNotifications: safetyPlan.targetDeleteNotifications,
-	});
+		providerEvidence,
+	);
 }
 
 function verifiedTargetsEqual(
@@ -1310,6 +1413,7 @@ async function persistAndClaimDirectMutationIntent(
 	userId: string,
 	item: FlaggedItem,
 	safetyPlan: SharedMediaSafetyPlan,
+	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
 ): Promise<{ id: string; claimed: boolean; executionToken: string }> {
 	const executablePlan = asExecutableSafetyPlan(safetyPlan);
 	if (!executablePlan) {
@@ -1318,7 +1422,7 @@ async function persistAndClaimDirectMutationIntent(
 	const retryEventFingerprint = createHash("sha256")
 		.update(
 			JSON.stringify([
-				serializeExecutableSafetyPlan(executablePlan),
+				serializeExecutableSafetyPlan(executablePlan, providerEvidence),
 				item.cacheItem.cachedAt?.toISOString() ?? null,
 				item.match.action,
 				item.match.scanMediaServerAfterDelete,
@@ -1361,7 +1465,7 @@ async function persistAndClaimDirectMutationIntent(
 				year: item.cacheItem.year,
 				rating: item.rating,
 				status: "retry_pending",
-				safetySnapshot: serializeExecutableSafetyPlan(executablePlan),
+				safetySnapshot: serializeExecutableSafetyPlan(executablePlan, providerEvidence),
 				lastExecutionError: null,
 				expiresAt: new Date(now.getTime() + APPROVAL_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
 			},
@@ -2152,8 +2256,14 @@ async function executeCleanupRunGuarded(
 			};
 		}
 
-		const { flagged, totalEvaluated, prefetchHealth, warnings, providerEvidence } =
-			await evaluateAllItems(deps, config, config.rules);
+		const {
+			flagged,
+			totalEvaluated,
+			prefetchHealth,
+			warnings,
+			providerEvidence,
+			providerAuthorities,
+		} = await evaluateAllItems(deps, config, config.rules);
 		// Real execution
 		if (config.requireApproval) {
 			const approvalSelection = await loadApprovalSelectionState(
@@ -2194,6 +2304,7 @@ async function executeCleanupRunGuarded(
 				sharedPlexBlocks,
 				safetyContext.plans,
 				providerEvidence,
+				providerAuthorities,
 				approvalSelection.skippedDetails,
 				approvalSelection,
 			);
@@ -2211,6 +2322,8 @@ async function executeCleanupRunGuarded(
 			[...priorRescanWarnings, ...warnings],
 			new Map(),
 			runLease.assertOwnership,
+			providerEvidence,
+			providerAuthorities,
 		);
 	} finally {
 		await runLease.release();
@@ -3666,6 +3779,7 @@ async function executeQueuedCleanupItemsCore(
 			requireApproval: true,
 			maxRemovalsPerRun: true,
 			respectQuiSeeding: true,
+			rules: true,
 		},
 	});
 	if (!currentConfig) {
@@ -3872,7 +3986,22 @@ async function executeQueuedCleanupItemsCore(
 
 			let sharedPlexBlock: string | undefined;
 			let approvalIdentityChanged = false;
-			let approvedPlan = parseExecutableSafetyPlan(approval.safetySnapshot);
+			const approvedEnvelope = parseExecutableSafetyEnvelope(approval.safetySnapshot);
+			let approvedPlan = approvedEnvelope?.plan ?? null;
+			const approvedProviderEvidence = approvedEnvelope?.providerEvidence;
+			const approvedRule = currentConfig.rules.find(
+				(rule) =>
+					rule.id === approval.matchedRuleId &&
+					(approval.targetScope === "episode"
+						? rule.targetScope === "episode"
+						: rule.targetScope !== "episode"),
+			);
+			const recordedSelectionRequiresProviderEvidence =
+				approvedRule !== undefined &&
+				ruleUsesUnavailableData(
+					approvedRule,
+					new Set<DataSourceDependency>(["plex", "jellyfin", "tautulli"]),
+				);
 			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
 			let recoveringEpisodeUnmonitorPartial =
 				approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE;
@@ -3882,6 +4011,8 @@ async function executeQueuedCleanupItemsCore(
 				recoveringEpisodeUnmonitorPartial;
 			if (
 				!approvedPlan ||
+				(recordedSelectionRequiresProviderEvidence &&
+					approvedProviderEvidence?.dependencies.length === 0) ||
 				approvedPlan.target.serviceFingerprint !== createArrServiceFingerprint(instance)
 			) {
 				approvalIdentityChanged = true;
@@ -3949,7 +4080,10 @@ async function executeQueuedCleanupItemsCore(
 						options.executeStatus,
 						claimedExecutionToken,
 						{
-							safetySnapshot: serializeExecutableSafetyPlan(reconciledPlan),
+							safetySnapshot: serializeExecutableSafetyPlan(
+								reconciledPlan,
+								approvedProviderEvidence,
+							),
 							lastExecutionError:
 								"Recovered a persisted Sonarr mutation after verifying that its target files were already removed.",
 						},
@@ -4073,7 +4207,10 @@ async function executeQueuedCleanupItemsCore(
 									options.executeStatus,
 									claimedExecutionToken,
 									{
-										safetySnapshot: serializeExecutableSafetyPlan(livePlan),
+										safetySnapshot: serializeExecutableSafetyPlan(
+											livePlan,
+											approvedProviderEvidence,
+										),
 										lastExecutionError:
 											"Recovered a persisted cleanup mutation after verifying the remaining ARR file set.",
 									},
@@ -4549,7 +4686,7 @@ async function executeQueuedCleanupItemsCore(
 				failed++;
 				const postPartialRetrySnapshot =
 					error instanceof ArrDeletePartialError
-						? buildPostPartialRetrySnapshot(safetyPlan, error, action)
+						? buildPostPartialRetrySnapshot(safetyPlan, error, action, approvedProviderEvidence)
 						: undefined;
 				if (error instanceof ArrDeletePartialError && error.deletedFileIds.length > 0) {
 					confirmedPartialFileDeletionIds.add(approval.id);
@@ -5089,10 +5226,10 @@ function jellyfinSnapshotToWatchMap(rows: JellyfinCacheSnapshotRow[]): JellyfinW
  * Prefetch Tautulli watch data from the TautulliCache table and build a lookup map.
  * Returns undefined if no Tautulli instance is configured.
  */
-async function prefetchTautulliData(
+async function loadTautulliDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<TautulliWatchMap | undefined> {
+): Promise<ProviderCacheSnapshot<TautulliWatchMap> | undefined> {
 	const { prisma, log } = deps;
 
 	const tautulliInstances = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
@@ -5109,6 +5246,7 @@ async function prefetchTautulliData(
 		}
 		const map: TautulliWatchMap = new Map();
 		const rowCounts = new Map<string, number>();
+		const rowsByInstance = new Map<string, unknown[]>();
 		let cursor: string | undefined;
 		let totalRows = 0;
 
@@ -5146,6 +5284,9 @@ async function prefetchTautulliData(
 						throw new Error("Tautulli cache row provenance was unavailable");
 					}
 					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
+					const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
+					sourceRows.push(row);
+					rowsByInstance.set(row.instanceId, sourceRows);
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
 					const existing = map.get(key);
@@ -5185,11 +5326,21 @@ async function prefetchTautulliData(
 			throw new Error("Tautulli cache row count did not match its published generation");
 		}
 
+		const snapshot = createProviderCacheSnapshot(
+			map,
+			"tautulli",
+			tautulliInstances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false))) {
+			throw new Error("Tautulli cache generation changed while rows were read");
+		}
 		log.info(
 			{ totalRows, totalEntries: map.size },
 			"Tautulli watch data prefetch complete for cleanup",
 		);
-		return map;
+		return snapshot;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5199,6 +5350,13 @@ async function prefetchTautulliData(
 	}
 }
 
+async function prefetchTautulliData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<TautulliWatchMap | undefined> {
+	return (await loadTautulliDataSnapshot(deps, userId))?.value;
+}
+
 /**
  * Prefetch Plex watch data from the PlexCache table and build a lookup map.
  * Now section-aware: each row carries sectionId/sectionTitle, and PlexWatchInfo
@@ -5206,10 +5364,10 @@ async function prefetchTautulliData(
  * Also includes collections and labels from the PlexCache table.
  * Returns undefined if no Plex instance is configured.
  */
-export async function prefetchPlexData(
+async function loadPlexDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<PlexWatchMap | undefined> {
+): Promise<ProviderCacheSnapshot<PlexWatchMap> | undefined> {
 	const { prisma, log } = deps;
 
 	const plexInstances = await loadProviderInstances(deps, userId, ["PLEX"]);
@@ -5224,6 +5382,7 @@ export async function prefetchPlexData(
 		const map: PlexWatchMap = new Map();
 		const instanceIds = plexInstances.map((i) => i.id);
 		const rowCounts = new Map<string, number>();
+		const rowsByInstance = new Map<string, unknown[]>();
 		let cursor: string | undefined;
 		let totalRows = 0;
 
@@ -5269,6 +5428,9 @@ export async function prefetchPlexData(
 						throw new Error("Plex cache row provenance was unavailable");
 					}
 					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
+					const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
+					sourceRows.push(row);
+					rowsByInstance.set(row.instanceId, sourceRows);
 					// Key is mediaType:tmdbId (aggregating across sections)
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
@@ -5351,11 +5513,21 @@ export async function prefetchPlexData(
 			throw new Error("Plex cache row count did not match its published generation");
 		}
 
+		const snapshot = createProviderCacheSnapshot(
+			map,
+			"plex",
+			plexInstances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false))) {
+			throw new Error("Plex cache generation changed while rows were read");
+		}
 		log.info(
 			{ totalRows, totalEntries: map.size },
 			"Plex watch data prefetch complete for cleanup",
 		);
-		return map;
+		return snapshot;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5365,14 +5537,21 @@ export async function prefetchPlexData(
 	}
 }
 
+export async function prefetchPlexData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<PlexWatchMap | undefined> {
+	return (await loadPlexDataSnapshot(deps, userId))?.value;
+}
+
 /**
  * Prefetch Jellyfin watch data from JellyfinCache.
  * Mirrors prefetchPlexData but simpler — no sections/labels.
  */
-async function prefetchJellyfinData(
+async function loadJellyfinDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<JellyfinWatchMap | undefined> {
+): Promise<ProviderCacheSnapshot<JellyfinWatchMap> | undefined> {
 	const { prisma, log } = deps;
 
 	const jellyfinInstances = await loadProviderInstances(deps, userId, ["JELLYFIN", "EMBY"]);
@@ -5387,6 +5566,7 @@ async function prefetchJellyfinData(
 		const map: JellyfinWatchMap = new Map();
 		const instanceIds = jellyfinInstances.map((i) => i.id);
 		const rowCounts = new Map<string, number>();
+		const rowsByInstance = new Map<string, unknown[]>();
 		let cursor: string | undefined;
 		let totalRows = 0;
 
@@ -5427,6 +5607,9 @@ async function prefetchJellyfinData(
 						throw new Error("Jellyfin cache row provenance was unavailable");
 					}
 					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
+					const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
+					sourceRows.push(row);
+					rowsByInstance.set(row.instanceId, sourceRows);
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
 
@@ -5483,11 +5666,21 @@ async function prefetchJellyfinData(
 			throw new Error("Jellyfin cache row count did not match its published generation");
 		}
 
+		const snapshot = createProviderCacheSnapshot(
+			map,
+			"jellyfin",
+			jellyfinInstances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false))) {
+			throw new Error("Jellyfin cache generation changed while rows were read");
+		}
 		log.info(
 			{ totalRows, totalEntries: map.size },
 			"Jellyfin watch data prefetch complete for cleanup",
 		);
-		return map;
+		return snapshot;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5497,14 +5690,21 @@ async function prefetchJellyfinData(
 	}
 }
 
+async function prefetchJellyfinData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<JellyfinWatchMap | undefined> {
+	return (await loadJellyfinDataSnapshot(deps, userId))?.value;
+}
+
 /**
  * Prefetch Jellyfin episode completion data.
  * Mirrors Plex pattern using JellyfinEpisodeCache with GROUP BY.
  */
-async function prefetchJellyfinEpisodeData(
+async function loadJellyfinEpisodeDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<PlexEpisodeMap | undefined> {
+): Promise<ProviderCacheSnapshot<PlexEpisodeMap> | undefined> {
 	const { prisma, log } = deps;
 
 	try {
@@ -5515,9 +5715,18 @@ async function prefetchJellyfinEpisodeData(
 		if (!generations) return undefined;
 		const generationRows = await prisma.jellyfinEpisodeCache.findMany({
 			where: { instanceId: { in: instanceIds } },
-			select: { instanceId: true, connectionGeneration: true, identityGeneration: true },
+			select: {
+				id: true,
+				instanceId: true,
+				showTmdbId: true,
+				seasonNumber: true,
+				watched: true,
+				connectionGeneration: true,
+				identityGeneration: true,
+			},
 		});
 		const countByInstance = new Map<string, number>();
+		const rowsByInstance = new Map<string, unknown[]>();
 		for (const row of generationRows) {
 			const generation = generations.get(row.instanceId);
 			if (
@@ -5528,6 +5737,9 @@ async function prefetchJellyfinEpisodeData(
 				return undefined;
 			}
 			countByInstance.set(row.instanceId, (countByInstance.get(row.instanceId) ?? 0) + 1);
+			const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
+			sourceRows.push(row);
+			rowsByInstance.set(row.instanceId, sourceRows);
 		}
 		if (
 			instances.some(
@@ -5538,60 +5750,29 @@ async function prefetchJellyfinEpisodeData(
 			return undefined;
 		}
 
-		const totalCounts = await prisma.jellyfinEpisodeCache.groupBy({
-			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds } },
-			_count: { id: true },
-		});
-
-		const watchedCounts = await prisma.jellyfinEpisodeCache.groupBy({
-			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds }, watched: true },
-			_count: { id: true },
-		});
-
-		const seasonTotals = await prisma.jellyfinEpisodeCache.groupBy({
-			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds } },
-			_count: { id: true },
-		});
-
-		const seasonWatched = await prisma.jellyfinEpisodeCache.groupBy({
-			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds }, watched: true },
-			_count: { id: true },
-		});
-
-		const seasonWatchedMap = new Map(
-			seasonWatched.map((g) => [`${g.showTmdbId}:${g.seasonNumber}`, g._count.id]),
-		);
-
-		const showSeasonsMap = new Map<number, Map<number, { total: number; watched: number }>>();
-		for (const g of seasonTotals) {
-			let seasons = showSeasonsMap.get(g.showTmdbId);
-			if (!seasons) {
-				seasons = new Map();
-				showSeasonsMap.set(g.showTmdbId, seasons);
-			}
-			seasons.set(g.seasonNumber, {
-				total: g._count.id,
-				watched: seasonWatchedMap.get(`${g.showTmdbId}:${g.seasonNumber}`) ?? 0,
-			});
-		}
-
-		const watchedMap = new Map(watchedCounts.map((g) => [g.showTmdbId, g._count.id]));
 		const map: PlexEpisodeMap = new Map();
-
-		for (const group of totalCounts) {
-			map.set(group.showTmdbId, {
-				total: group._count.id,
-				watched: watchedMap.get(group.showTmdbId) ?? 0,
-				seasons: showSeasonsMap.get(group.showTmdbId) ?? new Map(),
-			});
+		for (const row of generationRows) {
+			const show = map.get(row.showTmdbId) ?? { total: 0, watched: 0, seasons: new Map() };
+			show.total++;
+			if (row.watched) show.watched++;
+			const season = show.seasons.get(row.seasonNumber) ?? { total: 0, watched: 0 };
+			season.total++;
+			if (row.watched) season.watched++;
+			show.seasons.set(row.seasonNumber, season);
+			map.set(row.showTmdbId, show);
 		}
 
+		const snapshot = createProviderCacheSnapshot(
+			map,
+			"jellyfin_episode",
+			instances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false)))
+			return undefined;
 		log.info({ totalShows: map.size }, "Jellyfin episode data prefetch complete for cleanup");
-		return map;
+		return snapshot;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5601,15 +5782,22 @@ async function prefetchJellyfinEpisodeData(
 	}
 }
 
+async function prefetchJellyfinEpisodeData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<PlexEpisodeMap | undefined> {
+	return (await loadJellyfinEpisodeDataSnapshot(deps, userId))?.value;
+}
+
 /**
  * Prefetch Plex episode completion data for series.
  * Uses SQL GROUP BY on PlexEpisodeCache to avoid loading all episodes into memory.
  * Returns a Map of showTmdbId → { total, watched }.
  */
-async function prefetchPlexEpisodeData(
+async function loadPlexEpisodeDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<PlexEpisodeMap | undefined> {
+): Promise<ProviderCacheSnapshot<PlexEpisodeMap> | undefined> {
 	const { prisma, log } = deps;
 
 	try {
@@ -5621,7 +5809,11 @@ async function prefetchPlexEpisodeData(
 		const generationRows = await prisma.plexEpisodeCache.findMany({
 			where: { instanceId: { in: instanceIds } },
 			select: {
+				id: true,
 				instanceId: true,
+				showTmdbId: true,
+				seasonNumber: true,
+				watched: true,
 				refreshedAt: true,
 				sourceFingerprint: true,
 				connectionGeneration: true,
@@ -5629,6 +5821,7 @@ async function prefetchPlexEpisodeData(
 			},
 		});
 		const rowCounts = new Map<string, number>();
+		const rowsByInstance = new Map<string, unknown[]>();
 		for (const row of generationRows) {
 			const generation = generations.get(row.instanceId);
 			const instance = instances.find((candidate) => candidate.id === row.instanceId);
@@ -5643,6 +5836,9 @@ async function prefetchPlexEpisodeData(
 				return undefined;
 			}
 			rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
+			const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
+			sourceRows.push(row);
+			rowsByInstance.set(row.instanceId, sourceRows);
 		}
 		if (
 			instances.some(
@@ -5652,64 +5848,29 @@ async function prefetchPlexEpisodeData(
 			return undefined;
 		}
 
-		// Three groupBy queries: show-level totals, show-level watched, and per-season counts
-		const totalCounts = await prisma.plexEpisodeCache.groupBy({
-			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds } },
-			_count: { id: true },
-		});
-
-		const watchedCounts = await prisma.plexEpisodeCache.groupBy({
-			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds }, watched: true },
-			_count: { id: true },
-		});
-
-		// Per-season counts for minSeason filtering
-		const seasonTotals = await prisma.plexEpisodeCache.groupBy({
-			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds } },
-			_count: { id: true },
-		});
-
-		const seasonWatched = await prisma.plexEpisodeCache.groupBy({
-			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds }, watched: true },
-			_count: { id: true },
-		});
-
-		// Build per-season watched lookup: "showTmdbId:seasonNumber" → count
-		const seasonWatchedMap = new Map(
-			seasonWatched.map((g) => [`${g.showTmdbId}:${g.seasonNumber}`, g._count.id]),
-		);
-
-		// Build per-show season maps
-		const showSeasonsMap = new Map<number, Map<number, { total: number; watched: number }>>();
-		for (const g of seasonTotals) {
-			let seasons = showSeasonsMap.get(g.showTmdbId);
-			if (!seasons) {
-				seasons = new Map();
-				showSeasonsMap.set(g.showTmdbId, seasons);
-			}
-			seasons.set(g.seasonNumber, {
-				total: g._count.id,
-				watched: seasonWatchedMap.get(`${g.showTmdbId}:${g.seasonNumber}`) ?? 0,
-			});
-		}
-
-		const watchedMap = new Map(watchedCounts.map((g) => [g.showTmdbId, g._count.id]));
 		const map: PlexEpisodeMap = new Map();
-
-		for (const group of totalCounts) {
-			map.set(group.showTmdbId, {
-				total: group._count.id,
-				watched: watchedMap.get(group.showTmdbId) ?? 0,
-				seasons: showSeasonsMap.get(group.showTmdbId) ?? new Map(),
-			});
+		for (const row of generationRows) {
+			const show = map.get(row.showTmdbId) ?? { total: 0, watched: 0, seasons: new Map() };
+			show.total++;
+			if (row.watched) show.watched++;
+			const season = show.seasons.get(row.seasonNumber) ?? { total: 0, watched: 0 };
+			season.total++;
+			if (row.watched) season.watched++;
+			show.seasons.set(row.seasonNumber, season);
+			map.set(row.showTmdbId, show);
 		}
 
+		const snapshot = createProviderCacheSnapshot(
+			map,
+			"plex_episode",
+			instances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false)))
+			return undefined;
 		log.info({ totalShows: map.size }, "Plex episode data prefetch complete for cleanup");
-		return map;
+		return snapshot;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5717,6 +5878,13 @@ async function prefetchPlexEpisodeData(
 		);
 		return undefined;
 	}
+}
+
+async function prefetchPlexEpisodeData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<PlexEpisodeMap | undefined> {
+	return (await loadPlexEpisodeDataSnapshot(deps, userId))?.value;
 }
 
 /**
@@ -5737,6 +5905,7 @@ async function evaluateAllItems(
 	prefetchHealth: PrefetchResults;
 	warnings: string[];
 	providerEvidence: SanitizedProviderEvidence;
+	providerAuthorities: Array<ProviderCacheSnapshot<unknown>["authority"]>;
 }> {
 	const { prisma, log } = deps;
 	const now = new Date();
@@ -5795,10 +5964,10 @@ async function evaluateAllItems(
 		"user_retention", // Can use tautulli as source
 	];
 	const hasTautulliRules = TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t));
-	const tautulliResult = hasTautulliRules
-		? await prefetchTautulliData(deps, config.userId)
+	const tautulliSnapshot = hasTautulliRules
+		? await loadTautulliDataSnapshot(deps, config.userId)
 		: undefined;
-	const tautulliMap = hasTautulliRules ? tautulliResult : undefined;
+	const tautulliMap = tautulliSnapshot?.value;
 
 	// Prefetch Plex watch data if any Plex rule types are active
 	const PLEX_RULE_TYPES = [
@@ -5819,11 +5988,29 @@ async function evaluateAllItems(
 	];
 	const hasPlexRules = PLEX_RULE_TYPES.some((t) => activeTypes.has(t));
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(seriesRules).size > 0;
-	const publishedPlexEvidence =
+	let plexSnapshot =
 		hasPlexRules || needsPlexSectionInventory
-			? await loadPublishedPlexPolicyEvidence(deps, config.userId, seriesRules)
+			? await loadPlexDataSnapshot(deps, config.userId)
 			: undefined;
-	const plexMap = hasPlexRules ? publishedPlexEvidence?.plexMap : undefined;
+	let publishedPlexEvidence = needsPlexSectionInventory
+		? await loadPublishedPlexPolicyEvidence(deps, config.userId, seriesRules)
+		: undefined;
+	if (
+		plexSnapshot &&
+		publishedPlexEvidence &&
+		!(await revalidateProviderCacheAuthority(deps, plexSnapshot.authority, false))
+	) {
+		plexSnapshot = undefined;
+		publishedPlexEvidence = undefined;
+	}
+	const plexMap = plexSnapshot?.value;
+	const plexSectionTitles =
+		publishedPlexEvidence?.plexSectionTitles ??
+		new Set(
+			[...(plexMap?.values() ?? [])].flatMap((entry) =>
+				entry.sections.map((section) => section.sectionTitle),
+			),
+		);
 
 	// Prefetch Jellyfin watch data if any Jellyfin rule types are active
 	const JELLYFIN_RULE_TYPES = [
@@ -5835,21 +6022,24 @@ async function evaluateAllItems(
 		"jellyfin_added_at",
 	];
 	const hasJellyfinRules = JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t));
-	const jellyfinResult = hasJellyfinRules
-		? await prefetchJellyfinData(deps, config.userId)
+	const jellyfinSnapshot = hasJellyfinRules
+		? await loadJellyfinDataSnapshot(deps, config.userId)
 		: undefined;
-	const jellyfinMap = hasJellyfinRules ? jellyfinResult : undefined;
+	const jellyfinMap = jellyfinSnapshot?.value;
 
 	// Prefetch Plex episode data if episode completion rule is active
 	const hasEpisodeCompletionRules = activeTypes.has("plex_episode_completion");
-	const plexEpisodeMap = hasEpisodeCompletionRules
-		? await prefetchPlexEpisodeData(deps, config.userId)
+	const needsPlexEpisodeEvidence = hasEpisodeCompletionRules || episodeRules.length > 0;
+	const plexEpisodeSnapshot = needsPlexEpisodeEvidence
+		? await loadPlexEpisodeDataSnapshot(deps, config.userId)
 		: undefined;
+	const plexEpisodeMap = plexEpisodeSnapshot?.value;
 
 	const hasJellyfinEpisodeRules = activeTypes.has("jellyfin_episode_completion");
-	const jellyfinEpisodeMap = hasJellyfinEpisodeRules
-		? await prefetchJellyfinEpisodeData(deps, config.userId)
+	const jellyfinEpisodeSnapshot = hasJellyfinEpisodeRules
+		? await loadJellyfinEpisodeDataSnapshot(deps, config.userId)
 		: undefined;
+	const jellyfinEpisodeMap = jellyfinEpisodeSnapshot?.value;
 	const needsTmdb = activeTypes.has("tmdb_list_member");
 	const needsTrakt = activeTypes.has("trakt_list_member");
 	const listEvidence =
@@ -5862,9 +6052,9 @@ async function evaluateAllItems(
 		seerr: hasSeerrRules ? (seerrMap ? "ok" : "failed") : "skipped",
 		tautulli: hasTautulliRules ? (tautulliMap ? "ok" : "failed") : "skipped",
 		plex:
-			hasPlexRules || hasEpisodeCompletionRules || needsPlexSectionInventory
-				? (!hasPlexRules || publishedPlexEvidence) &&
-					(!hasEpisodeCompletionRules || plexEpisodeMap) &&
+			hasPlexRules || needsPlexEpisodeEvidence || needsPlexSectionInventory
+				? (!hasPlexRules || plexSnapshot) &&
+					(!needsPlexEpisodeEvidence || plexEpisodeSnapshot) &&
 					(!needsPlexSectionInventory || publishedPlexEvidence)
 					? "ok"
 					: "failed"
@@ -5879,54 +6069,19 @@ async function evaluateAllItems(
 		trakt: needsTrakt ? (listEvidence.traktListMemberships ? "ok" : "failed") : "skipped",
 	};
 
-	const providerEvidence = await buildSanitizedProviderEvidence(deps, config.userId, [
-		...(tautulliMap
-			? [
-					{
-						services: ["TAUTULLI"] as ServiceInstance["service"][],
-						cacheType: "tautulli",
-						fingerprint: evidenceFingerprint(tautulliMap),
-						exactlyOne: true,
-					},
-				]
-			: []),
-		...(publishedPlexEvidence
-			? [
-					{
-						services: ["PLEX"] as ServiceInstance["service"][],
-						cacheType: "plex",
-						fingerprint: publishedPlexEvidence.generationFingerprint,
-					},
-				]
-			: []),
-		...(plexEpisodeMap
-			? [
-					{
-						services: ["PLEX"] as ServiceInstance["service"][],
-						cacheType: "plex_episode",
-						fingerprint: evidenceFingerprint(plexEpisodeMap),
-					},
-				]
-			: []),
-		...(jellyfinMap
-			? [
-					{
-						services: ["JELLYFIN", "EMBY"] as ServiceInstance["service"][],
-						cacheType: "jellyfin",
-						fingerprint: evidenceFingerprint(jellyfinMap),
-					},
-				]
-			: []),
-		...(jellyfinEpisodeMap
-			? [
-					{
-						services: ["JELLYFIN", "EMBY"] as ServiceInstance["service"][],
-						cacheType: "jellyfin_episode",
-						fingerprint: evidenceFingerprint(jellyfinEpisodeMap),
-					},
-				]
-			: []),
-	]);
+	const contributingSnapshots = [
+		tautulliSnapshot,
+		plexSnapshot,
+		plexEpisodeSnapshot,
+		jellyfinSnapshot,
+		jellyfinEpisodeSnapshot,
+	].filter((snapshot) => snapshot !== undefined) as ProviderCacheSnapshot<unknown>[];
+	const providerEvidence = createSanitizedProviderEvidence(
+		contributingSnapshots.flatMap((snapshot) => snapshot.evidence.dependencies),
+		contributingSnapshots.flatMap((snapshot) =>
+			snapshot.evidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		),
+	);
 
 	// Check for failed prefetches that have dependent rules — generate warnings
 	const failedSources = new Set<DataSourceDependency>();
@@ -5936,11 +6091,6 @@ async function evaluateAllItems(
 	if (prefetchHealth.jellyfin === "failed") failedSources.add("jellyfin");
 	if (prefetchHealth.tmdb === "failed") failedSources.add("tmdb");
 	if (prefetchHealth.trakt === "failed") failedSources.add("trakt");
-	if (!providerEvidence) {
-		if (tautulliMap) failedSources.add("tautulli");
-		if (publishedPlexEvidence || plexEpisodeMap) failedSources.add("plex");
-		if (jellyfinMap || jellyfinEpisodeMap) failedSources.add("jellyfin");
-	}
 
 	if (failedSources.size > 0) {
 		const unavailableRuleWarning = buildUnavailableRuleWarning(seriesRules, failedSources);
@@ -5956,7 +6106,7 @@ async function evaluateAllItems(
 		seerrMap,
 		tautulliMap,
 		plexMap,
-		plexSectionTitles: publishedPlexEvidence?.plexSectionTitles,
+		plexSectionTitles,
 		plexEpisodeMap,
 		jellyfinMap,
 		jellyfinEpisodeMap,
@@ -6070,13 +6220,8 @@ async function evaluateAllItems(
 		totalEvaluated,
 		prefetchHealth,
 		warnings,
-		providerEvidence:
-			providerEvidence ??
-			({
-				version: 1,
-				sources: [],
-				fingerprint: evidenceFingerprint([]),
-			} as SanitizedProviderEvidence),
+		providerEvidence: providerEvidence,
+		providerAuthorities: contributingSnapshots.map((snapshot) => snapshot.authority),
 	};
 }
 
@@ -6106,6 +6251,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 	warnings: string[],
 	options: {
 		includeUnwatched?: boolean;
+		evidenceSink?: (evidence: SanitizedProviderEvidence) => void;
 		coordinate?: {
 			showTmdbId: number;
 			seasonNumber: number;
@@ -6188,10 +6334,14 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			},
 		});
 		const result = new Map<string, EpisodePlexWatchEvidence[]>();
+		const rowsByInstance = new Map<string, unknown[]>(
+			plexInstances.map((instance) => [instance.id, []]),
+		);
 		let staleEvidenceCount = 0;
 		let incompleteEvidenceCount = 0;
 		const freshnessThreshold = now.getTime() - PLEX_EPISODE_FRESHNESS_MS;
 		for (const row of rows) {
+			rowsByInstance.get(row.instanceId)?.push(row);
 			if (
 				row.watchCount === null ||
 				row.refreshedAt === null ||
@@ -6257,6 +6407,20 @@ export async function prefetchFreshPlexEpisodeWatchData(
 				"No fresh, complete Plex episode watch evidence was available; episode-scoped cleanup targets were skipped.",
 			);
 		}
+		const snapshot = createProviderCacheSnapshot(
+			result,
+			"plex_episode",
+			plexInstances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false, now))) {
+			warnings.push(
+				"Plex episode evidence changed while it was read; episode-scoped cleanup targets were skipped.",
+			);
+			return new Map();
+		}
+		options.evidenceSink?.(snapshot.evidence);
 		return result;
 	} catch (error) {
 		deps.log.error({ err: error }, "Failed to load fresh Plex episode watch data");
@@ -6780,6 +6944,7 @@ async function executeWithApproval(
 	sharedPlexBlocks: Map<string, string> = new Map(),
 	safetyPlans: Map<string, SharedMediaSafetyPlan> = new Map(),
 	providerEvidence?: SanitizedProviderEvidence,
+	providerAuthorities: Array<ProviderCacheSnapshot<unknown>["authority"]> = [],
 	preSkippedDetails: CleanupRunResult["details"] = [],
 	selectionState?: ApprovalSelectionState,
 ): Promise<CleanupRunResult> {
@@ -6790,6 +6955,31 @@ async function executeWithApproval(
 	const details: CleanupRunResult["details"] = [];
 	const deferredDetails = preSkippedDetails.slice(0, CLEANUP_DETAIL_LIMIT);
 	let approvalQueueFailures = 0;
+	const providerAuthorityCurrent = (
+		await Promise.all(
+			providerAuthorities.map((authority) => revalidateProviderCacheAuthority(deps, authority)),
+		)
+	).every(Boolean);
+	if (!providerAuthorityCurrent) {
+		const reason =
+			"Provider cache authority changed after cleanup selection; no approvals were queued.";
+		const result: CleanupRunResult = {
+			isDryRun: false,
+			status: "partial",
+			itemsEvaluated: totalEvaluated,
+			itemsFlagged: totalFlaggedBeforeLimit,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: totalFlaggedBeforeLimit,
+			details: flagged.map((item) => buildDetail(item, "skipped", reason)),
+			durationMs: Date.now() - startTime,
+			prefetchHealth,
+			warnings: [...(warnings ?? []), reason],
+		};
+		await createRunLog(deps, config.id, result);
+		return result;
+	}
 
 	// Approval and retry ownership was loaded once, before any queue write, by
 	// loadApprovalSelectionState. The operation guard prevents another cleanup
@@ -6837,9 +7027,7 @@ async function executeWithApproval(
 							(() => {
 								throw new Error("No executable cleanup safety plan was produced");
 							})(),
-						providerEvidence
-							? bindProviderEvidenceToTarget(providerEvidence, flaggedDeleteTarget(item))
-							: undefined,
+						providerEvidence,
 					),
 					expiresAt,
 				},
@@ -6906,6 +7094,8 @@ export async function executeDirectRemoval(
 	warnings?: string[],
 	sharedPlexBlocks: Map<string, string> = new Map(),
 	assertRunLease?: () => Promise<void>,
+	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
+	providerAuthorities: Array<ProviderCacheSnapshot<unknown>["authority"]> = [],
 ): Promise<CleanupRunResult> {
 	const { prisma, arrClientFactory, log } = deps;
 
@@ -7210,12 +7400,24 @@ export async function executeDirectRemoval(
 		let directMutationIntentId: string;
 		let directMutationExecutionToken: string;
 		try {
+			if (
+				!(
+					await Promise.all(
+						providerAuthorities.map((authority) =>
+							revalidateProviderCacheAuthority(deps, authority),
+						),
+					)
+				).every(Boolean)
+			) {
+				throw new Error("Provider cache authority changed after cleanup selection");
+			}
 			const intent = await persistAndClaimDirectMutationIntent(
 				deps,
 				config,
 				userId,
 				item,
 				safetyPlan!,
+				providerEvidence,
 			);
 			if (!intent.claimed) {
 				directIntentConcurrent++;
@@ -7742,6 +7944,7 @@ export async function executeDirectRemoval(
 					safetyPlan,
 					error,
 					item.match.action,
+					providerEvidence,
 				);
 				let retryPersistenceSucceeded = true;
 				try {
@@ -9000,82 +9203,6 @@ function providerTopologyFingerprint(instances: ServiceInstance[]): string {
 	);
 }
 
-async function buildSanitizedProviderEvidence(
-	deps: CleanupExecutorDeps,
-	userId: string,
-	contributions: Array<{
-		services: ServiceInstance["service"][];
-		cacheType: string;
-		fingerprint: string;
-		exactlyOne?: boolean;
-	}>,
-): Promise<SanitizedProviderEvidence | undefined> {
-	const sources: SanitizedProviderEvidenceSource[] = [];
-	for (const contribution of contributions) {
-		const instances = await loadProviderInstances(deps, userId, contribution.services);
-		if (contribution.exactlyOne && instances.length !== 1) return undefined;
-		if (instances.length === 0) return undefined;
-		const generations = await loadCompleteCacheGenerations(deps, instances, contribution.cacheType);
-		if (!generations) return undefined;
-		for (const instance of instances) {
-			const generation = generations.get(instance.id);
-			if (!generation || !instance.identityKind || !instance.identityVerifiedAt) return undefined;
-			sources.push({
-				service: instance.service as SanitizedProviderEvidenceSource["service"],
-				identityKind: instance.identityKind,
-				identityFingerprint: evidenceFingerprint({
-					service: instance.service,
-					identityKind: instance.identityKind,
-					expectedIdentity: instance.expectedIdentity,
-				}),
-				connectionGeneration: generation.connectionGeneration,
-				identityGeneration: generation.identityGeneration,
-				cacheType: contribution.cacheType,
-				completedAt: generation.completedAt.toISOString(),
-				itemCount: generation.itemCount,
-				verifiedAt: instance.identityVerifiedAt.toISOString(),
-			});
-		}
-	}
-	const orderedSources = sources.sort(
-		(left, right) =>
-			left.service.localeCompare(right.service) ||
-			left.cacheType.localeCompare(right.cacheType) ||
-			left.identityFingerprint.localeCompare(right.identityFingerprint),
-	);
-	return {
-		version: 1,
-		sources: orderedSources,
-		fingerprint: evidenceFingerprint({
-			contributions: contributions.map(({ fingerprint, cacheType }) => ({
-				cacheType,
-				fingerprint,
-			})),
-			sources: orderedSources,
-		}),
-	};
-}
-
-function bindProviderEvidenceToTarget(
-	evidence: SanitizedProviderEvidence,
-	target: CleanupDeleteTarget,
-): SanitizedProviderEvidence {
-	return {
-		...evidence,
-		fingerprint: evidenceFingerprint({
-			evidence: evidence.fingerprint,
-			target: {
-				instanceId: target.instanceId,
-				arrItemId: target.arrItemId,
-				itemType: target.itemType,
-				targetScope: target.targetScope ?? "series",
-				arrEpisodeId: target.arrEpisodeId ?? null,
-				episodeFileId: target.episodeFileId ?? null,
-			},
-		}),
-	};
-}
-
 async function loadProviderInstances(
 	deps: CleanupExecutorDeps,
 	userId: string,
@@ -10067,7 +10194,11 @@ export async function buildEvalContextWithHealth(
 		plexLibraryFilter?: string | null;
 	}>,
 	options: { providerEvidence?: "published" | "live" } = {},
-): Promise<{ ctx: EvalContext; failedSources: Set<DataSourceDependency> }> {
+): Promise<{
+	ctx: EvalContext;
+	failedSources: Set<DataSourceDependency>;
+	providerEvidence?: SanitizedProviderEvidence;
+}> {
 	// The legacy option remains callable for route compatibility, but cleanup
 	// authorization never substitutes an uncached live read for a published,
 	// identity-bound provider generation.
@@ -10128,30 +10259,40 @@ export async function buildEvalContextWithHealth(
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(rules).size > 0;
 	const [
 		seerrMap,
-		tautulliMap,
+		tautulliSnapshot,
+		plexSnapshot,
 		plexEvidence,
-		plexEpisodeMap,
-		jellyfinMap,
-		jellyfinEpisodeMap,
+		plexEpisodeSnapshot,
+		jellyfinSnapshot,
+		jellyfinEpisodeSnapshot,
 		listEvidence,
 	] = await Promise.all([
 		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
-		needsTautulli ? prefetchTautulliData(deps, userId) : undefined,
-		needsPlex || needsPlexSectionInventory
-			? loadPublishedPlexPolicyEvidence(deps, userId, rules)
-			: undefined,
-		needsPlexEpisodes ? prefetchPlexEpisodeData(deps, userId) : undefined,
-		needsJellyfin ? prefetchJellyfinData(deps, userId) : undefined,
-		needsJellyfinEpisodes ? prefetchJellyfinEpisodeData(deps, userId) : undefined,
+		needsTautulli ? loadTautulliDataSnapshot(deps, userId) : undefined,
+		needsPlex || needsPlexSectionInventory ? loadPlexDataSnapshot(deps, userId) : undefined,
+		needsPlexSectionInventory ? loadPublishedPlexPolicyEvidence(deps, userId, rules) : undefined,
+		needsPlexEpisodes ? loadPlexEpisodeDataSnapshot(deps, userId) : undefined,
+		needsJellyfin ? loadJellyfinDataSnapshot(deps, userId) : undefined,
+		needsJellyfinEpisodes ? loadJellyfinEpisodeDataSnapshot(deps, userId) : undefined,
 		refreshListMutationEvidence(deps, userId, rules),
 	]);
+	const plexAuthorityConsistent =
+		!plexSnapshot ||
+		!plexEvidence ||
+		(await revalidateProviderCacheAuthority(deps, plexSnapshot.authority, false));
+	const effectivePlexSnapshot = plexAuthorityConsistent ? plexSnapshot : undefined;
+	const effectivePlexEvidence = plexAuthorityConsistent ? plexEvidence : undefined;
+	const tautulliMap = tautulliSnapshot?.value;
+	const plexEpisodeMap = plexEpisodeSnapshot?.value;
+	const jellyfinMap = jellyfinSnapshot?.value;
+	const jellyfinEpisodeMap = jellyfinEpisodeSnapshot?.value;
 
 	const failedSources = new Set<DataSourceDependency>();
 	if (needsSeerr && !seerrMap) failedSources.add("seerr");
 	if (needsTautulli && !tautulliMap) failedSources.add("tautulli");
-	if (needsPlex && !plexEvidence) failedSources.add("plex");
+	if (needsPlex && !effectivePlexSnapshot) failedSources.add("plex");
 	if (needsPlexEpisodes && !plexEpisodeMap) failedSources.add("plex");
-	if (needsPlexSectionInventory && !plexEvidence) failedSources.add("plex");
+	if (needsPlexSectionInventory && !effectivePlexEvidence) failedSources.add("plex");
 	if (needsJellyfin && !jellyfinMap) failedSources.add("jellyfin");
 	if (needsJellyfinEpisodes && !jellyfinEpisodeMap) failedSources.add("jellyfin");
 	if (needsTmdb && !listEvidence.tmdbListMemberships) failedSources.add("tmdb");
@@ -10161,15 +10302,28 @@ export async function buildEvalContextWithHealth(
 		now: new Date(),
 		seerrMap: seerrMap ?? undefined,
 		tautulliMap: tautulliMap ?? undefined,
-		plexMap: plexEvidence?.plexMap,
-		plexSectionTitles: plexEvidence?.plexSectionTitles,
+		plexMap: effectivePlexSnapshot?.value,
+		plexSectionTitles: effectivePlexEvidence?.plexSectionTitles,
 		plexEpisodeMap: plexEpisodeMap ?? undefined,
 		jellyfinMap: jellyfinMap ?? undefined,
 		jellyfinEpisodeMap: jellyfinEpisodeMap ?? undefined,
 		tmdbListMemberships: listEvidence.tmdbListMemberships,
 		traktListMemberships: listEvidence.traktListMemberships,
 	};
-	return { ctx, failedSources };
+	const contributingSnapshots = [
+		tautulliSnapshot,
+		effectivePlexSnapshot,
+		plexEpisodeSnapshot,
+		jellyfinSnapshot,
+		jellyfinEpisodeSnapshot,
+	].filter((snapshot) => snapshot !== undefined) as ProviderCacheSnapshot<unknown>[];
+	const providerEvidence = createSanitizedProviderEvidence(
+		contributingSnapshots.flatMap((snapshot) => snapshot.evidence.dependencies),
+		contributingSnapshots.flatMap((snapshot) =>
+			snapshot.evidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		),
+	);
+	return { ctx, failedSources, providerEvidence };
 }
 
 export async function buildEvalContext(

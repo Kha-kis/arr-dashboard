@@ -373,6 +373,32 @@ describe("library cleanup approval compare-and-set routes", () => {
 		});
 	});
 
+	it("forwards sanitized provider evidence in preview responses", async () => {
+		const providerEvidence = {
+			version: 1,
+			fingerprint: "a".repeat(64),
+			sources: [],
+		};
+		executorMocks.executeCleanupPreview.mockReset().mockResolvedValueOnce({
+			isDryRun: true,
+			status: "completed",
+			itemsEvaluated: 0,
+			itemsFlagged: 0,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 0,
+			details: [],
+			durationMs: 1,
+			providerEvidence,
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/preview");
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json().providerEvidence).toEqual(providerEvidence);
+	});
+
 	it.each([
 		["a null state that was never published", null],
 		["a positive state without provenance", "seeding"],
