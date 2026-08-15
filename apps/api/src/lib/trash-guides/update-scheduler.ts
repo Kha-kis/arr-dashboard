@@ -385,6 +385,7 @@ export class UpdateScheduler {
 								body: outcome.errors.join("; "),
 								url: "/trash-guides",
 								metadata: {
+									templateId: outcome.templateId,
 									instanceId: outcome.instanceId,
 									endpointKey: outcome.endpointKey,
 									reason: "uncertain_result",

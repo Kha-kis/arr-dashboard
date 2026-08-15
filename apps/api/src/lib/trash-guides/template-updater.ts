@@ -63,6 +63,7 @@ import type {
 } from "./template-updater-types.js";
 
 interface AutomationDeploymentOutcome {
+	templateId: string;
 	endpointKey: string;
 	instanceId: string;
 	instanceLabel: string;
@@ -924,6 +925,7 @@ export class TemplateUpdater {
 				left.instanceId.localeCompare(right.instanceId),
 			)[0]!;
 			const outcomeTarget = {
+				templateId,
 				endpointKey,
 				instanceId: mapping.instanceId,
 				instanceLabel: mapping.instance.label,

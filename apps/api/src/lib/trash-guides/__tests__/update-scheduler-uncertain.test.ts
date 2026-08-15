@@ -4,6 +4,7 @@ import { UpdateScheduler } from "../update-scheduler.js";
 describe("TRaSH update scheduler uncertain automation", () => {
 	it("counts and notifies an uncertain deployment without treating it as failed", async () => {
 		const uncertainOutcome = {
+			templateId: "template-1",
 			endpointKey: "user-1:RADARR:credential-1",
 			instanceId: "instance-1",
 			instanceLabel: "Radarr",
@@ -86,7 +87,10 @@ describe("TRaSH update scheduler uncertain automation", () => {
 			expect.objectContaining({
 				eventType: "TRASH_DEPLOY_UNCERTAIN",
 				title: expect.stringContaining("needs review"),
-				metadata: expect.objectContaining({ reason: "uncertain_result" }),
+				metadata: expect.objectContaining({
+					templateId: "template-1",
+					reason: "uncertain_result",
+				}),
 			}),
 			{ userId: "user-1", fallbackEventTypes: ["TRASH_SYNC_ERROR"] },
 		);

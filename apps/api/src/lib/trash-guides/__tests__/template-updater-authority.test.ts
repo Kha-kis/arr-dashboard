@@ -72,6 +72,7 @@ function createUpdater(
 	const privateUpdater = updater as unknown as {
 		deployToMappedInstances: (templateId: string) => Promise<
 			Array<{
+				templateId: string;
 				endpointKey: string;
 				instanceId: string;
 				instanceLabel: string;
@@ -348,6 +349,7 @@ describe("TemplateUpdater automation authority", () => {
 		const { updater, privateUpdater } = createUpdater([mapping(target)]);
 		vi.spyOn(privateUpdater, "deployToMappedInstances").mockResolvedValue([
 			{
+				templateId: template.id,
 				endpointKey: "failed-endpoint",
 				instanceId: "failed-instance",
 				instanceLabel: "Failed Radarr",
@@ -356,6 +358,7 @@ describe("TemplateUpdater automation authority", () => {
 				errors: ["ARR rejected the deployment"],
 			},
 			{
+				templateId: template.id,
 				endpointKey: "uncertain-endpoint",
 				instanceId: "uncertain-instance",
 				instanceLabel: "Uncertain Radarr",
@@ -397,7 +400,11 @@ describe("TemplateUpdater automation authority", () => {
 
 		expect(result).toMatchObject({ processed: 1, successful: 0, failed: 1, uncertain: 1 });
 		expect(result.uncertainDeployments).toEqual([
-			expect.objectContaining({ instanceId: "uncertain-instance", status: "UNCERTAIN" }),
+			expect.objectContaining({
+				templateId: template.id,
+				instanceId: "uncertain-instance",
+				status: "UNCERTAIN",
+			}),
 		]);
 		expect(result.results[0]?.errors).toEqual([
 			expect.stringContaining("ARR rejected"),
