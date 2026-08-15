@@ -1,13 +1,13 @@
 import {
 	ALL_SERVICES,
+	type AnalyticsProvider,
 	analyticsProviderSchema,
 	arrServiceTypeSchema,
-	type AnalyticsProvider,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { requireInstance } from "../lib/arr/instance-helpers.js";
 import { resolveAnalyticsProviderSelection } from "../lib/analytics/provider-selection.js";
+import { requireInstance } from "../lib/arr/instance-helpers.js";
 import { ConflictError } from "../lib/errors.js";
 import {
 	withCleanupTopologyMutationLease,
@@ -30,7 +30,6 @@ import {
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
-import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { assertNoActiveDeploymentOwnership } from "../lib/trash-guides/deployment-operation-gate.js";
 import {
 	assertEquivalentDeploymentMappingAuthority,
@@ -41,6 +40,7 @@ import {
 	isCurrentDeploymentConnectionMapping,
 	normalizeDeploymentBaseUrl,
 } from "../lib/trash-guides/deployment-target.js";
+import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { validateRequest } from "../lib/utils/validate.js";
 import { invalidatePulseCache } from "./pulse.js";
 
@@ -709,43 +709,70 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						normalizeDeploymentBaseUrl(existing.baseUrl) !==
 							normalizeDeploymentBaseUrl(targetConnection.baseUrl) ||
 						arrCredentialsChanged);
-				if (arrConnectionChanged && isArrService(existing.service)) {
-					const aliases = await app.prisma.serviceInstance.findMany({
-						where: { userId, service: existing.service },
-					});
-					const currentEndpoint = normalizeDeploymentBaseUrl(existing.baseUrl);
-					const equivalentInstanceIds = aliases
-						.filter(
-							(alias) =>
-								alias.userId === userId &&
-								alias.service === existing.service &&
-								normalizeDeploymentBaseUrl(alias.baseUrl) === currentEndpoint,
-						)
-						.map((alias) => alias.id);
-					if (!equivalentInstanceIds.includes(id)) equivalentInstanceIds.push(id);
-					const unresolvedIntents = await app.prisma.instanceQualityProfileOverride.findMany({
-						where: {
-							userId,
-							instanceId: { in: equivalentInstanceIds },
-							status: { in: ["PENDING", "UNCERTAIN"] },
-						},
-					});
-					if (unresolvedIntents.length > 0) {
-						throw new ConflictError(
-							"This ARR endpoint has unresolved score intent. Reconcile it before changing the connection.",
-						);
+				const executeUpdate = async () => {
+					if (arrConnectionChanged && isArrService(existing.service)) {
+						const aliases = await app.prisma.serviceInstance.findMany({
+							where: { userId, service: existing.service },
+						});
+						const currentEndpoint = normalizeDeploymentBaseUrl(existing.baseUrl);
+						const equivalentInstanceIds = aliases
+							.filter(
+								(alias) =>
+									alias.userId === userId &&
+									alias.service === existing.service &&
+									normalizeDeploymentBaseUrl(alias.baseUrl) === currentEndpoint,
+							)
+							.map((alias) => alias.id);
+						if (!equivalentInstanceIds.includes(id)) equivalentInstanceIds.push(id);
+						const unresolvedIntents = await app.prisma.instanceQualityProfileOverride.findMany({
+							where: {
+								userId,
+								instanceId: { in: equivalentInstanceIds },
+								status: { in: ["PENDING", "UNCERTAIN"] },
+							},
+						});
+						if (unresolvedIntents.length > 0) {
+							throw new ConflictError(
+								"This ARR endpoint has unresolved score intent. Reconcile it before changing the connection.",
+							);
+						}
+						await assertNoActiveDeploymentOwnership(app.prisma, userId, equivalentInstanceIds);
 					}
-					await assertNoActiveDeploymentOwnership(app.prisma, userId, equivalentInstanceIds);
-				}
-				const serviceUpdateData =
-					arrConnectionChanged || providerConnectionChanged
-						? {
-								...updateData,
-								connectionGeneration: { increment: 1 },
-							}
-						: updateData;
-				if (quiTopologyChanged) {
-					await withQuiObservationTopologyGuard(userId, async () => {
+					const serviceUpdateData =
+						arrConnectionChanged || providerConnectionChanged
+							? {
+									...updateData,
+									connectionGeneration: { increment: 1 },
+								}
+							: updateData;
+					if (quiTopologyChanged) {
+						await withQuiObservationTopologyGuard(userId, async () => {
+							await app.prisma.$transaction(async (tx) => {
+								await resetOtherDefaults(tx);
+								await tx.serviceInstance.updateMany({
+									where: { id, userId },
+									data: serviceUpdateData,
+								});
+								if (payload.tags !== undefined) {
+									await updateInstanceTags(tx, id, payload.tags);
+								}
+								if (providerConnectionChanged) {
+									await clearDurableProviderCacheState(
+										tx,
+										id,
+										targetService,
+										payload.enabled ?? existing.enabled,
+									);
+								}
+								await clearDurableQuiObservations(tx, userId);
+							});
+							// Keep process-local evidence in the same guarded topology
+							// transition. Releasing the guard first would allow another
+							// observer to reuse the previous endpoint's inode inventory.
+							invalidateTorrentListCache(id);
+							clearFileIdIndexCache(id);
+						});
+					} else if (providerConnectionChanged || serviceTypeChanged || arrConnectionChanged) {
 						await app.prisma.$transaction(async (tx) => {
 							await resetOtherDefaults(tx);
 							await tx.serviceInstance.updateMany({
@@ -763,94 +790,98 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 									payload.enabled ?? existing.enabled,
 								);
 							}
-							await clearDurableQuiObservations(tx, userId);
 						});
-						// Keep process-local evidence in the same guarded topology
-						// transition. Releasing the guard first would allow another
-						// observer to reuse the previous endpoint's inode inventory.
-						invalidateTorrentListCache(id);
-						clearFileIdIndexCache(id);
-					});
-				} else if (providerConnectionChanged || serviceTypeChanged || arrConnectionChanged) {
-					await app.prisma.$transaction(async (tx) => {
-						await resetOtherDefaults(tx);
-						await tx.serviceInstance.updateMany({
+					} else {
+						await resetOtherDefaults(app.prisma);
+						await app.prisma.serviceInstance.updateMany({
 							where: { id, userId },
 							data: serviceUpdateData,
 						});
 						if (payload.tags !== undefined) {
-							await updateInstanceTags(tx, id, payload.tags);
+							await updateInstanceTags(app.prisma, id, payload.tags);
 						}
-						if (providerConnectionChanged) {
-							await clearDurableProviderCacheState(
-								tx,
-								id,
-								targetService,
-								payload.enabled ?? existing.enabled,
-							);
-						}
-					});
-				} else {
-					await resetOtherDefaults(app.prisma);
-					await app.prisma.serviceInstance.updateMany({
-						where: { id, userId },
-						data: serviceUpdateData,
-					});
-					if (payload.tags !== undefined) {
-						await updateInstanceTags(app.prisma, id, payload.tags);
 					}
-				}
-				if (providerConnectionChanged || serviceTypeChanged) {
-					invalidatePulseCache(userId);
-				}
+					if (providerConnectionChanged || serviceTypeChanged) {
+						invalidatePulseCache(userId);
+					}
 
-				// A qUI topology change invalidates both durable observations
-				// (inside the transaction above) and process-local data keyed
-				// by this instance. Connection, credential, enabled-state, and
-				// filesystem/path-mapping changes participate in one conservative
-				// topology generation so no observer can reuse evidence produced
-				// before a concurrent physical-evidence mutation.
-				const wasQui = existing.service === "QUI";
-				const nowDisabled = payload.enabled === false && existing.enabled === true;
-				const switchedAwayFromQui =
-					payload.service !== undefined && payload.service.toLowerCase() !== "qui";
-				if (quiTopologyChanged) {
-					request.log.info(
-						{
-							instanceId: id,
-							reason: nowDisabled
-								? "disabled"
-								: switchedAwayFromQui
-									? "service-changed"
-									: wasQui
-										? "connection-changed"
-										: "qui-enabled",
+					// A qUI topology change invalidates both durable observations
+					// (inside the transaction above) and process-local data keyed
+					// by this instance. Connection, credential, enabled-state, and
+					// filesystem/path-mapping changes participate in one conservative
+					// topology generation so no observer can reuse evidence produced
+					// before a concurrent physical-evidence mutation.
+					const wasQui = existing.service === "QUI";
+					const nowDisabled = payload.enabled === false && existing.enabled === true;
+					const switchedAwayFromQui =
+						payload.service !== undefined && payload.service.toLowerCase() !== "qui";
+					if (quiTopologyChanged) {
+						request.log.info(
+							{
+								instanceId: id,
+								reason: nowDisabled
+									? "disabled"
+									: switchedAwayFromQui
+										? "service-changed"
+										: wasQui
+											? "connection-changed"
+											: "qui-enabled",
+							},
+							"qui caches dropped after instance update",
+						);
+					}
+
+					// Fetch updated instance - include userId to ensure we only get owned instances
+					const fresh = await app.prisma.serviceInstance.findFirst({
+						where: {
+							id,
+							userId,
 						},
-						"qui caches dropped after instance update",
+						include: { tags: { include: { tag: true } } },
+					});
+
+					if (!fresh) {
+						return reply.status(404).send({ error: "Service instance not found" });
+					}
+
+					request.log.info(
+						{ service: fresh.service, label: fresh.label, instanceId: id },
+						"Service instance updated",
+					);
+
+					return reply.send({
+						service: formatServiceInstance(fresh),
+					});
+				};
+
+				if (arrConnectionChanged && isArrService(existing.service)) {
+					return await app.deploymentExecutor.runWithEndpointMutation(
+						userId,
+						existing,
+						"ARR connection replacement",
+						async (expectedEndpointKey) => {
+							const current = await requireInstance(app, userId, id);
+							const currentEndpointKey = createDeploymentEndpointKey(userId, {
+								service: current.service,
+								baseUrl: current.baseUrl,
+								credentialIdentity:
+									app.arrClientFactory.createConnectionCredentialIdentity(current),
+							});
+							if (
+								currentEndpointKey !== expectedEndpointKey ||
+								createDeploymentConnectionStateToken(current) !==
+									createDeploymentConnectionStateToken(existing)
+							) {
+								throw new ConflictError(
+									"The ARR connection changed while the replacement was starting. Review it and try again.",
+								);
+							}
+							return await executeUpdate();
+						},
 					);
 				}
 
-				// Fetch updated instance - include userId to ensure we only get owned instances
-				const fresh = await app.prisma.serviceInstance.findFirst({
-					where: {
-						id,
-						userId,
-					},
-					include: { tags: { include: { tag: true } } },
-				});
-
-				if (!fresh) {
-					return reply.status(404).send({ error: "Service instance not found" });
-				}
-
-				request.log.info(
-					{ service: fresh.service, label: fresh.label, instanceId: id },
-					"Service instance updated",
-				);
-
-				return reply.send({
-					service: formatServiceInstance(fresh),
-				});
+				return await executeUpdate();
 			},
 		);
 	});

@@ -237,7 +237,7 @@ beforeEach(async () => {
 			callback(
 				createDeploymentEndpointKey(lockedUserId, {
 					...target,
-					credentialIdentity: "credential-identity",
+					credentialIdentity: app.arrClientFactory.createConnectionCredentialIdentity(target),
 				}),
 			),
 		),
@@ -564,6 +564,67 @@ describe("PUT /services/:id", () => {
 		)?.[0];
 		expect(connectionUpdate?.data.connectionGeneration).toEqual({ increment: 1 });
 		expect(mockPrisma.instanceQualityProfileOverride.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("holds the ARR endpoint mutation gate while replacing a connection", async () => {
+		const original = makeInstance({
+			service: "RADARR",
+			baseUrl: "http://radarr-old:7878",
+		});
+		mockRequireInstance.mockResolvedValue(original);
+		mockBuildUpdateData.mockReturnValue({ baseUrl: "http://radarr-new:7878" });
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([original]);
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue(
+			makeInstance({ service: "RADARR", baseUrl: "http://radarr-new:7878" }),
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { baseUrl: "http://radarr-new:7878" },
+		});
+
+		expect(res.statusCode).toBe(200);
+		expect((app as any).deploymentExecutor.runWithEndpointMutation).toHaveBeenCalledWith(
+			"user-1",
+			original,
+			"ARR connection replacement",
+			expect.any(Function),
+		);
+		expect(mockRequireInstance).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.$transaction).toHaveBeenCalledOnce();
+	});
+
+	it("rejects an ARR connection replacement when its authority changes before the gate", async () => {
+		const original = makeInstance({
+			service: "RADARR",
+			baseUrl: "http://radarr-old:7878",
+			connectionGeneration: 2,
+		});
+		const changed = makeInstance({
+			service: "RADARR",
+			baseUrl: "http://radarr-other:7878",
+			connectionGeneration: 3,
+		});
+		mockRequireInstance.mockResolvedValue(original);
+		mockBuildUpdateData.mockReturnValue({ baseUrl: "http://radarr-new:7878" });
+		vi.mocked((app as any).deploymentExecutor.runWithEndpointMutation).mockImplementationOnce(
+			async (lockedUserId: string, target: any, _operation: string, callback: any) => {
+				mockRequireInstance.mockResolvedValue(changed);
+				return callback(
+					createDeploymentEndpointKey(lockedUserId, {
+						...target,
+						credentialIdentity: "credential-identity",
+					}),
+				);
+			},
+		);
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", {
+			body: { baseUrl: "http://radarr-new:7878" },
+		});
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain("changed while the replacement was starting");
+		expect(mockPrisma.serviceInstance.updateMany).not.toHaveBeenCalled();
 	});
 
 	it("does not advance ARR generation for a normalized equivalent URL", async () => {

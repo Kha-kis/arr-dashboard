@@ -572,25 +572,16 @@ describe("DELETE /auth/account", () => {
 		expect(mockPrisma.user.delete).not.toHaveBeenCalled();
 	});
 
-	it("rejects the account cascade when an owned instance has active recovery evidence", async () => {
+	it("refuses to cascade an account while service connections still exist", async () => {
 		mockPrisma.user.findUnique.mockResolvedValue(makeUser({ hashedPassword: null }));
 		mockPrisma.serviceInstance.findMany.mockResolvedValueOnce([{ id: "instance-1" }]);
-		mockPrisma.trashSyncHistory.findMany.mockResolvedValueOnce([
-			{
-				id: "sync-1",
-				status: "FAILED",
-				rolledBack: false,
-				rollbackStatus: "PARTIAL",
-			},
-		]);
 
 		const res = await injectAuthenticated("DELETE", "/auth/account");
 
 		expect(res.statusCode).toBe(409);
-		expect(mockPrisma.serviceInstance.findMany).toHaveBeenCalledWith({
-			where: { userId: "user-1" },
-			select: { id: true },
-		});
+		expect(JSON.parse(res.payload).message).toContain("Remove all service connections");
+		expect(mockPrisma.trashSyncHistory.findMany).not.toHaveBeenCalled();
+		expect(mockPrisma.templateDeploymentHistory.findMany).not.toHaveBeenCalled();
 		expect(mockPrisma.libraryCleanupConfig.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
 			mockPrisma.serviceInstance.findMany.mock.invocationCallOrder[0]!,
 		);
