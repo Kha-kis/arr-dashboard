@@ -61,6 +61,12 @@ const createMockInstance = (
 	hasLocalFilesystemAccess: false,
 	pathPrefix: null,
 	connectionGeneration: 0,
+	expectedIdentity: null,
+	identityKind: null,
+	identityStatus: "UNVERIFIED",
+	identityGeneration: 0,
+	identityVerifiedAt: null,
+	identityLastCheckedAt: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 });

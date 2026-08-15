@@ -12,7 +12,7 @@
 import { libraryItemSchema } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaClient, ServiceType } from "../../../lib/prisma.js";
+import type { PrismaClient, ServiceInstance, ServiceType } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
 import { createArrServiceFingerprint } from "../../arr/service-fingerprint.js";
 import type { Encryptor } from "../../auth/encryption.js";
@@ -45,7 +45,7 @@ function makeRawItem(overrides: Record<string, unknown> = {}): Record<string, un
 	};
 }
 
-function createMockInstance(service: ServiceType) {
+function createMockInstance(service: ServiceType): ServiceInstance {
 	return {
 		id: INSTANCE_ID,
 		label: `Test ${service}`,
@@ -63,6 +63,12 @@ function createMockInstance(service: ServiceType) {
 		httpAuthEncryptionIv: null,
 		enabled: true,
 		connectionGeneration: 0,
+		expectedIdentity: null,
+		identityKind: null,
+		identityStatus: "UNVERIFIED",
+		identityGeneration: 0,
+		identityVerifiedAt: null,
+		identityLastCheckedAt: null,
 		createdAt: new Date(),
 		updatedAt: new Date(),
 	};
