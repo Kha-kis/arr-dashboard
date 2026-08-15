@@ -337,7 +337,14 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 								{ standaloneCFDeployments: { some: {} } },
 								{ qualitySizeMapping: { isNot: null } },
 								{ namingConfig: { isNot: null } },
-								{ namingDeployHistory: { some: {} } },
+								{
+									namingDeployHistory: {
+										some: {
+											status: { in: ["PENDING", "SUCCESS"] },
+											rolledBack: false,
+										},
+									},
+								},
 							],
 						},
 						select: { id: true },

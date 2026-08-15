@@ -579,6 +579,7 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 		// TRaSH Guides history/audit
 		"trashSyncHistory",
 		"templateDeploymentHistory",
+		"namingDeployHistory",
 		// TRaSH instance backups (optional, can be large)
 		"trashBackups",
 		// Hunting feature

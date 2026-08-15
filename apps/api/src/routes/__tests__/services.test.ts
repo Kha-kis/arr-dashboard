@@ -1356,6 +1356,14 @@ describe("DELETE /services/:id", () => {
 				OR: expect.arrayContaining([
 					{ trashSchedules: { some: {} } },
 					{ standaloneCFDeployments: { some: {} } },
+					{
+						namingDeployHistory: {
+							some: {
+								status: { in: ["PENDING", "SUCCESS"] },
+								rolledBack: false,
+							},
+						},
+					},
 				]),
 			},
 			select: { id: true },

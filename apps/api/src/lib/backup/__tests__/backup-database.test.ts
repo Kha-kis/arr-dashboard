@@ -30,6 +30,7 @@ const TABLE_NAMES = [
 	"qualitySizeMapping",
 	"trashSyncHistory",
 	"templateDeploymentHistory",
+	"namingDeployHistory",
 	"huntConfig",
 	"huntLog",
 	"huntSearchHistory",
@@ -61,6 +62,27 @@ function makeMockPrisma(rows: Partial<Record<TableName, unknown[]>> = {}): {
 }
 
 describe("exportDatabase — operational history exclusion", () => {
+	it.each(["PENDING", "SUCCESS"])(
+		"always preserves unrolled %s naming recovery when operational history is excluded",
+		async (status) => {
+			const activeNaming = {
+				id: `naming-${status.toLowerCase()}`,
+				instanceId: "instance-1",
+				userId: "user-1",
+				status,
+				rolledBack: false,
+			};
+			const { prisma, mock } = makeMockPrisma({ namingDeployHistory: [activeNaming] });
+
+			const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
+
+			expect(result.namingDeployHistory).toEqual([activeNaming]);
+			expect(mock.namingDeployHistory.findMany).toHaveBeenCalledWith({
+				where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
+			});
+		},
+	);
+
 	it("omits an exact legacy terminal sync wrapper without requiring a snapshot", async () => {
 		const { prisma, mock } = makeMockPrisma();
 		mock.trashSyncHistory.findMany.mockResolvedValueOnce([
@@ -626,6 +648,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 		currentDeployments?: Array<Record<string, unknown>>;
 		currentSnapshots?: Array<Record<string, unknown>>;
 		currentOverrides?: Array<Record<string, unknown>>;
+		currentNaming?: Array<Record<string, unknown>>;
 	}) {
 		const firstDelete = vi.fn().mockResolvedValue({ count: 0 });
 		const tx = {
@@ -639,6 +662,9 @@ describe("restoreDatabase — current coordination preservation", () => {
 			},
 			instanceQualityProfileOverride: {
 				findMany: vi.fn().mockResolvedValue(options.currentOverrides ?? []),
+			},
+			namingDeployHistory: {
+				findMany: vi.fn().mockResolvedValue(options.currentNaming ?? []),
 			},
 			trashBackup: {
 				findMany: vi.fn().mockResolvedValue(options.currentSnapshots ?? []),
@@ -1164,6 +1190,32 @@ describe("restoreDatabase — current coordination preservation", () => {
 		);
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
+
+	it.each(["PENDING", "SUCCESS"])(
+		"rejects a restore that omits current unrolled %s naming recovery",
+		async (status) => {
+			const { prisma, firstDelete } = makeRestorePrisma({
+				currentNaming: [
+					{
+						id: `naming-${status.toLowerCase()}`,
+						instanceId: "instance-1",
+						userId: "user-1",
+						status,
+						rolledBack: false,
+						resolvedPayload: "{}",
+						previousConfig: "{}",
+						connectionGeneration: 2,
+						connectionStateToken: "connection-token",
+					},
+				],
+			});
+
+			await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
+				`current active naming recovery naming-${status.toLowerCase()}`,
+			);
+			expect(firstDelete).not.toHaveBeenCalled();
+		},
+	);
 
 	it("rejects a restore that changes a current unresolved score intent", async () => {
 		const currentOverride = {

@@ -105,6 +105,7 @@ export interface BackupData {
 		// TRaSH Guides history/audit (useful for tracking)
 		trashSyncHistory?: unknown[];
 		templateDeploymentHistory?: unknown[];
+		namingDeployHistory?: unknown[];
 
 		// TRaSH instance backups (ARR config snapshots) - optional, can be large.
 		// Recent snapshots follow BackupSettings.includeTrashBackups; snapshots

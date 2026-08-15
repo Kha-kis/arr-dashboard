@@ -109,6 +109,24 @@ const SCORE_INTENT_FIELDS = [
 	"updatedAt",
 ] as const;
 
+const ACTIVE_NAMING_FIELDS = [
+	"userId",
+	"instanceId",
+	"status",
+	"selectedPresets",
+	"resolvedPayload",
+	"deployedHash",
+	"previousConfig",
+	"changedFields",
+	"totalFields",
+	"errorMessage",
+	"rolledBack",
+	"rolledBackAt",
+	"connectionGeneration",
+	"connectionStateToken",
+	"deployedAt",
+] as const;
+
 function recordsById(value: unknown): Map<string, CoordinationRow> {
 	const records = new Map<string, CoordinationRow>();
 	if (!Array.isArray(value)) return records;
@@ -208,6 +226,27 @@ function assertCurrentScoreIntentPreserved(
 	}
 }
 
+function assertCurrentActiveNamingPreserved(
+	current: CoordinationRow,
+	incomingRows: Map<string, CoordinationRow>,
+): void {
+	const incoming = incomingRows.get(current.id);
+	if (!incoming) {
+		throw new Error(
+			`Cannot restore backup: current active naming recovery ${current.id} is missing from incoming data`,
+		);
+	}
+	for (const field of ACTIVE_NAMING_FIELDS) {
+		if (
+			comparableCoordinationValue(incoming[field]) !== comparableCoordinationValue(current[field])
+		) {
+			throw new Error(
+				`Cannot restore backup: current active naming recovery ${current.id} changed ${field}`,
+			);
+		}
+	}
+}
+
 async function validateCurrentCoordinationPreserved(
 	tx: Prisma.TransactionClient,
 	data: BackupData["data"],
@@ -243,10 +282,14 @@ async function validateCurrentCoordinationPreserved(
 	const currentScoreIntents = (await tx.instanceQualityProfileOverride.findMany({
 		where: { status: { in: ["PENDING", "UNCERTAIN"] } },
 	})) as CoordinationRow[];
+	const currentActiveNaming = (await tx.namingDeployHistory.findMany({
+		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
+	})) as CoordinationRow[];
 	const incomingRollbackRows = recordsById(data.trashSyncHistory);
 	const incomingUndeployRows = recordsById(data.templateDeploymentHistory);
 	const incomingTemplates = recordsById(data.trashTemplates);
 	const incomingScoreIntents = recordsById(data.instanceQualityProfileOverrides);
+	const incomingActiveNaming = recordsById(data.namingDeployHistory);
 
 	for (const row of currentRollbackRows) {
 		assertCurrentRowPreserved("rollback", row, incomingRollbackRows);
@@ -257,6 +300,9 @@ async function validateCurrentCoordinationPreserved(
 	}
 	for (const intent of currentScoreIntents) {
 		assertCurrentScoreIntentPreserved(intent, incomingScoreIntents);
+	}
+	for (const history of currentActiveNaming) {
+		assertCurrentActiveNamingPreserved(history, incomingActiveNaming);
 	}
 
 	const currentRecoveryRows = [
@@ -391,6 +437,9 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 			},
 		})
 	).filter(shouldPreserveDeploymentHistory);
+	const activeNamingHistory = await prisma.namingDeployHistory.findMany({
+		where: { status: { in: ["PENDING", "SUCCESS"] }, rolledBack: false },
+	});
 
 	const cappedTrashSyncHistory = skipHistory
 		? []
@@ -407,11 +456,19 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 				(take) =>
 					prisma.templateDeploymentHistory.findMany({ take, orderBy: { deployedAt: "desc" } }),
 			);
+	const cappedNamingDeployHistory = skipHistory
+		? []
+		: await fetchCappedHistory(
+				"namingDeployHistory",
+				() => prisma.namingDeployHistory.count(),
+				(take) => prisma.namingDeployHistory.findMany({ take, orderBy: { deployedAt: "desc" } }),
+			);
 	const trashSyncHistory = mergeRowsById(cappedTrashSyncHistory, nonterminalRollbackHistory);
 	const templateDeploymentHistory = mergeRowsById(
 		cappedTemplateDeploymentHistory,
 		nonterminalUndeployHistory,
 	);
+	const namingDeployHistory = mergeRowsById(cappedNamingDeployHistory, activeNamingHistory);
 
 	// Hunting feature: configs are config (always full); logs/history are operational
 	const huntConfigs = await prisma.huntConfig.findMany();
@@ -502,6 +559,7 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		// TRaSH Guides history/audit
 		trashSyncHistory,
 		templateDeploymentHistory,
+		namingDeployHistory,
 		// TRaSH instance backups (optional)
 		trashBackups,
 		// Hunting feature
@@ -536,6 +594,7 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		// TRaSH history/audit (depends on templates, instances, backups)
 		await tx.templateDeploymentHistory.deleteMany();
 		await tx.trashSyncHistory.deleteMany();
+		await tx.namingDeployHistory.deleteMany();
 
 		// TRaSH configuration (depends on templates, instances)
 		await tx.qualitySizeMapping.deleteMany();
@@ -729,6 +788,18 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 			]);
 			await tx.templateDeploymentHistory.createMany({
 				data: data.templateDeploymentHistory as Prisma.TemplateDeploymentHistoryCreateManyInput[],
+			});
+		}
+
+		if (data.namingDeployHistory && data.namingDeployHistory.length > 0) {
+			validateRecords(data.namingDeployHistory, "namingDeployHistory", [
+				"id",
+				"instanceId",
+				"userId",
+				"status",
+			]);
+			await tx.namingDeployHistory.createMany({
+				data: data.namingDeployHistory as Prisma.NamingDeployHistoryCreateManyInput[],
 			});
 		}
 

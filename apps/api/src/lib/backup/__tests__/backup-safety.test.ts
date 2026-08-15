@@ -30,6 +30,7 @@ const TABLE_NAMES = [
 	"qualitySizeMapping",
 	"trashSyncHistory",
 	"templateDeploymentHistory",
+	"namingDeployHistory",
 	"huntConfig",
 	"huntLog",
 	"huntSearchHistory",
@@ -161,7 +162,12 @@ describe("BackupService coordination safety", () => {
 				expect.objectContaining({
 					backupType: "scheduled",
 					skippedTables: ["huntLog", "huntSearchHistory"],
-					preservedTables: ["trashSyncHistory", "templateDeploymentHistory", "trashBackup"],
+					preservedTables: [
+						"trashSyncHistory",
+						"templateDeploymentHistory",
+						"namingDeployHistory",
+						"trashBackup",
+					],
 				}),
 				"Backup excluded disposable operational history while preserving nonterminal TRaSH coordination evidence",
 			);
