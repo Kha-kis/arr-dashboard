@@ -24,7 +24,7 @@ export const tautulliInfoSchema = z.looseObject({
 
 /** get_server_info — the linked Plex Media Server identity. */
 export const tautulliServerInfoSchema = z.looseObject({
-	pms_identifier: z.string(),
+	pms_identifier: z.string().optional(),
 	pms_name: z.string().optional(),
 });
 

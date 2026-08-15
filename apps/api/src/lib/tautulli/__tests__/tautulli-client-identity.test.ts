@@ -48,6 +48,21 @@ describe("TautulliClient server identity", () => {
 		});
 	});
 
+	it("uses the single compatibility fallback when get_server_info omits pms_identifier", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(success({ pms_name: "Plex" }))
+			.mockResolvedValueOnce(success([{ machine_identifier: "fallback-id", pms_name: "Plex" }]));
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(
+			new TautulliClient("http://tautulli.test", "api-key", log).getServerIdentity(),
+		).resolves.toEqual({
+			identifier: "fallback-id",
+			displayName: "Plex",
+		});
+	});
+
 	it.each([
 		[[]],
 		[[{ machine_identifier: "" }]],

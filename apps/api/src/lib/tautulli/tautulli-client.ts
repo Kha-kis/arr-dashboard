@@ -160,7 +160,7 @@ export class TautulliClient {
 	async getServerIdentity(): Promise<TautulliServerIdentity> {
 		try {
 			const serverInfo = await this.command("get_server_info", undefined, tautulliServerInfoSchema);
-			const primaryIdentifier = serverInfo.pms_identifier.trim();
+			const primaryIdentifier = serverInfo.pms_identifier?.trim();
 			if (primaryIdentifier) {
 				return {
 					identifier: primaryIdentifier,
