@@ -1372,6 +1372,32 @@ describe("DELETE /services/:id", () => {
 		});
 	});
 
+	it("cascades a backup-less sync audit after explicit manual resolution", async () => {
+		const source = makeInstance({
+			id: "inst-1",
+			service: "RADARR",
+			baseUrl: "http://radarr:7878",
+		});
+		mockRequireInstance.mockResolvedValue(source);
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([source]);
+		mockPrisma.trashSyncHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "sync-manually-resolved",
+				status: "FAILED",
+				backupId: null,
+				rolledBack: false,
+				rollbackStatus: "MANUALLY_RESOLVED",
+			},
+		]);
+
+		const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+		expect(res.statusCode).toBe(204);
+		expect(mockPrisma.serviceInstance.delete).toHaveBeenCalledWith({
+			where: { id: source.id, userId: "user-1" },
+		});
+	});
+
 	it("never migrates ARR state to another user's equivalent alias", async () => {
 		const source = makeInstance({
 			id: "inst-1",

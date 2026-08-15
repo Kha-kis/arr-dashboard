@@ -5,6 +5,7 @@ import {
 	hasPendingDeploymentMutation,
 	parseDeploymentBackupState,
 } from "./deployment-backup-state.js";
+import { isManuallyResolvedSyncHistory } from "./deployment-recovery-state.js";
 import type { DeploymentConnectionBinding } from "./deployment-target.js";
 
 export type ScoreIntentOperation = "SET_SCORE" | "RESET_SCORE";
@@ -205,6 +206,8 @@ export async function assertNoActiveDeploymentOwnership(
 			select: {
 				status: true,
 				backupId: true,
+				rolledBack: true,
+				rollbackStatus: true,
 				backup: { select: { id: true, backupData: true } },
 			},
 		}),
@@ -222,7 +225,8 @@ export async function assertNoActiveDeploymentOwnership(
 		}),
 	]);
 	const seen = new Set<string>();
-	for (const row of [...syncRows, ...deploymentRows]) {
+	const activeSyncRows = syncRows.filter((row) => !isManuallyResolvedSyncHistory(row));
+	for (const row of [...activeSyncRows, ...deploymentRows]) {
 		if (!row.backup) {
 			throw new ConflictError(
 				"This ARR connection has active deployment ownership without verifiable rollback data. Resolve that history before changing the connection.",

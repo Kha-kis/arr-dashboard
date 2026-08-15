@@ -1,5 +1,6 @@
 import { ConflictError } from "../errors.js";
 import type { PrismaClient } from "../prisma.js";
+import { isManuallyResolvedSyncHistory } from "./deployment-recovery-state.js";
 
 export type ReconciledRecoveryClaimCounts = {
 	rollback: number;
@@ -107,7 +108,13 @@ export async function assertNoActiveTrashRecoveryForInstance(
 	const [rollbackHistory, undeployHistory] = await Promise.all([
 		prisma.trashSyncHistory.findMany({
 			where: { userId, instanceId },
-			select: { id: true, status: true, rolledBack: true, rollbackStatus: true },
+			select: {
+				id: true,
+				status: true,
+				backupId: true,
+				rolledBack: true,
+				rollbackStatus: true,
+			},
 		}),
 		prisma.templateDeploymentHistory.findMany({
 			where: { userId, instanceId },
@@ -116,7 +123,9 @@ export async function assertNoActiveTrashRecoveryForInstance(
 	]);
 
 	const hasActiveSync = rollbackHistory.some(
-		(history) => !(history.rolledBack === true && history.rollbackStatus === "COMPLETED"),
+		(history) =>
+			!isManuallyResolvedSyncHistory(history) &&
+			!(history.rolledBack === true && history.rollbackStatus === "COMPLETED"),
 	);
 	const hasActiveDeployment = undeployHistory.some(
 		(history) => !(history.rolledBack === true && history.undeployStatus === "COMPLETED"),

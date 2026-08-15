@@ -210,6 +210,7 @@ describe("sync rollback route", () => {
 			status: "UNCERTAIN",
 			backupId: null,
 			backup: null,
+			rollbackStatus: null,
 			errorLog: "The application restarted before a deployment ledger was linked.",
 		};
 		syncFindFirst.mockResolvedValue(syncRecord);
@@ -229,9 +230,13 @@ describe("sync rollback route", () => {
 				userId,
 				status: "UNCERTAIN",
 				backupId: null,
+				rolledBack: false,
+				rollbackStatus: null,
 			},
 			data: expect.objectContaining({
 				status: "FAILED",
+				rolledBack: false,
+				rollbackStatus: "MANUALLY_RESOLVED",
 				errorLog: expect.stringContaining("Manual review acknowledged"),
 			}),
 		});
@@ -258,7 +263,13 @@ describe("sync rollback route", () => {
 
 		expect(response.statusCode, response.body).toBe(200);
 		expect(syncFindMany).toHaveBeenCalledWith({
-			where: { userId, status: "UNCERTAIN", backupId: null },
+			where: {
+				userId,
+				status: "UNCERTAIN",
+				backupId: null,
+				rolledBack: false,
+				rollbackStatus: null,
+			},
 			select: {
 				id: true,
 				templateId: true,
@@ -302,6 +313,7 @@ describe("sync rollback route", () => {
 			status: "UNCERTAIN",
 			backupId: null,
 			backup: null,
+			rollbackStatus: null,
 		};
 		syncFindFirst.mockResolvedValue(syncRecord);
 		syncUpdate.mockResolvedValue({ count: 0 });

@@ -4,6 +4,7 @@ import {
 	type DeploymentBackupState,
 	parseDeploymentBackupState,
 } from "./deployment-backup-state.js";
+import { isManuallyResolvedSyncHistory } from "./deployment-recovery-state.js";
 import {
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
@@ -190,6 +191,8 @@ export async function resolveActiveDeploymentOwnership(
 				templateId: true,
 				backupId: true,
 				status: true,
+				rolledBack: true,
+				rollbackStatus: true,
 				startedAt: true,
 				backup: { select: { backupData: true } },
 			},
@@ -201,6 +204,7 @@ export async function resolveActiveDeploymentOwnership(
 		...deploymentRows.map((item) => ({ ...item, startedAt: item.deployedAt })),
 		...syncRows,
 	]) {
+		if (isManuallyResolvedSyncHistory(row)) continue;
 		if (!row.backupId || !row.templateId || !row.backup) {
 			throw new ConflictError(
 				"An unrolled deployment ownership relation is missing, so this operation was stopped.",

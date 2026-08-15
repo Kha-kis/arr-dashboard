@@ -23,6 +23,7 @@ import {
 } from "../../lib/trash-guides/deployment-custom-format-state.js";
 import { restoreNamingDeployment } from "../../lib/trash-guides/deployment-naming-state.js";
 import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
+import { MANUALLY_RESOLVED_ROLLBACK_STATUS } from "../../lib/trash-guides/deployment-recovery-state.js";
 import {
 	type QualityProfileRollbackState,
 	rollbackQualityProfileDeployment,
@@ -494,7 +495,13 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	app.get("/review-needed", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const syncs = await app.prisma.trashSyncHistory.findMany({
-			where: { userId, status: "UNCERTAIN", backupId: null },
+			where: {
+				userId,
+				status: "UNCERTAIN",
+				backupId: null,
+				rolledBack: false,
+				rollbackStatus: null,
+			},
 			select: {
 				id: true,
 				templateId: true,
@@ -589,13 +596,24 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 		const userId = request.currentUser!.id;
 		const sync = await app.prisma.trashSyncHistory.findFirst({
 			where: { id: syncId, userId },
-			select: { status: true, backupId: true, errorLog: true },
+			select: {
+				status: true,
+				backupId: true,
+				rolledBack: true,
+				rollbackStatus: true,
+				errorLog: true,
+			},
 		});
 
 		if (!sync) {
 			return reply.status(404).send({ error: "NOT_FOUND", message: "Sync not found" });
 		}
-		if (sync.status !== "UNCERTAIN" || sync.backupId !== null) {
+		if (
+			sync.status !== "UNCERTAIN" ||
+			sync.backupId !== null ||
+			sync.rolledBack !== false ||
+			sync.rollbackStatus !== null
+		) {
 			return reply.status(409).send({
 				error: "REVIEW_NOT_ACKNOWLEDGEABLE",
 				message: "Only an uncertain sync without a rollback ledger can be acknowledged manually.",
@@ -605,9 +623,18 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 		const reviewedAt = new Date();
 		const reviewMessage = `Manual review acknowledged at ${reviewedAt.toISOString()}. No automatic rollback was performed; the administrator accepted the current ARR state.`;
 		const updated = await app.prisma.trashSyncHistory.updateMany({
-			where: { id: syncId, userId, status: "UNCERTAIN", backupId: null },
+			where: {
+				id: syncId,
+				userId,
+				status: "UNCERTAIN",
+				backupId: null,
+				rolledBack: false,
+				rollbackStatus: null,
+			},
 			data: {
 				status: "FAILED",
+				rolledBack: false,
+				rollbackStatus: MANUALLY_RESOLVED_ROLLBACK_STATUS,
 				completedAt: reviewedAt,
 				errorLog: sync.errorLog ? `${sync.errorLog}\n${reviewMessage}` : reviewMessage,
 			},

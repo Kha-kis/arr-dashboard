@@ -217,4 +217,38 @@ describe("assertNoActiveTrashRecoveryForInstance", () => {
 			assertNoActiveTrashRecoveryForInstance(prisma, "user-1", "instance-1"),
 		).resolves.toBeUndefined();
 	});
+
+	it("allows deletion after a backup-less uncertain sync is manually resolved", async () => {
+		const { prisma, trashSyncHistory } = createRecoveryPrisma();
+		trashSyncHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "sync-manually-resolved",
+				status: "FAILED",
+				backupId: null,
+				rolledBack: false,
+				rollbackStatus: "MANUALLY_RESOLVED",
+			},
+		]);
+
+		await expect(
+			assertNoActiveTrashRecoveryForInstance(prisma, "user-1", "instance-1"),
+		).resolves.toBeUndefined();
+	});
+
+	it("keeps malformed manual-resolution markers blocked", async () => {
+		const { prisma, trashSyncHistory } = createRecoveryPrisma();
+		trashSyncHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "sync-malformed-resolution",
+				status: "SUCCESS",
+				backupId: null,
+				rolledBack: false,
+				rollbackStatus: "MANUALLY_RESOLVED",
+			},
+		]);
+
+		await expect(
+			assertNoActiveTrashRecoveryForInstance(prisma, "user-1", "instance-1"),
+		).rejects.toThrow(/active TRaSH recovery work/i);
+	});
 });

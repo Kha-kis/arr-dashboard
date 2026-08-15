@@ -472,6 +472,32 @@ describe("active deployment ownership", () => {
 		).rejects.toThrow("ownership relation is missing");
 	});
 
+	it("ignores a backup-less sync after explicit manual resolution", async () => {
+		const prisma = {
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			trashSyncHistory: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						templateId: null,
+						backupId: null,
+						status: "FAILED",
+						startedAt: new Date("2026-01-01"),
+						backup: null,
+						rolledBack: false,
+						rollbackStatus: "MANUALLY_RESOLVED",
+					},
+				]),
+			},
+		};
+
+		await expect(
+			resolveActiveDeploymentOwnership(prisma as never, "user", ["instance"], {
+				backupId: "target",
+				templateId: "template-1",
+			}),
+		).rejects.toThrow("newer deployment");
+	});
+
 	it("fails closed when a backup ID points to a missing backup row", async () => {
 		const rows = [
 			{

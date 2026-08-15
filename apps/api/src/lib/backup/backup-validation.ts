@@ -6,6 +6,7 @@
  */
 
 import type { BackupData } from "@arr/shared";
+import { isManuallyResolvedSyncHistory } from "../trash-guides/deployment-recovery-state.js";
 import type { EncryptedBackupEnvelope } from "./backup-crypto.js";
 
 export const BACKUP_VERSION = "1.1";
@@ -16,6 +17,7 @@ const SUPPORTED_BACKUP_VERSIONS = new Set([LEGACY_BACKUP_VERSION, BACKUP_VERSION
 type CoordinationRecord = Record<string, unknown>;
 
 type CoordinationState = {
+	backupId?: unknown;
 	rollbackStatus?: unknown;
 	undeployStatus?: unknown;
 	status?: unknown;
@@ -34,6 +36,9 @@ const NONTERMINAL_SYNC_STATUSES = new Set(["IN_PROGRESS", "RUNNING"]);
 const NONTERMINAL_DEPLOYMENT_STATUSES = new Set(["PARTIAL_UNDEPLOY", "IN_PROGRESS"]);
 
 export function isNonterminalRollback(record: CoordinationState): boolean {
+	if (isManuallyResolvedSyncHistory(record)) {
+		return false;
+	}
 	if (record.rolledBack === true || record.rollbackStatus === "COMPLETED") {
 		return false;
 	}

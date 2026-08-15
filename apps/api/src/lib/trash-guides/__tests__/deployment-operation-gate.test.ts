@@ -741,6 +741,27 @@ describe("assertNoActiveDeploymentOwnership", () => {
 		).resolves.toBeUndefined();
 	});
 
+	it("allows a connection change after a backup-less sync is manually resolved", async () => {
+		const prisma = {
+			trashSyncHistory: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						status: "FAILED",
+						backupId: null,
+						backup: null,
+						rolledBack: false,
+						rollbackStatus: "MANUALLY_RESOLVED",
+					},
+				]),
+			},
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			assertNoActiveDeploymentOwnership(prisma as never, "user-1", ["instance-1"]),
+		).resolves.toBeUndefined();
+	});
+
 	it("blocks connection replacement when an unrolled history lost its backup relation", async () => {
 		const prisma = {
 			trashSyncHistory: {
