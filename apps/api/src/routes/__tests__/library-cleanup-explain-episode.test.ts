@@ -32,6 +32,12 @@ const plexInstance = {
 	encryptedHttpAuthCredentials: null,
 	httpAuthEncryptionIv: null,
 	enabled: true,
+	expectedIdentity: "plex-machine-1",
+	identityKind: "plex-machine-identifier",
+	identityStatus: "VERIFIED",
+	identityVerifiedAt: new Date(NOW.getTime() - 1_000),
+	connectionGeneration: 4,
+	identityGeneration: 9,
 	updatedAt: NOW,
 };
 
@@ -80,6 +86,8 @@ beforeEach(async () => {
 			ratingKey: "plex-episode-202",
 			refreshedAt: NOW,
 			sourceFingerprint: plexConnectionFingerprint(plexInstance),
+			connectionGeneration: 4,
+			identityGeneration: 9,
 		},
 	]);
 	libraryCleanupConfigFindUnique = vi.fn().mockResolvedValue({
@@ -147,7 +155,12 @@ beforeEach(async () => {
 					instanceId: PLEX_INSTANCE_ID,
 					lastRefreshedAt: NOW,
 					lastResult: "success",
+					lastErrorMessage: null,
+					lastAttemptResult: "success",
+					lastAttemptErrorMessage: null,
 					itemCount: 1,
+					connectionGeneration: 4,
+					identityGeneration: 9,
 				},
 			]),
 		},
