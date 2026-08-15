@@ -413,7 +413,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			expect.objectContaining({
 				update: expect.objectContaining({
 					lastAttemptResult: "error",
-					lastErrorMessage: "upstream Plex timeout",
+					lastAttemptErrorMessage: "upstream Plex timeout",
 				}),
 			}),
 		);

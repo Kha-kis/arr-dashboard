@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	expectPreservedSuccessWithSanitizedDecryptFailure,
+	watchSchedulerDecryptFailureFixture,
+} from "./watch-scheduler-decrypt-failure-fixture.js";
 
 const { createPublicationSnapshot, runSingleFlight } = vi.hoisted(() => ({
 	createPublicationSnapshot: vi.fn(),
@@ -20,32 +24,29 @@ describe("refreshScheduledJellyfinCacheInstance", () => {
 		vi.clearAllMocks();
 	});
 
-	it("preserves status when the owned snapshot cannot be decrypted", async () => {
-		const failure = new Error("stored credential could not be decrypted");
+	it("records a sanitized failed attempt without replacing the prior success on decrypt failure", async () => {
+		const state = watchSchedulerDecryptFailureFixture("JELLYFIN");
 		createPublicationSnapshot.mockImplementation(() => {
-			throw failure;
+			throw new Error("stored credential secret-token could not be decrypted");
 		});
-		const app = {
-			encryptor: {},
-			prisma: {},
-			log: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
-		};
-		const instance = {
-			id: "jellyfin-1",
-			label: "Living Room",
-			service: "JELLYFIN",
-			baseUrl: "https://jellyfin.example.com",
-			encryptedApiKey: "encrypted-key",
-			encryptionIv: "key-iv",
-			encryptedHttpAuthCredentials: null,
-			httpAuthEncryptionIv: null,
-			connectionGeneration: 7,
-		};
 
-		await refreshScheduledJellyfinCacheInstance(app as never, instance as never);
+		await refreshScheduledJellyfinCacheInstance(state.app as never, state.instance as never);
 
 		expect(runSingleFlight).not.toHaveBeenCalled();
-		expect(app.log.error).toHaveBeenCalledOnce();
+		expectPreservedSuccessWithSanitizedDecryptFailure(state);
+	});
+
+	it("does not record decrypt failure after a concurrent identity-only replacement", async () => {
+		const state = watchSchedulerDecryptFailureFixture("EMBY");
+		createPublicationSnapshot.mockImplementation(() => {
+			state.current.identityGeneration++;
+			throw new Error("stored credential secret-token could not be decrypted");
+		});
+
+		await refreshScheduledJellyfinCacheInstance(state.app as never, state.instance as never);
+
+		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		expect(state.status.lastAttemptResult).toBe("success");
 	});
 
 	it("does not duplicate failures already observed by the single-flight wrapper", async () => {

@@ -18,7 +18,6 @@ vi.mock("../../lib/plex/plex-episode-cache-refresher.js", () => ({
 }));
 vi.mock("../../lib/services/provider-cache-status.js", () => ({
 	recordPlexCacheRefreshFailure: mocks.recordFailure,
-	recordProviderCacheRefreshFailure: mocks.recordFailure,
 }));
 
 import plexCacheSchedulerPlugin from "../plex-cache-scheduler.js";

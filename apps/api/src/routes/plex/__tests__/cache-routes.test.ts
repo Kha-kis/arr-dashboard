@@ -18,7 +18,6 @@ vi.mock("../../../lib/plex/plex-helpers.js", () => ({
 }));
 vi.mock("../../../lib/services/provider-cache-status.js", () => ({
 	recordPlexCacheRefreshFailure: mocks.recordFailure,
-	recordProviderCacheRefreshFailure: mocks.recordFailure,
 }));
 
 import { registerCacheRoutes } from "../cache-routes.js";

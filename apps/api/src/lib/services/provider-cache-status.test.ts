@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	recordPlexCacheRefreshFailure,
-	recordProviderCacheRefreshFailure,
 	recordWatchProviderCacheRefreshFailure,
 } from "./provider-cache-status.js";
 import type { OwnedProviderPublicationSnapshot } from "./provider-identity-guard.js";
@@ -12,39 +11,6 @@ afterEach(() => {
 	vi.unstubAllEnvs();
 	vi.clearAllMocks();
 });
-
-function fixture(current: {
-	service: "PLEX" | "TAUTULLI" | "JELLYFIN";
-	enabled: boolean;
-	connectionGeneration: number;
-}) {
-	const order: string[] = [];
-	const tx = {
-		$queryRawUnsafe: vi.fn(async () => {
-			order.push("lock");
-			return [];
-		}),
-		serviceInstance: {
-			findUnique: vi.fn(async () => {
-				order.push("identity");
-				return current;
-			}),
-		},
-		cacheRefreshStatus: {
-			upsert: vi.fn(async () => {
-				order.push("failure");
-				return {};
-			}),
-		},
-	};
-	const prisma = {
-		$transaction: vi.fn(
-			async (callback: (transaction: typeof tx) => Promise<unknown>, _options?: unknown) =>
-				callback(tx),
-		),
-	};
-	return { prisma, tx, order };
-}
 
 function plexSnapshot(
 	overrides: Partial<OwnedProviderPublicationSnapshot> = {},
@@ -96,46 +62,6 @@ function publicationFixture(
 	};
 	return { prisma, tx };
 }
-
-describe("recordProviderCacheRefreshFailure", () => {
-	it("discards a failure from an outgoing provider generation", async () => {
-		const state = fixture({ service: "JELLYFIN", enabled: true, connectionGeneration: 8 });
-
-		const result = await recordProviderCacheRefreshFailure(
-			state.prisma as never,
-			"instance-1",
-			"plex",
-			"old Plex failed",
-			{ service: "PLEX", connectionGeneration: 7 },
-			log,
-		);
-
-		expect(result).toBe("superseded");
-		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
-	});
-
-	it("locks and revalidates the current PostgreSQL generation before recording failure", async () => {
-		vi.stubEnv("DATABASE_URL", "postgresql://database.example.com/arr");
-		const state = fixture({ service: "TAUTULLI", enabled: true, connectionGeneration: 4 });
-
-		const result = await recordProviderCacheRefreshFailure(
-			state.prisma as never,
-			"instance-1",
-			"tautulli",
-			"request failed",
-			{ service: "TAUTULLI", connectionGeneration: 4 },
-			log,
-		);
-
-		expect(result).toBe("recorded");
-		expect(state.order).toEqual(["lock", "identity", "failure"]);
-		expect(state.tx.$queryRawUnsafe).toHaveBeenCalledWith(
-			'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
-			"instance-1",
-		);
-		expect(state.prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), undefined);
-	});
-});
 
 describe("recordPlexCacheRefreshFailure", () => {
 	it.each(["plex", "plex_episode"] as const)(
@@ -270,6 +196,34 @@ describe("recordWatchProviderCacheRefreshFailure", () => {
 				create: expect.objectContaining({
 					connectionGeneration: 4,
 					identityGeneration: 9,
+				}),
+			}),
+		);
+	});
+
+	it("records a current failed attempt without replacing prior success fields", async () => {
+		const attempt = plexSnapshot({ id: "JELLYFIN-1", service: "JELLYFIN" });
+		const state = publicationFixture(attempt, {
+			connectionGeneration: attempt.connectionGeneration,
+			identityGeneration: attempt.identityGeneration,
+		});
+
+		const result = await recordWatchProviderCacheRefreshFailure(
+			state.prisma as never,
+			"jellyfin",
+			"credential decrypt failed",
+			attempt,
+			log,
+		);
+
+		expect(result).toBe("recorded");
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.not.objectContaining({
+					lastRefreshedAt: expect.anything(),
+					lastResult: expect.anything(),
+					lastErrorMessage: expect.anything(),
+					itemCount: expect.anything(),
 				}),
 			}),
 		);

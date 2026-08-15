@@ -20,6 +20,7 @@ import type { Encryptor } from "../auth/encryption.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import {
+	createProviderPublicationAuthority,
 	type OwnedProviderPublicationSnapshot,
 	ProviderIdentityGuardError,
 	withGuardedProviderPublication,
@@ -205,25 +206,13 @@ export function createOwnedPlexPublicationSnapshot(
 		throw new Error("Plex publication requires a Plex service instance");
 	}
 	return {
-		id: instance.id,
-		userId: instance.userId,
-		service: "PLEX",
+		...createProviderPublicationAuthority(instance),
 		label: instance.label,
-		baseUrl: instance.baseUrl,
 		apiKey: encryptor.decrypt({
 			value: instance.encryptedApiKey,
 			iv: instance.encryptionIv,
 		}),
 		httpAuthHeaders: getStoredHttpAuthHeaders(encryptor, instance),
-		enabled: instance.enabled,
-		encryptedApiKey: instance.encryptedApiKey,
-		encryptionIv: instance.encryptionIv,
-		encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
-		httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
-		expectedIdentity: instance.expectedIdentity,
-		identityStatus: instance.identityStatus,
-		connectionGeneration: instance.connectionGeneration,
-		identityGeneration: instance.identityGeneration,
 	};
 }
 
@@ -726,55 +715,4 @@ export async function collectPlexCacheLiveEvidence(
 		inventoryTargets:
 			complete && errors === 0 && completedAt ? verifiedInventoryTargets : undefined,
 	};
-}
-
-// ============================================================================
-// Stale Row Eviction
-// ============================================================================
-
-/**
- * Chunk size for `id: { in: ... }` deletes. Stays well below SQLite's
- * historical SQLITE_MAX_VARIABLE_NUMBER (999) so no single DELETE statement
- * can exceed the parameter limit, regardless of library size or SQLite build.
- *
- * Exported for tests.
- */
-export const STALE_EVICTION_CHUNK_SIZE = 500;
-
-/**
- * Evict rows for `instanceId` whose `id` is not in `keepIds`.
- *
- * Reads existing row ids, diffs in memory, then issues bounded `id: { in: chunk }`
- * deletes. This avoids Prisma P2029 on SQLite when `keepIds` would have been a
- * giant `notIn` parameter list (issue #323).
- *
- * Exported for tests.
- */
-export async function evictStaleRows(
-	prisma: PrismaClient,
-	instanceId: string,
-	keepIds: string[],
-): Promise<number> {
-	const existing = await prisma.plexCache.findMany({
-		where: { instanceId },
-		select: { id: true },
-	});
-
-	const keepSet = new Set(keepIds);
-	const staleIds: string[] = [];
-	for (const row of existing) {
-		if (!keepSet.has(row.id)) staleIds.push(row.id);
-	}
-
-	if (staleIds.length === 0) return 0;
-
-	let totalDeleted = 0;
-	for (let i = 0; i < staleIds.length; i += STALE_EVICTION_CHUNK_SIZE) {
-		const chunk = staleIds.slice(i, i + STALE_EVICTION_CHUNK_SIZE);
-		const { count } = await prisma.plexCache.deleteMany({
-			where: { instanceId, id: { in: chunk } },
-		});
-		totalDeleted += count;
-	}
-	return totalDeleted;
 }

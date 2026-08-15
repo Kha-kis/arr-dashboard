@@ -1,33 +1,69 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	expectPreservedSuccessWithSanitizedDecryptFailure,
+	watchSchedulerDecryptFailureFixture,
+} from "./watch-scheduler-decrypt-failure-fixture.js";
 
 const mocks = vi.hoisted(() => ({
 	createSnapshot: vi.fn(),
 	refresh: vi.fn(),
-	recordFailure: vi.fn(),
 }));
 
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
 	createOwnedTautulliPublicationSnapshot: mocks.createSnapshot,
 	refreshTautulliCache: mocks.refresh,
 }));
-vi.mock("../../lib/services/provider-cache-status.js", () => ({
-	recordWatchProviderCacheRefreshFailure: mocks.recordFailure,
-}));
 
 import { refreshScheduledTautulliCacheInstance } from "../tautulli-cache-scheduler.js";
 
-const app = {
-	encryptor: {},
-	prisma: {},
-	log: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
+const publicationInstance = {
+	id: "tautulli-1",
+	userId: "user-1",
+	service: "TAUTULLI",
+	label: "TAUTULLI",
+	baseUrl: "https://tautulli.example.com",
+	apiKey: "decrypted",
+	httpAuthHeaders: {},
+	enabled: true,
+	encryptedApiKey: "encrypted-secret-token",
+	encryptionIv: "token-iv",
+	encryptedHttpAuthCredentials: "encrypted-proxy-secret",
+	httpAuthEncryptionIv: "proxy-iv",
+	expectedIdentity: "tautulli-server-a",
+	identityStatus: "VERIFIED",
+	connectionGeneration: 4,
+	identityGeneration: 9,
 };
-const storedInstance = { id: "tautulli-1", label: "Tautulli" };
-const publicationInstance = { id: "tautulli-1", identityGeneration: 8 };
 
 describe("refreshScheduledTautulliCacheInstance", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mocks.createSnapshot.mockReturnValue(publicationInstance);
+	});
+
+	it("records a sanitized failed attempt without replacing the prior success on decrypt failure", async () => {
+		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
+		mocks.createSnapshot.mockImplementation(() => {
+			throw new Error("secret-token decrypt failed");
+		});
+
+		await refreshScheduledTautulliCacheInstance(state.app as never, state.instance as never);
+
+		expect(mocks.refresh).not.toHaveBeenCalled();
+		expectPreservedSuccessWithSanitizedDecryptFailure(state);
+	});
+
+	it("does not record decrypt failure after a concurrent proxy credential change", async () => {
+		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
+		mocks.createSnapshot.mockImplementation(() => {
+			state.current.encryptedHttpAuthCredentials = "replacement-proxy-ciphertext";
+			throw new Error("proxy-secret decrypt failed");
+		});
+
+		await refreshScheduledTautulliCacheInstance(state.app as never, state.instance as never);
+
+		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		expect(state.status.lastAttemptResult).toBe("success");
 	});
 
 	it("does not record a superseded refresh as a failure", async () => {
@@ -39,14 +75,15 @@ describe("refreshScheduledTautulliCacheInstance", () => {
 			superseded: true,
 		});
 
-		await refreshScheduledTautulliCacheInstance(app as never, storedInstance as never);
+		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
+		await refreshScheduledTautulliCacheInstance(state.app as never, state.instance as never);
 
 		expect(mocks.refresh).toHaveBeenCalledWith({
-			prisma: app.prisma,
+			prisma: state.app.prisma,
 			instance: publicationInstance,
-			log: app.log,
+			log: state.app.log,
 		});
-		expect(mocks.recordFailure).not.toHaveBeenCalled();
+		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("records incomplete attempts with the exact publication snapshot", async () => {
@@ -57,14 +94,10 @@ describe("refreshScheduledTautulliCacheInstance", () => {
 			errorMessages: ["history failed"],
 		});
 
-		await refreshScheduledTautulliCacheInstance(app as never, storedInstance as never);
+		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
+		await refreshScheduledTautulliCacheInstance(state.app as never, state.instance as never);
 
-		expect(mocks.recordFailure).toHaveBeenCalledWith(
-			app.prisma,
-			"tautulli",
-			"history failed",
-			publicationInstance,
-			app.log,
-		);
+		expect(state.status.lastAttemptResult).toBe("error");
+		expect(state.status.lastAttemptErrorMessage).toBe("history failed");
 	});
 });

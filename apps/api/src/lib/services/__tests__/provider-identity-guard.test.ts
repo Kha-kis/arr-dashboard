@@ -10,9 +10,10 @@ vi.mock("../service-identity.js", async (importOriginal) => ({
 }));
 
 import {
+	createProviderPublicationAuthority,
+	hasAuthoritativeProviderCacheGeneration,
 	ProviderIdentityGuardError,
 	type ProviderIdentityGuardOptions,
-	hasAuthoritativeProviderCacheGeneration,
 	withGuardedProviderPublication,
 } from "../provider-identity-guard.js";
 
@@ -91,12 +92,37 @@ function expectGuardError(error: unknown, code: ProviderIdentityGuardError["code
 }
 
 describe("withGuardedProviderPublication", () => {
+	it("builds stored publication authority without decrypted credentials", () => {
+		const authority = createProviderPublicationAuthority({
+			...instance(),
+			label: "Primary Plex",
+		} as never);
+
+		expect(authority).toEqual({
+			id: "provider-1",
+			userId: "user-1",
+			service: "PLEX",
+			enabled: true,
+			expectedIdentity: "plex-machine-a",
+			identityStatus: "VERIFIED",
+			connectionGeneration: 4,
+			identityGeneration: 8,
+			baseUrl: "http://plex-a.test",
+			encryptedApiKey: "cipher-a",
+			encryptionIv: "iv-a",
+			encryptedHttpAuthCredentials: "proxy-cipher-a",
+			httpAuthEncryptionIv: "proxy-iv-a",
+		});
+		expect(authority).not.toHaveProperty("apiKey");
+		expect(authority).not.toHaveProperty("httpAuthHeaders");
+	});
+
 	it("does not expose an identity reader in production options", () => {
 		const options: ProviderIdentityGuardOptions = {};
-		if (false) {
-			// @ts-expect-error Production callers cannot replace the live identity reader.
-			options.readIdentity = vi.fn();
-		}
+		const optionsHaveNoIdentityReader: "readIdentity" extends keyof ProviderIdentityGuardOptions
+			? false
+			: true = true;
+		expect(optionsHaveNoIdentityReader).toBe(true);
 		expect(options).not.toHaveProperty("readIdentity");
 	});
 

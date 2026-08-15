@@ -19,6 +19,7 @@ import type { Encryptor } from "../auth/encryption.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import {
+	createProviderPublicationAuthority,
 	type OwnedProviderPublicationSnapshot,
 	ProviderIdentityGuardError,
 	withGuardedProviderPublication,
@@ -110,22 +111,10 @@ export function createOwnedJellyfinPublicationSnapshot(
 		throw new Error("Jellyfin publication requires a Jellyfin or Emby service instance");
 	}
 	return {
-		id: instance.id,
-		userId: instance.userId,
-		service: instance.service,
+		...createProviderPublicationAuthority(instance),
 		label: instance.label,
-		baseUrl: instance.baseUrl,
 		apiKey: encryptor.decrypt({ value: instance.encryptedApiKey, iv: instance.encryptionIv }),
 		httpAuthHeaders: getStoredHttpAuthHeaders(encryptor, instance),
-		enabled: instance.enabled,
-		encryptedApiKey: instance.encryptedApiKey,
-		encryptionIv: instance.encryptionIv,
-		encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
-		httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
-		expectedIdentity: instance.expectedIdentity,
-		identityStatus: instance.identityStatus,
-		connectionGeneration: instance.connectionGeneration,
-		identityGeneration: instance.identityGeneration,
 	};
 }
 

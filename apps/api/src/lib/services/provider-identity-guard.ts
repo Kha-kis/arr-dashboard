@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { Prisma, PrismaClient } from "../prisma.js";
+import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
 import {
 	type DecryptedOwnedServiceSnapshot,
 	type ProviderIdentityObservation,
@@ -10,10 +10,12 @@ import {
 type GuardPrisma = Pick<PrismaClient, "$transaction">;
 type PublicationAuthorityResult<T> = { matched: true; value: T } | { matched: false };
 
-/** A provider connection already scoped to the current authenticated owner. */
-export type OwnedProviderPublicationSnapshot = DecryptedOwnedServiceSnapshot & {
+/** Exact stored authority from an ownership-scoped service row; contains no plaintext credentials. */
+export type ProviderPublicationAuthority = {
 	id: string;
 	userId: string;
+	service: ProviderIdentityService;
+	baseUrl: string;
 	enabled: boolean;
 	encryptedApiKey: string;
 	encryptionIv: string;
@@ -24,6 +26,33 @@ export type OwnedProviderPublicationSnapshot = DecryptedOwnedServiceSnapshot & {
 	connectionGeneration: number;
 	identityGeneration: number;
 };
+
+/** Stored publication authority plus the plaintext connection needed for live reads. */
+export type OwnedProviderPublicationSnapshot = ProviderPublicationAuthority &
+	DecryptedOwnedServiceSnapshot;
+
+export function createProviderPublicationAuthority(
+	instance: ServiceInstance,
+): ProviderPublicationAuthority {
+	if (!isProviderIdentityService(instance.service)) {
+		throw new Error("Publication authority requires an identity-enforced provider instance");
+	}
+	return {
+		id: instance.id,
+		userId: instance.userId,
+		service: instance.service,
+		baseUrl: instance.baseUrl,
+		enabled: instance.enabled,
+		encryptedApiKey: instance.encryptedApiKey,
+		encryptionIv: instance.encryptionIv,
+		encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
+		httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
+		expectedIdentity: instance.expectedIdentity,
+		identityStatus: instance.identityStatus,
+		connectionGeneration: instance.connectionGeneration,
+		identityGeneration: instance.identityGeneration,
+	};
+}
 
 export type ProviderIdentityGuardCode =
 	| "IDENTITY_UNVERIFIED"
@@ -92,7 +121,7 @@ export async function withGuardedProviderPublication<TSnapshot, TResult>(
  */
 export async function withCurrentProviderPublicationAuthority<T>(
 	prisma: GuardPrisma,
-	instance: OwnedProviderPublicationSnapshot,
+	instance: ProviderPublicationAuthority,
 	action: (tx: Prisma.TransactionClient) => Promise<T>,
 	options: ProviderIdentityGuardOptions = {},
 ): Promise<PublicationAuthorityResult<T>> {
@@ -121,7 +150,7 @@ export async function withCurrentProviderPublicationAuthority<T>(
 /** Legacy null provenance remains displayable but cannot authorize cleanup. */
 export function hasAuthoritativeProviderCacheGeneration(
 	row: { connectionGeneration: number | null; identityGeneration: number | null } | null,
-	authority: Pick<OwnedProviderPublicationSnapshot, "connectionGeneration" | "identityGeneration">,
+	authority: Pick<ProviderPublicationAuthority, "connectionGeneration" | "identityGeneration">,
 ): boolean {
 	return (
 		row?.connectionGeneration !== null &&
@@ -141,7 +170,7 @@ export function olderProviderCacheGenerationWhere(
 	return { instanceId, connectionGeneration: { lt: connectionGeneration } };
 }
 
-function assertVerified(instance: OwnedProviderPublicationSnapshot): void {
+function assertVerified(instance: ProviderPublicationAuthority): void {
 	if (
 		!instance.enabled ||
 		instance.identityStatus !== "VERIFIED" ||
@@ -193,7 +222,7 @@ async function ensureExpectedIdentity(
 	);
 }
 
-function providerPublicationPredicate(instance: OwnedProviderPublicationSnapshot) {
+function providerPublicationPredicate(instance: ProviderPublicationAuthority) {
 	return {
 		id: instance.id,
 		userId: instance.userId,

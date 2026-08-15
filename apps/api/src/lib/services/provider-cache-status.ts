@@ -1,13 +1,8 @@
 import type { FastifyBaseLogger } from "fastify";
-import { recordCacheRefreshFailure } from "../cache-refresh-status.js";
 import type { PrismaClient } from "../prisma.js";
 import {
-	type ProviderConnectionIdentity,
-	withCurrentProviderConnection,
-} from "./provider-connection-guard.js";
-import {
 	hasAuthoritativeProviderCacheGeneration,
-	type OwnedProviderPublicationSnapshot,
+	type ProviderPublicationAuthority,
 	withCurrentProviderPublicationAuthority,
 } from "./provider-identity-guard.js";
 
@@ -19,38 +14,12 @@ export type WatchProviderCacheRefreshType =
 	| "tautulli";
 export type PlexCacheRefreshType = Extract<WatchProviderCacheRefreshType, "plex" | "plex_episode">;
 
-export async function recordProviderCacheRefreshFailure(
-	prisma: Pick<PrismaClient, "$transaction">,
-	instanceId: string,
-	cacheType: string,
-	message: string,
-	expected: ProviderConnectionIdentity,
-	log: Pick<FastifyBaseLogger, "warn">,
-): Promise<"recorded" | "superseded" | "failed"> {
-	try {
-		const result = await withCurrentProviderConnection(
-			prisma,
-			instanceId,
-			expected,
-			async (tx) =>
-				await recordCacheRefreshFailure(tx, instanceId, cacheType, message.slice(0, 500)),
-		);
-		return result.matched ? "recorded" : "superseded";
-	} catch (error) {
-		log.warn(
-			{ err: error, instanceId, cacheType },
-			"Failed to record provider cache failure status",
-		);
-		return "failed";
-	}
-}
-
 /** Record Plex failure diagnostics only for the exact full publication authority. */
 export async function recordPlexCacheRefreshFailure(
 	prisma: Pick<PrismaClient, "$transaction">,
 	cacheType: PlexCacheRefreshType,
 	message: string,
-	instance: OwnedProviderPublicationSnapshot,
+	instance: ProviderPublicationAuthority,
 	log: Pick<FastifyBaseLogger, "warn">,
 ): Promise<"recorded" | "superseded" | "failed"> {
 	return await recordWatchProviderCacheRefreshFailure(prisma, cacheType, message, instance, log);
@@ -61,7 +30,7 @@ export async function recordWatchProviderCacheRefreshFailure(
 	prisma: Pick<PrismaClient, "$transaction">,
 	cacheType: WatchProviderCacheRefreshType,
 	message: string,
-	instance: OwnedProviderPublicationSnapshot,
+	instance: ProviderPublicationAuthority,
 	log: Pick<FastifyBaseLogger, "warn">,
 ): Promise<"recorded" | "superseded" | "failed"> {
 	try {
@@ -93,7 +62,6 @@ export async function recordWatchProviderCacheRefreshFailure(
 					identityGeneration: instance.identityGeneration,
 				},
 				update: {
-					lastErrorMessage: safeMessage,
 					lastAttemptAt: attemptedAt,
 					lastAttemptResult: "error",
 					lastAttemptErrorMessage: safeMessage,
@@ -114,7 +82,7 @@ export async function recordWatchProviderCacheRefreshFailure(
 }
 
 function supportsCacheType(
-	service: OwnedProviderPublicationSnapshot["service"],
+	service: ProviderPublicationAuthority["service"],
 	cacheType: WatchProviderCacheRefreshType,
 ): boolean {
 	switch (service) {

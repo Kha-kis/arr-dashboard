@@ -15,6 +15,10 @@ import type { ServiceInstance } from "../lib/prisma.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { recordWatchProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
 import {
+	createProviderPublicationAuthority,
+	type ProviderPublicationAuthority,
+} from "../lib/services/provider-identity-guard.js";
+import {
 	createOwnedTautulliPublicationSnapshot,
 	refreshTautulliCache,
 } from "../lib/tautulli/tautulli-cache-refresher.js";
@@ -27,6 +31,7 @@ export async function refreshScheduledTautulliCacheInstance(
 	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
 	instance: ServiceInstance,
 ): Promise<void> {
+	const authority = createProviderPublicationAuthority(instance);
 	let publicationInstance: ReturnType<typeof createOwnedTautulliPublicationSnapshot> | undefined;
 	try {
 		publicationInstance = createOwnedTautulliPublicationSnapshot(app.encryptor, instance);
@@ -53,19 +58,19 @@ export async function refreshScheduledTautulliCacheInstance(
 			{ err, instanceId: instance.id, label: instance.label },
 			"Tautulli cache refresh failed for instance",
 		);
-		if (publicationInstance) {
-			await recordScheduledTautulliFailure(
-				app,
-				publicationInstance,
-				getErrorMessage(err, "Unknown error"),
-			);
-		}
+		await recordScheduledTautulliFailure(
+			app,
+			publicationInstance ?? authority,
+			publicationInstance
+				? getErrorMessage(err, "Unknown error")
+				: "Provider credentials could not be decrypted.",
+		);
 	}
 }
 
 async function recordScheduledTautulliFailure(
 	app: Pick<FastifyInstance, "prisma" | "log">,
-	publicationInstance: ReturnType<typeof createOwnedTautulliPublicationSnapshot>,
+	publicationInstance: ProviderPublicationAuthority,
 	message: string,
 ): Promise<void> {
 	try {

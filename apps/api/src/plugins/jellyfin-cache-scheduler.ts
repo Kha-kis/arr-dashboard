@@ -14,6 +14,8 @@ import {
 import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-cache-singleflight.js";
 import type { ServiceInstance } from "../lib/prisma.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+import { recordWatchProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
+import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 45_000; // 45 seconds
@@ -22,6 +24,7 @@ export async function refreshScheduledJellyfinCacheInstance(
 	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
 	instance: ServiceInstance,
 ): Promise<void> {
+	const authority = createProviderPublicationAuthority(instance);
 	let publicationInstance: ReturnType<typeof createOwnedJellyfinPublicationSnapshot>;
 	try {
 		publicationInstance = createOwnedJellyfinPublicationSnapshot(app.encryptor, instance);
@@ -29,6 +32,13 @@ export async function refreshScheduledJellyfinCacheInstance(
 		app.log.error(
 			{ err, instanceId: instance.id, label: instance.label },
 			"Jellyfin cache refresh failed for instance",
+		);
+		await recordWatchProviderCacheRefreshFailure(
+			app.prisma,
+			"jellyfin",
+			"Provider credentials could not be decrypted.",
+			authority,
+			app.log,
 		);
 		return;
 	}
