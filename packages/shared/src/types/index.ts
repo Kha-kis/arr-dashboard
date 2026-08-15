@@ -26,6 +26,7 @@ export * from "./search";
 export * from "./seerr";
 export * from "./setup-discovery";
 export * from "./setup-starters";
+export * from "./tautulli";
 export * from "./template-sharing";
 export * from "./tracearr";
 export * from "./trash-guides";

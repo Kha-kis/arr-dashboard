@@ -12,6 +12,19 @@ export const tautulliInfoSchema = z.looseObject({
 	tautulli_version: z.string(),
 });
 
+export const tautulliServerInfoSchema = z.looseObject({
+	pms_identifier: z.string().optional(),
+	pms_name: z.string().optional(),
+});
+
+export const tautulliServersInfoSchema = z.array(
+	z.looseObject({
+		machine_identifier: z.string(),
+		name: z.string().optional(),
+		pms_name: z.string().optional(),
+	}),
+);
+
 export const tautulliLibrarySchema = z.looseObject({
 	section_id: z.coerce.string(),
 	section_name: z.string(),
