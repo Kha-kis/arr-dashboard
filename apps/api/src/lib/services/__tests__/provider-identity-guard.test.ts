@@ -1,11 +1,26 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const identityModuleMocks = vi.hoisted(() => ({
+	readProviderIdentity: vi.fn(),
+}));
+
+vi.mock("../service-identity.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../service-identity.js")>()),
+	readProviderIdentity: identityModuleMocks.readProviderIdentity,
+}));
+
 import {
 	ProviderIdentityGuardError,
+	type ProviderIdentityGuardOptions,
 	hasAuthoritativeProviderCacheGeneration,
 	withGuardedProviderPublication,
 } from "../provider-identity-guard.js";
 
 const silentLog = { warn: vi.fn() } as never;
+
+beforeEach(() => {
+	identityModuleMocks.readProviderIdentity.mockReset();
+});
 
 function identity(rawIdentity = "plex-machine-a") {
 	return {
@@ -76,11 +91,21 @@ function expectGuardError(error: unknown, code: ProviderIdentityGuardError["code
 }
 
 describe("withGuardedProviderPublication", () => {
+	it("does not expose an identity reader in production options", () => {
+		const options: ProviderIdentityGuardOptions = {};
+		if (false) {
+			// @ts-expect-error Production callers cannot replace the live identity reader.
+			options.readIdentity = vi.fn();
+		}
+		expect(options).not.toHaveProperty("readIdentity");
+	});
+
 	it("publishes only after matching verified identity before and after collection", async () => {
 		const row = instance();
 		const prisma = prismaFor(row);
 		const collect = vi.fn(async () => "snapshot");
 		const publish = vi.fn(async (_tx, snapshot: string) => `${snapshot}-published`);
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
 
 		const result = await withGuardedProviderPublication(
 			prisma as never,
@@ -88,10 +113,10 @@ describe("withGuardedProviderPublication", () => {
 			silentLog,
 			collect,
 			publish,
-			{ readIdentity: vi.fn().mockResolvedValue(identity()) },
 		);
 
 		expect(result).toBe("snapshot-published");
+		expect(identityModuleMocks.readProviderIdentity).toHaveBeenCalledTimes(2);
 		expect(collect).toHaveBeenCalledOnce();
 		expect(publish).toHaveBeenCalledOnce();
 		expect(prisma.serviceInstance.findFirst).toHaveBeenLastCalledWith({
@@ -122,7 +147,6 @@ describe("withGuardedProviderPublication", () => {
 				silentLog,
 				collect,
 				vi.fn(),
-				{ readIdentity: vi.fn() },
 			),
 		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "IDENTITY_UNVERIFIED"));
 		expect(collect).not.toHaveBeenCalled();
@@ -131,11 +155,10 @@ describe("withGuardedProviderPublication", () => {
 	it("marks an owned identity mismatch without replacing its expected identity", async () => {
 		const row = instance();
 		const prisma = prismaFor(row);
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity("plex-machine-b"));
 
 		await expect(
-			withGuardedProviderPublication(prisma as never, row as never, silentLog, vi.fn(), vi.fn(), {
-				readIdentity: vi.fn().mockResolvedValue(identity("plex-machine-b")),
-			}),
+			withGuardedProviderPublication(prisma as never, row as never, silentLog, vi.fn(), vi.fn()),
 		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "IDENTITY_MISMATCH"));
 		expect(row).toMatchObject({
 			expectedIdentity: "plex-machine-a",
@@ -151,6 +174,9 @@ describe("withGuardedProviderPublication", () => {
 	it("marks a provider that changes identity during collection as mismatch", async () => {
 		const row = instance();
 		const prisma = prismaFor(row);
+		identityModuleMocks.readProviderIdentity
+			.mockResolvedValueOnce(identity("plex-machine-a"))
+			.mockResolvedValueOnce(identity("plex-machine-b"));
 
 		await expect(
 			withGuardedProviderPublication(
@@ -159,12 +185,6 @@ describe("withGuardedProviderPublication", () => {
 				silentLog,
 				vi.fn(async () => "snapshot"),
 				vi.fn(),
-				{
-					readIdentity: vi
-						.fn()
-						.mockResolvedValueOnce(identity("plex-machine-a"))
-						.mockResolvedValueOnce(identity("plex-machine-b")),
-				},
 			),
 		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "IDENTITY_MISMATCH"));
 		expect(row).toMatchObject({ expectedIdentity: "plex-machine-a", identityStatus: "MISMATCH" });
@@ -190,6 +210,7 @@ describe("withGuardedProviderPublication", () => {
 		const owned = instance();
 		const row = { ...owned };
 		const prisma = prismaFor(row);
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
 
 		await expect(
 			withGuardedProviderPublication(
@@ -201,7 +222,6 @@ describe("withGuardedProviderPublication", () => {
 					return "snapshot";
 				},
 				vi.fn(),
-				{ readIdentity: vi.fn().mockResolvedValue(identity()) },
 			),
 		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "PUBLICATION_SUPERSEDED"));
 	});
@@ -209,6 +229,7 @@ describe("withGuardedProviderPublication", () => {
 	it("rejects publication when ownership disappears during collection", async () => {
 		const owned = instance();
 		const row = { ...owned };
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
 		await expect(
 			withGuardedProviderPublication(
 				prismaFor(row) as never,
@@ -219,14 +240,15 @@ describe("withGuardedProviderPublication", () => {
 					return "snapshot";
 				},
 				vi.fn(),
-				{ readIdentity: vi.fn().mockResolvedValue(identity()) },
 			),
 		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "PUBLICATION_SUPERSEDED"));
 	});
 
 	it("preserves expected identity and status on a dependency failure, then allows retry", async () => {
 		const row = instance();
-		const reader = vi.fn().mockRejectedValueOnce(new Error("http://secret.test plaintext-a"));
+		identityModuleMocks.readProviderIdentity.mockRejectedValueOnce(
+			new Error("http://secret.test plaintext-a"),
+		);
 
 		await expect(
 			withGuardedProviderPublication(
@@ -235,12 +257,11 @@ describe("withGuardedProviderPublication", () => {
 				silentLog,
 				vi.fn(),
 				vi.fn(),
-				{ readIdentity: reader },
 			),
 		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "IDENTITY_UNAVAILABLE"));
 		expect(row).toMatchObject({ expectedIdentity: "plex-machine-a", identityStatus: "VERIFIED" });
 
-		reader.mockResolvedValue(identity());
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
 		await expect(
 			withGuardedProviderPublication(
 				prismaFor(row) as never,
@@ -248,7 +269,6 @@ describe("withGuardedProviderPublication", () => {
 				silentLog,
 				vi.fn(async () => "retry"),
 				async (_tx, snapshot) => snapshot,
-				{ readIdentity: reader },
 			),
 		).resolves.toBe("retry");
 	});

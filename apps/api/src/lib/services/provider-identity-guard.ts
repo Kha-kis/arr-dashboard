@@ -42,11 +42,6 @@ export class ProviderIdentityGuardError extends Error {
 }
 
 export type ProviderIdentityGuardOptions = {
-	/** Test-only dependency injection; production callers use the real identity reader. */
-	readIdentity?: (
-		instance: DecryptedOwnedServiceSnapshot,
-		log: FastifyBaseLogger,
-	) => Promise<ProviderIdentityObservation>;
 	now?: () => Date;
 	maxWait?: number;
 	timeout?: number;
@@ -67,12 +62,11 @@ export async function withGuardedProviderPublication<TSnapshot, TResult>(
 	options: ProviderIdentityGuardOptions = {},
 ): Promise<TResult> {
 	assertVerified(instance);
-	const readIdentity = options.readIdentity ?? readProviderIdentity;
-	const before = await observeIdentity(readIdentity, instance, log);
+	const before = await observeIdentity(instance, log);
 	await ensureExpectedIdentity(prisma, instance, before, options.now);
 
 	const snapshot = await collect();
-	const after = await observeIdentity(readIdentity, instance, log);
+	const after = await observeIdentity(instance, log);
 	await ensureExpectedIdentity(prisma, instance, after, options.now);
 
 	const postgresql = isPostgresqlDatabase();
@@ -139,12 +133,11 @@ function assertVerified(instance: OwnedProviderPublicationSnapshot): void {
 }
 
 async function observeIdentity(
-	readIdentity: NonNullable<ProviderIdentityGuardOptions["readIdentity"]>,
 	instance: OwnedProviderPublicationSnapshot,
 	log: FastifyBaseLogger,
 ): Promise<ProviderIdentityObservation> {
 	try {
-		return await readIdentity(instance, log);
+		return await readProviderIdentity(instance, log);
 	} catch {
 		throw new ProviderIdentityGuardError(
 			"IDENTITY_UNAVAILABLE",
