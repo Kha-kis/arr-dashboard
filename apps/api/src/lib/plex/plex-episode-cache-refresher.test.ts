@@ -15,6 +15,60 @@ const plexConnection = {
 };
 
 describe("refreshPlexEpisodeCache watch count", () => {
+	it("publishes a guarded empty generation when the parent has no watched shows", async () => {
+		const deleteMany = vi.fn().mockResolvedValue({ count: 3 });
+		const statusUpsert = vi.fn().mockResolvedValue({});
+		const prisma = {
+			cacheRefreshStatus: {
+				findUnique: vi.fn().mockResolvedValue({ generationId: "parent-a", lastResult: "success" }),
+			},
+			plexCache: { findMany: vi.fn().mockResolvedValue([]) },
+			plexEpisodeCache: { groupBy: vi.fn().mockResolvedValue([]) },
+			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+				callback({
+					serviceInstance: { findUnique: vi.fn().mockResolvedValue(plexConnection) },
+					plexEpisodeCache: { deleteMany, createMany: vi.fn() },
+					cacheRefreshStatus: {
+						findUnique: vi.fn().mockResolvedValue({ generationId: "parent-a" }),
+						upsert: statusUpsert,
+					},
+				}),
+			),
+		};
+		const client = {
+			getHistory: vi.fn(),
+			getAccounts: vi.fn(),
+			getEpisodes: vi.fn(),
+		};
+
+		const result = await refreshPlexEpisodeCache(
+			client as never,
+			prisma as never,
+			"plex-1",
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+			"connection-fingerprint",
+			providerConnectionIdentity(plexConnection),
+		);
+
+		expect(result).toMatchObject({
+			complete: true,
+			eligibleShows: 0,
+			refreshedShows: 0,
+			upserted: 0,
+		});
+		expect(deleteMany).toHaveBeenCalledWith({ where: { instanceId: "plex-1" } });
+		expect(statusUpsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					lastResult: "success",
+					itemCount: 0,
+					generationMetadata: JSON.stringify({ parentGenerationId: "parent-a" }),
+				}),
+			}),
+		);
+		expect(client.getHistory).not.toHaveBeenCalled();
+	});
+
 	it("does not publish a selected batch when one duplicate copy fails", async () => {
 		const upsert = vi.fn().mockResolvedValue({});
 		const prisma = {

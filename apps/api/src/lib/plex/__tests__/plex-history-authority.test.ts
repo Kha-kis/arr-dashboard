@@ -116,6 +116,29 @@ describe("PlexClient complete history authority", () => {
 		expect(fetchMock).toHaveBeenCalledTimes(3);
 	});
 
+	it("continues when Plex enforces a smaller page cap than requested", async () => {
+		const history = Array.from({ length: 125 }, (_, index) => ({
+			...historyItem(index),
+			historyKey: undefined,
+		}));
+		const fetchMock = vi.fn(async (input: string | URL | Request) => {
+			const url = new URL(input instanceof Request ? input.url : input.toString());
+			const offset = Number(url.searchParams.get("X-Plex-Container-Start") ?? "0");
+			const requested = Number(url.searchParams.get("X-Plex-Container-Size") ?? "200");
+			const page = history.slice(offset, offset + Math.min(requested, 50));
+			return response({ size: page.length, Metadata: page });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(
+			new PlexClient("http://plex.test", "token", log).getHistory({
+				maxResults: 100_000,
+				requireComplete: true,
+			}),
+		).resolves.toHaveLength(125);
+		expect(fetchMock).toHaveBeenCalledTimes(6);
+	});
+
 	it("proves a metadata-light inventory that ends on the exact safety cap", async () => {
 		const history = Array.from({ length: 400 }, (_, index) => ({
 			...historyItem(index),

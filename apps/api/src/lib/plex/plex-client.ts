@@ -567,6 +567,25 @@ export class PlexClient {
 					);
 					const terminalItems = terminalProbe.MediaContainer.Metadata ?? [];
 					const terminalContainer = terminalProbe.MediaContainer;
+					if (terminalItems.length === 1) {
+						if (
+							(terminalContainer.offset !== undefined && terminalContainer.offset !== itemCount) ||
+							(terminalContainer.size !== undefined && terminalContainer.size !== 1) ||
+							(terminalContainer.totalSize !== undefined &&
+								terminalContainer.totalSize <= itemCount)
+						) {
+							throw new Error("Plex history returned contradictory terminal-probe metadata");
+						}
+						if (terminalContainer.totalSize !== undefined) {
+							expectedTotal = terminalContainer.totalSize;
+							if (expectedTotal > maxResults) {
+								throw new Error(
+									`Plex history contains ${expectedTotal} rows, exceeding the safe ${maxResults}-row limit`,
+								);
+							}
+						}
+						continue;
+					}
 					if (
 						terminalItems.length !== 0 ||
 						(terminalContainer.offset !== undefined && terminalContainer.offset !== itemCount) ||
