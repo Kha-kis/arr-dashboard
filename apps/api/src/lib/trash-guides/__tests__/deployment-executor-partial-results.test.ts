@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ConflictError } from "../../errors.js";
 import { DeploymentExecutorService } from "../deployment-executor.js";
 import {
+	createAutomationCatchUpTemplateStateToken,
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
 	createDeploymentStateToken,
@@ -106,8 +107,17 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			validateAndPrepareDeployment: (...args: unknown[]) => Promise<unknown>;
 			createBackupAndHistory: (...args: unknown[]) => Promise<unknown>;
 		};
+		const automationTemplate = {
+			id: "template-1",
+			name: "Any",
+			configData: "{}",
+			instanceOverrides: null,
+			trashGuidesCommitHash: "current",
+			lastSyncedAt: new Date("2026-08-10T12:00:00.000Z"),
+			hasUserModifications: false,
+		};
 		vi.spyOn(privateExecutor, "validateAndPrepareDeployment").mockResolvedValue({
-			template: { id: "template-1", name: "Any" },
+			template: automationTemplate,
 			instance,
 			templateConfig: {},
 			templateCFs: [],
@@ -116,7 +126,14 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		const createBackup = vi.spyOn(privateExecutor, "createBackupAndHistory");
 
 		await expect(
-			executor.deploySingleInstanceFromAutomation("template-1", "instance-1", "user-1"),
+			executor.deploySingleInstanceFromAutomation(
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				createAutomationCatchUpTemplateStateToken(automationTemplate),
+			),
 		).resolves.toMatchObject({
 			success: false,
 			errors: [expect.stringContaining("uncertain upstream result")],

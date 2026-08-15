@@ -1009,9 +1009,13 @@ export class TemplateUpdater {
 			) {
 				continue;
 			}
-			const mapping = [...endpointGroup].sort((left, right) =>
+			const sortedMappings = [...endpointGroup].sort((left, right) =>
 				left.instanceId.localeCompare(right.instanceId),
-			)[0]!;
+			);
+			const mapping =
+				(catchUpOnly && template.lastSyncedAt
+					? sortedMappings.find((candidate) => candidate.lastSyncedAt >= template.lastSyncedAt!)
+					: undefined) ?? sortedMappings[0]!;
 			const outcomeTarget = {
 				templateId,
 				endpointKey,
@@ -1096,7 +1100,12 @@ export class TemplateUpdater {
 				continue;
 			}
 			try {
-				assertEquivalentDeploymentMappingAuthority(endpointGroup);
+				assertEquivalentDeploymentMappingAuthority(
+					endpointGroup,
+					catchUpOnly && template.lastSyncedAt
+						? { allowManagedCustomFormatLagBefore: template.lastSyncedAt }
+						: undefined,
+				);
 			} catch (error) {
 				const message = `Auto-deploy to "${mapping.instance.label}" blocked: ${getErrorMessage(error)}`;
 				log.error(
@@ -1117,22 +1126,15 @@ export class TemplateUpdater {
 				);
 			}
 			try {
-				const result = catchUpOnly
-					? await this.deploymentExecutor.deploySingleInstanceFromAutomation(
-							templateId,
-							mapping.instanceId,
-							template.userId,
-							undefined,
-							undefined,
-							template.lastSyncedAt
-								? createAutomationCatchUpTemplateStateToken(template)
-								: undefined,
-						)
-					: await this.deploymentExecutor.deploySingleInstanceFromAutomation(
-							templateId,
-							mapping.instanceId,
-							template.userId,
-						);
+				const result = await this.deploymentExecutor.deploySingleInstanceFromAutomation(
+					templateId,
+					mapping.instanceId,
+					template.userId,
+					undefined,
+					undefined,
+					createAutomationCatchUpTemplateStateToken(template),
+					catchUpOnly,
+				);
 
 				if (result.status === "UNCERTAIN") {
 					const errors =

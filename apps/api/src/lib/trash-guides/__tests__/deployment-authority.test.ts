@@ -141,6 +141,22 @@ function createFixture(
 }
 
 describe("deployment execution authority", () => {
+	it("rejects automation without an exact template-state token", async () => {
+		const { executor, createBackup } = createFixture([currentMapping()]);
+
+		await expect(
+			executor.deploySingleInstanceFromAutomation(
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				undefined as never,
+			),
+		).rejects.toThrow("template-state token");
+		expect(createBackup).not.toHaveBeenCalled();
+	});
+
 	it("rejects tokenless user execution before reading deployment state", async () => {
 		const { executor, prisma, client } = createFixture([]);
 
@@ -352,7 +368,14 @@ describe("deployment execution authority", () => {
 		);
 
 		await expect(
-			executor.deploySingleInstanceFromAutomation("template-1", "instance-1", "user-1"),
+			executor.deploySingleInstanceFromAutomation(
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				createAutomationCatchUpTemplateStateToken(template),
+			),
 		).rejects.toThrow(/Automatic deployment|older connection|conflicting deployment authority/);
 		expect(createBackup).not.toHaveBeenCalled();
 	});
@@ -361,7 +384,14 @@ describe("deployment execution authority", () => {
 		const { executor, createBackup } = createFixture([currentMapping()]);
 
 		await expect(
-			executor.deploySingleInstanceFromAutomation("template-1", "instance-1", "user-1"),
+			executor.deploySingleInstanceFromAutomation(
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				createAutomationCatchUpTemplateStateToken(template),
+			),
 		).resolves.toMatchObject({ success: false, errors: ["authority accepted"] });
 		expect(createBackup).toHaveBeenCalledOnce();
 	});
@@ -382,7 +412,14 @@ describe("deployment execution authority", () => {
 		} as never);
 
 		await expect(
-			executor.deploySingleInstanceFromAutomation("template-1", "instance-1", "user-1"),
+			executor.deploySingleInstanceFromAutomation(
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				createAutomationCatchUpTemplateStateToken(template),
+			),
 		).rejects.toThrow("disabled");
 		expect(client.system.get).not.toHaveBeenCalled();
 		expect(createBackup).not.toHaveBeenCalled();
@@ -405,7 +442,14 @@ describe("deployment execution authority", () => {
 		prisma.serviceInstance.findMany.mockResolvedValue([instance, disabledAlias]);
 
 		await expect(
-			executor.deploySingleInstanceFromAutomation("template-1", "instance-1", "user-1"),
+			executor.deploySingleInstanceFromAutomation(
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				createAutomationCatchUpTemplateStateToken(template),
+			),
 		).resolves.toMatchObject({ success: false, errors: ["authority accepted"] });
 		expect(createBackup).toHaveBeenCalledOnce();
 	});
@@ -436,7 +480,14 @@ describe("deployment execution authority", () => {
 		);
 
 		await expect(
-			executor.deploySingleInstanceFromAutomation("template-1", "instance-1", "user-1"),
+			executor.deploySingleInstanceFromAutomation(
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				createAutomationCatchUpTemplateStateToken(template),
+			),
 		).resolves.toMatchObject({
 			success: false,
 			status: "FAILED",
@@ -458,9 +509,56 @@ describe("deployment execution authority", () => {
 				undefined,
 				undefined,
 				createAutomationCatchUpTemplateStateToken(template),
+				true,
 			),
 		).resolves.toMatchObject({ success: true, status: "SUCCESS" });
 		expect(createBackup).not.toHaveBeenCalled();
+	});
+
+	it("uses the current alias authority when a re-enabled alias has an expected stale snapshot", async () => {
+		const alias = {
+			...instance,
+			id: "instance-alias",
+			baseUrl: "HTTP://RADARR:7878/",
+		};
+		const currentAuthority = currentMapping({
+			lastSyncedAt: new Date("2026-08-10T12:01:00.000Z"),
+			managedCustomFormats: "[]",
+		});
+		const staleAliasAuthority = currentMapping({
+			id: "mapping-alias",
+			instanceId: alias.id,
+			connectionStateToken: createDeploymentConnectionStateToken(alias),
+			lastSyncedAt: new Date("2026-08-10T11:00:00.000Z"),
+			managedCustomFormats: JSON.stringify([
+				{
+					trashId: "removed-format",
+					name: "Removed Format",
+					resourceId: 41,
+					stateToken: "old-state",
+					profileId: 4,
+					appliedScore: 100,
+				},
+			]),
+		});
+		const { executor, prisma, createBackup } = createFixture([
+			currentAuthority,
+			staleAliasAuthority,
+		]);
+		prisma.serviceInstance.findMany.mockResolvedValue([instance, alias]);
+
+		await expect(
+			executor.deploySingleInstanceFromAutomation(
+				"template-1",
+				"instance-1",
+				"user-1",
+				undefined,
+				undefined,
+				createAutomationCatchUpTemplateStateToken(template),
+				true,
+			),
+		).resolves.toMatchObject({ success: false, errors: ["authority accepted"] });
+		expect(createBackup).toHaveBeenCalledOnce();
 	});
 
 	it("blocks catch-up when the template changes before the mutation lease", async () => {
@@ -492,6 +590,7 @@ describe("deployment execution authority", () => {
 				undefined,
 				undefined,
 				createAutomationCatchUpTemplateStateToken(selectedTemplate),
+				true,
 			),
 		).rejects.toThrow("template changed after target selection");
 		expect(createBackup).not.toHaveBeenCalled();
@@ -514,6 +613,7 @@ describe("deployment execution authority", () => {
 				undefined,
 				undefined,
 				createAutomationCatchUpTemplateStateToken(template),
+				true,
 			),
 		).rejects.toThrow("template changed after target selection");
 		expect(createBackup).not.toHaveBeenCalled();
@@ -556,6 +656,7 @@ describe("deployment execution authority", () => {
 			undefined,
 			undefined,
 			createAutomationCatchUpTemplateStateToken(template),
+			true,
 		);
 		await atBoundary;
 		const deletion = templateService.deleteTemplate("template-1", "user-1");
@@ -606,6 +707,7 @@ describe("deployment execution authority", () => {
 				undefined,
 				undefined,
 				createAutomationCatchUpTemplateStateToken(template),
+				true,
 			),
 		).resolves.toMatchObject({
 			success: false,
@@ -665,6 +767,7 @@ describe("deployment execution authority", () => {
 				undefined,
 				undefined,
 				createAutomationCatchUpTemplateStateToken(conflictingOverridesTemplate),
+				true,
 			),
 		).rejects.toThrow("conflicting instance overrides");
 		expect(createBackup).not.toHaveBeenCalled();

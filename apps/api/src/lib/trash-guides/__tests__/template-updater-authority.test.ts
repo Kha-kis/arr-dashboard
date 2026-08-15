@@ -220,6 +220,10 @@ describe("TemplateUpdater automation authority", () => {
 			template.id,
 			primary.id,
 			template.userId,
+			undefined,
+			undefined,
+			createAutomationCatchUpTemplateStateToken(template),
+			false,
 		);
 		expect(outcomes).toEqual([
 			expect.objectContaining({ instanceId: primary.id, success: true, errors: [] }),
@@ -599,6 +603,7 @@ describe("TemplateUpdater automation authority", () => {
 			undefined,
 			undefined,
 			createAutomationCatchUpTemplateStateToken(selectedTemplate),
+			true,
 		);
 	});
 
@@ -609,9 +614,11 @@ describe("TemplateUpdater automation authority", () => {
 		const { privateUpdater, deploySingleInstanceFromAutomation, prisma } = createUpdater([
 			mapping(currentAlias, {
 				lastSyncedAt: new Date("2026-08-10T12:01:00.000Z"),
+				managedCustomFormats: '[{"resourceId":42}]',
 			}),
 			mapping(behindAlias, {
 				lastSyncedAt: new Date("2026-08-10T11:00:00.000Z"),
+				managedCustomFormats: '[{"resourceId":41}]',
 			}),
 		]);
 		prisma.trashTemplate.findUnique.mockResolvedValue({
@@ -630,6 +637,7 @@ describe("TemplateUpdater automation authority", () => {
 			undefined,
 			undefined,
 			createAutomationCatchUpTemplateStateToken(selectedTemplate),
+			true,
 		);
 	});
 });

@@ -395,7 +395,7 @@ export class DeploymentExecutorService {
 			createAutomationCatchUpTemplateStateToken(template) !== expectedStateToken
 		) {
 			throw new ConflictError(
-				"Automatic catch-up is no longer authorized because the template changed after target selection.",
+				"Automatic deployment is no longer authorized because the template changed after target selection.",
 			);
 		}
 	}
@@ -1608,8 +1608,14 @@ export class DeploymentExecutorService {
 		userId: string,
 		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
 		parentSyncHistoryId?: string,
-		catchUpTemplateStateToken?: string,
+		automationTemplateStateToken?: string,
+		catchUpOnly = false,
 	): Promise<DeploymentResult> {
+		if (!automationTemplateStateToken) {
+			throw new AppValidationError(
+				"An exact template-state token is required for automatic deployment.",
+			);
+		}
 		return this.deploySingleInstanceWithCapability(
 			templateId,
 			instanceId,
@@ -1618,7 +1624,8 @@ export class DeploymentExecutorService {
 			conflictResolutions,
 			undefined,
 			parentSyncHistoryId,
-			catchUpTemplateStateToken,
+			automationTemplateStateToken,
+			catchUpOnly,
 		);
 	}
 
@@ -1630,7 +1637,8 @@ export class DeploymentExecutorService {
 		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
 		executionToken: string | undefined,
 		parentSyncHistoryId?: string,
-		catchUpTemplateStateToken?: string,
+		automationTemplateStateToken?: string,
+		catchUpOnly = false,
 	): Promise<DeploymentResult> {
 		const lockInstance = await this.prisma.serviceInstance.findFirst({
 			where: { id: instanceId, userId },
@@ -1659,7 +1667,8 @@ export class DeploymentExecutorService {
 					executionToken,
 					endpointKey,
 					parentSyncHistoryId,
-					catchUpTemplateStateToken,
+					automationTemplateStateToken,
+					catchUpOnly,
 				),
 			),
 		);
@@ -1763,7 +1772,8 @@ export class DeploymentExecutorService {
 		executionToken?: string,
 		expectedEndpointKey?: string,
 		parentSyncHistoryId?: string,
-		catchUpTemplateStateToken?: string,
+		automationTemplateStateToken?: string,
+		catchUpOnly = false,
 	): Promise<DeploymentResult> {
 		const startTime = new Date();
 		let historyId: string | null = null;
@@ -1785,12 +1795,12 @@ export class DeploymentExecutorService {
 				await this.validateAndPrepareDeployment(templateId, instanceId, userId);
 			instanceLabel = instance.label;
 			if (
-				catchUpTemplateStateToken &&
+				automationTemplateStateToken &&
 				(template.hasUserModifications ||
-					createAutomationCatchUpTemplateStateToken(template) !== catchUpTemplateStateToken)
+					createAutomationCatchUpTemplateStateToken(template) !== automationTemplateStateToken)
 			) {
 				throw new ConflictError(
-					"Automatic catch-up is no longer authorized because the template changed after target selection.",
+					"Automatic deployment is no longer authorized because the template changed after target selection.",
 				);
 			}
 			if (!executionToken && !instance.enabled) {
@@ -1896,8 +1906,16 @@ export class DeploymentExecutorService {
 					"This template has conflicting quality-profile mappings for duplicate records of the same ARR instance. Unlink the stale deployment before continuing.",
 				);
 			}
-			assertEquivalentDeploymentMappingAuthority(templateMappings);
+			assertEquivalentDeploymentMappingAuthority(
+				templateMappings,
+				catchUpOnly && template.lastSyncedAt
+					? { allowManagedCustomFormatLagBefore: template.lastSyncedAt }
+					: undefined,
+			);
 			const qualityProfileMapping =
+				(catchUpOnly && template.lastSyncedAt
+					? templateMappings.find((mapping) => mapping.lastSyncedAt >= template.lastSyncedAt!)
+					: undefined) ??
 				templateMappings.find((mapping) => mapping.instanceId === instanceId) ??
 				templateMappings[0];
 			const selectedMappingIsLegacy = Boolean(
@@ -1962,7 +1980,7 @@ export class DeploymentExecutorService {
 					);
 				}
 				if (
-					catchUpTemplateStateToken &&
+					catchUpOnly &&
 					(!template.lastSyncedAt ||
 						!eligibleAutomationMappings.some(
 							(mapping) => mapping.lastSyncedAt < template.lastSyncedAt!,
@@ -2109,11 +2127,11 @@ export class DeploymentExecutorService {
 				}
 			}
 
-			if (catchUpTemplateStateToken) {
+			if (automationTemplateStateToken) {
 				await this.assertAutomationCatchUpTemplateState(
 					templateId,
 					userId,
-					catchUpTemplateStateToken,
+					automationTemplateStateToken,
 				);
 			}
 
