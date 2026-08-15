@@ -425,8 +425,6 @@ describe("PUT /services/:id", () => {
 		const calls: string[] = [];
 		let plexCleared = false;
 		let plexEpisodesCleared = false;
-		let jellyfinCleared = false;
-		let jellyfinEpisodesCleared = false;
 		let tautulliCleared = false;
 		mockPrisma.plexCache.deleteMany.mockImplementation(async () => {
 			calls.push("plex");
@@ -439,23 +437,21 @@ describe("PUT /services/:id", () => {
 			await Promise.resolve();
 			plexEpisodesCleared = true;
 		});
-		mockPrisma.jellyfinCache.deleteMany.mockImplementation(async () => {
-			if (!plexEpisodesCleared) throw new Error("Plex episode cache must clear first");
-			calls.push("jellyfin");
-			await Promise.resolve();
-			jellyfinCleared = true;
-		});
-		mockPrisma.jellyfinEpisodeCache.deleteMany.mockImplementation(async () => {
-			if (!jellyfinCleared) throw new Error("Jellyfin cache must clear first");
-			calls.push("jellyfin_episode");
-			await Promise.resolve();
-			jellyfinEpisodesCleared = true;
-		});
 		mockPrisma.tautulliCache.deleteMany.mockImplementation(async () => {
-			if (!jellyfinEpisodesCleared) throw new Error("Jellyfin episode cache must clear first");
+			if (!plexEpisodesCleared) throw new Error("Plex episode cache must clear first");
 			calls.push("tautulli");
 			await Promise.resolve();
 			tautulliCleared = true;
+		});
+		mockPrisma.jellyfinCache.deleteMany.mockImplementation(async () => {
+			if (!tautulliCleared) throw new Error("Tautulli cache must clear first");
+			calls.push("jellyfin");
+			await Promise.resolve();
+		});
+		mockPrisma.jellyfinEpisodeCache.deleteMany.mockImplementation(async () => {
+			if (!tautulliCleared) throw new Error("Tautulli cache must clear first");
+			calls.push("jellyfin_episode");
+			await Promise.resolve();
 		});
 		mockPrisma.cacheRefreshStatus.deleteMany.mockImplementation(async () => {
 			if (!tautulliCleared) throw new Error("Tautulli cache must clear first");
@@ -475,33 +471,12 @@ describe("PUT /services/:id", () => {
 		expect(calls).toEqual([
 			"plex",
 			"plex_episode",
+			"tautulli",
 			"jellyfin",
 			"jellyfin_episode",
-			"tautulli",
 			"status",
 		]);
-		expect(mockPrisma.cacheRefreshStatus.upsert).toHaveBeenCalledTimes(2);
-		expect(mockPrisma.cacheRefreshStatus.upsert).toHaveBeenNthCalledWith(
-			1,
-			expect.objectContaining({
-				where: {
-					instanceId_cacheType: { instanceId: "inst-1", cacheType: "plex" },
-				},
-				create: expect.objectContaining({
-					lastResult: "error",
-					lastAttemptResult: "error",
-					lastAttemptErrorMessage: "Provider connection changed; refresh required",
-				}),
-			}),
-		);
-		expect(mockPrisma.cacheRefreshStatus.upsert).toHaveBeenNthCalledWith(
-			2,
-			expect.objectContaining({
-				where: {
-					instanceId_cacheType: { instanceId: "inst-1", cacheType: "plex_episode" },
-				},
-			}),
-		);
+		expect(mockPrisma.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 		expect(mockInvalidatePulseCache).toHaveBeenCalledWith("user-1");
 	});
 
@@ -522,12 +497,7 @@ describe("PUT /services/:id", () => {
 		expect(mockPrisma.tautulliCache.deleteMany).toHaveBeenCalledWith({
 			where: { instanceId: "inst-1" },
 		});
-		expect(mockPrisma.cacheRefreshStatus.upsert).toHaveBeenCalledTimes(1);
-		expect(mockPrisma.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
-			expect.objectContaining({
-				where: { instanceId_cacheType: { instanceId: "inst-1", cacheType: "tautulli" } },
-			}),
-		);
+		expect(mockPrisma.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("calls buildUpdateData and updates the instance", async () => {

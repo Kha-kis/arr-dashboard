@@ -7453,6 +7453,9 @@ async function createRunLog(
 	result: Omit<CleanupRunResult, "error"> & { error?: string },
 	log?: CleanupExecutorDeps["log"],
 ): Promise<void> {
+	// Dry runs are previews: recording one would mutate the database even
+	// though no cleanup action is allowed to do so.
+	if (result.isDryRun) return;
 	try {
 		await prisma.libraryCleanupLog.create({
 			data: {
