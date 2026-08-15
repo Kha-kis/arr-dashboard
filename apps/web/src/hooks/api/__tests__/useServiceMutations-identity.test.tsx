@@ -8,6 +8,7 @@ import {
 	libraryCleanupKeys,
 	plexKeys,
 	serviceKeys,
+	tautulliKeys,
 	trashCacheKeys,
 } from "../../../lib/query-keys";
 
@@ -92,6 +93,9 @@ describe("service identity mutations", () => {
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: trashCacheKeys.cacheHealth });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: plexKeys.cacheHealth() });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: jellyfinKeys.cacheHealth() });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: plexKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: jellyfinKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: tautulliKeys.all });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.status });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.approvals });
 		client.clear();

@@ -1,6 +1,7 @@
 import type { ServiceInstanceSummary } from "@arr/shared";
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../../components/layout", () => ({
 	DomainStatusBadge: () => <span>Configured</span>,
@@ -11,11 +12,6 @@ vi.mock("../../../../hooks/useThemeGradient", () => ({
 	useThemeGradient: () => ({
 		gradient: { from: "#111", to: "#222", fromLight: "#333", fromMuted: "#444" },
 	}),
-}));
-vi.mock("../../../../lib/incognito", () => ({
-	getLinuxInstanceName: () => "redacted-instance",
-	getLinuxUrl: () => "http://redacted.test",
-	useIncognitoMode: () => [true],
 }));
 vi.mock("../../../../lib/theme-gradients", () => ({
 	getServiceGradient: () => ({ from: "#111", to: "#222" }),
@@ -53,23 +49,48 @@ const service: ServiceInstanceSummary = {
 };
 
 describe("ServiceInstanceCard provider identity", () => {
+	beforeEach(() => localStorage.setItem("arr-dashboard-incognito-mode", "true"));
+
 	it("renders a verified safe fingerprint without exposing a raw provider identity", () => {
 		render(
-			<ServiceInstanceCard
-				instance={service}
-				onTestConnection={vi.fn()}
-				onEdit={vi.fn()}
-				onToggleDefault={vi.fn()}
-				onToggleEnabled={vi.fn()}
-				onDelete={vi.fn()}
-				isTesting={false}
-				mutationPending={false}
-			/>,
+			<IncognitoProvider>
+				<ServiceInstanceCard
+					instance={service}
+					onTestConnection={vi.fn()}
+					onEdit={vi.fn()}
+					onToggleDefault={vi.fn()}
+					onToggleEnabled={vi.fn()}
+					onDelete={vi.fn()}
+					isTesting={false}
+					mutationPending={false}
+				/>
+			</IncognitoProvider>,
 		);
 
 		expect(screen.getByText(/verified.*plex-machine-identifier/i)).toBeInTheDocument();
 		expect(screen.getByText(/7a9c6d3e1f20/)).toBeInTheDocument();
 		expect(screen.getByText(/last verified/i)).toBeInTheDocument();
 		expect(screen.queryByText(/plex-machine-123/)).not.toBeInTheDocument();
+	});
+
+	it.each([
+		["unverified", "Provider identity verification required"],
+		["mismatch", "Provider identity mismatch"],
+	] as const)("renders %s identity status as actionable text", (status, expected) => {
+		render(
+			<IncognitoProvider>
+				<ServiceInstanceCard
+					instance={{ ...service, identity: { ...service.identity, status } }}
+					onTestConnection={vi.fn()}
+					onEdit={vi.fn()}
+					onToggleDefault={vi.fn()}
+					onToggleEnabled={vi.fn()}
+					onDelete={vi.fn()}
+					isTesting={false}
+					mutationPending={false}
+				/>
+			</IncognitoProvider>,
+		);
+		expect(screen.getByText(new RegExp(expected, "i"))).toBeInTheDocument();
 	});
 });

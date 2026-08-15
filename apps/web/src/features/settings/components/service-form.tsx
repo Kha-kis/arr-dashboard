@@ -144,7 +144,12 @@ export const ServiceForm = ({
 										</p>
 									)}
 									<div className="flex gap-2">
-										<Button type="button" variant="secondary" onClick={onConfirmIdentity}>
+										<Button
+											type="button"
+											variant="secondary"
+											onClick={onConfirmIdentity}
+											disabled={activeIdentityFlow.requiresReinspection}
+										>
 											{activeIdentityFlow.mode === "replace"
 												? "Confirm replacement"
 												: "Confirm verification"}
@@ -152,7 +157,7 @@ export const ServiceForm = ({
 										<Button type="button" variant="ghost" onClick={onDismissIdentityFlow}>
 											Keep editing
 										</Button>
-										{activeIdentityFlow.message.includes("Inspect it again") && (
+										{activeIdentityFlow.requiresReinspection && (
 											<Button type="button" variant="ghost" onClick={onInspectIdentity}>
 												Inspect again
 											</Button>

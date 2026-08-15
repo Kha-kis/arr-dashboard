@@ -26,6 +26,7 @@ export type IdentityFlow = {
 	connectionGeneration: number;
 	identityGeneration: number;
 	replacementPayload: UpdateServicePayload;
+	requiresReinspection: boolean;
 	message: string;
 };
 
@@ -176,6 +177,7 @@ export const useServicesManagement = () => {
 					connectionGeneration: conflict.connectionGeneration,
 					identityGeneration: conflict.identityGeneration,
 					replacementPayload: identityReplacementPayload,
+					requiresReinspection: false,
 					message:
 						"This connection points at a different provider. Review and explicitly replace it.",
 				});
@@ -364,13 +366,15 @@ export const useServicesManagement = () => {
 	const inspectIdentity = async (instance: ServiceInstanceSummary) => {
 		try {
 			const inspection = await inspectServiceIdentity(instance.id);
+			const priorFlow = identityFlow?.instanceId === instance.id ? identityFlow : null;
 			setIdentityFlow({
 				instanceId: instance.id,
-				mode: instance.identity.status === "mismatch" ? "replace" : "verify",
+				mode: priorFlow?.mode ?? (instance.identity.status === "mismatch" ? "replace" : "verify"),
 				candidate: inspection.candidate,
 				connectionGeneration: inspection.connectionGeneration,
 				identityGeneration: inspection.identityGeneration,
-				replacementPayload: {},
+				replacementPayload: priorFlow?.replacementPayload ?? {},
+				requiresReinspection: false,
 				message:
 					instance.identity.status === "mismatch"
 						? "The provider differs from the enrolled server. Replacement clears cache data and expires affected pending approvals."
@@ -382,7 +386,7 @@ export const useServicesManagement = () => {
 	};
 
 	const confirmIdentity = async () => {
-		if (!identityFlow) return;
+		if (!identityFlow || identityFlow.requiresReinspection) return;
 		const confirmation = {
 			confirmationDigest: identityFlow.candidate.confirmationDigest,
 			expectedConnectionGeneration: identityFlow.connectionGeneration,
@@ -407,6 +411,9 @@ export const useServicesManagement = () => {
 						? {
 								...current,
 								...(conflict.candidate ? { candidate: conflict.candidate } : {}),
+								...(conflict.code === "IDENTITY_REPLACEMENT_REQUIRED"
+									? { mode: "replace" as const, requiresReinspection: false }
+									: { requiresReinspection: true }),
 								connectionGeneration: conflict.connectionGeneration,
 								identityGeneration: conflict.identityGeneration,
 								message:

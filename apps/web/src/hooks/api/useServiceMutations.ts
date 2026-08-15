@@ -17,6 +17,7 @@ import {
 	libraryCleanupKeys,
 	plexKeys,
 	serviceKeys,
+	tautulliKeys,
 	trashCacheKeys,
 } from "../../lib/query-keys";
 
@@ -42,6 +43,9 @@ function applyServiceSummary(
 	queryClient.invalidateQueries({ queryKey: trashCacheKeys.cacheHealth });
 	queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });
 	queryClient.invalidateQueries({ queryKey: jellyfinKeys.cacheHealth() });
+	queryClient.invalidateQueries({ queryKey: plexKeys.all });
+	queryClient.invalidateQueries({ queryKey: jellyfinKeys.all });
+	queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
 	queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
 	queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
 	queryClient.setQueryData<ServiceInstanceSummary[]>(SERVICES_QUERY_KEY, (previous) =>
