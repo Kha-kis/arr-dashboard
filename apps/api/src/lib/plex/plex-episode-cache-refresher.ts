@@ -110,7 +110,7 @@ export async function refreshPlexEpisodeCache(
 		},
 	});
 
-	if (recentlyWatchedShows.length === 0) {
+	if (recentlyWatchedShows.length === 0 && !expectedConnection) {
 		log.debug({ instanceId }, "No recently watched shows to refresh episodes for");
 		return {
 			upserted,
@@ -139,14 +139,17 @@ export async function refreshPlexEpisodeCache(
 	// Rotate the bounded batch toward shows with the oldest episode evidence.
 	// This guarantees eventual coverage instead of permanently refreshing only
 	// the same newest 50 watched shows.
-	const existingRefreshes = await prisma.plexEpisodeCache.groupBy({
-		by: ["showTmdbId"],
-		where: {
-			instanceId,
-			showTmdbId: { in: [...showMap.keys()] },
-		},
-		_max: { refreshedAt: true },
-	});
+	const existingRefreshes =
+		showMap.size > 0
+			? await prisma.plexEpisodeCache.groupBy({
+					by: ["showTmdbId"],
+					where: {
+						instanceId,
+						showTmdbId: { in: [...showMap.keys()] },
+					},
+					_max: { refreshedAt: true },
+				})
+			: [];
 	const newestRefreshByShow = new Map<number, number>();
 	for (const row of existingRefreshes) {
 		if (row._max.refreshedAt) {
@@ -177,13 +180,15 @@ export async function refreshPlexEpisodeCache(
 	>();
 	let history: Awaited<ReturnType<PlexClient["getHistory"]>> = [];
 	let historyAvailable = true;
-	try {
-		history = await client.getHistory({ maxResults: MAX_HISTORY_RESULTS });
-	} catch (err) {
-		historyAvailable = false;
-		log.warn({ err, instanceId }, "Failed to fetch history for episode cache refresh");
-		errors++;
-		errorMessages.push(`Failed to fetch history: ${getErrorMessage(err)}`);
+	if (eligibleShows > 0) {
+		try {
+			history = await client.getHistory({ maxResults: MAX_HISTORY_RESULTS });
+		} catch (err) {
+			historyAvailable = false;
+			log.warn({ err, instanceId }, "Failed to fetch history for episode cache refresh");
+			errors++;
+			errorMessages.push(`Failed to fetch history: ${getErrorMessage(err)}`);
+		}
 	}
 	const historyComplete = historyAvailable && history.length < MAX_HISTORY_RESULTS;
 	if (historyAvailable && !historyComplete) {
@@ -531,7 +536,9 @@ export async function refreshPlexEpisodeCache(
 						return { published: false as const, count: 0 };
 					}
 					const selectedShowIds = selectedShows.map(([tmdbId]) => tmdbId);
-					if (selectedShowIds.length > 0) {
+					if (eligibleShows === 0) {
+						await tx.plexEpisodeCache.deleteMany({ where: { instanceId } });
+					} else if (selectedShowIds.length > 0) {
 						await tx.plexEpisodeCache.deleteMany({
 							where: { instanceId, showTmdbId: { in: selectedShowIds } },
 						});

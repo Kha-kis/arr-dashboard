@@ -12,14 +12,26 @@ import type { AutoTagRule, ServiceInstance, User } from "../../prisma.js";
 
 // Mock the evaluator + prefetch context builder. The evaluator returns a
 // reason string (truthy = match) by default; tests can override per-call.
-const evalState: { reason: string | null } = { reason: "matched" };
+const evalState: {
+	reason: string | null;
+	buildContextThrows: boolean;
+	lastBuildRules: Array<Record<string, unknown>> | null;
+} = {
+	reason: "matched",
+	buildContextThrows: false,
+	lastBuildRules: null,
+};
 
 vi.mock("../../library-cleanup/rule-evaluators.js", () => ({
 	evaluateSingleCondition: vi.fn(() => evalState.reason),
 }));
 
 vi.mock("../../library-cleanup/cleanup-executor.js", () => ({
-	buildEvalContext: vi.fn(async () => ({ now: new Date() })),
+	buildEvalContext: vi.fn(async (_deps, _userId, rules) => {
+		evalState.lastBuildRules = rules;
+		if (evalState.buildContextThrows) throw new Error("Plex evidence unavailable");
+		return { now: new Date() };
+	}),
 }));
 
 import { processWebhook, resolveUserFromBearer } from "../webhook-handler.js";
@@ -192,6 +204,8 @@ describe("resolveUserFromBearer", () => {
 describe("processWebhook", () => {
 	beforeEach(() => {
 		evalState.reason = "matched";
+		evalState.buildContextThrows = false;
+		evalState.lastBuildRules = null;
 	});
 
 	it("test event returns status 'test' without invoking *arr API", async () => {
@@ -260,6 +274,69 @@ describe("processWebhook", () => {
 		expect(result.status).toBe("ok");
 		expect(result.tagsApplied).toBe(1);
 		expect(arrClient.movie.update).toHaveBeenCalledWith(100, { id: 100, tags: [7] });
+	});
+
+	it("fails closed without creating or applying tags when rule evidence is unavailable", async () => {
+		evalState.buildContextThrows = true;
+		const arrClient = makeArrClient();
+		const prisma = {
+			autoTagRule: {
+				findMany: vi.fn().mockResolvedValue([
+					makeRule({
+						ruleType: "plex_user_rating",
+						parameters: JSON.stringify({ operator: "unrated" }),
+					}),
+				]),
+			},
+		};
+
+		const result = await processWebhook({
+			deps: {
+				prisma: prisma as never,
+				arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+				encryptor: {} as never,
+				log,
+			},
+			user: makeUser(),
+			instance: makeInstance(),
+			payload: { eventType: "Download", movie: { id: 100 } },
+		});
+
+		expect(result.status).toBe("error");
+		expect(result.message).toMatch(/evaluation evidence/i);
+		expect(arrClient.tag.getAll).not.toHaveBeenCalled();
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("forwards the Plex library filter into webhook evidence validation", async () => {
+		const arrClient = makeArrClient();
+		const prisma = {
+			autoTagRule: {
+				findMany: vi.fn().mockResolvedValue([
+					makeRule({
+						ruleType: "plex_user_rating",
+						parameters: JSON.stringify({ operator: "unrated" }),
+						plexLibraryFilter: JSON.stringify(["Movies"]),
+					}),
+				]),
+			},
+		};
+
+		await processWebhook({
+			deps: {
+				prisma: prisma as never,
+				arrClientFactory: { create: vi.fn().mockReturnValue(arrClient) } as never,
+				encryptor: {} as never,
+				log,
+			},
+			user: makeUser(),
+			instance: makeInstance(),
+			payload: { eventType: "Download", movie: { id: 100 } },
+		});
+
+		expect(evalState.lastBuildRules).toEqual([
+			expect.objectContaining({ plexLibraryFilter: JSON.stringify(["Movies"]) }),
+		]);
 	});
 
 	it("idempotent: item already has the tag → no update call, still status ok", async () => {

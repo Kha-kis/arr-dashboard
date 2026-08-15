@@ -115,6 +115,7 @@ export async function executeCrossDomainRule(
 			targetCacheItemIds: pending.map((match) => match.cacheId),
 		});
 		const outcomes = new Map(result.itemOutcomes.map((outcome) => [outcome.cacheId, outcome]));
+		const runFailure = result.status === "failed" ? result.message : null;
 		for (const match of pending) {
 			const outcome = outcomes.get(match.cacheId);
 			if (outcome?.success) {
@@ -126,7 +127,7 @@ export async function executeCrossDomainRule(
 					deps.prisma,
 					rule,
 					match,
-					outcome?.error ?? "Matched item disappeared before tag action",
+					outcome?.error ?? runFailure ?? "Matched item disappeared before tag action",
 				);
 			}
 		}

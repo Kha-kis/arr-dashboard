@@ -71,10 +71,16 @@ const plexMediaSchema = z.looseObject({
 	Part: z.array(plexMediaPartSchema).min(1),
 });
 
+const plexSafetyPaginationNumberSchema = z.coerce
+	.number()
+	.int()
+	.nonnegative()
+	.refine(Number.isSafeInteger);
+
 const plexSafetyPaginationFields = {
-	offset: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
-	size: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
-	totalSize: z.coerce.number().int().nonnegative().refine(Number.isSafeInteger),
+	offset: plexSafetyPaginationNumberSchema,
+	size: plexSafetyPaginationNumberSchema,
+	totalSize: plexSafetyPaginationNumberSchema,
 };
 
 /** /library/sections/{id}/all with includeMedia=1 */
@@ -129,10 +135,13 @@ export const plexEpisodeMediaItemsResponseSchema = z.looseObject({
 /** /status/sessions/history/all endpoint (paginated) */
 export const plexHistoryResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
-		size: z.number().optional(),
+		offset: plexSafetyPaginationNumberSchema.optional(),
+		size: plexSafetyPaginationNumberSchema.optional(),
+		totalSize: plexSafetyPaginationNumberSchema.optional(),
 		Metadata: z
 			.array(
 				z.looseObject({
+					historyKey: z.string().min(1).optional(),
 					ratingKey: z.string().optional().default(""),
 					parentRatingKey: z.string().optional(),
 					parentKey: z.string().optional(),

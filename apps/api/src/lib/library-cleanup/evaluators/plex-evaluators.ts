@@ -22,6 +22,7 @@ export function lookupPlexWatch(
 	item: CacheItemForEval,
 	plexMap: PlexWatchMap | undefined,
 	plexLibraryFilter?: string[] | null,
+	plexSectionTitles?: Set<string>,
 ): PlexWatchInfo | null {
 	if (!plexMap || plexMap.size === 0) return null;
 
@@ -41,6 +42,12 @@ export function lookupPlexWatch(
 
 	// If no filter, return the pre-computed aggregates (existing behavior)
 	if (!plexLibraryFilter || plexLibraryFilter.length === 0) return entry;
+	if (
+		!plexSectionTitles ||
+		plexLibraryFilter.some((sectionTitle) => !plexSectionTitles.has(sectionTitle))
+	) {
+		return null;
+	}
 
 	// Filter to matching sections only
 	const matchingSections = entry.sections.filter((s) => plexLibraryFilter.includes(s.sectionTitle));
@@ -81,10 +88,10 @@ export function evaluatePlexLastWatched(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 
 	if (params.operator === "never") {
-		if (!watch || watch.lastWatchedAt === null) {
+		if (watch?.lastWatchedAt === null) {
 			return "Never watched (per Plex)";
 		}
 		return null;
@@ -124,10 +131,11 @@ export function evaluatePlexWatchCount(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch) {
 		// Not in Plex — infer 0 plays when Plex is configured and item has a file
 		if (
+			(!plexLibraryFilter || plexLibraryFilter.length === 0) &&
 			ctx.plexMap &&
 			ctx.plexMap.size > 0 &&
 			params.operator === "less_than" &&
@@ -168,7 +176,7 @@ export function evaluatePlexOnDeck(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch) return null;
 	const isOnDeck = watch.onDeck;
 
@@ -191,7 +199,7 @@ export function evaluatePlexUserRating(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 
 	if (params.operator === "unrated") {
 		if (!watch || watch.userRating === null) {
@@ -228,7 +236,7 @@ export function evaluatePlexWatchedBy(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch) return null;
 	const watchedBy = watch.watchedByUsers.map((u) => u.toLowerCase());
 	const targetNames = params.userNames.map((n) => n.toLowerCase());
@@ -257,7 +265,7 @@ export function evaluatePlexCollection(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch) return null;
 	const collections = watch.collections;
 
@@ -287,7 +295,7 @@ export function evaluatePlexLabel(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch) return null;
 	const labels = watch.labels;
 
@@ -319,7 +327,7 @@ export function evaluatePlexAddedAt(
 	ctx: EvalContext,
 	plexLibraryFilter?: string[] | null,
 ): string | null {
-	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter);
+	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 	if (!watch?.addedAt) return null;
 
 	const ageDays = (ctx.now.getTime() - watch.addedAt.getTime()) / (1000 * 60 * 60 * 24);

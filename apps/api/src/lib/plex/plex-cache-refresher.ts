@@ -15,13 +15,13 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../prisma.js";
 import {
 	type ProviderConnectionIdentity,
 	withCurrentProviderConnection,
 } from "../services/provider-connection-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import type { FastifyBaseLogger } from "fastify";
 import type { PlexClient } from "./plex-client.js";
 
 /** Bound Prisma's cached createMany query plans for production-sized libraries. */
@@ -70,10 +70,18 @@ interface ItemAggregation {
 	thumb: string | null;
 }
 
-// Plex 1.43 rejects the stable-reference history sort/verification API. Ask
-// for one row beyond the supported cache limit so exactly 5,000 results remain
-// distinguishable from a truncated response.
-const PLEX_HISTORY_CACHE_LIMIT = 5_000;
+function onDeckSignature(items: Awaited<ReturnType<PlexClient["getOnDeck"]>>): string[] {
+	return items
+		.map((item) =>
+			JSON.stringify([
+				item.type,
+				item.ratingKey,
+				item.parentRatingKey ?? null,
+				item.grandparentRatingKey ?? null,
+			]),
+		)
+		.sort();
+}
 
 export type PlexCacheRefreshResult = {
 	upserted: number;
@@ -206,21 +214,7 @@ async function performPlexCacheRefresh(
 		}
 
 		// 4. Get history and aggregate (per-section: key includes sectionId)
-		let history: Awaited<ReturnType<typeof client.getHistory>> | undefined =
-			await client.getHistory({ maxResults: PLEX_HISTORY_CACHE_LIMIT + 1 });
-		const fetchedHistoryCount = history.length;
-		if (fetchedHistoryCount > PLEX_HISTORY_CACHE_LIMIT) {
-			complete = false;
-			errors++;
-			errorMessages.push(
-				`Plex history exceeded ${PLEX_HISTORY_CACHE_LIMIT} entries, so watch evidence is incomplete`,
-			);
-			log.warn(
-				{ instanceId, historyCount: fetchedHistoryCount, historyLimit: PLEX_HISTORY_CACHE_LIMIT },
-				"Plex cache refresh: history exceeds the supported cache limit",
-			);
-			history = history.slice(0, PLEX_HISTORY_CACHE_LIMIT);
-		}
+		const history = await client.getHistory({ maxResults: 100_000, requireComplete: true });
 		const historyCount = history.length;
 		const aggregations = new Map<string, ItemAggregation>();
 
@@ -279,9 +273,6 @@ async function performPlexCacheRefresh(
 			}
 		}
 
-		// Release history array — only historyCount is needed from here (#239)
-		history = undefined;
-
 		// Ensure all library items are in aggregations (even if unwatched)
 		for (const [_ratingKey, itemData] of ratingKeyMap) {
 			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
@@ -307,8 +298,10 @@ async function performPlexCacheRefresh(
 		}
 
 		// 5. Get on-deck items and mark
+		let verifiedOnDeckSignature: string[] = [];
 		try {
 			const onDeckItems = await client.getOnDeck();
+			verifiedOnDeckSignature = onDeckSignature(onDeckItems);
 			for (const deckItem of onDeckItems) {
 				// For episodes, use the show's ratingKey
 				const itemRatingKey =
@@ -351,6 +344,11 @@ async function performPlexCacheRefresh(
 		aggregations.clear();
 
 		if (errors === 0 && complete) {
+			await client.verifyHistorySnapshot(history);
+			const latestOnDeckSignature = onDeckSignature(await client.getOnDeck());
+			if (JSON.stringify(latestOnDeckSignature) !== JSON.stringify(verifiedOnDeckSignature)) {
+				throw new Error("Plex on-deck state changed before cache publication");
+			}
 			completedAt = new Date();
 			const generationId = randomUUID();
 			const generationMetadata = JSON.stringify({
