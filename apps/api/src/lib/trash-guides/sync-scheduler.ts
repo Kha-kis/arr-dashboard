@@ -93,10 +93,11 @@ export class TrashSyncScheduler {
 				where: {
 					enabled: true,
 					nextRunAt: { lte: now },
+					instance: { is: { enabled: true } },
 				},
 				include: {
 					template: { select: { id: true, name: true, serviceType: true } },
-					instance: { select: { id: true, label: true } },
+					instance: { select: { id: true, label: true, enabled: true } },
 				},
 			});
 
@@ -105,6 +106,13 @@ export class TrashSyncScheduler {
 			this.logger.info({ count: dueSchedules.length }, "Processing due TRaSH sync schedules");
 
 			for (const schedule of dueSchedules) {
+				if (!schedule.instance?.enabled) {
+					this.logger.info(
+						{ scheduleId: schedule.id, instanceId: schedule.instanceId },
+						"Skipping scheduled TRaSH sync for a disabled service instance",
+					);
+					continue;
+				}
 				await this.executeSchedule(schedule);
 			}
 		} catch (error) {
@@ -123,7 +131,7 @@ export class TrashSyncScheduler {
 		autoApply: boolean;
 		notifyUser: boolean;
 		template: { id: string; name: string; serviceType: string } | null;
-		instance: { id: string; label: string } | null;
+		instance: { id: string; label: string; enabled: boolean } | null;
 	}) {
 		const templateName = schedule.template?.name ?? "Unknown";
 		const instanceLabel = schedule.instance?.label ?? "Unknown";

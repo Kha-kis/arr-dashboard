@@ -57,7 +57,7 @@ describe("TrashSyncScheduler uncertain results", () => {
 			autoApply: true,
 			notifyUser: true,
 			template: { id: "template-1", name: "Any", serviceType: "RADARR" },
-			instance: { id: "instance-1", label: "Radarr" },
+			instance: { id: "instance-1", label: "Radarr", enabled: true },
 		});
 
 		expect(notify).toHaveBeenCalledWith(
@@ -71,6 +71,50 @@ describe("TrashSyncScheduler uncertain results", () => {
 				fallbackEventTypes: ["TRASH_SYNC_ERROR"],
 			},
 		);
+	});
+
+	it("skips due schedules for disabled service instances before template refresh", async () => {
+		const findMany = vi.fn().mockResolvedValue([
+			{
+				id: "schedule-disabled",
+				templateId: "template-1",
+				instanceId: "instance-disabled",
+				userId: "user-1",
+				frequency: "DAILY",
+				autoApply: true,
+				notifyUser: true,
+				template: { id: "template-1", name: "Any", serviceType: "RADARR" },
+				instance: { id: "instance-disabled", label: "Disabled Radarr", enabled: false },
+			},
+		]);
+		const prisma = {
+			trashSyncSchedule: { findMany, update: vi.fn() },
+		};
+		const logger = {
+			info: vi.fn(),
+			warn: vi.fn(),
+			error: vi.fn(),
+			debug: vi.fn(),
+		};
+		const scheduler = new TrashSyncScheduler(
+			prisma as never,
+			logger as never,
+			{} as never,
+			{} as never,
+		);
+		const checkAndRunSchedules = (
+			scheduler as unknown as { checkAndRunSchedules: () => Promise<void> }
+		).checkAndRunSchedules.bind(scheduler);
+
+		await checkAndRunSchedules();
+
+		expect(findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ instance: { is: { enabled: true } } }),
+			}),
+		);
+		expect(mocks.validate).not.toHaveBeenCalled();
+		expect(mocks.execute).not.toHaveBeenCalled();
 	});
 
 	it("preserves an uncertain result when advancing the schedule fails", async () => {
@@ -109,7 +153,7 @@ describe("TrashSyncScheduler uncertain results", () => {
 			autoApply: true,
 			notifyUser: true,
 			template: { id: "template-1", name: "Any", serviceType: "RADARR" },
-			instance: { id: "instance-1", label: "Radarr" },
+			instance: { id: "instance-1", label: "Radarr", enabled: true },
 		});
 
 		expect(notify).toHaveBeenCalledTimes(1);

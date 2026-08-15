@@ -22,6 +22,7 @@ interface DeploymentMappingAuthorityInput {
 	syncStrategy?: string | null;
 	managedCustomFormatsCaptured?: boolean | null;
 	managedCustomFormats?: string | null;
+	lastSyncedAt?: Date | string | null;
 	updatedAt?: Date | string | null;
 }
 
@@ -43,6 +44,26 @@ export type DeploymentConnectionPersistenceBinding = Pick<
 	DeploymentConnectionBinding,
 	"instanceId" | "connectionGeneration" | "connectionStateToken"
 >;
+
+export interface AutomationCatchUpTemplateState {
+	configData: string;
+	instanceOverrides: string | null;
+	trashGuidesCommitHash: string | null;
+	lastSyncedAt: Date | null;
+	hasUserModifications: boolean;
+}
+
+export function createAutomationCatchUpTemplateStateToken(
+	template: AutomationCatchUpTemplateState,
+): string {
+	return createUpstreamResourceStateToken({
+		configData: template.configData,
+		instanceOverrides: template.instanceOverrides,
+		trashGuidesCommitHash: template.trashGuidesCommitHash,
+		lastSyncedAt: template.lastSyncedAt?.toISOString() ?? null,
+		hasUserModifications: template.hasUserModifications,
+	});
+}
 
 interface DeploymentConnectionMapping {
 	connectionGeneration?: number | null;
@@ -457,9 +478,52 @@ function deploymentMappingAuthorityValue(mapping: DeploymentMappingAuthorityInpu
 /** Fail closed when aliases disagree about the resources one template owns. */
 export function assertEquivalentDeploymentMappingAuthority(
 	mappings: DeploymentMappingAuthorityInput[],
+	options?: { allowManagedCustomFormatLagBefore?: Date },
 ): void {
 	const expected = mappings[0];
 	if (!expected) return;
+	const lagBoundary = options?.allowManagedCustomFormatLagBefore;
+	if (lagBoundary) {
+		const currentMappings = mappings.filter((mapping) => {
+			if (!mapping.lastSyncedAt) return false;
+			const lastSyncedAt =
+				mapping.lastSyncedAt instanceof Date
+					? mapping.lastSyncedAt
+					: new Date(mapping.lastSyncedAt);
+			return !Number.isNaN(lastSyncedAt.getTime()) && lastSyncedAt >= lagBoundary;
+		});
+		const currentAuthority = currentMappings[0];
+		if (currentAuthority) {
+			const authorityWithoutManagedSnapshot = (mapping: DeploymentMappingAuthorityInput) => {
+				const authority = deploymentMappingAuthorityValue(mapping);
+				return {
+					qualityProfileId: authority.qualityProfileId,
+					qualityProfileName: authority.qualityProfileName,
+					syncStrategy: authority.syncStrategy,
+					managedCustomFormatsCaptured: authority.managedCustomFormatsCaptured,
+				};
+			};
+			const expectedBaseAuthority = JSON.stringify(
+				stableValue(authorityWithoutManagedSnapshot(currentAuthority)),
+			);
+			const currentManagedAuthority = JSON.stringify(
+				stableValue(deploymentMappingAuthorityValue(currentAuthority)),
+			);
+			const baseAuthorityConflicts = mappings.some(
+				(mapping) =>
+					JSON.stringify(stableValue(authorityWithoutManagedSnapshot(mapping))) !==
+					expectedBaseAuthority,
+			);
+			const currentSnapshotConflicts = currentMappings.some(
+				(mapping) =>
+					JSON.stringify(stableValue(deploymentMappingAuthorityValue(mapping))) !==
+					currentManagedAuthority,
+			);
+			if (!baseAuthorityConflicts && !currentSnapshotConflicts) {
+				return;
+			}
+		}
+	}
 	const expectedAuthority = JSON.stringify(stableValue(deploymentMappingAuthorityValue(expected)));
 	if (
 		mappings.some(

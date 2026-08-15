@@ -22,7 +22,6 @@ import {
 	InstanceNotFoundError,
 	TemplateNotFoundError,
 } from "../errors.js";
-import { withCleanupTopologyMutationLease } from "../library-cleanup/cleanup-executor.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
@@ -57,6 +56,7 @@ import { assertNoPendingDeploymentOperation } from "./deployment-operation-gate.
 import {
 	assertDeploymentTargetOwnership,
 	assertEquivalentDeploymentMappingAuthority,
+	createAutomationCatchUpTemplateStateToken,
 	createDeploymentConnectionBindingCandidates,
 	createDeploymentConnectionPersistenceBindings,
 	createDeploymentConnectionStateToken,
@@ -79,6 +79,7 @@ import {
 	type TemplateCF,
 } from "./quality-profile-helpers.js";
 import { getSyncMetrics } from "./sync-metrics.js";
+import { withTrashTemplateDeploymentGuard } from "./template-mutation-guard.js";
 import { calculateScoreAndSource } from "./template-score-utils.js";
 
 const log = loggers.deployment;
@@ -185,11 +186,15 @@ interface ValidatedDeploymentData {
 		configData: string;
 		instanceOverrides: string | null;
 		sourceQualityProfileName: string | null;
+		lastSyncedAt: Date | null;
+		trashGuidesCommitHash: string | null;
+		hasUserModifications: boolean;
 	};
 	instance: {
 		id: string;
 		label: string;
 		service: ServiceType;
+		enabled: boolean;
 		baseUrl: string;
 		encryptedApiKey: string;
 		encryptionIv: string;
@@ -369,6 +374,32 @@ export class DeploymentExecutorService {
 		return this.createEndpointKey(userId, instance);
 	}
 
+	private async assertAutomationCatchUpTemplateState(
+		templateId: string,
+		userId: string,
+		expectedStateToken: string,
+	): Promise<void> {
+		const template = await this.prisma.trashTemplate.findUnique({
+			where: { id: templateId, userId, deletedAt: null },
+			select: {
+				configData: true,
+				instanceOverrides: true,
+				trashGuidesCommitHash: true,
+				lastSyncedAt: true,
+				hasUserModifications: true,
+			},
+		});
+		if (
+			!template ||
+			template.hasUserModifications ||
+			createAutomationCatchUpTemplateStateToken(template) !== expectedStateToken
+		) {
+			throw new ConflictError(
+				"Automatic deployment is no longer authorized because the template changed after target selection.",
+			);
+		}
+	}
+
 	// ============================================================================
 	// Private Helper Methods
 	// ============================================================================
@@ -379,7 +410,7 @@ export class DeploymentExecutorService {
 		userId: string,
 	): Promise<ValidatedDeploymentData> {
 		const template = await this.prisma.trashTemplate.findUnique({
-			where: { id: templateId, userId },
+			where: { id: templateId, userId, deletedAt: null },
 		});
 
 		if (!template) {
@@ -468,11 +499,15 @@ export class DeploymentExecutorService {
 				configData: template.configData,
 				instanceOverrides: template.instanceOverrides,
 				sourceQualityProfileName: template.sourceQualityProfileName,
+				lastSyncedAt: template.lastSyncedAt,
+				trashGuidesCommitHash: template.trashGuidesCommitHash,
+				hasUserModifications: template.hasUserModifications,
 			},
 			instance: {
 				id: instance.id,
 				label: instance.label,
 				service: instance.service,
+				enabled: instance.enabled,
 				baseUrl: instance.baseUrl,
 				encryptedApiKey: instance.encryptedApiKey,
 				encryptionIv: instance.encryptionIv,
@@ -1573,7 +1608,14 @@ export class DeploymentExecutorService {
 		userId: string,
 		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
 		parentSyncHistoryId?: string,
+		automationTemplateStateToken?: string,
+		catchUpOnly = false,
 	): Promise<DeploymentResult> {
+		if (!automationTemplateStateToken) {
+			throw new AppValidationError(
+				"An exact template-state token is required for automatic deployment.",
+			);
+		}
 		return this.deploySingleInstanceWithCapability(
 			templateId,
 			instanceId,
@@ -1582,6 +1624,8 @@ export class DeploymentExecutorService {
 			conflictResolutions,
 			undefined,
 			parentSyncHistoryId,
+			automationTemplateStateToken,
+			catchUpOnly,
 		);
 	}
 
@@ -1593,6 +1637,8 @@ export class DeploymentExecutorService {
 		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
 		executionToken: string | undefined,
 		parentSyncHistoryId?: string,
+		automationTemplateStateToken?: string,
+		catchUpOnly = false,
 	): Promise<DeploymentResult> {
 		const lockInstance = await this.prisma.serviceInstance.findFirst({
 			where: { id: instanceId, userId },
@@ -1610,7 +1656,7 @@ export class DeploymentExecutorService {
 		if (!lockInstance) {
 			throw new InstanceNotFoundError(instanceId);
 		}
-		return withCleanupTopologyMutationLease({ prisma: this.prisma, log }, userId, () =>
+		return withTrashTemplateDeploymentGuard({ prisma: this.prisma, log }, userId, () =>
 			this.runWithEndpointMutation(userId, lockInstance, "Deployment", (endpointKey) =>
 				this.executeSingleDeployment(
 					templateId,
@@ -1621,6 +1667,8 @@ export class DeploymentExecutorService {
 					executionToken,
 					endpointKey,
 					parentSyncHistoryId,
+					automationTemplateStateToken,
+					catchUpOnly,
 				),
 			),
 		);
@@ -1724,6 +1772,8 @@ export class DeploymentExecutorService {
 		executionToken?: string,
 		expectedEndpointKey?: string,
 		parentSyncHistoryId?: string,
+		automationTemplateStateToken?: string,
+		catchUpOnly = false,
 	): Promise<DeploymentResult> {
 		const startTime = new Date();
 		let historyId: string | null = null;
@@ -1744,6 +1794,20 @@ export class DeploymentExecutorService {
 			const { template, instance, templateConfig, templateCFs, effectiveQualityConfig } =
 				await this.validateAndPrepareDeployment(templateId, instanceId, userId);
 			instanceLabel = instance.label;
+			if (
+				automationTemplateStateToken &&
+				(template.hasUserModifications ||
+					createAutomationCatchUpTemplateStateToken(template) !== automationTemplateStateToken)
+			) {
+				throw new ConflictError(
+					"Automatic deployment is no longer authorized because the template changed after target selection.",
+				);
+			}
+			if (!executionToken && !instance.enabled) {
+				throw new ConflictError(
+					"Automatic deployment is no longer authorized because this service instance is disabled.",
+				);
+			}
 			if (expectedEndpointKey && this.createEndpointKey(userId, instance) !== expectedEndpointKey) {
 				throw new ConflictError(
 					"The ARR service connection changed while deployment was starting. Refresh the preview and try again.",
@@ -1763,6 +1827,7 @@ export class DeploymentExecutorService {
 				select: {
 					id: true,
 					service: true,
+					enabled: true,
 					baseUrl: true,
 					encryptedApiKey: true,
 					encryptionIv: true,
@@ -1772,19 +1837,26 @@ export class DeploymentExecutorService {
 				},
 			});
 			const credentialIdentity = this.createCredentialIdentity(instance);
-			const equivalentInstanceIds = getEquivalentServiceInstanceIds(
+			const allEquivalentInstanceIds = getEquivalentServiceInstanceIds(
 				serviceAliases.map((alias) => ({
 					...alias,
 					credentialIdentity: this.createCredentialIdentity(alias),
 				})),
 				{ ...instance, credentialIdentity },
 			);
+			if (!allEquivalentInstanceIds.includes(instanceId)) {
+				allEquivalentInstanceIds.push(instanceId);
+			}
+			const authorizedServiceAliases = executionToken
+				? serviceAliases
+				: serviceAliases.filter((alias) => alias.enabled);
+			const equivalentAliases = authorizedServiceAliases.filter((alias) =>
+				allEquivalentInstanceIds.includes(alias.id),
+			);
+			const equivalentInstanceIds = equivalentAliases.map((alias) => alias.id);
 			if (!equivalentInstanceIds.includes(instanceId)) {
 				equivalentInstanceIds.push(instanceId);
 			}
-			const equivalentAliases = serviceAliases.filter((alias) =>
-				equivalentInstanceIds.includes(alias.id),
-			);
 			const connectionBindings = equivalentAliases.map((alias) => ({
 				instanceId: alias.id,
 				connectionGeneration: alias.connectionGeneration,
@@ -1796,7 +1868,7 @@ export class DeploymentExecutorService {
 			await assertNoPendingDeploymentOperation(
 				this.prisma,
 				userId,
-				equivalentInstanceIds,
+				allEquivalentInstanceIds,
 				undefined,
 				parentSyncHistoryId,
 			);
@@ -1834,14 +1906,56 @@ export class DeploymentExecutorService {
 					"This template has conflicting quality-profile mappings for duplicate records of the same ARR instance. Unlink the stale deployment before continuing.",
 				);
 			}
-			assertEquivalentDeploymentMappingAuthority(templateMappings);
+			assertEquivalentDeploymentMappingAuthority(
+				templateMappings,
+				catchUpOnly && template.lastSyncedAt
+					? { allowManagedCustomFormatLagBefore: template.lastSyncedAt }
+					: undefined,
+			);
 			const qualityProfileMapping =
+				(catchUpOnly && template.lastSyncedAt
+					? templateMappings.find((mapping) => mapping.lastSyncedAt >= template.lastSyncedAt!)
+					: undefined) ??
 				templateMappings.find((mapping) => mapping.instanceId === instanceId) ??
 				templateMappings[0];
 			const selectedMappingIsLegacy = Boolean(
 				qualityProfileMapping && isLegacyDeploymentConnectionMapping(qualityProfileMapping),
 			);
 			if (!executionToken) {
+				let automationInstanceOverrides: Record<string, unknown> = {};
+				try {
+					const parsedOverrides = template.instanceOverrides
+						? JSON.parse(template.instanceOverrides)
+						: {};
+					if (
+						typeof parsedOverrides !== "object" ||
+						parsedOverrides === null ||
+						Array.isArray(parsedOverrides)
+					) {
+						throw new Error("instance overrides must be an object");
+					}
+					automationInstanceOverrides = parsedOverrides as Record<string, unknown>;
+				} catch (error) {
+					throw new ConflictError(
+						`Automatic deployment is blocked because instance overrides are invalid: ${getErrorMessage(error)}`,
+					);
+				}
+				const aliasOverrideStates = new Set(
+					equivalentInstanceIds.map((equivalentInstanceId) => {
+						const value = automationInstanceOverrides[equivalentInstanceId] ?? {};
+						if (typeof value !== "object" || value === null || Array.isArray(value)) {
+							throw new ConflictError(
+								"Automatic deployment is blocked because an equivalent ARR alias has invalid instance overrides.",
+							);
+						}
+						return createUpstreamResourceStateToken(value);
+					}),
+				);
+				if (aliasOverrideStates.size > 1) {
+					throw new ConflictError(
+						"Automatic deployment is blocked because equivalent ARR aliases have conflicting instance overrides.",
+					);
+				}
 				const eligibleAutomationMappings = templateMappings.filter(
 					(mapping) =>
 						mapping.syncStrategy === "auto" &&
@@ -1864,6 +1978,24 @@ export class DeploymentExecutorService {
 					throw new ConflictError(
 						"Automatic deployment is blocked by a changed, stale, or legacy alias mapping for this ARR endpoint. Review and consolidate the deployment mappings first.",
 					);
+				}
+				if (
+					catchUpOnly &&
+					(!template.lastSyncedAt ||
+						!eligibleAutomationMappings.some(
+							(mapping) => mapping.lastSyncedAt < template.lastSyncedAt!,
+						))
+				) {
+					return {
+						instanceId,
+						instanceLabel,
+						success: true,
+						status: "SUCCESS",
+						customFormatsCreated: 0,
+						customFormatsUpdated: 0,
+						customFormatsSkipped: 0,
+						errors: [],
+					};
 				}
 			}
 			const isVerifiedSourceInstance = qualityProfileMapping
@@ -1993,6 +2125,14 @@ export class DeploymentExecutorService {
 						"The template or instance changed after this preview. Refresh the preview and review the deployment again.",
 					);
 				}
+			}
+
+			if (automationTemplateStateToken) {
+				await this.assertAutomationCatchUpTemplateState(
+					templateId,
+					userId,
+					automationTemplateStateToken,
+				);
 			}
 
 			const { backup, historyId: syncHistoryId } = await this.createBackupAndHistory(
@@ -2449,7 +2589,7 @@ export class DeploymentExecutorService {
 				);
 			}
 		}
-		return withCleanupTopologyMutationLease({ prisma: this.prisma, log }, userId, async () => {
+		return withTrashTemplateDeploymentGuard({ prisma: this.prisma, log }, userId, async () => {
 			const template = await this.prisma.trashTemplate.findUnique({
 				where: { id: templateId, userId },
 			});

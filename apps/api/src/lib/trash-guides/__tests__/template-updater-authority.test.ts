@@ -1,20 +1,28 @@
 import { describe, expect, it, vi } from "vitest";
-import { createDeploymentConnectionStateToken } from "../deployment-target.js";
+import {
+	createAutomationCatchUpTemplateStateToken,
+	createDeploymentConnectionStateToken,
+} from "../deployment-target.js";
 import { TemplateUpdater } from "../template-updater.js";
 
 const template = {
 	id: "template-1",
 	userId: "user-1",
 	name: "Any",
+	configData: '{"customFormats":[]}',
 	instanceOverrides: null as string | null,
+	trashGuidesCommitHash: "current" as string | null,
+	lastSyncedAt: null as Date | null,
+	hasUserModifications: false,
 };
 
-function instance(id: string, baseUrl: string) {
+function instance(id: string, baseUrl: string, enabled = true) {
 	return {
 		id,
 		userId: "user-1",
 		label: id,
 		service: "RADARR",
+		enabled,
 		baseUrl,
 		encryptedApiKey: "encrypted-key",
 		encryptionIv: "iv",
@@ -70,7 +78,10 @@ function createUpdater(
 		{ deploySingleInstanceFromAutomation, createEndpointMutationKey } as never,
 	);
 	const privateUpdater = updater as unknown as {
-		deployToMappedInstances: (templateId: string) => Promise<
+		deployToMappedInstances: (
+			templateId: string,
+			catchUpOnly?: boolean,
+		) => Promise<
 			Array<{
 				templateId: string;
 				endpointKey: string;
@@ -82,10 +93,79 @@ function createUpdater(
 			}>
 		>;
 	};
-	return { updater, privateUpdater, deploySingleInstanceFromAutomation };
+	return {
+		updater,
+		privateUpdater,
+		deploySingleInstanceFromAutomation,
+		createEndpointMutationKey,
+		prisma,
+	};
 }
 
 describe("TemplateUpdater automation authority", () => {
+	it("reports deployment catch-up after a disabled auto target is re-enabled", async () => {
+		const templateSyncedAt = new Date("2026-08-10T12:00:00.000Z");
+		const prisma = {
+			trashTemplate: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						id: template.id,
+						name: template.name,
+						serviceType: "RADARR",
+						trashGuidesCommitHash: "current",
+						hasUserModifications: false,
+						configData: '{"customFormats":[]}',
+						changeLog: null,
+						lastSyncedAt: templateSyncedAt,
+						qualityProfileMappings: [
+							{
+								syncStrategy: "auto",
+								lastSyncedAt: new Date("2026-08-09T12:00:00.000Z"),
+								instance: { enabled: true },
+							},
+						],
+					},
+				]),
+			},
+		};
+		const updater = new TemplateUpdater(
+			prisma as never,
+			{
+				getLatestCommit: vi.fn().mockResolvedValue({
+					commitHash: "current",
+					commitDate: "2026-08-10",
+					commitMessage: "current",
+					commitUrl: "https://example.com/commit/current",
+				}),
+			} as never,
+			{} as never,
+			{} as never,
+		);
+
+		const result = await updater.checkForUpdates(template.userId);
+
+		expect(result.templatesWithUpdates).toEqual([
+			expect.objectContaining({
+				templateId: template.id,
+				currentCommit: "current",
+				latestCommit: "current",
+				canAutoSync: true,
+				deploymentCatchUp: true,
+			}),
+		]);
+		expect(result.outdatedTemplates).toBe(1);
+	});
+
+	it("does not invoke automation for a disabled instance", async () => {
+		const target = instance("instance-1", "http://radarr:7878", false);
+		const { privateUpdater, deploySingleInstanceFromAutomation } = createUpdater([mapping(target)]);
+
+		const outcomes = await privateUpdater.deployToMappedInstances(template.id);
+
+		expect(deploySingleInstanceFromAutomation).not.toHaveBeenCalled();
+		expect(outcomes).toEqual([]);
+	});
+
 	it("does not invoke automation for a stale connection binding", async () => {
 		const target = instance("instance-1", "http://radarr:7878");
 		const { privateUpdater, deploySingleInstanceFromAutomation } = createUpdater([
@@ -140,6 +220,10 @@ describe("TemplateUpdater automation authority", () => {
 			template.id,
 			primary.id,
 			template.userId,
+			undefined,
+			undefined,
+			createAutomationCatchUpTemplateStateToken(template),
+			false,
 		);
 		expect(outcomes).toEqual([
 			expect.objectContaining({ instanceId: primary.id, success: true, errors: [] }),
@@ -448,5 +532,112 @@ describe("TemplateUpdater automation authority", () => {
 		expect(result).toMatchObject({ processed: 1, successful: 1, failed: 0 });
 		expect(result.results).toEqual([expect.objectContaining({ success: true })]);
 		expect(result.results[0]).not.toHaveProperty("errors");
+	});
+
+	it("deploys a current template to a re-enabled target without syncing the template again", async () => {
+		const target = instance("instance-1", "http://radarr:7878");
+		const { updater, privateUpdater } = createUpdater([mapping(target)]);
+		vi.spyOn(updater, "checkForUpdates").mockResolvedValue({
+			templatesWithUpdates: [
+				{
+					templateId: template.id,
+					templateName: template.name,
+					currentCommit: "current",
+					latestCommit: "current",
+					hasUserModifications: false,
+					autoSyncInstanceCount: 1,
+					canAutoSync: true,
+					serviceType: "RADARR",
+					deploymentCatchUp: true,
+				},
+			],
+			latestCommit: {
+				commitHash: "current",
+				commitDate: "2026-08-10",
+				commitMessage: "current",
+				commitUrl: "https://example.com/commit/current",
+			},
+			totalTemplates: 1,
+			outdatedTemplates: 1,
+		});
+		const syncTemplate = vi.spyOn(updater, "syncTemplate");
+		const deployToMappedInstances = vi.spyOn(privateUpdater, "deployToMappedInstances");
+
+		const result = await updater.processAutoUpdates(template.userId);
+
+		expect(syncTemplate).not.toHaveBeenCalled();
+		expect(deployToMappedInstances).toHaveBeenCalledWith(template.id, true);
+		expect(result).toMatchObject({ processed: 1, successful: 1, failed: 0 });
+	});
+
+	it("limits catch-up to endpoint groups that are still behind", async () => {
+		const behind = instance("a-behind", "http://radarr-a:7878");
+		const current = instance("z-current", "http://radarr-b:7878");
+		const templateSyncedAt = new Date("2026-08-10T12:00:00.000Z");
+		const {
+			privateUpdater,
+			deploySingleInstanceFromAutomation,
+			createEndpointMutationKey,
+			prisma,
+		} = createUpdater([
+			mapping(behind, { lastSyncedAt: new Date("2026-08-10T11:00:00.000Z") }),
+			mapping(current, { lastSyncedAt: new Date("2026-08-10T12:01:00.000Z") }),
+		]);
+		createEndpointMutationKey.mockImplementation(
+			(userId: string, target: ReturnType<typeof instance>) =>
+				`${userId}:${target.service}:${new URL(target.baseUrl).origin.toLowerCase()}`,
+		);
+		prisma.trashTemplate.findUnique.mockResolvedValue({
+			...template,
+			lastSyncedAt: templateSyncedAt,
+		});
+		const selectedTemplate = { ...template, lastSyncedAt: templateSyncedAt };
+
+		await privateUpdater.deployToMappedInstances(template.id, true);
+
+		expect(deploySingleInstanceFromAutomation).toHaveBeenCalledOnce();
+		expect(deploySingleInstanceFromAutomation).toHaveBeenCalledWith(
+			template.id,
+			behind.id,
+			template.userId,
+			undefined,
+			undefined,
+			createAutomationCatchUpTemplateStateToken(selectedTemplate),
+			true,
+		);
+	});
+
+	it("keeps current aliases in a selected catch-up endpoint group", async () => {
+		const currentAlias = instance("a-current", "http://radarr:7878");
+		const behindAlias = instance("z-behind", "HTTP://RADARR:7878/");
+		const templateSyncedAt = new Date("2026-08-10T12:00:00.000Z");
+		const { privateUpdater, deploySingleInstanceFromAutomation, prisma } = createUpdater([
+			mapping(currentAlias, {
+				lastSyncedAt: new Date("2026-08-10T12:01:00.000Z"),
+				managedCustomFormats: '[{"resourceId":42}]',
+			}),
+			mapping(behindAlias, {
+				lastSyncedAt: new Date("2026-08-10T11:00:00.000Z"),
+				managedCustomFormats: '[{"resourceId":41}]',
+			}),
+		]);
+		prisma.trashTemplate.findUnique.mockResolvedValue({
+			...template,
+			lastSyncedAt: templateSyncedAt,
+		});
+		const selectedTemplate = { ...template, lastSyncedAt: templateSyncedAt };
+
+		await privateUpdater.deployToMappedInstances(template.id, true);
+
+		expect(deploySingleInstanceFromAutomation).toHaveBeenCalledOnce();
+		expect(deploySingleInstanceFromAutomation).toHaveBeenCalledWith(
+			template.id,
+			currentAlias.id,
+			template.userId,
+			undefined,
+			undefined,
+			createAutomationCatchUpTemplateStateToken(selectedTemplate),
+			true,
+		);
 	});
 });

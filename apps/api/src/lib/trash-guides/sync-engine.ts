@@ -13,6 +13,7 @@ import { getErrorMessage } from "../utils/error-message.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import { isDeploymentResultUncertain } from "./deployment-history-manager.js";
 import {
+	createAutomationCatchUpTemplateStateToken,
 	createDeploymentConnectionBindingCandidates,
 	createDeploymentConnectionStateToken,
 	getEquivalentServiceInstanceIds,
@@ -584,6 +585,24 @@ export class SyncEngine {
 				: undefined;
 
 			deploymentAttempted = true;
+			const automationTemplateState =
+				options.syncType === "SCHEDULED"
+					? await this.prisma.trashTemplate.findFirst({
+							where: { id: options.templateId, userId: options.userId, deletedAt: null },
+							select: {
+								configData: true,
+								instanceOverrides: true,
+								trashGuidesCommitHash: true,
+								lastSyncedAt: true,
+								hasUserModifications: true,
+							},
+						})
+					: null;
+			if (options.syncType === "SCHEDULED" && !automationTemplateState) {
+				throw new ConflictError(
+					"Automatic deployment is no longer authorized because the template is unavailable.",
+				);
+			}
 			const deployResult =
 				options.syncType === "SCHEDULED"
 					? await this.deploymentExecutor.deploySingleInstanceFromAutomation(
@@ -592,6 +611,8 @@ export class SyncEngine {
 							options.userId,
 							deploymentConflictResolutions,
 							syncId,
+							createAutomationCatchUpTemplateStateToken(automationTemplateState!),
+							false,
 						)
 					: await this.deploymentExecutor.deploySingleInstance(
 							options.templateId,

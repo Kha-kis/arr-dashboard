@@ -19,6 +19,7 @@ import type {
 import { AppValidationError, ConflictError, TemplateNotFoundError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import { withTrashTemplateMutationGuard } from "./template-mutation-guard.js";
 import { safeJsonParse } from "./utils.js";
 
 const log = loggers.trashGuides;
@@ -302,6 +303,16 @@ export class TemplateService {
 		userId: string,
 		request: UpdateTemplateRequest,
 	): Promise<TrashTemplate> {
+		return withTrashTemplateMutationGuard(userId, () =>
+			this.updateTemplateUnlocked(templateId, userId, request),
+		);
+	}
+
+	private async updateTemplateUnlocked(
+		templateId: string,
+		userId: string,
+		request: UpdateTemplateRequest,
+	): Promise<TrashTemplate> {
 		// Check ownership
 		const existing = await this.prisma.trashTemplate.findFirst({
 			where: {
@@ -386,6 +397,12 @@ export class TemplateService {
 	 * Delete template (soft delete)
 	 */
 	async deleteTemplate(templateId: string, userId: string): Promise<boolean> {
+		return withTrashTemplateMutationGuard(userId, () =>
+			this.deleteTemplateUnlocked(templateId, userId),
+		);
+	}
+
+	private async deleteTemplateUnlocked(templateId: string, userId: string): Promise<boolean> {
 		// Check ownership
 		const existing = await this.prisma.trashTemplate.findFirst({
 			where: {

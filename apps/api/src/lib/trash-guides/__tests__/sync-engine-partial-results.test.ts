@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { ConflictError } from "../../errors.js";
+import { createAutomationCatchUpTemplateStateToken } from "../deployment-target.js";
 import { SyncEngine, type SyncOptions } from "../sync-engine.js";
 
 const createSyncOptions = (overrides: Partial<SyncOptions> = {}): SyncOptions => ({
@@ -406,6 +407,13 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 	});
 
 	it("keeps scheduled refresh before automation deployment without a review token", async () => {
+		const automationTemplateState = {
+			configData: "{}",
+			instanceOverrides: null,
+			trashGuidesCommitHash: "current",
+			lastSyncedAt: new Date("2026-08-10T12:00:00.000Z"),
+			hasUserModifications: false,
+		};
 		const syncTemplate = vi.fn().mockResolvedValue({ success: true, errors: [] });
 		const deploySingleInstanceFromAutomation = vi.fn().mockResolvedValue({
 			instanceId: "instance-123",
@@ -419,6 +427,9 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			details: { created: ["Created CF"], updated: [], failed: [] },
 		});
 		const prisma = {
+			trashTemplate: {
+				findFirst: vi.fn().mockResolvedValue(automationTemplateState),
+			},
 			trashSyncHistory: {
 				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
 				update: vi.fn().mockResolvedValue({}),
@@ -440,6 +451,8 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			"user-123",
 			undefined,
 			"sync-1",
+			createAutomationCatchUpTemplateStateToken(automationTemplateState),
+			false,
 		);
 		expect(syncTemplate.mock.invocationCallOrder[0]).toBeLessThan(
 			deploySingleInstanceFromAutomation.mock.invocationCallOrder[0]!,
