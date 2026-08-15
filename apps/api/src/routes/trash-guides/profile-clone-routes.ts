@@ -43,7 +43,7 @@ import { z } from "zod";
 const instanceIdParams = z.object({ instanceId: z.string().min(1) });
 const instanceProfileParams = z.object({
 	instanceId: z.string().min(1),
-	profileId: z.coerce.number().int().positive(),
+	profileId: z.coerce.number().int().positive().safe(),
 });
 
 const profileImportSchema = z.object({
@@ -94,7 +94,7 @@ const createTemplateSchema = z.object({
 		}),
 	),
 	sourceInstanceId: z.string().min(1),
-	sourceProfileId: z.number().int(),
+	sourceProfileId: z.number().int().positive().safe(),
 	sourceProfileName: z.string(),
 	sourceInstanceLabel: z.string(),
 	profileConfig: z.object({
@@ -117,6 +117,81 @@ function requireSourceProfileName(profile: { name?: string | null }): string {
 		);
 	}
 	return profile.name;
+}
+
+interface CloneSourceCustomFormat {
+	id?: number;
+	name?: string | null;
+	specifications?: unknown[] | null;
+	includeCustomFormatWhenRenaming?: boolean | null;
+}
+
+function validateCloneSourceState(
+	requestedProfileId: number,
+	profile: ArrQualityProfileResponse,
+	allCustomFormats: CloneSourceCustomFormat[],
+) {
+	if (!Number.isSafeInteger(profile.id) || profile.id <= 0 || profile.id !== requestedProfileId) {
+		throw new ConflictError(
+			"The cloned source quality profile identity changed while it was being reviewed. Refresh the profile and try again.",
+		);
+	}
+
+	const profileFormatIds: number[] = [];
+	const sourceProfileScores = new Map<number, number>();
+	for (const item of profile.formatItems ?? []) {
+		if (!Number.isSafeInteger(item.format) || item.format <= 0) {
+			throw new ConflictError(
+				"The source quality profile contains an invalid Custom Format identity.",
+			);
+		}
+		if (sourceProfileScores.has(item.format)) {
+			throw new ConflictError(
+				"The source quality profile contains a duplicate Custom Format identity.",
+			);
+		}
+		if (!Number.isFinite(item.score)) {
+			throw new ConflictError(
+				"The source quality profile contains an invalid Custom Format score.",
+			);
+		}
+		profileFormatIds.push(item.format);
+		sourceProfileScores.set(item.format, item.score);
+	}
+
+	const seenCustomFormatIds = new Set<number>();
+	for (const customFormat of allCustomFormats) {
+		if (!Number.isSafeInteger(customFormat.id) || customFormat.id! <= 0) {
+			throw new ConflictError("ARR returned an invalid Custom Format identity.");
+		}
+		if (seenCustomFormatIds.has(customFormat.id!)) {
+			throw new ConflictError("ARR returned a duplicate Custom Format identity.");
+		}
+		seenCustomFormatIds.add(customFormat.id!);
+	}
+
+	const customFormatsById = new Map<number, CloneSourceCustomFormat>();
+	for (const customFormat of allCustomFormats) {
+		customFormatsById.set(customFormat.id!, customFormat);
+	}
+	for (const customFormatId of [...profileFormatIds].sort((left, right) => left - right)) {
+		const customFormat = customFormatsById.get(customFormatId);
+		if (
+			!customFormat ||
+			typeof customFormat.name !== "string" ||
+			customFormat.name.trim().length === 0
+		) {
+			throw new ConflictError(
+				`Custom Format ${customFormatId} no longer has an exact live definition in ARR.`,
+			);
+		}
+	}
+
+	return {
+		profileFormatIds: new Set(profileFormatIds),
+		sourceProfileScores,
+		customFormatsById,
+	};
 }
 
 // ============================================================================
@@ -291,12 +366,13 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			client.customFormat.getAll(),
 		]);
 		requireSourceProfileName(profile);
-		// Get the CFs used in this profile (from formatItems)
-		const profileCFIds = new Set(
-			((profile as ArrQualityProfileResponse).formatItems || []).map(
-				(item: { format: number }) => item.format,
-			),
+		const cloneSourceState = validateCloneSourceState(
+			profileId,
+			profile as ArrQualityProfileResponse,
+			allCustomFormats,
 		);
+		// Get the CFs used in this profile (from formatItems)
+		const profileCFIds = cloneSourceState.profileFormatIds;
 
 		// Filter to only CFs used in the profile and include score
 		// Use type guard to filter out CFs with undefined id or name
@@ -602,12 +678,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			client.qualityProfile.getById(sourceProfileId) as Promise<ArrQualityProfileResponse>,
 			client.customFormat.getAll(),
 		]);
-		if (fullProfile.id !== sourceProfileId) {
-			throw new ConflictError(
-				"The cloned source quality profile identity changed while the template was being created. Refresh the profile and try again.",
-			);
-		}
 		const sourceProfileName = requireSourceProfileName(fullProfile);
+		const cloneSourceState = validateCloneSourceState(
+			sourceProfileId,
+			fullProfile,
+			allCustomFormats,
+		);
 		const validCustomFormats = allCustomFormats.filter(
 			(cf): cf is typeof cf & { id: number; name: string } =>
 				cf.id !== undefined && cf.name !== undefined && cf.name !== null,
@@ -626,12 +702,14 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Build a lookup map for instance CFs (filter out CFs with undefined id or name)
 		const cfLookup = new Map<number, { id: number; name: string; specifications?: unknown[] }>();
-		for (const cf of validCustomFormats) {
-			cfLookup.set(cf.id, {
-				id: cf.id,
-				name: cf.name,
-				specifications: cf.specifications ?? undefined,
-			});
+		for (const [customFormatId, cf] of cloneSourceState.customFormatsById) {
+			if (cf.name !== undefined && cf.name !== null) {
+				cfLookup.set(customFormatId, {
+					id: customFormatId,
+					name: cf.name,
+					specifications: cf.specifications ?? undefined,
+				});
+			}
 		}
 
 		// Get TRaSH cache for matching
@@ -649,13 +727,13 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				trashCFLookup.set(cf.trash_id, cf);
 			}
 		}
-
 		// Build template config from selections using extracted helpers
 		const customFormatsConfig = buildCustomFormatsConfig(
 			customFormatSelections,
 			cfLookup,
 			trashCFLookup,
 			sourceInstanceId,
+			cloneSourceState.sourceProfileScores,
 		);
 
 		const completeQualityProfile = buildCompleteQualityProfile(fullProfile, profileConfig, {

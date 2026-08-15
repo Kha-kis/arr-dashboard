@@ -42,6 +42,12 @@ let instanceService: "RADARR" | "SONARR" = "RADARR";
 let instanceEncryptedApiKey = "encrypted-key-a";
 let upstreamCustomFormatName = "Reviewed CF";
 let upstreamCustomFormatSpecifications: unknown[] = [{ name: "Source", value: "WEB-DL" }];
+let upstreamFormatItems: Array<{ format: number; score: number }> = [{ format: 42, score: 100 }];
+let upstreamCustomFormats: Array<{
+	id: number;
+	name: string;
+	specifications: unknown[];
+}> | null = null;
 
 function createClient() {
 	const Client = instanceService === "RADARR" ? clients.MockRadarrClient : clients.MockSonarrClient;
@@ -54,19 +60,22 @@ function createClient() {
 				cutoff: 1,
 				minFormatScore: 0,
 				cutoffFormatScore: 0,
-				formatItems: [{ format: 42, score: 100 }],
+				formatItems: upstreamFormatItems,
 				items: [],
 			}),
 		},
 		customFormat: {
-			getAll: vi.fn().mockImplementation(async () => [
-				{
-					id: 42,
-					name: upstreamCustomFormatName,
-					specifications: upstreamCustomFormatSpecifications,
-					includeCustomFormatWhenRenaming: false,
-				},
-			]),
+			getAll: vi.fn().mockImplementation(
+				async () =>
+					upstreamCustomFormats ?? [
+						{
+							id: 42,
+							name: upstreamCustomFormatName,
+							specifications: upstreamCustomFormatSpecifications,
+							includeCustomFormatWhenRenaming: false,
+						},
+					],
+			),
 		},
 	});
 }
@@ -102,6 +111,8 @@ describe("profile clone source authority", () => {
 		instanceEncryptedApiKey = "encrypted-key-a";
 		upstreamCustomFormatName = "Reviewed CF";
 		upstreamCustomFormatSpecifications = [{ name: "Source", value: "WEB-DL" }];
+		upstreamFormatItems = [{ format: 42, score: 100 }];
+		upstreamCustomFormats = null;
 		mocks.cacheGet.mockResolvedValue([]);
 		mocks.getCommitHash.mockResolvedValue("commit-1");
 		mocks.createTemplate.mockResolvedValue({ id: "template-1" });
@@ -171,6 +182,148 @@ describe("profile clone source authority", () => {
 					}),
 				}),
 			);
+		},
+	);
+
+	it.each([
+		["RADARR", -10_000],
+		["SONARR", -10_000],
+		["RADARR", 0],
+		["SONARR", 0],
+	] as const)(
+		"preserves the %s source score %s for Keep Instance",
+		async (serviceType, sourceScore) => {
+			instanceService = serviceType;
+			upstreamFormatItems = [{ format: 42, score: sourceScore }];
+			upstreamCustomFormats = [{ id: 42, name: "Language: Not English", specifications: [] }];
+			const sourceStateToken = await getSourceStateToken();
+
+			const response = await createInjectAuthenticated(app)("POST", "/create-template", {
+				body: {
+					...requestBody(serviceType, sourceStateToken),
+					customFormatSelections: {
+						"instance-42": { selected: true, conditionsEnabled: {} },
+					},
+				},
+			});
+
+			expect(response.statusCode).toBe(201);
+			expect(mocks.createTemplate).toHaveBeenCalledWith(
+				"user-1",
+				expect.objectContaining({
+					config: expect.objectContaining({
+						customFormats: [
+							expect.objectContaining({
+								trashId: "instance-42",
+								scoreOverride: sourceScore,
+							}),
+						],
+					}),
+				}),
+			);
+		},
+	);
+
+	it.each([
+		{
+			label: "name",
+			mutate: () => {
+				upstreamCustomFormats = [
+					{ id: 42, name: "Renamed upstream", specifications: [{ name: "Not English" }] },
+				];
+			},
+		},
+		{
+			label: "specification",
+			mutate: () => {
+				upstreamCustomFormats = [
+					{ id: 42, name: "Language", specifications: [{ name: "Changed specification" }] },
+				];
+			},
+		},
+	])("rejects creation when a reviewed selected CF $label changes", async ({ mutate }) => {
+		upstreamFormatItems = [{ format: 42, score: 0 }];
+		upstreamCustomFormats = [
+			{ id: 42, name: "Language", specifications: [{ name: "Not English" }] },
+		];
+		const sourceStateToken = await getSourceStateToken();
+		mutate();
+
+		const response = await createInjectAuthenticated(app)("POST", "/create-template", {
+			body: {
+				...requestBody("RADARR", sourceStateToken),
+				customFormatSelections: {
+					"instance-42": { selected: true, conditionsEnabled: {} },
+				},
+			},
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(mocks.createTemplate).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ label: "duplicate", formats: [42, 42] },
+		{ label: "fractional", formats: [4.5] },
+		{ label: "zero", formats: [0] },
+		{ label: "negative", formats: [-4] },
+		{ label: "unsafe", formats: [Number.MAX_SAFE_INTEGER + 1] },
+	])("rejects $label upstream Custom Format IDs before template creation", async ({ formats }) => {
+		upstreamFormatItems = [{ format: 42, score: 0 }];
+		upstreamCustomFormats = [{ id: 42, name: "Language", specifications: [] }];
+		const sourceStateToken = await getSourceStateToken();
+		upstreamCustomFormats = formats.map((id, index) => ({
+			id,
+			name: `Format ${index}`,
+			specifications: [],
+		}));
+
+		const response = await createInjectAuthenticated(app)("POST", "/create-template", {
+			body: requestBody("RADARR", sourceStateToken),
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(mocks.createTemplate).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{
+			label: "duplicate",
+			formatItems: [
+				{ format: 42, score: 0 },
+				{ format: 42, score: 100 },
+			],
+		},
+		{ label: "fractional", formatItems: [{ format: 4.5, score: 0 }] },
+		{ label: "zero", formatItems: [{ format: 0, score: 0 }] },
+		{ label: "negative", formatItems: [{ format: -4, score: 0 }] },
+		{ label: "unsafe", formatItems: [{ format: Number.MAX_SAFE_INTEGER + 1, score: 0 }] },
+	])("rejects $label profile format IDs during source review", async ({ formatItems }) => {
+		upstreamFormatItems = formatItems;
+		upstreamCustomFormats = [{ id: 42, name: "Language", specifications: [] }];
+
+		const response = await createInjectAuthenticated(app)("GET", "/profile-details/instance-1/7");
+
+		expect(response.statusCode).toBe(409);
+	});
+
+	it("rejects source review when ARR returns a different profile ID", async () => {
+		upstreamProfileId = 8;
+
+		const response = await createInjectAuthenticated(app)("GET", "/profile-details/instance-1/7");
+
+		expect(response.statusCode).toBe(409);
+	});
+
+	it.each([0, -7, Number.MAX_SAFE_INTEGER + 1])(
+		"rejects invalid requested source profile ID %s before lookup",
+		async (sourceProfileId) => {
+			const response = await createInjectAuthenticated(app)("POST", "/create-template", {
+				body: { ...requestBody("RADARR", "0".repeat(64)), sourceProfileId },
+			});
+
+			expect(response.statusCode).toBe(400);
+			expect(mocks.createTemplate).not.toHaveBeenCalled();
 		},
 	);
 

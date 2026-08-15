@@ -70,6 +70,7 @@ export {
 export type {
 	BulkDeleteOverridesPayload,
 	BulkDeleteOverridesResponse,
+	BulkOverridesResponse,
 	CFMatchDetails,
 	CFMatchResult,
 	CFValidationResponse,
@@ -92,6 +93,7 @@ export type {
 	QualityProfileDetailsResponse,
 	// Profile matching types
 	RecommendedCF,
+	ScoreRecoveryPlan,
 	// Score update types
 	ScoreUpdate,
 	UpdateProfileScoresPayload,
