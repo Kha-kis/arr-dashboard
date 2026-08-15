@@ -195,6 +195,14 @@ function parseEpisodeParentGenerationId(metadata: string | null): string | undef
 		: undefined;
 }
 
+function parsePublishedStringArray(value: string, label: string): string[] {
+	const parsed = safeJsonParse(value);
+	if (!Array.isArray(parsed) || parsed.some((entry) => typeof entry !== "string")) {
+		throw new Error(`${label} evidence was not a string array`);
+	}
+	return parsed as string[];
+}
+
 // The route returns at most 200 preview rows; avoid live safety I/O for rows
 // the caller cannot inspect.
 const PREVIEW_SAFETY_INSPECTION_LIMIT = 200;
@@ -3405,6 +3413,7 @@ export async function prefetchPlexData(
 		const instanceIds = plexInstances.map((i) => i.id);
 		let cursor: string | undefined;
 		let totalRows = 0;
+		let invalidRows = 0;
 
 		// Cursor-paginate to bound peak heap. Project only columns the watch-map
 		// builder reads — skipping ratingKey/thumb/title and the per-row instanceId.
@@ -3438,9 +3447,9 @@ export async function prefetchPlexData(
 				try {
 					// Key is mediaType:tmdbId (aggregating across sections)
 					const key = `${row.mediaType}:${row.tmdbId}`;
-					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
-					const collections = (safeJsonParse(row.collections) as string[]) ?? [];
-					const labels = (safeJsonParse(row.labels) as string[]) ?? [];
+					const watchedByUsers = parsePublishedStringArray(row.watchedByUsers, "Plex watched-by");
+					const collections = parsePublishedStringArray(row.collections, "Plex collection");
+					const labels = parsePublishedStringArray(row.labels, "Plex label");
 
 					const sectionInfo: PlexSectionWatchInfo = {
 						sectionId: row.sectionId,
@@ -3503,12 +3512,16 @@ export async function prefetchPlexData(
 						});
 					}
 				} catch (rowErr) {
+					invalidRows++;
 					log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Plex cache row with bad data");
 				}
 			}
 
 			cursor = batch[batch.length - 1]!.id;
 			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
+		}
+		if (invalidRows > 0) {
+			throw new Error("Plex cache contained malformed policy evidence");
 		}
 
 		log.info(
@@ -3665,16 +3678,37 @@ async function prefetchJellyfinData(
 
 	const jellyfinInstances = await prisma.serviceInstance.findMany({
 		where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-		select: { id: true },
+		orderBy: { id: "asc" },
+		select: { id: true, updatedAt: true },
 	});
 
 	if (jellyfinInstances.length === 0) return undefined;
 
 	try {
+		const before = await loadCompleteCacheGenerations(deps, jellyfinInstances, "jellyfin");
+		if (!before || [...before.values()].some((generation) => !generation.generationId)) {
+			throw new Error("Jellyfin cache did not have a complete fresh generation for every instance");
+		}
+		const generationSignature = (
+			generations: NonNullable<Awaited<ReturnType<typeof loadCompleteCacheGenerations>>>,
+		) =>
+			JSON.stringify(
+				[...generations.entries()].map(([instanceId, generation]) => [
+					instanceId,
+					generation.completedAt.toISOString(),
+					generation.itemCount,
+					generation.generationId,
+				]),
+			);
+		const expectedRows = [...before.values()].reduce(
+			(total, generation) => total + generation.itemCount,
+			0,
+		);
 		const map: JellyfinWatchMap = new Map();
 		const instanceIds = jellyfinInstances.map((i) => i.id);
 		let cursor: string | undefined;
 		let totalRows = 0;
+		let invalidRows = 0;
 
 		// Cursor-paginate. Project only columns the watch-map reader uses.
 		while (true) {
@@ -3702,7 +3736,10 @@ async function prefetchJellyfinData(
 			for (const row of batch) {
 				try {
 					const key = `${row.mediaType}:${row.tmdbId}`;
-					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+					const watchedByUsers = parsePublishedStringArray(
+						row.watchedByUsers,
+						"Jellyfin watched-by",
+					);
 
 					const existing = map.get(key);
 					if (existing) {
@@ -3739,6 +3776,7 @@ async function prefetchJellyfinData(
 						});
 					}
 				} catch (rowErr) {
+					invalidRows++;
 					log.warn(
 						{ err: rowErr, tmdbId: row.tmdbId },
 						"Skipping Jellyfin cache row with bad data",
@@ -3748,6 +3786,13 @@ async function prefetchJellyfinData(
 
 			cursor = batch[batch.length - 1]!.id;
 			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
+		}
+		if (invalidRows > 0 || totalRows !== expectedRows) {
+			throw new Error("Jellyfin cache rows did not match their published generation");
+		}
+		const after = await loadCompleteCacheGenerations(deps, jellyfinInstances, "jellyfin");
+		if (!after || generationSignature(after) !== generationSignature(before)) {
+			throw new Error("Jellyfin cache generation changed while evidence was being read");
 		}
 
 		log.info(
@@ -7303,7 +7348,7 @@ export async function buildEvalContext(
 		conditions: string | null;
 		plexLibraryFilter?: string | null;
 	}>,
-	options: { destructiveAuthority?: boolean } = {},
+	options: { destructiveAuthority?: boolean; requireAvailableEvidence?: boolean } = {},
 ): Promise<EvalContext> {
 	const activeTypes = collectActiveRuleTypes(rules);
 	if (options.destructiveAuthority) {
@@ -7354,19 +7399,17 @@ export async function buildEvalContext(
 		needsPlex || needsPlexSectionInventory
 			? await loadPublishedPlexPolicyEvidence(deps, userId, rules)
 			: undefined;
+	const needsSeerr = SEERR_RULE_TYPES.some((type) => activeTypes.has(type));
+	const needsPlexEpisodes = activeTypes.has("plex_episode_completion");
+	const needsJellyfin = JELLYFIN_RULE_TYPES.some((type) => activeTypes.has(type));
+	const needsJellyfinEpisodes = activeTypes.has("jellyfin_episode_completion");
 	const [seerrMap, prefetchedPlexEpisodeMap, jellyfinMap, jellyfinEpisodeMap] = await Promise.all([
-		SEERR_RULE_TYPES.some((t) => activeTypes.has(t))
-			? prefetchSeerrRequests(deps, userId)
-			: undefined,
-		activeTypes.has("plex_episode_completion") && plexEvidence
+		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
+		needsPlexEpisodes && plexEvidence
 			? prefetchPlexEpisodeData(deps, userId, plexEvidence.generationIds)
 			: undefined,
-		JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t))
-			? prefetchJellyfinData(deps, userId)
-			: undefined,
-		activeTypes.has("jellyfin_episode_completion")
-			? prefetchJellyfinEpisodeData(deps, userId)
-			: undefined,
+		needsJellyfin ? prefetchJellyfinData(deps, userId) : undefined,
+		needsJellyfinEpisodes ? prefetchJellyfinEpisodeData(deps, userId) : undefined,
 	]);
 	const tmdbListMemberships = activeTypes.has("tmdb_list_member")
 		? await prefetchCleanupListMemberships(deps, userId, rules, "tmdb")
@@ -7374,6 +7417,18 @@ export async function buildEvalContext(
 	const traktListMemberships = activeTypes.has("trakt_list_member")
 		? await prefetchCleanupListMemberships(deps, userId, rules, "trakt")
 		: undefined;
+
+	if (options.requireAvailableEvidence) {
+		const unavailable: string[] = [];
+		if (needsSeerr && !seerrMap) unavailable.push("Seerr");
+		if ((needsPlex || needsPlexSectionInventory) && !plexEvidence) unavailable.push("Plex");
+		if (needsPlexEpisodes && !prefetchedPlexEpisodeMap) unavailable.push("Plex episode");
+		if (needsJellyfin && !jellyfinMap) unavailable.push("Jellyfin/Emby");
+		if (needsJellyfinEpisodes && !jellyfinEpisodeMap) unavailable.push("Jellyfin/Emby episode");
+		if (unavailable.length > 0) {
+			throw new Error(`Required evaluation evidence is unavailable: ${unavailable.join(", ")}`);
+		}
+	}
 
 	return {
 		now: new Date(),

@@ -560,7 +560,7 @@ export class PlexClient {
 					}
 					continue;
 				}
-				if (items.length < take) {
+				if (items.length < take || itemCount === maxResults) {
 					const terminalProbe = await this.request(
 						`/status/sessions/history/all?sort=${HISTORY_SORT}&X-Plex-Container-Start=${itemCount}&X-Plex-Container-Size=1`,
 						{ schema: plexHistoryResponseSchema },

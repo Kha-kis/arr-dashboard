@@ -209,6 +209,11 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 			expect(result.ctx.plexMap).toBeUndefined();
 			expect(result.failedSources).toContain("plex");
+			await expect(
+				buildEvalContext({ prisma, log } as CleanupExecutorDeps, "user-1", [rule], {
+					requireAvailableEvidence: true,
+				}),
+			).rejects.toThrow(/required evaluation evidence is unavailable: plex/i);
 			expect(
 				evaluateItemAgainstRules(
 					plexDecisionItem,

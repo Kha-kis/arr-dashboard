@@ -432,7 +432,7 @@ describe("executeAutoTagRule (orchestration)", () => {
 		expect(result.totals.failures).toBe(1);
 	});
 
-	it("buildEvalContext throwing falls back to empty context (rule still runs)", async () => {
+	it("fails closed without scanning or writing when evaluation evidence cannot be built", async () => {
 		mockState.buildContextThrows = true;
 		const arrClient = makeArrClient();
 		const prisma = {
@@ -453,7 +453,12 @@ describe("executeAutoTagRule (orchestration)", () => {
 			log,
 		});
 
-		expect(result.totals.itemsMatched).toBe(1);
+		expect(result.status).toBe("failed");
+		expect(result.message).toMatch(/evaluation context/i);
+		expect(result.totals.itemsScanned).toBe(0);
+		expect(prisma.libraryCache.findMany).not.toHaveBeenCalled();
+		expect(arrClient.tag.getAll).not.toHaveBeenCalled();
+		expect(arrClient.movie.update).not.toHaveBeenCalled();
 	});
 
 	// ── Edge cases (PR C — defensive coverage) ────────────────────────

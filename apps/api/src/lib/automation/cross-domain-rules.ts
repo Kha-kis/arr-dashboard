@@ -122,7 +122,9 @@ export async function scanCrossDomainRule(
 		conditions: v0.conditions ? JSON.stringify(v0.conditions) : null,
 	};
 	const cleanupDeps: CleanupExecutorDeps = deps;
-	const context = await buildEvalContext(cleanupDeps, userId, [evalRule]);
+	const context = await buildEvalContext(cleanupDeps, userId, [evalRule], {
+		requireAvailableEvidence: true,
+	});
 
 	const instances = await deps.prisma.serviceInstance.findMany({
 		where: {

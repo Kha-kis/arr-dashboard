@@ -139,6 +139,12 @@ export async function processWebhook(opts: {
 	// prefetched data. The rules pass their criteria types in via the same
 	// shape `buildEvalContext` expects.
 	const ctx = await safeBuildContext(deps, user.id, applicable, log);
+	if (!ctx) {
+		return {
+			status: "error",
+			message: "Required evaluation evidence is unavailable; no tags were changed.",
+		};
+	}
 
 	let tagsApplied = 0;
 	const tagsToApply: string[] = [];
@@ -421,7 +427,7 @@ async function safeBuildContext(
 	userId: string,
 	rules: AutoTagRule[],
 	log: FastifyBaseLogger,
-): Promise<Awaited<ReturnType<typeof buildEvalContext>>> {
+): Promise<Awaited<ReturnType<typeof buildEvalContext>> | null> {
 	try {
 		return await buildEvalContext(
 			{ prisma: deps.prisma, arrClientFactory: deps.arrClientFactory, log },
@@ -431,10 +437,11 @@ async function safeBuildContext(
 				ruleType: r.ruleType,
 				conditions: r.conditions,
 			})),
+			{ requireAvailableEvidence: true },
 		);
 	} catch (err) {
-		log.warn({ err }, "Failed to build evaluation context — continuing with empty maps");
-		return { now: new Date() };
+		log.warn({ err }, "Failed to build evaluation context — skipping webhook auto-tag writes");
+		return null;
 	}
 }
 

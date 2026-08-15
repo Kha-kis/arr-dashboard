@@ -114,16 +114,21 @@ export async function executeAutoTagRule(opts: ExecuteOpts): Promise<AutoTagRunR
 	// shape it expects from our rule.
 	let evalCtx: EvalContext;
 	try {
-		evalCtx = await buildEvalContext({ prisma, arrClientFactory, log: childLog }, rule.userId, [
-			{
-				enabled: true,
-				ruleType: rule.ruleType,
-				conditions: rule.conditions ? JSON.stringify(rule.conditions) : null,
-			},
-		]);
+		evalCtx = await buildEvalContext(
+			{ prisma, arrClientFactory, log: childLog },
+			rule.userId,
+			[
+				{
+					enabled: true,
+					ruleType: rule.ruleType,
+					conditions: rule.conditions ? JSON.stringify(rule.conditions) : null,
+				},
+			],
+			{ requireAvailableEvidence: true },
+		);
 	} catch (err) {
-		childLog.warn({ err }, "Failed to build evaluation context — proceeding with empty maps");
-		evalCtx = { now: new Date() };
+		childLog.warn({ err }, "Failed to build evaluation context — skipping auto-tag writes");
+		return failure("Evaluation context could not be built; no tags were changed.");
 	}
 
 	// Layer in TMDb/Trakt list-membership prefetch — these aren't part of
