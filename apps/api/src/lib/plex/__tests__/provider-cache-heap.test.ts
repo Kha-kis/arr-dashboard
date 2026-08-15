@@ -95,6 +95,7 @@ function reportHeap(message: string): void {
 					.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
 				getLibraryItems: vi.fn().mockResolvedValue(plexItems),
 				getHistory: vi.fn().mockResolvedValue([]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
 			} as unknown as PlexClient;
 
