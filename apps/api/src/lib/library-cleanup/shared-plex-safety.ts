@@ -340,6 +340,29 @@ export type ExecutableSharedMediaSafetyPlan = Extract<
 	}
 >;
 
+/**
+ * Provider authority captured with a cleanup selection. These fields are
+ * deliberately derived-only: no URLs, labels, titles, credentials, raw
+ * expected identities, or upstream identifiers belong in approval JSON.
+ */
+export interface SanitizedProviderEvidenceSource {
+	service: "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI";
+	identityKind: string;
+	identityFingerprint: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+	cacheType: string;
+	completedAt: string;
+	itemCount: number;
+	verifiedAt: string;
+}
+
+export interface SanitizedProviderEvidence {
+	version: 1;
+	fingerprint: string;
+	sources: SanitizedProviderEvidenceSource[];
+}
+
 function requiredPositiveSafeInteger(value: unknown, label: string): number {
 	if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
 		throw new FileMatchVerificationError(`${label} is unavailable`);
@@ -1048,14 +1071,85 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 	throw new FileMatchVerificationError("Cleanup safety snapshot is not executable");
 }
 
-export function serializeExecutableSafetyPlan(plan: ExecutableSharedMediaSafetyPlan): string {
-	return JSON.stringify(canonicalExecutableSafetyPlan(plan));
+function emptyProviderEvidence(): SanitizedProviderEvidence {
+	const sources: SanitizedProviderEvidenceSource[] = [];
+	return {
+		version: 1,
+		fingerprint: createHash("sha256").update(JSON.stringify(sources)).digest("hex"),
+		sources,
+	};
+}
+
+function canonicalProviderEvidence(value: unknown): SanitizedProviderEvidence {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw new FileMatchVerificationError("Cleanup provider evidence is unavailable");
+	}
+	const candidate = value as Record<string, unknown>;
+	if (
+		candidate.version !== 1 ||
+		typeof candidate.fingerprint !== "string" ||
+		!Array.isArray(candidate.sources)
+	) {
+		throw new FileMatchVerificationError("Cleanup provider evidence is invalid");
+	}
+	const sources = candidate.sources.map((source) => {
+		if (!source || typeof source !== "object" || Array.isArray(source)) {
+			throw new FileMatchVerificationError("Cleanup provider evidence source is invalid");
+		}
+		const row = source as Record<string, unknown>;
+		if (
+			(row.service !== "PLEX" &&
+				row.service !== "JELLYFIN" &&
+				row.service !== "EMBY" &&
+				row.service !== "TAUTULLI") ||
+			typeof row.identityKind !== "string" ||
+			!isSha256(row.identityFingerprint) ||
+			!Number.isSafeInteger(row.connectionGeneration) ||
+			!Number.isSafeInteger(row.identityGeneration) ||
+			typeof row.cacheType !== "string" ||
+			typeof row.completedAt !== "string" ||
+			!Number.isSafeInteger(row.itemCount) ||
+			typeof row.verifiedAt !== "string"
+		) {
+			throw new FileMatchVerificationError("Cleanup provider evidence source is invalid");
+		}
+		return {
+			service: row.service as SanitizedProviderEvidenceSource["service"],
+			identityKind: row.identityKind as string,
+			identityFingerprint: row.identityFingerprint as string,
+			connectionGeneration: row.connectionGeneration as number,
+			identityGeneration: row.identityGeneration as number,
+			cacheType: row.cacheType as string,
+			completedAt: row.completedAt as string,
+			itemCount: row.itemCount as number,
+			verifiedAt: row.verifiedAt as string,
+		};
+	});
+	return { version: 1, fingerprint: candidate.fingerprint, sources };
+}
+
+function isSha256(value: unknown): value is string {
+	return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
+}
+
+export function serializeExecutableSafetyPlan(
+	plan: ExecutableSharedMediaSafetyPlan,
+	providerEvidence: SanitizedProviderEvidence = emptyProviderEvidence(),
+): string {
+	return JSON.stringify({
+		version: 2,
+		plan: canonicalExecutableSafetyPlan(plan),
+		providerEvidence: canonicalProviderEvidence(providerEvidence),
+	});
 }
 
 export function parseExecutableSafetyPlan(value: unknown): ExecutableSharedMediaSafetyPlan | null {
 	if (typeof value !== "string" || value.trim() === "") return null;
 	try {
-		return canonicalExecutableSafetyPlan(JSON.parse(value));
+		const snapshot = JSON.parse(value) as Record<string, unknown>;
+		if (snapshot?.version !== 2) return null;
+		canonicalProviderEvidence(snapshot.providerEvidence);
+		return canonicalExecutableSafetyPlan(snapshot.plan);
 	} catch {
 		return null;
 	}

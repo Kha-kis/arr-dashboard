@@ -95,6 +95,12 @@ function instance(service: "PLEX" | "TAUTULLI" | "JELLYFIN") {
 		encryptedHttpAuthCredentials: null,
 		httpAuthEncryptionIv: null,
 		enabled: true,
+		expectedIdentity: `${service.toLowerCase()}-identity`,
+		identityKind: `${service}_IDENTITY`,
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date("2026-07-31T12:00:00.000Z"),
+		connectionGeneration: 1,
+		identityGeneration: 1,
 		createdAt: new Date("2026-07-31T12:00:00.000Z"),
 		updatedAt: new Date("2026-07-31T12:00:00.000Z"),
 	};
@@ -142,19 +148,24 @@ function makeDeps(
 		upsert: cacheStatusUpsert,
 		findUnique: vi.fn().mockResolvedValue(null),
 		findMany: vi.fn(async ({ where }: { where: { instanceId: { in: string[] } } }) =>
-			where.instanceId.in.map((instanceId) => ({
-				instanceId,
-				lastRefreshedAt: publishedAt,
-				lastResult: "success",
-				itemCount: 0,
-				generationId: `generation-${instanceId}`,
-				generationMetadata: JSON.stringify({
-					sections: [{ key: "1", title: "Movies", type: "movie" }],
-				}),
-				lastErrorMessage: null,
-				lastAttemptResult: "success",
-				lastAttemptErrorMessage: null,
-			})),
+			where.instanceId.in.map((instanceId) => {
+				const source = instances.find((entry) => entry.id === instanceId);
+				return {
+					instanceId,
+					lastRefreshedAt: publishedAt,
+					lastResult: "success",
+					itemCount: 0,
+					generationId: `generation-${instanceId}`,
+					generationMetadata: JSON.stringify({
+						sections: [{ key: "1", title: "Movies", type: "movie" }],
+					}),
+					lastErrorMessage: null,
+					lastAttemptResult: "success",
+					lastAttemptErrorMessage: null,
+					connectionGeneration: source?.connectionGeneration ?? 1,
+					identityGeneration: source?.identityGeneration ?? 1,
+				};
+			}),
 		),
 	};
 	const refreshTransaction = {
@@ -605,6 +616,8 @@ describe("authoritative mutation policy snapshots", () => {
 				collections: "[]",
 				labels: "[]",
 				addedAt: new Date("2025-01-01T00:00:00.000Z"),
+				connectionGeneration: 1,
+				identityGeneration: 1,
 			};
 			vi.mocked(deps.prisma.plexCache.findMany).mockImplementation((async () => [
 				{
@@ -636,6 +649,8 @@ describe("authoritative mutation policy snapshots", () => {
 					lastErrorMessage: null,
 					lastAttemptResult: "success",
 					lastAttemptErrorMessage: null,
+					connectionGeneration: 1,
+					identityGeneration: 1,
 				}))) as never);
 			refreshMocks.plex.mockImplementation(async (...args: unknown[]) => {
 				const instanceId = plexRefreshInstanceId(args);
@@ -837,7 +852,7 @@ describe("interactive preview live watch authority", () => {
 		["Tautulli", "TAUTULLI", "tautulli_last_watched", refreshMocks.tautulli, "tautulli"],
 		["Jellyfin", "JELLYFIN", "jellyfin_last_watched", refreshMocks.jellyfin, "jellyfin"],
 	] as const)(
-		"uses live %s authority without publishing provider cache state",
+		"rejects unpublished live %s authority for preview evaluation",
 		async (_label, service, ruleType, refreshMock, source) => {
 			const provider = { ...instance(service), connectionGeneration: 1 };
 			const radarr = {
@@ -1008,8 +1023,9 @@ describe("interactive preview live watch authority", () => {
 			expect(result.itemsFlagged).toBe(0);
 			expect(result.previewItemCount).toBe(0);
 			expect(result.details).toEqual([]);
-			expect(result.prefetchHealth?.[source]).toBe("ok");
-			expect(refreshMock).toHaveBeenCalledTimes(2);
+			expect(result.prefetchHealth?.[source]).toBe("failed");
+			expect(result.warnings).toContainEqual(expect.stringContaining("unavailable"));
+			expect(refreshMock).not.toHaveBeenCalled();
 			expect(transaction).not.toHaveBeenCalled();
 			expect(deleteMany).not.toHaveBeenCalled();
 			expect(createMany).not.toHaveBeenCalled();
@@ -1067,8 +1083,8 @@ describe("interactive preview live watch authority", () => {
 			expect(unrelatedResult.itemsEvaluated).toBe(1);
 			expect(unrelatedResult.itemsFlagged).toBe(0);
 			expect(unrelatedResult.previewItemCount).toBe(0);
-			expect(unrelatedResult.prefetchHealth?.[source]).toBe("ok");
-			expect(refreshMock).toHaveBeenCalledTimes(2);
+			expect(unrelatedResult.prefetchHealth?.[source]).toBe("failed");
+			expect(refreshMock).not.toHaveBeenCalled();
 			expect(transaction).not.toHaveBeenCalled();
 			expect(deleteMany).not.toHaveBeenCalled();
 			expect(createMany).not.toHaveBeenCalled();

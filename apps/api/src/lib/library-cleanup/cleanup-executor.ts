@@ -123,6 +123,8 @@ import {
 	findSharedPlexDeleteBlocks,
 	parseExecutableSafetyPlan,
 	RadarrFileChangedDuringSafetyCheckError,
+	type SanitizedProviderEvidence,
+	type SanitizedProviderEvidenceSource,
 	type SharedMediaSafetyPlan,
 	SonarrFilesChangedDuringSafetyCheckError,
 	serializeExecutableSafetyPlan,
@@ -156,12 +158,66 @@ const APPROVAL_EXPIRY_DAYS = 7;
 const CACHE_QUERY_BATCH_SIZE = 500;
 const PROVIDER_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
 
+type CleanupRunResultWithProviderEvidence = CleanupRunResult & {
+	providerEvidence?: SanitizedProviderEvidence;
+};
+
+function isVerifiedProviderCacheSource(
+	instance: Pick<
+		ServiceInstance,
+		| "enabled"
+		| "expectedIdentity"
+		| "identityKind"
+		| "identityStatus"
+		| "identityVerifiedAt"
+		| "connectionGeneration"
+		| "identityGeneration"
+	>,
+): boolean {
+	return (
+		instance.enabled &&
+		instance.identityStatus === "VERIFIED" &&
+		typeof instance.expectedIdentity === "string" &&
+		instance.expectedIdentity.trim() !== "" &&
+		instance.identityKind !== null &&
+		instance.identityVerifiedAt !== null &&
+		Number.isSafeInteger(instance.connectionGeneration) &&
+		instance.connectionGeneration >= 0 &&
+		Number.isSafeInteger(instance.identityGeneration) &&
+		instance.identityGeneration > 0
+	);
+}
+
 async function loadCompleteCacheGenerations(
 	deps: CleanupExecutorDeps,
-	instances: Array<{ id: string; updatedAt: Date }>,
+	instances: Array<
+		Pick<
+			ServiceInstance,
+			| "id"
+			| "enabled"
+			| "updatedAt"
+			| "expectedIdentity"
+			| "identityKind"
+			| "identityStatus"
+			| "identityVerifiedAt"
+			| "connectionGeneration"
+			| "identityGeneration"
+		>
+	>,
 	cacheType: string,
 	now: Date = new Date(),
-): Promise<Map<string, { completedAt: Date; itemCount: number }> | undefined> {
+): Promise<
+	| Map<
+			string,
+			{
+				completedAt: Date;
+				itemCount: number;
+				connectionGeneration: number;
+				identityGeneration: number;
+			}
+	  >
+	| undefined
+> {
 	if (instances.length === 0) return undefined;
 	const statuses = await deps.prisma.cacheRefreshStatus.findMany({
 		where: { instanceId: { in: instances.map((instance) => instance.id) }, cacheType },
@@ -173,26 +229,45 @@ async function loadCompleteCacheGenerations(
 			lastAttemptResult: true,
 			lastAttemptErrorMessage: true,
 			itemCount: true,
+			connectionGeneration: true,
+			identityGeneration: true,
 		},
 	});
 	const byInstance = new Map(statuses.map((status) => [status.instanceId, status]));
 	const freshnessThreshold = now.getTime() - PROVIDER_EVIDENCE_FRESHNESS_MS;
-	const generations = new Map<string, { completedAt: Date; itemCount: number }>();
+	const generations = new Map<
+		string,
+		{
+			completedAt: Date;
+			itemCount: number;
+			connectionGeneration: number;
+			identityGeneration: number;
+		}
+	>();
 	for (const instance of instances) {
 		const status = byInstance.get(instance.id);
 		if (
+			!isVerifiedProviderCacheSource(instance) ||
+			instance.identityVerifiedAt === null ||
 			status?.lastResult !== "success" ||
 			status.lastErrorMessage != null ||
 			status.lastAttemptErrorMessage != null ||
 			(status.lastAttemptResult != null && status.lastAttemptResult !== "success") ||
 			status.lastRefreshedAt.getTime() < freshnessThreshold ||
-			status.lastRefreshedAt.getTime() < instance.updatedAt.getTime()
+			status.lastRefreshedAt.getTime() < instance.updatedAt.getTime() ||
+			status.lastRefreshedAt.getTime() < instance.identityVerifiedAt.getTime() ||
+			status.connectionGeneration === null ||
+			status.identityGeneration === null ||
+			status.connectionGeneration !== instance.connectionGeneration ||
+			status.identityGeneration !== instance.identityGeneration
 		) {
 			return undefined;
 		}
 		generations.set(instance.id, {
 			completedAt: status.lastRefreshedAt,
 			itemCount: status.itemCount,
+			connectionGeneration: status.connectionGeneration,
+			identityGeneration: status.identityGeneration,
 		});
 	}
 	return generations;
@@ -1690,7 +1765,7 @@ function buildDirectSelectionPreviewDetails(
 export async function executeCleanupPreview(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<CleanupRunResult> {
+): Promise<CleanupRunResultWithProviderEvidence> {
 	const startTime = Date.now();
 	const { prisma, log } = deps;
 
@@ -1736,11 +1811,8 @@ export async function executeCleanupPreview(
 		};
 	}
 
-	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
-		deps,
-		config,
-		config.rules,
-	);
+	const { flagged, totalEvaluated, prefetchHealth, warnings, providerEvidence } =
+		await evaluateAllItems(deps, config, config.rules);
 	const configuredRunLimit =
 		Number.isSafeInteger(config.maxRemovalsPerRun) &&
 		config.maxRemovalsPerRun > 0 &&
@@ -1862,6 +1934,7 @@ export async function executeCleanupPreview(
 		durationMs: Date.now() - startTime,
 		prefetchHealth,
 		warnings: allWarnings,
+		providerEvidence,
 	};
 }
 
@@ -1887,12 +1960,9 @@ async function executeConfiguredCleanupDryRun(
 	userId: string,
 	config: LibraryCleanupConfig & { rules: LibraryCleanupRule[] },
 	startTime: number,
-): Promise<CleanupRunResult> {
-	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
-		deps,
-		config,
-		config.rules,
-	);
+): Promise<CleanupRunResultWithProviderEvidence> {
+	const { flagged, totalEvaluated, prefetchHealth, warnings, providerEvidence } =
+		await evaluateAllItems(deps, config, config.rules);
 	const configuredRunLimit =
 		Number.isSafeInteger(config.maxRemovalsPerRun) &&
 		config.maxRemovalsPerRun > 0 &&
@@ -1967,7 +2037,7 @@ async function executeConfiguredCleanupDryRun(
 				...selectionDetails,
 			];
 
-	const result: CleanupRunResult = {
+	const result: CleanupRunResultWithProviderEvidence = {
 		isDryRun: true,
 		status: allWarnings.length > 0 ? "partial" : "completed",
 		itemsEvaluated: totalEvaluated,
@@ -1992,6 +2062,7 @@ async function executeConfiguredCleanupDryRun(
 		durationMs: Date.now() - startTime,
 		prefetchHealth,
 		warnings: allWarnings,
+		providerEvidence,
 	};
 
 	return result;
@@ -2081,11 +2152,8 @@ async function executeCleanupRunGuarded(
 			};
 		}
 
-		const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
-			deps,
-			config,
-			config.rules,
-		);
+		const { flagged, totalEvaluated, prefetchHealth, warnings, providerEvidence } =
+			await evaluateAllItems(deps, config, config.rules);
 		// Real execution
 		if (config.requireApproval) {
 			const approvalSelection = await loadApprovalSelectionState(
@@ -2125,6 +2193,7 @@ async function executeCleanupRunGuarded(
 				allWarnings,
 				sharedPlexBlocks,
 				safetyContext.plans,
+				providerEvidence,
 				approvalSelection.skippedDetails,
 				approvalSelection,
 			);
@@ -5026,19 +5095,20 @@ async function prefetchTautulliData(
 ): Promise<TautulliWatchMap | undefined> {
 	const { prisma, log } = deps;
 
-	const tautulliInstances = await prisma.serviceInstance.findMany({
-		where: { userId, service: "TAUTULLI", enabled: true },
-		orderBy: { id: "asc" },
-		select: { id: true, updatedAt: true },
-	});
+	const tautulliInstances = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
 
-	if (tautulliInstances.length === 0) return undefined;
+	// A Tautulli cache is an aggregate over a single PMS watch-history source.
+	// Combining multiple enabled sources would turn an ambiguous provider choice
+	// into a synthetic watch count, so it cannot authorize cleanup.
+	if (tautulliInstances.length !== 1) return undefined;
 
 	try {
-		if (!(await loadCompleteCacheGenerations(deps, tautulliInstances, "tautulli"))) {
+		const generations = await loadCompleteCacheGenerations(deps, tautulliInstances, "tautulli");
+		if (!generations) {
 			throw new Error("Tautulli cache did not have a complete fresh generation for every instance");
 		}
 		const map: TautulliWatchMap = new Map();
+		const rowCounts = new Map<string, number>();
 		let cursor: string | undefined;
 		let totalRows = 0;
 
@@ -5048,11 +5118,14 @@ async function prefetchTautulliData(
 				where: { instanceId: { in: tautulliInstances.map((instance) => instance.id) } },
 				select: {
 					id: true,
+					instanceId: true,
 					tmdbId: true,
 					mediaType: true,
 					lastWatchedAt: true,
 					watchCount: true,
 					watchedByUsers: true,
+					connectionGeneration: true,
+					identityGeneration: true,
 				},
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -5064,6 +5137,15 @@ async function prefetchTautulliData(
 
 			for (const row of batch) {
 				try {
+					const generation = generations.get(row.instanceId);
+					if (
+						!generation ||
+						row.connectionGeneration !== generation.connectionGeneration ||
+						row.identityGeneration !== generation.identityGeneration
+					) {
+						throw new Error("Tautulli cache row provenance was unavailable");
+					}
+					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
 					const existing = map.get(key);
@@ -5096,6 +5178,12 @@ async function prefetchTautulliData(
 			cursor = batch[batch.length - 1]!.id;
 			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 		}
+		if (
+			(rowCounts.get(tautulliInstances[0]!.id) ?? 0) !==
+			generations.get(tautulliInstances[0]!.id)!.itemCount
+		) {
+			throw new Error("Tautulli cache row count did not match its published generation");
+		}
 
 		log.info(
 			{ totalRows, totalEntries: map.size },
@@ -5124,20 +5212,18 @@ export async function prefetchPlexData(
 ): Promise<PlexWatchMap | undefined> {
 	const { prisma, log } = deps;
 
-	const plexInstances = await prisma.serviceInstance.findMany({
-		where: { userId, service: "PLEX", enabled: true },
-		orderBy: { id: "asc" },
-		select: { id: true, updatedAt: true },
-	});
+	const plexInstances = await loadProviderInstances(deps, userId, ["PLEX"]);
 
 	if (plexInstances.length === 0) return undefined;
 
 	try {
-		if (!(await loadCompleteCacheGenerations(deps, plexInstances, "plex"))) {
+		const generations = await loadCompleteCacheGenerations(deps, plexInstances, "plex");
+		if (!generations) {
 			throw new Error("Plex cache did not have a complete fresh generation for every instance");
 		}
 		const map: PlexWatchMap = new Map();
 		const instanceIds = plexInstances.map((i) => i.id);
+		const rowCounts = new Map<string, number>();
 		let cursor: string | undefined;
 		let totalRows = 0;
 
@@ -5148,6 +5234,7 @@ export async function prefetchPlexData(
 				where: { instanceId: { in: instanceIds } },
 				select: {
 					id: true,
+					instanceId: true,
 					tmdbId: true,
 					mediaType: true,
 					sectionId: true,
@@ -5160,6 +5247,8 @@ export async function prefetchPlexData(
 					collections: true,
 					labels: true,
 					addedAt: true,
+					connectionGeneration: true,
+					identityGeneration: true,
 				},
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -5171,6 +5260,15 @@ export async function prefetchPlexData(
 
 			for (const row of batch) {
 				try {
+					const generation = generations.get(row.instanceId);
+					if (
+						!generation ||
+						row.connectionGeneration !== generation.connectionGeneration ||
+						row.identityGeneration !== generation.identityGeneration
+					) {
+						throw new Error("Plex cache row provenance was unavailable");
+					}
+					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
 					// Key is mediaType:tmdbId (aggregating across sections)
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
@@ -5245,6 +5343,13 @@ export async function prefetchPlexData(
 			cursor = batch[batch.length - 1]!.id;
 			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 		}
+		if (
+			plexInstances.some(
+				(instance) => (rowCounts.get(instance.id) ?? 0) !== generations.get(instance.id)!.itemCount,
+			)
+		) {
+			throw new Error("Plex cache row count did not match its published generation");
+		}
 
 		log.info(
 			{ totalRows, totalEntries: map.size },
@@ -5270,20 +5375,18 @@ async function prefetchJellyfinData(
 ): Promise<JellyfinWatchMap | undefined> {
 	const { prisma, log } = deps;
 
-	const jellyfinInstances = await prisma.serviceInstance.findMany({
-		where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-		orderBy: { id: "asc" },
-		select: { id: true, updatedAt: true },
-	});
+	const jellyfinInstances = await loadProviderInstances(deps, userId, ["JELLYFIN", "EMBY"]);
 
 	if (jellyfinInstances.length === 0) return undefined;
 
 	try {
-		if (!(await loadCompleteCacheGenerations(deps, jellyfinInstances, "jellyfin"))) {
+		const generations = await loadCompleteCacheGenerations(deps, jellyfinInstances, "jellyfin");
+		if (!generations) {
 			throw new Error("Jellyfin cache did not have a complete fresh generation for every instance");
 		}
 		const map: JellyfinWatchMap = new Map();
 		const instanceIds = jellyfinInstances.map((i) => i.id);
+		const rowCounts = new Map<string, number>();
 		let cursor: string | undefined;
 		let totalRows = 0;
 
@@ -5293,6 +5396,7 @@ async function prefetchJellyfinData(
 				where: { instanceId: { in: instanceIds } },
 				select: {
 					id: true,
+					instanceId: true,
 					tmdbId: true,
 					mediaType: true,
 					lastWatchedAt: true,
@@ -5301,6 +5405,8 @@ async function prefetchJellyfinData(
 					onDeck: true,
 					userRating: true,
 					addedAt: true,
+					connectionGeneration: true,
+					identityGeneration: true,
 				},
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -5312,6 +5418,15 @@ async function prefetchJellyfinData(
 
 			for (const row of batch) {
 				try {
+					const generation = generations.get(row.instanceId);
+					if (
+						!generation ||
+						row.connectionGeneration !== generation.connectionGeneration ||
+						row.identityGeneration !== generation.identityGeneration
+					) {
+						throw new Error("Jellyfin cache row provenance was unavailable");
+					}
+					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
 
@@ -5360,6 +5475,13 @@ async function prefetchJellyfinData(
 			cursor = batch[batch.length - 1]!.id;
 			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 		}
+		if (
+			jellyfinInstances.some(
+				(instance) => (rowCounts.get(instance.id) ?? 0) !== generations.get(instance.id)!.itemCount,
+			)
+		) {
+			throw new Error("Jellyfin cache row count did not match its published generation");
+		}
 
 		log.info(
 			{ totalRows, totalEntries: map.size },
@@ -5386,21 +5508,27 @@ async function prefetchJellyfinEpisodeData(
 	const { prisma, log } = deps;
 
 	try {
-		const instances = await prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			orderBy: { id: "asc" },
-			select: { id: true, updatedAt: true },
-		});
+		const instances = await loadProviderInstances(deps, userId, ["JELLYFIN", "EMBY"]);
 		const instanceIds = instances.map((i) => i.id);
 		if (instanceIds.length === 0) return undefined;
 		const generations = await loadCompleteCacheGenerations(deps, instances, "jellyfin_episode");
 		if (!generations) return undefined;
-		const generationCounts = await prisma.jellyfinEpisodeCache.groupBy({
-			by: ["instanceId"],
+		const generationRows = await prisma.jellyfinEpisodeCache.findMany({
 			where: { instanceId: { in: instanceIds } },
-			_count: { id: true },
+			select: { instanceId: true, connectionGeneration: true, identityGeneration: true },
 		});
-		const countByInstance = new Map(generationCounts.map((row) => [row.instanceId, row._count.id]));
+		const countByInstance = new Map<string, number>();
+		for (const row of generationRows) {
+			const generation = generations.get(row.instanceId);
+			if (
+				!generation ||
+				row.connectionGeneration !== generation.connectionGeneration ||
+				row.identityGeneration !== generation.identityGeneration
+			) {
+				return undefined;
+			}
+			countByInstance.set(row.instanceId, (countByInstance.get(row.instanceId) ?? 0) + 1);
+		}
 		if (
 			instances.some(
 				(instance) =>
@@ -5485,29 +5613,20 @@ async function prefetchPlexEpisodeData(
 	const { prisma, log } = deps;
 
 	try {
-		const instances = await prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			orderBy: { id: "asc" },
-			select: {
-				id: true,
-				updatedAt: true,
-				baseUrl: true,
-				encryptedApiKey: true,
-				encryptionIv: true,
-				encryptedHttpAuthCredentials: true,
-				httpAuthEncryptionIv: true,
-				service: true,
-				label: true,
-				enabled: true,
-			},
-		});
+		const instances = await loadProviderInstances(deps, userId, ["PLEX"]);
 		const instanceIds = instances.map((i) => i.id);
 		if (instanceIds.length === 0) return undefined;
 		const generations = await loadCompleteCacheGenerations(deps, instances, "plex_episode");
 		if (!generations) return undefined;
 		const generationRows = await prisma.plexEpisodeCache.findMany({
 			where: { instanceId: { in: instanceIds } },
-			select: { instanceId: true, refreshedAt: true, sourceFingerprint: true },
+			select: {
+				instanceId: true,
+				refreshedAt: true,
+				sourceFingerprint: true,
+				connectionGeneration: true,
+				identityGeneration: true,
+			},
 		});
 		const rowCounts = new Map<string, number>();
 		for (const row of generationRows) {
@@ -5516,6 +5635,8 @@ async function prefetchPlexEpisodeData(
 			if (
 				!generation ||
 				!instance ||
+				row.connectionGeneration !== generation.connectionGeneration ||
+				row.identityGeneration !== generation.identityGeneration ||
 				row.refreshedAt?.getTime() !== generation.completedAt.getTime() ||
 				row.sourceFingerprint !== plexConnectionFingerprint(instance as ServiceInstance)
 			) {
@@ -5615,6 +5736,7 @@ async function evaluateAllItems(
 	totalEvaluated: number;
 	prefetchHealth: PrefetchResults;
 	warnings: string[];
+	providerEvidence: SanitizedProviderEvidence;
 }> {
 	const { prisma, log } = deps;
 	const now = new Date();
@@ -5674,7 +5796,7 @@ async function evaluateAllItems(
 	];
 	const hasTautulliRules = TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t));
 	const tautulliResult = hasTautulliRules
-		? await collectLiveTautulliPolicyEvidence(deps, config.userId)
+		? await prefetchTautulliData(deps, config.userId)
 		: undefined;
 	const tautulliMap = hasTautulliRules ? tautulliResult : undefined;
 
@@ -5699,7 +5821,7 @@ async function evaluateAllItems(
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(seriesRules).size > 0;
 	const publishedPlexEvidence =
 		hasPlexRules || needsPlexSectionInventory
-			? await collectLivePlexPolicyEvidence(deps, config.userId, seriesRules)
+			? await loadPublishedPlexPolicyEvidence(deps, config.userId, seriesRules)
 			: undefined;
 	const plexMap = hasPlexRules ? publishedPlexEvidence?.plexMap : undefined;
 
@@ -5714,7 +5836,7 @@ async function evaluateAllItems(
 	];
 	const hasJellyfinRules = JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t));
 	const jellyfinResult = hasJellyfinRules
-		? await collectLiveJellyfinPolicyEvidence(deps, config.userId)
+		? await prefetchJellyfinData(deps, config.userId)
 		: undefined;
 	const jellyfinMap = hasJellyfinRules ? jellyfinResult : undefined;
 
@@ -5757,6 +5879,55 @@ async function evaluateAllItems(
 		trakt: needsTrakt ? (listEvidence.traktListMemberships ? "ok" : "failed") : "skipped",
 	};
 
+	const providerEvidence = await buildSanitizedProviderEvidence(deps, config.userId, [
+		...(tautulliMap
+			? [
+					{
+						services: ["TAUTULLI"] as ServiceInstance["service"][],
+						cacheType: "tautulli",
+						fingerprint: evidenceFingerprint(tautulliMap),
+						exactlyOne: true,
+					},
+				]
+			: []),
+		...(publishedPlexEvidence
+			? [
+					{
+						services: ["PLEX"] as ServiceInstance["service"][],
+						cacheType: "plex",
+						fingerprint: publishedPlexEvidence.generationFingerprint,
+					},
+				]
+			: []),
+		...(plexEpisodeMap
+			? [
+					{
+						services: ["PLEX"] as ServiceInstance["service"][],
+						cacheType: "plex_episode",
+						fingerprint: evidenceFingerprint(plexEpisodeMap),
+					},
+				]
+			: []),
+		...(jellyfinMap
+			? [
+					{
+						services: ["JELLYFIN", "EMBY"] as ServiceInstance["service"][],
+						cacheType: "jellyfin",
+						fingerprint: evidenceFingerprint(jellyfinMap),
+					},
+				]
+			: []),
+		...(jellyfinEpisodeMap
+			? [
+					{
+						services: ["JELLYFIN", "EMBY"] as ServiceInstance["service"][],
+						cacheType: "jellyfin_episode",
+						fingerprint: evidenceFingerprint(jellyfinEpisodeMap),
+					},
+				]
+			: []),
+	]);
+
 	// Check for failed prefetches that have dependent rules — generate warnings
 	const failedSources = new Set<DataSourceDependency>();
 	if (prefetchHealth.seerr === "failed") failedSources.add("seerr");
@@ -5765,6 +5936,11 @@ async function evaluateAllItems(
 	if (prefetchHealth.jellyfin === "failed") failedSources.add("jellyfin");
 	if (prefetchHealth.tmdb === "failed") failedSources.add("tmdb");
 	if (prefetchHealth.trakt === "failed") failedSources.add("trakt");
+	if (!providerEvidence) {
+		if (tautulliMap) failedSources.add("tautulli");
+		if (publishedPlexEvidence || plexEpisodeMap) failedSources.add("plex");
+		if (jellyfinMap || jellyfinEpisodeMap) failedSources.add("jellyfin");
+	}
 
 	if (failedSources.size > 0) {
 		const unavailableRuleWarning = buildUnavailableRuleWarning(seriesRules, failedSources);
@@ -5774,7 +5950,6 @@ async function evaluateAllItems(
 			"Cleanup run has failed prefetches with dependent rules",
 		);
 	}
-
 	// Build evaluation context
 	const ctx: EvalContext = {
 		now,
@@ -5890,7 +6065,19 @@ async function evaluateAllItems(
 		if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 	}
 
-	return { flagged, totalEvaluated, prefetchHealth, warnings };
+	return {
+		flagged,
+		totalEvaluated,
+		prefetchHealth,
+		warnings,
+		providerEvidence:
+			providerEvidence ??
+			({
+				version: 1,
+				sources: [],
+				fingerprint: evidenceFingerprint([]),
+			} as SanitizedProviderEvidence),
+	};
 }
 
 const PLEX_EPISODE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
@@ -5996,6 +6183,8 @@ export async function prefetchFreshPlexEpisodeWatchData(
 				ratingKey: true,
 				refreshedAt: true,
 				sourceFingerprint: true,
+				connectionGeneration: true,
+				identityGeneration: true,
 			},
 		});
 		const result = new Map<string, EpisodePlexWatchEvidence[]>();
@@ -6020,6 +6209,8 @@ export async function prefetchFreshPlexEpisodeWatchData(
 				!Number.isFinite(sourceUpdatedAt) ||
 				!sourceFingerprint ||
 				!generation ||
+				row.connectionGeneration !== generation.connectionGeneration ||
+				row.identityGeneration !== generation.identityGeneration ||
 				row.sourceFingerprint !== sourceFingerprint ||
 				row.refreshedAt.getTime() !== generation.completedAt.getTime() ||
 				row.refreshedAt.getTime() < freshnessThreshold ||
@@ -6588,6 +6779,7 @@ async function executeWithApproval(
 	warnings?: string[],
 	sharedPlexBlocks: Map<string, string> = new Map(),
 	safetyPlans: Map<string, SharedMediaSafetyPlan> = new Map(),
+	providerEvidence?: SanitizedProviderEvidence,
 	preSkippedDetails: CleanupRunResult["details"] = [],
 	selectionState?: ApprovalSelectionState,
 ): Promise<CleanupRunResult> {
@@ -6645,6 +6837,9 @@ async function executeWithApproval(
 							(() => {
 								throw new Error("No executable cleanup safety plan was produced");
 							})(),
+						providerEvidence
+							? bindProviderEvidenceToTarget(providerEvidence, flaggedDeleteTarget(item))
+							: undefined,
 					),
 					expiresAt,
 				},
@@ -8805,6 +9000,82 @@ function providerTopologyFingerprint(instances: ServiceInstance[]): string {
 	);
 }
 
+async function buildSanitizedProviderEvidence(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	contributions: Array<{
+		services: ServiceInstance["service"][];
+		cacheType: string;
+		fingerprint: string;
+		exactlyOne?: boolean;
+	}>,
+): Promise<SanitizedProviderEvidence | undefined> {
+	const sources: SanitizedProviderEvidenceSource[] = [];
+	for (const contribution of contributions) {
+		const instances = await loadProviderInstances(deps, userId, contribution.services);
+		if (contribution.exactlyOne && instances.length !== 1) return undefined;
+		if (instances.length === 0) return undefined;
+		const generations = await loadCompleteCacheGenerations(deps, instances, contribution.cacheType);
+		if (!generations) return undefined;
+		for (const instance of instances) {
+			const generation = generations.get(instance.id);
+			if (!generation || !instance.identityKind || !instance.identityVerifiedAt) return undefined;
+			sources.push({
+				service: instance.service as SanitizedProviderEvidenceSource["service"],
+				identityKind: instance.identityKind,
+				identityFingerprint: evidenceFingerprint({
+					service: instance.service,
+					identityKind: instance.identityKind,
+					expectedIdentity: instance.expectedIdentity,
+				}),
+				connectionGeneration: generation.connectionGeneration,
+				identityGeneration: generation.identityGeneration,
+				cacheType: contribution.cacheType,
+				completedAt: generation.completedAt.toISOString(),
+				itemCount: generation.itemCount,
+				verifiedAt: instance.identityVerifiedAt.toISOString(),
+			});
+		}
+	}
+	const orderedSources = sources.sort(
+		(left, right) =>
+			left.service.localeCompare(right.service) ||
+			left.cacheType.localeCompare(right.cacheType) ||
+			left.identityFingerprint.localeCompare(right.identityFingerprint),
+	);
+	return {
+		version: 1,
+		sources: orderedSources,
+		fingerprint: evidenceFingerprint({
+			contributions: contributions.map(({ fingerprint, cacheType }) => ({
+				cacheType,
+				fingerprint,
+			})),
+			sources: orderedSources,
+		}),
+	};
+}
+
+function bindProviderEvidenceToTarget(
+	evidence: SanitizedProviderEvidence,
+	target: CleanupDeleteTarget,
+): SanitizedProviderEvidence {
+	return {
+		...evidence,
+		fingerprint: evidenceFingerprint({
+			evidence: evidence.fingerprint,
+			target: {
+				instanceId: target.instanceId,
+				arrItemId: target.arrItemId,
+				itemType: target.itemType,
+				targetScope: target.targetScope ?? "series",
+				arrEpisodeId: target.arrEpisodeId ?? null,
+				episodeFileId: target.episodeFileId ?? null,
+			},
+		}),
+	};
+}
+
 async function loadProviderInstances(
 	deps: CleanupExecutorDeps,
 	userId: string,
@@ -8869,11 +9140,7 @@ async function loadPublishedPlexPolicyEvidenceUnsafe(
 	userId: string,
 	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
 ): Promise<PublishedPlexPolicyEvidence | undefined> {
-	const instances = await deps.prisma.serviceInstance.findMany({
-		where: { userId, service: "PLEX", enabled: true },
-		orderBy: { id: "asc" },
-		select: { id: true, updatedAt: true },
-	});
+	const instances = await loadProviderInstances(deps, userId, ["PLEX"]);
 	if (instances.length === 0) return undefined;
 	const instanceIds = instances.map((instance) => instance.id);
 	const readStatuses = async () =>
@@ -8890,21 +9157,33 @@ async function loadPublishedPlexPolicyEvidenceUnsafe(
 				lastErrorMessage: true,
 				lastAttemptResult: true,
 				lastAttemptErrorMessage: true,
+				connectionGeneration: true,
+				identityGeneration: true,
 			},
 		});
 	const before = await readStatuses();
 	if (
 		before.length !== instances.length ||
-		before.some(
-			(status) =>
+		before.some((status) => {
+			const instance = instances.find((candidate) => candidate.id === status.instanceId);
+			return (
+				!instance ||
+				!isVerifiedProviderCacheSource(instance) ||
 				status.lastResult !== "success" ||
 				status.lastErrorMessage != null ||
 				status.lastAttemptErrorMessage != null ||
 				(status.lastAttemptResult != null && status.lastAttemptResult !== "success") ||
 				!status.generationId ||
 				!status.generationMetadata ||
-				Date.now() - status.lastRefreshedAt.getTime() > PROVIDER_EVIDENCE_FRESHNESS_MS,
-		)
+				Date.now() - status.lastRefreshedAt.getTime() > PROVIDER_EVIDENCE_FRESHNESS_MS ||
+				status.lastRefreshedAt.getTime() < instance.updatedAt.getTime() ||
+				status.lastRefreshedAt.getTime() < instance.identityVerifiedAt!.getTime() ||
+				status.connectionGeneration === null ||
+				status.identityGeneration === null ||
+				status.connectionGeneration !== instance.connectionGeneration ||
+				status.identityGeneration !== instance.identityGeneration
+			);
+		})
 	) {
 		return undefined;
 	}
@@ -8968,7 +9247,7 @@ function sortProviderRows<T extends { instanceId: string; mediaType: string; tmd
 	);
 }
 
-async function collectLivePlexPolicyEvidence(
+async function _collectLivePlexPolicyEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
@@ -9040,7 +9319,7 @@ async function collectLivePlexPolicyEvidence(
 	}
 }
 
-async function collectLiveTautulliPolicyEvidence(
+async function _collectLiveTautulliPolicyEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<TautulliWatchMap | undefined> {
@@ -9080,7 +9359,7 @@ async function collectLiveTautulliPolicyEvidence(
 	}
 }
 
-async function collectLiveJellyfinPolicyEvidence(
+async function _collectLiveJellyfinPolicyEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<JellyfinWatchMap | undefined> {
@@ -9789,6 +10068,10 @@ export async function buildEvalContextWithHealth(
 	}>,
 	options: { providerEvidence?: "published" | "live" } = {},
 ): Promise<{ ctx: EvalContext; failedSources: Set<DataSourceDependency> }> {
+	// The legacy option remains callable for route compatibility, but cleanup
+	// authorization never substitutes an uncached live read for a published,
+	// identity-bound provider generation.
+	void options;
 	const activeTypes = collectActiveRuleTypes(rules);
 
 	const SEERR_RULE_TYPES = [
@@ -9853,22 +10136,12 @@ export async function buildEvalContextWithHealth(
 		listEvidence,
 	] = await Promise.all([
 		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
-		needsTautulli
-			? options.providerEvidence === "live"
-				? collectLiveTautulliPolicyEvidence(deps, userId)
-				: prefetchTautulliData(deps, userId)
-			: undefined,
+		needsTautulli ? prefetchTautulliData(deps, userId) : undefined,
 		needsPlex || needsPlexSectionInventory
-			? options.providerEvidence === "live"
-				? collectLivePlexPolicyEvidence(deps, userId, rules)
-				: loadPublishedPlexPolicyEvidence(deps, userId, rules)
+			? loadPublishedPlexPolicyEvidence(deps, userId, rules)
 			: undefined,
 		needsPlexEpisodes ? prefetchPlexEpisodeData(deps, userId) : undefined,
-		needsJellyfin
-			? options.providerEvidence === "live"
-				? collectLiveJellyfinPolicyEvidence(deps, userId)
-				: prefetchJellyfinData(deps, userId)
-			: undefined,
+		needsJellyfin ? prefetchJellyfinData(deps, userId) : undefined,
 		needsJellyfinEpisodes ? prefetchJellyfinEpisodeData(deps, userId) : undefined,
 		refreshListMutationEvidence(deps, userId, rules),
 	]);
