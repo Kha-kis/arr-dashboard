@@ -60,6 +60,10 @@ function makeObserver(current = publicationSnapshot()) {
 	const upsert = vi.fn().mockResolvedValue({});
 	const warn = vi.fn();
 	const tx = {
+		libraryCleanupConfig: {
+			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			findUnique: vi.fn().mockResolvedValue({ runClaimToken: null }),
+		},
 		serviceInstance: {
 			findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) =>
 				Object.entries(where).every(

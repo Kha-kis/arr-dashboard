@@ -170,6 +170,10 @@ function makeDeps(
 	};
 	const refreshTransaction = {
 		$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+		libraryCleanupConfig: {
+			upsert: vi.fn().mockResolvedValue({ id: "config-1" }),
+			findUnique: vi.fn().mockResolvedValue({ runClaimToken: null }),
+		},
 		serviceInstance: { findUnique: findInstance, findFirst: findInstance },
 		cacheRefreshStatus,
 	};

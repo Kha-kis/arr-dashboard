@@ -129,6 +129,25 @@ export async function withCurrentProviderPublicationAuthority<T>(
 	const postgresql = isPostgresqlDatabase();
 	return await prisma.$transaction(
 		async (tx) => {
+			const cleanupConfig = await tx.libraryCleanupConfig.upsert({
+				where: { userId: instance.userId },
+				update: {},
+				create: { userId: instance.userId },
+				select: { id: true },
+			});
+			if (postgresql) {
+				await tx.$queryRawUnsafe(
+					'SELECT "id" FROM "LibraryCleanupConfig" WHERE "id" = $1 FOR UPDATE',
+					cleanupConfig.id,
+				);
+			}
+			const cleanupAuthority = await tx.libraryCleanupConfig.findUnique({
+				where: { id: cleanupConfig.id },
+				select: { runClaimToken: true },
+			});
+			if (!cleanupAuthority || cleanupAuthority.runClaimToken !== null) {
+				return { matched: false };
+			}
 			if (postgresql) {
 				await tx.$queryRawUnsafe(
 					'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
@@ -210,12 +229,18 @@ async function ensureExpectedIdentity(
 	) {
 		return;
 	}
-	await prisma.$transaction(async (tx) => {
-		await tx.serviceInstance.updateMany({
+	const mismatch = await withCurrentProviderPublicationAuthority(prisma, instance, async (tx) =>
+		tx.serviceInstance.updateMany({
 			where: providerPublicationPredicate(instance),
 			data: { identityStatus: "MISMATCH", identityLastCheckedAt: (now ?? (() => new Date()))() },
-		});
-	});
+		}),
+	);
+	if (!mismatch.matched) {
+		throw new ProviderIdentityGuardError(
+			"PUBLICATION_SUPERSEDED",
+			"Provider cache publication was superseded by a service change.",
+		);
+	}
 	throw new ProviderIdentityGuardError(
 		"IDENTITY_MISMATCH",
 		"Provider identity changed; cache publication was not attempted.",

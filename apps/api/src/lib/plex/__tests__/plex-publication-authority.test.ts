@@ -105,6 +105,10 @@ function dataClient(itemCount = 1): PlexClient {
 function prisma(finalPredicateMatches = true) {
 	const rows: unknown[] = [];
 	const tx = {
+		libraryCleanupConfig: {
+			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			findUnique: vi.fn().mockResolvedValue({ runClaimToken: null }),
+		},
 		serviceInstance: {
 			findFirst: vi.fn(async () => {
 				authority.events.push("predicate");
@@ -223,7 +227,7 @@ describe("Plex publication authority", () => {
 		});
 
 		expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
-		expect(authority.events).toEqual(["identity", "collect", "identity"]);
+		expect(authority.events).toEqual(["identity", "collect", "identity", "predicate"]);
 		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
 		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});

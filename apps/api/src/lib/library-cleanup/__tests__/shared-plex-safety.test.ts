@@ -18,9 +18,11 @@ import { planCleanupSelection } from "../selection-planner.js";
 import {
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
+	createSanitizedProviderEvidence,
 	createSharedPlexSafetyContext,
 	findSharedPlexDeleteBlocks,
 	serializeExecutableSafetyPlan,
+	serializeProviderScanAuthority,
 } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
@@ -76,6 +78,7 @@ function radarrSafetySnapshot(
 			mapping: null,
 		},
 	],
+	providerEvidence = createSanitizedProviderEvidence([], []),
 ) {
 	return serializeExecutableSafetyPlan(
 		file
@@ -88,8 +91,28 @@ function radarrSafetySnapshot(
 					targetDeleteNotifications,
 				}
 			: { kind: "verified_radarr_empty", target: radarrTargetIdentity },
+		providerEvidence,
 	);
 }
+
+const TEST_PLEX_SCAN_EVIDENCE = createSanitizedProviderEvidence(
+	["plex"],
+	[
+		{
+			service: "PLEX",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityFingerprint: "1".repeat(64),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			cacheType: "plex",
+			completedAt: "2026-08-15T00:00:00.000Z",
+			itemCount: 1,
+			verifiedAt: "2026-08-14T23:00:00.000Z",
+			statusFingerprint: "2".repeat(64),
+			rowFingerprint: "3".repeat(64),
+		},
+	],
+);
 
 function radarrTargetOnlySnapshot() {
 	return serializeExecutableSafetyPlan({
@@ -1054,6 +1077,7 @@ describe("shared Plex deletion safety", () => {
 		const storedApproval = approvalRecord({
 			scanMediaServerAfterDelete: true,
 			status: "approved",
+			safetySnapshot: radarrSafetySnapshot(undefined, undefined, TEST_PLEX_SCAN_EVIDENCE),
 		});
 		configureApprovalStore(fixture.deps, storedApproval);
 		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
@@ -1068,7 +1092,26 @@ describe("shared Plex deletion safety", () => {
 				scanMediaServerAfterDelete: true,
 			},
 		]);
-		const enabledPlex = { ...fixture.plexInstance, enabled: true };
+		const enabledPlex = {
+			...fixture.plexInstance,
+			enabled: true,
+			expectedIdentity: "plex-machine",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date("2026-08-14T23:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		};
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi.fn().mockResolvedValue(undefined),
+			providerScanAuthorityCreator: vi.fn(
+				async (target: {
+					instanceId: string;
+					service: "PLEX" | "JELLYFIN" | "EMBY";
+					mediaType: "movie" | "show";
+				}) => serializeProviderScanAuthority(target, TEST_PLEX_SCAN_EVIDENCE),
+			),
+		});
 		vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation((async ({
 			where,
 		}: {
@@ -1121,7 +1164,10 @@ describe("shared Plex deletion safety", () => {
 			updatedAt: new Date(),
 		};
 		(fixture.deps.prisma as never as Record<string, unknown>).libraryCleanupMediaServerScan = {
-			create: vi.fn().mockResolvedValue(scanRow),
+			create: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+				Object.assign(scanRow, data);
+				return scanRow;
+			}),
 			count: vi.fn().mockResolvedValue(1),
 			findFirst: vi.fn().mockResolvedValue(null),
 			findMany: vi.fn().mockImplementation(async ({ where, select }) => {
@@ -1171,7 +1217,26 @@ describe("shared Plex deletion safety", () => {
 			},
 		});
 		const retries = configureRetryStore(fixture.deps);
-		const enabledPlex = { ...fixture.plexInstance, enabled: true };
+		const enabledPlex = {
+			...fixture.plexInstance,
+			enabled: true,
+			expectedIdentity: "plex-machine",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date("2026-08-14T23:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		};
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi.fn().mockResolvedValue(undefined),
+			providerScanAuthorityCreator: vi.fn(
+				async (target: {
+					instanceId: string;
+					service: "PLEX" | "JELLYFIN" | "EMBY";
+					mediaType: "movie" | "show";
+				}) => serializeProviderScanAuthority(target, TEST_PLEX_SCAN_EVIDENCE),
+			),
+		});
 		vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation((async ({
 			where,
 		}: {
@@ -1285,6 +1350,11 @@ describe("shared Plex deletion safety", () => {
 			1,
 			1,
 			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_SCAN_EVIDENCE,
 		);
 
 		expect(result).toMatchObject({ itemsRemoved: 1, status: "completed" });

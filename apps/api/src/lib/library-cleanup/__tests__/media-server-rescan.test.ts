@@ -7,7 +7,9 @@ import {
 } from "../media-server-rescan.js";
 import {
 	createSanitizedProviderEvidence,
+	ProviderExecutionAuthorityChangedError,
 	serializeExecutableSafetyPlan,
+	serializeProviderScanAuthority,
 } from "../shared-plex-safety.js";
 
 function authorityFingerprint(value: unknown): string {
@@ -37,6 +39,78 @@ const providerIndependentSafetySnapshot = serializeExecutableSafetyPlan({
 	},
 });
 
+const testPlexEvidence = createSanitizedProviderEvidence(
+	["plex"],
+	[
+		{
+			service: "PLEX",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityFingerprint: "1".repeat(64),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			cacheType: "plex",
+			completedAt: "2026-08-15T00:00:00.000Z",
+			itemCount: 1,
+			verifiedAt: "2026-08-14T23:00:00.000Z",
+			statusFingerprint: "2".repeat(64),
+			rowFingerprint: "3".repeat(64),
+		},
+	],
+);
+
+const testTautulliEvidence = createSanitizedProviderEvidence(
+	["tautulli"],
+	[
+		{
+			service: "TAUTULLI",
+			identityKind: "TAUTULLI_PMS_IDENTIFIER",
+			identityFingerprint: "4".repeat(64),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			cacheType: "tautulli",
+			completedAt: "2026-08-15T00:00:00.000Z",
+			itemCount: 1,
+			verifiedAt: "2026-08-14T23:00:00.000Z",
+			statusFingerprint: "5".repeat(64),
+			rowFingerprint: "6".repeat(64),
+		},
+	],
+);
+
+const testMediaEvidence = createSanitizedProviderEvidence(
+	["jellyfin", "plex"],
+	[
+		...testPlexEvidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		...(["JELLYFIN", "EMBY"] as const).map((service, index) => ({
+			service,
+			identityKind: service === "JELLYFIN" ? "JELLYFIN_SERVER_ID" : "EMBY_SERVER_ID",
+			identityFingerprint: ["7", "8"][index]!.repeat(64),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			cacheType: "jellyfin",
+			completedAt: "2026-08-15T00:00:00.000Z",
+			itemCount: 1,
+			verifiedAt: "2026-08-14T23:00:00.000Z",
+			statusFingerprint: ["8", "9"][index]!.repeat(64),
+			rowFingerprint: ["9", "a"][index]!.repeat(64),
+		})),
+	],
+);
+
+function providerSafetySnapshot(evidence = testMediaEvidence) {
+	return serializeExecutableSafetyPlan(
+		{
+			kind: "verified_arr_target",
+			target: {
+				serviceFingerprint: "a".repeat(64),
+				externalId: 42,
+				mediaPath: { value: "/movies/Movie", windows: false },
+			},
+		},
+		evidence,
+	);
+}
+
 function approval(overrides: Record<string, unknown> = {}) {
 	return {
 		id: "approval-1",
@@ -61,7 +135,7 @@ function approval(overrides: Record<string, unknown> = {}) {
 		rating: null,
 		status: "executed",
 		executionToken: null,
-		safetySnapshot: providerIndependentSafetySnapshot,
+		safetySnapshot: providerSafetySnapshot(),
 		lastExecutionError: null,
 		reviewedAt: null,
 		executedAt: new Date(),
@@ -75,6 +149,12 @@ function approval(overrides: Record<string, unknown> = {}) {
 }
 
 function instance(id: string, service: "PLEX" | "JELLYFIN" | "EMBY", enabled = true) {
+	const identityKind =
+		service === "PLEX"
+			? "PLEX_MACHINE_IDENTIFIER"
+			: service === "JELLYFIN"
+				? "JELLYFIN_SERVER_ID"
+				: "EMBY_SERVER_ID";
 	return {
 		id,
 		userId: "user-1",
@@ -88,6 +168,12 @@ function instance(id: string, service: "PLEX" | "JELLYFIN" | "EMBY", enabled = t
 		httpAuthEncryptionIv: null,
 		isDefault: false,
 		enabled,
+		expectedIdentity: service === "PLEX" ? "plex-machine" : "media-server-id",
+		identityKind,
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date(Date.now() - 60_000),
+		identityGeneration: 7,
+		connectionGeneration: 3,
 		storageGroupId: null,
 		hasLocalFilesystemAccess: false,
 		pathPrefix: null,
@@ -102,13 +188,22 @@ function scan(
 	service: "PLEX" | "JELLYFIN" | "EMBY",
 	overrides: Record<string, unknown> = {},
 ) {
+	const mediaType = (overrides.mediaType as "movie" | "show" | undefined) ?? "movie";
+	const matchingSources = testMediaEvidence.sources.filter((source) => source.service === service);
+	const targetEvidence = createSanitizedProviderEvidence(
+		matchingSources.map((source) => source.cacheType),
+		matchingSources.map(({ fingerprint: _fingerprint, ...source }) => source),
+	);
 	return {
 		id,
 		approvalId: "approval-1",
 		instanceId,
 		service,
-		serverIdentity: service === "PLEX" ? "PLEX:plex-machine" : `${service}:media-server-id`,
-		mediaType: "movie",
+		serverIdentity: serializeProviderScanAuthority(
+			{ instanceId, service, mediaType },
+			targetEvidence,
+		),
+		mediaType,
 		plannedSectionIds: service === "PLEX" ? '["movies"]' : null,
 		targetKey: `${service}:${instanceId}:movie`,
 		status: "pending",
@@ -190,6 +285,22 @@ function deps(
 			arrClientFactory: {},
 			plexCacheClientFactory: vi.fn(() => plexClient),
 			jellyfinCacheClientFactory: vi.fn(() => jellyfinClient),
+			providerEvidenceAuthorityChecker: vi.fn().mockResolvedValue(undefined),
+			providerScanAuthorityCreator: vi.fn(
+				async (
+					target: Parameters<typeof serializeProviderScanAuthority>[0],
+					evidence: Parameters<typeof serializeProviderScanAuthority>[1],
+				) => {
+					const sources = evidence.sources.filter((source) => source.service === target.service);
+					return serializeProviderScanAuthority(
+						target,
+						createSanitizedProviderEvidence(
+							sources.map((source) => source.cacheType),
+							sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+						),
+					);
+				},
+			),
 			log: {
 				warn: vi.fn(),
 				error: vi.fn(),
@@ -350,10 +461,54 @@ describe("durable media-server rescans", () => {
 		expect(fixture.prisma.libraryCleanupMediaServerScan.create).toHaveBeenCalledWith({
 			data: expect.objectContaining({
 				instanceId: "plex-1",
-				serverIdentity: "PLEX:plex-machine",
+				serverIdentity: expect.stringContaining('"providerEvidence"'),
 				plannedSectionIds: '["movies"]',
 			}),
 		});
+	});
+
+	it("rejects scan preparation when cleanup recorded no provider dependency", async () => {
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		const storedApproval = approval({ safetySnapshot: providerIndependentSafetySnapshot });
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", storedApproval as never, "movie"),
+		).rejects.toThrow("provider authority");
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).not.toHaveBeenCalled();
+	});
+
+	it("rejects Tautulli-only authority for a Plex scan target", async () => {
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		const storedApproval = approval({
+			safetySnapshot: providerSafetySnapshot(testTautulliEvidence),
+		});
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", storedApproval as never, "movie"),
+		).rejects.toThrow("provider authority");
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).not.toHaveBeenCalled();
+	});
+
+	it("stores canonical target-bound scan authority without a raw identity", async () => {
+		const plex = instance("plex-1", "PLEX");
+		Object.assign(plex, {
+			expectedIdentity: "plex-machine",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date("2026-08-14T23:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		});
+		const fixture = deps({ instances: [plex] });
+		const storedApproval = approval({ safetySnapshot: providerSafetySnapshot() });
+
+		await prepareMediaServerRescans(fixture.deps, "user-1", storedApproval as never, "movie");
+
+		const createCall = fixture.prisma.libraryCleanupMediaServerScan.create.mock.calls[0]?.[0];
+		const persisted = createCall?.data.serverIdentity as string;
+		expect(() => JSON.parse(persisted)).not.toThrow();
+		expect(persisted).not.toContain("plex-machine");
+		expect(persisted).not.toContain("http://");
 	});
 
 	it("does not persist scan work when the rule snapshot disabled it", async () => {
@@ -404,6 +559,8 @@ describe("durable media-server rescans", () => {
 	it("blocks a pre-deletion retry when its Plex section plan changed", async () => {
 		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
 		await prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie");
+		const storedAuthority =
+			fixture.prisma.libraryCleanupMediaServerScan.create.mock.calls[0]![0].data.serverIdentity;
 		fixture.plexClient.getLibrarySections.mockResolvedValue([
 			{ key: "movies", title: "Movies", type: "movie" },
 			{ key: "anime", title: "Anime", type: "movie" },
@@ -413,7 +570,7 @@ describe("durable media-server rescans", () => {
 		);
 		Object.assign(fixture.prisma.libraryCleanupMediaServerScan, {
 			findUnique: vi.fn().mockResolvedValue({
-				serverIdentity: "PLEX:plex-machine",
+				serverIdentity: storedAuthority,
 				plannedSectionIds: '["movies"]',
 			}),
 		});
@@ -428,13 +585,15 @@ describe("durable media-server rescans", () => {
 		const jellyfin = instance("jellyfin-1", "JELLYFIN");
 		const fixture = deps({ instances: [plex, jellyfin] });
 		await prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie");
+		const storedAuthority =
+			fixture.prisma.libraryCleanupMediaServerScan.create.mock.calls[0]![0].data.serverIdentity;
 		fixture.prisma.serviceInstance.findMany.mockResolvedValue([plex]);
 		fixture.prisma.libraryCleanupMediaServerScan.create.mockRejectedValue(
 			Object.assign(new Error("duplicate"), { code: "P2002" }),
 		);
 		Object.assign(fixture.prisma.libraryCleanupMediaServerScan, {
 			findUnique: vi.fn().mockResolvedValue({
-				serverIdentity: "PLEX:plex-machine",
+				serverIdentity: storedAuthority,
 				plannedSectionIds: '["movies"]',
 			}),
 		});
@@ -569,10 +728,18 @@ describe("durable media-server rescans", () => {
 				evidence,
 			),
 		});
-		const rows = [scan("scan-1", plexInstance.id, "PLEX")];
+		const rows = [
+			scan("scan-1", plexInstance.id, "PLEX", {
+				serverIdentity: serializeProviderScanAuthority(
+					{ instanceId: plexInstance.id, service: "PLEX", mediaType: "movie" },
+					evidence,
+				),
+			}),
+		];
 		const fixture = deps({ instances: [plexInstance], scans: rows, approval: storedApproval });
 		Object.assign(fixture.deps, {
 			encryptor: { decrypt: vi.fn(() => "decrypted") },
+			providerEvidenceAuthorityChecker: undefined,
 			providerIdentityReader: vi.fn(async () => ({
 				service: "PLEX",
 				identityKind: "plex-machine-identifier",
@@ -932,6 +1099,11 @@ describe("durable media-server rescans", () => {
 			friendlyName: "Different Plex",
 			platform: "Linux",
 		});
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi
+				.fn()
+				.mockRejectedValue(new ProviderExecutionAuthorityChangedError()),
+		});
 
 		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
 
@@ -1038,7 +1210,7 @@ describe("durable media-server rescans", () => {
 		installStatefulScanStore(fixture, rows, [approval()]);
 		const brokenClient = {
 			getPublicInfo: vi.fn().mockRejectedValue(new Error("instance unavailable")),
-			refreshLibrary: vi.fn(),
+			refreshLibrary: vi.fn().mockRejectedValue(new Error("instance unavailable")),
 		};
 		(
 			fixture.deps as unknown as {
@@ -1051,9 +1223,38 @@ describe("durable media-server rescans", () => {
 		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
 
 		expect(result).toMatchObject({ targets: 2, triggered: 2, failed: 0 });
-		expect(brokenClient.refreshLibrary).not.toHaveBeenCalled();
+		expect(brokenClient.refreshLibrary).toHaveBeenCalledOnce();
 		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
 		expect(rows.map((row) => row.status)).toEqual(["triggered", "triggered"]);
+	});
+
+	it("fail-stops later scan operations after provider authority changes", async () => {
+		const rows = [
+			scan("scan-movies", "plex-1", "PLEX"),
+			scan("scan-shows", "plex-1", "PLEX", {
+				mediaType: "show",
+				plannedSectionIds: '["shows"]',
+				targetKey: "PLEX:plex-1:show",
+			}),
+		];
+		const storedApproval = approval({ safetySnapshot: providerSafetySnapshot() });
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")], approval: storedApproval });
+		installStatefulScanStore(fixture, rows, [storedApproval]);
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi
+				.fn()
+				.mockRejectedValue(new ProviderExecutionAuthorityChangedError()),
+		});
+
+		const result = await triggerMediaServerRescansForApproval(
+			fixture.deps,
+			"user-1",
+			storedApproval.id,
+		);
+
+		expect(result).toMatchObject({ triggered: 0, failed: 1, providerAuthorityFailed: true });
+		expect(rows.map((row) => row.status)).toEqual(["failed", "pending"]);
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
 	});
 
 	it("atomically claims equivalent rows so concurrent callers issue one physical refresh", async () => {
@@ -1266,18 +1467,34 @@ describe("durable media-server rescans", () => {
 	});
 
 	it("never coalesces pending work across different physical server identities", async () => {
+		const { fingerprint: _fingerprint, ...jellyfinSource } = testMediaEvidence.sources.find(
+			(source) => source.service === "JELLYFIN",
+		)!;
+		const alternateSource = {
+			...jellyfinSource,
+			identityFingerprint: "b".repeat(64),
+		};
+		const alternateEvidence = createSanitizedProviderEvidence(
+			[alternateSource.cacheType],
+			[alternateSource],
+		);
 		const rows = [
 			scan("scan-old", "jellyfin-1", "JELLYFIN", {
 				approvalId: "approval-old",
-				serverIdentity: "JELLYFIN:old-server",
 			}),
-			scan("scan-new", "jellyfin-1", "JELLYFIN", {
+			scan("scan-new", "jellyfin-2", "JELLYFIN", {
 				approvalId: "approval-new",
-				serverIdentity: "JELLYFIN:media-server-id",
+				targetKey: "JELLYFIN:jellyfin-2:movie",
+				serverIdentity: serializeProviderScanAuthority(
+					{ instanceId: "jellyfin-2", service: "JELLYFIN", mediaType: "movie" },
+					alternateEvidence,
+				),
 			}),
 		];
 		const approvals = [approval({ id: "approval-old" }), approval({ id: "approval-new" })];
-		const fixture = deps({ instances: [instance("jellyfin-1", "JELLYFIN")] });
+		const fixture = deps({
+			instances: [instance("jellyfin-1", "JELLYFIN"), instance("jellyfin-2", "JELLYFIN")],
+		});
 		installStatefulScanStore(fixture, rows, approvals);
 
 		const result = await triggerCoalescedMediaServerRescans(fixture.deps, "user-1", [
@@ -1285,9 +1502,9 @@ describe("durable media-server rescans", () => {
 			"approval-new",
 		]);
 
-		expect(result).toMatchObject({ targets: 2, triggered: 1, failed: 1 });
-		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
-		expect(rows.find((row) => row.id === "scan-old")?.status).toBe("failed");
+		expect(result).toMatchObject({ targets: 2, triggered: 2, failed: 0 });
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledTimes(2);
+		expect(rows.find((row) => row.id === "scan-old")?.status).toBe("triggered");
 		expect(rows.find((row) => row.id === "scan-new")?.status).toBe("triggered");
 	});
 

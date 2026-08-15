@@ -54,8 +54,16 @@ function instance(overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function prismaFor(row: Record<string, unknown> | undefined) {
+function prismaFor(
+	row: Record<string, unknown> | undefined,
+	options: { runClaimToken?: string | null; lockOrder?: string[] } = {},
+) {
+	let runClaimToken = options.runClaimToken ?? null;
 	const tx = {
+		libraryCleanupConfig: {
+			upsert: vi.fn(async () => ({ id: "cleanup-1" })),
+			findUnique: vi.fn(async () => ({ id: "cleanup-1", runClaimToken })),
+		},
 		serviceInstance: {
 			findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
 				if (!row || !matches(row, where)) return null;
@@ -69,10 +77,16 @@ function prismaFor(row: Record<string, unknown> | undefined) {
 				},
 			),
 		},
-		$queryRawUnsafe: vi.fn(),
+		$queryRawUnsafe: vi.fn(async (query: string) => {
+			options.lockOrder?.push(query.includes("LibraryCleanupConfig") ? "cleanup" : "service");
+			return [];
+		}),
 	};
 	return {
 		...tx,
+		setRunClaimToken(value: string | null) {
+			runClaimToken = value;
+		},
 		$transaction: vi.fn(
 			async (action: (transaction: typeof tx) => Promise<unknown>) => await action(tx),
 		),
@@ -160,6 +174,58 @@ describe("withGuardedProviderPublication", () => {
 				encryptedHttpAuthCredentials: "proxy-cipher-a",
 			}),
 		});
+	});
+
+	it("locks cleanup publication authority before the service row", async () => {
+		vi.stubEnv("DATABASE_URL", "postgresql://publication-lock-test");
+		const row = instance();
+		const lockOrder: string[] = [];
+		const prisma = prismaFor(row, { lockOrder });
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
+
+		try {
+			await withGuardedProviderPublication(
+				prisma as never,
+				row as never,
+				silentLog,
+				async () => "snapshot",
+				async (_tx, snapshot) => snapshot,
+			);
+
+			expect(lockOrder).toEqual(["cleanup", "service"]);
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+
+	it("skips publication behind an active cleanup run and succeeds after release", async () => {
+		const row = instance();
+		const prisma = prismaFor(row, { runClaimToken: "cleanup-run" });
+		const publish = vi.fn(async (_tx, snapshot: string) => snapshot);
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
+
+		await expect(
+			withGuardedProviderPublication(
+				prisma as never,
+				row as never,
+				silentLog,
+				async () => "blocked",
+				publish,
+			),
+		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "PUBLICATION_SUPERSEDED"));
+		expect(publish).not.toHaveBeenCalled();
+
+		prisma.setRunClaimToken(null);
+		await expect(
+			withGuardedProviderPublication(
+				prisma as never,
+				row as never,
+				silentLog,
+				async () => "retry",
+				publish,
+			),
+		).resolves.toBe("retry");
+		expect(publish).toHaveBeenCalledOnce();
 	});
 
 	it("rejects unverified snapshots before collection", async () => {

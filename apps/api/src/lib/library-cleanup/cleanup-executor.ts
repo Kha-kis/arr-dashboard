@@ -86,6 +86,11 @@ import {
 	retryPendingMediaServerRescans,
 	triggerCoalescedMediaServerRescans,
 } from "./media-server-rescan.js";
+import {
+	loadExactProviderCacheRows,
+	PROVIDER_CACHE_ROW_SELECTS,
+	type ProviderCacheType,
+} from "./provider-cache-evidence.js";
 import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
 import {
 	type ConditionEvidenceAvailability,
@@ -162,83 +167,6 @@ const APPROVAL_EXPIRY_DAYS = 7;
 const CACHE_QUERY_BATCH_SIZE = 500;
 const PROVIDER_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
 
-const TAUTULLI_EVIDENCE_ROW_SELECT = {
-	id: true,
-	instanceId: true,
-	tmdbId: true,
-	mediaType: true,
-	lastWatchedAt: true,
-	watchCount: true,
-	watchedByUsers: true,
-	connectionGeneration: true,
-	identityGeneration: true,
-} as const;
-
-const PLEX_EVIDENCE_ROW_SELECT = {
-	id: true,
-	instanceId: true,
-	tmdbId: true,
-	mediaType: true,
-	sectionId: true,
-	sectionTitle: true,
-	lastWatchedAt: true,
-	watchCount: true,
-	watchedByUsers: true,
-	onDeck: true,
-	userRating: true,
-	collections: true,
-	labels: true,
-	addedAt: true,
-	connectionGeneration: true,
-	identityGeneration: true,
-} as const;
-
-const JELLYFIN_EVIDENCE_ROW_SELECT = {
-	id: true,
-	instanceId: true,
-	tmdbId: true,
-	mediaType: true,
-	lastWatchedAt: true,
-	watchCount: true,
-	watchedByUsers: true,
-	onDeck: true,
-	userRating: true,
-	addedAt: true,
-	connectionGeneration: true,
-	identityGeneration: true,
-} as const;
-
-const PLEX_EPISODE_EVIDENCE_ROW_SELECT = {
-	id: true,
-	instanceId: true,
-	showTmdbId: true,
-	seasonNumber: true,
-	episodeNumber: true,
-	ratingKey: true,
-	watched: true,
-	watchedByUsers: true,
-	lastWatchedAt: true,
-	watchCount: true,
-	refreshedAt: true,
-	sourceFingerprint: true,
-	connectionGeneration: true,
-	identityGeneration: true,
-} as const;
-
-const JELLYFIN_EPISODE_EVIDENCE_ROW_SELECT = {
-	id: true,
-	instanceId: true,
-	showTmdbId: true,
-	seasonNumber: true,
-	episodeNumber: true,
-	jellyfinId: true,
-	watched: true,
-	watchedByUsers: true,
-	lastWatchedAt: true,
-	connectionGeneration: true,
-	identityGeneration: true,
-} as const;
-
 type CleanupRunResultWithProviderEvidence = CleanupRunResult & {
 	providerEvidence?: SanitizedProviderEvidence;
 };
@@ -255,8 +183,6 @@ interface ProviderCacheRowAuthority {
 	rowCount: number;
 	rowFingerprint: string;
 }
-
-type ProviderCacheType = "plex" | "plex_episode" | "jellyfin" | "jellyfin_episode" | "tautulli";
 
 interface ProviderCacheSnapshot<T> {
 	value: T;
@@ -467,71 +393,6 @@ function createProviderCacheSnapshot<T>(
 		),
 		authority: { cacheType, instances, generations, rows: rowAuthorities },
 	};
-}
-
-function groupProviderRowsByInstance(
-	instanceIds: string[],
-	rows: Array<{ id: string; instanceId: string }>,
-): Map<string, unknown[]> {
-	const grouped = new Map<string, unknown[]>(instanceIds.map((instanceId) => [instanceId, []]));
-	for (const row of rows) grouped.get(row.instanceId)?.push(row);
-	return grouped;
-}
-
-async function loadExactProviderCacheRows(
-	tx: Prisma.TransactionClient,
-	cacheType: ProviderCacheType,
-	instanceIds: string[],
-): Promise<Map<string, unknown[]> | undefined> {
-	switch (cacheType) {
-		case "plex":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.plexCache.findMany({
-					where: { instanceId: { in: instanceIds } },
-					select: PLEX_EVIDENCE_ROW_SELECT,
-					orderBy: { id: "asc" },
-				}),
-			);
-		case "plex_episode":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.plexEpisodeCache.findMany({
-					where: { instanceId: { in: instanceIds } },
-					select: PLEX_EPISODE_EVIDENCE_ROW_SELECT,
-					orderBy: { id: "asc" },
-				}),
-			);
-		case "jellyfin":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.jellyfinCache.findMany({
-					where: { instanceId: { in: instanceIds } },
-					select: JELLYFIN_EVIDENCE_ROW_SELECT,
-					orderBy: { id: "asc" },
-				}),
-			);
-		case "jellyfin_episode":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.jellyfinEpisodeCache.findMany({
-					where: { instanceId: { in: instanceIds } },
-					select: JELLYFIN_EPISODE_EVIDENCE_ROW_SELECT,
-					orderBy: { id: "asc" },
-				}),
-			);
-		case "tautulli":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.tautulliCache.findMany({
-					where: { instanceId: { in: instanceIds } },
-					select: TAUTULLI_EVIDENCE_ROW_SELECT,
-					orderBy: { id: "asc" },
-				}),
-			);
-		default:
-			return undefined;
-	}
 }
 
 async function revalidateExactProviderCacheAuthority(
@@ -5603,7 +5464,7 @@ async function loadTautulliDataSnapshot(
 		while (true) {
 			const batch = await prisma.tautulliCache.findMany({
 				where: { instanceId: { in: tautulliInstances.map((instance) => instance.id) } },
-				select: TAUTULLI_EVIDENCE_ROW_SELECT,
+				select: PROVIDER_CACHE_ROW_SELECTS.tautulli,
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 				orderBy: { id: "asc" },
@@ -5730,7 +5591,7 @@ async function loadPlexDataSnapshot(
 		while (true) {
 			const batch = await prisma.plexCache.findMany({
 				where: { instanceId: { in: instanceIds } },
-				select: PLEX_EVIDENCE_ROW_SELECT,
+				select: PROVIDER_CACHE_ROW_SELECTS.plex,
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 				orderBy: { id: "asc" },
@@ -5896,7 +5757,7 @@ async function loadJellyfinDataSnapshot(
 		while (true) {
 			const batch = await prisma.jellyfinCache.findMany({
 				where: { instanceId: { in: instanceIds } },
-				select: JELLYFIN_EVIDENCE_ROW_SELECT,
+				select: PROVIDER_CACHE_ROW_SELECTS.jellyfin,
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 				orderBy: { id: "asc" },
@@ -6024,7 +5885,7 @@ async function loadJellyfinEpisodeDataSnapshot(
 		if (!generations) return undefined;
 		const generationRows = await prisma.jellyfinEpisodeCache.findMany({
 			where: { instanceId: { in: instanceIds } },
-			select: JELLYFIN_EPISODE_EVIDENCE_ROW_SELECT,
+			select: PROVIDER_CACHE_ROW_SELECTS.jellyfin_episode,
 			orderBy: { id: "asc" },
 		});
 		const countByInstance = new Map<string, number>();
@@ -6110,7 +5971,7 @@ async function loadPlexEpisodeDataSnapshot(
 		if (!generations) return undefined;
 		const generationRows = await prisma.plexEpisodeCache.findMany({
 			where: { instanceId: { in: instanceIds } },
-			select: PLEX_EPISODE_EVIDENCE_ROW_SELECT,
+			select: PROVIDER_CACHE_ROW_SELECTS.plex_episode,
 			orderBy: { id: "asc" },
 		});
 		const rowCounts = new Map<string, number>();

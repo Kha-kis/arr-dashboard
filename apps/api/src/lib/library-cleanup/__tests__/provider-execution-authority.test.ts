@@ -169,7 +169,250 @@ function fixture() {
 	};
 }
 
+const cacheCases = {
+	plex: {
+		service: "PLEX",
+		identityKind: "PLEX_MACHINE_IDENTIFIER",
+		observationKind: "plex-machine-identifier",
+		model: "plexCache",
+		row: {
+			id: "plex-row",
+			instanceId: "provider-1",
+			tmdbId: 42,
+			mediaType: "movie",
+			sectionId: "1",
+			sectionTitle: "Movies",
+			lastWatchedAt: null,
+			watchCount: 2,
+			watchedByUsers: "[]",
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			labels: "[]",
+			addedAt: null,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		},
+	},
+	plex_episode: {
+		service: "PLEX",
+		identityKind: "PLEX_MACHINE_IDENTIFIER",
+		observationKind: "plex-machine-identifier",
+		model: "plexEpisodeCache",
+		row: {
+			id: "plex-episode-row",
+			instanceId: "provider-1",
+			showTmdbId: 42,
+			seasonNumber: 1,
+			episodeNumber: 2,
+			ratingKey: "episode-key",
+			watched: true,
+			watchedByUsers: "[]",
+			lastWatchedAt: null,
+			watchCount: 1,
+			refreshedAt: new Date("2026-08-15T00:00:00.000Z"),
+			sourceFingerprint: "source",
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		},
+	},
+	jellyfin: {
+		service: "JELLYFIN",
+		identityKind: "JELLYFIN_SERVER_ID",
+		observationKind: "jellyfin-server-id",
+		model: "jellyfinCache",
+		row: {
+			id: "jellyfin-row",
+			instanceId: "provider-1",
+			tmdbId: 42,
+			mediaType: "movie",
+			lastWatchedAt: null,
+			watchCount: 2,
+			watchedByUsers: "[]",
+			onDeck: false,
+			userRating: null,
+			addedAt: null,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		},
+		extraRow: {
+			libraryId: "library-id",
+			libraryName: "Private library",
+			jellyfinId: "upstream-item",
+			collections: "[]",
+		},
+	},
+	jellyfin_episode: {
+		service: "EMBY",
+		identityKind: "EMBY_SERVER_ID",
+		observationKind: "emby-server-id",
+		model: "jellyfinEpisodeCache",
+		row: {
+			id: "jellyfin-episode-row",
+			instanceId: "provider-1",
+			showTmdbId: 42,
+			seasonNumber: 1,
+			episodeNumber: 2,
+			jellyfinId: "episode-id",
+			watched: true,
+			watchedByUsers: "[]",
+			lastWatchedAt: null,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		},
+	},
+	tautulli: {
+		service: "TAUTULLI",
+		identityKind: "TAUTULLI_PMS_IDENTIFIER",
+		observationKind: "tautulli-pms-identifier",
+		model: "tautulliCache",
+		row: {
+			id: "tautulli-row",
+			instanceId: "provider-1",
+			tmdbId: 42,
+			mediaType: "movie",
+			lastWatchedAt: null,
+			watchCount: 2,
+			watchedByUsers: "[]",
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		},
+	},
+} as const;
+
+function cacheTypeFixture(cacheType: keyof typeof cacheCases) {
+	const cacheCase = cacheCases[cacheType];
+	const now = new Date();
+	const provider = {
+		id: "provider-1",
+		userId: "user-1",
+		service: cacheCase.service,
+		name: "Private label",
+		label: "Private label",
+		baseUrl: "http://private.invalid",
+		encryptedApiKey: "encrypted",
+		encryptionIv: "iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
+		enabled: true,
+		expectedIdentity: "provider-identity",
+		identityKind: cacheCase.identityKind,
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date(now.getTime() - 5_000),
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		createdAt: new Date(now.getTime() - 20_000),
+		updatedAt: new Date(now.getTime() - 10_000),
+	};
+	const status = {
+		instanceId: provider.id,
+		cacheType,
+		lastRefreshedAt: now,
+		lastResult: "success",
+		lastErrorMessage: null,
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		itemCount: 1,
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		generationId: "generation-a",
+		generationMetadata: "{}",
+	};
+	const statusPayload = {
+		instanceId: status.instanceId,
+		lastRefreshedAt: status.lastRefreshedAt,
+		lastResult: status.lastResult,
+		lastErrorMessage: status.lastErrorMessage,
+		lastAttemptResult: status.lastAttemptResult,
+		lastAttemptErrorMessage: status.lastAttemptErrorMessage,
+		itemCount: status.itemCount,
+		connectionGeneration: status.connectionGeneration,
+		identityGeneration: status.identityGeneration,
+		generationId: status.generationId,
+		generationMetadata: status.generationMetadata,
+	};
+	const evidence = createSanitizedProviderEvidence(
+		[cacheType],
+		[
+			{
+				service: cacheCase.service,
+				identityKind: cacheCase.identityKind,
+				identityFingerprint: fingerprint({
+					service: provider.service,
+					identityKind: provider.identityKind,
+					expectedIdentity: provider.expectedIdentity,
+				}),
+				connectionGeneration: 3,
+				identityGeneration: 7,
+				cacheType,
+				completedAt: now.toISOString(),
+				itemCount: 1,
+				verifiedAt: provider.identityVerifiedAt.toISOString(),
+				statusFingerprint: fingerprint({
+					instance: {
+						id: provider.id,
+						expectedIdentity: provider.expectedIdentity,
+						identityKind: provider.identityKind,
+						identityVerifiedAt: provider.identityVerifiedAt,
+						connectionGeneration: provider.connectionGeneration,
+						identityGeneration: provider.identityGeneration,
+						updatedAt: provider.updatedAt,
+					},
+					status: statusPayload,
+				}),
+				rowFingerprint: fingerprint([cacheCase.row]),
+			},
+		],
+	);
+	const databaseRow = { ...cacheCase.row, ...(cacheCase as { extraRow?: object }).extraRow };
+	const findRows = vi.fn(async ({ select }: { select: Record<string, boolean> }) => [
+		Object.fromEntries(
+			Object.keys(select).map((key) => [key, databaseRow[key as keyof typeof databaseRow]]),
+		),
+	]);
+	const tx = {
+		$queryRawUnsafe: vi.fn(),
+		serviceInstance: { findMany: vi.fn(async () => [provider]) },
+		cacheRefreshStatus: { findMany: vi.fn(async () => [status]) },
+		plexCache: { findMany: findRows },
+		plexEpisodeCache: { findMany: findRows },
+		jellyfinCache: { findMany: findRows },
+		jellyfinEpisodeCache: { findMany: findRows },
+		tautulliCache: { findMany: findRows },
+	};
+	const identityReader = vi.fn(async () => ({
+		service: cacheCase.service,
+		identityKind: cacheCase.observationKind,
+		rawIdentity: provider.expectedIdentity,
+		confirmationDigest: "safe",
+		fingerprint: "safe",
+	}));
+	const deps = {
+		prisma: {
+			...tx,
+			$transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) =>
+				callback(tx),
+			),
+		},
+		encryptor: { decrypt: vi.fn(() => "decrypted") },
+		providerIdentityReader: identityReader,
+		log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+	} as unknown as CleanupExecutorDeps;
+	return { deps, evidence, identityReader };
+}
+
 describe("provider execution authority", () => {
+	for (const cacheType of Object.keys(cacheCases) as Array<keyof typeof cacheCases>) {
+		it(`accepts unchanged real ${cacheType} evidence`, async () => {
+			const subject = cacheTypeFixture(cacheType);
+
+			await expect(
+				assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
+			).resolves.toBeUndefined();
+			expect(subject.identityReader).toHaveBeenCalledOnce();
+		});
+	}
+
 	it("live-checks identity and exact rows, then fences the accepted snapshot", async () => {
 		const subject = fixture();
 		const assertLease = vi.fn().mockResolvedValue(undefined);
