@@ -15,7 +15,10 @@ import {
 vi.mock("../../../lib/api-client/services");
 
 import * as servicesApi from "../../../lib/api-client/services";
-import { useVerifyServiceIdentityMutation } from "../useServiceMutations";
+import {
+	useReplaceServiceIdentityMutation,
+	useVerifyServiceIdentityMutation,
+} from "../useServiceMutations";
 
 const unverifiedService: ServiceInstanceSummary = {
 	id: "plex-1",
@@ -97,6 +100,43 @@ describe("service identity mutations", () => {
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: jellyfinKeys.all });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: tautulliKeys.all });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.status });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.approvals });
+		client.clear();
+	});
+
+	it("updates the service cache and invalidates provider roots after replacement", async () => {
+		const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+		client.setQueryData(serviceKeys.all, [unverifiedService]);
+		const invalidateQueries = vi.spyOn(client, "invalidateQueries");
+		const replaced = {
+			...unverifiedService,
+			identity: {
+				status: "verified" as const,
+				kind: "jellyfin-server-id",
+				fingerprint: "111111111111",
+				verifiedAt: "2026-08-14T01:00:00.000Z",
+				lastCheckedAt: "2026-08-14T01:00:00.000Z",
+			},
+		};
+		vi.mocked(servicesApi.replaceServiceIdentity).mockResolvedValue(replaced);
+		const mutation = renderHook(() => useReplaceServiceIdentityMutation(), {
+			wrapper: wrapper(client),
+		});
+		mutation.result.current.mutate({
+			id: "plex-1",
+			payload: { label: "Replacement" },
+			confirmationDigest: "a".repeat(64),
+			expectedConnectionGeneration: 4,
+			expectedIdentityGeneration: 2,
+		});
+		await waitFor(() =>
+			expect(
+				client.getQueryData<ServiceInstanceSummary[]>(serviceKeys.all)?.[0]?.identity.fingerprint,
+			).toBe("111111111111"),
+		);
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: plexKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: jellyfinKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: tautulliKeys.all });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.approvals });
 		client.clear();
 	});
