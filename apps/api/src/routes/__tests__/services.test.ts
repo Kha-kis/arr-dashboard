@@ -1275,7 +1275,7 @@ describe("DELETE /services/:id", () => {
 		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
 	});
 
-	it("keeps durable deployment history instead of cascading it during alias deletion", async () => {
+	it("keeps active deployment ownership instead of cascading it during alias deletion", async () => {
 		const source = makeInstance({
 			id: "inst-1",
 			service: "RADARR",
@@ -1303,6 +1303,50 @@ describe("DELETE /services/:id", () => {
 		expect(res.statusCode).toBe(409);
 		expect(JSON.parse(res.payload).message).toContain("deployment history");
 		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
+	it("cascades terminal deployment audit rows when deleting an ARR alias", async () => {
+		const source = makeInstance({
+			id: "inst-1",
+			service: "RADARR",
+			baseUrl: "http://radarr:7878",
+		});
+		mockRequireInstance.mockResolvedValue(source);
+		mockPrisma.serviceInstance.findMany.mockResolvedValue([source]);
+		mockPrisma.trashSyncHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "sync-1",
+				status: "SUCCESS",
+				rolledBack: true,
+				rollbackStatus: "COMPLETED",
+			},
+		]);
+		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "deployment-1",
+				status: "SUCCESS",
+				rolledBack: true,
+				undeployStatus: "COMPLETED",
+			},
+		]);
+
+		const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+		expect(res.statusCode).toBe(204);
+		expect(mockPrisma.serviceInstance.findFirst).toHaveBeenCalledWith({
+			where: {
+				id: source.id,
+				userId: "user-1",
+				OR: expect.arrayContaining([
+					{ trashSyncHistory: { some: { rolledBack: false, backupId: { not: null } } } },
+					{ deploymentHistory: { some: { rolledBack: false, backupId: { not: null } } } },
+				]),
+			},
+			select: { id: true },
+		});
+		expect(mockPrisma.serviceInstance.delete).toHaveBeenCalledWith({
+			where: { id: source.id, userId: "user-1" },
+		});
 	});
 
 	it("never migrates ARR state to another user's equivalent alias", async () => {

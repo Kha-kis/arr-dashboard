@@ -333,10 +333,17 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							id: current.id,
 							userId,
 							OR: [
-								{ trashSyncHistory: { some: {} } },
-								{ trashBackups: { some: {} } },
+								{
+									trashSyncHistory: {
+										some: { rolledBack: false, backupId: { not: null } },
+									},
+								},
 								{ trashSchedules: { some: {} } },
-								{ deploymentHistory: { some: {} } },
+								{
+									deploymentHistory: {
+										some: { rolledBack: false, backupId: { not: null } },
+									},
+								},
 								{ standaloneCFDeployments: { some: {} } },
 								{ qualitySizeMapping: { isNot: null } },
 								{ namingConfig: { isNot: null } },

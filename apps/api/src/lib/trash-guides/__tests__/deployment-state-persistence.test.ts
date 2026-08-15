@@ -10,6 +10,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Prisma, PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
+import { restoreDatabase } from "../../backup/backup-database.js";
 
 const RUN_DB_TESTS = process.env.TEST_DB === "true";
 const TEST_DB_PATH = path.resolve(import.meta.dirname, "../../../../prisma/test-integration.db");
@@ -22,6 +23,7 @@ const ids = {
 	mapping: "trash-state-contract-mapping",
 	override: "trash-state-contract-override",
 	deployment: "trash-state-contract-deployment",
+	snapshot: "trash-state-contract-snapshot",
 };
 
 (RUN_DB_TESTS ? describe : describe.skip)("durable deployment-state Prisma contract", () => {
@@ -33,6 +35,7 @@ const ids = {
 		await prisma.instanceQualityProfileOverride.deleteMany({ where: { id: ids.override } });
 		await prisma.templateQualityProfileMapping.deleteMany({ where: { id: ids.mapping } });
 		await prisma.trashSyncHistory.deleteMany({ where: { id: ids.syncHistory } });
+		await prisma.trashBackup.deleteMany({ where: { id: ids.snapshot } });
 		await prisma.trashTemplate.deleteMany({ where: { id: ids.template } });
 		await prisma.serviceInstance.deleteMany({ where: { id: ids.instance } });
 		await prisma.user.deleteMany({ where: { id: ids.user } });
@@ -65,6 +68,7 @@ const ids = {
 		await prisma.instanceQualityProfileOverride.deleteMany({ where: { id: ids.override } });
 		await prisma.templateQualityProfileMapping.deleteMany({ where: { id: ids.mapping } });
 		await prisma.trashSyncHistory.deleteMany({ where: { id: ids.syncHistory } });
+		await prisma.trashBackup.deleteMany({ where: { id: ids.snapshot } });
 		await prisma.trashTemplate.deleteMany({ where: { id: ids.template } });
 		await prisma.serviceInstance.deleteMany({ where: { id: ids.instance } });
 		await prisma.user.deleteMany({ where: { id: ids.user } });
@@ -199,5 +203,110 @@ const ids = {
 			undeployAttemptedAt: undeployCompletedAt,
 			undeployProgress: '[{"step":"remove-custom-formats","status":"COMPLETED"}]',
 		});
+	});
+
+	function olderBackupData() {
+		return {
+			trashSyncHistory: [],
+			templateDeploymentHistory: [],
+			trashTemplates: [],
+			trashBackups: [],
+		} as never;
+	}
+
+	async function createRecoverySnapshot() {
+		await prisma.trashBackup.create({
+			data: {
+				id: ids.snapshot,
+				instanceId: ids.instance,
+				userId: ids.user,
+				backupData: "current-owner-evidence",
+			},
+		});
+	}
+
+	it("detects a successful unrolled sync owner whose rollback status is null", async () => {
+		await createRecoverySnapshot();
+		await prisma.trashSyncHistory.create({
+			data: {
+				id: ids.syncHistory,
+				instanceId: ids.instance,
+				templateId: ids.template,
+				userId: ids.user,
+				syncType: "MANUAL",
+				status: "SUCCESS",
+				appliedConfigs: "[]",
+				rolledBack: false,
+				rollbackStatus: null,
+				backupId: ids.snapshot,
+			},
+		});
+
+		await expect(restoreDatabase(prisma, olderBackupData())).rejects.toThrow(
+			`current nonterminal coordination row ${ids.syncHistory}`,
+		);
+	});
+
+	it("detects a successful unrolled deployment owner whose undeploy status is null", async () => {
+		await createRecoverySnapshot();
+		await prisma.templateDeploymentHistory.create({
+			data: {
+				id: ids.deployment,
+				instanceId: ids.instance,
+				templateId: ids.template,
+				userId: ids.user,
+				deployedBy: ids.user,
+				status: "SUCCESS",
+				rolledBack: false,
+				undeployStatus: null,
+				canRollback: true,
+				templateSnapshot: "{}",
+				backupId: ids.snapshot,
+			},
+		});
+
+		await expect(restoreDatabase(prisma, olderBackupData())).rejects.toThrow(
+			`current nonterminal coordination row ${ids.deployment}`,
+		);
+	});
+
+	it("cascades terminal recovery audits so the service and account remain deletable", async () => {
+		await createRecoverySnapshot();
+		await prisma.trashSyncHistory.create({
+			data: {
+				id: ids.syncHistory,
+				instanceId: ids.instance,
+				templateId: ids.template,
+				userId: ids.user,
+				syncType: "MANUAL",
+				status: "SUCCESS",
+				appliedConfigs: "[]",
+				rolledBack: true,
+				rollbackStatus: "COMPLETED",
+				backupId: ids.snapshot,
+			},
+		});
+		await prisma.templateDeploymentHistory.create({
+			data: {
+				id: ids.deployment,
+				instanceId: ids.instance,
+				templateId: ids.template,
+				userId: ids.user,
+				deployedBy: ids.user,
+				status: "SUCCESS",
+				rolledBack: true,
+				undeployStatus: "COMPLETED",
+				backupId: ids.snapshot,
+			},
+		});
+
+		await prisma.serviceInstance.delete({ where: { id: ids.instance, userId: ids.user } });
+
+		expect(await prisma.trashSyncHistory.count({ where: { id: ids.syncHistory } })).toBe(0);
+		expect(await prisma.templateDeploymentHistory.count({ where: { id: ids.deployment } })).toBe(0);
+		expect(await prisma.trashBackup.count({ where: { id: ids.snapshot } })).toBe(0);
+
+		await prisma.user.delete({ where: { id: ids.user } });
+		expect(await prisma.user.findUnique({ where: { id: ids.user } })).toBeNull();
 	});
 });
