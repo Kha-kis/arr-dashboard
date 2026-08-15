@@ -1288,7 +1288,6 @@ describe("DELETE /services/:id", () => {
 		});
 		mockRequireInstance.mockResolvedValue(source);
 		mockPrisma.serviceInstance.findMany.mockResolvedValue([source, survivor]);
-		mockPrisma.serviceInstance.findFirst.mockResolvedValueOnce(source);
 		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValue([
 			{
 				id: "deployment-1",
@@ -1301,7 +1300,24 @@ describe("DELETE /services/:id", () => {
 		const res = await injectAuthenticated("DELETE", "/services/inst-1");
 
 		expect(res.statusCode).toBe(409);
-		expect(JSON.parse(res.payload).message).toContain("deployment history");
+		expect(JSON.parse(res.payload).message).toContain("recovery");
+		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
+	});
+
+	it("keeps snapshotless uncertain audit evidence during ARR alias deletion", async () => {
+		mockPrisma.trashSyncHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "uncertain-sync",
+				status: "UNCERTAIN",
+				rolledBack: false,
+				rollbackStatus: null,
+			},
+		]);
+
+		const res = await injectAuthenticated("DELETE", "/services/inst-1");
+
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.payload).message).toContain("recovery");
 		expect(mockPrisma.serviceInstance.delete).not.toHaveBeenCalled();
 	});
 
@@ -1338,12 +1354,19 @@ describe("DELETE /services/:id", () => {
 				id: source.id,
 				userId: "user-1",
 				OR: expect.arrayContaining([
-					{ trashSyncHistory: { some: { rolledBack: false, backupId: { not: null } } } },
-					{ deploymentHistory: { some: { rolledBack: false, backupId: { not: null } } } },
+					{ trashSchedules: { some: {} } },
+					{ standaloneCFDeployments: { some: {} } },
 				]),
 			},
 			select: { id: true },
 		});
+		const durableStateWhere = mockPrisma.serviceInstance.findFirst.mock.calls[0]?.[0]?.where;
+		expect(durableStateWhere?.OR).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ trashSyncHistory: expect.anything() }),
+				expect.objectContaining({ deploymentHistory: expect.anything() }),
+			]),
+		);
 		expect(mockPrisma.serviceInstance.delete).toHaveBeenCalledWith({
 			where: { id: source.id, userId: "user-1" },
 		});

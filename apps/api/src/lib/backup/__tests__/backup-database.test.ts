@@ -977,6 +977,60 @@ describe("restoreDatabase — current coordination preservation", () => {
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
+	it.each([
+		{
+			kind: "sync",
+			field: "startedAt",
+			table: "trashSyncHistory",
+			statusField: "rollbackStatus",
+		},
+		{
+			kind: "deployment",
+			field: "deployedAt",
+			table: "templateDeploymentHistory",
+			statusField: "undeployStatus",
+		},
+	] as const)("rejects a restore that changes active $kind ownership ordering", async (entry) => {
+		const currentTimestamp = new Date("2026-08-15T10:00:00.000Z");
+		const staleTimestamp = new Date("2026-08-14T10:00:00.000Z");
+		const current = {
+			id: `current-${entry.kind}-owner`,
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "SUCCESS",
+			rolledBack: false,
+			backupId: `snapshot-${entry.kind}-owner`,
+			[entry.statusField]: null,
+			[entry.field]: currentTimestamp,
+			...(entry.kind === "deployment" ? { templateSnapshot: "{}" } : {}),
+		};
+		const currentSnapshot = {
+			id: `snapshot-${entry.kind}-owner`,
+			instanceId: "instance-1",
+			userId: "user-1",
+			backupData: `${entry.kind}-owner-evidence`,
+		};
+		const { prisma, firstDelete } = makeRestorePrisma({
+			currentSync: entry.kind === "sync" ? [current] : [],
+			currentDeployments: entry.kind === "deployment" ? [current] : [],
+			currentSnapshots: [currentSnapshot],
+		});
+
+		await expect(
+			restoreDatabase(
+				prisma,
+				incomingData({
+					[entry.table]: [{ ...current, [entry.field]: staleTimestamp }],
+					trashBackups: [currentSnapshot],
+				}),
+			),
+		).rejects.toThrow(
+			`current nonterminal coordination row current-${entry.kind}-owner changed ${entry.field}`,
+		);
+		expect(firstDelete).not.toHaveBeenCalled();
+	});
+
 	it("rejects a restore that omits a current unresolved score intent", async () => {
 		const currentOverride = {
 			id: "pending-score-intent",

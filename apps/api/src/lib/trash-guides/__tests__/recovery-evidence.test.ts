@@ -161,4 +161,60 @@ describe("assertNoActiveTrashRecoveryForInstance", () => {
 			assertNoActiveTrashRecoveryForInstance(prisma, "user-1", "instance-1"),
 		).rejects.toThrow(/active TRaSH recovery work/i);
 	});
+
+	it("blocks deletion for a snapshotless uncertain sync audit", async () => {
+		const { prisma, trashSyncHistory } = createRecoveryPrisma();
+		trashSyncHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "sync-uncertain",
+				status: "UNCERTAIN",
+				rolledBack: false,
+				rollbackStatus: null,
+			},
+		]);
+
+		await expect(
+			assertNoActiveTrashRecoveryForInstance(prisma, "user-1", "instance-1"),
+		).rejects.toThrow(/active TRaSH recovery work/i);
+	});
+
+	it("blocks deletion for inconsistent rolled-back history that is not completed", async () => {
+		const { prisma, templateDeploymentHistory } = createRecoveryPrisma();
+		templateDeploymentHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "deployment-inconsistent",
+				status: "PARTIAL_UNDEPLOY",
+				rolledBack: true,
+				undeployStatus: "PARTIAL",
+			},
+		]);
+
+		await expect(
+			assertNoActiveTrashRecoveryForInstance(prisma, "user-1", "instance-1"),
+		).rejects.toThrow(/active TRaSH recovery work/i);
+	});
+
+	it("allows deletion only when existing histories are explicitly completed", async () => {
+		const { prisma, trashSyncHistory, templateDeploymentHistory } = createRecoveryPrisma();
+		trashSyncHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "sync-terminal",
+				status: "SUCCESS",
+				rolledBack: true,
+				rollbackStatus: "COMPLETED",
+			},
+		]);
+		templateDeploymentHistory.findMany.mockResolvedValueOnce([
+			{
+				id: "deployment-terminal",
+				status: "SUCCESS",
+				rolledBack: true,
+				undeployStatus: "COMPLETED",
+			},
+		]);
+
+		await expect(
+			assertNoActiveTrashRecoveryForInstance(prisma, "user-1", "instance-1"),
+		).resolves.toBeUndefined();
+	});
 });

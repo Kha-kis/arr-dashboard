@@ -1,4 +1,3 @@
-import { isNonterminalRollback, isNonterminalUndeploy } from "../backup/backup-validation.js";
 import { ConflictError } from "../errors.js";
 import type { PrismaClient } from "../prisma.js";
 
@@ -99,7 +98,7 @@ export async function reconcileAbandonedTrashRecoveryClaims(
 	};
 }
 
-/** Prevent service deletion from cascading away retryable rollback or undeploy evidence. */
+/** Allow cascading history only after rollback or undeploy is explicitly terminal. */
 export async function assertNoActiveTrashRecoveryForInstance(
 	prisma: PrismaClient,
 	userId: string,
@@ -117,13 +116,10 @@ export async function assertNoActiveTrashRecoveryForInstance(
 	]);
 
 	const hasActiveSync = rollbackHistory.some(
-		(history) =>
-			history.status === "IN_PROGRESS" ||
-			history.status === "RUNNING" ||
-			isNonterminalRollback(history),
+		(history) => !(history.rolledBack === true && history.rollbackStatus === "COMPLETED"),
 	);
 	const hasActiveDeployment = undeployHistory.some(
-		(history) => history.status === "IN_PROGRESS" || isNonterminalUndeploy(history),
+		(history) => !(history.rolledBack === true && history.undeployStatus === "COMPLETED"),
 	);
 
 	if (hasActiveSync || hasActiveDeployment) {

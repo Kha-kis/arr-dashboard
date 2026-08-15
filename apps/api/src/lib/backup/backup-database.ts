@@ -77,6 +77,7 @@ const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
 		"rollbackAttemptedAt",
 		"rollbackProgress",
 		"backupId",
+		"startedAt",
 	],
 	undeploy: [
 		"userId",
@@ -91,6 +92,7 @@ const COORDINATION_FIELDS: Record<CoordinationKind, readonly string[]> = {
 		"undeployAttemptedAt",
 		"undeployProgress",
 		"backupId",
+		"deployedAt",
 	],
 };
 
