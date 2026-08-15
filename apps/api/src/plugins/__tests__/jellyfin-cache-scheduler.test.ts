@@ -1,14 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { createJellyfinClient, recordFailure, runSingleFlight } = vi.hoisted(() => ({
-	createJellyfinClient: vi.fn(),
-	recordFailure: vi.fn().mockResolvedValue(undefined),
+const { createPublicationSnapshot, runSingleFlight } = vi.hoisted(() => ({
+	createPublicationSnapshot: vi.fn(),
 	runSingleFlight: vi.fn(),
 }));
 
-vi.mock("../../lib/jellyfin/jellyfin-client.js", () => ({ createJellyfinClient }));
+vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
+	createOwnedJellyfinPublicationSnapshot: createPublicationSnapshot,
+	refreshJellyfinCache: vi.fn(),
+}));
 vi.mock("../../lib/jellyfin/jellyfin-cache-singleflight.js", () => ({
-	recordJellyfinCacheRefreshFailure: recordFailure,
 	runJellyfinCacheRefreshSingleFlight: runSingleFlight,
 }));
 
@@ -19,9 +20,9 @@ describe("refreshScheduledJellyfinCacheInstance", () => {
 		vi.clearAllMocks();
 	});
 
-	it("records a guarded failure when client construction fails", async () => {
+	it("preserves status when the owned snapshot cannot be decrypted", async () => {
 		const failure = new Error("stored credential could not be decrypted");
-		createJellyfinClient.mockImplementation(() => {
+		createPublicationSnapshot.mockImplementation(() => {
 			throw failure;
 		});
 		const app = {
@@ -44,16 +45,11 @@ describe("refreshScheduledJellyfinCacheInstance", () => {
 		await refreshScheduledJellyfinCacheInstance(app as never, instance as never);
 
 		expect(runSingleFlight).not.toHaveBeenCalled();
-		expect(recordFailure).toHaveBeenCalledWith(
-			"jellyfin-1",
-			expect.any(String),
-			"stored credential could not be decrypted",
-			{ prisma: app.prisma, log: app.log },
-		);
+		expect(app.log.error).toHaveBeenCalledOnce();
 	});
 
 	it("does not duplicate failures already observed by the single-flight wrapper", async () => {
-		createJellyfinClient.mockReturnValue({});
+		createPublicationSnapshot.mockReturnValue({ id: "jellyfin-1" });
 		runSingleFlight.mockRejectedValue(new Error("refresh failed"));
 		const app = {
 			encryptor: {},
@@ -75,7 +71,6 @@ describe("refreshScheduledJellyfinCacheInstance", () => {
 		await refreshScheduledJellyfinCacheInstance(app as never, instance as never);
 
 		expect(runSingleFlight).toHaveBeenCalledOnce();
-		expect(recordFailure).not.toHaveBeenCalled();
 		expect(app.log.error).toHaveBeenCalledOnce();
 	});
 });

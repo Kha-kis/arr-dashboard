@@ -24,9 +24,37 @@ vi.mock("../../plex/plex-episode-cache-refresher.js", () => ({
 	refreshPlexEpisodeCache: refreshMocks.plexEpisodes,
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
+	collectTautulliCacheLiveEvidence: refreshMocks.tautulli,
+	createOwnedTautulliPublicationSnapshot: (
+		_encryptor: unknown,
+		instance: Record<string, unknown>,
+	) => ({
+		...instance,
+		label: instance.name ?? "Tautulli",
+		apiKey: "decrypted",
+		httpAuthHeaders: {},
+		expectedIdentity: "plex-a",
+		identityStatus: "VERIFIED",
+		connectionGeneration: 0,
+		identityGeneration: 0,
+	}),
 	refreshTautulliCache: refreshMocks.tautulli,
 }));
 vi.mock("../../jellyfin/jellyfin-cache-refresher.js", () => ({
+	collectJellyfinCacheLiveEvidence: refreshMocks.jellyfin,
+	createOwnedJellyfinPublicationSnapshot: (
+		_encryptor: unknown,
+		instance: Record<string, unknown>,
+	) => ({
+		...instance,
+		label: instance.name ?? "Jellyfin",
+		apiKey: "decrypted",
+		httpAuthHeaders: {},
+		expectedIdentity: "jellyfin-a",
+		identityStatus: "VERIFIED",
+		connectionGeneration: 0,
+		identityGeneration: 0,
+	}),
 	refreshJellyfinCache: refreshMocks.jellyfin,
 }));
 vi.mock("../../jellyfin/jellyfin-episode-cache-refresher.js", () => ({
@@ -112,6 +140,7 @@ function makeDeps(
 	);
 	const cacheRefreshStatus = {
 		upsert: cacheStatusUpsert,
+		findUnique: vi.fn().mockResolvedValue(null),
 		findMany: vi.fn(async ({ where }: { where: { instanceId: { in: string[] } } }) =>
 			where.instanceId.in.map((instanceId) => ({
 				instanceId,
@@ -130,7 +159,7 @@ function makeDeps(
 	};
 	const refreshTransaction = {
 		$queryRawUnsafe: vi.fn().mockResolvedValue([]),
-		serviceInstance: { findUnique: findInstance },
+		serviceInstance: { findUnique: findInstance, findFirst: findInstance },
 		cacheRefreshStatus,
 	};
 	const deps = {

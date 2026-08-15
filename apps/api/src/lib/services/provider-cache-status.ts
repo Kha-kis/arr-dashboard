@@ -11,7 +11,13 @@ import {
 	withCurrentProviderPublicationAuthority,
 } from "./provider-identity-guard.js";
 
-export type PlexCacheRefreshType = "plex" | "plex_episode";
+export type WatchProviderCacheRefreshType =
+	| "plex"
+	| "plex_episode"
+	| "jellyfin"
+	| "jellyfin_episode"
+	| "tautulli";
+export type PlexCacheRefreshType = Extract<WatchProviderCacheRefreshType, "plex" | "plex_episode">;
 
 export async function recordProviderCacheRefreshFailure(
 	prisma: Pick<PrismaClient, "$transaction">,
@@ -47,7 +53,21 @@ export async function recordPlexCacheRefreshFailure(
 	instance: OwnedProviderPublicationSnapshot,
 	log: Pick<FastifyBaseLogger, "warn">,
 ): Promise<"recorded" | "superseded" | "failed"> {
+	return await recordWatchProviderCacheRefreshFailure(prisma, cacheType, message, instance, log);
+}
+
+/** Record failure diagnostics only for an exact, service-compatible publication authority. */
+export async function recordWatchProviderCacheRefreshFailure(
+	prisma: Pick<PrismaClient, "$transaction">,
+	cacheType: WatchProviderCacheRefreshType,
+	message: string,
+	instance: OwnedProviderPublicationSnapshot,
+	log: Pick<FastifyBaseLogger, "warn">,
+): Promise<"recorded" | "superseded" | "failed"> {
 	try {
+		if (!supportsCacheType(instance.service, cacheType)) {
+			throw new Error("Provider cache type does not match publication service");
+		}
 		const attemptedAt = new Date();
 		const result = await withCurrentProviderPublicationAuthority(prisma, instance, async (tx) => {
 			const status = await tx.cacheRefreshStatus.findUnique({
@@ -87,8 +107,23 @@ export async function recordPlexCacheRefreshFailure(
 	} catch (error) {
 		log.warn(
 			{ err: error, instanceId: instance.id, cacheType },
-			"Failed to record Plex cache failure status",
+			"Failed to record provider cache failure status",
 		);
 		return "failed";
+	}
+}
+
+function supportsCacheType(
+	service: OwnedProviderPublicationSnapshot["service"],
+	cacheType: WatchProviderCacheRefreshType,
+): boolean {
+	switch (service) {
+		case "PLEX":
+			return cacheType === "plex" || cacheType === "plex_episode";
+		case "JELLYFIN":
+		case "EMBY":
+			return cacheType === "jellyfin" || cacheType === "jellyfin_episode";
+		case "TAUTULLI":
+			return cacheType === "tautulli";
 	}
 }

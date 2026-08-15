@@ -18,11 +18,83 @@ import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
 import {
+	collectTautulliCacheLiveEvidence,
 	evictStaleRows,
-	refreshTautulliCache,
+	refreshTautulliCache as refreshGuardedTautulliCache,
 	STALE_EVICTION_CHUNK_SIZE,
 } from "../tautulli-cache-refresher.js";
 import type { TautulliClient } from "../tautulli-client.js";
+
+const publication = vi.hoisted(() => ({ client: undefined as TautulliClient | undefined }));
+
+vi.mock("../tautulli-client.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../tautulli-client.js")>();
+	return {
+		...actual,
+		TautulliClient: class {
+			constructor() {
+				if (!publication.client) throw new Error("Tautulli test client was not configured");
+				Object.assign(this, publication.client);
+			}
+		},
+	};
+});
+
+vi.mock("../../services/provider-identity-guard.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../services/provider-identity-guard.js")>();
+	return {
+		...actual,
+		withGuardedProviderPublication: vi.fn(
+			async (
+				prisma: { $transaction: (callback: (tx: unknown) => Promise<unknown>) => Promise<unknown> },
+				_instance: unknown,
+				_log: unknown,
+				collect: () => Promise<unknown>,
+				publish: (tx: unknown, snapshot: unknown) => Promise<unknown>,
+			) => {
+				const snapshot = await collect();
+				if ((snapshot as { complete?: boolean }).complete !== true) return snapshot;
+				return await prisma.$transaction(async (tx) => await publish(tx, snapshot));
+			},
+		),
+	};
+});
+
+async function refreshTautulliCache(
+	client: TautulliClient,
+	prisma: PrismaClient,
+	instanceId: string,
+	log: FastifyBaseLogger,
+	_expectedConnection?: unknown,
+	options?: { publish?: boolean },
+) {
+	if (options?.publish === false || typeof prisma.$transaction !== "function") {
+		return await collectTautulliCacheLiveEvidence(client, instanceId, log);
+	}
+	publication.client = client;
+	return await refreshGuardedTautulliCache({
+		prisma,
+		instance: {
+			id: instanceId,
+			userId: "user-1",
+			service: "TAUTULLI",
+			label: "Tautulli",
+			baseUrl: "https://tautulli.example.com",
+			apiKey: "key",
+			httpAuthHeaders: {},
+			enabled: true,
+			encryptedApiKey: "encrypted-key",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			expectedIdentity: "plex-a",
+			identityStatus: "VERIFIED",
+			connectionGeneration: 4,
+			identityGeneration: 2,
+		},
+		log,
+	});
+}
 
 // Neutralise the inter-lookup rate-limit delay so the end-to-end test runs fast.
 vi.mock("../../utils/delay.js", () => ({
@@ -207,7 +279,15 @@ describe("refreshTautulliCache (end-to-end)", () => {
 
 		expect(replacementDelete).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
 		expect(publishedRows).toHaveLength(FRESH_COUNT);
-		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
+		expect(publishedRows[0]).toEqual(
+			expect.objectContaining({ connectionGeneration: 4, identityGeneration: 2 }),
+		);
+		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 2 }),
+				update: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 2 }),
+			}),
+		);
 	});
 
 	it("reports incomplete evidence when unique metadata exceeds the lookup cap", async () => {
@@ -347,63 +427,6 @@ describe("refreshTautulliCache (end-to-end)", () => {
 			}),
 		]);
 		expect(transaction).not.toHaveBeenCalled();
-	});
-
-	it("discards an outgoing Tautulli generation after its connection changes before publication", async () => {
-		let resolveHistory: (result: {
-			data: unknown[];
-			recordsFiltered: number;
-			recordsTotal: number;
-		}) => void = () => {};
-		const pendingHistory = new Promise<{
-			data: unknown[];
-			recordsFiltered: number;
-			recordsTotal: number;
-		}>((resolve) => {
-			resolveHistory = resolve;
-		});
-		let currentGeneration = 7;
-		const mockClient = {
-			getLibraries: vi
-				.fn()
-				.mockResolvedValue([
-					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "0" },
-				]),
-			getHistory: vi
-				.fn()
-				.mockReturnValueOnce(pendingHistory)
-				.mockResolvedValue({ data: [], recordsFiltered: 0, recordsTotal: 0 }),
-			getMetadata: vi.fn(),
-		} as unknown as TautulliClient;
-		const tx = {
-			serviceInstance: {
-				findUnique: vi.fn(async () => ({
-					service: "TAUTULLI",
-					enabled: true,
-					connectionGeneration: currentGeneration,
-				})),
-			},
-			tautulliCache: { deleteMany: vi.fn(), createMany: vi.fn() },
-			cacheRefreshStatus: { upsert: vi.fn() },
-		};
-		const prisma = {
-			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
-				callback(tx),
-			),
-		} as unknown as PrismaClient;
-
-		const refresh = refreshTautulliCache(mockClient, prisma, "inst-1", silentLog, {
-			service: "TAUTULLI",
-			connectionGeneration: 7,
-		});
-		await vi.waitFor(() => expect(mockClient.getHistory).toHaveBeenCalledOnce());
-		currentGeneration = 8;
-		resolveHistory({ data: [], recordsFiltered: 0, recordsTotal: 0 });
-		const result = await refresh;
-
-		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
-		expect(tx.tautulliCache.deleteMany).not.toHaveBeenCalled();
-		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("fails closed when no media libraries can be discovered", async () => {

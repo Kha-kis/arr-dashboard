@@ -36,12 +36,14 @@ vi.mock("../../lib/plex/plex-helpers.js", () => ({
 // Tautulli helpers are not exercised by this file but need stubs because
 // the dispatcher module imports them at top level.
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
+	createOwnedTautulliPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshTautulliCache: vi.fn(),
 }));
 vi.mock("../../lib/tautulli/tautulli-helpers.js", () => ({
 	requireTautulliClient: vi.fn(),
 }));
 vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
+	createOwnedJellyfinPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshJellyfinCache: (...args: unknown[]) => refreshJellyfinCache(...args),
 }));
 vi.mock("../../lib/jellyfin/jellyfin-helpers.js", () => ({

@@ -16,13 +16,14 @@ import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
 import {
+	collectJellyfinCacheLiveEvidence,
+	createOwnedJellyfinPublicationSnapshot,
 	type JellyfinCacheSnapshotRow,
 	refreshJellyfinCache,
 } from "../jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-refresher.js";
-import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import {
 	collectPlexCacheLiveEvidence,
@@ -47,8 +48,9 @@ import type {
 } from "../prisma.js";
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
-import { providerConnectionIdentity } from "../services/provider-connection-guard.js";
 import {
+	collectTautulliCacheLiveEvidence,
+	createOwnedTautulliPublicationSnapshot,
 	refreshTautulliCache,
 	type TautulliCacheSnapshotRow,
 } from "../tautulli/tautulli-cache-refresher.js";
@@ -9054,14 +9056,7 @@ async function collectLiveTautulliPolicyEvidence(
 					deps.tautulliCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createTautulliClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Tautulli credentials were unavailable");
-				const collected = await refreshTautulliCache(
-					client,
-					deps.prisma,
-					instance.id,
-					deps.log,
-					providerConnectionIdentity(instance),
-					{ publish: false },
-				);
+				const collected = await collectTautulliCacheLiveEvidence(client, instance.id, deps.log);
 				if (collected.errors > 0 || collected.complete !== true || !collected.snapshot) {
 					throw new Error("Tautulli live evidence collection was incomplete");
 				}
@@ -9111,14 +9106,7 @@ async function collectLiveJellyfinPolicyEvidence(
 					deps.jellyfinCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createJellyfinClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Jellyfin credentials were unavailable");
-				const collected = await refreshJellyfinCache(
-					client,
-					deps.prisma,
-					instance.id,
-					deps.log,
-					jellyfinConnectionFingerprint(instance),
-					{ publish: false },
-				);
+				const collected = await collectJellyfinCacheLiveEvidence(client, instance.id, deps.log);
 				if (
 					collected.errors > 0 ||
 					collected.complete !== true ||
@@ -9293,17 +9281,16 @@ async function refreshTautulliMutationEvidence(
 		let accepted: { map: TautulliWatchMap; fingerprint: string; completedAt: Date } | undefined;
 		for (let pass = 0; pass < 2; pass++) {
 			for (const instance of initial) {
-				const client =
-					deps.tautulliCacheClientFactory?.(instance) ??
-					(deps.encryptor ? createTautulliClient(deps.encryptor, instance, deps.log) : null);
-				if (!client) throw new Error("Tautulli credentials were unavailable");
-				const refreshed = await refreshTautulliCache(
-					client,
-					deps.prisma,
-					instance.id,
-					deps.log,
-					providerConnectionIdentity(instance),
+				if (!deps.encryptor) throw new Error("Tautulli credentials were unavailable");
+				const publicationInstance = createOwnedTautulliPublicationSnapshot(
+					deps.encryptor,
+					instance,
 				);
+				const refreshed = await refreshTautulliCache({
+					prisma: deps.prisma,
+					instance: publicationInstance,
+					log: deps.log,
+				});
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Tautulli cache refresh was incomplete");
 				}
@@ -9360,34 +9347,30 @@ async function refreshJellyfinMutationEvidence(
 			| undefined;
 		for (let pass = 0; pass < 2; pass++) {
 			for (const instance of initial) {
-				const client =
-					deps.jellyfinCacheClientFactory?.(instance) ??
-					(deps.encryptor ? createJellyfinClient(deps.encryptor, instance, deps.log) : null);
-				if (!client) throw new Error("Jellyfin credentials were unavailable");
+				if (!deps.encryptor) throw new Error("Jellyfin credentials were unavailable");
+				const publicationInstance = createOwnedJellyfinPublicationSnapshot(
+					deps.encryptor,
+					instance,
+				);
 				const refreshed = await runJellyfinCacheRefreshSingleFlight(
-					instance.id,
-					jellyfinConnectionFingerprint(instance),
-					(expectedConnectionFingerprint) =>
-						refreshJellyfinCache(
-							client,
-							deps.prisma,
-							instance.id,
-							deps.log,
-							expectedConnectionFingerprint,
-						),
+					publicationInstance,
+					() =>
+						refreshJellyfinCache({
+							prisma: deps.prisma,
+							instance: publicationInstance,
+							log: deps.log,
+						}),
 					{ prisma: deps.prisma, log: deps.log },
 				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Jellyfin cache refresh was incomplete");
 				}
 				if (includeEpisodes) {
-					const episodes = await refreshJellyfinEpisodeCache(
-						client,
-						deps.prisma,
-						instance.id,
-						deps.log,
-						jellyfinConnectionFingerprint(instance),
-					);
+					const episodes = await refreshJellyfinEpisodeCache({
+						prisma: deps.prisma,
+						instance: publicationInstance,
+						log: deps.log,
+					});
 					if (episodes.errors > 0 || episodes.complete !== true) {
 						throw new Error("Jellyfin episode refresh was incomplete");
 					}

@@ -56,12 +56,17 @@ const createOwnedPlexPublicationSnapshot = vi.fn(
 	(_encryptor: unknown, _instance: unknown) => plexPublicationInstance,
 );
 const refreshTautulliCache = vi.fn();
+const createOwnedTautulliPublicationSnapshot = vi.fn(
+	(_encryptor: unknown, instance: unknown) => instance,
+);
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
 	createOwnedPlexPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
 		createOwnedPlexPublicationSnapshot(encryptor, instance),
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
+	createOwnedTautulliPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
+		createOwnedTautulliPublicationSnapshot(encryptor, instance),
 	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
 }));
 
@@ -278,7 +283,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
-	it("refreshes the tautulli cache via requireTautulliClient + refreshTautulliCache", async () => {
+	it("refreshes Tautulli from the owned snapshot without forwarding the helper client", async () => {
 		const fakeClient = { id: "tautulli-client" };
 		requireTautulliClient.mockResolvedValue({ client: fakeClient, instance: tautulliInstance });
 		refreshTautulliCache.mockResolvedValue({
@@ -298,13 +303,16 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// before asserting they ran.
 		await result.backgroundTask;
 
-		expect(refreshTautulliCache).toHaveBeenCalledWith(
-			fakeClient,
-			fakeApp.prisma,
-			"inst-tautulli-1",
-			fakeLog,
+		expect(createOwnedTautulliPublicationSnapshot).toHaveBeenCalledWith(
+			fakeApp.encryptor,
 			tautulliInstance,
 		);
+		expect(refreshTautulliCache).toHaveBeenCalledWith({
+			prisma: fakeApp.prisma,
+			instance: tautulliInstance,
+			log: fakeLog,
+		});
+		expect(refreshTautulliCache.mock.calls[0]).not.toContain(fakeClient);
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 

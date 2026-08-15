@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	recordPlexCacheRefreshFailure,
 	recordProviderCacheRefreshFailure,
+	recordWatchProviderCacheRefreshFailure,
 } from "./provider-cache-status.js";
 import type { OwnedProviderPublicationSnapshot } from "./provider-identity-guard.js";
 
@@ -219,5 +220,58 @@ describe("recordPlexCacheRefreshFailure", () => {
 
 		expect(result).toBe("superseded");
 		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+});
+
+describe("recordWatchProviderCacheRefreshFailure", () => {
+	it.each([
+		["JELLYFIN", "jellyfin"],
+		["EMBY", "jellyfin_episode"],
+		["TAUTULLI", "tautulli"],
+	] as const)("fences %s %s failure status by identity generation", async (service, cacheType) => {
+		const attempt = plexSnapshot({ id: `${service}-1`, service, identityGeneration: 4 });
+		const current = plexSnapshot({ id: `${service}-1`, service, identityGeneration: 5 });
+		const state = publicationFixture(current, {
+			connectionGeneration: attempt.connectionGeneration,
+			identityGeneration: current.identityGeneration,
+		});
+
+		const result = await recordWatchProviderCacheRefreshFailure(
+			state.prisma as never,
+			cacheType,
+			"outgoing attempt failed",
+			attempt,
+			log,
+		);
+
+		expect(result).toBe("superseded");
+		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["JELLYFIN", "jellyfin"],
+		["EMBY", "jellyfin_episode"],
+		["TAUTULLI", "tautulli"],
+	] as const)("creates %s %s failure status with both generations", async (service, cacheType) => {
+		const attempt = plexSnapshot({ id: `${service}-1`, service });
+		const state = publicationFixture(attempt, null);
+
+		const result = await recordWatchProviderCacheRefreshFailure(
+			state.prisma as never,
+			cacheType,
+			"current attempt failed",
+			attempt,
+			log,
+		);
+
+		expect(result).toBe("recorded");
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					connectionGeneration: 4,
+					identityGeneration: 9,
+				}),
+			}),
+		);
 	});
 });
