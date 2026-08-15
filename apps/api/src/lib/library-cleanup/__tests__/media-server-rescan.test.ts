@@ -1,9 +1,119 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withCurrentProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
+import { providerInstanceAuthorityFingerprint } from "../../services/service-identity.js";
 import {
 	prepareMediaServerRescans,
+	retryAllPendingMediaServerRescans,
 	triggerCoalescedMediaServerRescans,
 	triggerMediaServerRescansForApproval,
 } from "../media-server-rescan.js";
+import {
+	createSanitizedProviderEvidence,
+	ProviderExecutionAuthorityChangedError,
+	renewCurrentProviderRetryAuthority,
+	serializeExecutableSafetyPlan,
+	serializeProviderScanAuthority,
+} from "../shared-plex-safety.js";
+
+function authorityFingerprint(value: unknown): string {
+	const canonicalize = (input: unknown): unknown => {
+		if (input instanceof Date) return input.toISOString();
+		if (Array.isArray(input)) return input.map(canonicalize);
+		if (typeof input === "object" && input !== null) {
+			return Object.fromEntries(
+				Object.entries(input as Record<string, unknown>)
+					.sort(([left], [right]) => left.localeCompare(right))
+					.map(([key, entry]) => [key, canonicalize(entry)]),
+			);
+		}
+		return input;
+	};
+	return createHash("sha256")
+		.update(JSON.stringify(canonicalize(value)))
+		.digest("hex");
+}
+
+const providerIndependentSafetySnapshot = serializeExecutableSafetyPlan({
+	kind: "verified_arr_target",
+	target: {
+		serviceFingerprint: "a".repeat(64),
+		externalId: 42,
+		mediaPath: { value: "/movies/Movie", windows: false },
+	},
+});
+
+const testPlexEvidence = createSanitizedProviderEvidence(
+	["plex"],
+	[
+		{
+			service: "PLEX",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityFingerprint: "1".repeat(64),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			cacheType: "plex",
+			completedAt: "2026-08-15T00:00:00.000Z",
+			itemCount: 1,
+			verifiedAt: "2026-08-14T23:00:00.000Z",
+			statusFingerprint: "2".repeat(64),
+			rowFingerprint: "3".repeat(64),
+		},
+	],
+);
+
+const testTautulliEvidence = createSanitizedProviderEvidence(
+	["tautulli"],
+	[
+		{
+			service: "TAUTULLI",
+			identityKind: "TAUTULLI_PMS_IDENTIFIER",
+			identityFingerprint: "4".repeat(64),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			cacheType: "tautulli",
+			completedAt: "2026-08-15T00:00:00.000Z",
+			itemCount: 1,
+			verifiedAt: "2026-08-14T23:00:00.000Z",
+			statusFingerprint: "5".repeat(64),
+			rowFingerprint: "6".repeat(64),
+		},
+	],
+);
+
+const testMediaEvidence = createSanitizedProviderEvidence(
+	["jellyfin", "plex"],
+	[
+		...testPlexEvidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		...(["JELLYFIN", "EMBY"] as const).map((service, index) => ({
+			service,
+			identityKind: service === "JELLYFIN" ? "JELLYFIN_SERVER_ID" : "EMBY_SERVER_ID",
+			identityFingerprint: ["7", "8"][index]!.repeat(64),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			cacheType: "jellyfin",
+			completedAt: "2026-08-15T00:00:00.000Z",
+			itemCount: 1,
+			verifiedAt: "2026-08-14T23:00:00.000Z",
+			statusFingerprint: ["8", "9"][index]!.repeat(64),
+			rowFingerprint: ["9", "a"][index]!.repeat(64),
+		})),
+	],
+);
+
+function providerSafetySnapshot(evidence = testMediaEvidence) {
+	return serializeExecutableSafetyPlan(
+		{
+			kind: "verified_arr_target",
+			target: {
+				serviceFingerprint: "a".repeat(64),
+				externalId: 42,
+				mediaPath: { value: "/movies/Movie", windows: false },
+			},
+		},
+		evidence,
+	);
+}
 
 function approval(overrides: Record<string, unknown> = {}) {
 	return {
@@ -29,7 +139,7 @@ function approval(overrides: Record<string, unknown> = {}) {
 		rating: null,
 		status: "executed",
 		executionToken: null,
-		safetySnapshot: null,
+		safetySnapshot: providerSafetySnapshot(),
 		lastExecutionError: null,
 		reviewedAt: null,
 		executedAt: new Date(),
@@ -43,6 +153,12 @@ function approval(overrides: Record<string, unknown> = {}) {
 }
 
 function instance(id: string, service: "PLEX" | "JELLYFIN" | "EMBY", enabled = true) {
+	const identityKind =
+		service === "PLEX"
+			? "PLEX_MACHINE_IDENTIFIER"
+			: service === "JELLYFIN"
+				? "JELLYFIN_SERVER_ID"
+				: "EMBY_SERVER_ID";
 	return {
 		id,
 		userId: "user-1",
@@ -56,6 +172,12 @@ function instance(id: string, service: "PLEX" | "JELLYFIN" | "EMBY", enabled = t
 		httpAuthEncryptionIv: null,
 		isDefault: false,
 		enabled,
+		expectedIdentity: service === "PLEX" ? "plex-machine" : "media-server-id",
+		identityKind,
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date(Date.now() - 60_000),
+		identityGeneration: 7,
+		connectionGeneration: 3,
 		storageGroupId: null,
 		hasLocalFilesystemAccess: false,
 		pathPrefix: null,
@@ -70,13 +192,22 @@ function scan(
 	service: "PLEX" | "JELLYFIN" | "EMBY",
 	overrides: Record<string, unknown> = {},
 ) {
+	const mediaType = (overrides.mediaType as "movie" | "show" | undefined) ?? "movie";
+	const matchingSources = testMediaEvidence.sources.filter((source) => source.service === service);
+	const targetEvidence = createSanitizedProviderEvidence(
+		matchingSources.map((source) => source.cacheType),
+		matchingSources.map(({ fingerprint: _fingerprint, ...source }) => source),
+	);
 	return {
 		id,
 		approvalId: "approval-1",
 		instanceId,
 		service,
-		serverIdentity: service === "PLEX" ? "PLEX:plex-machine" : `${service}:media-server-id`,
-		mediaType: "movie",
+		serverIdentity: serializeProviderScanAuthority(
+			{ instanceId, service, mediaType },
+			targetEvidence,
+		),
+		mediaType,
 		plannedSectionIds: service === "PLEX" ? '["movies"]' : null,
 		targetKey: `${service}:${instanceId}:movie`,
 		status: "pending",
@@ -158,6 +289,21 @@ function deps(
 			arrClientFactory: {},
 			plexCacheClientFactory: vi.fn(() => plexClient),
 			jellyfinCacheClientFactory: vi.fn(() => jellyfinClient),
+			providerEvidenceAuthorityChecker: vi.fn().mockResolvedValue(undefined),
+			providerScanAuthorityCapturer: vi.fn(
+				async (target: Parameters<typeof serializeProviderScanAuthority>[0]) => {
+					const sources = testMediaEvidence.sources.filter(
+						(source) => source.service === target.service,
+					);
+					return serializeProviderScanAuthority(
+						target,
+						createSanitizedProviderEvidence(
+							sources.map((source) => source.cacheType),
+							sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+						),
+					);
+				},
+			),
 			log: {
 				warn: vi.fn(),
 				error: vi.fn(),
@@ -295,6 +441,96 @@ function installStatefulScanStore(
 	});
 }
 
+function installRecoveryRunClaimStore(
+	fixture: ReturnType<typeof deps>,
+	configs: Array<{
+		id: string;
+		userId: string;
+		runClaimToken: string | null;
+		runClaimedAt: Date | null;
+	}>,
+) {
+	const updateMany = vi.fn(
+		async ({
+			where,
+			data,
+		}: {
+			where: { id: string; userId: string; runClaimToken?: string; OR?: unknown[] };
+			data: { runClaimToken?: string | null; runClaimedAt: Date | null };
+		}) => {
+			const config = configs.find(
+				(candidate) => candidate.id === where.id && candidate.userId === where.userId,
+			);
+			if (!config) return { count: 0 };
+			if (data.runClaimToken === null) {
+				if (where.runClaimToken !== config.runClaimToken) return { count: 0 };
+				config.runClaimToken = null;
+				config.runClaimedAt = null;
+				return { count: 1 };
+			}
+			if (where.OR) {
+				if (config.runClaimToken !== null) return { count: 0 };
+				config.runClaimToken = data.runClaimToken ?? null;
+				config.runClaimedAt = data.runClaimedAt;
+				return { count: 1 };
+			}
+			if (where.runClaimToken !== config.runClaimToken) return { count: 0 };
+			config.runClaimedAt = data.runClaimedAt;
+			return { count: 1 };
+		},
+	);
+	const transactionState = { depth: 0 };
+	Object.assign(fixture.prisma, {
+		libraryCleanupConfig: {
+			upsert: vi.fn(async ({ where }: { where: { userId: string } }) => ({
+				id: configs.find((config) => config.userId === where.userId)?.id,
+			})),
+			findUnique: vi.fn(async ({ where }: { where: { id?: string; userId?: string } }) =>
+				configs.find((config) => config.id === where.id || config.userId === where.userId),
+			),
+			updateMany,
+		},
+		$transaction: vi.fn(async (callback: (tx: typeof fixture.prisma) => Promise<unknown>) => {
+			transactionState.depth++;
+			try {
+				return await callback(fixture.prisma);
+			} finally {
+				transactionState.depth--;
+			}
+		}),
+	});
+	return { configs, transactionState, updateMany };
+}
+
+function installRecoveryCandidateProjection(
+	fixture: ReturnType<typeof deps>,
+	rows: ReturnType<typeof scan>[],
+	configByApprovalId: Record<string, { id: string; userId: string }>,
+) {
+	const statefulFind =
+		fixture.prisma.libraryCleanupMediaServerScan.findMany.getMockImplementation()!;
+	fixture.prisma.libraryCleanupMediaServerScan.findMany.mockImplementation(
+		async (args: {
+			where: { approval?: { config?: { userId?: string } } };
+			select?: { approval?: unknown };
+		}) => {
+			if (args.select?.approval) {
+				return rows.map((row) => ({
+					id: row.id,
+					status: row.status,
+					nextAttemptAt: row.nextAttemptAt,
+					approval: { config: configByApprovalId[row.approvalId] },
+				}));
+			}
+			const matches = (await statefulFind(args as never)) as ReturnType<typeof scan>[];
+			const userId = args.where.approval?.config?.userId;
+			return userId
+				? matches.filter((row) => configByApprovalId[row.approvalId]?.userId === userId)
+				: matches;
+		},
+	);
+}
+
 describe("durable media-server rescans", () => {
 	beforeEach(() => vi.clearAllMocks());
 
@@ -318,10 +554,93 @@ describe("durable media-server rescans", () => {
 		expect(fixture.prisma.libraryCleanupMediaServerScan.create).toHaveBeenCalledWith({
 			data: expect.objectContaining({
 				instanceId: "plex-1",
-				serverIdentity: "PLEX:plex-machine",
+				serverIdentity: expect.stringContaining('"providerEvidence"'),
 				plannedSectionIds: '["movies"]',
 			}),
 		});
+	});
+
+	it("captures scan authority when cleanup recorded no provider dependency", async () => {
+		const plex = instance("plex-1", "PLEX");
+		const refreshedAt = new Date();
+		plex.identityVerifiedAt = new Date(refreshedAt.getTime() - 120_000);
+		plex.updatedAt = new Date(refreshedAt.getTime() - 60_000);
+		const fixture = deps({ instances: [plex] });
+		delete (fixture.deps as { providerScanAuthorityCapturer?: unknown })
+			.providerScanAuthorityCapturer;
+		Object.assign(fixture.prisma, {
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "plex-1",
+						cacheType: "plex",
+						lastRefreshedAt: refreshedAt,
+						lastResult: "success",
+						lastErrorMessage: null,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
+						itemCount: 0,
+						connectionGeneration: 3,
+						identityGeneration: 7,
+						generationId: "plex-generation-1",
+						generationMetadata: '{"version":1}',
+					},
+				]),
+			},
+			plexCache: { findMany: vi.fn().mockResolvedValue([]) },
+		});
+		const storedApproval = approval({ safetySnapshot: providerIndependentSafetySnapshot });
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", storedApproval as never, "movie"),
+		).resolves.toBe(1);
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).toHaveBeenCalledOnce();
+		const persisted = fixture.prisma.libraryCleanupMediaServerScan.create.mock.calls[0]?.[0].data
+			.serverIdentity as string;
+		expect(persisted).toContain('"cacheType":"plex"');
+		expect(persisted).not.toContain("plex-machine");
+	});
+
+	it("captures Plex scan authority independently of Tautulli-only cleanup evidence", async () => {
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		const storedApproval = approval({
+			safetySnapshot: providerSafetySnapshot(testTautulliEvidence),
+		});
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", storedApproval as never, "movie"),
+		).resolves.toBe(1);
+		expect(
+			(fixture.deps as unknown as { providerScanAuthorityCapturer: ReturnType<typeof vi.fn> })
+				.providerScanAuthorityCapturer,
+		).toHaveBeenCalledWith({
+			instanceId: "plex-1",
+			service: "PLEX",
+			mediaType: "movie",
+		});
+		expect(fixture.prisma.libraryCleanupMediaServerScan.create).toHaveBeenCalledOnce();
+	});
+
+	it("stores canonical target-bound scan authority without a raw identity", async () => {
+		const plex = instance("plex-1", "PLEX");
+		Object.assign(plex, {
+			expectedIdentity: "plex-machine",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date("2026-08-14T23:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		});
+		const fixture = deps({ instances: [plex] });
+		const storedApproval = approval({ safetySnapshot: providerSafetySnapshot() });
+
+		await prepareMediaServerRescans(fixture.deps, "user-1", storedApproval as never, "movie");
+
+		const createCall = fixture.prisma.libraryCleanupMediaServerScan.create.mock.calls[0]?.[0];
+		const persisted = createCall?.data.serverIdentity as string;
+		expect(() => JSON.parse(persisted)).not.toThrow();
+		expect(persisted).not.toContain("plex-machine");
+		expect(persisted).not.toContain("http://");
 	});
 
 	it("does not persist scan work when the rule snapshot disabled it", async () => {
@@ -372,6 +691,8 @@ describe("durable media-server rescans", () => {
 	it("blocks a pre-deletion retry when its Plex section plan changed", async () => {
 		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
 		await prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie");
+		const storedAuthority =
+			fixture.prisma.libraryCleanupMediaServerScan.create.mock.calls[0]![0].data.serverIdentity;
 		fixture.plexClient.getLibrarySections.mockResolvedValue([
 			{ key: "movies", title: "Movies", type: "movie" },
 			{ key: "anime", title: "Anime", type: "movie" },
@@ -381,7 +702,7 @@ describe("durable media-server rescans", () => {
 		);
 		Object.assign(fixture.prisma.libraryCleanupMediaServerScan, {
 			findUnique: vi.fn().mockResolvedValue({
-				serverIdentity: "PLEX:plex-machine",
+				serverIdentity: storedAuthority,
 				plannedSectionIds: '["movies"]',
 			}),
 		});
@@ -391,18 +712,67 @@ describe("durable media-server rescans", () => {
 		).rejects.toThrow("section plan changed");
 	});
 
+	it("renews volatile scan authority when a pre-deletion retry keeps the same target plan", async () => {
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")] });
+		await prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie");
+		const storedAuthority =
+			fixture.prisma.libraryCleanupMediaServerScan.create.mock.calls[0]![0].data.serverIdentity;
+		const refreshedEvidence = createSanitizedProviderEvidence(
+			["plex"],
+			testPlexEvidence.sources.map(({ fingerprint: _fingerprint, ...source }) => ({
+				...source,
+				completedAt: "2026-08-15T00:05:00.000Z",
+				statusFingerprint: "d".repeat(64),
+				rowFingerprint: "e".repeat(64),
+			})),
+		);
+		const refreshedAuthority = serializeProviderScanAuthority(
+			{ instanceId: "plex-1", service: "PLEX", mediaType: "movie" },
+			refreshedEvidence,
+		);
+		(
+			fixture.deps as unknown as {
+				providerScanAuthorityCapturer: ReturnType<typeof vi.fn>;
+			}
+		).providerScanAuthorityCapturer.mockResolvedValue(refreshedAuthority);
+		fixture.prisma.libraryCleanupMediaServerScan.create.mockRejectedValue(
+			Object.assign(new Error("duplicate"), { code: "P2002" }),
+		);
+		Object.assign(fixture.prisma.libraryCleanupMediaServerScan, {
+			findUnique: vi.fn().mockResolvedValue({
+				serverIdentity: storedAuthority,
+				plannedSectionIds: '["movies"]',
+			}),
+		});
+
+		await expect(
+			prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie"),
+		).resolves.toBe(1);
+		expect(fixture.prisma.libraryCleanupMediaServerScan.updateMany).toHaveBeenCalledWith({
+			where: {
+				approvalId: "approval-1",
+				targetKey: "PLEX:plex-1:movie",
+				serverIdentity: storedAuthority,
+				plannedSectionIds: '["movies"]',
+			},
+			data: { serverIdentity: refreshedAuthority },
+		});
+	});
+
 	it("blocks a pre-deletion retry when an earlier media-server target was removed", async () => {
 		const plex = instance("plex-1", "PLEX");
 		const jellyfin = instance("jellyfin-1", "JELLYFIN");
 		const fixture = deps({ instances: [plex, jellyfin] });
 		await prepareMediaServerRescans(fixture.deps, "user-1", approval() as never, "movie");
+		const storedAuthority =
+			fixture.prisma.libraryCleanupMediaServerScan.create.mock.calls[0]![0].data.serverIdentity;
 		fixture.prisma.serviceInstance.findMany.mockResolvedValue([plex]);
 		fixture.prisma.libraryCleanupMediaServerScan.create.mockRejectedValue(
 			Object.assign(new Error("duplicate"), { code: "P2002" }),
 		);
 		Object.assign(fixture.prisma.libraryCleanupMediaServerScan, {
 			findUnique: vi.fn().mockResolvedValue({
-				serverIdentity: "PLEX:plex-machine",
+				serverIdentity: storedAuthority,
 				plannedSectionIds: '["movies"]',
 			}),
 		});
@@ -432,6 +802,297 @@ describe("durable media-server rescans", () => {
 		expect(fixture.plexClient.refreshSection).toHaveBeenCalledOnce();
 		expect(fixture.plexClient.refreshSection).toHaveBeenCalledWith("movies");
 		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledTimes(2);
+	});
+
+	it("binds post-delete scan retries to stable identity rather than cache generations", async () => {
+		const now = new Date();
+		const plexInstance = {
+			...instance("plex-1", "PLEX"),
+			expectedIdentity: "plex-machine-a",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date(now.getTime() - 5_000),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			updatedAt: new Date(now.getTime() - 10_000),
+		};
+		const status = {
+			instanceId: plexInstance.id,
+			cacheType: "plex",
+			lastRefreshedAt: now,
+			lastResult: "success",
+			lastErrorMessage: null,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			itemCount: 1,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			generationId: "generation-a",
+			generationMetadata: "{}",
+		};
+		const row = {
+			id: "plex-row-1",
+			instanceId: plexInstance.id,
+			tmdbId: 42,
+			mediaType: "movie",
+			sectionId: "movies",
+			sectionTitle: "Movies",
+			lastWatchedAt: now,
+			watchCount: 2,
+			watchedByUsers: "[]",
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			labels: "[]",
+			addedAt: null,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		};
+		const statusPayload = {
+			instanceId: status.instanceId,
+			lastRefreshedAt: status.lastRefreshedAt,
+			lastResult: status.lastResult,
+			lastErrorMessage: status.lastErrorMessage,
+			lastAttemptResult: status.lastAttemptResult,
+			lastAttemptErrorMessage: status.lastAttemptErrorMessage,
+			itemCount: status.itemCount,
+			connectionGeneration: status.connectionGeneration,
+			identityGeneration: status.identityGeneration,
+			generationId: status.generationId,
+			generationMetadata: status.generationMetadata,
+		};
+		const evidence = createSanitizedProviderEvidence(
+			["plex"],
+			[
+				{
+					service: "PLEX",
+					identityKind: plexInstance.identityKind,
+					identityFingerprint: authorityFingerprint({
+						service: plexInstance.service,
+						identityKind: plexInstance.identityKind,
+						expectedIdentity: plexInstance.expectedIdentity,
+					}),
+					connectionGeneration: 3,
+					identityGeneration: 7,
+					cacheType: "plex",
+					completedAt: now.toISOString(),
+					itemCount: 1,
+					verifiedAt: plexInstance.identityVerifiedAt.toISOString(),
+					statusFingerprint: authorityFingerprint({
+						instance: {
+							id: plexInstance.id,
+							expectedIdentity: plexInstance.expectedIdentity,
+							identityKind: plexInstance.identityKind,
+							identityVerifiedAt: plexInstance.identityVerifiedAt,
+							connectionGeneration: 3,
+							identityGeneration: 7,
+							updatedAt: plexInstance.updatedAt,
+						},
+						status: statusPayload,
+					}),
+					rowFingerprint: authorityFingerprint([row]),
+				},
+			],
+		);
+		const storedApproval = approval({
+			safetySnapshot: serializeExecutableSafetyPlan(
+				{
+					kind: "verified_arr_target",
+					target: {
+						serviceFingerprint: "a".repeat(64),
+						externalId: 42,
+						mediaPath: { value: "/movies/Movie", windows: false },
+					},
+				},
+				evidence,
+			),
+		});
+		const rows = [
+			scan("scan-1", plexInstance.id, "PLEX", {
+				serverIdentity: serializeProviderScanAuthority(
+					{ instanceId: plexInstance.id, service: "PLEX", mediaType: "movie" },
+					evidence,
+				),
+			}),
+		];
+		const fixture = deps({ instances: [plexInstance], scans: rows, approval: storedApproval });
+		Object.assign(fixture.deps, {
+			encryptor: { decrypt: vi.fn(() => "decrypted") },
+			providerEvidenceAuthorityChecker: undefined,
+			providerIdentityReader: vi.fn(async () => ({
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				rawIdentity: "plex-machine-b",
+				confirmationDigest: "safe",
+				fingerprint: "safe",
+			})),
+		});
+		Object.assign(fixture.prisma, {
+			cacheRefreshStatus: { findMany: vi.fn(async () => [status]) },
+			plexCache: { findMany: vi.fn(async () => [row]) },
+			$transaction: vi.fn(),
+		});
+
+		const result = await triggerMediaServerRescansForApproval(
+			fixture.deps,
+			"user-1",
+			storedApproval.id,
+		);
+
+		expect(result).toMatchObject({ targets: 1, triggered: 0, failed: 1 });
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+		expect(rows[0]).toMatchObject({ status: "failed", executionToken: null });
+
+		const retryRows = [
+			scan("scan-2", plexInstance.id, "PLEX", {
+				serverIdentity: serializeProviderScanAuthority(
+					{ instanceId: plexInstance.id, service: "PLEX", mediaType: "movie" },
+					evidence,
+				),
+			}),
+		];
+		const retryFixture = deps({
+			instances: [plexInstance],
+			scans: retryRows,
+			approval: storedApproval,
+		});
+		Object.assign(retryFixture.deps, {
+			encryptor: { decrypt: vi.fn(() => "decrypted") },
+			providerEvidenceAuthorityChecker: undefined,
+			providerIdentityReader: vi.fn(async () => ({
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				rawIdentity: plexInstance.expectedIdentity,
+				confirmationDigest: "safe",
+				fingerprint: "safe",
+			})),
+		});
+		Object.assign(retryFixture.prisma, {
+			cacheRefreshStatus: {
+				findMany: vi.fn(async () => [
+					{
+						...status,
+						lastRefreshedAt: new Date(status.lastRefreshedAt.getTime() + 60_000),
+						generationId: "generation-b",
+					},
+				]),
+			},
+			plexCache: { findMany: vi.fn(async () => [{ ...row, watchCount: row.watchCount + 1 }]) },
+			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+				callback(retryFixture.prisma),
+			),
+		});
+
+		const retryResult = await triggerMediaServerRescansForApproval(
+			retryFixture.deps,
+			"user-1",
+			storedApproval.id,
+		);
+
+		expect(retryResult).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
+		expect(retryFixture.plexClient.refreshSection).toHaveBeenCalledWith("movies");
+		expect(retryRows[0]).toMatchObject({ status: "triggered", executionToken: null });
+	});
+
+	it("renews record-only retry evidence from current cache data under stable provider identity", async () => {
+		const capturedAt = new Date("2026-08-15T00:00:00.000Z");
+		const refreshedAt = new Date("2026-08-15T00:05:00.000Z");
+		const plexInstance = {
+			...instance("plex-1", "PLEX"),
+			expectedIdentity: "plex-machine",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date("2026-08-14T23:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			updatedAt: new Date("2026-08-14T23:30:00.000Z"),
+		};
+		const accepted = createSanitizedProviderEvidence(
+			["plex"],
+			[
+				{
+					service: "PLEX",
+					instanceFingerprint: providerInstanceAuthorityFingerprint(plexInstance.id),
+					identityKind: plexInstance.identityKind,
+					identityFingerprint: authorityFingerprint({
+						service: plexInstance.service,
+						identityKind: plexInstance.identityKind,
+						expectedIdentity: plexInstance.expectedIdentity,
+					}),
+					connectionGeneration: 3,
+					identityGeneration: 7,
+					cacheType: "plex",
+					completedAt: capturedAt.toISOString(),
+					itemCount: 1,
+					verifiedAt: plexInstance.identityVerifiedAt.toISOString(),
+					statusFingerprint: "a".repeat(64),
+					rowFingerprint: "b".repeat(64),
+				},
+			],
+		);
+		const row = {
+			id: "plex-row-1",
+			instanceId: plexInstance.id,
+			tmdbId: 42,
+			mediaType: "movie",
+			sectionId: "movies",
+			sectionTitle: "Movies",
+			lastWatchedAt: refreshedAt,
+			watchCount: 3,
+			watchedByUsers: "[]",
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			labels: "[]",
+			addedAt: null,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		};
+		const fixture = deps({ instances: [plexInstance] });
+		Object.assign(fixture.deps, {
+			encryptor: { decrypt: vi.fn(() => "decrypted") },
+			providerEvidenceAuthorityChecker: undefined,
+			providerIdentityReader: vi.fn(async () => ({
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				rawIdentity: plexInstance.expectedIdentity,
+				confirmationDigest: "safe",
+				fingerprint: "safe",
+			})),
+		});
+		Object.assign(fixture.prisma, {
+			cacheRefreshStatus: {
+				findMany: vi.fn(async () => [
+					{
+						instanceId: plexInstance.id,
+						cacheType: "plex",
+						lastRefreshedAt: refreshedAt,
+						lastResult: "success",
+						lastErrorMessage: null,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
+						itemCount: 1,
+						connectionGeneration: 3,
+						identityGeneration: 7,
+						generationId: "generation-b",
+						generationMetadata: "{}",
+					},
+				]),
+			},
+			plexCache: { findMany: vi.fn(async () => [row]) },
+			$transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) =>
+				callback(fixture.prisma),
+			),
+		});
+
+		const renewed = await renewCurrentProviderRetryAuthority(fixture.deps, "user-1", accepted);
+
+		expect(renewed.fingerprint).not.toBe(accepted.fingerprint);
+		expect(renewed.sources[0]).toMatchObject({
+			instanceFingerprint: providerInstanceAuthorityFingerprint(plexInstance.id),
+			completedAt: refreshedAt.toISOString(),
+			itemCount: 1,
+		});
 	});
 
 	it("reissues the full Plex plan after a partial attempt", async () => {
@@ -768,6 +1429,11 @@ describe("durable media-server rescans", () => {
 			friendlyName: "Different Plex",
 			platform: "Linux",
 		});
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi
+				.fn()
+				.mockRejectedValue(new ProviderExecutionAuthorityChangedError()),
+		});
 
 		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
 
@@ -874,7 +1540,7 @@ describe("durable media-server rescans", () => {
 		installStatefulScanStore(fixture, rows, [approval()]);
 		const brokenClient = {
 			getPublicInfo: vi.fn().mockRejectedValue(new Error("instance unavailable")),
-			refreshLibrary: vi.fn(),
+			refreshLibrary: vi.fn().mockRejectedValue(new Error("instance unavailable")),
 		};
 		(
 			fixture.deps as unknown as {
@@ -887,9 +1553,98 @@ describe("durable media-server rescans", () => {
 		const result = await triggerMediaServerRescansForApproval(fixture.deps, "user-1", "approval-1");
 
 		expect(result).toMatchObject({ targets: 2, triggered: 2, failed: 0 });
-		expect(brokenClient.refreshLibrary).not.toHaveBeenCalled();
+		expect(brokenClient.refreshLibrary).toHaveBeenCalledOnce();
 		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
 		expect(rows.map((row) => row.status)).toEqual(["triggered", "triggered"]);
+	});
+
+	it("fail-stops later scan operations after provider authority changes", async () => {
+		const rows = [
+			scan("scan-movies", "plex-1", "PLEX"),
+			scan("scan-shows", "plex-1", "PLEX", {
+				mediaType: "show",
+				plannedSectionIds: '["shows"]',
+				targetKey: "PLEX:plex-1:show",
+			}),
+		];
+		const storedApproval = approval({ safetySnapshot: providerSafetySnapshot() });
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")], approval: storedApproval });
+		installStatefulScanStore(fixture, rows, [storedApproval]);
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi
+				.fn()
+				.mockRejectedValue(new ProviderExecutionAuthorityChangedError()),
+		});
+
+		const result = await triggerMediaServerRescansForApproval(
+			fixture.deps,
+			"user-1",
+			storedApproval.id,
+		);
+
+		expect(result).toMatchObject({ triggered: 0, failed: 1, providerAuthorityFailed: true });
+		expect(rows.map((row) => row.status)).toEqual(["failed", "pending"]);
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+	});
+
+	it("fail-stops later operations when Plex authority changes after a partial section dispatch", async () => {
+		const rows = [
+			scan("scan-movies", "plex-1", "PLEX", {
+				plannedSectionIds: '["movies","movies-2"]',
+			}),
+			scan("scan-shows", "plex-1", "PLEX", {
+				mediaType: "show",
+				plannedSectionIds: '["shows"]',
+				targetKey: "PLEX:plex-1:show",
+			}),
+		];
+		const storedApproval = approval({ safetySnapshot: providerSafetySnapshot() });
+		const fixture = deps({ instances: [instance("plex-1", "PLEX")], approval: storedApproval });
+		installStatefulScanStore(fixture, rows, [storedApproval]);
+		fixture.plexClient.getLibrarySections.mockResolvedValue([
+			{ key: "movies", title: "Movies", type: "movie" },
+			{ key: "movies-2", title: "More Movies", type: "movie" },
+			{ key: "shows", title: "Shows", type: "show" },
+		]);
+		const authorityChecker = vi
+			.fn()
+			.mockResolvedValueOnce(undefined)
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(new ProviderExecutionAuthorityChangedError())
+			.mockResolvedValue(undefined);
+		Object.assign(fixture.deps, { providerEvidenceAuthorityChecker: authorityChecker });
+		const releaseLease = vi.fn().mockResolvedValue({ count: 1 });
+		Object.assign(fixture.prisma, {
+			libraryCleanupMediaServerScanLease: {
+				create: vi.fn().mockResolvedValue({}),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				deleteMany: releaseLease,
+			},
+		});
+
+		const result = await triggerMediaServerRescansForApproval(
+			fixture.deps,
+			"user-1",
+			storedApproval.id,
+		);
+
+		expect(result).toMatchObject({
+			targets: 2,
+			triggered: 0,
+			failed: 0,
+			providerAuthorityFailed: true,
+		});
+		expect(result.warnings).toContainEqual(expect.stringContaining("may have completed"));
+		expect(fixture.plexClient.refreshSection.mock.calls).toEqual([["movies"]]);
+		expect(rows[0]).toMatchObject({
+			status: "triggering",
+			executionToken: expect.any(String),
+			requestStartedAt: expect.any(Date),
+			lastError: null,
+		});
+		expect(rows[1]?.status).toBe("pending");
+		expect(authorityChecker).toHaveBeenCalledTimes(3);
+		expect(releaseLease).not.toHaveBeenCalled();
 	});
 
 	it("atomically claims equivalent rows so concurrent callers issue one physical refresh", async () => {
@@ -1102,18 +1857,34 @@ describe("durable media-server rescans", () => {
 	});
 
 	it("never coalesces pending work across different physical server identities", async () => {
+		const { fingerprint: _fingerprint, ...jellyfinSource } = testMediaEvidence.sources.find(
+			(source) => source.service === "JELLYFIN",
+		)!;
+		const alternateSource = {
+			...jellyfinSource,
+			identityFingerprint: "b".repeat(64),
+		};
+		const alternateEvidence = createSanitizedProviderEvidence(
+			[alternateSource.cacheType],
+			[alternateSource],
+		);
 		const rows = [
 			scan("scan-old", "jellyfin-1", "JELLYFIN", {
 				approvalId: "approval-old",
-				serverIdentity: "JELLYFIN:old-server",
 			}),
-			scan("scan-new", "jellyfin-1", "JELLYFIN", {
+			scan("scan-new", "jellyfin-2", "JELLYFIN", {
 				approvalId: "approval-new",
-				serverIdentity: "JELLYFIN:media-server-id",
+				targetKey: "JELLYFIN:jellyfin-2:movie",
+				serverIdentity: serializeProviderScanAuthority(
+					{ instanceId: "jellyfin-2", service: "JELLYFIN", mediaType: "movie" },
+					alternateEvidence,
+				),
 			}),
 		];
 		const approvals = [approval({ id: "approval-old" }), approval({ id: "approval-new" })];
-		const fixture = deps({ instances: [instance("jellyfin-1", "JELLYFIN")] });
+		const fixture = deps({
+			instances: [instance("jellyfin-1", "JELLYFIN"), instance("jellyfin-2", "JELLYFIN")],
+		});
 		installStatefulScanStore(fixture, rows, approvals);
 
 		const result = await triggerCoalescedMediaServerRescans(fixture.deps, "user-1", [
@@ -1121,9 +1892,9 @@ describe("durable media-server rescans", () => {
 			"approval-new",
 		]);
 
-		expect(result).toMatchObject({ targets: 2, triggered: 1, failed: 1 });
-		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledOnce();
-		expect(rows.find((row) => row.id === "scan-old")?.status).toBe("failed");
+		expect(result).toMatchObject({ targets: 2, triggered: 2, failed: 0 });
+		expect(fixture.jellyfinClient.refreshLibrary).toHaveBeenCalledTimes(2);
+		expect(rows.find((row) => row.id === "scan-old")?.status).toBe("triggered");
 		expect(rows.find((row) => row.id === "scan-new")?.status).toBe("triggered");
 	});
 
@@ -1240,6 +2011,153 @@ describe("durable media-server rescans", () => {
 
 		expect(result).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
 		expect(fixture.plexClient.refreshSection).toHaveBeenCalledWith("movies");
+	});
+
+	it("holds the cleanup run claim across scheduled scan validation and dispatch", async () => {
+		const plex = instance("plex-1", "PLEX");
+		const rows = [scan("scan-plex", plex.id, "PLEX")];
+		const storedApproval = approval();
+		const fixture = deps({ instances: [plex], scans: rows, approval: storedApproval });
+		const claimStore = installRecoveryRunClaimStore(fixture, [
+			{
+				id: "config-1",
+				userId: "user-1",
+				runClaimToken: null,
+				runClaimedAt: null,
+			},
+		]);
+		installRecoveryCandidateProjection(fixture, rows, {
+			[storedApproval.id]: { id: "config-1", userId: "user-1" },
+		});
+		const publicationWrites: string[] = [];
+		const publish = async (label: string) =>
+			await withCurrentProviderPublicationAuthority(
+				fixture.prisma as never,
+				plex as never,
+				async () => {
+					publicationWrites.push(label);
+					return label;
+				},
+			);
+		await expect(publish("before-recovery")).resolves.toMatchObject({ matched: true });
+		const observedClaimTokens: Array<string | null> = [];
+		const duringPublicationResults: boolean[] = [];
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi.fn(
+				async (_userId: string, _evidence: unknown, assertLease?: () => Promise<void>) => {
+					await assertLease?.();
+					observedClaimTokens.push(claimStore.configs[0]!.runClaimToken);
+					duringPublicationResults.push((await publish("during-recovery")).matched);
+				},
+			),
+		});
+		const networkTransactionDepth: number[] = [];
+		fixture.plexClient.refreshSection.mockImplementation(async () => {
+			networkTransactionDepth.push(claimStore.transactionState.depth);
+		});
+
+		const result = await retryAllPendingMediaServerRescans(fixture.deps);
+
+		expect(result).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
+		expect(observedClaimTokens).toEqual([expect.any(String), expect.any(String)]);
+		expect(duringPublicationResults).toEqual([false, false]);
+		expect(publicationWrites).toEqual(["before-recovery"]);
+		expect(networkTransactionDepth).toEqual([0]);
+		expect(claimStore.configs[0]?.runClaimToken).toBeNull();
+		await expect(publish("after-recovery")).resolves.toMatchObject({ matched: true });
+		expect(publicationWrites).toEqual(["before-recovery", "after-recovery"]);
+	});
+
+	it("defers an actively claimed recovery owner without blocking another user", async () => {
+		const userOnePlex = instance("plex-user-1", "PLEX");
+		const userTwoPlex = { ...instance("plex-user-2", "PLEX"), userId: "user-2" };
+		const approvals = [
+			approval({ id: "approval-user-1", configId: "config-user-1" }),
+			approval({ id: "approval-user-2", configId: "config-user-2" }),
+		];
+		const rows = [
+			scan("scan-user-1", userOnePlex.id, "PLEX", { approvalId: approvals[0]!.id }),
+			scan("scan-user-2", userTwoPlex.id, "PLEX", { approvalId: approvals[1]!.id }),
+		];
+		const fixture = deps({ instances: [userOnePlex, userTwoPlex] });
+		installStatefulScanStore(fixture, rows, approvals);
+		const claimStore = installRecoveryRunClaimStore(fixture, [
+			{
+				id: "config-user-1",
+				userId: "user-1",
+				runClaimToken: "normal-cleanup-owner",
+				runClaimedAt: new Date(),
+			},
+			{
+				id: "config-user-2",
+				userId: "user-2",
+				runClaimToken: null,
+				runClaimedAt: null,
+			},
+		]);
+		installRecoveryCandidateProjection(fixture, rows, {
+			[approvals[0]!.id]: { id: "config-user-1", userId: "user-1" },
+			[approvals[1]!.id]: { id: "config-user-2", userId: "user-2" },
+		});
+		const validatedUsers: string[] = [];
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi.fn(
+				async (userId: string, _evidence: unknown, assertLease?: () => Promise<void>) => {
+					await assertLease?.();
+					validatedUsers.push(userId);
+				},
+			),
+		});
+
+		const result = await retryAllPendingMediaServerRescans(fixture.deps);
+
+		expect(result).toMatchObject({ targets: 1, triggered: 1, failed: 0 });
+		expect(validatedUsers).toEqual(["user-2", "user-2"]);
+		expect(rows[0]?.status).toBe("pending");
+		expect(rows[1]?.status).toBe("triggered");
+		expect(claimStore.configs[0]?.runClaimToken).toBe("normal-cleanup-owner");
+		expect(claimStore.configs[1]?.runClaimToken).toBeNull();
+		expect(fixture.plexClient.refreshSection).toHaveBeenCalledOnce();
+	});
+
+	it("stops scheduled recovery before dispatch when its cleanup claim is lost", async () => {
+		const plex = instance("plex-1", "PLEX");
+		const rows = [scan("scan-plex", plex.id, "PLEX")];
+		const storedApproval = approval();
+		const fixture = deps({ instances: [plex], scans: rows, approval: storedApproval });
+		const claimStore = installRecoveryRunClaimStore(fixture, [
+			{
+				id: "config-1",
+				userId: "user-1",
+				runClaimToken: null,
+				runClaimedAt: null,
+			},
+		]);
+		installRecoveryCandidateProjection(fixture, rows, {
+			[storedApproval.id]: { id: "config-1", userId: "user-1" },
+		});
+		const updateClaim = claimStore.updateMany.getMockImplementation()!;
+		claimStore.updateMany.mockImplementation(async (args) => {
+			if (!args.where.OR && args.where.runClaimToken && args.data.runClaimToken === undefined) {
+				claimStore.configs[0]!.runClaimToken = "replacement-owner";
+				return { count: 0 };
+			}
+			return await updateClaim(args);
+		});
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi.fn(
+				async (_userId: string, _evidence: unknown, assertLease?: () => Promise<void>) => {
+					await assertLease?.();
+				},
+			),
+		});
+
+		const result = await retryAllPendingMediaServerRescans(fixture.deps);
+
+		expect(result).toMatchObject({ targets: 0, triggered: 0, failed: 0 });
+		expect(fixture.plexClient.refreshSection).not.toHaveBeenCalled();
+		expect(rows[0]).toMatchObject({ status: "pending", executionToken: null });
+		expect(claimStore.configs[0]?.runClaimToken).toBe("replacement-owner");
 	});
 
 	it("reclaims a fast-worker crash using only database eligibility and lease clocks", async () => {

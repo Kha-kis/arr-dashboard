@@ -1,5 +1,6 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
+import * as plexCacheRefresher from "../../plex/plex-cache-refresher.js";
 import { withQuiObservationTopologyGuard } from "../../qui/observation-topology-guard.js";
 import {
 	buildCleanupPreviewDetails,
@@ -12,15 +13,18 @@ import {
 	executeDirectRemoval,
 	executeRetryItems,
 	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+	providerCacheTypesForEvidence,
 	sortSonarrEpisodesByIdentity,
 } from "../cleanup-executor.js";
 import { planCleanupSelection } from "../selection-planner.js";
 import {
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
+	createSanitizedProviderEvidence,
 	createSharedPlexSafetyContext,
 	findSharedPlexDeleteBlocks,
 	serializeExecutableSafetyPlan,
+	serializeProviderScanAuthority,
 } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
@@ -76,6 +80,7 @@ function radarrSafetySnapshot(
 			mapping: null,
 		},
 	],
+	providerEvidence = createSanitizedProviderEvidence([], []),
 ) {
 	return serializeExecutableSafetyPlan(
 		file
@@ -88,8 +93,28 @@ function radarrSafetySnapshot(
 					targetDeleteNotifications,
 				}
 			: { kind: "verified_radarr_empty", target: radarrTargetIdentity },
+		providerEvidence,
 	);
 }
+
+const TEST_PLEX_SCAN_EVIDENCE = createSanitizedProviderEvidence(
+	["plex"],
+	[
+		{
+			service: "PLEX",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityFingerprint: "1".repeat(64),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			cacheType: "plex",
+			completedAt: "2026-08-15T00:00:00.000Z",
+			itemCount: 1,
+			verifiedAt: "2026-08-14T23:00:00.000Z",
+			statusFingerprint: "2".repeat(64),
+			rowFingerprint: "3".repeat(64),
+		},
+	],
+);
 
 function radarrTargetOnlySnapshot() {
 	return serializeExecutableSafetyPlan({
@@ -895,6 +920,152 @@ function matchingDryRunCacheItem(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function configurePlexApprovalAuthority(
+	fixture: ReturnType<typeof makeDeps>,
+	options: {
+		items?: Array<{ id: string; arrItemId: number; title: string }>;
+		driftBeforeApproval?: boolean;
+		driftAfterFirstApproval?: "rows" | "rows_and_status";
+	} = {},
+) {
+	const providerInstance = {
+		...fixture.plexInstance,
+		enabled: true,
+		expectedIdentity: "private-plex-machine-id",
+		identityKind: "PLEX_MACHINE_IDENTIFIER",
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date("2026-08-14T00:00:00.000Z"),
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		updatedAt: new Date("2026-08-14T00:00:00.000Z"),
+	};
+	const completedAt = new Date();
+	let statusVersion = 1;
+	let rows = [
+		{
+			id: "plex-cache-1",
+			instanceId: providerInstance.id,
+			tmdbId: 42,
+			mediaType: "movie",
+			sectionId: "movies",
+			sectionTitle: "Movies",
+			lastWatchedAt: completedAt,
+			watchCount: 5,
+			watchedByUsers: JSON.stringify(["owner"]),
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			labels: "[]",
+			addedAt: new Date("2026-01-01T00:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		},
+	];
+	const currentStatus = () => ({
+		instanceId: providerInstance.id,
+		lastRefreshedAt: completedAt,
+		lastResult: "success",
+		lastErrorMessage: null,
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		itemCount: rows.length,
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		generationId: `plex-generation-${statusVersion}`,
+		generationMetadata: JSON.stringify({
+			version: statusVersion,
+			sections: [{ key: "movies", title: "Movies", type: "movie" }],
+		}),
+	});
+	const items = options.items ?? [
+		{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" },
+		{ id: "cache-provider-2", arrItemId: 102, title: "Fresh rule match" },
+	];
+
+	vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+		...dryRunConfig(items.length),
+		dryRunMode: false,
+		requireApproval: true,
+		rules: [
+			{
+				...dryRunConfig().rules[0]!,
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+			},
+		],
+	} as never);
+	vi.mocked(fixture.deps.prisma.libraryCache.findMany)
+		.mockResolvedValueOnce(
+			items.map((item) =>
+				matchingDryRunCacheItem({
+					...item,
+					data: radarrCachedFileIdentity.data,
+					sizeOnDisk: 2_000n,
+				}),
+			) as never,
+		)
+		.mockResolvedValue([] as never);
+	vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation((async ({
+		where,
+	}: {
+		where: { service?: string | { in?: string[] } };
+	}) => {
+		const services =
+			typeof where.service === "string" ? [where.service] : (where.service?.in ?? []);
+		if (services.includes("PLEX")) return [providerInstance];
+		return [fixture.targetInstance, providerInstance];
+	}) as never);
+
+	const plexFindMany = vi.fn(async (args?: { cursor?: { id: string } }) =>
+		args?.cursor ? [] : rows.map((row) => ({ ...row })),
+	);
+	Object.assign(fixture.deps.prisma, {
+		cacheRefreshStatus: { findMany: vi.fn(async () => [currentStatus()]) },
+		plexCache: { findMany: plexFindMany, count: vi.fn(async () => rows.length) },
+	});
+
+	const rootCreate = vi.mocked(fixture.deps.prisma.libraryCleanupApproval.create);
+	const transactionCreate = vi.fn(async (_args: { data: Record<string, unknown> }) => {
+		const ordinal = transactionCreate.mock.calls.length;
+		if (ordinal === 1 && options.driftAfterFirstApproval) {
+			rows = [{ ...rows[0]!, watchCount: rows[0]!.watchCount + 1 }];
+			if (options.driftAfterFirstApproval === "rows_and_status") statusVersion++;
+		}
+		return { id: `approval-transaction-${ordinal}` };
+	});
+	const rowLock = vi.fn().mockResolvedValue([]);
+	const transactionClient = {
+		...fixture.deps.prisma,
+		libraryCleanupApproval: {
+			...fixture.deps.prisma.libraryCleanupApproval,
+			create: transactionCreate,
+		},
+		$queryRawUnsafe: rowLock,
+	};
+	const transaction = vi.fn(
+		async (callback: (tx: typeof transactionClient) => Promise<unknown>, _options?: unknown) =>
+			callback(transactionClient),
+	);
+	Object.assign(fixture.deps.prisma, { $transaction: transaction });
+
+	if (options.driftBeforeApproval) {
+		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async () => {
+			rows = [{ ...rows[0]!, watchCount: rows[0]!.watchCount + 1 }];
+			return [];
+		}) as never);
+	}
+
+	return {
+		providerInstance,
+		completedAt,
+		plexFindMany,
+		rootCreate,
+		rowLock,
+		transactionCreate,
+		transaction,
+	};
+}
+
 function tiedPriorityConfig(options: { dryRunMode: boolean; requireApproval: boolean }) {
 	return {
 		...dryRunConfig(10),
@@ -907,7 +1078,7 @@ function tiedPriorityConfig(options: { dryRunMode: boolean; requireApproval: boo
 }
 
 describe("shared Plex deletion safety", () => {
-	it("records and triggers a queued post-delete media-server scan without reopening deletion", async () => {
+	it("blocks a queued post-delete media-server scan when the cleanup lease is lost", async () => {
 		const fixture = makeDeps({ action: "delete", mediaPartCount: 1 });
 		const auditEvents: Array<Record<string, unknown>> = [];
 		Object.assign(fixture.deps.prisma, {
@@ -921,6 +1092,7 @@ describe("shared Plex deletion safety", () => {
 		const storedApproval = approvalRecord({
 			scanMediaServerAfterDelete: true,
 			status: "approved",
+			safetySnapshot: radarrSafetySnapshot(undefined, undefined, TEST_PLEX_SCAN_EVIDENCE),
 		});
 		configureApprovalStore(fixture.deps, storedApproval);
 		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
@@ -935,7 +1107,28 @@ describe("shared Plex deletion safety", () => {
 				scanMediaServerAfterDelete: true,
 			},
 		]);
-		const enabledPlex = { ...fixture.plexInstance, enabled: true };
+		const enabledPlex = {
+			...fixture.plexInstance,
+			enabled: true,
+			expectedIdentity: "plex-machine",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date("2026-08-14T23:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		};
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi.fn(
+				async (_userId, _evidence, assertLease?: () => Promise<void>) => await assertLease?.(),
+			),
+			providerScanAuthorityCapturer: vi.fn(
+				async (target: {
+					instanceId: string;
+					service: "PLEX" | "JELLYFIN" | "EMBY";
+					mediaType: "movie" | "show";
+				}) => serializeProviderScanAuthority(target, TEST_PLEX_SCAN_EVIDENCE),
+			),
+		});
 		vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation((async ({
 			where,
 		}: {
@@ -988,13 +1181,19 @@ describe("shared Plex deletion safety", () => {
 			updatedAt: new Date(),
 		};
 		(fixture.deps.prisma as never as Record<string, unknown>).libraryCleanupMediaServerScan = {
-			create: vi.fn().mockResolvedValue(scanRow),
+			create: vi.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => {
+				Object.assign(scanRow, data);
+				return scanRow;
+			}),
 			count: vi.fn().mockResolvedValue(1),
 			findFirst: vi.fn().mockResolvedValue(null),
 			findMany: vi.fn().mockImplementation(async ({ where, select }) => {
 				const approvalFilter = where?.approvalId as { in?: string[] } | string | undefined;
 				if (typeof approvalFilter === "object" && approvalFilter.in?.length === 0) return [];
-				if (select?.status) return [scanRow];
+				if (select?.status) {
+					const statuses = where?.status?.in as string[] | undefined;
+					return statuses && !statuses.includes(scanRow.status) ? [] : [scanRow];
+				}
 				return scanRow.status === "triggered" ? [] : [scanRow];
 			}),
 			updateMany: vi
@@ -1007,14 +1206,25 @@ describe("shared Plex deletion safety", () => {
 				}),
 			deleteMany: vi.fn().mockResolvedValue({ count: 1 }),
 		};
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.updateMany).mockImplementation((async ({
+			where,
+			data,
+		}: {
+			where: { OR?: unknown[] };
+			data: { runClaimToken?: string | null };
+		}) => {
+			if (where.OR) return { count: 1 };
+			if (data.runClaimToken === null) return { count: 1 };
+			return { count: fixture.deleteMovie.mock.calls.length > 0 ? 0 : 1 };
+		}) as never);
 
 		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
 
 		expect(result).toMatchObject({ removed: 1, failed: 0 });
 		expect(fixture.deleteMovieFile).toHaveBeenCalledOnce();
 		expect(fixture.deleteMovie).toHaveBeenCalledOnce();
-		expect(refreshSection).toHaveBeenCalledWith("movies");
-		expect(scanRow.status).toBe("triggered");
+		expect(refreshSection).not.toHaveBeenCalled();
+		expect(scanRow.status).not.toBe("triggered");
 		expect(storedApproval.status).toBe("executed");
 		const terminalIndex = auditEvents.findIndex(
 			(event) => event.eventType === "terminal_succeeded",
@@ -1023,10 +1233,13 @@ describe("shared Plex deletion safety", () => {
 			(event) => event.eventType === "media_rescan_triggered",
 		);
 		expect(terminalIndex).toBeGreaterThanOrEqual(0);
-		expect(scanIndex).toBeGreaterThan(terminalIndex);
+		expect(scanIndex).toBe(-1);
+		expect(result.warnings).toContain(
+			"Plex library scan request failed; arr-dashboard will retry it without repeating the cleanup deletion.",
+		);
 	});
 
-	it("records and triggers a direct post-delete media-server scan", async () => {
+	it("blocks a direct post-delete media-server scan when the cleanup lease is lost", async () => {
 		const fixture = makeDeps({ action: "delete", mediaPartCount: 1 });
 		const auditEvents: Array<Record<string, unknown>> = [];
 		Object.assign(fixture.deps.prisma, {
@@ -1038,7 +1251,28 @@ describe("shared Plex deletion safety", () => {
 			},
 		});
 		const retries = configureRetryStore(fixture.deps);
-		const enabledPlex = { ...fixture.plexInstance, enabled: true };
+		const enabledPlex = {
+			...fixture.plexInstance,
+			enabled: true,
+			expectedIdentity: "plex-machine",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date("2026-08-14T23:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		};
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: vi.fn(
+				async (_userId, _evidence, assertLease?: () => Promise<void>) => await assertLease?.(),
+			),
+			providerScanAuthorityCapturer: vi.fn(
+				async (target: {
+					instanceId: string;
+					service: "PLEX" | "JELLYFIN" | "EMBY";
+					mediaType: "movie" | "show";
+				}) => serializeProviderScanAuthority(target, TEST_PLEX_SCAN_EVIDENCE),
+			),
+		});
 		vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation((async ({
 			where,
 		}: {
@@ -1098,7 +1332,10 @@ describe("shared Plex deletion safety", () => {
 			findMany: vi.fn().mockImplementation(async ({ where, select }) => {
 				const approvalFilter = where?.approvalId as { in?: string[] } | string | undefined;
 				if (typeof approvalFilter === "object" && approvalFilter.in?.length === 0) return [];
-				if (select?.status) return [scanRow];
+				if (select?.status) {
+					const statuses = where?.status?.in as string[] | undefined;
+					return statuses && !statuses.includes(scanRow.status) ? [] : [scanRow];
+				}
 				return scanRow.status === "triggered" ? [] : [scanRow];
 			}),
 			updateMany: vi
@@ -1135,6 +1372,9 @@ describe("shared Plex deletion safety", () => {
 			},
 			rating: 8,
 		} as never;
+		const assertRunLease = vi.fn(async () => {
+			if (fixture.deleteMovie.mock.calls.length > 0) throw new CleanupRunLeaseLostError();
+		});
 
 		const result = await executeDirectRemoval(
 			fixture.deps,
@@ -1152,11 +1392,16 @@ describe("shared Plex deletion safety", () => {
 			1,
 			1,
 			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			assertRunLease,
+			TEST_PLEX_SCAN_EVIDENCE,
 		);
 
-		expect(result).toMatchObject({ itemsRemoved: 1, status: "completed" });
-		expect(refreshSection).toHaveBeenCalledWith("movies");
-		expect(scanRow.status).toBe("triggered");
+		expect(result).toMatchObject({ itemsRemoved: 1, status: "partial" });
+		expect(refreshSection).not.toHaveBeenCalled();
+		expect(scanRow.status).not.toBe("triggered");
 		expect(retries).toContainEqual(expect.objectContaining({ status: "executed" }));
 		const terminalIndex = auditEvents.findIndex(
 			(event) => event.eventType === "terminal_succeeded",
@@ -1165,7 +1410,10 @@ describe("shared Plex deletion safety", () => {
 			(event) => event.eventType === "media_rescan_triggered",
 		);
 		expect(terminalIndex).toBeGreaterThanOrEqual(0);
-		expect(scanIndex).toBeGreaterThan(terminalIndex);
+		expect(scanIndex).toBe(-1);
+		expect(result.warnings).toContain(
+			"Plex library scan request failed; arr-dashboard will retry it without repeating the cleanup deletion.",
+		);
 	});
 
 	it.each(["delete", "delete_files"] as const)(
@@ -1565,6 +1813,289 @@ describe("shared Plex deletion safety", () => {
 			"candidate_selected",
 			"approval_pending",
 		]);
+	});
+
+	it("rejects row drift even while the accepted provider status token is lagging", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture, {
+			items: [{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" }],
+			driftBeforeApproval: true,
+		});
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result.itemsFlagged).toBe(1);
+		expect(authority.transaction).toHaveBeenCalledOnce();
+		expect(authority.transactionCreate).not.toHaveBeenCalled();
+		expect(authority.rootCreate).not.toHaveBeenCalled();
+		expect(result).toMatchObject({ itemsSkipped: 1, itemsRemoved: 0, status: "partial" });
+	});
+
+	it("stops before a later approval when provider rows and status drift between targets", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture, {
+			driftAfterFirstApproval: "rows_and_status",
+		});
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(authority.transaction).toHaveBeenCalledTimes(2);
+		expect(authority.transaction).toHaveBeenNthCalledWith(1, expect.any(Function), {
+			isolationLevel: "Serializable",
+		});
+		expect(authority.transaction).toHaveBeenNthCalledWith(2, expect.any(Function), {
+			isolationLevel: "Serializable",
+		});
+		expect(authority.transactionCreate).toHaveBeenCalledOnce();
+		expect(authority.rootCreate).not.toHaveBeenCalled();
+		expect(result.details).toEqual([
+			expect.objectContaining({ arrItemId: 101, action: "queued_for_approval" }),
+			expect.objectContaining({ arrItemId: 102, action: "skipped" }),
+		]);
+	});
+
+	it("revalidates unchanged provider rows inside each approval write transaction", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture);
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(authority.transaction).toHaveBeenCalledTimes(2);
+		expect(authority.transactionCreate).toHaveBeenCalledTimes(2);
+		expect(authority.rootCreate).not.toHaveBeenCalled();
+		expect(result.details).toEqual([
+			expect.objectContaining({ arrItemId: 101, action: "queued_for_approval" }),
+			expect.objectContaining({ arrItemId: 102, action: "queued_for_approval" }),
+		]);
+	});
+
+	it("leaves provider evidence empty for an ARR-only approval with an unrelated Plex rule", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture, {
+			items: [{ id: "cache-arr-only", arrItemId: 101, title: "Example Movie" }],
+		});
+		const arrOnlyRule = { ...dryRunConfig().rules[0]!, id: "age-rule", priority: 0 };
+		const plexRule = {
+			...arrOnlyRule,
+			id: "plex-rule",
+			name: "Watched in Plex",
+			priority: 1,
+			ruleType: "plex_watch_count",
+			parameters: JSON.stringify({ operator: "greater_than", count: 10 }),
+		};
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...dryRunConfig(1),
+			dryRunMode: false,
+			requireApproval: true,
+			rules: [arrOnlyRule, plexRule],
+		} as never);
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result).toMatchObject({ status: "completed", itemsFlagged: 1, itemsSkipped: 0 });
+		expect(authority.transaction).not.toHaveBeenCalled();
+		expect(authority.rootCreate).toHaveBeenCalledOnce();
+		const created = authority.rootCreate.mock.calls[0]?.[0] as {
+			data: { safetySnapshot: string };
+		};
+		expect(JSON.parse(created.data.safetySnapshot)).toMatchObject({
+			providerEvidence: { dependencies: [], sources: [] },
+		});
+	});
+
+	it("serializes and revalidates Plex authority for a Plex-matched approval", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture, {
+			items: [{ id: "cache-plex", arrItemId: 101, title: "Example Movie" }],
+		});
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result).toMatchObject({ status: "completed", itemsFlagged: 1, itemsSkipped: 0 });
+		expect(authority.transaction).toHaveBeenCalledOnce();
+		expect(authority.transactionCreate).toHaveBeenCalledOnce();
+		const created = authority.transactionCreate.mock.calls[0]?.[0] as {
+			data: { safetySnapshot: string };
+		};
+		expect(JSON.parse(created.data.safetySnapshot)).toMatchObject({
+			providerEvidence: {
+				dependencies: ["plex"],
+				sources: [expect.objectContaining({ service: "PLEX", cacheType: "plex" })],
+			},
+		});
+	});
+
+	it("binds a versioned OR approval only to the branch that matched", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture, {
+			items: [{ id: "cache-or-approval", arrItemId: 101, title: "Example Movie" }],
+		});
+		const rule = {
+			...dryRunConfig().rules[0]!,
+			id: "age-or-plex",
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: JSON.stringify({
+				version: 1,
+				root: {
+					type: "group",
+					operator: "OR",
+					children: [
+						{
+							type: "condition",
+							ruleType: "age",
+							parameters: { operator: "older_than", days: 30 },
+						},
+						{
+							type: "condition",
+							ruleType: "plex_watch_count",
+							parameters: { operator: "greater_than", count: 10 },
+						},
+					],
+				},
+			}),
+		};
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...dryRunConfig(1),
+			dryRunMode: false,
+			requireApproval: true,
+			rules: [rule],
+		} as never);
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result).toMatchObject({ status: "completed", itemsFlagged: 1, itemsSkipped: 0 });
+		expect(authority.transaction).not.toHaveBeenCalled();
+		expect(authority.rootCreate).toHaveBeenCalledOnce();
+		const created = authority.rootCreate.mock.calls[0]?.[0] as {
+			data: { safetySnapshot: string };
+		};
+		expect(JSON.parse(created.data.safetySnapshot)).toMatchObject({
+			providerEvidence: { dependencies: [], sources: [] },
+		});
+
+		const storedApproval = approvalRecord({
+			id: "approval-or-path",
+			matchedRuleId: rule.id,
+			matchedRuleName: rule.name,
+			safetySnapshot: created.data.safetySnapshot,
+			status: "approved",
+		});
+		configureApprovalStore(fixture.deps, storedApproval);
+		setRadarrMutationRules(fixture.deps, [rule as never]);
+		const approvedGetMovie = fixture.targetClient.movie.getById;
+		const approvedGetMovieImplementation = approvedGetMovie.getMockImplementation()!;
+		approvedGetMovie.mockImplementation(async (movieId: number) => ({
+			...(await approvedGetMovieImplementation(movieId)),
+			added: "2020-01-01T00:00:00.000Z",
+		}));
+
+		const approvedResult = await executeApprovedItems(fixture.deps, "user-1", ["approval-or-path"]);
+		expect(approvedResult.errors).toEqual([]);
+		expect(approvedResult).toMatchObject({ removed: 1, failed: 0 });
+		expect(fixture.deleteMovie).toHaveBeenCalledOnce();
+	});
+
+	it("binds a legacy OR direct intent only to the branch that matched", async () => {
+		const fixture = makeDeps({ action: "unmonitor", mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture, {
+			items: [{ id: "cache-or-direct", arrItemId: 101, title: "Example Movie" }],
+		});
+		const retries = configureRetryStore(fixture.deps);
+		authority.rootCreate.mockImplementation((async ({
+			data,
+		}: {
+			data: Record<string, unknown>;
+		}) => {
+			const retry = { id: "direct-or-intent", createdAt: new Date(), ...data };
+			retries.push(retry);
+			return retry;
+		}) as never);
+		const rule = {
+			...dryRunConfig().rules[0]!,
+			id: "legacy-age-or-plex",
+			action: "unmonitor",
+			operator: "OR",
+			conditions: JSON.stringify([
+				{
+					ruleType: "age",
+					parameters: { operator: "older_than", days: 30 },
+				},
+				{
+					ruleType: "plex_watch_count",
+					parameters: { operator: "greater_than", count: 10 },
+				},
+			]),
+		};
+		const directGetMovie = fixture.targetClient.movie.getById;
+		const directGetMovieImplementation = directGetMovie.getMockImplementation()!;
+		directGetMovie.mockImplementation(async (movieId: number) => ({
+			...(await directGetMovieImplementation(movieId)),
+			added: "2020-01-01T00:00:00.000Z",
+		}));
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...dryRunConfig(1),
+			dryRunMode: false,
+			requireApproval: false,
+			rules: [rule],
+		} as never);
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result).toMatchObject({
+			status: "completed",
+			itemsFlagged: 1,
+			itemsSkipped: 0,
+			itemsUnmonitored: 1,
+		});
+		expect(authority.transaction).not.toHaveBeenCalled();
+		expect(authority.rootCreate).toHaveBeenCalledOnce();
+		expect(fixture.targetClient.movie.update).toHaveBeenCalledOnce();
+	});
+
+	it("maps supported episode watch rules to Plex episode authority", () => {
+		const rule = {
+			...dryRunConfig().rules[0]!,
+			targetScope: "episode",
+			ruleType: "plex_watch_count",
+			parameters: JSON.stringify({ operator: "greater_than", count: 1 }),
+		} as never;
+
+		expect([
+			...providerCacheTypesForEvidence(rule, [
+				{
+					ruleType: "plex_watch_count",
+					parameters: { operator: "greater_than", count: 1 },
+				},
+			]),
+		]).toEqual(["plex_episode"]);
+	});
+
+	it("locks provider publication authority before row validation and approval creation", async () => {
+		vi.stubEnv("DATABASE_URL", "postgresql://localhost/arr_test");
+		try {
+			const fixture = makeDeps({ mediaPartCount: 1 });
+			const authority = configurePlexApprovalAuthority(fixture, {
+				items: [{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" }],
+			});
+
+			await executeCleanupRun(fixture.deps, "user-1");
+
+			expect(authority.rowLock).toHaveBeenCalledWith(
+				'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+				"plex-1",
+			);
+			expect(authority.rowLock.mock.invocationCallOrder[0]).toBeLessThan(
+				authority.plexFindMany.mock.invocationCallOrder.at(-1)!,
+			);
+			expect(authority.plexFindMany.mock.invocationCallOrder.at(-1)).toBeLessThan(
+				authority.transactionCreate.mock.invocationCallOrder[0]!,
+			);
+			expect(authority.rootCreate).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 
 	it.each([
@@ -6485,6 +7016,57 @@ describe("shared Plex deletion safety", () => {
 		expect(storedApproval).toMatchObject({ status: "expired" });
 	});
 
+	it("renews volatile provider evidence before a record-only Radarr retry", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const originalEvidence = TEST_PLEX_SCAN_EVIDENCE;
+		const refreshedEvidence = createSanitizedProviderEvidence(
+			["plex"],
+			originalEvidence.sources.map(({ fingerprint: _fingerprint, ...source }) => ({
+				...source,
+				completedAt: "2026-08-15T00:05:00.000Z",
+				statusFingerprint: "d".repeat(64),
+				rowFingerprint: "e".repeat(64),
+			})),
+		);
+		const strictAuthorityChecker = vi.fn().mockResolvedValue(undefined);
+		const retryAuthorityRenewer = vi.fn().mockResolvedValue(refreshedEvidence);
+		Object.assign(deps, {
+			providerEvidenceAuthorityChecker: strictAuthorityChecker,
+			providerRetryAuthorityRenewer: retryAuthorityRenewer,
+		});
+		const storedRetry = approvalRecord({
+			safetySnapshot: radarrSafetySnapshot(undefined, undefined, originalEvidence),
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedRetry);
+		deleteMovie
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"))
+			.mockRejectedValueOnce(new Error("Radarr movie delete unavailable"));
+
+		await executeApprovedItems(deps, "user-1", ["approval-1"]);
+		expect(storedRetry).toMatchObject({ status: "pending", executionToken: null });
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		strictAuthorityChecker.mockImplementation(
+			async (_userId: string, evidence: typeof originalEvidence) => {
+				if (evidence.fingerprint !== refreshedEvidence.fingerprint) {
+					throw new Error("volatile provider evidence changed");
+				}
+			},
+		);
+		storedRetry.status = "approved";
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toEqual({ removed: 1, failed: 0, errors: [] });
+		expect(retryAuthorityRenewer).toHaveBeenCalledWith(
+			"user-1",
+			originalEvidence,
+			expect.any(Function),
+		);
+		expect(deleteMovieFile).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledTimes(3);
+		expect(storedRetry).toMatchObject({ status: "executed", executionToken: null });
+	});
+
 	it("expires an approved Radarr mutation when the service is repointed after preflight", async () => {
 		const { deps, targetInstance, plexInstance, deleteMovie, deleteMovieFile } = makeDeps({
 			mediaPartCount: 1,
@@ -6774,6 +7356,92 @@ describe("shared Plex deletion safety", () => {
 		expect(deleteMovieFile).toHaveBeenCalledOnce();
 		expect(deleteMovie).toHaveBeenCalledTimes(3);
 		expect(targetClient.movie.update).not.toHaveBeenCalled();
+	});
+
+	it("passes the active cleanup claim token through automatic provider-backed retries", async () => {
+		const fixture = makeDeps({ action: "unmonitor", mediaPartCount: 1 });
+		const retries = configureRetryStore(fixture.deps);
+		const cleanupRunClaimToken = "cleanup-run-claim";
+		const filePathRule = currentSeriesRule("rule-1", "unmonitor", "Example Movie");
+		const plexRule = {
+			...currentSeriesRule("plex-rule", "unmonitor"),
+			name: "Watched in Plex",
+			priority: 0,
+			ruleType: "plex_watch_count",
+			parameters: JSON.stringify({ operator: "greater_than", count: 10 }),
+		};
+		const { providerInstance, completedAt } = configurePlexApprovalAuthority(fixture, {
+			items: [{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" }],
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...dryRunConfig(10),
+			dryRunMode: false,
+			requireApproval: false,
+			rules: [filePathRule, plexRule],
+		} as never);
+		fixture.deps.encryptor = { decrypt: vi.fn().mockReturnValue("plex-token") } as never;
+		vi.mocked(fixture.deps.prisma.serviceInstance.findFirst).mockImplementation((async ({
+			where,
+		}: {
+			where: { id?: string; service?: string };
+		}) => {
+			if (where.id === providerInstance.id || where.service === "PLEX") {
+				return providerInstance;
+			}
+			return fixture.targetInstance;
+		}) as never);
+		const refresh = vi.spyOn(plexCacheRefresher, "refreshPlexCache").mockResolvedValue({
+			upserted: 1,
+			errors: 0,
+			errorMessages: [],
+			complete: true,
+			completedAt,
+			generationId: "plex-generation-1",
+			inventoryTargets: [{ mediaType: "movie", tmdbId: 42, ratingKey: "plex-movie-42" }],
+		} as never);
+		retries.push({
+			...approvalRecord({
+				id: "retry-1",
+				configId: "config-1",
+				status: "retry_pending",
+				action: "unmonitor",
+				matchedRuleId: filePathRule.id,
+				matchedRuleName: filePathRule.name,
+				safetySnapshot: radarrTargetOnlySnapshot(),
+			}),
+		});
+
+		try {
+			const result = await executeDirectRemoval(
+				fixture.deps,
+				{
+					id: "config-1",
+					maxRemovalsPerRun: 10,
+					rules: [filePathRule, plexRule],
+				} as never,
+				"user-1",
+				[],
+				0,
+				0,
+				Date.now(),
+				undefined,
+				undefined,
+				new Map(),
+				async () => undefined,
+				createSanitizedProviderEvidence([], []),
+				[],
+				cleanupRunClaimToken,
+			);
+
+			expect(result).toMatchObject({ status: "completed", itemsUnmonitored: 1 });
+			expect(retries[0]).toMatchObject({ status: "executed" });
+			expect(refresh).toHaveBeenCalled();
+			for (const [context] of refresh.mock.calls) {
+				expect(context).toEqual(expect.objectContaining({ cleanupRunClaimToken }));
+			}
+		} finally {
+			refresh.mockRestore();
+		}
 	});
 
 	it("expires a direct retry before reading a missing target from a repointed service", async () => {

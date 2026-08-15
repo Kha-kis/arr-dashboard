@@ -39,6 +39,26 @@ export type CreateServicePayload = {
 
 export type UpdateServicePayload = Partial<CreateServicePayload>;
 
+export type ServiceIdentityCandidate = {
+	service: "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI";
+	identityKind: string;
+	fingerprint: string;
+	displayName?: string;
+	confirmationDigest: string;
+};
+
+export type ServiceIdentityInspection = {
+	candidate: ServiceIdentityCandidate;
+	connectionGeneration: number;
+	identityGeneration: number;
+};
+
+export type ServiceIdentityConfirmation = {
+	confirmationDigest: string;
+	expectedConnectionGeneration: number;
+	expectedIdentityGeneration: number;
+};
+
 export async function createService(
 	payload: CreateServicePayload,
 ): Promise<ServiceInstanceSummary> {
@@ -64,6 +84,39 @@ export async function removeService(id: string): Promise<void> {
 	await apiRequest<void>(`/api/services/${id}`, {
 		method: "DELETE",
 	});
+}
+
+export async function inspectServiceIdentity(
+	id: string,
+	candidate?: UpdateServicePayload,
+): Promise<ServiceIdentityInspection> {
+	return await apiRequest<ServiceIdentityInspection>(`/api/services/${id}/identity/inspect`, {
+		method: "POST",
+		json: candidate ? { candidate } : {},
+	});
+}
+
+export async function verifyServiceIdentity(
+	id: string,
+	confirmation: ServiceIdentityConfirmation,
+): Promise<ServiceInstanceSummary> {
+	const data = await apiRequest<ServiceResponse>(`/api/services/${id}/identity/verify`, {
+		method: "POST",
+		json: confirmation,
+	});
+	return data.service;
+}
+
+export async function replaceServiceIdentity(
+	id: string,
+	candidate: UpdateServicePayload,
+	confirmation: ServiceIdentityConfirmation,
+): Promise<ServiceInstanceSummary> {
+	const data = await apiRequest<ServiceResponse>(`/api/services/${id}/identity/replace`, {
+		method: "POST",
+		json: { candidate, ...confirmation },
+	});
+	return data.service;
 }
 
 export type TestConnectionResponse = {

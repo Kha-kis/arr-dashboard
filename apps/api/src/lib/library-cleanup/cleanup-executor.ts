@@ -11,20 +11,27 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import type { CleanupRuleExpression, DataSourceDependency } from "@arr/shared";
+import {
+	ruleDataSourceMap,
+	type CleanupRuleExpression,
+	type DataSourceDependency,
+} from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
 import {
+	collectJellyfinCacheLiveEvidence,
+	createOwnedJellyfinPublicationSnapshot,
 	type JellyfinCacheSnapshotRow,
 	refreshJellyfinCache,
 } from "../jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-refresher.js";
-import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import {
+	collectPlexCacheLiveEvidence,
+	createOwnedPlexPublicationSnapshot,
 	type PlexCacheSnapshotRow,
 	type PlexInventoryTarget,
 	refreshPlexCache,
@@ -45,8 +52,13 @@ import type {
 } from "../prisma.js";
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
-import { providerConnectionIdentity } from "../services/provider-connection-guard.js";
 import {
+	providerIdentityAuthorityFingerprint,
+	providerInstanceAuthorityFingerprint,
+} from "../services/service-identity.js";
+import {
+	collectTautulliCacheLiveEvidence,
+	createOwnedTautulliPublicationSnapshot,
 	refreshTautulliCache,
 	type TautulliCacheSnapshotRow,
 } from "../tautulli/tautulli-cache-refresher.js";
@@ -70,6 +82,15 @@ import {
 	withExclusiveCleanupOperationGuard,
 } from "./cleanup-maintenance-gate.js";
 import {
+	acquireCleanupRunLease,
+	CLEANUP_RUN_LEASE_MS,
+	CleanupRunAlreadyInProgressError,
+	CleanupRunLeaseLostError,
+	releaseCleanupRunLease,
+	renewCleanupRunLease,
+	startCleanupRunLease,
+} from "./cleanup-run-lease.js";
+import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
 	evaluateEpisodeWatchCountRule,
@@ -82,14 +103,19 @@ import {
 	retryPendingMediaServerRescans,
 	triggerCoalescedMediaServerRescans,
 } from "./media-server-rescan.js";
+import {
+	loadExactProviderCacheRows,
+	PROVIDER_CACHE_ROW_SELECTS,
+	type ProviderCacheType,
+} from "./provider-cache-evidence.js";
 import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
 import {
 	type ConditionEvidenceAvailability,
-	evaluateItemAgainstRules,
 	evaluateItemPolicyState,
 	evaluateRuleState,
 	extractRating,
 	normalizeStoredCleanupRuleExpression,
+	type RuleEvidenceCondition,
 	passesCleanupRuleFilters,
 	ruleUsesUnavailableData,
 } from "./rule-evaluators.js";
@@ -99,6 +125,7 @@ import {
 	ArrFileChangedDuringSafetyCheckError,
 	ArrMutationAuthorityChangedDuringSafetyCheckError,
 	ArrTargetChangedDuringSafetyCheckError,
+	assertCurrentProviderEvidenceAuthority,
 	assertVerifiedArrTargetUnchanged,
 	assertVerifiedRadarrEmptyUnchanged,
 	assertVerifiedRadarrFileUnchanged,
@@ -113,12 +140,18 @@ import {
 	type CleanupDeleteTarget,
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
+	createSanitizedProviderEvidence,
 	createSharedPlexSafetyContext,
 	type ExecutableSharedMediaSafetyPlan,
 	executableSafetyPlansEqual,
 	findSharedPlexDeleteBlocks,
+	ProviderExecutionAuthorityChangedError,
+	parseExecutableSafetyEnvelope,
 	parseExecutableSafetyPlan,
 	RadarrFileChangedDuringSafetyCheckError,
+	renewCurrentProviderRetryAuthority,
+	type SanitizedProviderEvidence,
+	type SanitizedProviderEvidenceSource,
 	type SharedMediaSafetyPlan,
 	SonarrFilesChangedDuringSafetyCheckError,
 	serializeExecutableSafetyPlan,
@@ -145,6 +178,15 @@ import type {
 } from "./types.js";
 import { type ListMembershipKey, listMembershipKey } from "./types.js";
 
+export {
+	acquireCleanupRunLease,
+	CLEANUP_RUN_LEASE_MS,
+	CleanupRunAlreadyInProgressError,
+	CleanupRunLeaseLostError,
+	releaseCleanupRunLease,
+	renewCleanupRunLease,
+};
+
 // Default approval expiry: 7 days
 const APPROVAL_EXPIRY_DAYS = 7;
 
@@ -152,12 +194,99 @@ const APPROVAL_EXPIRY_DAYS = 7;
 const CACHE_QUERY_BATCH_SIZE = 500;
 const PROVIDER_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
 
+type CleanupRunResultWithProviderEvidence = CleanupRunResult & {
+	providerEvidence?: SanitizedProviderEvidence;
+};
+
+interface ProviderCacheGeneration {
+	completedAt: Date;
+	itemCount: number;
+	connectionGeneration: number;
+	identityGeneration: number;
+	statusFingerprint: string;
+}
+
+interface ProviderCacheRowAuthority {
+	rowCount: number;
+	rowFingerprint: string;
+}
+
+interface ProviderCacheSnapshot<T> {
+	value: T;
+	evidence: SanitizedProviderEvidence;
+	authority: {
+		cacheType: ProviderCacheType;
+		instances: ServiceInstance[];
+		generations: Map<string, ProviderCacheGeneration>;
+		rows: Map<string, ProviderCacheRowAuthority>;
+	};
+}
+
+interface MatchedRuleProviderAuthority {
+	evidence: SanitizedProviderEvidence;
+	authorities: Array<ProviderCacheSnapshot<unknown>["authority"]>;
+	complete: boolean;
+}
+
+export function mergeSanitizedProviderEvidence(
+	...evidenceSets: Array<SanitizedProviderEvidence | undefined>
+): SanitizedProviderEvidence {
+	const available = evidenceSets.filter(
+		(evidence): evidence is SanitizedProviderEvidence => evidence !== undefined,
+	);
+	return createSanitizedProviderEvidence(
+		available.flatMap((evidence) => evidence.dependencies),
+		available.flatMap((evidence) =>
+			evidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		),
+	);
+}
+
+function isVerifiedProviderCacheSource(
+	instance: Pick<
+		ServiceInstance,
+		| "enabled"
+		| "expectedIdentity"
+		| "identityKind"
+		| "identityStatus"
+		| "identityVerifiedAt"
+		| "connectionGeneration"
+		| "identityGeneration"
+	>,
+): boolean {
+	return (
+		instance.enabled &&
+		instance.identityStatus === "VERIFIED" &&
+		typeof instance.expectedIdentity === "string" &&
+		instance.expectedIdentity.trim() !== "" &&
+		instance.identityKind !== null &&
+		instance.identityVerifiedAt !== null &&
+		Number.isSafeInteger(instance.connectionGeneration) &&
+		instance.connectionGeneration >= 0 &&
+		Number.isSafeInteger(instance.identityGeneration) &&
+		instance.identityGeneration > 0
+	);
+}
+
 async function loadCompleteCacheGenerations(
 	deps: CleanupExecutorDeps,
-	instances: Array<{ id: string; updatedAt: Date }>,
-	cacheType: string,
+	instances: Array<
+		Pick<
+			ServiceInstance,
+			| "id"
+			| "enabled"
+			| "updatedAt"
+			| "expectedIdentity"
+			| "identityKind"
+			| "identityStatus"
+			| "identityVerifiedAt"
+			| "connectionGeneration"
+			| "identityGeneration"
+		>
+	>,
+	cacheType: ProviderCacheType,
 	now: Date = new Date(),
-): Promise<Map<string, { completedAt: Date; itemCount: number }> | undefined> {
+): Promise<Map<string, ProviderCacheGeneration> | undefined> {
 	if (instances.length === 0) return undefined;
 	const statuses = await deps.prisma.cacheRefreshStatus.findMany({
 		where: { instanceId: { in: instances.map((instance) => instance.id) }, cacheType },
@@ -169,29 +298,233 @@ async function loadCompleteCacheGenerations(
 			lastAttemptResult: true,
 			lastAttemptErrorMessage: true,
 			itemCount: true,
+			connectionGeneration: true,
+			identityGeneration: true,
+			generationId: true,
+			generationMetadata: true,
 		},
 	});
 	const byInstance = new Map(statuses.map((status) => [status.instanceId, status]));
 	const freshnessThreshold = now.getTime() - PROVIDER_EVIDENCE_FRESHNESS_MS;
-	const generations = new Map<string, { completedAt: Date; itemCount: number }>();
+	const generations = new Map<string, ProviderCacheGeneration>();
 	for (const instance of instances) {
 		const status = byInstance.get(instance.id);
 		if (
+			!isVerifiedProviderCacheSource(instance) ||
+			instance.identityVerifiedAt === null ||
 			status?.lastResult !== "success" ||
 			status.lastErrorMessage != null ||
 			status.lastAttemptErrorMessage != null ||
 			(status.lastAttemptResult != null && status.lastAttemptResult !== "success") ||
 			status.lastRefreshedAt.getTime() < freshnessThreshold ||
-			status.lastRefreshedAt.getTime() < instance.updatedAt.getTime()
+			status.lastRefreshedAt.getTime() < instance.updatedAt.getTime() ||
+			status.lastRefreshedAt.getTime() < instance.identityVerifiedAt.getTime() ||
+			status.connectionGeneration === null ||
+			status.identityGeneration === null ||
+			status.connectionGeneration !== instance.connectionGeneration ||
+			status.identityGeneration !== instance.identityGeneration
 		) {
 			return undefined;
 		}
 		generations.set(instance.id, {
 			completedAt: status.lastRefreshedAt,
 			itemCount: status.itemCount,
+			connectionGeneration: status.connectionGeneration,
+			identityGeneration: status.identityGeneration,
+			statusFingerprint: evidenceFingerprint({
+				instance: {
+					id: instance.id,
+					expectedIdentity: instance.expectedIdentity,
+					identityKind: instance.identityKind,
+					identityVerifiedAt: instance.identityVerifiedAt,
+					connectionGeneration: instance.connectionGeneration,
+					identityGeneration: instance.identityGeneration,
+					updatedAt: instance.updatedAt,
+				},
+				status,
+			}),
 		});
 	}
 	return generations;
+}
+
+async function revalidateProviderCacheAuthority(
+	deps: CleanupExecutorDeps,
+	authority: ProviderCacheSnapshot<unknown>["authority"],
+	revalidateTopology = true,
+	now = new Date(),
+): Promise<boolean> {
+	let currentInstances = authority.instances;
+	if (revalidateTopology) {
+		currentInstances = await loadProviderInstances(deps, authority.instances[0]!.userId, [
+			...new Set(authority.instances.map((instance) => instance.service)),
+		]);
+		if (
+			providerTopologyFingerprint(currentInstances) !==
+			providerTopologyFingerprint(authority.instances)
+		) {
+			return false;
+		}
+	}
+	const current = await loadCompleteCacheGenerations(
+		deps,
+		currentInstances,
+		authority.cacheType,
+		now,
+	);
+	if (!current || current.size !== authority.generations.size) return false;
+	return [...authority.generations].every(
+		([instanceId, generation]) =>
+			current.get(instanceId)?.statusFingerprint === generation.statusFingerprint,
+	);
+}
+
+function createProviderCacheSnapshot<T>(
+	value: T,
+	cacheType: ProviderCacheType,
+	instances: ServiceInstance[],
+	generations: Map<string, ProviderCacheGeneration>,
+	rowsByInstance: Map<string, unknown[]>,
+): ProviderCacheSnapshot<T> {
+	const rowAuthorities = new Map(
+		instances.map((instance) => {
+			const rows = [...(rowsByInstance.get(instance.id) ?? [])].sort((left, right) =>
+				String((left as { id?: unknown }).id ?? "").localeCompare(
+					String((right as { id?: unknown }).id ?? ""),
+				),
+			);
+			return [
+				instance.id,
+				{ rowCount: rows.length, rowFingerprint: evidenceFingerprint(rows) },
+			] as const;
+		}),
+	);
+	return {
+		value,
+		evidence: createSanitizedProviderEvidence(
+			[cacheType],
+			instances.map((instance) => {
+				const generation = generations.get(instance.id)!;
+				return {
+					service: instance.service as SanitizedProviderEvidenceSource["service"],
+					instanceFingerprint: providerInstanceAuthorityFingerprint(instance.id),
+					identityKind: instance.identityKind!,
+					identityFingerprint: providerIdentityAuthorityFingerprint(instance),
+					connectionGeneration: generation.connectionGeneration,
+					identityGeneration: generation.identityGeneration,
+					cacheType,
+					completedAt: generation.completedAt.toISOString(),
+					itemCount: generation.itemCount,
+					verifiedAt: instance.identityVerifiedAt!.toISOString(),
+					statusFingerprint: generation.statusFingerprint,
+					rowFingerprint: rowAuthorities.get(instance.id)!.rowFingerprint,
+				};
+			}),
+		),
+		authority: { cacheType, instances, generations, rows: rowAuthorities },
+	};
+}
+
+async function revalidateExactProviderCacheAuthority(
+	deps: CleanupExecutorDeps,
+	tx: Prisma.TransactionClient,
+	authority: ProviderCacheSnapshot<unknown>["authority"],
+	now: Date,
+): Promise<boolean> {
+	const transactionDeps = {
+		...deps,
+		prisma: tx as unknown as CleanupExecutorDeps["prisma"],
+	};
+	const currentInstances = await loadProviderInstances(
+		transactionDeps,
+		authority.instances[0]!.userId,
+		[...new Set(authority.instances.map((instance) => instance.service))],
+	);
+	if (
+		providerTopologyFingerprint(currentInstances) !==
+		providerTopologyFingerprint(authority.instances)
+	) {
+		return false;
+	}
+	const currentGenerations = await loadCompleteCacheGenerations(
+		transactionDeps,
+		currentInstances,
+		authority.cacheType,
+		now,
+	);
+	if (!currentGenerations || currentGenerations.size !== authority.generations.size) return false;
+	if (
+		![...authority.generations].every(
+			([instanceId, generation]) =>
+				currentGenerations.get(instanceId)?.statusFingerprint === generation.statusFingerprint,
+		)
+	) {
+		return false;
+	}
+	const instanceIds = authority.instances.map((instance) => instance.id);
+	const currentRows = await loadExactProviderCacheRows(tx, authority.cacheType, instanceIds);
+	if (!currentRows) return false;
+	return instanceIds.every((instanceId) => {
+		const expected = authority.rows.get(instanceId);
+		const rows = currentRows.get(instanceId) ?? [];
+		return (
+			expected !== undefined &&
+			expected.rowCount === rows.length &&
+			expected.rowFingerprint === evidenceFingerprint(rows)
+		);
+	});
+}
+
+class ProviderCacheAuthorityChangedError extends Error {
+	constructor() {
+		super("Provider cache authority changed after cleanup selection");
+		this.name = "ProviderCacheAuthorityChangedError";
+	}
+}
+
+function isProviderExecutionAuthorityFailure(error: unknown): boolean {
+	let current = error;
+	for (let depth = 0; depth < 4 && current instanceof Error; depth++) {
+		if (current instanceof ProviderExecutionAuthorityChangedError) return true;
+		current = current.cause;
+	}
+	return false;
+}
+
+async function createApprovalWithProviderCacheAuthority(
+	deps: CleanupExecutorDeps,
+	authorities: Array<ProviderCacheSnapshot<unknown>["authority"]>,
+	data: Prisma.LibraryCleanupApprovalUncheckedCreateInput,
+): Promise<LibraryCleanupApproval> {
+	if (authorities.length === 0) {
+		return await deps.prisma.libraryCleanupApproval.create({ data });
+	}
+	const postgresql = /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
+	return await deps.prisma.$transaction(
+		async (tx) => {
+			const instanceIds = [
+				...new Set(
+					authorities.flatMap((authority) => authority.instances.map((instance) => instance.id)),
+				),
+			].sort();
+			if (postgresql) {
+				for (const instanceId of instanceIds) {
+					await tx.$queryRawUnsafe(
+						'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
+						instanceId,
+					);
+				}
+			}
+			const now = new Date();
+			for (const authority of authorities) {
+				if (!(await revalidateExactProviderCacheAuthority(deps, tx, authority, now))) {
+					throw new ProviderCacheAuthorityChangedError();
+				}
+			}
+			return await tx.libraryCleanupApproval.create({ data });
+		},
+		postgresql ? undefined : { isolationLevel: "Serializable" },
+	);
 }
 
 // The route returns at most 200 preview rows; avoid live safety I/O for rows
@@ -201,25 +534,8 @@ export const CLEANUP_DETAIL_LIMIT = 200;
 // Circuit breaker: abort after N consecutive ARR API failures
 const CIRCUIT_BREAKER_THRESHOLD = 3;
 
-export const CLEANUP_RUN_LEASE_MS = 2 * 60 * 60 * 1000;
-const CLEANUP_RUN_HEARTBEAT_MS = 60 * 1000;
-
 export const INTERRUPTED_CLEANUP_RECOVERY_MESSAGE =
 	"Recovered after an interrupted cleanup. Review and approve again to reconcile the verified ARR state.";
-
-export class CleanupRunAlreadyInProgressError extends Error {
-	constructor() {
-		super("A cleanup operation is already in progress");
-		this.name = "CleanupRunAlreadyInProgressError";
-	}
-}
-
-export class CleanupRunLeaseLostError extends Error {
-	constructor() {
-		super("The cleanup run lost its database execution lease");
-		this.name = "CleanupRunLeaseLostError";
-	}
-}
 
 export class CleanupTopologyMutationConflictError extends Error {
 	readonly statusCode = 409;
@@ -237,55 +553,6 @@ export class CleanupPolicyMutationConflictError extends Error {
 		super("Library cleanup settings cannot be changed while a cleanup operation is in progress");
 		this.name = "CleanupPolicyMutationConflictError";
 	}
-}
-
-export async function acquireCleanupRunLease(
-	prisma: CleanupExecutorDeps["prisma"],
-	userId: string,
-	configId: string,
-	now: Date = new Date(),
-	runClaimToken: string = randomUUID(),
-): Promise<string | null> {
-	const claim = await prisma.libraryCleanupConfig.updateMany({
-		where: {
-			id: configId,
-			userId,
-			OR: [
-				{ runClaimToken: null },
-				{ runClaimedAt: null },
-				{ runClaimedAt: { lt: new Date(now.getTime() - CLEANUP_RUN_LEASE_MS) } },
-			],
-		},
-		data: { runClaimToken, runClaimedAt: now },
-	});
-	return claim.count === 1 ? runClaimToken : null;
-}
-
-export async function releaseCleanupRunLease(
-	prisma: CleanupExecutorDeps["prisma"],
-	userId: string,
-	configId: string,
-	runClaimToken: string,
-): Promise<boolean> {
-	const release = await prisma.libraryCleanupConfig.updateMany({
-		where: { id: configId, userId, runClaimToken },
-		data: { runClaimToken: null, runClaimedAt: null },
-	});
-	return release.count === 1;
-}
-
-export async function renewCleanupRunLease(
-	prisma: CleanupExecutorDeps["prisma"],
-	userId: string,
-	configId: string,
-	runClaimToken: string,
-	now: Date = new Date(),
-): Promise<boolean> {
-	const renewal = await prisma.libraryCleanupConfig.updateMany({
-		where: { id: configId, userId, runClaimToken },
-		data: { runClaimedAt: now },
-	});
-	return renewal.count === 1;
 }
 
 async function withCleanupMutationLease<T>(
@@ -386,66 +653,6 @@ export async function withCleanupPolicyMutationLease<T>(
 	);
 }
 
-async function startCleanupRunLease(
-	deps: CleanupExecutorDeps,
-	userId: string,
-	configId: string,
-): Promise<{
-	assertOwnership: () => Promise<void>;
-	release: () => Promise<void>;
-}> {
-	const { prisma, log } = deps;
-	const runClaimToken = await acquireCleanupRunLease(prisma, userId, configId);
-	if (!runClaimToken) throw new CleanupRunAlreadyInProgressError();
-
-	let runLeaseLost = false;
-	const assertOwnership = async () => {
-		if (runLeaseLost) throw new CleanupRunLeaseLostError();
-		try {
-			if (!(await renewCleanupRunLease(prisma, userId, configId, runClaimToken))) {
-				runLeaseLost = true;
-				throw new CleanupRunLeaseLostError();
-			}
-		} catch (error) {
-			runLeaseLost = true;
-			if (error instanceof CleanupRunLeaseLostError) throw error;
-			log.error({ err: error, configId }, "Library cleanup could not renew its database run lease");
-			throw new CleanupRunLeaseLostError();
-		}
-	};
-	const heartbeat = setInterval(() => {
-		assertOwnership().catch((error) => {
-			log.error(
-				{ err: error, configId },
-				"Library cleanup database run lease heartbeat failed; mutations will stop",
-			);
-		});
-	}, CLEANUP_RUN_HEARTBEAT_MS);
-	heartbeat.unref();
-
-	return {
-		assertOwnership,
-		release: async () => {
-			clearInterval(heartbeat);
-			await releaseCleanupRunLease(prisma, userId, configId, runClaimToken)
-				.then((released) => {
-					if (!released) {
-						log.warn(
-							{ configId },
-							"Library cleanup finished after its database run lease ownership changed",
-						);
-					}
-				})
-				.catch((error) => {
-					log.error(
-						{ err: error, configId },
-						"Library cleanup finished but its database run lease could not be released",
-					);
-				});
-		},
-	};
-}
-
 class ArrDeletePartialError extends Error {
 	readonly service: "RADARR" | "SONARR";
 	readonly deletedFileIds: number[];
@@ -521,6 +728,7 @@ function buildPostPartialRetrySnapshot(
 	safetyPlan: SharedMediaSafetyPlan | undefined,
 	error: ArrDeletePartialError,
 	action: RuleAction,
+	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
 ): string | undefined {
 	if (error.hasRemainingFiles || error.deletedFileIds.length === 0) return undefined;
 
@@ -532,10 +740,13 @@ function buildPostPartialRetrySnapshot(
 		) {
 			return undefined;
 		}
-		return serializeExecutableSafetyPlan({
-			kind: "verified_radarr_empty",
-			target: safetyPlan.target,
-		});
+		return serializeExecutableSafetyPlan(
+			{
+				kind: "verified_radarr_empty",
+				target: safetyPlan.target,
+			},
+			providerEvidence,
+		);
 	}
 
 	if (safetyPlan?.kind !== "verified_sonarr") return undefined;
@@ -548,17 +759,20 @@ function buildPostPartialRetrySnapshot(
 	) {
 		return undefined;
 	}
-	return serializeExecutableSafetyPlan({
-		kind: "verified_sonarr",
-		target: safetyPlan.target,
-		files: {
-			seriesPath: safetyPlan.files.seriesPath,
-			episodeFiles: [],
+	return serializeExecutableSafetyPlan(
+		{
+			kind: "verified_sonarr",
+			target: safetyPlan.target,
+			files: {
+				seriesPath: safetyPlan.files.seriesPath,
+				episodeFiles: [],
+			},
+			peers: safetyPlan.peers,
+			ownership: action === "delete" ? safetyPlan.ownership : [],
+			targetDeleteNotifications: safetyPlan.targetDeleteNotifications,
 		},
-		peers: safetyPlan.peers,
-		ownership: action === "delete" ? safetyPlan.ownership : [],
-		targetDeleteNotifications: safetyPlan.targetDeleteNotifications,
-	});
+		providerEvidence,
+	);
 }
 
 function verifiedTargetsEqual(
@@ -1231,15 +1445,22 @@ async function persistAndClaimDirectMutationIntent(
 	userId: string,
 	item: FlaggedItem,
 	safetyPlan: SharedMediaSafetyPlan,
-): Promise<{ id: string; claimed: boolean; executionToken: string }> {
+	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
+): Promise<{
+	id: string;
+	claimed: boolean;
+	executionToken: string;
+	safetySnapshot: string | null;
+}> {
 	const executablePlan = asExecutableSafetyPlan(safetyPlan);
 	if (!executablePlan) {
 		throw new Error("No executable cleanup safety plan was available for the mutation intent");
 	}
+	const safetySnapshot = serializeExecutableSafetyPlan(executablePlan, providerEvidence);
 	const retryEventFingerprint = createHash("sha256")
 		.update(
 			JSON.stringify([
-				serializeExecutableSafetyPlan(executablePlan),
+				safetySnapshot,
 				item.cacheItem.cachedAt?.toISOString() ?? null,
 				item.match.action,
 				item.match.scanMediaServerAfterDelete,
@@ -1258,6 +1479,7 @@ async function persistAndClaimDirectMutationIntent(
 	const now = new Date();
 	const executionToken = randomUUID();
 
+	let created = false;
 	try {
 		await deps.prisma.libraryCleanupApproval.create({
 			data: {
@@ -1282,11 +1504,12 @@ async function persistAndClaimDirectMutationIntent(
 				year: item.cacheItem.year,
 				rating: item.rating,
 				status: "retry_pending",
-				safetySnapshot: serializeExecutableSafetyPlan(executablePlan),
+				safetySnapshot,
 				lastExecutionError: null,
 				expiresAt: new Date(now.getTime() + APPROVAL_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
 			},
 		});
+		created = true;
 	} catch (error) {
 		if ((error as { code?: string }).code !== "P2002") throw error;
 	}
@@ -1305,7 +1528,27 @@ async function persistAndClaimDirectMutationIntent(
 			terminalAuditRecordedAt: null,
 		},
 	});
-	return { id: intentId, claimed: claim.count === 1, executionToken };
+	const claimedIntent =
+		claim.count === 1 && !created
+			? await deps.prisma.libraryCleanupApproval.findFirst({
+					where: {
+						id: intentId,
+						config: { userId },
+						status: "retry_executing",
+						executionToken,
+					},
+					select: { safetySnapshot: true },
+				})
+			: null;
+	if (claim.count === 1 && !created && !claimedIntent) {
+		throw new Error("Claimed cleanup mutation intent could not be reloaded");
+	}
+	return {
+		id: intentId,
+		claimed: claim.count === 1,
+		executionToken,
+		safetySnapshot: created ? safetySnapshot : (claimedIntent?.safetySnapshot ?? null),
+	};
 }
 
 async function buildEvaluatedCacheSafetyPlan(
@@ -1686,7 +1929,7 @@ function buildDirectSelectionPreviewDetails(
 export async function executeCleanupPreview(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<CleanupRunResult> {
+): Promise<CleanupRunResultWithProviderEvidence> {
 	const startTime = Date.now();
 	const { prisma, log } = deps;
 
@@ -1732,11 +1975,8 @@ export async function executeCleanupPreview(
 		};
 	}
 
-	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
-		deps,
-		config,
-		config.rules,
-	);
+	const { flagged, totalEvaluated, prefetchHealth, warnings, providerEvidence } =
+		await evaluateAllItems(deps, config, config.rules);
 	const configuredRunLimit =
 		Number.isSafeInteger(config.maxRemovalsPerRun) &&
 		config.maxRemovalsPerRun > 0 &&
@@ -1858,6 +2098,7 @@ export async function executeCleanupPreview(
 		durationMs: Date.now() - startTime,
 		prefetchHealth,
 		warnings: allWarnings,
+		providerEvidence,
 	};
 }
 
@@ -1883,12 +2124,9 @@ async function executeConfiguredCleanupDryRun(
 	userId: string,
 	config: LibraryCleanupConfig & { rules: LibraryCleanupRule[] },
 	startTime: number,
-): Promise<CleanupRunResult> {
-	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
-		deps,
-		config,
-		config.rules,
-	);
+): Promise<CleanupRunResultWithProviderEvidence> {
+	const { flagged, totalEvaluated, prefetchHealth, warnings, providerEvidence } =
+		await evaluateAllItems(deps, config, config.rules);
 	const configuredRunLimit =
 		Number.isSafeInteger(config.maxRemovalsPerRun) &&
 		config.maxRemovalsPerRun > 0 &&
@@ -1963,7 +2201,7 @@ async function executeConfiguredCleanupDryRun(
 				...selectionDetails,
 			];
 
-	const result: CleanupRunResult = {
+	const result: CleanupRunResultWithProviderEvidence = {
 		isDryRun: true,
 		status: allWarnings.length > 0 ? "partial" : "completed",
 		itemsEvaluated: totalEvaluated,
@@ -1988,6 +2226,7 @@ async function executeConfiguredCleanupDryRun(
 		durationMs: Date.now() - startTime,
 		prefetchHealth,
 		warnings: allWarnings,
+		providerEvidence,
 	};
 
 	return result;
@@ -2052,7 +2291,11 @@ async function executeCleanupRunGuarded(
 		let priorRescanWarnings: string[] = [];
 		if (!deps.skipPendingMediaServerRescanRetry) {
 			try {
-				const retryResult = await retryPendingMediaServerRescans(deps, userId);
+				const retryResult = await retryPendingMediaServerRescans(
+					deps,
+					userId,
+					runLease.assertOwnership,
+				);
 				priorRescanWarnings = retryResult.warnings;
 			} catch (error) {
 				priorRescanWarnings = [
@@ -2077,11 +2320,15 @@ async function executeCleanupRunGuarded(
 			};
 		}
 
-		const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
-			deps,
-			config,
-			config.rules,
-		);
+		const {
+			flagged,
+			totalEvaluated,
+			prefetchHealth,
+			warnings,
+			providerEvidence,
+			providerAuthorities,
+			providerAuthoritiesByTarget,
+		} = await evaluateAllItems(deps, config, config.rules);
 		// Real execution
 		if (config.requireApproval) {
 			const approvalSelection = await loadApprovalSelectionState(
@@ -2121,6 +2368,7 @@ async function executeCleanupRunGuarded(
 				allWarnings,
 				sharedPlexBlocks,
 				safetyContext.plans,
+				providerAuthoritiesByTarget,
 				approvalSelection.skippedDetails,
 				approvalSelection,
 			);
@@ -2138,6 +2386,10 @@ async function executeCleanupRunGuarded(
 			[...priorRescanWarnings, ...warnings],
 			new Map(),
 			runLease.assertOwnership,
+			providerEvidence,
+			providerAuthorities,
+			runLease.claimToken,
+			providerAuthoritiesByTarget,
 		);
 	} finally {
 		await runLease.release();
@@ -2208,6 +2460,7 @@ async function executeApprovedItemsGuarded(
 			assertExecutionAllowed: runLease.assertOwnership,
 			claimExecutionToken: approvalRequestToken,
 			auditCorrelationId: approvalRequestToken,
+			cleanupRunClaimToken: runLease.claimToken,
 		});
 		const unclaimedErrors = result.unclaimedIds.map(
 			() => "Cleanup approval was not found, expired, no longer approved, or changed ownership.",
@@ -2281,6 +2534,7 @@ async function executeRetryItemsGuarded(
 			retryStatus: "retry_pending",
 			enforceExpiry: false,
 			assertExecutionAllowed: runLease.assertOwnership,
+			cleanupRunClaimToken: runLease.claimToken,
 		});
 		const unclaimedErrors = result.unclaimedIds.map(
 			() => "Cleanup retry was not found, was no longer pending, or changed ownership.",
@@ -2312,6 +2566,7 @@ interface QueuedCleanupExecutionResult {
 	mutationAttemptedIds: string[];
 	warnings?: string[];
 	rescanApprovalIds: string[];
+	providerAuthorityFailed: boolean;
 }
 
 async function retryTargetRecordIsAbsent(
@@ -2811,6 +3066,7 @@ interface ExpectedCleanupRule {
 	matchedRuleId: string;
 	action: RuleAction;
 	scanMediaServerAfterDelete: boolean;
+	providerDependencies?: string[];
 }
 
 export async function assertCurrentSeriesPolicySnapshotUnchanged(
@@ -2982,6 +3238,7 @@ function plexRulesCapableOfAffectingExpectedSeriesPolicy(
 	rules: LibraryCleanupRule[],
 	service: "RADARR" | "SONARR",
 	expectedRuleId: string,
+	expectedProviderDependencies?: Set<string>,
 ): LibraryCleanupRule[] {
 	const expectedRule = rules.find((rule) => rule.id === expectedRuleId);
 	if (!expectedRule || expectedRule.retentionMode) {
@@ -2989,6 +3246,13 @@ function plexRulesCapableOfAffectingExpectedSeriesPolicy(
 	}
 	const plexDependency = new Set<DataSourceDependency>(["plex"]);
 	return rules.filter((rule) => {
+		if (
+			rule.id === expectedRuleId &&
+			expectedProviderDependencies !== undefined &&
+			!expectedProviderDependencies.has("plex")
+		) {
+			return false;
+		}
 		const canAffectExpectedWinner =
 			rule.retentionMode ||
 			rule.priority < expectedRule.priority ||
@@ -2999,6 +3263,19 @@ function plexRulesCapableOfAffectingExpectedSeriesPolicy(
 			ruleUsesUnavailableData(rule, plexDependency)
 		);
 	});
+}
+
+function providerDependenciesForMatchedEvidence(
+	rule: LibraryCleanupRule,
+	evidenceConditions: RuleEvidenceCondition[],
+): Set<string> {
+	return new Set(
+		[...providerCacheTypesForEvidence(rule, evidenceConditions)].map((cacheType) => {
+			if (cacheType === "tautulli") return "tautulli";
+			if (cacheType === "jellyfin" || cacheType === "jellyfin_episode") return "jellyfin";
+			return "plex";
+		}),
+	);
 }
 
 /**
@@ -3014,9 +3291,12 @@ export async function assertCurrentSeriesMutationAuthority(
 	arrItemId: number,
 	expectedRule: ExpectedCleanupRule,
 	snapshot?: MutationPolicySnapshot,
+	cleanupRunClaimToken?: string,
 ): Promise<AuthorizedSeriesMutationPolicy> {
 	try {
-		const policySnapshot = snapshot ?? (await createMutationPolicySnapshot(deps, userId));
+		const policySnapshot =
+			snapshot ??
+			(await createMutationPolicySnapshot(deps, userId, undefined, cleanupRunClaimToken));
 		await assertCurrentSeriesPolicySnapshotUnchanged(deps, userId, expectedRule, policySnapshot);
 
 		const arrClient = deps.arrClientFactory.create(instance);
@@ -3039,6 +3319,7 @@ export async function assertCurrentSeriesMutationAuthority(
 			policySnapshot.rules,
 			instance.service,
 			expectedRule.matchedRuleId,
+			expectedRule.providerDependencies ? new Set(expectedRule.providerDependencies) : undefined,
 		);
 		let currentPolicyCtx = policySnapshot.ctx;
 		let currentFailedSources = policySnapshot.failedSources;
@@ -3082,6 +3363,7 @@ export async function assertCurrentSeriesMutationAuthority(
 				userId,
 				activeTypes.has("plex_episode_completion"),
 				plexPolicyRules,
+				cleanupRunClaimToken,
 			);
 			if (
 				!currentPlexEvidence ||
@@ -3142,6 +3424,7 @@ export async function assertCurrentSeriesMutationAuthority(
 				policySnapshot.rules,
 				instance.service,
 				expectedRule.matchedRuleId,
+				expectedRule.providerDependencies ? new Set(expectedRule.providerDependencies) : undefined,
 			);
 			const refreshedRuleIds = new Set(refreshedPlexPolicyRules.map((rule) => rule.id));
 			if (refreshedRuleIds.size > plexPolicyRules.length) {
@@ -3168,6 +3451,28 @@ export async function assertCurrentSeriesMutationAuthority(
 		) {
 			throw new Error("The exact matched cleanup policy is no longer authoritative");
 		}
+		if (expectedRule.providerDependencies !== undefined) {
+			const currentRule = policySnapshot.rules.find(
+				(rule) => rule.id === expectedRule.matchedRuleId,
+			);
+			if (!currentRule) {
+				throw new Error("The matched cleanup rule disappeared during policy revalidation");
+			}
+			const expectedProviderDependencies = new Set(expectedRule.providerDependencies);
+			const currentProviderDependencies = providerDependenciesForMatchedEvidence(
+				currentRule,
+				policy.evidenceConditions,
+			);
+			if (
+				[...currentProviderDependencies].some(
+					(dependency) => !expectedProviderDependencies.has(dependency),
+				)
+			) {
+				throw new Error(
+					"The current cleanup match requires provider evidence that was not bound to the durable selection",
+				);
+			}
+		}
 		await assertCurrentSeriesPolicySnapshotUnchanged(deps, userId, expectedRule, policySnapshot);
 		return {
 			snapshot: policySnapshot,
@@ -3193,6 +3498,7 @@ async function assertCurrentSeriesPostStepMutationAuthority(
 	expectedRule: ExpectedCleanupRule,
 	authorizedPolicy: AuthorizedSeriesMutationPolicy,
 	transition: SeriesMutationTransition,
+	cleanupRunClaimToken?: string,
 ): Promise<void> {
 	try {
 		await assertCurrentSeriesPolicySnapshotUnchanged(
@@ -3205,6 +3511,7 @@ async function assertCurrentSeriesPostStepMutationAuthority(
 			deps,
 			userId,
 			authorizedPolicy.snapshot.configFingerprint,
+			cleanupRunClaimToken,
 		);
 		if (
 			currentSnapshot.ruleFingerprint !== authorizedPolicy.snapshot.ruleFingerprint ||
@@ -3479,6 +3786,7 @@ async function executeQueuedCleanupItems(
 		getMutationPolicySnapshot?: () => Promise<MutationPolicySnapshot>;
 		auditCorrelationId?: string;
 		deferMediaServerRescans?: boolean;
+		cleanupRunClaimToken?: string;
 	},
 ): Promise<QueuedCleanupExecutionResult> {
 	const result = await executeQueuedCleanupItemsCore(deps, userId, approvalIds, options);
@@ -3553,6 +3861,7 @@ async function executeQueuedCleanupItems(
 					deps,
 					userId,
 					result.rescanApprovalIds,
+					options.assertExecutionAllowed,
 				);
 				rescanWarnings.push(...scanResult.warnings);
 			} catch (error) {
@@ -3581,6 +3890,7 @@ async function executeQueuedCleanupItemsCore(
 		getMutationPolicySnapshot?: () => Promise<MutationPolicySnapshot>;
 		auditCorrelationId?: string;
 		deferMediaServerRescans?: boolean;
+		cleanupRunClaimToken?: string;
 	},
 ): Promise<QueuedCleanupExecutionResult> {
 	const { prisma, arrClientFactory, log } = deps;
@@ -3593,6 +3903,7 @@ async function executeQueuedCleanupItemsCore(
 			requireApproval: true,
 			maxRemovalsPerRun: true,
 			respectQuiSeeding: true,
+			rules: true,
 		},
 	});
 	if (!currentConfig) {
@@ -3627,7 +3938,12 @@ async function executeQueuedCleanupItemsCore(
 	const confirmedPartialFileDeletionIds = new Set<string>();
 	const getMutationPolicySnapshot =
 		options.getMutationPolicySnapshot ??
-		createMutationPolicySnapshotGetter(deps, userId, expectedConfigFingerprint);
+		createMutationPolicySnapshotGetter(
+			deps,
+			userId,
+			expectedConfigFingerprint,
+			options.cleanupRunClaimToken,
+		);
 	const orderedApprovalIds = [...new Set(approvalIds)].sort((left, right) =>
 		left.localeCompare(right),
 	);
@@ -3681,6 +3997,7 @@ async function executeQueuedCleanupItemsCore(
 			auditPreparedIds: [],
 			mutationAttemptedIds: [],
 			rescanApprovalIds: [],
+			providerAuthorityFailed: false,
 		};
 	}
 
@@ -3705,6 +4022,7 @@ async function executeQueuedCleanupItemsCore(
 		const recordingFailureIds: string[] = [];
 		const reconciledIds: string[] = [];
 		const sharedPlexSafetyContext = createSharedPlexSafetyContext();
+		let providerAuthorityFailed = false;
 
 		for (const approval of approvals) {
 			const claimedExecutionToken = claimedApprovalTokens.get(approval.id);
@@ -3799,7 +4117,9 @@ async function executeQueuedCleanupItemsCore(
 
 			let sharedPlexBlock: string | undefined;
 			let approvalIdentityChanged = false;
-			let approvedPlan = parseExecutableSafetyPlan(approval.safetySnapshot);
+			const approvedEnvelope = parseExecutableSafetyEnvelope(approval.safetySnapshot);
+			let approvedPlan = approvedEnvelope?.plan ?? null;
+			let approvedProviderEvidence = approvedEnvelope?.providerEvidence;
 			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
 			let recoveringEpisodeUnmonitorPartial =
 				approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE;
@@ -3814,6 +4134,47 @@ async function executeQueuedCleanupItemsCore(
 				approvalIdentityChanged = true;
 				sharedPlexBlock =
 					"Skipped for safety: the ARR target identity changed after this cleanup item was queued. Run cleanup again and review a new approval.";
+			}
+			if (
+				!sharedPlexBlock &&
+				approvedPlan?.kind === "verified_sonarr_episode" &&
+				!approvedProviderEvidence?.dependencies.some(
+					(dependency) => dependency === "plex_episode" || dependency === "plex",
+				)
+			) {
+				providerAuthorityFailed = true;
+				approvalIdentityChanged = true;
+				sharedPlexBlock =
+					"Skipped for safety: the approved episode cleanup intent did not retain its required Plex evidence.";
+			}
+			if (!sharedPlexBlock && approvedProviderEvidence) {
+				try {
+					const recordOnlyRetry =
+						approvedPlan?.kind === "verified_radarr_empty" ||
+						(approvedPlan?.kind === "verified_sonarr" &&
+							approvedPlan.files.episodeFiles.length === 0);
+					if (recordOnlyRetry) {
+						approvedProviderEvidence = await renewCurrentProviderRetryAuthority(
+							deps,
+							userId,
+							approvedProviderEvidence,
+							options.assertExecutionAllowed,
+						);
+					} else {
+						await assertCurrentProviderEvidenceAuthority(
+							deps,
+							userId,
+							approvedProviderEvidence,
+							options.assertExecutionAllowed,
+						);
+					}
+				} catch (error) {
+					if (error instanceof CleanupRunLeaseLostError) throw error;
+					providerAuthorityFailed = true;
+					approvalIdentityChanged = true;
+					sharedPlexBlock =
+						"Skipped for safety: provider execution authority changed after this cleanup item was queued. Run cleanup again and review a new approval.";
+				}
 			}
 			if (
 				approvedPlan?.kind === "verified_sonarr_episode" &&
@@ -3876,7 +4237,10 @@ async function executeQueuedCleanupItemsCore(
 						options.executeStatus,
 						claimedExecutionToken,
 						{
-							safetySnapshot: serializeExecutableSafetyPlan(reconciledPlan),
+							safetySnapshot: serializeExecutableSafetyPlan(
+								reconciledPlan,
+								approvedProviderEvidence,
+							),
 							lastExecutionError:
 								"Recovered a persisted Sonarr mutation after verifying that its target files were already removed.",
 						},
@@ -4000,7 +4364,10 @@ async function executeQueuedCleanupItemsCore(
 									options.executeStatus,
 									claimedExecutionToken,
 									{
-										safetySnapshot: serializeExecutableSafetyPlan(livePlan),
+										safetySnapshot: serializeExecutableSafetyPlan(
+											livePlan,
+											approvedProviderEvidence,
+										),
 										lastExecutionError:
 											"Recovered a persisted cleanup mutation after verifying the remaining ARR file set.",
 									},
@@ -4078,6 +4445,12 @@ async function executeQueuedCleanupItemsCore(
 				let authorizedSeriesPolicy: AuthorizedSeriesMutationPolicy | undefined;
 				const assertExecutionAuthority: MutationAuthorityCheck = async (evidence) => {
 					await options.assertExecutionAllowed?.();
+					await assertCurrentProviderEvidenceAuthority(
+						deps,
+						userId,
+						approvedProviderEvidence!,
+						options.assertExecutionAllowed,
+					);
 					if (safetyPlan!.kind === "verified_sonarr_episode") {
 						await assertCurrentEpisodeMutationAuthority(
 							deps,
@@ -4114,8 +4487,10 @@ async function executeQueuedCleanupItemsCore(
 									matchedRuleId: approval.matchedRuleId,
 									action,
 									scanMediaServerAfterDelete: approval.scanMediaServerAfterDelete === true,
+									providerDependencies: approvedProviderEvidence?.dependencies,
 								},
 								snapshot,
+								options.cleanupRunClaimToken,
 							);
 						} else {
 							await assertCurrentSeriesPostStepMutationAuthority(
@@ -4127,9 +4502,11 @@ async function executeQueuedCleanupItemsCore(
 									matchedRuleId: approval.matchedRuleId,
 									action,
 									scanMediaServerAfterDelete: approval.scanMediaServerAfterDelete === true,
+									providerDependencies: approvedProviderEvidence?.dependencies,
 								},
 								authorizedSeriesPolicy,
 								evidence.seriesTransition,
+								options.cleanupRunClaimToken,
 							);
 						}
 					}
@@ -4454,6 +4831,9 @@ async function executeQueuedCleanupItemsCore(
 					}
 					continue;
 				}
+				if (isProviderExecutionAuthorityFailure(error)) {
+					providerAuthorityFailed = true;
+				}
 				const preserveEpisodeUnmonitorPartial =
 					recoveringEpisodeUnmonitorPartial &&
 					error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError;
@@ -4470,13 +4850,15 @@ async function executeQueuedCleanupItemsCore(
 						? error.message
 						: "Cleanup item could not be executed. Review the API logs for details.";
 				const mutationAuthorityChanged =
-					error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError &&
-					!preserveEpisodeUnmonitorPartial;
+					(error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError ||
+						isProviderExecutionAuthorityFailure(error)) &&
+					!preserveEpisodeUnmonitorPartial &&
+					!(error instanceof ArrDeletePartialError);
 				errors.push(executionError);
 				failed++;
 				const postPartialRetrySnapshot =
 					error instanceof ArrDeletePartialError
-						? buildPostPartialRetrySnapshot(safetyPlan, error, action)
+						? buildPostPartialRetrySnapshot(safetyPlan, error, action, approvedProviderEvidence)
 						: undefined;
 				if (error instanceof ArrDeletePartialError && error.deletedFileIds.length > 0) {
 					confirmedPartialFileDeletionIds.add(approval.id);
@@ -4571,6 +4953,7 @@ async function executeQueuedCleanupItemsCore(
 			auditPreparedIds: [...auditPreparedApprovalIds],
 			mutationAttemptedIds: [...mutationAttemptedApprovalIds],
 			rescanApprovalIds: [...rescanApprovalIds],
+			providerAuthorityFailed,
 		};
 	} finally {
 		for (const [approvalId, executionToken] of claimedApprovalTokens) {
@@ -4645,6 +5028,71 @@ function collectActiveRuleTypes(
 		}
 	}
 	return types;
+}
+
+export function providerCacheTypesForEvidence(
+	rule: LibraryCleanupRule,
+	evidenceConditions: RuleEvidenceCondition[],
+): Set<ProviderCacheType> {
+	const cacheTypes = new Set<ProviderCacheType>();
+	if (isSupportedEpisodeCleanupRule(rule)) {
+		cacheTypes.add("plex_episode");
+		return cacheTypes;
+	}
+
+	for (const condition of evidenceConditions) {
+		if (condition.ruleType === "user_retention") {
+			const source = condition.parameters.source;
+			if (source === "tautulli" || source === "either") cacheTypes.add("tautulli");
+			if (source === "plex" || source === "either" || source === undefined) {
+				cacheTypes.add("plex");
+			}
+			continue;
+		}
+		if (
+			condition.ruleType === "seerr_requester_watched" ||
+			condition.ruleType === "seerr_requester_not_watched"
+		) {
+			cacheTypes.add("plex");
+			continue;
+		}
+		if (condition.ruleType === "recently_active" && condition.parameters.requireActivity !== true) {
+			continue;
+		}
+
+		const dependency = ruleDataSourceMap[condition.ruleType];
+		if (dependency === "plex") {
+			cacheTypes.add(condition.ruleType === "plex_episode_completion" ? "plex_episode" : "plex");
+		} else if (dependency === "jellyfin") {
+			cacheTypes.add(
+				condition.ruleType === "jellyfin_episode_completion" ? "jellyfin_episode" : "jellyfin",
+			);
+		} else if (dependency === "tautulli") {
+			cacheTypes.add("tautulli");
+		}
+	}
+	return cacheTypes;
+}
+
+function buildMatchedProviderAuthority(
+	rule: LibraryCleanupRule,
+	evidenceConditions: RuleEvidenceCondition[],
+	snapshotsByCacheType: Map<ProviderCacheType, ProviderCacheSnapshot<unknown>>,
+): MatchedRuleProviderAuthority {
+	const requiredCacheTypes = providerCacheTypesForEvidence(rule, evidenceConditions);
+	const matchedSnapshots = [...requiredCacheTypes]
+		.map((cacheType) => snapshotsByCacheType.get(cacheType))
+		.filter((snapshot): snapshot is ProviderCacheSnapshot<unknown> => snapshot !== undefined);
+	return {
+		evidence: createSanitizedProviderEvidence(
+			matchedSnapshots.flatMap((snapshot) => snapshot.evidence.dependencies),
+			matchedSnapshots.flatMap((snapshot) =>
+				snapshot.evidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+			),
+		),
+		authorities: matchedSnapshots.map((snapshot) => snapshot.authority),
+		complete: matchedSnapshots.length === requiredCacheTypes.size,
+	};
 }
 
 /**
@@ -5016,25 +5464,27 @@ function jellyfinSnapshotToWatchMap(rows: JellyfinCacheSnapshotRow[]): JellyfinW
  * Prefetch Tautulli watch data from the TautulliCache table and build a lookup map.
  * Returns undefined if no Tautulli instance is configured.
  */
-async function prefetchTautulliData(
+async function loadTautulliDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<TautulliWatchMap | undefined> {
+): Promise<ProviderCacheSnapshot<TautulliWatchMap> | undefined> {
 	const { prisma, log } = deps;
 
-	const tautulliInstances = await prisma.serviceInstance.findMany({
-		where: { userId, service: "TAUTULLI", enabled: true },
-		orderBy: { id: "asc" },
-		select: { id: true, updatedAt: true },
-	});
+	const tautulliInstances = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
 
-	if (tautulliInstances.length === 0) return undefined;
+	// A Tautulli cache is an aggregate over a single PMS watch-history source.
+	// Combining multiple enabled sources would turn an ambiguous provider choice
+	// into a synthetic watch count, so it cannot authorize cleanup.
+	if (tautulliInstances.length !== 1) return undefined;
 
 	try {
-		if (!(await loadCompleteCacheGenerations(deps, tautulliInstances, "tautulli"))) {
+		const generations = await loadCompleteCacheGenerations(deps, tautulliInstances, "tautulli");
+		if (!generations) {
 			throw new Error("Tautulli cache did not have a complete fresh generation for every instance");
 		}
 		const map: TautulliWatchMap = new Map();
+		const rowCounts = new Map<string, number>();
+		const rowsByInstance = new Map<string, unknown[]>();
 		let cursor: string | undefined;
 		let totalRows = 0;
 
@@ -5042,14 +5492,7 @@ async function prefetchTautulliData(
 		while (true) {
 			const batch = await prisma.tautulliCache.findMany({
 				where: { instanceId: { in: tautulliInstances.map((instance) => instance.id) } },
-				select: {
-					id: true,
-					tmdbId: true,
-					mediaType: true,
-					lastWatchedAt: true,
-					watchCount: true,
-					watchedByUsers: true,
-				},
+				select: PROVIDER_CACHE_ROW_SELECTS.tautulli,
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 				orderBy: { id: "asc" },
@@ -5060,6 +5503,18 @@ async function prefetchTautulliData(
 
 			for (const row of batch) {
 				try {
+					const generation = generations.get(row.instanceId);
+					if (
+						!generation ||
+						row.connectionGeneration !== generation.connectionGeneration ||
+						row.identityGeneration !== generation.identityGeneration
+					) {
+						throw new Error("Tautulli cache row provenance was unavailable");
+					}
+					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
+					const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
+					sourceRows.push(row);
+					rowsByInstance.set(row.instanceId, sourceRows);
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
 					const existing = map.get(key);
@@ -5092,12 +5547,28 @@ async function prefetchTautulliData(
 			cursor = batch[batch.length - 1]!.id;
 			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 		}
+		if (
+			(rowCounts.get(tautulliInstances[0]!.id) ?? 0) !==
+			generations.get(tautulliInstances[0]!.id)!.itemCount
+		) {
+			throw new Error("Tautulli cache row count did not match its published generation");
+		}
 
+		const snapshot = createProviderCacheSnapshot(
+			map,
+			"tautulli",
+			tautulliInstances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false))) {
+			throw new Error("Tautulli cache generation changed while rows were read");
+		}
 		log.info(
 			{ totalRows, totalEntries: map.size },
 			"Tautulli watch data prefetch complete for cleanup",
 		);
-		return map;
+		return snapshot;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5107,6 +5578,13 @@ async function prefetchTautulliData(
 	}
 }
 
+async function prefetchTautulliData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<TautulliWatchMap | undefined> {
+	return (await loadTautulliDataSnapshot(deps, userId))?.value;
+}
+
 /**
  * Prefetch Plex watch data from the PlexCache table and build a lookup map.
  * Now section-aware: each row carries sectionId/sectionTitle, and PlexWatchInfo
@@ -5114,26 +5592,25 @@ async function prefetchTautulliData(
  * Also includes collections and labels from the PlexCache table.
  * Returns undefined if no Plex instance is configured.
  */
-export async function prefetchPlexData(
+async function loadPlexDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<PlexWatchMap | undefined> {
+): Promise<ProviderCacheSnapshot<PlexWatchMap> | undefined> {
 	const { prisma, log } = deps;
 
-	const plexInstances = await prisma.serviceInstance.findMany({
-		where: { userId, service: "PLEX", enabled: true },
-		orderBy: { id: "asc" },
-		select: { id: true, updatedAt: true },
-	});
+	const plexInstances = await loadProviderInstances(deps, userId, ["PLEX"]);
 
 	if (plexInstances.length === 0) return undefined;
 
 	try {
-		if (!(await loadCompleteCacheGenerations(deps, plexInstances, "plex"))) {
+		const generations = await loadCompleteCacheGenerations(deps, plexInstances, "plex");
+		if (!generations) {
 			throw new Error("Plex cache did not have a complete fresh generation for every instance");
 		}
 		const map: PlexWatchMap = new Map();
 		const instanceIds = plexInstances.map((i) => i.id);
+		const rowCounts = new Map<string, number>();
+		const rowsByInstance = new Map<string, unknown[]>();
 		let cursor: string | undefined;
 		let totalRows = 0;
 
@@ -5142,21 +5619,7 @@ export async function prefetchPlexData(
 		while (true) {
 			const batch = await prisma.plexCache.findMany({
 				where: { instanceId: { in: instanceIds } },
-				select: {
-					id: true,
-					tmdbId: true,
-					mediaType: true,
-					sectionId: true,
-					sectionTitle: true,
-					lastWatchedAt: true,
-					watchCount: true,
-					watchedByUsers: true,
-					onDeck: true,
-					userRating: true,
-					collections: true,
-					labels: true,
-					addedAt: true,
-				},
+				select: PROVIDER_CACHE_ROW_SELECTS.plex,
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 				orderBy: { id: "asc" },
@@ -5167,6 +5630,18 @@ export async function prefetchPlexData(
 
 			for (const row of batch) {
 				try {
+					const generation = generations.get(row.instanceId);
+					if (
+						!generation ||
+						row.connectionGeneration !== generation.connectionGeneration ||
+						row.identityGeneration !== generation.identityGeneration
+					) {
+						throw new Error("Plex cache row provenance was unavailable");
+					}
+					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
+					const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
+					sourceRows.push(row);
+					rowsByInstance.set(row.instanceId, sourceRows);
 					// Key is mediaType:tmdbId (aggregating across sections)
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
@@ -5241,12 +5716,29 @@ export async function prefetchPlexData(
 			cursor = batch[batch.length - 1]!.id;
 			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 		}
+		if (
+			plexInstances.some(
+				(instance) => (rowCounts.get(instance.id) ?? 0) !== generations.get(instance.id)!.itemCount,
+			)
+		) {
+			throw new Error("Plex cache row count did not match its published generation");
+		}
 
+		const snapshot = createProviderCacheSnapshot(
+			map,
+			"plex",
+			plexInstances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false))) {
+			throw new Error("Plex cache generation changed while rows were read");
+		}
 		log.info(
 			{ totalRows, totalEntries: map.size },
 			"Plex watch data prefetch complete for cleanup",
 		);
-		return map;
+		return snapshot;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5256,30 +5748,36 @@ export async function prefetchPlexData(
 	}
 }
 
+export async function prefetchPlexData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<PlexWatchMap | undefined> {
+	return (await loadPlexDataSnapshot(deps, userId))?.value;
+}
+
 /**
  * Prefetch Jellyfin watch data from JellyfinCache.
  * Mirrors prefetchPlexData but simpler — no sections/labels.
  */
-async function prefetchJellyfinData(
+async function loadJellyfinDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<JellyfinWatchMap | undefined> {
+): Promise<ProviderCacheSnapshot<JellyfinWatchMap> | undefined> {
 	const { prisma, log } = deps;
 
-	const jellyfinInstances = await prisma.serviceInstance.findMany({
-		where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-		orderBy: { id: "asc" },
-		select: { id: true, updatedAt: true },
-	});
+	const jellyfinInstances = await loadProviderInstances(deps, userId, ["JELLYFIN", "EMBY"]);
 
 	if (jellyfinInstances.length === 0) return undefined;
 
 	try {
-		if (!(await loadCompleteCacheGenerations(deps, jellyfinInstances, "jellyfin"))) {
+		const generations = await loadCompleteCacheGenerations(deps, jellyfinInstances, "jellyfin");
+		if (!generations) {
 			throw new Error("Jellyfin cache did not have a complete fresh generation for every instance");
 		}
 		const map: JellyfinWatchMap = new Map();
 		const instanceIds = jellyfinInstances.map((i) => i.id);
+		const rowCounts = new Map<string, number>();
+		const rowsByInstance = new Map<string, unknown[]>();
 		let cursor: string | undefined;
 		let totalRows = 0;
 
@@ -5287,17 +5785,7 @@ async function prefetchJellyfinData(
 		while (true) {
 			const batch = await prisma.jellyfinCache.findMany({
 				where: { instanceId: { in: instanceIds } },
-				select: {
-					id: true,
-					tmdbId: true,
-					mediaType: true,
-					lastWatchedAt: true,
-					watchCount: true,
-					watchedByUsers: true,
-					onDeck: true,
-					userRating: true,
-					addedAt: true,
-				},
+				select: PROVIDER_CACHE_ROW_SELECTS.jellyfin,
 				take: CACHE_QUERY_BATCH_SIZE,
 				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 				orderBy: { id: "asc" },
@@ -5308,6 +5796,18 @@ async function prefetchJellyfinData(
 
 			for (const row of batch) {
 				try {
+					const generation = generations.get(row.instanceId);
+					if (
+						!generation ||
+						row.connectionGeneration !== generation.connectionGeneration ||
+						row.identityGeneration !== generation.identityGeneration
+					) {
+						throw new Error("Jellyfin cache row provenance was unavailable");
+					}
+					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
+					const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
+					sourceRows.push(row);
+					rowsByInstance.set(row.instanceId, sourceRows);
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
 
@@ -5356,12 +5856,29 @@ async function prefetchJellyfinData(
 			cursor = batch[batch.length - 1]!.id;
 			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 		}
+		if (
+			jellyfinInstances.some(
+				(instance) => (rowCounts.get(instance.id) ?? 0) !== generations.get(instance.id)!.itemCount,
+			)
+		) {
+			throw new Error("Jellyfin cache row count did not match its published generation");
+		}
 
+		const snapshot = createProviderCacheSnapshot(
+			map,
+			"jellyfin",
+			jellyfinInstances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false))) {
+			throw new Error("Jellyfin cache generation changed while rows were read");
+		}
 		log.info(
 			{ totalRows, totalEntries: map.size },
 			"Jellyfin watch data prefetch complete for cleanup",
 		);
-		return map;
+		return snapshot;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5371,32 +5888,50 @@ async function prefetchJellyfinData(
 	}
 }
 
+async function prefetchJellyfinData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<JellyfinWatchMap | undefined> {
+	return (await loadJellyfinDataSnapshot(deps, userId))?.value;
+}
+
 /**
  * Prefetch Jellyfin episode completion data.
  * Mirrors Plex pattern using JellyfinEpisodeCache with GROUP BY.
  */
-async function prefetchJellyfinEpisodeData(
+async function loadJellyfinEpisodeDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<PlexEpisodeMap | undefined> {
+): Promise<ProviderCacheSnapshot<PlexEpisodeMap> | undefined> {
 	const { prisma, log } = deps;
 
 	try {
-		const instances = await prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			orderBy: { id: "asc" },
-			select: { id: true, updatedAt: true },
-		});
+		const instances = await loadProviderInstances(deps, userId, ["JELLYFIN", "EMBY"]);
 		const instanceIds = instances.map((i) => i.id);
 		if (instanceIds.length === 0) return undefined;
 		const generations = await loadCompleteCacheGenerations(deps, instances, "jellyfin_episode");
 		if (!generations) return undefined;
-		const generationCounts = await prisma.jellyfinEpisodeCache.groupBy({
-			by: ["instanceId"],
+		const generationRows = await prisma.jellyfinEpisodeCache.findMany({
 			where: { instanceId: { in: instanceIds } },
-			_count: { id: true },
+			select: PROVIDER_CACHE_ROW_SELECTS.jellyfin_episode,
+			orderBy: { id: "asc" },
 		});
-		const countByInstance = new Map(generationCounts.map((row) => [row.instanceId, row._count.id]));
+		const countByInstance = new Map<string, number>();
+		const rowsByInstance = new Map<string, unknown[]>();
+		for (const row of generationRows) {
+			const generation = generations.get(row.instanceId);
+			if (
+				!generation ||
+				row.connectionGeneration !== generation.connectionGeneration ||
+				row.identityGeneration !== generation.identityGeneration
+			) {
+				return undefined;
+			}
+			countByInstance.set(row.instanceId, (countByInstance.get(row.instanceId) ?? 0) + 1);
+			const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
+			sourceRows.push(row);
+			rowsByInstance.set(row.instanceId, sourceRows);
+		}
 		if (
 			instances.some(
 				(instance) =>
@@ -5406,60 +5941,29 @@ async function prefetchJellyfinEpisodeData(
 			return undefined;
 		}
 
-		const totalCounts = await prisma.jellyfinEpisodeCache.groupBy({
-			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds } },
-			_count: { id: true },
-		});
-
-		const watchedCounts = await prisma.jellyfinEpisodeCache.groupBy({
-			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds }, watched: true },
-			_count: { id: true },
-		});
-
-		const seasonTotals = await prisma.jellyfinEpisodeCache.groupBy({
-			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds } },
-			_count: { id: true },
-		});
-
-		const seasonWatched = await prisma.jellyfinEpisodeCache.groupBy({
-			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds }, watched: true },
-			_count: { id: true },
-		});
-
-		const seasonWatchedMap = new Map(
-			seasonWatched.map((g) => [`${g.showTmdbId}:${g.seasonNumber}`, g._count.id]),
-		);
-
-		const showSeasonsMap = new Map<number, Map<number, { total: number; watched: number }>>();
-		for (const g of seasonTotals) {
-			let seasons = showSeasonsMap.get(g.showTmdbId);
-			if (!seasons) {
-				seasons = new Map();
-				showSeasonsMap.set(g.showTmdbId, seasons);
-			}
-			seasons.set(g.seasonNumber, {
-				total: g._count.id,
-				watched: seasonWatchedMap.get(`${g.showTmdbId}:${g.seasonNumber}`) ?? 0,
-			});
-		}
-
-		const watchedMap = new Map(watchedCounts.map((g) => [g.showTmdbId, g._count.id]));
 		const map: PlexEpisodeMap = new Map();
-
-		for (const group of totalCounts) {
-			map.set(group.showTmdbId, {
-				total: group._count.id,
-				watched: watchedMap.get(group.showTmdbId) ?? 0,
-				seasons: showSeasonsMap.get(group.showTmdbId) ?? new Map(),
-			});
+		for (const row of generationRows) {
+			const show = map.get(row.showTmdbId) ?? { total: 0, watched: 0, seasons: new Map() };
+			show.total++;
+			if (row.watched) show.watched++;
+			const season = show.seasons.get(row.seasonNumber) ?? { total: 0, watched: 0 };
+			season.total++;
+			if (row.watched) season.watched++;
+			show.seasons.set(row.seasonNumber, season);
+			map.set(row.showTmdbId, show);
 		}
 
+		const snapshot = createProviderCacheSnapshot(
+			map,
+			"jellyfin_episode",
+			instances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false)))
+			return undefined;
 		log.info({ totalShows: map.size }, "Jellyfin episode data prefetch complete for cleanup");
-		return map;
+		return snapshot;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5469,55 +5973,54 @@ async function prefetchJellyfinEpisodeData(
 	}
 }
 
+async function prefetchJellyfinEpisodeData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<PlexEpisodeMap | undefined> {
+	return (await loadJellyfinEpisodeDataSnapshot(deps, userId))?.value;
+}
+
 /**
  * Prefetch Plex episode completion data for series.
  * Uses SQL GROUP BY on PlexEpisodeCache to avoid loading all episodes into memory.
  * Returns a Map of showTmdbId → { total, watched }.
  */
-async function prefetchPlexEpisodeData(
+async function loadPlexEpisodeDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<PlexEpisodeMap | undefined> {
+): Promise<ProviderCacheSnapshot<PlexEpisodeMap> | undefined> {
 	const { prisma, log } = deps;
 
 	try {
-		const instances = await prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			orderBy: { id: "asc" },
-			select: {
-				id: true,
-				updatedAt: true,
-				baseUrl: true,
-				encryptedApiKey: true,
-				encryptionIv: true,
-				encryptedHttpAuthCredentials: true,
-				httpAuthEncryptionIv: true,
-				service: true,
-				label: true,
-				enabled: true,
-			},
-		});
+		const instances = await loadProviderInstances(deps, userId, ["PLEX"]);
 		const instanceIds = instances.map((i) => i.id);
 		if (instanceIds.length === 0) return undefined;
 		const generations = await loadCompleteCacheGenerations(deps, instances, "plex_episode");
 		if (!generations) return undefined;
 		const generationRows = await prisma.plexEpisodeCache.findMany({
 			where: { instanceId: { in: instanceIds } },
-			select: { instanceId: true, refreshedAt: true, sourceFingerprint: true },
+			select: PROVIDER_CACHE_ROW_SELECTS.plex_episode,
+			orderBy: { id: "asc" },
 		});
 		const rowCounts = new Map<string, number>();
+		const rowsByInstance = new Map<string, unknown[]>();
 		for (const row of generationRows) {
 			const generation = generations.get(row.instanceId);
 			const instance = instances.find((candidate) => candidate.id === row.instanceId);
 			if (
 				!generation ||
 				!instance ||
+				row.connectionGeneration !== generation.connectionGeneration ||
+				row.identityGeneration !== generation.identityGeneration ||
 				row.refreshedAt?.getTime() !== generation.completedAt.getTime() ||
 				row.sourceFingerprint !== plexConnectionFingerprint(instance as ServiceInstance)
 			) {
 				return undefined;
 			}
 			rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
+			const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
+			sourceRows.push(row);
+			rowsByInstance.set(row.instanceId, sourceRows);
 		}
 		if (
 			instances.some(
@@ -5527,64 +6030,29 @@ async function prefetchPlexEpisodeData(
 			return undefined;
 		}
 
-		// Three groupBy queries: show-level totals, show-level watched, and per-season counts
-		const totalCounts = await prisma.plexEpisodeCache.groupBy({
-			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds } },
-			_count: { id: true },
-		});
-
-		const watchedCounts = await prisma.plexEpisodeCache.groupBy({
-			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds }, watched: true },
-			_count: { id: true },
-		});
-
-		// Per-season counts for minSeason filtering
-		const seasonTotals = await prisma.plexEpisodeCache.groupBy({
-			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds } },
-			_count: { id: true },
-		});
-
-		const seasonWatched = await prisma.plexEpisodeCache.groupBy({
-			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds }, watched: true },
-			_count: { id: true },
-		});
-
-		// Build per-season watched lookup: "showTmdbId:seasonNumber" → count
-		const seasonWatchedMap = new Map(
-			seasonWatched.map((g) => [`${g.showTmdbId}:${g.seasonNumber}`, g._count.id]),
-		);
-
-		// Build per-show season maps
-		const showSeasonsMap = new Map<number, Map<number, { total: number; watched: number }>>();
-		for (const g of seasonTotals) {
-			let seasons = showSeasonsMap.get(g.showTmdbId);
-			if (!seasons) {
-				seasons = new Map();
-				showSeasonsMap.set(g.showTmdbId, seasons);
-			}
-			seasons.set(g.seasonNumber, {
-				total: g._count.id,
-				watched: seasonWatchedMap.get(`${g.showTmdbId}:${g.seasonNumber}`) ?? 0,
-			});
-		}
-
-		const watchedMap = new Map(watchedCounts.map((g) => [g.showTmdbId, g._count.id]));
 		const map: PlexEpisodeMap = new Map();
-
-		for (const group of totalCounts) {
-			map.set(group.showTmdbId, {
-				total: group._count.id,
-				watched: watchedMap.get(group.showTmdbId) ?? 0,
-				seasons: showSeasonsMap.get(group.showTmdbId) ?? new Map(),
-			});
+		for (const row of generationRows) {
+			const show = map.get(row.showTmdbId) ?? { total: 0, watched: 0, seasons: new Map() };
+			show.total++;
+			if (row.watched) show.watched++;
+			const season = show.seasons.get(row.seasonNumber) ?? { total: 0, watched: 0 };
+			season.total++;
+			if (row.watched) season.watched++;
+			show.seasons.set(row.seasonNumber, season);
+			map.set(row.showTmdbId, show);
 		}
 
+		const snapshot = createProviderCacheSnapshot(
+			map,
+			"plex_episode",
+			instances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false)))
+			return undefined;
 		log.info({ totalShows: map.size }, "Plex episode data prefetch complete for cleanup");
-		return map;
+		return snapshot;
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -5592,6 +6060,13 @@ async function prefetchPlexEpisodeData(
 		);
 		return undefined;
 	}
+}
+
+async function prefetchPlexEpisodeData(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<PlexEpisodeMap | undefined> {
+	return (await loadPlexEpisodeDataSnapshot(deps, userId))?.value;
 }
 
 /**
@@ -5611,6 +6086,9 @@ async function evaluateAllItems(
 	totalEvaluated: number;
 	prefetchHealth: PrefetchResults;
 	warnings: string[];
+	providerEvidence: SanitizedProviderEvidence;
+	providerAuthorities: Array<ProviderCacheSnapshot<unknown>["authority"]>;
+	providerAuthoritiesByTarget: Map<string, MatchedRuleProviderAuthority>;
 }> {
 	const { prisma, log } = deps;
 	const now = new Date();
@@ -5669,10 +6147,10 @@ async function evaluateAllItems(
 		"user_retention", // Can use tautulli as source
 	];
 	const hasTautulliRules = TAUTULLI_RULE_TYPES.some((t) => activeTypes.has(t));
-	const tautulliResult = hasTautulliRules
-		? await collectLiveTautulliPolicyEvidence(deps, config.userId)
+	const tautulliSnapshot = hasTautulliRules
+		? await loadTautulliDataSnapshot(deps, config.userId)
 		: undefined;
-	const tautulliMap = hasTautulliRules ? tautulliResult : undefined;
+	const tautulliMap = tautulliSnapshot?.value;
 
 	// Prefetch Plex watch data if any Plex rule types are active
 	const PLEX_RULE_TYPES = [
@@ -5693,11 +6171,29 @@ async function evaluateAllItems(
 	];
 	const hasPlexRules = PLEX_RULE_TYPES.some((t) => activeTypes.has(t));
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(seriesRules).size > 0;
-	const publishedPlexEvidence =
+	let plexSnapshot =
 		hasPlexRules || needsPlexSectionInventory
-			? await collectLivePlexPolicyEvidence(deps, config.userId, seriesRules)
+			? await loadPlexDataSnapshot(deps, config.userId)
 			: undefined;
-	const plexMap = hasPlexRules ? publishedPlexEvidence?.plexMap : undefined;
+	let publishedPlexEvidence = needsPlexSectionInventory
+		? await loadPublishedPlexPolicyEvidence(deps, config.userId, seriesRules)
+		: undefined;
+	if (
+		plexSnapshot &&
+		publishedPlexEvidence &&
+		!(await revalidateProviderCacheAuthority(deps, plexSnapshot.authority, false))
+	) {
+		plexSnapshot = undefined;
+		publishedPlexEvidence = undefined;
+	}
+	const plexMap = plexSnapshot?.value;
+	const plexSectionTitles =
+		publishedPlexEvidence?.plexSectionTitles ??
+		new Set(
+			[...(plexMap?.values() ?? [])].flatMap((entry) =>
+				entry.sections.map((section) => section.sectionTitle),
+			),
+		);
 
 	// Prefetch Jellyfin watch data if any Jellyfin rule types are active
 	const JELLYFIN_RULE_TYPES = [
@@ -5709,21 +6205,24 @@ async function evaluateAllItems(
 		"jellyfin_added_at",
 	];
 	const hasJellyfinRules = JELLYFIN_RULE_TYPES.some((t) => activeTypes.has(t));
-	const jellyfinResult = hasJellyfinRules
-		? await collectLiveJellyfinPolicyEvidence(deps, config.userId)
+	const jellyfinSnapshot = hasJellyfinRules
+		? await loadJellyfinDataSnapshot(deps, config.userId)
 		: undefined;
-	const jellyfinMap = hasJellyfinRules ? jellyfinResult : undefined;
+	const jellyfinMap = jellyfinSnapshot?.value;
 
 	// Prefetch Plex episode data if episode completion rule is active
 	const hasEpisodeCompletionRules = activeTypes.has("plex_episode_completion");
-	const plexEpisodeMap = hasEpisodeCompletionRules
-		? await prefetchPlexEpisodeData(deps, config.userId)
+	const needsPlexEpisodeEvidence = hasEpisodeCompletionRules || episodeRules.length > 0;
+	const plexEpisodeSnapshot = needsPlexEpisodeEvidence
+		? await loadPlexEpisodeDataSnapshot(deps, config.userId)
 		: undefined;
+	const plexEpisodeMap = plexEpisodeSnapshot?.value;
 
 	const hasJellyfinEpisodeRules = activeTypes.has("jellyfin_episode_completion");
-	const jellyfinEpisodeMap = hasJellyfinEpisodeRules
-		? await prefetchJellyfinEpisodeData(deps, config.userId)
+	const jellyfinEpisodeSnapshot = hasJellyfinEpisodeRules
+		? await loadJellyfinEpisodeDataSnapshot(deps, config.userId)
 		: undefined;
+	const jellyfinEpisodeMap = jellyfinEpisodeSnapshot?.value;
 	const needsTmdb = activeTypes.has("tmdb_list_member");
 	const needsTrakt = activeTypes.has("trakt_list_member");
 	const listEvidence =
@@ -5736,9 +6235,9 @@ async function evaluateAllItems(
 		seerr: hasSeerrRules ? (seerrMap ? "ok" : "failed") : "skipped",
 		tautulli: hasTautulliRules ? (tautulliMap ? "ok" : "failed") : "skipped",
 		plex:
-			hasPlexRules || hasEpisodeCompletionRules || needsPlexSectionInventory
-				? (!hasPlexRules || publishedPlexEvidence) &&
-					(!hasEpisodeCompletionRules || plexEpisodeMap) &&
+			hasPlexRules || needsPlexEpisodeEvidence || needsPlexSectionInventory
+				? (!hasPlexRules || plexSnapshot) &&
+					(!needsPlexEpisodeEvidence || plexEpisodeSnapshot) &&
 					(!needsPlexSectionInventory || publishedPlexEvidence)
 					? "ok"
 					: "failed"
@@ -5752,6 +6251,25 @@ async function evaluateAllItems(
 		tmdb: needsTmdb ? (listEvidence.tmdbListMemberships ? "ok" : "failed") : "skipped",
 		trakt: needsTrakt ? (listEvidence.traktListMemberships ? "ok" : "failed") : "skipped",
 	};
+
+	const contributingSnapshots = [
+		tautulliSnapshot,
+		plexSnapshot,
+		plexEpisodeSnapshot,
+		jellyfinSnapshot,
+		jellyfinEpisodeSnapshot,
+	].filter((snapshot) => snapshot !== undefined) as ProviderCacheSnapshot<unknown>[];
+	const providerEvidence = createSanitizedProviderEvidence(
+		contributingSnapshots.flatMap((snapshot) => snapshot.evidence.dependencies),
+		contributingSnapshots.flatMap((snapshot) =>
+			snapshot.evidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		),
+	);
+	const snapshotsByCacheType = new Map(
+		contributingSnapshots.map((snapshot) => [snapshot.authority.cacheType, snapshot]),
+	);
+	const rulesById = new Map(rules.map((rule) => [rule.id, rule]));
+	const providerAuthoritiesByTarget = new Map<string, MatchedRuleProviderAuthority>();
 
 	// Check for failed prefetches that have dependent rules — generate warnings
 	const failedSources = new Set<DataSourceDependency>();
@@ -5770,14 +6288,13 @@ async function evaluateAllItems(
 			"Cleanup run has failed prefetches with dependent rules",
 		);
 	}
-
 	// Build evaluation context
 	const ctx: EvalContext = {
 		now,
 		seerrMap,
 		tautulliMap,
 		plexMap,
-		plexSectionTitles: publishedPlexEvidence?.plexSectionTitles,
+		plexSectionTitles,
 		plexEpisodeMap,
 		jellyfinMap,
 		jellyfinEpisodeMap,
@@ -5846,17 +6363,30 @@ async function evaluateAllItems(
 			const instanceService = instanceServiceMap.get(item.instanceId);
 			if (!instanceService) continue; // Skip orphaned cache items with no matching instance
 
-			const match =
+			const policy =
 				useCachedQuiSeedingGate && isQuiSeedingState(item.torrentState)
-					? null
-					: evaluateItemAgainstRules(item, seriesRules, instanceService, ctx, failedSources);
-			if (match) {
-				flagged.push({
+					? { kind: "no_match" as const }
+					: evaluateItemPolicyState(item, seriesRules, instanceService, ctx, failedSources);
+			const match = policy.kind === "cleanup" ? policy.match : null;
+			if (policy.kind === "cleanup") {
+				const flaggedItem: FlaggedItem = {
 					cacheItem: item,
-					match,
+					match: policy.match,
 					rating: extractRating(item),
 					respectQuiSeeding,
-				});
+				};
+				flagged.push(flaggedItem);
+				const matchedRule = rulesById.get(policy.match.ruleId);
+				if (matchedRule) {
+					providerAuthoritiesByTarget.set(
+						cleanupDeleteTargetKey(flaggedDeleteTarget(flaggedItem)),
+						buildMatchedProviderAuthority(
+							matchedRule,
+							policy.evidenceConditions,
+							snapshotsByCacheType,
+						),
+					);
+				}
 			}
 			if (
 				instanceService === "SONARR" &&
@@ -5879,6 +6409,14 @@ async function evaluateAllItems(
 				);
 				totalEvaluated += episodeMatches.evaluated;
 				flagged.push(...episodeMatches.flagged);
+				for (const episodeItem of episodeMatches.flagged) {
+					const matchedRule = rulesById.get(episodeItem.match.ruleId);
+					if (!matchedRule) continue;
+					providerAuthoritiesByTarget.set(
+						cleanupDeleteTargetKey(flaggedDeleteTarget(episodeItem)),
+						buildMatchedProviderAuthority(matchedRule, [], snapshotsByCacheType),
+					);
+				}
 			}
 		}
 
@@ -5886,7 +6424,15 @@ async function evaluateAllItems(
 		if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
 	}
 
-	return { flagged, totalEvaluated, prefetchHealth, warnings };
+	return {
+		flagged,
+		totalEvaluated,
+		prefetchHealth,
+		warnings,
+		providerEvidence: providerEvidence,
+		providerAuthorities: contributingSnapshots.map((snapshot) => snapshot.authority),
+		providerAuthoritiesByTarget,
+	};
 }
 
 const PLEX_EPISODE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
@@ -5915,6 +6461,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 	warnings: string[],
 	options: {
 		includeUnwatched?: boolean;
+		evidenceSink?: (evidence: SanitizedProviderEvidence) => void;
 		coordinate?: {
 			showTmdbId: number;
 			seasonNumber: number;
@@ -5992,13 +6539,19 @@ export async function prefetchFreshPlexEpisodeWatchData(
 				ratingKey: true,
 				refreshedAt: true,
 				sourceFingerprint: true,
+				connectionGeneration: true,
+				identityGeneration: true,
 			},
 		});
 		const result = new Map<string, EpisodePlexWatchEvidence[]>();
+		const rowsByInstance = new Map<string, unknown[]>(
+			plexInstances.map((instance) => [instance.id, []]),
+		);
 		let staleEvidenceCount = 0;
 		let incompleteEvidenceCount = 0;
 		const freshnessThreshold = now.getTime() - PLEX_EPISODE_FRESHNESS_MS;
 		for (const row of rows) {
+			rowsByInstance.get(row.instanceId)?.push(row);
 			if (
 				row.watchCount === null ||
 				row.refreshedAt === null ||
@@ -6016,6 +6569,8 @@ export async function prefetchFreshPlexEpisodeWatchData(
 				!Number.isFinite(sourceUpdatedAt) ||
 				!sourceFingerprint ||
 				!generation ||
+				row.connectionGeneration !== generation.connectionGeneration ||
+				row.identityGeneration !== generation.identityGeneration ||
 				row.sourceFingerprint !== sourceFingerprint ||
 				row.refreshedAt.getTime() !== generation.completedAt.getTime() ||
 				row.refreshedAt.getTime() < freshnessThreshold ||
@@ -6062,6 +6617,20 @@ export async function prefetchFreshPlexEpisodeWatchData(
 				"No fresh, complete Plex episode watch evidence was available; episode-scoped cleanup targets were skipped.",
 			);
 		}
+		const snapshot = createProviderCacheSnapshot(
+			result,
+			"plex_episode",
+			plexInstances,
+			generations,
+			rowsByInstance,
+		);
+		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false, now))) {
+			warnings.push(
+				"Plex episode evidence changed while it was read; episode-scoped cleanup targets were skipped.",
+			);
+			return new Map();
+		}
+		options.evidenceSink?.(snapshot.evidence);
 		return result;
 	} catch (error) {
 		deps.log.error({ err: error }, "Failed to load fresh Plex episode watch data");
@@ -6584,15 +7153,17 @@ async function executeWithApproval(
 	warnings?: string[],
 	sharedPlexBlocks: Map<string, string> = new Map(),
 	safetyPlans: Map<string, SharedMediaSafetyPlan> = new Map(),
+	providerAuthoritiesByTarget: Map<string, MatchedRuleProviderAuthority> = new Map(),
 	preSkippedDetails: CleanupRunResult["details"] = [],
 	selectionState?: ApprovalSelectionState,
 ): Promise<CleanupRunResult> {
-	const { prisma, log } = deps;
+	const { log } = deps;
 	const now = new Date();
 	const expiresAt = new Date(now.getTime() + APPROVAL_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
 
 	const details: CleanupRunResult["details"] = [];
 	const deferredDetails = preSkippedDetails.slice(0, CLEANUP_DETAIL_LIMIT);
+	const resultWarnings = [...(warnings ?? [])];
 	let approvalQueueFailures = 0;
 
 	// Approval and retry ownership was loaded once, before any queue write, by
@@ -6601,7 +7172,8 @@ async function executeWithApproval(
 	// per target. Keeping reads before writes means a storage read failure can
 	// defer the whole run instead of being discovered after an earlier item was
 	// already queued.
-	for (const item of flagged) {
+	for (let itemIndex = 0; itemIndex < flagged.length; itemIndex++) {
+		const item = flagged[itemIndex]!;
 		const targetKey = cleanupDeleteTargetKey(flaggedDeleteTarget(item));
 		const sharedPlexBlock = sharedPlexBlocks.get(targetKey);
 		if (sharedPlexBlock) {
@@ -6614,8 +7186,18 @@ async function executeWithApproval(
 		}
 
 		try {
-			const approval = await prisma.libraryCleanupApproval.create({
-				data: {
+			const matchedRuleAuthority = providerAuthoritiesByTarget.get(targetKey) ?? {
+				evidence: createSanitizedProviderEvidence([], []),
+				authorities: [],
+				complete: false,
+			};
+			if (!matchedRuleAuthority.complete) {
+				throw new ProviderCacheAuthorityChangedError();
+			}
+			const approval = await createApprovalWithProviderCacheAuthority(
+				deps,
+				matchedRuleAuthority.authorities,
+				{
 					configId: config.id,
 					instanceId: item.cacheItem.instanceId,
 					arrItemId: item.cacheItem.arrItemId,
@@ -6641,10 +7223,11 @@ async function executeWithApproval(
 							(() => {
 								throw new Error("No executable cleanup safety plan was produced");
 							})(),
+						matchedRuleAuthority.evidence,
 					),
 					expiresAt,
 				},
-			});
+			);
 
 			details.push(
 				buildDetail(item, "queued_for_approval", undefined, {
@@ -6653,6 +7236,18 @@ async function executeWithApproval(
 				}),
 			);
 		} catch (error) {
+			if (error instanceof ProviderCacheAuthorityChangedError) {
+				const reason =
+					"Provider cache authority changed after cleanup selection; approval was not queued.";
+				details.push(buildDetail(item, "skipped", reason));
+				approvalQueueFailures++;
+				resultWarnings.push(reason);
+				log.warn(
+					{ instanceId: item.cacheItem.instanceId, arrItemId: item.cacheItem.arrItemId },
+					reason,
+				);
+				continue;
+			}
 			log.error(
 				{ err: error, title: item.cacheItem.title },
 				"Failed to create cleanup approval entry",
@@ -6662,7 +7257,7 @@ async function executeWithApproval(
 		}
 	}
 
-	const hasFailedPrefetch = warnings && warnings.length > 0;
+	const hasFailedPrefetch = resultWarnings.length > 0;
 	const result: CleanupRunResult = {
 		isDryRun: false,
 		status: hasFailedPrefetch || approvalQueueFailures > 0 ? "partial" : "completed",
@@ -6684,7 +7279,7 @@ async function executeWithApproval(
 		details: [...details, ...deferredDetails].slice(0, CLEANUP_DETAIL_LIMIT),
 		durationMs: Date.now() - startTime,
 		prefetchHealth,
-		warnings,
+		warnings: resultWarnings.length > 0 ? resultWarnings : undefined,
 	};
 
 	await createRunLog(deps, config.id, result);
@@ -6707,6 +7302,10 @@ export async function executeDirectRemoval(
 	warnings?: string[],
 	sharedPlexBlocks: Map<string, string> = new Map(),
 	assertRunLease?: () => Promise<void>,
+	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
+	providerAuthorities: Array<ProviderCacheSnapshot<unknown>["authority"]> = [],
+	cleanupRunClaimToken?: string,
+	providerAuthoritiesByTarget: Map<string, MatchedRuleProviderAuthority> = new Map(),
 ): Promise<CleanupRunResult> {
 	const { prisma, arrClientFactory, log } = deps;
 
@@ -6746,6 +7345,7 @@ export async function executeDirectRemoval(
 		deps,
 		userId,
 		completeMutationConfigFingerprint(config),
+		cleanupRunClaimToken,
 	);
 	const directSelection = await loadDirectSelectionState(
 		deps,
@@ -6779,6 +7379,7 @@ export async function executeDirectRemoval(
 				assertExecutionAllowed: assertRunLease,
 				getMutationPolicySnapshot,
 				deferMediaServerRescans: true,
+				cleanupRunClaimToken,
 			});
 			mediaServerRescanWarnings.push(...(retryResult.warnings ?? []));
 			for (const approvalId of retryResult.rescanApprovalIds) {
@@ -7008,15 +7609,44 @@ export async function executeDirectRemoval(
 			continue;
 		}
 
+		const matchedRuleAuthority = providerAuthoritiesByTarget.get(
+			cleanupDeleteTargetKey(flaggedDeleteTarget(item)),
+		);
+		if (matchedRuleAuthority && !matchedRuleAuthority.complete) {
+			runtimeSafetyBlocks++;
+			details.push(
+				buildDetail(
+					item,
+					"skipped",
+					"Skipped for safety: provider evidence required by the matched cleanup path was incomplete.",
+				),
+			);
+			continue;
+		}
+		const itemProviderEvidence = matchedRuleAuthority?.evidence ?? providerEvidence;
+		const itemProviderAuthorities = matchedRuleAuthority?.authorities ?? providerAuthorities;
 		let directMutationIntentId: string;
 		let directMutationExecutionToken: string;
+		let directProviderEvidence = itemProviderEvidence;
 		try {
+			if (
+				!(
+					await Promise.all(
+						itemProviderAuthorities.map((authority) =>
+							revalidateProviderCacheAuthority(deps, authority),
+						),
+					)
+				).every(Boolean)
+			) {
+				throw new Error("Provider cache authority changed after cleanup selection");
+			}
 			const intent = await persistAndClaimDirectMutationIntent(
 				deps,
 				config,
 				userId,
 				item,
 				safetyPlan!,
+				itemProviderEvidence,
 			);
 			if (!intent.claimed) {
 				directIntentConcurrent++;
@@ -7031,6 +7661,11 @@ export async function executeDirectRemoval(
 			}
 			directMutationIntentId = intent.id;
 			directMutationExecutionToken = intent.executionToken;
+			const durableEnvelope = parseExecutableSafetyEnvelope(intent.safetySnapshot);
+			if (!durableEnvelope) {
+				throw new ProviderExecutionAuthorityChangedError();
+			}
+			directProviderEvidence = durableEnvelope.providerEvidence;
 		} catch (error) {
 			directRetryPersistenceFailures++;
 			log.error(
@@ -7131,6 +7766,12 @@ export async function executeDirectRemoval(
 			let authorizedSeriesPolicy: AuthorizedSeriesMutationPolicy | undefined;
 			const assertDirectExecutionAuthority: MutationAuthorityCheck = async (evidence) => {
 				await assertRunLease?.();
+				await assertCurrentProviderEvidenceAuthority(
+					deps,
+					userId,
+					directProviderEvidence,
+					assertRunLease,
+				);
 				if (safetyPlan!.kind === "verified_sonarr_episode") {
 					await assertCurrentEpisodeMutationAuthority(
 						deps,
@@ -7167,8 +7808,10 @@ export async function executeDirectRemoval(
 								matchedRuleId: item.match.ruleId,
 								action: ruleAction,
 								scanMediaServerAfterDelete: item.match.scanMediaServerAfterDelete === true,
+								providerDependencies: directProviderEvidence.dependencies,
 							},
 							snapshot,
+							cleanupRunClaimToken,
 						);
 					} else {
 						await assertCurrentSeriesPostStepMutationAuthority(
@@ -7180,9 +7823,11 @@ export async function executeDirectRemoval(
 								matchedRuleId: item.match.ruleId,
 								action: ruleAction,
 								scanMediaServerAfterDelete: item.match.scanMediaServerAfterDelete === true,
+								providerDependencies: directProviderEvidence.dependencies,
 							},
 							authorizedSeriesPolicy,
 							evidence.seriesTransition,
+							cleanupRunClaimToken,
 						);
 					}
 				}
@@ -7543,6 +8188,7 @@ export async function executeDirectRemoval(
 					safetyPlan,
 					error,
 					item.match.action,
+					directProviderEvidence,
 				);
 				let retryPersistenceSucceeded = true;
 				try {
@@ -7675,9 +8321,12 @@ export async function executeDirectRemoval(
 
 	if (mediaServerRescanApprovalIds.size > 0) {
 		try {
-			const scanResult = await triggerCoalescedMediaServerRescans(deps, userId, [
-				...mediaServerRescanApprovalIds,
-			]);
+			const scanResult = await triggerCoalescedMediaServerRescans(
+				deps,
+				userId,
+				[...mediaServerRescanApprovalIds],
+				assertRunLease,
+			);
 			mediaServerRescanWarnings.push(...scanResult.warnings);
 		} catch (error) {
 			mediaServerRescanWarnings.push(
@@ -7930,6 +8579,7 @@ async function deleteVerifiedRadarrFile(
 		mutationAudit?.attempted(step);
 		await radarr.movieFile.delete(expected.movieFileId);
 	} catch (error) {
+		if (isProviderExecutionAuthorityFailure(error)) throw error;
 		deleteError = error;
 	}
 
@@ -8014,6 +8664,17 @@ async function deleteRadarrRecordWithoutFiles(
 			});
 			return;
 		} catch (error) {
+			if (isProviderExecutionAuthorityFailure(error)) {
+				if (deletedFileIds.length === 0) throw error;
+				throw new ArrDeletePartialError({
+					cause: error,
+					service: "RADARR",
+					deletedFileIds,
+					hasRemainingFiles: false,
+					message:
+						"Partial cleanup: the verified Radarr movie file was deleted, but provider authority changed before the movie record could be removed.",
+				});
+			}
 			if (error instanceof CleanupRunLeaseLostError) {
 				if (deletedFileIds.length === 0) throw error;
 				throw new ArrDeletePartialError({
@@ -8071,6 +8732,7 @@ async function deleteVerifiedSonarrFiles(
 		mutationAudit?.attempted(step);
 		await sonarr.episodeFile.bulkDelete(expectedIds);
 	} catch (error) {
+		if (isProviderExecutionAuthorityFailure(error)) throw error;
 		bulkError = error;
 	}
 
@@ -8262,6 +8924,17 @@ async function deleteSonarrRecordWithoutFiles(
 			});
 			return;
 		} catch (error) {
+			if (isProviderExecutionAuthorityFailure(error)) {
+				if (deletedFileIds.length === 0) throw error;
+				throw new ArrDeletePartialError({
+					cause: error,
+					service: "SONARR",
+					deletedFileIds,
+					hasRemainingFiles: false,
+					message:
+						"Partial cleanup: the verified Sonarr episode files were deleted, but provider authority changed before the series record could be removed.",
+				});
+			}
 			if (error instanceof CleanupRunLeaseLostError) {
 				if (deletedFileIds.length === 0) throw error;
 				throw new ArrDeletePartialError({
@@ -8865,11 +9538,7 @@ async function loadPublishedPlexPolicyEvidenceUnsafe(
 	userId: string,
 	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
 ): Promise<PublishedPlexPolicyEvidence | undefined> {
-	const instances = await deps.prisma.serviceInstance.findMany({
-		where: { userId, service: "PLEX", enabled: true },
-		orderBy: { id: "asc" },
-		select: { id: true, updatedAt: true },
-	});
+	const instances = await loadProviderInstances(deps, userId, ["PLEX"]);
 	if (instances.length === 0) return undefined;
 	const instanceIds = instances.map((instance) => instance.id);
 	const readStatuses = async () =>
@@ -8886,21 +9555,33 @@ async function loadPublishedPlexPolicyEvidenceUnsafe(
 				lastErrorMessage: true,
 				lastAttemptResult: true,
 				lastAttemptErrorMessage: true,
+				connectionGeneration: true,
+				identityGeneration: true,
 			},
 		});
 	const before = await readStatuses();
 	if (
 		before.length !== instances.length ||
-		before.some(
-			(status) =>
+		before.some((status) => {
+			const instance = instances.find((candidate) => candidate.id === status.instanceId);
+			return (
+				!instance ||
+				!isVerifiedProviderCacheSource(instance) ||
 				status.lastResult !== "success" ||
 				status.lastErrorMessage != null ||
 				status.lastAttemptErrorMessage != null ||
 				(status.lastAttemptResult != null && status.lastAttemptResult !== "success") ||
 				!status.generationId ||
 				!status.generationMetadata ||
-				Date.now() - status.lastRefreshedAt.getTime() > PROVIDER_EVIDENCE_FRESHNESS_MS,
-		)
+				Date.now() - status.lastRefreshedAt.getTime() > PROVIDER_EVIDENCE_FRESHNESS_MS ||
+				status.lastRefreshedAt.getTime() < instance.updatedAt.getTime() ||
+				status.lastRefreshedAt.getTime() < instance.identityVerifiedAt!.getTime() ||
+				status.connectionGeneration === null ||
+				status.identityGeneration === null ||
+				status.connectionGeneration !== instance.connectionGeneration ||
+				status.identityGeneration !== instance.identityGeneration
+			);
+		})
 	) {
 		return undefined;
 	}
@@ -8964,7 +9645,7 @@ function sortProviderRows<T extends { instanceId: string; mediaType: string; tmd
 	);
 }
 
-async function collectLivePlexPolicyEvidence(
+async function _collectLivePlexPolicyEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
@@ -8990,14 +9671,7 @@ async function collectLivePlexPolicyEvidence(
 					deps.plexCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createPlexClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Plex credentials were unavailable");
-				const collected = await refreshPlexCache(
-					client,
-					deps.prisma,
-					instance.id,
-					deps.log,
-					providerConnectionIdentity(instance),
-					{ publish: false },
-				);
+				const collected = await collectPlexCacheLiveEvidence(client, instance.id, deps.log);
 				if (
 					collected.errors > 0 ||
 					collected.complete !== true ||
@@ -9043,7 +9717,7 @@ async function collectLivePlexPolicyEvidence(
 	}
 }
 
-async function collectLiveTautulliPolicyEvidence(
+async function _collectLiveTautulliPolicyEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<TautulliWatchMap | undefined> {
@@ -9059,14 +9733,7 @@ async function collectLiveTautulliPolicyEvidence(
 					deps.tautulliCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createTautulliClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Tautulli credentials were unavailable");
-				const collected = await refreshTautulliCache(
-					client,
-					deps.prisma,
-					instance.id,
-					deps.log,
-					providerConnectionIdentity(instance),
-					{ publish: false },
-				);
+				const collected = await collectTautulliCacheLiveEvidence(client, instance.id, deps.log);
 				if (collected.errors > 0 || collected.complete !== true || !collected.snapshot) {
 					throw new Error("Tautulli live evidence collection was incomplete");
 				}
@@ -9090,7 +9757,7 @@ async function collectLiveTautulliPolicyEvidence(
 	}
 }
 
-async function collectLiveJellyfinPolicyEvidence(
+async function _collectLiveJellyfinPolicyEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<JellyfinWatchMap | undefined> {
@@ -9116,14 +9783,7 @@ async function collectLiveJellyfinPolicyEvidence(
 					deps.jellyfinCacheClientFactory?.(instance) ??
 					(deps.encryptor ? createJellyfinClient(deps.encryptor, instance, deps.log) : null);
 				if (!client) throw new Error("Jellyfin credentials were unavailable");
-				const collected = await refreshJellyfinCache(
-					client,
-					deps.prisma,
-					instance.id,
-					deps.log,
-					jellyfinConnectionFingerprint(instance),
-					{ publish: false },
-				);
+				const collected = await collectJellyfinCacheLiveEvidence(client, instance.id, deps.log);
 				if (
 					collected.errors > 0 ||
 					collected.complete !== true ||
@@ -9163,6 +9823,7 @@ async function refreshPlexMutationEvidence(
 	userId: string,
 	includeEpisodes: boolean,
 	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
+	cleanupRunClaimToken?: string,
 ): Promise<
 	| {
 			plexMap: PlexWatchMap;
@@ -9195,18 +9856,14 @@ async function refreshPlexMutationEvidence(
 				initial.map((instance) => [instance.id, new Map<string, Set<string>>()]),
 			);
 			for (const instance of initial) {
-				const client =
-					deps.plexCacheClientFactory?.(instance) ??
-					(deps.encryptor ? createPlexClient(deps.encryptor, instance, deps.log) : null);
-				if (!client) throw new Error("Plex credentials were unavailable");
-				const expectedConnection = providerConnectionIdentity(instance);
-				const refreshed = await refreshPlexCache(
-					client,
-					deps.prisma,
-					instance.id,
-					deps.log,
-					expectedConnection,
-				);
+				if (!deps.encryptor) throw new Error("Plex credentials were unavailable");
+				const publicationInstance = createOwnedPlexPublicationSnapshot(deps.encryptor, instance);
+				const refreshed = await refreshPlexCache({
+					prisma: deps.prisma,
+					instance: publicationInstance,
+					log: deps.log,
+					cleanupRunClaimToken,
+				});
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Plex cache refresh was incomplete");
 				}
@@ -9227,14 +9884,12 @@ async function refreshPlexMutationEvidence(
 					}
 				}
 				if (includeEpisodes) {
-					const episodes = await refreshPlexEpisodeCache(
-						client,
-						deps.prisma,
-						instance.id,
-						deps.log,
-						plexConnectionFingerprint(instance),
-						expectedConnection,
-					);
+					const episodes = await refreshPlexEpisodeCache({
+						prisma: deps.prisma,
+						instance: publicationInstance,
+						log: deps.log,
+						cleanupRunClaimToken,
+					});
 					if (episodes.errors > 0 || episodes.complete !== true) {
 						throw new Error("Plex episode evidence refresh was incomplete");
 					}
@@ -9298,6 +9953,7 @@ async function refreshPlexMutationEvidence(
 async function refreshTautulliMutationEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
+	cleanupRunClaimToken?: string,
 ): Promise<{ map: TautulliWatchMap; completedAt: Date } | undefined> {
 	try {
 		const initial = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
@@ -9306,17 +9962,17 @@ async function refreshTautulliMutationEvidence(
 		let accepted: { map: TautulliWatchMap; fingerprint: string; completedAt: Date } | undefined;
 		for (let pass = 0; pass < 2; pass++) {
 			for (const instance of initial) {
-				const client =
-					deps.tautulliCacheClientFactory?.(instance) ??
-					(deps.encryptor ? createTautulliClient(deps.encryptor, instance, deps.log) : null);
-				if (!client) throw new Error("Tautulli credentials were unavailable");
-				const refreshed = await refreshTautulliCache(
-					client,
-					deps.prisma,
-					instance.id,
-					deps.log,
-					providerConnectionIdentity(instance),
+				if (!deps.encryptor) throw new Error("Tautulli credentials were unavailable");
+				const publicationInstance = createOwnedTautulliPublicationSnapshot(
+					deps.encryptor,
+					instance,
 				);
+				const refreshed = await refreshTautulliCache({
+					prisma: deps.prisma,
+					instance: publicationInstance,
+					log: deps.log,
+					cleanupRunClaimToken,
+				});
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Tautulli cache refresh was incomplete");
 				}
@@ -9355,6 +10011,7 @@ async function refreshJellyfinMutationEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	includeEpisodes: boolean,
+	cleanupRunClaimToken?: string,
 ): Promise<
 	| { jellyfinMap: JellyfinWatchMap; jellyfinEpisodeMap?: PlexEpisodeMap; completedAt: Date }
 	| undefined
@@ -9373,34 +10030,33 @@ async function refreshJellyfinMutationEvidence(
 			| undefined;
 		for (let pass = 0; pass < 2; pass++) {
 			for (const instance of initial) {
-				const client =
-					deps.jellyfinCacheClientFactory?.(instance) ??
-					(deps.encryptor ? createJellyfinClient(deps.encryptor, instance, deps.log) : null);
-				if (!client) throw new Error("Jellyfin credentials were unavailable");
+				if (!deps.encryptor) throw new Error("Jellyfin credentials were unavailable");
+				const publicationInstance = createOwnedJellyfinPublicationSnapshot(
+					deps.encryptor,
+					instance,
+				);
 				const refreshed = await runJellyfinCacheRefreshSingleFlight(
-					instance.id,
-					jellyfinConnectionFingerprint(instance),
-					(expectedConnectionFingerprint) =>
-						refreshJellyfinCache(
-							client,
-							deps.prisma,
-							instance.id,
-							deps.log,
-							expectedConnectionFingerprint,
-						),
+					publicationInstance,
+					() =>
+						refreshJellyfinCache({
+							prisma: deps.prisma,
+							instance: publicationInstance,
+							log: deps.log,
+							cleanupRunClaimToken,
+						}),
 					{ prisma: deps.prisma, log: deps.log },
+					{ cleanupRunClaimToken },
 				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Jellyfin cache refresh was incomplete");
 				}
 				if (includeEpisodes) {
-					const episodes = await refreshJellyfinEpisodeCache(
-						client,
-						deps.prisma,
-						instance.id,
-						deps.log,
-						jellyfinConnectionFingerprint(instance),
-					);
+					const episodes = await refreshJellyfinEpisodeCache({
+						prisma: deps.prisma,
+						instance: publicationInstance,
+						log: deps.log,
+						cleanupRunClaimToken,
+					});
 					if (episodes.errors > 0 || episodes.complete !== true) {
 						throw new Error("Jellyfin episode refresh was incomplete");
 					}
@@ -9599,6 +10255,7 @@ async function buildMutationEvalContext(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	rules: LibraryCleanupRule[],
+	cleanupRunClaimToken?: string,
 ): Promise<{
 	ctx: EvalContext;
 	failedSources: Set<DataSourceDependency>;
@@ -9656,15 +10313,22 @@ async function buildMutationEvalContext(
 
 	const [seerrMap, tautulliMap, plexEvidence, jellyfinEvidence, listEvidence] = await Promise.all([
 		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
-		needsTautulli ? refreshTautulliMutationEvidence(deps, userId) : undefined,
+		needsTautulli ? refreshTautulliMutationEvidence(deps, userId, cleanupRunClaimToken) : undefined,
 		needsPlex || needsPlexSectionInventory
-			? refreshPlexMutationEvidence(deps, userId, activeTypes.has("plex_episode_completion"), rules)
+			? refreshPlexMutationEvidence(
+					deps,
+					userId,
+					activeTypes.has("plex_episode_completion"),
+					rules,
+					cleanupRunClaimToken,
+				)
 			: undefined,
 		needsJellyfin
 			? refreshJellyfinMutationEvidence(
 					deps,
 					userId,
 					activeTypes.has("jellyfin_episode_completion"),
+					cleanupRunClaimToken,
 				)
 			: undefined,
 		refreshListMutationEvidence(deps, userId, rules),
@@ -9731,17 +10395,25 @@ export function createMutationPolicySnapshotGetter(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	expectedConfigFingerprint?: string,
+	cleanupRunClaimToken?: string,
 ): () => Promise<MutationPolicySnapshot> {
 	// Deliberately do not reuse mutable provider authority across targets or
 	// irreversible writes. Every call performs a fresh bounded publication and
 	// captures a new immutable policy snapshot.
-	return async () => await createMutationPolicySnapshot(deps, userId, expectedConfigFingerprint);
+	return async () =>
+		await createMutationPolicySnapshot(
+			deps,
+			userId,
+			expectedConfigFingerprint,
+			cleanupRunClaimToken,
+		);
 }
 
 async function createMutationPolicySnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	expectedConfigFingerprint?: string,
+	cleanupRunClaimToken?: string,
 ): Promise<MutationPolicySnapshot> {
 	const config = await deps.prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
@@ -9762,7 +10434,7 @@ async function createMutationPolicySnapshot(
 		sourceCompletedAt,
 		plexTargetRatingKeysByInstance,
 		plexTopologyFingerprint,
-	} = await buildMutationEvalContext(deps, userId, rules);
+	} = await buildMutationEvalContext(deps, userId, rules, cleanupRunClaimToken);
 	const oldestSourceCompletedAt =
 		sourceCompletedAt.size > 0
 			? new Date(Math.min(...[...sourceCompletedAt.values()].map((date) => date.getTime())))
@@ -9818,7 +10490,15 @@ export async function buildEvalContextWithHealth(
 		plexLibraryFilter?: string | null;
 	}>,
 	options: { providerEvidence?: "published" | "live" } = {},
-): Promise<{ ctx: EvalContext; failedSources: Set<DataSourceDependency> }> {
+): Promise<{
+	ctx: EvalContext;
+	failedSources: Set<DataSourceDependency>;
+	providerEvidence?: SanitizedProviderEvidence;
+}> {
+	// The legacy option remains callable for route compatibility, but cleanup
+	// authorization never substitutes an uncached live read for a published,
+	// identity-bound provider generation.
+	void options;
 	const activeTypes = collectActiveRuleTypes(rules);
 
 	const SEERR_RULE_TYPES = [
@@ -9875,40 +10555,40 @@ export async function buildEvalContextWithHealth(
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(rules).size > 0;
 	const [
 		seerrMap,
-		tautulliMap,
+		tautulliSnapshot,
+		plexSnapshot,
 		plexEvidence,
-		plexEpisodeMap,
-		jellyfinMap,
-		jellyfinEpisodeMap,
+		plexEpisodeSnapshot,
+		jellyfinSnapshot,
+		jellyfinEpisodeSnapshot,
 		listEvidence,
 	] = await Promise.all([
 		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
-		needsTautulli
-			? options.providerEvidence === "live"
-				? collectLiveTautulliPolicyEvidence(deps, userId)
-				: prefetchTautulliData(deps, userId)
-			: undefined,
-		needsPlex || needsPlexSectionInventory
-			? options.providerEvidence === "live"
-				? collectLivePlexPolicyEvidence(deps, userId, rules)
-				: loadPublishedPlexPolicyEvidence(deps, userId, rules)
-			: undefined,
-		needsPlexEpisodes ? prefetchPlexEpisodeData(deps, userId) : undefined,
-		needsJellyfin
-			? options.providerEvidence === "live"
-				? collectLiveJellyfinPolicyEvidence(deps, userId)
-				: prefetchJellyfinData(deps, userId)
-			: undefined,
-		needsJellyfinEpisodes ? prefetchJellyfinEpisodeData(deps, userId) : undefined,
+		needsTautulli ? loadTautulliDataSnapshot(deps, userId) : undefined,
+		needsPlex || needsPlexSectionInventory ? loadPlexDataSnapshot(deps, userId) : undefined,
+		needsPlexSectionInventory ? loadPublishedPlexPolicyEvidence(deps, userId, rules) : undefined,
+		needsPlexEpisodes ? loadPlexEpisodeDataSnapshot(deps, userId) : undefined,
+		needsJellyfin ? loadJellyfinDataSnapshot(deps, userId) : undefined,
+		needsJellyfinEpisodes ? loadJellyfinEpisodeDataSnapshot(deps, userId) : undefined,
 		refreshListMutationEvidence(deps, userId, rules),
 	]);
+	const plexAuthorityConsistent =
+		!plexSnapshot ||
+		!plexEvidence ||
+		(await revalidateProviderCacheAuthority(deps, plexSnapshot.authority, false));
+	const effectivePlexSnapshot = plexAuthorityConsistent ? plexSnapshot : undefined;
+	const effectivePlexEvidence = plexAuthorityConsistent ? plexEvidence : undefined;
+	const tautulliMap = tautulliSnapshot?.value;
+	const plexEpisodeMap = plexEpisodeSnapshot?.value;
+	const jellyfinMap = jellyfinSnapshot?.value;
+	const jellyfinEpisodeMap = jellyfinEpisodeSnapshot?.value;
 
 	const failedSources = new Set<DataSourceDependency>();
 	if (needsSeerr && !seerrMap) failedSources.add("seerr");
 	if (needsTautulli && !tautulliMap) failedSources.add("tautulli");
-	if (needsPlex && !plexEvidence) failedSources.add("plex");
+	if (needsPlex && !effectivePlexSnapshot) failedSources.add("plex");
 	if (needsPlexEpisodes && !plexEpisodeMap) failedSources.add("plex");
-	if (needsPlexSectionInventory && !plexEvidence) failedSources.add("plex");
+	if (needsPlexSectionInventory && !effectivePlexEvidence) failedSources.add("plex");
 	if (needsJellyfin && !jellyfinMap) failedSources.add("jellyfin");
 	if (needsJellyfinEpisodes && !jellyfinEpisodeMap) failedSources.add("jellyfin");
 	if (needsTmdb && !listEvidence.tmdbListMemberships) failedSources.add("tmdb");
@@ -9918,15 +10598,28 @@ export async function buildEvalContextWithHealth(
 		now: new Date(),
 		seerrMap: seerrMap ?? undefined,
 		tautulliMap: tautulliMap ?? undefined,
-		plexMap: plexEvidence?.plexMap,
-		plexSectionTitles: plexEvidence?.plexSectionTitles,
+		plexMap: effectivePlexSnapshot?.value,
+		plexSectionTitles: effectivePlexEvidence?.plexSectionTitles,
 		plexEpisodeMap: plexEpisodeMap ?? undefined,
 		jellyfinMap: jellyfinMap ?? undefined,
 		jellyfinEpisodeMap: jellyfinEpisodeMap ?? undefined,
 		tmdbListMemberships: listEvidence.tmdbListMemberships,
 		traktListMemberships: listEvidence.traktListMemberships,
 	};
-	return { ctx, failedSources };
+	const contributingSnapshots = [
+		tautulliSnapshot,
+		effectivePlexSnapshot,
+		plexEpisodeSnapshot,
+		jellyfinSnapshot,
+		jellyfinEpisodeSnapshot,
+	].filter((snapshot) => snapshot !== undefined) as ProviderCacheSnapshot<unknown>[];
+	const providerEvidence = createSanitizedProviderEvidence(
+		contributingSnapshots.flatMap((snapshot) => snapshot.evidence.dependencies),
+		contributingSnapshots.flatMap((snapshot) =>
+			snapshot.evidence.sources.map(({ fingerprint: _fingerprint, ...source }) => source),
+		),
+	);
+	return { ctx, failedSources, providerEvidence };
 }
 
 export async function buildEvalContext(

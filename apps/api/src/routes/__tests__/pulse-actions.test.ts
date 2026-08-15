@@ -47,12 +47,15 @@ const requirePlexClient = vi.fn();
 const requireTautulliClient = vi.fn();
 const requireJellyfinClient = vi.fn();
 vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
+	createOwnedPlexPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
+	createOwnedTautulliPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
 }));
 vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
+	createOwnedJellyfinPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshJellyfinCache: (...args: unknown[]) => refreshJellyfinCache(...args),
 }));
 vi.mock("../../lib/plex/plex-helpers.js", () => ({

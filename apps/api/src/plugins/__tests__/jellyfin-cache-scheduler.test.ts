@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	expectPreservedSuccessWithSanitizedDecryptFailure,
+	watchSchedulerDecryptFailureFixture,
+} from "./watch-scheduler-decrypt-failure-fixture.js";
 
-const { createJellyfinClient, recordFailure, runSingleFlight } = vi.hoisted(() => ({
-	createJellyfinClient: vi.fn(),
-	recordFailure: vi.fn().mockResolvedValue(undefined),
+const { createPublicationSnapshot, runSingleFlight } = vi.hoisted(() => ({
+	createPublicationSnapshot: vi.fn(),
 	runSingleFlight: vi.fn(),
 }));
 
-vi.mock("../../lib/jellyfin/jellyfin-client.js", () => ({ createJellyfinClient }));
+vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
+	createOwnedJellyfinPublicationSnapshot: createPublicationSnapshot,
+	refreshJellyfinCache: vi.fn(),
+}));
 vi.mock("../../lib/jellyfin/jellyfin-cache-singleflight.js", () => ({
-	recordJellyfinCacheRefreshFailure: recordFailure,
 	runJellyfinCacheRefreshSingleFlight: runSingleFlight,
 }));
 
@@ -19,41 +24,33 @@ describe("refreshScheduledJellyfinCacheInstance", () => {
 		vi.clearAllMocks();
 	});
 
-	it("records a guarded failure when client construction fails", async () => {
-		const failure = new Error("stored credential could not be decrypted");
-		createJellyfinClient.mockImplementation(() => {
-			throw failure;
+	it("records a sanitized failed attempt without replacing the prior success on decrypt failure", async () => {
+		const state = watchSchedulerDecryptFailureFixture("JELLYFIN");
+		createPublicationSnapshot.mockImplementation(() => {
+			throw new Error("stored credential secret-token could not be decrypted");
 		});
-		const app = {
-			encryptor: {},
-			prisma: {},
-			log: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
-		};
-		const instance = {
-			id: "jellyfin-1",
-			label: "Living Room",
-			service: "JELLYFIN",
-			baseUrl: "https://jellyfin.example.com",
-			encryptedApiKey: "encrypted-key",
-			encryptionIv: "key-iv",
-			encryptedHttpAuthCredentials: null,
-			httpAuthEncryptionIv: null,
-			connectionGeneration: 7,
-		};
 
-		await refreshScheduledJellyfinCacheInstance(app as never, instance as never);
+		await refreshScheduledJellyfinCacheInstance(state.app as never, state.instance as never);
 
 		expect(runSingleFlight).not.toHaveBeenCalled();
-		expect(recordFailure).toHaveBeenCalledWith(
-			"jellyfin-1",
-			expect.any(String),
-			"stored credential could not be decrypted",
-			{ prisma: app.prisma, log: app.log },
-		);
+		expectPreservedSuccessWithSanitizedDecryptFailure(state);
+	});
+
+	it("does not record decrypt failure after a concurrent identity-only replacement", async () => {
+		const state = watchSchedulerDecryptFailureFixture("EMBY");
+		createPublicationSnapshot.mockImplementation(() => {
+			state.current.identityGeneration++;
+			throw new Error("stored credential secret-token could not be decrypted");
+		});
+
+		await refreshScheduledJellyfinCacheInstance(state.app as never, state.instance as never);
+
+		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		expect(state.status.lastAttemptResult).toBe("success");
 	});
 
 	it("does not duplicate failures already observed by the single-flight wrapper", async () => {
-		createJellyfinClient.mockReturnValue({});
+		createPublicationSnapshot.mockReturnValue({ id: "jellyfin-1" });
 		runSingleFlight.mockRejectedValue(new Error("refresh failed"));
 		const app = {
 			encryptor: {},
@@ -75,7 +72,6 @@ describe("refreshScheduledJellyfinCacheInstance", () => {
 		await refreshScheduledJellyfinCacheInstance(app as never, instance as never);
 
 		expect(runSingleFlight).toHaveBeenCalledOnce();
-		expect(recordFailure).not.toHaveBeenCalled();
 		expect(app.log.error).toHaveBeenCalledOnce();
 	});
 });

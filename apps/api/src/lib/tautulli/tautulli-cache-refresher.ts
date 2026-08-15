@@ -14,14 +14,18 @@
 
 import type { TautulliHistoryItem } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
-import type { PrismaClient } from "../prisma.js";
+import type { Encryptor } from "../auth/encryption.js";
+import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
+import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import {
-	type ProviderConnectionIdentity,
-	withCurrentProviderConnection,
-} from "../services/provider-connection-guard.js";
+	createProviderPublicationAuthority,
+	type OwnedProviderPublicationSnapshot,
+	ProviderIdentityGuardError,
+	withGuardedProviderPublication,
+} from "../services/provider-identity-guard.js";
 import { delay } from "../utils/delay.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import type { TautulliClient } from "./tautulli-client.js";
+import { TautulliClient } from "./tautulli-client.js";
 
 // Tautulli exposes offset/length pagination without a documented page-count
 // ceiling. Bound both the aggregate inventory and requests for the whole
@@ -32,6 +36,7 @@ const MAX_HISTORY_REQUESTS = 1_000;
 
 // Rate limit: max metadata lookups per refresh cycle
 const MAX_METADATA_LOOKUPS = 500;
+export const TAUTULLI_CACHE_PUBLICATION_CHUNK_SIZE = 100;
 
 /** Parsed TMDB ID from Tautulli GUIDs */
 interface ParsedGuid {
@@ -52,8 +57,11 @@ export interface TautulliCacheSnapshot {
 	rows: TautulliCacheSnapshotRow[];
 }
 
-export interface TautulliCacheRefreshOptions {
-	publish?: boolean;
+export interface TautulliPublicationContext {
+	prisma: PrismaClient;
+	instance: OwnedProviderPublicationSnapshot;
+	log: FastifyBaseLogger;
+	cleanupRunClaimToken?: string;
 }
 
 export interface TautulliCacheRefreshResult {
@@ -70,19 +78,124 @@ export interface TautulliCacheRefreshResult {
  * Refresh the TautulliCache for a given instance.
  * Fetches history from Tautulli and aggregates into per-item watch stats.
  */
+export function createOwnedTautulliPublicationSnapshot(
+	encryptor: Pick<Encryptor, "decrypt">,
+	instance: ServiceInstance,
+): OwnedProviderPublicationSnapshot {
+	if (instance.service !== "TAUTULLI") {
+		throw new Error("Tautulli publication requires a Tautulli service instance");
+	}
+	return {
+		...createProviderPublicationAuthority(instance),
+		label: instance.label,
+		apiKey: encryptor.decrypt({ value: instance.encryptedApiKey, iv: instance.encryptionIv }),
+		httpAuthHeaders: getStoredHttpAuthHeaders(encryptor, instance),
+	};
+}
+
+function tautulliClientForSnapshot(
+	instance: OwnedProviderPublicationSnapshot,
+	log: FastifyBaseLogger,
+): TautulliClient {
+	return new TautulliClient(
+		instance.baseUrl,
+		instance.apiKey,
+		log,
+		undefined,
+		instance.httpAuthHeaders,
+	);
+}
+
 export async function refreshTautulliCache(
+	context: TautulliPublicationContext,
+): Promise<TautulliCacheRefreshResult> {
+	const { prisma, instance, log } = context;
+	try {
+		return await withGuardedProviderPublication(
+			prisma,
+			instance,
+			log,
+			async () =>
+				await collectTautulliCacheLiveEvidence(
+					tautulliClientForSnapshot(instance, log),
+					instance.id,
+					log,
+				),
+			async (tx, collected) => await publishTautulliCache(tx, instance, collected),
+			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
+		);
+	} catch (error) {
+		log.error({ err: error, instanceId: instance.id }, "Tautulli cache publication rejected");
+		if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") {
+			return { upserted: 0, errors: 0, errorMessages: [], complete: false, superseded: true };
+		}
+		return {
+			upserted: 0,
+			errors: 1,
+			errorMessages: [
+				error instanceof ProviderIdentityGuardError
+					? error.message
+					: `Atomic cache publication failed: ${getErrorMessage(error)}`,
+			],
+			complete: false,
+		};
+	}
+}
+
+async function publishTautulliCache(
+	tx: Prisma.TransactionClient,
+	instance: OwnedProviderPublicationSnapshot,
+	collected: TautulliCacheRefreshResult,
+): Promise<TautulliCacheRefreshResult> {
+	if (!collected.complete || !collected.completedAt || !collected.snapshot) return collected;
+	const rows = collected.snapshot.rows;
+	await tx.tautulliCache.deleteMany({ where: { instanceId: instance.id } });
+	for (let start = 0; start < rows.length; start += TAUTULLI_CACHE_PUBLICATION_CHUNK_SIZE) {
+		await tx.tautulliCache.createMany({
+			data: rows.slice(start, start + TAUTULLI_CACHE_PUBLICATION_CHUNK_SIZE).map((row) => ({
+				...row,
+				connectionGeneration: instance.connectionGeneration,
+				identityGeneration: instance.identityGeneration,
+			})),
+		});
+	}
+	await tx.cacheRefreshStatus.upsert({
+		where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "tautulli" } },
+		create: {
+			instanceId: instance.id,
+			cacheType: "tautulli",
+			lastRefreshedAt: collected.completedAt,
+			lastResult: "success",
+			itemCount: rows.length,
+			lastAttemptAt: collected.completedAt,
+			lastAttemptResult: "success",
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		},
+		update: {
+			lastRefreshedAt: collected.completedAt,
+			lastResult: "success",
+			lastErrorMessage: null,
+			itemCount: rows.length,
+			lastAttemptAt: collected.completedAt,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		},
+	});
+	return { ...collected, upserted: rows.length };
+}
+
+export async function collectTautulliCacheLiveEvidence(
 	client: TautulliClient,
-	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-	expectedConnection: ProviderConnectionIdentity | undefined,
-	options: TautulliCacheRefreshOptions = {},
 ): Promise<TautulliCacheRefreshResult> {
-	let upserted = 0;
+	const upserted = 0;
 	let errors = 0;
 	let complete = true;
 	const errorMessages: string[] = [];
-	let superseded = false;
 
 	try {
 		// 1. Get libraries to iterate over
@@ -424,64 +537,16 @@ export async function refreshTautulliCache(
 			// Re-read the entire snapshot immediately before publication.
 			await verifyCompleteHistorySnapshot();
 			completedAt = new Date();
-			if (options.publish === false) {
-				return {
-					upserted: 0,
-					errors: 0,
-					errorMessages: [],
-					complete: true,
-					completedAt,
-					snapshot: { rows },
-				};
-			}
-			try {
-				const publication = await withCurrentProviderConnection(
-					prisma,
-					instanceId,
-					expectedConnection,
-					async (tx) => {
-						await tx.tautulliCache.deleteMany({ where: { instanceId } });
-						if (rows.length > 0) await tx.tautulliCache.createMany({ data: rows });
-						await tx.cacheRefreshStatus.upsert({
-							where: { instanceId_cacheType: { instanceId, cacheType: "tautulli" } },
-							create: {
-								instanceId,
-								cacheType: "tautulli",
-								lastRefreshedAt: completedAt!,
-								lastResult: "success",
-								itemCount: rows.length,
-								lastAttemptAt: completedAt!,
-								lastAttemptResult: "success",
-							},
-							update: {
-								lastRefreshedAt: completedAt!,
-								lastResult: "success",
-								lastErrorMessage: null,
-								itemCount: rows.length,
-								lastAttemptAt: completedAt!,
-								lastAttemptResult: "success",
-								lastAttemptErrorMessage: null,
-							},
-						});
-					},
-				);
-				if (publication.matched) {
-					upserted = rows.length;
-				} else {
-					superseded = true;
-					completedAt = undefined;
-					complete = false;
-				}
-			} catch (error) {
-				completedAt = undefined;
-				complete = false;
-				errors++;
-				errorMessages.push(`Atomic cache publication failed: ${getErrorMessage(error)}`);
-				log.error({ err: error, instanceId }, "Tautulli cache publication failed");
-			}
-		} else {
-			log.warn({ instanceId, errors }, "Skipping cache publication due to incomplete refresh");
+			return {
+				upserted: 0,
+				errors: 0,
+				errorMessages: [],
+				complete: true,
+				completedAt,
+				snapshot: { rows },
+			};
 		}
+		log.warn({ instanceId, errors }, "Skipping cache publication due to incomplete refresh");
 
 		log.info(
 			{
@@ -499,7 +564,6 @@ export async function refreshTautulliCache(
 			errorMessages,
 			complete: complete && errors === 0,
 			completedAt,
-			superseded: superseded || undefined,
 		};
 	} catch (error) {
 		complete = false;
@@ -509,59 +573,6 @@ export async function refreshTautulliCache(
 	}
 
 	return { upserted, errors, errorMessages, complete: false };
-}
-
-// ============================================================================
-// Stale Row Eviction
-// ============================================================================
-
-/**
- * Chunk size for `id: { in: ... }` deletes. Stays well below SQLite's historical
- * SQLITE_MAX_VARIABLE_NUMBER (999) so no single DELETE statement can exceed the
- * parameter limit. Mirrors the constant used for the Plex refresher (PR #328)
- * — kept local rather than shared so each cache subsystem can tune independently.
- *
- * Exported for tests.
- */
-export const STALE_EVICTION_CHUNK_SIZE = 500;
-
-/**
- * Evict rows for `instanceId` whose `id` is not in `keepIds`.
- *
- * Reads existing row ids, diffs in memory, then issues bounded `id: { in: chunk }`
- * deletes. This avoids Prisma P2029 on SQLite when `keepIds` would have been a
- * giant `notIn` parameter list — proactive hardening mirroring the Plex fix
- * from PR #328.
- *
- * Exported for tests.
- */
-export async function evictStaleRows(
-	prisma: PrismaClient,
-	instanceId: string,
-	keepIds: string[],
-): Promise<number> {
-	const existing = await prisma.tautulliCache.findMany({
-		where: { instanceId },
-		select: { id: true },
-	});
-
-	const keepSet = new Set(keepIds);
-	const staleIds: string[] = [];
-	for (const row of existing) {
-		if (!keepSet.has(row.id)) staleIds.push(row.id);
-	}
-
-	if (staleIds.length === 0) return 0;
-
-	let totalDeleted = 0;
-	for (let i = 0; i < staleIds.length; i += STALE_EVICTION_CHUNK_SIZE) {
-		const chunk = staleIds.slice(i, i + STALE_EVICTION_CHUNK_SIZE);
-		const { count } = await prisma.tautulliCache.deleteMany({
-			where: { instanceId, id: { in: chunk } },
-		});
-		totalDeleted += count;
-	}
-	return totalDeleted;
 }
 
 /**

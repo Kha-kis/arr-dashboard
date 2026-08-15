@@ -6,11 +6,13 @@
  * lastPlayedDate is present, even if item.played === false.
  */
 
+import type { FastifyBaseLogger } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	collectJellyfinCacheLiveEvidence,
 	JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE,
 	JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
-	refreshJellyfinCache,
+	refreshJellyfinCache as refreshGuardedJellyfinCache,
 } from "../jellyfin-cache-refresher.js";
 import type {
 	JellyfinClient,
@@ -18,8 +20,86 @@ import type {
 	JellyfinLibrary,
 	JellyfinUser,
 } from "../jellyfin-client.js";
-import type { FastifyBaseLogger } from "fastify";
-import { jellyfinConnectionFingerprint } from "../service-instance-fingerprint.js";
+
+const publication = vi.hoisted(() => ({ client: undefined as JellyfinClient | undefined }));
+
+vi.mock("../jellyfin-client.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../jellyfin-client.js")>();
+	return {
+		...actual,
+		JellyfinClient: class {
+			constructor() {
+				if (!publication.client) throw new Error("Jellyfin test client was not configured");
+				Object.assign(this, publication.client);
+			}
+		},
+	};
+});
+
+vi.mock("../../services/provider-identity-guard.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../services/provider-identity-guard.js")>();
+	return {
+		...actual,
+		withGuardedProviderPublication: vi.fn(
+			async (
+				prisma: {
+					$transaction: (
+						callback: (tx: unknown) => Promise<unknown>,
+						options?: unknown,
+					) => Promise<unknown>;
+				},
+				_instance: unknown,
+				_log: unknown,
+				collect: () => Promise<unknown>,
+				publish: (tx: unknown, snapshot: unknown) => Promise<unknown>,
+				options: unknown,
+			) => {
+				const snapshot = await collect();
+				if ((snapshot as { complete?: boolean }).complete !== true) return snapshot;
+				return await prisma.$transaction(async (tx) => await publish(tx, snapshot), {
+					isolationLevel: "Serializable",
+					...(options as object),
+				});
+			},
+		),
+	};
+});
+
+async function refreshJellyfinCache(
+	client: JellyfinClient,
+	prisma: never,
+	instanceId: string,
+	log: FastifyBaseLogger,
+	_expectedConnection?: string,
+	options?: { publish?: boolean },
+) {
+	if (options?.publish === false) {
+		return await collectJellyfinCacheLiveEvidence(client, instanceId, log);
+	}
+	publication.client = client;
+	return await refreshGuardedJellyfinCache({
+		prisma,
+		instance: {
+			id: instanceId,
+			userId: "user-1",
+			service: "JELLYFIN",
+			label: "Jellyfin",
+			baseUrl: "https://jellyfin-current.example.com",
+			apiKey: "key",
+			httpAuthHeaders: {},
+			enabled: true,
+			encryptedApiKey: "current-key",
+			encryptionIv: "current-iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			expectedIdentity: "jellyfin-a",
+			identityStatus: "VERIFIED",
+			connectionGeneration: 7,
+			identityGeneration: 3,
+		},
+		log,
+	});
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -505,86 +585,5 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 			}),
 		]);
 		expect(transaction).not.toHaveBeenCalled();
-	});
-
-	it("discards a completed scan when the service connection changed before publication", async () => {
-		const client = makeMockClient([]);
-		const { stub, tx } = makeMockPrisma();
-		const expectedConnectionFingerprint = jellyfinConnectionFingerprint({
-			service: "JELLYFIN",
-			baseUrl: "https://jellyfin-old.example.com",
-			encryptedApiKey: "old-key",
-			encryptionIv: "old-iv",
-			encryptedHttpAuthCredentials: null,
-			httpAuthEncryptionIv: null,
-			connectionGeneration: 6,
-		} as never);
-
-		const result = await refreshJellyfinCache(
-			client,
-			stub as never,
-			"inst-1",
-			silentLog,
-			expectedConnectionFingerprint,
-		);
-
-		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
-		expect(tx.jellyfinCache.deleteMany).not.toHaveBeenCalled();
-		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
-	});
-
-	it("locks the PostgreSQL service row before validating identity and publishing", async () => {
-		vi.stubEnv("DATABASE_URL", "postgresql://database.example.com/arr");
-		const client = makeMockClient([]);
-		const { stub, tx } = makeMockPrisma();
-		const order: string[] = [];
-		tx.$queryRawUnsafe.mockImplementation(async () => {
-			order.push("lock");
-			return [];
-		});
-		tx.serviceInstance.findUnique.mockImplementation(async () => {
-			order.push("identity");
-			return {
-				service: "JELLYFIN",
-				baseUrl: "https://jellyfin-current.example.com",
-				encryptedApiKey: "current-key",
-				encryptionIv: "current-iv",
-				encryptedHttpAuthCredentials: null,
-				httpAuthEncryptionIv: null,
-				enabled: true,
-				connectionGeneration: 7,
-			};
-		});
-		tx.jellyfinCache.deleteMany.mockImplementation(async () => {
-			order.push("publish");
-			return { count: 0 };
-		});
-		const expectedConnectionFingerprint = jellyfinConnectionFingerprint({
-			service: "JELLYFIN",
-			baseUrl: "https://jellyfin-current.example.com",
-			encryptedApiKey: "current-key",
-			encryptionIv: "current-iv",
-			encryptedHttpAuthCredentials: null,
-			httpAuthEncryptionIv: null,
-			connectionGeneration: 7,
-		} as never);
-
-		const result = await refreshJellyfinCache(
-			client,
-			stub as never,
-			"inst-1",
-			silentLog,
-			expectedConnectionFingerprint,
-		);
-
-		expect(result.complete).toBe(true);
-		expect(order).toEqual(["lock", "identity", "publish"]);
-		expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(
-			'SELECT "id" FROM "ServiceInstance" WHERE "id" = $1 FOR UPDATE',
-			"inst-1",
-		);
-		expect(stub.$transaction).toHaveBeenCalledWith(expect.any(Function), {
-			timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
-		});
 	});
 });

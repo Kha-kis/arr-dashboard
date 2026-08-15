@@ -1,6 +1,25 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/test-helpers.js";
+
+const routeMocks = vi.hoisted(() => ({
+	requireClient: vi.fn(),
+	createSnapshot: vi.fn(),
+	refresh: vi.fn(),
+	singleflight: vi.fn(),
+}));
+
+vi.mock("../../../lib/jellyfin/jellyfin-helpers.js", () => ({
+	requireJellyfinClient: routeMocks.requireClient,
+}));
+vi.mock("../../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
+	createOwnedJellyfinPublicationSnapshot: routeMocks.createSnapshot,
+	refreshJellyfinCache: routeMocks.refresh,
+}));
+vi.mock("../../../lib/jellyfin/jellyfin-cache-singleflight.js", () => ({
+	runJellyfinCacheRefreshSingleFlight: routeMocks.singleflight,
+}));
+
 import { registerCacheRoutes } from "../cache-routes.js";
 
 describe("GET /api/jellyfin/cache/health", () => {
@@ -100,5 +119,56 @@ describe("GET /api/jellyfin/cache/health", () => {
 				}),
 			]),
 		);
+	});
+});
+
+describe("POST /api/jellyfin/cache/:instanceId/refresh", () => {
+	let app: FastifyInstance;
+	const helperClient = { source: "caller-supplied-client" };
+	const storedInstance = { id: "jellyfin-1", service: "JELLYFIN" };
+	const publicationInstance = { id: "jellyfin-1", identityGeneration: 4 };
+
+	beforeEach(async () => {
+		vi.clearAllMocks();
+		routeMocks.requireClient.mockResolvedValue({ client: helperClient, instance: storedInstance });
+		routeMocks.createSnapshot.mockReturnValue(publicationInstance);
+		routeMocks.refresh.mockResolvedValue({
+			complete: true,
+			completedAt: new Date(),
+			upserted: 3,
+			errors: 0,
+		});
+		routeMocks.singleflight.mockImplementation(
+			async (_authority: unknown, refresh: () => Promise<unknown>) => await refresh(),
+		);
+		app = Fastify({ logger: false });
+		setupAuthInjection(app);
+		app.decorate("prisma", {} as never);
+		app.decorate("encryptor", {} as never);
+		await app.register(registerCacheRoutes, { prefix: "/api/jellyfin" });
+		await app.ready();
+	});
+
+	afterEach(async () => {
+		await app.close();
+	});
+
+	it("passes only the sealed owned snapshot to singleflight and publication", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/api/jellyfin/cache/jellyfin-1/refresh",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(routeMocks.createSnapshot).toHaveBeenCalledWith(app.encryptor, storedInstance);
+		expect(routeMocks.singleflight).toHaveBeenCalledWith(
+			publicationInstance,
+			expect.any(Function),
+			expect.objectContaining({ prisma: app.prisma }),
+		);
+		expect(routeMocks.refresh).toHaveBeenCalledWith(
+			expect.objectContaining({ prisma: app.prisma, instance: publicationInstance }),
+		);
+		expect(routeMocks.refresh.mock.calls.flat()).not.toContain(helperClient);
 	});
 });

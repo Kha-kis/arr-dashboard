@@ -1,27 +1,9 @@
-/**
- * Plex Cache Refresher — stale row eviction tests
- *
- * Regression for issue #323: `deleteMany({ id: { notIn: upsertedIds } })` was
- * exceeding SQLite's SQLITE_MAX_VARIABLE_NUMBER (default 999) for large
- * libraries, surfacing as Prisma P2029 and leaving the Plex cache in a
- * "errors, data may be outdated" state that neither manual nor scheduled
- * refreshes could clear.
- *
- * The fix replaces the oversized `notIn` query with a
- * read-then-diff-then-chunked-`in`-delete pattern. These tests pin that
- * behaviour so we don't regress it.
- */
+/** Plex cache collection and guarded publication tests. */
 
 import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
-import {
-	evictStaleRows,
-	PLEX_CACHE_PUBLICATION_CHUNK_SIZE,
-	PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
-	refreshPlexCache,
-	STALE_EVICTION_CHUNK_SIZE,
-} from "../plex-cache-refresher.js";
+import { collectPlexCacheLiveEvidence } from "../plex-cache-refresher.js";
 import type { PlexClient } from "../plex-client.js";
 
 const silentLog = {
@@ -34,89 +16,20 @@ const silentLog = {
 	child: vi.fn(),
 } as unknown as FastifyBaseLogger;
 
-/**
- * Build a minimal Prisma stub that records every `deleteMany` call so tests
- * can assert on chunking behaviour without needing a real database.
- */
-function makeMockPrisma(existingIds: string[]) {
-	const deleteCalls: Array<{ idsInFilter: string[] }> = [];
-
-	const stub = {
-		plexCache: {
-			findMany: vi.fn(async () => existingIds.map((id) => ({ id }))),
-			deleteMany: vi.fn(async (args: { where: { id: { in: string[] } } }) => {
-				deleteCalls.push({ idsInFilter: args.where.id.in });
-				return { count: args.where.id.in.length };
-			}),
-		},
-	} as unknown as PrismaClient;
-
-	return { prisma: stub, deleteCalls };
+async function refreshPlexCache(
+	client: PlexClient,
+	prisma: PrismaClient,
+	instanceId: string,
+	log: FastifyBaseLogger,
+	_expectedConnection?: unknown,
+	_options?: unknown,
+) {
+	void prisma;
+	return await collectPlexCacheLiveEvidence(client, instanceId, log);
 }
 
-describe("evictStaleRows", () => {
-	it("returns 0 and issues no DELETE when nothing is stale", async () => {
-		const keepIds = ["a", "b", "c"];
-		const { prisma, deleteCalls } = makeMockPrisma(keepIds);
-
-		const deleted = await evictStaleRows(prisma, "inst-1", keepIds);
-
-		expect(deleted).toBe(0);
-		expect(deleteCalls).toHaveLength(0);
-	});
-
-	it("deletes only rows whose id is not in keepIds", async () => {
-		const existing = ["keep-1", "stale-1", "keep-2", "stale-2"];
-		const keepIds = ["keep-1", "keep-2"];
-		const { prisma, deleteCalls } = makeMockPrisma(existing);
-
-		const deleted = await evictStaleRows(prisma, "inst-1", keepIds);
-
-		expect(deleted).toBe(2);
-		expect(deleteCalls).toHaveLength(1);
-		// Order doesn't matter; membership does.
-		expect(new Set(deleteCalls[0]!.idsInFilter)).toEqual(new Set(["stale-1", "stale-2"]));
-	});
-
-	it("chunks large stale sets so no single DELETE exceeds the SQLite parameter limit (#323)", async () => {
-		// Simulate a library large enough that the old `notIn: upsertedIds` path
-		// would have generated a single 5,000-parameter query (5x SQLite's
-		// default 999-parameter ceiling).
-		const TOTAL_EXISTING = 5_000;
-		const existingIds = Array.from({ length: TOTAL_EXISTING }, (_, i) => `row-${i}`);
-		// Keep none of them — every row is stale. This is the worst case for
-		// parameter count.
-		const keepIds: string[] = [];
-		const { prisma, deleteCalls } = makeMockPrisma(existingIds);
-
-		const deleted = await evictStaleRows(prisma, "inst-1", keepIds);
-
-		expect(deleted).toBe(TOTAL_EXISTING);
-
-		// Every DELETE must stay well under the SQLite limit. 999 is the
-		// conservative ceiling; our chunk size is smaller by design.
-		const SQLITE_PARAM_CEILING = 999;
-		for (const call of deleteCalls) {
-			expect(call.idsInFilter.length).toBeLessThanOrEqual(STALE_EVICTION_CHUNK_SIZE);
-			expect(call.idsInFilter.length).toBeLessThan(SQLITE_PARAM_CEILING);
-		}
-
-		// And the chunks must cover the full stale set with no duplicates.
-		const seen = new Set<string>();
-		for (const call of deleteCalls) {
-			for (const id of call.idsInFilter) {
-				expect(seen.has(id)).toBe(false);
-				seen.add(id);
-			}
-		}
-		expect(seen.size).toBe(TOTAL_EXISTING);
-
-		// Sanity: we actually did issue multiple statements (i.e. we chunked,
-		// not just "happened to send one small query"). ceil(5000 / 500) = 10.
-		expect(deleteCalls.length).toBe(Math.ceil(TOTAL_EXISTING / STALE_EVICTION_CHUNK_SIZE));
-	});
-
-	it("large-library end-to-end: refreshPlexCache completes with zero errors and no oversized DELETE (#323 regression)", async () => {
+describe("collectPlexCacheLiveEvidence", () => {
+	it("collects a complete large-library snapshot without publishing", async () => {
 		// Stands in for "manual smoke on a Docker + SQLite deployment with a large
 		// Plex library" — runs the full refreshPlexCache path with >1,000 items
 		// and 1,500 pre-existing stale rows, then asserts:
@@ -124,7 +37,6 @@ describe("evictStaleRows", () => {
 		//   2. every DELETE stays under the SQLite 999-parameter ceiling
 		//   3. upserts are actually issued (we didn't silently short-circuit)
 		const LIBRARY_SIZE = 1_200;
-		const STALE_COUNT = 1_500;
 
 		const libraryItems = Array.from({ length: LIBRARY_SIZE }, (_, i) => ({
 			ratingKey: `rk-${i}`,
@@ -147,69 +59,19 @@ describe("evictStaleRows", () => {
 			getOnDeck: vi.fn().mockResolvedValue([]),
 		} as unknown as PlexClient;
 
-		// Pre-populate the "existing rows" list with the fresh upsert ids plus
-		// a large stale tail — enough that the old `notIn: upsertedIds` path
-		// would have been >999 params and tripped P2029.
-		const publishedRows: unknown[] = [];
-		const replacementDelete = vi.fn().mockResolvedValue({ count: STALE_COUNT });
-		const tx = {
-			plexCache: {
-				deleteMany: replacementDelete,
-				createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
-					publishedRows.push(...data);
-					return { count: data.length };
-				}),
-			},
-			cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
-		};
-
-		const mockPrisma = {
-			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
-				callback(tx),
-			),
-		} as unknown as PrismaClient;
+		const transaction = vi.fn();
+		const mockPrisma = { $transaction: transaction } as unknown as PrismaClient;
 
 		const result = await refreshPlexCache(mockClient, mockPrisma, "inst-1", silentLog, undefined);
 
 		expect(result.errors).toBe(0);
 		expect(result.errorMessages).toEqual([]);
-		expect(result.upserted).toBe(LIBRARY_SIZE);
-
-		expect(replacementDelete).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
-		expect(publishedRows).toHaveLength(LIBRARY_SIZE);
-		expect(tx.plexCache.createMany).toHaveBeenCalledTimes(
-			Math.ceil(LIBRARY_SIZE / PLEX_CACHE_PUBLICATION_CHUNK_SIZE),
-		);
-		let chunkedRows = 0;
-		for (const [call] of tx.plexCache.createMany.mock.calls) {
-			expect(call.data.length).toBeLessThanOrEqual(PLEX_CACHE_PUBLICATION_CHUNK_SIZE);
-			chunkedRows += call.data.length;
-		}
-		expect(chunkedRows).toBe(LIBRARY_SIZE);
-		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
-		expect(mockPrisma.$transaction).toHaveBeenCalledWith(
-			expect.any(Function),
-			expect.objectContaining({ timeout: PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS }),
-		);
+		expect(result.upserted).toBe(0);
+		expect(result.snapshot?.rows).toHaveLength(LIBRARY_SIZE);
+		expect(transaction).not.toHaveBeenCalled();
 	});
 
-	it("never uses `notIn` — the original P2029 trigger", async () => {
-		// Guard against a future regression where someone re-introduces the
-		// oversized `notIn` query. The mock's deleteMany only accepts `id.in`,
-		// so any `notIn` call would surface here as a runtime error.
-		const existingIds = Array.from({ length: 1_500 }, (_, i) => `row-${i}`);
-		const { prisma, deleteCalls } = makeMockPrisma(existingIds);
-
-		await evictStaleRows(prisma, "inst-1", []);
-
-		for (const call of deleteCalls) {
-			// `idsInFilter` comes from `args.where.id.in` — if the code ever
-			// switched back to `notIn`, this array would be undefined.
-			expect(Array.isArray(call.idsInFilter)).toBe(true);
-		}
-	});
-
-	it("evicts stale rows when a discovered library is authoritatively empty", async () => {
+	it("collects an authoritatively empty library without publishing", async () => {
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
@@ -232,7 +94,8 @@ describe("evictStaleRows", () => {
 		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
 		expect(result).toMatchObject({ errors: 0, complete: true, upserted: 0 });
-		expect(deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
+		expect(result.snapshot?.rows).toEqual([]);
+		expect(deleteMany).not.toHaveBeenCalled();
 		expect(tx.plexCache.createMany).not.toHaveBeenCalled();
 	});
 
@@ -275,51 +138,6 @@ describe("evictStaleRows", () => {
 		]);
 		expect(result.snapshot?.sections).toEqual([{ key: "1", title: "Movies", type: "movie" }]);
 		expect(transaction).not.toHaveBeenCalled();
-	});
-
-	it("discards an outgoing Plex generation after its connection changes before publication", async () => {
-		let resolveLibraryItems: (items: unknown[]) => void = () => {};
-		const pendingLibraryItems = new Promise<unknown[]>((resolve) => {
-			resolveLibraryItems = resolve;
-		});
-		let currentGeneration = 7;
-		const mockClient = {
-			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
-			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
-			getLibraryItems: vi.fn().mockReturnValue(pendingLibraryItems),
-			getHistory: vi.fn().mockResolvedValue([]),
-			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
-			getOnDeck: vi.fn().mockResolvedValue([]),
-		} as unknown as PlexClient;
-		const tx = {
-			serviceInstance: {
-				findUnique: vi.fn(async () => ({
-					service: "PLEX",
-					enabled: true,
-					connectionGeneration: currentGeneration,
-				})),
-			},
-			plexCache: { deleteMany: vi.fn(), createMany: vi.fn() },
-			cacheRefreshStatus: { upsert: vi.fn() },
-		};
-		const prisma = {
-			$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
-				callback(tx),
-			),
-		} as unknown as PrismaClient;
-
-		const refresh = refreshPlexCache(mockClient, prisma, "inst-1", silentLog, {
-			service: "PLEX",
-			connectionGeneration: 7,
-		});
-		await vi.waitFor(() => expect(mockClient.getLibraryItems).toHaveBeenCalledOnce());
-		currentGeneration = 8;
-		resolveLibraryItems([]);
-		const result = await refresh;
-
-		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0 });
-		expect(tx.plexCache.deleteMany).not.toHaveBeenCalled();
-		expect(tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("keeps the previous generation when history changes after enrichment", async () => {
@@ -478,7 +296,7 @@ describe("evictStaleRows", () => {
 		expect(deleteMany).not.toHaveBeenCalled();
 	});
 
-	it("publishes a complete current library while ignoring history for a stale library key", async () => {
+	it("collects a complete current library while ignoring history for a stale library key", async () => {
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
@@ -517,18 +335,15 @@ describe("evictStaleRows", () => {
 
 		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
-		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
-		expect(deleteMany).toHaveBeenCalledWith({ where: { instanceId: "inst-1" } });
-		expect(createMany).toHaveBeenCalledWith({
-			data: [expect.objectContaining({ ratingKey: "current", tmdbId: 42 })],
-		});
-		expect(silentLog.info).toHaveBeenCalledWith(
-			expect.objectContaining({ ignoredHistoricalItems: 1 }),
-			"Plex cache refresh complete",
-		);
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 0 });
+		expect(result.snapshot?.rows).toEqual([
+			expect.objectContaining({ ratingKey: "current", tmdbId: 42 }),
+		]);
+		expect(deleteMany).not.toHaveBeenCalled();
+		expect(createMany).not.toHaveBeenCalled();
 	});
 
-	it("publishes a complete current show library while ignoring stale episode history", async () => {
+	it("collects a complete current show library while ignoring stale episode history", async () => {
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 			getLibrarySections: vi.fn().mockResolvedValue([{ key: "2", title: "Shows", type: "show" }]),
@@ -566,11 +381,10 @@ describe("evictStaleRows", () => {
 
 		const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
 
-		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
-		expect(silentLog.info).toHaveBeenCalledWith(
-			expect.objectContaining({ ignoredHistoricalItems: 1 }),
-			"Plex cache refresh complete",
-		);
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 0 });
+		expect(result.snapshot?.rows).toEqual([
+			expect.objectContaining({ ratingKey: "current-show", tmdbId: 84 }),
+		]);
 	});
 
 	it("fails closed when a stale history key becomes current before publication", async () => {

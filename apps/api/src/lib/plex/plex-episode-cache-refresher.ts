@@ -5,13 +5,18 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
-import type { PrismaClientInstance } from "../prisma.js";
+import type { Prisma, PrismaClientInstance } from "../prisma.js";
 import {
-	type ProviderConnectionIdentity,
-	withCurrentProviderConnection,
-} from "../services/provider-connection-guard.js";
+	ProviderIdentityGuardError,
+	withGuardedProviderPublication,
+} from "../services/provider-identity-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import type { PlexClient, PlexEpisodeItem } from "./plex-client.js";
+import {
+	PLEX_CACHE_PUBLICATION_CHUNK_SIZE,
+	type PlexPublicationContext,
+} from "./plex-cache-refresher.js";
+import { PlexClient, type PlexEpisodeItem } from "./plex-client.js";
+import { plexConnectionFingerprint } from "./service-instance-fingerprint.js";
 
 const MAX_SHOWS_PER_REFRESH = 50;
 const REFRESHES_PER_FRESHNESS_WINDOW = 4;
@@ -31,6 +36,25 @@ export interface PlexEpisodeRefreshResult {
 	superseded?: boolean;
 }
 
+type PlexEpisodeRow = {
+	instanceId: string;
+	showTmdbId: number;
+	seasonNumber: number;
+	episodeNumber: number;
+	ratingKey: string;
+	title: string;
+	watched: boolean;
+	watchedByUsers: string;
+	lastWatchedAt: Date | null;
+	watchCount: number;
+	refreshedAt: Date;
+	sourceFingerprint: string;
+};
+
+type CollectedPlexEpisodeRefresh = PlexEpisodeRefreshResult & {
+	rows?: PlexEpisodeRow[];
+};
+
 function failedResult(
 	errorMessages: string[],
 	eligibleShows: number,
@@ -49,20 +73,23 @@ function failedResult(
 	};
 }
 
-export async function refreshPlexEpisodeCache(
+async function collectPlexEpisodeCache(
 	client: PlexClient,
 	prisma: PrismaClientInstance,
 	instanceId: string,
 	log: FastifyBaseLogger,
 	sourceFingerprint: string,
-	expectedConnection: ProviderConnectionIdentity | undefined,
-): Promise<PlexEpisodeRefreshResult> {
+	connectionGeneration: number,
+	identityGeneration: number,
+): Promise<CollectedPlexEpisodeRefresh> {
 	const recentlyWatchedShows = await prisma.plexCache.findMany({
 		where: {
 			instanceId,
 			mediaType: "series",
 			ratingKey: { not: null },
 			watchCount: { gt: 0 },
+			connectionGeneration,
+			identityGeneration,
 		},
 		orderBy: { lastWatchedAt: "desc" },
 		select: { tmdbId: true, ratingKey: true },
@@ -131,20 +158,7 @@ export async function refreshPlexEpisodeCache(
 		}
 	}
 
-	const rows: Array<{
-		instanceId: string;
-		showTmdbId: number;
-		seasonNumber: number;
-		episodeNumber: number;
-		ratingKey: string;
-		title: string;
-		watched: boolean;
-		watchedByUsers: string;
-		lastWatchedAt: Date | null;
-		watchCount: number;
-		refreshedAt: Date;
-		sourceFingerprint: string;
-	}> = [];
+	const rows: PlexEpisodeRow[] = [];
 	const completedAt = new Date();
 	let refreshedShows = 0;
 
@@ -218,62 +232,8 @@ export async function refreshPlexEpisodeCache(
 		return failedResult([message], eligibleShows, refreshedShows);
 	}
 
-	try {
-		const publication = await withCurrentProviderConnection(
-			prisma,
-			instanceId,
-			expectedConnection,
-			async (tx) => {
-				await tx.plexEpisodeCache.deleteMany({ where: { instanceId } });
-				if (rows.length > 0) await tx.plexEpisodeCache.createMany({ data: rows });
-				await tx.cacheRefreshStatus.upsert({
-					where: { instanceId_cacheType: { instanceId, cacheType: "plex_episode" } },
-					create: {
-						instanceId,
-						cacheType: "plex_episode",
-						lastRefreshedAt: completedAt,
-						lastResult: "success",
-						itemCount: rows.length,
-						lastAttemptAt: completedAt,
-						lastAttemptResult: "success",
-					},
-					update: {
-						lastRefreshedAt: completedAt,
-						lastResult: "success",
-						lastErrorMessage: null,
-						itemCount: rows.length,
-						lastAttemptAt: completedAt,
-						lastAttemptResult: "success",
-						lastAttemptErrorMessage: null,
-					},
-				});
-			},
-		);
-		if (!publication.matched) {
-			return {
-				upserted: 0,
-				errors: 0,
-				errorMessages: [],
-				eligibleShows,
-				refreshedShows,
-				coverageIncomplete: true,
-				capacityDegraded: false,
-				complete: false,
-				superseded: true,
-			};
-		}
-	} catch (error) {
-		const message = `Atomic Plex episode publication failed: ${getErrorMessage(error)}`;
-		log.error({ err: error, instanceId }, message);
-		return failedResult([message], eligibleShows, refreshedShows);
-	}
-
-	log.info(
-		{ instanceId, eligibleShows, refreshedShows, upserted: rows.length },
-		"Plex episode cache refresh published",
-	);
 	return {
-		upserted: rows.length,
+		upserted: 0,
 		errors: 0,
 		errorMessages: [],
 		eligibleShows,
@@ -282,5 +242,103 @@ export async function refreshPlexEpisodeCache(
 		capacityDegraded: false,
 		complete: true,
 		completedAt,
+		rows,
 	};
+}
+
+export async function refreshPlexEpisodeCache(
+	context: PlexPublicationContext,
+): Promise<PlexEpisodeRefreshResult> {
+	const { prisma, instance, log } = context;
+	const client = new PlexClient(
+		instance.baseUrl,
+		instance.apiKey,
+		log,
+		undefined,
+		instance.httpAuthHeaders,
+	);
+	try {
+		return await withGuardedProviderPublication(
+			prisma,
+			instance,
+			log,
+			async () =>
+				await collectPlexEpisodeCache(
+					client,
+					prisma,
+					instance.id,
+					log,
+					plexConnectionFingerprint(instance),
+					instance.connectionGeneration,
+					instance.identityGeneration,
+				),
+			async (tx, collected) => await publishPlexEpisodeCache(tx, instance, collected),
+			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
+		);
+	} catch (error) {
+		if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") {
+			return {
+				upserted: 0,
+				errors: 0,
+				errorMessages: [],
+				eligibleShows: 0,
+				refreshedShows: 0,
+				coverageIncomplete: true,
+				capacityDegraded: false,
+				complete: false,
+				superseded: true,
+			};
+		}
+		const message =
+			error instanceof ProviderIdentityGuardError
+				? error.message
+				: `Atomic Plex episode publication failed: ${getErrorMessage(error)}`;
+		log.error({ err: error, instanceId: instance.id }, message);
+		return failedResult([message], 0, 0);
+	}
+}
+
+async function publishPlexEpisodeCache(
+	tx: Prisma.TransactionClient,
+	instance: PlexPublicationContext["instance"],
+	collected: CollectedPlexEpisodeRefresh,
+): Promise<PlexEpisodeRefreshResult> {
+	if (!collected.complete || !collected.completedAt || !collected.rows) return collected;
+	const rows = collected.rows;
+	await tx.plexEpisodeCache.deleteMany({ where: { instanceId: instance.id } });
+	for (let start = 0; start < rows.length; start += PLEX_CACHE_PUBLICATION_CHUNK_SIZE) {
+		await tx.plexEpisodeCache.createMany({
+			data: rows.slice(start, start + PLEX_CACHE_PUBLICATION_CHUNK_SIZE).map((row) => ({
+				...row,
+				connectionGeneration: instance.connectionGeneration,
+				identityGeneration: instance.identityGeneration,
+			})),
+		});
+	}
+	await tx.cacheRefreshStatus.upsert({
+		where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex_episode" } },
+		create: {
+			instanceId: instance.id,
+			cacheType: "plex_episode",
+			lastRefreshedAt: collected.completedAt,
+			lastResult: "success",
+			itemCount: rows.length,
+			lastAttemptAt: collected.completedAt,
+			lastAttemptResult: "success",
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		},
+		update: {
+			lastRefreshedAt: collected.completedAt,
+			lastResult: "success",
+			lastErrorMessage: null,
+			itemCount: rows.length,
+			lastAttemptAt: collected.completedAt,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		},
+	});
+	return { ...collected, upserted: rows.length };
 }

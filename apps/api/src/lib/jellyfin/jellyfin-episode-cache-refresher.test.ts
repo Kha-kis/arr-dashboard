@@ -4,9 +4,50 @@ import type { PrismaClient } from "../prisma.js";
 import type { JellyfinClient } from "./jellyfin-client.js";
 import {
 	JELLYFIN_EPISODE_MAX_SERIES,
-	refreshJellyfinEpisodeCache,
+	refreshJellyfinEpisodeCache as refreshGuardedJellyfinEpisodeCache,
 } from "./jellyfin-episode-cache-refresher.js";
-import { jellyfinConnectionFingerprint } from "./service-instance-fingerprint.js";
+
+const publication = vi.hoisted(() => ({ client: undefined as JellyfinClient | undefined }));
+
+vi.mock("./jellyfin-client.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./jellyfin-client.js")>();
+	return {
+		...actual,
+		JellyfinClient: class {
+			constructor() {
+				if (!publication.client) throw new Error("Episode test client was not configured");
+				Object.assign(this, publication.client);
+			}
+		},
+	};
+});
+
+vi.mock("../services/provider-identity-guard.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../services/provider-identity-guard.js")>();
+	return {
+		...actual,
+		withGuardedProviderPublication: vi.fn(
+			async (
+				prisma: { $transaction: (callback: (tx: unknown) => Promise<unknown>) => Promise<unknown> },
+				_instance: unknown,
+				_log: unknown,
+				collect: () => Promise<unknown>,
+				publish: (tx: unknown, snapshot: unknown) => Promise<unknown>,
+			) => {
+				const snapshot = await collect();
+				if ((snapshot as { complete?: boolean }).complete !== true) return snapshot;
+				return await prisma.$transaction(async (tx) => await publish(tx, snapshot));
+			},
+		),
+		withCurrentProviderPublicationAuthority: vi.fn(
+			async (
+				prisma: { $transaction: (callback: (tx: unknown) => Promise<unknown>) => Promise<unknown> },
+				_instance: unknown,
+				action: (tx: unknown) => Promise<unknown>,
+			) => ({ matched: true, value: await prisma.$transaction(action) }),
+		),
+	};
+});
 
 const log = {
 	warn: vi.fn(),
@@ -35,11 +76,37 @@ const connectionOne: TestConnection = {
 	enabled: true,
 	connectionGeneration: 7,
 };
-const connectionTwo: TestConnection = {
-	...connectionOne,
-	connectionGeneration: 8,
-};
-const fingerprintOne = jellyfinConnectionFingerprint(connectionOne as never);
+async function refreshJellyfinEpisodeCache(
+	client: JellyfinClient,
+	prisma: PrismaClient,
+	instanceId: string,
+	log: FastifyBaseLogger,
+	_expectedConnection?: string,
+) {
+	publication.client = client;
+	return await refreshGuardedJellyfinEpisodeCache({
+		prisma,
+		instance: {
+			id: instanceId,
+			userId: "user-1",
+			service: "JELLYFIN",
+			label: "Jellyfin",
+			baseUrl: connectionOne.baseUrl,
+			apiKey: "key",
+			httpAuthHeaders: {},
+			enabled: true,
+			encryptedApiKey: connectionOne.encryptedApiKey,
+			encryptionIv: connectionOne.encryptionIv,
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			expectedIdentity: "jellyfin-a",
+			identityStatus: "VERIFIED",
+			connectionGeneration: connectionOne.connectionGeneration,
+			identityGeneration: 2,
+		},
+		log,
+	});
+}
 
 function fixture(
 	series: unknown[] = [{ tmdbId: 42, jellyfinId: "series-1", title: "Show" }],
@@ -56,10 +123,20 @@ function fixture(
 				return { count: data.length };
 			}),
 		},
-		cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+		cacheRefreshStatus: {
+			findUnique: vi.fn().mockResolvedValue(null),
+			upsert: vi.fn().mockResolvedValue({}),
+		},
 	};
 	const prisma = {
 		jellyfinCache: { findMany: vi.fn().mockResolvedValue(series) },
+		cacheRefreshStatus: {
+			findUnique: vi.fn().mockResolvedValue({
+				lastResult: "success",
+				connectionGeneration: connectionOne.connectionGeneration,
+				identityGeneration: 2,
+			}),
+		},
 		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
 			callback(tx),
 		),
@@ -88,7 +165,7 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 			state.prisma,
 			"jellyfin-1",
 			log,
-			fingerprintOne,
+			"ignored",
 		);
 
 		expect(result).toMatchObject({ upserted: 1, errors: 0, complete: true });
@@ -101,9 +178,16 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 				showTmdbId: 42,
 				watched: true,
 				watchedByUsers: JSON.stringify(["Alice"]),
+				connectionGeneration: 7,
+				identityGeneration: 2,
 			}),
 		]);
-		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({ connectionGeneration: 7, identityGeneration: 2 }),
+				update: expect.objectContaining({ connectionGeneration: 7, identityGeneration: 2 }),
+			}),
+		);
 	});
 
 	it("does not publish when one user's episode inventory fails", async () => {
@@ -121,7 +205,7 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 			state.prisma,
 			"jellyfin-1",
 			log,
-			fingerprintOne,
+			"ignored",
 		);
 
 		expect(result).toEqual({ upserted: 0, errors: 1, complete: false });
@@ -138,7 +222,7 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 			state.prisma,
 			"jellyfin-1",
 			log,
-			fingerprintOne,
+			"ignored",
 		);
 
 		expect(result).toEqual({ upserted: 0, errors: 1, complete: false });
@@ -159,7 +243,7 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 			state.prisma,
 			"jellyfin-1",
 			log,
-			fingerprintOne,
+			"ignored",
 		);
 
 		expect(result).toEqual({ upserted: 0, errors: 1, complete: false });
@@ -174,7 +258,7 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 			state.prisma,
 			"jellyfin-1",
 			log,
-			fingerprintOne,
+			"ignored",
 		);
 
 		expect(result).toMatchObject({ upserted: 0, errors: 0, complete: true });
@@ -182,46 +266,4 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 		expect(state.tx.jellyfinEpisodeCache.createMany).not.toHaveBeenCalled();
 		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 	});
-
-	it("does not publish a complete snapshot from a superseded connection", async () => {
-		const state = fixture(undefined, connectionTwo);
-
-		const result = await refreshJellyfinEpisodeCache(
-			state.client,
-			state.prisma,
-			"jellyfin-1",
-			log,
-			fingerprintOne,
-		);
-
-		expect(result).toMatchObject({ complete: false, errors: 0, superseded: true });
-		expect(state.tx.jellyfinEpisodeCache.deleteMany).not.toHaveBeenCalled();
-		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
-	});
-
-	it.each(["incomplete", "rejected"] as const)(
-		"does not record an old-connection %s attempt against the current connection",
-		async (outcome) => {
-			const state = fixture(undefined, connectionTwo);
-			if (outcome === "incomplete") {
-				(state.client.getUsers as ReturnType<typeof vi.fn>).mockResolvedValue([]);
-			} else {
-				(state.client.getUsers as ReturnType<typeof vi.fn>).mockRejectedValue(
-					new Error("old endpoint unavailable"),
-				);
-			}
-
-			const result = await refreshJellyfinEpisodeCache(
-				state.client,
-				state.prisma,
-				"jellyfin-1",
-				log,
-				fingerprintOne,
-			);
-
-			expect(result).toMatchObject({ complete: false, errors: 0, superseded: true });
-			expect(state.tx.jellyfinEpisodeCache.deleteMany).not.toHaveBeenCalled();
-			expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
-		},
-	);
 });

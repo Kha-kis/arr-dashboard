@@ -11,15 +11,83 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
+import type { ServiceInstance } from "../lib/prisma.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import { recordProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
-import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
-import { refreshTautulliCache } from "../lib/tautulli/tautulli-cache-refresher.js";
-import { createTautulliClient } from "../lib/tautulli/tautulli-client.js";
+import { recordWatchProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
+import {
+	createProviderPublicationAuthority,
+	type ProviderPublicationAuthority,
+} from "../lib/services/provider-identity-guard.js";
+import {
+	createOwnedTautulliPublicationSnapshot,
+	refreshTautulliCache,
+} from "../lib/tautulli/tautulli-cache-refresher.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 2 * 60_000; // 2 minutes — staggered after plex-cache (30s) to reduce peak memory
+
+export async function refreshScheduledTautulliCacheInstance(
+	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
+	instance: ServiceInstance,
+): Promise<void> {
+	const authority = createProviderPublicationAuthority(instance);
+	let publicationInstance: ReturnType<typeof createOwnedTautulliPublicationSnapshot> | undefined;
+	try {
+		publicationInstance = createOwnedTautulliPublicationSnapshot(app.encryptor, instance);
+		const result = await refreshTautulliCache({
+			prisma: app.prisma,
+			instance: publicationInstance,
+			log: app.log,
+		});
+		app.log.info(
+			{ instanceId: instance.id, label: instance.label, ...result },
+			"Tautulli cache refresh completed for instance",
+		);
+
+		if ((!result.complete || !result.completedAt) && !result.superseded) {
+			await recordScheduledTautulliFailure(
+				app,
+				publicationInstance,
+				result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
+					"Tautulli refresh did not produce a complete generation",
+			);
+		}
+	} catch (err) {
+		app.log.error(
+			{ err, instanceId: instance.id, label: instance.label },
+			"Tautulli cache refresh failed for instance",
+		);
+		await recordScheduledTautulliFailure(
+			app,
+			publicationInstance ?? authority,
+			publicationInstance
+				? getErrorMessage(err, "Unknown error")
+				: "Provider credentials could not be decrypted.",
+		);
+	}
+}
+
+async function recordScheduledTautulliFailure(
+	app: Pick<FastifyInstance, "prisma" | "log">,
+	publicationInstance: ProviderPublicationAuthority,
+	message: string,
+): Promise<void> {
+	try {
+		await recordWatchProviderCacheRefreshFailure(
+			app.prisma,
+			"tautulli",
+			message,
+			publicationInstance,
+			app.log,
+		);
+	} catch (trackErr) {
+		app.log.warn(
+			{ err: trackErr, instanceId: publicationInstance.id },
+			"Tautulli cache refresh failed to record status",
+		);
+	}
+}
 
 const tautulliCacheSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
@@ -50,55 +118,7 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
-						const expectedConnection = providerConnectionIdentity(instance);
-						try {
-							const client = createTautulliClient(app.encryptor, instance, app.log);
-							const result = await refreshTautulliCache(
-								client,
-								app.prisma,
-								instance.id,
-								app.log,
-								expectedConnection,
-							);
-							app.log.info(
-								{ instanceId: instance.id, label: instance.label, ...result },
-								"Tautulli cache refresh completed for instance",
-							);
-
-							try {
-								if (!result.complete || !result.completedAt) {
-									await recordProviderCacheRefreshFailure(
-										app.prisma,
-										instance.id,
-										"tautulli",
-										result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
-											"Tautulli refresh did not produce a complete generation",
-										expectedConnection,
-										app.log,
-									);
-								}
-							} catch (trackErr) {
-								app.log.warn(
-									{ err: trackErr, instanceId: instance.id },
-									"Tautulli cache refreshed successfully but failed to record status",
-								);
-							}
-						} catch (err) {
-							app.log.error(
-								{ err, instanceId: instance.id, label: instance.label },
-								"Tautulli cache refresh failed for instance",
-							);
-
-							// Track failure
-							await recordProviderCacheRefreshFailure(
-								app.prisma,
-								instance.id,
-								"tautulli",
-								getErrorMessage(err, "Unknown error"),
-								expectedConnection,
-								app.log,
-							);
-						}
+						await refreshScheduledTautulliCacheInstance(app, instance);
 					}
 
 					// Check for stale caches (>12h since last successful refresh)

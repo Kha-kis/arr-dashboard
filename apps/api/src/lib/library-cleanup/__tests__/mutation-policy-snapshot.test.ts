@@ -16,15 +16,45 @@ const refreshMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
+	collectPlexCacheLiveEvidence: refreshMocks.plex,
+	createOwnedPlexPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshPlexCache: refreshMocks.plex,
 }));
 vi.mock("../../plex/plex-episode-cache-refresher.js", () => ({
 	refreshPlexEpisodeCache: refreshMocks.plexEpisodes,
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
+	collectTautulliCacheLiveEvidence: refreshMocks.tautulli,
+	createOwnedTautulliPublicationSnapshot: (
+		_encryptor: unknown,
+		instance: Record<string, unknown>,
+	) => ({
+		...instance,
+		label: instance.name ?? "Tautulli",
+		apiKey: "decrypted",
+		httpAuthHeaders: {},
+		expectedIdentity: "plex-a",
+		identityStatus: "VERIFIED",
+		connectionGeneration: 0,
+		identityGeneration: 0,
+	}),
 	refreshTautulliCache: refreshMocks.tautulli,
 }));
 vi.mock("../../jellyfin/jellyfin-cache-refresher.js", () => ({
+	collectJellyfinCacheLiveEvidence: refreshMocks.jellyfin,
+	createOwnedJellyfinPublicationSnapshot: (
+		_encryptor: unknown,
+		instance: Record<string, unknown>,
+	) => ({
+		...instance,
+		label: instance.name ?? "Jellyfin",
+		apiKey: "decrypted",
+		httpAuthHeaders: {},
+		expectedIdentity: "jellyfin-a",
+		identityStatus: "VERIFIED",
+		connectionGeneration: 0,
+		identityGeneration: 0,
+	}),
 	refreshJellyfinCache: refreshMocks.jellyfin,
 }));
 vi.mock("../../jellyfin/jellyfin-episode-cache-refresher.js", () => ({
@@ -65,9 +95,29 @@ function instance(service: "PLEX" | "TAUTULLI" | "JELLYFIN") {
 		encryptedHttpAuthCredentials: null,
 		httpAuthEncryptionIv: null,
 		enabled: true,
+		expectedIdentity: `${service.toLowerCase()}-identity`,
+		identityKind: `${service}_IDENTITY`,
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date("2026-07-31T12:00:00.000Z"),
+		connectionGeneration: 1,
+		identityGeneration: 1,
 		createdAt: new Date("2026-07-31T12:00:00.000Z"),
 		updatedAt: new Date("2026-07-31T12:00:00.000Z"),
 	};
+}
+
+function plexRefreshInstanceId(args: unknown[]): string {
+	const [first, second, positionalInstanceId] = args;
+	if (
+		typeof first === "object" &&
+		first !== null &&
+		"instance" in first &&
+		typeof (first as { instance?: { id?: unknown } }).instance?.id === "string"
+	) {
+		return (first as { instance: { id: string } }).instance.id;
+	}
+	if (typeof second === "string") return second;
+	return String(positionalInstanceId);
 }
 
 function makeDeps(
@@ -96,25 +146,35 @@ function makeDeps(
 	);
 	const cacheRefreshStatus = {
 		upsert: cacheStatusUpsert,
+		findUnique: vi.fn().mockResolvedValue(null),
 		findMany: vi.fn(async ({ where }: { where: { instanceId: { in: string[] } } }) =>
-			where.instanceId.in.map((instanceId) => ({
-				instanceId,
-				lastRefreshedAt: publishedAt,
-				lastResult: "success",
-				itemCount: 0,
-				generationId: `generation-${instanceId}`,
-				generationMetadata: JSON.stringify({
-					sections: [{ key: "1", title: "Movies", type: "movie" }],
-				}),
-				lastErrorMessage: null,
-				lastAttemptResult: "success",
-				lastAttemptErrorMessage: null,
-			})),
+			where.instanceId.in.map((instanceId) => {
+				const source = instances.find((entry) => entry.id === instanceId);
+				return {
+					instanceId,
+					lastRefreshedAt: publishedAt,
+					lastResult: "success",
+					itemCount: 0,
+					generationId: `generation-${instanceId}`,
+					generationMetadata: JSON.stringify({
+						sections: [{ key: "1", title: "Movies", type: "movie" }],
+					}),
+					lastErrorMessage: null,
+					lastAttemptResult: "success",
+					lastAttemptErrorMessage: null,
+					connectionGeneration: source?.connectionGeneration ?? 1,
+					identityGeneration: source?.identityGeneration ?? 1,
+				};
+			}),
 		),
 	};
 	const refreshTransaction = {
 		$queryRawUnsafe: vi.fn().mockResolvedValue([]),
-		serviceInstance: { findUnique: findInstance },
+		libraryCleanupConfig: {
+			upsert: vi.fn().mockResolvedValue({ id: "config-1" }),
+			findUnique: vi.fn().mockResolvedValue({ runClaimToken: null }),
+		},
+		serviceInstance: { findUnique: findInstance, findFirst: findInstance },
 		cacheRefreshStatus,
 	};
 	const deps = {
@@ -135,6 +195,7 @@ function makeDeps(
 			jellyfinEpisodeCache: { findMany: vi.fn(), groupBy: vi.fn().mockResolvedValue([]) },
 		},
 		arrClientFactory: vi.fn(),
+		encryptor: { decrypt: vi.fn().mockReturnValue("decrypted") },
 		plexCacheClientFactory: vi.fn(() => ({}) as never),
 		tautulliCacheClientFactory: vi.fn(() => ({}) as never),
 		jellyfinCacheClientFactory: vi.fn(() => ({}) as never),
@@ -146,13 +207,13 @@ function makeDeps(
 describe("authoritative mutation policy snapshots", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		refreshMocks.plex.mockImplementation(async (_client, _prisma, instanceId: string) => ({
+		refreshMocks.plex.mockImplementation(async (...args: unknown[]) => ({
 			upserted: 0,
 			errors: 0,
 			errorMessages: [],
 			complete: true,
 			completedAt: new Date(),
-			generationId: `generation-${instanceId}`,
+			generationId: `generation-${plexRefreshInstanceId(args)}`,
 			inventoryTargets: [],
 		}));
 		refreshMocks.plexEpisodes.mockResolvedValue({
@@ -265,6 +326,23 @@ describe("authoritative mutation policy snapshots", () => {
 		expect(refreshMocks.plex).toHaveBeenCalledOnce();
 		expect(refreshMocks.plexEpisodes).toHaveBeenCalledOnce();
 	});
+
+	it.each([
+		["Plex", "plex_watch_count", "PLEX", refreshMocks.plex],
+		["Tautulli", "tautulli_watch_count", "TAUTULLI", refreshMocks.tautulli],
+		["Jellyfin", "jellyfin_watch_count", "JELLYFIN", refreshMocks.jellyfin],
+	] as const)(
+		"coordinates cleanup-owned %s publication with the active run lease",
+		async (_label, ruleType, service, refreshMock) => {
+			const { deps } = makeDeps([rule(ruleType)], [instance(service)]);
+
+			await createMutationPolicySnapshotGetter(deps, "user-1", undefined, "cleanup-run")();
+
+			expect(refreshMock).toHaveBeenCalledWith(
+				expect.objectContaining({ cleanupRunClaimToken: "cleanup-run" }),
+			);
+		},
+	);
 
 	it("rejects inventory identities that do not belong to the published Plex generation", async () => {
 		refreshMocks.plex.mockResolvedValue({
@@ -501,6 +579,7 @@ describe("authoritative mutation policy snapshots", () => {
 	] as const)(
 		"%s %s after final target revalidation",
 		async (_label, _expectedBehavior, service, mediaType, plexATargetsAtSnapshot, plexBTargetsAtSnapshot, plexATargetsAtMutation, plexBTargetsAtMutation, expectedToBlock, omitSonarrTmdbId, policyChangesAfterSnapshot) => {
+			const cleanupRunClaimToken = "cleanup-run";
 			const arrPolicyChangesDuringRefresh =
 				_expectedBehavior === "blocks a live ARR policy change during the Plex refresh";
 			const plexA = { ...instance("PLEX"), id: "plex-a", name: "Plex A" };
@@ -559,6 +638,8 @@ describe("authoritative mutation policy snapshots", () => {
 				collections: "[]",
 				labels: "[]",
 				addedAt: new Date("2025-01-01T00:00:00.000Z"),
+				connectionGeneration: 1,
+				identityGeneration: 1,
 			};
 			vi.mocked(deps.prisma.plexCache.findMany).mockImplementation((async () => [
 				{
@@ -590,8 +671,11 @@ describe("authoritative mutation policy snapshots", () => {
 					lastErrorMessage: null,
 					lastAttemptResult: "success",
 					lastAttemptErrorMessage: null,
+					connectionGeneration: 1,
+					identityGeneration: 1,
 				}))) as never);
-			refreshMocks.plex.mockImplementation(async (_client, _prisma, instanceId: string) => {
+			refreshMocks.plex.mockImplementation(async (...args: unknown[]) => {
+				const instanceId = plexRefreshInstanceId(args);
 				const pass = Math.floor(refreshCallCount / 2) + 1;
 				refreshCallCount++;
 				const generationId = `generation-${pass}-${instanceId}`;
@@ -672,7 +756,12 @@ describe("authoritative mutation policy snapshots", () => {
 					service === "RADARR" ? { movie: { getById } } : { series: { getById } },
 				),
 			} as never;
-			const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+			const snapshot = await createMutationPolicySnapshotGetter(
+				deps,
+				"user-1",
+				undefined,
+				cleanupRunClaimToken,
+			)();
 			const deleteMovieFile = vi.fn();
 
 			const executeAuthorizedDelete = async () => {
@@ -687,6 +776,7 @@ describe("authoritative mutation policy snapshots", () => {
 						scanMediaServerAfterDelete: false,
 					},
 					snapshot,
+					cleanupRunClaimToken,
 				);
 				await deleteMovieFile();
 			};
@@ -698,6 +788,9 @@ describe("authoritative mutation policy snapshots", () => {
 			} else {
 				await expect(executeAuthorizedDelete()).resolves.toBeUndefined();
 				expect(deleteMovieFile).toHaveBeenCalledOnce();
+			}
+			for (const [context] of refreshMocks.plex.mock.calls) {
+				expect(context).toEqual(expect.objectContaining({ cleanupRunClaimToken }));
 			}
 		},
 	);
@@ -790,7 +883,7 @@ describe("interactive preview live watch authority", () => {
 		["Tautulli", "TAUTULLI", "tautulli_last_watched", refreshMocks.tautulli, "tautulli"],
 		["Jellyfin", "JELLYFIN", "jellyfin_last_watched", refreshMocks.jellyfin, "jellyfin"],
 	] as const)(
-		"uses live %s authority without publishing provider cache state",
+		"rejects unpublished live %s authority for preview evaluation",
 		async (_label, service, ruleType, refreshMock, source) => {
 			const provider = { ...instance(service), connectionGeneration: 1 };
 			const radarr = {
@@ -961,8 +1054,9 @@ describe("interactive preview live watch authority", () => {
 			expect(result.itemsFlagged).toBe(0);
 			expect(result.previewItemCount).toBe(0);
 			expect(result.details).toEqual([]);
-			expect(result.prefetchHealth?.[source]).toBe("ok");
-			expect(refreshMock).toHaveBeenCalledTimes(2);
+			expect(result.prefetchHealth?.[source]).toBe("failed");
+			expect(result.warnings).toContainEqual(expect.stringContaining("unavailable"));
+			expect(refreshMock).not.toHaveBeenCalled();
 			expect(transaction).not.toHaveBeenCalled();
 			expect(deleteMany).not.toHaveBeenCalled();
 			expect(createMany).not.toHaveBeenCalled();
@@ -1020,8 +1114,8 @@ describe("interactive preview live watch authority", () => {
 			expect(unrelatedResult.itemsEvaluated).toBe(1);
 			expect(unrelatedResult.itemsFlagged).toBe(0);
 			expect(unrelatedResult.previewItemCount).toBe(0);
-			expect(unrelatedResult.prefetchHealth?.[source]).toBe("ok");
-			expect(refreshMock).toHaveBeenCalledTimes(2);
+			expect(unrelatedResult.prefetchHealth?.[source]).toBe("failed");
+			expect(refreshMock).not.toHaveBeenCalled();
 			expect(transaction).not.toHaveBeenCalled();
 			expect(deleteMany).not.toHaveBeenCalled();
 			expect(createMany).not.toHaveBeenCalled();

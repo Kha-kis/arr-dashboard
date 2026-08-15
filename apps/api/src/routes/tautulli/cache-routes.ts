@@ -7,9 +7,11 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { recordProviderCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
-import { providerConnectionIdentity } from "../../lib/services/provider-connection-guard.js";
-import { refreshTautulliCache } from "../../lib/tautulli/tautulli-cache-refresher.js";
+import { recordWatchProviderCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
+import {
+	createOwnedTautulliPublicationSnapshot,
+	refreshTautulliCache,
+} from "../../lib/tautulli/tautulli-cache-refresher.js";
 import { requireTautulliClient } from "../../lib/tautulli/tautulli-helpers.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -54,25 +56,22 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { instanceId } = validateRequest(instanceParams, request.params);
 			const userId = request.currentUser!.id;
 
-			const { client, instance } = await requireTautulliClient(app, userId, instanceId);
-			const expectedConnection = providerConnectionIdentity(instance);
+			const { instance } = await requireTautulliClient(app, userId, instanceId);
+			const publicationInstance = createOwnedTautulliPublicationSnapshot(app.encryptor, instance);
 
 			try {
-				const result = await refreshTautulliCache(
-					client,
-					app.prisma,
-					instanceId,
-					request.log,
-					expectedConnection,
-				);
+				const result = await refreshTautulliCache({
+					prisma: app.prisma,
+					instance: publicationInstance,
+					log: request.log,
+				});
 				if ((!result.complete || !result.completedAt) && !result.superseded) {
-					await recordProviderCacheRefreshFailure(
+					await recordWatchProviderCacheRefreshFailure(
 						app.prisma,
-						instanceId,
 						"tautulli",
 						result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
 							"Tautulli refresh did not publish a complete generation",
-						expectedConnection,
+						publicationInstance,
 						request.log,
 					);
 				}
@@ -83,12 +82,11 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 					errors: result.errors,
 				});
 			} catch (err) {
-				await recordProviderCacheRefreshFailure(
+				await recordWatchProviderCacheRefreshFailure(
 					app.prisma,
-					instanceId,
 					"tautulli",
 					getErrorMessage(err, "Unknown error"),
-					expectedConnection,
+					publicationInstance,
 					request.log,
 				);
 				throw err;

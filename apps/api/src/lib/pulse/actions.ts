@@ -27,19 +27,24 @@ import { requireEnabledInstance } from "../arr/instance-helpers.js";
 import { parseQueueId } from "../dashboard/queue-utils.js";
 import { AppValidationError, ConflictError } from "../errors.js";
 import { getHuntingScheduler } from "../hunting/scheduler.js";
-import { refreshJellyfinCache } from "../jellyfin/jellyfin-cache-refresher.js";
+import {
+	createOwnedJellyfinPublicationSnapshot,
+	refreshJellyfinCache,
+} from "../jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
 import { requireJellyfinClient } from "../jellyfin/jellyfin-helpers.js";
-import { jellyfinConnectionFingerprint } from "../jellyfin/service-instance-fingerprint.js";
-import { refreshPlexCache } from "../plex/plex-cache-refresher.js";
+import {
+	createOwnedPlexPublicationSnapshot,
+	refreshPlexCache,
+} from "../plex/plex-cache-refresher.js";
 import { requirePlexClient } from "../plex/plex-helpers.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
-import { recordProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
+import { recordWatchProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
+import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
 import {
-	type ProviderConnectionIdentity,
-	providerConnectionIdentity,
-} from "../services/provider-connection-guard.js";
-import { refreshTautulliCache } from "../tautulli/tautulli-cache-refresher.js";
+	createOwnedTautulliPublicationSnapshot,
+	refreshTautulliCache,
+} from "../tautulli/tautulli-cache-refresher.js";
 import { requireTautulliClient } from "../tautulli/tautulli-helpers.js";
 
 export interface PulseActionResult {
@@ -163,22 +168,23 @@ async function dispatchCacheRefresh(
 	log: FastifyBaseLogger,
 ): Promise<PulseActionResult> {
 	if (cacheType === "plex") {
-		const { client, instance } = await requirePlexClient(app, userId, instanceId);
-		const expectedConnection = providerConnectionIdentity(instance);
+		const { instance } = await requirePlexClient(app, userId, instanceId);
+		const publicationInstance = createOwnedPlexPublicationSnapshot(app.encryptor, instance);
 		const backgroundTask = runBackgroundCacheRefresh({
 			app,
 			log,
 			instanceId,
 			cacheType: "plex",
-			refresh: () => refreshPlexCache(client, app.prisma, instanceId, log, expectedConnection),
-			expectedConnection,
+			refresh: () => refreshPlexCache({ prisma: app.prisma, instance: publicationInstance, log }),
+			publicationAuthority: publicationInstance,
 		});
 		log.info({ instanceId, cacheType }, "pulse-action: plex cache refresh dispatched");
 		return { status: "ok", backgroundTask };
 	}
 
 	if (cacheType === "jellyfin") {
-		const { client, instance } = await requireJellyfinClient(app, userId, instanceId);
+		const { instance } = await requireJellyfinClient(app, userId, instanceId);
+		const publicationInstance = createOwnedJellyfinPublicationSnapshot(app.encryptor, instance);
 		const backgroundTask = runBackgroundCacheRefresh({
 			app,
 			log,
@@ -186,34 +192,32 @@ async function dispatchCacheRefresh(
 			cacheType: "jellyfin",
 			refresh: () =>
 				runJellyfinCacheRefreshSingleFlight(
-					instanceId,
-					jellyfinConnectionFingerprint(instance),
-					(expectedConnectionFingerprint) =>
-						refreshJellyfinCache(
-							client,
-							app.prisma,
-							instanceId,
+					publicationInstance,
+					() =>
+						refreshJellyfinCache({
+							prisma: app.prisma,
+							instance: publicationInstance,
 							log,
-							expectedConnectionFingerprint,
-						),
+						}),
 					{ prisma: app.prisma, log },
 				),
 			failureRecordedByRefresh: true,
+			publicationAuthority: publicationInstance,
 		});
 		log.info({ instanceId, cacheType }, "pulse-action: jellyfin cache refresh dispatched");
 		return { status: "ok", backgroundTask };
 	}
 
 	// tautulli
-	const { client, instance } = await requireTautulliClient(app, userId, instanceId);
-	const expectedConnection = providerConnectionIdentity(instance);
+	const { instance } = await requireTautulliClient(app, userId, instanceId);
+	const publicationInstance = createOwnedTautulliPublicationSnapshot(app.encryptor, instance);
 	const backgroundTask = runBackgroundCacheRefresh({
 		app,
 		log,
 		instanceId,
 		cacheType: "tautulli",
-		refresh: () => refreshTautulliCache(client, app.prisma, instanceId, log, expectedConnection),
-		expectedConnection,
+		refresh: () => refreshTautulliCache({ prisma: app.prisma, instance: publicationInstance, log }),
+		publicationAuthority: publicationInstance,
 	});
 	log.info({ instanceId, cacheType }, "pulse-action: tautulli cache refresh dispatched");
 	return { status: "ok", backgroundTask };
@@ -226,16 +230,15 @@ function runBackgroundCacheRefresh(opts: {
 	cacheType: PulseCacheType;
 	refresh: () => Promise<CacheRefreshResult>;
 	failureRecordedByRefresh?: boolean;
-	expectedConnection?: ProviderConnectionIdentity;
+	publicationAuthority?: OwnedProviderPublicationSnapshot;
 }): Promise<void> {
 	const {
-		app,
 		log,
 		instanceId,
 		cacheType,
 		refresh,
 		failureRecordedByRefresh = false,
-		expectedConnection,
+		publicationAuthority,
 	} = opts;
 	return (async () => {
 		try {
@@ -244,16 +247,12 @@ function runBackgroundCacheRefresh(opts: {
 				(!result.complete || !result.completedAt) &&
 				!result.superseded &&
 				!failureRecordedByRefresh &&
-				expectedConnection
+				publicationAuthority
 			) {
-				await recordProviderCacheRefreshFailure(
-					app.prisma,
-					instanceId,
-					cacheType,
+				await recordBackgroundCacheRefreshFailure(
+					opts,
 					result.errorMessages?.slice(0, 3).join("; ").slice(0, 200) ||
 						`${cacheType} refresh did not publish a complete generation`,
-					expectedConnection,
-					log,
 				);
 			}
 			log.info(
@@ -261,19 +260,36 @@ function runBackgroundCacheRefresh(opts: {
 				"pulse-action: cache refresh completed (background)",
 			);
 		} catch (err) {
-			if (!failureRecordedByRefresh && expectedConnection) {
-				await recordProviderCacheRefreshFailure(
-					app.prisma,
-					instanceId,
-					cacheType,
+			if (!failureRecordedByRefresh && publicationAuthority) {
+				await recordBackgroundCacheRefreshFailure(
+					opts,
 					err instanceof Error ? err.message : String(err),
-					expectedConnection,
-					log,
 				);
 			}
 			log.error({ err, instanceId, cacheType }, "pulse-action: cache refresh failed (background)");
 		}
 	})();
+}
+
+async function recordBackgroundCacheRefreshFailure(
+	opts: {
+		app: FastifyInstance;
+		log: FastifyBaseLogger;
+		instanceId: string;
+		cacheType: PulseCacheType;
+		publicationAuthority?: OwnedProviderPublicationSnapshot;
+	},
+	message: string,
+): Promise<void> {
+	if (opts.publicationAuthority) {
+		await recordWatchProviderCacheRefreshFailure(
+			opts.app.prisma,
+			opts.cacheType,
+			message,
+			opts.publicationAuthority,
+			opts.log,
+		);
+	}
 }
 
 // ---------------------------------------------------------------------------

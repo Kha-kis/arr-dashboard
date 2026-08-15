@@ -39,6 +39,7 @@ import {
 	executeCleanupRun,
 	executeRetryItems,
 	extractSeriesTmdbId,
+	mergeSanitizedProviderEvidence,
 	prefetchFreshPlexEpisodeWatchData,
 	withCleanupPolicyMutationLease,
 } from "../lib/library-cleanup/cleanup-executor.js";
@@ -1306,6 +1307,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 								]
 							: []),
 					],
+					providerEvidence: result.providerEvidence,
 				});
 			} catch (error) {
 				request.log.error({ err: error }, "Cleanup preview failed");
@@ -1953,6 +1955,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		}
 
 		let episodeEvidence: EpisodeExplainEvidence | undefined;
+		let episodeProviderEvidence: Parameters<typeof mergeSanitizedProviderEvidence>[0];
 		let episodeDisplay:
 			| {
 					arrEpisodeId: number;
@@ -2003,6 +2006,9 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					[],
 					{
 						includeUnwatched: true,
+						evidenceSink: (evidence) => {
+							episodeProviderEvidence = evidence;
+						},
 						coordinate: { showTmdbId: tmdbId, seasonNumber, episodeNumber },
 					},
 				);
@@ -2051,7 +2057,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		}
 
 		// Build a fully-populated eval context with prefetched external data
-		const { ctx, failedSources } = await buildEvalContextWithHealth(
+		const { ctx, failedSources, providerEvidence } = await buildEvalContextWithHealth(
 			{
 				prisma: app.prisma,
 				arrClientFactory: app.arrClientFactory,
@@ -2083,6 +2089,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			item: explainedItem,
 			results,
 			retentionProtected,
+			providerEvidence: mergeSanitizedProviderEvidence(providerEvidence, episodeProviderEvidence),
 		});
 	});
 

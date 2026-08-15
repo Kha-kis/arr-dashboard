@@ -14,9 +14,14 @@ import {
 	assertVerifiedSonarrPeerOwnershipRetained,
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
+	createSanitizedProviderEvidence,
 	createSharedPlexSafetyContext,
+	type ExecutableSharedMediaSafetyPlan,
 	findSharedPlexDeleteBlocks,
-	serializeExecutableSafetyPlan,
+	ProviderExecutionAuthorityChangedError,
+	parseExecutableSafetyEnvelope,
+	type SanitizedProviderEvidence,
+	serializeExecutableSafetyPlan as serializeExecutableSafetyPlanRaw,
 	type VerifiedSonarrTargetDeleteNotification,
 } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "../types.js";
@@ -32,6 +37,36 @@ const PLEX_SOURCE_FINGERPRINT = plexConnectionFingerprint({
 	encryptedApiKey: "encrypted",
 	encryptionIv: "iv",
 });
+
+const TEST_PLEX_PROVIDER_EVIDENCE = createSanitizedProviderEvidence(
+	["plex_episode"],
+	[
+		{
+			service: "PLEX",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityFingerprint: "1".repeat(64),
+			connectionGeneration: 1,
+			identityGeneration: 1,
+			cacheType: "plex_episode",
+			completedAt: "2026-07-27T12:00:00.000Z",
+			itemCount: 1,
+			verifiedAt: "2026-07-27T11:00:00.000Z",
+			statusFingerprint: "2".repeat(64),
+			rowFingerprint: "3".repeat(64),
+		},
+	],
+);
+
+function serializeExecutableSafetyPlan(
+	plan: ExecutableSharedMediaSafetyPlan,
+	providerEvidence?: SanitizedProviderEvidence,
+): string {
+	return serializeExecutableSafetyPlanRaw(
+		plan,
+		providerEvidence ??
+			(plan.kind === "verified_sonarr_episode" ? TEST_PLEX_PROVIDER_EVIDENCE : undefined),
+	);
+}
 
 const sonarrServiceFingerprint = createArrServiceFingerprint({
 	id: "sonarr-4k",
@@ -213,6 +248,12 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		enabled: true,
 		encryptedApiKey: "encrypted",
 		encryptionIv: "iv",
+		expectedIdentity: "plex-machine-1",
+		identityKind: "PLEX_MACHINE_IDENTIFIER",
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date("2026-07-27T11:00:00.000Z"),
+		connectionGeneration: 1,
+		identityGeneration: 1,
 		updatedAt: new Date("2026-07-27T12:00:00.000Z"),
 	};
 	const quiInstance = {
@@ -502,8 +543,9 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		quiFileHashIndexFactory: vi.fn().mockResolvedValue({
 			resolve: vi.fn().mockResolvedValue({ hashes: ["episode-hash"], complete: true }),
 		}),
+		providerEvidenceAuthorityChecker: vi.fn().mockResolvedValue(undefined),
 		log: silentLog,
-	};
+	} as CleanupExecutorDeps;
 	Object.defineProperty(deps, "__setTestMutationRules", {
 		value: (rules: ReturnType<typeof currentSeriesRule>[]) => {
 			currentMutationRules = rules;
@@ -988,16 +1030,20 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		const generation = new Date();
 		vi.mocked(fixture.deps.prisma.plexEpisodeCache.findMany).mockResolvedValue([
 			{
+				id: "plex-episode-1",
 				instanceId: "plex-1",
 				showTmdbId: 456,
 				seasonNumber: 1,
 				episodeNumber: 1,
 				watchCount: 1,
+				watched: true,
 				lastWatchedAt: new Date(),
 				watchedByUsers: JSON.stringify(["Owner"]),
 				ratingKey: "episode-1",
 				refreshedAt: generation,
 				sourceFingerprint: PLEX_SOURCE_FINGERPRINT,
+				connectionGeneration: 1,
+				identityGeneration: 1,
 			},
 		] as never);
 		Object.assign(fixture.deps.prisma.plexEpisodeCache, {
@@ -1010,7 +1056,12 @@ describe("shared Plex deletion safety for Sonarr", () => {
 						instanceId: "plex-1",
 						lastRefreshedAt: generation,
 						lastResult: "success",
+						lastErrorMessage: null,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
 						itemCount: 1,
+						connectionGeneration: 1,
+						identityGeneration: 1,
 					},
 				]),
 			},
@@ -2364,6 +2415,116 @@ describe("shared Plex deletion safety for Sonarr", () => {
 });
 
 describe("verified Sonarr mutation handoff", () => {
+	it("blocks approved episode mutation when provider execution authority fails", async () => {
+		const fixture = makeSonarrDeps();
+		const context = createSharedPlexSafetyContext();
+		const episodeTarget = exactEpisodeTarget();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") throw new Error("Expected episode plan");
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan, TEST_PLEX_PROVIDER_EVIDENCE),
+		};
+		configureApprovalStore(fixture.deps, storedApproval);
+		const checker = (
+			fixture.deps as CleanupExecutorDeps & {
+				providerEvidenceAuthorityChecker: ReturnType<typeof vi.fn>;
+			}
+		).providerEvidenceAuthorityChecker;
+		checker
+			.mockResolvedValueOnce(undefined)
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(new ProviderExecutionAuthorityChangedError());
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "expired" });
+		expect(checker).toHaveBeenCalledTimes(3);
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("blocks direct episode mutation when provider execution authority fails", async () => {
+		const fixture = makeSonarrDeps();
+		configureRetryStore(fixture.deps);
+		const checker = (
+			fixture.deps as CleanupExecutorDeps & {
+				providerEvidenceAuthorityChecker: ReturnType<typeof vi.fn>;
+			}
+		).providerEvidenceAuthorityChecker;
+		checker
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(new ProviderExecutionAuthorityChangedError());
+		const config = {
+			id: "config-1",
+			maxRemovalsPerRun: 10,
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule()],
+		} as never;
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			config,
+			"user-1",
+			[directEpisodeFlaggedItem(fixture)],
+			1,
+			1,
+			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_PROVIDER_EVIDENCE,
+		);
+
+		expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 0, itemsSkipped: 1 });
+		expect(checker).toHaveBeenCalledTimes(2);
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("retains an honest partial retry when provider authority changes between ARR mutations", async () => {
+		const fixture = makeSonarrDeps();
+		setSonarrMutationRules(fixture.deps, [
+			{ ...episodeCleanupRule(), targetScope: "series" } as ReturnType<typeof currentSeriesRule>,
+		]);
+		const storedApproval = approval();
+		const envelope = parseExecutableSafetyEnvelope(storedApproval.safetySnapshot);
+		if (!envelope) throw new Error("Expected executable approval envelope");
+		storedApproval.safetySnapshot = serializeExecutableSafetyPlan(
+			envelope.plan,
+			TEST_PLEX_PROVIDER_EVIDENCE,
+		);
+		configureApprovalStore(fixture.deps, storedApproval);
+		const checker = (
+			fixture.deps as CleanupExecutorDeps & {
+				providerEvidenceAuthorityChecker: ReturnType<typeof vi.fn>;
+			}
+		).providerEvidenceAuthorityChecker;
+		checker
+			.mockResolvedValueOnce(undefined)
+			.mockResolvedValueOnce(undefined)
+			.mockRejectedValueOnce(new ProviderExecutionAuthorityChangedError());
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "pending" });
+		expect(checker).toHaveBeenCalledTimes(3);
+		expect(fixture.bulkDelete).toHaveBeenCalledOnce();
+		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+		expect(JSON.parse(storedApproval.safetySnapshot).providerEvidence).toEqual(
+			TEST_PLEX_PROVIDER_EVIDENCE,
+		);
+	});
+
 	function approval(
 		action: "delete" | "delete_files" | "unmonitor" = "delete",
 		episodeFiles: Array<{
@@ -2999,6 +3160,11 @@ describe("verified Sonarr mutation handoff", () => {
 				1,
 				1,
 				Date.now(),
+				undefined,
+				undefined,
+				new Map(),
+				undefined,
+				TEST_PLEX_PROVIDER_EVIDENCE,
 			);
 
 			expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 0 });
@@ -3056,6 +3222,32 @@ describe("verified Sonarr mutation handoff", () => {
 			expect(fixture.bulkDelete).not.toHaveBeenCalled();
 		},
 	);
+
+	it("rejects a provider-dependent approval whose recorded envelope has empty evidence", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			safetySnapshot: serializeExecutableSafetyPlanRaw(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired" });
+	});
 
 	it("unmonitors and deletes only the approved episode without removing its series", async () => {
 		const fixture = makeSonarrDeps();
@@ -3878,6 +4070,11 @@ describe("verified Sonarr mutation handoff", () => {
 			1,
 			1,
 			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_PROVIDER_EVIDENCE,
 		);
 
 		expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 0 });
@@ -4170,6 +4367,11 @@ describe("verified Sonarr mutation handoff", () => {
 			1,
 			1,
 			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_PROVIDER_EVIDENCE,
 		);
 
 		expect(result).toMatchObject({
@@ -4379,6 +4581,7 @@ describe("verified Sonarr mutation handoff", () => {
 				undefined,
 				new Map(),
 				assertRunLease,
+				TEST_PLEX_PROVIDER_EVIDENCE,
 			),
 		).rejects.toBeInstanceOf(CleanupRunLeaseLostError);
 
@@ -5287,6 +5490,11 @@ describe("verified Sonarr mutation handoff", () => {
 			1,
 			1,
 			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_PROVIDER_EVIDENCE,
 		);
 
 		expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 1 });
@@ -5379,6 +5587,11 @@ describe("verified Sonarr mutation handoff", () => {
 			1,
 			1,
 			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_PROVIDER_EVIDENCE,
 		);
 
 		expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 0 });
@@ -5473,6 +5686,11 @@ describe("verified Sonarr mutation handoff", () => {
 			1,
 			1,
 			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_PROVIDER_EVIDENCE,
 		);
 
 		expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 0 });
@@ -6441,6 +6659,10 @@ describe("verified Sonarr mutation handoff", () => {
 			safetySnapshot: serializeExecutableSafetyPlan(plan),
 		} as unknown as Record<string, unknown>;
 		configureApprovalStore(fixture.deps, storedApproval);
+		storedApproval.safetySnapshot = serializeExecutableSafetyPlan(
+			plan,
+			TEST_PLEX_PROVIDER_EVIDENCE,
+		);
 		fixture.deleteSeries
 			.mockRejectedValueOnce(new Error("series delete unavailable"))
 			.mockRejectedValueOnce(new Error("series delete unavailable"));
@@ -6448,12 +6670,14 @@ describe("verified Sonarr mutation handoff", () => {
 		const firstResult = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
 
 		expect(firstResult).toMatchObject({ removed: 0, failed: 1 });
-		expect(JSON.parse(storedApproval.safetySnapshot as string)).toMatchObject({
+		const retryEnvelope = JSON.parse(storedApproval.safetySnapshot as string);
+		expect(retryEnvelope.plan).toMatchObject({
 			kind: "verified_sonarr",
 			files: { episodeFiles: [] },
 			peers: [expect.objectContaining({ instanceId: "sonarr-hd", arrItemId: null })],
 			ownership: [expect.objectContaining({ retained: [] })],
 		});
+		expect(retryEnvelope.providerEvidence).toEqual(TEST_PLEX_PROVIDER_EVIDENCE);
 
 		storedApproval.status = "approved";
 		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
@@ -6629,6 +6853,10 @@ describe("verified Sonarr mutation handoff", () => {
 			safetySnapshot: serializeExecutableSafetyPlan(plan),
 			lastExecutionError: INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
 		} as unknown as Record<string, unknown>;
+		storedApproval.safetySnapshot = serializeExecutableSafetyPlan(
+			plan,
+			TEST_PLEX_PROVIDER_EVIDENCE,
+		);
 		configureApprovalStore(fixture.deps, storedApproval);
 
 		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
@@ -6638,7 +6866,8 @@ describe("verified Sonarr mutation handoff", () => {
 		});
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 		expect(fixture.deleteSeries).toHaveBeenCalledOnce();
-		expect(JSON.parse(storedApproval.safetySnapshot as string)).toMatchObject({
+		const recoveryEnvelope = JSON.parse(storedApproval.safetySnapshot as string);
+		expect(recoveryEnvelope.plan).toMatchObject({
 			kind: "verified_sonarr",
 			files: { episodeFiles: [] },
 			ownership: [
@@ -6647,6 +6876,7 @@ describe("verified Sonarr mutation handoff", () => {
 				}),
 			],
 		});
+		expect(recoveryEnvelope.providerEvidence).toEqual(TEST_PLEX_PROVIDER_EVIDENCE);
 	});
 
 	it("reconciles an interrupted Sonarr file-delete retry when no episode files remain", async () => {
@@ -6860,6 +7090,11 @@ describe("verified Sonarr mutation handoff", () => {
 			1,
 			1,
 			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_PROVIDER_EVIDENCE,
 		);
 		const retryResult = await executeDirectRemoval(deps, config, "user-1", [], 0, 0, Date.now());
 
@@ -6873,7 +7108,8 @@ describe("verified Sonarr mutation handoff", () => {
 			status: "executed",
 			safetySnapshot: expect.any(String),
 		});
-		expect(JSON.parse(retries[0]!.safetySnapshot as string)).toMatchObject({
+		const directRetryEnvelope = JSON.parse(retries[0]!.safetySnapshot as string);
+		expect(directRetryEnvelope.plan).toMatchObject({
 			kind: "verified_sonarr",
 			files: { episodeFiles: [] },
 			peers: [expect.objectContaining({ instanceId: "sonarr-hd" })],
@@ -6883,6 +7119,7 @@ describe("verified Sonarr mutation handoff", () => {
 				}),
 			],
 		});
+		expect(directRetryEnvelope.providerEvidence).toEqual(TEST_PLEX_PROVIDER_EVIDENCE);
 		expect(retryResult).toMatchObject({
 			status: "completed",
 			itemsRemoved: 1,

@@ -6,12 +6,23 @@ import {
 	type CreateServicePayload,
 	createService,
 	removeService,
+	replaceServiceIdentity,
+	type ServiceIdentityConfirmation,
 	type UpdateServicePayload,
 	updateService,
+	verifyServiceIdentity,
 } from "../../lib/api-client/services";
+import {
+	jellyfinKeys,
+	libraryCleanupKeys,
+	plexKeys,
+	serviceKeys,
+	tautulliKeys,
+	trashCacheKeys,
+} from "../../lib/query-keys";
 
-const SERVICES_QUERY_KEY = ["services"] as const;
-const FIELD_OPTIONS_KEY = ["library-cleanup-field-options"] as const;
+const SERVICES_QUERY_KEY = serviceKeys.all;
+const FIELD_OPTIONS_KEY = libraryCleanupKeys.fieldOptions;
 
 type UpdateVariables = {
 	id: string;
@@ -21,6 +32,30 @@ type UpdateVariables = {
 type CreateVariables = CreateServicePayload;
 
 type DeleteVariables = string;
+type IdentityVariables = ServiceIdentityConfirmation & { id: string };
+type ReplaceIdentityVariables = IdentityVariables & { payload: UpdateServicePayload };
+
+function invalidateServiceDependencies(queryClient: ReturnType<typeof useQueryClient>) {
+	queryClient.invalidateQueries({ queryKey: SERVICES_QUERY_KEY });
+	queryClient.invalidateQueries({ queryKey: trashCacheKeys.cacheHealth });
+	queryClient.invalidateQueries({ queryKey: plexKeys.cacheHealth() });
+	queryClient.invalidateQueries({ queryKey: jellyfinKeys.cacheHealth() });
+	queryClient.invalidateQueries({ queryKey: plexKeys.all });
+	queryClient.invalidateQueries({ queryKey: jellyfinKeys.all });
+	queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
+	queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
+	queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.approvals });
+}
+
+function applyServiceSummary(
+	queryClient: ReturnType<typeof useQueryClient>,
+	updated: ServiceInstanceSummary,
+) {
+	invalidateServiceDependencies(queryClient);
+	queryClient.setQueryData<ServiceInstanceSummary[]>(SERVICES_QUERY_KEY, (previous) =>
+		previous?.map((service) => (service.id === updated.id ? updated : service)),
+	);
+}
 
 export const useCreateServiceMutation = () => {
 	const queryClient = useQueryClient();
@@ -40,6 +75,7 @@ export const useUpdateServiceMutation = () => {
 	return useMutation<ServiceInstanceSummary, Error, UpdateVariables>({
 		mutationFn: ({ id, payload }) => updateService(id, payload),
 		onSuccess: (updated) => {
+			invalidateServiceDependencies(queryClient);
 			queryClient.setQueryData<ServiceInstanceSummary[]>(SERVICES_QUERY_KEY, (prev) => {
 				if (!prev) {
 					return prev;
@@ -73,6 +109,23 @@ export const useDeleteServiceMutation = () => {
 			});
 			queryClient.invalidateQueries({ queryKey: FIELD_OPTIONS_KEY });
 		},
+	});
+};
+
+export const useVerifyServiceIdentityMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<ServiceInstanceSummary, Error, IdentityVariables>({
+		mutationFn: ({ id, ...confirmation }) => verifyServiceIdentity(id, confirmation),
+		onSuccess: (updated) => applyServiceSummary(queryClient, updated),
+	});
+};
+
+export const useReplaceServiceIdentityMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<ServiceInstanceSummary, Error, ReplaceIdentityVariables>({
+		mutationFn: ({ id, payload, ...confirmation }) =>
+			replaceServiceIdentity(id, payload, confirmation),
+		onSuccess: (updated) => applyServiceSummary(queryClient, updated),
 	});
 };
 

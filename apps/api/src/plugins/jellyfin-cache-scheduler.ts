@@ -7,16 +7,15 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { refreshJellyfinCache } from "../lib/jellyfin/jellyfin-cache-refresher.js";
 import {
-	recordJellyfinCacheRefreshFailure,
-	runJellyfinCacheRefreshSingleFlight,
-} from "../lib/jellyfin/jellyfin-cache-singleflight.js";
-import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
-import { jellyfinConnectionFingerprint } from "../lib/jellyfin/service-instance-fingerprint.js";
+	createOwnedJellyfinPublicationSnapshot,
+	refreshJellyfinCache,
+} from "../lib/jellyfin/jellyfin-cache-refresher.js";
+import { runJellyfinCacheRefreshSingleFlight } from "../lib/jellyfin/jellyfin-cache-singleflight.js";
 import type { ServiceInstance } from "../lib/prisma.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import { getErrorMessage } from "../lib/utils/error-message.js";
+import { recordWatchProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
+import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 45_000; // 45 seconds
@@ -25,36 +24,34 @@ export async function refreshScheduledJellyfinCacheInstance(
 	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
 	instance: ServiceInstance,
 ): Promise<void> {
-	const connectionFingerprint = jellyfinConnectionFingerprint(instance);
-	let client: ReturnType<typeof createJellyfinClient>;
+	const authority = createProviderPublicationAuthority(instance);
+	let publicationInstance: ReturnType<typeof createOwnedJellyfinPublicationSnapshot>;
 	try {
-		client = createJellyfinClient(app.encryptor, instance, app.log);
+		publicationInstance = createOwnedJellyfinPublicationSnapshot(app.encryptor, instance);
 	} catch (err) {
 		app.log.error(
 			{ err, instanceId: instance.id, label: instance.label },
 			"Jellyfin cache refresh failed for instance",
 		);
-		await recordJellyfinCacheRefreshFailure(
-			instance.id,
-			connectionFingerprint,
-			getErrorMessage(err, "Unknown Jellyfin cache refresh error"),
-			{ prisma: app.prisma, log: app.log },
+		await recordWatchProviderCacheRefreshFailure(
+			app.prisma,
+			"jellyfin",
+			"Provider credentials could not be decrypted.",
+			authority,
+			app.log,
 		);
 		return;
 	}
 
 	try {
 		const result = await runJellyfinCacheRefreshSingleFlight(
-			instance.id,
-			connectionFingerprint,
-			(expectedConnectionFingerprint) =>
-				refreshJellyfinCache(
-					client,
-					app.prisma,
-					instance.id,
-					app.log,
-					expectedConnectionFingerprint,
-				),
+			publicationInstance,
+			async () =>
+				await refreshJellyfinCache({
+					prisma: app.prisma,
+					instance: publicationInstance,
+					log: app.log,
+				}),
 			{ prisma: app.prisma, log: app.log },
 		);
 		app.log.info(

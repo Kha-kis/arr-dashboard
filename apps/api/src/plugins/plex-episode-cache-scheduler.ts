@@ -8,12 +8,11 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { createPlexClient } from "../lib/plex/plex-client.js";
+import { createOwnedPlexPublicationSnapshot } from "../lib/plex/plex-cache-refresher.js";
 import { refreshPlexEpisodeCache } from "../lib/plex/plex-episode-cache-refresher.js";
-import { plexConnectionFingerprint } from "../lib/plex/service-instance-fingerprint.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import { recordProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
-import { providerConnectionIdentity } from "../lib/services/provider-connection-guard.js";
+import { recordPlexCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
+import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -60,17 +59,17 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
-						const expectedConnection = providerConnectionIdentity(instance);
+						const authority = createProviderPublicationAuthority(instance);
+						let publicationInstance:
+							| ReturnType<typeof createOwnedPlexPublicationSnapshot>
+							| undefined;
 						try {
-							const client = createPlexClient(app.encryptor, instance, app.log);
-							const result = await refreshPlexEpisodeCache(
-								client,
-								app.prisma,
-								instance.id,
-								app.log,
-								plexConnectionFingerprint(instance),
-								expectedConnection,
-							);
+							publicationInstance = createOwnedPlexPublicationSnapshot(app.encryptor, instance);
+							const result = await refreshPlexEpisodeCache({
+								prisma: app.prisma,
+								instance: publicationInstance,
+								log: app.log,
+							});
 							app.log.info(
 								{ instanceId: instance.id, label: instance.label, ...result },
 								"Plex episode cache refresh completed for instance",
@@ -86,13 +85,12 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 									result.errorMessages.length > 0
 										? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
 										: coverageMessage;
-								if (!result.complete || !result.completedAt) {
-									await recordProviderCacheRefreshFailure(
+								if ((!result.complete || !result.completedAt) && !result.superseded) {
+									await recordPlexCacheRefreshFailure(
 										app.prisma,
-										instance.id,
 										"plex_episode",
 										statusMessage ?? "Plex episode refresh did not produce a complete generation",
-										expectedConnection,
+										publicationInstance,
 										app.log,
 									);
 								}
@@ -108,13 +106,13 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 								"Plex episode cache refresh failed for instance",
 							);
 
-							// Track failure
-							await recordProviderCacheRefreshFailure(
+							await recordPlexCacheRefreshFailure(
 								app.prisma,
-								instance.id,
 								"plex_episode",
-								getErrorMessage(err, "Unknown error"),
-								expectedConnection,
+								publicationInstance
+									? getErrorMessage(err, "Unknown error")
+									: "Provider credentials could not be decrypted.",
+								publicationInstance ?? authority,
 								app.log,
 							);
 						}

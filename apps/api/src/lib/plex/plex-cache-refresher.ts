@@ -16,13 +16,17 @@
 
 import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
-import type { PrismaClient } from "../prisma.js";
+import type { Encryptor } from "../auth/encryption.js";
+import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
+import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import {
-	type ProviderConnectionIdentity,
-	withCurrentProviderConnection,
-} from "../services/provider-connection-guard.js";
+	createProviderPublicationAuthority,
+	type OwnedProviderPublicationSnapshot,
+	ProviderIdentityGuardError,
+	withGuardedProviderPublication,
+} from "../services/provider-identity-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import type { PlexClient } from "./plex-client.js";
+import { PlexClient } from "./plex-client.js";
 
 /** Bound Prisma's cached createMany query plans for production-sized libraries. */
 export const PLEX_CACHE_PUBLICATION_CHUNK_SIZE = 100;
@@ -116,8 +120,11 @@ export interface PlexInventoryTarget {
 	ratingKey: string;
 }
 
-export interface PlexCacheRefreshOptions {
-	publish?: boolean;
+export interface PlexPublicationContext {
+	prisma: PrismaClient;
+	instance: OwnedProviderPublicationSnapshot;
+	log: FastifyBaseLogger;
+	cleanupRunClaimToken?: string;
 }
 
 export interface PlexCacheRefreshResult {
@@ -191,6 +198,146 @@ function appendIncompleteReasonMessages(
 	}
 }
 
+/** Build the only production publication context from an owned database row. */
+export function createOwnedPlexPublicationSnapshot(
+	encryptor: Pick<Encryptor, "decrypt">,
+	instance: ServiceInstance,
+): OwnedProviderPublicationSnapshot {
+	if (instance.service !== "PLEX") {
+		throw new Error("Plex publication requires a Plex service instance");
+	}
+	return {
+		...createProviderPublicationAuthority(instance),
+		label: instance.label,
+		apiKey: encryptor.decrypt({
+			value: instance.encryptedApiKey,
+			iv: instance.encryptionIv,
+		}),
+		httpAuthHeaders: getStoredHttpAuthHeaders(encryptor, instance),
+	};
+}
+
+function plexClientForSnapshot(
+	instance: OwnedProviderPublicationSnapshot,
+	log: FastifyBaseLogger,
+): PlexClient {
+	return new PlexClient(
+		instance.baseUrl,
+		instance.apiKey,
+		log,
+		undefined,
+		instance.httpAuthHeaders,
+	);
+}
+
+function unpublishedResult(error: unknown): PlexCacheRefreshResult {
+	if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") {
+		return {
+			upserted: 0,
+			errors: 0,
+			errorMessages: [],
+			complete: false,
+			superseded: true,
+		};
+	}
+	return {
+		upserted: 0,
+		errors: 1,
+		errorMessages: [
+			error instanceof ProviderIdentityGuardError
+				? error.message
+				: `Atomic Plex cache publication failed: ${getErrorMessage(error)}`,
+		],
+		complete: false,
+	};
+}
+
+/**
+ * Collect and publish Plex cache data through the shared identity authority.
+ * The data client is always constructed from the exact snapshot observed by
+ * both identity reads; callers cannot provide a separate Plex connection.
+ */
+export async function refreshPlexCache(
+	context: PlexPublicationContext,
+): Promise<PlexCacheRefreshResult> {
+	const { prisma, instance, log } = context;
+	try {
+		return await withGuardedProviderPublication(
+			prisma,
+			instance,
+			log,
+			async () =>
+				await collectPlexCacheLiveEvidence(plexClientForSnapshot(instance, log), instance.id, log),
+			async (tx, collected) => await publishPlexCacheSnapshot(tx, instance, collected),
+			{
+				cleanupRunClaimToken: context.cleanupRunClaimToken,
+				timeout: PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
+			},
+		);
+	} catch (error) {
+		const result = unpublishedResult(error);
+		log.error({ err: error, instanceId: instance.id }, "Plex cache publication rejected");
+		return result;
+	}
+}
+
+async function publishPlexCacheSnapshot(
+	tx: Prisma.TransactionClient,
+	instance: OwnedProviderPublicationSnapshot,
+	collected: PlexCacheRefreshResult,
+): Promise<PlexCacheRefreshResult> {
+	if (!collected.complete || !collected.completedAt || !collected.snapshot) return collected;
+
+	const rows = collected.snapshot.rows;
+	const generationId = randomUUID();
+	const generationMetadata = JSON.stringify({ sections: collected.snapshot.sections });
+	await tx.plexCache.deleteMany({ where: { instanceId: instance.id } });
+	for (let start = 0; start < rows.length; start += PLEX_CACHE_PUBLICATION_CHUNK_SIZE) {
+		await tx.plexCache.createMany({
+			data: rows.slice(start, start + PLEX_CACHE_PUBLICATION_CHUNK_SIZE).map((row) => ({
+				...row,
+				connectionGeneration: instance.connectionGeneration,
+				identityGeneration: instance.identityGeneration,
+			})),
+		});
+	}
+	await tx.cacheRefreshStatus.upsert({
+		where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
+		create: {
+			instanceId: instance.id,
+			cacheType: "plex",
+			lastRefreshedAt: collected.completedAt,
+			lastResult: "success",
+			itemCount: rows.length,
+			generationId,
+			generationMetadata,
+			lastAttemptAt: collected.completedAt,
+			lastAttemptResult: "success",
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		},
+		update: {
+			lastRefreshedAt: collected.completedAt,
+			lastResult: "success",
+			lastErrorMessage: null,
+			itemCount: rows.length,
+			generationId,
+			generationMetadata,
+			lastAttemptAt: collected.completedAt,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		},
+	});
+	return {
+		...collected,
+		upserted: rows.length,
+		generationId,
+		inventoryTargets: collected.inventoryTargets,
+	};
+}
+
 // ============================================================================
 // Refresher
 // ============================================================================
@@ -198,20 +345,15 @@ function appendIncompleteReasonMessages(
 /**
  * Refresh the PlexCache for a given instance.
  */
-export async function refreshPlexCache(
+export async function collectPlexCacheLiveEvidence(
 	client: PlexClient,
-	prisma: PrismaClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-	expectedConnection: ProviderConnectionIdentity | undefined,
-	options: PlexCacheRefreshOptions = {},
 ): Promise<PlexCacheRefreshResult> {
-	let upserted = 0;
+	const upserted = 0;
 	let errors = 0;
 	let complete = true;
 	let completedAt: Date | undefined;
-	let superseded = false;
-	let publishedGenerationId: string | undefined;
 	const errorMessages: string[] = [];
 	const incompleteReasons: Record<string, number> = {};
 	let totalLibraryItems = 0;
@@ -491,154 +633,58 @@ export async function refreshPlexCache(
 			}
 			verifiedInventoryTargets = inventoryTargets;
 			completedAt = new Date();
-			if (options.publish === false) {
-				const sections = mediaLibs
-					.map((section) => ({
-						key: section.key,
-						title: section.title,
-						type: section.type as "movie" | "show",
-					}))
-					.sort(
-						(left, right) =>
-							left.key.localeCompare(right.key) ||
-							left.title.localeCompare(right.title) ||
-							left.type.localeCompare(right.type),
-					);
-				const rows: PlexCacheSnapshotRow[] = aggregationsArray.map((agg) => ({
-					instanceId,
-					tmdbId: agg.tmdbId,
-					mediaType: agg.mediaType,
-					sectionId: agg.sectionId,
-					sectionTitle: agg.sectionTitle,
-					title: agg.title,
-					ratingKey: agg.ratingKey,
-					lastWatchedAt: agg.lastWatchedAt,
-					watchCount: agg.watchCount,
-					watchedByUsers: JSON.stringify([...agg.watchedByUsers].sort()),
-					onDeck: agg.onDeck,
-					userRating: agg.userRating,
-					collections: JSON.stringify([...agg.collections].sort()),
-					labels: JSON.stringify([...agg.labels].sort()),
-					addedAt: agg.addedAt,
-					thumb: agg.thumb,
-				}));
-				return {
-					upserted: 0,
-					errors: 0,
-					errorMessages: [],
-					complete: true,
-					completedAt,
-					inventoryTargets,
-					snapshot: { rows, sections },
-				};
-			}
-			const generationId = randomUUID();
-			const generationMetadata = JSON.stringify({
-				sections: mediaLibs
-					.map((section) => ({ key: section.key, title: section.title, type: section.type }))
-					.sort(
-						(left, right) =>
-							left.key.localeCompare(right.key) ||
-							left.title.localeCompare(right.title) ||
-							left.type.localeCompare(right.type),
-					),
-			});
-			try {
-				const publication = await withCurrentProviderConnection(
-					prisma,
-					instanceId,
-					expectedConnection,
-					async (tx) => {
-						await tx.plexCache.deleteMany({ where: { instanceId } });
-						if (aggregationsArray.length > 0) {
-							for (
-								let start = 0;
-								start < aggregationsArray.length;
-								start += PLEX_CACHE_PUBLICATION_CHUNK_SIZE
-							) {
-								const chunk = aggregationsArray.slice(
-									start,
-									start + PLEX_CACHE_PUBLICATION_CHUNK_SIZE,
-								);
-								await tx.plexCache.createMany({
-									data: chunk.map((agg) => ({
-										instanceId,
-										tmdbId: agg.tmdbId,
-										mediaType: agg.mediaType,
-										sectionId: agg.sectionId,
-										sectionTitle: agg.sectionTitle,
-										title: agg.title,
-										ratingKey: agg.ratingKey,
-										lastWatchedAt: agg.lastWatchedAt,
-										watchCount: agg.watchCount,
-										watchedByUsers: JSON.stringify([...agg.watchedByUsers]),
-										onDeck: agg.onDeck,
-										userRating: agg.userRating,
-										collections: JSON.stringify(agg.collections),
-										labels: JSON.stringify(agg.labels),
-										addedAt: agg.addedAt,
-										thumb: agg.thumb,
-									})),
-								});
-							}
-						}
-						await tx.cacheRefreshStatus.upsert({
-							where: { instanceId_cacheType: { instanceId, cacheType: "plex" } },
-							create: {
-								instanceId,
-								cacheType: "plex",
-								lastRefreshedAt: completedAt!,
-								lastResult: "success",
-								itemCount: aggregationsArray.length,
-								generationId,
-								generationMetadata,
-								lastAttemptAt: completedAt!,
-								lastAttemptResult: "success",
-							},
-							update: {
-								lastRefreshedAt: completedAt!,
-								lastResult: "success",
-								lastErrorMessage: null,
-								itemCount: aggregationsArray.length,
-								generationId,
-								generationMetadata,
-								lastAttemptAt: completedAt!,
-								lastAttemptResult: "success",
-								lastAttemptErrorMessage: null,
-							},
-						});
-					},
-					{ timeout: PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS },
+			const sections = mediaLibs
+				.map((section) => ({
+					key: section.key,
+					title: section.title,
+					type: section.type as "movie" | "show",
+				}))
+				.sort(
+					(left, right) =>
+						left.key.localeCompare(right.key) ||
+						left.title.localeCompare(right.title) ||
+						left.type.localeCompare(right.type),
 				);
-				if (publication.matched) {
-					upserted = aggregationsArray.length;
-					publishedGenerationId = generationId;
-				} else {
-					superseded = true;
-					complete = false;
-					completedAt = undefined;
-				}
-			} catch (error) {
-				complete = false;
-				completedAt = undefined;
-				errors++;
-				errorMessages.push(`Atomic Plex cache publication failed: ${getErrorMessage(error)}`);
-				log.error({ err: error, instanceId }, "Plex cache atomic publication failed");
-			}
-		} else {
-			log.warn(
-				{
-					instanceId,
-					aggregationSize: aggregationsArray.length,
-					totalLibraryItems,
-					mappedLibraryItems,
-					ignoredHistoricalItems,
-					incompleteReasons,
-					errors,
-				},
-				"Plex cache: skipping eviction because the refreshed inventory was incomplete",
-			);
+			const rows: PlexCacheSnapshotRow[] = aggregationsArray.map((agg) => ({
+				instanceId,
+				tmdbId: agg.tmdbId,
+				mediaType: agg.mediaType,
+				sectionId: agg.sectionId,
+				sectionTitle: agg.sectionTitle,
+				title: agg.title,
+				ratingKey: agg.ratingKey,
+				lastWatchedAt: agg.lastWatchedAt,
+				watchCount: agg.watchCount,
+				watchedByUsers: JSON.stringify([...agg.watchedByUsers].sort()),
+				onDeck: agg.onDeck,
+				userRating: agg.userRating,
+				collections: JSON.stringify([...agg.collections].sort()),
+				labels: JSON.stringify([...agg.labels].sort()),
+				addedAt: agg.addedAt,
+				thumb: agg.thumb,
+			}));
+			return {
+				upserted: 0,
+				errors: 0,
+				errorMessages: [],
+				complete: true,
+				completedAt,
+				inventoryTargets,
+				snapshot: { rows, sections },
+			};
 		}
+		log.warn(
+			{
+				instanceId,
+				aggregationSize: aggregationsArray.length,
+				totalLibraryItems,
+				mappedLibraryItems,
+				ignoredHistoricalItems,
+				incompleteReasons,
+				errors,
+			},
+			"Plex cache: skipping eviction because the refreshed inventory was incomplete",
+		);
 
 		log.info(
 			{
@@ -670,60 +716,7 @@ export async function refreshPlexCache(
 		errorMessages,
 		complete: complete && errors === 0,
 		completedAt,
-		superseded: superseded || undefined,
-		generationId: complete && errors === 0 && completedAt ? publishedGenerationId : undefined,
 		inventoryTargets:
 			complete && errors === 0 && completedAt ? verifiedInventoryTargets : undefined,
 	};
-}
-
-// ============================================================================
-// Stale Row Eviction
-// ============================================================================
-
-/**
- * Chunk size for `id: { in: ... }` deletes. Stays well below SQLite's
- * historical SQLITE_MAX_VARIABLE_NUMBER (999) so no single DELETE statement
- * can exceed the parameter limit, regardless of library size or SQLite build.
- *
- * Exported for tests.
- */
-export const STALE_EVICTION_CHUNK_SIZE = 500;
-
-/**
- * Evict rows for `instanceId` whose `id` is not in `keepIds`.
- *
- * Reads existing row ids, diffs in memory, then issues bounded `id: { in: chunk }`
- * deletes. This avoids Prisma P2029 on SQLite when `keepIds` would have been a
- * giant `notIn` parameter list (issue #323).
- *
- * Exported for tests.
- */
-export async function evictStaleRows(
-	prisma: PrismaClient,
-	instanceId: string,
-	keepIds: string[],
-): Promise<number> {
-	const existing = await prisma.plexCache.findMany({
-		where: { instanceId },
-		select: { id: true },
-	});
-
-	const keepSet = new Set(keepIds);
-	const staleIds: string[] = [];
-	for (const row of existing) {
-		if (!keepSet.has(row.id)) staleIds.push(row.id);
-	}
-
-	if (staleIds.length === 0) return 0;
-
-	let totalDeleted = 0;
-	for (let i = 0; i < staleIds.length; i += STALE_EVICTION_CHUNK_SIZE) {
-		const chunk = staleIds.slice(i, i + STALE_EVICTION_CHUNK_SIZE);
-		const { count } = await prisma.plexCache.deleteMany({
-			where: { instanceId, id: { in: chunk } },
-		});
-		totalDeleted += count;
-	}
-	return totalDeleted;
 }

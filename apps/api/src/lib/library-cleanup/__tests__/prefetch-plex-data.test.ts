@@ -13,16 +13,17 @@
 import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import { plexConnectionFingerprint } from "../../plex/service-instance-fingerprint.js";
-import { evaluateItemAgainstRules } from "../rule-evaluators.js";
 import {
 	buildEvalContextWithHealth,
 	prefetchFreshPlexEpisodeWatchData,
 	prefetchPlexData,
 } from "../cleanup-executor.js";
+import { evaluateItemAgainstRules } from "../rule-evaluators.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
 function makePlexRow(overrides: {
 	id: string;
+	instanceId?: string;
 	tmdbId: number;
 	mediaType: "movie" | "series";
 	sectionId: string;
@@ -35,9 +36,12 @@ function makePlexRow(overrides: {
 	addedAt?: Date | null;
 	onDeck?: boolean;
 	userRating?: number | null;
+	connectionGeneration?: number | null;
+	identityGeneration?: number | null;
 }) {
 	return {
 		id: overrides.id,
+		instanceId: overrides.instanceId ?? "plex-inst-1",
 		tmdbId: overrides.tmdbId,
 		mediaType: overrides.mediaType,
 		sectionId: overrides.sectionId,
@@ -50,6 +54,30 @@ function makePlexRow(overrides: {
 		collections: JSON.stringify(overrides.collections ?? []),
 		labels: JSON.stringify(overrides.labels ?? []),
 		addedAt: overrides.addedAt ?? null,
+		connectionGeneration: overrides.connectionGeneration ?? 3,
+		identityGeneration: overrides.identityGeneration ?? 7,
+	};
+}
+
+function verifiedPlexInstance(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "plex-inst-1",
+		userId: "user-1",
+		service: "PLEX",
+		enabled: true,
+		baseUrl: "http://plex.internal:32400",
+		encryptedApiKey: "encrypted-token",
+		encryptionIv: "iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
+		expectedIdentity: "stored-plex-machine-identity",
+		identityKind: "PLEX_MACHINE_IDENTIFIER",
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date(0),
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		updatedAt: new Date(0),
+		...overrides,
 	};
 }
 
@@ -76,6 +104,8 @@ function completeStatus(instanceId: string, completedAt = new Date(), itemCount 
 		lastErrorMessage: null,
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
+		connectionGeneration: 3,
+		identityGeneration: 7,
 	};
 }
 
@@ -135,6 +165,8 @@ type PlexStatusOverride =
 			lastErrorMessage: string | null;
 			lastAttemptErrorMessage: string | null;
 			itemCount: number;
+			connectionGeneration: number | null;
+			identityGeneration: number | null;
 	  }>
 	| undefined;
 
@@ -145,21 +177,90 @@ const unavailablePlexEvidenceCases = [
 	["failed latest attempt", () => ({ lastAttemptResult: "error" })],
 	["completed-generation error", () => ({ lastErrorMessage: "refresh failed" })],
 	["latest-attempt error", () => ({ lastAttemptErrorMessage: "refresh failed" })],
+	["missing connection generation", () => ({ connectionGeneration: null })],
+	["missing identity generation", () => ({ identityGeneration: null })],
+	["stale connection generation", () => ({ connectionGeneration: 2 })],
+	["stale identity generation", () => ({ identityGeneration: 6 })],
 	["connection repoint", () => ({ lastRefreshedAt: new Date("2026-08-10T10:00:00.000Z") })],
 	["normal cache row-count mismatch", () => ({ itemCount: 2 })],
 ] satisfies ReadonlyArray<readonly [string, () => PlexStatusOverride]>;
 
 describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
+	it("does not authorize cleanup from an unverified Plex cache source", async () => {
+		const instance = {
+			id: "plex-inst-1",
+			updatedAt: new Date(0),
+			service: "PLEX",
+			enabled: true,
+			expectedIdentity: "raw-identity-must-not-be-used-as-evidence",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "UNVERIFIED",
+			identityVerifiedAt: null,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([completeStatus(instance.id, new Date(), 1)]),
+			},
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[plexCleanupRule()],
+		);
+
+		expect(result.ctx.plexMap).toBeUndefined();
+		expect(result.failedSources).toContain("plex");
+	});
+
+	it("rejects ambiguous Tautulli sources instead of combining their watch history", async () => {
+		const prisma = {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([
+					{ ...verifiedPlexInstance(), id: "tautulli-a", service: "TAUTULLI" },
+					{ ...verifiedPlexInstance(), id: "tautulli-b", service: "TAUTULLI" },
+				]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[
+				{
+					enabled: true,
+					ruleType: "tautulli_watch_count",
+					parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+					conditions: null,
+					plexLibraryFilter: null,
+				},
+			],
+		);
+
+		expect(result.ctx.tautulliMap).toBeUndefined();
+		expect(result.failedSources).toContain("tautulli");
+	});
+
 	it.each(unavailablePlexEvidenceCases)(
 		"blocks Plex cleanup evidence for %s",
 		async (caseName, overrides) => {
-			const instance = {
-				id: "plex-inst-1",
+			const instance = verifiedPlexInstance({
 				updatedAt:
 					caseName === "connection repoint"
 						? new Date("2026-08-10T11:00:00.000Z")
 						: new Date("2026-08-10T00:00:00.000Z"),
-			};
+			});
 			const baseStatus = completeStatus(instance.id, new Date(), 1);
 			const statusOverride = overrides();
 			const status = statusOverride ? { ...baseStatus, ...statusOverride } : undefined;
@@ -199,7 +300,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 	it("keeps a complete Plex generation available for cleanup evaluation", async () => {
 		const completedAt = new Date();
-		const instance = { id: "plex-inst-1", updatedAt: new Date(0) };
+		const instance = verifiedPlexInstance();
 		const status = completeStatus(instance.id, completedAt, 1);
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
@@ -226,6 +327,29 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		);
 	});
 
+	it("rejects a Plex map when its published generation changes while rows are read", async () => {
+		const instance = verifiedPlexInstance();
+		const first = completeStatus(instance.id, new Date(), 1);
+		const second = { ...first, identityGeneration: 8 };
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValueOnce([first]).mockResolvedValueOnce([second]),
+			},
+			plexCache: {
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		await expect(
+			prefetchPlexData({ prisma, log } as CleanupExecutorDeps, "user-1"),
+		).resolves.toBeUndefined();
+	});
+
 	it("blocks Plex episode cleanup when the episode cache row count mismatches", async () => {
 		const instance = {
 			id: "plex-inst-1",
@@ -238,6 +362,12 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			encryptedHttpAuthCredentials: null,
 			httpAuthEncryptionIv: null,
 			label: null,
+			expectedIdentity: "stored-plex-machine-identity",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date(0),
+			connectionGeneration: 3,
+			identityGeneration: 7,
 		};
 		const completedAt = new Date();
 		const normalStatus = completeStatus(instance.id, completedAt, 1);
@@ -289,7 +419,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	});
 
 	it("rejects an interleaved map/section generation", async () => {
-		const instance = { id: "plex-inst-1", updatedAt: new Date(0) };
+		const instance = verifiedPlexInstance();
 		const completedAt = new Date();
 		const status = (generationId: string, includeNewSection: boolean) => ({
 			...completeStatus(instance.id, completedAt, 1),
@@ -336,7 +466,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			],
 		);
 
-		expect(statusReads).toHaveBeenCalledTimes(3);
+		expect(statusReads).toHaveBeenCalledTimes(4);
 		expect(result.failedSources).toContain("plex");
 		expect(result.ctx.plexMap).toBeUndefined();
 		expect(result.ctx.plexSectionTitles).toBeUndefined();
@@ -389,9 +519,11 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 		const prisma = {
 			serviceInstance: {
-				findMany: vi.fn().mockResolvedValue([{ id: "plex-inst-1", updatedAt: new Date(0) }]),
+				findMany: vi.fn().mockResolvedValue([verifiedPlexInstance()]),
 			},
-			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1")]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 501)]),
+			},
 			plexCache: { findMany: findManySpy },
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -431,9 +563,11 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 		const prisma = {
 			serviceInstance: {
-				findMany: vi.fn().mockResolvedValue([{ id: "plex-inst-1", updatedAt: new Date(0) }]),
+				findMany: vi.fn().mockResolvedValue([verifiedPlexInstance()]),
 			},
-			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1")]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 1)]),
+			},
 			plexCache: { findMany: findManySpy },
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -457,6 +591,12 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 			encryptionIv: "new-iv",
 			encryptedHttpAuthCredentials: null,
 			httpAuthEncryptionIv: null,
+			expectedIdentity: "stored-plex-machine-identity",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date(0),
+			connectionGeneration: 3,
+			identityGeneration: 7,
 			updatedAt: new Date("2026-07-30T11:30:00.000Z"),
 		};
 		const oldFingerprint = plexConnectionFingerprint({
@@ -482,6 +622,8 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 						// in-flight refresh committing after settings changed.
 						refreshedAt: new Date("2026-07-30T11:45:00.000Z"),
 						sourceFingerprint: oldFingerprint,
+						connectionGeneration: 3,
+						identityGeneration: 7,
 					},
 				]),
 			},
@@ -518,6 +660,12 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 			encryptionIv: "iv",
 			encryptedHttpAuthCredentials: null,
 			httpAuthEncryptionIv: null,
+			expectedIdentity: "stored-plex-machine-identity",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date(0),
+			connectionGeneration: 3,
+			identityGeneration: 7,
 			updatedAt: new Date("2026-07-30T10:00:00.000Z"),
 		};
 		const prisma = {
@@ -535,6 +683,8 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 						ratingKey: "episode-123",
 						refreshedAt: new Date("2026-07-30T11:44:59.999Z"),
 						sourceFingerprint: plexConnectionFingerprint(currentInstance as never),
+						connectionGeneration: 3,
+						identityGeneration: 7,
 					},
 				]),
 			},
@@ -566,6 +716,12 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 			encryptionIv: "iv",
 			encryptedHttpAuthCredentials: null,
 			httpAuthEncryptionIv: null,
+			expectedIdentity: "stored-plex-machine-identity",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date(0),
+			connectionGeneration: 3,
+			identityGeneration: 7,
 			updatedAt: new Date("2026-07-30T10:00:00.000Z"),
 		};
 		const prisma = {
@@ -583,6 +739,8 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 						ratingKey: "episode-123",
 						refreshedAt: new Date("2026-07-30T11:45:00.000Z"),
 						sourceFingerprint: plexConnectionFingerprint(currentInstance as never),
+						connectionGeneration: 3,
+						identityGeneration: 7,
 					},
 				]),
 			},

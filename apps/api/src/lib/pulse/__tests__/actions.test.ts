@@ -34,11 +34,39 @@ vi.mock("../../queue-cleaner/scheduler.js", () => ({
 }));
 
 const refreshPlexCache = vi.fn();
+const plexPublicationInstance = {
+	id: "inst-plex-1",
+	userId: "user-1",
+	service: "PLEX" as const,
+	label: "Primary Plex",
+	baseUrl: "https://plex.invalid",
+	apiKey: "decrypted-token",
+	httpAuthHeaders: {},
+	enabled: true,
+	encryptedApiKey: "encrypted-token",
+	encryptionIv: "token-iv",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	expectedIdentity: "plex-a",
+	identityStatus: "VERIFIED" as const,
+	connectionGeneration: 7,
+	identityGeneration: 3,
+};
+const createOwnedPlexPublicationSnapshot = vi.fn(
+	(_encryptor: unknown, _instance: unknown) => plexPublicationInstance,
+);
 const refreshTautulliCache = vi.fn();
+const createOwnedTautulliPublicationSnapshot = vi.fn(
+	(_encryptor: unknown, instance: unknown) => instance,
+);
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
+	createOwnedPlexPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
+		createOwnedPlexPublicationSnapshot(encryptor, instance),
 	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
+	createOwnedTautulliPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
+		createOwnedTautulliPublicationSnapshot(encryptor, instance),
 	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
 }));
 
@@ -78,7 +106,12 @@ const fakeApp = {
 		$transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
 			callback({
 				$queryRawUnsafe: vi.fn().mockResolvedValue([]),
+				libraryCleanupConfig: {
+					upsert: vi.fn().mockResolvedValue({ id: "cleanup-user-1" }),
+					findUnique: vi.fn().mockResolvedValue({ id: "cleanup-user-1", runClaimToken: null }),
+				},
 				serviceInstance: {
+					findFirst: vi.fn().mockResolvedValue({ id: "inst-plex-1" }),
 					findUnique: vi.fn(async ({ where }: { where: { id: string } }) =>
 						where.id === "inst-plex-1"
 							? { ...plexInstance, enabled: true }
@@ -86,6 +119,7 @@ const fakeApp = {
 					),
 				},
 				cacheRefreshStatus: {
+					findUnique: vi.fn().mockResolvedValue(null),
 					upsert: (...args: unknown[]) => cacheStatusUpsert(...args),
 				},
 			}),
@@ -104,6 +138,7 @@ beforeEach(() => {
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
 	refreshPlexCache.mockReset();
+	createOwnedPlexPublicationSnapshot.mockClear();
 	refreshTautulliCache.mockReset();
 	requirePlexClient.mockReset();
 	requireTautulliClient.mockReset();
@@ -239,18 +274,20 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// this; the HTTP client has already received 200.
 		await result.backgroundTask;
 
-		expect(refreshPlexCache).toHaveBeenCalledWith(
-			fakeClient,
-			fakeApp.prisma,
-			"inst-plex-1",
-			fakeLog,
+		expect(refreshPlexCache).toHaveBeenCalledWith({
+			prisma: fakeApp.prisma,
+			instance: plexPublicationInstance,
+			log: fakeLog,
+		});
+		expect(createOwnedPlexPublicationSnapshot).toHaveBeenCalledWith(
+			fakeApp.encryptor,
 			plexInstance,
 		);
 		// The refresher transaction is the sole successful-generation publisher.
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
-	it("refreshes the tautulli cache via requireTautulliClient + refreshTautulliCache", async () => {
+	it("refreshes Tautulli from the owned snapshot without forwarding the helper client", async () => {
 		const fakeClient = { id: "tautulli-client" };
 		requireTautulliClient.mockResolvedValue({ client: fakeClient, instance: tautulliInstance });
 		refreshTautulliCache.mockResolvedValue({
@@ -270,13 +307,16 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// before asserting they ran.
 		await result.backgroundTask;
 
-		expect(refreshTautulliCache).toHaveBeenCalledWith(
-			fakeClient,
-			fakeApp.prisma,
-			"inst-tautulli-1",
-			fakeLog,
+		expect(createOwnedTautulliPublicationSnapshot).toHaveBeenCalledWith(
+			fakeApp.encryptor,
 			tautulliInstance,
 		);
+		expect(refreshTautulliCache).toHaveBeenCalledWith({
+			prisma: fakeApp.prisma,
+			instance: tautulliInstance,
+			log: fakeLog,
+		});
+		expect(refreshTautulliCache.mock.calls[0]).not.toContain(fakeClient);
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
@@ -294,10 +334,30 @@ describe("dispatchPulseAction — cache.refresh", () => {
 
 		expect(cacheStatusUpsert).toHaveBeenCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({ lastResult: "error" }),
+				create: expect.objectContaining({
+					lastResult: "error",
+					connectionGeneration: 7,
+					identityGeneration: 3,
+				}),
 				update: expect.objectContaining({ lastAttemptResult: "error" }),
 			}),
 		);
+	});
+
+	it("does not record a superseded Plex refresh as a failure", async () => {
+		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
+		refreshPlexCache.mockResolvedValue({
+			upserted: 0,
+			errors: 0,
+			errorMessages: [],
+			complete: false,
+			superseded: true,
+		});
+
+		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
+		await result.backgroundTask;
+
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("returns 200 immediately even when the refresher is slow — fire-and-forget contract", async () => {
@@ -357,7 +417,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 			expect.objectContaining({
 				update: expect.objectContaining({
 					lastAttemptResult: "error",
-					lastErrorMessage: "upstream Plex timeout",
+					lastAttemptErrorMessage: "upstream Plex timeout",
 				}),
 			}),
 		);

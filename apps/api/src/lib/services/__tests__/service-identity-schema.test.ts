@@ -32,6 +32,11 @@ const identityFields = `  // Durable provider-identity state. Lifecycle activati
 `;
 const identityIndexes = `  @@index([service, enabled, identityStatus])
 `;
+const cacheGenerationFields = `  connectionGeneration Int?
+  identityGeneration   Int?
+`;
+const cacheGenerationIndex = `  @@index([instanceId, connectionGeneration, identityGeneration])
+`;
 
 const temporaryDirectories: string[] = [];
 
@@ -42,6 +47,53 @@ afterEach(() => {
 });
 
 describe("ServiceInstance dormant identity schema", () => {
+	it("keeps legacy provider cache rows readable while leaving them without generation authority", () => {
+		const schema = readFileSync(schemaPath, "utf8");
+		for (const model of [
+			"PlexCache",
+			"PlexEpisodeCache",
+			"JellyfinCache",
+			"JellyfinEpisodeCache",
+			"TautulliCache",
+			"CacheRefreshStatus",
+		]) {
+			const block = schema.match(new RegExp(`model ${model} \\{[\\s\\S]*?^\\}`, "m"))?.[0];
+			expect(block, `${model} model`).toContain(cacheGenerationFields);
+			expect(block, `${model} generation index`).toContain(
+				"@@index([instanceId, connectionGeneration, identityGeneration])",
+			);
+		}
+	});
+
+	it("preserves legacy Plex cache rows with nullable generation provenance after schema sync", () => {
+		const directory = mkdtempSync(join(tmpdir(), "arr-cache-generation-schema-"));
+		temporaryDirectories.push(directory);
+		const databasePath = join(directory, "cache-generation.db");
+		const legacySchemaPath = join(directory, "legacy-schema.prisma");
+		writeFileSync(legacySchemaPath, removeCacheGenerationState(readFileSync(schemaPath, "utf8")));
+		syncSchema(legacySchemaPath, databasePath);
+		insertLegacyInstance(databasePath);
+		insertLegacyPlexCache(databasePath);
+		syncSchema(schemaPath, databasePath);
+
+		const database = new Database(databasePath, { readonly: true });
+		try {
+			const cache = database
+				.prepare(
+					"SELECT instanceId, tmdbId, connectionGeneration, identityGeneration FROM plex_cache WHERE id = ?",
+				)
+				.get("legacy-plex-cache");
+			expect(cache).toEqual({
+				instanceId: "legacy-instance",
+				tmdbId: 42,
+				connectionGeneration: null,
+				identityGeneration: null,
+			});
+		} finally {
+			database.close();
+		}
+	}, 30_000);
+
 	it("preserves a legacy instance as unverified generation zero after schema sync", () => {
 		const directory = mkdtempSync(join(tmpdir(), "arr-identity-schema-"));
 		temporaryDirectories.push(directory);
@@ -77,7 +129,7 @@ describe("ServiceInstance dormant identity schema", () => {
 		}
 	}, 30_000);
 
-	it("keeps dormant identity state out of formatted service responses", () => {
+	it("exposes a safe provider identity summary without raw identity or credentials", () => {
 		const formatted = formatServiceInstance({
 			id: "instance-1",
 			service: "PLEX",
@@ -94,12 +146,27 @@ describe("ServiceInstance dormant identity schema", () => {
 			storageGroupId: null,
 			hasLocalFilesystemAccess: false,
 			pathPrefix: null,
+			expectedIdentity: "plex-machine-123",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityGeneration: 3,
+			identityVerifiedAt: new Date("2026-08-14T01:00:00.000Z"),
+			identityLastCheckedAt: new Date("2026-08-14T02:00:00.000Z"),
 			tags: [],
-		});
+		} as never);
 
-		expect(JSON.stringify(formatted)).toBe(
-			'{"id":"instance-1","service":"plex","label":"Living Room","baseUrl":"http://plex.test","externalUrl":null,"enabled":true,"isDefault":false,"createdAt":"2026-08-14T00:00:00.000Z","updatedAt":"2026-08-14T00:00:00.000Z","hasApiKey":true,"hasHttpAuth":false,"storageGroupId":null,"hasLocalFilesystemAccess":false,"pathPrefix":null,"tags":[]}',
-		);
+		expect(formatted).toMatchObject({
+			identity: {
+				status: "verified",
+				kind: "plex-machine-identifier",
+				fingerprint: expect.stringMatching(/^[a-f0-9]{12}$/),
+				verifiedAt: new Date("2026-08-14T01:00:00.000Z"),
+				lastCheckedAt: new Date("2026-08-14T02:00:00.000Z"),
+			},
+		});
+		const serialized = JSON.stringify(formatted);
+		expect(serialized).not.toContain("plex-machine-123");
+		expect(serialized).not.toContain("ciphertext");
 	});
 });
 
@@ -115,6 +182,17 @@ function removeIdentityState(schema: string): string {
 	}
 
 	return schema.replace(identityEnums, "").replace(identityFields, "").replace(identityIndexes, "");
+}
+
+function removeCacheGenerationState(schema: string): string {
+	const fieldCount = schema.split(cacheGenerationFields).length - 1;
+	const indexCount = schema.split(cacheGenerationIndex).length - 1;
+	if (fieldCount !== 6 || indexCount !== 6) {
+		throw new Error(
+			"Provider cache generation fields or indexes are missing from the Prisma schema",
+		);
+	}
+	return schema.replaceAll(cacheGenerationFields, "").replaceAll(cacheGenerationIndex, "");
 }
 
 function syncSchema(schema: string, databasePath: string): void {
@@ -152,6 +230,33 @@ function insertLegacyInstance(databasePath: string): void {
 				1,
 				0,
 				0,
+			);
+	} finally {
+		database.close();
+	}
+}
+
+function insertLegacyPlexCache(databasePath: string): void {
+	const database = new Database(databasePath);
+	try {
+		database
+			.prepare(
+				`INSERT INTO plex_cache (
+					id, instanceId, tmdbId, mediaType, sectionId, sectionTitle, title,
+					watchedByUsers, collections, labels
+				) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			)
+			.run(
+				"legacy-plex-cache",
+				"legacy-instance",
+				42,
+				"movie",
+				"1",
+				"Movies",
+				"Legacy Movie",
+				"[]",
+				"[]",
+				"[]",
 			);
 	} finally {
 		database.close();
