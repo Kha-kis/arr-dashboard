@@ -30,6 +30,7 @@ import {
 import {
 	clearDurableProviderCacheState,
 	confirmsIdentityCandidate,
+	createProviderReplacementAuthority,
 	expireApprovalsForProviderReplacement,
 	initialVerifiedIdentityData,
 	isProviderIdentityService,
@@ -991,6 +992,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				}
 
 				const connectionChanged = changesCacheProviderConnection(existing, candidate);
+				const replacedProviderAuthority = createProviderReplacementAuthority(existing);
+				if (!replacedProviderAuthority) {
+					throw new ConflictError(
+						"The existing provider identity is unavailable; inspect the service again before replacing.",
+					);
+				}
 				const replacementData = {
 					...buildUpdateData(candidate, app.encryptor),
 					...(connectionChanged ? { connectionGeneration: existing.connectionGeneration + 1 } : {}),
@@ -1020,13 +1027,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						await updateInstanceTags(tx, id, candidate.tags);
 					}
 					await clearDurableProviderCacheState(tx, id);
-					await expireApprovalsForProviderReplacement(
-						tx,
-						userId,
-						id,
-						confirmation.expectedConnectionGeneration,
-						confirmation.expectedIdentityGeneration,
-					);
+					await expireApprovalsForProviderReplacement(tx, userId, replacedProviderAuthority);
 					return true;
 				});
 				if (!replaced) {

@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../prisma.js";
 import { recordWatchProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
-import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
+import type {
+	OwnedProviderPublicationSnapshot,
+	ProviderIdentityGuardOptions,
+} from "../services/provider-identity-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { refreshJellyfinCache } from "./jellyfin-cache-refresher.js";
 
@@ -10,7 +13,10 @@ type JellyfinCacheRefreshResult = Awaited<ReturnType<typeof refreshJellyfinCache
 
 const inFlightRefreshes = new Map<string, Promise<JellyfinCacheRefreshResult>>();
 
-function refreshKey(instance: OwnedProviderPublicationSnapshot): string {
+function refreshKey(
+	instance: OwnedProviderPublicationSnapshot,
+	options: ProviderIdentityGuardOptions,
+): string {
 	return createHash("sha256")
 		.update(
 			JSON.stringify([
@@ -27,6 +33,7 @@ function refreshKey(instance: OwnedProviderPublicationSnapshot): string {
 				instance.encryptionIv,
 				instance.encryptedHttpAuthCredentials,
 				instance.httpAuthEncryptionIv,
+				options.cleanupRunClaimToken ?? null,
 			]),
 		)
 		.digest("hex");
@@ -41,6 +48,7 @@ export async function recordJellyfinCacheRefreshFailure(
 	instance: OwnedProviderPublicationSnapshot,
 	message: string,
 	observer: JellyfinCacheRefreshObserver,
+	options: ProviderIdentityGuardOptions = {},
 ): Promise<void> {
 	await recordWatchProviderCacheRefreshFailure(
 		observer.prisma,
@@ -48,6 +56,7 @@ export async function recordJellyfinCacheRefreshFailure(
 		message,
 		instance,
 		observer.log,
+		options,
 	);
 }
 
@@ -55,6 +64,7 @@ async function runObservedRefresh(
 	instance: OwnedProviderPublicationSnapshot,
 	refresh: () => Promise<JellyfinCacheRefreshResult>,
 	observer: JellyfinCacheRefreshObserver,
+	options: ProviderIdentityGuardOptions,
 ): Promise<JellyfinCacheRefreshResult> {
 	try {
 		const result = await refresh();
@@ -64,6 +74,7 @@ async function runObservedRefresh(
 				result.errorMessages.slice(0, 3).join("; ") ||
 					"Jellyfin refresh did not publish a complete generation",
 				observer,
+				options,
 			);
 		}
 		return result;
@@ -72,6 +83,7 @@ async function runObservedRefresh(
 			instance,
 			getErrorMessage(error, "Unknown Jellyfin cache refresh error"),
 			observer,
+			options,
 		);
 		throw error;
 	}
@@ -82,12 +94,15 @@ export function runJellyfinCacheRefreshSingleFlight(
 	instance: OwnedProviderPublicationSnapshot,
 	refresh: () => Promise<JellyfinCacheRefreshResult>,
 	observer: JellyfinCacheRefreshObserver,
+	options: ProviderIdentityGuardOptions = {},
 ): Promise<JellyfinCacheRefreshResult> {
-	const key = refreshKey(instance);
+	const key = refreshKey(instance, options);
 	const existing = inFlightRefreshes.get(key);
 	if (existing) return existing;
 
-	const pending = Promise.resolve().then(() => runObservedRefresh(instance, refresh, observer));
+	const pending = Promise.resolve().then(() =>
+		runObservedRefresh(instance, refresh, observer, options),
+	);
 	inFlightRefreshes.set(key, pending);
 	void pending
 		.finally(() => {

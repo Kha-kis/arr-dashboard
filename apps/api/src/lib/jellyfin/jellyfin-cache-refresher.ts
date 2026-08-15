@@ -87,6 +87,7 @@ export interface JellyfinPublicationContext {
 	prisma: PrismaClient;
 	instance: OwnedProviderPublicationSnapshot;
 	log: FastifyBaseLogger;
+	cleanupRunClaimToken?: string;
 }
 
 export interface JellyfinCacheRefreshResult {
@@ -147,7 +148,10 @@ export async function refreshJellyfinCache(
 					log,
 				),
 			async (tx, collected) => await publishJellyfinCache(tx, instance, collected),
-			{ timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS },
+			{
+				cleanupRunClaimToken: context.cleanupRunClaimToken,
+				timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
+			},
 		);
 	} catch (error) {
 		log.error({ err: error, instanceId: instance.id }, "Jellyfin cache publication rejected");

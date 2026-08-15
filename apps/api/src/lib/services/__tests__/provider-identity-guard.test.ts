@@ -234,6 +234,50 @@ describe("withGuardedProviderPublication", () => {
 		expect(publish).toHaveBeenCalledOnce();
 	});
 
+	it("allows publication only for the cleanup run that owns the active lease", async () => {
+		const row = instance();
+		const prisma = prismaFor(row, { runClaimToken: "cleanup-run" });
+		const publish = vi.fn(async (_tx, snapshot: string) => snapshot);
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
+
+		await expect(
+			withGuardedProviderPublication(
+				prisma as never,
+				row as never,
+				silentLog,
+				async () => "wrong-owner",
+				publish,
+				{ cleanupRunClaimToken: "other-run" },
+			),
+		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "PUBLICATION_SUPERSEDED"));
+		expect(publish).not.toHaveBeenCalled();
+
+		await expect(
+			withGuardedProviderPublication(
+				prisma as never,
+				row as never,
+				silentLog,
+				async () => "lease-owner",
+				publish,
+				{ cleanupRunClaimToken: "cleanup-run" },
+			),
+		).resolves.toBe("lease-owner");
+		expect(publish).toHaveBeenCalledOnce();
+
+		prisma.setRunClaimToken("replacement-run");
+		await expect(
+			withGuardedProviderPublication(
+				prisma as never,
+				row as never,
+				silentLog,
+				async () => "lost-owner",
+				publish,
+				{ cleanupRunClaimToken: "cleanup-run" },
+			),
+		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "PUBLICATION_SUPERSEDED"));
+		expect(publish).toHaveBeenCalledOnce();
+	});
+
 	it("rejects unverified snapshots before collection", async () => {
 		const row = instance({ identityStatus: "UNVERIFIED", expectedIdentity: null });
 		const collect = vi.fn();

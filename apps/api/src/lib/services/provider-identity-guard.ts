@@ -72,6 +72,8 @@ export class ProviderIdentityGuardError extends Error {
 }
 
 export type ProviderIdentityGuardOptions = {
+	/** Internal cleanup lease owner; omitted publications require no active cleanup run. */
+	cleanupRunClaimToken?: string;
 	now?: () => Date;
 	maxWait?: number;
 	timeout?: number;
@@ -93,11 +95,11 @@ export async function withGuardedProviderPublication<TSnapshot, TResult>(
 ): Promise<TResult> {
 	assertVerified(instance);
 	const before = await observeIdentity(instance, log);
-	await ensureExpectedIdentity(prisma, instance, before, options.now);
+	await ensureExpectedIdentity(prisma, instance, before, options);
 
 	const snapshot = await collect();
 	const after = await observeIdentity(instance, log);
-	await ensureExpectedIdentity(prisma, instance, after, options.now);
+	await ensureExpectedIdentity(prisma, instance, after, options);
 
 	const publication = await withCurrentProviderPublicationAuthority(
 		prisma,
@@ -145,7 +147,8 @@ export async function withCurrentProviderPublicationAuthority<T>(
 				where: { id: cleanupConfig.id },
 				select: { runClaimToken: true },
 			});
-			if (!cleanupAuthority || cleanupAuthority.runClaimToken !== null) {
+			const expectedRunClaimToken = options.cleanupRunClaimToken ?? null;
+			if (!cleanupAuthority || cleanupAuthority.runClaimToken !== expectedRunClaimToken) {
 				return { matched: false };
 			}
 			if (postgresql) {
@@ -221,7 +224,7 @@ async function ensureExpectedIdentity(
 	prisma: GuardPrisma,
 	instance: OwnedProviderPublicationSnapshot,
 	observation: ProviderIdentityObservation,
-	now: (() => Date) | undefined,
+	options: ProviderIdentityGuardOptions,
 ): Promise<void> {
 	if (
 		observation.service === instance.service &&
@@ -229,11 +232,18 @@ async function ensureExpectedIdentity(
 	) {
 		return;
 	}
-	const mismatch = await withCurrentProviderPublicationAuthority(prisma, instance, async (tx) =>
-		tx.serviceInstance.updateMany({
-			where: providerPublicationPredicate(instance),
-			data: { identityStatus: "MISMATCH", identityLastCheckedAt: (now ?? (() => new Date()))() },
-		}),
+	const mismatch = await withCurrentProviderPublicationAuthority(
+		prisma,
+		instance,
+		async (tx) =>
+			await tx.serviceInstance.updateMany({
+				where: providerPublicationPredicate(instance),
+				data: {
+					identityStatus: "MISMATCH",
+					identityLastCheckedAt: (options.now ?? (() => new Date()))(),
+				},
+			}),
+		options,
 	);
 	if (!mismatch.matched) {
 		throw new ProviderIdentityGuardError(

@@ -327,6 +327,23 @@ describe("authoritative mutation policy snapshots", () => {
 		expect(refreshMocks.plexEpisodes).toHaveBeenCalledOnce();
 	});
 
+	it.each([
+		["Plex", "plex_watch_count", "PLEX", refreshMocks.plex],
+		["Tautulli", "tautulli_watch_count", "TAUTULLI", refreshMocks.tautulli],
+		["Jellyfin", "jellyfin_watch_count", "JELLYFIN", refreshMocks.jellyfin],
+	] as const)(
+		"coordinates cleanup-owned %s publication with the active run lease",
+		async (_label, ruleType, service, refreshMock) => {
+			const { deps } = makeDeps([rule(ruleType)], [instance(service)]);
+
+			await createMutationPolicySnapshotGetter(deps, "user-1", undefined, "cleanup-run")();
+
+			expect(refreshMock).toHaveBeenCalledWith(
+				expect.objectContaining({ cleanupRunClaimToken: "cleanup-run" }),
+			);
+		},
+	);
+
 	it("rejects inventory identities that do not belong to the published Plex generation", async () => {
 		refreshMocks.plex.mockResolvedValue({
 			upserted: 0,
@@ -562,6 +579,7 @@ describe("authoritative mutation policy snapshots", () => {
 	] as const)(
 		"%s %s after final target revalidation",
 		async (_label, _expectedBehavior, service, mediaType, plexATargetsAtSnapshot, plexBTargetsAtSnapshot, plexATargetsAtMutation, plexBTargetsAtMutation, expectedToBlock, omitSonarrTmdbId, policyChangesAfterSnapshot) => {
+			const cleanupRunClaimToken = "cleanup-run";
 			const arrPolicyChangesDuringRefresh =
 				_expectedBehavior === "blocks a live ARR policy change during the Plex refresh";
 			const plexA = { ...instance("PLEX"), id: "plex-a", name: "Plex A" };
@@ -738,7 +756,12 @@ describe("authoritative mutation policy snapshots", () => {
 					service === "RADARR" ? { movie: { getById } } : { series: { getById } },
 				),
 			} as never;
-			const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+			const snapshot = await createMutationPolicySnapshotGetter(
+				deps,
+				"user-1",
+				undefined,
+				cleanupRunClaimToken,
+			)();
 			const deleteMovieFile = vi.fn();
 
 			const executeAuthorizedDelete = async () => {
@@ -753,6 +776,7 @@ describe("authoritative mutation policy snapshots", () => {
 						scanMediaServerAfterDelete: false,
 					},
 					snapshot,
+					cleanupRunClaimToken,
 				);
 				await deleteMovieFile();
 			};
@@ -764,6 +788,9 @@ describe("authoritative mutation policy snapshots", () => {
 			} else {
 				await expect(executeAuthorizedDelete()).resolves.toBeUndefined();
 				expect(deleteMovieFile).toHaveBeenCalledOnce();
+			}
+			for (const [context] of refreshMocks.plex.mock.calls) {
+				expect(context).toEqual(expect.objectContaining({ cleanupRunClaimToken }));
 			}
 		},
 	);

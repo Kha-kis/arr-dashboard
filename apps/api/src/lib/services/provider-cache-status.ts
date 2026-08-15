@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { PrismaClient } from "../prisma.js";
 import {
 	hasAuthoritativeProviderCacheGeneration,
+	type ProviderIdentityGuardOptions,
 	type ProviderPublicationAuthority,
 	withCurrentProviderPublicationAuthority,
 } from "./provider-identity-guard.js";
@@ -32,45 +33,51 @@ export async function recordWatchProviderCacheRefreshFailure(
 	message: string,
 	instance: ProviderPublicationAuthority,
 	log: Pick<FastifyBaseLogger, "warn">,
+	options: ProviderIdentityGuardOptions = {},
 ): Promise<"recorded" | "superseded" | "failed"> {
 	try {
 		if (!supportsCacheType(instance.service, cacheType)) {
 			throw new Error("Provider cache type does not match publication service");
 		}
 		const attemptedAt = new Date();
-		const result = await withCurrentProviderPublicationAuthority(prisma, instance, async (tx) => {
-			const status = await tx.cacheRefreshStatus.findUnique({
-				where: { instanceId_cacheType: { instanceId: instance.id, cacheType } },
-				select: { connectionGeneration: true, identityGeneration: true },
-			});
-			if (status && !hasAuthoritativeProviderCacheGeneration(status, instance)) return false;
+		const result = await withCurrentProviderPublicationAuthority(
+			prisma,
+			instance,
+			async (tx) => {
+				const status = await tx.cacheRefreshStatus.findUnique({
+					where: { instanceId_cacheType: { instanceId: instance.id, cacheType } },
+					select: { connectionGeneration: true, identityGeneration: true },
+				});
+				if (status && !hasAuthoritativeProviderCacheGeneration(status, instance)) return false;
 
-			const safeMessage = message.slice(0, 500);
-			await tx.cacheRefreshStatus.upsert({
-				where: { instanceId_cacheType: { instanceId: instance.id, cacheType } },
-				create: {
-					instanceId: instance.id,
-					cacheType,
-					lastRefreshedAt: attemptedAt,
-					lastResult: "error",
-					lastErrorMessage: safeMessage,
-					itemCount: 0,
-					lastAttemptAt: attemptedAt,
-					lastAttemptResult: "error",
-					lastAttemptErrorMessage: safeMessage,
-					connectionGeneration: instance.connectionGeneration,
-					identityGeneration: instance.identityGeneration,
-				},
-				update: {
-					lastAttemptAt: attemptedAt,
-					lastAttemptResult: "error",
-					lastAttemptErrorMessage: safeMessage,
-					connectionGeneration: instance.connectionGeneration,
-					identityGeneration: instance.identityGeneration,
-				},
-			});
-			return true;
-		});
+				const safeMessage = message.slice(0, 500);
+				await tx.cacheRefreshStatus.upsert({
+					where: { instanceId_cacheType: { instanceId: instance.id, cacheType } },
+					create: {
+						instanceId: instance.id,
+						cacheType,
+						lastRefreshedAt: attemptedAt,
+						lastResult: "error",
+						lastErrorMessage: safeMessage,
+						itemCount: 0,
+						lastAttemptAt: attemptedAt,
+						lastAttemptResult: "error",
+						lastAttemptErrorMessage: safeMessage,
+						connectionGeneration: instance.connectionGeneration,
+						identityGeneration: instance.identityGeneration,
+					},
+					update: {
+						lastAttemptAt: attemptedAt,
+						lastAttemptResult: "error",
+						lastAttemptErrorMessage: safeMessage,
+						connectionGeneration: instance.connectionGeneration,
+						identityGeneration: instance.identityGeneration,
+					},
+				});
+				return true;
+			},
+			options,
+		);
 		return result.matched && result.value ? "recorded" : "superseded";
 	} catch (error) {
 		log.warn(

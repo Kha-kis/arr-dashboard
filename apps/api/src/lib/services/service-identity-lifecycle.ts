@@ -1,5 +1,7 @@
 import {
 	confirmProviderIdentity,
+	providerIdentityAuthorityFingerprint,
+	providerInstanceAuthorityFingerprint,
 	type ProviderIdentityObservation,
 	type ProviderIdentityService,
 } from "./service-identity.js";
@@ -116,6 +118,40 @@ const NONTERMINAL_APPROVAL_STATUSES: string[] = [
 
 type ApprovalReplacementPrisma = Pick<PrismaClientInstance, "libraryCleanupApproval">;
 
+export type ProviderReplacementAuthority = {
+	service: ProviderIdentityService;
+	identityKind: NonNullable<ReturnType<typeof toPersistedIdentityKind> | undefined>;
+	identityFingerprint: string;
+	instanceFingerprint: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+};
+
+export function createProviderReplacementAuthority(instance: {
+	id: string;
+	service: string;
+	identityKind: string | null;
+	expectedIdentity: string | null;
+	connectionGeneration: number;
+	identityGeneration: number;
+}): ProviderReplacementAuthority | null {
+	if (
+		!isProviderIdentityService(instance.service) ||
+		instance.identityKind === null ||
+		instance.expectedIdentity === null
+	) {
+		return null;
+	}
+	return {
+		service: instance.service,
+		identityKind: instance.identityKind as ProviderReplacementAuthority["identityKind"],
+		identityFingerprint: providerIdentityAuthorityFingerprint(instance),
+		instanceFingerprint: providerInstanceAuthorityFingerprint(instance.id),
+		connectionGeneration: instance.connectionGeneration,
+		identityGeneration: instance.identityGeneration,
+	};
+}
+
 /**
  * Pre-provenance approvals cannot establish that they are unrelated, so a
  * replacement expires them conservatively. Future provider-evidence snapshots
@@ -124,23 +160,14 @@ type ApprovalReplacementPrisma = Pick<PrismaClientInstance, "libraryCleanupAppro
 export async function expireApprovalsForProviderReplacement(
 	prisma: ApprovalReplacementPrisma,
 	userId: string,
-	instanceId: string,
-	connectionGeneration: number,
-	identityGeneration: number,
+	authority: ProviderReplacementAuthority,
 ): Promise<void> {
 	const approvals = await prisma.libraryCleanupApproval.findMany({
 		where: { config: { userId }, status: { in: NONTERMINAL_APPROVAL_STATUSES } },
 		select: { id: true, status: true, safetySnapshot: true },
 	});
 	for (const approval of approvals) {
-		if (
-			!approvalReferencesReplacedProvider(
-				approval.safetySnapshot,
-				instanceId,
-				connectionGeneration,
-				identityGeneration,
-			)
-		) {
+		if (!(await approvalReferencesReplacedProvider(approval.safetySnapshot, authority))) {
 			continue;
 		}
 		await prisma.libraryCleanupApproval.updateMany({
@@ -168,28 +195,27 @@ export function toPersistedIdentityKind(
 	}
 }
 
-function approvalReferencesReplacedProvider(
+async function approvalReferencesReplacedProvider(
 	safetySnapshot: string | null,
-	instanceId: string,
-	connectionGeneration: number,
-	identityGeneration: number,
-): boolean {
+	authority: ProviderReplacementAuthority,
+): Promise<boolean> {
 	if (!safetySnapshot) return true;
-	try {
-		const parsed: unknown = JSON.parse(safetySnapshot);
-		if (typeof parsed !== "object" || parsed === null) return true;
-		const providerEvidence = (parsed as { providerEvidence?: unknown }).providerEvidence;
-		if (!Array.isArray(providerEvidence)) return true;
-		return providerEvidence.some(
-			(evidence) =>
-				typeof evidence === "object" &&
-				evidence !== null &&
-				(evidence as { instanceId?: unknown }).instanceId === instanceId &&
-				(evidence as { connectionGeneration?: unknown }).connectionGeneration ===
-					connectionGeneration &&
-				(evidence as { identityGeneration?: unknown }).identityGeneration === identityGeneration,
+	const { parseExecutableSafetyEnvelope } = await import(
+		"../library-cleanup/shared-plex-safety.js"
+	);
+	const envelope = parseExecutableSafetyEnvelope(safetySnapshot);
+	if (!envelope) return true;
+	return envelope.providerEvidence.sources.some((source) => {
+		const exactInstance =
+			source.instanceFingerprint === undefined ||
+			source.instanceFingerprint === authority.instanceFingerprint;
+		return (
+			exactInstance &&
+			source.service === authority.service &&
+			source.identityKind === authority.identityKind &&
+			source.identityFingerprint === authority.identityFingerprint &&
+			source.connectionGeneration === authority.connectionGeneration &&
+			source.identityGeneration === authority.identityGeneration
 		);
-	} catch {
-		return true;
-	}
+	});
 }

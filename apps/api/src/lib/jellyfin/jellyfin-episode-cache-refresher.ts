@@ -59,6 +59,7 @@ export async function refreshJellyfinEpisodeCache(
 			log,
 			async () => await collectJellyfinEpisodes(client, prisma, instance, log),
 			async (tx, collected) => await publishJellyfinEpisodes(tx, instance, collected),
+			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
 		);
 	} catch (error) {
 		if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") {
@@ -78,6 +79,7 @@ export async function refreshJellyfinEpisodeCache(
 			"Jellyfin episode refresh did not produce a complete generation",
 			instance,
 			log,
+			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
 		);
 		if (failure === "superseded") return { ...result, errors: 0, superseded: true };
 	}

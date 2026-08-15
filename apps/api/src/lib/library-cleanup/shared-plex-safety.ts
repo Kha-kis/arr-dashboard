@@ -22,7 +22,11 @@ import {
 } from "../plex/plex-client.js";
 import { plexConnectionFingerprint as plexEvidenceSourceFingerprint } from "../plex/service-instance-fingerprint.js";
 import type { ServiceInstance } from "../prisma.js";
-import { readProviderIdentity } from "../services/service-identity.js";
+import {
+	providerIdentityAuthorityFingerprint,
+	providerInstanceAuthorityFingerprint,
+	readProviderIdentity,
+} from "../services/service-identity.js";
 import { toPersistedIdentityKind } from "../services/service-identity-lifecycle.js";
 import { createOwnedTautulliPublicationSnapshot } from "../tautulli/tautulli-cache-refresher.js";
 import {
@@ -359,6 +363,8 @@ export type ExecutableSharedMediaSafetyPlan = Extract<
  */
 export interface SanitizedProviderEvidenceSource {
 	service: "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI";
+	/** Added after evidence v1 shipped; absent sources remain parseable as conservative legacy evidence. */
+	instanceFingerprint?: string;
 	identityKind: string;
 	identityFingerprint: string;
 	connectionGeneration: number;
@@ -1101,6 +1107,9 @@ function canonicalFingerprint(value: unknown): string {
 function providerSourcePayload(source: Omit<SanitizedProviderEvidenceSource, "fingerprint">) {
 	return {
 		service: source.service,
+		...(source.instanceFingerprint === undefined
+			? {}
+			: { instanceFingerprint: source.instanceFingerprint }),
 		identityKind: source.identityKind,
 		identityFingerprint: source.identityFingerprint,
 		connectionGeneration: source.connectionGeneration,
@@ -1386,12 +1395,9 @@ async function loadCurrentProviderExecutionEvidence(
 			if (rows.length !== status.itemCount) throw new ProviderExecutionAuthorityChangedError();
 			sources.push({
 				service: instance.service as SanitizedProviderEvidenceSource["service"],
+				instanceFingerprint: providerInstanceAuthorityFingerprint(instance.id),
 				identityKind: instance.identityKind!,
-				identityFingerprint: providerExecutionFingerprint({
-					service: instance.service,
-					identityKind: instance.identityKind,
-					expectedIdentity: instance.expectedIdentity,
-				}),
+				identityFingerprint: providerIdentityAuthorityFingerprint(instance),
 				connectionGeneration: status.connectionGeneration!,
 				identityGeneration: status.identityGeneration!,
 				cacheType,
@@ -1464,12 +1470,13 @@ export async function createCurrentProviderScanAuthority(
 			new Date(),
 			target,
 		);
-		const acceptedFingerprints = new Set(
-			canonicalAccepted.sources.map((source) => source.fingerprint),
-		);
 		if (
 			current.evidence.sources.length === 0 ||
-			current.evidence.sources.some((source) => !acceptedFingerprints.has(source.fingerprint))
+			!current.evidence.sources.every((currentSource) =>
+				acceptedSources.some((acceptedSource) =>
+					providerEvidenceSourceMatches(acceptedSource, currentSource),
+				),
+			)
 		) {
 			throw new ProviderExecutionAuthorityChangedError();
 		}
@@ -1484,13 +1491,43 @@ function currentEvidenceMatches(
 	accepted: SanitizedProviderEvidence,
 	current: SanitizedProviderEvidence,
 ): boolean {
+	if (accepted.fingerprint === current.fingerprint) return true;
 	return (
-		accepted.fingerprint === current.fingerprint &&
-		accepted.sources.length === current.sources.length &&
-		accepted.sources.every(
-			(source, index) => source.fingerprint === current.sources[index]?.fingerprint,
-		)
+		JSON.stringify(accepted.dependencies) === JSON.stringify(current.dependencies) &&
+		providerEvidenceSourcesMatch(accepted.sources, current.sources)
 	);
+}
+
+function providerEvidenceSourcesMatch(
+	accepted: SanitizedProviderEvidenceSource[],
+	current: SanitizedProviderEvidenceSource[],
+): boolean {
+	if (accepted.length !== current.length) return false;
+	const remaining = [...current];
+	for (const acceptedSource of accepted) {
+		const matchIndex = remaining.findIndex((currentSource) =>
+			providerEvidenceSourceMatches(acceptedSource, currentSource),
+		);
+		if (matchIndex < 0) return false;
+		remaining.splice(matchIndex, 1);
+	}
+	return true;
+}
+
+function providerEvidenceSourceMatches(
+	accepted: SanitizedProviderEvidenceSource,
+	current: SanitizedProviderEvidenceSource,
+): boolean {
+	if (accepted.instanceFingerprint !== undefined) {
+		return accepted.fingerprint === current.fingerprint;
+	}
+	const {
+		instanceFingerprint: _currentInstanceFingerprint,
+		fingerprint: _currentFingerprint,
+		...currentLegacyPayload
+	} = current;
+	const { fingerprint: _acceptedFingerprint, ...acceptedLegacyPayload } = accepted;
+	return JSON.stringify(acceptedLegacyPayload) === JSON.stringify(currentLegacyPayload);
 }
 
 /**
@@ -1650,6 +1687,7 @@ function canonicalProviderEvidence(value: unknown): SanitizedProviderEvidence {
 				row.service !== "TAUTULLI") ||
 			typeof row.identityKind !== "string" ||
 			!isSha256(row.identityFingerprint) ||
+			(row.instanceFingerprint !== undefined && !isSha256(row.instanceFingerprint)) ||
 			!Number.isSafeInteger(row.connectionGeneration) ||
 			!Number.isSafeInteger(row.identityGeneration) ||
 			typeof row.cacheType !== "string" ||
@@ -1664,6 +1702,9 @@ function canonicalProviderEvidence(value: unknown): SanitizedProviderEvidence {
 		}
 		const canonical = {
 			service: row.service as SanitizedProviderEvidenceSource["service"],
+			...(row.instanceFingerprint === undefined
+				? {}
+				: { instanceFingerprint: row.instanceFingerprint as string }),
 			identityKind: row.identityKind as string,
 			identityFingerprint: row.identityFingerprint as string,
 			connectionGeneration: row.connectionGeneration as number,

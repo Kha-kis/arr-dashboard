@@ -61,6 +61,7 @@ export interface TautulliPublicationContext {
 	prisma: PrismaClient;
 	instance: OwnedProviderPublicationSnapshot;
 	log: FastifyBaseLogger;
+	cleanupRunClaimToken?: string;
 }
 
 export interface TautulliCacheRefreshResult {
@@ -121,6 +122,7 @@ export async function refreshTautulliCache(
 					log,
 				),
 			async (tx, collected) => await publishTautulliCache(tx, instance, collected),
+			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
 		);
 	} catch (error) {
 		log.error({ err: error, instanceId: instance.id }, "Tautulli cache publication rejected");

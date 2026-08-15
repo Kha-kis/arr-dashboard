@@ -273,6 +273,7 @@ export async function refreshPlexEpisodeCache(
 					instance.identityGeneration,
 				),
 			async (tx, collected) => await publishPlexEpisodeCache(tx, instance, collected),
+			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
 		);
 	} catch (error) {
 		if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") {

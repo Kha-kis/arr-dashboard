@@ -126,6 +126,24 @@ describe("runJellyfinCacheRefreshSingleFlight", () => {
 		await Promise.all([first, second]);
 	});
 
+	it("does not coalesce scheduler work with cleanup-owned publication", async () => {
+		const gate = deferred<CacheRefreshResult>();
+		const refresh = vi.fn(() => gate.promise);
+		const { observer } = makeObserver();
+		const instance = publicationSnapshot();
+
+		const scheduler = runJellyfinCacheRefreshSingleFlight(instance, refresh, observer);
+		const cleanup = runJellyfinCacheRefreshSingleFlight(instance, refresh, observer, {
+			cleanupRunClaimToken: "cleanup-run",
+		});
+
+		expect(scheduler).not.toBe(cleanup);
+		await Promise.resolve();
+		expect(refresh).toHaveBeenCalledTimes(2);
+		gate.resolve(completeResult);
+		await Promise.all([scheduler, cleanup]);
+	});
+
 	it("allows a new attempt after the previous refresh settles", async () => {
 		const refresh = vi.fn().mockResolvedValue(completeResult);
 		const { observer } = makeObserver();

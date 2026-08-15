@@ -124,6 +124,7 @@ export interface PlexPublicationContext {
 	prisma: PrismaClient;
 	instance: OwnedProviderPublicationSnapshot;
 	log: FastifyBaseLogger;
+	cleanupRunClaimToken?: string;
 }
 
 export interface PlexCacheRefreshResult {
@@ -268,7 +269,10 @@ export async function refreshPlexCache(
 			async () =>
 				await collectPlexCacheLiveEvidence(plexClientForSnapshot(instance, log), instance.id, log),
 			async (tx, collected) => await publishPlexCacheSnapshot(tx, instance, collected),
-			{ timeout: PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS },
+			{
+				cleanupRunClaimToken: context.cleanupRunClaimToken,
+				timeout: PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
+			},
 		);
 	} catch (error) {
 		const result = unpublishedResult(error);

@@ -68,6 +68,8 @@ export async function renewCleanupRunLease(
 }
 
 export interface CleanupRunLease {
+	/** Internal token used to coordinate provider publication with this exact run. */
+	claimToken: string;
 	assertOwnership: () => Promise<void>;
 	release: () => Promise<void>;
 }
@@ -107,6 +109,7 @@ export async function startCleanupRunLease(
 	heartbeat.unref();
 
 	return {
+		claimToken: runClaimToken,
 		assertOwnership,
 		release: async () => {
 			clearInterval(heartbeat);

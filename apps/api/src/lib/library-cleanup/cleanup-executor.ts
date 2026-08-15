@@ -49,6 +49,10 @@ import type {
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
 import {
+	providerIdentityAuthorityFingerprint,
+	providerInstanceAuthorityFingerprint,
+} from "../services/service-identity.js";
+import {
 	collectTautulliCacheLiveEvidence,
 	createOwnedTautulliPublicationSnapshot,
 	refreshTautulliCache,
@@ -392,12 +396,9 @@ function createProviderCacheSnapshot<T>(
 				const generation = generations.get(instance.id)!;
 				return {
 					service: instance.service as SanitizedProviderEvidenceSource["service"],
+					instanceFingerprint: providerInstanceAuthorityFingerprint(instance.id),
 					identityKind: instance.identityKind!,
-					identityFingerprint: evidenceFingerprint({
-						service: instance.service,
-						identityKind: instance.identityKind,
-						expectedIdentity: instance.expectedIdentity,
-					}),
+					identityFingerprint: providerIdentityAuthorityFingerprint(instance),
 					connectionGeneration: generation.connectionGeneration,
 					identityGeneration: generation.identityGeneration,
 					cacheType,
@@ -2376,6 +2377,7 @@ async function executeCleanupRunGuarded(
 			runLease.assertOwnership,
 			providerEvidence,
 			providerAuthorities,
+			runLease.claimToken,
 		);
 	} finally {
 		await runLease.release();
@@ -2446,6 +2448,7 @@ async function executeApprovedItemsGuarded(
 			assertExecutionAllowed: runLease.assertOwnership,
 			claimExecutionToken: approvalRequestToken,
 			auditCorrelationId: approvalRequestToken,
+			cleanupRunClaimToken: runLease.claimToken,
 		});
 		const unclaimedErrors = result.unclaimedIds.map(
 			() => "Cleanup approval was not found, expired, no longer approved, or changed ownership.",
@@ -2519,6 +2522,7 @@ async function executeRetryItemsGuarded(
 			retryStatus: "retry_pending",
 			enforceExpiry: false,
 			assertExecutionAllowed: runLease.assertOwnership,
+			cleanupRunClaimToken: runLease.claimToken,
 		});
 		const unclaimedErrors = result.unclaimedIds.map(
 			() => "Cleanup retry was not found, was no longer pending, or changed ownership.",
@@ -3253,9 +3257,12 @@ export async function assertCurrentSeriesMutationAuthority(
 	arrItemId: number,
 	expectedRule: ExpectedCleanupRule,
 	snapshot?: MutationPolicySnapshot,
+	cleanupRunClaimToken?: string,
 ): Promise<AuthorizedSeriesMutationPolicy> {
 	try {
-		const policySnapshot = snapshot ?? (await createMutationPolicySnapshot(deps, userId));
+		const policySnapshot =
+			snapshot ??
+			(await createMutationPolicySnapshot(deps, userId, undefined, cleanupRunClaimToken));
 		await assertCurrentSeriesPolicySnapshotUnchanged(deps, userId, expectedRule, policySnapshot);
 
 		const arrClient = deps.arrClientFactory.create(instance);
@@ -3321,6 +3328,7 @@ export async function assertCurrentSeriesMutationAuthority(
 				userId,
 				activeTypes.has("plex_episode_completion"),
 				plexPolicyRules,
+				cleanupRunClaimToken,
 			);
 			if (
 				!currentPlexEvidence ||
@@ -3432,6 +3440,7 @@ async function assertCurrentSeriesPostStepMutationAuthority(
 	expectedRule: ExpectedCleanupRule,
 	authorizedPolicy: AuthorizedSeriesMutationPolicy,
 	transition: SeriesMutationTransition,
+	cleanupRunClaimToken?: string,
 ): Promise<void> {
 	try {
 		await assertCurrentSeriesPolicySnapshotUnchanged(
@@ -3444,6 +3453,7 @@ async function assertCurrentSeriesPostStepMutationAuthority(
 			deps,
 			userId,
 			authorizedPolicy.snapshot.configFingerprint,
+			cleanupRunClaimToken,
 		);
 		if (
 			currentSnapshot.ruleFingerprint !== authorizedPolicy.snapshot.ruleFingerprint ||
@@ -3718,6 +3728,7 @@ async function executeQueuedCleanupItems(
 		getMutationPolicySnapshot?: () => Promise<MutationPolicySnapshot>;
 		auditCorrelationId?: string;
 		deferMediaServerRescans?: boolean;
+		cleanupRunClaimToken?: string;
 	},
 ): Promise<QueuedCleanupExecutionResult> {
 	const result = await executeQueuedCleanupItemsCore(deps, userId, approvalIds, options);
@@ -3821,6 +3832,7 @@ async function executeQueuedCleanupItemsCore(
 		getMutationPolicySnapshot?: () => Promise<MutationPolicySnapshot>;
 		auditCorrelationId?: string;
 		deferMediaServerRescans?: boolean;
+		cleanupRunClaimToken?: string;
 	},
 ): Promise<QueuedCleanupExecutionResult> {
 	const { prisma, arrClientFactory, log } = deps;
@@ -3868,7 +3880,12 @@ async function executeQueuedCleanupItemsCore(
 	const confirmedPartialFileDeletionIds = new Set<string>();
 	const getMutationPolicySnapshot =
 		options.getMutationPolicySnapshot ??
-		createMutationPolicySnapshotGetter(deps, userId, expectedConfigFingerprint);
+		createMutationPolicySnapshotGetter(
+			deps,
+			userId,
+			expectedConfigFingerprint,
+			options.cleanupRunClaimToken,
+		);
 	const orderedApprovalIds = [...new Set(approvalIds)].sort((left, right) =>
 		left.localeCompare(right),
 	);
@@ -4427,6 +4444,7 @@ async function executeQueuedCleanupItemsCore(
 									scanMediaServerAfterDelete: approval.scanMediaServerAfterDelete === true,
 								},
 								snapshot,
+								options.cleanupRunClaimToken,
 							);
 						} else {
 							await assertCurrentSeriesPostStepMutationAuthority(
@@ -4441,6 +4459,7 @@ async function executeQueuedCleanupItemsCore(
 								},
 								authorizedSeriesPolicy,
 								evidence.seriesTransition,
+								options.cleanupRunClaimToken,
 							);
 						}
 					}
@@ -7132,6 +7151,7 @@ export async function executeDirectRemoval(
 	assertRunLease?: () => Promise<void>,
 	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
 	providerAuthorities: Array<ProviderCacheSnapshot<unknown>["authority"]> = [],
+	cleanupRunClaimToken?: string,
 ): Promise<CleanupRunResult> {
 	const { prisma, arrClientFactory, log } = deps;
 
@@ -7172,6 +7192,7 @@ export async function executeDirectRemoval(
 		deps,
 		userId,
 		completeMutationConfigFingerprint(config),
+		cleanupRunClaimToken,
 	);
 	const directSelection = await loadDirectSelectionState(
 		deps,
@@ -7659,6 +7680,7 @@ export async function executeDirectRemoval(
 								scanMediaServerAfterDelete: item.match.scanMediaServerAfterDelete === true,
 							},
 							snapshot,
+							cleanupRunClaimToken,
 						);
 					} else {
 						await assertCurrentSeriesPostStepMutationAuthority(
@@ -7673,6 +7695,7 @@ export async function executeDirectRemoval(
 							},
 							authorizedSeriesPolicy,
 							evidence.seriesTransition,
+							cleanupRunClaimToken,
 						);
 					}
 				}
@@ -9671,6 +9694,7 @@ async function refreshPlexMutationEvidence(
 	userId: string,
 	includeEpisodes: boolean,
 	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
+	cleanupRunClaimToken?: string,
 ): Promise<
 	| {
 			plexMap: PlexWatchMap;
@@ -9709,6 +9733,7 @@ async function refreshPlexMutationEvidence(
 					prisma: deps.prisma,
 					instance: publicationInstance,
 					log: deps.log,
+					cleanupRunClaimToken,
 				});
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Plex cache refresh was incomplete");
@@ -9734,6 +9759,7 @@ async function refreshPlexMutationEvidence(
 						prisma: deps.prisma,
 						instance: publicationInstance,
 						log: deps.log,
+						cleanupRunClaimToken,
 					});
 					if (episodes.errors > 0 || episodes.complete !== true) {
 						throw new Error("Plex episode evidence refresh was incomplete");
@@ -9798,6 +9824,7 @@ async function refreshPlexMutationEvidence(
 async function refreshTautulliMutationEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
+	cleanupRunClaimToken?: string,
 ): Promise<{ map: TautulliWatchMap; completedAt: Date } | undefined> {
 	try {
 		const initial = await loadProviderInstances(deps, userId, ["TAUTULLI"]);
@@ -9815,6 +9842,7 @@ async function refreshTautulliMutationEvidence(
 					prisma: deps.prisma,
 					instance: publicationInstance,
 					log: deps.log,
+					cleanupRunClaimToken,
 				});
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Tautulli cache refresh was incomplete");
@@ -9854,6 +9882,7 @@ async function refreshJellyfinMutationEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	includeEpisodes: boolean,
+	cleanupRunClaimToken?: string,
 ): Promise<
 	| { jellyfinMap: JellyfinWatchMap; jellyfinEpisodeMap?: PlexEpisodeMap; completedAt: Date }
 	| undefined
@@ -9884,8 +9913,10 @@ async function refreshJellyfinMutationEvidence(
 							prisma: deps.prisma,
 							instance: publicationInstance,
 							log: deps.log,
+							cleanupRunClaimToken,
 						}),
 					{ prisma: deps.prisma, log: deps.log },
+					{ cleanupRunClaimToken },
 				);
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Jellyfin cache refresh was incomplete");
@@ -9895,6 +9926,7 @@ async function refreshJellyfinMutationEvidence(
 						prisma: deps.prisma,
 						instance: publicationInstance,
 						log: deps.log,
+						cleanupRunClaimToken,
 					});
 					if (episodes.errors > 0 || episodes.complete !== true) {
 						throw new Error("Jellyfin episode refresh was incomplete");
@@ -10094,6 +10126,7 @@ async function buildMutationEvalContext(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	rules: LibraryCleanupRule[],
+	cleanupRunClaimToken?: string,
 ): Promise<{
 	ctx: EvalContext;
 	failedSources: Set<DataSourceDependency>;
@@ -10151,15 +10184,22 @@ async function buildMutationEvalContext(
 
 	const [seerrMap, tautulliMap, plexEvidence, jellyfinEvidence, listEvidence] = await Promise.all([
 		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
-		needsTautulli ? refreshTautulliMutationEvidence(deps, userId) : undefined,
+		needsTautulli ? refreshTautulliMutationEvidence(deps, userId, cleanupRunClaimToken) : undefined,
 		needsPlex || needsPlexSectionInventory
-			? refreshPlexMutationEvidence(deps, userId, activeTypes.has("plex_episode_completion"), rules)
+			? refreshPlexMutationEvidence(
+					deps,
+					userId,
+					activeTypes.has("plex_episode_completion"),
+					rules,
+					cleanupRunClaimToken,
+				)
 			: undefined,
 		needsJellyfin
 			? refreshJellyfinMutationEvidence(
 					deps,
 					userId,
 					activeTypes.has("jellyfin_episode_completion"),
+					cleanupRunClaimToken,
 				)
 			: undefined,
 		refreshListMutationEvidence(deps, userId, rules),
@@ -10226,17 +10266,25 @@ export function createMutationPolicySnapshotGetter(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	expectedConfigFingerprint?: string,
+	cleanupRunClaimToken?: string,
 ): () => Promise<MutationPolicySnapshot> {
 	// Deliberately do not reuse mutable provider authority across targets or
 	// irreversible writes. Every call performs a fresh bounded publication and
 	// captures a new immutable policy snapshot.
-	return async () => await createMutationPolicySnapshot(deps, userId, expectedConfigFingerprint);
+	return async () =>
+		await createMutationPolicySnapshot(
+			deps,
+			userId,
+			expectedConfigFingerprint,
+			cleanupRunClaimToken,
+		);
 }
 
 async function createMutationPolicySnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	expectedConfigFingerprint?: string,
+	cleanupRunClaimToken?: string,
 ): Promise<MutationPolicySnapshot> {
 	const config = await deps.prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
@@ -10257,7 +10305,7 @@ async function createMutationPolicySnapshot(
 		sourceCompletedAt,
 		plexTargetRatingKeysByInstance,
 		plexTopologyFingerprint,
-	} = await buildMutationEvalContext(deps, userId, rules);
+	} = await buildMutationEvalContext(deps, userId, rules, cleanupRunClaimToken);
 	const oldestSourceCompletedAt =
 		sourceCompletedAt.size > 0
 			? new Date(Math.min(...[...sourceCompletedAt.values()].map((date) => date.getTime())))

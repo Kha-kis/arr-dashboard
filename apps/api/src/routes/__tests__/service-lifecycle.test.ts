@@ -39,7 +39,8 @@ vi.mock("../../lib/services/connection-tester.js", () => ({
 	testServiceConnection: (...args: unknown[]) => mockTestConnection(...args),
 }));
 
-vi.mock("../../lib/services/service-identity.js", () => ({
+vi.mock("../../lib/services/service-identity.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/services/service-identity.js")>()),
 	readProviderIdentity: (...args: unknown[]) => mockReadProviderIdentity(...args),
 	confirmProviderIdentity: (expected: string, actual: string) => expected === actual,
 }));
@@ -50,6 +51,14 @@ import {
 	createDeploymentEndpointKey,
 	isCurrentDeploymentConnectionMapping,
 } from "../../lib/trash-guides/deployment-target.js";
+import {
+	createSanitizedProviderEvidence,
+	serializeExecutableSafetyPlan,
+} from "../../lib/library-cleanup/shared-plex-safety.js";
+import {
+	providerIdentityAuthorityFingerprint,
+	providerInstanceAuthorityFingerprint,
+} from "../../lib/services/service-identity.js";
 import { registerServiceRoutes } from "../services.js";
 import {
 	createInjectAuthenticated,
@@ -64,6 +73,40 @@ const ENCRYPTED_V1 = "encrypted-v1-bytes";
 const ENCRYPTED_V2 = "encrypted-v2-bytes";
 const IV_V1 = "iv-v1";
 const IV_V2 = "iv-v2";
+
+function providerSafetySnapshot(source: {
+	service: "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI";
+	instanceFingerprint?: string;
+	identityKind: string;
+	identityFingerprint: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+}) {
+	return serializeExecutableSafetyPlan(
+		{
+			kind: "verified_arr_target",
+			target: {
+				serviceFingerprint: "a".repeat(64),
+				externalId: 42,
+				mediaPath: { value: "/movies/Example", windows: false },
+			},
+		},
+		createSanitizedProviderEvidence(
+			[source.service.toLowerCase()],
+			[
+				{
+					...source,
+					cacheType: source.service === "TAUTULLI" ? "tautulli" : "plex",
+					completedAt: "2026-08-15T04:00:00.000Z",
+					itemCount: 1,
+					verifiedAt: "2026-08-15T03:00:00.000Z",
+					statusFingerprint: "c".repeat(64),
+					rowFingerprint: "d".repeat(64),
+				},
+			],
+		),
+	);
+}
 
 /**
  * In-memory prisma stub that persists state across requests.
@@ -748,18 +791,29 @@ describe("Service instance lifecycle", () => {
 			id: "tagged-approval",
 			config: { userId: USER_ID },
 			status: "approved",
-			safetySnapshot: JSON.stringify({
-				providerEvidence: [{ instanceId: id, connectionGeneration: 0, identityGeneration: 3 }],
+			safetySnapshot: providerSafetySnapshot({
+				service: "PLEX",
+				instanceFingerprint: providerInstanceAuthorityFingerprint(id),
+				identityKind: "PLEX_MACHINE_IDENTIFIER",
+				identityFingerprint: providerIdentityAuthorityFingerprint({
+					expectedIdentity: "enrolled-plex-machine",
+					identityKind: "PLEX_MACHINE_IDENTIFIER",
+					service: "PLEX",
+				}),
+				connectionGeneration: 0,
+				identityGeneration: 3,
 			}),
 		});
 		prisma._approvals.set("unrelated-approval", {
 			id: "unrelated-approval",
 			config: { userId: USER_ID },
 			status: "pending",
-			safetySnapshot: JSON.stringify({
-				providerEvidence: [
-					{ instanceId: "another-instance", connectionGeneration: 0, identityGeneration: 3 },
-				],
+			safetySnapshot: providerSafetySnapshot({
+				service: "TAUTULLI",
+				identityKind: "TAUTULLI_PMS_IDENTIFIER",
+				identityFingerprint: "b".repeat(64),
+				connectionGeneration: 0,
+				identityGeneration: 3,
 			}),
 		});
 		const replacement = {
