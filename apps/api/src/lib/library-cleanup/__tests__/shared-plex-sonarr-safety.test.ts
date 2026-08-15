@@ -373,7 +373,25 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 				}),
 			},
 			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
 				findMany: vi.fn().mockResolvedValue([]),
+			},
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: plexInstance.id,
+						lastRefreshedAt: new Date(),
+						lastResult: "success",
+						lastErrorMessage: null,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
+						itemCount: 1,
+						generationId: "plex-generation-1",
+						generationMetadata: JSON.stringify({
+							sections: [{ key: "tv", title: "TV", type: "show" }],
+						}),
+					},
+				]),
 			},
 			tmdbListCache: {
 				findMany: vi.fn().mockResolvedValue([]),

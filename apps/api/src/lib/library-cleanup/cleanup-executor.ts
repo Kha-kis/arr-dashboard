@@ -52,11 +52,6 @@ import {
 	isSupportedEpisodeCleanupRule,
 	toEpisodeTargetMetadata,
 } from "./episode-scope.js";
-import {
-	prepareMediaServerRescans,
-	rescanMediaType,
-	triggerCoalescedMediaServerRescans,
-} from "./media-server-rescan.js";
 import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
 import {
 	evaluateSingleCondition,
