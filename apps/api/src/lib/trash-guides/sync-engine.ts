@@ -7,11 +7,18 @@
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import { ConflictError } from "../errors.js";
+import { AppValidationError, ConflictError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import { isDeploymentResultUncertain } from "./deployment-history-manager.js";
+import {
+	createDeploymentConnectionBindingCandidates,
+	createDeploymentConnectionStateToken,
+	getEquivalentServiceInstanceIds,
+	isCurrentDeploymentConnectionMapping,
+	isLegacyDeploymentConnectionMapping,
+} from "./deployment-target.js";
 import { getSyncMetrics } from "./sync-metrics.js";
 import type { TemplateUpdater } from "./template-updater.js";
 import { USER_CF_PREFIX } from "./user-cf-resolver.js";
@@ -184,17 +191,84 @@ export class SyncEngine {
 			return { valid: false, conflicts, errors, warnings };
 		}
 
-		// Check for quality profile mappings
-		const qualityProfileMappings = await this.prisma.templateQualityProfileMapping.findMany({
-			where: {
-				templateId: options.templateId,
-				instanceId: options.instanceId,
+		const serviceAliases = await this.prisma.serviceInstance.findMany({
+			where: { userId: options.userId, service: instance.service },
+			select: {
+				id: true,
+				service: true,
+				baseUrl: true,
+				encryptedApiKey: true,
+				encryptionIv: true,
+				encryptedHttpAuthCredentials: true,
+				httpAuthEncryptionIv: true,
+				connectionGeneration: true,
 			},
 		});
+		const aliases = serviceAliases.some((alias) => alias.id === instance.id)
+			? serviceAliases
+			: [...serviceAliases, instance];
+		const aliasesWithCredentials = aliases.map((alias) => ({
+			...alias,
+			credentialIdentity:
+				typeof this.arrClientFactory?.createConnectionCredentialIdentity === "function"
+					? this.arrClientFactory.createConnectionCredentialIdentity(alias)
+					: createDeploymentConnectionStateToken(alias),
+		}));
+		const instanceWithCredential = aliasesWithCredentials.find(
+			(alias) => alias.id === instance.id,
+		) ?? {
+			...instance,
+			credentialIdentity: createDeploymentConnectionStateToken(instance),
+		};
+		const equivalentInstanceIds = getEquivalentServiceInstanceIds(
+			aliasesWithCredentials,
+			instanceWithCredential,
+		);
+		if (!equivalentInstanceIds.includes(instance.id)) equivalentInstanceIds.push(instance.id);
+		const connectionBindings = aliasesWithCredentials
+			.filter((alias) => equivalentInstanceIds.includes(alias.id))
+			.flatMap((alias) =>
+				createDeploymentConnectionBindingCandidates(alias, alias.credentialIdentity),
+			);
+		const allQualityProfileMappings = await this.prisma.templateQualityProfileMapping.findMany({
+			where: { instanceId: { in: equivalentInstanceIds } },
+		});
+		const staleMappings = allQualityProfileMappings.filter(
+			(mapping) =>
+				!isLegacyDeploymentConnectionMapping(mapping) &&
+				!isCurrentDeploymentConnectionMapping(mapping, connectionBindings),
+		);
+		if (staleMappings.length > 0) {
+			errors.push(
+				"Sync is blocked because this ARR endpoint has a deployment mapping bound to an older connection. Unlink or reconcile the stale mapping before continuing.",
+			);
+			return { valid: false, conflicts, errors, warnings };
+		}
+		const legacyMappings = allQualityProfileMappings.filter(isLegacyDeploymentConnectionMapping);
+		if (options.syncType === "SCHEDULED" && legacyMappings.length > 0) {
+			errors.push(
+				"Auto-sync is blocked because this ARR endpoint has a legacy deployment mapping. Run a manual sync to review and rebind it before enabling scheduled sync.",
+			);
+			return { valid: false, conflicts, errors, warnings };
+		}
+		const qualityProfileMappings = allQualityProfileMappings.filter(
+			(mapping) =>
+				mapping.templateId === options.templateId &&
+				(options.syncType === "MANUAL" || !isLegacyDeploymentConnectionMapping(mapping)),
+		);
 
 		if (qualityProfileMappings.length === 0) {
 			errors.push(
 				"No quality profile mappings found. Please deploy this template to the instance first.",
+			);
+			return { valid: false, conflicts, errors, warnings };
+		}
+		if (
+			options.syncType === "SCHEDULED" &&
+			qualityProfileMappings.some((mapping) => mapping.syncStrategy !== "auto")
+		) {
+			errors.push(
+				"Auto-sync is blocked because this ARR endpoint no longer has auto enabled on every equivalent deployment mapping. Review and consolidate the deployment mappings first.",
 			);
 			return { valid: false, conflicts, errors, warnings };
 		}
@@ -420,7 +494,13 @@ export class SyncEngine {
 	async execute(
 		options: SyncOptions,
 		conflictResolutions?: Map<string, "REPLACE" | "SKIP">,
+		executionToken?: string,
 	): Promise<SyncResult> {
+		if (options.syncType === "MANUAL" && !executionToken) {
+			throw new AppValidationError(
+				"Manual sync requires a fresh validation token. Validate the sync again before executing.",
+			);
+		}
 		const startTime = Date.now();
 		const metrics = getSyncMetrics();
 		const completeMetrics = metrics.startOperation("sync");
@@ -454,18 +534,24 @@ export class SyncEngine {
 				errors: [],
 			});
 
-			if (!this.templateUpdater) {
-				throw new Error(
-					"Template sync cannot proceed: templateUpdater dependency is not configured. " +
-						"Ensure SyncEngine is instantiated with a TemplateUpdater instance.",
-				);
-			}
+			if (options.syncType === "SCHEDULED") {
+				if (!this.templateUpdater) {
+					throw new Error(
+						"Template sync cannot proceed: templateUpdater dependency is not configured. " +
+							"Ensure SyncEngine is instantiated with a TemplateUpdater instance.",
+					);
+				}
 
-			const syncResult = await this.templateUpdater.syncTemplate(options.templateId);
-			if (!syncResult.success) {
-				throw new Error(
-					`Template sync failed: ${syncResult.errors?.join(", ") || "Unknown error"}`,
+				const syncResult = await this.templateUpdater.syncTemplate(
+					options.templateId,
+					undefined,
+					options.userId,
 				);
+				if (!syncResult.success) {
+					throw new Error(
+						`Template sync failed: ${syncResult.errors?.join(", ") || "Unknown error"}`,
+					);
+				}
 			}
 
 			// Step 2: Deploy to instance using deployment executor
@@ -498,14 +584,24 @@ export class SyncEngine {
 				: undefined;
 
 			deploymentAttempted = true;
-			const deployResult = await this.deploymentExecutor.deploySingleInstance(
-				options.templateId,
-				options.instanceId,
-				options.userId,
-				undefined, // syncStrategy - not used in sync engine
-				deploymentConflictResolutions,
-				syncId,
-			);
+			const deployResult =
+				options.syncType === "SCHEDULED"
+					? await this.deploymentExecutor.deploySingleInstanceFromAutomation(
+							options.templateId,
+							options.instanceId,
+							options.userId,
+							deploymentConflictResolutions,
+							syncId,
+						)
+					: await this.deploymentExecutor.deploySingleInstance(
+							options.templateId,
+							options.instanceId,
+							options.userId,
+							undefined,
+							deploymentConflictResolutions,
+							executionToken,
+							syncId,
+						);
 
 			// Calculate duration and status
 			const duration = Math.floor((Date.now() - startTime) / 1000);
@@ -594,7 +690,8 @@ export class SyncEngine {
 			// Emit completion
 			this.emitProgress({
 				syncId,
-				status: status === "UNCERTAIN" ? "UNCERTAIN" : "COMPLETED",
+				status:
+					status === "SUCCESS" ? "COMPLETED" : status === "UNCERTAIN" ? "UNCERTAIN" : "FAILED",
 				currentStep: resultSuccess
 					? warnings.length
 						? "Sync completed with warnings"

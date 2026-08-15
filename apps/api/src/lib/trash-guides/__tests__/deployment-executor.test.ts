@@ -4,12 +4,13 @@
  * Tests extractTrashId function and ID-based vs name-based matching behavior
  */
 
-import { describe, expect, it, vi } from "vitest";
 import type { SonarrClient } from "arr-sdk";
+import { describe, expect, it, vi } from "vitest";
 import { ConflictError } from "../../errors.js";
 import { extractTrashId } from "../cf-field-utils.js";
 import { DeploymentExecutorService } from "../deployment-executor.js";
 import {
+	createDeploymentEndpointKey,
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
 } from "../deployment-target.js";
@@ -233,6 +234,37 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 			"changed during deployment",
 		);
 		expect(update).not.toHaveBeenCalled();
+	});
+
+	it("revalidates a kept format before retaining its managed identity", async () => {
+		const existing = { id: 1, name: "Test CF", specifications: [] } as SdkCustomFormat;
+		const client = {
+			customFormat: {
+				getById: vi.fn().mockResolvedValue({
+					...existing,
+					name: "Changed after review",
+				}),
+				update: vi.fn(),
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployCustomFormats.bind(executor);
+
+		await expect(
+			run(
+				client,
+				[{ trashId: "cf-1", name: "Test CF", originalConfig: { specifications: [] } }],
+				new Map([["cf-1", existing]]),
+				new Map([["Test CF", existing]]),
+				{ "cf-1": "keep_existing" },
+			),
+		).rejects.toThrow("changed during deployment");
+		expect(client.customFormat.getById).toHaveBeenCalledWith(1);
+		expect(client.customFormat.update).not.toHaveBeenCalled();
 	});
 
 	it("aborts instead of creating a duplicate format that appeared after preview", async () => {
@@ -542,7 +574,11 @@ describe("DeploymentExecutorService - backup parity", () => {
 
 		const backupData = JSON.parse(createBackup.mock.calls[0]![0].data.backupData);
 		expect(backupData).toMatchObject({
-			endpointKey: "user-1:RADARR:http://radarr:7878/:credential-1",
+			endpointKey: createDeploymentEndpointKey("user-1", {
+				service: "RADARR",
+				baseUrl: "http://radarr:7878",
+				credentialIdentity: "credential-1",
+			}),
 			connectionStateToken: expect.any(String),
 			customFormats: [{ id: 5, name: "CF" }],
 			customFormatDeployments: [],
@@ -958,6 +994,7 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 					appliedScore: 10,
 				},
 			],
+			new Map([["managed-trash-id", 42]]),
 		);
 		expect(result).toMatchObject({ errors: [] });
 
@@ -1041,6 +1078,7 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 						appliedScore: 5,
 					},
 				],
+				new Map([["managed-trash-id", 42]]),
 			),
 		).resolves.toMatchObject({ errors: [] });
 
@@ -1052,6 +1090,7 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 
 	it("blocks profile creation when the reviewed name appears before POST", async () => {
 		const client = {
+			customFormat: { getAll: vi.fn().mockResolvedValue([]) },
 			qualityProfile: {
 				getAll: vi.fn().mockResolvedValue([{ id: 9, name: "Any", formatItems: [] }]),
 			},
@@ -1093,16 +1132,12 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		};
 		const persistProfileState = vi.fn().mockResolvedValue(undefined);
 		const client = {
+			customFormat: { getAll: vi.fn().mockResolvedValue([]) },
 			qualityProfile: {
 				getAll: vi.fn().mockResolvedValue([]),
 				getSchema: vi.fn().mockResolvedValue({ items: [], formatItems: [] }),
 				create: vi.fn().mockResolvedValue(createdProfile),
-			},
-			customFormat: {
-				getAll: vi
-					.fn()
-					.mockResolvedValueOnce([])
-					.mockRejectedValueOnce(new Error("later custom format read failed")),
+				getById: vi.fn().mockRejectedValue(new Error("later profile read failed")),
 			},
 		};
 		const executor = new DeploymentExecutorService({} as never, {} as never);
@@ -1250,6 +1285,10 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 				["instance-1"],
 				undefined,
 				persistProfileState,
+				undefined,
+				undefined,
+				[],
+				new Map([["managed-cf", 7]]),
 			);
 		} catch (caughtError) {
 			error = caughtError;
@@ -1320,6 +1359,10 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 			["instance-1"],
 			undefined,
 			persistProfileState,
+			undefined,
+			undefined,
+			[],
+			new Map([["managed-cf", 42]]),
 		);
 		expect(result).toMatchObject({
 			errors: [],
@@ -1469,6 +1512,10 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 				["instance-1"],
 				undefined,
 				persistProfileState,
+				undefined,
+				undefined,
+				[],
+				new Map([["managed-cf", 42]]),
 			),
 		).rejects.toThrow("did not match the intended post-write state");
 		expect(persistProfileState).toHaveBeenCalledOnce();
@@ -1538,6 +1585,12 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 				[],
 				new Map(),
 				["instance-1"],
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				[],
+				new Map([["managed-trash-id", 42]]),
 			),
 		).resolves.toMatchObject({ errors: [] });
 
@@ -1547,7 +1600,7 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		);
 	});
 
-	it("defers selected-instance mapping finalization without changing an alias", async () => {
+	it("defers mapping finalization while retaining every equivalent alias", async () => {
 		const profile = { id: 2, name: "Any", formatItems: [] };
 		const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
 		const upsert = vi.fn().mockResolvedValue({});
@@ -1597,7 +1650,7 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 			mappingFinalization: {
 				templateId: "template-1",
 				instanceId: "instance-alias",
-				equivalentInstanceIds: ["instance-alias"],
+				equivalentInstanceIds: ["instance-primary", "instance-alias"],
 				qualityProfileId: 2,
 			},
 		});
@@ -1605,6 +1658,108 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		expect(deleteMany).not.toHaveBeenCalled();
 		expect(transaction).not.toHaveBeenCalled();
 		expect(upsert).not.toHaveBeenCalled();
+	});
+
+	it("finalizes mapping and saved-score authority for every equivalent alias", async () => {
+		const deleteMappings = vi.fn().mockResolvedValue({ count: 2 });
+		const upsertMapping = vi.fn().mockResolvedValue({});
+		const deleteOverrides = vi.fn().mockResolvedValue({ count: 0 });
+		const createOverride = vi.fn().mockResolvedValue({});
+		const database = {
+			templateQualityProfileMapping: {
+				deleteMany: deleteMappings,
+				upsert: upsertMapping,
+			},
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "instance-primary",
+						qualityProfileId: 7,
+						customFormatId: 42,
+						score: 100,
+						status: "APPLIED",
+						connectionGeneration: 2,
+						connectionStateToken: "primary-token",
+					},
+					{
+						instanceId: "instance-alias",
+						qualityProfileId: 7,
+						customFormatId: 42,
+						score: 100,
+						status: "APPLIED",
+						connectionGeneration: 3,
+						connectionStateToken: "alias-token",
+					},
+				]),
+				deleteMany: deleteOverrides,
+				create: createOverride,
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never) as unknown as {
+			finalizeQualityProfileMappingState: (
+				database: unknown,
+				finalization: Record<string, unknown>,
+			) => Promise<void>;
+		};
+		const connectionBindings = [
+			{
+				instanceId: "instance-primary",
+				connectionGeneration: 2,
+				connectionStateToken: "primary-token",
+			},
+			{
+				instanceId: "instance-alias",
+				connectionGeneration: 3,
+				connectionStateToken: "alias-token",
+			},
+		];
+
+		await executor.finalizeQualityProfileMappingState(database, {
+			userId: "user-1",
+			templateId: "template-1",
+			instanceId: "instance-primary",
+			equivalentInstanceIds: ["instance-primary", "instance-alias"],
+			connectionBindings,
+			connectionReadBindings: connectionBindings,
+			savedScoreOverrides: [[42, 100]],
+			qualityProfileId: 7,
+			qualityProfileName: "HD-1080p",
+			connectionGeneration: 2,
+			connectionStateToken: "primary-token",
+			syncStrategy: "auto",
+		});
+
+		expect(deleteMappings).toHaveBeenCalledWith({
+			where: {
+				templateId: "template-1",
+				instanceId: { in: ["instance-primary", "instance-alias"] },
+			},
+		});
+		expect(upsertMapping).toHaveBeenCalledTimes(2);
+		expect(upsertMapping).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					instanceId_qualityProfileId: {
+						instanceId: "instance-alias",
+						qualityProfileId: 7,
+					},
+				},
+				create: expect.objectContaining({
+					instanceId: "instance-alias",
+					connectionGeneration: 3,
+					connectionStateToken: "alias-token",
+				}),
+			}),
+		);
+		expect(createOverride).toHaveBeenCalledTimes(2);
+		expect(createOverride).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				instanceId: "instance-alias",
+				customFormatId: 42,
+				connectionGeneration: 3,
+				connectionStateToken: "alias-token",
+			}),
+		});
 	});
 
 	it("resets an orphaned managed score and defers override cleanup until finalization", async () => {
@@ -1625,9 +1780,15 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		};
 		const prisma = {
 			instanceQualityProfileOverride: {
-				findMany: vi
-					.fn()
-					.mockResolvedValue([{ customFormatId: 42, score: -10_000, instanceId: "instance-1" }]),
+				findMany: vi.fn().mockResolvedValue([
+					{
+						customFormatId: 42,
+						score: -10_000,
+						instanceId: "instance-1",
+						connectionGeneration: 0,
+						connectionStateToken: "",
+					},
+				]),
 				deleteMany: deleteManyOverrides,
 			},
 			templateQualityProfileMapping: {
@@ -1689,9 +1850,15 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		};
 		const prisma = {
 			instanceQualityProfileOverride: {
-				findMany: vi
-					.fn()
-					.mockResolvedValue([{ customFormatId: 42, score: 0, instanceId: "instance-1" }]),
+				findMany: vi.fn().mockResolvedValue([
+					{
+						customFormatId: 42,
+						score: 0,
+						instanceId: "instance-1",
+						connectionGeneration: 0,
+						connectionStateToken: "",
+					},
+				]),
 			},
 		};
 		const executor = new DeploymentExecutorService(prisma as never, {} as never);
@@ -1747,8 +1914,20 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 		const prisma = {
 			instanceQualityProfileOverride: {
 				findMany: vi.fn().mockResolvedValue([
-					{ customFormatId: 7, score: 200, instanceId: "instance-1" },
-					{ customFormatId: 42, score: 100, instanceId: "instance-1" },
+					{
+						customFormatId: 7,
+						score: 200,
+						instanceId: "instance-1",
+						connectionGeneration: 0,
+						connectionStateToken: "",
+					},
+					{
+						customFormatId: 42,
+						score: 100,
+						instanceId: "instance-1",
+						connectionGeneration: 0,
+						connectionStateToken: "",
+					},
 				]),
 			},
 		};
@@ -1789,9 +1968,186 @@ describe("DeploymentExecutorService - saved override concurrency", () => {
 					[7, 200],
 				]),
 				["instance-1"],
+				undefined,
+				undefined,
+				undefined,
+				undefined,
+				[],
+				new Map([
+					["first", 42],
+					["second", 7],
+				]),
 			),
 		).resolves.toMatchObject({ errors: [] });
 		expect(update).toHaveBeenCalledOnce();
+	});
+});
+
+describe("DeploymentExecutorService - legacy override finalization", () => {
+	async function loadLegacyOverrideScore(recordedScore: number, liveScore: number) {
+		const prisma = {
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "instance-1",
+						qualityProfileId: 1,
+						customFormatId: 42,
+						score: recordedScore,
+						status: "APPLIED",
+						connectionGeneration: 0,
+						connectionStateToken: null,
+					},
+				]),
+			},
+		};
+		const executor = new DeploymentExecutorService(prisma as never, {} as never) as unknown as {
+			loadEquivalentInstanceOverrideScores: (...args: unknown[]) => Promise<Map<number, number>>;
+		};
+		return executor.loadEquivalentInstanceOverrideScores(
+			"user-1",
+			[
+				{
+					instanceId: "instance-1",
+					connectionGeneration: 2,
+					connectionStateToken: "current-connection",
+				},
+			],
+			1,
+			{ id: 1, name: "Any", formatItems: [{ format: 42, score: liveScore }] },
+		);
+	}
+
+	it("loads legacy override intent when its exact score remains live", async () => {
+		await expect(loadLegacyOverrideScore(100, 100)).resolves.toEqual(new Map([[42, 100]]));
+	});
+
+	it("rejects legacy override intent after its live score drifts", async () => {
+		await expect(loadLegacyOverrideScore(100, 200)).rejects.toThrow(
+			"unverified saved score override",
+		);
+	});
+
+	async function prepareLegacyFinalization() {
+		const profile = { id: 1, name: "Any", formatItems: [{ format: 42, score: 100 }] };
+		const legacyOverride = {
+			id: "override-legacy",
+			userId: "user-1",
+			instanceId: "instance-1",
+			qualityProfileId: 1,
+			customFormatId: 42,
+			score: 100,
+			status: "APPLIED",
+			connectionGeneration: 0,
+			connectionStateToken: null,
+		};
+		const prisma = {
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([legacyOverride]),
+			},
+		};
+		const client = {
+			qualityProfile: {
+				getById: vi.fn().mockResolvedValue(profile),
+				update: vi.fn().mockResolvedValue(profile),
+			},
+		};
+		const executor = new DeploymentExecutorService(prisma as never, {} as never);
+		const privateExecutor = executor as unknown as {
+			syncQualityProfile: (...args: unknown[]) => Promise<{
+				mappingFinalization?: Record<string, unknown>;
+			}>;
+			finalizeSavedScoreOverrideState: (
+				database: unknown,
+				finalization: Record<string, unknown>,
+			) => Promise<void>;
+		};
+		const currentBinding = {
+			instanceId: "instance-1",
+			connectionGeneration: 2,
+			connectionStateToken: "current-connection",
+		};
+		const result = await privateExecutor.syncQualityProfile(
+			client,
+			{},
+			[],
+			"template-1",
+			"instance-1",
+			"user-1",
+			"notify",
+			undefined,
+			"Any",
+			profile,
+			undefined,
+			[],
+			new Map([[42, 100]]),
+			["instance-1"],
+			undefined,
+			undefined,
+			[currentBinding],
+			[
+				currentBinding,
+				{
+					instanceId: "instance-1",
+					connectionGeneration: 0,
+					connectionStateToken: null,
+				},
+			],
+			[],
+			new Map(),
+		);
+		if (!result.mappingFinalization) throw new Error("Expected mapping finalization state");
+		return { executor: privateExecutor, finalization: result.mappingFinalization, legacyOverride };
+	}
+
+	it("carries reviewed legacy APPLIED intent into canonical finalization", async () => {
+		const { executor, finalization, legacyOverride } = await prepareLegacyFinalization();
+		const deleteMany = vi.fn().mockResolvedValue({ count: 1 });
+		const create = vi.fn().mockResolvedValue({});
+		const database = {
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([legacyOverride]),
+				deleteMany,
+				create,
+			},
+		};
+
+		await executor.finalizeSavedScoreOverrideState(database, finalization);
+
+		expect(deleteMany).toHaveBeenCalledWith({
+			where: {
+				userId: "user-1",
+				instanceId: { in: ["instance-1"] },
+				qualityProfileId: 1,
+			},
+		});
+		expect(create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				instanceId: "instance-1",
+				customFormatId: 42,
+				score: 100,
+				connectionGeneration: 2,
+				connectionStateToken: "current-connection",
+			}),
+		});
+	});
+
+	it("preserves legacy intent when finalization authority changed", async () => {
+		const { executor, finalization, legacyOverride } = await prepareLegacyFinalization();
+		const deleteMany = vi.fn();
+		const create = vi.fn();
+		const database = {
+			instanceQualityProfileOverride: {
+				findMany: vi.fn().mockResolvedValue([{ ...legacyOverride, score: 200 }]),
+				deleteMany,
+				create,
+			},
+		};
+
+		await expect(executor.finalizeSavedScoreOverrideState(database, finalization)).rejects.toThrow(
+			"changed before deployment state could be finalized",
+		);
+		expect(deleteMany).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
 	});
 });
 

@@ -8,6 +8,7 @@
 import { createHash } from "node:crypto";
 import {
 	type NamingSelectedPresets,
+	type NotificationEventType,
 	TRASH_CONFIG_TYPES,
 	type TrashNamingData,
 	type TrashQualitySize,
@@ -62,6 +63,7 @@ export interface SchedulerStats {
 		templatesNeedingAttention: number;
 		templatesNeedingApproval: number; // Templates with CF Group additions needing user approval
 		templatesWithScoreConflicts: number; // Templates where score updates were skipped due to user overrides
+		templatesWithUncertainDeployments: number;
 		cachesRefreshed: number;
 		cachesFailed: number;
 		qualitySizeAutoSynced: number;
@@ -100,6 +102,7 @@ export class UpdateScheduler {
 	private deploymentExecutor?: import("./deployment-executor.js").DeploymentExecutorService;
 	private notifyFn?: (
 		payload: import("../notifications/types.js").NotificationPayload,
+		options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
 	) => Promise<void>;
 	private trackTick: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 
@@ -115,6 +118,7 @@ export class UpdateScheduler {
 			deploymentExecutor?: import("./deployment-executor.js").DeploymentExecutorService;
 			notifyFn?: (
 				payload: import("../notifications/types.js").NotificationPayload,
+				options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
 			) => Promise<void>;
 			trackTick?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 		},
@@ -267,6 +271,7 @@ export class UpdateScheduler {
 		let templatesNeedingAttention = 0;
 		let templatesNeedingApproval = 0;
 		let templatesWithScoreConflicts = 0;
+		let templatesWithUncertainDeployments = 0;
 		let qualitySizeAutoSynced = 0;
 		let qualitySizeUpdatesPending = 0;
 		let namingAutoSynced = 0;
@@ -371,6 +376,25 @@ export class UpdateScheduler {
 					templatesAutoSynced += autoSyncResult.successful;
 					templatesNeedingApproval += autoSyncResult.skippedForApproval;
 					templatesWithScoreConflicts += autoSyncResult.templatesWithScoreConflicts;
+					templatesWithUncertainDeployments += autoSyncResult.uncertain;
+					for (const outcome of autoSyncResult.uncertainDeployments) {
+						this.notifyFn?.(
+							{
+								eventType: "TRASH_DEPLOY_UNCERTAIN",
+								title: `Automatic TRaSH deployment needs review on ${outcome.instanceLabel}`,
+								body: outcome.errors.join("; "),
+								url: "/trash-guides",
+								metadata: {
+									instanceId: outcome.instanceId,
+									endpointKey: outcome.endpointKey,
+									reason: "uncertain_result",
+								},
+							},
+							{ userId: user.id, fallbackEventTypes: ["TRASH_SYNC_ERROR"] },
+						).catch((err) => {
+							this.logger.debug({ err }, "Automatic deployment review notification failed");
+						});
+					}
 
 					if (autoSyncResult.failed > 0) {
 						const failedResults = autoSyncResult.results.filter((r: SyncResult) => !r.success);
@@ -418,6 +442,7 @@ export class UpdateScheduler {
 					templatesNeedingAttention: 0,
 					templatesNeedingApproval: 0,
 					templatesWithScoreConflicts: 0,
+					templatesWithUncertainDeployments: 0,
 					cachesRefreshed: totalCachesRefreshed,
 					cachesFailed: totalCacheFailed,
 					qualitySizeAutoSynced,
@@ -450,6 +475,7 @@ export class UpdateScheduler {
 				templatesNeedingAttention,
 				templatesNeedingApproval,
 				templatesWithScoreConflicts,
+				templatesWithUncertainDeployments,
 				cachesRefreshed: totalCachesRefreshed,
 				cachesFailed: totalCacheFailed,
 				qualitySizeAutoSynced,
@@ -500,6 +526,7 @@ export class UpdateScheduler {
 				templatesNeedingAttention: 0,
 				templatesNeedingApproval: 0,
 				templatesWithScoreConflicts: 0,
+				templatesWithUncertainDeployments: 0,
 				cachesRefreshed: 0,
 				cachesFailed: 0,
 				qualitySizeAutoSynced: 0,
@@ -984,7 +1011,10 @@ export function createUpdateScheduler(
 	options?: {
 		repoConfigResolver?: RepoConfigResolver;
 		deploymentExecutor?: import("./deployment-executor.js").DeploymentExecutorService;
-		notifyFn?: (payload: import("../notifications/types.js").NotificationPayload) => Promise<void>;
+		notifyFn?: (
+			payload: import("../notifications/types.js").NotificationPayload,
+			options?: { userId?: string; fallbackEventTypes?: NotificationEventType[] },
+		) => Promise<void>;
 		trackTick?: import("../scheduler-registry/scheduler-registry.js").TickWrapper;
 	},
 ): UpdateScheduler {

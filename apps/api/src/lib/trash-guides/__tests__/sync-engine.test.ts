@@ -5,9 +5,10 @@
  * are properly configured before sync operations.
  */
 
-import { describe, it, expect, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
+import { createDeploymentConnectionStateToken } from "../deployment-target.js";
 import { SyncEngine, type SyncOptions } from "../sync-engine.js";
 
 // Create mock template
@@ -44,6 +45,7 @@ const createMockInstance = (
 		baseUrl: string;
 		encryptedApiKey: string;
 		encryptionIv: string;
+		connectionGeneration: number;
 	}> = {},
 ) => ({
 	id: "instance-123",
@@ -53,6 +55,9 @@ const createMockInstance = (
 	baseUrl: "http://localhost:7878",
 	encryptedApiKey: "encrypted-key",
 	encryptionIv: "iv-123",
+	encryptedHttpAuthCredentials: null,
+	httpAuthEncryptionIv: null,
+	connectionGeneration: 0,
 	enabled: true,
 	createdAt: new Date(),
 	updatedAt: new Date(),
@@ -65,12 +70,20 @@ const createMockMapping = (
 		templateId: string;
 		instanceId: string;
 		qualityProfileId: number;
+		qualityProfileName: string;
+		connectionGeneration: number;
+		connectionStateToken: string | null;
+		syncStrategy: "auto" | "manual" | "notify";
 	}> = {},
 ) => ({
 	id: "mapping-123",
 	templateId: "template-123",
 	instanceId: "instance-123",
 	qualityProfileId: 1,
+	qualityProfileName: "HD-1080p",
+	connectionGeneration: 0,
+	connectionStateToken: createDeploymentConnectionStateToken(createMockInstance()),
+	syncStrategy: "auto",
 	createdAt: new Date(),
 	...overrides,
 });
@@ -80,6 +93,7 @@ const createMockPrisma = (
 	overrides: {
 		template?: ReturnType<typeof createMockTemplate> | null;
 		instance?: ReturnType<typeof createMockInstance> | null;
+		instances?: ReturnType<typeof createMockInstance>[];
 		mappings?: ReturnType<typeof createMockMapping>[];
 		cache?: { configData: string; lastModified: Date; updatedAt: Date } | null;
 	} = {},
@@ -105,6 +119,7 @@ const createMockPrisma = (
 		},
 		serviceInstance: {
 			findFirst: vi.fn().mockResolvedValue(instance),
+			findMany: vi.fn().mockResolvedValue(overrides.instances ?? (instance ? [instance] : [])),
 		},
 		templateQualityProfileMapping: {
 			findMany: vi.fn().mockResolvedValue(mappings),
@@ -287,6 +302,44 @@ describe("SyncEngine - validate()", () => {
 			const result = await engine.validate(createSyncOptions());
 
 			expect(result.errors.filter((e) => e.includes("mappings"))).toHaveLength(0);
+		});
+
+		it("blocks scheduled sync when an equivalent mapping no longer allows auto", async () => {
+			const prisma = createMockPrisma({
+				mappings: [createMockMapping({ syncStrategy: "notify" })],
+			});
+			const engine = new SyncEngine(prisma);
+
+			const result = await engine.validate(createSyncOptions({ syncType: "SCHEDULED" }));
+
+			expect(result.valid).toBe(false);
+			expect(result.errors).toContainEqual(expect.stringContaining("auto enabled"));
+		});
+
+		it("blocks sync when an equivalent alias has a mapping from an older connection", async () => {
+			const primary = createMockInstance();
+			const alias = createMockInstance({ id: "instance-alias" });
+			const prisma = createMockPrisma({
+				instance: primary,
+				instances: [primary, alias],
+				mappings: [
+					createMockMapping(),
+					createMockMapping({
+						instanceId: alias.id,
+						connectionGeneration: alias.connectionGeneration + 1,
+						connectionStateToken: createDeploymentConnectionStateToken(alias),
+					}),
+				],
+			});
+			const engine = new SyncEngine(prisma);
+
+			const result = await engine.validate(createSyncOptions());
+
+			expect(result.valid).toBe(false);
+			expect(result.errors).toContainEqual(expect.stringContaining("older connection"));
+			expect(prisma.templateQualityProfileMapping.findMany).toHaveBeenCalledWith({
+				where: { instanceId: { in: expect.arrayContaining([primary.id, alias.id]) } },
+			});
 		});
 
 		it("should warn when mapped quality profiles no longer exist in instance", async () => {

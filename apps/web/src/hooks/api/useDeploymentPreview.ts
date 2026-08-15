@@ -50,6 +50,11 @@ export function useExecuteDeployment() {
 
 	return useMutation<ExecuteDeploymentResponse, Error, ExecuteDeploymentPayload>({
 		mutationFn: (payload) => executeDeployment(payload),
+		onError: (_error, payload) => {
+			queryClient.invalidateQueries({
+				queryKey: trashGuidesKeys.deployment.preview(payload.templateId, payload.instanceId),
+			});
+		},
 		onSuccess: () => {
 			// Invalidate relevant queries
 			queryClient.invalidateQueries({
@@ -76,6 +81,11 @@ export function useExecuteBulkDeployment() {
 
 	return useMutation<ExecuteBulkDeploymentResponse, Error, ExecuteBulkDeploymentPayload>({
 		mutationFn: (payload) => executeBulkDeployment(payload),
+		onError: () => {
+			queryClient.invalidateQueries({
+				queryKey: trashGuidesKeys.deployment.all,
+			});
+		},
 		onSuccess: () => {
 			// Invalidate relevant queries
 			queryClient.invalidateQueries({

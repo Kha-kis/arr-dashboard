@@ -36,7 +36,9 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 		const progress = vi.fn();
 		engine.onProgress("sync-1", progress);
 
-		await expect(engine.execute(createSyncOptions(), undefined)).resolves.toMatchObject({
+		await expect(
+			engine.execute(createSyncOptions(), undefined, "review-token"),
+		).resolves.toMatchObject({
 			success: false,
 			status: "UNCERTAIN",
 			configsApplied: 1,
@@ -81,7 +83,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			} as never,
 		);
 
-		const result = await engine.execute(createSyncOptions(), undefined);
+		const result = await engine.execute(createSyncOptions(), undefined, "review-token");
 
 		expect(result).toMatchObject({
 			success: false,
@@ -124,7 +126,9 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			{ deploySingleInstance: vi.fn().mockRejectedValue(partialConflict) } as never,
 		);
 
-		await expect(engine.execute(createSyncOptions(), undefined)).resolves.toMatchObject({
+		await expect(
+			engine.execute(createSyncOptions(), undefined, "review-token"),
+		).resolves.toMatchObject({
 			success: false,
 			status: "PARTIAL_SUCCESS",
 			configsApplied: 1,
@@ -171,7 +175,9 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 		const progress = vi.fn();
 		engine.onProgress("sync-1", progress);
 
-		await expect(engine.execute(createSyncOptions(), undefined)).resolves.toMatchObject({
+		await expect(
+			engine.execute(createSyncOptions(), undefined, "review-token"),
+		).resolves.toMatchObject({
 			success: false,
 			status: "PARTIAL_SUCCESS",
 			configsApplied: 2,
@@ -229,7 +235,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			{ deploySingleInstance: vi.fn().mockRejectedValue(conflict) } as never,
 		);
 
-		const result = await engine.execute(createSyncOptions(), undefined);
+		const result = await engine.execute(createSyncOptions(), undefined, "review-token");
 
 		expect(result).toMatchObject({
 			success: false,
@@ -268,7 +274,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 		const progress = vi.fn();
 		engine.onProgress("sync-1", progress);
 
-		const result = await engine.execute(createSyncOptions(), undefined);
+		const result = await engine.execute(createSyncOptions(), undefined, "review-token");
 
 		expect(result).toMatchObject({
 			success: true,
@@ -314,7 +320,7 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			} as never,
 		);
 
-		const result = await engine.execute(createSyncOptions(), undefined);
+		const result = await engine.execute(createSyncOptions(), undefined, "review-token");
 
 		expect(result).toMatchObject({
 			success: true,
@@ -365,8 +371,10 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			{ syncTemplate: vi.fn().mockResolvedValue({ success: true, errors: [] }) } as never,
 			{ deploySingleInstance } as never,
 		);
+		const progress = vi.fn();
+		engine.onProgress("sync-1", progress);
 
-		const result = await engine.execute(createSyncOptions(), undefined);
+		const result = await engine.execute(createSyncOptions(), undefined, "review-token");
 
 		expect(result).toMatchObject({
 			success: false,
@@ -377,6 +385,14 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 		expect(result.warnings).toEqual([
 			"ARR changes may be present, but the local audit record is incomplete.",
 		]);
+		expect(progress).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				status: "FAILED",
+				progress: 100,
+				appliedConfigs: 2,
+				failedConfigs: 1,
+			}),
+		);
 		expect(prisma.trashSyncHistory.update).toHaveBeenCalledTimes(1);
 		expect(deploySingleInstance).toHaveBeenCalledWith(
 			"template-123",
@@ -384,7 +400,49 @@ describe("SyncEngine Task 4A partial result consumption", () => {
 			"user-123",
 			undefined,
 			undefined,
+			"review-token",
 			"sync-1",
+		);
+	});
+
+	it("keeps scheduled refresh before automation deployment without a review token", async () => {
+		const syncTemplate = vi.fn().mockResolvedValue({ success: true, errors: [] });
+		const deploySingleInstanceFromAutomation = vi.fn().mockResolvedValue({
+			instanceId: "instance-123",
+			instanceLabel: "Test Radarr",
+			success: true,
+			status: "SUCCESS",
+			customFormatsCreated: 1,
+			customFormatsUpdated: 0,
+			customFormatsSkipped: 0,
+			errors: [],
+			details: { created: ["Created CF"], updated: [], failed: [] },
+		});
+		const prisma = {
+			trashSyncHistory: {
+				create: vi.fn().mockResolvedValue({ id: "sync-1" }),
+				update: vi.fn().mockResolvedValue({}),
+			},
+		};
+		const engine = new SyncEngine(
+			prisma as never,
+			{ syncTemplate } as never,
+			{ deploySingleInstanceFromAutomation } as never,
+		);
+
+		const result = await engine.execute(createSyncOptions({ syncType: "SCHEDULED" }));
+
+		expect(result).toMatchObject({ success: true, status: "SUCCESS", configsApplied: 1 });
+		expect(syncTemplate).toHaveBeenCalledWith("template-123", undefined, "user-123");
+		expect(deploySingleInstanceFromAutomation).toHaveBeenCalledWith(
+			"template-123",
+			"instance-123",
+			"user-123",
+			undefined,
+			"sync-1",
+		);
+		expect(syncTemplate.mock.invocationCallOrder[0]).toBeLessThan(
+			deploySingleInstanceFromAutomation.mock.invocationCallOrder[0]!,
 		);
 	});
 });

@@ -50,5 +50,59 @@ export function extractTrashId(cf: SdkCustomFormat): string | null {
 			}
 		}
 	}
+	if (cf.name) {
+		const trailingIdentity = cf.name.match(
+			/\[([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})\]$/i,
+		);
+		if (trailingIdentity?.[1]) {
+			return trailingIdentity[1].toLowerCase();
+		}
+	}
 	return null;
+}
+
+/**
+ * Index ARR Custom Formats only when each mutation identity resolves to one row.
+ * Ambiguous identities are removed from the indexes so callers cannot
+ * accidentally authorize whichever duplicate happened to be returned last.
+ */
+export function buildCustomFormatIdentityIndex(customFormats: SdkCustomFormat[]): {
+	byTrashId: Map<string, SdkCustomFormat>;
+	byName: Map<string, SdkCustomFormat>;
+	collisions: string[];
+} {
+	const byTrashId = new Map<string, SdkCustomFormat>();
+	const byName = new Map<string, SdkCustomFormat>();
+	const duplicateTrashIds = new Set<string>();
+	const duplicateNames = new Set<string>();
+
+	for (const customFormat of customFormats) {
+		const trashId = extractTrashId(customFormat);
+		if (trashId) {
+			if (duplicateTrashIds.has(trashId) || byTrashId.has(trashId)) {
+				duplicateTrashIds.add(trashId);
+				byTrashId.delete(trashId);
+			} else {
+				byTrashId.set(trashId, customFormat);
+			}
+		}
+
+		if (customFormat.name) {
+			if (duplicateNames.has(customFormat.name) || byName.has(customFormat.name)) {
+				duplicateNames.add(customFormat.name);
+				byName.delete(customFormat.name);
+			} else {
+				byName.set(customFormat.name, customFormat);
+			}
+		}
+	}
+
+	return {
+		byTrashId,
+		byName,
+		collisions: [
+			...[...duplicateTrashIds].sort().map((trashId) => `TRaSH identity ${trashId}`),
+			...[...duplicateNames].sort().map((name) => `name "${name}"`),
+		],
+	};
 }

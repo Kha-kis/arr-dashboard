@@ -209,6 +209,15 @@ export async function finalizeDeploymentHistoryWithPartialFailure(
 	const appliedCFCount = counts.created + counts.updated;
 	const appliedCount =
 		appliedCFCount + (qualityProfile ? 1 : 0) + (namingFieldsApplied > 0 ? 1 : 0);
+	const uncertain = isDeploymentResultUncertain(error);
+	const status = uncertain ? "UNCERTAIN" : appliedCount > 0 ? "PARTIAL_SUCCESS" : "FAILED";
+	const failedConfigs = [
+		...details.failed.map((name, index) => ({
+			name,
+			error: priorErrors[index] ?? "Custom Format deployment failed",
+		})),
+		...(uncertain ? [] : [{ name: "Deployment phase", error: errorMessage }]),
+	];
 	const appliedConfigs = [
 		...getAppliedConfigs(details, qualityProfile),
 		...(namingFieldsApplied > 0
@@ -221,15 +230,6 @@ export async function finalizeDeploymentHistoryWithPartialFailure(
 					},
 				]
 			: []),
-	];
-	const uncertain = isDeploymentResultUncertain(error);
-	const status = uncertain ? "UNCERTAIN" : appliedCount > 0 ? "PARTIAL_SUCCESS" : "FAILED";
-	const failedConfigs = [
-		...details.failed.map((name, index) => ({
-			name,
-			error: priorErrors[index] ?? "Custom Format deployment failed",
-		})),
-		...(uncertain ? [] : [{ name: "Deployment phase", error: errorMessage }]),
 	];
 	await withHistoryTransaction(prisma, async (database) => {
 		if (historyId) {

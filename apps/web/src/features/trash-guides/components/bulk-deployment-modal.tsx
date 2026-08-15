@@ -67,6 +67,7 @@ interface InstancePreview {
 		updatedCustomFormats: number;
 		conflicts: number;
 		canDeploy: boolean;
+		executionToken: string;
 	};
 	loading: boolean;
 	error?: Error;
@@ -216,6 +217,7 @@ export const BulkDeploymentModal = ({
 							updatedCustomFormats: preview.summary.updatedCustomFormats,
 							conflicts: preview.summary.totalConflicts,
 							canDeploy: preview.canDeploy,
+							executionToken: preview.executionToken,
 						}
 					: undefined,
 			};
@@ -294,14 +296,18 @@ export const BulkDeploymentModal = ({
 
 		// Build per-instance sync strategies map
 		const instanceSyncStrategies: Record<string, SyncStrategy> = {};
+		const executionTokens: Record<string, string> = {};
 		for (const inst of deployableInstances) {
+			if (!inst.preview?.executionToken) return;
 			instanceSyncStrategies[inst.instanceId] = inst.syncStrategy;
+			executionTokens[inst.instanceId] = inst.preview.executionToken;
 		}
 
 		bulkDeployMutation.mutate(
 			{
 				templateId,
 				instanceIds: deployableInstances.map((inst) => inst.instanceId),
+				executionTokens,
 				instanceSyncStrategies,
 			},
 			{

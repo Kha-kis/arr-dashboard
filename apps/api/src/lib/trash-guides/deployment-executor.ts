@@ -26,7 +26,11 @@ import { withCleanupTopologyMutationLease } from "../library-cleanup/cleanup-exe
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
-import { extractTrashId, transformFieldsToArray } from "./cf-field-utils.js";
+import {
+	buildCustomFormatIdentityIndex,
+	extractTrashId,
+	transformFieldsToArray,
+} from "./cf-field-utils.js";
 import { checkMutualExclusions } from "./conflict-checker.js";
 import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
 import type { CustomFormatRollbackState } from "./deployment-custom-format-state.js";
@@ -36,7 +40,6 @@ import {
 	finalizeDeploymentHistoryWithPartialFailure,
 	isDeploymentResultUncertain,
 } from "./deployment-history-manager.js";
-import { assertNoPendingDeploymentOperation } from "./deployment-operation-gate.js";
 import {
 	captureManagedCustomFormatIdentities,
 	type ManagedCustomFormatIdentity,
@@ -48,13 +51,22 @@ import {
 	type PreparedNamingDeployment,
 	prepareNamingDeployment,
 } from "./deployment-naming-state.js";
+import { assertNoPendingDeploymentOperation } from "./deployment-operation-gate.js";
 import {
+	assertDeploymentTargetOwnership,
+	assertEquivalentDeploymentMappingAuthority,
 	createDeploymentConnectionBindingCandidates,
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
+	createDeploymentMappingAuthorityState,
+	createDeploymentStateToken,
+	createLegacyDeploymentConnectionBindings,
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
 	getEquivalentServiceInstanceIds,
+	isCurrentDeploymentConnectionMapping,
+	isLegacyDeploymentConnectionMapping,
+	resolveDeploymentTarget,
 } from "./deployment-target.js";
 import { createQualityProfileFromSchema } from "./profile-creation-strategies.js";
 import {
@@ -301,6 +313,7 @@ interface DeployCustomFormatsResult {
 	skipped: number;
 	details: DeploymentDetails;
 	errors: string[];
+	resolvedResourceIds: Map<string, number>;
 }
 
 interface SyncQualityProfileResult {
@@ -314,9 +327,13 @@ interface SyncQualityProfileResult {
 		connectionReadBindings: DeploymentConnectionReadBinding[];
 	};
 	mappingFinalization?: {
+		userId: string;
 		templateId: string;
 		instanceId: string;
 		equivalentInstanceIds: string[];
+		connectionBindings: DeploymentConnectionBinding[];
+		connectionReadBindings: DeploymentConnectionReadBinding[];
+		savedScoreOverrides: Array<[number, number]>;
 		qualityProfileId: number;
 		qualityProfileName: string;
 		connectionGeneration: number;
@@ -369,6 +386,10 @@ export class DeploymentExecutorService {
 			baseUrl: instance.baseUrl,
 			credentialIdentity,
 		});
+	}
+
+	createEndpointMutationKey(userId: string, instance: EndpointCredentialSource): string {
+		return this.createEndpointKey(userId, instance);
 	}
 
 	// ============================================================================
@@ -622,6 +643,7 @@ export class DeploymentExecutorService {
 		let created = 0;
 		let updated = 0;
 		let skipped = 0;
+		const resolvedResourceIds = new Map<string, number>();
 		const throwWithPartialDeployment = (error: ConflictError): never => {
 			Object.assign(error, {
 				partialDeployment: {
@@ -646,11 +668,27 @@ export class DeploymentExecutorService {
 				const cfResolution =
 					conflictResolutions?.[templateCF.trashId] ?? conflictResolutions?.[templateCF.name];
 				if (existingCF && cfResolution === "keep_existing") {
+					if (existingCF.id === undefined) {
+						throw new ConflictError(
+							`Custom Format "${templateCF.name}" has no stable ARR identity. Refresh the preview and try again.`,
+						);
+					}
+					const freshExistingCF = await client.customFormat.getById(existingCF.id);
+					if (
+						createUpstreamResourceStateToken(freshExistingCF) !==
+						createUpstreamResourceStateToken(existingCF)
+					) {
+						throw new ConflictError(
+							`Custom Format "${templateCF.name}" changed during deployment. Refresh the preview and review the deployment again.`,
+						);
+					}
+					resolvedResourceIds.set(templateCF.trashId, existingCF.id);
 					skipped++;
 					continue;
 				}
 
 				if (existingCF?.id) {
+					resolvedResourceIds.set(templateCF.trashId, existingCF.id);
 					const freshExistingCF = await client.customFormat.getById(existingCF.id);
 					if (
 						createUpstreamResourceStateToken(freshExistingCF) !==
@@ -751,6 +789,7 @@ export class DeploymentExecutorService {
 					created++;
 					details.created.push(templateCF.name);
 					await persistMutationState(mutationState, false);
+					resolvedResourceIds.set(templateCF.trashId, createdFormat.id);
 				}
 			} catch (error) {
 				if (upstreamMutationStarted) {
@@ -775,7 +814,7 @@ export class DeploymentExecutorService {
 			}
 		}
 
-		return { created, updated, skipped, details, errors };
+		return { created, updated, skipped, details, errors, resolvedResourceIds };
 	}
 
 	private async syncQualityProfile(
@@ -803,6 +842,7 @@ export class DeploymentExecutorService {
 		})),
 		connectionReadBindings: DeploymentConnectionReadBinding[] = connectionBindings,
 		previousManagedFormats: ManagedCustomFormatIdentity[] = [],
+		resolvedCustomFormatIds: ReadonlyMap<string, number> = new Map(),
 	): Promise<SyncQualityProfileResult> {
 		const errors: string[] = [];
 		const orphanedCFs: string[] = [];
@@ -890,9 +930,6 @@ export class DeploymentExecutorService {
 			}
 
 			if (targetProfile) {
-				const allCFs = await client.customFormat.getAll();
-				const cfMap = new Map(allCFs.map((cf) => [cf.name, cf]));
-
 				const formatItems: Array<{ format: number; score: number }> = [];
 				const scoreSet = templateConfig.qualityProfile?.trash_score_set;
 
@@ -904,29 +941,29 @@ export class DeploymentExecutorService {
 				}
 
 				for (const templateCF of templateCFs) {
-					const cf = cfMap.get(templateCF.name);
-					if (cf?.id) {
+					const customFormatId = resolvedCustomFormatIds.get(templateCF.trashId);
+					if (customFormatId !== undefined) {
 						const conflictResolution = conflictResolutions?.[templateCF.trashId];
 						if (conflictResolution === "keep_existing") {
-							const existingScore = existingScoreMap.get(cf.id);
+							const existingScore = existingScoreMap.get(customFormatId);
 							if (existingScore !== undefined) {
-								formatItems.push({ format: cf.id, score: existingScore });
+								formatItems.push({ format: customFormatId, score: existingScore });
 								continue;
 							}
 						}
 
-						const instanceOverrideScore = instanceOverrideScores.get(cf.id);
+						const instanceOverrideScore = instanceOverrideScores.get(customFormatId);
 						const { score: templateScore } = calculateScoreAndSource(
 							templateCF,
 							scoreSet,
 							instanceOverrideScore,
 						);
 
-						const existingScore = existingScoreMap.get(cf.id);
+						const existingScore = existingScoreMap.get(customFormatId);
 						const previousManagedFormat = previousManagedFormats.find(
 							(previous) =>
 								previous.trashId === templateCF.trashId &&
-								previous.resourceId === cf.id &&
+								previous.resourceId === customFormatId &&
 								previous.profileId === targetProfile.id,
 						);
 						const manuallyDriftedAfterDeployment =
@@ -935,16 +972,16 @@ export class DeploymentExecutorService {
 						if (
 							existingScore !== undefined &&
 							existingScore !== templateScore &&
-							!instanceOverrideScores.has(cf.id) &&
+							!instanceOverrideScores.has(customFormatId) &&
 							templateCF.scoreOverride === undefined &&
 							conflictResolution !== "use_template" &&
 							(previousManagedFormat === undefined || manuallyDriftedAfterDeployment)
 						) {
 							// Preserve genuine manual Radarr/Sonarr drift, but do not mistake
 							// the score applied by the previous deployment for user intent.
-							formatItems.push({ format: cf.id, score: existingScore });
+							formatItems.push({ format: customFormatId, score: existingScore });
 						} else {
-							formatItems.push({ format: cf.id, score: templateScore });
+							formatItems.push({ format: customFormatId, score: templateScore });
 						}
 					}
 				}
@@ -1190,14 +1227,15 @@ export class DeploymentExecutorService {
 				if (targetProfile.id === undefined) {
 					throw new Error("Quality profile ID is missing");
 				}
-				const [latestTargetProfile, latestOverrideScores] = await Promise.all([
-					client.qualityProfile.getById(targetProfile.id) as Promise<SdkQualityProfile>,
-					this.loadEquivalentInstanceOverrideScores(
-						userId,
-						connectionReadBindings,
-						targetProfile.id,
-					),
-				]);
+				const latestTargetProfile = (await client.qualityProfile.getById(
+					targetProfile.id,
+				)) as SdkQualityProfile;
+				const latestOverrideScores = await this.loadEquivalentInstanceOverrideScores(
+					userId,
+					connectionReadBindings,
+					targetProfile.id,
+					latestTargetProfile,
+				);
 				if (
 					createQualityProfileStateToken(latestTargetProfile) !==
 						createQualityProfileStateToken(targetProfile) ||
@@ -1258,10 +1296,13 @@ export class DeploymentExecutorService {
 				// Mapping replacement is committed only with successful history
 				// finalization. Until then, the previous mapping remains authoritative.
 				mappingFinalization = {
+					userId,
 					templateId,
 					instanceId,
-					// Alias consolidation requires Task 4B's in-lock authority checks.
-					equivalentInstanceIds: [instanceId],
+					equivalentInstanceIds,
+					connectionBindings,
+					connectionReadBindings,
+					savedScoreOverrides: getSortedOverrideScoreEntries(instanceOverrideScores),
 					qualityProfileId: targetProfile.id,
 					qualityProfileName: targetProfile.name ?? profileName,
 					connectionGeneration: connectionBinding.connectionGeneration,
@@ -1315,17 +1356,30 @@ export class DeploymentExecutorService {
 		userId: string,
 		connectionBindings: DeploymentConnectionReadBinding[],
 		qualityProfileId: number,
+		liveProfile: SdkQualityProfile,
 	): Promise<Map<number, number>> {
+		const instanceIds = [...new Set(connectionBindings.map((binding) => binding.instanceId))];
 		const overrides = await this.prisma.instanceQualityProfileOverride.findMany({
 			where: {
 				userId,
 				status: "APPLIED",
 				qualityProfileId,
-				OR: connectionBindings,
+				instanceId: { in: instanceIds },
 			},
 		});
 		const scores = new Map<number, number>();
 		for (const override of overrides) {
+			const currentOverride = isCurrentDeploymentConnectionMapping(override, connectionBindings);
+			const liveScore = liveProfile.formatItems?.find(
+				(item) => item.format === override.customFormatId,
+			)?.score;
+			const verifiedLegacyOverride =
+				isLegacyDeploymentConnectionMapping(override) && liveScore === override.score;
+			if (!currentOverride && !verifiedLegacyOverride) {
+				throw new ConflictError(
+					"This ARR endpoint has an unverified saved score override. Restore its recorded score on the current profile or remove the override before deploying.",
+				);
+			}
 			const existingScore = scores.get(override.customFormatId);
 			if (existingScore !== undefined && existingScore !== override.score) {
 				throw new ConflictError(
@@ -1335,6 +1389,135 @@ export class DeploymentExecutorService {
 			scores.set(override.customFormatId, override.score);
 		}
 		return scores;
+	}
+
+	private async finalizeSavedScoreOverrideState(
+		database: PrismaClient,
+		finalization: NonNullable<SyncQualityProfileResult["mappingFinalization"]>,
+	): Promise<void> {
+		const bindingByInstanceId = new Map(
+			finalization.connectionBindings.map((binding) => [binding.instanceId, binding]),
+		);
+		if (
+			bindingByInstanceId.size !== finalization.equivalentInstanceIds.length ||
+			finalization.equivalentInstanceIds.some((instanceId) => !bindingByInstanceId.has(instanceId))
+		) {
+			throw new ConflictError(
+				"Equivalent ARR alias connection authority is incomplete and cannot be finalized safely.",
+			);
+		}
+		const liveOverrides = await database.instanceQualityProfileOverride.findMany({
+			where: {
+				userId: finalization.userId,
+				instanceId: { in: finalization.equivalentInstanceIds },
+				qualityProfileId: finalization.qualityProfileId,
+			},
+		});
+		const liveOverrideScores = new Map<number, number>();
+		for (const override of liveOverrides) {
+			if (
+				override.status !== "APPLIED" ||
+				(!isCurrentDeploymentConnectionMapping(override, finalization.connectionReadBindings) &&
+					!isLegacyDeploymentConnectionMapping(override))
+			) {
+				throw new ConflictError(
+					"Saved score override authority changed before deployment state could be finalized.",
+				);
+			}
+			const existingScore = liveOverrideScores.get(override.customFormatId);
+			if (existingScore !== undefined && existingScore !== override.score) {
+				throw new ConflictError(
+					"Saved score overrides changed before deployment state could be finalized.",
+				);
+			}
+			liveOverrideScores.set(override.customFormatId, override.score);
+		}
+		if (
+			createUpstreamResourceStateToken(getSortedOverrideScoreEntries(liveOverrideScores)) !==
+			createUpstreamResourceStateToken(finalization.savedScoreOverrides)
+		) {
+			throw new ConflictError(
+				"Saved score overrides changed before deployment state could be finalized.",
+			);
+		}
+
+		await database.instanceQualityProfileOverride.deleteMany({
+			where: {
+				userId: finalization.userId,
+				instanceId: { in: finalization.equivalentInstanceIds },
+				qualityProfileId: finalization.qualityProfileId,
+			},
+		});
+		for (const binding of bindingByInstanceId.values()) {
+			for (const [customFormatId, score] of finalization.savedScoreOverrides) {
+				await database.instanceQualityProfileOverride.create({
+					data: {
+						userId: finalization.userId,
+						instanceId: binding.instanceId,
+						qualityProfileId: finalization.qualityProfileId,
+						customFormatId,
+						score,
+						status: "APPLIED",
+						connectionGeneration: binding.connectionGeneration,
+						connectionStateToken: binding.connectionStateToken,
+					},
+				});
+			}
+		}
+	}
+
+	private async finalizeQualityProfileMappingState(
+		database: PrismaClient,
+		finalization: NonNullable<SyncQualityProfileResult["mappingFinalization"]>,
+	): Promise<void> {
+		await this.finalizeSavedScoreOverrideState(database, finalization);
+		const bindingByInstanceId = new Map(
+			finalization.connectionBindings.map((binding) => [binding.instanceId, binding]),
+		);
+		if (
+			bindingByInstanceId.size !== finalization.equivalentInstanceIds.length ||
+			finalization.equivalentInstanceIds.some((instanceId) => !bindingByInstanceId.has(instanceId))
+		) {
+			throw new ConflictError(
+				"Equivalent ARR alias connection authority is incomplete and cannot be finalized safely.",
+			);
+		}
+
+		await database.templateQualityProfileMapping.deleteMany({
+			where: {
+				templateId: finalization.templateId,
+				instanceId: { in: finalization.equivalentInstanceIds },
+			},
+		});
+		for (const binding of bindingByInstanceId.values()) {
+			await database.templateQualityProfileMapping.upsert({
+				where: {
+					instanceId_qualityProfileId: {
+						instanceId: binding.instanceId,
+						qualityProfileId: finalization.qualityProfileId,
+					},
+				},
+				create: {
+					templateId: finalization.templateId,
+					instanceId: binding.instanceId,
+					qualityProfileId: finalization.qualityProfileId,
+					qualityProfileName: finalization.qualityProfileName,
+					connectionGeneration: binding.connectionGeneration,
+					connectionStateToken: binding.connectionStateToken,
+					syncStrategy: finalization.syncStrategy || "notify",
+					lastSyncedAt: new Date(),
+				},
+				update: {
+					templateId: finalization.templateId,
+					qualityProfileName: finalization.qualityProfileName,
+					connectionGeneration: binding.connectionGeneration,
+					connectionStateToken: binding.connectionStateToken,
+					...(finalization.syncStrategy && { syncStrategy: finalization.syncStrategy }),
+					lastSyncedAt: new Date(),
+					updatedAt: new Date(),
+				},
+			});
+		}
 	}
 
 	// ============================================================================
@@ -1368,6 +1551,50 @@ export class DeploymentExecutorService {
 		userId: string,
 		syncStrategy?: "auto" | "manual" | "notify",
 		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
+		executionToken?: string,
+		parentSyncHistoryId?: string,
+	): Promise<DeploymentResult> {
+		if (!executionToken) {
+			throw new AppValidationError(
+				"A fresh deployment preview token is required for user-triggered execution.",
+			);
+		}
+		return this.deploySingleInstanceWithCapability(
+			templateId,
+			instanceId,
+			userId,
+			syncStrategy,
+			conflictResolutions,
+			executionToken,
+			parentSyncHistoryId,
+		);
+	}
+
+	async deploySingleInstanceFromAutomation(
+		templateId: string,
+		instanceId: string,
+		userId: string,
+		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
+		parentSyncHistoryId?: string,
+	): Promise<DeploymentResult> {
+		return this.deploySingleInstanceWithCapability(
+			templateId,
+			instanceId,
+			userId,
+			"auto",
+			conflictResolutions,
+			undefined,
+			parentSyncHistoryId,
+		);
+	}
+
+	private async deploySingleInstanceWithCapability(
+		templateId: string,
+		instanceId: string,
+		userId: string,
+		syncStrategy: "auto" | "manual" | "notify" | undefined,
+		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
+		executionToken: string | undefined,
 		parentSyncHistoryId?: string,
 	): Promise<DeploymentResult> {
 		const lockInstance = await this.prisma.serviceInstance.findFirst({
@@ -1394,6 +1621,7 @@ export class DeploymentExecutorService {
 					userId,
 					syncStrategy,
 					conflictResolutions,
+					executionToken,
 					endpointKey,
 					parentSyncHistoryId,
 				),
@@ -1496,6 +1724,7 @@ export class DeploymentExecutorService {
 		userId: string,
 		syncStrategy?: "auto" | "manual" | "notify",
 		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
+		executionToken?: string,
 		expectedEndpointKey?: string,
 		parentSyncHistoryId?: string,
 	): Promise<DeploymentResult> {
@@ -1531,8 +1760,7 @@ export class DeploymentExecutorService {
 				throw new Error(`Instance unreachable: ${getErrorMessage(error, "Unknown error")}`);
 			}
 
-			// Resolve equivalent endpoint records for serialization and durable state capture.
-			// Preview tokens, automation capabilities, and legacy rebinding are integrated by Task 4B.
+			// Resolve and authorize the exact upstream target before any write or history mutation.
 			const serviceAliases = await this.prisma.serviceInstance.findMany({
 				where: { userId, service: instance.service },
 				select: {
@@ -1579,39 +1807,127 @@ export class DeploymentExecutorService {
 				client.customFormat.getAll(),
 				client.qualityProfile.getAll(),
 				this.prisma.templateQualityProfileMapping.findMany({
-					where: { templateId, instanceId },
+					where: { instanceId: { in: equivalentInstanceIds } },
 					orderBy: { updatedAt: "desc" },
 				}),
 			]);
-			const profileName = template.name || "TRaSH Guides HD/UHD";
-			const listedProfile = (fetchedProfiles as SdkQualityProfile[]).find(
-				(profile) => profile.name === profileName,
-			);
-			const preDeploymentQP =
-				listedProfile?.id !== undefined
-					? ((await client.qualityProfile.getById(listedProfile.id)) as SdkQualityProfile)
-					: null;
-			if (preDeploymentQP && preDeploymentQP.id !== listedProfile?.id) {
+			const customFormatIndex = buildCustomFormatIdentityIndex(existingCFs);
+			if (customFormatIndex.collisions.length > 0) {
 				throw new ConflictError(
-					"The target quality profile identity changed before its rollback snapshot was captured.",
+					`ARR returned ambiguous Custom Format identities (${customFormatIndex.collisions.join(", ")}). Resolve the duplicates before deploying.`,
 				);
 			}
+			if (
+				qualityProfileMappings.some(
+					(mapping) =>
+						!isLegacyDeploymentConnectionMapping(mapping) &&
+						!isCurrentDeploymentConnectionMapping(mapping, connectionBindings),
+				)
+			) {
+				throw new ConflictError(
+					"This ARR endpoint has a deployment mapping bound to an older connection. Unlink or reconcile the stale mapping before deploying.",
+				);
+			}
+			const allProfiles = fetchedProfiles as SdkQualityProfile[];
+			const templateMappings = qualityProfileMappings.filter(
+				(mapping) => mapping.templateId === templateId,
+			);
+			if (new Set(templateMappings.map((mapping) => mapping.qualityProfileId)).size > 1) {
+				throw new ConflictError(
+					"This template has conflicting quality-profile mappings for duplicate records of the same ARR instance. Unlink the stale deployment before continuing.",
+				);
+			}
+			assertEquivalentDeploymentMappingAuthority(templateMappings);
+			const qualityProfileMapping =
+				templateMappings.find((mapping) => mapping.instanceId === instanceId) ??
+				templateMappings[0];
+			const selectedMappingIsLegacy = Boolean(
+				qualityProfileMapping && isLegacyDeploymentConnectionMapping(qualityProfileMapping),
+			);
+			if (!executionToken) {
+				const eligibleAutomationMappings = templateMappings.filter(
+					(mapping) =>
+						mapping.syncStrategy === "auto" &&
+						!isLegacyDeploymentConnectionMapping(mapping) &&
+						isCurrentDeploymentConnectionMapping(mapping, connectionBindings),
+				);
+				if (eligibleAutomationMappings.length === 0) {
+					throw new ConflictError(
+						"Automatic deployment is no longer authorized for this ARR endpoint. Review the mapping, sync strategy, and connection before retrying.",
+					);
+				}
+				if (
+					templateMappings.some(
+						(mapping) =>
+							mapping.syncStrategy !== "auto" ||
+							isLegacyDeploymentConnectionMapping(mapping) ||
+							!isCurrentDeploymentConnectionMapping(mapping, connectionBindings),
+					)
+				) {
+					throw new ConflictError(
+						"Automatic deployment is blocked by a changed, stale, or legacy alias mapping for this ARR endpoint. Review and consolidate the deployment mappings first.",
+					);
+				}
+			}
+			const resolvedTarget = resolveDeploymentTarget({
+				profiles: allProfiles,
+				mapping: qualityProfileMapping,
+				sourceProfileId: templateConfig.completeQualityProfile?.sourceProfileId,
+				isSourceInstance: equivalentInstanceIds.includes(
+					templateConfig.completeQualityProfile?.sourceInstanceId ?? "",
+				),
+				sourceProfileName: template.sourceQualityProfileName,
+				templateName: template.name,
+			});
+			if (resolvedTarget.matchedBy === "mapping_name" && !executionToken) {
+				throw new ConflictError(
+					"The mapped quality profile was recreated. Review a fresh deployment preview before relinking it.",
+				);
+			}
+			assertDeploymentTargetOwnership({
+				target: resolvedTarget,
+				templateId,
+				existingMappings: qualityProfileMappings,
+			});
+			const preDeploymentQP =
+				resolvedTarget.profile?.id !== undefined
+					? ((await client.qualityProfile.getById(resolvedTarget.profile.id)) as SdkQualityProfile)
+					: null;
+			if (preDeploymentQP?.id !== resolvedTarget.profile?.id) {
+				throw new ConflictError(
+					"The target quality profile identity changed before its full rollback snapshot was captured.",
+				);
+			}
+			const authorizedTarget = { ...resolvedTarget, profile: preDeploymentQP ?? undefined };
+			const profileName = resolvedTarget.profileName;
+			const reviewedTargetProfileToken = executionToken
+				? createQualityProfileStateToken(authorizedTarget.profile ?? null)
+				: undefined;
 			const namingSelection = templateConfig.namingSelection as NamingSelectedPresets | undefined;
 			const namingState = namingSelection
 				? await prepareNamingDeployment(this.prisma, this.clientFactory, instance, namingSelection)
 				: undefined;
+			const overrideReadBindings = selectedMappingIsLegacy
+				? [
+						...connectionReadBindings,
+						...createLegacyDeploymentConnectionBindings(equivalentInstanceIds),
+					]
+				: connectionReadBindings;
 			const instanceOverrideScores =
-				preDeploymentQP?.id !== undefined
+				authorizedTarget.profile?.id !== undefined
 					? await this.loadEquivalentInstanceOverrideScores(
 							userId,
-							connectionReadBindings,
-							preDeploymentQP.id,
+							overrideReadBindings,
+							authorizedTarget.profile.id,
+							authorizedTarget.profile,
 						)
 					: new Map<number, number>();
-			const qualityProfileMapping = qualityProfileMappings[0];
 			let previousManagedFormats: ManagedCustomFormatIdentity[] = [];
 			try {
-				previousManagedFormats = readPersistedManagedCustomFormatIdentities(qualityProfileMapping);
+				previousManagedFormats =
+					selectedMappingIsLegacy && !qualityProfileMapping?.managedCustomFormatsCaptured
+						? []
+						: readPersistedManagedCustomFormatIdentities(qualityProfileMapping);
 			} catch (parseError) {
 				throw new ConflictError(
 					`The previous deployment's Custom Format identity metadata is unavailable or invalid: ${getErrorMessage(parseError)}`,
@@ -1621,9 +1937,57 @@ export class DeploymentExecutorService {
 				client,
 				templateCFs,
 				previousManagedFormats,
-				preDeploymentQP ?? undefined,
+				authorizedTarget.profile,
 			);
 			warnings.push(...orphanResolution.warnings);
+			const currentProfileScores = new Map(
+				(authorizedTarget.profile?.formatItems ?? []).map((item) => [item.format, item.score]),
+			);
+			const orphanedFormatScoreChanges = orphanResolution.formats.map((format) => ({
+				instanceId: format.resourceId,
+				name: format.name,
+				score:
+					currentProfileScores.get(format.resourceId) ??
+					instanceOverrideScores.get(format.resourceId) ??
+					0,
+			}));
+
+			if (executionToken) {
+				const currentToken = createDeploymentStateToken({
+					template: {
+						id: template.id,
+						name: template.name,
+						configData: template.configData,
+						instanceOverrides: template.instanceOverrides,
+						sourceQualityProfileName: template.sourceQualityProfileName,
+					},
+					instanceId,
+					connection: {
+						service: instance.service,
+						baseUrl: instance.baseUrl,
+						credentialIdentity: [
+							instance.encryptedApiKey,
+							instance.encryptionIv,
+							instance.encryptedHttpAuthCredentials,
+							instance.httpAuthEncryptionIv,
+						].join(":"),
+					},
+					target: authorizedTarget,
+					customFormats: existingCFs,
+					namingConfig: namingState?.currentConfig,
+					namingPayload: namingState?.mergedConfig,
+					mappingAuthority: createDeploymentMappingAuthorityState(templateMappings),
+					savedScoreOverrides: [...instanceOverrideScores.entries()].sort(
+						([left], [right]) => left - right,
+					),
+					orphanedFormatScoreChanges,
+				});
+				if (currentToken !== executionToken) {
+					throw new ConflictError(
+						"The template or instance changed after this preview. Refresh the preview and review the deployment again.",
+					);
+				}
+			}
 
 			const { backup, historyId: syncHistoryId } = await this.createBackupAndHistory(
 				instance,
@@ -1645,17 +2009,8 @@ export class DeploymentExecutorService {
 				});
 			};
 			historyId = syncHistoryId;
-			const existingCFMap = new Map<string, SdkCustomFormat>();
-			const existingCFByName = new Map<string, SdkCustomFormat>();
-			for (const cf of existingCFs) {
-				const trashId = extractTrashId(cf);
-				if (trashId) {
-					existingCFMap.set(trashId, cf);
-				}
-				if (cf.name) {
-					existingCFByName.set(cf.name, cf);
-				}
-			}
+			const existingCFMap = customFormatIndex.byTrashId;
+			const existingCFByName = customFormatIndex.byName;
 
 			const deploymentHistory = await this.prisma.templateDeploymentHistory.create({
 				data: {
@@ -1699,6 +2054,11 @@ export class DeploymentExecutorService {
 			partialCFResult = cfResult;
 			deploymentPhase = "quality_profile";
 
+			const retainedSyncStrategy = ["auto", "manual", "notify"].includes(
+				qualityProfileMapping?.syncStrategy ?? "",
+			)
+				? (qualityProfileMapping?.syncStrategy as "auto" | "manual" | "notify")
+				: undefined;
 			const profileResult = await this.syncQualityProfile(
 				client,
 				templateConfig,
@@ -1706,11 +2066,11 @@ export class DeploymentExecutorService {
 				templateId,
 				instanceId,
 				userId,
-				syncStrategy,
+				syncStrategy ?? retainedSyncStrategy ?? "notify",
 				conflictResolutions,
 				profileName,
-				preDeploymentQP ?? undefined,
-				undefined,
+				authorizedTarget.profile,
+				reviewedTargetProfileToken,
 				orphanResolution.formats,
 				instanceOverrideScores,
 				equivalentInstanceIds,
@@ -1720,8 +2080,9 @@ export class DeploymentExecutorService {
 					await persistBackupLedger();
 				},
 				connectionBindings,
-				connectionReadBindings,
+				overrideReadBindings,
 				previousManagedFormats,
+				cfResult.resolvedResourceIds ?? new Map(),
 			);
 			appliedProfileMutation = profileResult.mutation;
 			let deferredManagedMappingUpdate:
@@ -1744,6 +2105,7 @@ export class DeploymentExecutorService {
 					client,
 					templateCFs,
 					managedProfile,
+					cfResult.resolvedResourceIds,
 				);
 				backup.data.managedCustomFormats = managedCustomFormats;
 				backup.data.managedCustomFormatsCaptured = true;
@@ -1859,48 +2221,52 @@ export class DeploymentExecutorService {
 					mappingFinalization || orphanedOverrideCleanup || managedMappingUpdate
 						? async (database) => {
 								if (mappingFinalization) {
-									await database.templateQualityProfileMapping.deleteMany({
+									const liveInstances = await database.serviceInstance.findMany({
 										where: {
-											templateId: mappingFinalization.templateId,
-											instanceId: { in: mappingFinalization.equivalentInstanceIds },
-											qualityProfileId: { not: mappingFinalization.qualityProfileId },
+											id: { in: mappingFinalization.equivalentInstanceIds },
+											userId: mappingFinalization.userId,
+										},
+										select: {
+											id: true,
+											service: true,
+											baseUrl: true,
+											encryptedApiKey: true,
+											encryptionIv: true,
+											encryptedHttpAuthCredentials: true,
+											httpAuthEncryptionIv: true,
+											connectionGeneration: true,
 										},
 									});
-									await database.templateQualityProfileMapping.upsert({
-										where: {
-											instanceId_qualityProfileId: {
-												instanceId: mappingFinalization.instanceId,
-												qualityProfileId: mappingFinalization.qualityProfileId,
-											},
-										},
-										create: {
-											templateId: mappingFinalization.templateId,
-											instanceId: mappingFinalization.instanceId,
-											qualityProfileId: mappingFinalization.qualityProfileId,
-											qualityProfileName: mappingFinalization.qualityProfileName,
-											connectionGeneration: mappingFinalization.connectionGeneration,
-											connectionStateToken: mappingFinalization.connectionStateToken,
-											syncStrategy: mappingFinalization.syncStrategy || "notify",
-											lastSyncedAt: new Date(),
-										},
-										update: {
-											templateId: mappingFinalization.templateId,
-											qualityProfileName: mappingFinalization.qualityProfileName,
-											connectionGeneration: mappingFinalization.connectionGeneration,
-											connectionStateToken: mappingFinalization.connectionStateToken,
-											...(mappingFinalization.syncStrategy && {
-												syncStrategy: mappingFinalization.syncStrategy,
-											}),
-											lastSyncedAt: new Date(),
-											updatedAt: new Date(),
-										},
-									});
+									const expectedBindingByInstanceId = new Map(
+										mappingFinalization.connectionBindings.map((binding) => [
+											binding.instanceId,
+											binding,
+										]),
+									);
+									if (
+										liveInstances.length !== expectedBindingByInstanceId.size ||
+										liveInstances.some((liveInstance) => {
+											const expected = expectedBindingByInstanceId.get(liveInstance.id);
+											return (
+												!expected ||
+												expected.connectionGeneration !== liveInstance.connectionGeneration ||
+												expected.connectionStateToken !==
+													createDeploymentConnectionStateToken(liveInstance)
+											);
+										})
+									) {
+										throw new ConflictError(
+											"The ARR service connection changed before deployment state could be finalized.",
+										);
+									}
+
+									await this.finalizeQualityProfileMappingState(database, mappingFinalization);
 								}
 								if (managedMappingUpdate) {
 									await database.templateQualityProfileMapping.updateMany({
 										where: {
 											templateId,
-											instanceId,
+											instanceId: { in: equivalentInstanceIds },
 											qualityProfileId: managedMappingUpdate.managedProfileId,
 										},
 										data: {
@@ -2072,49 +2438,110 @@ export class DeploymentExecutorService {
 		userId: string,
 		syncStrategy?: "auto" | "manual" | "notify",
 		instanceSyncStrategies?: Record<string, "auto" | "manual" | "notify">,
+		executionTokens: Record<string, string> = {},
 	): Promise<BulkDeploymentResult> {
-		const template = await this.prisma.trashTemplate.findUnique({
-			where: { id: templateId, userId },
-		});
-		if (!template) {
-			throw new TemplateNotFoundError(templateId);
+		if (new Set(instanceIds).size !== instanceIds.length) {
+			throw new AppValidationError(
+				"Bulk deployment contains the same service instance more than once.",
+			);
 		}
-
-		// The topology lease is per user, so bulk targets run sequentially.
-		const results: DeploymentResult[] = [];
-		for (let index = 0; index < instanceIds.length; index++) {
-			const instanceId = instanceIds[index]!;
-			try {
-				const strategy = instanceSyncStrategies?.[instanceId] ?? syncStrategy;
-				results.push(await this.deploySingleInstance(templateId, instanceId, userId, strategy));
-			} catch (error) {
-				const partialDeployment = getPartialDeploymentResult(error);
-				results.push({
-					instanceId,
-					instanceLabel: `Instance ${index + 1}`,
-					success: false,
-					status: isDeploymentResultUncertain(error) ? "UNCERTAIN" : "FAILED",
-					customFormatsCreated: partialDeployment?.created ?? 0,
-					customFormatsUpdated: partialDeployment?.updated ?? 0,
-					customFormatsSkipped: partialDeployment?.skipped ?? 0,
-					errors: [
-						...(partialDeployment?.errors ?? []),
-						getErrorMessage(error, "Deployment failed"),
-					],
-					qualityProfileApplied: toPublicQualityProfileMutation(partialDeployment?.qualityProfile),
-					details: partialDeployment?.details,
-				});
+		for (const instanceId of instanceIds) {
+			if (!executionTokens[instanceId]) {
+				throw new AppValidationError(
+					"A fresh deployment preview token is required for every user-triggered bulk target.",
+				);
 			}
 		}
+		return withCleanupTopologyMutationLease({ prisma: this.prisma, log }, userId, async () => {
+			const template = await this.prisma.trashTemplate.findUnique({
+				where: { id: templateId, userId },
+			});
+			if (!template) {
+				throw new TemplateNotFoundError(templateId);
+			}
 
-		return {
-			templateId,
-			templateName: template.name,
-			totalInstances: instanceIds.length,
-			successfulInstances: results.filter((result) => result.status === "SUCCESS").length,
-			failedInstances: results.filter((result) => result.status === "FAILED").length,
-			uncertainInstances: results.filter((result) => result.status === "UNCERTAIN").length,
-			results,
-		};
+			const selectedInstances = await this.prisma.serviceInstance.findMany({
+				where: { id: { in: instanceIds }, userId },
+				select: {
+					id: true,
+					service: true,
+					baseUrl: true,
+					encryptedApiKey: true,
+					encryptionIv: true,
+					encryptedHttpAuthCredentials: true,
+					httpAuthEncryptionIv: true,
+					connectionGeneration: true,
+				},
+			});
+			if (selectedInstances.length !== instanceIds.length) {
+				throw new AppValidationError(
+					"One or more selected service instances no longer exist or are not authorized.",
+				);
+			}
+			const selectedById = new Map(selectedInstances.map((instance) => [instance.id, instance]));
+			const endpointOwners = new Map<string, string>();
+			for (const instanceId of instanceIds) {
+				const instance = selectedById.get(instanceId)!;
+				const endpointKey = this.createEndpointKey(userId, instance);
+				const existingInstanceId = endpointOwners.get(endpointKey);
+				if (existingInstanceId && existingInstanceId !== instance.id) {
+					throw new AppValidationError(
+						"Bulk deployment includes multiple service records for the same ARR endpoint. Select only one record for each endpoint.",
+					);
+				}
+				endpointOwners.set(endpointKey, instance.id);
+			}
+
+			const results: DeploymentResult[] = [];
+			for (let index = 0; index < instanceIds.length; index++) {
+				const instanceId = instanceIds[index]!;
+				const instance = selectedById.get(instanceId)!;
+				try {
+					const strategy = instanceSyncStrategies?.[instanceId] ?? syncStrategy;
+					results.push(
+						await this.runWithEndpointMutation(userId, instance, "Deployment", (endpointKey) =>
+							this.executeSingleDeployment(
+								templateId,
+								instanceId,
+								userId,
+								strategy,
+								undefined,
+								executionTokens[instanceId],
+								endpointKey,
+							),
+						),
+					);
+				} catch (error) {
+					const partialDeployment = getPartialDeploymentResult(error);
+					results.push({
+						instanceId,
+						instanceLabel: `Instance ${index + 1}`,
+						success: false,
+						status: isDeploymentResultUncertain(error) ? "UNCERTAIN" : "FAILED",
+						customFormatsCreated: partialDeployment?.created ?? 0,
+						customFormatsUpdated: partialDeployment?.updated ?? 0,
+						customFormatsSkipped: partialDeployment?.skipped ?? 0,
+						errors: [
+							...(partialDeployment?.errors ?? []),
+							getErrorMessage(error, "Deployment failed"),
+						],
+						qualityProfileApplied: toPublicQualityProfileMutation(
+							partialDeployment?.qualityProfile,
+						),
+						details: partialDeployment?.details,
+					});
+				}
+			}
+
+			return {
+				templateId,
+				templateName: template.name,
+				totalInstances: instanceIds.length,
+				successfulInstances: results.filter((result) => result.status === "SUCCESS").length,
+				failedInstances: results.filter((result) => result.status === "FAILED").length,
+				uncertainInstances: results.filter((result) => result.status === "UNCERTAIN").length,
+				results,
+			};
+		});
 	}
 }

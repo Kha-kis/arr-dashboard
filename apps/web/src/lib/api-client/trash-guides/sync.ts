@@ -5,6 +5,7 @@
  */
 
 import { apiRequest } from "../base";
+import type { DeploymentPreview } from "./types";
 
 // ============================================================================
 // Types
@@ -27,12 +28,15 @@ export interface ValidationResult {
 	conflicts: ConflictInfo[];
 	errors: string[];
 	warnings: string[];
+	executionToken?: string;
+	preview?: DeploymentPreview;
 }
 
 export interface SyncExecuteRequest {
 	templateId: string;
 	instanceId: string;
-	syncType: "MANUAL" | "SCHEDULED";
+	syncType: "MANUAL";
+	executionToken: string;
 	conflictResolutions?: Record<string, "REPLACE" | "SKIP">;
 }
 

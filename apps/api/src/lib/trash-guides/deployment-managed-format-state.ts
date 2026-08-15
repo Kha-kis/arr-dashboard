@@ -27,6 +27,7 @@ export async function captureManagedCustomFormatIdentities(
 	client: ArrClient,
 	templateCFs: Array<Pick<TemplateCF, "trashId" | "name">>,
 	profile: ManagedProfile,
+	resolvedResourceIds?: ReadonlyMap<string, number>,
 ): Promise<ManagedCustomFormatIdentity[]> {
 	if (profile.id === undefined) {
 		throw new Error("The managed quality profile ID is unavailable");
@@ -37,26 +38,30 @@ export async function captureManagedCustomFormatIdentities(
 			appliedScores.set(item.format, item.score);
 		}
 	}
-	const listed = await client.customFormat.getAll();
-	const byName = new Map(
-		listed.filter((format) => format.name).map((format) => [format.name!, format]),
-	);
+	const byName = resolvedResourceIds
+		? undefined
+		: new Map(
+				(await client.customFormat.getAll())
+					.filter((format) => format.name)
+					.map((format) => [format.name!, format]),
+			);
 	const identities: ManagedCustomFormatIdentity[] = [];
 	for (const templateCF of templateCFs) {
-		const match = byName.get(templateCF.name);
-		if (match?.id === undefined) {
+		const resourceId =
+			resolvedResourceIds?.get(templateCF.trashId) ?? byName?.get(templateCF.name)?.id;
+		if (resourceId === undefined) {
 			throw new Error(
 				`The deployed Custom Format identity for "${templateCF.name}" could not be captured.`,
 			);
 		}
-		const full = await client.customFormat.getById(match.id);
+		const full = await client.customFormat.getById(resourceId);
 		identities.push({
 			trashId: templateCF.trashId,
 			name: templateCF.name,
-			resourceId: match.id,
+			resourceId,
 			stateToken: createUpstreamResourceStateToken(full),
 			profileId: profile.id,
-			appliedScore: appliedScores.get(match.id) ?? 0,
+			appliedScore: appliedScores.get(resourceId) ?? 0,
 		});
 	}
 	return identities;
