@@ -12,6 +12,7 @@ const {
 	mockUpdateInstanceTags,
 	mockFormatServiceInstance,
 	mockInvalidatePulseCache,
+	mockReadProviderIdentity,
 } = vi.hoisted(() => ({
 	mockRequireInstance: vi.fn(),
 	mockTestConnection: vi.fn().mockResolvedValue({ success: true, version: "4.0.0" }),
@@ -30,6 +31,7 @@ const {
 		storageGroupId: instance.storageGroupId ?? null,
 	})),
 	mockInvalidatePulseCache: vi.fn(),
+	mockReadProviderIdentity: vi.fn(),
 }));
 
 vi.mock("../pulse.js", () => ({
@@ -55,6 +57,10 @@ vi.mock("../../lib/services/tag-manager.js", () => ({
 
 vi.mock("../../lib/services/service-formatter.js", () => ({
 	formatServiceInstance: (instance: unknown) => mockFormatServiceInstance(instance),
+}));
+
+vi.mock("../../lib/services/service-identity.js", () => ({
+	readProviderIdentity: (...args: unknown[]) => mockReadProviderIdentity(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -95,6 +101,12 @@ function makeInstance(overrides: Record<string, unknown> = {}) {
 		createdAt: new Date("2024-01-01T00:00:00Z"),
 		updatedAt: new Date("2024-01-01T00:00:00Z"),
 		connectionGeneration: 0,
+		expectedIdentity: null,
+		identityKind: null,
+		identityStatus: "UNVERIFIED",
+		identityGeneration: 0,
+		identityVerifiedAt: null,
+		identityLastCheckedAt: null,
 		storageGroupId: null,
 		tags: [],
 		...overrides,
@@ -203,6 +215,21 @@ let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 
 beforeEach(async () => {
 	vi.clearAllMocks();
+	mockReadProviderIdentity.mockImplementation(async ({ service }: { service: string }) => {
+		const identities = {
+			PLEX: "plex-machine-identifier",
+			JELLYFIN: "jellyfin-server-id",
+			EMBY: "emby-server-id",
+			TAUTULLI: "tautulli-pms-identifier",
+		} as const;
+		return {
+			service,
+			identityKind: identities[service as keyof typeof identities],
+			rawIdentity: `${service}-identity`,
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+	});
 
 	mockPrisma = createMockPrisma();
 
@@ -470,7 +497,7 @@ describe("PUT /services/:id", () => {
 		expect(connectionUpdate?.data.connectionGeneration).toEqual({ increment: 1 });
 	});
 
-	it("does not advance generation for a non-ARR connection update", async () => {
+	it("advances generation for a provider connection update", async () => {
 		mockRequireInstance.mockResolvedValue(
 			makeInstance({ service: "JELLYFIN", baseUrl: "http://jellyfin-old:8096" }),
 		);
@@ -486,9 +513,9 @@ describe("PUT /services/:id", () => {
 		expect(res.statusCode).toBe(200);
 		expect(
 			mockPrisma.serviceInstance.updateMany.mock.calls.some(
-				([args]) => args.data.connectionGeneration !== undefined,
+				([args]) => args.data.connectionGeneration?.increment === 1,
 			),
-		).toBe(false);
+		).toBe(true);
 	});
 
 	it("blocks a real ARR credential change while an equivalent alias has unresolved intent", async () => {
@@ -600,7 +627,7 @@ describe("PUT /services/:id", () => {
 		const connectionUpdate = mockPrisma.serviceInstance.updateMany.mock.calls.find(
 			([args]) => args.where.id === "inst-1",
 		)?.[0];
-		expect(connectionUpdate?.data.connectionGeneration).toBeUndefined();
+		expect(connectionUpdate?.data.connectionGeneration).toEqual({ increment: 1 });
 		expect(mockPrisma.cacheRefreshStatus.deleteMany).toHaveBeenCalledWith({
 			where: { instanceId: "inst-1" },
 		});
@@ -686,7 +713,7 @@ describe("PUT /services/:id", () => {
 		["PLEX", "http://plex-old:32400", "http://plex-new:32400"],
 		["TAUTULLI", "http://tautulli-old:8181", "http://tautulli-new:8181"],
 	] as const)(
-		"keeps %s generation unchanged and clears every provider cache on URL replacement",
+		"advances %s generation and clears every provider cache on URL replacement",
 		async (service, oldUrl, newUrl) => {
 			mockRequireInstance.mockResolvedValue(makeInstance({ service, baseUrl: oldUrl }));
 			mockBuildUpdateData.mockReturnValue({ baseUrl: newUrl });
@@ -702,7 +729,7 @@ describe("PUT /services/:id", () => {
 			const connectionUpdate = mockPrisma.serviceInstance.updateMany.mock.calls.find(
 				([args]) => args.where.id === "inst-1",
 			)?.[0];
-			expect(connectionUpdate?.data.connectionGeneration).toBeUndefined();
+			expect(connectionUpdate?.data.connectionGeneration).toEqual({ increment: 1 });
 			expect(mockPrisma.plexCache.deleteMany).toHaveBeenCalledWith({
 				where: { instanceId: "inst-1" },
 			});
