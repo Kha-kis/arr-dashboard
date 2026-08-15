@@ -13,6 +13,7 @@ import {
 } from "../lib/plex/plex-cache-refresher.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 import { recordPlexCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
+import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -50,6 +51,7 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
+						const authority = createProviderPublicationAuthority(instance);
 						let publicationInstance:
 							| ReturnType<typeof createOwnedPlexPublicationSnapshot>
 							| undefined;
@@ -88,16 +90,15 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 								"Plex cache refresh failed for instance",
 							);
 
-							// Track failure
-							if (publicationInstance) {
-								await recordPlexCacheRefreshFailure(
-									app.prisma,
-									"plex",
-									getErrorMessage(err, "Unknown error"),
-									publicationInstance,
-									app.log,
-								);
-							}
+							await recordPlexCacheRefreshFailure(
+								app.prisma,
+								"plex",
+								publicationInstance
+									? getErrorMessage(err, "Unknown error")
+									: "Provider credentials could not be decrypted.",
+								publicationInstance ?? authority,
+								app.log,
+							);
 						}
 					}
 

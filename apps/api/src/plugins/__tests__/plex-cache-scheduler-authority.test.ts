@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
 	createSnapshot: vi.fn((_encryptor: unknown, instance: unknown) => ({ sealed: instance })),
+	createAuthority: vi.fn((instance: unknown) => ({ authority: instance })),
 	refreshLibrary: vi.fn(),
 	refreshEpisodes: vi.fn(),
 	recordFailure: vi.fn(),
@@ -18,6 +19,9 @@ vi.mock("../../lib/plex/plex-episode-cache-refresher.js", () => ({
 }));
 vi.mock("../../lib/services/provider-cache-status.js", () => ({
 	recordPlexCacheRefreshFailure: mocks.recordFailure,
+}));
+vi.mock("../../lib/services/provider-identity-guard.js", () => ({
+	createProviderPublicationAuthority: mocks.createAuthority,
 }));
 
 import plexCacheSchedulerPlugin from "../plex-cache-scheduler.js";
@@ -37,6 +41,7 @@ describe("Plex scheduler publication authority", () => {
 	beforeEach(async () => {
 		vi.useFakeTimers();
 		mocks.createSnapshot.mockClear();
+		mocks.createAuthority.mockClear();
 		mocks.refreshLibrary.mockReset().mockResolvedValue({
 			complete: true,
 			completedAt: new Date(),
@@ -154,5 +159,34 @@ describe("Plex scheduler publication authority", () => {
 		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(1);
 		expect(mocks.refreshEpisodes).toHaveBeenCalledTimes(1);
 		expect(mocks.recordFailure).not.toHaveBeenCalled();
+	});
+
+	it("records sanitized library and episode failures when credentials cannot decrypt", async () => {
+		mocks.createSnapshot.mockImplementation(() => {
+			throw new Error("secret decrypt detail");
+		});
+
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+		expect(mocks.createAuthority).toHaveBeenCalledTimes(2);
+		expect(mocks.refreshLibrary).not.toHaveBeenCalled();
+		expect(mocks.refreshEpisodes).not.toHaveBeenCalled();
+		expect(mocks.recordFailure).toHaveBeenCalledTimes(2);
+		expect(mocks.recordFailure).toHaveBeenNthCalledWith(
+			1,
+			app.prisma,
+			"plex",
+			"Provider credentials could not be decrypted.",
+			{ authority: instance },
+			app.log,
+		);
+		expect(mocks.recordFailure).toHaveBeenNthCalledWith(
+			2,
+			app.prisma,
+			"plex_episode",
+			"Provider credentials could not be decrypted.",
+			{ authority: instance },
+			app.log,
+		);
 	});
 });
