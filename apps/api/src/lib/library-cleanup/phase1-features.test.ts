@@ -355,14 +355,12 @@ describe("prefetch failure handling", () => {
 		expect(result).toBeNull();
 	});
 
-	it("no failedSources = normal evaluation", () => {
+	it("does not infer never-watched without a positive Plex witness", () => {
 		const plexRule = makeRule({
 			id: "plex-rule",
 			ruleType: "plex_last_watched",
 			parameters: JSON.stringify({ operator: "never" }),
 		});
-		// No plexMap in context, so plex_last_watched with "never" and no watch data
-		// should match (watch is null → "never" matches)
 		const result = evaluateItemAgainstRules(
 			makeCacheItem(),
 			[plexRule] as LibraryCleanupRule[],
@@ -370,7 +368,7 @@ describe("prefetch failure handling", () => {
 			ctx,
 			undefined,
 		);
-		expect(result).not.toBeNull();
+		expect(result).toBeNull();
 	});
 
 	it("does not let a filtered-out unavailable retention rule protect the item", () => {

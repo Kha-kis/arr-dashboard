@@ -458,16 +458,14 @@ describe("plex_last_watched rule", () => {
 		expect(result).toBeNull();
 	});
 
-	it("never operator matches when no plex data exists", () => {
-		// With no plexMap at all, lookupPlexWatch returns null.
-		// The code checks `!watch || watch.lastWatchedAt === null` — null watch triggers "never".
+	it("never operator does not match when no Plex evidence exists", () => {
 		const result = evaluateSingleCondition(
 			makeCacheItem(),
 			"plex_last_watched",
 			{ operator: "never" },
 			baseCtx(), // no plexMap
 		);
-		expect(result).toBe("Never watched (per Plex)");
+		expect(result).toBeNull();
 	});
 
 	it("never operator matches item with null lastWatchedAt", () => {
@@ -756,27 +754,18 @@ describe("golden test — multi-rule priority evaluation", () => {
 		expect(result!.ruleId).toBe("r-declined"); // declined rule still matches first
 	});
 
-	it("recent high-rated item with no plex data gets no match", () => {
+	it("recent high-rated item with no Plex data gets no match", () => {
 		// No seerr data (tmdbId 99999), high rating (9.0), recently added (1 day)
 		// - r-declined: no seerr data → skip
 		// - r-low-rating: 9.0 not < 5 → skip
-		// - r-never-watched: no plex data → lookupPlexWatch returns null
-		//   "never" with null watch → "Never watched (per Plex)"... wait
-		//   Actually: watch is null (not in plexMap), so returns null for "never"
-		//   because the function only returns match when watch exists but lastWatchedAt is null
+		// - r-never-watched: no Plex row means there is no positive never-watched witness
 		const result = evaluateItemAgainstRules(
 			recentHighRated,
 			rules as LibraryCleanupRule[],
 			"RADARR",
 			ctx,
 		);
-		// plex_last_watched with "never": if watch is null (no plex entry), the function returns null
-		// (you need to be IN plex with null lastWatchedAt to match)
-		// But wait — looking at the code: `if (!watch || watch.lastWatchedAt === null)` — so null watch
-		// DOES match "never". So this will match r-never-watched.
-		expect(result).not.toBeNull();
-		expect(result!.ruleId).toBe("r-never-watched");
-		expect(result!.action).toBe("unmonitor");
+		expect(result).toBeNull();
 	});
 
 	it("protected item is excluded by title pattern in composite rule", () => {

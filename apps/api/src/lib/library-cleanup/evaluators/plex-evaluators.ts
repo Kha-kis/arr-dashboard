@@ -91,7 +91,7 @@ export function evaluatePlexLastWatched(
 	const watch = lookupPlexWatch(item, ctx.plexMap, plexLibraryFilter, ctx.plexSectionTitles);
 
 	if (params.operator === "never") {
-		if (!watch || watch.lastWatchedAt === null) {
+		if (watch?.lastWatchedAt === null) {
 			return "Never watched (per Plex)";
 		}
 		return null;
@@ -135,6 +135,7 @@ export function evaluatePlexWatchCount(
 	if (!watch) {
 		// Not in Plex — infer 0 plays when Plex is configured and item has a file
 		if (
+			(!plexLibraryFilter || plexLibraryFilter.length === 0) &&
 			ctx.plexMap &&
 			ctx.plexMap.size > 0 &&
 			params.operator === "less_than" &&

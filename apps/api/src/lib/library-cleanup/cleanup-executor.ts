@@ -4496,8 +4496,12 @@ async function evaluateAllItems(
 		"seerr_requester_not_watched",
 	];
 	const hasPlexRules = PLEX_RULE_TYPES.some((t) => activeTypes.has(t));
-	const plexResult = hasPlexRules ? await prefetchPlexData(deps, config.userId) : undefined;
-	const plexMap = hasPlexRules ? plexResult : undefined;
+	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(rules).size > 0;
+	const plexEvidence =
+		hasPlexRules || needsPlexSectionInventory
+			? await loadPublishedPlexPolicyEvidence(deps, config.userId, rules)
+			: undefined;
+	const plexMap = hasPlexRules ? plexEvidence?.plexMap : undefined;
 
 	// Prefetch Jellyfin watch data if any Jellyfin rule types are active
 	const JELLYFIN_RULE_TYPES = [
@@ -4539,7 +4543,7 @@ async function evaluateAllItems(
 	// Build prefetch health status
 	const prefetchHealth: PrefetchResults = {
 		seerr: hasSeerrRules ? (seerrMap ? "ok" : "failed") : "skipped",
-		plex: hasPlexRules ? (plexMap ? "ok" : "failed") : "skipped",
+		plex: hasPlexRules || needsPlexSectionInventory ? (plexEvidence ? "ok" : "failed") : "skipped",
 		jellyfin: hasJellyfinRules ? (jellyfinMap ? "ok" : "failed") : "skipped",
 	};
 
@@ -4572,6 +4576,7 @@ async function evaluateAllItems(
 		now,
 		seerrMap,
 		plexMap,
+		plexSectionTitles: plexEvidence?.plexSectionTitles,
 		plexEpisodeMap,
 		jellyfinMap,
 		jellyfinEpisodeMap,
