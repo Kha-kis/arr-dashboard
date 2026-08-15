@@ -113,6 +113,10 @@ export function shouldRetainDeploymentBackup(value: string): boolean {
 	if (Array.isArray(parsed)) {
 		return !z.array(restorableCustomFormatSchema).safeParse(parsed).success;
 	}
+	const deploymentState = deploymentBackupStateSchema.safeParse(parsed);
+	if (deploymentState.success) {
+		return hasPendingDeploymentMutation(deploymentState.data);
+	}
 	if (
 		typeof parsed === "object" &&
 		parsed !== null &&

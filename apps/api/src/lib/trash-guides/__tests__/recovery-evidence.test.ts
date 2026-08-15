@@ -235,6 +235,26 @@ describe("assertNoActiveTrashRecoveryForInstance", () => {
 		).resolves.toBeUndefined();
 	});
 
+	it.each(["SUCCESS", "FAILED"])(
+		"allows deletion for a legacy terminal %s sync wrapper without a snapshot",
+		async (status) => {
+			const { prisma, trashSyncHistory } = createRecoveryPrisma();
+			trashSyncHistory.findMany.mockResolvedValueOnce([
+				{
+					id: "legacy-terminal-sync",
+					status,
+					backupId: null,
+					rolledBack: false,
+					rollbackStatus: null,
+				},
+			]);
+
+			await expect(
+				assertNoActiveTrashRecoveryForInstance(prisma, "user-1", "instance-1"),
+			).resolves.toBeUndefined();
+		},
+	);
+
 	it("keeps malformed manual-resolution markers blocked", async () => {
 		const { prisma, trashSyncHistory } = createRecoveryPrisma();
 		trashSyncHistory.findMany.mockResolvedValueOnce([

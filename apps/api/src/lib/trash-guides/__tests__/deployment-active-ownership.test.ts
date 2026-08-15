@@ -498,6 +498,45 @@ describe("active deployment ownership", () => {
 		).rejects.toThrow("newer deployment");
 	});
 
+	it.each(["SUCCESS", "FAILED"])(
+		"ignores a legacy terminal %s sync wrapper without ownership metadata",
+		async (status) => {
+			const prisma = {
+				templateDeploymentHistory: {
+					findMany: vi.fn().mockResolvedValue([
+						{
+							templateId: "template-1",
+							backupId: "target",
+							status: "SUCCESS",
+							deployedAt: new Date("2026-01-02"),
+							backup: { backupData: state() },
+						},
+					]),
+				},
+				trashSyncHistory: {
+					findMany: vi.fn().mockResolvedValue([
+						{
+							templateId: null,
+							backupId: null,
+							status,
+							startedAt: new Date("2025-01-01"),
+							backup: null,
+							rolledBack: false,
+							rollbackStatus: null,
+						},
+					]),
+				},
+			};
+
+			await expect(
+				resolveActiveDeploymentOwnership(prisma as never, "user", ["instance"], {
+					backupId: "target",
+					templateId: "template-1",
+				}),
+			).resolves.toBeDefined();
+		},
+	);
+
 	it("fails closed when a backup ID points to a missing backup row", async () => {
 		const rows = [
 			{

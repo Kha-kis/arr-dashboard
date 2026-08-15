@@ -7,6 +7,7 @@ const hookMocks = vi.hoisted(() => ({
 	bulkScoresLoaded: vi.fn(),
 	refreshBulkScores: vi.fn(),
 	bulkUpdateScores: vi.fn(),
+	bulkDeleteOverrides: vi.fn(),
 }));
 
 const bulkScoresResponse = {
@@ -92,7 +93,10 @@ vi.mock("../../../../hooks/api/useQualityProfileScores", async (importOriginal) 
 });
 
 vi.mock("../../../../hooks/api/useQualityProfileOverrides", () => ({
-	useBulkDeleteOverrides: () => ({ isPending: false, mutateAsync: vi.fn() }),
+	useBulkDeleteOverrides: () => ({
+		isPending: false,
+		mutateAsync: hookMocks.bulkDeleteOverrides,
+	}),
 	useDeleteOverride: () => ({ isPending: false, mutateAsync: vi.fn() }),
 }));
 
@@ -429,5 +433,55 @@ describe("BulkScoreManager partial saves", () => {
 				recoveryToken: "a".repeat(64),
 			},
 		]);
+	});
+
+	it("retries an exact reset-score recovery plan after reload", async () => {
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({
+				success: true,
+				overridesByProfile: {},
+				recoveryPlans: [
+					{
+						qualityProfileId: 101,
+						entries: [
+							{
+								customFormatId: 10,
+								operation: "RESET_SCORE",
+								intendedScore: 0,
+								status: "UNCERTAIN",
+							},
+							{
+								customFormatId: 11,
+								operation: "RESET_SCORE",
+								intendedScore: 5,
+								status: "PENDING",
+							},
+						],
+						retryable: true,
+						requiresManualReconciliation: false,
+						retryAction: {
+							method: "POST",
+							customFormatIds: [10, 11],
+						},
+					},
+				],
+			}),
+		} as Response);
+		hookMocks.bulkDeleteOverrides.mockResolvedValue({ deletedCount: 2 });
+
+		renderWithQueryClient(<BulkScoreManager userId="user-1" />);
+		await selectInstanceAndLoadScores();
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Retry score reset for Profile 101" }),
+		);
+
+		await waitFor(() => expect(hookMocks.bulkDeleteOverrides).toHaveBeenCalledTimes(1));
+		expect(hookMocks.bulkDeleteOverrides).toHaveBeenCalledWith({
+			instanceId: "instance-1",
+			qualityProfileId: 101,
+			payload: { customFormatIds: [10, 11] },
+		});
+		expect(hookMocks.bulkUpdateScores).not.toHaveBeenCalled();
 	});
 });

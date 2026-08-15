@@ -311,20 +311,26 @@ function buildScoreRecoveryPlans(
 	return [...byProfile.entries()].map(([qualityProfileId, rows]) => {
 		const desiredScores = new Map<number, number>();
 		let retryable = true;
+		let operation: "SET_SCORE" | "RESET_SCORE" | null = null;
 		for (const row of rows) {
 			if (
 				!isCurrentDeploymentConnectionMapping(row, bindings) ||
-				row.intentOperation !== "SET_SCORE" ||
+				(row.intentOperation !== "SET_SCORE" && row.intentOperation !== "RESET_SCORE") ||
 				row.intendedScore === null
 			) {
 				retryable = false;
 				continue;
 			}
+			if (operation !== null && operation !== row.intentOperation) retryable = false;
+			operation = row.intentOperation;
 			const existing = desiredScores.get(row.customFormatId);
 			if (existing !== undefined && existing !== row.intendedScore) retryable = false;
 			desiredScores.set(row.customFormatId, row.intendedScore);
 		}
-		if (desiredScores.size !== rows.length) retryable = false;
+		if (desiredScores.size === 0 || operation === null) retryable = false;
+		const orderedScores = [...desiredScores]
+			.sort(([left], [right]) => left - right)
+			.map(([customFormatId, score]) => ({ customFormatId, score }));
 		return {
 			qualityProfileId,
 			entries: rows.map((row) => ({
@@ -335,16 +341,18 @@ function buildScoreRecoveryPlans(
 			})),
 			retryable,
 			requiresManualReconciliation: !retryable,
-			retryAction: retryable
-				? {
-						method: "PATCH" as const,
-						recoveryToken: createScoreRecoveryToken(rows),
-						scoreUpdates: [...desiredScores].map(([customFormatId, score]) => ({
-							customFormatId,
-							score,
-						})),
-					}
-				: null,
+			retryAction: !retryable
+				? null
+				: operation === "SET_SCORE"
+					? {
+							method: "PATCH" as const,
+							recoveryToken: createScoreRecoveryToken(rows),
+							scoreUpdates: orderedScores,
+						}
+					: {
+							method: "POST" as const,
+							customFormatIds: orderedScores.map((score) => score.customFormatId),
+						},
 		};
 	});
 }

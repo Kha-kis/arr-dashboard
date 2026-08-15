@@ -133,6 +133,8 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			cutoff: 1,
 		};
 		const storedBackupPayloads: string[] = [];
+		const retentionExpiresAt = new Date("2026-09-01T00:00:00.000Z");
+		const storedExpiryValues: Array<Date | null> = [];
 		const syncHistoryUpdate = vi.fn().mockResolvedValue({});
 		const deploymentHistoryUpdate = vi.fn().mockResolvedValue({});
 		const transactionClient = {
@@ -181,10 +183,13 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 				create: vi.fn().mockResolvedValue({ id: "deployment-history-1" }),
 			},
 			trashBackup: {
-				update: vi.fn(async ({ data }: { data: { backupData: string } }) => {
-					storedBackupPayloads.push(data.backupData);
-					return {};
-				}),
+				update: vi.fn(
+					async ({ data }: { data: { backupData: string; expiresAt: Date | null } }) => {
+						storedBackupPayloads.push(data.backupData);
+						storedExpiryValues.push(data.expiresAt);
+						return {};
+					},
+				),
 			},
 			$transaction: vi.fn(async (work: (database: typeof transactionClient) => Promise<void>) =>
 				work(transactionClient),
@@ -248,7 +253,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		} as never);
 		const backup = {
 			id: "backup-1",
-			retentionExpiresAt: null,
+			retentionExpiresAt,
 			data: {
 				schemaVersion: 2,
 				endpointKey: createDeploymentEndpointKey("user-1", {
@@ -331,6 +336,10 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			qualityProfileApplied: { action: "created", profileId: 9, profileName: "Any" },
 		});
 		expect(storedBackupPayloads).toContainEqual(expect.any(String));
+		expect(storedExpiryValues.length).toBeGreaterThan(0);
+		expect(
+			storedExpiryValues.every((value) => value?.getTime() === retentionExpiresAt.getTime()),
+		).toBe(true);
 		expect(
 			storedBackupPayloads.some((payload) => {
 				const state = JSON.parse(payload).qualityProfileDeployment;

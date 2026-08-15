@@ -32,7 +32,6 @@ import {
 	transformFieldsToArray,
 } from "./cf-field-utils.js";
 import { checkMutualExclusions } from "./conflict-checker.js";
-import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
 import type { CustomFormatRollbackState } from "./deployment-custom-format-state.js";
 import {
 	finalizeDeploymentHistory,
@@ -2014,7 +2013,7 @@ export class DeploymentExecutorService {
 					where: { id: backup.id },
 					data: {
 						backupData,
-						expiresAt: shouldRetainDeploymentBackup(backupData) ? null : backup.retentionExpiresAt,
+						expiresAt: backup.retentionExpiresAt,
 					},
 				});
 			};
@@ -2127,9 +2126,7 @@ export class DeploymentExecutorService {
 					where: { id: backup.id },
 					data: {
 						backupData: capturedBackupData,
-						expiresAt: shouldRetainDeploymentBackup(capturedBackupData)
-							? null
-							: backup.retentionExpiresAt,
+						expiresAt: backup.retentionExpiresAt,
 					},
 				});
 				await backupUpdate;

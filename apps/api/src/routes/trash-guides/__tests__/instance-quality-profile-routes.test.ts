@@ -859,20 +859,7 @@ describe("instance quality profile score persistence", () => {
 		});
 	});
 
-	it.each([
-		{
-			label: "stale SET",
-			intentOperation: "SET_SCORE",
-			connectionGeneration: 1,
-			connectionStateToken: "stale-token",
-		},
-		{
-			label: "legacy RESET",
-			intentOperation: "RESET_SCORE",
-			connectionGeneration: instance.connectionGeneration,
-			connectionStateToken: createDeploymentConnectionStateToken(instance),
-		},
-	])("reports $label intent as manual-only on single reads", async (intent) => {
+	it("reports a stale SET intent as manual-only on single reads", async () => {
 		findOverrides.mockResolvedValueOnce([
 			{
 				id: "manual-intent",
@@ -881,10 +868,10 @@ describe("instance quality profile score persistence", () => {
 				customFormatId: 7,
 				score: -10_000,
 				status: "UNCERTAIN",
-				intentOperation: intent.intentOperation,
+				intentOperation: "SET_SCORE",
 				intendedScore: -10_000,
-				connectionGeneration: intent.connectionGeneration,
-				connectionStateToken: intent.connectionStateToken,
+				connectionGeneration: 1,
+				connectionStateToken: "stale-token",
 				updatedAt: new Date("2026-08-09T00:00:00Z"),
 			},
 		]);
@@ -900,6 +887,54 @@ describe("instance quality profile score persistence", () => {
 				retryable: false,
 				requiresManualReconciliation: true,
 				retryAction: null,
+			}),
+		]);
+	});
+
+	it("returns an exact retry action for current RESET_SCORE intents", async () => {
+		findOverrides.mockResolvedValueOnce([
+			{
+				id: "reset-7",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 7,
+				score: -10_000,
+				status: "UNCERTAIN",
+				intentOperation: "RESET_SCORE",
+				intendedScore: 0,
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				updatedAt: new Date("2026-08-09T00:00:00Z"),
+			},
+			{
+				id: "reset-8",
+				instanceId: instance.id,
+				qualityProfileId: 4,
+				customFormatId: 8,
+				score: 100,
+				status: "PENDING",
+				intentOperation: "RESET_SCORE",
+				intendedScore: 10,
+				connectionGeneration: instance.connectionGeneration,
+				connectionStateToken: createDeploymentConnectionStateToken(instance),
+				updatedAt: new Date("2026-08-09T00:00:01Z"),
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/instance-1/quality-profiles/4/overrides",
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().recoveryPlans).toEqual([
+			expect.objectContaining({
+				retryable: true,
+				requiresManualReconciliation: false,
+				retryAction: {
+					method: "POST",
+					customFormatIds: [7, 8],
+				},
 			}),
 		]);
 	});

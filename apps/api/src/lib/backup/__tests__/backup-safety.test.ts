@@ -62,7 +62,7 @@ function makePrismaWithCoordinationEvidence(): PrismaClient {
 			id: "snapshot-1",
 			instanceId: "instance-1",
 			userId: "user-1",
-			backupData: "required-rollback-evidence",
+			backupData: JSON.stringify([]),
 			createdAt: new Date("2020-01-01T00:00:00.000Z"),
 			expiresAt: new Date("2020-01-02T00:00:00.000Z"),
 		},
@@ -154,7 +154,7 @@ describe("BackupService coordination safety", () => {
 			expect(payload.data.trashBackups).toEqual([
 				expect.objectContaining({
 					id: "snapshot-1",
-					backupData: "required-rollback-evidence",
+					backupData: JSON.stringify([]),
 				}),
 			]);
 			expect(infoSpy).toHaveBeenCalledWith(

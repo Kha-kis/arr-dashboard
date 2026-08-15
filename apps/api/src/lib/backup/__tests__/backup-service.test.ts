@@ -381,7 +381,7 @@ describe("BackupService - Backup Validation (Unit)", () => {
 							id: "snapshot-1",
 							instanceId: "instance-1",
 							userId: "user-1",
-							backupData: "recovery-evidence",
+							backupData: JSON.stringify([]),
 						},
 					],
 				},

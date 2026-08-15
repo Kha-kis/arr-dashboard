@@ -762,6 +762,30 @@ describe("assertNoActiveDeploymentOwnership", () => {
 		).resolves.toBeUndefined();
 	});
 
+	it.each(["SUCCESS", "FAILED"])(
+		"allows a connection change past a legacy terminal %s sync wrapper",
+		async (status) => {
+			const prisma = {
+				trashSyncHistory: {
+					findMany: vi.fn().mockResolvedValue([
+						{
+							status,
+							backupId: null,
+							backup: null,
+							rolledBack: false,
+							rollbackStatus: null,
+						},
+					]),
+				},
+				templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			};
+
+			await expect(
+				assertNoActiveDeploymentOwnership(prisma as never, "user-1", ["instance-1"]),
+			).resolves.toBeUndefined();
+		},
+	);
+
 	it("blocks connection replacement when an unrolled history lost its backup relation", async () => {
 		const prisma = {
 			trashSyncHistory: {

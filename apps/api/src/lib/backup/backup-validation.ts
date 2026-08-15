@@ -6,7 +6,21 @@
  */
 
 import type { BackupData } from "@arr/shared";
-import { isManuallyResolvedSyncHistory } from "../trash-guides/deployment-recovery-state.js";
+import { ArrClientFactory } from "../arr/client-factory.js";
+import { Encryptor } from "../auth/encryption.js";
+import {
+	parseDeploymentBackupState,
+	shouldRetainDeploymentBackup,
+} from "../trash-guides/deployment-backup-state.js";
+import {
+	isLegacyTerminalSyncHistory,
+	isManuallyResolvedSyncHistory,
+} from "../trash-guides/deployment-recovery-state.js";
+import {
+	createDeploymentConnectionStateToken,
+	isDeploymentBackupEndpointIdentityCurrent,
+	normalizeDeploymentBaseUrl,
+} from "../trash-guides/deployment-target.js";
 import type { EncryptedBackupEnvelope } from "./backup-crypto.js";
 
 export const BACKUP_VERSION = "1.1";
@@ -15,6 +29,17 @@ export const LEGACY_BACKUP_VERSION = "1.0";
 const SUPPORTED_BACKUP_VERSIONS = new Set([LEGACY_BACKUP_VERSION, BACKUP_VERSION]);
 
 type CoordinationRecord = Record<string, unknown>;
+type CoordinationValidationOptions = {
+	credentialIdentityForInstance?: (instance: {
+		id: string;
+		service: string;
+		baseUrl: string;
+		encryptedApiKey: string;
+		encryptionIv: string;
+		encryptedHttpAuthCredentials?: string | null;
+		httpAuthEncryptionIv?: string | null;
+	}) => string;
+};
 
 export type CoordinationState = {
 	backupId?: unknown;
@@ -59,6 +84,9 @@ export function isAuditOnlyUncertainDeployment(record: CoordinationState): boole
 
 export function isNonterminalRollback(record: CoordinationState): boolean {
 	if (isManuallyResolvedSyncHistory(record)) {
+		return false;
+	}
+	if (isLegacyTerminalSyncHistory(record)) {
 		return false;
 	}
 	if (isAuditOnlyUncertainSync(record)) {
@@ -173,11 +201,103 @@ function recordsById(value: unknown, label: string): Map<string, CoordinationRec
 	return records;
 }
 
+function validateDeploymentLedgerBinding(
+	snapshot: CoordinationRecord,
+	instance: CoordinationRecord,
+	rowId: string,
+	kind: "rollback" | "undeploy",
+	options: CoordinationValidationOptions,
+): void {
+	let ledger: ReturnType<typeof parseDeploymentBackupState>;
+	try {
+		ledger = parseDeploymentBackupState(snapshot.backupData as string);
+	} catch {
+		// Positively identified pre-ledger snapshots remain restorable. Unknown,
+		// malformed, and malformed schema-v2 payloads still fail closed.
+		if (!shouldRetainDeploymentBackup(snapshot.backupData as string)) return;
+		throw new Error(
+			`Invalid ${kind} coordination evidence for row ${rowId}: referenced snapshot ${snapshot.id} has an invalid deployment ledger`,
+		);
+	}
+
+	if (
+		typeof instance.userId !== "string" ||
+		typeof instance.service !== "string" ||
+		typeof instance.baseUrl !== "string" ||
+		typeof instance.encryptedApiKey !== "string" ||
+		typeof instance.encryptionIv !== "string" ||
+		(instance.encryptedHttpAuthCredentials !== null &&
+			instance.encryptedHttpAuthCredentials !== undefined &&
+			typeof instance.encryptedHttpAuthCredentials !== "string") ||
+		(instance.httpAuthEncryptionIv !== null &&
+			instance.httpAuthEncryptionIv !== undefined &&
+			typeof instance.httpAuthEncryptionIv !== "string") ||
+		(instance.connectionGeneration !== undefined &&
+			(typeof instance.connectionGeneration !== "number" ||
+				!Number.isSafeInteger(instance.connectionGeneration) ||
+				instance.connectionGeneration < 0))
+	) {
+		throw new Error(
+			`Invalid ${kind} coordination evidence for row ${rowId}: service instance ${snapshot.instanceId} cannot verify its deployment ledger binding`,
+		);
+	}
+
+	const connectionInstance = {
+		id: snapshot.instanceId as string,
+		service: instance.service,
+		baseUrl: instance.baseUrl,
+		encryptedApiKey: instance.encryptedApiKey,
+		encryptionIv: instance.encryptionIv,
+		encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials as
+			| string
+			| null
+			| undefined,
+		httpAuthEncryptionIv: instance.httpAuthEncryptionIv as string | null | undefined,
+		connectionGeneration: instance.connectionGeneration as number | undefined,
+	};
+	const currentPrefix = `${instance.userId}:${instance.service.toUpperCase()}:${normalizeDeploymentBaseUrl(instance.baseUrl)}:`;
+	const legacyPrefix = `${instance.userId}:${instance.service.toUpperCase()}:`;
+	const embeddedCredentialIdentity = ledger.endpointKey.startsWith(currentPrefix)
+		? ledger.endpointKey.slice(currentPrefix.length)
+		: ledger.endpointKey.startsWith(legacyPrefix)
+			? ledger.endpointKey.slice(legacyPrefix.length)
+			: "";
+	let credentialIdentity = embeddedCredentialIdentity;
+	if (options.credentialIdentityForInstance) {
+		try {
+			credentialIdentity = options.credentialIdentityForInstance(connectionInstance);
+		} catch {
+			throw new Error(
+				`Invalid ${kind} coordination evidence for row ${rowId}: service instance ${snapshot.instanceId} cannot decrypt its deployment credentials`,
+			);
+		}
+	}
+	if (
+		embeddedCredentialIdentity.length === 0 ||
+		credentialIdentity.length === 0 ||
+		ledger.connectionStateToken !== createDeploymentConnectionStateToken(connectionInstance) ||
+		!isDeploymentBackupEndpointIdentityCurrent({
+			userId: instance.userId,
+			backupEndpointKey: ledger.endpointKey,
+			backupConnectionStateToken: ledger.connectionStateToken,
+			instance: connectionInstance,
+			credentialIdentity,
+		})
+	) {
+		throw new Error(
+			`Invalid ${kind} coordination evidence for row ${rowId}: referenced snapshot ${snapshot.id} belongs to a different ARR connection`,
+		);
+	}
+}
+
 /**
  * Verify that rollback/undeploy work can still be resumed after restore.
  * This runs before secrets or database state are changed.
  */
-export function validateCoordinationEvidence(data: Record<string, unknown>): void {
+export function validateCoordinationEvidence(
+	data: Record<string, unknown>,
+	options: CoordinationValidationOptions = {},
+): void {
 	const instancesById = recordsById(data.serviceInstances, "service instance");
 	const templatesById = recordsById(data.trashTemplates, "template");
 	const snapshots = Array.isArray(data.trashBackups) ? data.trashBackups : [];
@@ -305,6 +425,7 @@ export function validateCoordinationEvidence(data: Record<string, unknown>): voi
 				`Invalid ${kind} coordination evidence for row ${rowId}: referenced snapshot ${row.backupId} is incomplete or belongs to a different instance or owner`,
 			);
 		}
+		validateDeploymentLedgerBinding(snapshot, instance, rowId, kind, options);
 	}
 }
 
@@ -472,15 +593,22 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 		}
 	}
 
-	if (b.version === BACKUP_VERSION) {
-		validateCoordinationEvidence(dataRecord);
-	}
-
 	// Validate required secret fields
 	if (
 		typeof b.secrets.encryptionKey !== "string" ||
 		typeof b.secrets.sessionCookieSecret !== "string"
 	) {
 		throw new Error("Invalid backup format: missing or invalid secrets");
+	}
+
+	if (b.version === BACKUP_VERSION) {
+		const encryptionKey = b.secrets.encryptionKey;
+		let credentialFactory: ArrClientFactory | undefined;
+		validateCoordinationEvidence(dataRecord, {
+			credentialIdentityForInstance: (instance) => {
+				credentialFactory ??= new ArrClientFactory(new Encryptor(encryptionKey));
+				return credentialFactory.createConnectionCredentialIdentity(instance as never);
+			},
+		});
 	}
 }

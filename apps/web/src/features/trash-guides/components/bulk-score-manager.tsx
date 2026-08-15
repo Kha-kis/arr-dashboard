@@ -174,7 +174,8 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 
 	// Bulk update scores hook
 	const bulkUpdateScores = useBulkUpdateScores();
-	const isScoreSavePending = bulkUpdateScores.isPending || pendingScoreEditKeys.size > 0;
+	const isScoreSavePending =
+		bulkUpdateScores.isPending || bulkDeleteOverrides.isPending || pendingScoreEditKeys.size > 0;
 
 	// Track quality profile IDs and their overrides
 	const [qualityProfileIds, setQualityProfileIds] = useState<number[]>([]);
@@ -422,18 +423,26 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 		if (!instanceId || !plan.retryAction || retryingProfileId !== null) return;
 		setRetryingProfileId(plan.qualityProfileId);
 		try {
-			await bulkUpdateScores.mutateAsync([
-				{
-					entryKey: `${instanceId}-${plan.qualityProfileId}`,
-					profileId: plan.qualityProfileId,
+			if (plan.retryAction.method === "PATCH") {
+				await bulkUpdateScores.mutateAsync([
+					{
+						entryKey: `${instanceId}-${plan.qualityProfileId}`,
+						profileId: plan.qualityProfileId,
+						instanceId,
+						changes: plan.retryAction.scoreUpdates.map((update) => ({
+							cfTrashId: `cf-${update.customFormatId}`,
+							score: update.score,
+						})),
+						recoveryToken: plan.retryAction.recoveryToken,
+					},
+				]);
+			} else {
+				await bulkDeleteOverrides.mutateAsync({
 					instanceId,
-					changes: plan.retryAction.scoreUpdates.map((update) => ({
-						cfTrashId: `cf-${update.customFormatId}`,
-						score: update.score,
-					})),
-					recoveryToken: plan.retryAction.recoveryToken,
-				},
-			]);
+					qualityProfileId: plan.qualityProfileId,
+					payload: { customFormatIds: plan.retryAction.customFormatIds },
+				});
+			}
 			await fetchOverridesForProfiles(qualityProfileIds);
 			onOperationComplete?.();
 		} catch (error) {
@@ -743,7 +752,8 @@ export function BulkScoreManager({ userId: _userId, onOperationComplete }: BulkS
 												{retryingProfileId === plan.qualityProfileId && (
 													<Loader2 className="h-4 w-4 animate-spin" />
 												)}
-												Retry score update for {profileName}
+												Retry score {plan.retryAction.method === "POST" ? "reset" : "update"} for{" "}
+												{profileName}
 											</button>
 										) : (
 											<p className="text-sm font-medium text-warning">

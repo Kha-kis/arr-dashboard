@@ -105,7 +105,7 @@ describe("parseDeploymentBackupState", () => {
 });
 
 describe("shouldRetainDeploymentBackup", () => {
-	it("retains a relationless applied v2 deployment ledger", () => {
+	it("allows an applied v2 deployment ledger to expire after ownership is terminal", () => {
 		const backup = validBackup();
 		backup.customFormatDeployments = [
 			{
@@ -115,6 +115,23 @@ describe("shouldRetainDeploymentBackup", () => {
 				name: "Foo",
 				status: "applied",
 				postStateToken: "post-token",
+			},
+		] as never;
+
+		expect(shouldRetainDeploymentBackup(JSON.stringify(backup))).toBe(false);
+	});
+
+	it("retains a v2 deployment ledger with a pending mutation", () => {
+		const backup = validBackup();
+		backup.customFormatDeployments = [
+			{
+				beforeFormat: null,
+				action: "created",
+				resourceId: 7,
+				name: "Pending",
+				status: "pending",
+				postStateToken: null,
+				intendedPostStateToken: "intended-token",
 			},
 		] as never;
 

@@ -61,11 +61,10 @@ function makeMockPrisma(rows: Partial<Record<TableName, unknown[]>> = {}): {
 }
 
 describe("exportDatabase — operational history exclusion", () => {
-	it.each([
-		{
-			kind: "sync",
-			table: "trashSyncHistory" as const,
-			row: {
+	it("omits an exact legacy terminal sync wrapper without requiring a snapshot", async () => {
+		const { prisma, mock } = makeMockPrisma();
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce([
+			{
 				id: "snapshotless-sync-owner",
 				instanceId: "instance-1",
 				templateId: "template-1",
@@ -75,27 +74,29 @@ describe("exportDatabase — operational history exclusion", () => {
 				rollbackStatus: null,
 				backupId: null,
 			},
-		},
-		{
-			kind: "deployment",
-			table: "templateDeploymentHistory" as const,
-			row: {
-				id: "snapshotless-deployment-owner",
-				instanceId: "instance-1",
-				templateId: "template-1",
-				userId: "user-1",
-				status: "SUCCESS",
-				rolledBack: false,
-				undeployStatus: null,
-				backupId: null,
-			},
-		},
-	])("fails backup creation for a snapshotless active $kind owner", async ({ table, row }) => {
+		]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([]);
+
+		const result = await exportDatabase(prisma, { excludeOperationalHistory: true });
+
+		expect(result.trashSyncHistory).toEqual([]);
+		expect(mock.trashBackup.findMany).not.toHaveBeenCalled();
+	});
+
+	it("fails backup creation for a snapshotless active deployment owner", async () => {
+		const row = {
+			id: "snapshotless-deployment-owner",
+			instanceId: "instance-1",
+			templateId: "template-1",
+			userId: "user-1",
+			status: "SUCCESS",
+			rolledBack: false,
+			undeployStatus: null,
+			backupId: null,
+		};
 		const { prisma, mock } = makeMockPrisma();
-		mock.trashSyncHistory.findMany.mockResolvedValueOnce(table === "trashSyncHistory" ? [row] : []);
-		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce(
-			table === "templateDeploymentHistory" ? [row] : [],
-		);
+		mock.trashSyncHistory.findMany.mockResolvedValueOnce([]);
+		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([row]);
 
 		await expect(exportDatabase(prisma, { excludeOperationalHistory: true })).rejects.toThrow(
 			row.id,
@@ -132,7 +133,7 @@ describe("exportDatabase — operational history exclusion", () => {
 				id: "snapshot-deployment-owner",
 				instanceId: "instance-1",
 				userId: "user-1",
-				backupData: "deployment-owner-evidence",
+				backupData: JSON.stringify([]),
 			},
 		];
 		mock.trashSyncHistory.findMany.mockResolvedValueOnce([]);
@@ -187,7 +188,7 @@ describe("exportDatabase — operational history exclusion", () => {
 			id: "snapshot-sync-owner",
 			instanceId: "instance-1",
 			userId: "user-1",
-			backupData: "sync-owner-evidence",
+			backupData: JSON.stringify([]),
 		};
 		mock.trashSyncHistory.findMany.mockResolvedValueOnce([syncOwner, terminalSyncAudit]);
 		mock.templateDeploymentHistory.findMany.mockResolvedValueOnce([]);
@@ -238,13 +239,13 @@ describe("exportDatabase — operational history exclusion", () => {
 				id: "snapshot-rollback",
 				instanceId: "instance-1",
 				userId: "user-1",
-				backupData: "rollback-evidence",
+				backupData: JSON.stringify([]),
 			},
 			{
 				id: "snapshot-undeploy",
 				instanceId: "instance-1",
 				userId: "user-1",
-				backupData: "undeploy-evidence",
+				backupData: JSON.stringify([]),
 			},
 		];
 		mock.trashSyncHistory.findMany.mockResolvedValueOnce([rollback]);
@@ -312,13 +313,13 @@ describe("exportDatabase — operational history exclusion", () => {
 				id: "snapshot-sync",
 				instanceId: "instance-1",
 				userId: "user-1",
-				backupData: "sync-evidence",
+				backupData: JSON.stringify([]),
 			},
 			{
 				id: "snapshot-deployment",
 				instanceId: "instance-1",
 				userId: "user-1",
-				backupData: "deployment-evidence",
+				backupData: JSON.stringify([]),
 			},
 		];
 		mock.trashSyncHistory.findMany.mockResolvedValueOnce([runningSync]);
@@ -421,7 +422,7 @@ describe("exportDatabase — operational history exclusion", () => {
 				id: "snapshot-1",
 				instanceId: "instance-1",
 				userId: "user-1",
-				backupData: "evidence",
+				backupData: JSON.stringify([]),
 			},
 		]);
 
@@ -733,7 +734,7 @@ describe("restoreDatabase — current coordination preservation", () => {
 		expect(firstDelete).not.toHaveBeenCalled();
 	});
 
-	it("rejects a current snapshotless successful sync owner before restore deletion", async () => {
+	it("does not preserve an exact legacy terminal sync wrapper during restore", async () => {
 		const { prisma, firstDelete } = makeRestorePrisma({
 			currentSync: [
 				{
@@ -749,10 +750,10 @@ describe("restoreDatabase — current coordination preservation", () => {
 			],
 		});
 
-		await expect(restoreDatabase(prisma, incomingData())).rejects.toThrow(
-			"snapshotless-successful-sync",
-		);
-		expect(firstDelete).not.toHaveBeenCalled();
+		// This intentionally reaches the simplified test transaction's first
+		// delete and then may stop on a model the fixture does not implement.
+		await restoreDatabase(prisma, incomingData()).catch(() => undefined);
+		expect(firstDelete).toHaveBeenCalled();
 	});
 
 	it("rejects a restore that omits a current snapshotless restart audit", async () => {

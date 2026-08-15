@@ -111,11 +111,17 @@ export type ScoreRecoveryPlan = {
 	}>;
 	retryable: boolean;
 	requiresManualReconciliation: boolean;
-	retryAction: {
-		method: "PATCH";
-		recoveryToken: string;
-		scoreUpdates: ScoreUpdate[];
-	} | null;
+	retryAction:
+		| {
+				method: "PATCH";
+				recoveryToken: string;
+				scoreUpdates: ScoreUpdate[];
+		  }
+		| {
+				method: "POST";
+				customFormatIds: number[];
+		  }
+		| null;
 };
 
 export type GetOverridesResponse = {

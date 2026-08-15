@@ -5,7 +5,10 @@ import {
 	hasPendingDeploymentMutation,
 	parseDeploymentBackupState,
 } from "./deployment-backup-state.js";
-import { isManuallyResolvedSyncHistory } from "./deployment-recovery-state.js";
+import {
+	isLegacyTerminalSyncHistory,
+	isManuallyResolvedSyncHistory,
+} from "./deployment-recovery-state.js";
 import type { DeploymentConnectionBinding } from "./deployment-target.js";
 
 export type ScoreIntentOperation = "SET_SCORE" | "RESET_SCORE";
@@ -225,7 +228,9 @@ export async function assertNoActiveDeploymentOwnership(
 		}),
 	]);
 	const seen = new Set<string>();
-	const activeSyncRows = syncRows.filter((row) => !isManuallyResolvedSyncHistory(row));
+	const activeSyncRows = syncRows.filter(
+		(row) => !isManuallyResolvedSyncHistory(row) && !isLegacyTerminalSyncHistory(row),
+	);
 	for (const row of [...activeSyncRows, ...deploymentRows]) {
 		if (!row.backup) {
 			throw new ConflictError(
