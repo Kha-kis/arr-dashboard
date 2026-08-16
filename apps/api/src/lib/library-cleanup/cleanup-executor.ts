@@ -6658,7 +6658,7 @@ function providerEvidenceDependenciesForRules(rules: LibraryCleanupRule[]): Prov
 	) {
 		dependencies.add("plex");
 	}
-	if (activeTypes.has("plex_episode_completion")) {
+	if (activeTypes.has("plex_episode_completion") || rules.some(isSupportedEpisodeCleanupRule)) {
 		dependencies.add("plex");
 		dependencies.add("plex_episode");
 	}
@@ -6677,32 +6677,56 @@ async function evaluateCleanupPreviewWithProviderEvidence(
 	userId: string,
 	config: LibraryCleanupConfig & { rules: LibraryCleanupRule[] },
 ) {
-	// Provider publication uses the same durable run claim as cleanup. Holding
-	// it across evaluation and evidence capture binds the response to one cache
-	// generation without turning the preview into an upstream mutation.
-	const lease = await startCleanupRunLease(deps, userId, config.id);
-	try {
-		const evaluation = await evaluateAllItems(deps, config, config.rules);
-		const { providerEvidence, warning: providerEvidenceWarning } =
-			await capturePreviewProviderEvidence(deps, userId, config.rules);
-		return { ...evaluation, providerEvidence, providerEvidenceWarning };
-	} finally {
-		await lease.release();
+	const dependencies = providerEvidenceDependenciesForRules(config.rules);
+	if (dependencies.length === 0) {
+		return {
+			...(await evaluateAllItems(deps, config, config.rules)),
+			providerEvidence: createSanitizedProviderEvidence([], []),
+			providerEvidenceWarning: undefined,
+		};
 	}
+
+	let accepted = await capturePreviewProviderEvidence(deps, userId, dependencies);
+	if (!accepted.providerEvidence) {
+		return withUnavailablePreviewProviderEvidence(
+			await evaluateAllItems(deps, config, config.rules),
+			accepted.warning,
+		);
+	}
+
+	for (let attempt = 0; attempt < 2; attempt++) {
+		const acceptedEvidence = accepted.providerEvidence;
+		if (!acceptedEvidence) throw new Error("Provider evidence retry lost its accepted snapshot");
+		const evaluation = await evaluateAllItems(deps, config, config.rules);
+		const current = await capturePreviewProviderEvidence(deps, userId, dependencies);
+		if (
+			current.providerEvidence &&
+			current.providerEvidence.fingerprint === acceptedEvidence.fingerprint
+		) {
+			return {
+				...evaluation,
+				providerEvidence: acceptedEvidence,
+				providerEvidenceWarning: undefined,
+			};
+		}
+		if (attempt === 0 && current.providerEvidence) {
+			accepted = current;
+			continue;
+		}
+		return withUnavailablePreviewProviderEvidence(evaluation, current.warning);
+	}
+
+	throw new Error("Unreachable provider evidence preview attempt");
 }
 
 async function capturePreviewProviderEvidence(
 	deps: CleanupExecutorDeps,
 	userId: string,
-	rules: LibraryCleanupRule[],
+	dependencies: ProviderCacheType[],
 ): Promise<{ providerEvidence?: SanitizedProviderEvidence; warning?: string }> {
 	try {
 		return {
-			providerEvidence: await captureCurrentProviderEvidenceAuthority(
-				deps,
-				userId,
-				providerEvidenceDependenciesForRules(rules),
-			),
+			providerEvidence: await captureCurrentProviderEvidenceAuthority(deps, userId, dependencies),
 		};
 	} catch (error) {
 		deps.log.warn({ err: error }, "Library cleanup preview provider evidence was unavailable");
@@ -6711,6 +6735,20 @@ async function capturePreviewProviderEvidence(
 				"Cleanup provider evidence was unavailable. Provider-backed decisions were not attributed to a durable cache generation.",
 		};
 	}
+}
+
+function withUnavailablePreviewProviderEvidence(
+	evaluation: Awaited<ReturnType<typeof evaluateAllItems>>,
+	warning?: string,
+) {
+	return {
+		...evaluation,
+		flagged: [],
+		providerEvidence: undefined,
+		providerEvidenceWarning:
+			warning ??
+			"Cleanup provider evidence changed while this preview was evaluated. Cleanup selection was withheld; run the preview again.",
+	};
 }
 
 function buildApprovalDedupSkipReason(

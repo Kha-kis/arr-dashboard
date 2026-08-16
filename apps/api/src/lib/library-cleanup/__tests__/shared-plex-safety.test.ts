@@ -82,6 +82,22 @@ function plexProviderEvidence(completedAt = "2026-08-15T04:00:00.000Z") {
 	);
 }
 
+function plexEpisodeProviderEvidence() {
+	const { fingerprint: _fingerprint, ...plexSource } = plexProviderEvidence().sources[0]!;
+	return createSanitizedProviderEvidence(
+		["plex", "plex_episode"],
+		[
+			plexSource,
+			{
+				...plexSource,
+				cacheType: "plex_episode",
+				statusFingerprint: "e".repeat(64),
+				rowFingerprint: "f".repeat(64),
+			},
+		],
+	);
+}
+
 function radarrSafetySnapshot(
 	file: {
 		movieFileId: number;
@@ -1367,7 +1383,7 @@ describe("shared Plex deletion safety", () => {
 		).toBeNull();
 	});
 
-	it("holds the provider publication lease across a configured dry run", async () => {
+	it("does not mutate the durable run lease for a configured dry run", async () => {
 		const { deps } = makeDeps();
 		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
 			dryRunConfig() as never,
@@ -1381,17 +1397,7 @@ describe("shared Plex deletion safety", () => {
 			itemsEvaluated: 0,
 			itemsRemoved: 0,
 		});
-		expect(deps.prisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
-		expect(deps.prisma.libraryCleanupConfig.updateMany).toHaveBeenNthCalledWith(
-			1,
-			expect.objectContaining({
-				data: { runClaimToken: expect.any(String), runClaimedAt: expect.any(Date) },
-			}),
-		);
-		expect(deps.prisma.libraryCleanupConfig.updateMany).toHaveBeenNthCalledWith(
-			2,
-			expect.objectContaining({ data: { runClaimToken: null, runClaimedAt: null } }),
-		);
+		expect(deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
 		expect(deps.prisma.libraryCleanupLog.create).not.toHaveBeenCalled();
 	});
 
@@ -1421,18 +1427,71 @@ describe("shared Plex deletion safety", () => {
 					? await executeCleanupPreview(fixture.deps, "user-1")
 					: await executeCleanupRun(fixture.deps, "user-1");
 
-			expect(capture).toHaveBeenCalledWith("user-1", ["plex"]);
+			expect(capture).toHaveBeenCalledTimes(2);
+			expect(capture).toHaveBeenNthCalledWith(1, "user-1", ["plex"]);
+			expect(capture).toHaveBeenNthCalledWith(2, "user-1", ["plex"]);
 			expect(result.providerEvidence).toEqual(evidence);
-			const leaseWrites = vi.mocked(fixture.deps.prisma.libraryCleanupConfig.updateMany);
-			expect(leaseWrites).toHaveBeenCalledTimes(2);
-			expect(leaseWrites.mock.invocationCallOrder[0]).toBeLessThan(
-				capture.mock.invocationCallOrder[0]!,
-			);
-			expect(capture.mock.invocationCallOrder[0]).toBeLessThan(
-				leaseWrites.mock.invocationCallOrder[1]!,
-			);
+			expect(fixture.deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
 		},
 	);
+
+	it("re-evaluates a preview when provider publication changes during its read", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const config = plexPolicyCleanupConfig({
+			ruleType: "plex_watch_count",
+			parameters: { operator: "less_than", count: 1 },
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...config,
+			dryRunMode: false,
+			requireApproval: false,
+		} as never);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([
+			matchingDryRunCacheItem(),
+		] as never);
+		configurePublishedPlexEvidence(fixture, { itemCount: 1, rowCount: 1 });
+		const firstEvidence = plexProviderEvidence("2026-08-15T04:00:00.000Z");
+		const publishedEvidence = plexProviderEvidence("2026-08-15T05:00:00.000Z");
+		const capture = vi
+			.fn()
+			.mockResolvedValueOnce(firstEvidence)
+			.mockResolvedValue(publishedEvidence);
+		Object.assign(fixture.deps, { providerEvidenceCapturer: capture });
+
+		const result = await executeCleanupPreview(fixture.deps, "user-1");
+
+		expect(capture).toHaveBeenCalledTimes(3);
+		expect(fixture.deps.prisma.libraryCache.findMany).toHaveBeenCalledTimes(2);
+		expect(result.providerEvidence).toEqual(publishedEvidence);
+		expect(fixture.deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
+	});
+
+	it("includes Plex episode rows for supported episode watch rules", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const config = dryRunConfig();
+		config.dryRunMode = false;
+		config.rules = [
+			{
+				...config.rules[0]!,
+				targetScope: "episode",
+				ruleType: "plex_watch_count",
+				parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+				action: "unmonitor",
+			} as (typeof config.rules)[number],
+		];
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
+			config as never,
+		);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([] as never);
+		const evidence = plexEpisodeProviderEvidence();
+		const capture = vi.fn().mockResolvedValue(evidence);
+		Object.assign(fixture.deps, { providerEvidenceCapturer: capture });
+
+		await executeCleanupPreview(fixture.deps, "user-1");
+
+		expect(capture).toHaveBeenCalledTimes(2);
+		expect(capture).toHaveBeenCalledWith("user-1", ["plex", "plex_episode"]);
+	});
 
 	it("retains provider authority when only a durable retry is selected", async () => {
 		const fixture = makeDeps({ mediaPartCount: 1 });
@@ -1467,6 +1526,7 @@ describe("shared Plex deletion safety", () => {
 			previewSelection: { selectedFresh: 0, selectedRetries: 1 },
 			providerEvidence: evidence,
 		});
+		expect(capture).toHaveBeenCalledTimes(2);
 		expect(capture).toHaveBeenCalledWith("user-1", ["plex"]);
 	});
 
@@ -2203,7 +2263,7 @@ describe("shared Plex deletion safety", () => {
 			}),
 		);
 		expect(targetClient.movie.getById).not.toHaveBeenCalled();
-		expect(deps.prisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
+		expect(deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
 	});
 
 	it("uses the same frozen direct selection for preview, configured dry run, and live execution", async () => {
@@ -2642,7 +2702,7 @@ describe("shared Plex deletion safety", () => {
 			],
 		});
 		expect(targetClient.movie.getById).not.toHaveBeenCalled();
-		expect(deps.prisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
+		expect(deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
 	});
 
 	it("blocks when another Radarr instance may mount the same storage under a different path", async () => {
@@ -3218,7 +3278,7 @@ describe("shared Plex deletion safety", () => {
 		expect(capture).toHaveBeenCalledWith("user-1", ["plex"]);
 	});
 
-	it("keeps ARR-only matches when Jellyfin or Emby authority is unavailable", async () => {
+	it("withholds selection when Jellyfin or Emby authority is unavailable", async () => {
 		const fixture = makeDeps();
 		const config = dryRunConfig();
 		config.rules.push({
@@ -3243,7 +3303,7 @@ describe("shared Plex deletion safety", () => {
 		expect(result).toMatchObject({
 			status: "partial",
 			itemsEvaluated: 1,
-			itemsFlagged: 1,
+			itemsFlagged: 0,
 		});
 		expect(result.warnings).toContainEqual(
 			expect.stringContaining("provider evidence was unavailable"),
