@@ -4,7 +4,7 @@
  * Internal types for the cleanup rule evaluation pipeline.
  */
 
-import type { CleanupProviderEvidence } from "@arr/shared";
+import type { CleanupProviderEvidence, DataSourceDependency } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
@@ -184,6 +184,8 @@ export type PlexEpisodeMap = Map<number, PlexEpisodeStats>;
  */
 export interface EvalContext {
 	now: Date;
+	/** Successful complete external snapshots, including valid empty snapshots. */
+	availableDataSources?: ReadonlySet<Exclude<DataSourceDependency, null>>;
 	seerrMap?: SeerrRequestMap;
 	plexMap?: PlexWatchMap;
 	/** Complete, current Plex movie/show section-title inventory across enabled instances. */

@@ -223,8 +223,9 @@ function validateExpressionParameters(expression: RuleDocument): string | null {
 	if (boundsError) return boundsError;
 	const emptyGroupError = getCleanupExpressionEmptyGroupError(expression.root);
 	if (emptyGroupError) return emptyGroupError;
-	if (cleanupExpressionContainsNot(expression.root)) {
-		return "NOT cleanup expressions are not supported until preview and execution can prove false evidence consistently";
+	const unsupportedNegatedKind = getUnsupportedNegatedCleanupKind(expression.root);
+	if (unsupportedNegatedKind) {
+		return `NOT cleanup expressions cannot use "${unsupportedNegatedKind}" until a fresh complete list snapshot is available at execution`;
 	}
 	for (const predicate of walkPredicates(expression.root)) {
 		if (!isKindLegalForContext("library-cleanup", predicate.kind)) {
@@ -239,11 +240,22 @@ function validateExpressionParameters(expression: RuleDocument): string | null {
 	return null;
 }
 
-function cleanupExpressionContainsNot(node: RuleDocument["root"]): boolean {
-	if ("kind" in node) return false;
-	if ("not" in node) return true;
+function getUnsupportedNegatedCleanupKind(
+	node: RuleDocument["root"],
+	insideNot = false,
+): "tmdb_list_member" | "trakt_list_member" | null {
+	if ("kind" in node) {
+		return insideNot && (node.kind === "tmdb_list_member" || node.kind === "trakt_list_member")
+			? node.kind
+			: null;
+	}
+	if ("not" in node) return getUnsupportedNegatedCleanupKind(node.not, true);
 	const children = "all" in node ? node.all : node.any;
-	return children.some(cleanupExpressionContainsNot);
+	for (const child of children) {
+		const unsupportedKind = getUnsupportedNegatedCleanupKind(child, insideNot);
+		if (unsupportedKind) return unsupportedKind;
+	}
+	return null;
 }
 
 function assertStoredCleanupRulesSerializable(rules: readonly Record<string, unknown>[]): void {

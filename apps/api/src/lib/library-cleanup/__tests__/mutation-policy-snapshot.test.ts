@@ -503,6 +503,191 @@ describe("mutation policy evidence authority", () => {
 		).toMatchObject({ kind: "cleanup", match: { ruleId: "rule-recursive" } });
 	});
 
+	it("uses the same proven NOT expression for preview and mutation authorization", () => {
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive-not",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: { not: { kind: "year_range", params: { operator: "after", year: 2030 } } },
+				}),
+			},
+		);
+		const item = mutationEvidenceItem({ _arrDashboardEvidence: {} });
+		const context = { now: new Date() };
+
+		expect(evaluateRuleViaEngine(item as never, rule as never, "RADARR", context)).toMatchObject({
+			ruleId: "rule-recursive-not",
+			reason: "NOT",
+		});
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(item as never, [rule] as never, "RADARR", context),
+		).toMatchObject({ kind: "cleanup", match: { ruleId: "rule-recursive-not" } });
+	});
+
+	it("fails closed when NOT lacks the field needed to prove false", () => {
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive-not-missing",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: { not: { kind: "year_range", params: { operator: "after", year: 2030 } } },
+				}),
+			},
+		);
+		const item = { ...mutationEvidenceItem({ _arrDashboardEvidence: {} }), year: null };
+		const context = { now: new Date() };
+
+		expect(evaluateRuleViaEngine(item as never, rule as never, "RADARR", context)).toBeNull();
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(item as never, [rule] as never, "RADARR", context),
+		).toEqual({ kind: "unknown", ruleId: "rule-recursive-not-missing" });
+	});
+
+	it("keeps partial file evidence unknown in both NOT preview and mutation authorization", () => {
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive-not-partial-file",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: { kind: "custom_format_score", params: { operator: "greater_than", score: 0 } },
+					},
+				}),
+			},
+		);
+		const item = mutationEvidenceItem({
+			movieFile: { customFormatScore: null },
+			_arrDashboardEvidence: { hasFile: true },
+		});
+		const context = { now: new Date() };
+
+		expect(evaluateRuleViaEngine(item as never, rule as never, "RADARR", context)).toBeNull();
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(item as never, [rule] as never, "RADARR", context),
+		).toEqual({ kind: "unknown", ruleId: "rule-recursive-not-partial-file" });
+	});
+
+	it("requires every weighted staleness input before authorizing NOT", () => {
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive-not-staleness",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: {
+							kind: "staleness_score",
+							params: {
+								operator: "greater_than",
+								threshold: 1,
+								weights: {
+									daysSinceLastWatch: 0,
+									inverseWatchCount: 0,
+									notOnDeck: 0,
+									lowUserRating: 0,
+									lowTmdbRating: 0,
+									sizeOnDisk: 1,
+								},
+							},
+						},
+					},
+				}),
+			},
+		);
+		const item = {
+			...mutationEvidenceItem({ _arrDashboardEvidence: { sizeOnDisk: false } }),
+			sizeOnDisk: 0n,
+		};
+		const context = {
+			now: new Date(),
+			plexMap: new Map([
+				[
+					"movie:42",
+					{
+						lastWatchedAt: null,
+						watchCount: 0,
+						watchedByUsers: [],
+						onDeck: false,
+						userRating: null,
+						collections: [],
+						labels: [],
+						addedAt: null,
+						sections: [],
+					},
+				],
+			]),
+		};
+
+		expect(evaluateRuleViaEngine(item as never, rule as never, "RADARR", context)).toBeNull();
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(item as never, [rule] as never, "RADARR", context),
+		).toEqual({ kind: "unknown", ruleId: "rule-recursive-not-staleness" });
+	});
+
+	it("authorizes negative tag logic from a complete empty inventory", () => {
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive-empty-tags",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: {
+							kind: "tag_match",
+							params: { operator: "includes_any", tagIds: [99] },
+						},
+					},
+				}),
+			},
+		);
+		const item = mutationEvidenceItem({ _arrDashboardEvidence: { tags: true } });
+
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(item as never, [rule] as never, "RADARR", {
+				now: new Date(),
+			}),
+		).toMatchObject({ kind: "cleanup", match: { ruleId: "rule-recursive-empty-tags" } });
+	});
+
+	it("authorizes explicit SDR after normalization removes the null field", () => {
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive-sdr",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: { kind: "hdr_type", params: { operator: "none" } },
+				}),
+			},
+		);
+		const item = mutationEvidenceItem({
+			movieFile: { id: 1001 },
+			_arrDashboardEvidence: { hasFile: true, hdrType: true },
+		});
+
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(item as never, [rule] as never, "RADARR", {
+				now: new Date(),
+			}),
+		).toMatchObject({ kind: "cleanup", match: { ruleId: "rule-recursive-sdr" } });
+	});
+
 	it("fails closed when a nested expression depends on a failed provider", () => {
 		const rule = mutationEvidenceRule(
 			"composite",

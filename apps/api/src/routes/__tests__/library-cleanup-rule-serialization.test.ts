@@ -160,7 +160,7 @@ describe("library cleanup rule scope persistence", () => {
 		});
 	});
 
-	it("rejects NOT expressions until false evidence is authoritative", async () => {
+	it("stores NOT expressions once false evidence is evaluated authoritatively", async () => {
 		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/rules", {
 			body: {
 				name: "Unsafe negation",
@@ -173,10 +173,38 @@ describe("library cleanup rule scope persistence", () => {
 			},
 		});
 
-		expect(response.statusCode).toBe(400);
-		expect(response.json().error).toContain("NOT cleanup expressions are not supported");
-		expect(ruleCreate).not.toHaveBeenCalled();
+		expect(response.statusCode).toBe(201);
+		expect(ruleCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					ruleType: "composite",
+					operator: null,
+				}),
+			}),
+		);
 	});
+
+	it.each(["tmdb_list_member", "trakt_list_member"] as const)(
+		"rejects NOT over %s without an execution-time complete list snapshot",
+		async (kind) => {
+			const identifier = kind === "tmdb_list_member" ? { listId: "123" } : { listSlug: "mine" };
+			const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/rules", {
+				body: {
+					name: "Unsafe list negation",
+					ruleType: "composite",
+					parameters: {},
+					expression: {
+						version: 1,
+						root: { not: { kind, params: { operator: "is_in", ...identifier } } },
+					},
+				},
+			});
+
+			expect(response.statusCode).toBe(400);
+			expect(response.json().error).toContain(`NOT cleanup expressions cannot use "${kind}"`);
+			expect(ruleCreate).not.toHaveBeenCalled();
+		},
+	);
 
 	it("serializes canonical rows separately from legacy composite conditions", async () => {
 		const legacyConditions = [
