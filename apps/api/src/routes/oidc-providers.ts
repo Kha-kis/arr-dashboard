@@ -8,7 +8,7 @@ import {
 	updateOidcProviderSchema,
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
-import { buildOidcRedirectUriFromAppUrl } from "../lib/auth/oidc-redirect-uri.js";
+import { buildOidcRedirectUriForRequest } from "../lib/auth/oidc-redirect-uri.js";
 import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.js";
@@ -97,20 +97,30 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				});
 			}
 
-			// Auto-generate redirect URI if not provided
-			// Use APP_URL (configured env var) as the trusted base URL.
-			// Only fall back to request headers when TRUST_PROXY is enabled (headers are validated by Fastify).
+			const systemSettings = await app.prisma.systemSettings.findUnique({
+				where: { id: 1 },
+				select: { externalUrl: true },
+			});
+			const publicAppUrl = systemSettings?.externalUrl ?? app.config.APP_URL;
+
+			// Prefer the persisted External URL, then APP_URL. A loopback fallback
+			// may use the origin stamped by the local Next proxy only when proxy
+			// trust is explicitly enabled.
 			let redirectUri = data.redirectUri;
 			if (!redirectUri) {
-				const generatedRedirectUri = buildOidcRedirectUriFromAppUrl(app.config.APP_URL);
+				const generatedRedirectUri = buildOidcRedirectUriForRequest(
+					publicAppUrl,
+					app.config.TRUST_PROXY,
+					request,
+				);
 				if (!generatedRedirectUri) {
 					return reply.status(400).send({
 						error:
-							"APP_URL must be a credential-free HTTP(S) URL that can generate a valid OIDC redirect URI.",
+							"External URL or APP_URL must be a credential-free HTTP(S) URL that can generate a valid OIDC redirect URI.",
 					});
 				}
 				redirectUri = generatedRedirectUri;
-				request.log.info({ redirectUri }, "Auto-generated redirect URI from APP_URL");
+				request.log.info({ redirectUri }, "Auto-generated OIDC redirect URI");
 			}
 
 			// Check if provider already exists (only one allowed)
