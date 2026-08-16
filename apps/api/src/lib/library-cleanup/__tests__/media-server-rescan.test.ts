@@ -995,17 +995,19 @@ describe("durable media-server rescans", () => {
 	});
 
 	it("renews record-only retry evidence from current cache data under stable provider identity", async () => {
-		const capturedAt = new Date("2026-08-15T00:00:00.000Z");
-		const refreshedAt = new Date("2026-08-15T00:05:00.000Z");
+		const refreshedAt = new Date(Date.now() - 60_000);
+		const capturedAt = new Date(refreshedAt.getTime() - 5 * 60_000);
+		const identityVerifiedAt = new Date(refreshedAt.getTime() - 60 * 60_000);
+		const instanceUpdatedAt = new Date(refreshedAt.getTime() - 30 * 60_000);
 		const plexInstance = {
 			...instance("plex-1", "PLEX"),
 			expectedIdentity: "plex-machine",
 			identityKind: "PLEX_MACHINE_IDENTIFIER",
 			identityStatus: "VERIFIED",
-			identityVerifiedAt: new Date("2026-08-14T23:00:00.000Z"),
+			identityVerifiedAt,
 			connectionGeneration: 3,
 			identityGeneration: 7,
-			updatedAt: new Date("2026-08-14T23:30:00.000Z"),
+			updatedAt: instanceUpdatedAt,
 		};
 		const accepted = createSanitizedProviderEvidence(
 			["plex"],
