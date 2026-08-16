@@ -25,7 +25,11 @@ import { z } from "zod";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { ConflictError, TemplateNotFoundError } from "../errors.js";
 import { loggers } from "../logger.js";
-import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js";
+import {
+	CacheCorruptionError,
+	type TrashCacheManager,
+	type TrashCacheProvenance,
+} from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import {
 	assertEquivalentDeploymentMappingAuthority,
@@ -34,7 +38,11 @@ import {
 	createUpstreamResourceStateToken,
 } from "./deployment-target.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
-import { trashCustomFormatGroupSchema, trashCustomFormatSchema } from "./github-schemas.js";
+import {
+	trashCustomFormatGroupSchema,
+	trashCustomFormatSchema,
+	trashQualityProfileSchema,
+} from "./github-schemas.js";
 
 const log = loggers.trashGuides;
 
@@ -71,6 +79,29 @@ interface AutomationDeploymentOutcome {
 	success: boolean;
 	status: "SUCCESS" | "FAILED" | "UNCERTAIN";
 	errors: string[];
+}
+
+const REQUIRED_SYNC_CACHE_TYPES = ["CUSTOM_FORMATS", "CF_GROUPS", "QUALITY_PROFILES"] as const;
+type RequiredSyncCacheType = (typeof REQUIRED_SYNC_CACHE_TYPES)[number];
+
+interface TrashSyncDataResult {
+	success: boolean;
+	customFormats: TrashCustomFormat[];
+	customFormatGroups: TrashCustomFormatGroup[];
+	qualityProfiles: TrashQualityProfile[];
+	cacheProvenances: Record<RequiredSyncCacheType, TrashCacheProvenance | null>;
+	error?: string;
+}
+
+function sameCacheProvenance(
+	actual: TrashCacheProvenance | null,
+	expected: TrashCacheProvenance,
+): boolean {
+	return (
+		actual?.version === expected.version &&
+		actual.repository === expected.repository &&
+		actual.commitHash === expected.commitHash
+	);
 }
 
 // ============================================================================
@@ -540,6 +571,20 @@ export class TemplateUpdater {
 		const serviceType = template.serviceType as "RADARR" | "SONARR";
 
 		try {
+			let expectedProvenance: TrashCacheProvenance;
+			try {
+				expectedProvenance = this.githubFetcher.getCommitProvenance(targetCommit.commitHash);
+			} catch (provenanceError) {
+				return {
+					success: false,
+					templateId,
+					previousCommit,
+					newCommit: targetCommit.commitHash,
+					errors: [getErrorMessage(provenanceError)],
+					errorType: "sync_failed",
+				};
+			}
+
 			let currentConfig: TemplateConfig = {
 				customFormats: [],
 				customFormatGroups: [],
@@ -551,95 +596,21 @@ export class TemplateUpdater {
 			}
 
 			let fetchResult = await this.fetchLatestTrashData(serviceType);
+			const unverifiedCacheTypes = REQUIRED_SYNC_CACHE_TYPES.filter(
+				(configType) =>
+					!fetchResult.success ||
+					!sameCacheProvenance(fetchResult.cacheProvenances[configType], expectedProvenance),
+			);
+			if (!fetchResult.success || unverifiedCacheTypes.length > 0) {
+				fetchResult = await this.fetchTrashDataAtCommit(serviceType, expectedProvenance);
+			}
 			if (!fetchResult.success) {
 				return {
 					success: false,
 					templateId,
 					previousCommit,
 					newCommit: targetCommit.commitHash,
-					errors: [`Failed to fetch TRaSH data: ${fetchResult.error}`],
-					errorType: "sync_failed",
-				};
-			}
-
-			const requiredCacheTypes: TrashConfigType[] = [
-				"CUSTOM_FORMATS",
-				"CF_GROUPS",
-				"QUALITY_PROFILES",
-			];
-			const readRequiredCacheCommits = async () =>
-				new Map(
-					await Promise.all(
-						requiredCacheTypes.map(
-							async (configType) =>
-								[
-									configType,
-									await this.cacheManager.getCommitHash(serviceType, configType),
-								] as const,
-						),
-					),
-				);
-			let requiredCacheCommits = await readRequiredCacheCommits();
-			if (
-				requiredCacheTypes.some(
-					(configType) => requiredCacheCommits.get(configType) !== targetCommit.commitHash,
-				)
-			) {
-				log.info(
-					{
-						cacheCommits: Object.fromEntries(requiredCacheCommits),
-						targetCommit: targetCommit.commitHash,
-						templateId,
-						serviceType,
-					},
-					"Cache provenance mismatch — auto-refreshing cache",
-				);
-
-				for (const configType of requiredCacheTypes) {
-					try {
-						const data = await this.githubFetcher.fetchConfigs(serviceType, configType);
-						await this.cacheManager.set(serviceType, configType, data, targetCommit.commitHash);
-					} catch (fetchError) {
-						return {
-							success: false,
-							templateId,
-							previousCommit,
-							newCommit: targetCommit.commitHash,
-							errors: [
-								`Failed to refresh ${configType} cache for ${serviceType}: ${getErrorMessage(fetchError)}`,
-							],
-							errorType: "sync_failed" as const,
-						};
-					}
-				}
-
-				fetchResult = await this.fetchLatestTrashData(serviceType);
-				if (!fetchResult.success) {
-					return {
-						success: false,
-						templateId,
-						previousCommit,
-						newCommit: targetCommit.commitHash,
-						errors: [`Failed to fetch TRaSH data after cache refresh: ${fetchResult.error}`],
-						errorType: "sync_failed",
-					};
-				}
-
-				requiredCacheCommits = await readRequiredCacheCommits();
-			}
-
-			const unverifiedCacheTypes = requiredCacheTypes.filter(
-				(configType) => requiredCacheCommits.get(configType) !== targetCommit.commitHash,
-			);
-			if (unverifiedCacheTypes.length > 0) {
-				return {
-					success: false,
-					templateId,
-					previousCommit,
-					newCommit: targetCommit.commitHash,
-					errors: [
-						`TRaSH cache provenance could not be verified for ${unverifiedCacheTypes.join(", ")} at commit ${targetCommit.commitHash}.`,
-					],
+					errors: [`Failed to fetch verified TRaSH data: ${fetchResult.error}`],
 					errorType: "sync_failed",
 				};
 			}
@@ -650,9 +621,7 @@ export class TemplateUpdater {
 
 			const qualityProfileCFIds = new Set<string>();
 			if (options?.includeQualityProfileCFs && template.sourceQualityProfileTrashId) {
-				const qualityProfilesCache = await this.cacheManager.get(serviceType, "QUALITY_PROFILES");
-				const qualityProfilesData = (qualityProfilesCache as TrashQualityProfile[] | null) ?? [];
-				const linkedProfile = qualityProfilesData.find(
+				const linkedProfile = fetchResult.qualityProfiles.find(
 					(p) => p.trash_id === template.sourceQualityProfileTrashId,
 				);
 
@@ -884,50 +853,120 @@ export class TemplateUpdater {
 	 * Fetch latest TRaSH Guides custom formats and groups from cache
 	 * @private
 	 */
-	private async fetchLatestTrashData(serviceType: "RADARR" | "SONARR"): Promise<{
-		success: boolean;
-		customFormats: TrashCustomFormat[];
-		customFormatGroups: TrashCustomFormatGroup[];
-		cacheCommitHash: string | null;
-		error?: string;
-	}> {
+	private async fetchLatestTrashData(
+		serviceType: "RADARR" | "SONARR",
+	): Promise<TrashSyncDataResult> {
 		try {
-			const [cfCache, groupCache, cacheCommitHash] = await Promise.all([
-				this.cacheManager.get<TrashCustomFormat[]>(
+			const [cfSnapshot, groupSnapshot, qualityProfileSnapshot] = await Promise.all([
+				this.cacheManager.getSnapshot<TrashCustomFormat[]>(
 					serviceType,
 					"CUSTOM_FORMATS",
 					z.array(trashCustomFormatSchema),
 				),
-				this.cacheManager.get<TrashCustomFormatGroup[]>(
+				this.cacheManager.getSnapshot<TrashCustomFormatGroup[]>(
 					serviceType,
 					"CF_GROUPS",
 					z.array(trashCustomFormatGroupSchema),
 				),
-				this.cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS"),
+				this.cacheManager.getSnapshot<TrashQualityProfile[]>(
+					serviceType,
+					"QUALITY_PROFILES",
+					z.array(trashQualityProfileSchema),
+				),
 			]);
 
-			if (cfCache == null || groupCache == null) {
+			if (cfSnapshot == null || groupSnapshot == null || qualityProfileSnapshot == null) {
 				return {
 					success: false,
 					customFormats: [],
 					customFormatGroups: [],
-					cacheCommitHash: null,
-					error: "TRaSH cache miss: CUSTOM_FORMATS or CF_GROUPS not ready",
+					qualityProfiles: [],
+					cacheProvenances: {
+						CUSTOM_FORMATS: null,
+						CF_GROUPS: null,
+						QUALITY_PROFILES: null,
+					},
+					error: "TRaSH cache miss: required sync data is not ready",
 				};
 			}
 
 			return {
 				success: true,
-				customFormats: cfCache,
-				customFormatGroups: groupCache,
-				cacheCommitHash,
+				customFormats: cfSnapshot.data,
+				customFormatGroups: groupSnapshot.data,
+				qualityProfiles: qualityProfileSnapshot.data,
+				cacheProvenances: {
+					CUSTOM_FORMATS: cfSnapshot.provenance,
+					CF_GROUPS: groupSnapshot.provenance,
+					QUALITY_PROFILES: qualityProfileSnapshot.provenance,
+				},
 			};
 		} catch (error) {
 			return {
 				success: false,
 				customFormats: [],
 				customFormatGroups: [],
-				cacheCommitHash: null,
+				qualityProfiles: [],
+				cacheProvenances: {
+					CUSTOM_FORMATS: null,
+					CF_GROUPS: null,
+					QUALITY_PROFILES: null,
+				},
+				error: getErrorMessage(error),
+			};
+		}
+	}
+
+	private async fetchTrashDataAtCommit(
+		serviceType: "RADARR" | "SONARR",
+		provenance: TrashCacheProvenance,
+	): Promise<TrashSyncDataResult> {
+		try {
+			const [rawCustomFormats, rawGroups, rawQualityProfiles] = await Promise.all([
+				this.githubFetcher.fetchConfigsAtCommit(
+					serviceType,
+					"CUSTOM_FORMATS",
+					provenance.commitHash,
+				),
+				this.githubFetcher.fetchConfigsAtCommit(serviceType, "CF_GROUPS", provenance.commitHash),
+				this.githubFetcher.fetchConfigsAtCommit(
+					serviceType,
+					"QUALITY_PROFILES",
+					provenance.commitHash,
+				),
+			]);
+			const customFormats = z.array(trashCustomFormatSchema).parse(rawCustomFormats);
+			const customFormatGroups = z.array(trashCustomFormatGroupSchema).parse(rawGroups);
+			const qualityProfiles = z.array(trashQualityProfileSchema).parse(rawQualityProfiles);
+
+			await Promise.all([
+				this.cacheManager.setVerified(serviceType, "CUSTOM_FORMATS", customFormats, provenance),
+				this.cacheManager.setVerified(serviceType, "CF_GROUPS", customFormatGroups, provenance),
+				this.cacheManager.setVerified(serviceType, "QUALITY_PROFILES", qualityProfiles, provenance),
+			]);
+
+			return {
+				success: true,
+				customFormats,
+				customFormatGroups,
+				qualityProfiles,
+				cacheProvenances: {
+					CUSTOM_FORMATS: provenance,
+					CF_GROUPS: provenance,
+					QUALITY_PROFILES: provenance,
+				},
+			};
+		} catch (error) {
+			return {
+				success: false,
+				customFormats: [],
+				customFormatGroups: [],
+				qualityProfiles: [],
+				cacheProvenances: {
+					CUSTOM_FORMATS: null,
+					CF_GROUPS: null,
+					QUALITY_PROFILES: null,
+				},
 				error: getErrorMessage(error),
 			};
 		}
@@ -1415,8 +1454,9 @@ export class TemplateUpdater {
 	): Promise<{ needsUpdate: boolean; error?: string }> {
 		try {
 			const latestCommit = await this.versionTracker.getLatestCommit();
-			const currentCommitHash = await this.cacheManager.getCommitHash(serviceType, configType);
-			const needsUpdate = currentCommitHash !== latestCommit.commitHash;
+			const expectedProvenance = this.githubFetcher.getCommitProvenance(latestCommit.commitHash);
+			const currentProvenance = await this.cacheManager.getProvenance(serviceType, configType);
+			const needsUpdate = !sameCacheProvenance(currentProvenance, expectedProvenance);
 			return { needsUpdate };
 		} catch (error) {
 			return {
@@ -1449,25 +1489,31 @@ export class TemplateUpdater {
 		const errors: string[] = [];
 
 		let latestCommit: VersionInfo;
+		let expectedProvenance: TrashCacheProvenance;
 		try {
 			latestCommit = await this.versionTracker.getLatestCommit();
+			expectedProvenance = this.githubFetcher.getCommitProvenance(latestCommit.commitHash);
 		} catch (error) {
-			const errorMsg = `[TemplateUpdater] Failed to fetch latest commit: ${getErrorMessage(error)}`;
+			const errorMsg = `[TemplateUpdater] Failed to establish commit provenance: ${getErrorMessage(error)}`;
 			errors.push(errorMsg);
 			return { refreshed: 0, failed: configTypes.length, errors };
 		}
 
 		for (const configType of configTypes) {
 			try {
-				const currentCommitHash = await this.cacheManager.getCommitHash(serviceType, configType);
+				const currentProvenance = await this.cacheManager.getProvenance(serviceType, configType);
 
-				if (currentCommitHash === latestCommit.commitHash) {
+				if (sameCacheProvenance(currentProvenance, expectedProvenance)) {
 					await this.cacheManager.touchCache(serviceType, configType);
 					continue;
 				}
 
-				const data = await this.githubFetcher.fetchConfigs(serviceType, configType);
-				await this.cacheManager.set(serviceType, configType, data, latestCommit.commitHash);
+				const data = await this.githubFetcher.fetchConfigsAtCommit(
+					serviceType,
+					configType,
+					latestCommit.commitHash,
+				);
+				await this.cacheManager.setVerified(serviceType, configType, data, expectedProvenance);
 
 				refreshed++;
 			} catch (error) {

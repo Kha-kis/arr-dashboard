@@ -97,6 +97,38 @@ interface CacheStats {
 	newestEntry?: Date;
 }
 
+export interface TrashCacheProvenance {
+	version: 1;
+	repository: string;
+	commitHash: string;
+}
+
+export interface TrashCacheSnapshot<T> {
+	data: T;
+	commitHash: string | null;
+	provenance: TrashCacheProvenance | null;
+}
+
+const VERIFIED_PROVENANCE_PREFIX = "verified:v1:";
+
+function encodeVerifiedProvenance(provenance: TrashCacheProvenance): string {
+	if (!provenance.repository || !/^[0-9a-f]{40}$/i.test(provenance.commitHash)) {
+		throw new Error("Verified TRaSH cache provenance requires a repository and full commit hash");
+	}
+	return `${VERIFIED_PROVENANCE_PREFIX}${encodeURIComponent(provenance.repository)}:${provenance.commitHash.toLowerCase()}`;
+}
+
+function decodeVerifiedProvenance(value: string | null): TrashCacheProvenance | null {
+	if (!value?.startsWith(VERIFIED_PROVENANCE_PREFIX)) return null;
+	const encoded = value.slice(VERIFIED_PROVENANCE_PREFIX.length);
+	const separatorIndex = encoded.lastIndexOf(":");
+	if (separatorIndex <= 0) return null;
+	const repository = decodeURIComponent(encoded.slice(0, separatorIndex));
+	const commitHash = encoded.slice(separatorIndex + 1);
+	if (!repository || !/^[0-9a-f]{40}$/i.test(commitHash)) return null;
+	return { version: 1, repository, commitHash: commitHash.toLowerCase() };
+}
+
 /** Thrown when a cache entry is corrupted and has been automatically cleaned up. */
 export class CacheCorruptionError extends Error {
 	readonly statusCode = 500;
@@ -132,6 +164,18 @@ export class TrashCacheManager {
 		configType: TrashConfigType,
 		schema?: z.ZodType<T>,
 	): Promise<T | null> {
+		const snapshot = await this.getSnapshot(serviceType, configType, schema);
+		return snapshot?.data ?? null;
+	}
+
+	/**
+	 * Get cached data and its source commit from the same database row.
+	 */
+	async getSnapshot<T = unknown>(
+		serviceType: "RADARR" | "SONARR",
+		configType: TrashConfigType,
+		schema?: z.ZodType<T>,
+	): Promise<TrashCacheSnapshot<T> | null> {
 		const cacheEntry = await this.prisma.trashCache.findUnique({
 			where: {
 				serviceType_configType: {
@@ -150,8 +194,13 @@ export class TrashCacheManager {
 
 		// Decompress and return data
 		try {
+			const provenance = decodeVerifiedProvenance(cacheEntry.commitHash);
 			if (this.options.compressionEnabled) {
-				return await decompressData<T>(cacheEntry.data, schema);
+				return {
+					data: await decompressData<T>(cacheEntry.data, schema),
+					commitHash: provenance?.commitHash ?? null,
+					provenance,
+				};
 			}
 
 			const parsed = safeJsonParse<T>(cacheEntry.data, {
@@ -163,7 +212,11 @@ export class TrashCacheManager {
 				await this.delete(serviceType, configType);
 				throw new CacheCorruptionError(serviceType, configType);
 			}
-			return parsed;
+			return {
+				data: parsed,
+				commitHash: provenance?.commitHash ?? null,
+				provenance,
+			};
 		} catch (error) {
 			if (error instanceof CacheCorruptionError) throw error;
 			// Handle decompression or parsing errors
@@ -230,6 +283,16 @@ export class TrashCacheManager {
 				lastCheckedAt: now,
 			},
 		});
+	}
+
+	/** Store cache data with durable, commit-addressed repository provenance. */
+	async setVerified<T = unknown>(
+		serviceType: "RADARR" | "SONARR",
+		configType: TrashConfigType,
+		data: T,
+		provenance: TrashCacheProvenance,
+	): Promise<void> {
+		await this.set(serviceType, configType, data, encodeVerifiedProvenance(provenance));
 	}
 
 	/**
@@ -513,6 +576,14 @@ export class TrashCacheManager {
 		serviceType: "RADARR" | "SONARR",
 		configType: TrashConfigType,
 	): Promise<string | null> {
+		return (await this.getProvenance(serviceType, configType))?.commitHash ?? null;
+	}
+
+	/** Get durable provenance without decompressing the cache payload. */
+	async getProvenance(
+		serviceType: "RADARR" | "SONARR",
+		configType: TrashConfigType,
+	): Promise<TrashCacheProvenance | null> {
 		const cacheEntry = await this.prisma.trashCache.findUnique({
 			where: {
 				serviceType_configType: {
@@ -525,7 +596,7 @@ export class TrashCacheManager {
 			},
 		});
 
-		return cacheEntry?.commitHash || null;
+		return decodeVerifiedProvenance(cacheEntry?.commitHash ?? null);
 	}
 }
 

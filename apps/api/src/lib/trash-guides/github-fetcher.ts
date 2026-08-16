@@ -25,6 +25,7 @@ import { marked } from "marked";
 import { z } from "zod";
 import { loggers } from "../logger.js";
 import { parseUpstreamOrThrow, UpstreamValidationError } from "../validation/parse-upstream.js";
+import type { TrashCacheProvenance } from "./cache-manager.js";
 import {
 	radarrNamingSchema,
 	recordSchemaFingerprint,
@@ -239,6 +240,10 @@ interface FetchOptions {
 	 * Forks must follow the same directory structure as the official repo.
 	 */
 	repoConfig?: TrashRepoConfig;
+	/** Immutable commit used for commit-addressed cache population. */
+	contentRef?: string;
+	/** Reject partial categories instead of returning best-effort data. */
+	strictContent?: boolean;
 }
 
 /** Schema for TRaSH Guides metadata file */
@@ -484,6 +489,8 @@ export class TrashGitHubFetcher {
 	private cfDescriptionsBaseUrl: string;
 	private repoContentsApiUrl: string;
 	private rawBaseUrl: string;
+	private contentRef?: string;
+	private strictContent: boolean;
 
 	constructor(options: FetchOptions = {}) {
 		this.fetchOptions = options;
@@ -492,10 +499,13 @@ export class TrashGitHubFetcher {
 
 		// Build URLs from repo config (custom fork or official)
 		this.repoConfig = options.repoConfig ?? DEFAULT_TRASH_REPO;
+		this.contentRef = options.contentRef;
+		this.strictContent = options.strictContent ?? false;
 		const { owner, name, branch } = this.repoConfig;
 		// GitHub now requires the canonical `refs/heads/{branch}` path for raw content.
 		// The legacy `…/{branch}/…` form returns 404 for many repos (issue #406).
-		this.rawBaseUrl = `https://raw.githubusercontent.com/${owner}/${name}/refs/heads/${branch}`;
+		const rawRef = this.contentRef ?? `refs/heads/${branch}`;
+		this.rawBaseUrl = `https://raw.githubusercontent.com/${owner}/${name}/${rawRef}`;
 		this.baseUrl = `${this.rawBaseUrl}/docs/json`;
 		this.metadataUrl = `${this.rawBaseUrl}/metadata.json`;
 		this.cfDescriptionsBaseUrl = `${this.rawBaseUrl}/includes/cf-descriptions`;
@@ -568,17 +578,22 @@ export class TrashGitHubFetcher {
 				const url = `${baseUrl}/${file}`;
 				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
-				if (response.ok) {
-					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashCustomFormatSchema, file, this.log, {
-						integration: "trash-guides",
-						category: "customFormats",
-						skipFingerprint: true,
-					});
-					formats.push(...result.items);
-					recordValidationStats("customFormats", result.stats);
+				if (!response.ok) {
+					throw new Error(`Failed to fetch ${file}: HTTP ${response.status}`);
 				}
+				const rawData: unknown = await response.json();
+				const result = validateAndCollect(rawData, trashCustomFormatSchema, file, this.log, {
+					integration: "trash-guides",
+					category: "customFormats",
+					skipFingerprint: true,
+				});
+				if (this.strictContent && result.stats.rejected > 0) {
+					throw new Error(`${file} contained ${result.stats.rejected} invalid Custom Formats`);
+				}
+				formats.push(...result.items);
+				recordValidationStats("customFormats", result.stats);
 			} catch (error) {
+				if (this.strictContent) throw error;
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
 				// Continue with other files
 			}
@@ -604,17 +619,22 @@ export class TrashGitHubFetcher {
 				const url = `${baseUrl}/${file}`;
 				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
-				if (response.ok) {
-					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashCustomFormatGroupSchema, file, this.log, {
-						integration: "trash-guides",
-						category: "customFormatGroups",
-						skipFingerprint: true,
-					});
-					groups.push(...result.items);
-					recordValidationStats("customFormatGroups", result.stats);
+				if (!response.ok) throw new Error(`Failed to fetch ${file}: HTTP ${response.status}`);
+				const rawData: unknown = await response.json();
+				const result = validateAndCollect(rawData, trashCustomFormatGroupSchema, file, this.log, {
+					integration: "trash-guides",
+					category: "customFormatGroups",
+					skipFingerprint: true,
+				});
+				if (this.strictContent && result.stats.rejected > 0) {
+					throw new Error(
+						`${file} contained ${result.stats.rejected} invalid Custom Format Groups`,
+					);
 				}
+				groups.push(...result.items);
+				recordValidationStats("customFormatGroups", result.stats);
 			} catch (error) {
+				if (this.strictContent) throw error;
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
 			}
 		}
@@ -637,17 +657,20 @@ export class TrashGitHubFetcher {
 				const url = `${baseUrl}/${file}`;
 				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
-				if (response.ok) {
-					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashQualitySizeSchema, file, this.log, {
-						integration: "trash-guides",
-						category: "qualitySize",
-						skipFingerprint: true,
-					});
-					settings.push(...result.items);
-					recordValidationStats("qualitySize", result.stats);
+				if (!response.ok) throw new Error(`Failed to fetch ${file}: HTTP ${response.status}`);
+				const rawData: unknown = await response.json();
+				const result = validateAndCollect(rawData, trashQualitySizeSchema, file, this.log, {
+					integration: "trash-guides",
+					category: "qualitySize",
+					skipFingerprint: true,
+				});
+				if (this.strictContent && result.stats.rejected > 0) {
+					throw new Error(`${file} contained ${result.stats.rejected} invalid Quality Sizes`);
 				}
+				settings.push(...result.items);
+				recordValidationStats("qualitySize", result.stats);
 			} catch (error) {
+				if (this.strictContent) throw error;
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
 			}
 		}
@@ -670,17 +693,20 @@ export class TrashGitHubFetcher {
 				const url = `${baseUrl}/${file}`;
 				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
-				if (response.ok) {
-					const rawData: unknown = await response.json();
-					const result = validateAndCollect(rawData, trashQualityProfileSchema, file, this.log, {
-						integration: "trash-guides",
-						category: "qualityProfiles",
-						skipFingerprint: true,
-					});
-					profiles.push(...result.items);
-					recordValidationStats("qualityProfiles", result.stats);
+				if (!response.ok) throw new Error(`Failed to fetch ${file}: HTTP ${response.status}`);
+				const rawData: unknown = await response.json();
+				const result = validateAndCollect(rawData, trashQualityProfileSchema, file, this.log, {
+					integration: "trash-guides",
+					category: "qualityProfiles",
+					skipFingerprint: true,
+				});
+				if (this.strictContent && result.stats.rejected > 0) {
+					throw new Error(`${file} contained ${result.stats.rejected} invalid Quality Profiles`);
 				}
+				profiles.push(...result.items);
+				recordValidationStats("qualityProfiles", result.stats);
 			} catch (error) {
+				if (this.strictContent) throw error;
 				this.log.warn({ err: error, file }, "Failed to fetch config file");
 			}
 		}
@@ -700,6 +726,9 @@ export class TrashGitHubFetcher {
 		try {
 			const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 			if (!response.ok) {
+				if (this.strictContent) {
+					throw new Error(`Failed to fetch quality profile groups: HTTP ${response.status}`);
+				}
 				this.log.warn(`Failed to fetch quality profile groups: ${response.status}`);
 				return [];
 			}
@@ -709,6 +738,7 @@ export class TrashGitHubFetcher {
 				category: "qualityProfileGroups",
 			}).items;
 		} catch (error) {
+			if (this.strictContent) throw error;
 			this.log.error("Error fetching quality profile groups:", error);
 			return [];
 		}
@@ -724,6 +754,9 @@ export class TrashGitHubFetcher {
 		try {
 			const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 			if (!response.ok) {
+				if (this.strictContent) {
+					throw new Error(`Failed to fetch CF conflicts: HTTP ${response.status}`);
+				}
 				this.log.warn(`Failed to fetch CF conflicts: ${response.status}`);
 				return [];
 			}
@@ -740,6 +773,7 @@ export class TrashGitHubFetcher {
 			return parsed.custom_formats;
 		} catch (error) {
 			if (error instanceof UpstreamValidationError) throw error;
+			if (this.strictContent) throw error;
 			this.log.error("Error fetching CF conflicts:", error);
 			return [];
 		}
@@ -802,6 +836,9 @@ export class TrashGitHubFetcher {
 			const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 			if (!response.ok) {
+				if (this.strictContent) {
+					throw new Error(`CF description ${cfName} failed: HTTP ${response.status}`);
+				}
 				this.log.warn(`CF description not found: ${cfName}`);
 				return null;
 			}
@@ -840,6 +877,7 @@ export class TrashGitHubFetcher {
 				fetchedAt: new Date().toISOString(),
 			};
 		} catch (error) {
+			if (this.strictContent) throw error;
 			this.log.error({ err: error, cfName }, `Failed to fetch CF description for ${cfName}`);
 			return null;
 		}
@@ -850,12 +888,16 @@ export class TrashGitHubFetcher {
 	 */
 	async fetchAllCFDescriptions(): Promise<TrashCFDescription[]> {
 		// First, discover all markdown files in cf-descriptions directory
-		const apiUrl = `${this.repoContentsApiUrl}/includes/cf-descriptions`;
+		const ref = this.contentRef ?? this.repoConfig.branch;
+		const apiUrl = `${this.repoContentsApiUrl}/includes/cf-descriptions?ref=${encodeURIComponent(ref)}`;
 
 		try {
 			const response = await fetchWithRetry(apiUrl, { ...this.fetchOptions, retries: 2 }, this.log);
 
 			if (!response.ok) {
+				if (this.strictContent) {
+					throw new Error(`CF description listing failed: HTTP ${response.status}`);
+				}
 				this.log.warn(`GitHub API returned ${response.status} for CF descriptions`);
 				return [];
 			}
@@ -890,6 +932,7 @@ export class TrashGitHubFetcher {
 
 			return descriptions;
 		} catch (error) {
+			if (this.strictContent) throw error;
 			if (error instanceof UpstreamValidationError) {
 				this.log.warn(
 					{ integration: error.integration, issues: error.issues },
@@ -1030,6 +1073,54 @@ export class TrashGitHubFetcher {
 	}
 
 	/**
+	 * Fetch one config category from an immutable repository commit.
+	 * Supplementary mode combines two repositories and therefore cannot be
+	 * represented honestly by one commit hash, so it fails closed here.
+	 */
+	async fetchConfigsAtCommit(
+		serviceType: "RADARR" | "SONARR",
+		configType: TrashConfigType,
+		commitHash: string,
+	): Promise<unknown[]> {
+		this.getCommitProvenance(commitHash);
+		const supportedTypes: TrashConfigType[] = [
+			"CUSTOM_FORMATS",
+			"CF_GROUPS",
+			"QUALITY_SIZE",
+			"QUALITY_PROFILES",
+			"CF_DESCRIPTIONS",
+			"CONFLICTS",
+		];
+		if (!supportedTypes.includes(configType)) {
+			throw new Error(`Commit-addressed fetching is not supported for ${configType}`);
+		}
+
+		const commitFetcher = new TrashGitHubFetcher({
+			...this.fetchOptions,
+			repoConfig: this.repoConfig,
+			contentRef: commitHash,
+			strictContent: true,
+		});
+		return commitFetcher.fetchConfigsFromRepo(serviceType, configType);
+	}
+
+	getCommitProvenance(commitHash: string): TrashCacheProvenance {
+		if (!/^[0-9a-f]{40}$/i.test(commitHash)) {
+			throw new Error("Commit-addressed TRaSH fetch requires a full commit hash");
+		}
+		if (this.repoConfig.mode === "supplementary") {
+			throw new Error(
+				"Commit-addressed TRaSH fetch is unavailable in supplementary mode because one commit cannot identify both repositories",
+			);
+		}
+		return {
+			version: 1,
+			repository: `${this.repoConfig.owner}/${this.repoConfig.name}`.toLowerCase(),
+			commitHash: commitHash.toLowerCase(),
+		};
+	}
+
+	/**
 	 * Fetch configs from this fetcher's single repo (no merge logic).
 	 */
 	private async fetchConfigsFromRepo(
@@ -1064,22 +1155,23 @@ export class TrashGitHubFetcher {
 	 * Discover available config files in a directory using GitHub API
 	 */
 	private async discoverConfigFiles(baseUrl: string): Promise<string[]> {
-		// Extract the repo-relative path from the raw URL.
-		// baseUrl format: https://raw.githubusercontent.com/{owner}/{name}/refs/heads/{branch}/docs/json/{service}/{type}
-		const branchEscaped = this.repoConfig.branch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-		const pathMatch = baseUrl.match(new RegExp(`/refs/heads/${branchEscaped}/(.+)$`));
-		if (!pathMatch) {
+		const rawPrefix = `${this.rawBaseUrl}/`;
+		if (!baseUrl.startsWith(rawPrefix)) {
 			this.log.warn(`Could not extract path from URL: ${baseUrl}`);
 			return [];
 		}
 
-		const repoPath = pathMatch[1];
-		const apiUrl = `${this.repoContentsApiUrl}/${repoPath}`;
+		const repoPath = baseUrl.slice(rawPrefix.length);
+		const ref = this.contentRef ?? this.repoConfig.branch;
+		const apiUrl = `${this.repoContentsApiUrl}/${repoPath}?ref=${encodeURIComponent(ref)}`;
 
 		try {
 			const response = await fetchWithRetry(apiUrl, { ...this.fetchOptions, retries: 2 }, this.log);
 
 			if (!response.ok) {
+				if (this.strictContent) {
+					throw new Error(`GitHub directory listing failed: HTTP ${response.status}`);
+				}
 				this.log.warn(`GitHub API returned ${response.status} for ${apiUrl}`);
 				return [];
 			}
@@ -1096,11 +1188,15 @@ export class TrashGitHubFetcher {
 				.map((file) => file.name);
 
 			if (jsonFiles.length === 0) {
+				if (this.strictContent) {
+					throw new Error(`No JSON files discovered at ${baseUrl}`);
+				}
 				this.log.warn(`No JSON files discovered at ${baseUrl}`);
 			}
 
 			return jsonFiles;
 		} catch (error) {
+			if (this.strictContent) throw error;
 			if (error instanceof UpstreamValidationError) {
 				this.log.warn(
 					{ integration: error.integration, issues: error.issues },
