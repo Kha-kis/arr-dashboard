@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { appendCleanupAuditEvent, appendCleanupTerminalAuditEvent } from "../cleanup-audit.js";
-import { INTERRUPTED_CLEANUP_RECOVERY_MESSAGE } from "../cleanup-executor.js";
+import {
+	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+} from "../cleanup-executor.js";
 import {
 	CleanupMaintenanceConflictError,
 	withCleanupMaintenanceGuard,
@@ -59,6 +64,7 @@ describe("library cleanup scheduler recovery", () => {
 			{
 				id: "active",
 				status: "executing",
+				lastExecutionError: null as string | null,
 				reviewedAt: new Date("2026-07-27T13:00:00.000Z"),
 				config: {
 					runClaimToken: "live-owner",
@@ -69,12 +75,14 @@ describe("library cleanup scheduler recovery", () => {
 			{
 				id: "unleased",
 				status: "executing",
+				lastExecutionError: null as string | null,
 				reviewedAt: new Date("2026-07-27T13:00:00.000Z"),
 				config: { runClaimToken: null, runClaimedAt: null, userId: "user-1" },
 			},
 			{
 				id: "stale-lease",
 				status: "retry_executing",
+				lastExecutionError: null as string | null,
 				reviewedAt: new Date("2026-07-27T13:00:00.000Z"),
 				config: {
 					runClaimToken: "crashed-owner",
@@ -85,15 +93,33 @@ describe("library cleanup scheduler recovery", () => {
 			{
 				id: "approved-after-crash",
 				status: "approved",
+				lastExecutionError: null as string | null,
 				reviewedAt: new Date("2026-07-27T13:00:00.000Z"),
 				config: { runClaimToken: null, runClaimedAt: null, userId: "user-1" },
 			},
 		];
 		const approvalFindMany = vi.fn(
-			async ({ where }: { where: { status?: string; reviewedAt?: { lt: Date } } }) =>
+			async ({
+				where,
+			}: {
+				where: {
+					status?: string;
+					lastExecutionError?: string;
+					OR?: Array<{ lastExecutionError: null | { notIn?: string[] } }>;
+					reviewedAt?: { lt: Date };
+				};
+			}) =>
 				rows.filter(
 					(row) =>
 						(!where.status || row.status === where.status) &&
+						(where.lastExecutionError === undefined ||
+							row.lastExecutionError === where.lastExecutionError) &&
+						(!where.OR ||
+							where.OR.some((condition) =>
+								condition.lastExecutionError === null
+									? row.lastExecutionError === null
+									: !condition.lastExecutionError.notIn?.includes(row.lastExecutionError ?? ""),
+							)) &&
 						(!where.reviewedAt || row.reviewedAt < where.reviewedAt.lt),
 				),
 		);
@@ -103,7 +129,10 @@ describe("library cleanup scheduler recovery", () => {
 				data,
 			}: {
 				where: {
+					id?: string;
 					status: string;
+					lastExecutionError?: string;
+					OR?: Array<{ lastExecutionError: null | { notIn?: string[] } }>;
 					reviewedAt?: { lt: Date };
 					config?: { OR: Array<{ runClaimedAt?: null | { lt: Date }; runClaimToken?: null }> };
 				};
@@ -114,7 +143,24 @@ describe("library cleanup scheduler recovery", () => {
 					(condition) => condition.runClaimedAt && typeof condition.runClaimedAt === "object",
 				)?.runClaimedAt as { lt: Date } | undefined;
 				for (const row of rows) {
+					if (where.id && row.id !== where.id) continue;
 					if (row.status !== where.status) continue;
+					if (
+						where.lastExecutionError !== undefined &&
+						row.lastExecutionError !== where.lastExecutionError
+					) {
+						continue;
+					}
+					if (
+						where.OR &&
+						!where.OR.some((condition) =>
+							condition.lastExecutionError === null
+								? row.lastExecutionError === null
+								: !condition.lastExecutionError.notIn?.includes(row.lastExecutionError ?? ""),
+						)
+					) {
+						continue;
+					}
 					if (where.reviewedAt && row.reviewedAt >= where.reviewedAt.lt) continue;
 					if (where.config) {
 						const leaseIsRecoverable =
@@ -178,6 +224,169 @@ describe("library cleanup scheduler recovery", () => {
 				}),
 			}),
 		);
+	});
+
+	it("preserves durable Sonarr episode phases during interrupted recovery", async () => {
+		const oldReview = new Date("2026-07-27T13:00:00.000Z");
+		const base = {
+			configId: "config-1",
+			instanceId: "sonarr-1",
+			arrItemId: 42,
+			arrEpisodeId: 9001,
+			itemType: "series",
+			targetScope: "episode",
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Pilot",
+			title: "Example Series",
+			matchedRuleId: "rule-1",
+			matchedRuleName: "Old episodes",
+			reason: "Episode was watched",
+			action: "delete",
+			reviewedAt: oldReview,
+			expiresAt: new Date("2026-07-28T15:00:00.000Z"),
+			reconciledWithoutMutation: false,
+			terminalAuditRecordedAt: null as Date | null,
+			config: { userId: "user-1", runClaimToken: null, runClaimedAt: null },
+		};
+		const rows = [
+			{
+				...base,
+				id: "started",
+				status: "executing",
+				lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+			},
+			{
+				...base,
+				id: "confirmed",
+				status: "executing",
+				lastExecutionError: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+			},
+			{
+				...base,
+				id: "legacy-partial",
+				status: "retry_executing",
+				lastExecutionError: SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+			},
+		];
+		const findMany = vi.fn(
+			async ({ where }: { where: { status: string; lastExecutionError: string } }) =>
+				rows.filter(
+					(row) =>
+						row.status === where.status && row.lastExecutionError === where.lastExecutionError,
+				),
+		);
+		const updateMany = vi.fn(
+			async ({
+				where,
+				data,
+			}: {
+				where: { id: string; status: string; lastExecutionError: string };
+				data: Record<string, unknown>;
+			}) => {
+				const row = rows.find(
+					(candidate) =>
+						candidate.id === where.id &&
+						candidate.status === where.status &&
+						candidate.lastExecutionError === where.lastExecutionError,
+				);
+				if (!row) return { count: 0 };
+				Object.assign(row, data);
+				return { count: 1 };
+			},
+		);
+		const prisma = {
+			libraryCleanupApproval: { findMany, updateMany },
+			$transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => await run(prisma)),
+		};
+		let terminalAuditAttempts = 0;
+		vi.mocked(appendCleanupTerminalAuditEvent).mockImplementation(async () => {
+			terminalAuditAttempts++;
+			if (terminalAuditAttempts === 1) throw new Error("audit unavailable");
+			(rows[0] as Record<string, unknown>).terminalAuditRecordedAt = new Date();
+			return {} as never;
+		});
+		const scheduler = new CleanupScheduler(
+			prisma as never,
+			{} as never,
+			{} as never,
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+		);
+
+		await (
+			scheduler as unknown as {
+				recoverInterruptedSonarrEpisodePhases: (
+					stuckThreshold: Date,
+					staleRunLeaseThreshold: Date,
+				) => Promise<void>;
+			}
+		).recoverInterruptedSonarrEpisodePhases(
+			new Date("2026-07-27T14:00:00.000Z"),
+			new Date("2026-07-27T14:30:00.000Z"),
+		);
+
+		expect(rows).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					id: "started",
+					status: "expired",
+					lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+					terminalAuditEventType: "expired",
+					terminalAuditOutcome: "blocked",
+					terminalAuditActorType: "scheduler",
+					terminalAuditTrigger: "recovery",
+					terminalAuditReason: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+					terminalAuditRecordedAt: null,
+				}),
+				expect.objectContaining({
+					id: "confirmed",
+					status: "retry_pending",
+					lastExecutionError: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+				}),
+				expect.objectContaining({
+					id: "legacy-partial",
+					status: "retry_pending",
+					lastExecutionError: SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+				}),
+			]),
+		);
+		expect(appendCleanupAuditEvent).toHaveBeenCalledTimes(2);
+		expect(appendCleanupTerminalAuditEvent).toHaveBeenCalledWith(
+			prisma,
+			expect.objectContaining({
+				eventType: "expired",
+				trigger: "recovery",
+				outcome: "blocked",
+				evidence: expect.objectContaining({
+					fromStatus: "executing",
+					toStatus: "expired",
+					mutationOutcome: "unknown",
+				}),
+			}),
+			{ approvalId: "started", status: "expired" },
+		);
+
+		findMany.mockImplementation((async ({ where }: { where: Record<string, unknown> }) =>
+			where.terminalAuditRecordedAt === null ? [rows[0]] : []) as never);
+		await (
+			scheduler as unknown as { repairMissingTerminalAuditEvents: () => Promise<void> }
+		).repairMissingTerminalAuditEvents();
+
+		expect(appendCleanupTerminalAuditEvent).toHaveBeenCalledTimes(2);
+		expect(appendCleanupTerminalAuditEvent).toHaveBeenLastCalledWith(
+			prisma,
+			expect.objectContaining({
+				eventType: "expired",
+				trigger: "recovery",
+				evidence: expect.objectContaining({
+					fromStatus: "executing",
+					toStatus: "expired",
+					mutationOutcome: "unknown",
+				}),
+			}),
+			{ approvalId: "started", status: "expired" },
+		);
+		expect((rows[0] as Record<string, unknown>).terminalAuditRecordedAt).toBeInstanceOf(Date);
 	});
 
 	it("persists a repairable expiration envelope with transition-specific history", async () => {
@@ -288,8 +497,35 @@ describe("library cleanup scheduler recovery", () => {
 			lastExecutionError: null as string | null,
 			config: { userId: "user-1", runClaimToken: null, runClaimedAt: null },
 		};
-		const findMany = vi.fn(async ({ where }: { where: { status?: unknown } }) =>
-			where.status === "executing" ? [approval] : [],
+		const findMany = vi.fn(
+			async ({
+				where,
+			}: {
+				where: {
+					status?: unknown;
+					lastExecutionError?: string;
+					OR?: Array<{ lastExecutionError: null | { notIn?: string[] } }>;
+				};
+			}) => {
+				if (where.status !== "executing") return [];
+				if (
+					where.lastExecutionError !== undefined &&
+					approval.lastExecutionError !== where.lastExecutionError
+				) {
+					return [];
+				}
+				if (
+					where.OR &&
+					!where.OR.some((condition) =>
+						condition.lastExecutionError === null
+							? approval.lastExecutionError === null
+							: !condition.lastExecutionError.notIn?.includes(approval.lastExecutionError ?? ""),
+					)
+				) {
+					return [];
+				}
+				return [approval];
+			},
 		);
 		const updateMany = vi.fn(
 			async ({ where, data }: { where: { status: string }; data: object }) => {
