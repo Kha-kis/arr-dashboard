@@ -453,27 +453,27 @@ describe("Service instance lifecycle", () => {
 			},
 		});
 		const id = JSON.parse(created.payload).service.id;
-		Object.assign(prisma._instances.get(id), {
-			service,
-			expectedIdentity: null,
-			identityKind: null,
-			identityStatus: "UNVERIFIED",
-			identityGeneration: 0,
-			identityVerifiedAt: null,
-			identityLastCheckedAt: null,
-		});
+		const instance = prisma._instances.get(id);
+		if (!instance) throw new Error("created service fixture is missing");
+		instance.service = service;
+		instance.expectedIdentity = null;
+		instance.identityKind = null;
+		instance.identityStatus = "UNVERIFIED";
+		instance.identityGeneration = 0;
+		instance.identityVerifiedAt = null;
+		instance.identityLastCheckedAt = null;
 		return id;
 	}
 
 	async function createExistingVerifiedProvider() {
 		const id = await createExistingUnverifiedProvider();
-		Object.assign(prisma._instances.get(id), {
-			expectedIdentity: "enrolled-plex-machine",
-			identityKind: "PLEX_MACHINE_IDENTIFIER",
-			identityStatus: "VERIFIED",
-			identityGeneration: 3,
-			identityVerifiedAt: new Date("2026-08-15T00:00:00.000Z"),
-		});
+		const instance = prisma._instances.get(id);
+		if (!instance) throw new Error("created service fixture is missing");
+		instance.expectedIdentity = "enrolled-plex-machine";
+		instance.identityKind = "PLEX_MACHINE_IDENTIFIER";
+		instance.identityStatus = "VERIFIED";
+		instance.identityGeneration = 3;
+		instance.identityVerifiedAt = new Date("2026-08-15T00:00:00.000Z");
 		return id;
 	}
 
