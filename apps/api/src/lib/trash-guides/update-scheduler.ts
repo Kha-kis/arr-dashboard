@@ -15,14 +15,12 @@ import {
 	type TrashRepoConfig,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
-import { z } from "zod";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { createCacheManager } from "./cache-manager.js";
 import { createTrashFetcher } from "./github-fetcher.js";
-import { trashQualitySizeSchema } from "./github-schemas.js";
 import { computeNamingHash, resolvePayload } from "./naming-deployer.js";
 import { applyQualitySizeToDefinitions } from "./quality-size-matcher.js";
 import type {
@@ -345,8 +343,18 @@ export class UpdateScheduler {
 				errors.push(...sonarrCacheResult.errors.map((e: string) => `Sonarr: ${e}`));
 			}
 
+			// Only service caches whose repository-and-commit provenance was verified
+			// during this tick may authorize an upstream quality-size write.
+			const verifiedQualitySizeData = new Map<"RADARR" | "SONARR", readonly TrashQualitySize[]>();
+			if (radarrCacheResult.verifiedQualitySizeData) {
+				verifiedQualitySizeData.set("RADARR", radarrCacheResult.verifiedQualitySizeData);
+			}
+			if (sonarrCacheResult.verifiedQualitySizeData) {
+				verifiedQualitySizeData.set("SONARR", sonarrCacheResult.verifiedQualitySizeData);
+			}
+
 			// Process quality size auto-sync after caches are refreshed
-			const qsResult = await this.processQualitySizeSync();
+			const qsResult = await this.processQualitySizeSync(verifiedQualitySizeData);
 			qualitySizeAutoSynced = qsResult.autoSynced;
 			qualitySizeUpdatesPending = qsResult.updatesPending;
 			if (qsResult.errors.length > 0) {
@@ -577,7 +585,9 @@ export class UpdateScheduler {
 	 * Compares current preset hash to the stored appliedDataHash and applies changes
 	 * for "auto" mappings, or counts pending updates for "notify" mappings.
 	 */
-	private async processQualitySizeSync(): Promise<{
+	private async processQualitySizeSync(
+		verifiedData: ReadonlyMap<"RADARR" | "SONARR", readonly TrashQualitySize[]>,
+	): Promise<{
 		autoSynced: number;
 		updatesPending: number;
 		errors: string[];
@@ -607,21 +617,25 @@ export class UpdateScheduler {
 
 		if (mappings.length === 0) return result;
 
-		const cacheManager = createCacheManager(this.prisma);
+		const warnedUnverifiedServiceTypes = new Set<"RADARR" | "SONARR">();
 
 		for (const mapping of mappings) {
 			try {
-				// Get latest preset data from cache
-				const cached = await cacheManager.get<TrashQualitySize[]>(
-					mapping.serviceType as "RADARR" | "SONARR",
-					"QUALITY_SIZE",
-					z.array(trashQualitySizeSchema),
-				);
+				const serviceType = mapping.serviceType as "RADARR" | "SONARR";
+				const cached = verifiedData.get(serviceType);
 				if (!cached) {
-					this.logger.warn(
-						`Quality size cache empty for ${mapping.serviceType} — skipping sync for instance ${mapping.instance.label}`,
-					);
+					if (!warnedUnverifiedServiceTypes.has(serviceType)) {
+						warnedUnverifiedServiceTypes.add(serviceType);
+						this.logger.warn(
+							`Quality size cache provenance was not verified for ${serviceType} during this scheduler tick — skipping sync`,
+						);
+					}
 					continue;
+				}
+				if (mapping.instance.service !== serviceType) {
+					throw new Error(
+						`Quality size mapping service type changed from ${serviceType} to ${mapping.instance.service}`,
+					);
 				}
 
 				const preset = cached.find((p) => p.trash_id === mapping.presetTrashId);
@@ -649,17 +663,26 @@ export class UpdateScheduler {
 					continue;
 				}
 
-				// Auto-sync: reset to factory defaults first, then apply
-				if (!mapping.instance.enabled) {
+				// Re-resolve the target immediately before the destructive reset. A stale
+				// mapping must never authorize data for a different service type.
+				const liveInstance = await this.prisma.serviceInstance.findFirst({
+					where: { id: mapping.instanceId, userId: mapping.instance.userId },
+				});
+				if (!liveInstance || liveInstance.service !== serviceType) {
+					throw new Error(
+						`Quality size mapping service type changed before execution for instance ${mapping.instance.label}`,
+					);
+				}
+				if (!liveInstance.enabled) {
 					this.logger.debug(
-						`Skipping quality size sync for disabled instance ${mapping.instance.label}`,
+						`Skipping quality size sync for disabled instance ${liveInstance.label}`,
 					);
 					continue;
 				}
 
 				// Reset to factory defaults before applying (matches manual apply flow)
 				const resetResponse = await this.arrClientFactory.rawRequest(
-					mapping.instance,
+					liveInstance,
 					"/api/v3/qualitydefinition/reset",
 					{ method: "PUT" },
 				);
@@ -671,9 +694,7 @@ export class UpdateScheduler {
 
 				// Apply preset on top of factory defaults
 				try {
-					const client = this.arrClientFactory.create(mapping.instance) as
-						| SonarrClient
-						| RadarrClient;
+					const client = this.arrClientFactory.create(liveInstance) as SonarrClient | RadarrClient;
 					const definitions = await client.qualityDefinition.getAll();
 					const { updated, appliedCount } = applyQualitySizeToDefinitions(
 						preset.qualities,
