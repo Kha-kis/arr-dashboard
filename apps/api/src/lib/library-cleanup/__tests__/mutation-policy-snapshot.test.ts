@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { evaluateItemMutationPolicyStateViaEngine } from "../../rules/cleanup-adapter.js";
+import {
+	evaluateItemMutationPolicyStateViaEngine,
+	evaluateRuleViaEngine,
+} from "../../rules/cleanup-adapter.js";
 import { deriveArrPolicyEvidence } from "../arr-policy-evidence.js";
 import { executeDirectRemoval } from "../cleanup-executor.js";
 import { createArrServiceFingerprint } from "../shared-plex-safety.js";
@@ -465,6 +468,90 @@ function mutationEvidenceItem(data: Record<string, unknown>) {
 }
 
 describe("mutation policy evidence authority", () => {
+	it("uses the same nested positive expression for preview and mutation authorization", () => {
+		const expression = {
+			version: 1,
+			root: {
+				all: [
+					{ kind: "year_range", params: { operator: "before", year: 2030 } },
+					{
+						any: [
+							{ kind: "year_range", params: { operator: "after", year: 2010 } },
+							{ kind: "year_range", params: { operator: "before", year: 2000 } },
+						],
+					},
+				],
+			},
+		};
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive",
+				operator: null,
+				conditions: JSON.stringify(expression),
+			},
+		);
+		const item = mutationEvidenceItem({ _arrDashboardEvidence: {} });
+		const context = { now: new Date() };
+
+		expect(evaluateRuleViaEngine(item as never, rule as never, "RADARR", context)).toMatchObject({
+			ruleId: "rule-recursive",
+		});
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(item as never, [rule] as never, "RADARR", context),
+		).toMatchObject({ kind: "cleanup", match: { ruleId: "rule-recursive" } });
+	});
+
+	it("fails closed when a nested expression depends on a failed provider", () => {
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive-plex",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						all: [
+							{ kind: "year_range", params: { operator: "before", year: 2030 } },
+							{ kind: "plex_watch_count", params: { operator: "less_than", count: 1 } },
+						],
+					},
+				}),
+			},
+		);
+		const context = {
+			now: new Date(),
+			plexMap: new Map([
+				[
+					"movie:42",
+					{
+						lastWatchedAt: null,
+						watchCount: 0,
+						watchedByUsers: [],
+						onDeck: false,
+						userRating: null,
+						collections: [],
+						labels: [],
+						addedAt: null,
+						sections: [],
+					},
+				],
+			]),
+		};
+
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(
+				mutationEvidenceItem({ _arrDashboardEvidence: {} }) as never,
+				[rule] as never,
+				"RADARR",
+				context,
+				new Set(["plex"]),
+			),
+		).toEqual({ kind: "unknown", ruleId: "rule-recursive-plex" });
+	});
+
 	it.each([
 		["missing source", { ratings: {} }],
 		["zero sentinel", { ratings: { tmdb: { value: 0 }, imdb: { value: 0 } } }],

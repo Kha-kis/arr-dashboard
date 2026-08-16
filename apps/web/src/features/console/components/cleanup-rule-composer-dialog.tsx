@@ -47,6 +47,7 @@ import { getDefaultConditionParams } from "../../rule-criteria/components/condit
 import {
 	type CriteriaEditorState,
 	decomposeCriteriaDocument,
+	isCriteriaDocumentV0Editable,
 	toCriteriaV0Payload,
 } from "../lib/rule-document-editor";
 import { CriteriaConditionEditor } from "./criteria-condition-editor";
@@ -117,6 +118,11 @@ export function CleanupRuleComposerDialog({
 	// retentionMode:false) and write them over the stored values — on a media-
 	// deletion rule, silently flipping e.g. "unmonitor" → "delete". So we gate.
 	const editDataReady = !isEdit || (Boolean(summary) && Boolean(configRule));
+	const isRecursiveReadOnly = Boolean(
+		isEdit &&
+			configRule?.expression &&
+			(!summary?.document || !isCriteriaDocumentV0Editable(summary.document)),
+	);
 
 	const [name, setName] = useState("");
 	const [enabled, setEnabled] = useState(true);
@@ -149,7 +155,9 @@ export function CleanupRuleComposerDialog({
 			// rule was unparseable (document null) we fall back to a fresh editor so
 			// the operator can re-author rather than see a broken form.
 			setEditorState(
-				summary?.document ? decomposeCriteriaDocument(summary.document) : freshEditorState(),
+				summary?.document && !isRecursiveReadOnly
+					? decomposeCriteriaDocument(summary.document)
+					: freshEditorState(),
 			);
 		} else {
 			setName("");
@@ -160,7 +168,7 @@ export function CleanupRuleComposerDialog({
 			setEpisodeWatchCount(1);
 			setEditorState(freshEditorState());
 		}
-	}, [open, isEdit, editDataReady, summary, configRule]);
+	}, [open, isEdit, editDataReady, isRecursiveReadOnly, summary, configRule]);
 
 	const inputStyles = getInputStyles(gradient);
 	const inputClass = `${inputStyles.base} focus:outline-hidden`;
@@ -189,7 +197,7 @@ export function CleanupRuleComposerDialog({
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
-		if (isSaving) return;
+		if (isSaving || isRecursiveReadOnly) return;
 
 		if (!name.trim()) {
 			setError("Give the rule a name.");
@@ -303,6 +311,23 @@ export function CleanupRuleComposerDialog({
 					<div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
 						<Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
 						Loading rule…
+					</div>
+				) : isRecursiveReadOnly ? (
+					<div className="mt-2 space-y-4 rounded-lg border border-amber-500/20 bg-amber-500/10 p-4">
+						<p className="text-sm font-medium text-foreground">Recursive rule is read-only</p>
+						<p className="text-sm text-muted-foreground">
+							The flat composer cannot safely represent this nested expression. The stored rule has
+							not been changed.
+						</p>
+						<div className="flex justify-end">
+							<button
+								type="button"
+								onClick={() => onOpenChange(false)}
+								className="rounded-lg border border-border/50 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+							>
+								Close
+							</button>
+						</div>
 					</div>
 				) : (
 					<form

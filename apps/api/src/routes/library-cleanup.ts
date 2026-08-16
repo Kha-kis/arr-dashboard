@@ -14,8 +14,11 @@ import {
 	isKindLegalForContext,
 	reorderRulesSchema,
 	ruleParamSchemaMap,
+	type RuleDocument,
 	updateCleanupConfigSchema,
 	updateCleanupRuleSchema,
+	validateV1Bounds,
+	walkPredicates,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
@@ -63,6 +66,7 @@ import {
 } from "../lib/plex/plex-cache-refresher.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
 import { explainItemAgainstRulesViaEngine } from "../lib/rules/cleanup-adapter.js";
+import { mapCriteriaV0ToDocument } from "../lib/rules/v0-mappers.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { safeJsonParse as utilSafeJsonParse } from "../lib/utils/json.js";
 import { parsePaginationQuery } from "../lib/utils/pagination.js";
@@ -110,6 +114,7 @@ function serializeConfig(config: Record<string, unknown>) {
 }
 
 function serializeRule(rule: Record<string, unknown>) {
+	const expression = getStoredCleanupExpression(rule);
 	return {
 		id: rule.id,
 		name: rule.name,
@@ -127,13 +132,122 @@ function serializeRule(rule: Record<string, unknown>) {
 		scanMediaServerAfterDelete: rule.scanMediaServerAfterDelete === true,
 		scanMediaServerInstanceIds: parseMediaServerInstanceIds(rule.scanMediaServerInstanceIds),
 		operator: (rule.operator as string) ?? null,
-		conditions: safeJsonParse(rule.conditions as string | null),
+		conditions: expression ? null : safeJsonParse(rule.conditions as string | null),
+		expression,
 		retentionMode: rule.retentionMode ?? false,
 		useGlobalRejectionMemory: rule.useGlobalRejectionMemory ?? true,
 		rejectionMemoryDays: rule.rejectionMemoryDays ?? null,
 		createdAt: (rule.createdAt as Date).toISOString(),
 		updatedAt: (rule.updatedAt as Date).toISOString(),
 	};
+}
+
+class StoredCleanupExpressionError extends Error {
+	statusCode = 409;
+
+	constructor(message: string) {
+		super(message);
+		this.name = "StoredCleanupExpressionError";
+	}
+}
+
+function getStoredCleanupExpression(rule: Record<string, unknown>): RuleDocument | null {
+	if (
+		rule.ruleType !== "composite" ||
+		rule.operator !== null ||
+		typeof rule.conditions !== "string"
+	) {
+		return null;
+	}
+	const stored = safeJsonParse(rule.conditions);
+	if (
+		typeof stored !== "object" ||
+		stored === null ||
+		Array.isArray(stored) ||
+		(stored as Record<string, unknown>).version !== 1
+	) {
+		return null;
+	}
+
+	let expression: RuleDocument;
+	try {
+		expression = mapCriteriaV0ToDocument({
+			ruleType: rule.ruleType as string,
+			parameters: rule.parameters as string,
+			operator: rule.operator as string | null,
+			conditions: rule.conditions as string | null,
+		});
+	} catch (error) {
+		throw new StoredCleanupExpressionError(
+			`Stored recursive cleanup expression is invalid: ${getErrorMessage(error)}`,
+		);
+	}
+
+	const emptyGroupError = getCleanupExpressionEmptyGroupError(expression.root);
+	if (emptyGroupError) {
+		throw new StoredCleanupExpressionError(
+			`Stored recursive cleanup expression is invalid: ${emptyGroupError}`,
+		);
+	}
+	return expression;
+}
+
+function getCleanupExpressionEmptyGroupError(
+	node: RuleDocument["root"],
+	path = "root",
+): string | null {
+	if ("kind" in node) return null;
+	if ("not" in node) return getCleanupExpressionEmptyGroupError(node.not, `${path}.not`);
+	if ("all" in node) {
+		if (node.all.length === 0) {
+			return `Recursive cleanup expression contains an empty all group at ${path}`;
+		}
+		for (let index = 0; index < node.all.length; index++) {
+			const error = getCleanupExpressionEmptyGroupError(node.all[index]!, `${path}.all[${index}]`);
+			if (error) return error;
+		}
+		return null;
+	}
+	if (node.any.length === 0) {
+		return `Recursive cleanup expression contains an empty any group at ${path}`;
+	}
+	for (let index = 0; index < node.any.length; index++) {
+		const error = getCleanupExpressionEmptyGroupError(node.any[index]!, `${path}.any[${index}]`);
+		if (error) return error;
+	}
+	return null;
+}
+
+function validateExpressionParameters(expression: RuleDocument): string | null {
+	const boundsError = validateV1Bounds(expression);
+	if (boundsError) return boundsError;
+	const emptyGroupError = getCleanupExpressionEmptyGroupError(expression.root);
+	if (emptyGroupError) return emptyGroupError;
+	if (cleanupExpressionContainsNot(expression.root)) {
+		return "NOT cleanup expressions are not supported until preview and execution can prove false evidence consistently";
+	}
+	for (const predicate of walkPredicates(expression.root)) {
+		if (!isKindLegalForContext("library-cleanup", predicate.kind)) {
+			return `Unknown rule type in expression: "${predicate.kind}"`;
+		}
+		const result = ruleParamSchemaMap[predicate.kind]?.safeParse(predicate.params);
+		if (!result?.success) {
+			const message = result?.error.issues.map((issue) => issue.message).join(", ");
+			return `Invalid parameters for expression rule type "${predicate.kind}": ${message || "unknown condition"}`;
+		}
+	}
+	return null;
+}
+
+function cleanupExpressionContainsNot(node: RuleDocument["root"]): boolean {
+	if ("kind" in node) return false;
+	if ("not" in node) return true;
+	const children = "all" in node ? node.all : node.any;
+	return children.some(cleanupExpressionContainsNot);
+}
+
+function assertStoredCleanupRulesSerializable(rules: readonly Record<string, unknown>[]): void {
+	for (const rule of rules) getStoredCleanupExpression(rule);
 }
 
 function storedStringArrayCount(value: unknown): number {
@@ -764,6 +878,15 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			{ prisma: app.prisma, log: request.log },
 			userId,
 			async () => {
+				const current = await app.prisma.libraryCleanupConfig.findUnique({
+					where: { userId },
+					include: { rules: true },
+				});
+				if (current) {
+					assertStoredCleanupRulesSerializable(
+						current.rules as unknown as Record<string, unknown>[],
+					);
+				}
 				const config = await app.prisma.libraryCleanupConfig.upsert({
 					where: { userId },
 					update: data,
@@ -792,17 +915,26 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	app.post("/library-cleanup/rules", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const data = validateRequest(createCleanupRuleSchema, request.body);
+		const expression = data.expression ?? null;
+		if (expression && Object.keys(data.parameters).length > 0) {
+			return reply.status(400).send({
+				error: "Recursive cleanup expressions cannot mix legacy parameters",
+			});
+		}
 
 		// Write-time parameter validation: validate params against type-specific schema
-		const paramValidationError = validateRuleParameters(
-			data.ruleType,
-			data.parameters,
-			data.conditions ?? null,
-		);
+		const paramValidationError = expression
+			? validateExpressionParameters(expression)
+			: validateRuleParameters(
+					data.ruleType,
+					data.parameters,
+					data.operator ?? null,
+					data.conditions ?? null,
+				);
 		if (paramValidationError) {
 			return reply.status(400).send({ error: paramValidationError });
 		}
-		const scopeValidationError = getCleanupRuleScopeValidationError(data);
+		const scopeValidationError = getCleanupRuleScopeValidationError({ ...data, expression });
 		if (scopeValidationError) {
 			return reply.status(400).send({ error: scopeValidationError });
 		}
@@ -831,8 +963,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						name: data.name,
 						enabled: data.enabled,
 						priority: data.priority,
-						ruleType: data.ruleType,
-						parameters: JSON.stringify(data.parameters),
+						ruleType: expression ? "composite" : data.ruleType,
+						parameters: JSON.stringify(expression ? {} : data.parameters),
 						serviceFilter: data.serviceFilter ? JSON.stringify(data.serviceFilter) : null,
 						instanceFilter: data.instanceFilter ? JSON.stringify(data.instanceFilter) : null,
 						excludeTags: data.excludeTags ? JSON.stringify(data.excludeTags) : null,
@@ -846,8 +978,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						scanMediaServerInstanceIds: data.scanMediaServerAfterDelete
 							? JSON.stringify(scanMediaServerInstanceIds)
 							: null,
-						operator: data.operator ?? null,
-						conditions: data.conditions ? JSON.stringify(data.conditions) : null,
+						operator: expression ? null : (data.operator ?? null),
+						conditions: expression
+							? JSON.stringify(expression)
+							: data.conditions
+								? JSON.stringify(data.conditions)
+								: null,
 						retentionMode: data.retentionMode ?? false,
 						useGlobalRejectionMemory: data.useGlobalRejectionMemory ?? true,
 						// `?? 0` would collapse a deliberate `null` (forever) to `0` (off),
@@ -885,11 +1021,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			async () => {
 				const config = await app.prisma.libraryCleanupConfig.findUnique({
 					where: { userId },
-					include: { rules: { select: { id: true } } },
+					include: { rules: true },
 				});
 				if (!config) {
 					return reply.status(404).send({ error: "Config not found" });
 				}
+				assertStoredCleanupRulesSerializable(config.rules as unknown as Record<string, unknown>[]);
 
 				// Verify all IDs belong to this config and all rules are included
 				const existingIds = new Set(config.rules.map((r) => r.id));
@@ -941,17 +1078,73 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			return reply.status(404).send({ error: "Rule not found" });
 		}
 
-		// Write-time parameter validation (when ruleType or parameters are changed)
-		const effectiveRuleType = hasSuppliedField("ruleType") ? data.ruleType! : existing.ruleType;
-		const effectiveParams = hasSuppliedField("parameters")
-			? data.parameters!
-			: (utilSafeJsonParse(existing.parameters) as Record<string, unknown>);
-		const effectiveConditions = hasSuppliedField("conditions")
-			? (data.conditions ?? null)
-			: (utilSafeJsonParse(existing.conditions ?? "") as Array<{
-					ruleType: string;
-					parameters: Record<string, unknown>;
-				}> | null);
+		const storedExpression = getStoredCleanupExpression(
+			existing as unknown as Record<string, unknown>,
+		);
+		const expressionSupplied = hasSuppliedField("expression");
+		const effectiveExpression = expressionSupplied ? (data.expression ?? null) : storedExpression;
+		const isClearingStoredExpression = Boolean(
+			expressionSupplied && data.expression === null && storedExpression,
+		);
+		const representationFieldSupplied = ["ruleType", "parameters", "operator", "conditions"].some(
+			hasSuppliedField,
+		);
+
+		if (storedExpression && !expressionSupplied && representationFieldSupplied) {
+			return reply.status(400).send({
+				error: "Canonical cleanup expressions must be updated through the expression field",
+			});
+		}
+		if (
+			isClearingStoredExpression &&
+			(!hasSuppliedField("ruleType") || !hasSuppliedField("parameters"))
+		) {
+			return reply.status(400).send({
+				error: "Clearing a recursive cleanup expression requires a complete legacy replacement",
+			});
+		}
+
+		if (
+			effectiveExpression &&
+			((hasSuppliedField("ruleType") && data.ruleType !== "composite") ||
+				(hasSuppliedField("parameters") && Object.keys(data.parameters ?? {}).length > 0) ||
+				(hasSuppliedField("operator") && data.operator !== null) ||
+				(hasSuppliedField("conditions") && data.conditions !== null))
+		) {
+			return reply.status(400).send({
+				error: "Recursive cleanup expressions must use canonical composite storage",
+			});
+		}
+
+		const effectiveRuleType = effectiveExpression
+			? "composite"
+			: hasSuppliedField("ruleType")
+				? data.ruleType!
+				: existing.ruleType;
+		const effectiveParams = effectiveExpression
+			? {}
+			: hasSuppliedField("parameters")
+				? data.parameters!
+				: isClearingStoredExpression
+					? {}
+					: (utilSafeJsonParse(existing.parameters) as Record<string, unknown>);
+		const effectiveOperator = effectiveExpression
+			? null
+			: hasSuppliedField("operator")
+				? (data.operator ?? null)
+				: isClearingStoredExpression
+					? null
+					: existing.operator;
+		const effectiveConditions = effectiveExpression
+			? null
+			: hasSuppliedField("conditions")
+				? (data.conditions ?? null)
+				: isClearingStoredExpression
+					? null
+					: (utilSafeJsonParse(existing.conditions ?? "") as Array<{
+							ruleType: string;
+							parameters: Record<string, unknown>;
+						}> | null);
 		const effectiveTargetScope = hasSuppliedField("targetScope")
 			? data.targetScope
 			: existing.targetScope === "episode"
@@ -989,8 +1182,9 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			retentionMode: effectiveRetentionMode,
 			ruleType: effectiveRuleType,
 			parameters: effectiveParams ?? {},
-			operator: hasSuppliedField("operator") ? data.operator : existing.operator,
+			operator: effectiveOperator,
 			conditions: effectiveConditions ?? null,
+			expression: effectiveExpression,
 		});
 		if (scopeValidationError) {
 			return reply.status(400).send({ error: scopeValidationError });
@@ -1011,16 +1205,15 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			);
 			if (selectionError) return reply.status(400).send({ error: selectionError });
 		}
-		if (
-			hasSuppliedField("ruleType") ||
-			hasSuppliedField("parameters") ||
-			hasSuppliedField("conditions")
-		) {
-			const paramValidationError = validateRuleParameters(
-				effectiveRuleType,
-				effectiveParams ?? {},
-				effectiveConditions ?? null,
-			);
+		if (expressionSupplied || representationFieldSupplied) {
+			const paramValidationError = effectiveExpression
+				? validateExpressionParameters(effectiveExpression)
+				: validateRuleParameters(
+						effectiveRuleType,
+						effectiveParams ?? {},
+						effectiveOperator,
+						effectiveConditions ?? null,
+					);
 			if (paramValidationError) {
 				return reply.status(400).send({ error: paramValidationError });
 			}
@@ -1030,8 +1223,25 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		if (hasSuppliedField("name")) updateData.name = data.name;
 		if (hasSuppliedField("enabled")) updateData.enabled = data.enabled;
 		if (hasSuppliedField("priority")) updateData.priority = data.priority;
-		if (hasSuppliedField("ruleType")) updateData.ruleType = data.ruleType;
-		if (hasSuppliedField("parameters")) updateData.parameters = JSON.stringify(data.parameters);
+		if (effectiveExpression && expressionSupplied) {
+			updateData.ruleType = "composite";
+			updateData.parameters = "{}";
+			updateData.operator = null;
+			updateData.conditions = JSON.stringify(effectiveExpression);
+		} else if (isClearingStoredExpression) {
+			updateData.ruleType = effectiveRuleType;
+			updateData.parameters = JSON.stringify(effectiveParams ?? {});
+			updateData.operator = effectiveOperator;
+			updateData.conditions = effectiveConditions?.length
+				? JSON.stringify(effectiveConditions)
+				: null;
+		} else {
+			if (hasSuppliedField("ruleType")) updateData.ruleType = data.ruleType;
+			if (hasSuppliedField("parameters")) updateData.parameters = JSON.stringify(data.parameters);
+			if (hasSuppliedField("operator")) updateData.operator = data.operator ?? null;
+			if (hasSuppliedField("conditions"))
+				updateData.conditions = data.conditions?.length ? JSON.stringify(data.conditions) : null;
+		}
 		if (hasSuppliedField("serviceFilter"))
 			updateData.serviceFilter = data.serviceFilter ? JSON.stringify(data.serviceFilter) : null;
 		if (hasSuppliedField("instanceFilter"))
@@ -1057,9 +1267,6 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				? JSON.stringify(effectiveScanMediaServerInstanceIds)
 				: null;
 		}
-		if (hasSuppliedField("operator")) updateData.operator = data.operator ?? null;
-		if (hasSuppliedField("conditions"))
-			updateData.conditions = data.conditions?.length ? JSON.stringify(data.conditions) : null;
 		if (hasSuppliedField("retentionMode")) updateData.retentionMode = data.retentionMode;
 		if (hasSuppliedField("useGlobalRejectionMemory"))
 			updateData.useGlobalRejectionMemory = data.useGlobalRejectionMemory;
@@ -2338,6 +2545,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 function validateRuleParameters(
 	ruleType: string,
 	parameters: Record<string, unknown>,
+	operator: string | null,
 	conditions: Array<{ ruleType: string; parameters: Record<string, unknown> }> | null,
 ): string | null {
 	// Reject mode-mismatch: a leaf ruleType carrying operator+conditions
@@ -2346,6 +2554,12 @@ function validateRuleParameters(
 	// mixed shape would validate one thing and evaluate another (the same
 	// guard auto-tag.ts has carried; ported per review finding).
 	const compositeByShape = conditions != null && conditions.length > 0;
+	const compositeByOperator = operator != null;
+	if (compositeByShape !== compositeByOperator) {
+		return compositeByShape
+			? "Composite rule conditions require an operator"
+			: "Composite rule operator requires at least one condition";
+	}
 	const compositeByRuleType = ruleType === "composite";
 	if (compositeByShape !== compositeByRuleType) {
 		return compositeByShape

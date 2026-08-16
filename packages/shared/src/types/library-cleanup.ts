@@ -11,6 +11,7 @@
  */
 
 import { z } from "zod";
+import { type RuleDocument, ruleDocumentSchema } from "../rules/grammar.js";
 import { getRegexSafetyError, REGEX_MAX_LENGTH } from "./regex-safety.js";
 import {
 	type CompositeOperator,
@@ -75,6 +76,8 @@ const baseCleanupRuleSchema = z.object({
 		.default([]),
 	operator: compositeOperatorSchema.nullable().optional(),
 	conditions: z.array(conditionSchema).nullable().optional(),
+	/** Recursive v1 criteria, persisted in the existing conditions column. */
+	expression: ruleDocumentSchema.nullable().optional(),
 	retentionMode: z.boolean().optional().default(false),
 	/**
 	 * When true, this rule inherits the config-level `rejectionMemoryDays`.
@@ -101,6 +104,7 @@ interface CleanupRuleScopeInput {
 	parameters?: Record<string, unknown> | null;
 	operator?: CompositeOperator | string | null;
 	conditions?: readonly unknown[] | null;
+	expression?: RuleDocument | null;
 }
 
 interface CleanupMediaServerScanInput {
@@ -154,7 +158,8 @@ export function getCleanupRuleScopeValidationError(rule: CleanupRuleScopeInput):
 	if (
 		rule.ruleType === "composite" ||
 		rule.operator != null ||
-		(rule.conditions?.length ?? 0) > 0
+		(rule.conditions?.length ?? 0) > 0 ||
+		rule.expression != null
 	) {
 		return "Episode-scoped cleanup rules cannot be composite";
 	}
@@ -168,7 +173,42 @@ export function getCleanupRuleScopeValidationError(rule: CleanupRuleScopeInput):
 	return null;
 }
 
+function validateCleanupExpression(
+	data: {
+		ruleType?: RuleType;
+		operator?: CompositeOperator | null;
+		conditions?: Condition[] | null;
+		expression?: RuleDocument | null;
+	},
+	ctx: z.RefinementCtx,
+	requireCompositeRuleType: boolean,
+): void {
+	if (data.expression == null) return;
+	if (data.ruleType !== "composite" && (requireCompositeRuleType || data.ruleType !== undefined)) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: "Recursive cleanup expressions must use ruleType composite",
+			path: ["ruleType"],
+		});
+	}
+	if (data.operator != null) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: "Cleanup rules cannot mix expression with operator",
+			path: ["operator"],
+		});
+	}
+	if (data.conditions != null) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: "Cleanup rules cannot mix expression with conditions",
+			path: ["conditions"],
+		});
+	}
+}
+
 export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine((data, ctx) => {
+	validateCleanupExpression(data, ctx, true);
 	if (data.operator != null && (!data.conditions || data.conditions.length === 0)) {
 		ctx.addIssue({
 			code: z.ZodIssueCode.custom,
@@ -207,6 +247,7 @@ export const updateCleanupRuleSchema = baseCleanupRuleSchema
 		scanMediaServerInstanceIds: z.array(z.string().trim().min(1).max(128)).max(50).optional(),
 	})
 	.superRefine((data, ctx) => {
+		validateCleanupExpression(data, ctx, false);
 		if (data.operator != null && (!data.conditions || data.conditions.length === 0)) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
@@ -226,6 +267,13 @@ export const updateCleanupRuleSchema = baseCleanupRuleSchema
 					path: ["scanMediaServerAfterDelete"],
 				});
 			}
+		}
+		if (data.targetScope === "episode" && data.expression != null) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "Episode-scoped cleanup rules cannot be composite",
+				path: ["targetScope"],
+			});
 		}
 	});
 
@@ -299,6 +347,7 @@ export interface CleanupRuleResponse {
 	scanMediaServerInstanceIds: string[];
 	operator: CompositeOperator | null;
 	conditions: Condition[] | null;
+	expression: RuleDocument | null;
 	retentionMode: boolean;
 	/** Issue #474: when true, rule inherits config's rejectionMemoryDays. */
 	useGlobalRejectionMemory: boolean;

@@ -57,8 +57,14 @@ import type {
 	VideoCodecRuleParams,
 	YearRangeRuleParams,
 } from "@arr/shared";
-import { type DataSourceDependency, isRegexSafe, ruleDataSourceMap } from "@arr/shared";
+import {
+	type DataSourceDependency,
+	isRegexSafe,
+	ruleDataSourceMap,
+	walkPredicates,
+} from "@arr/shared";
 import type { LibraryCleanupRule } from "../prisma.js";
+import { mapCriteriaV0ToDocument } from "../rules/v0-mappers.js";
 import { safeJsonParse } from "../utils/json.js";
 import {
 	evaluateJellyfinAddedAt,
@@ -1581,30 +1587,18 @@ export function ruleUsesUnavailableData(
 	rule: LibraryCleanupRule,
 	failedSources?: Set<DataSourceDependency>,
 ): boolean {
-	// Check top-level rule type
-	if (shouldSkipRuleType(rule.ruleType, rule.parameters, failedSources)) return true;
-
-	// Check composite sub-conditions
-	if (rule.conditions) {
-		const conds = safeJsonParse(rule.conditions) as Array<{
-			ruleType?: string;
-			parameters?: Record<string, unknown>;
-		}> | null;
-		if (Array.isArray(conds)) {
-			for (const c of conds) {
-				if (
-					c.ruleType &&
-					shouldSkipRuleType(
-						c.ruleType,
-						c.parameters ? JSON.stringify(c.parameters) : null,
-						failedSources,
-					)
-				)
-					return true;
+	try {
+		const document = mapCriteriaV0ToDocument(rule);
+		for (const predicate of walkPredicates(document.root)) {
+			if (shouldSkipRuleType(predicate.kind, JSON.stringify(predicate.params), failedSources)) {
+				return true;
 			}
 		}
+		return false;
+	} catch {
+		// A malformed rule cannot prove that all of its dependencies are available.
+		return true;
 	}
-	return false;
 }
 
 /** Compatibility name for callers that only need cleanup-rule skip semantics. */

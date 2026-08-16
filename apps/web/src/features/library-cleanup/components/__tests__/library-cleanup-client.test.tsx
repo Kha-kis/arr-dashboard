@@ -196,6 +196,7 @@ function makeConfig(overrides: Partial<CleanupConfigResponse> = {}): CleanupConf
 				scanMediaServerInstanceIds: [],
 				operator: null,
 				conditions: null,
+				expression: null,
 				retentionMode: false,
 				useGlobalRejectionMemory: true,
 				rejectionMemoryDays: 0,

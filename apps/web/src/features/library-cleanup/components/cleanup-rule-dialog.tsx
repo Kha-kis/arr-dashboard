@@ -72,6 +72,7 @@ export function CleanupRuleDialog({
 	const { gradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
 	const isEdit = !!editRule;
+	const isRecursiveReadOnly = Boolean(editRule?.expression);
 	const { data: fieldOptions, isLoading: fieldOptionsLoading } = useCleanupFieldOptions();
 	const { data: allServices } = useServicesQuery();
 	const mediaServerInstances = fieldOptions?.mediaServerInstances ?? [];
@@ -766,6 +767,7 @@ export function CleanupRuleDialog({
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
+		if (isRecursiveReadOnly) return;
 		const isEpisodeScope = targetScope === "episode";
 		const shouldScanMediaServers = canScanMediaServers && scanMediaServerAfterDelete;
 		if (shouldScanMediaServers && scanMediaServerInstanceIds.length === 0) {
@@ -898,7 +900,27 @@ export function CleanupRuleDialog({
 					</div>
 				)}
 
+				{isRecursiveReadOnly && (
+					<div className="mt-2 space-y-4 rounded-lg border border-amber-500/20 bg-amber-500/10 p-4">
+						<p className="text-sm font-medium text-foreground">Recursive rule is read-only</p>
+						<p className="text-sm text-muted-foreground">
+							This editor cannot safely represent nested cleanup conditions yet. The stored rule has
+							not been changed; close this dialog to keep it intact.
+						</p>
+						<div className="flex justify-end">
+							<button
+								type="button"
+								onClick={() => onOpenChange(false)}
+								className="rounded-lg px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+							>
+								Close
+							</button>
+						</div>
+					</div>
+				)}
+
 				<form
+					hidden={isRecursiveReadOnly}
 					onSubmit={handleSubmit}
 					className="space-y-5 mt-2"
 					onFocus={(e) => {

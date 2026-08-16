@@ -49,6 +49,7 @@ import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, getLinuxIsoName } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { RuleDocumentView } from "./rule-document-view";
+import { isCriteriaDocumentV0Editable } from "../lib/rule-document-editor";
 
 const CleanupRuleComposerDialog = lazy(() =>
 	import("./cleanup-rule-composer-dialog").then((m) => ({
@@ -296,7 +297,10 @@ export function AutomationPanel() {
 											// dead-end (picker shows a wrong kind, save is blocked). Route
 											// those to the domain surface to repair instead.
 											const ctx = editableContext(rule.context);
-											return ctx && rule.unavailableKinds.length === 0
+											return ctx &&
+												rule.unavailableKinds.length === 0 &&
+												rule.document &&
+												isCriteriaDocumentV0Editable(rule.document)
 												? () => openEdit(ctx, rule.id)
 												: undefined;
 										})()}
