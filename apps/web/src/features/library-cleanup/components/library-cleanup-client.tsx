@@ -1,6 +1,8 @@
 "use client";
 
 import type {
+	CleanupAuditEventResponse,
+	CleanupAuditTimelineResponse,
 	CleanupExplainResponse,
 	CleanupPreviewResponse,
 	CleanupRuleResponse,
@@ -68,6 +70,8 @@ import {
 	useApproveCleanupItem,
 	useBulkCleanupAction,
 	useCleanupApprovalQueue,
+	useCleanupActivity,
+	useCleanupActivityEvents,
 	useCleanupConfig,
 	useCleanupExecute,
 	useCleanupExplain,
@@ -1369,6 +1373,217 @@ function parseLogDetail(detail: Record<string, unknown>): LogDetail | null {
 	};
 }
 
+function auditOutcomeStatus(
+	outcome: CleanupAuditEventResponse["outcome"],
+): "success" | "warning" | "error" | "info" {
+	switch (outcome) {
+		case "success":
+			return "success";
+		case "blocked":
+			return "warning";
+		case "failed":
+			return "error";
+		default:
+			return "info";
+	}
+}
+
+function CleanupActionTimeline({
+	timeline,
+	incognitoMode,
+}: {
+	timeline: CleanupAuditTimelineResponse;
+	incognitoMode: boolean;
+}) {
+	const [expanded, setExpanded] = useState(false);
+	const displayTitle = incognitoMode ? getLinuxIsoName(timeline.title) : timeline.title;
+
+	return (
+		<div className="rounded-lg border border-border/30 bg-card/20">
+			<button
+				type="button"
+				aria-expanded={expanded}
+				aria-label={`${expanded ? "Hide" : "Show"} history for ${displayTitle}`}
+				onClick={() => setExpanded((value) => !value)}
+				className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-card/30"
+			>
+				{expanded ? (
+					<ChevronUp className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+				) : (
+					<ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+				)}
+				<div className="min-w-0 flex-1">
+					<div className="flex flex-wrap items-center gap-2">
+						<span className="truncate font-medium text-foreground">{displayTitle}</span>
+						<StatusBadge status={auditOutcomeStatus(timeline.latestOutcome)}>
+							{timeline.latestOutcome}
+						</StatusBadge>
+						<span className="text-xs text-muted-foreground">{timeline.action}</span>
+					</div>
+					<p className="mt-1 text-xs text-muted-foreground">
+						{incognitoMode
+							? `${getIncognitoCleanupRuleName()}: ${getIncognitoCleanupReason()}`
+							: (timeline.ruleName ?? "No cleanup rule recorded")}
+					</p>
+					<p className="mt-0.5 text-xs text-muted-foreground/80">
+						{incognitoMode ? "Cleanup reason hidden in incognito mode." : timeline.actionableReason}
+					</p>
+				</div>
+				<time className="shrink-0 text-xs text-muted-foreground" dateTime={timeline.updatedAt}>
+					{new Date(timeline.updatedAt).toLocaleString()}
+				</time>
+			</button>
+
+			{expanded && (
+				<ExpandedCleanupActionTimeline timeline={timeline} incognitoMode={incognitoMode} />
+			)}
+		</div>
+	);
+}
+
+function ExpandedCleanupActionTimeline({
+	timeline,
+	incognitoMode,
+}: {
+	timeline: CleanupAuditTimelineResponse;
+	incognitoMode: boolean;
+}) {
+	const olderEvents = useCleanupActivityEvents(timeline.actionId, timeline.olderEventsCursor, 200);
+	const loadedOlderEvents = useMemo(
+		() => [...(olderEvents.data?.pages ?? [])].reverse().flatMap((page) => page.items),
+		[olderEvents.data?.pages],
+	);
+	const events = [...loadedOlderEvents, ...timeline.events];
+	const canLoadEarlier =
+		timeline.olderEventsCursor !== null &&
+		(olderEvents.data === undefined || olderEvents.hasNextPage === true);
+	const loadingEarlier = olderEvents.isFetching || olderEvents.isFetchingNextPage;
+	const earlierLoadFailed = olderEvents.isError || olderEvents.isFetchNextPageError;
+
+	return (
+		<div className="border-t border-border/20 px-4 py-3">
+			<ol className="space-y-3" aria-label="Cleanup action events">
+				{events.map((event) => (
+					<li key={event.id} className="flex gap-3 text-xs">
+						<div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
+						<div className="min-w-0 flex-1">
+							<div className="flex flex-wrap items-center gap-2">
+								<span className="font-medium text-foreground">
+									{event.eventType.replaceAll("_", " ")}
+								</span>
+								<StatusBadge status={auditOutcomeStatus(event.outcome)}>
+									{event.outcome}
+								</StatusBadge>
+								<time className="text-muted-foreground" dateTime={event.createdAt}>
+									{new Date(event.createdAt).toLocaleString()}
+								</time>
+							</div>
+							<p className="mt-1 text-muted-foreground">
+								{incognitoMode ? "Cleanup reason hidden in incognito mode." : event.reason}
+							</p>
+						</div>
+					</li>
+				))}
+			</ol>
+
+			{earlierLoadFailed && (
+				<p role="alert" className="mt-3 text-xs text-destructive">
+					Earlier events could not be loaded. The recent events shown above are unchanged.
+				</p>
+			)}
+			{canLoadEarlier && (
+				<button
+					type="button"
+					onClick={() =>
+						void (olderEvents.data === undefined
+							? olderEvents.refetch()
+							: olderEvents.fetchNextPage())
+					}
+					disabled={loadingEarlier}
+					className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-border/30 bg-card/30 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-card/50 disabled:opacity-50"
+				>
+					{loadingEarlier && <Loader2 className="h-3 w-3 animate-spin" />}
+					Load earlier events
+				</button>
+			)}
+		</div>
+	);
+}
+
+function ActionHistorySection() {
+	const [incognitoMode] = useIncognitoMode();
+	const [page, setPage] = useState(1);
+	const { data, isLoading, isError, refetch } = useCleanupActivity(page, 20);
+	const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
+
+	return (
+		<PremiumSection
+			title="Action history"
+			description="An immutable timeline for each proposed and executed cleanup action."
+			icon={ListChecks}
+		>
+			{isLoading ? (
+				<div className="flex items-center justify-center py-8">
+					<Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+				</div>
+			) : isError ? (
+				<div className="rounded-lg border border-border/30 bg-muted/10 p-4 text-center">
+					<p className="text-sm text-muted-foreground">Action history could not be loaded.</p>
+					<button
+						type="button"
+						onClick={() => refetch()}
+						className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-primary/20 px-3 py-1.5 text-xs font-medium text-primary transition-colors hover:bg-primary/30"
+					>
+						<RefreshCw className="h-3 w-3" />
+						Retry
+					</button>
+				</div>
+			) : !data || data.items.length === 0 ? (
+				<div className="rounded-lg border border-border/30 bg-muted/10 p-5 text-center">
+					<p className="text-sm text-muted-foreground">No cleanup actions recorded yet.</p>
+				</div>
+			) : (
+				<div className="space-y-3">
+					{data.items.map((timeline) => (
+						<CleanupActionTimeline
+							key={timeline.actionId}
+							timeline={timeline}
+							incognitoMode={incognitoMode}
+						/>
+					))}
+					{totalPages > 1 && (
+						<div className="flex items-center justify-between pt-1">
+							<span className="text-xs text-muted-foreground">
+								Page {page} of {totalPages}
+							</span>
+							<div className="flex items-center gap-2">
+								<button
+									type="button"
+									aria-label="Previous action history page"
+									onClick={() => setPage((value) => Math.max(1, value - 1))}
+									disabled={page <= 1}
+									className="rounded-md border border-border/30 bg-card/30 p-1.5 text-muted-foreground disabled:opacity-40"
+								>
+									<ChevronLeft className="h-4 w-4" />
+								</button>
+								<button
+									type="button"
+									aria-label="Next action history page"
+									onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
+									disabled={page >= totalPages}
+									className="rounded-md border border-border/30 bg-card/30 p-1.5 text-muted-foreground disabled:opacity-40"
+								>
+									<ChevronRight className="h-4 w-4" />
+								</button>
+							</div>
+						</div>
+					)}
+				</div>
+			)}
+		</PremiumSection>
+	);
+}
+
 function LogsTab() {
 	const [incognitoMode] = useIncognitoMode();
 	const [page, setPage] = useState(1);
@@ -1389,7 +1604,17 @@ function LogsTab() {
 	const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
 
 	return (
-		<div className="space-y-4">
+		<div className="space-y-6">
+			<ActionHistorySection />
+			<div className="flex items-center gap-3">
+				<ScrollText className="h-4 w-4 text-primary" />
+				<div>
+					<h3 className="font-semibold text-foreground">Cleanup runs</h3>
+					<p className="text-sm text-muted-foreground">
+						Aggregate results for each manual or scheduled cleanup run.
+					</p>
+				</div>
+			</div>
 			{/* Log status filter + date range — always visible */}
 			<div className="flex flex-wrap items-end gap-3">
 				<div className="flex items-center gap-2">

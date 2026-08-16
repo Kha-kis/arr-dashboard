@@ -21,6 +21,35 @@ import {
 } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps, FlaggedItem } from "../types.js";
 
+vi.mock("../cleanup-audit.js", () => ({
+	appendCleanupAuditEvent: vi.fn().mockResolvedValue({}),
+	appendCleanupTerminalAuditEvent: vi.fn().mockResolvedValue({}),
+	createCleanupTerminalAuditState: vi.fn(
+		(input: {
+			actorId?: string | null;
+			actorType: string;
+			correlationId: string;
+			eventType: string;
+			outcome: string;
+			summary?: { reason?: string };
+			trigger: string;
+		}) => ({
+			terminalAuditCorrelationId: input.correlationId,
+			terminalAuditEventType: input.eventType,
+			terminalAuditOutcome: input.outcome,
+			terminalAuditActorType: input.actorType,
+			terminalAuditActorId: input.actorId ?? null,
+			terminalAuditTrigger: input.trigger,
+			terminalAuditReason: input.summary?.reason ?? null,
+			terminalAuditRecordedAt: null,
+		}),
+	),
+	createCleanupAuditEventKey: vi.fn(
+		(input: { actionId: string; correlationId: string; eventType: string }) =>
+			`${input.eventType}:${input.actionId}:${input.correlationId}`,
+	),
+}));
+
 const silentLog = {
 	warn: vi.fn(),
 	error: vi.fn(),
@@ -515,6 +544,9 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		externalRuleCacheRefresher: vi.fn().mockResolvedValue(undefined),
 		log: silentLog,
 	};
+	deps.prisma.$transaction = vi.fn(
+		async (callback) => await callback(deps.prisma as never),
+	) as never;
 
 	return {
 		deps,

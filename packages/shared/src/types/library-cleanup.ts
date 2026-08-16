@@ -303,6 +303,53 @@ export interface CleanupLogResponse {
 	completedAt: string | null;
 }
 
+export interface CleanupAuditEventResponse {
+	id: string;
+	actionId: string;
+	correlationId: string;
+	sequence: number;
+	eventType: string;
+	outcome: "info" | "success" | "blocked" | "failed";
+	trigger: "scheduled" | "manual" | "approval" | "retry" | "recovery";
+	actorType: "operator" | "scheduler" | "system";
+	actorId: string | null;
+	approvalId: string | null;
+	runLogId: string | null;
+	reason: string;
+	evidence: Record<string, unknown> | null;
+	details: Record<string, unknown> | null;
+	createdAt: string;
+}
+
+export interface CleanupAuditTimelineResponse {
+	actionId: string;
+	instanceId: string;
+	arrItemId: number;
+	itemType: string;
+	targetScope: "series" | "episode";
+	arrEpisodeId: number | null;
+	title: string;
+	ruleId: string | null;
+	ruleName: string | null;
+	action: string;
+	trigger: CleanupAuditEventResponse["trigger"];
+	latestOutcome: CleanupAuditEventResponse["outcome"];
+	actionableReason: string;
+	startedAt: string;
+	updatedAt: string;
+	eventCount: number;
+	eventsTruncated: boolean;
+	olderEventsCursor: string | null;
+	events: CleanupAuditEventResponse[];
+}
+
+export interface PaginatedCleanupAuditTimelines {
+	items: CleanupAuditTimelineResponse[];
+	total: number;
+	page: number;
+	pageSize: number;
+}
+
 /** Distinct field values extracted from the user's library cache */
 export interface CleanupFieldOptionsResponse {
 	videoCodecs: string[];

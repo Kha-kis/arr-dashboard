@@ -24,7 +24,37 @@ const executorMocks = vi.hoisted(() => ({
 	),
 }));
 
+const auditMocks = vi.hoisted(() => ({
+	appendCleanupAuditEvent: vi.fn().mockResolvedValue({}),
+	appendCleanupTerminalAuditEvent: vi.fn().mockResolvedValue({}),
+	createCleanupTerminalAuditState: vi.fn(
+		(input: {
+			actorId?: string | null;
+			actorType: string;
+			correlationId: string;
+			eventType: string;
+			outcome: string;
+			summary?: { reason?: string };
+			trigger: string;
+		}) => ({
+			terminalAuditCorrelationId: input.correlationId,
+			terminalAuditEventType: input.eventType,
+			terminalAuditOutcome: input.outcome,
+			terminalAuditActorType: input.actorType,
+			terminalAuditActorId: input.actorId ?? null,
+			terminalAuditTrigger: input.trigger,
+			terminalAuditReason: input.summary?.reason ?? null,
+			terminalAuditRecordedAt: null,
+		}),
+	),
+	createCleanupAuditEventKey: vi.fn(
+		(input: { actionId: string; correlationId: string; eventType: string }) =>
+			`${input.eventType}:${input.actionId}:${input.correlationId}`,
+	),
+}));
+
 vi.mock("../../lib/library-cleanup/cleanup-executor.js", () => executorMocks);
+vi.mock("../../lib/library-cleanup/cleanup-audit.js", () => auditMocks);
 
 import {
 	CleanupMaintenanceConflictError,
@@ -57,31 +87,55 @@ describe("library cleanup approval compare-and-set routes", () => {
 		setupAuthInjection(app);
 		registerTestErrorHandler(app);
 		app.decorate("prisma", {
+			$transaction: vi.fn(async (callback) => await callback(app.prisma)),
 			libraryCleanupApproval: {
 				updateMany,
+				findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+					id: where.id,
+					configId: "config-1",
+					instanceId: "radarr-1",
+					arrItemId: 101,
+					arrEpisodeId: null,
+					itemType: "movie",
+					targetScope: "series",
+					title: "Example Movie",
+					episodeTitle: null,
+					seasonNumber: null,
+					episodeNumber: null,
+					matchedRuleId: "rule-1",
+					matchedRuleName: "Cleanup",
+					reason: "Matched",
+					action: "delete",
+				})),
 				findMany: vi.fn(
-					async ({ where }: { where: { status?: string; OR?: Array<{ status: string }> } }) => [
-						{
-							id: "retry-1",
-							instanceId: "radarr-1",
-							arrItemId: 101,
-							itemType: "movie",
-							title: "Example Movie",
-							matchedRuleId: "rule-1",
-							matchedRuleName: "Cleanup",
-							reason: "Matched",
-							action: "delete",
-							sizeOnDisk: 1000n,
-							year: 2024,
-							rating: 8,
-							status: where.status ?? "executed",
-							lastExecutionError: "Radarr is unavailable",
-							reviewedAt: new Date(),
-							executedAt: null,
-							createdAt: new Date(),
-							expiresAt: new Date(Date.now() + 60_000),
-						},
-					],
+					async ({
+						where,
+					}: {
+						where: { id?: { in: string[] }; status?: string; OR?: Array<{ status: string }> };
+					}) =>
+						where.id?.in && where.status && where.status !== status
+							? []
+							: (where.id?.in ?? ["retry-1"]).map((id) => ({
+									id,
+									configId: "config-1",
+									instanceId: "radarr-1",
+									arrItemId: 101,
+									itemType: "movie",
+									title: "Example Movie",
+									matchedRuleId: "rule-1",
+									matchedRuleName: "Cleanup",
+									reason: "Matched",
+									action: "delete",
+									sizeOnDisk: 1000n,
+									year: 2024,
+									rating: 8,
+									status: where.status ?? "executed",
+									lastExecutionError: "Radarr is unavailable",
+									reviewedAt: new Date(),
+									executedAt: null,
+									createdAt: new Date(),
+									expiresAt: new Date(Date.now() + 60_000),
+								})),
 				),
 				count: vi.fn().mockResolvedValue(1),
 			},
@@ -112,6 +166,88 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect([first.statusCode, second.statusCode].sort()).toEqual([200, 404]);
 		expect(executorMocks.executeApprovedItems).toHaveBeenCalledOnce();
 		expect(updateMany).toHaveBeenCalledTimes(2);
+		expect(auditMocks.appendCleanupAuditEvent).toHaveBeenCalledOnce();
+	});
+
+	it("records operator approval after the durable compare-and-set", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/library-cleanup/approval-queue/approval-1/approve",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(auditMocks.appendCleanupAuditEvent).toHaveBeenCalledWith(
+			app.prisma,
+			expect.objectContaining({
+				userId: "user-1",
+				configId: "config-1",
+				actionId: "approval-1",
+				actorType: "operator",
+				actorId: "user-1",
+				eventType: "approval_reviewed",
+				trigger: "approval",
+				outcome: "info",
+				evidence: { decision: "approved" },
+			}),
+		);
+		expect(auditMocks.appendCleanupAuditEvent.mock.invocationCallOrder[0]).toBeLessThan(
+			executorMocks.executeApprovedItems.mock.invocationCallOrder[0]!,
+		);
+	});
+
+	it("fails closed before approval execution when the operator audit cannot be persisted", async () => {
+		auditMocks.appendCleanupAuditEvent.mockRejectedValueOnce(new Error("audit unavailable"));
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/library-cleanup/approval-queue/approval-1/approve",
+		);
+
+		expect(response.statusCode).toBe(500);
+		expect(executorMocks.executeApprovedItems).not.toHaveBeenCalled();
+	});
+
+	it("records a rejected review only after its durable transition", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/library-cleanup/approval-queue/approval-1/reject",
+		);
+
+		expect(response.statusCode).toBe(204);
+		expect(auditMocks.appendCleanupAuditEvent).toHaveBeenCalledWith(
+			app.prisma,
+			expect.objectContaining({
+				eventType: "approval_reviewed",
+				outcome: "blocked",
+				evidence: { decision: "rejected" },
+			}),
+		);
+		expect(updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "rejected",
+					terminalAuditEventType: "approval_reviewed",
+					terminalAuditOutcome: "blocked",
+					terminalAuditActorType: "operator",
+					terminalAuditActorId: "user-1",
+					terminalAuditTrigger: "approval",
+					terminalAuditReason: "Rejected by the operator",
+					terminalAuditRecordedAt: expect.any(Date),
+				}),
+			}),
+		);
+	});
+
+	it("fails the rejected transition when its audit event is unavailable", async () => {
+		auditMocks.appendCleanupAuditEvent.mockRejectedValueOnce(new Error("audit unavailable"));
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/library-cleanup/approval-queue/approval-1/reject",
+		);
+
+		expect(response.statusCode).toBe(500);
+		expect(auditMocks.appendCleanupAuditEvent).toHaveBeenCalledOnce();
 	});
 
 	it("returns a retryable conflict when another cleanup run owns the database lease", async () => {
@@ -163,13 +299,35 @@ describe("library cleanup approval compare-and-set routes", () => {
 				id: { in: ["approval-1"] },
 				config: { userId: "user-1" },
 				status: "pending",
-				expiresAt: { gt: expect.any(Date) },
 			},
 			data: {
 				status: "approved",
 				executionToken: expect.any(String),
 				reviewedAt: expect.any(Date),
 			},
+		});
+	});
+
+	it("keeps expired approvals out of the pending queue while scheduler auditing catches up", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/library-cleanup/approval-queue?status=pending&pageSize=100",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(app.prisma.libraryCleanupApproval.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					status: "pending",
+					expiresAt: { gt: expect.any(Date) },
+				}),
+			}),
+		);
+		expect(app.prisma.libraryCleanupApproval.count).toHaveBeenCalledWith({
+			where: expect.objectContaining({
+				status: "pending",
+				expiresAt: { gt: expect.any(Date) },
+			}),
 		});
 	});
 
@@ -203,7 +361,6 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect(secondToken).toEqual(expect.any(String));
 		expect(firstToken).not.toBe(secondToken);
 		expect(updateMany.mock.calls[0]?.[0].data.executionToken).toBe(firstToken);
-		expect(updateMany.mock.calls[1]?.[0].data.executionToken).toBe(secondToken);
 	});
 
 	it.each(["retry_pending", "retry_executing"])(
@@ -294,6 +451,30 @@ describe("library cleanup approval compare-and-set routes", () => {
 
 		expect(response.statusCode).toBe(409);
 		expect(response.json()).toEqual({ error: "A cleanup operation is already in progress" });
+	});
+
+	it("attributes a manual cleanup run to the current operator", async () => {
+		executorMocks.executeCleanupRun.mockResolvedValueOnce({
+			isDryRun: false,
+			status: "completed",
+			itemsEvaluated: 0,
+			itemsFlagged: 0,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 0,
+			details: [],
+			durationMs: 1,
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/execute");
+
+		expect(response.statusCode).toBe(200);
+		expect(executorMocks.executeCleanupRun).toHaveBeenCalledWith(expect.anything(), "user-1", {
+			actorId: "user-1",
+			actorType: "operator",
+			trigger: "manual",
+		});
 	});
 
 	it("returns a retryable conflict when maintenance blocks manual cleanup", async () => {

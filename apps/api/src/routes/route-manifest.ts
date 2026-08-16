@@ -243,7 +243,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		prefix: "/api",
 		register: registerLibraryCleanupRoutes,
 		maturity: "internal",
-		summary: "Library cleanup rules, approvals, execution",
+		summary: "Library cleanup rules, approvals, execution, and action history",
 	},
 
 	// --- Media servers (Plex / Jellyfin / Tautulli) ---

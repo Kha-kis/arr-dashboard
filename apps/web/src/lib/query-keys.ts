@@ -512,6 +512,11 @@ export const libraryCleanupKeys = {
 	logs: (page: number, filters?: Record<string, string>) =>
 		["library-cleanup-logs", page, filters] as const,
 	logsAll: ["library-cleanup-logs"] as const,
+	activity: (page: number, pageSize: number) =>
+		["library-cleanup-activity", page, pageSize] as const,
+	activityAll: ["library-cleanup-activity"] as const,
+	activityEvents: (actionId: string, cursor: string | null, pageSize: number) =>
+		["library-cleanup-activity-events", actionId, cursor, pageSize] as const,
 };
 
 /* -------------------------------------------------------------------------- */

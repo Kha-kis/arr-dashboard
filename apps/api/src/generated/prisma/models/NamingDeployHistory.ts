@@ -29,11 +29,13 @@ export type AggregateNamingDeployHistory = {
 export type NamingDeployHistoryAvgAggregateOutputType = {
   changedFields: number | null
   totalFields: number | null
+  connectionGeneration: number | null
 }
 
 export type NamingDeployHistorySumAggregateOutputType = {
   changedFields: number | null
   totalFields: number | null
+  connectionGeneration: number | null
 }
 
 export type NamingDeployHistoryMinAggregateOutputType = {
@@ -51,6 +53,8 @@ export type NamingDeployHistoryMinAggregateOutputType = {
   errorMessage: string | null
   rolledBack: boolean | null
   rolledBackAt: Date | null
+  connectionGeneration: number | null
+  connectionStateToken: string | null
 }
 
 export type NamingDeployHistoryMaxAggregateOutputType = {
@@ -68,6 +72,8 @@ export type NamingDeployHistoryMaxAggregateOutputType = {
   errorMessage: string | null
   rolledBack: boolean | null
   rolledBackAt: Date | null
+  connectionGeneration: number | null
+  connectionStateToken: string | null
 }
 
 export type NamingDeployHistoryCountAggregateOutputType = {
@@ -85,6 +91,8 @@ export type NamingDeployHistoryCountAggregateOutputType = {
   errorMessage: number
   rolledBack: number
   rolledBackAt: number
+  connectionGeneration: number
+  connectionStateToken: number
   _all: number
 }
 
@@ -92,11 +100,13 @@ export type NamingDeployHistoryCountAggregateOutputType = {
 export type NamingDeployHistoryAvgAggregateInputType = {
   changedFields?: true
   totalFields?: true
+  connectionGeneration?: true
 }
 
 export type NamingDeployHistorySumAggregateInputType = {
   changedFields?: true
   totalFields?: true
+  connectionGeneration?: true
 }
 
 export type NamingDeployHistoryMinAggregateInputType = {
@@ -114,6 +124,8 @@ export type NamingDeployHistoryMinAggregateInputType = {
   errorMessage?: true
   rolledBack?: true
   rolledBackAt?: true
+  connectionGeneration?: true
+  connectionStateToken?: true
 }
 
 export type NamingDeployHistoryMaxAggregateInputType = {
@@ -131,6 +143,8 @@ export type NamingDeployHistoryMaxAggregateInputType = {
   errorMessage?: true
   rolledBack?: true
   rolledBackAt?: true
+  connectionGeneration?: true
+  connectionStateToken?: true
 }
 
 export type NamingDeployHistoryCountAggregateInputType = {
@@ -148,6 +162,8 @@ export type NamingDeployHistoryCountAggregateInputType = {
   errorMessage?: true
   rolledBack?: true
   rolledBackAt?: true
+  connectionGeneration?: true
+  connectionStateToken?: true
   _all?: true
 }
 
@@ -252,6 +268,8 @@ export type NamingDeployHistoryGroupByOutputType = {
   errorMessage: string | null
   rolledBack: boolean
   rolledBackAt: Date | null
+  connectionGeneration: number | null
+  connectionStateToken: string | null
   _count: NamingDeployHistoryCountAggregateOutputType | null
   _avg: NamingDeployHistoryAvgAggregateOutputType | null
   _sum: NamingDeployHistorySumAggregateOutputType | null
@@ -292,6 +310,8 @@ export type NamingDeployHistoryWhereInput = {
   errorMessage?: Prisma.StringNullableFilter<"NamingDeployHistory"> | string | null
   rolledBack?: Prisma.BoolFilter<"NamingDeployHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableFilter<"NamingDeployHistory"> | Date | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"NamingDeployHistory"> | number | null
+  connectionStateToken?: Prisma.StringNullableFilter<"NamingDeployHistory"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
 }
@@ -311,6 +331,8 @@ export type NamingDeployHistoryOrderByWithRelationInput = {
   errorMessage?: Prisma.SortOrderInput | Prisma.SortOrder
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
   user?: Prisma.UserOrderByWithRelationInput
 }
@@ -333,6 +355,8 @@ export type NamingDeployHistoryWhereUniqueInput = Prisma.AtLeast<{
   errorMessage?: Prisma.StringNullableFilter<"NamingDeployHistory"> | string | null
   rolledBack?: Prisma.BoolFilter<"NamingDeployHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableFilter<"NamingDeployHistory"> | Date | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"NamingDeployHistory"> | number | null
+  connectionStateToken?: Prisma.StringNullableFilter<"NamingDeployHistory"> | string | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
 }, "id">
@@ -352,6 +376,8 @@ export type NamingDeployHistoryOrderByWithAggregationInput = {
   errorMessage?: Prisma.SortOrderInput | Prisma.SortOrder
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.NamingDeployHistoryCountOrderByAggregateInput
   _avg?: Prisma.NamingDeployHistoryAvgOrderByAggregateInput
   _max?: Prisma.NamingDeployHistoryMaxOrderByAggregateInput
@@ -377,6 +403,8 @@ export type NamingDeployHistoryScalarWhereWithAggregatesInput = {
   errorMessage?: Prisma.StringNullableWithAggregatesFilter<"NamingDeployHistory"> | string | null
   rolledBack?: Prisma.BoolWithAggregatesFilter<"NamingDeployHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableWithAggregatesFilter<"NamingDeployHistory"> | Date | string | null
+  connectionGeneration?: Prisma.IntNullableWithAggregatesFilter<"NamingDeployHistory"> | number | null
+  connectionStateToken?: Prisma.StringNullableWithAggregatesFilter<"NamingDeployHistory"> | string | null
 }
 
 export type NamingDeployHistoryCreateInput = {
@@ -392,6 +420,8 @@ export type NamingDeployHistoryCreateInput = {
   errorMessage?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  connectionGeneration?: number | null
+  connectionStateToken?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutNamingDeployHistoryInput
   user: Prisma.UserCreateNestedOneWithoutNamingDeployHistoryInput
 }
@@ -411,6 +441,8 @@ export type NamingDeployHistoryUncheckedCreateInput = {
   errorMessage?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  connectionGeneration?: number | null
+  connectionStateToken?: string | null
 }
 
 export type NamingDeployHistoryUpdateInput = {
@@ -426,6 +458,8 @@ export type NamingDeployHistoryUpdateInput = {
   errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutNamingDeployHistoryNestedInput
   user?: Prisma.UserUpdateOneRequiredWithoutNamingDeployHistoryNestedInput
 }
@@ -445,6 +479,8 @@ export type NamingDeployHistoryUncheckedUpdateInput = {
   errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type NamingDeployHistoryCreateManyInput = {
@@ -462,6 +498,8 @@ export type NamingDeployHistoryCreateManyInput = {
   errorMessage?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  connectionGeneration?: number | null
+  connectionStateToken?: string | null
 }
 
 export type NamingDeployHistoryUpdateManyMutationInput = {
@@ -477,6 +515,8 @@ export type NamingDeployHistoryUpdateManyMutationInput = {
   errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type NamingDeployHistoryUncheckedUpdateManyInput = {
@@ -494,6 +534,8 @@ export type NamingDeployHistoryUncheckedUpdateManyInput = {
   errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type NamingDeployHistoryListRelationFilter = {
@@ -521,11 +563,14 @@ export type NamingDeployHistoryCountOrderByAggregateInput = {
   errorMessage?: Prisma.SortOrder
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrder
 }
 
 export type NamingDeployHistoryAvgOrderByAggregateInput = {
   changedFields?: Prisma.SortOrder
   totalFields?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
 }
 
 export type NamingDeployHistoryMaxOrderByAggregateInput = {
@@ -543,6 +588,8 @@ export type NamingDeployHistoryMaxOrderByAggregateInput = {
   errorMessage?: Prisma.SortOrder
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrder
 }
 
 export type NamingDeployHistoryMinOrderByAggregateInput = {
@@ -560,11 +607,14 @@ export type NamingDeployHistoryMinOrderByAggregateInput = {
   errorMessage?: Prisma.SortOrder
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrder
 }
 
 export type NamingDeployHistorySumOrderByAggregateInput = {
   changedFields?: Prisma.SortOrder
   totalFields?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
 }
 
 export type NamingDeployHistoryCreateNestedManyWithoutUserInput = {
@@ -664,6 +714,8 @@ export type NamingDeployHistoryCreateWithoutUserInput = {
   errorMessage?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  connectionGeneration?: number | null
+  connectionStateToken?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutNamingDeployHistoryInput
 }
 
@@ -681,6 +733,8 @@ export type NamingDeployHistoryUncheckedCreateWithoutUserInput = {
   errorMessage?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  connectionGeneration?: number | null
+  connectionStateToken?: string | null
 }
 
 export type NamingDeployHistoryCreateOrConnectWithoutUserInput = {
@@ -726,6 +780,8 @@ export type NamingDeployHistoryScalarWhereInput = {
   errorMessage?: Prisma.StringNullableFilter<"NamingDeployHistory"> | string | null
   rolledBack?: Prisma.BoolFilter<"NamingDeployHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableFilter<"NamingDeployHistory"> | Date | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"NamingDeployHistory"> | number | null
+  connectionStateToken?: Prisma.StringNullableFilter<"NamingDeployHistory"> | string | null
 }
 
 export type NamingDeployHistoryCreateWithoutInstanceInput = {
@@ -741,6 +797,8 @@ export type NamingDeployHistoryCreateWithoutInstanceInput = {
   errorMessage?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  connectionGeneration?: number | null
+  connectionStateToken?: string | null
   user: Prisma.UserCreateNestedOneWithoutNamingDeployHistoryInput
 }
 
@@ -758,6 +816,8 @@ export type NamingDeployHistoryUncheckedCreateWithoutInstanceInput = {
   errorMessage?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  connectionGeneration?: number | null
+  connectionStateToken?: string | null
 }
 
 export type NamingDeployHistoryCreateOrConnectWithoutInstanceInput = {
@@ -799,6 +859,8 @@ export type NamingDeployHistoryCreateManyUserInput = {
   errorMessage?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  connectionGeneration?: number | null
+  connectionStateToken?: string | null
 }
 
 export type NamingDeployHistoryUpdateWithoutUserInput = {
@@ -814,6 +876,8 @@ export type NamingDeployHistoryUpdateWithoutUserInput = {
   errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutNamingDeployHistoryNestedInput
 }
 
@@ -831,6 +895,8 @@ export type NamingDeployHistoryUncheckedUpdateWithoutUserInput = {
   errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type NamingDeployHistoryUncheckedUpdateManyWithoutUserInput = {
@@ -847,6 +913,8 @@ export type NamingDeployHistoryUncheckedUpdateManyWithoutUserInput = {
   errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type NamingDeployHistoryCreateManyInstanceInput = {
@@ -863,6 +931,8 @@ export type NamingDeployHistoryCreateManyInstanceInput = {
   errorMessage?: string | null
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
+  connectionGeneration?: number | null
+  connectionStateToken?: string | null
 }
 
 export type NamingDeployHistoryUpdateWithoutInstanceInput = {
@@ -878,6 +948,8 @@ export type NamingDeployHistoryUpdateWithoutInstanceInput = {
   errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   user?: Prisma.UserUpdateOneRequiredWithoutNamingDeployHistoryNestedInput
 }
 
@@ -895,6 +967,8 @@ export type NamingDeployHistoryUncheckedUpdateWithoutInstanceInput = {
   errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 export type NamingDeployHistoryUncheckedUpdateManyWithoutInstanceInput = {
@@ -911,6 +985,8 @@ export type NamingDeployHistoryUncheckedUpdateManyWithoutInstanceInput = {
   errorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
 
 
@@ -930,6 +1006,8 @@ export type NamingDeployHistorySelect<ExtArgs extends runtime.Types.Extensions.I
   errorMessage?: boolean
   rolledBack?: boolean
   rolledBackAt?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["namingDeployHistory"]>
@@ -949,6 +1027,8 @@ export type NamingDeployHistorySelectCreateManyAndReturn<ExtArgs extends runtime
   errorMessage?: boolean
   rolledBack?: boolean
   rolledBackAt?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["namingDeployHistory"]>
@@ -968,6 +1048,8 @@ export type NamingDeployHistorySelectUpdateManyAndReturn<ExtArgs extends runtime
   errorMessage?: boolean
   rolledBack?: boolean
   rolledBackAt?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["namingDeployHistory"]>
@@ -987,9 +1069,11 @@ export type NamingDeployHistorySelectScalar = {
   errorMessage?: boolean
   rolledBack?: boolean
   rolledBackAt?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
 }
 
-export type NamingDeployHistoryOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "userId" | "deployedAt" | "status" | "selectedPresets" | "resolvedPayload" | "deployedHash" | "previousConfig" | "changedFields" | "totalFields" | "errorMessage" | "rolledBack" | "rolledBackAt", ExtArgs["result"]["namingDeployHistory"]>
+export type NamingDeployHistoryOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "userId" | "deployedAt" | "status" | "selectedPresets" | "resolvedPayload" | "deployedHash" | "previousConfig" | "changedFields" | "totalFields" | "errorMessage" | "rolledBack" | "rolledBackAt" | "connectionGeneration" | "connectionStateToken", ExtArgs["result"]["namingDeployHistory"]>
 export type NamingDeployHistoryInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -1024,6 +1108,8 @@ export type $NamingDeployHistoryPayload<ExtArgs extends runtime.Types.Extensions
     errorMessage: string | null
     rolledBack: boolean
     rolledBackAt: Date | null
+    connectionGeneration: number | null
+    connectionStateToken: string | null
   }, ExtArgs["result"]["namingDeployHistory"]>
   composites: {}
 }
@@ -1463,6 +1549,8 @@ export interface NamingDeployHistoryFieldRefs {
   readonly errorMessage: Prisma.FieldRef<"NamingDeployHistory", 'String'>
   readonly rolledBack: Prisma.FieldRef<"NamingDeployHistory", 'Boolean'>
   readonly rolledBackAt: Prisma.FieldRef<"NamingDeployHistory", 'DateTime'>
+  readonly connectionGeneration: Prisma.FieldRef<"NamingDeployHistory", 'Int'>
+  readonly connectionStateToken: Prisma.FieldRef<"NamingDeployHistory", 'String'>
 }
     
 

@@ -17,7 +17,13 @@ import {
 	updateCleanupRuleSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import { assertCompleteCacheRefresh } from "../lib/cache-refresh-status.js";
+import {
+	appendCleanupAuditEvent,
+	createCleanupAuditEventKey,
+	createCleanupTerminalAuditState,
+} from "../lib/library-cleanup/cleanup-audit.js";
 import {
 	buildEvalContext,
 	CleanupPolicyMutationConflictError,
@@ -41,6 +47,7 @@ import {
 } from "../lib/library-cleanup/episode-scope.js";
 import { getFilterReason } from "../lib/library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval, CleanupExecutorDeps } from "../lib/library-cleanup/types.js";
+import type { PrismaClient } from "../lib/prisma.js";
 import {
 	buildFreshCompleteFileIdIndex,
 	getAllHashesForFileIdComplete,
@@ -176,6 +183,169 @@ function serializeLog(l: Record<string, unknown>) {
 	};
 }
 
+type CleanupAuditRouteRow = {
+	eventOrder: number;
+	actionId: string;
+	correlationId: string;
+	actionSequence: number;
+	actorType: string;
+	actorId: string | null;
+	eventType: string;
+	trigger: string;
+	targetKind: string;
+	targetId: string | null;
+	targetInstanceId: string | null;
+	targetItemType: string | null;
+	targetArrItemId: number | null;
+	targetArrEpisodeId: number | null;
+	targetScope: string | null;
+	title: string | null;
+	ruleId: string | null;
+	ruleName: string | null;
+	action: string | null;
+	reason: string | null;
+	outcome: string;
+	evidence: string;
+	details: string | null;
+	createdAt: Date;
+};
+
+function parseAuditMetadata(value: string | null): Record<string, unknown> | null {
+	const parsed = safeJsonParse(value);
+	return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+		? (parsed as Record<string, unknown>)
+		: null;
+}
+
+function serializeCleanupAuditEvent(event: CleanupAuditRouteRow) {
+	return {
+		id: String(event.eventOrder),
+		actionId: event.actionId,
+		correlationId: event.correlationId,
+		sequence: event.actionSequence,
+		eventType: event.eventType,
+		outcome: event.outcome,
+		trigger: event.trigger,
+		actorType: event.actorType,
+		actorId: event.actorId,
+		approvalId: event.targetKind === "approval" ? event.targetId : null,
+		runLogId: event.targetKind === "cleanup_run" ? event.targetId : null,
+		reason: event.reason ?? event.eventType.replaceAll("_", " "),
+		evidence: parseAuditMetadata(event.evidence),
+		details: parseAuditMetadata(event.details),
+		createdAt: event.createdAt.toISOString(),
+	};
+}
+
+type ApprovalReviewDecision = "approved" | "rejected";
+
+function cleanupApprovalAuditTitle(approval: {
+	title: string;
+	targetScope: string;
+	seasonNumber: number | null;
+	episodeNumber: number | null;
+	episodeTitle: string | null;
+}): string {
+	if (
+		approval.targetScope !== "episode" ||
+		approval.seasonNumber === null ||
+		approval.episodeNumber === null
+	) {
+		return approval.title;
+	}
+	const coordinates = `S${String(approval.seasonNumber).padStart(2, "0")}E${String(approval.episodeNumber).padStart(2, "0")}`;
+	return `${approval.title} ${coordinates}${approval.episodeTitle ? ` · ${approval.episodeTitle}` : ""}`;
+}
+
+async function recordApprovalReview(
+	prisma: Pick<
+		PrismaClient,
+		"libraryCleanupApproval" | "libraryCleanupAuditEvent" | "libraryCleanupConfig"
+	>,
+	input: {
+		userId: string;
+		approvalId: string;
+		decision: ApprovalReviewDecision;
+		correlationId: string;
+		reviewedAt: Date;
+		executionToken?: string;
+	},
+): Promise<void> {
+	const approval = await prisma.libraryCleanupApproval.findFirst({
+		where: {
+			id: input.approvalId,
+			config: { userId: input.userId },
+			status: input.decision,
+			reviewedAt: input.reviewedAt,
+			...(input.executionToken === undefined ? {} : { executionToken: input.executionToken }),
+		},
+		select: {
+			id: true,
+			configId: true,
+			instanceId: true,
+			arrItemId: true,
+			arrEpisodeId: true,
+			itemType: true,
+			targetScope: true,
+			seasonNumber: true,
+			episodeNumber: true,
+			episodeTitle: true,
+			title: true,
+			matchedRuleId: true,
+			matchedRuleName: true,
+			action: true,
+		},
+	});
+	if (!approval || (approval.itemType !== "movie" && approval.itemType !== "series")) {
+		throw new Error("Cleanup approval review transition changed before its audit was recorded");
+	}
+	const action: "delete" | "delete_files" | "unmonitor" | undefined =
+		approval.action === "delete" ||
+		approval.action === "unmonitor" ||
+		approval.action === "delete_files"
+			? approval.action
+			: undefined;
+
+	const eventType = "approval_reviewed" as const;
+	const event = {
+		userId: input.userId,
+		configId: approval.configId,
+		eventKey: createCleanupAuditEventKey({
+			actionId: approval.id,
+			correlationId: input.correlationId,
+			eventType,
+		}),
+		actionId: approval.id,
+		correlationId: input.correlationId,
+		actorType: "operator",
+		actorId: input.userId,
+		eventType,
+		trigger: "approval",
+		target: {
+			kind: "approval",
+			id: approval.id,
+			instanceId: approval.instanceId,
+			itemType: approval.itemType,
+			arrItemId: approval.arrItemId,
+			targetScope: approval.targetScope === "episode" ? "episode" : "series",
+			...(approval.targetScope === "episode" && approval.arrEpisodeId !== null
+				? { arrEpisodeId: approval.arrEpisodeId }
+				: {}),
+		},
+		summary: {
+			title: cleanupApprovalAuditTitle(approval),
+			ruleId: approval.matchedRuleId,
+			ruleName: approval.matchedRuleName,
+			...(action === undefined ? {} : { action }),
+			reason:
+				input.decision === "approved" ? "Approved by the operator" : "Rejected by the operator",
+		},
+		outcome: input.decision === "approved" ? "info" : "blocked",
+		evidence: { decision: input.decision },
+	} as const;
+	await appendCleanupAuditEvent(prisma, event);
+}
+
 function safeJsonParse(val: string | null | undefined): unknown {
 	if (!val) return null;
 	try {
@@ -192,6 +362,19 @@ function safeJsonParse(val: string | null | undefined): unknown {
 // Field options cache: userId → { data, expiresAt }
 const fieldOptionsCache = new Map<string, { data: unknown; expiresAt: number }>();
 const FIELD_OPTIONS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CLEANUP_ACTIVITY_EVENTS_PER_TIMELINE = 200;
+const cleanupActivityEventParamsSchema = z.object({
+	actionId: z.string().min(1).max(256),
+});
+const cleanupActivityEventQuerySchema = z.object({
+	cursor: z.coerce.number().int().positive().max(2_147_483_647),
+	pageSize: z.coerce
+		.number()
+		.int()
+		.min(1)
+		.max(CLEANUP_ACTIVITY_EVENTS_PER_TIMELINE)
+		.default(CLEANUP_ACTIVITY_EVENTS_PER_TIMELINE),
+});
 
 export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	const quiFileHashIndexFactory = async (instance: Parameters<typeof createQuiClient>[1]) => {
@@ -990,6 +1173,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						log: request.log,
 					},
 					userId,
+					{ actorId: userId, actorType: "operator", trigger: "manual" },
 				);
 
 				return reply.send(result);
@@ -1033,12 +1217,15 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						],
 					}
 				: { status: statusFilter };
+		const pendingFreshnessWhere =
+			statusFilter === "pending" ? { expiresAt: { gt: new Date() } } : {};
 
 		const [approvals, total] = await Promise.all([
 			app.prisma.libraryCleanupApproval.findMany({
 				where: {
 					config: { userId },
 					...statusWhere,
+					...pendingFreshnessWhere,
 				},
 				orderBy: { createdAt: "desc" },
 				skip: (page - 1) * pageSize,
@@ -1048,6 +1235,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				where: {
 					config: { userId },
 					...statusWhere,
+					...pendingFreshnessWhere,
 				},
 			}),
 		]);
@@ -1083,23 +1271,36 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			const userId = request.currentUser!.id;
 			const { id } = request.params;
 			const approvalRequestToken = randomUUID();
+			const reviewedAt = new Date();
 
 			try {
 				return await withCleanupOperationGuard(async () => {
-					const transition = await app.prisma.libraryCleanupApproval.updateMany({
-						where: {
-							id,
-							config: { userId },
-							status: "pending",
-							expiresAt: { gt: new Date() },
-						},
-						data: {
-							status: "approved",
+					const transitioned = await app.prisma.$transaction(async (tx) => {
+						const transition = await tx.libraryCleanupApproval.updateMany({
+							where: {
+								id,
+								config: { userId },
+								status: "pending",
+								expiresAt: { gt: new Date() },
+							},
+							data: {
+								status: "approved",
+								executionToken: approvalRequestToken,
+								reviewedAt,
+							},
+						});
+						if (transition.count !== 1) return false;
+						await recordApprovalReview(tx, {
+							userId,
+							approvalId: id,
+							decision: "approved",
+							correlationId: approvalRequestToken,
+							reviewedAt,
 							executionToken: approvalRequestToken,
-							reviewedAt: new Date(),
-						},
+						});
+						return true;
 					});
-					if (transition.count !== 1) {
+					if (!transitioned) {
 						return reply.status(404).send({ error: "Approval not found or not pending" });
 					}
 
@@ -1167,14 +1368,42 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		async (request, reply) => {
 			const userId = request.currentUser!.id;
 			const { id } = request.params;
+			const reviewCorrelationId = randomUUID();
+			const reviewedAt = new Date();
+			const rejectedTerminalState = createCleanupTerminalAuditState({
+				correlationId: reviewCorrelationId,
+				actorType: "operator",
+				actorId: userId,
+				eventType: "approval_reviewed",
+				trigger: "approval",
+				outcome: "blocked",
+				summary: { reason: "Rejected by the operator" },
+			});
 
 			try {
 				return await withCleanupOperationGuard(async () => {
-					const transition = await app.prisma.libraryCleanupApproval.updateMany({
-						where: { id, config: { userId }, status: "pending" },
-						data: { status: "rejected", executionToken: null, reviewedAt: new Date() },
+					const transitioned = await app.prisma.$transaction(async (tx) => {
+						const transition = await tx.libraryCleanupApproval.updateMany({
+							where: { id, config: { userId }, status: "pending" },
+							data: {
+								status: "rejected",
+								executionToken: null,
+								reviewedAt,
+								...rejectedTerminalState,
+								terminalAuditRecordedAt: reviewedAt,
+							},
+						});
+						if (transition.count !== 1) return false;
+						await recordApprovalReview(tx, {
+							userId,
+							approvalId: id,
+							decision: "rejected",
+							correlationId: reviewCorrelationId,
+							reviewedAt,
+						});
+						return true;
 					});
-					if (transition.count !== 1) {
+					if (!transitioned) {
 						return reply.status(404).send({ error: "Approval not found or not pending" });
 					}
 
@@ -1197,28 +1426,89 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		try {
 			return await withCleanupOperationGuard(async () => {
 				if (action === "rejected") {
-					const result = await app.prisma.libraryCleanupApproval.updateMany({
-						where: { id: { in: ids }, config: { userId }, status: "pending" },
-						data: { status: "rejected", executionToken: null, reviewedAt: new Date() },
+					const reviewCorrelationId = randomUUID();
+					const reviewedAt = new Date();
+					const rejectedTerminalState = createCleanupTerminalAuditState({
+						correlationId: reviewCorrelationId,
+						actorType: "operator",
+						actorId: userId,
+						eventType: "approval_reviewed",
+						trigger: "approval",
+						outcome: "blocked",
+						summary: { reason: "Rejected by the operator" },
 					});
-					return reply.send({ updated: result.count });
+					const updated = await app.prisma.$transaction(async (tx) => {
+						const candidates = await tx.libraryCleanupApproval.findMany({
+							where: { id: { in: ids }, config: { userId }, status: "pending" },
+							select: { id: true },
+						});
+						if (candidates.length === 0) return 0;
+						const candidateIds = candidates.map((candidate) => candidate.id);
+						const result = await tx.libraryCleanupApproval.updateMany({
+							where: { id: { in: candidateIds }, config: { userId }, status: "pending" },
+							data: {
+								status: "rejected",
+								executionToken: null,
+								reviewedAt,
+								...rejectedTerminalState,
+								terminalAuditRecordedAt: reviewedAt,
+							},
+						});
+						if (result.count !== candidateIds.length) {
+							throw new Error("Cleanup bulk rejection ownership changed");
+						}
+						for (const approvalId of candidateIds) {
+							await recordApprovalReview(tx, {
+								userId,
+								approvalId,
+								decision: "rejected",
+								correlationId: reviewCorrelationId,
+								reviewedAt,
+							});
+						}
+						return result.count;
+					});
+					return reply.send({ updated });
 				}
 
 				// Approve and execute under one guard so restore cannot observe
 				// an intermediate approved state.
 				const approvalRequestToken = randomUUID();
-				await app.prisma.libraryCleanupApproval.updateMany({
-					where: {
-						id: { in: ids },
-						config: { userId },
-						status: "pending",
-						expiresAt: { gt: new Date() },
-					},
-					data: {
-						status: "approved",
-						executionToken: approvalRequestToken,
-						reviewedAt: new Date(),
-					},
+				const reviewedAt = new Date();
+				const approvedIds = await app.prisma.$transaction(async (tx) => {
+					const candidates = await tx.libraryCleanupApproval.findMany({
+						where: {
+							id: { in: ids },
+							config: { userId },
+							status: "pending",
+							expiresAt: { gt: new Date() },
+						},
+						select: { id: true },
+					});
+					const candidateIds = candidates.map((candidate) => candidate.id);
+					if (candidateIds.length === 0) return [];
+					const result = await tx.libraryCleanupApproval.updateMany({
+						where: { id: { in: candidateIds }, config: { userId }, status: "pending" },
+						data: {
+							status: "approved",
+							executionToken: approvalRequestToken,
+							reviewedAt,
+						},
+					});
+					if (result.count !== candidateIds.length) {
+						throw new Error("Cleanup bulk approval ownership changed");
+					}
+					for (const approvalId of candidateIds) {
+						await recordApprovalReview(tx, {
+							userId,
+							approvalId,
+							decision: "approved",
+							correlationId: approvalRequestToken,
+							reviewedAt,
+							executionToken: approvalRequestToken,
+						});
+					}
+					return candidateIds;
 				});
 
 				const result = await executeApprovedItems(
@@ -1232,7 +1522,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						log: request.log,
 					},
 					userId,
-					ids,
+					approvedIds,
 					approvalRequestToken,
 				);
 
@@ -1247,6 +1537,126 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	});
 
 	// ─── Logs ─────────────────────────────────────────────────────────
+
+	/** GET /api/library-cleanup/activity
+	 *  Bounded per-action append-only timelines. Aggregate run logs remain
+	 *  available separately and are intentionally not folded into this feed.
+	 */
+	app.get("/library-cleanup/activity", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { page, pageSize, skip } = parsePaginationQuery(request.query as Record<string, string>);
+		const [countRow] = await app.prisma.$queryRaw<Array<{ total: bigint | number }>>`
+			SELECT COUNT(DISTINCT audit."actionId") AS "total"
+			FROM "library_cleanup_audit_events" AS audit
+			INNER JOIN "library_cleanup_configs" AS config
+				ON config."id" = audit."configId"
+			WHERE config."userId" = ${userId}
+		`;
+		const total = Number(countRow?.total ?? 0);
+		const latestActions = await app.prisma.libraryCleanupAuditEvent.groupBy({
+			by: ["actionId"],
+			where: { config: { userId } },
+			_max: { eventOrder: true },
+			_min: { createdAt: true },
+			_count: { _all: true },
+			orderBy: { _max: { eventOrder: "desc" } },
+			skip,
+			take: pageSize,
+		});
+		const actionIds = latestActions.map((row) => row.actionId);
+		const eventPages = await Promise.all(
+			latestActions.map(async (action) => ({
+				actionId: action.actionId,
+				events: await app.prisma.libraryCleanupAuditEvent.findMany({
+					where: {
+						config: { userId },
+						actionId: action.actionId,
+						...(action._max.eventOrder === null
+							? {}
+							: { eventOrder: { lte: action._max.eventOrder } }),
+					},
+					orderBy: { eventOrder: "desc" },
+					take: CLEANUP_ACTIVITY_EVENTS_PER_TIMELINE,
+				}),
+			})),
+		);
+		const eventsByAction = new Map(
+			eventPages.map(({ actionId, events }) => [actionId, [...events].reverse()] as const),
+		);
+		const actionMetadata = new Map(
+			latestActions.map((row) => [
+				row.actionId,
+				{ count: row._count._all, startedAt: row._min.createdAt },
+			]),
+		);
+
+		const timelines = actionIds.flatMap((actionId) => {
+			const chronological = eventsByAction.get(actionId);
+			if (!chronological || chronological.length === 0) return [];
+			const first = chronological[0]!;
+			const latest = chronological[chronological.length - 1]!;
+			const metadata = actionMetadata.get(actionId);
+			const eventCount = metadata?.count ?? chronological.length;
+			return [
+				{
+					actionId,
+					instanceId: first.targetInstanceId ?? "",
+					arrItemId: first.targetArrItemId ?? 0,
+					itemType: first.targetItemType ?? "series",
+					targetScope: first.targetScope === "episode" ? "episode" : "series",
+					arrEpisodeId: first.targetArrEpisodeId,
+					title: first.title ?? "Cleanup action",
+					ruleId: first.ruleId,
+					ruleName: first.ruleName,
+					action: first.action ?? "delete",
+					trigger: latest.trigger,
+					latestOutcome: latest.outcome,
+					actionableReason:
+						latest.reason ?? first.reason ?? "No additional cleanup details were recorded.",
+					startedAt: (metadata?.startedAt ?? first.createdAt).toISOString(),
+					updatedAt: latest.createdAt.toISOString(),
+					eventCount,
+					eventsTruncated: eventCount > chronological.length,
+					olderEventsCursor:
+						eventCount > chronological.length ? String(chronological[0]!.eventOrder) : null,
+					events: chronological.map(serializeCleanupAuditEvent),
+				},
+			];
+		});
+
+		return reply.send({ items: timelines, total, page, pageSize });
+	});
+
+	/** GET /api/library-cleanup/activity/:actionId/events
+	 *  Loads a bounded page immediately older than a durable database-order
+	 *  cursor. Newer appends cannot shift or duplicate this page.
+	 */
+	app.get<{
+		Params: { actionId: string };
+		Querystring: { cursor: string; pageSize?: string };
+	}>("/library-cleanup/activity/:actionId/events", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { actionId } = validateRequest(cleanupActivityEventParamsSchema, request.params);
+		const { cursor, pageSize } = validateRequest(cleanupActivityEventQuerySchema, request.query);
+		const events = await app.prisma.libraryCleanupAuditEvent.findMany({
+			where: {
+				config: { userId },
+				actionId,
+				eventOrder: { lt: cursor },
+			},
+			orderBy: { eventOrder: "desc" },
+			take: pageSize + 1,
+		});
+		const hasMore = events.length > pageSize;
+		const boundedPage = hasMore ? events.slice(0, pageSize) : events;
+		const chronological = [...boundedPage].reverse();
+		const oldestReturned = boundedPage.at(-1);
+
+		return reply.send({
+			items: chronological.map(serializeCleanupAuditEvent),
+			olderEventsCursor: hasMore && oldestReturned ? String(oldestReturned.eventOrder) : null,
+		});
+	});
 
 	/** GET /api/library-cleanup/logs */
 	app.get("/library-cleanup/logs", async (request, reply) => {

@@ -1285,6 +1285,7 @@ model LibraryCleanupConfig {
   rules     LibraryCleanupRule[]
   approvals LibraryCleanupApproval[]
   logs      LibraryCleanupLog[]
+  auditEvents LibraryCleanupAuditEvent[]
 
   @@map("library_cleanup_configs")
 }
@@ -1349,6 +1350,16 @@ model LibraryCleanupApproval {
   rating          Float?
   status          String   @default("pending") // "pending" | "approved" | "retry_pending" | "rejected" | "executing" | "retry_executing" | "executed" | "expired"
   executionToken  String?                      // Current mutation owner; cleared on recovery/terminal transitions
+  executionAuditCorrelationId String?          // Durable audit correlation captured before mutation for restart repair
+  reconciledWithoutMutation   Boolean @default(false) // True only when restart repair reaches a terminal outcome without ARR work
+  terminalAuditCorrelationId  String?          // Stable identity for the pending/canonical terminal audit event
+  terminalAuditEventType      String?          // succeeded | failed | expired | approval_reviewed
+  terminalAuditOutcome        String?          // success | blocked | failed
+  terminalAuditActorType      String?          // operator | scheduler | system
+  terminalAuditActorId        String?
+  terminalAuditTrigger        String?          // scheduled | manual | approval | retry | recovery
+  terminalAuditReason         String?          // Public transition-specific reason; never raw upstream payloads
+  terminalAuditRecordedAt     DateTime?        // Atomically set with the canonical terminal audit event
   safetySnapshot  String?                      // Canonical JSON ARR target/file identity approved for mutation
   lastExecutionError String?
   reviewedAt      DateTime?
@@ -1361,6 +1372,48 @@ model LibraryCleanupApproval {
   @@index([configId, status])
   @@index([expiresAt])
   @@map("library_cleanup_approvals")
+}
+
+/// Immutable event history for the native 3.0 library-cleanup lifecycle.
+/// Only the dedicated append writer creates rows; callers never supply the
+/// database-assigned order or per-action sequence.
+model LibraryCleanupAuditEvent {
+  eventOrder      Int      @id @default(autoincrement())
+  id              String   @unique @default(cuid())
+  configId        String
+  eventKey        String
+  actionId        String
+  correlationId   String
+  actionSequence  Int
+  actorType       String
+  actorId         String?
+  eventType       String
+  trigger         String
+  targetKind      String
+  targetId        String?
+  targetInstanceId String?
+  targetItemType   LibraryItemType?
+  targetArrItemId  Int?
+  targetArrEpisodeId Int?
+  targetScope      String?
+  title            String?
+  ruleId           String?
+  ruleName         String?
+  action           String?
+  reason           String?
+  outcome         String
+  evidence        String
+  details         String?
+  fingerprint     String
+  createdAt       DateTime @default(now())
+
+  config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, eventKey])
+  @@unique([configId, actionId, actionSequence])
+  @@index([configId, eventOrder])
+  @@index([configId, correlationId, eventOrder])
+  @@map("library_cleanup_audit_events")
 }
 
 /// Library cleanup activity audit log

@@ -1,5 +1,6 @@
 import type {
 	CleanupApprovalResponse,
+	CleanupAuditTimelineResponse,
 	CleanupConfigResponse,
 	CleanupExplainResponse,
 	CleanupPreviewItem,
@@ -75,6 +76,8 @@ const mockUseRetryCleanupItem = vi.fn();
 const mockUseRejectCleanupItem = vi.fn();
 const mockUseBulkCleanupAction = vi.fn();
 const mockUseCleanupLogs = vi.fn();
+const mockUseCleanupActivity = vi.fn();
+const mockUseCleanupActivityEvents = vi.fn();
 const mockUseCleanupStatistics = vi.fn();
 
 vi.mock("../../../../hooks/api/useLibraryCleanup", () => ({
@@ -94,6 +97,8 @@ vi.mock("../../../../hooks/api/useLibraryCleanup", () => ({
 	useRejectCleanupItem: () => mockUseRejectCleanupItem(),
 	useBulkCleanupAction: () => mockUseBulkCleanupAction(),
 	useCleanupLogs: () => mockUseCleanupLogs(),
+	useCleanupActivity: (...args: unknown[]) => mockUseCleanupActivity(...args),
+	useCleanupActivityEvents: (...args: unknown[]) => mockUseCleanupActivityEvents(...args),
 	useCleanupStatistics: () => mockUseCleanupStatistics(),
 }));
 
@@ -230,6 +235,22 @@ function setupDefaultMocks(configOverrides: Partial<CleanupConfigResponse> = {})
 		isError: false,
 		refetch: vi.fn(),
 	});
+	mockUseCleanupActivity.mockReturnValue({
+		data: { items: [], total: 0, page: 1, pageSize: 20 },
+		isLoading: false,
+		isError: false,
+		refetch: vi.fn(),
+	});
+	mockUseCleanupActivityEvents.mockReturnValue({
+		data: undefined,
+		isFetching: false,
+		isFetchingNextPage: false,
+		isError: false,
+		isFetchNextPageError: false,
+		refetch: vi.fn(),
+		fetchNextPage: vi.fn(),
+		hasNextPage: false,
+	});
 	mockUseCleanupStatistics.mockReturnValue({
 		data: undefined,
 		isLoading: false,
@@ -310,6 +331,51 @@ function makeEpisodeExplain(): CleanupExplainResponse {
 		},
 		results: [],
 		retentionProtected: false,
+	};
+}
+
+function makeAuditTimeline(
+	overrides: Partial<CleanupAuditTimelineResponse> = {},
+): CleanupAuditTimelineResponse {
+	return {
+		actionId: "approval-episode",
+		instanceId: "sonarr-main",
+		arrItemId: 42,
+		itemType: "series",
+		targetScope: "episode",
+		arrEpisodeId: 9001,
+		title: "Signal Harbor S01E02 · First Light",
+		ruleId: "rule-episode",
+		ruleName: "Watched episodes",
+		action: "delete",
+		trigger: "approval",
+		latestOutcome: "success",
+		actionableReason: "Exact episode matched cleanup criteria",
+		startedAt: "2026-08-12T12:00:00Z",
+		updatedAt: "2026-08-12T12:01:00Z",
+		eventCount: 2,
+		eventsTruncated: true,
+		olderEventsCursor: "99",
+		events: [
+			{
+				id: "100",
+				actionId: "approval-episode",
+				correlationId: "attempt-1",
+				sequence: 1,
+				eventType: "proposal_created",
+				outcome: "info",
+				trigger: "approval",
+				actorType: "operator",
+				actorId: null,
+				approvalId: "approval-episode",
+				runLogId: null,
+				reason: "Proposal created",
+				evidence: null,
+				details: null,
+				createdAt: "2026-08-12T12:00:00Z",
+			},
+		],
+		...overrides,
 	};
 }
 
@@ -761,6 +827,146 @@ describe("LibraryCleanupClient", () => {
 
 			expect(screen.getByText("Series target")).toBeInTheDocument();
 			expect(screen.getByText("Episode target")).toBeInTheDocument();
+		});
+	});
+
+	describe("action history", () => {
+		it("keeps per-action history separate from aggregate cleanup runs", async () => {
+			mockUseCleanupActivity.mockReturnValue({
+				data: { items: [makeAuditTimeline()], total: 1, page: 1, pageSize: 20 },
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+			mockUseCleanupLogs.mockReturnValue({
+				data: {
+					items: [
+						{
+							id: "run-1",
+							isDryRun: false,
+							status: "completed",
+							itemsEvaluated: 1,
+							itemsFlagged: 1,
+							itemsRemoved: 1,
+							itemsUnmonitored: 0,
+							itemsFilesDeleted: 1,
+							itemsSkipped: 0,
+							details: null,
+							error: null,
+							durationMs: 500,
+							startedAt: "2026-08-12T12:00:00Z",
+							completedAt: "2026-08-12T12:01:00Z",
+						},
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Activity Log"));
+
+			expect(await screen.findByRole("heading", { name: "Action history" })).toBeInTheDocument();
+			expect(screen.getByText("Signal Harbor S01E02 · First Light")).toBeInTheDocument();
+			expect(screen.getByText("Exact episode matched cleanup criteria")).toBeInTheDocument();
+			expect(screen.getByRole("heading", { name: "Cleanup runs" })).toBeInTheDocument();
+			expect(screen.getByText("completed")).toBeInTheDocument();
+		});
+
+		it("expands an accessible timeline and requests earlier durable events", async () => {
+			const fetchNextPage = vi.fn();
+			mockUseCleanupActivity.mockReturnValue({
+				data: { items: [makeAuditTimeline()], total: 1, page: 1, pageSize: 20 },
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+			mockUseCleanupActivityEvents.mockReturnValue({
+				data: {
+					pages: [{ items: [], olderEventsCursor: "75" }],
+					pageParams: ["99"],
+				},
+				isFetching: false,
+				isFetchingNextPage: false,
+				isError: false,
+				isFetchNextPageError: false,
+				refetch: vi.fn(),
+				fetchNextPage,
+				hasNextPage: true,
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Activity Log"));
+			const expand = await screen.findByRole("button", {
+				name: "Show history for Signal Harbor S01E02 · First Light",
+			});
+			expect(expand).toHaveAttribute("aria-expanded", "false");
+			fireEvent.click(expand);
+
+			expect(expand).toHaveAttribute("aria-expanded", "true");
+			expect(screen.getByText("Proposal created")).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Load earlier events" }));
+			expect(fetchNextPage).toHaveBeenCalledOnce();
+			expect(mockUseCleanupActivityEvents).toHaveBeenCalledWith("approval-episode", "99", 200);
+		});
+
+		it("keeps recent events visible and retries a failed earlier-event page", async () => {
+			const refetch = vi.fn();
+			mockUseCleanupActivity.mockReturnValue({
+				data: { items: [makeAuditTimeline()], total: 1, page: 1, pageSize: 20 },
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+			mockUseCleanupActivityEvents.mockReturnValue({
+				data: undefined,
+				isFetching: false,
+				isFetchingNextPage: false,
+				isError: true,
+				isFetchNextPageError: false,
+				refetch,
+				fetchNextPage: vi.fn(),
+				hasNextPage: false,
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Activity Log"));
+			fireEvent.click(
+				await screen.findByRole("button", {
+					name: "Show history for Signal Harbor S01E02 · First Light",
+				}),
+			);
+
+			expect(screen.getByText("Proposal created")).toBeInTheDocument();
+			expect(screen.getByRole("alert")).toHaveTextContent("Earlier events could not be loaded");
+			fireEvent.click(screen.getByRole("button", { name: "Load earlier events" }));
+			expect(refetch).toHaveBeenCalledOnce();
+		});
+
+		it("masks action titles, rules, and reasons in incognito mode", async () => {
+			localStorage.setItem("arr-dashboard-incognito-mode", "true");
+			mockUseCleanupActivity.mockReturnValue({
+				data: { items: [makeAuditTimeline()], total: 1, page: 1, pageSize: 20 },
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Activity Log"));
+
+			await waitFor(() => {
+				expect(screen.queryByText(/Signal Harbor/)).not.toBeInTheDocument();
+				expect(screen.queryByText(/Watched episodes/)).not.toBeInTheDocument();
+				expect(screen.queryByText(/Exact episode/)).not.toBeInTheDocument();
+			});
+			expect(screen.getByText(/\.iso$/)).toBeInTheDocument();
+			expect(screen.getByText("Cleanup rule: Matched cleanup criteria")).toBeInTheDocument();
+			expect(screen.getByText("Cleanup reason hidden in incognito mode.")).toBeInTheDocument();
 		});
 	});
 

@@ -28,10 +28,12 @@ export type AggregateTemplateQualityProfileMapping = {
 
 export type TemplateQualityProfileMappingAvgAggregateOutputType = {
   qualityProfileId: number | null
+  connectionGeneration: number | null
 }
 
 export type TemplateQualityProfileMappingSumAggregateOutputType = {
   qualityProfileId: number | null
+  connectionGeneration: number | null
 }
 
 export type TemplateQualityProfileMappingMinAggregateOutputType = {
@@ -40,6 +42,10 @@ export type TemplateQualityProfileMappingMinAggregateOutputType = {
   instanceId: string | null
   qualityProfileId: number | null
   qualityProfileName: string | null
+  connectionGeneration: number | null
+  connectionStateToken: string | null
+  managedCustomFormats: string | null
+  managedCustomFormatsCaptured: boolean | null
   createdAt: Date | null
   updatedAt: Date | null
   lastSyncedAt: Date | null
@@ -52,6 +58,10 @@ export type TemplateQualityProfileMappingMaxAggregateOutputType = {
   instanceId: string | null
   qualityProfileId: number | null
   qualityProfileName: string | null
+  connectionGeneration: number | null
+  connectionStateToken: string | null
+  managedCustomFormats: string | null
+  managedCustomFormatsCaptured: boolean | null
   createdAt: Date | null
   updatedAt: Date | null
   lastSyncedAt: Date | null
@@ -64,6 +74,10 @@ export type TemplateQualityProfileMappingCountAggregateOutputType = {
   instanceId: number
   qualityProfileId: number
   qualityProfileName: number
+  connectionGeneration: number
+  connectionStateToken: number
+  managedCustomFormats: number
+  managedCustomFormatsCaptured: number
   createdAt: number
   updatedAt: number
   lastSyncedAt: number
@@ -74,10 +88,12 @@ export type TemplateQualityProfileMappingCountAggregateOutputType = {
 
 export type TemplateQualityProfileMappingAvgAggregateInputType = {
   qualityProfileId?: true
+  connectionGeneration?: true
 }
 
 export type TemplateQualityProfileMappingSumAggregateInputType = {
   qualityProfileId?: true
+  connectionGeneration?: true
 }
 
 export type TemplateQualityProfileMappingMinAggregateInputType = {
@@ -86,6 +102,10 @@ export type TemplateQualityProfileMappingMinAggregateInputType = {
   instanceId?: true
   qualityProfileId?: true
   qualityProfileName?: true
+  connectionGeneration?: true
+  connectionStateToken?: true
+  managedCustomFormats?: true
+  managedCustomFormatsCaptured?: true
   createdAt?: true
   updatedAt?: true
   lastSyncedAt?: true
@@ -98,6 +118,10 @@ export type TemplateQualityProfileMappingMaxAggregateInputType = {
   instanceId?: true
   qualityProfileId?: true
   qualityProfileName?: true
+  connectionGeneration?: true
+  connectionStateToken?: true
+  managedCustomFormats?: true
+  managedCustomFormatsCaptured?: true
   createdAt?: true
   updatedAt?: true
   lastSyncedAt?: true
@@ -110,6 +134,10 @@ export type TemplateQualityProfileMappingCountAggregateInputType = {
   instanceId?: true
   qualityProfileId?: true
   qualityProfileName?: true
+  connectionGeneration?: true
+  connectionStateToken?: true
+  managedCustomFormats?: true
+  managedCustomFormatsCaptured?: true
   createdAt?: true
   updatedAt?: true
   lastSyncedAt?: true
@@ -209,6 +237,10 @@ export type TemplateQualityProfileMappingGroupByOutputType = {
   instanceId: string
   qualityProfileId: number
   qualityProfileName: string
+  connectionGeneration: number
+  connectionStateToken: string | null
+  managedCustomFormats: string | null
+  managedCustomFormatsCaptured: boolean
   createdAt: Date
   updatedAt: Date
   lastSyncedAt: Date
@@ -244,6 +276,10 @@ export type TemplateQualityProfileMappingWhereInput = {
   instanceId?: Prisma.StringFilter<"TemplateQualityProfileMapping"> | string
   qualityProfileId?: Prisma.IntFilter<"TemplateQualityProfileMapping"> | number
   qualityProfileName?: Prisma.StringFilter<"TemplateQualityProfileMapping"> | string
+  connectionGeneration?: Prisma.IntFilter<"TemplateQualityProfileMapping"> | number
+  connectionStateToken?: Prisma.StringNullableFilter<"TemplateQualityProfileMapping"> | string | null
+  managedCustomFormats?: Prisma.StringNullableFilter<"TemplateQualityProfileMapping"> | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFilter<"TemplateQualityProfileMapping"> | boolean
   createdAt?: Prisma.DateTimeFilter<"TemplateQualityProfileMapping"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"TemplateQualityProfileMapping"> | Date | string
   lastSyncedAt?: Prisma.DateTimeFilter<"TemplateQualityProfileMapping"> | Date | string
@@ -258,6 +294,10 @@ export type TemplateQualityProfileMappingOrderByWithRelationInput = {
   instanceId?: Prisma.SortOrder
   qualityProfileId?: Prisma.SortOrder
   qualityProfileName?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrderInput | Prisma.SortOrder
+  managedCustomFormats?: Prisma.SortOrderInput | Prisma.SortOrder
+  managedCustomFormatsCaptured?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   lastSyncedAt?: Prisma.SortOrder
@@ -276,6 +316,10 @@ export type TemplateQualityProfileMappingWhereUniqueInput = Prisma.AtLeast<{
   instanceId?: Prisma.StringFilter<"TemplateQualityProfileMapping"> | string
   qualityProfileId?: Prisma.IntFilter<"TemplateQualityProfileMapping"> | number
   qualityProfileName?: Prisma.StringFilter<"TemplateQualityProfileMapping"> | string
+  connectionGeneration?: Prisma.IntFilter<"TemplateQualityProfileMapping"> | number
+  connectionStateToken?: Prisma.StringNullableFilter<"TemplateQualityProfileMapping"> | string | null
+  managedCustomFormats?: Prisma.StringNullableFilter<"TemplateQualityProfileMapping"> | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFilter<"TemplateQualityProfileMapping"> | boolean
   createdAt?: Prisma.DateTimeFilter<"TemplateQualityProfileMapping"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"TemplateQualityProfileMapping"> | Date | string
   lastSyncedAt?: Prisma.DateTimeFilter<"TemplateQualityProfileMapping"> | Date | string
@@ -290,6 +334,10 @@ export type TemplateQualityProfileMappingOrderByWithAggregationInput = {
   instanceId?: Prisma.SortOrder
   qualityProfileId?: Prisma.SortOrder
   qualityProfileName?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrderInput | Prisma.SortOrder
+  managedCustomFormats?: Prisma.SortOrderInput | Prisma.SortOrder
+  managedCustomFormatsCaptured?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   lastSyncedAt?: Prisma.SortOrder
@@ -310,6 +358,10 @@ export type TemplateQualityProfileMappingScalarWhereWithAggregatesInput = {
   instanceId?: Prisma.StringWithAggregatesFilter<"TemplateQualityProfileMapping"> | string
   qualityProfileId?: Prisma.IntWithAggregatesFilter<"TemplateQualityProfileMapping"> | number
   qualityProfileName?: Prisma.StringWithAggregatesFilter<"TemplateQualityProfileMapping"> | string
+  connectionGeneration?: Prisma.IntWithAggregatesFilter<"TemplateQualityProfileMapping"> | number
+  connectionStateToken?: Prisma.StringNullableWithAggregatesFilter<"TemplateQualityProfileMapping"> | string | null
+  managedCustomFormats?: Prisma.StringNullableWithAggregatesFilter<"TemplateQualityProfileMapping"> | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolWithAggregatesFilter<"TemplateQualityProfileMapping"> | boolean
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"TemplateQualityProfileMapping"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"TemplateQualityProfileMapping"> | Date | string
   lastSyncedAt?: Prisma.DateTimeWithAggregatesFilter<"TemplateQualityProfileMapping"> | Date | string
@@ -320,6 +372,10 @@ export type TemplateQualityProfileMappingCreateInput = {
   id?: string
   qualityProfileId: number
   qualityProfileName: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
+  managedCustomFormats?: string | null
+  managedCustomFormatsCaptured?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   lastSyncedAt?: Date | string
@@ -334,6 +390,10 @@ export type TemplateQualityProfileMappingUncheckedCreateInput = {
   instanceId: string
   qualityProfileId: number
   qualityProfileName: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
+  managedCustomFormats?: string | null
+  managedCustomFormatsCaptured?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   lastSyncedAt?: Date | string
@@ -344,6 +404,10 @@ export type TemplateQualityProfileMappingUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   qualityProfileName?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormats?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastSyncedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -358,6 +422,10 @@ export type TemplateQualityProfileMappingUncheckedUpdateInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   qualityProfileName?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormats?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastSyncedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -370,6 +438,10 @@ export type TemplateQualityProfileMappingCreateManyInput = {
   instanceId: string
   qualityProfileId: number
   qualityProfileName: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
+  managedCustomFormats?: string | null
+  managedCustomFormatsCaptured?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   lastSyncedAt?: Date | string
@@ -380,6 +452,10 @@ export type TemplateQualityProfileMappingUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   qualityProfileName?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormats?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastSyncedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -392,6 +468,10 @@ export type TemplateQualityProfileMappingUncheckedUpdateManyInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   qualityProfileName?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormats?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastSyncedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -419,6 +499,10 @@ export type TemplateQualityProfileMappingCountOrderByAggregateInput = {
   instanceId?: Prisma.SortOrder
   qualityProfileId?: Prisma.SortOrder
   qualityProfileName?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrder
+  managedCustomFormats?: Prisma.SortOrder
+  managedCustomFormatsCaptured?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   lastSyncedAt?: Prisma.SortOrder
@@ -427,6 +511,7 @@ export type TemplateQualityProfileMappingCountOrderByAggregateInput = {
 
 export type TemplateQualityProfileMappingAvgOrderByAggregateInput = {
   qualityProfileId?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
 }
 
 export type TemplateQualityProfileMappingMaxOrderByAggregateInput = {
@@ -435,6 +520,10 @@ export type TemplateQualityProfileMappingMaxOrderByAggregateInput = {
   instanceId?: Prisma.SortOrder
   qualityProfileId?: Prisma.SortOrder
   qualityProfileName?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrder
+  managedCustomFormats?: Prisma.SortOrder
+  managedCustomFormatsCaptured?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   lastSyncedAt?: Prisma.SortOrder
@@ -447,6 +536,10 @@ export type TemplateQualityProfileMappingMinOrderByAggregateInput = {
   instanceId?: Prisma.SortOrder
   qualityProfileId?: Prisma.SortOrder
   qualityProfileName?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrder
+  managedCustomFormats?: Prisma.SortOrder
+  managedCustomFormatsCaptured?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   lastSyncedAt?: Prisma.SortOrder
@@ -455,6 +548,7 @@ export type TemplateQualityProfileMappingMinOrderByAggregateInput = {
 
 export type TemplateQualityProfileMappingSumOrderByAggregateInput = {
   qualityProfileId?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
 }
 
 export type TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput = {
@@ -545,6 +639,10 @@ export type TemplateQualityProfileMappingCreateWithoutInstanceInput = {
   id?: string
   qualityProfileId: number
   qualityProfileName: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
+  managedCustomFormats?: string | null
+  managedCustomFormatsCaptured?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   lastSyncedAt?: Date | string
@@ -557,6 +655,10 @@ export type TemplateQualityProfileMappingUncheckedCreateWithoutInstanceInput = {
   templateId: string
   qualityProfileId: number
   qualityProfileName: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
+  managedCustomFormats?: string | null
+  managedCustomFormatsCaptured?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   lastSyncedAt?: Date | string
@@ -597,6 +699,10 @@ export type TemplateQualityProfileMappingScalarWhereInput = {
   instanceId?: Prisma.StringFilter<"TemplateQualityProfileMapping"> | string
   qualityProfileId?: Prisma.IntFilter<"TemplateQualityProfileMapping"> | number
   qualityProfileName?: Prisma.StringFilter<"TemplateQualityProfileMapping"> | string
+  connectionGeneration?: Prisma.IntFilter<"TemplateQualityProfileMapping"> | number
+  connectionStateToken?: Prisma.StringNullableFilter<"TemplateQualityProfileMapping"> | string | null
+  managedCustomFormats?: Prisma.StringNullableFilter<"TemplateQualityProfileMapping"> | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFilter<"TemplateQualityProfileMapping"> | boolean
   createdAt?: Prisma.DateTimeFilter<"TemplateQualityProfileMapping"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"TemplateQualityProfileMapping"> | Date | string
   lastSyncedAt?: Prisma.DateTimeFilter<"TemplateQualityProfileMapping"> | Date | string
@@ -607,6 +713,10 @@ export type TemplateQualityProfileMappingCreateWithoutTemplateInput = {
   id?: string
   qualityProfileId: number
   qualityProfileName: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
+  managedCustomFormats?: string | null
+  managedCustomFormatsCaptured?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   lastSyncedAt?: Date | string
@@ -619,6 +729,10 @@ export type TemplateQualityProfileMappingUncheckedCreateWithoutTemplateInput = {
   instanceId: string
   qualityProfileId: number
   qualityProfileName: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
+  managedCustomFormats?: string | null
+  managedCustomFormatsCaptured?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   lastSyncedAt?: Date | string
@@ -655,6 +769,10 @@ export type TemplateQualityProfileMappingCreateManyInstanceInput = {
   templateId: string
   qualityProfileId: number
   qualityProfileName: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
+  managedCustomFormats?: string | null
+  managedCustomFormatsCaptured?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   lastSyncedAt?: Date | string
@@ -665,6 +783,10 @@ export type TemplateQualityProfileMappingUpdateWithoutInstanceInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   qualityProfileName?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormats?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastSyncedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -677,6 +799,10 @@ export type TemplateQualityProfileMappingUncheckedUpdateWithoutInstanceInput = {
   templateId?: Prisma.StringFieldUpdateOperationsInput | string
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   qualityProfileName?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormats?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastSyncedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -688,6 +814,10 @@ export type TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceInput
   templateId?: Prisma.StringFieldUpdateOperationsInput | string
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   qualityProfileName?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormats?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastSyncedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -699,6 +829,10 @@ export type TemplateQualityProfileMappingCreateManyTemplateInput = {
   instanceId: string
   qualityProfileId: number
   qualityProfileName: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
+  managedCustomFormats?: string | null
+  managedCustomFormatsCaptured?: boolean
   createdAt?: Date | string
   updatedAt?: Date | string
   lastSyncedAt?: Date | string
@@ -709,6 +843,10 @@ export type TemplateQualityProfileMappingUpdateWithoutTemplateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   qualityProfileName?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormats?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastSyncedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -721,6 +859,10 @@ export type TemplateQualityProfileMappingUncheckedUpdateWithoutTemplateInput = {
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   qualityProfileName?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormats?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastSyncedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -732,6 +874,10 @@ export type TemplateQualityProfileMappingUncheckedUpdateManyWithoutTemplateInput
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   qualityProfileName?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormats?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  managedCustomFormatsCaptured?: Prisma.BoolFieldUpdateOperationsInput | boolean
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastSyncedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -746,6 +892,10 @@ export type TemplateQualityProfileMappingSelect<ExtArgs extends runtime.Types.Ex
   instanceId?: boolean
   qualityProfileId?: boolean
   qualityProfileName?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
+  managedCustomFormats?: boolean
+  managedCustomFormatsCaptured?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   lastSyncedAt?: boolean
@@ -760,6 +910,10 @@ export type TemplateQualityProfileMappingSelectCreateManyAndReturn<ExtArgs exten
   instanceId?: boolean
   qualityProfileId?: boolean
   qualityProfileName?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
+  managedCustomFormats?: boolean
+  managedCustomFormatsCaptured?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   lastSyncedAt?: boolean
@@ -774,6 +928,10 @@ export type TemplateQualityProfileMappingSelectUpdateManyAndReturn<ExtArgs exten
   instanceId?: boolean
   qualityProfileId?: boolean
   qualityProfileName?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
+  managedCustomFormats?: boolean
+  managedCustomFormatsCaptured?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   lastSyncedAt?: boolean
@@ -788,13 +946,17 @@ export type TemplateQualityProfileMappingSelectScalar = {
   instanceId?: boolean
   qualityProfileId?: boolean
   qualityProfileName?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
+  managedCustomFormats?: boolean
+  managedCustomFormatsCaptured?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   lastSyncedAt?: boolean
   syncStrategy?: boolean
 }
 
-export type TemplateQualityProfileMappingOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "templateId" | "instanceId" | "qualityProfileId" | "qualityProfileName" | "createdAt" | "updatedAt" | "lastSyncedAt" | "syncStrategy", ExtArgs["result"]["templateQualityProfileMapping"]>
+export type TemplateQualityProfileMappingOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "templateId" | "instanceId" | "qualityProfileId" | "qualityProfileName" | "connectionGeneration" | "connectionStateToken" | "managedCustomFormats" | "managedCustomFormatsCaptured" | "createdAt" | "updatedAt" | "lastSyncedAt" | "syncStrategy", ExtArgs["result"]["templateQualityProfileMapping"]>
 export type TemplateQualityProfileMappingInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   template?: boolean | Prisma.TrashTemplateDefaultArgs<ExtArgs>
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
@@ -820,6 +982,10 @@ export type $TemplateQualityProfileMappingPayload<ExtArgs extends runtime.Types.
     instanceId: string
     qualityProfileId: number
     qualityProfileName: string
+    connectionGeneration: number
+    connectionStateToken: string | null
+    managedCustomFormats: string | null
+    managedCustomFormatsCaptured: boolean
     createdAt: Date
     updatedAt: Date
     lastSyncedAt: Date
@@ -1254,6 +1420,10 @@ export interface TemplateQualityProfileMappingFieldRefs {
   readonly instanceId: Prisma.FieldRef<"TemplateQualityProfileMapping", 'String'>
   readonly qualityProfileId: Prisma.FieldRef<"TemplateQualityProfileMapping", 'Int'>
   readonly qualityProfileName: Prisma.FieldRef<"TemplateQualityProfileMapping", 'String'>
+  readonly connectionGeneration: Prisma.FieldRef<"TemplateQualityProfileMapping", 'Int'>
+  readonly connectionStateToken: Prisma.FieldRef<"TemplateQualityProfileMapping", 'String'>
+  readonly managedCustomFormats: Prisma.FieldRef<"TemplateQualityProfileMapping", 'String'>
+  readonly managedCustomFormatsCaptured: Prisma.FieldRef<"TemplateQualityProfileMapping", 'Boolean'>
   readonly createdAt: Prisma.FieldRef<"TemplateQualityProfileMapping", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"TemplateQualityProfileMapping", 'DateTime'>
   readonly lastSyncedAt: Prisma.FieldRef<"TemplateQualityProfileMapping", 'DateTime'>

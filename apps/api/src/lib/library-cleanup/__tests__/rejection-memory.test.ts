@@ -114,28 +114,31 @@ describe("buildDedupOrClauses", () => {
 
 	it("mode 'off' → active ownership only (no rejection skip)", () => {
 		const clauses = buildDedupOrClauses({ mode: "off" }, NOW);
-		expect(clauses).toEqual([{ status: { in: ["pending", "approved", "executing"] } }]);
+		expect(clauses).toEqual([
+			{ status: "pending", expiresAt: { gt: NOW } },
+			{ status: { in: ["approved", "executing"] } },
+		]);
 	});
 
 	it("mode 'forever' → pending + unconditional rejected skip", () => {
 		const clauses = buildDedupOrClauses({ mode: "forever" }, NOW);
 		expect(clauses).toEqual([
-			{ status: { in: ["pending", "approved", "executing"] } },
+			{ status: "pending", expiresAt: { gt: NOW } },
+			{ status: { in: ["approved", "executing"] } },
 			{ status: "rejected" },
 		]);
 		// No reviewedAt clause on the rejected branch — forever means
 		// "remember this rejection regardless of when it happened."
-		const rejectedClause = clauses[1] as { status: string; reviewedAt?: unknown };
+		const rejectedClause = clauses[2] as { status: string; reviewedAt?: unknown };
 		expect(rejectedClause.reviewedAt).toBeUndefined();
 	});
 
 	it("mode 'days' → rejected skip with cutoff = now - N days", () => {
 		const clauses = buildDedupOrClauses({ mode: "days", days: 7 }, NOW);
-		expect(clauses).toHaveLength(2);
-		expect(clauses[0]).toEqual({
-			status: { in: ["pending", "approved", "executing"] },
-		});
-		const rejectedClause = clauses[1] as { status: string; reviewedAt: { gt: Date } };
+		expect(clauses).toHaveLength(3);
+		expect(clauses[0]).toEqual({ status: "pending", expiresAt: { gt: NOW } });
+		expect(clauses[1]).toEqual({ status: { in: ["approved", "executing"] } });
+		const rejectedClause = clauses[2] as { status: string; reviewedAt: { gt: Date } };
 		expect(rejectedClause.status).toBe("rejected");
 		// Cutoff: 7 days before NOW = 2026-05-20T12:00:00Z
 		expect(rejectedClause.reviewedAt.gt.toISOString()).toBe("2026-05-20T12:00:00.000Z");
@@ -143,13 +146,13 @@ describe("buildDedupOrClauses", () => {
 
 	it("mode 'days' with days=1 → cutoff = 24h ago (smallest meaningful window)", () => {
 		const clauses = buildDedupOrClauses({ mode: "days", days: 1 }, NOW);
-		const rejectedClause = clauses[1] as { reviewedAt: { gt: Date } };
+		const rejectedClause = clauses[2] as { reviewedAt: { gt: Date } };
 		expect(rejectedClause.reviewedAt.gt.toISOString()).toBe("2026-05-26T12:00:00.000Z");
 	});
 
 	it("mode 'days' with days=365 → cutoff = 1y ago (sanity on large windows)", () => {
 		const clauses = buildDedupOrClauses({ mode: "days", days: 365 }, NOW);
-		const rejectedClause = clauses[1] as { reviewedAt: { gt: Date } };
+		const rejectedClause = clauses[2] as { reviewedAt: { gt: Date } };
 		expect(rejectedClause.reviewedAt.gt.toISOString()).toBe("2025-05-27T12:00:00.000Z");
 	});
 
@@ -160,7 +163,7 @@ describe("buildDedupOrClauses", () => {
 		const before = Date.now();
 		const clauses = buildDedupOrClauses({ mode: "days", days: 30 });
 		const after = Date.now();
-		const rejectedClause = clauses[1] as { reviewedAt: { gt: Date } };
+		const rejectedClause = clauses[2] as { reviewedAt: { gt: Date } };
 		const cutoff = rejectedClause.reviewedAt.gt.getTime();
 		const expectedRangeMin = before - 30 * 86400000;
 		const expectedRangeMax = after - 30 * 86400000;

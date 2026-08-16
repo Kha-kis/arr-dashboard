@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildMovieItem } from "../../library/movie-normalizer.js";
 import { PlexMovieNotFoundError } from "../../plex/plex-client.js";
 import { withQuiObservationTopologyGuard } from "../../qui/observation-topology-guard.js";
+import { appendCleanupAuditEvent, appendCleanupTerminalAuditEvent } from "../cleanup-audit.js";
 import {
 	buildCleanupPreviewDetails,
 	cleanupApprovalTargetKey,
@@ -29,6 +30,35 @@ import {
 	serializeExecutableSafetyPlan,
 } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "../types.js";
+
+vi.mock("../cleanup-audit.js", () => ({
+	appendCleanupAuditEvent: vi.fn().mockResolvedValue({}),
+	appendCleanupTerminalAuditEvent: vi.fn().mockResolvedValue({}),
+	createCleanupTerminalAuditState: vi.fn(
+		(input: {
+			actorId?: string | null;
+			actorType: string;
+			correlationId: string;
+			eventType: string;
+			outcome: string;
+			summary?: { reason?: string };
+			trigger: string;
+		}) => ({
+			terminalAuditCorrelationId: input.correlationId,
+			terminalAuditEventType: input.eventType,
+			terminalAuditOutcome: input.outcome,
+			terminalAuditActorType: input.actorType,
+			terminalAuditActorId: input.actorId ?? null,
+			terminalAuditTrigger: input.trigger,
+			terminalAuditReason: input.summary?.reason ?? null,
+			terminalAuditRecordedAt: null,
+		}),
+	),
+	createCleanupAuditEventKey: vi.fn(
+		(input: { actionId: string; correlationId: string; eventType: string }) =>
+			`${input.eventType}:${input.actionId}:${input.correlationId}`,
+	),
+}));
 
 const silentLog = {
 	warn: vi.fn(),
@@ -449,6 +479,9 @@ function makeDeps(options: TestOptions = {}) {
 				create: vi.fn().mockResolvedValue({}),
 				update: vi.fn().mockResolvedValue({}),
 			},
+			libraryCleanupAuditEvent: {
+				findUnique: vi.fn().mockResolvedValue(null),
+			},
 			libraryCache: {
 				findFirst: vi.fn().mockResolvedValue({
 					id: "cache-radarr-101",
@@ -482,6 +515,9 @@ function makeDeps(options: TestOptions = {}) {
 		plexClientFactory,
 		log: silentLog,
 	};
+	deps.prisma.$transaction = vi.fn(
+		async (callback) => await callback(deps.prisma as never),
+	) as never;
 
 	return {
 		deps,
@@ -680,6 +716,10 @@ function uncorrelatedRadarrPeerSafetySnapshot(
 
 function configureRetryStore(deps: CleanupExecutorDeps) {
 	const retries: Array<Record<string, unknown>> = [];
+	vi.mocked(deps.prisma.libraryCleanupApproval.findFirst).mockImplementation(
+		(async ({ where }: { where: { id?: string } }) =>
+			retries.find((retry) => retry.id === where.id) ?? null) as never,
+	);
 	vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
 		where,
 		select,
@@ -1573,6 +1613,48 @@ describe("shared Plex deletion safety", () => {
 			);
 		},
 	);
+
+	it("does not replay an existing proposal with a later run's attribution", async () => {
+		const { deps } = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...dryRunConfig(1),
+			dryRunMode: false,
+			requireApproval: true,
+			rules: [{ ...dryRunConfig(1).rules[0]!, action: "unmonitor" }],
+		} as never);
+		vi.mocked(deps.prisma.libraryCache.findMany).mockResolvedValue([
+			matchingDryRunCacheItem(),
+		] as never);
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([]);
+		vi.mocked(deps.prisma.libraryCleanupApproval.findFirst).mockResolvedValue(
+			approvalRecord({ status: "pending", action: "unmonitor" }) as never,
+		);
+		vi.mocked(deps.prisma.libraryCleanupAuditEvent.findUnique).mockResolvedValue({
+			id: "existing-proposal-event",
+		} as never);
+		vi.mocked(appendCleanupAuditEvent).mockClear();
+		vi.mocked(appendCleanupAuditEvent).mockRejectedValueOnce(
+			new Error("proposal attribution conflict"),
+		);
+
+		try {
+			const result = await executeCleanupRun(deps, "user-1", {
+				actorType: "operator",
+				actorId: "user-1",
+				trigger: "manual",
+			});
+
+			expect(result.status).toBe("completed");
+			expect(result.details).not.toContainEqual(
+				expect.objectContaining({ reason: expect.stringContaining("Failed to queue") }),
+			);
+			expect(appendCleanupAuditEvent).not.toHaveBeenCalled();
+		} finally {
+			vi.mocked(appendCleanupAuditEvent)
+				.mockReset()
+				.mockResolvedValue({} as never);
+		}
+	});
 
 	it("blocks direct cleanup before persisting or calling ARR when provider evidence changes", async () => {
 		const fixture = makeDeps({ mediaPartCount: 1 });
@@ -2577,7 +2659,7 @@ describe("shared Plex deletion safety", () => {
 				where: expect.objectContaining({
 					OR: expect.arrayContaining([
 						expect.objectContaining({
-							status: { in: ["pending", "approved", "executing"] },
+							status: { in: ["approved", "executing"] },
 						}),
 					]),
 				}),
@@ -5581,6 +5663,69 @@ describe("shared Plex deletion safety", () => {
 		expect(result).toMatchObject({ status: "completed", itemsFilesDeleted: 1 });
 	});
 
+	it("records a fresh direct already-empty file action as reconciliation without mutation", async () => {
+		vi.mocked(appendCleanupAuditEvent).mockClear();
+		vi.mocked(appendCleanupTerminalAuditEvent).mockClear();
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({
+			action: "delete_files",
+			includePlexNotification: false,
+			initialMovieFileId: null,
+		});
+		const retries = configureRetryStore(deps);
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				hasFile: false,
+				cachedAt: new Date("2026-07-27T12:05:00.000Z"),
+				data: JSON.stringify({
+					_arrDashboardSource: {
+						serviceFingerprint: radarrTargetIdentity.serviceFingerprint,
+					},
+					remoteIds: { tmdbId: 42 },
+					path: "/movies-4k/Example Movie (2024)",
+				}),
+				sizeOnDisk: 0n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "Empty file cleanup",
+				reason: "No ARR file remains",
+				action: "delete_files",
+			},
+			rating: 8,
+		} as never;
+
+		const result = await executeDirectRemoval(
+			deps,
+			{ id: "config-1", maxRemovalsPerRun: 10, rules: [] } as never,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result).toMatchObject({ status: "completed", itemsFilesDeleted: 0 });
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(retries[0]).toMatchObject({
+			status: "executed",
+			reconciledWithoutMutation: true,
+		});
+		expect(appendCleanupTerminalAuditEvent).toHaveBeenLastCalledWith(
+			deps.prisma,
+			expect.objectContaining({
+				eventType: "succeeded",
+				evidence: expect.objectContaining({ reconciledWithoutMutation: true }),
+			}),
+			expect.objectContaining({ status: "executed" }),
+		);
+	});
+
 	it("treats hasFile=false with a positive Radarr file ID as an unknown delete outcome", async () => {
 		const { deps, targetClient, deleteMovieFile } = makeDeps({
 			action: "delete_files",
@@ -5729,6 +5874,9 @@ describe("shared Plex deletion safety", () => {
 			error.code = "P2002";
 			throw error;
 		}) as never);
+		vi.mocked(deps.prisma.libraryCleanupApproval.findFirst).mockImplementation(
+			(async () => concurrentRetry ?? null) as never,
+		);
 		vi.mocked(deps.prisma.libraryCleanupApproval.updateMany).mockResolvedValue({ count: 0 });
 		const flaggedItem = {
 			cacheItem: {
@@ -6419,7 +6567,7 @@ describe("shared Plex deletion safety", () => {
 		},
 	);
 
-	it("accounts for a durable retry whose post-claim read fails", async () => {
+	it("executes a durable retry without a database wait after its atomic claim", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
 		const retries = configureRetryStore(deps);
 		deleteMovie
@@ -6476,19 +6624,11 @@ describe("shared Plex deletion safety", () => {
 		expect(deferredResult).toMatchObject({
 			status: "partial",
 			itemsFlagged: 1,
-			itemsSkipped: 2,
+			itemsSkipped: 1,
 		});
-		expect(deferredResult.details).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({ reason: expect.stringContaining("after claiming it") }),
-			]),
-		);
-		expect(deferredResult.warnings).toContainEqual(
-			expect.stringContaining("post-claim read failure"),
-		);
-		expect(retries[0]).toMatchObject({ status: "retry_pending" });
+		expect(retries[0]).toMatchObject({ status: "executed" });
 		expect(deleteMovieFile).toHaveBeenCalledOnce();
-		expect(deleteMovie).toHaveBeenCalledTimes(2);
+		expect(deleteMovie).toHaveBeenCalledTimes(3);
 	});
 
 	it.each([0, 101])(
@@ -7368,6 +7508,94 @@ describe("shared Plex deletion safety", () => {
 		});
 	});
 
+	it("records claim, mutation start, and terminal success after the authoritative approved-delete transitions", async () => {
+		vi.mocked(appendCleanupAuditEvent).mockClear();
+		vi.mocked(appendCleanupTerminalAuditEvent).mockClear();
+		const { deps } = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+			approvalRecord() as never,
+		]);
+
+		await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(appendCleanupAuditEvent).toHaveBeenCalledTimes(2);
+		expect(appendCleanupAuditEvent).toHaveBeenNthCalledWith(
+			1,
+			deps.prisma,
+			expect.objectContaining({ eventType: "claim", outcome: "info" }),
+		);
+		expect(appendCleanupAuditEvent).toHaveBeenNthCalledWith(
+			2,
+			deps.prisma,
+			expect.objectContaining({ eventType: "mutation_started", outcome: "info" }),
+		);
+		expect(appendCleanupTerminalAuditEvent).toHaveBeenCalledWith(
+			deps.prisma,
+			expect.objectContaining({ eventType: "succeeded", outcome: "success" }),
+			{ approvalId: "approval-1", status: "executed" },
+		);
+		expect(deps.prisma.libraryCleanupApproval.updateMany).toHaveBeenCalledWith({
+			where: expect.objectContaining({ id: "approval-1", status: "approved" }),
+			data: expect.objectContaining({
+				executionAuditCorrelationId: expect.any(String),
+			}),
+		});
+	});
+
+	it("fails closed before final mutation authority when its mutation-start audit cannot be persisted", async () => {
+		vi.mocked(appendCleanupAuditEvent)
+			.mockResolvedValueOnce({} as never)
+			.mockRejectedValueOnce(new Error("audit unavailable"));
+		vi.mocked(appendCleanupTerminalAuditEvent).mockRejectedValue(
+			new Error("terminal audit unavailable"),
+		);
+		try {
+			const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+			vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+				approvalRecord() as never,
+			]);
+
+			await expect(executeApprovedItems(deps, "user-1", ["approval-1"])).resolves.toMatchObject({
+				removed: 0,
+				failed: 1,
+			});
+			expect(deleteMovieFile).not.toHaveBeenCalled();
+			expect(deleteMovie).not.toHaveBeenCalled();
+		} finally {
+			vi.mocked(appendCleanupAuditEvent).mockResolvedValue({} as never);
+			vi.mocked(appendCleanupTerminalAuditEvent).mockResolvedValue({} as never);
+		}
+	});
+
+	it("records a retryable failed attempt only after durable retry state is restored", async () => {
+		vi.mocked(appendCleanupAuditEvent).mockClear();
+		const { deps, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		deleteMovieFile.mockRejectedValue(new Error("Radarr file delete unavailable"));
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
+			approvalRecord() as never,
+		]);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(deps.prisma.libraryCleanupApproval.updateMany).toHaveBeenCalledWith({
+			where: expect.objectContaining({ id: "approval-1", status: "executing" }),
+			data: expect.objectContaining({ status: "pending", executionToken: null }),
+		});
+		expect(appendCleanupAuditEvent).toHaveBeenLastCalledWith(
+			deps.prisma,
+			expect.objectContaining({
+				eventType: "failed",
+				outcome: "failed",
+				evidence: {
+					durableStatus: "pending",
+					mutationAttempted: true,
+					retryableStatePersisted: true,
+				},
+			}),
+		);
+	});
+
 	it("retries only the executed-status write after an approved delete succeeds", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
@@ -7462,6 +7690,30 @@ describe("shared Plex deletion safety", () => {
 		expect(deleteMovie).not.toHaveBeenCalled();
 	});
 
+	it("keeps the approval review and execution attempt on one audit correlation", async () => {
+		vi.mocked(appendCleanupAuditEvent).mockClear();
+		const { deps } = makeDeps({ mediaPartCount: 1 });
+		const approval = approvalRecord({
+			status: "approved",
+			executionToken: "approval-request-1",
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, approval);
+
+		await executeApprovedItems(deps, "user-1", ["approval-1"], "approval-request-1");
+
+		expect(approval).toMatchObject({
+			status: "executed",
+			executionAuditCorrelationId: "approval-request-1",
+		});
+		expect(appendCleanupAuditEvent).toHaveBeenCalledWith(
+			deps.prisma,
+			expect.objectContaining({
+				correlationId: "approval-request-1",
+				eventType: "claim",
+			}),
+		);
+	});
+
 	it("reports a bulk-selected approval that expired before transition as failed", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
 		const approval = approvalRecord({
@@ -7507,7 +7759,7 @@ describe("shared Plex deletion safety", () => {
 			return { count: 1 };
 		}) as never);
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async () =>
-			state === "executing" ? [approval] : []) as never);
+			state === "approved" || state === "executing" ? [approval] : []) as never);
 
 		const first = await executeApprovedItems(deps, "user-1", ["approval-1"]);
 		const second = await executeApprovedItems(deps, "user-1", ["approval-1"]);
@@ -7546,25 +7798,40 @@ describe("shared Plex deletion safety", () => {
 		expect(deleteMovie).toHaveBeenCalledOnce();
 	});
 
-	it("returns every untouched bulk claim to pending when the approval read fails", async () => {
+	it("returns bulk approvals to pending when their atomic claim read fails", async () => {
 		const { deps } = makeDeps({ mediaPartCount: 1 });
 		const approvals = [
 			approvalRecord({ id: "approval-1" }),
 			approvalRecord({ id: "approval-2", arrItemId: 102 }),
 		];
 		configureApprovalStores(deps, approvals);
+		vi.mocked(appendCleanupAuditEvent).mockClear();
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockRejectedValue(
 			new Error("database unavailable"),
 		);
 
 		await expect(
 			executeApprovedItems(deps, "user-1", ["approval-1", "approval-2"]),
-		).rejects.toThrow("database unavailable");
+		).resolves.toMatchObject({ removed: 0, failed: 2 });
 
 		expect(approvals).toEqual([
 			expect.objectContaining({ id: "approval-1", status: "pending", executionToken: null }),
 			expect.objectContaining({ id: "approval-2", status: "pending", executionToken: null }),
 		]);
+		expect(appendCleanupAuditEvent).toHaveBeenCalledTimes(2);
+		expect(appendCleanupAuditEvent).toHaveBeenCalledWith(
+			deps.prisma,
+			expect.objectContaining({
+				eventType: "recovered",
+				outcome: "blocked",
+				evidence: {
+					executionOwnershipSecured: false,
+					fromStatus: "approved",
+					stateTransitionPersisted: true,
+					toStatus: "pending",
+				},
+			}),
+		);
 	});
 
 	it("returns current and later bulk claims to pending when the run lease is lost", async () => {
