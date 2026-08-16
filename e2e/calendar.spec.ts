@@ -173,18 +173,9 @@ test.describe("Calendar - Timezone Bucketing", () => {
 	test.use({ timezoneId: "Europe/Stockholm" });
 
 	test("places an early-morning Sonarr episode on the viewer's local day", async ({ page }) => {
-		const dateParts = new Intl.DateTimeFormat("en-US", {
-			timeZone: "Europe/Stockholm",
-			year: "numeric",
-			month: "2-digit",
-		}).formatToParts(new Date());
-		const year = dateParts.find((part) => part.type === "year")?.value;
-		const month = dateParts.find((part) => part.type === "month")?.value;
-		expect(year).toBeTruthy();
-		expect(month).toBeTruthy();
-
-		const networkDate = `${year}-${month}-15`;
-		const localDate = `${year}-${month}-16`;
+		await page.clock.setFixedTime(new Date("2026-08-16T12:00:00Z"));
+		const networkDate = "2026-08-15";
+		const localDate = "2026-08-16";
 		const title = "Stockholm timezone regression";
 
 		await page.route("**/api/services", async (route) => {
