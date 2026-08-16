@@ -1074,8 +1074,8 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					existing.identityGeneration === confirmation.expectedIdentityGeneration;
 				const mayBeIdempotentRetry =
 					existing.identityGeneration === confirmation.expectedIdentityGeneration + 1 &&
-					(existing.connectionGeneration === confirmation.expectedConnectionGeneration ||
-						existing.connectionGeneration === confirmation.expectedConnectionGeneration + 1);
+					existing.connectionGeneration === confirmation.expectedConnectionGeneration &&
+					Object.keys(candidate).length === 0;
 				if (!authorityIsCurrent && !mayBeIdempotentRetry) {
 					throw createIdentityConflict(
 						"IDENTITY_GENERATION_STALE",
@@ -1083,10 +1083,8 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 						existing,
 					);
 				}
-				const observation = await readProviderIdentity(
-					buildIdentityCandidateSnapshot(existing, candidate, app.encryptor),
-					request.log,
-				);
+				const snapshot = buildIdentityCandidateSnapshot(existing, candidate, app.encryptor);
+				const observation = await readProviderIdentity(snapshot, request.log);
 				const safeCandidate = toSafeIdentityCandidate(observation);
 				if (!confirmsIdentityCandidate(observation, confirmation.confirmationDigest)) {
 					throw createIdentityConflict(

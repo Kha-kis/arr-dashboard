@@ -8,7 +8,10 @@ import {
 	libraryCleanupKeys,
 	plexKeys,
 	serviceKeys,
+	systemKeys,
+	tautulliKeys,
 	trashCacheKeys,
+	tracearrKeys,
 } from "../../../lib/query-keys";
 
 vi.mock("../../../lib/api-client/services");
@@ -163,6 +166,13 @@ describe("service identity mutations", () => {
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: plexKeys.all });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: jellyfinKeys.all });
 		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.approvalsAll });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: libraryCleanupKeys.fieldOptions });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: systemKeys.analyticsProvider });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: tracearrKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: tautulliKeys.all });
+		expect(invalidateQueries).toHaveBeenCalledWith({
+			queryKey: systemKeys.tautulliProviderNotices,
+		});
 		client.clear();
 	});
 });

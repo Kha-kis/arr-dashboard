@@ -329,9 +329,10 @@ export interface SanitizedProviderEvidence {
 }
 
 export interface ExecutableSafetyEnvelope {
-	version: 2;
+	version: 3;
 	plan: ExecutableSharedMediaSafetyPlan;
 	providerEvidence: SanitizedProviderEvidence;
+	mutationCheckpoint: "pre_mutation" | "post_partial_mutation";
 	fingerprint: string;
 }
 
@@ -1282,6 +1283,44 @@ async function loadCurrentProviderExecutionEvidence(
 	);
 }
 
+/**
+ * Capture the exact durable provider generations that participated in a
+ * cleanup decision. A cleanup run lease must already prevent concurrent
+ * publication before callers use this evidence to authorize a mutation.
+ */
+export async function captureCurrentProviderEvidenceAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	dependencies: ProviderCacheType[],
+): Promise<SanitizedProviderEvidence> {
+	const uniqueDependencies = [...new Set(dependencies)].sort();
+	if (uniqueDependencies.length === 0) return emptyProviderEvidence();
+	const testCapturer = (
+		deps as unknown as {
+			providerEvidenceCapturer?: (
+				userId: string,
+				dependencies: ProviderCacheType[],
+			) => Promise<SanitizedProviderEvidence>;
+		}
+	).providerEvidenceCapturer;
+	if (testCapturer)
+		return canonicalProviderEvidence(await testCapturer(userId, uniqueDependencies));
+	try {
+		return (
+			await loadProviderExecutionEvidence(
+				deps.prisma,
+				userId,
+				uniqueDependencies,
+				uniqueDependencies,
+				new Date(),
+			)
+		).evidence;
+	} catch (error) {
+		if (error instanceof ProviderExecutionAuthorityChangedError) throw error;
+		throw new ProviderExecutionAuthorityChangedError();
+	}
+}
+
 export async function captureCurrentProviderScanAuthority(
 	deps: CleanupExecutorDeps,
 	userId: string,
@@ -1768,16 +1807,19 @@ function isSha256(value: unknown): value is string {
 export function serializeExecutableSafetyPlan(
 	plan: ExecutableSharedMediaSafetyPlan,
 	providerEvidence: SanitizedProviderEvidence = emptyProviderEvidence(),
+	mutationCheckpoint: ExecutableSafetyEnvelope["mutationCheckpoint"] = "pre_mutation",
 ): string {
 	const canonicalPlan = canonicalExecutableSafetyPlan(plan);
 	const canonicalEvidence = canonicalProviderEvidence(providerEvidence);
 	return JSON.stringify({
-		version: 2,
+		version: 3,
 		plan: canonicalPlan,
 		providerEvidence: canonicalEvidence,
+		mutationCheckpoint,
 		fingerprint: canonicalFingerprint({
 			plan: canonicalPlan,
 			providerEvidenceFingerprint: canonicalEvidence.fingerprint,
+			mutationCheckpoint,
 		}),
 	});
 }
@@ -1786,15 +1828,29 @@ export function parseExecutableSafetyEnvelope(value: unknown): ExecutableSafetyE
 	if (typeof value !== "string" || value.trim() === "") return null;
 	try {
 		const snapshot = JSON.parse(value) as Record<string, unknown>;
-		if (snapshot?.version !== 2 || !isSha256(snapshot.fingerprint)) return null;
+		if (
+			snapshot?.version !== 3 ||
+			(snapshot.mutationCheckpoint !== "pre_mutation" &&
+				snapshot.mutationCheckpoint !== "post_partial_mutation") ||
+			!isSha256(snapshot.fingerprint)
+		) {
+			return null;
+		}
 		const providerEvidence = canonicalProviderEvidence(snapshot.providerEvidence);
 		const plan = canonicalExecutableSafetyPlan(snapshot.plan);
 		const fingerprint = canonicalFingerprint({
 			plan,
 			providerEvidenceFingerprint: providerEvidence.fingerprint,
+			mutationCheckpoint: snapshot.mutationCheckpoint,
 		});
 		if (snapshot.fingerprint !== fingerprint) return null;
-		return { version: 2, plan, providerEvidence, fingerprint };
+		return {
+			version: 3,
+			plan,
+			providerEvidence,
+			mutationCheckpoint: snapshot.mutationCheckpoint,
+			fingerprint,
+		};
 	} catch {
 		return null;
 	}

@@ -145,7 +145,14 @@ export const useReplaceServiceIdentityMutation = () => {
 	return useMutation<ServiceInstanceSummary, Error, ReplaceIdentityVariables>({
 		mutationFn: ({ id, payload, ...confirmation }) =>
 			replaceServiceIdentity(id, payload, confirmation),
-		onSuccess: (updated) => applyServiceSummary(queryClient, updated),
+		onSuccess: (updated) => {
+			applyServiceSummary(queryClient, updated);
+			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.fieldOptions });
+			queryClient.invalidateQueries({ queryKey: systemKeys.analyticsProvider });
+			queryClient.invalidateQueries({ queryKey: tracearrKeys.all });
+			queryClient.invalidateQueries({ queryKey: tautulliKeys.all });
+			queryClient.invalidateQueries({ queryKey: systemKeys.tautulliProviderNotices });
+		},
 	});
 };
 

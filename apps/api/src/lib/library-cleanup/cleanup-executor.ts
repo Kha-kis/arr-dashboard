@@ -53,6 +53,7 @@ import {
 	isSupportedEpisodeCleanupRule,
 	toEpisodeTargetMetadata,
 } from "./episode-scope.js";
+import type { ProviderCacheType } from "./provider-cache-evidence.js";
 import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
 import {
 	evaluateSingleCondition,
@@ -70,6 +71,7 @@ import {
 	ArrFileChangedDuringSafetyCheckError,
 	ArrMutationAuthorityChangedDuringSafetyCheckError,
 	ArrTargetChangedDuringSafetyCheckError,
+	assertCurrentProviderEvidenceAuthority,
 	assertVerifiedArrTargetUnchanged,
 	assertVerifiedRadarrEmptyUnchanged,
 	assertVerifiedRadarrFileUnchanged,
@@ -81,15 +83,20 @@ import {
 	buildRadarrCacheSafetyPlan,
 	buildSonarrCacheSafetyPlan,
 	type CleanupDeleteTarget,
+	captureCurrentProviderEvidenceAuthority,
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
+	createSanitizedProviderEvidence,
 	createSharedPlexSafetyContext,
 	type ExecutableSharedMediaSafetyPlan,
 	executableSafetyPlansEqual,
 	findSharedPlexDeleteBlocks,
+	parseExecutableSafetyEnvelope,
 	parseExecutableSafetyPlan,
-	radarrCachedFileIdentityMatches,
 	RadarrFileChangedDuringSafetyCheckError,
+	radarrCachedFileIdentityMatches,
+	renewCurrentProviderRetryAuthority,
+	type SanitizedProviderEvidence,
 	type SharedMediaSafetyPlan,
 	SonarrFilesChangedDuringSafetyCheckError,
 	serializeExecutableSafetyPlan,
@@ -574,7 +581,15 @@ async function updateClaimedCleanupApproval(
 function buildPostPartialRetrySnapshot(
 	safetyPlan: SharedMediaSafetyPlan | undefined,
 	error: ArrDeletePartialError,
+	providerEvidence: SanitizedProviderEvidence,
 ): string | undefined {
+	if (
+		safetyPlan?.kind === "verified_sonarr_episode" &&
+		error.deletedFileIds.length === 1 &&
+		error.deletedFileIds[0] === safetyPlan.selectedFile.episodeFileId
+	) {
+		return serializeExecutableSafetyPlan(safetyPlan, providerEvidence, "post_partial_mutation");
+	}
 	if (error.hasRemainingFiles || error.deletedFileIds.length === 0) return undefined;
 
 	if (error.service === "RADARR") {
@@ -585,7 +600,7 @@ function buildPostPartialRetrySnapshot(
 		) {
 			return undefined;
 		}
-		return serializeExecutableSafetyPlan(safetyPlan);
+		return serializeExecutableSafetyPlan(safetyPlan, providerEvidence, "post_partial_mutation");
 	}
 
 	if (safetyPlan?.kind !== "verified_sonarr") return undefined;
@@ -598,13 +613,17 @@ function buildPostPartialRetrySnapshot(
 	) {
 		return undefined;
 	}
-	return serializeExecutableSafetyPlan({
-		...safetyPlan,
-		files: {
-			seriesPath: safetyPlan.files.seriesPath,
-			episodeFiles: [],
+	return serializeExecutableSafetyPlan(
+		{
+			...safetyPlan,
+			files: {
+				seriesPath: safetyPlan.files.seriesPath,
+				episodeFiles: [],
+			},
 		},
-	});
+		providerEvidence,
+		"post_partial_mutation",
+	);
 }
 
 function verifiedTargetsEqual(
@@ -1036,6 +1055,7 @@ async function persistAndClaimDirectMutationIntent(
 	userId: string,
 	item: FlaggedItem,
 	safetyPlan: SharedMediaSafetyPlan,
+	providerEvidence: SanitizedProviderEvidence,
 ): Promise<{ id: string; claimed: boolean; executionToken: string }> {
 	const executablePlan = asExecutableSafetyPlan(safetyPlan);
 	if (!executablePlan) {
@@ -1044,7 +1064,7 @@ async function persistAndClaimDirectMutationIntent(
 	const retryEventFingerprint = createHash("sha256")
 		.update(
 			JSON.stringify([
-				serializeExecutableSafetyPlan(executablePlan),
+				serializeExecutableSafetyPlan(executablePlan, providerEvidence),
 				item.cacheItem.cachedAt?.toISOString() ?? null,
 				item.match.action,
 			]),
@@ -1084,7 +1104,7 @@ async function persistAndClaimDirectMutationIntent(
 				year: item.cacheItem.year,
 				rating: item.rating,
 				status: "retry_pending",
-				safetySnapshot: serializeExecutableSafetyPlan(executablePlan),
+				safetySnapshot: serializeExecutableSafetyPlan(executablePlan, providerEvidence),
 				lastExecutionError: null,
 				expiresAt: new Date(now.getTime() + APPROVAL_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
 			},
@@ -1835,6 +1855,11 @@ async function executeCleanupRunGuarded(
 			config,
 			config.rules,
 		);
+		const providerEvidence = await captureCurrentProviderEvidenceAuthority(
+			deps,
+			userId,
+			providerEvidenceDependenciesForRules(config.rules),
+		);
 		// Real execution
 		if (config.requireApproval) {
 			const nonterminalRetryTargets = await prisma.libraryCleanupApproval.findMany({
@@ -1891,6 +1916,7 @@ async function executeCleanupRunGuarded(
 				allWarnings,
 				sharedPlexBlocks,
 				safetyContext.plans,
+				providerEvidence,
 				approvalSelection.skippedDetails,
 			);
 		}
@@ -1908,6 +1934,7 @@ async function executeCleanupRunGuarded(
 			new Map(),
 			runLease.assertOwnership,
 			runLease.runClaimToken,
+			providerEvidence,
 		);
 	} finally {
 		await runLease.release();
@@ -2619,7 +2646,9 @@ async function executeQueuedCleanupItems(
 
 			let sharedPlexBlock: string | undefined;
 			let approvalIdentityChanged = false;
-			let approvedPlan = parseExecutableSafetyPlan(approval.safetySnapshot);
+			const approvedEnvelope = parseExecutableSafetyEnvelope(approval.safetySnapshot);
+			let approvedPlan = approvedEnvelope?.plan ?? null;
+			let approvedProviderEvidence = approvedEnvelope?.providerEvidence;
 			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
 			let recoveringEpisodeUnmonitorPartial =
 				approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE;
@@ -2637,6 +2666,49 @@ async function executeQueuedCleanupItems(
 				approvalIdentityChanged = true;
 				sharedPlexBlock =
 					"Skipped for safety: the ARR target identity changed after this cleanup item was queued. Run cleanup again and review a new approval.";
+			}
+			if (!sharedPlexBlock && approvedProviderEvidence) {
+				try {
+					if (
+						recoveringInterruptedMutation &&
+						approvedEnvelope?.mutationCheckpoint === "post_partial_mutation"
+					) {
+						approvedProviderEvidence = await renewCurrentProviderRetryAuthority(
+							deps,
+							userId,
+							approvedProviderEvidence,
+							options.assertExecutionAllowed,
+						);
+						await updateClaimedCleanupApproval(
+							prisma,
+							userId,
+							approval.id,
+							options.executeStatus,
+							claimedExecutionToken,
+							{
+								safetySnapshot: serializeExecutableSafetyPlan(
+									approvedPlan!,
+									approvedProviderEvidence,
+								),
+							},
+						);
+					} else {
+						await assertCurrentProviderEvidenceAuthority(
+							deps,
+							userId,
+							approvedProviderEvidence,
+							options.assertExecutionAllowed,
+						);
+					}
+				} catch (error) {
+					approvalIdentityChanged = true;
+					sharedPlexBlock =
+						"Skipped for safety: the provider evidence used by this cleanup decision changed. Run cleanup again and review a new approval.";
+					log.warn(
+						{ err: error, approvalId: approval.id },
+						"Approved cleanup item lost provider evidence authority",
+					);
+				}
 			}
 			const approvedEpisodeRefreshTime =
 				approvedPlan?.kind === "verified_sonarr_episode"
@@ -2699,7 +2771,10 @@ async function executeQueuedCleanupItems(
 						options.executeStatus,
 						claimedExecutionToken,
 						{
-							safetySnapshot: serializeExecutableSafetyPlan(reconciledPlan),
+							safetySnapshot: serializeExecutableSafetyPlan(
+								reconciledPlan,
+								approvedProviderEvidence!,
+							),
 							lastExecutionError:
 								"Recovered a persisted Sonarr mutation after verifying that its target files were already removed.",
 						},
@@ -2835,6 +2910,7 @@ async function executeQueuedCleanupItems(
 									{
 										safetySnapshot: serializeExecutableSafetyPlan(
 											postFileOwnershipPlan ?? livePlan,
+											approvedProviderEvidence!,
 										),
 										lastExecutionError:
 											"Recovered a persisted cleanup mutation after verifying the remaining ARR file set.",
@@ -3211,7 +3287,15 @@ async function executeQueuedCleanupItems(
 				failed++;
 				const postPartialRetrySnapshot =
 					error instanceof ArrDeletePartialError
-						? buildPostPartialRetrySnapshot(safetyPlan, error)
+						? buildPostPartialRetrySnapshot(safetyPlan, error, approvedProviderEvidence!)
+						: undefined;
+				const postEpisodeUnmonitorSnapshot =
+					error instanceof SonarrEpisodeUnmonitorPartialError || preserveEpisodeUnmonitorPartial
+						? serializeExecutableSafetyPlan(
+								approvedPlan!,
+								approvedProviderEvidence!,
+								"post_partial_mutation",
+							)
 						: undefined;
 				if (error instanceof ArrDeletePartialError && error.deletedFileIds.length > 0) {
 					confirmedPartialFileDeletionIds.add(approval.id);
@@ -3241,7 +3325,11 @@ async function executeQueuedCleanupItems(
 							executionToken: null,
 							lastExecutionError: executionError,
 							...(mutationAuthorityChanged ? { reviewedAt: new Date() } : {}),
-							...(postPartialRetrySnapshot ? { safetySnapshot: postPartialRetrySnapshot } : {}),
+							...(postPartialRetrySnapshot || postEpisodeUnmonitorSnapshot
+								? {
+										safetySnapshot: postPartialRetrySnapshot ?? postEpisodeUnmonitorSnapshot,
+									}
+								: {}),
 						},
 					);
 					retryStatePersisted = true;
@@ -5361,6 +5449,29 @@ function getRuleDataSources(rule: LibraryCleanupRule): Set<DataSourceDependency>
 	return sources;
 }
 
+function providerEvidenceDependenciesForRules(rules: LibraryCleanupRule[]): ProviderCacheType[] {
+	const activeTypes = collectActiveRuleTypes(rules);
+	const dependencies = new Set<ProviderCacheType>();
+	if (
+		[...activeTypes].some(ruleTypeUsesPlexSeriesCache) ||
+		collectConfiguredPlexSectionTitles(rules).size > 0
+	) {
+		dependencies.add("plex");
+	}
+	if (activeTypes.has("plex_episode_completion")) {
+		dependencies.add("plex");
+		dependencies.add("plex_episode");
+	}
+	if ([...activeTypes].some(ruleTypeUsesJellyfinSeriesCache)) {
+		dependencies.add("jellyfin");
+	}
+	if (activeTypes.has("jellyfin_episode_completion")) {
+		dependencies.add("jellyfin");
+		dependencies.add("jellyfin_episode");
+	}
+	return [...dependencies].sort();
+}
+
 function buildApprovalDedupSkipReason(
 	status: string,
 	memWindow: RejectionMemoryWindow,
@@ -5480,6 +5591,7 @@ async function executeWithApproval(
 	warnings?: string[],
 	sharedPlexBlocks: Map<string, string> = new Map(),
 	safetyPlans: Map<string, SharedMediaSafetyPlan> = new Map(),
+	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
 	preSkippedDetails: CleanupRunResult["details"] = [],
 ): Promise<CleanupRunResult> {
 	const { prisma, log } = deps;
@@ -5564,6 +5676,7 @@ async function executeWithApproval(
 							(() => {
 								throw new Error("No executable cleanup safety plan was produced");
 							})(),
+						providerEvidence,
 					),
 					expiresAt,
 				},
@@ -5623,6 +5736,7 @@ export async function executeDirectRemoval(
 	sharedPlexBlocks: Map<string, string> = new Map(),
 	assertRunLease?: () => Promise<void>,
 	cleanupRunClaimToken?: string,
+	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
 ): Promise<CleanupRunResult> {
 	const { prisma, arrClientFactory, log } = deps;
 
@@ -6016,12 +6130,14 @@ export async function executeDirectRemoval(
 		let directMutationIntentId: string;
 		let directMutationExecutionToken: string;
 		try {
+			await assertCurrentProviderEvidenceAuthority(deps, userId, providerEvidence, assertRunLease);
 			const intent = await persistAndClaimDirectMutationIntent(
 				deps,
 				config,
 				userId,
 				item,
 				safetyPlan!,
+				providerEvidence,
 			);
 			if (!intent.claimed) {
 				directIntentConcurrent++;
@@ -6321,6 +6437,14 @@ export async function executeDirectRemoval(
 				error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError
 			) {
 				partialArrDeletes++;
+				const postEpisodeUnmonitorSnapshot =
+					error instanceof SonarrEpisodeUnmonitorPartialError
+						? serializeExecutableSafetyPlan(
+								asExecutableSafetyPlan(safetyPlan)!,
+								providerEvidence,
+								"post_partial_mutation",
+							)
+						: undefined;
 				try {
 					await updateClaimedCleanupApproval(
 						prisma,
@@ -6332,6 +6456,9 @@ export async function executeDirectRemoval(
 							status: "retry_pending",
 							executionToken: null,
 							lastExecutionError: error.message,
+							...(postEpisodeUnmonitorSnapshot
+								? { safetySnapshot: postEpisodeUnmonitorSnapshot }
+								: {}),
 						},
 					);
 				} catch (retryError) {
@@ -6363,7 +6490,11 @@ export async function executeDirectRemoval(
 				partialArrDeletes++;
 				const deletedAnyVerifiedFiles = error.deletedFileIds.length > 0;
 				if (deletedAnyVerifiedFiles) filesDeleted++;
-				const postPartialRetrySnapshot = buildPostPartialRetrySnapshot(safetyPlan, error);
+				const postPartialRetrySnapshot = buildPostPartialRetrySnapshot(
+					safetyPlan,
+					error,
+					providerEvidence,
+				);
 				let retryPersistenceSucceeded = true;
 				try {
 					await updateClaimedCleanupApproval(

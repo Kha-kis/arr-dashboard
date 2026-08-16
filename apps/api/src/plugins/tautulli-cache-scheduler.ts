@@ -30,7 +30,7 @@ const STARTUP_DELAY_MS = 2 * 60_000; // 2 minutes — staggered after plex-cache
 export async function refreshScheduledTautulliCacheInstance(
 	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
 	instance: ServiceInstance,
-): Promise<void> {
+): Promise<boolean> {
 	const authority = createProviderPublicationAuthority(instance);
 	let publicationInstance: ReturnType<typeof createOwnedTautulliPublicationSnapshot> | undefined;
 	try {
@@ -45,14 +45,21 @@ export async function refreshScheduledTautulliCacheInstance(
 			"Tautulli cache refresh completed for instance",
 		);
 
-		if ((!result.complete || !result.completedAt) && !result.superseded) {
+		if (result.superseded) {
+			return false;
+		}
+
+		if (!result.complete || !result.completedAt) {
 			await recordScheduledTautulliFailure(
 				app,
 				publicationInstance,
 				result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
 					"Tautulli refresh did not produce a complete generation",
 			);
+			return false;
 		}
+
+		return true;
 	} catch (err) {
 		app.log.error(
 			{ err, instanceId: instance.id, label: instance.label },
@@ -65,6 +72,7 @@ export async function refreshScheduledTautulliCacheInstance(
 				? getErrorMessage(err, "Unknown error")
 				: "Provider credentials could not be decrypted.",
 		);
+		return false;
 	}
 }
 
@@ -117,8 +125,11 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 						"Starting Tautulli cache refresh for all instances",
 					);
 
+					let failedInstances = 0;
 					for (const instance of instances) {
-						await refreshScheduledTautulliCacheInstance(app, instance);
+						if (!(await refreshScheduledTautulliCacheInstance(app, instance))) {
+							failedInstances += 1;
+						}
 					}
 
 					// Check for stale caches (>12h since last successful refresh)
@@ -149,9 +160,15 @@ const tautulliCacheSchedulerPlugin = fastifyPlugin(
 								app.log.warn({ err: notifyErr }, "Failed to send stale-cache notification");
 							});
 					}
+
+					if (failedInstances > 0) {
+						throw new Error(
+							`Tautulli cache refresh failed for ${failedInstances} instance${failedInstances === 1 ? "" : "s"}`,
+						);
+					}
 				});
 			} catch (err) {
-				app.log.error({ err }, "Tautulli cache scheduler: failed to query instances");
+				app.log.error({ err }, "Tautulli cache scheduler tick failed");
 			} finally {
 				isRunning = false;
 			}

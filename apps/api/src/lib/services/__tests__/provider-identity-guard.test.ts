@@ -56,13 +56,19 @@ function instance(overrides: Record<string, unknown> = {}) {
 
 function prismaFor(
 	row: Record<string, unknown> | undefined,
-	options: { runClaimToken?: string | null; lockOrder?: string[]; lockedQueries?: string[] } = {},
+	options: {
+		runClaimToken?: string | null;
+		runClaimedAt?: Date | null;
+		lockOrder?: string[];
+		lockedQueries?: string[];
+	} = {},
 ) {
 	let runClaimToken = options.runClaimToken ?? null;
+	let runClaimedAt = options.runClaimedAt ?? null;
 	const tx = {
 		libraryCleanupConfig: {
 			upsert: vi.fn(async () => ({ id: "cleanup-1" })),
-			findUnique: vi.fn(async () => ({ id: "cleanup-1", runClaimToken })),
+			findUnique: vi.fn(async () => ({ id: "cleanup-1", runClaimToken, runClaimedAt })),
 		},
 		serviceInstance: {
 			findFirst: vi.fn(async ({ where }: { where: Record<string, unknown> }) => {
@@ -85,8 +91,9 @@ function prismaFor(
 	};
 	return {
 		...tx,
-		setRunClaimToken(value: string | null) {
+		setRunClaimToken(value: string | null, claimedAt: Date | null = null) {
 			runClaimToken = value;
+			runClaimedAt = claimedAt;
 		},
 		$transaction: vi.fn(
 			async (action: (transaction: typeof tx) => Promise<unknown>) => await action(tx),
@@ -206,7 +213,11 @@ describe("withGuardedProviderPublication", () => {
 
 	it("skips publication behind an active cleanup run and succeeds after release", async () => {
 		const row = instance();
-		const prisma = prismaFor(row, { runClaimToken: "cleanup-run" });
+		const prisma = prismaFor(row, {
+			runClaimToken: "cleanup-run",
+			runClaimedAt: new Date("2026-08-15T12:00:00.000Z"),
+		});
+		const cleanupLeaseOptions = { now: () => new Date("2026-08-15T12:01:00.000Z") };
 		const publish = vi.fn(async (_tx, snapshot: string) => snapshot);
 		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
 
@@ -217,6 +228,7 @@ describe("withGuardedProviderPublication", () => {
 				silentLog,
 				async () => "blocked",
 				publish,
+				cleanupLeaseOptions,
 			),
 		).rejects.toSatisfy((error: unknown) => expectGuardError(error, "PUBLICATION_SUPERSEDED"));
 		expect(publish).not.toHaveBeenCalled();
@@ -229,14 +241,40 @@ describe("withGuardedProviderPublication", () => {
 				silentLog,
 				async () => "retry",
 				publish,
+				cleanupLeaseOptions,
 			),
 		).resolves.toBe("retry");
 		expect(publish).toHaveBeenCalledOnce();
 	});
 
+	it("treats an expired foreign cleanup claim as inactive", async () => {
+		const row = instance();
+		const prisma = prismaFor(row, {
+			runClaimToken: "crashed-run",
+			runClaimedAt: new Date("2026-08-15T09:59:59.999Z"),
+		});
+		const publish = vi.fn(async (_tx, snapshot: string) => snapshot);
+		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
+
+		await expect(
+			withGuardedProviderPublication(
+				prisma as never,
+				row as never,
+				silentLog,
+				async () => "published-after-expiry",
+				publish,
+				{ now: () => new Date("2026-08-15T12:00:00.000Z") },
+			),
+		).resolves.toBe("published-after-expiry");
+		expect(publish).toHaveBeenCalledOnce();
+	});
+
 	it("allows publication only for the cleanup run that owns the active lease", async () => {
 		const row = instance();
-		const prisma = prismaFor(row, { runClaimToken: "cleanup-run" });
+		const prisma = prismaFor(row, {
+			runClaimToken: "cleanup-run",
+			runClaimedAt: new Date(),
+		});
 		const publish = vi.fn(async (_tx, snapshot: string) => snapshot);
 		identityModuleMocks.readProviderIdentity.mockResolvedValue(identity());
 

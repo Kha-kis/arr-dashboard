@@ -51,7 +51,8 @@ describe("cleanup provider-evidence snapshots", () => {
 		>;
 
 		expect(snapshot).toMatchObject({
-			version: 2,
+			version: 3,
+			mutationCheckpoint: "pre_mutation",
 			providerEvidence: {
 				version: 1,
 				fingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -67,6 +68,25 @@ describe("cleanup provider-evidence snapshots", () => {
 		});
 		expect(JSON.stringify(snapshot)).not.toContain("encrypted-radarr-key");
 		expect(JSON.stringify(snapshot)).not.toContain("radarr.internal");
+	});
+
+	it("rejects pre-correction envelopes that cannot prove provider independence", () => {
+		const snapshot = JSON.parse(
+			serializeExecutableSafetyPlan(
+				{
+					kind: "verified_arr_target",
+					target: {
+						serviceFingerprint: "a".repeat(64),
+						externalId: 42,
+						mediaPath: { value: "/movies/Example", windows: false },
+					},
+				},
+				createSanitizedProviderEvidence([], []),
+			),
+		) as Record<string, unknown>;
+		snapshot.version = 2;
+
+		expect(parseExecutableSafetyPlan(JSON.stringify(snapshot))).toBeNull();
 	});
 
 	it.each([

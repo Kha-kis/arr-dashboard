@@ -59,6 +59,57 @@ const candidate = {
 };
 
 describe("useServicesManagement identity conflicts", () => {
+	it("confirms an unavailable Tautulli provider before retrying direct identity replacement", async () => {
+		const tautulli = {
+			...service,
+			id: "tautulli-1",
+			service: "tautulli" as const,
+			identity: { ...service.identity, status: "mismatch" as const },
+		};
+		inspectServiceIdentity.mockResolvedValue({
+			candidate,
+			connectionGeneration: 4,
+			identityGeneration: 2,
+		});
+		replaceMutate
+			.mockRejectedValueOnce(
+				new ApiError("analytics confirmation required", 409, {
+					code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
+					selected: "tautulli",
+					alternativeEnabled: false,
+				}),
+			)
+			.mockResolvedValueOnce({
+				...tautulli,
+				identity: { ...tautulli.identity, status: "verified" as const },
+			});
+		const { result } = renderHook(() => useServicesManagement());
+
+		await act(async () => {
+			await result.current.inspectIdentity(tautulli);
+		});
+		await act(async () => {
+			await result.current.confirmIdentity();
+		});
+
+		await waitFor(() =>
+			expect(result.current.analyticsUnavailableConfirmation?.selected).toBe("tautulli"),
+		);
+		await act(async () => {
+			await result.current.analyticsUnavailableConfirmation?.onConfirm();
+		});
+
+		expect(replaceMutate).toHaveBeenLastCalledWith({
+			id: "tautulli-1",
+			payload: expect.not.objectContaining({ confirmAnalyticsUnavailableFor: expect.anything() }),
+			confirmAnalyticsUnavailableFor: "tautulli",
+			confirmationDigest: candidate.confirmationDigest,
+			expectedConnectionGeneration: 4,
+			expectedIdentityGeneration: 2,
+		});
+		expect(result.current.identityFlow).toBeNull();
+	});
+
 	it("retains analytics confirmation when an enabled Tautulli update proceeds to identity replacement", async () => {
 		const tautulli = { ...service, id: "tautulli-1", service: "tautulli" as const };
 		const stagedForm = {

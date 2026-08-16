@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import Fastify, { type FastifyInstance } from "fastify";
+import fastifyPlugin from "fastify-plugin";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	expectPreservedSuccessWithSanitizedDecryptFailure,
 	watchSchedulerDecryptFailureFixture,
@@ -14,7 +16,9 @@ vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
 	refreshTautulliCache: mocks.refresh,
 }));
 
-import { refreshScheduledTautulliCacheInstance } from "../tautulli-cache-scheduler.js";
+import tautulliCacheSchedulerPlugin, {
+	refreshScheduledTautulliCacheInstance,
+} from "../tautulli-cache-scheduler.js";
 
 const publicationInstance = {
 	id: "tautulli-1",
@@ -66,7 +70,7 @@ describe("refreshScheduledTautulliCacheInstance", () => {
 		expect(state.status.lastAttemptResult).toBe("success");
 	});
 
-	it("does not record a superseded refresh as a failure", async () => {
+	it("reports a superseded refresh as an unsuccessful scheduler instance", async () => {
 		mocks.refresh.mockResolvedValue({
 			complete: false,
 			upserted: 0,
@@ -76,7 +80,10 @@ describe("refreshScheduledTautulliCacheInstance", () => {
 		});
 
 		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
-		await refreshScheduledTautulliCacheInstance(state.app as never, state.instance as never);
+		const succeeded = await refreshScheduledTautulliCacheInstance(
+			state.app as never,
+			state.instance as never,
+		);
 
 		expect(mocks.refresh).toHaveBeenCalledWith({
 			prisma: state.app.prisma,
@@ -84,6 +91,7 @@ describe("refreshScheduledTautulliCacheInstance", () => {
 			log: state.app.log,
 		});
 		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		expect(succeeded).toBe(false);
 	});
 
 	it("records incomplete attempts with the exact publication snapshot", async () => {
@@ -99,5 +107,107 @@ describe("refreshScheduledTautulliCacheInstance", () => {
 
 		expect(state.status.lastAttemptResult).toBe("error");
 		expect(state.status.lastAttemptErrorMessage).toBe("history failed");
+	});
+});
+
+describe("tautulli cache scheduler", () => {
+	let app: FastifyInstance;
+	const trackedTickFailures: unknown[] = [];
+	const schedulerRegistry = {
+		track: vi.fn(async (_jobId, callback: () => Promise<unknown>) => {
+			try {
+				return await callback();
+			} catch (error) {
+				trackedTickFailures.push(error);
+				throw error;
+			}
+		}),
+	};
+
+	beforeEach(async () => {
+		vi.useFakeTimers();
+		vi.clearAllMocks();
+		trackedTickFailures.length = 0;
+		mocks.createSnapshot.mockImplementation((_encryptor, instance) => instance);
+		mocks.refresh
+			.mockResolvedValueOnce({
+				complete: false,
+				upserted: 0,
+				errors: 1,
+				errorMessages: ["history failed"],
+			})
+			.mockResolvedValueOnce({
+				complete: true,
+				completedAt: new Date(),
+				upserted: 1,
+				errors: 0,
+				errorMessages: [],
+			});
+
+		app = Fastify({ logger: false });
+		await app.register(
+			fastifyPlugin(
+				async (server) => {
+					server.decorate("prisma", {
+						serviceInstance: {
+							findMany: vi.fn().mockResolvedValue([
+								{ ...publicationInstance, id: "tautulli-failed" },
+								{ ...publicationInstance, id: "tautulli-succeeded" },
+							]),
+						},
+						cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([]) },
+					} as never);
+				},
+				{ name: "prisma" },
+			),
+		);
+		await app.register(
+			fastifyPlugin(
+				async (server) => {
+					server.decorate("encryptor", { decrypt: vi.fn() } as never);
+				},
+				{ name: "security" },
+			),
+		);
+		await app.register(
+			fastifyPlugin(
+				async (server) => {
+					server.decorate("notificationService", {
+						notify: vi.fn().mockResolvedValue({}),
+					} as never);
+				},
+				{ name: "notification-service" },
+			),
+		);
+		await app.register(
+			fastifyPlugin(
+				async (server) => {
+					server.decorate("schedulerRegistry", schedulerRegistry as never);
+				},
+				{ name: "scheduler-registry" },
+			),
+		);
+		await app.register(tautulliCacheSchedulerPlugin);
+		await app.ready();
+	});
+
+	afterEach(async () => {
+		await app.close();
+		vi.useRealTimers();
+	});
+
+	it("reports an incomplete instance refresh to the scheduler after refreshing every instance", async () => {
+		await vi.advanceTimersByTimeAsync(2 * 60_000);
+
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		expect(mocks.refresh).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({ instance: expect.objectContaining({ id: "tautulli-failed" }) }),
+		);
+		expect(mocks.refresh).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ instance: expect.objectContaining({ id: "tautulli-succeeded" }) }),
+		);
+		expect(trackedTickFailures).toEqual([expect.any(Error)]);
 	});
 });

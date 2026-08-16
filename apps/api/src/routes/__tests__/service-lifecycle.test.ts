@@ -1203,6 +1203,99 @@ describe("Service instance lifecycle", () => {
 		expect(prisma.serviceInstance.updateMany).toHaveBeenCalledTimes(1);
 	});
 
+	it("rejects a concurrent replacement with a different inspected connection for the same provider", async () => {
+		const id = await createExistingVerifiedProvider();
+		const replacement = {
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValue(replacement);
+
+		const firstCandidate = { baseUrl: "http://first-provider.test" };
+		const secondCandidate = { baseUrl: "http://second-provider.test" };
+		const firstInspection = await inject("POST", `/services/${id}/identity/inspect`, {
+			body: { candidate: firstCandidate },
+		});
+		const secondInspection = await inject("POST", `/services/${id}/identity/inspect`, {
+			body: { candidate: secondCandidate },
+		});
+
+		const first = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: firstCandidate,
+				confirmationDigest: firstInspection.json().candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+		const staleSecond = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: secondCandidate,
+				confirmationDigest: secondInspection.json().candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(first.statusCode).toBe(200);
+		expect(staleSecond.statusCode).toBe(409);
+		expect(staleSecond.json().details).toMatchObject({
+			code: "IDENTITY_GENERATION_STALE",
+		});
+		expect(prisma._instances.get(id)).toMatchObject({
+			baseUrl: "http://first-provider.test",
+			identityGeneration: 4,
+		});
+	});
+
+	it("rejects a stale same-identity replacement requesting a different enabled state", async () => {
+		const id = await createExistingVerifiedProvider();
+		mockReadProviderIdentity.mockResolvedValue({
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		});
+		const disabledCandidate = { enabled: false };
+		const enabledCandidate = { enabled: true };
+		const disabledInspection = await inject("POST", `/services/${id}/identity/inspect`, {
+			body: { candidate: disabledCandidate },
+		});
+		const enabledInspection = await inject("POST", `/services/${id}/identity/inspect`, {
+			body: { candidate: enabledCandidate },
+		});
+
+		const first = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: disabledCandidate,
+				confirmationDigest: disabledInspection.json().candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+		const staleSecond = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: enabledCandidate,
+				confirmationDigest: enabledInspection.json().candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(first.statusCode).toBe(200);
+		expect(staleSecond.statusCode).toBe(409);
+		expect(staleSecond.json().details).toMatchObject({ code: "IDENTITY_GENERATION_STALE" });
+		expect(prisma._instances.get(id)).toMatchObject({
+			enabled: false,
+			connectionGeneration: 1,
+			identityGeneration: 4,
+		});
+	});
+
 	it("encrypts HTTP auth credentials and exposes only a configured flag", async () => {
 		const response = await inject("POST", "/services", {
 			body: {

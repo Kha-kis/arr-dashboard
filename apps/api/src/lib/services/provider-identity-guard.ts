@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import { CLEANUP_RUN_LEASE_MS } from "../library-cleanup/cleanup-run-lease.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
 import {
 	type DecryptedOwnedServiceSnapshot,
@@ -145,10 +146,20 @@ export async function withCurrentProviderPublicationAuthority<T>(
 			}
 			const cleanupAuthority = await tx.libraryCleanupConfig.findUnique({
 				where: { id: cleanupConfig.id },
-				select: { runClaimToken: true },
+				select: { runClaimToken: true, runClaimedAt: true },
 			});
+			if (!cleanupAuthority) return { matched: false };
 			const expectedRunClaimToken = options.cleanupRunClaimToken ?? null;
-			if (!cleanupAuthority || cleanupAuthority.runClaimToken !== expectedRunClaimToken) {
+			const now = (options.now ?? (() => new Date()))();
+			const activeCleanupClaim =
+				cleanupAuthority.runClaimToken !== null &&
+				cleanupAuthority.runClaimedAt !== null &&
+				cleanupAuthority.runClaimedAt >= new Date(now.getTime() - CLEANUP_RUN_LEASE_MS);
+			if (
+				activeCleanupClaim
+					? cleanupAuthority.runClaimToken !== expectedRunClaimToken
+					: expectedRunClaimToken !== null
+			) {
 				return { matched: false };
 			}
 			if (postgresql) {

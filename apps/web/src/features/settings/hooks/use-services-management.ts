@@ -529,6 +529,20 @@ export const useServicesManagement = () => {
 			}
 			setIdentityFlow(null);
 		} catch (error) {
+			if (
+				identityFlow.mode === "replace" &&
+				requestAnalyticsUnavailableConfirmation(error, async (selected) => {
+					await replaceIdentityMutation.mutateAsync({
+						id: identityFlow.instanceId,
+						payload: identityFlow.replacementPayload,
+						confirmAnalyticsUnavailableFor: selected,
+						...confirmation,
+					});
+					setIdentityFlow(null);
+				})
+			) {
+				return;
+			}
 			const conflict = getIdentityConflict(error);
 			if (conflict) {
 				setIdentityFlow((current) =>

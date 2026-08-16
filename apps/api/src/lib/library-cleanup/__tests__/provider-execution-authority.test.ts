@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import {
 	assertCurrentProviderEvidenceAuthority,
+	captureCurrentProviderEvidenceAuthority,
 	createSanitizedProviderEvidence,
 } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "../types.js";
@@ -402,6 +403,27 @@ function cacheTypeFixture(cacheType: keyof typeof cacheCases) {
 }
 
 describe("provider execution authority", () => {
+	it("captures the current durable provider generation for a cleanup decision", async () => {
+		const subject = fixture();
+
+		const captured = await captureCurrentProviderEvidenceAuthority(subject.deps, "user-1", [
+			"plex",
+			"plex",
+		]);
+
+		expect(captured.dependencies).toEqual(["plex"]);
+		expect(captured.sources).toEqual([
+			expect.objectContaining({
+				service: "PLEX",
+				cacheType: "plex",
+				connectionGeneration: 3,
+				identityGeneration: 7,
+				instanceFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+			}),
+		]);
+		expect(subject.identityReader).not.toHaveBeenCalled();
+	});
+
 	for (const cacheType of Object.keys(cacheCases) as Array<keyof typeof cacheCases>) {
 		it(`accepts unchanged real ${cacheType} evidence`, async () => {
 			const subject = cacheTypeFixture(cacheType);
