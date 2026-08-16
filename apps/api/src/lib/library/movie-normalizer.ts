@@ -1,6 +1,7 @@
 import type { LibraryItem, LibraryService } from "@arr/shared";
 import type { ServiceInstance } from "../../lib/prisma.js";
 import { normalizeImages } from "./image-normalizer.js";
+import { normalizeRatings } from "./rating-normalizer.js";
 import {
 	normalizeGenres,
 	normalizeTags,
@@ -140,6 +141,7 @@ export const buildMovieItem = (
 			tmdbId: toNumber(raw?.tmdbId),
 			imdbId: toStringValue(raw?.imdbId),
 		},
+		ratings: normalizeRatings(raw?.ratings, service),
 		movieFile: buildMovieFile(raw?.movieFile as Record<string, unknown>),
 		statistics: {
 			movieFileQuality: (() => {

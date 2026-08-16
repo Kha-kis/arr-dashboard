@@ -9,12 +9,15 @@
  * - Memory instrumentation at debug level
  */
 
+import { libraryItemSchema } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient, ServiceInstance, ServiceType } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
 import { createArrServiceFingerprint } from "../../arr/service-fingerprint.js";
 import type { Encryptor } from "../../auth/encryption.js";
+import { evaluateSingleCondition, extractRating } from "../../library-cleanup/rule-evaluators.js";
+import type { CacheItemForEval } from "../../library-cleanup/types.js";
 import { type LibraryStreamFn, type SyncExecutorDeps, syncInstance } from "../sync-executor.js";
 
 const MOCK_USER_ID = "user-1";
@@ -346,6 +349,96 @@ function setupSync(
 // ============================================================================
 
 describe("syncInstance", () => {
+	describe("rating cache contract", () => {
+		async function syncRating(
+			service: "RADARR" | "SONARR",
+			ratings: unknown,
+		): Promise<{ data: Record<string, unknown>; cacheItem: CacheItemForEval }> {
+			const raw = makeRawItem({
+				ratings,
+				...(service === "SONARR" ? { statistics: { episodeFileCount: 0, sizeOnDisk: 0 } } : {}),
+			});
+			const { deps, instance, mockPrisma } = setupSync(service, [raw], []);
+			expect((await syncInstance(deps, instance)).success).toBe(true);
+			const serialized = mockPrisma._txCreates[0]?.data.data;
+			expect(typeof serialized).toBe("string");
+			const data = JSON.parse(serialized as string) as Record<string, unknown>;
+			expect(libraryItemSchema.safeParse(data).success).toBe(true);
+			return {
+				data,
+				cacheItem: {
+					id: "rating-cache",
+					instanceId: instance.id,
+					arrItemId: 1,
+					itemType: service === "RADARR" ? "movie" : "series",
+					title: "Test Item",
+					year: 2024,
+					monitored: true,
+					hasFile: false,
+					status: "released",
+					qualityProfileId: 1,
+					qualityProfileName: "Test Profile",
+					sizeOnDisk: 0n,
+					arrAddedAt: null,
+					data: serialized as string,
+				},
+			};
+		}
+
+		it("preserves Radarr source provenance and matches IMDb cleanup from cached data", async () => {
+			const { data, cacheItem } = await syncRating("RADARR", {
+				imdb: { value: 7.4, votes: 100 },
+				tmdb: { value: 8.6, votes: 200 },
+				metacritic: { value: 84, votes: 20 },
+			});
+			expect(data.ratings).toEqual({
+				imdb: { value: 7.4, votes: 100 },
+				tmdb: { value: 8.6, votes: 200 },
+				metacritic: { value: 84, votes: 20 },
+			});
+			expect(extractRating(cacheItem)).toBe(8.6);
+			expect(
+				evaluateSingleCondition(
+					cacheItem,
+					"imdb_rating",
+					{ operator: "less_than", score: 10 },
+					{ now: new Date("2026-07-30T00:00:00Z") },
+				),
+			).toBe("IMDb rating: 7.4 (threshold: < 10)");
+		});
+
+		it("keeps Sonarr's flat score separate from IMDb", async () => {
+			const { data, cacheItem } = await syncRating("SONARR", { value: 6.8, votes: 500 });
+			expect(data.ratings).toEqual({ value: 6.8, votes: 500 });
+			expect(extractRating(cacheItem)).toBe(6.8);
+			expect(
+				evaluateSingleCondition(
+					cacheItem,
+					"imdb_rating",
+					{ operator: "less_than", score: 10 },
+					{ now: new Date("2026-07-30T00:00:00Z") },
+				),
+			).toBeNull();
+		});
+
+		it("drops blank Radarr values instead of matching them as zero ratings", async () => {
+			const { data, cacheItem } = await syncRating("RADARR", {
+				imdb: { value: "   ", votes: 100 },
+				tmdb: { value: 8.6, votes: 200 },
+			});
+			expect(data.ratings).toEqual({ tmdb: { value: 8.6, votes: 200 } });
+			expect(extractRating(cacheItem)).toBe(8.6);
+			expect(
+				evaluateSingleCondition(
+					cacheItem,
+					"imdb_rating",
+					{ operator: "less_than", score: 10 },
+					{ now: new Date("2026-07-30T00:00:00Z") },
+				),
+			).toBeNull();
+		});
+	});
+
 	// --- Data column selection tests ----------------------------------------
 
 	describe("LibraryCache data column selection", () => {
