@@ -112,7 +112,8 @@ const serviceUpdateSchema = servicePayloadSchema
 
 type AnalyticsProviderLifecycleChange =
 	| { kind: "delete" }
-	| { kind: "update"; targetService: ServiceType; targetEnabled: boolean };
+	| { kind: "update"; targetService: ServiceType; targetEnabled: boolean }
+	| { kind: "replace"; targetService: ServiceType; targetEnabled: boolean };
 
 async function getAnalyticsProviderConfirmationRequirement(
 	prisma: Pick<import("../lib/prisma.js").PrismaClient, "$transaction" | "serviceInstance">,
@@ -168,6 +169,7 @@ const identityConfirmationSchema = z.object({
 
 const identityReplaceSchema = identityConfirmationSchema.extend({
 	candidate: serviceCandidateSchema.default({}),
+	confirmAnalyticsUnavailableFor: analyticsProviderSchema.optional(),
 });
 
 const tagCreateSchema = z.object({
@@ -1056,7 +1058,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.post("/services/:id/identity/replace", async (request, reply) => {
 		const { id } = validateRequest(idParams, request.params);
-		const { candidate, ...confirmation } = validateRequest(identityReplaceSchema, request.body);
+		const { candidate, confirmAnalyticsUnavailableFor, ...confirmation } = validateRequest(
+			identityReplaceSchema,
+			request.body,
+		);
 		const userId = request.currentUser!.id;
 
 		return await withExclusiveCleanupTopologyMutationLease(
@@ -1115,6 +1120,29 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					);
 				}
 
+				const replacementService = (
+					candidate.service ?? existing.service
+				).toUpperCase() as ServiceType;
+				const analyticsConfirmation = await getAnalyticsProviderConfirmationRequirement(
+					app.prisma,
+					userId,
+					existing,
+					{
+						kind: "replace",
+						targetService: replacementService,
+						targetEnabled: candidate.enabled ?? existing.enabled,
+					},
+				);
+				if (
+					analyticsConfirmation &&
+					confirmAnalyticsUnavailableFor !== analyticsConfirmation.selected
+				) {
+					return reply.status(409).send({
+						code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
+						...analyticsConfirmation,
+					});
+				}
+
 				const connectionChanged = changesCacheProviderConnection(existing, candidate);
 				const replacedProviderAuthority = createProviderReplacementAuthority(existing);
 				if (!replacedProviderAuthority) {
@@ -1127,9 +1155,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					...(connectionChanged ? { connectionGeneration: existing.connectionGeneration + 1 } : {}),
 					...replacementIdentityData(existing, observation),
 				};
-				const replacementService = (
-					candidate.service ?? existing.service
-				).toUpperCase() as ServiceType;
 				const replaced = await app.prisma.$transaction(async (tx) => {
 					const updated = await tx.serviceInstance.updateMany({
 						where: {

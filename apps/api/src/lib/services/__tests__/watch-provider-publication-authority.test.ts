@@ -181,6 +181,7 @@ function prisma(finalPredicateMatches = true) {
 			}),
 		},
 		cacheRefreshStatus: {
+			findFirst: vi.fn().mockResolvedValue({ generationId: "jellyfin-parent-generation" }),
 			upsert: vi.fn(async () => {
 				authority.events.push("status");
 				return {};
@@ -197,6 +198,7 @@ function prisma(finalPredicateMatches = true) {
 			cacheRefreshStatus: {
 				findUnique: vi.fn().mockResolvedValue({
 					lastResult: "success",
+					generationId: "jellyfin-parent-generation",
 					connectionGeneration: 4,
 					identityGeneration: 9,
 				}),

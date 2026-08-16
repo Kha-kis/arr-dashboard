@@ -39,6 +39,7 @@ import {
 	evaluateRuleViaEngine,
 } from "../rules/cleanup-adapter.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
+import { hasAuthoritativeProviderCacheGeneration } from "../services/provider-identity-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { safeJsonParse } from "../utils/json.js";
 import {
@@ -120,9 +121,38 @@ const APPROVAL_EXPIRY_DAYS = 7;
 const CACHE_QUERY_BATCH_SIZE = 500;
 const PROVIDER_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
 
+type ProviderEvidenceAuthority = {
+	id: string;
+	updatedAt: Date;
+	enabled: boolean;
+	expectedIdentity: string | null;
+	identityStatus: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+};
+
+function hasVerifiedProviderAuthority(instance: ProviderEvidenceAuthority): boolean {
+	return (
+		instance.enabled &&
+		instance.identityStatus === "VERIFIED" &&
+		typeof instance.expectedIdentity === "string" &&
+		instance.expectedIdentity.length > 0
+	);
+}
+
+function providerGenerationWhere(instances: ProviderEvidenceAuthority[]) {
+	return {
+		OR: instances.map((instance) => ({
+			instanceId: instance.id,
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		})),
+	};
+}
+
 async function loadCompleteCacheGenerations(
 	deps: CleanupExecutorDeps,
-	instances: Array<{ id: string; updatedAt: Date }>,
+	instances: ProviderEvidenceAuthority[],
 	cacheType: string,
 ): Promise<
 	| Map<
@@ -149,6 +179,8 @@ async function loadCompleteCacheGenerations(
 			itemCount: true,
 			generationId: true,
 			generationMetadata: true,
+			connectionGeneration: true,
+			identityGeneration: true,
 		},
 	});
 	const byInstance = new Map(statuses.map((status) => [status.instanceId, status]));
@@ -166,6 +198,8 @@ async function loadCompleteCacheGenerations(
 	for (const instance of instances) {
 		const status = byInstance.get(instance.id);
 		if (
+			!hasVerifiedProviderAuthority(instance) ||
+			!hasAuthoritativeProviderCacheGeneration(status ?? null, instance) ||
 			status?.lastResult !== "success" ||
 			status.lastErrorMessage != null ||
 			status.lastAttemptErrorMessage != null ||
@@ -409,6 +443,7 @@ async function startCleanupRunLease(
 	userId: string,
 	configId: string,
 ): Promise<{
+	runClaimToken: string;
 	assertOwnership: () => Promise<void>;
 	release: () => Promise<void>;
 }> {
@@ -442,6 +477,7 @@ async function startCleanupRunLease(
 	heartbeat.unref();
 
 	return {
+		runClaimToken,
 		assertOwnership,
 		release: async () => {
 			clearInterval(heartbeat);
@@ -1376,6 +1412,7 @@ function createSonarrEpisodeMutationAuthority(
 	safetyPlan: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr_episode" }>,
 	expectedRule: { matchedRuleId: string; action: RuleAction },
 	assertExecutionAllowed?: () => Promise<void>,
+	cleanupRunClaimToken?: string,
 ): () => Promise<void> {
 	let revalidationCount = 0;
 	return async () => {
@@ -1386,6 +1423,8 @@ function createSonarrEpisodeMutationAuthority(
 			instance,
 			target.arrItemId,
 			expectedRule,
+			undefined,
+			cleanupRunClaimToken,
 		);
 		const context = createSharedPlexSafetyContext();
 		const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
@@ -1437,6 +1476,7 @@ function createSonarrEpisodeMutationAuthority(
 			target.arrItemId,
 			expectedRule,
 			{ liveEpisodeWatchSources },
+			cleanupRunClaimToken,
 		);
 		await assertExecutionAllowed?.();
 	};
@@ -1867,6 +1907,7 @@ async function executeCleanupRunGuarded(
 			warnings,
 			new Map(),
 			runLease.assertOwnership,
+			runLease.runClaimToken,
 		);
 	} finally {
 		await runLease.release();
@@ -1936,6 +1977,7 @@ async function executeApprovedItemsGuarded(
 			enforceExpiry: true,
 			assertExecutionAllowed: runLease.assertOwnership,
 			claimExecutionToken: approvalRequestToken,
+			cleanupRunClaimToken: runLease.runClaimToken,
 		});
 		const unclaimedErrors = result.unclaimedIds.map(
 			() => "Cleanup approval was not found, expired, no longer approved, or changed ownership.",
@@ -1996,6 +2038,7 @@ async function executeRetryItemsGuarded(
 			retryStatus: "retry_pending",
 			enforceExpiry: false,
 			assertExecutionAllowed: runLease.assertOwnership,
+			cleanupRunClaimToken: runLease.runClaimToken,
 		});
 		const unclaimedErrors = result.unclaimedIds.map(
 			() => "Cleanup retry was not found, was no longer pending, or changed ownership.",
@@ -2279,6 +2322,7 @@ async function assertCurrentEpisodeMutationAuthority(
 	arrSeriesId: number,
 	expectedRule: { matchedRuleId: string; action: RuleAction },
 	evidence?: { liveEpisodeWatchSources: VerifiedEpisodePlexWatchSource[] },
+	cleanupRunClaimToken?: string,
 ): Promise<void> {
 	const config = await deps.prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
@@ -2312,6 +2356,7 @@ async function assertCurrentEpisodeMutationAuthority(
 	try {
 		currentSeriesContext = await buildEvalContext(deps, userId, currentSeriesRules, {
 			destructiveAuthority: true,
+			cleanupRunClaimToken,
 		});
 		const sonarr = deps.arrClientFactory.create(instance) as InstanceType<typeof SonarrClient>;
 		rawSeries = (await sonarr.series.getById(arrSeriesId)) as unknown as Record<string, unknown>;
@@ -2426,6 +2471,7 @@ async function executeQueuedCleanupItems(
 		enforceExpiry: boolean;
 		assertExecutionAllowed?: () => Promise<void>;
 		claimExecutionToken?: string;
+		cleanupRunClaimToken?: string;
 	},
 ): Promise<QueuedCleanupExecutionResult> {
 	const { prisma, arrClientFactory, log } = deps;
@@ -2902,6 +2948,7 @@ async function executeQueuedCleanupItems(
 								safetyPlan,
 								{ matchedRuleId: approval.matchedRuleId, action },
 								assertMutationAuthority,
+								options.cleanupRunClaimToken,
 							)
 						: mutationInstance.service === "RADARR"
 							? createRadarrDestructiveMutationAuthority(
@@ -3400,7 +3447,15 @@ export async function prefetchPlexData(
 	const plexInstances = await prisma.serviceInstance.findMany({
 		where: { userId, service: "PLEX", enabled: true },
 		orderBy: { id: "asc" },
-		select: { id: true, updatedAt: true },
+		select: {
+			id: true,
+			updatedAt: true,
+			enabled: true,
+			expectedIdentity: true,
+			identityStatus: true,
+			connectionGeneration: true,
+			identityGeneration: true,
+		},
 	});
 
 	if (plexInstances.length === 0) return undefined;
@@ -3410,7 +3465,6 @@ export async function prefetchPlexData(
 			throw new Error("Plex cache did not have a complete fresh generation for every instance");
 		}
 		const map: PlexWatchMap = new Map();
-		const instanceIds = plexInstances.map((i) => i.id);
 		let cursor: string | undefined;
 		let totalRows = 0;
 		let invalidRows = 0;
@@ -3419,7 +3473,7 @@ export async function prefetchPlexData(
 		// builder reads — skipping ratingKey/thumb/title and the per-row instanceId.
 		while (true) {
 			const batch = await prisma.plexCache.findMany({
-				where: { instanceId: { in: instanceIds } },
+				where: providerGenerationWhere(plexInstances),
 				select: {
 					id: true,
 					tmdbId: true,
@@ -3595,7 +3649,15 @@ async function loadPublishedPlexPolicyEvidence(
 		const instances = await deps.prisma.serviceInstance.findMany({
 			where: { userId, service: "PLEX", enabled: true },
 			orderBy: { id: "asc" },
-			select: { id: true, updatedAt: true },
+			select: {
+				id: true,
+				updatedAt: true,
+				enabled: true,
+				expectedIdentity: true,
+				identityStatus: true,
+				connectionGeneration: true,
+				identityGeneration: true,
+			},
 		});
 		if (instances.length === 0) return undefined;
 		const instanceIds = instances.map((instance) => instance.id);
@@ -3613,6 +3675,8 @@ async function loadPublishedPlexPolicyEvidence(
 					lastErrorMessage: true,
 					lastAttemptResult: true,
 					lastAttemptErrorMessage: true,
+					connectionGeneration: true,
+					identityGeneration: true,
 				},
 			});
 		const before = await readStatuses();
@@ -3623,6 +3687,8 @@ async function loadPublishedPlexPolicyEvidence(
 				const instance = instances.find((candidate) => candidate.id === status.instanceId);
 				return (
 					!instance ||
+					!hasVerifiedProviderAuthority(instance) ||
+					!hasAuthoritativeProviderCacheGeneration(status, instance) ||
 					status.lastResult !== "success" ||
 					status.lastErrorMessage != null ||
 					status.lastAttemptErrorMessage != null ||
@@ -3644,7 +3710,11 @@ async function loadPublishedPlexPolicyEvidence(
 			if (!sections || sections.length === 0) return undefined;
 			for (const section of sections) sectionTitles.add(section.title);
 			const count = await deps.prisma.plexCache.count({
-				where: { instanceId: status.instanceId },
+				where: {
+					instanceId: status.instanceId,
+					connectionGeneration: status.connectionGeneration,
+					identityGeneration: status.identityGeneration,
+				},
 			});
 			if (count !== status.itemCount) return undefined;
 		}
@@ -3679,7 +3749,15 @@ async function prefetchJellyfinData(
 	const jellyfinInstances = await prisma.serviceInstance.findMany({
 		where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
 		orderBy: { id: "asc" },
-		select: { id: true, updatedAt: true },
+		select: {
+			id: true,
+			updatedAt: true,
+			enabled: true,
+			expectedIdentity: true,
+			identityStatus: true,
+			connectionGeneration: true,
+			identityGeneration: true,
+		},
 	});
 
 	if (jellyfinInstances.length === 0) return undefined;
@@ -3705,7 +3783,6 @@ async function prefetchJellyfinData(
 			0,
 		);
 		const map: JellyfinWatchMap = new Map();
-		const instanceIds = jellyfinInstances.map((i) => i.id);
 		let cursor: string | undefined;
 		let totalRows = 0;
 		let invalidRows = 0;
@@ -3713,7 +3790,7 @@ async function prefetchJellyfinData(
 		// Cursor-paginate. Project only columns the watch-map reader uses.
 		while (true) {
 			const batch = await prisma.jellyfinCache.findMany({
-				where: { instanceId: { in: instanceIds } },
+				where: providerGenerationWhere(jellyfinInstances),
 				select: {
 					id: true,
 					tmdbId: true,
@@ -3822,34 +3899,100 @@ async function prefetchJellyfinEpisodeData(
 	try {
 		const instances = await prisma.serviceInstance.findMany({
 			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true },
+			orderBy: { id: "asc" },
+			select: {
+				id: true,
+				updatedAt: true,
+				enabled: true,
+				expectedIdentity: true,
+				identityStatus: true,
+				connectionGeneration: true,
+				identityGeneration: true,
+			},
 		});
-		const instanceIds = instances.map((i) => i.id);
-		if (instanceIds.length === 0) return undefined;
+		if (instances.length === 0) return undefined;
+		const episodeGenerations = await loadCompleteCacheGenerations(
+			deps,
+			instances,
+			"jellyfin_episode",
+		);
+		const parentGenerations = await loadCompleteCacheGenerations(deps, instances, "jellyfin");
+		if (!episodeGenerations || !parentGenerations) return undefined;
+		for (const instance of instances) {
+			const episodeGeneration = episodeGenerations.get(instance.id);
+			const parentGeneration = parentGenerations.get(instance.id);
+			if (
+				!episodeGeneration?.generationId ||
+				!parentGeneration?.generationId ||
+				parseEpisodeParentGenerationId(episodeGeneration.generationMetadata) !==
+					parentGeneration.generationId
+			) {
+				return undefined;
+			}
+		}
+		const currentRowsWhere = providerGenerationWhere(instances);
 
 		const totalCounts = await prisma.jellyfinEpisodeCache.groupBy({
 			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds } },
+			where: currentRowsWhere,
 			_count: { id: true },
 		});
+		const expectedRows = [...episodeGenerations.values()].reduce(
+			(total, generation) => total + generation.itemCount,
+			0,
+		);
+		if (totalCounts.reduce((total, group) => total + group._count.id, 0) !== expectedRows) {
+			return undefined;
+		}
 
 		const watchedCounts = await prisma.jellyfinEpisodeCache.groupBy({
 			by: ["showTmdbId"],
-			where: { instanceId: { in: instanceIds }, watched: true },
+			where: { AND: [currentRowsWhere, { watched: true }] },
 			_count: { id: true },
 		});
 
 		const seasonTotals = await prisma.jellyfinEpisodeCache.groupBy({
 			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds } },
+			where: currentRowsWhere,
 			_count: { id: true },
 		});
 
 		const seasonWatched = await prisma.jellyfinEpisodeCache.groupBy({
 			by: ["showTmdbId", "seasonNumber"],
-			where: { instanceId: { in: instanceIds }, watched: true },
+			where: { AND: [currentRowsWhere, { watched: true }] },
 			_count: { id: true },
 		});
+		const finalEpisodeGenerations = await loadCompleteCacheGenerations(
+			deps,
+			instances,
+			"jellyfin_episode",
+		);
+		const finalParentGenerations = await loadCompleteCacheGenerations(deps, instances, "jellyfin");
+		if (
+			!finalEpisodeGenerations ||
+			!finalParentGenerations ||
+			instances.some((instance) => {
+				const beforeEpisode = episodeGenerations.get(instance.id);
+				const afterEpisode = finalEpisodeGenerations.get(instance.id);
+				const beforeParent = parentGenerations.get(instance.id);
+				const afterParent = finalParentGenerations.get(instance.id);
+				return (
+					!beforeEpisode?.generationId ||
+					!afterEpisode?.generationId ||
+					!beforeParent?.generationId ||
+					!afterParent?.generationId ||
+					beforeEpisode.generationId !== afterEpisode.generationId ||
+					beforeEpisode.completedAt.getTime() !== afterEpisode.completedAt.getTime() ||
+					beforeEpisode.itemCount !== afterEpisode.itemCount ||
+					beforeParent.generationId !== afterParent.generationId ||
+					beforeParent.completedAt.getTime() !== afterParent.completedAt.getTime() ||
+					parseEpisodeParentGenerationId(afterEpisode.generationMetadata) !==
+						afterParent.generationId
+				);
+			})
+		) {
+			return undefined;
+		}
 
 		const seasonWatchedMap = new Map(
 			seasonWatched.map((g) => [`${g.showTmdbId}:${g.seasonNumber}`, g._count.id]),
@@ -3917,6 +4060,10 @@ async function prefetchPlexEpisodeData(
 				service: true,
 				label: true,
 				enabled: true,
+				expectedIdentity: true,
+				identityStatus: true,
+				connectionGeneration: true,
+				identityGeneration: true,
 			},
 		});
 		const instanceIds = instances.map((i) => i.id);
@@ -3927,7 +4074,7 @@ async function prefetchPlexEpisodeData(
 		const eligibleShowRows = await prisma.plexCache.groupBy({
 			by: ["instanceId", "tmdbId"],
 			where: {
-				instanceId: { in: instanceIds },
+				...providerGenerationWhere(instances),
 				mediaType: "series",
 				ratingKey: { not: null },
 				watchCount: { gt: 0 },
@@ -3961,6 +4108,8 @@ async function prefetchPlexEpisodeData(
 			const sourceWhere: Prisma.PlexEpisodeCacheWhereInput = {
 				instanceId: instance.id,
 				showTmdbId: { in: showTmdbIds },
+				connectionGeneration: instance.connectionGeneration,
+				identityGeneration: instance.identityGeneration,
 			};
 			const validatedSourceWhere: Prisma.PlexEpisodeCacheWhereInput = {
 				...sourceWhere,
@@ -5473,6 +5622,7 @@ export async function executeDirectRemoval(
 	warnings?: string[],
 	sharedPlexBlocks: Map<string, string> = new Map(),
 	assertRunLease?: () => Promise<void>,
+	cleanupRunClaimToken?: string,
 ): Promise<CleanupRunResult> {
 	const { prisma, arrClientFactory, log } = deps;
 
@@ -5611,6 +5761,7 @@ export async function executeDirectRemoval(
 				retryStatus: "retry_pending",
 				enforceExpiry: false,
 				assertExecutionAllowed: assertRunLease,
+				cleanupRunClaimToken,
 			});
 			if (retryResult.mutationBudgetConsumedIds.includes(retry.id)) {
 				directRetryMutationBudgetConsumed++;
@@ -5951,6 +6102,7 @@ export async function executeDirectRemoval(
 							safetyPlan,
 							{ matchedRuleId: item.match.ruleId, action: ruleAction },
 							assertRunLease,
+							cleanupRunClaimToken,
 						)
 					: mutationInstance.service === "RADARR"
 						? createRadarrDestructiveMutationAuthority(
@@ -7296,6 +7448,7 @@ async function refreshCurrentExternalRuleCaches(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	activeTypes: Set<string>,
+	cleanupRunClaimToken?: string,
 ): Promise<void> {
 	const sources: Array<{
 		source: "plex" | "jellyfin";
@@ -7327,7 +7480,7 @@ async function refreshCurrentExternalRuleCaches(
 			if (!deps.externalRuleCacheRefresher) {
 				throw new Error(`No ${source} evidence refresher is available`);
 			}
-			await deps.externalRuleCacheRefresher(source, instance);
+			await deps.externalRuleCacheRefresher(source, instance, { cleanupRunClaimToken });
 		}
 	}
 }
@@ -7348,11 +7501,15 @@ export async function buildEvalContext(
 		conditions: string | null;
 		plexLibraryFilter?: string | null;
 	}>,
-	options: { destructiveAuthority?: boolean; requireAvailableEvidence?: boolean } = {},
+	options: {
+		destructiveAuthority?: boolean;
+		requireAvailableEvidence?: boolean;
+		cleanupRunClaimToken?: string;
+	} = {},
 ): Promise<EvalContext> {
 	const activeTypes = collectActiveRuleTypes(rules);
 	if (options.destructiveAuthority) {
-		await refreshCurrentExternalRuleCaches(deps, userId, activeTypes);
+		await refreshCurrentExternalRuleCaches(deps, userId, activeTypes, options.cleanupRunClaimToken);
 	}
 
 	const SEERR_RULE_TYPES = [

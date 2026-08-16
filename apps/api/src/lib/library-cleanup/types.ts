@@ -43,6 +43,7 @@ export interface CleanupExecutorDeps {
 	externalRuleCacheRefresher?: (
 		source: "plex" | "jellyfin",
 		instance: ServiceInstance,
+		context?: { cleanupRunClaimToken?: string },
 	) => Promise<void>;
 	log: FastifyBaseLogger;
 }

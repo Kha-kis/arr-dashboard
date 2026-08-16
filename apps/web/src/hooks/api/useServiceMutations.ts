@@ -8,6 +8,7 @@ import {
 	removeService,
 	replaceServiceIdentity,
 	type ServiceIdentityConfirmation,
+	type ServiceIdentityReplacementConfirmation,
 	type UpdateServicePayload,
 	updateService,
 	verifyServiceIdentity,
@@ -33,7 +34,10 @@ type CreateVariables = CreateServicePayload;
 
 type DeleteVariables = string | { id: string; confirmAnalyticsUnavailableFor?: AnalyticsProvider };
 type IdentityVariables = ServiceIdentityConfirmation & { id: string };
-type ReplaceIdentityVariables = IdentityVariables & { payload: UpdateServicePayload };
+type ReplaceIdentityVariables = ServiceIdentityReplacementConfirmation & {
+	id: string;
+	payload: UpdateServicePayload;
+};
 
 function invalidateServiceDependencies(queryClient: ReturnType<typeof useQueryClient>) {
 	queryClient.invalidateQueries({ queryKey: SERVICES_QUERY_KEY });

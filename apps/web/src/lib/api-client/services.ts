@@ -56,6 +56,10 @@ export type ServiceIdentityConfirmation = {
 	expectedIdentityGeneration: number;
 };
 
+export type ServiceIdentityReplacementConfirmation = ServiceIdentityConfirmation & {
+	confirmAnalyticsUnavailableFor?: AnalyticsProvider;
+};
+
 export async function createService(
 	payload: CreateServicePayload,
 ): Promise<ServiceInstanceSummary> {
@@ -114,7 +118,7 @@ export async function verifyServiceIdentity(
 export async function replaceServiceIdentity(
 	id: string,
 	candidate: UpdateServicePayload,
-	confirmation: ServiceIdentityConfirmation,
+	confirmation: ServiceIdentityReplacementConfirmation,
 ): Promise<ServiceInstanceSummary> {
 	const data = await apiRequest<ServiceResponse>(`/api/services/${id}/identity/replace`, {
 		method: "POST",

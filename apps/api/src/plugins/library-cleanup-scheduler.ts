@@ -53,18 +53,20 @@ const libraryCleanupSchedulerPlugin = fastifyPlugin(
 									resolve: (path) => getAllHashesForFileIdComplete(path, index),
 								};
 							},
-							externalRuleCacheRefresher: async (source, instance) => {
+							externalRuleCacheRefresher: async (source, instance, context) => {
 								const result =
 									source === "plex"
 										? await refreshPlexCache({
 												prisma: app.prisma,
 												instance: createOwnedPlexPublicationSnapshot(app.encryptor, instance),
 												log: app.log,
+												cleanupRunClaimToken: context?.cleanupRunClaimToken,
 											})
 										: await refreshJellyfinCache({
 												prisma: app.prisma,
 												instance: createOwnedJellyfinPublicationSnapshot(app.encryptor, instance),
 												log: app.log,
+												cleanupRunClaimToken: context?.cleanupRunClaimToken,
 											});
 								assertCompleteCacheRefresh(source, result);
 							},

@@ -14,6 +14,7 @@
  * 6. Upsert into JellyfinCache
  */
 
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
@@ -97,6 +98,7 @@ export interface JellyfinCacheRefreshResult {
 	complete: boolean;
 	completedAt?: Date;
 	superseded?: boolean;
+	generationId?: string;
 	snapshot?: JellyfinCacheSnapshot;
 }
 
@@ -178,6 +180,7 @@ async function publishJellyfinCache(
 ): Promise<JellyfinCacheRefreshResult> {
 	if (!collected.complete || !collected.completedAt || !collected.snapshot) return collected;
 	const rows = collected.snapshot.rows;
+	const generationId = randomUUID();
 	await tx.jellyfinCache.deleteMany({ where: { instanceId: instance.id } });
 	for (let start = 0; start < rows.length; start += JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE) {
 		await tx.jellyfinCache.createMany({
@@ -196,6 +199,7 @@ async function publishJellyfinCache(
 			lastRefreshedAt: collected.completedAt,
 			lastResult: "success",
 			itemCount: rows.length,
+			generationId,
 			lastAttemptAt: collected.completedAt,
 			lastAttemptResult: "success",
 			connectionGeneration: instance.connectionGeneration,
@@ -206,6 +210,7 @@ async function publishJellyfinCache(
 			lastResult: "success",
 			lastErrorMessage: null,
 			itemCount: rows.length,
+			generationId,
 			lastAttemptAt: collected.completedAt,
 			lastAttemptResult: "success",
 			lastAttemptErrorMessage: null,
@@ -213,7 +218,7 @@ async function publishJellyfinCache(
 			identityGeneration: instance.identityGeneration,
 		},
 	});
-	return { ...collected, upserted: rows.length };
+	return { ...collected, upserted: rows.length, generationId };
 }
 
 export async function collectJellyfinCacheLiveEvidence(

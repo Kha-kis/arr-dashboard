@@ -210,6 +210,7 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		const result = await refreshJellyfinCache(client, stub as never, "inst-1", silentLog);
 
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: itemCount });
+		expect(result.generationId).toMatch(/^[0-9a-f-]{36}$/i);
 		expect(tx.jellyfinCache.createMany).toHaveBeenCalledTimes(3);
 		for (const [call] of tx.jellyfinCache.createMany.mock.calls) {
 			expect(call.data.length).toBeLessThanOrEqual(JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE);
@@ -217,6 +218,12 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		expect(stub.$transaction).toHaveBeenCalledWith(
 			expect.any(Function),
 			expect.objectContaining({ timeout: JELLYFIN_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS }),
+		);
+		expect(tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({ generationId: result.generationId }),
+				update: expect.objectContaining({ generationId: result.generationId }),
+			}),
 		);
 	});
 

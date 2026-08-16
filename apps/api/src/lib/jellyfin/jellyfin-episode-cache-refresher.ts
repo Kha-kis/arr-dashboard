@@ -1,5 +1,6 @@
 /** Publishes a complete per-instance Jellyfin/Emby episode snapshot atomically. */
 
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { Prisma, PrismaClient } from "../prisma.js";
 import { recordWatchProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
@@ -24,6 +25,7 @@ export type JellyfinEpisodeRefreshResult = {
 	complete: boolean;
 	completedAt?: Date;
 	superseded?: boolean;
+	generationId?: string;
 };
 
 type JellyfinEpisodeRow = {
@@ -38,7 +40,10 @@ type JellyfinEpisodeRow = {
 	lastWatchedAt: Date | null;
 };
 
-type CollectedEpisodes = JellyfinEpisodeRefreshResult & { rows?: JellyfinEpisodeRow[] };
+type CollectedEpisodes = JellyfinEpisodeRefreshResult & {
+	rows?: JellyfinEpisodeRow[];
+	parentGenerationId?: string;
+};
 
 export async function refreshJellyfinEpisodeCache(
 	context: JellyfinPublicationContext,
@@ -97,12 +102,14 @@ async function collectJellyfinEpisodes(
 		where: { instanceId_cacheType: { instanceId, cacheType: "jellyfin" } },
 		select: {
 			lastResult: true,
+			generationId: true,
 			connectionGeneration: true,
 			identityGeneration: true,
 		},
 	});
 	if (
 		sourceStatus?.lastResult !== "success" ||
+		!sourceStatus.generationId ||
 		!hasAuthoritativeProviderCacheGeneration(sourceStatus, instance)
 	) {
 		return { upserted: 0, errors: 1, complete: false };
@@ -229,7 +236,14 @@ async function collectJellyfinEpisodes(
 			});
 		}
 	}
-	return { upserted: 0, errors: 0, complete: true, completedAt: new Date(), rows };
+	return {
+		upserted: 0,
+		errors: 0,
+		complete: true,
+		completedAt: new Date(),
+		rows,
+		parentGenerationId: sourceStatus.generationId,
+	};
 }
 
 async function publishJellyfinEpisodes(
@@ -237,8 +251,34 @@ async function publishJellyfinEpisodes(
 	instance: OwnedProviderPublicationSnapshot,
 	collected: CollectedEpisodes,
 ): Promise<JellyfinEpisodeRefreshResult> {
-	if (!collected.complete || !collected.completedAt || !collected.rows) return collected;
+	if (
+		!collected.complete ||
+		!collected.completedAt ||
+		!collected.rows ||
+		!collected.parentGenerationId
+	) {
+		return collected;
+	}
+	const currentParent = await tx.cacheRefreshStatus.findFirst({
+		where: {
+			instanceId: instance.id,
+			cacheType: "jellyfin",
+			generationId: collected.parentGenerationId,
+			lastResult: "success",
+			lastErrorMessage: null,
+			lastAttemptErrorMessage: null,
+			OR: [{ lastAttemptResult: null }, { lastAttemptResult: "success" }],
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+		},
+		select: { generationId: true },
+	});
+	if (!currentParent) return { upserted: 0, errors: 1, complete: false };
 	const rows = collected.rows;
+	const generationId = randomUUID();
+	const generationMetadata = JSON.stringify({
+		parentGenerationId: collected.parentGenerationId,
+	});
 	await tx.jellyfinEpisodeCache.deleteMany({ where: { instanceId: instance.id } });
 	for (let start = 0; start < rows.length; start += JELLYFIN_CACHE_PUBLICATION_CHUNK_SIZE) {
 		await tx.jellyfinEpisodeCache.createMany({
@@ -257,6 +297,8 @@ async function publishJellyfinEpisodes(
 			lastRefreshedAt: collected.completedAt,
 			lastResult: "success",
 			itemCount: rows.length,
+			generationId,
+			generationMetadata,
 			lastAttemptAt: collected.completedAt,
 			lastAttemptResult: "success",
 			connectionGeneration: instance.connectionGeneration,
@@ -267,6 +309,8 @@ async function publishJellyfinEpisodes(
 			lastResult: "success",
 			lastErrorMessage: null,
 			itemCount: rows.length,
+			generationId,
+			generationMetadata,
 			lastAttemptAt: collected.completedAt,
 			lastAttemptResult: "success",
 			lastAttemptErrorMessage: null,
@@ -274,5 +318,5 @@ async function publishJellyfinEpisodes(
 			identityGeneration: instance.identityGeneration,
 		},
 	});
-	return { ...collected, upserted: rows.length };
+	return { ...collected, upserted: rows.length, generationId };
 }

@@ -59,6 +59,69 @@ const candidate = {
 };
 
 describe("useServicesManagement identity conflicts", () => {
+	it("retains analytics confirmation when an enabled Tautulli update proceeds to identity replacement", async () => {
+		const tautulli = { ...service, id: "tautulli-1", service: "tautulli" as const };
+		const stagedForm = {
+			label: "Replacement Tautulli",
+			baseUrl: "http://replacement-tautulli.test",
+			externalUrl: "",
+			apiKey: "replacement-api-key",
+			service: "tautulli" as const,
+			enabled: true,
+			isDefault: false,
+			tags: "",
+			storageGroupId: "",
+			httpAuthEnabled: false,
+			httpAuthUsername: "",
+			httpAuthPassword: "",
+			hasLocalFilesystemAccess: false,
+			pathPrefix: "",
+		};
+		updateMutate
+			.mockRejectedValueOnce(
+				new ApiError("analytics confirmation required", 409, {
+					code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
+					selected: "tautulli",
+					alternativeEnabled: false,
+				}),
+			)
+			.mockRejectedValueOnce(
+				new ApiError("replacement required", 409, {
+					details: {
+						code: "IDENTITY_REPLACEMENT_REQUIRED",
+						candidate,
+						connectionGeneration: 4,
+						identityGeneration: 2,
+					},
+				}),
+			);
+		replaceMutate.mockResolvedValue({
+			...tautulli,
+			identity: { ...tautulli.identity, status: "verified" },
+		});
+		const { result } = renderHook(() => useServicesManagement());
+
+		await act(async () => {
+			await result.current.handleSubmit(stagedForm, tautulli, vi.fn());
+		});
+		await act(async () => {
+			await result.current.analyticsUnavailableConfirmation?.onConfirm();
+		});
+
+		await waitFor(() => expect(result.current.identityFlow?.mode).toBe("replace"));
+		await act(async () => {
+			await result.current.confirmIdentity();
+		});
+		expect(replaceMutate).toHaveBeenCalledWith({
+			id: "tautulli-1",
+			payload: expect.not.objectContaining({ confirmAnalyticsUnavailableFor: expect.anything() }),
+			confirmAnalyticsUnavailableFor: "tautulli",
+			confirmationDigest: candidate.confirmationDigest,
+			expectedConnectionGeneration: 4,
+			expectedIdentityGeneration: 2,
+		});
+	});
+
 	it("turns a verify replacement conflict into an explicit replacement flow", async () => {
 		inspectServiceIdentity.mockResolvedValue({
 			candidate,

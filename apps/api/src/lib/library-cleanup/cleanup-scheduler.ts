@@ -186,6 +186,7 @@ export class CleanupScheduler {
 			return;
 		}
 
+		let isScheduledDryRun = false;
 		try {
 			await withCleanupOperationGuard(async () => {
 				// Expire stale pending approvals
@@ -319,6 +320,7 @@ export class CleanupScheduler {
 				if (effectiveNextRunAtMs > now.getTime()) return;
 
 				this._isRunning = true;
+				isScheduledDryRun = config.dryRunMode;
 
 				this.logger.info(
 					{ intervalHours: config.intervalHours, dryRunMode: config.dryRunMode },
@@ -391,6 +393,7 @@ export class CleanupScheduler {
 				return;
 			}
 			this.logger.error({ err: error }, "Error checking/running scheduled cleanup");
+			if (isScheduledDryRun) return;
 
 			await this.sendNotification(
 				{

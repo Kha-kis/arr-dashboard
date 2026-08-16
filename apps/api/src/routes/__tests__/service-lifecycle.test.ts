@@ -123,6 +123,14 @@ function createPrismaStub() {
 	let nextId = 1;
 
 	const serviceInstance = {
+		count: vi.fn(async ({ where }: any) => {
+			return [...instances.values()].filter(
+				(row) =>
+					(!where.userId || row.userId === where.userId) &&
+					(!where.service || row.service === where.service) &&
+					(where.enabled === undefined || row.enabled === where.enabled),
+			).length;
+		}),
 		findMany: vi.fn(async ({ where }: any) => {
 			return [...instances.values()]
 				.filter(
@@ -204,6 +212,13 @@ function createPrismaStub() {
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		systemSettings: {
+			findUnique: vi.fn().mockResolvedValue({
+				analyticsProvider: "tautulli",
+				analyticsProviderSource: "explicit",
+			}),
+			upsert: vi.fn(),
+		},
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -453,27 +468,27 @@ describe("Service instance lifecycle", () => {
 			},
 		});
 		const id = JSON.parse(created.payload).service.id;
-		Object.assign(prisma._instances.get(id), {
-			service,
-			expectedIdentity: null,
-			identityKind: null,
-			identityStatus: "UNVERIFIED",
-			identityGeneration: 0,
-			identityVerifiedAt: null,
-			identityLastCheckedAt: null,
-		});
+		const instance = prisma._instances.get(id);
+		if (!instance) throw new Error("Expected created provider instance");
+		instance.service = service;
+		instance.expectedIdentity = null;
+		instance.identityKind = null;
+		instance.identityStatus = "UNVERIFIED";
+		instance.identityGeneration = 0;
+		instance.identityVerifiedAt = null;
+		instance.identityLastCheckedAt = null;
 		return id;
 	}
 
 	async function createExistingVerifiedProvider() {
 		const id = await createExistingUnverifiedProvider();
-		Object.assign(prisma._instances.get(id), {
-			expectedIdentity: "enrolled-plex-machine",
-			identityKind: "PLEX_MACHINE_IDENTIFIER",
-			identityStatus: "VERIFIED",
-			identityGeneration: 3,
-			identityVerifiedAt: new Date("2026-08-15T00:00:00.000Z"),
-		});
+		const instance = prisma._instances.get(id);
+		if (!instance) throw new Error("Expected created provider instance");
+		instance.expectedIdentity = "enrolled-plex-machine";
+		instance.identityKind = "PLEX_MACHINE_IDENTIFIER";
+		instance.identityStatus = "VERIFIED";
+		instance.identityGeneration = 3;
+		instance.identityVerifiedAt = new Date("2026-08-15T00:00:00.000Z");
 		return id;
 	}
 
@@ -932,6 +947,57 @@ describe("Service instance lifecycle", () => {
 		expect(prisma._approvals.get("untagged-approval")).toMatchObject({ status: "expired" });
 		expect(prisma._approvals.get("tagged-approval")).toMatchObject({ status: "expired" });
 		expect(prisma._approvals.get("unrelated-approval")).toMatchObject({ status: "pending" });
+	});
+
+	it("requires and consumes analytics confirmation when replacing the selected Tautulli identity", async () => {
+		const id = await createExistingVerifiedProvider();
+		const instance = prisma._instances.get(id);
+		if (!instance) throw new Error("Expected Tautulli instance");
+		instance.service = "TAUTULLI";
+		instance.expectedIdentity = "enrolled-tautulli-server";
+		instance.identityKind = "TAUTULLI_PMS_IDENTIFIER";
+		const replacement = {
+			service: "TAUTULLI",
+			identityKind: "tautulli-pms-identifier",
+			rawIdentity: "replacement-tautulli-server",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "c".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValue(replacement);
+
+		const blocked = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: { baseUrl: "http://replacement-tautulli.test" },
+				confirmationDigest: replacement.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(blocked.statusCode).toBe(409);
+		expect(blocked.json()).toEqual({
+			code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
+			selected: "tautulli",
+			alternativeEnabled: false,
+		});
+		expect(instance.expectedIdentity).toBe("enrolled-tautulli-server");
+
+		const replaced = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: { baseUrl: "http://replacement-tautulli.test" },
+				confirmationDigest: replacement.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+				confirmAnalyticsUnavailableFor: "tautulli",
+			},
+		});
+
+		expect(replaced.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			expectedIdentity: "replacement-tautulli-server",
+			identityGeneration: 4,
+		});
+		expect(prisma._instances.get(id)).not.toHaveProperty("confirmAnalyticsUnavailableFor");
 	});
 
 	it("preserves defaults and tags when a replacement loses its generation race", async () => {

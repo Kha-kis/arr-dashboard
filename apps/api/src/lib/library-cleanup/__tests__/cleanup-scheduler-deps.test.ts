@@ -124,4 +124,89 @@ describe("library cleanup scheduler dependencies", () => {
 		expect(update).not.toHaveBeenCalled();
 		expect(notify).not.toHaveBeenCalled();
 	});
+
+	it("keeps failed scheduled dry runs notification-free and read-only", async () => {
+		executorMocks.executeCleanupRun.mockRejectedValueOnce(new Error("dry run execution failed"));
+		const update = vi.fn().mockResolvedValue({});
+		const notify = vi.fn().mockResolvedValue(undefined);
+		const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+		const prisma = {
+			libraryCleanupApproval: {
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			libraryCleanupConfig: {
+				findFirst: vi.fn().mockResolvedValue({
+					id: "config-dry-run-failure",
+					userId: "user-1",
+					enabled: true,
+					nextRunAt: new Date(0),
+					intervalHours: 24,
+					dryRunMode: true,
+				}),
+				update,
+			},
+		};
+		const scheduler = new CleanupScheduler(
+			prisma as never,
+			{} as never,
+			{} as never,
+			logger as never,
+			notify,
+		);
+
+		await (
+			scheduler as unknown as {
+				checkAndRun: () => Promise<void>;
+			}
+		).checkAndRun();
+
+		expect(notify).not.toHaveBeenCalled();
+		expect(update).not.toHaveBeenCalled();
+		expect(logger.error).toHaveBeenCalledWith(
+			expect.objectContaining({ err: expect.any(Error) }),
+			"Error checking/running scheduled cleanup",
+		);
+	});
+
+	it("notifies for failed scheduled non-dry runs", async () => {
+		executorMocks.executeCleanupRun.mockRejectedValueOnce(new Error("scheduled execution failed"));
+		const notify = vi.fn().mockResolvedValue(undefined);
+		const prisma = {
+			libraryCleanupApproval: {
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+			},
+			libraryCleanupConfig: {
+				findFirst: vi.fn().mockResolvedValue({
+					id: "config-non-dry-run-failure",
+					userId: "user-1",
+					enabled: true,
+					nextRunAt: new Date(0),
+					intervalHours: 24,
+					dryRunMode: false,
+				}),
+				update: vi.fn().mockResolvedValue({}),
+			},
+		};
+		const scheduler = new CleanupScheduler(
+			prisma as never,
+			{} as never,
+			{} as never,
+			{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+			notify,
+		);
+
+		await (
+			scheduler as unknown as {
+				checkAndRun: () => Promise<void>;
+			}
+		).checkAndRun();
+
+		expect(notify).toHaveBeenCalledWith(
+			expect.objectContaining({
+				eventType: "SYSTEM_ERROR",
+				title: "Library cleanup failed",
+				body: "scheduled execution failed",
+			}),
+		);
+	});
 });

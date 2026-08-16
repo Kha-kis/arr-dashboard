@@ -204,6 +204,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 	const externalRuleCacheRefresher: CleanupExecutorDeps["externalRuleCacheRefresher"] = async (
 		source,
 		instance,
+		context,
 	) => {
 		const result =
 			source === "plex"
@@ -211,11 +212,13 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						prisma: app.prisma,
 						instance: createOwnedPlexPublicationSnapshot(app.encryptor, instance),
 						log: app.log,
+						cleanupRunClaimToken: context?.cleanupRunClaimToken,
 					})
 				: await refreshJellyfinCache({
 						prisma: app.prisma,
 						instance: createOwnedJellyfinPublicationSnapshot(app.encryptor, instance),
 						log: app.log,
+						cleanupRunClaimToken: context?.cleanupRunClaimToken,
 					});
 		assertCompleteCacheRefresh(source, result);
 	};

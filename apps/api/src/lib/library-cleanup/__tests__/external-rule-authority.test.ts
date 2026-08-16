@@ -13,6 +13,36 @@ const log = {
 	fatal: vi.fn(),
 } as unknown as FastifyBaseLogger;
 
+function verifiedProviderInstance(id: string, service: "PLEX" | "JELLYFIN" | "EMBY" = "JELLYFIN") {
+	return {
+		id,
+		service,
+		enabled: true,
+		expectedIdentity: `${id}-identity`,
+		identityStatus: "VERIFIED",
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		updatedAt: new Date(0),
+	};
+}
+
+function successfulGeneration(instanceId: string, cacheType = "jellyfin", itemCount = 0) {
+	return {
+		instanceId,
+		cacheType,
+		lastRefreshedAt: new Date(),
+		lastResult: "success",
+		lastErrorMessage: null,
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		itemCount,
+		generationId: `${cacheType}-generation-1`,
+		generationMetadata: null,
+		connectionGeneration: 3,
+		identityGeneration: 7,
+	};
+}
+
 function seerrInstance(id: string) {
 	return {
 		id,
@@ -75,18 +105,8 @@ describe("external parent-rule authority", () => {
 	});
 
 	it("accepts a status-proven empty Jellyfin generation as authoritative evidence", async () => {
-		const instance = { id: "jellyfin-1", updatedAt: new Date(0) };
-		const status = {
-			instanceId: instance.id,
-			lastRefreshedAt: new Date(),
-			lastResult: "success",
-			lastErrorMessage: null,
-			lastAttemptResult: "success",
-			lastAttemptErrorMessage: null,
-			itemCount: 0,
-			generationId: "jellyfin-generation-1",
-			generationMetadata: null,
-		};
+		const instance = verifiedProviderInstance("jellyfin-1");
+		const status = successfulGeneration(instance.id);
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
@@ -104,19 +124,33 @@ describe("external parent-rule authority", () => {
 		expect(prisma.cacheRefreshStatus.findMany).toHaveBeenCalledTimes(2);
 	});
 
-	it("rejects malformed Jellyfin user evidence before negative rules can match", async () => {
-		const instance = { id: "jellyfin-1", updatedAt: new Date(0) };
+	it("rejects legacy provider generations with null authority provenance", async () => {
+		const instance = verifiedProviderInstance("jellyfin-1");
 		const status = {
-			instanceId: instance.id,
-			lastRefreshedAt: new Date(),
-			lastResult: "success",
-			lastErrorMessage: null,
-			lastAttemptResult: "success",
-			lastAttemptErrorMessage: null,
-			itemCount: 1,
-			generationId: "jellyfin-generation-1",
-			generationMetadata: null,
+			...successfulGeneration(instance.id),
+			connectionGeneration: null,
+			identityGeneration: null,
 		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
+			jellyfinCache: { findMany: vi.fn() },
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		await expect(
+			buildEvalContext(
+				{ prisma, arrClientFactory: {} as never, log } as CleanupExecutorDeps,
+				"user-1",
+				[{ enabled: true, ruleType: "jellyfin_user_rating", conditions: null }],
+				{ requireAvailableEvidence: true },
+			),
+		).rejects.toThrow(/required evaluation evidence is unavailable: jellyfin\/emby/i);
+		expect(prisma.jellyfinCache.findMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects malformed Jellyfin user evidence before negative rules can match", async () => {
+		const instance = verifiedProviderInstance("jellyfin-1");
+		const status = successfulGeneration(instance.id, "jellyfin", 1);
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
@@ -145,6 +179,98 @@ describe("external parent-rule authority", () => {
 				{ requireAvailableEvidence: true },
 			),
 		).rejects.toThrow(/required evaluation evidence is unavailable: jellyfin\/emby/i);
+	});
+
+	it("passes the active cleanup lease through destructive provider refreshes", async () => {
+		const instance = verifiedProviderInstance("jellyfin-1");
+		const status = successfulGeneration(instance.id);
+		const externalRuleCacheRefresher = vi.fn().mockResolvedValue(undefined);
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
+			jellyfinCache: { findMany: vi.fn().mockResolvedValue([]) },
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		await buildEvalContext(
+			{ prisma, arrClientFactory: {} as never, externalRuleCacheRefresher, log },
+			"user-1",
+			[{ enabled: true, ruleType: "jellyfin_user_rating", conditions: null }],
+			{
+				destructiveAuthority: true,
+				requireAvailableEvidence: true,
+				cleanupRunClaimToken: "cleanup-run-token",
+			},
+		);
+
+		expect(externalRuleCacheRefresher).toHaveBeenCalledWith("jellyfin", instance, {
+			cleanupRunClaimToken: "cleanup-run-token",
+		});
+	});
+
+	it("accepts only a stable Jellyfin episode generation bound to its parent cache", async () => {
+		const instance = verifiedProviderInstance("jellyfin-1");
+		const parent = successfulGeneration(instance.id);
+		const episode = {
+			...successfulGeneration(instance.id, "jellyfin_episode", 1),
+			generationMetadata: JSON.stringify({ parentGenerationId: parent.generationId }),
+		};
+		const findMany = vi
+			.fn()
+			.mockResolvedValueOnce([episode])
+			.mockResolvedValueOnce([parent])
+			.mockResolvedValueOnce([episode])
+			.mockResolvedValueOnce([parent]);
+		const groupBy = vi
+			.fn()
+			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
+			.mockResolvedValueOnce([{ showTmdbId: 42, _count: { id: 1 } }])
+			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }])
+			.mockResolvedValueOnce([{ showTmdbId: 42, seasonNumber: 1, _count: { id: 1 } }]);
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: { findMany },
+			jellyfinEpisodeCache: { groupBy },
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const context = await buildEvalContext(
+			{ prisma, arrClientFactory: {} as never, log } as CleanupExecutorDeps,
+			"user-1",
+			[{ enabled: true, ruleType: "jellyfin_episode_completion", conditions: null }],
+			{ requireAvailableEvidence: true },
+		);
+
+		expect(context.jellyfinEpisodeMap?.get(42)).toEqual({
+			total: 1,
+			watched: 1,
+			seasons: new Map([[1, { total: 1, watched: 1 }]]),
+		});
+		expect(groupBy).toHaveBeenCalledTimes(4);
+	});
+
+	it("rejects a Jellyfin episode snapshot whose parent generation changed", async () => {
+		const instance = verifiedProviderInstance("jellyfin-1");
+		const parent = successfulGeneration(instance.id);
+		const episode = {
+			...successfulGeneration(instance.id, "jellyfin_episode", 0),
+			generationMetadata: JSON.stringify({ parentGenerationId: "older-parent" }),
+		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValueOnce([episode]).mockResolvedValueOnce([parent]),
+			},
+			jellyfinEpisodeCache: { groupBy: vi.fn() },
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		await expect(
+			buildEvalContext(
+				{ prisma, arrClientFactory: {} as never, log } as CleanupExecutorDeps,
+				"user-1",
+				[{ enabled: true, ruleType: "jellyfin_episode_completion", conditions: null }],
+				{ requireAvailableEvidence: true },
+			),
+		).rejects.toThrow(/required evaluation evidence is unavailable: jellyfin\/emby episode/i);
+		expect(prisma.jellyfinEpisodeCache.groupBy).not.toHaveBeenCalled();
 	});
 
 	it.each(["plex_episode_completion", "jellyfin_episode_completion"])(

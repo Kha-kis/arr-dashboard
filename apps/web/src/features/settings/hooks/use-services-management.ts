@@ -26,6 +26,7 @@ export type IdentityFlow = {
 	connectionGeneration: number;
 	identityGeneration: number;
 	replacementPayload: UpdateServicePayload;
+	analyticsUnavailableConfirmedFor?: AnalyticsProvider;
 	requiresReinspection: boolean;
 	message: string;
 };
@@ -216,14 +217,34 @@ export const useServicesManagement = () => {
 				} catch (error) {
 					if (
 						requestAnalyticsUnavailableConfirmation(error, async (selected) => {
-							await updateServiceMutation.mutateAsync({
-								...updateVariables,
-								payload: {
-									...updateVariables.payload,
-									confirmAnalyticsUnavailableFor: selected,
-								},
-							});
-							resetForm(basePayload.service);
+							try {
+								await updateServiceMutation.mutateAsync({
+									...updateVariables,
+									payload: {
+										...updateVariables.payload,
+										confirmAnalyticsUnavailableFor: selected,
+									},
+								});
+								resetForm(basePayload.service);
+							} catch (retryError) {
+								const conflict = getIdentityConflict(retryError);
+								if (conflict?.candidate && identityReplacementPayload) {
+									setIdentityFlow({
+										instanceId: selectedServiceForEdit.id,
+										mode: "replace",
+										candidate: conflict.candidate,
+										connectionGeneration: conflict.connectionGeneration,
+										identityGeneration: conflict.identityGeneration,
+										replacementPayload: identityReplacementPayload,
+										analyticsUnavailableConfirmedFor: selected,
+										requiresReinspection: false,
+										message:
+											"This connection points at a different provider. Review and explicitly replace it.",
+									});
+									return;
+								}
+								throw retryError;
+							}
 						})
 					) {
 						return;
@@ -496,6 +517,11 @@ export const useServicesManagement = () => {
 				await replaceIdentityMutation.mutateAsync({
 					id: identityFlow.instanceId,
 					payload: identityFlow.replacementPayload,
+					...(identityFlow.analyticsUnavailableConfirmedFor
+						? {
+								confirmAnalyticsUnavailableFor: identityFlow.analyticsUnavailableConfirmedFor,
+							}
+						: {}),
 					...confirmation,
 				});
 			} else {

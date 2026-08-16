@@ -125,6 +125,7 @@ function fixture(
 		},
 		cacheRefreshStatus: {
 			findUnique: vi.fn().mockResolvedValue(null),
+			findFirst: vi.fn().mockResolvedValue({ generationId: "jellyfin-parent-generation" }),
 			upsert: vi.fn().mockResolvedValue({}),
 		},
 	};
@@ -133,6 +134,7 @@ function fixture(
 		cacheRefreshStatus: {
 			findUnique: vi.fn().mockResolvedValue({
 				lastResult: "success",
+				generationId: "jellyfin-parent-generation",
 				connectionGeneration: connectionOne.connectionGeneration,
 				identityGeneration: 2,
 			}),
@@ -169,6 +171,7 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 		);
 
 		expect(result).toMatchObject({ upserted: 1, errors: 0, complete: true });
+		expect(result.generationId).toMatch(/^[0-9a-f-]{36}$/i);
 		expect(state.tx.jellyfinEpisodeCache.deleteMany).toHaveBeenCalledWith({
 			where: { instanceId: "jellyfin-1" },
 		});
@@ -184,8 +187,43 @@ describe("refreshJellyfinEpisodeCache authoritative publication", () => {
 		]);
 		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({ connectionGeneration: 7, identityGeneration: 2 }),
-				update: expect.objectContaining({ connectionGeneration: 7, identityGeneration: 2 }),
+				create: expect.objectContaining({
+					connectionGeneration: 7,
+					identityGeneration: 2,
+					generationId: result.generationId,
+					generationMetadata: JSON.stringify({
+						parentGenerationId: "jellyfin-parent-generation",
+					}),
+				}),
+				update: expect.objectContaining({
+					connectionGeneration: 7,
+					identityGeneration: 2,
+					generationId: result.generationId,
+				}),
+			}),
+		);
+	});
+
+	it("does not publish when the parent Jellyfin generation changes during collection", async () => {
+		const state = fixture();
+		state.tx.cacheRefreshStatus.findFirst.mockResolvedValueOnce(null);
+
+		const result = await refreshJellyfinEpisodeCache(
+			state.client,
+			state.prisma,
+			"jellyfin-1",
+			log,
+			"ignored",
+		);
+
+		expect(result).toEqual({ upserted: 0, errors: 1, complete: false });
+		expect(state.tx.jellyfinEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.objectContaining({
+					lastAttemptResult: "error",
+					lastAttemptErrorMessage: "Jellyfin episode refresh did not produce a complete generation",
+				}),
 			}),
 		);
 	});

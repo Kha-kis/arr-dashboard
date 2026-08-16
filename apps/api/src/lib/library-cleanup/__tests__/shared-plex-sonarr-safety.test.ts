@@ -140,6 +140,15 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		enabled: true,
 		encryptedApiKey: "encrypted",
 		encryptionIv: "iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
+		expectedIdentity: "plex-machine-1",
+		identityKind: "PLEX_MACHINE_IDENTIFIER",
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date("2026-07-27T11:00:00.000Z"),
+		identityLastCheckedAt: new Date("2026-07-27T11:00:00.000Z"),
+		connectionGeneration: 3,
+		identityGeneration: 7,
 		updatedAt: new Date("2026-07-27T12:00:00.000Z"),
 	};
 	const quiInstance = {
@@ -390,6 +399,8 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 						generationMetadata: JSON.stringify({
 							sections: [{ key: "tv", title: "TV", type: "show" }],
 						}),
+						connectionGeneration: 3,
+						identityGeneration: 7,
 					},
 				]),
 			},
@@ -2574,7 +2585,9 @@ describe("verified Sonarr mutation handoff", () => {
 		});
 		const evidenceRefresher = vi.mocked(fixture.deps.externalRuleCacheRefresher!);
 		const plexFindMany = vi.mocked(fixture.deps.prisma.plexCache.findMany);
-		expect(evidenceRefresher).toHaveBeenCalledWith("plex", fixture.plexInstance);
+		expect(evidenceRefresher).toHaveBeenCalledWith("plex", fixture.plexInstance, {
+			cleanupRunClaimToken: expect.any(String),
+		});
 		expect(evidenceRefresher.mock.invocationCallOrder[0]).toBeLessThan(
 			plexFindMany.mock.invocationCallOrder[0]!,
 		);

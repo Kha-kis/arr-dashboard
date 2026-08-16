@@ -63,6 +63,34 @@ const log = {
 	fatal: vi.fn(),
 } as unknown as FastifyBaseLogger;
 
+function verifiedPlexInstance(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "plex-inst-1",
+		userId: "user-1",
+		service: "PLEX",
+		enabled: true,
+		baseUrl: "http://plex.internal:32400",
+		externalUrl: null,
+		label: "Plex",
+		encryptedApiKey: "encrypted-token",
+		encryptionIv: "iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
+		isDefault: false,
+		storageGroupId: null,
+		expectedIdentity: "plex-machine-1",
+		identityKind: "PLEX_MACHINE_IDENTIFIER",
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date(0),
+		identityLastCheckedAt: new Date(0),
+		connectionGeneration: 3,
+		identityGeneration: 7,
+		createdAt: new Date(0),
+		updatedAt: new Date(0),
+		...overrides,
+	};
+}
+
 async function buildPlexEvalContextWithHealth(
 	deps: CleanupExecutorDeps,
 	userId: string,
@@ -98,6 +126,8 @@ function completeStatus(instanceId: string, completedAt = new Date(), itemCount 
 		lastErrorMessage: null,
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
+		connectionGeneration: 3,
+		identityGeneration: 7,
 	};
 }
 
@@ -177,13 +207,12 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	it.each(unavailablePlexEvidenceCases)(
 		"blocks Plex cleanup evidence for %s",
 		async (caseName, overrides) => {
-			const instance = {
-				id: "plex-inst-1",
+			const instance = verifiedPlexInstance({
 				updatedAt:
 					caseName === "connection repoint"
 						? new Date("2026-08-10T11:00:00.000Z")
 						: new Date("2026-08-10T00:00:00.000Z"),
-			};
+			});
 			const baseStatus = completeStatus(instance.id, new Date(), 1);
 			const statusOverride = overrides();
 			const status = statusOverride ? { ...baseStatus, ...statusOverride } : undefined;
@@ -227,18 +256,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	);
 
 	it("withholds episode evidence when the normal Plex inventory is rejected", async () => {
-		const instance = {
-			id: "plex-inst-1",
-			updatedAt: new Date(0),
-			service: "PLEX",
-			enabled: true,
-			baseUrl: "http://plex.internal:32400",
-			encryptedApiKey: "encrypted-token",
-			encryptionIv: "iv",
-			encryptedHttpAuthCredentials: null,
-			httpAuthEncryptionIv: null,
-			label: null,
-		};
+		const instance = verifiedPlexInstance();
 		const completedAt = new Date();
 		const rejectedNormalStatus = {
 			...completeStatus(instance.id, completedAt, 2),
@@ -287,7 +305,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 	it("keeps a complete Plex generation available for cleanup evaluation", async () => {
 		const completedAt = new Date();
-		const instance = { id: "plex-inst-1", updatedAt: new Date(0) };
+		const instance = verifiedPlexInstance();
 		const status = completeStatus(instance.id, completedAt, 1);
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
@@ -315,18 +333,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	});
 
 	it("keeps fresh retained episode rows from earlier incremental refreshes", async () => {
-		const instance = {
-			id: "plex-inst-1",
-			updatedAt: new Date(0),
-			service: "PLEX",
-			enabled: true,
-			baseUrl: "http://plex.internal:32400",
-			encryptedApiKey: "encrypted-token",
-			encryptionIv: "iv",
-			encryptedHttpAuthCredentials: null,
-			httpAuthEncryptionIv: null,
-			label: null,
-		};
+		const instance = verifiedPlexInstance();
 		const completedAt = new Date();
 		const normalStatus = completeStatus(instance.id, completedAt, 1);
 		const episodeStatus = completeStatus(instance.id, completedAt, 1);
@@ -383,18 +390,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	});
 
 	it("ignores episode rows orphaned from the current eligible Plex inventory", async () => {
-		const instance = {
-			id: "plex-inst-1",
-			updatedAt: new Date(0),
-			service: "PLEX",
-			enabled: true,
-			baseUrl: "http://plex.internal:32400",
-			encryptedApiKey: "encrypted-token",
-			encryptionIv: "iv",
-			encryptedHttpAuthCredentials: null,
-			httpAuthEncryptionIv: null,
-			label: null,
-		};
+		const instance = verifiedPlexInstance();
 		const completedAt = new Date();
 		const normalStatus = completeStatus(instance.id, completedAt, 1);
 		const episodeStatus = completeStatus(instance.id, completedAt, 1);
@@ -449,18 +445,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	it.each(["generation", "row"] as const)(
 		"rejects a future-dated Plex episode %s",
 		async (futureTarget) => {
-			const instance = {
-				id: "plex-inst-1",
-				updatedAt: new Date(0),
-				service: "PLEX",
-				enabled: true,
-				baseUrl: "http://plex.internal:32400",
-				encryptedApiKey: "encrypted-token",
-				encryptionIv: "iv",
-				encryptedHttpAuthCredentials: null,
-				httpAuthEncryptionIv: null,
-				label: null,
-			};
+			const instance = verifiedPlexInstance();
 			const completedAt = new Date();
 			const futureAt = new Date(completedAt.getTime() + 60 * 1000);
 			const normalStatus = completeStatus(instance.id, completedAt, 1);
@@ -511,18 +496,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	);
 
 	it("rejects episode aggregates interleaved with a newer cache generation", async () => {
-		const instance = {
-			id: "plex-inst-1",
-			updatedAt: new Date(0),
-			service: "PLEX",
-			enabled: true,
-			baseUrl: "http://plex.internal:32400",
-			encryptedApiKey: "encrypted-token",
-			encryptionIv: "iv",
-			encryptedHttpAuthCredentials: null,
-			httpAuthEncryptionIv: null,
-			label: null,
-		};
+		const instance = verifiedPlexInstance();
 		const completedAt = new Date();
 		const normalStatus = completeStatus(instance.id, completedAt, 1);
 		const episodeStatus = completeStatus(instance.id, completedAt, 1);
@@ -576,18 +550,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	it.each(["missing coverage", "parent mismatch"] as const)(
 		"rejects Plex episode evidence with %s",
 		async (failure) => {
-			const instance = {
-				id: "plex-inst-1",
-				updatedAt: new Date(0),
-				service: "PLEX",
-				enabled: true,
-				baseUrl: "http://plex.internal:32400",
-				encryptedApiKey: "encrypted-token",
-				encryptionIv: "iv",
-				encryptedHttpAuthCredentials: null,
-				httpAuthEncryptionIv: null,
-				label: null,
-			};
+			const instance = verifiedPlexInstance();
 			const completedAt = new Date();
 			const normalStatus = completeStatus(instance.id, completedAt, 1);
 			const episodeStatus = {
@@ -649,7 +612,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	);
 
 	it("rejects an interleaved map/section generation", async () => {
-		const instance = { id: "plex-inst-1", updatedAt: new Date(0) };
+		const instance = verifiedPlexInstance();
 		const completedAt = new Date();
 		const status = (generationId: string, includeNewSection: boolean) => ({
 			...completeStatus(instance.id, completedAt, 1),
@@ -747,7 +710,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 		const prisma = {
 			serviceInstance: {
-				findMany: vi.fn().mockResolvedValue([{ id: "plex-inst-1", updatedAt: new Date(0) }]),
+				findMany: vi.fn().mockResolvedValue([verifiedPlexInstance()]),
 			},
 			cacheRefreshStatus: {
 				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 501)]),
@@ -791,7 +754,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 		const prisma = {
 			serviceInstance: {
-				findMany: vi.fn().mockResolvedValue([{ id: "plex-inst-1", updatedAt: new Date(0) }]),
+				findMany: vi.fn().mockResolvedValue([verifiedPlexInstance()]),
 			},
 			cacheRefreshStatus: {
 				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 1)]),
