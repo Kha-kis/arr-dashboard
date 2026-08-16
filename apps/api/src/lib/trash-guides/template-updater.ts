@@ -23,7 +23,7 @@ import type {
 } from "@arr/shared";
 import { z } from "zod";
 import type { PrismaClient } from "../../lib/prisma.js";
-import { TemplateNotFoundError } from "../errors.js";
+import { ConflictError, TemplateNotFoundError } from "../errors.js";
 import { loggers } from "../logger.js";
 import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
@@ -562,22 +562,38 @@ export class TemplateUpdater {
 				};
 			}
 
-			if (fetchResult.cacheCommitHash && fetchResult.cacheCommitHash !== targetCommit.commitHash) {
+			const requiredCacheTypes: TrashConfigType[] = [
+				"CUSTOM_FORMATS",
+				"CF_GROUPS",
+				"QUALITY_PROFILES",
+			];
+			const readRequiredCacheCommits = async () =>
+				new Map(
+					await Promise.all(
+						requiredCacheTypes.map(
+							async (configType) =>
+								[
+									configType,
+									await this.cacheManager.getCommitHash(serviceType, configType),
+								] as const,
+						),
+					),
+				);
+			let requiredCacheCommits = await readRequiredCacheCommits();
+			if (
+				requiredCacheTypes.some(
+					(configType) => requiredCacheCommits.get(configType) !== targetCommit.commitHash,
+				)
+			) {
 				log.info(
 					{
-						cacheCommit: fetchResult.cacheCommitHash,
+						cacheCommits: Object.fromEntries(requiredCacheCommits),
 						targetCommit: targetCommit.commitHash,
 						templateId,
 						serviceType,
 					},
-					"Cache/version mismatch — auto-refreshing cache",
+					"Cache provenance mismatch — auto-refreshing cache",
 				);
-
-				const requiredCacheTypes: TrashConfigType[] = [
-					"CUSTOM_FORMATS",
-					"CF_GROUPS",
-					"QUALITY_PROFILES",
-				];
 
 				for (const configType of requiredCacheTypes) {
 					try {
@@ -608,6 +624,24 @@ export class TemplateUpdater {
 						errorType: "sync_failed",
 					};
 				}
+
+				requiredCacheCommits = await readRequiredCacheCommits();
+			}
+
+			const unverifiedCacheTypes = requiredCacheTypes.filter(
+				(configType) => requiredCacheCommits.get(configType) !== targetCommit.commitHash,
+			);
+			if (unverifiedCacheTypes.length > 0) {
+				return {
+					success: false,
+					templateId,
+					previousCommit,
+					newCommit: targetCommit.commitHash,
+					errors: [
+						`TRaSH cache provenance could not be verified for ${unverifiedCacheTypes.join(", ")} at commit ${targetCommit.commitHash}.`,
+					],
+					errorType: "sync_failed",
+				};
 			}
 
 			const currentCFTrashIds = new Set(
@@ -765,15 +799,50 @@ export class TemplateUpdater {
 
 			const syncedAt = new Date();
 			const syncedConfigData = JSON.stringify(mergeResult.mergedConfig);
-			await this.prisma.trashTemplate.update({
-				where: { id: templateId },
-				data: {
-					changeLog: JSON.stringify(updatedChangeLog),
-					configData: syncedConfigData,
-					trashGuidesCommitHash: targetCommit.commitHash,
-					lastSyncedAt: syncedAt,
-				},
-			});
+			const updateData = {
+				changeLog: JSON.stringify(updatedChangeLog),
+				configData: syncedConfigData,
+				trashGuidesCommitHash: targetCommit.commitHash,
+				lastSyncedAt: syncedAt,
+			};
+			if (options?.expectedAutomationStateToken) {
+				await this.prisma.$transaction(
+					async (transaction) => {
+						const [liveTemplate, autoMapping] = await Promise.all([
+							transaction.trashTemplate.findUnique({ where: { id: templateId } }),
+							transaction.templateQualityProfileMapping.findFirst({
+								where: { templateId, syncStrategy: "auto" },
+								select: { id: true },
+							}),
+						]);
+						if (
+							!liveTemplate ||
+							!userId ||
+							liveTemplate.userId !== userId ||
+							liveTemplate.deletedAt ||
+							liveTemplate.hasUserModifications ||
+							(!liveTemplate.trashGuidesCommitHash && !liveTemplate.sourceQualityProfileTrashId) ||
+							!autoMapping ||
+							createAutomationCatchUpTemplateStateToken(liveTemplate) !==
+								options.expectedAutomationStateToken
+						) {
+							throw new ConflictError(
+								"Automatic sync is no longer authorized because the template or Auto mapping changed after selection.",
+							);
+						}
+						await transaction.trashTemplate.update({
+							where: { id: templateId },
+							data: updateData,
+						});
+					},
+					{ isolationLevel: "Serializable", timeout: 10000 },
+				);
+			} else {
+				await this.prisma.trashTemplate.update({
+					where: { id: templateId },
+					data: updateData,
+				});
+			}
 
 			const metricsResult = completeMetrics();
 			metricsResult.recordSuccess();
