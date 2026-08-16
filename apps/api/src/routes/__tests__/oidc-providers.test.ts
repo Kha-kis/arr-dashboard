@@ -35,6 +35,7 @@ const provider = {
 
 let app: ReturnType<typeof Fastify>;
 const findProvider = vi.fn();
+const createProvider = vi.fn();
 const findLinkedAccount = vi.fn();
 const findUniqueProvider = vi.fn();
 const deleteProvider = vi.fn();
@@ -46,9 +47,11 @@ const updateManyUsers = vi.fn();
 const runTransaction = vi.fn();
 const deleteSessions = vi.fn();
 const clearCookie = vi.fn();
+const findSystemSettings = vi.fn();
 
 beforeEach(async () => {
 	findProvider.mockReset();
+	createProvider.mockReset();
 	findLinkedAccount.mockReset();
 	findUniqueProvider.mockReset();
 	deleteProvider.mockReset();
@@ -60,8 +63,11 @@ beforeEach(async () => {
 	runTransaction.mockReset();
 	deleteSessions.mockReset();
 	clearCookie.mockReset();
+	findSystemSettings.mockReset();
+	findSystemSettings.mockResolvedValue(null);
 
 	findUniqueProvider.mockResolvedValue(provider);
+	createProvider.mockImplementation(({ data }) => ({ ...provider, ...data }));
 	deleteProvider.mockResolvedValue({ count: 1 });
 	deleteOidcAccounts.mockResolvedValue({ count: 1 });
 	findOidcOnlyUsers.mockResolvedValue([{ id: "admin-user", hashedPassword: null }]);
@@ -85,9 +91,11 @@ beforeEach(async () => {
 
 	app = Fastify();
 	app.decorate("prisma", {
+		systemSettings: { findUnique: findSystemSettings },
 		oIDCProvider: {
 			findFirst: findProvider,
 			findUnique: findUniqueProvider,
+			create: createProvider,
 		},
 		oIDCAccount: { findFirst: findLinkedAccount },
 		user: { findMany: findOidcOnlyUsers, findUnique: findUniqueUser },
@@ -95,7 +103,11 @@ beforeEach(async () => {
 		$transaction: runTransaction,
 	});
 	app.decorate("sessionService", { clearCookie });
-	app.decorate("config", { APP_URL: "https://arr.example.com" });
+	app.decorate("config", {
+		APP_URL: "https://arr.example.com",
+		WEBAUTHN_ORIGIN: undefined,
+		TRUST_PROXY: false,
+	});
 	app.decorate("encryptor", {
 		encrypt: vi.fn().mockReturnValue({ value: "encrypted", iv: "iv" }),
 	});
@@ -149,6 +161,59 @@ describe("GET /api/oidc-providers", () => {
 });
 
 describe("POST /api/oidc-providers", () => {
+	it("uses the configured WebAuthn origin when APP_URL is still localhost", async () => {
+		Object.assign(app.config, {
+			APP_URL: "http://localhost:3000",
+			WEBAUTHN_ORIGIN: "https://arr.example.com",
+		});
+
+		const response = await app.inject({
+			method: "POST",
+			url: "/api/oidc-providers",
+			payload: {
+				displayName: "Authentik",
+				clientId: "arr-dashboard",
+				clientSecret: "secret",
+				issuer: "https://auth.example.com",
+			},
+		});
+
+		expect(response.statusCode).toBe(201);
+		expect(JSON.parse(response.payload)).toMatchObject({
+			redirectUri: "https://arr.example.com/auth/oidc/callback",
+		});
+	});
+
+	it("prefers the persisted External URL when generating the admin callback", async () => {
+		Object.assign(app.config, {
+			APP_URL: "http://localhost:3000",
+			WEBAUTHN_ORIGIN: "https://webauthn.example.com",
+		});
+		findSystemSettings.mockResolvedValue({
+			externalUrl: "https://canonical.example.com/dashboard",
+		});
+
+		const response = await app.inject({
+			method: "POST",
+			url: "/api/oidc-providers",
+			remoteAddress: "127.0.0.1",
+			headers: {
+				"x-arr-dashboard-origin": "https://incidental.example.com",
+			},
+			payload: {
+				displayName: "Authentik",
+				clientId: "arr-dashboard",
+				clientSecret: "secret",
+				issuer: "https://auth.example.com",
+			},
+		});
+
+		expect(response.statusCode).toBe(201);
+		expect(JSON.parse(response.payload)).toMatchObject({
+			redirectUri: "https://canonical.example.com/dashboard/auth/oidc/callback",
+		});
+	});
+
 	it.each([
 		"https://admin:secret@arr.example.com/",
 		"ftp://arr.example.com/",
