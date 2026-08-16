@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planDirectCleanupSelection } from "../selection-planner.js";
+import { planApprovalCleanupSelection, planDirectCleanupSelection } from "../selection-planner.js";
 
 const fresh = (...keys: string[]) => keys.map((key) => ({ key, value: key }));
 const freshCandidate = (key: string, value: string) => ({ key, value });
@@ -172,5 +172,92 @@ describe("planDirectCleanupSelection", () => {
 		});
 
 		expect(plan.selectedFresh.map((candidate) => candidate.key)).toEqual(selected);
+	});
+});
+
+describe("planApprovalCleanupSelection", () => {
+	it("applies approval memory before the hard run budget", () => {
+		const plan = planApprovalCleanupSelection({
+			limit: 2,
+			fresh: fresh("pending", "rejected", "selected-1", "selected-2", "deferred"),
+			approvalExclusions: new Map([
+				["pending", "Already pending in the approval queue"],
+				["rejected", "Previously rejected"],
+			]),
+			nonterminalRetryKeys: new Set(),
+			inFlightRetries: [],
+			retryStateLoaded: true,
+		});
+
+		expect(plan.selectedFresh.map((candidate) => candidate.key)).toEqual([
+			"selected-1",
+			"selected-2",
+		]);
+		expect(plan.counts).toMatchObject({ deferredApproval: 2, deferredBudget: 1 });
+	});
+
+	it("defers durable retry ownership and duplicate fresh targets before selection", () => {
+		const plan = planApprovalCleanupSelection({
+			limit: 2,
+			fresh: fresh("retry-owned", "first", "first", "second"),
+			approvalExclusions: new Map(),
+			nonterminalRetryKeys: new Set(["retry-owned"]),
+			inFlightRetries: [],
+			retryStateLoaded: true,
+		});
+
+		expect(plan.selectedFresh.map((candidate) => candidate.key)).toEqual(["first", "second"]);
+		expect(plan.counts).toMatchObject({
+			deferredApproval: 1,
+			deferredDuplicateTarget: 1,
+		});
+	});
+
+	it("reports in-flight retries without charging approval-run budget", () => {
+		const plan = planApprovalCleanupSelection({
+			limit: 1,
+			fresh: fresh("fresh"),
+			approvalExclusions: new Map(),
+			nonterminalRetryKeys: new Set(),
+			inFlightRetries: [retry("executing")],
+			retryStateLoaded: true,
+		});
+
+		expect(plan.selectedFresh.map((candidate) => candidate.key)).toEqual(["fresh"]);
+		expect(plan.counts).toMatchObject({ selectedFresh: 1, inFlight: 1, total: 2 });
+	});
+
+	it("represents an in-flight target once when the same target still matches a rule", () => {
+		const plan = planApprovalCleanupSelection({
+			limit: 1,
+			fresh: fresh("executing", "fresh"),
+			approvalExclusions: new Map(),
+			nonterminalRetryKeys: new Set(["executing"]),
+			inFlightRetries: [retry("executing"), { ...retry("duplicate"), key: "executing" }],
+			retryStateLoaded: true,
+		});
+
+		expect(plan.selectedFresh.map((candidate) => candidate.key)).toEqual(["fresh"]);
+		expect(plan.counts).toMatchObject({ selectedFresh: 1, inFlight: 1, total: 2 });
+		expect(
+			plan.decisions.filter((decision) => decision.candidate.key === "executing"),
+		).toHaveLength(1);
+	});
+
+	it("fails closed when approval or retry state is unavailable", () => {
+		const plan = planApprovalCleanupSelection({
+			limit: 2,
+			fresh: fresh("first", "second"),
+			approvalExclusions: new Map(),
+			nonterminalRetryKeys: new Set(),
+			inFlightRetries: [],
+			retryStateLoaded: false,
+		});
+
+		expect(plan.selectedFresh).toEqual([]);
+		expect(plan.counts).toMatchObject({
+			retryState: "unavailable",
+			retryStateUnavailable: 2,
+		});
 	});
 });

@@ -1,6 +1,7 @@
 export type DirectCleanupSelectionDisposition =
 	| "selected"
 	| "deferred_budget"
+	| "deferred_approval"
 	| "deferred_retry_fairness"
 	| "deferred_in_flight_target"
 	| "deferred_duplicate_target"
@@ -32,6 +33,7 @@ export interface DirectCleanupSelectionPlan<TFresh, TRetry> {
 		selectedFresh: number;
 		selectedRetries: number;
 		deferredBudget: number;
+		deferredApproval: number;
 		deferredRetryFairness: number;
 		deferredInFlightTarget: number;
 		deferredDuplicateTarget: number;
@@ -48,6 +50,15 @@ export interface DirectCleanupSelectionInput<TFresh, TRetry> {
 	pendingRetries: Array<CleanupSelectionRetry<TRetry>>;
 	inFlightRetries: Array<CleanupSelectionRetry<TRetry>>;
 	previousRunStartedAt?: Date;
+	retryStateLoaded: boolean;
+}
+
+export interface ApprovalCleanupSelectionInput<TFresh, TRetry> {
+	limit: number;
+	fresh: Array<CleanupSelectionCandidate<TFresh>>;
+	approvalExclusions: Map<string, string>;
+	nonterminalRetryKeys: Set<string>;
+	inFlightRetries: Array<CleanupSelectionRetry<TRetry>>;
 	retryStateLoaded: boolean;
 }
 
@@ -91,6 +102,7 @@ function buildCounts<TFresh, TRetry>(
 		selectedFresh: selectedFresh.length,
 		selectedRetries: selectedRetries.length,
 		deferredBudget: count("deferred_budget"),
+		deferredApproval: count("deferred_approval"),
 		deferredRetryFairness: count("deferred_retry_fairness"),
 		deferredInFlightTarget: count("deferred_in_flight_target"),
 		deferredDuplicateTarget: count("deferred_duplicate_target"),
@@ -98,6 +110,87 @@ function buildCounts<TFresh, TRetry>(
 		retryStateUnavailable: count("retry_state_unavailable"),
 		retryState,
 		total: decisions.length,
+	};
+}
+
+/**
+ * Side-effect-free approval-run selection. Existing approvals and durable
+ * retry ownership are applied before the hard run budget, so excluded targets
+ * cannot consume slots that should go to later eligible candidates.
+ */
+export function planApprovalCleanupSelection<TFresh, TRetry = never>(
+	input: ApprovalCleanupSelectionInput<TFresh, TRetry>,
+): DirectCleanupSelectionPlan<TFresh, TRetry> {
+	const limit = normalizedLimit(input.limit);
+	const decisions: Array<DirectCleanupSelectionDecision<TFresh | TRetry>> = [];
+
+	if (!input.retryStateLoaded) {
+		for (const candidate of input.fresh) {
+			decisions.push({
+				candidate,
+				disposition: "retry_state_unavailable",
+				reason: RETRY_STATE_UNAVAILABLE_REASON,
+			});
+		}
+		return {
+			selectedFresh: [],
+			selectedRetries: [],
+			decisions,
+			counts: buildCounts([], [], decisions, "unavailable"),
+		};
+	}
+
+	const inFlightByTarget = new Map<string, CleanupSelectionRetry<TRetry>>();
+	for (const retry of [...input.inFlightRetries].sort(compareRetryOrder)) {
+		if (!inFlightByTarget.has(retry.key)) inFlightByTarget.set(retry.key, retry);
+	}
+	for (const retry of inFlightByTarget.values()) {
+		decisions.push({ candidate: retry, disposition: "in_flight", reason: IN_FLIGHT_REASON });
+	}
+	const inFlightKeys = new Set(inFlightByTarget.keys());
+
+	const eligible: Array<CleanupSelectionCandidate<TFresh>> = [];
+	const eligibleKeys = new Set<string>();
+	for (const candidate of input.fresh) {
+		if (inFlightKeys.has(candidate.key)) continue;
+		const approvalReason = input.approvalExclusions.get(candidate.key);
+		if (approvalReason) {
+			decisions.push({
+				candidate,
+				disposition: "deferred_approval",
+				reason: approvalReason,
+			});
+		} else if (input.nonterminalRetryKeys.has(candidate.key)) {
+			decisions.push({
+				candidate,
+				disposition: "deferred_approval",
+				reason: "Deferred: a durable cleanup retry already exists for this target",
+			});
+		} else if (eligibleKeys.has(candidate.key)) {
+			decisions.push({
+				candidate,
+				disposition: "deferred_duplicate_target",
+				reason: DUPLICATE_TARGET_REASON,
+			});
+		} else {
+			eligibleKeys.add(candidate.key);
+			eligible.push(candidate);
+		}
+	}
+
+	const selectedFresh = eligible.slice(0, limit);
+	for (const [index, candidate] of eligible.entries()) {
+		decisions.push(
+			index < selectedFresh.length
+				? { candidate, disposition: "selected", reason: "Selected for the next approval run" }
+				: { candidate, disposition: "deferred_budget", reason: RUN_BUDGET_REASON },
+		);
+	}
+	return {
+		selectedFresh,
+		selectedRetries: [],
+		decisions,
+		counts: buildCounts(selectedFresh, [], decisions),
 	};
 }
 
