@@ -17,6 +17,11 @@ vi.mock("../media-server-rescan.js", async (importOriginal) => ({
 
 import { CleanupScheduler } from "../cleanup-scheduler.js";
 import {
+	SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+} from "../cleanup-executor.js";
+import {
 	CleanupMaintenanceConflictError,
 	withCleanupMaintenanceGuard,
 } from "../cleanup-maintenance-gate.js";
@@ -91,6 +96,7 @@ describe("library cleanup scheduler recovery", () => {
 			{
 				id: "active",
 				status: "executing",
+				lastExecutionError: null as string | null,
 				reviewedAt: new Date("2026-07-27T13:00:00.000Z"),
 				config: {
 					runClaimToken: "live-owner",
@@ -100,12 +106,14 @@ describe("library cleanup scheduler recovery", () => {
 			{
 				id: "unleased",
 				status: "executing",
+				lastExecutionError: null as string | null,
 				reviewedAt: new Date("2026-07-27T13:00:00.000Z"),
 				config: { runClaimToken: null, runClaimedAt: null },
 			},
 			{
 				id: "stale-lease",
 				status: "retry_executing",
+				lastExecutionError: null as string | null,
 				reviewedAt: new Date("2026-07-27T13:00:00.000Z"),
 				config: {
 					runClaimToken: "crashed-owner",
@@ -115,6 +123,7 @@ describe("library cleanup scheduler recovery", () => {
 			{
 				id: "approved-after-crash",
 				status: "approved",
+				lastExecutionError: null as string | null,
 				reviewedAt: new Date("2026-07-27T13:00:00.000Z"),
 				config: { runClaimToken: null, runClaimedAt: null },
 			},
@@ -126,6 +135,7 @@ describe("library cleanup scheduler recovery", () => {
 			}: {
 				where: {
 					status: string;
+					lastExecutionError?: string;
 					reviewedAt?: { lt: Date };
 					config?: { OR: Array<{ runClaimedAt?: null | { lt: Date }; runClaimToken?: null }> };
 				};
@@ -137,6 +147,12 @@ describe("library cleanup scheduler recovery", () => {
 				)?.runClaimedAt as { lt: Date } | undefined;
 				for (const row of rows) {
 					if (row.status !== where.status) continue;
+					if (
+						typeof where.lastExecutionError === "string" &&
+						row.lastExecutionError !== where.lastExecutionError
+					) {
+						continue;
+					}
 					if (where.reviewedAt && row.reviewedAt >= where.reviewedAt.lt) continue;
 					if (where.config) {
 						const leaseIsRecoverable =
@@ -181,6 +197,99 @@ describe("library cleanup scheduler recovery", () => {
 			approvalUpdateMany.mock.calls.find(([args]) => args.where.status === "executing")?.[0].where
 				.config,
 		).toBeDefined();
+	});
+
+	it("preserves durable Sonarr episode phases while recovering interrupted execution", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-07-27T15:00:00.000Z"));
+		const startedMessage = SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE;
+		const confirmedMessage = SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE;
+		const legacyPartialMessage = SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE;
+		const expiredAt = new Date("2026-07-27T14:00:00.000Z");
+		const rows = [
+			{ id: "started", status: "executing", lastExecutionError: startedMessage },
+			{
+				id: "confirmed",
+				status: "executing",
+				lastExecutionError: confirmedMessage,
+				expiresAt: expiredAt,
+			},
+			{
+				id: "legacy-partial",
+				status: "executing",
+				lastExecutionError: legacyPartialMessage,
+			},
+			{ id: "retry-started", status: "retry_executing", lastExecutionError: startedMessage },
+			{ id: "retry-confirmed", status: "retry_executing", lastExecutionError: confirmedMessage },
+			{ id: "ordinary", status: "executing", lastExecutionError: null },
+			{ id: "ordinary-retry", status: "retry_executing", lastExecutionError: "retrying" },
+		];
+		const updateMany = vi.fn(
+			async ({
+				where,
+				data,
+			}: {
+				where: {
+					status: string;
+					lastExecutionError?: string | { notIn?: string[] };
+				};
+				data: Record<string, unknown>;
+			}) => {
+				let count = 0;
+				for (const row of rows) {
+					if (row.status !== where.status) continue;
+					if (typeof where.lastExecutionError === "string") {
+						if (row.lastExecutionError !== where.lastExecutionError) continue;
+					} else if (where.lastExecutionError?.notIn?.includes(row.lastExecutionError ?? "")) {
+						continue;
+					}
+					Object.assign(row, data);
+					count++;
+				}
+				return { count };
+			},
+		);
+		const prisma = {
+			libraryCleanupApproval: { updateMany },
+			libraryCleanupConfig: { findFirst: vi.fn().mockResolvedValue(null) },
+		};
+		const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+		const scheduler = new CleanupScheduler(prisma as never, {} as never, {} as never, log as never);
+
+		await (scheduler as unknown as { checkAndRun: () => Promise<void> }).checkAndRun();
+
+		expect(rows).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					id: "started",
+					status: "expired",
+					lastExecutionError: startedMessage,
+				}),
+				expect.objectContaining({
+					id: "confirmed",
+					status: "retry_pending",
+					lastExecutionError: confirmedMessage,
+					expiresAt: expiredAt,
+				}),
+				expect.objectContaining({
+					id: "legacy-partial",
+					status: "retry_pending",
+					lastExecutionError: legacyPartialMessage,
+				}),
+				expect.objectContaining({
+					id: "retry-started",
+					status: "expired",
+					lastExecutionError: startedMessage,
+				}),
+				expect.objectContaining({
+					id: "retry-confirmed",
+					status: "retry_pending",
+					lastExecutionError: confirmedMessage,
+				}),
+				expect.objectContaining({ id: "ordinary", status: "pending" }),
+				expect.objectContaining({ id: "ordinary-retry", status: "retry_pending" }),
+			]),
+		);
 	});
 
 	it("appends expiry and crash-recovery events only after the authoritative transitions", async () => {
@@ -232,7 +341,12 @@ describe("library cleanup scheduler recovery", () => {
 					Object.assign(expired, data);
 					return { count: 1 };
 				}
-				if (where.status === "executing" && crashed.status === "executing") {
+				if (
+					where.status === "executing" &&
+					crashed.status === "executing" &&
+					(typeof where.lastExecutionError !== "string" ||
+						crashed.lastExecutionError === where.lastExecutionError)
+				) {
 					Object.assign(crashed, data);
 					return { count: 1 };
 				}
