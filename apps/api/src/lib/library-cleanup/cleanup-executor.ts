@@ -796,6 +796,7 @@ function buildRetryDetail(
 		year: number | null;
 		targetScope?: string | null;
 		arrEpisodeId?: number | null;
+		episodeFileId?: number | null;
 		seasonNumber?: number | null;
 		episodeNumber?: number | null;
 		episodeTitle?: string | null;
@@ -816,12 +817,43 @@ function buildRetryDetail(
 		itemType: approval.itemType,
 		targetScope: approval.targetScope === "episode" ? "episode" : "series",
 		arrEpisodeId: approval.arrEpisodeId ?? undefined,
+		episodeFileId: approval.episodeFileId ?? undefined,
 		seasonNumber: approval.seasonNumber ?? undefined,
 		episodeNumber: approval.episodeNumber ?? undefined,
 		sizeOnDisk: approval.sizeOnDisk.toString(),
 		year: approval.year,
 		rating: null,
 	};
+}
+
+type CleanupApprovalTarget = {
+	instanceId: string;
+	arrItemId: number;
+	itemType: string;
+	targetScope?: string | null;
+	arrEpisodeId?: number | null;
+	episodeFileId?: number | null;
+	action?: string | null;
+	safetySnapshot?: string | null;
+};
+
+function retryEpisodeFileId(approval: CleanupApprovalTarget): number | undefined {
+	if (
+		typeof approval.episodeFileId === "number" &&
+		Number.isSafeInteger(approval.episodeFileId) &&
+		approval.episodeFileId > 0
+	) {
+		return approval.episodeFileId;
+	}
+	const plan = parseExecutableSafetyPlan(approval.safetySnapshot);
+	return plan?.kind === "verified_sonarr_episode" ? plan.selectedFile.episodeFileId : undefined;
+}
+
+export function cleanupApprovalTargetKey(approval: CleanupApprovalTarget): string {
+	return cleanupDeleteTargetKey({
+		...approval,
+		episodeFileId: retryEpisodeFileId(approval),
+	});
 }
 
 function toDeleteTargets(items: FlaggedItem[]): CleanupDeleteTarget[] {
@@ -1092,6 +1124,7 @@ async function persistAndClaimDirectMutationIntent(
 				itemType: item.cacheItem.itemType,
 				targetScope: item.episodeTarget ? "episode" : "series",
 				arrEpisodeId: item.episodeTarget?.arrEpisodeId,
+				episodeFileId: item.episodeTarget?.episodeFileId,
 				seasonNumber: item.episodeTarget?.seasonNumber,
 				episodeNumber: item.episodeTarget?.episodeNumber,
 				title: item.cacheItem.title,
@@ -1553,6 +1586,9 @@ async function loadDurableRetryPreview(
 					itemType: true,
 					targetScope: true,
 					arrEpisodeId: true,
+					episodeFileId: true,
+					action: true,
+					safetySnapshot: true,
 				},
 			}),
 			deps.prisma.libraryCleanupApproval.findMany({
@@ -1582,7 +1618,7 @@ async function loadDurableRetryPreview(
 		);
 		const total = Math.max(pendingRetryTargets.length, retryDetails.length);
 		const targetKeys = new Set(
-			[...pendingRetryTargets, ...inFlightRetries].map((retry) => cleanupDeleteTargetKey(retry)),
+			[...pendingRetryTargets, ...inFlightRetries].map((retry) => cleanupApprovalTargetKey(retry)),
 		);
 		const warningParts = [];
 		if (total > 0) {
@@ -1636,7 +1672,7 @@ export async function executeCleanupPreview(
 
 	const config = await prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
-		include: { rules: { orderBy: { priority: "asc" } } },
+		include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 	});
 
 	if (!config) {
@@ -1765,7 +1801,7 @@ async function executeCleanupRunGuarded(
 
 	const config = await prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
-		include: { rules: { orderBy: { priority: "asc" } } },
+		include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 	});
 
 	if (!config?.enabled || config.rules.length === 0) {
@@ -1874,10 +1910,13 @@ async function executeCleanupRunGuarded(
 					itemType: true,
 					targetScope: true,
 					arrEpisodeId: true,
+					episodeFileId: true,
+					action: true,
+					safetySnapshot: true,
 				},
 			});
 			const retryTargetKeys = new Set(
-				nonterminalRetryTargets.map((retry) => cleanupDeleteTargetKey(retry)),
+				nonterminalRetryTargets.map((retry) => cleanupApprovalTargetKey(retry)),
 			);
 			const freshCandidates = flagged.filter(
 				(item) => !retryTargetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item))),
@@ -2353,7 +2392,7 @@ async function assertCurrentEpisodeMutationAuthority(
 ): Promise<void> {
 	const config = await deps.prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
-		include: { rules: { orderBy: { priority: "asc" } } },
+		include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 	});
 	if (!config) {
 		throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
@@ -5486,7 +5525,7 @@ function buildApprovalDedupSkipReason(
 	return undefined;
 }
 
-async function selectApprovalCandidatesBeforeLimit(
+export async function selectApprovalCandidatesBeforeLimit(
 	deps: CleanupExecutorDeps,
 	config: LibraryCleanupConfig & { rules: LibraryCleanupRule[] },
 	userId: string,
@@ -5537,13 +5576,16 @@ async function selectApprovalCandidatesBeforeLimit(
 			itemType: true,
 			targetScope: true,
 			arrEpisodeId: true,
+			episodeFileId: true,
+			action: true,
+			safetySnapshot: true,
 			status: true,
 			reviewedAt: true,
 		},
 	});
 	const approvalDedupRowsByTarget = new Map<string, typeof approvalDedupRows>();
 	for (const row of approvalDedupRows) {
-		const targetKey = cleanupDeleteTargetKey(row);
+		const targetKey = cleanupApprovalTargetKey(row);
 		const rows = approvalDedupRowsByTarget.get(targetKey);
 		if (rows) rows.push(row);
 		else approvalDedupRowsByTarget.set(targetKey, [row]);
@@ -5638,7 +5680,17 @@ async function executeWithApproval(
 					arrItemId: item.cacheItem.arrItemId,
 					itemType: item.cacheItem.itemType,
 					targetScope: item.episodeTarget ? "episode" : "series",
-					arrEpisodeId: item.episodeTarget?.arrEpisodeId ?? null,
+					...(item.episodeTarget
+						? item.match.action === "unmonitor"
+							? {
+									arrEpisodeId: item.episodeTarget.arrEpisodeId,
+									action: "unmonitor",
+								}
+							: {
+									episodeFileId: item.episodeTarget.episodeFileId,
+									AND: [{ OR: [{ action: null }, { action: { not: "unmonitor" } }] }],
+								}
+						: {}),
 					OR: orClauses,
 				},
 			});
@@ -5659,6 +5711,7 @@ async function executeWithApproval(
 					itemType: item.cacheItem.itemType,
 					targetScope: item.episodeTarget ? "episode" : "series",
 					arrEpisodeId: item.episodeTarget?.arrEpisodeId,
+					episodeFileId: item.episodeTarget?.episodeFileId,
 					seasonNumber: item.episodeTarget?.seasonNumber,
 					episodeNumber: item.episodeTarget?.episodeNumber,
 					title: item.cacheItem.title,
@@ -5809,6 +5862,9 @@ export async function executeDirectRemoval(
 				itemType: true,
 				targetScope: true,
 				arrEpisodeId: true,
+				episodeFileId: true,
+				action: true,
+				safetySnapshot: true,
 			},
 		});
 		const loadedDirectRetries = await prisma.libraryCleanupApproval.findMany({
@@ -5828,15 +5884,15 @@ export async function executeDirectRemoval(
 			},
 		});
 		for (const retry of executingDirectRetries) {
-			const targetKey = cleanupDeleteTargetKey(retry);
+			const targetKey = cleanupApprovalTargetKey(retry);
 			directRetryTargetKeys.add(targetKey);
 			inFlightDirectRetryTargetKeys.add(targetKey);
 		}
 		for (const retry of loadedDirectRetries) {
-			directRetryTargetKeys.add(cleanupDeleteTargetKey(retry));
+			directRetryTargetKeys.add(cleanupApprovalTargetKey(retry));
 		}
 		for (const retryTarget of nonterminalRetryTargets) {
-			directRetryTargetKeys.add(cleanupDeleteTargetKey(retryTarget));
+			directRetryTargetKeys.add(cleanupApprovalTargetKey(retryTarget));
 		}
 		const hasDistinctFreshCandidate = flagged.some(
 			(item) => !directRetryTargetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item))),
@@ -5866,7 +5922,7 @@ export async function executeDirectRemoval(
 	}
 
 	for (const retry of directRetries) {
-		const targetKey = cleanupDeleteTargetKey(retry);
+		const targetKey = cleanupApprovalTargetKey(retry);
 		selectedDirectRetryTargetKeys.add(targetKey);
 		try {
 			const retryResult = await executeQueuedCleanupItems(deps, userId, [retry.id], {
