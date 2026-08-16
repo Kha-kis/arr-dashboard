@@ -2043,6 +2043,7 @@ describe("verified Sonarr mutation handoff", () => {
 					instanceId?: string;
 					arrItemId?: number;
 					arrEpisodeId?: number;
+					episodeFileId?: number;
 					status?: string;
 					lastExecutionError?: string;
 				};
@@ -2054,6 +2055,7 @@ describe("verified Sonarr mutation handoff", () => {
 						(where.instanceId === undefined || retry.instanceId === where.instanceId) &&
 						(where.arrItemId === undefined || retry.arrItemId === where.arrItemId) &&
 						(where.arrEpisodeId === undefined || retry.arrEpisodeId === where.arrEpisodeId) &&
+						(where.episodeFileId === undefined || retry.episodeFileId === where.episodeFileId) &&
 						(where.status === undefined || retry.status === where.status) &&
 						(where.lastExecutionError === undefined ||
 							retry.lastExecutionError === where.lastExecutionError),
@@ -2431,6 +2433,7 @@ describe("verified Sonarr mutation handoff", () => {
 			instanceId: "sonarr-4k",
 			arrItemId: 201,
 			arrEpisodeId: 9_001,
+			episodeFileId: 3_001,
 			targetScope: "episode",
 			status: "expired",
 			lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
@@ -2460,6 +2463,42 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(intents).toHaveLength(1);
 		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("does not let an old unknown-unmonitor tombstone block a replacement episode file", async () => {
+		const fixture = makeSonarrDeps({ seriesPolicyAction: null });
+		const intents = configureRetryStore(fixture.deps);
+		intents.push({
+			id: "expired-unknown-old-file",
+			configId: "config-1",
+			instanceId: "sonarr-4k",
+			arrItemId: 201,
+			arrEpisodeId: 9_001,
+			episodeFileId: 2_999,
+			targetScope: "episode",
+			status: "expired",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+		});
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{
+				id: "config-1",
+				maxRemovalsPerRun: 10,
+				respectQuiSeeding: true,
+				rules: [episodeCleanupRule()],
+			} as never,
+			"user-1",
+			[directEpisodeFlaggedItem(fixture)],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result).toMatchObject({ itemsRemoved: 1, itemsFilesDeleted: 0, itemsSkipped: 0 });
+		expect(intents).toHaveLength(2);
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
 	});
 
 	it("deduplicates approval candidates by physical episode file using legacy snapshot identity", async () => {

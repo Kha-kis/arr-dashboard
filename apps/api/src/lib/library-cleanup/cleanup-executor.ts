@@ -2419,6 +2419,7 @@ async function persistAndClaimDirectMutationIntent(
 				arrItemId: item.cacheItem.arrItemId,
 				targetScope: "episode",
 				arrEpisodeId: item.episodeTarget.arrEpisodeId,
+				episodeFileId: item.episodeTarget.episodeFileId,
 				status: "expired",
 				lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
 			},
