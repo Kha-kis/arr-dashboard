@@ -241,24 +241,27 @@ function canonicalMetadata(value: AuditMetadata, field: string): string {
 	return JSON.stringify(Object.fromEntries(entries));
 }
 
+function boundedAuditDisplayString(value: string, maxLength: number): string {
+	if (value.length <= maxLength) return value;
+	return `${value.slice(0, maxLength - 1)}…`;
+}
+
 function validateSummary(summary: CleanupAuditSummary | undefined): CleanupAuditSummary {
 	if (!summary) return {};
-	if (summary.title !== undefined && summary.title.length > MAX_AUDIT_TITLE_LENGTH) {
-		throw new Error("Invalid cleanup audit title");
-	}
 	if (summary.ruleId !== undefined) assertAuditString(summary.ruleId, "rule id");
 	if (summary.ruleName !== undefined) assertAuditString(summary.ruleName, "rule name");
 	if (summary.action !== undefined)
 		assertAllowedAuditValue(summary.action, AUDIT_ACTIONS, "action");
-	if (summary.reason !== undefined && summary.reason.length > MAX_AUDIT_REASON_LENGTH) {
-		throw new Error("Invalid cleanup audit reason");
-	}
 	return {
-		...(summary.title === undefined ? {} : { title: summary.title }),
+		...(summary.title === undefined
+			? {}
+			: { title: boundedAuditDisplayString(summary.title, MAX_AUDIT_TITLE_LENGTH) }),
 		...(summary.ruleId === undefined ? {} : { ruleId: summary.ruleId }),
 		...(summary.ruleName === undefined ? {} : { ruleName: summary.ruleName }),
 		...(summary.action === undefined ? {} : { action: summary.action }),
-		...(summary.reason === undefined ? {} : { reason: summary.reason }),
+		...(summary.reason === undefined
+			? {}
+			: { reason: boundedAuditDisplayString(summary.reason, MAX_AUDIT_REASON_LENGTH) }),
 	};
 }
 
@@ -276,9 +279,9 @@ export function createCleanupTerminalAuditState(
 	) {
 		throw new Error("Cleanup terminal audit requires a terminal event type");
 	}
-	const reason = input.summary?.reason;
+	const summary = validateSummary(input.summary);
+	const reason = summary.reason;
 	if (!reason) throw new Error("Cleanup terminal audit requires a public transition reason");
-	validateSummary(input.summary);
 	assertAllowedAuditValue(input.actorType, AUDIT_ACTOR_TYPES, "actor type");
 	if (input.actorId !== undefined && input.actorId !== null) {
 		assertAuditString(input.actorId, "actor id");

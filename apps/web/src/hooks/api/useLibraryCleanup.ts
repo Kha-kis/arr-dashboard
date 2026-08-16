@@ -166,7 +166,7 @@ export function useCleanupExecute() {
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: (): Promise<ExecuteResult> => libraryCleanupApi.execute(),
-		onSuccess: () => {
+		onSettled: () => {
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.config });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.status });
 			queryClient.invalidateQueries({ queryKey: libraryCleanupKeys.logsAll });

@@ -5,6 +5,35 @@ import { executeDirectRemoval } from "../cleanup-executor.js";
 import { createArrServiceFingerprint } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
+vi.mock("../cleanup-audit.js", () => ({
+	appendCleanupAuditEvent: vi.fn().mockResolvedValue({}),
+	appendCleanupTerminalAuditEvent: vi.fn().mockResolvedValue({}),
+	createCleanupTerminalAuditState: vi.fn(
+		(input: {
+			actorId?: string | null;
+			actorType: string;
+			correlationId: string;
+			eventType: string;
+			outcome: string;
+			summary?: { reason?: string };
+			trigger: string;
+		}) => ({
+			terminalAuditCorrelationId: input.correlationId,
+			terminalAuditEventType: input.eventType,
+			terminalAuditOutcome: input.outcome,
+			terminalAuditActorType: input.actorType,
+			terminalAuditActorId: input.actorId ?? null,
+			terminalAuditTrigger: input.trigger,
+			terminalAuditReason: input.summary?.reason ?? null,
+			terminalAuditRecordedAt: null,
+		}),
+	),
+	createCleanupAuditEventKey: vi.fn(
+		(input: { actionId: string; correlationId: string; eventType: string }) =>
+			`${input.eventType}:${input.actionId}:${input.correlationId}`,
+	),
+}));
+
 type Service = "RADARR" | "SONARR";
 
 function cleanupRule(overrides: Record<string, unknown> = {}) {
@@ -194,6 +223,9 @@ function makeFixture(
 		} as unknown as CleanupExecutorDeps["arrClientFactory"],
 		log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"],
 	} satisfies CleanupExecutorDeps;
+	deps.prisma.$transaction = vi.fn(
+		async (callback) => await callback(deps.prisma as never),
+	) as never;
 	const flagged = {
 		cacheItem,
 		match: { ruleId: rule.id, ruleName: rule.name, reason: "Matched", action },

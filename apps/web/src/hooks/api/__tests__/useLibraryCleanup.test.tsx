@@ -139,4 +139,30 @@ describe("cleanup activity hooks", () => {
 		});
 		client.clear();
 	});
+
+	it("invalidates mutation-derived state when cleanup execution rejects", async () => {
+		const client = new QueryClient({
+			defaultOptions: { mutations: { retry: false }, queries: { retry: false } },
+		});
+		const invalidateQueries = vi.spyOn(client, "invalidateQueries");
+		vi.mocked(libraryCleanupApi.execute).mockRejectedValue(new Error("run lease lost"));
+
+		const { result } = renderHook(() => useCleanupExecute(), {
+			wrapper: createWrapper(client),
+		});
+		result.current.mutate();
+
+		await waitFor(() => expect(result.current.isError).toBe(true));
+		for (const queryKey of [
+			libraryCleanupKeys.config,
+			libraryCleanupKeys.status,
+			libraryCleanupKeys.logsAll,
+			libraryCleanupKeys.activityAll,
+			libraryCleanupKeys.approvalsAll,
+			libraryCleanupKeys.statisticsAll,
+		]) {
+			expect(invalidateQueries).toHaveBeenCalledWith({ queryKey });
+		}
+		client.clear();
+	});
 });

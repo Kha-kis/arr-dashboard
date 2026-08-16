@@ -238,18 +238,21 @@ describe("cleanup audit writer", () => {
 		expect(review).toMatchObject({ eventType: "approval_reviewed" });
 	});
 
-	it("rejects oversized operator-facing reasons before they can become audit payloads", async () => {
+	it("bounds oversized display fields before they become audit payloads", async () => {
 		const prisma = createAuditStore();
 
-		await expect(
-			appendCleanupAuditEvent(
-				prisma as never,
-				{
-					...eventInput(),
-					summary: { reason: "x".repeat(1025) },
-				} as never,
-			),
-		).rejects.toThrow("reason");
+		const event = await appendCleanupAuditEvent(
+			prisma as never,
+			{
+				...eventInput(),
+				summary: { title: "t".repeat(600), reason: "r".repeat(1200) },
+			} as never,
+		);
+
+		expect(event.summary.title).toHaveLength(512);
+		expect(event.summary.title?.endsWith("…")).toBe(true);
+		expect(event.summary.reason).toHaveLength(1024);
+		expect(event.summary.reason?.endsWith("…")).toBe(true);
 	});
 
 	it("returns the original immutable row for an identical event key retry", async () => {

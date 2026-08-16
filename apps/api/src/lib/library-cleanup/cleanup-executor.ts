@@ -1263,24 +1263,7 @@ function cleanupAuditSummary(
 	} as const;
 }
 
-async function appendCleanupAuditBestEffort(
-	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
-	input: Parameters<typeof appendCleanupAuditEvent>[1],
-): Promise<boolean> {
-	try {
-		await appendCleanupAuditEvent(deps.prisma, input);
-		return true;
-	} catch (error) {
-		deps.log.warn(
-			{ err: error, actionId: input.actionId, eventType: input.eventType },
-			"Cleanup audit append failed; authoritative cleanup state remains unchanged",
-		);
-		return false;
-	}
-}
-
-async function appendCleanupProposalAudit(
-	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+function buildCleanupProposalAuditInput(
 	userId: string,
 	approval: Pick<
 		LibraryCleanupApproval,
@@ -1301,10 +1284,10 @@ async function appendCleanupProposalAudit(
 		| "title"
 	>,
 	auditContext: CleanupAuditContext,
-): Promise<void> {
+): AppendCleanupAuditEventInput {
 	const correlationId = `proposal:${approval.id}`;
 	const eventType = "proposal_created" as const;
-	await appendCleanupAuditBestEffort(deps, {
+	return {
 		userId,
 		configId: approval.configId,
 		eventKey: createCleanupAuditEventKey({
@@ -1322,11 +1305,22 @@ async function appendCleanupProposalAudit(
 		summary: cleanupAuditSummary(approval),
 		outcome: "info",
 		evidence: { durableState: "created" },
-	});
+	};
 }
 
-async function appendCleanupClaimAudit(
-	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+async function appendCleanupProposalAudit(
+	deps: Pick<CleanupExecutorDeps, "prisma">,
+	userId: string,
+	approval: Parameters<typeof buildCleanupProposalAuditInput>[1],
+	auditContext: CleanupAuditContext,
+): Promise<void> {
+	await appendCleanupAuditEvent(
+		deps.prisma,
+		buildCleanupProposalAuditInput(userId, approval, auditContext),
+	);
+}
+
+function buildCleanupClaimAuditInput(
 	userId: string,
 	approval: Pick<
 		LibraryCleanupApproval,
@@ -1348,9 +1342,9 @@ async function appendCleanupClaimAudit(
 	>,
 	correlationId: string,
 	auditContext: CleanupAuditContext,
-): Promise<void> {
+): AppendCleanupAuditEventInput {
 	const eventType = "claim" as const;
-	await appendCleanupAuditBestEffort(deps, {
+	return {
 		userId,
 		configId: approval.configId,
 		eventKey: createCleanupAuditEventKey({
@@ -1368,18 +1362,18 @@ async function appendCleanupClaimAudit(
 		summary: cleanupAuditSummary(approval),
 		outcome: "info",
 		evidence: { executionClaimed: true },
-	});
+	};
 }
 
 async function appendCleanupMutationStartedAudit(
-	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+	deps: Pick<CleanupExecutorDeps, "prisma">,
 	userId: string,
-	approval: Parameters<typeof appendCleanupClaimAudit>[2],
+	approval: Parameters<typeof buildCleanupClaimAuditInput>[1],
 	correlationId: string,
 	auditContext: CleanupAuditContext,
 ): Promise<void> {
 	const eventType = "mutation_started" as const;
-	await appendCleanupAuditBestEffort(deps, {
+	await appendCleanupAuditEvent(deps.prisma, {
 		userId,
 		configId: approval.configId,
 		eventKey: createCleanupAuditEventKey({
@@ -1396,14 +1390,14 @@ async function appendCleanupMutationStartedAudit(
 		target: cleanupAuditTarget(approval),
 		summary: cleanupAuditSummary(approval),
 		outcome: "info",
-		evidence: { liveAuthorityVerified: true },
+		evidence: { durableMutationIntent: true, finalAuthorityPending: true },
 	});
 }
 
 async function appendCleanupTerminalAudit(
 	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
 	userId: string,
-	approval: Parameters<typeof appendCleanupClaimAudit>[2],
+	approval: Parameters<typeof buildCleanupClaimAuditInput>[1],
 	correlationId: string,
 	outcome: "success" | "blocked" | "failed",
 	auditContext: CleanupAuditContext,
@@ -1450,7 +1444,7 @@ function cleanupTerminalReason(
 
 function buildCleanupTerminalAuditInput(
 	userId: string,
-	approval: Parameters<typeof appendCleanupClaimAudit>[2],
+	approval: Parameters<typeof buildCleanupClaimAuditInput>[1],
 	correlationId: string,
 	outcome: "success" | "blocked" | "failed",
 	auditContext: CleanupAuditContext,
@@ -1482,7 +1476,7 @@ function buildCleanupTerminalAuditInput(
 
 function buildCleanupTerminalAuditState(
 	userId: string,
-	approval: Parameters<typeof appendCleanupClaimAudit>[2],
+	approval: Parameters<typeof buildCleanupClaimAuditInput>[1],
 	correlationId: string,
 	outcome: "success" | "blocked" | "failed",
 	auditContext: CleanupAuditContext,
@@ -1513,10 +1507,9 @@ const CLEAR_CLEANUP_TERMINAL_AUDIT_STATE = {
 	terminalAuditRecordedAt: null,
 } as const;
 
-async function appendCleanupFailureAudit(
-	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+function buildCleanupFailureAuditInput(
 	userId: string,
-	approval: Parameters<typeof appendCleanupClaimAudit>[2],
+	approval: Parameters<typeof buildCleanupClaimAuditInput>[1],
 	correlationId: string,
 	auditContext: CleanupAuditContext,
 	options: {
@@ -1525,9 +1518,9 @@ async function appendCleanupFailureAudit(
 		reason: string;
 		outcome?: "blocked" | "failed";
 	},
-): Promise<void> {
+): AppendCleanupAuditEventInput {
 	const eventType = "failed" as const;
-	await appendCleanupAuditBestEffort(deps, {
+	return {
 		userId,
 		configId: approval.configId,
 		eventKey: createCleanupAuditEventKey({
@@ -1549,6 +1542,39 @@ async function appendCleanupFailureAudit(
 			mutationAttempted: options.mutationAttempted,
 			retryableStatePersisted: true,
 		},
+	};
+}
+
+async function persistCleanupFailureTransition(
+	deps: Pick<CleanupExecutorDeps, "prisma">,
+	userId: string,
+	approval: Parameters<typeof buildCleanupClaimAuditInput>[1],
+	executeStatus: "executing" | "retry_executing",
+	executionToken: string,
+	data: Prisma.LibraryCleanupApprovalUpdateManyMutationInput,
+	correlationId: string,
+	auditContext: CleanupAuditContext,
+	options: Parameters<typeof buildCleanupFailureAuditInput>[4],
+): Promise<void> {
+	const auditInput = buildCleanupFailureAuditInput(
+		userId,
+		approval,
+		correlationId,
+		auditContext,
+		options,
+	);
+	await deps.prisma.$transaction(async (tx) => {
+		const update = await tx.libraryCleanupApproval.updateMany({
+			where: {
+				id: approval.id,
+				config: { userId },
+				status: executeStatus,
+				executionToken,
+			},
+			data,
+		});
+		if (update.count !== 1) throw new CleanupApprovalOwnershipLostError();
+		await appendCleanupAuditEvent(tx, auditInput);
 	});
 }
 
@@ -1787,7 +1813,8 @@ export function buildDedupOrClauses(
 	now: Date = new Date(),
 ): Prisma.LibraryCleanupApprovalWhereInput[] {
 	const clauses: Prisma.LibraryCleanupApprovalWhereInput[] = [
-		{ status: { in: ["pending", "approved", "executing"] } },
+		{ status: "pending", expiresAt: { gt: now } },
+		{ status: { in: ["approved", "executing"] } },
 	];
 	if (memWindow.mode === "forever") {
 		clauses.push({ status: "rejected" });
@@ -2171,58 +2198,82 @@ async function persistAndClaimDirectMutationIntent(
 	let createdIntent: LibraryCleanupApproval | null = null;
 
 	try {
-		createdIntent = await deps.prisma.libraryCleanupApproval.create({
-			data: {
-				id: intentId,
-				configId: config.id,
-				instanceId: item.cacheItem.instanceId,
-				arrItemId: item.cacheItem.arrItemId,
-				itemType: item.cacheItem.itemType,
-				targetScope: item.episodeTarget ? "episode" : "series",
-				arrEpisodeId: item.episodeTarget?.arrEpisodeId,
-				episodeFileId: item.episodeTarget?.episodeFileId,
-				seasonNumber: item.episodeTarget?.seasonNumber,
-				episodeNumber: item.episodeTarget?.episodeNumber,
-				title: item.cacheItem.title,
-				episodeTitle: item.episodeTarget?.episodeTitle,
-				matchedRuleId: item.match.ruleId,
-				matchedRuleName: item.match.ruleName,
-				reason: item.match.reason,
-				action: item.match.action,
-				sizeOnDisk: item.cacheItem.sizeOnDisk,
-				year: item.cacheItem.year,
-				rating: item.rating,
-				status: "retry_pending",
-				safetySnapshot: serializeExecutableSafetyPlan(executablePlan, providerEvidence),
-				lastExecutionError: null,
-				expiresAt: new Date(now.getTime() + APPROVAL_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
-			},
+		createdIntent = await deps.prisma.$transaction(async (tx) => {
+			const intent = await tx.libraryCleanupApproval.create({
+				data: {
+					id: intentId,
+					configId: config.id,
+					instanceId: item.cacheItem.instanceId,
+					arrItemId: item.cacheItem.arrItemId,
+					itemType: item.cacheItem.itemType,
+					targetScope: item.episodeTarget ? "episode" : "series",
+					arrEpisodeId: item.episodeTarget?.arrEpisodeId,
+					episodeFileId: item.episodeTarget?.episodeFileId,
+					seasonNumber: item.episodeTarget?.seasonNumber,
+					episodeNumber: item.episodeTarget?.episodeNumber,
+					title: item.cacheItem.title,
+					episodeTitle: item.episodeTarget?.episodeTitle,
+					matchedRuleId: item.match.ruleId,
+					matchedRuleName: item.match.ruleName,
+					reason: item.match.reason,
+					action: item.match.action,
+					sizeOnDisk: item.cacheItem.sizeOnDisk,
+					year: item.cacheItem.year,
+					rating: item.rating,
+					status: "retry_pending",
+					safetySnapshot: serializeExecutableSafetyPlan(executablePlan, providerEvidence),
+					lastExecutionError: null,
+					expiresAt: new Date(now.getTime() + APPROVAL_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+				},
+			});
+			await appendCleanupAuditEvent(
+				tx,
+				buildCleanupProposalAuditInput(userId, intent, auditContext),
+			);
+			return intent;
 		});
 	} catch (error) {
 		if ((error as { code?: string }).code !== "P2002") throw error;
 	}
-	if (createdIntent) {
-		await appendCleanupProposalAudit(deps, userId, createdIntent, auditContext);
+	const intent =
+		createdIntent ??
+		(await deps.prisma.libraryCleanupApproval.findFirst({
+			where: { id: intentId, config: { userId } },
+		}));
+	if (!intent) throw new Error("Cleanup mutation intent could not be loaded after persistence");
+	if (!createdIntent) {
+		await appendCleanupProposalAudit(deps, userId, intent, auditContext);
 	}
 
-	const claim = await deps.prisma.libraryCleanupApproval.updateMany({
-		where: {
-			id: intentId,
-			config: { userId },
-			status: "retry_pending",
-		},
-		data: {
-			status: "retry_executing",
-			reviewedAt: now,
-			executionToken,
-			executionAuditCorrelationId,
-			reconciledWithoutMutation: false,
-			...CLEAR_CLEANUP_TERMINAL_AUDIT_STATE,
-		},
+	const claimAuditInput = buildCleanupClaimAuditInput(
+		userId,
+		intent,
+		executionAuditCorrelationId,
+		auditContext,
+	);
+	const claimed = await deps.prisma.$transaction(async (tx) => {
+		const claim = await tx.libraryCleanupApproval.updateMany({
+			where: {
+				id: intentId,
+				config: { userId },
+				status: "retry_pending",
+			},
+			data: {
+				status: "retry_executing",
+				reviewedAt: now,
+				executionToken,
+				executionAuditCorrelationId,
+				reconciledWithoutMutation: false,
+				...CLEAR_CLEANUP_TERMINAL_AUDIT_STATE,
+			},
+		});
+		if (claim.count !== 1) return false;
+		await appendCleanupAuditEvent(tx, claimAuditInput);
+		return true;
 	});
 	return {
 		id: intentId,
-		claimed: claim.count === 1,
+		claimed,
 		executionToken,
 		executionAuditCorrelationId,
 	};
@@ -4082,6 +4133,7 @@ async function executeQueuedCleanupItems(
 	// Also enforce expiry — don't execute items past their expiration
 	const now = new Date();
 	const claimedApprovalIds: string[] = [];
+	const claimedApprovals: LibraryCleanupApproval[] = [];
 	const claimedApprovalTokens = new Map<string, string>();
 	const claimedAuditCorrelationIds = new Map<string, string>();
 	const mutationAttemptedApprovalIds = new Set<string>();
@@ -4093,25 +4145,52 @@ async function executeQueuedCleanupItems(
 		try {
 			const executionToken = randomUUID();
 			const executionAuditCorrelationId = options.claimExecutionToken ?? randomUUID();
-			const claim = await prisma.libraryCleanupApproval.updateMany({
-				where: {
-					id: approvalId,
-					config: { userId },
-					status: options.claimStatus,
-					...(options.claimExecutionToken ? { executionToken: options.claimExecutionToken } : {}),
-					...(options.enforceExpiry ? { expiresAt: { gt: now } } : {}),
-				},
-				data: {
-					status: options.executeStatus,
-					reviewedAt: now,
-					executionToken,
-					executionAuditCorrelationId,
-					reconciledWithoutMutation: false,
-					...CLEAR_CLEANUP_TERMINAL_AUDIT_STATE,
-				},
+			const claimWhere = {
+				id: approvalId,
+				config: { userId },
+				status: options.claimStatus,
+				...(options.claimExecutionToken ? { executionToken: options.claimExecutionToken } : {}),
+				...(options.enforceExpiry ? { expiresAt: { gt: now } } : {}),
+			} as const;
+			const [approval] = await prisma.libraryCleanupApproval.findMany({
+				where: claimWhere,
+				take: 1,
 			});
-			if (claim.count === 1) {
+			if (!approval) {
+				unclaimedIds.push(approvalId);
+				continue;
+			}
+			const claimAuditInput = buildCleanupClaimAuditInput(
+				userId,
+				approval,
+				executionAuditCorrelationId,
+				options.auditContext,
+			);
+			const claimed = await prisma.$transaction(async (tx) => {
+				const claim = await tx.libraryCleanupApproval.updateMany({
+					where: {
+						id: approvalId,
+						config: { userId },
+						status: options.claimStatus,
+						...(options.claimExecutionToken ? { executionToken: options.claimExecutionToken } : {}),
+						...(options.enforceExpiry ? { expiresAt: { gt: now } } : {}),
+					},
+					data: {
+						status: options.executeStatus,
+						reviewedAt: now,
+						executionToken,
+						executionAuditCorrelationId,
+						reconciledWithoutMutation: false,
+						...CLEAR_CLEANUP_TERMINAL_AUDIT_STATE,
+					},
+				});
+				if (claim.count !== 1) return false;
+				await appendCleanupAuditEvent(tx, claimAuditInput);
+				return true;
+			});
+			if (claimed) {
 				claimedApprovalIds.push(approvalId);
+				claimedApprovals.push(approval);
 				claimedApprovalTokens.set(approvalId, executionToken);
 				claimedAuditCorrelationIds.set(approvalId, executionAuditCorrelationId);
 			} else unclaimedIds.push(approvalId);
@@ -4135,13 +4214,7 @@ async function executeQueuedCleanupItems(
 	}
 
 	try {
-		const approvals = await prisma.libraryCleanupApproval.findMany({
-			where: {
-				id: { in: claimedApprovalIds },
-				config: { userId },
-				status: options.executeStatus,
-			},
-		});
+		const approvals = claimedApprovals;
 
 		let removed = 0;
 		let failed = claimErrors.length;
@@ -4158,13 +4231,6 @@ async function executeQueuedCleanupItems(
 				unclaimedIds.push(approval.id);
 				continue;
 			}
-			await appendCleanupClaimAudit(
-				deps,
-				userId,
-				approval,
-				executionAuditCorrelationId,
-				options.auditContext,
-			);
 			let instance: ServiceInstance | null = null;
 			try {
 				instance = await prisma.serviceInstance.findFirst({
@@ -4182,10 +4248,10 @@ async function executeQueuedCleanupItems(
 				errors.push(executionError);
 				failed++;
 				try {
-					await updateClaimedCleanupApproval(
-						prisma,
+					await persistCleanupFailureTransition(
+						deps,
 						userId,
-						approval.id,
+						approval,
 						options.executeStatus,
 						claimedExecutionToken,
 						{
@@ -4193,11 +4259,6 @@ async function executeQueuedCleanupItems(
 							executionToken: null,
 							lastExecutionError: executionError,
 						},
-					);
-					await appendCleanupFailureAudit(
-						deps,
-						userId,
-						approval,
 						executionAuditCorrelationId,
 						options.auditContext,
 						{
@@ -4229,10 +4290,10 @@ async function executeQueuedCleanupItems(
 					"Approved cleanup item has an invalid mutation shape",
 				);
 				try {
-					await updateClaimedCleanupApproval(
-						prisma,
+					await persistCleanupFailureTransition(
+						deps,
 						userId,
-						approval.id,
+						approval,
 						options.executeStatus,
 						claimedExecutionToken,
 						{
@@ -4240,11 +4301,6 @@ async function executeQueuedCleanupItems(
 							executionToken: null,
 							lastExecutionError: executionError,
 						},
-					);
-					await appendCleanupFailureAudit(
-						deps,
-						userId,
-						approval,
 						executionAuditCorrelationId,
 						options.auditContext,
 						{
@@ -4560,31 +4616,29 @@ async function executeQueuedCleanupItems(
 					"Approved cleanup item blocked by shared-media safety check",
 				);
 				try {
-					await updateClaimedCleanupApproval(
-						prisma,
-						userId,
-						approval.id,
-						options.executeStatus,
-						claimedExecutionToken,
-						{
-							status: approvalIdentityChanged ? "expired" : options.retryStatus,
-							executionToken: null,
-							...(approvalIdentityChanged ? { reviewedAt: new Date() } : {}),
-							lastExecutionError: sharedPlexBlock,
-							...(approvalIdentityChanged
-								? buildCleanupTerminalAuditState(
-										userId,
-										approval,
-										executionAuditCorrelationId,
-										"blocked",
-										options.auditContext,
-										false,
-										sharedPlexBlock,
-									)
-								: {}),
-						},
-					);
 					if (approvalIdentityChanged) {
+						await updateClaimedCleanupApproval(
+							prisma,
+							userId,
+							approval.id,
+							options.executeStatus,
+							claimedExecutionToken,
+							{
+								status: "expired",
+								executionToken: null,
+								reviewedAt: new Date(),
+								lastExecutionError: sharedPlexBlock,
+								...buildCleanupTerminalAuditState(
+									userId,
+									approval,
+									executionAuditCorrelationId,
+									"blocked",
+									options.auditContext,
+									false,
+									sharedPlexBlock,
+								),
+							},
+						);
 						expiredIds.push(approval.id);
 						await appendCleanupTerminalAudit(
 							deps,
@@ -4597,10 +4651,17 @@ async function executeQueuedCleanupItems(
 							sharedPlexBlock,
 						);
 					} else {
-						await appendCleanupFailureAudit(
+						await persistCleanupFailureTransition(
 							deps,
 							userId,
 							approval,
+							options.executeStatus,
+							claimedExecutionToken,
+							{
+								status: options.retryStatus,
+								executionToken: null,
+								lastExecutionError: sharedPlexBlock,
+							},
 							executionAuditCorrelationId,
 							options.auditContext,
 							{
@@ -4744,7 +4805,6 @@ async function executeQueuedCleanupItems(
 									)
 								: assertMutationAuthority;
 				const assertMutationAuthorityWithAudit: MutationAuthorityCheck = async (evidence) => {
-					const authorizedResource = await assertDestructiveMutationAuthority(evidence);
 					if (!mutationStartedAuditAttempted) {
 						mutationStartedAuditAttempted = true;
 						await appendCleanupMutationStartedAudit(
@@ -4755,7 +4815,7 @@ async function executeQueuedCleanupItems(
 							options.auditContext,
 						);
 					}
-					return authorizedResource;
+					return await assertDestructiveMutationAuthority(evidence);
 				};
 
 				if (retryTargetAlreadyAbsent) {
@@ -4952,10 +5012,10 @@ async function executeQueuedCleanupItems(
 				if (error instanceof CleanupRunLeaseLostError) {
 					const leaseError = "Cleanup execution paused because its database run lease was lost.";
 					try {
-						await updateClaimedCleanupApproval(
-							prisma,
+						await persistCleanupFailureTransition(
+							deps,
 							userId,
-							approval.id,
+							approval,
 							options.executeStatus,
 							claimedExecutionToken,
 							{
@@ -4963,11 +5023,6 @@ async function executeQueuedCleanupItems(
 								executionToken: null,
 								lastExecutionError: leaseError,
 							},
-						);
-						await appendCleanupFailureAudit(
-							deps,
-							userId,
-							approval,
 							executionAuditCorrelationId,
 							options.auditContext,
 							{
@@ -5087,37 +5142,29 @@ async function executeQueuedCleanupItems(
 				);
 				let retryStatePersisted = false;
 				try {
-					await updateClaimedCleanupApproval(
-						prisma,
-						userId,
-						approval.id,
-						options.executeStatus,
-						claimedExecutionToken,
-						{
-							status: nextFailureStatus,
-							executionToken: null,
-							lastExecutionError: executionError,
-							...(mutationAuthorityChanged ? { reviewedAt: new Date() } : {}),
-							...(mutationAuthorityChanged
-								? buildCleanupTerminalAuditState(
-										userId,
-										approval,
-										executionAuditCorrelationId,
-										"blocked",
-										options.auditContext,
-										false,
-										executionError,
-									)
-								: {}),
-							...(postPartialRetrySnapshot || postEpisodeUnmonitorSnapshot
-								? {
-										safetySnapshot: postPartialRetrySnapshot ?? postEpisodeUnmonitorSnapshot,
-									}
-								: {}),
-						},
-					);
-					retryStatePersisted = true;
 					if (mutationAuthorityChanged) {
+						await updateClaimedCleanupApproval(
+							prisma,
+							userId,
+							approval.id,
+							options.executeStatus,
+							claimedExecutionToken,
+							{
+								status: "expired",
+								executionToken: null,
+								lastExecutionError: executionError,
+								reviewedAt: new Date(),
+								...buildCleanupTerminalAuditState(
+									userId,
+									approval,
+									executionAuditCorrelationId,
+									"blocked",
+									options.auditContext,
+									false,
+									executionError,
+								),
+							},
+						);
 						expiredIds.push(approval.id);
 						await appendCleanupTerminalAudit(
 							deps,
@@ -5130,10 +5177,22 @@ async function executeQueuedCleanupItems(
 							executionError,
 						);
 					} else {
-						await appendCleanupFailureAudit(
+						await persistCleanupFailureTransition(
 							deps,
 							userId,
 							approval,
+							options.executeStatus,
+							claimedExecutionToken,
+							{
+								status: nextFailureStatus,
+								executionToken: null,
+								lastExecutionError: executionError,
+								...(postPartialRetrySnapshot || postEpisodeUnmonitorSnapshot
+									? {
+											safetySnapshot: postPartialRetrySnapshot ?? postEpisodeUnmonitorSnapshot,
+										}
+									: {}),
+							},
 							executionAuditCorrelationId,
 							options.auditContext,
 							{
@@ -5143,6 +5202,7 @@ async function executeQueuedCleanupItems(
 							},
 						);
 					}
+					retryStatePersisted = true;
 				} catch (revertErr) {
 					errors.push(
 						"Cleanup files changed, but arr-dashboard could not record retry state. Cached file state was left unchanged.",
@@ -7532,7 +7592,8 @@ async function loadApprovalSelectionState(
 					configId: config.id,
 					config: { userId },
 					OR: [
-						{ status: { in: ["pending", "approved", "executing"] } },
+						{ status: "pending", expiresAt: { gt: now } },
+						{ status: { in: ["approved", "executing"] } },
 						...(remembersForever
 							? [{ status: "rejected" }]
 							: maxRememberedDays > 0
@@ -7706,6 +7767,9 @@ async function executeWithApproval(
 			});
 
 			if (existing) {
+				if (existing.status === "pending") {
+					await appendCleanupProposalAudit(deps, config.userId, existing, auditContext);
+				}
 				details.push(
 					buildDetail(item, "skipped", buildApprovalDedupSkipReason(existing.status, memWindow)),
 				);
@@ -7713,38 +7777,44 @@ async function executeWithApproval(
 				continue;
 			}
 
-			const approval = await prisma.libraryCleanupApproval.create({
-				data: {
-					configId: config.id,
-					instanceId: item.cacheItem.instanceId,
-					arrItemId: item.cacheItem.arrItemId,
-					itemType: item.cacheItem.itemType,
-					targetScope: item.episodeTarget ? "episode" : "series",
-					arrEpisodeId: item.episodeTarget?.arrEpisodeId,
-					episodeFileId: item.episodeTarget?.episodeFileId,
-					seasonNumber: item.episodeTarget?.seasonNumber,
-					episodeNumber: item.episodeTarget?.episodeNumber,
-					title: item.cacheItem.title,
-					episodeTitle: item.episodeTarget?.episodeTitle,
-					matchedRuleId: item.match.ruleId,
-					matchedRuleName: item.match.ruleName,
-					reason: item.match.reason,
-					action: item.match.action,
-					sizeOnDisk: item.cacheItem.sizeOnDisk,
-					year: item.cacheItem.year,
-					rating: item.rating,
-					status: "pending",
-					safetySnapshot: serializeExecutableSafetyPlan(
-						asExecutableSafetyPlan(safetyPlans.get(targetKey)) ??
-							(() => {
-								throw new Error("No executable cleanup safety plan was produced");
-							})(),
-						providerEvidence,
-					),
-					expiresAt,
-				},
+			await prisma.$transaction(async (tx) => {
+				const created = await tx.libraryCleanupApproval.create({
+					data: {
+						configId: config.id,
+						instanceId: item.cacheItem.instanceId,
+						arrItemId: item.cacheItem.arrItemId,
+						itemType: item.cacheItem.itemType,
+						targetScope: item.episodeTarget ? "episode" : "series",
+						arrEpisodeId: item.episodeTarget?.arrEpisodeId,
+						episodeFileId: item.episodeTarget?.episodeFileId,
+						seasonNumber: item.episodeTarget?.seasonNumber,
+						episodeNumber: item.episodeTarget?.episodeNumber,
+						title: item.cacheItem.title,
+						episodeTitle: item.episodeTarget?.episodeTitle,
+						matchedRuleId: item.match.ruleId,
+						matchedRuleName: item.match.ruleName,
+						reason: item.match.reason,
+						action: item.match.action,
+						sizeOnDisk: item.cacheItem.sizeOnDisk,
+						year: item.cacheItem.year,
+						rating: item.rating,
+						status: "pending",
+						safetySnapshot: serializeExecutableSafetyPlan(
+							asExecutableSafetyPlan(safetyPlans.get(targetKey)) ??
+								(() => {
+									throw new Error("No executable cleanup safety plan was produced");
+								})(),
+							providerEvidence,
+						),
+						expiresAt,
+					},
+				});
+				await appendCleanupAuditEvent(
+					tx,
+					buildCleanupProposalAuditInput(config.userId, created, auditContext),
+				);
+				return created;
 			});
-			await appendCleanupProposalAudit(deps, config.userId, approval, auditContext);
 
 			details.push(buildDetail(item, "queued_for_approval"));
 			queued++;
@@ -8163,14 +8233,6 @@ export async function executeDirectRemoval(
 			reason: item.match.reason,
 			action: ruleAction,
 		} as const;
-		await appendCleanupClaimAudit(
-			deps,
-			userId,
-			directAuditApproval,
-			directMutationAuditCorrelationId,
-			auditContext,
-		);
-
 		let directMutationStartedAuditAttempted = false;
 		try {
 			await assertRunLease?.();
@@ -8280,7 +8342,6 @@ export async function executeDirectRemoval(
 								)
 							: assertDirectExecutionAuthority;
 			const assertDirectMutationAuthorityWithAudit: MutationAuthorityCheck = async (evidence) => {
-				const authorizedResource = await assertDestructiveMutationAuthority(evidence);
 				if (!directMutationStartedAuditAttempted) {
 					directMutationStartedAuditAttempted = true;
 					await appendCleanupMutationStartedAudit(
@@ -8291,7 +8352,7 @@ export async function executeDirectRemoval(
 						auditContext,
 					);
 				}
-				return authorizedResource;
+				return await assertDestructiveMutationAuthority(evidence);
 			};
 
 			let directReconciledWithoutMutation = false;
@@ -8472,10 +8533,10 @@ export async function executeDirectRemoval(
 			if (error instanceof CleanupRunLeaseLostError) {
 				const leaseError = "Cleanup execution paused because its database run lease was lost.";
 				try {
-					await updateClaimedCleanupApproval(
-						prisma,
+					await persistCleanupFailureTransition(
+						deps,
 						userId,
-						directMutationIntentId,
+						directAuditApproval,
 						"retry_executing",
 						directMutationExecutionToken,
 						{
@@ -8483,11 +8544,6 @@ export async function executeDirectRemoval(
 							executionToken: null,
 							lastExecutionError: leaseError,
 						},
-					);
-					await appendCleanupFailureAudit(
-						deps,
-						userId,
-						directAuditApproval,
 						directMutationAuditCorrelationId,
 						auditContext,
 						{
@@ -8567,10 +8623,10 @@ export async function executeDirectRemoval(
 							)
 						: undefined;
 				try {
-					await updateClaimedCleanupApproval(
-						prisma,
+					await persistCleanupFailureTransition(
+						deps,
 						userId,
-						directMutationIntentId,
+						directAuditApproval,
 						"retry_executing",
 						directMutationExecutionToken,
 						{
@@ -8581,11 +8637,6 @@ export async function executeDirectRemoval(
 								? { safetySnapshot: postEpisodeUnmonitorSnapshot }
 								: {}),
 						},
-					);
-					await appendCleanupFailureAudit(
-						deps,
-						userId,
-						directAuditApproval,
 						directMutationAuditCorrelationId,
 						auditContext,
 						{
@@ -8630,10 +8681,10 @@ export async function executeDirectRemoval(
 				);
 				let retryPersistenceSucceeded = true;
 				try {
-					await updateClaimedCleanupApproval(
-						prisma,
+					await persistCleanupFailureTransition(
+						deps,
 						userId,
-						directMutationIntentId,
+						directAuditApproval,
 						"retry_executing",
 						directMutationExecutionToken,
 						{
@@ -8641,6 +8692,13 @@ export async function executeDirectRemoval(
 							executionToken: null,
 							lastExecutionError: error.message,
 							...(postPartialRetrySnapshot ? { safetySnapshot: postPartialRetrySnapshot } : {}),
+						},
+						directMutationAuditCorrelationId,
+						auditContext,
+						{
+							durableStatus: "retry_pending",
+							mutationAttempted: directMutationStartedAuditAttempted,
+							reason: error.message,
 						},
 					);
 				} catch (retryError) {
@@ -8657,18 +8715,6 @@ export async function executeDirectRemoval(
 					);
 				}
 				if (retryPersistenceSucceeded) {
-					await appendCleanupFailureAudit(
-						deps,
-						userId,
-						directAuditApproval,
-						directMutationAuditCorrelationId,
-						auditContext,
-						{
-							durableStatus: "retry_pending",
-							mutationAttempted: directMutationStartedAuditAttempted,
-							reason: error.message,
-						},
-					);
 					await reconcilePartialFileDeletion(
 						prisma,
 						instance,
@@ -8759,10 +8805,10 @@ export async function executeDirectRemoval(
 			consecutiveFailures++;
 			const directExecutionError = `Action failed: ${getErrorMessage(error)}`;
 			try {
-				await updateClaimedCleanupApproval(
-					prisma,
+				await persistCleanupFailureTransition(
+					deps,
 					userId,
-					directMutationIntentId,
+					directAuditApproval,
 					"retry_executing",
 					directMutationExecutionToken,
 					{
@@ -8770,11 +8816,6 @@ export async function executeDirectRemoval(
 						executionToken: null,
 						lastExecutionError: directExecutionError,
 					},
-				);
-				await appendCleanupFailureAudit(
-					deps,
-					userId,
-					directAuditApproval,
 					directMutationAuditCorrelationId,
 					auditContext,
 					{

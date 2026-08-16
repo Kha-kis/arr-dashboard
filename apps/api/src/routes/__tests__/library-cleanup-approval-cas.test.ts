@@ -87,10 +87,11 @@ describe("library cleanup approval compare-and-set routes", () => {
 		setupAuthInjection(app);
 		registerTestErrorHandler(app);
 		app.decorate("prisma", {
+			$transaction: vi.fn(async (callback) => await callback(app.prisma)),
 			libraryCleanupApproval: {
 				updateMany,
-				findFirst: vi.fn().mockResolvedValue({
-					id: "approval-1",
+				findFirst: vi.fn(async ({ where }: { where: { id: string } }) => ({
+					id: where.id,
 					configId: "config-1",
 					instanceId: "radarr-1",
 					arrItemId: 101,
@@ -105,30 +106,36 @@ describe("library cleanup approval compare-and-set routes", () => {
 					matchedRuleName: "Cleanup",
 					reason: "Matched",
 					action: "delete",
-				}),
+				})),
 				findMany: vi.fn(
-					async ({ where }: { where: { status?: string; OR?: Array<{ status: string }> } }) => [
-						{
-							id: "retry-1",
-							instanceId: "radarr-1",
-							arrItemId: 101,
-							itemType: "movie",
-							title: "Example Movie",
-							matchedRuleId: "rule-1",
-							matchedRuleName: "Cleanup",
-							reason: "Matched",
-							action: "delete",
-							sizeOnDisk: 1000n,
-							year: 2024,
-							rating: 8,
-							status: where.status ?? "executed",
-							lastExecutionError: "Radarr is unavailable",
-							reviewedAt: new Date(),
-							executedAt: null,
-							createdAt: new Date(),
-							expiresAt: new Date(Date.now() + 60_000),
-						},
-					],
+					async ({
+						where,
+					}: {
+						where: { id?: { in: string[] }; status?: string; OR?: Array<{ status: string }> };
+					}) =>
+						where.id?.in && where.status && where.status !== status
+							? []
+							: (where.id?.in ?? ["retry-1"]).map((id) => ({
+									id,
+									configId: "config-1",
+									instanceId: "radarr-1",
+									arrItemId: 101,
+									itemType: "movie",
+									title: "Example Movie",
+									matchedRuleId: "rule-1",
+									matchedRuleName: "Cleanup",
+									reason: "Matched",
+									action: "delete",
+									sizeOnDisk: 1000n,
+									year: 2024,
+									rating: 8,
+									status: where.status ?? "executed",
+									lastExecutionError: "Radarr is unavailable",
+									reviewedAt: new Date(),
+									executedAt: null,
+									createdAt: new Date(),
+									expiresAt: new Date(Date.now() + 60_000),
+								})),
 				),
 				count: vi.fn().mockResolvedValue(1),
 			},
@@ -188,7 +195,7 @@ describe("library cleanup approval compare-and-set routes", () => {
 		);
 	});
 
-	it("does not let an audit outage block an authorized approval execution", async () => {
+	it("fails closed before approval execution when the operator audit cannot be persisted", async () => {
 		auditMocks.appendCleanupAuditEvent.mockRejectedValueOnce(new Error("audit unavailable"));
 
 		const response = await createInjectAuthenticated(app)(
@@ -196,8 +203,8 @@ describe("library cleanup approval compare-and-set routes", () => {
 			"/library-cleanup/approval-queue/approval-1/approve",
 		);
 
-		expect(response.statusCode).toBe(200);
-		expect(executorMocks.executeApprovedItems).toHaveBeenCalledOnce();
+		expect(response.statusCode).toBe(500);
+		expect(executorMocks.executeApprovedItems).not.toHaveBeenCalled();
 	});
 
 	it("records a rejected review only after its durable transition", async () => {
@@ -207,14 +214,13 @@ describe("library cleanup approval compare-and-set routes", () => {
 		);
 
 		expect(response.statusCode).toBe(204);
-		expect(auditMocks.appendCleanupTerminalAuditEvent).toHaveBeenCalledWith(
+		expect(auditMocks.appendCleanupAuditEvent).toHaveBeenCalledWith(
 			app.prisma,
 			expect.objectContaining({
 				eventType: "approval_reviewed",
 				outcome: "blocked",
 				evidence: { decision: "rejected" },
 			}),
-			{ approvalId: "approval-1", status: "rejected" },
 		);
 		expect(updateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -226,33 +232,22 @@ describe("library cleanup approval compare-and-set routes", () => {
 					terminalAuditActorId: "user-1",
 					terminalAuditTrigger: "approval",
 					terminalAuditReason: "Rejected by the operator",
-					terminalAuditRecordedAt: null,
+					terminalAuditRecordedAt: expect.any(Date),
 				}),
 			}),
 		);
 	});
 
-	it("leaves a rejected review durably repairable when its terminal append is unavailable", async () => {
-		auditMocks.appendCleanupTerminalAuditEvent.mockRejectedValueOnce(
-			new Error("audit unavailable"),
-		);
+	it("fails the rejected transition when its audit event is unavailable", async () => {
+		auditMocks.appendCleanupAuditEvent.mockRejectedValueOnce(new Error("audit unavailable"));
 
 		const response = await createInjectAuthenticated(app)(
 			"POST",
 			"/library-cleanup/approval-queue/approval-1/reject",
 		);
 
-		expect(response.statusCode).toBe(204);
-		expect(updateMany).toHaveBeenCalledWith(
-			expect.objectContaining({
-				data: expect.objectContaining({
-					status: "rejected",
-					terminalAuditCorrelationId: expect.any(String),
-					terminalAuditEventType: "approval_reviewed",
-					terminalAuditRecordedAt: null,
-				}),
-			}),
-		);
+		expect(response.statusCode).toBe(500);
+		expect(auditMocks.appendCleanupAuditEvent).toHaveBeenCalledOnce();
 	});
 
 	it("returns a retryable conflict when another cleanup run owns the database lease", async () => {
@@ -304,13 +299,35 @@ describe("library cleanup approval compare-and-set routes", () => {
 				id: { in: ["approval-1"] },
 				config: { userId: "user-1" },
 				status: "pending",
-				expiresAt: { gt: expect.any(Date) },
 			},
 			data: {
 				status: "approved",
 				executionToken: expect.any(String),
 				reviewedAt: expect.any(Date),
 			},
+		});
+	});
+
+	it("keeps expired approvals out of the pending queue while scheduler auditing catches up", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/library-cleanup/approval-queue?status=pending&pageSize=100",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(app.prisma.libraryCleanupApproval.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					status: "pending",
+					expiresAt: { gt: expect.any(Date) },
+				}),
+			}),
+		);
+		expect(app.prisma.libraryCleanupApproval.count).toHaveBeenCalledWith({
+			where: expect.objectContaining({
+				status: "pending",
+				expiresAt: { gt: expect.any(Date) },
+			}),
 		});
 	});
 
@@ -344,7 +361,6 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect(secondToken).toEqual(expect.any(String));
 		expect(firstToken).not.toBe(secondToken);
 		expect(updateMany.mock.calls[0]?.[0].data.executionToken).toBe(firstToken);
-		expect(updateMany.mock.calls[1]?.[0].data.executionToken).toBe(secondToken);
 	});
 
 	it.each(["retry_pending", "retry_executing"])(
