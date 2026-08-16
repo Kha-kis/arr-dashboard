@@ -4,6 +4,7 @@ import { buildMovieItem } from "../../library/movie-normalizer.js";
 import { PlexMovieNotFoundError } from "../../plex/plex-client.js";
 import {
 	buildCleanupPreviewDetails,
+	cleanupApprovalTargetKey,
 	CleanupRunAlreadyInProgressError,
 	CleanupRunLeaseLostError,
 	executeApprovedItems,
@@ -889,6 +890,106 @@ describe("shared Plex deletion safety", () => {
 		itemType: "movie",
 		action: "delete",
 	};
+
+	it("keys file-changing episode work by physical file and unmonitoring by episode", () => {
+		const episodeTarget = (
+			arrEpisodeId: number,
+			episodeFileId: number,
+			action: "delete" | "delete_files" | "unmonitor",
+		) => ({
+			instanceId: "sonarr-1",
+			arrItemId: 42,
+			itemType: "series",
+			targetScope: "episode",
+			arrEpisodeId,
+			episodeFileId,
+			action,
+		});
+
+		expect(cleanupDeleteTargetKey(episodeTarget(101, 7001, "delete"))).toBe(
+			cleanupDeleteTargetKey(episodeTarget(102, 7001, "delete_files")),
+		);
+		expect(cleanupDeleteTargetKey(episodeTarget(101, 7001, "unmonitor"))).not.toBe(
+			cleanupDeleteTargetKey(episodeTarget(102, 7001, "unmonitor")),
+		);
+		expect(() => cleanupDeleteTargetKey(episodeTarget(101, Number.NaN, "delete"))).toThrow(
+			"episode file ID",
+		);
+		expect(() =>
+			cleanupDeleteTargetKey({
+				...episodeTarget(101, 7001, "unmonitor"),
+				arrEpisodeId: undefined,
+			}),
+		).toThrow("episode ID");
+	});
+
+	it("recovers legacy retry file identity from its verified safety snapshot and otherwise fails closed", () => {
+		const safetySnapshot = serializeExecutableSafetyPlan({
+			kind: "verified_sonarr_episode",
+			target: radarrTargetIdentity,
+			episode: {
+				arrEpisodeId: 101,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				episodeFileId: 7001,
+				episodeFileConsumerIds: [101],
+				monitored: true,
+			},
+			selectedFile: {
+				episodeFileId: 7001,
+				fullPath: { value: "/shows/Example/Example.S01E01.mkv", windows: false },
+				size: 2_000,
+			},
+			retainedTargetFiles: [],
+			watchProof: {
+				plexInstanceId: "plex-1",
+				sourceFingerprint: "source-fingerprint",
+				plexServerUrl: "http://plex.internal:32400",
+				ratingKey: "episode-101",
+				watchCount: 1,
+				refreshedAt: "2026-08-12T12:00:00.000Z",
+				fullPath: { value: "/plex/shows/Example/Example.S01E01.mkv", windows: false },
+				size: 2_000,
+				mapping: null,
+			},
+			quiIdentity: { enabled: false, infoHash: null, torrentState: null },
+			peers: [],
+			ownership: [],
+			targetDeleteNotifications: [],
+		});
+		const legacyRetry = {
+			instanceId: "sonarr-1",
+			arrItemId: 42,
+			itemType: "series",
+			targetScope: "episode",
+			arrEpisodeId: 101,
+			episodeFileId: null,
+			action: "delete_files",
+			safetySnapshot,
+		};
+
+		expect(cleanupApprovalTargetKey(legacyRetry)).toBe("sonarr-1:42:series:episode-file:7001");
+		expect(() => cleanupApprovalTargetKey({ ...legacyRetry, safetySnapshot: null })).toThrow(
+			"episode file ID",
+		);
+	});
+
+	it("orders equal-priority cleanup rules deterministically in every executor query", async () => {
+		const { deps } = makeDeps();
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(null);
+
+		await executeCleanupPreview(deps, "user-1");
+		await executeCleanupRun(deps, "user-1");
+
+		expect(deps.prisma.libraryCleanupConfig.findUnique).toHaveBeenNthCalledWith(1, {
+			where: { userId: "user-1" },
+			include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
+		});
+		expect(deps.prisma.libraryCleanupConfig.findUnique).toHaveBeenNthCalledWith(2, {
+			where: { userId: "user-1" },
+			include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
+		});
+	});
 
 	it("rejects a retained Radarr plan that predates peer ownership witnesses", () => {
 		expect(

@@ -2488,12 +2488,28 @@ function matchingPlexSeriesParts(
 
 export function cleanupDeleteTargetKey(
 	target: Pick<CleanupDeleteTarget, "instanceId" | "arrItemId" | "itemType"> &
-		Partial<Pick<CleanupDeleteTarget, "targetScope" | "arrEpisodeId">>,
+		Partial<Pick<CleanupDeleteTarget, "targetScope" | "arrEpisodeId" | "episodeFileId" | "action">>,
 ): string {
 	const seriesKey = `${target.instanceId}:${target.arrItemId}:${target.itemType}`;
-	return target.targetScope === "episode" && typeof target.arrEpisodeId === "number"
-		? `${seriesKey}:episode:${target.arrEpisodeId}`
-		: seriesKey;
+	if (target.targetScope !== "episode") return seriesKey;
+	if (target.action === "unmonitor") {
+		if (
+			typeof target.arrEpisodeId !== "number" ||
+			!Number.isSafeInteger(target.arrEpisodeId) ||
+			target.arrEpisodeId <= 0
+		) {
+			throw new Error("Episode-scoped unmonitor target is missing its episode ID");
+		}
+		return `${seriesKey}:episode:${target.arrEpisodeId}`;
+	}
+	if (
+		typeof target.episodeFileId !== "number" ||
+		!Number.isSafeInteger(target.episodeFileId) ||
+		target.episodeFileId <= 0
+	) {
+		throw new Error("File-changing episode target is missing its episode file ID");
+	}
+	return `${seriesKey}:episode-file:${target.episodeFileId}`;
 }
 
 function isDestructiveTarget(target: CleanupDeleteTarget): boolean {

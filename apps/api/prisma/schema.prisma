@@ -1335,6 +1335,7 @@ model LibraryCleanupApproval {
   itemType        LibraryItemType              // movie | series
   targetScope     String    @default("series") // "series" | "episode"
   arrEpisodeId    Int?
+  episodeFileId   Int?
   seasonNumber    Int?
   episodeNumber   Int?
   episodeTitle    String?

@@ -454,7 +454,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 		let config = await app.prisma.libraryCleanupConfig.findUnique({
 			where: { userId },
-			include: { rules: { orderBy: { priority: "asc" } } },
+			include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 		});
 
 		if (!config) {
@@ -466,7 +466,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				async () => {
 					const initialized = await app.prisma.libraryCleanupConfig.findUnique({
 						where: { userId },
-						include: { rules: { orderBy: { priority: "asc" } } },
+						include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 					});
 					if (!initialized) throw new Error("Cleanup configuration could not be initialized");
 					return initialized;
@@ -490,7 +490,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					where: { userId },
 					update: data,
 					create: { userId, ...data },
-					include: { rules: { orderBy: { priority: "asc" } } },
+					include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 				});
 
 				// Recalculate nextRunAt when enabled or intervalHours changes
@@ -627,7 +627,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 				const updated = await app.prisma.libraryCleanupConfig.findUnique({
 					where: { userId },
-					include: { rules: { orderBy: { priority: "asc" } } },
+					include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 				});
 				return reply.send(serializeConfig(updated as unknown as Record<string, unknown>));
 			},
@@ -1470,7 +1470,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		// Load config + rules
 		const config = await app.prisma.libraryCleanupConfig.findUnique({
 			where: { userId },
-			include: { rules: { orderBy: { priority: "asc" } } },
+			include: { rules: { orderBy: [{ priority: "asc" }, { id: "asc" }] } },
 		});
 		if (!config || config.rules.length === 0) {
 			return reply.send({
