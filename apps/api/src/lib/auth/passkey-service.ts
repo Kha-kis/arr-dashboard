@@ -322,7 +322,7 @@ export class PasskeyService {
 export function createPasskeyService(app: FastifyInstance): PasskeyService {
 	const rpName = process.env.WEBAUTHN_RP_NAME ?? "Arr Dashboard";
 	const rpID = process.env.WEBAUTHN_RP_ID ?? "localhost";
-	const origin = process.env.WEBAUTHN_ORIGIN ?? "http://localhost:3000";
+	const origin = app.config.WEBAUTHN_ORIGIN ?? "http://localhost:3000";
 
 	return new PasskeyService(app, {
 		rpName,

@@ -9,7 +9,11 @@ import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { validateRequest } from "../lib/utils/validate.js";
-import { buildOidcRedirectUriFromAppUrl } from "../lib/auth/oidc-redirect-uri.js";
+import {
+	buildOidcRedirectUriFromAppUrl,
+	oidcRedirectUriMatchesAppOrigin,
+	resolveOidcAppUrl,
+} from "../lib/auth/oidc-redirect-uri.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
@@ -128,29 +132,35 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 
-			// Auto-generate redirect URI if not provided
-			// Use APP_URL (configured env var) as the trusted base URL.
-			// Only fall back to request headers when TRUST_PROXY is enabled (headers are validated by Fastify).
+			const systemSettings = await app.prisma.systemSettings.findUnique({
+				where: { id: 1 },
+				select: { externalUrl: true },
+			});
+			const publicAppUrl = resolveOidcAppUrl(
+				systemSettings?.externalUrl,
+				app.config.APP_URL,
+				app.config.WEBAUTHN_ORIGIN,
+			);
+
+			// Use only operator-controlled origins: External URL, public APP_URL,
+			// then the public WebAuthn origin when APP_URL still has its local default.
 			let redirectUri = parsed.redirectUri;
 			if (redirectUri) {
-				// Validate redirect URI origin matches APP_URL to prevent open redirect
-				const redirectOrigin = new URL(redirectUri).origin;
-				const appOrigin = new URL(app.config.APP_URL).origin;
-				if (redirectOrigin !== appOrigin) {
+				if (!oidcRedirectUriMatchesAppOrigin(redirectUri, publicAppUrl)) {
 					return reply.status(400).send({
 						error: "Redirect URI must match the application URL origin",
 					});
 				}
 			} else {
-				const generatedRedirectUri = buildOidcRedirectUriFromAppUrl(app.config.APP_URL);
+				const generatedRedirectUri = buildOidcRedirectUriFromAppUrl(publicAppUrl);
 				if (!generatedRedirectUri) {
 					return reply.status(400).send({
 						error:
-							"APP_URL must be a credential-free HTTP(S) URL that can generate a valid OIDC redirect URI.",
+							"External URL, APP_URL, or WEBAUTHN_ORIGIN must be a credential-free HTTP(S) URL that can generate a valid OIDC redirect URI.",
 					});
 				}
 				redirectUri = generatedRedirectUri;
-				request.log.info({ redirectUri }, "Auto-generated redirect URI from APP_URL");
+				request.log.info({ redirectUri }, "Auto-generated OIDC redirect URI");
 			}
 
 			try {

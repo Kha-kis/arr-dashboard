@@ -134,6 +134,9 @@ function createMockPrisma() {
 	};
 
 	return {
+		systemSettings: {
+			findUnique: vi.fn().mockResolvedValue(null),
+		},
 		user: userMock,
 		oIDCProvider: oidcProviderMock,
 		oIDCAccount: {
@@ -199,6 +202,8 @@ beforeEach(async () => {
 	app.decorate("config", {
 		PASSWORD_POLICY: "relaxed",
 		APP_URL: "http://localhost:3000",
+		WEBAUTHN_ORIGIN: undefined,
+		TRUST_PROXY: false,
 	});
 
 	// Request decorations
@@ -274,6 +279,218 @@ describe("POST /auth/oidc/setup", () => {
 		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
 			data: expect.objectContaining({
 				redirectUri: "https://arr.example.com/dashboard/auth/oidc/callback",
+			}),
+		});
+	});
+
+	it("uses the configured WebAuthn origin when APP_URL is still localhost", async () => {
+		Object.assign(app.config, { WEBAUTHN_ORIGIN: "https://arr.example.com" });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/setup",
+			payload: {
+				displayName: "My OIDC Provider",
+				clientId: "my-client-id",
+				clientSecret: "my-client-secret",
+				issuer: "https://provider.example.com",
+			},
+		});
+
+		expect(res.statusCode).toBe(201);
+		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				redirectUri: "https://arr.example.com/auth/oidc/callback",
+			}),
+		});
+	});
+
+	it("accepts a manual callback matching the configured WebAuthn origin", async () => {
+		Object.assign(app.config, {
+			WEBAUTHN_ORIGIN: "https://arr.example.com",
+		});
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/setup",
+			payload: {
+				displayName: "My OIDC Provider",
+				clientId: "my-client-id",
+				clientSecret: "my-client-secret",
+				issuer: "https://provider.example.com",
+				redirectUri: "https://arr.example.com/auth/oidc/callback",
+			},
+		});
+
+		expect(res.statusCode).toBe(201);
+		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				redirectUri: "https://arr.example.com/auth/oidc/callback",
+			}),
+		});
+	});
+
+	it("does not trust request forwarding headers as the public OIDC origin", async () => {
+		Object.assign(app.config, { TRUST_PROXY: true });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/setup",
+			remoteAddress: "127.0.0.1",
+			headers: {
+				host: "localhost:3001",
+				"x-arr-dashboard-origin": "https://arr.example.com",
+			},
+			payload: {
+				displayName: "My OIDC Provider",
+				clientId: "my-client-id",
+				clientSecret: "my-client-secret",
+				issuer: "https://provider.example.com",
+			},
+		});
+
+		expect(res.statusCode).toBe(201);
+		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				redirectUri: "http://localhost:3000/auth/oidc/callback",
+			}),
+		});
+	});
+
+	it("ignores forwarded origins when proxy trust is disabled", async () => {
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/setup",
+			remoteAddress: "127.0.0.1",
+			headers: {
+				host: "localhost:3001",
+				"x-arr-dashboard-origin": "https://attacker.example",
+				"x-forwarded-host": "attacker.example",
+				"x-forwarded-proto": "https",
+			},
+			payload: {
+				displayName: "My OIDC Provider",
+				clientId: "my-client-id",
+				clientSecret: "my-client-secret",
+				issuer: "https://provider.example.com",
+			},
+		});
+
+		expect(res.statusCode).toBe(201);
+		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				redirectUri: "http://localhost:3000/auth/oidc/callback",
+			}),
+		});
+	});
+
+	it("rejects a manual public callback without a matching configured origin", async () => {
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/setup",
+			remoteAddress: "127.0.0.1",
+			headers: {
+				"x-arr-dashboard-origin": "https://arr.example.com",
+			},
+			payload: {
+				displayName: "My OIDC Provider",
+				clientId: "my-client-id",
+				clientSecret: "my-client-secret",
+				issuer: "https://provider.example.com",
+				redirectUri: "https://arr.example.com/auth/oidc/callback",
+			},
+		});
+
+		expect(res.statusCode).toBe(400);
+		expect(mockPrisma.oIDCProvider.create).not.toHaveBeenCalled();
+	});
+
+	it("prefers the persisted External URL over APP_URL and WebAuthn origin", async () => {
+		Object.assign(app.config, {
+			TRUST_PROXY: true,
+			WEBAUTHN_ORIGIN: "https://webauthn.example.com",
+		});
+		mockPrisma.systemSettings.findUnique.mockResolvedValue({
+			externalUrl: "https://canonical.example.com/dashboard",
+		});
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/setup",
+			remoteAddress: "127.0.0.1",
+			headers: {
+				"x-arr-dashboard-origin": "https://incidental.example.com",
+			},
+			payload: {
+				displayName: "My OIDC Provider",
+				clientId: "my-client-id",
+				clientSecret: "my-client-secret",
+				issuer: "https://provider.example.com",
+			},
+		});
+
+		expect(res.statusCode).toBe(201);
+		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				redirectUri: "https://canonical.example.com/dashboard/auth/oidc/callback",
+			}),
+		});
+	});
+
+	it("ignores a forged proxy origin from a non-loopback peer", async () => {
+		Object.assign(app.config, { TRUST_PROXY: true });
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/setup",
+			remoteAddress: "192.0.2.10",
+			headers: {
+				host: "localhost:3001",
+				"x-arr-dashboard-origin": "https://attacker.example",
+			},
+			payload: {
+				displayName: "My OIDC Provider",
+				clientId: "my-client-id",
+				clientSecret: "my-client-secret",
+				issuer: "https://provider.example.com",
+			},
+		});
+
+		expect(res.statusCode).toBe(201);
+		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				redirectUri: "http://localhost:3000/auth/oidc/callback",
+			}),
+		});
+	});
+
+	it("keeps an explicit public APP_URL authoritative over the WebAuthn origin", async () => {
+		Object.assign(app.config, {
+			APP_URL: "https://configured.example.com/dashboard",
+			WEBAUTHN_ORIGIN: "https://webauthn.example.com",
+			TRUST_PROXY: true,
+		});
+
+		const res = await app.inject({
+			method: "POST",
+			url: "/auth/oidc/setup",
+			remoteAddress: "127.0.0.1",
+			headers: {
+				host: "localhost:3001",
+				"x-arr-dashboard-origin": "https://attacker.example",
+			},
+			payload: {
+				displayName: "My OIDC Provider",
+				clientId: "my-client-id",
+				clientSecret: "my-client-secret",
+				issuer: "https://provider.example.com",
+			},
+		});
+
+		expect(res.statusCode).toBe(201);
+		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				redirectUri: "https://configured.example.com/dashboard/auth/oidc/callback",
 			}),
 		});
 	});

@@ -44,6 +44,7 @@ export const envSchema = z
 			.optional()
 			.transform((v) => parseBooleanEnv(v)),
 		APP_URL: z.string().url().default("http://localhost:3000"),
+		WEBAUTHN_ORIGIN: z.string().optional(),
 		TMDB_BASE_URL: z.string().url().default("https://api.themoviedb.org/3"),
 		TMDB_IMAGE_BASE_URL: z.string().url().default("https://image.tmdb.org/t/p"),
 		// Logging — these are informational in the schema; the logger reads them at
