@@ -65,6 +65,8 @@ export type LibraryCleanupApprovalMinAggregateOutputType = {
   matchedRuleName: string | null
   reason: string | null
   action: string | null
+  scanMediaServerAfterDelete: boolean | null
+  scanMediaServerInstanceIds: string | null
   sizeOnDisk: bigint | null
   year: number | null
   rating: number | null
@@ -105,6 +107,8 @@ export type LibraryCleanupApprovalMaxAggregateOutputType = {
   matchedRuleName: string | null
   reason: string | null
   action: string | null
+  scanMediaServerAfterDelete: boolean | null
+  scanMediaServerInstanceIds: string | null
   sizeOnDisk: bigint | null
   year: number | null
   rating: number | null
@@ -145,6 +149,8 @@ export type LibraryCleanupApprovalCountAggregateOutputType = {
   matchedRuleName: number
   reason: number
   action: number
+  scanMediaServerAfterDelete: number
+  scanMediaServerInstanceIds: number
   sizeOnDisk: number
   year: number
   rating: number
@@ -209,6 +215,8 @@ export type LibraryCleanupApprovalMinAggregateInputType = {
   matchedRuleName?: true
   reason?: true
   action?: true
+  scanMediaServerAfterDelete?: true
+  scanMediaServerInstanceIds?: true
   sizeOnDisk?: true
   year?: true
   rating?: true
@@ -249,6 +257,8 @@ export type LibraryCleanupApprovalMaxAggregateInputType = {
   matchedRuleName?: true
   reason?: true
   action?: true
+  scanMediaServerAfterDelete?: true
+  scanMediaServerInstanceIds?: true
   sizeOnDisk?: true
   year?: true
   rating?: true
@@ -289,6 +299,8 @@ export type LibraryCleanupApprovalCountAggregateInputType = {
   matchedRuleName?: true
   reason?: true
   action?: true
+  scanMediaServerAfterDelete?: true
+  scanMediaServerInstanceIds?: true
   sizeOnDisk?: true
   year?: true
   rating?: true
@@ -416,6 +428,8 @@ export type LibraryCleanupApprovalGroupByOutputType = {
   matchedRuleName: string
   reason: string
   action: string | null
+  scanMediaServerAfterDelete: boolean
+  scanMediaServerInstanceIds: string | null
   sizeOnDisk: bigint
   year: number | null
   rating: number | null
@@ -479,6 +493,8 @@ export type LibraryCleanupApprovalWhereInput = {
   matchedRuleName?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   reason?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   action?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFilter<"LibraryCleanupApproval"> | boolean
+  scanMediaServerInstanceIds?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCleanupApproval"> | bigint | number
   year?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableFilter<"LibraryCleanupApproval"> | number | null
@@ -501,6 +517,7 @@ export type LibraryCleanupApprovalWhereInput = {
   expiresAt?: Prisma.DateTimeFilter<"LibraryCleanupApproval"> | Date | string
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupApproval"> | Date | string
   config?: Prisma.XOR<Prisma.LibraryCleanupConfigScalarRelationFilter, Prisma.LibraryCleanupConfigWhereInput>
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanListRelationFilter
 }
 
 export type LibraryCleanupApprovalOrderByWithRelationInput = {
@@ -520,6 +537,8 @@ export type LibraryCleanupApprovalOrderByWithRelationInput = {
   matchedRuleName?: Prisma.SortOrder
   reason?: Prisma.SortOrder
   action?: Prisma.SortOrderInput | Prisma.SortOrder
+  scanMediaServerAfterDelete?: Prisma.SortOrder
+  scanMediaServerInstanceIds?: Prisma.SortOrderInput | Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrderInput | Prisma.SortOrder
   rating?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -542,6 +561,7 @@ export type LibraryCleanupApprovalOrderByWithRelationInput = {
   expiresAt?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   config?: Prisma.LibraryCleanupConfigOrderByWithRelationInput
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanOrderByRelationAggregateInput
 }
 
 export type LibraryCleanupApprovalWhereUniqueInput = Prisma.AtLeast<{
@@ -564,6 +584,8 @@ export type LibraryCleanupApprovalWhereUniqueInput = Prisma.AtLeast<{
   matchedRuleName?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   reason?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   action?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFilter<"LibraryCleanupApproval"> | boolean
+  scanMediaServerInstanceIds?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCleanupApproval"> | bigint | number
   year?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableFilter<"LibraryCleanupApproval"> | number | null
@@ -586,6 +608,7 @@ export type LibraryCleanupApprovalWhereUniqueInput = Prisma.AtLeast<{
   expiresAt?: Prisma.DateTimeFilter<"LibraryCleanupApproval"> | Date | string
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupApproval"> | Date | string
   config?: Prisma.XOR<Prisma.LibraryCleanupConfigScalarRelationFilter, Prisma.LibraryCleanupConfigWhereInput>
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanListRelationFilter
 }, "id">
 
 export type LibraryCleanupApprovalOrderByWithAggregationInput = {
@@ -605,6 +628,8 @@ export type LibraryCleanupApprovalOrderByWithAggregationInput = {
   matchedRuleName?: Prisma.SortOrder
   reason?: Prisma.SortOrder
   action?: Prisma.SortOrderInput | Prisma.SortOrder
+  scanMediaServerAfterDelete?: Prisma.SortOrder
+  scanMediaServerInstanceIds?: Prisma.SortOrderInput | Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrderInput | Prisma.SortOrder
   rating?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -653,6 +678,8 @@ export type LibraryCleanupApprovalScalarWhereWithAggregatesInput = {
   matchedRuleName?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
   reason?: Prisma.StringWithAggregatesFilter<"LibraryCleanupApproval"> | string
   action?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupApproval"> | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolWithAggregatesFilter<"LibraryCleanupApproval"> | boolean
+  scanMediaServerInstanceIds?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupApproval"> | string | null
   sizeOnDisk?: Prisma.BigIntWithAggregatesFilter<"LibraryCleanupApproval"> | bigint | number
   year?: Prisma.IntNullableWithAggregatesFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableWithAggregatesFilter<"LibraryCleanupApproval"> | number | null
@@ -692,6 +719,8 @@ export type LibraryCleanupApprovalCreateInput = {
   matchedRuleName: string
   reason: string
   action?: string | null
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   sizeOnDisk: bigint | number
   year?: number | null
   rating?: number | null
@@ -714,6 +743,7 @@ export type LibraryCleanupApprovalCreateInput = {
   expiresAt: Date | string
   createdAt?: Date | string
   config: Prisma.LibraryCleanupConfigCreateNestedOneWithoutApprovalsInput
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanCreateNestedManyWithoutApprovalInput
 }
 
 export type LibraryCleanupApprovalUncheckedCreateInput = {
@@ -733,6 +763,8 @@ export type LibraryCleanupApprovalUncheckedCreateInput = {
   matchedRuleName: string
   reason: string
   action?: string | null
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   sizeOnDisk: bigint | number
   year?: number | null
   rating?: number | null
@@ -754,6 +786,7 @@ export type LibraryCleanupApprovalUncheckedCreateInput = {
   executedAt?: Date | string | null
   expiresAt: Date | string
   createdAt?: Date | string
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanUncheckedCreateNestedManyWithoutApprovalInput
 }
 
 export type LibraryCleanupApprovalUpdateInput = {
@@ -772,6 +805,8 @@ export type LibraryCleanupApprovalUpdateInput = {
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -794,6 +829,7 @@ export type LibraryCleanupApprovalUpdateInput = {
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   config?: Prisma.LibraryCleanupConfigUpdateOneRequiredWithoutApprovalsNestedInput
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanUpdateManyWithoutApprovalNestedInput
 }
 
 export type LibraryCleanupApprovalUncheckedUpdateInput = {
@@ -813,6 +849,8 @@ export type LibraryCleanupApprovalUncheckedUpdateInput = {
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -834,6 +872,7 @@ export type LibraryCleanupApprovalUncheckedUpdateInput = {
   executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanUncheckedUpdateManyWithoutApprovalNestedInput
 }
 
 export type LibraryCleanupApprovalCreateManyInput = {
@@ -853,6 +892,8 @@ export type LibraryCleanupApprovalCreateManyInput = {
   matchedRuleName: string
   reason: string
   action?: string | null
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   sizeOnDisk: bigint | number
   year?: number | null
   rating?: number | null
@@ -892,6 +933,8 @@ export type LibraryCleanupApprovalUpdateManyMutationInput = {
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -932,6 +975,8 @@ export type LibraryCleanupApprovalUncheckedUpdateManyInput = {
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -982,6 +1027,8 @@ export type LibraryCleanupApprovalCountOrderByAggregateInput = {
   matchedRuleName?: Prisma.SortOrder
   reason?: Prisma.SortOrder
   action?: Prisma.SortOrder
+  scanMediaServerAfterDelete?: Prisma.SortOrder
+  scanMediaServerInstanceIds?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
@@ -1033,6 +1080,8 @@ export type LibraryCleanupApprovalMaxOrderByAggregateInput = {
   matchedRuleName?: Prisma.SortOrder
   reason?: Prisma.SortOrder
   action?: Prisma.SortOrder
+  scanMediaServerAfterDelete?: Prisma.SortOrder
+  scanMediaServerInstanceIds?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
@@ -1073,6 +1122,8 @@ export type LibraryCleanupApprovalMinOrderByAggregateInput = {
   matchedRuleName?: Prisma.SortOrder
   reason?: Prisma.SortOrder
   action?: Prisma.SortOrder
+  scanMediaServerAfterDelete?: Prisma.SortOrder
+  scanMediaServerInstanceIds?: Prisma.SortOrder
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
@@ -1105,6 +1156,11 @@ export type LibraryCleanupApprovalSumOrderByAggregateInput = {
   sizeOnDisk?: Prisma.SortOrder
   year?: Prisma.SortOrder
   rating?: Prisma.SortOrder
+}
+
+export type LibraryCleanupApprovalScalarRelationFilter = {
+  is?: Prisma.LibraryCleanupApprovalWhereInput
+  isNot?: Prisma.LibraryCleanupApprovalWhereInput
 }
 
 export type LibraryCleanupApprovalCreateNestedManyWithoutConfigInput = {
@@ -1149,6 +1205,20 @@ export type LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigNestedInput = 
   deleteMany?: Prisma.LibraryCleanupApprovalScalarWhereInput | Prisma.LibraryCleanupApprovalScalarWhereInput[]
 }
 
+export type LibraryCleanupApprovalCreateNestedOneWithoutMediaServerScansInput = {
+  create?: Prisma.XOR<Prisma.LibraryCleanupApprovalCreateWithoutMediaServerScansInput, Prisma.LibraryCleanupApprovalUncheckedCreateWithoutMediaServerScansInput>
+  connectOrCreate?: Prisma.LibraryCleanupApprovalCreateOrConnectWithoutMediaServerScansInput
+  connect?: Prisma.LibraryCleanupApprovalWhereUniqueInput
+}
+
+export type LibraryCleanupApprovalUpdateOneRequiredWithoutMediaServerScansNestedInput = {
+  create?: Prisma.XOR<Prisma.LibraryCleanupApprovalCreateWithoutMediaServerScansInput, Prisma.LibraryCleanupApprovalUncheckedCreateWithoutMediaServerScansInput>
+  connectOrCreate?: Prisma.LibraryCleanupApprovalCreateOrConnectWithoutMediaServerScansInput
+  upsert?: Prisma.LibraryCleanupApprovalUpsertWithoutMediaServerScansInput
+  connect?: Prisma.LibraryCleanupApprovalWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.LibraryCleanupApprovalUpdateToOneWithWhereWithoutMediaServerScansInput, Prisma.LibraryCleanupApprovalUpdateWithoutMediaServerScansInput>, Prisma.LibraryCleanupApprovalUncheckedUpdateWithoutMediaServerScansInput>
+}
+
 export type LibraryCleanupApprovalCreateWithoutConfigInput = {
   id?: string
   instanceId: string
@@ -1165,6 +1235,8 @@ export type LibraryCleanupApprovalCreateWithoutConfigInput = {
   matchedRuleName: string
   reason: string
   action?: string | null
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   sizeOnDisk: bigint | number
   year?: number | null
   rating?: number | null
@@ -1186,6 +1258,7 @@ export type LibraryCleanupApprovalCreateWithoutConfigInput = {
   executedAt?: Date | string | null
   expiresAt: Date | string
   createdAt?: Date | string
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanCreateNestedManyWithoutApprovalInput
 }
 
 export type LibraryCleanupApprovalUncheckedCreateWithoutConfigInput = {
@@ -1204,6 +1277,8 @@ export type LibraryCleanupApprovalUncheckedCreateWithoutConfigInput = {
   matchedRuleName: string
   reason: string
   action?: string | null
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   sizeOnDisk: bigint | number
   year?: number | null
   rating?: number | null
@@ -1225,6 +1300,7 @@ export type LibraryCleanupApprovalUncheckedCreateWithoutConfigInput = {
   executedAt?: Date | string | null
   expiresAt: Date | string
   createdAt?: Date | string
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanUncheckedCreateNestedManyWithoutApprovalInput
 }
 
 export type LibraryCleanupApprovalCreateOrConnectWithoutConfigInput = {
@@ -1272,6 +1348,8 @@ export type LibraryCleanupApprovalScalarWhereInput = {
   matchedRuleName?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   reason?: Prisma.StringFilter<"LibraryCleanupApproval"> | string
   action?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFilter<"LibraryCleanupApproval"> | boolean
+  scanMediaServerInstanceIds?: Prisma.StringNullableFilter<"LibraryCleanupApproval"> | string | null
   sizeOnDisk?: Prisma.BigIntFilter<"LibraryCleanupApproval"> | bigint | number
   year?: Prisma.IntNullableFilter<"LibraryCleanupApproval"> | number | null
   rating?: Prisma.FloatNullableFilter<"LibraryCleanupApproval"> | number | null
@@ -1295,6 +1373,190 @@ export type LibraryCleanupApprovalScalarWhereInput = {
   createdAt?: Prisma.DateTimeFilter<"LibraryCleanupApproval"> | Date | string
 }
 
+export type LibraryCleanupApprovalCreateWithoutMediaServerScansInput = {
+  id?: string
+  instanceId: string
+  arrItemId: number
+  itemType: $Enums.LibraryItemType
+  targetScope?: string
+  arrEpisodeId?: number | null
+  episodeFileId?: number | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
+  episodeTitle?: string | null
+  title: string
+  matchedRuleId: string
+  matchedRuleName: string
+  reason: string
+  action?: string | null
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
+  sizeOnDisk: bigint | number
+  year?: number | null
+  rating?: number | null
+  status?: string
+  executionToken?: string | null
+  executionAuditCorrelationId?: string | null
+  reconciledWithoutMutation?: boolean
+  terminalAuditCorrelationId?: string | null
+  terminalAuditEventType?: string | null
+  terminalAuditOutcome?: string | null
+  terminalAuditActorType?: string | null
+  terminalAuditActorId?: string | null
+  terminalAuditTrigger?: string | null
+  terminalAuditReason?: string | null
+  terminalAuditRecordedAt?: Date | string | null
+  safetySnapshot?: string | null
+  lastExecutionError?: string | null
+  reviewedAt?: Date | string | null
+  executedAt?: Date | string | null
+  expiresAt: Date | string
+  createdAt?: Date | string
+  config: Prisma.LibraryCleanupConfigCreateNestedOneWithoutApprovalsInput
+}
+
+export type LibraryCleanupApprovalUncheckedCreateWithoutMediaServerScansInput = {
+  id?: string
+  configId: string
+  instanceId: string
+  arrItemId: number
+  itemType: $Enums.LibraryItemType
+  targetScope?: string
+  arrEpisodeId?: number | null
+  episodeFileId?: number | null
+  seasonNumber?: number | null
+  episodeNumber?: number | null
+  episodeTitle?: string | null
+  title: string
+  matchedRuleId: string
+  matchedRuleName: string
+  reason: string
+  action?: string | null
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
+  sizeOnDisk: bigint | number
+  year?: number | null
+  rating?: number | null
+  status?: string
+  executionToken?: string | null
+  executionAuditCorrelationId?: string | null
+  reconciledWithoutMutation?: boolean
+  terminalAuditCorrelationId?: string | null
+  terminalAuditEventType?: string | null
+  terminalAuditOutcome?: string | null
+  terminalAuditActorType?: string | null
+  terminalAuditActorId?: string | null
+  terminalAuditTrigger?: string | null
+  terminalAuditReason?: string | null
+  terminalAuditRecordedAt?: Date | string | null
+  safetySnapshot?: string | null
+  lastExecutionError?: string | null
+  reviewedAt?: Date | string | null
+  executedAt?: Date | string | null
+  expiresAt: Date | string
+  createdAt?: Date | string
+}
+
+export type LibraryCleanupApprovalCreateOrConnectWithoutMediaServerScansInput = {
+  where: Prisma.LibraryCleanupApprovalWhereUniqueInput
+  create: Prisma.XOR<Prisma.LibraryCleanupApprovalCreateWithoutMediaServerScansInput, Prisma.LibraryCleanupApprovalUncheckedCreateWithoutMediaServerScansInput>
+}
+
+export type LibraryCleanupApprovalUpsertWithoutMediaServerScansInput = {
+  update: Prisma.XOR<Prisma.LibraryCleanupApprovalUpdateWithoutMediaServerScansInput, Prisma.LibraryCleanupApprovalUncheckedUpdateWithoutMediaServerScansInput>
+  create: Prisma.XOR<Prisma.LibraryCleanupApprovalCreateWithoutMediaServerScansInput, Prisma.LibraryCleanupApprovalUncheckedCreateWithoutMediaServerScansInput>
+  where?: Prisma.LibraryCleanupApprovalWhereInput
+}
+
+export type LibraryCleanupApprovalUpdateToOneWithWhereWithoutMediaServerScansInput = {
+  where?: Prisma.LibraryCleanupApprovalWhereInput
+  data: Prisma.XOR<Prisma.LibraryCleanupApprovalUpdateWithoutMediaServerScansInput, Prisma.LibraryCleanupApprovalUncheckedUpdateWithoutMediaServerScansInput>
+}
+
+export type LibraryCleanupApprovalUpdateWithoutMediaServerScansInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  instanceId?: Prisma.StringFieldUpdateOperationsInput | string
+  arrItemId?: Prisma.IntFieldUpdateOperationsInput | number
+  itemType?: Prisma.EnumLibraryItemTypeFieldUpdateOperationsInput | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFieldUpdateOperationsInput | string
+  arrEpisodeId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeFileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  seasonNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeTitle?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  title?: Prisma.StringFieldUpdateOperationsInput | string
+  matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
+  matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
+  reason?: Prisma.StringFieldUpdateOperationsInput | string
+  action?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  executionToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  terminalAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditEventType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditOutcome?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditActorType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditActorId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditTrigger?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  config?: Prisma.LibraryCleanupConfigUpdateOneRequiredWithoutApprovalsNestedInput
+}
+
+export type LibraryCleanupApprovalUncheckedUpdateWithoutMediaServerScansInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  configId?: Prisma.StringFieldUpdateOperationsInput | string
+  instanceId?: Prisma.StringFieldUpdateOperationsInput | string
+  arrItemId?: Prisma.IntFieldUpdateOperationsInput | number
+  itemType?: Prisma.EnumLibraryItemTypeFieldUpdateOperationsInput | $Enums.LibraryItemType
+  targetScope?: Prisma.StringFieldUpdateOperationsInput | string
+  arrEpisodeId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeFileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  seasonNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeNumber?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  episodeTitle?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  title?: Prisma.StringFieldUpdateOperationsInput | string
+  matchedRuleId?: Prisma.StringFieldUpdateOperationsInput | string
+  matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
+  reason?: Prisma.StringFieldUpdateOperationsInput | string
+  action?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
+  year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  executionToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  executionAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  reconciledWithoutMutation?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  terminalAuditCorrelationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditEventType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditOutcome?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditActorType?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditActorId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditTrigger?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditReason?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  terminalAuditRecordedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  safetySnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  lastExecutionError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  reviewedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
 export type LibraryCleanupApprovalCreateManyConfigInput = {
   id?: string
   instanceId: string
@@ -1311,6 +1573,8 @@ export type LibraryCleanupApprovalCreateManyConfigInput = {
   matchedRuleName: string
   reason: string
   action?: string | null
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   sizeOnDisk: bigint | number
   year?: number | null
   rating?: number | null
@@ -1350,6 +1614,8 @@ export type LibraryCleanupApprovalUpdateWithoutConfigInput = {
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -1371,6 +1637,7 @@ export type LibraryCleanupApprovalUpdateWithoutConfigInput = {
   executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanUpdateManyWithoutApprovalNestedInput
 }
 
 export type LibraryCleanupApprovalUncheckedUpdateWithoutConfigInput = {
@@ -1389,6 +1656,8 @@ export type LibraryCleanupApprovalUncheckedUpdateWithoutConfigInput = {
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -1410,6 +1679,7 @@ export type LibraryCleanupApprovalUncheckedUpdateWithoutConfigInput = {
   executedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   expiresAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  mediaServerScans?: Prisma.LibraryCleanupMediaServerScanUncheckedUpdateManyWithoutApprovalNestedInput
 }
 
 export type LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigInput = {
@@ -1428,6 +1698,8 @@ export type LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigInput = {
   matchedRuleName?: Prisma.StringFieldUpdateOperationsInput | string
   reason?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   sizeOnDisk?: Prisma.BigIntFieldUpdateOperationsInput | bigint | number
   year?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   rating?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
@@ -1451,6 +1723,35 @@ export type LibraryCleanupApprovalUncheckedUpdateManyWithoutConfigInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
 
+
+/**
+ * Count Type LibraryCleanupApprovalCountOutputType
+ */
+
+export type LibraryCleanupApprovalCountOutputType = {
+  mediaServerScans: number
+}
+
+export type LibraryCleanupApprovalCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  mediaServerScans?: boolean | LibraryCleanupApprovalCountOutputTypeCountMediaServerScansArgs
+}
+
+/**
+ * LibraryCleanupApprovalCountOutputType without action
+ */
+export type LibraryCleanupApprovalCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the LibraryCleanupApprovalCountOutputType
+   */
+  select?: Prisma.LibraryCleanupApprovalCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * LibraryCleanupApprovalCountOutputType without action
+ */
+export type LibraryCleanupApprovalCountOutputTypeCountMediaServerScansArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.LibraryCleanupMediaServerScanWhereInput
+}
 
 
 export type LibraryCleanupApprovalSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1470,6 +1771,8 @@ export type LibraryCleanupApprovalSelect<ExtArgs extends runtime.Types.Extension
   matchedRuleName?: boolean
   reason?: boolean
   action?: boolean
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: boolean
   sizeOnDisk?: boolean
   year?: boolean
   rating?: boolean
@@ -1492,6 +1795,8 @@ export type LibraryCleanupApprovalSelect<ExtArgs extends runtime.Types.Extension
   expiresAt?: boolean
   createdAt?: boolean
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
+  mediaServerScans?: boolean | Prisma.LibraryCleanupApproval$mediaServerScansArgs<ExtArgs>
+  _count?: boolean | Prisma.LibraryCleanupApprovalCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["libraryCleanupApproval"]>
 
 export type LibraryCleanupApprovalSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -1511,6 +1816,8 @@ export type LibraryCleanupApprovalSelectCreateManyAndReturn<ExtArgs extends runt
   matchedRuleName?: boolean
   reason?: boolean
   action?: boolean
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: boolean
   sizeOnDisk?: boolean
   year?: boolean
   rating?: boolean
@@ -1552,6 +1859,8 @@ export type LibraryCleanupApprovalSelectUpdateManyAndReturn<ExtArgs extends runt
   matchedRuleName?: boolean
   reason?: boolean
   action?: boolean
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: boolean
   sizeOnDisk?: boolean
   year?: boolean
   rating?: boolean
@@ -1593,6 +1902,8 @@ export type LibraryCleanupApprovalSelectScalar = {
   matchedRuleName?: boolean
   reason?: boolean
   action?: boolean
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: boolean
   sizeOnDisk?: boolean
   year?: boolean
   rating?: boolean
@@ -1616,9 +1927,11 @@ export type LibraryCleanupApprovalSelectScalar = {
   createdAt?: boolean
 }
 
-export type LibraryCleanupApprovalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "instanceId" | "arrItemId" | "itemType" | "targetScope" | "arrEpisodeId" | "episodeFileId" | "seasonNumber" | "episodeNumber" | "episodeTitle" | "title" | "matchedRuleId" | "matchedRuleName" | "reason" | "action" | "sizeOnDisk" | "year" | "rating" | "status" | "executionToken" | "executionAuditCorrelationId" | "reconciledWithoutMutation" | "terminalAuditCorrelationId" | "terminalAuditEventType" | "terminalAuditOutcome" | "terminalAuditActorType" | "terminalAuditActorId" | "terminalAuditTrigger" | "terminalAuditReason" | "terminalAuditRecordedAt" | "safetySnapshot" | "lastExecutionError" | "reviewedAt" | "executedAt" | "expiresAt" | "createdAt", ExtArgs["result"]["libraryCleanupApproval"]>
+export type LibraryCleanupApprovalOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "instanceId" | "arrItemId" | "itemType" | "targetScope" | "arrEpisodeId" | "episodeFileId" | "seasonNumber" | "episodeNumber" | "episodeTitle" | "title" | "matchedRuleId" | "matchedRuleName" | "reason" | "action" | "scanMediaServerAfterDelete" | "scanMediaServerInstanceIds" | "sizeOnDisk" | "year" | "rating" | "status" | "executionToken" | "executionAuditCorrelationId" | "reconciledWithoutMutation" | "terminalAuditCorrelationId" | "terminalAuditEventType" | "terminalAuditOutcome" | "terminalAuditActorType" | "terminalAuditActorId" | "terminalAuditTrigger" | "terminalAuditReason" | "terminalAuditRecordedAt" | "safetySnapshot" | "lastExecutionError" | "reviewedAt" | "executedAt" | "expiresAt" | "createdAt", ExtArgs["result"]["libraryCleanupApproval"]>
 export type LibraryCleanupApprovalInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
+  mediaServerScans?: boolean | Prisma.LibraryCleanupApproval$mediaServerScansArgs<ExtArgs>
+  _count?: boolean | Prisma.LibraryCleanupApprovalCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type LibraryCleanupApprovalIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
@@ -1631,6 +1944,7 @@ export type $LibraryCleanupApprovalPayload<ExtArgs extends runtime.Types.Extensi
   name: "LibraryCleanupApproval"
   objects: {
     config: Prisma.$LibraryCleanupConfigPayload<ExtArgs>
+    mediaServerScans: Prisma.$LibraryCleanupMediaServerScanPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1649,6 +1963,8 @@ export type $LibraryCleanupApprovalPayload<ExtArgs extends runtime.Types.Extensi
     matchedRuleName: string
     reason: string
     action: string | null
+    scanMediaServerAfterDelete: boolean
+    scanMediaServerInstanceIds: string | null
     sizeOnDisk: bigint
     year: number | null
     rating: number | null
@@ -2065,6 +2381,7 @@ readonly fields: LibraryCleanupApprovalFieldRefs;
 export interface Prisma__LibraryCleanupApprovalClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
   config<T extends Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>>): Prisma.Prisma__LibraryCleanupConfigClient<runtime.Types.Result.GetResult<Prisma.$LibraryCleanupConfigPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | Null, Null, ExtArgs, GlobalOmitOptions>
+  mediaServerScans<T extends Prisma.LibraryCleanupApproval$mediaServerScansArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.LibraryCleanupApproval$mediaServerScansArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$LibraryCleanupMediaServerScanPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2110,6 +2427,8 @@ export interface LibraryCleanupApprovalFieldRefs {
   readonly matchedRuleName: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly reason: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly action: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
+  readonly scanMediaServerAfterDelete: Prisma.FieldRef<"LibraryCleanupApproval", 'Boolean'>
+  readonly scanMediaServerInstanceIds: Prisma.FieldRef<"LibraryCleanupApproval", 'String'>
   readonly sizeOnDisk: Prisma.FieldRef<"LibraryCleanupApproval", 'BigInt'>
   readonly year: Prisma.FieldRef<"LibraryCleanupApproval", 'Int'>
   readonly rating: Prisma.FieldRef<"LibraryCleanupApproval", 'Float'>
@@ -2527,6 +2846,30 @@ export type LibraryCleanupApprovalDeleteManyArgs<ExtArgs extends runtime.Types.E
    * Limit how many LibraryCleanupApprovals to delete.
    */
   limit?: number
+}
+
+/**
+ * LibraryCleanupApproval.mediaServerScans
+ */
+export type LibraryCleanupApproval$mediaServerScansArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the LibraryCleanupMediaServerScan
+   */
+  select?: Prisma.LibraryCleanupMediaServerScanSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the LibraryCleanupMediaServerScan
+   */
+  omit?: Prisma.LibraryCleanupMediaServerScanOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.LibraryCleanupMediaServerScanInclude<ExtArgs> | null
+  where?: Prisma.LibraryCleanupMediaServerScanWhereInput
+  orderBy?: Prisma.LibraryCleanupMediaServerScanOrderByWithRelationInput | Prisma.LibraryCleanupMediaServerScanOrderByWithRelationInput[]
+  cursor?: Prisma.LibraryCleanupMediaServerScanWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.LibraryCleanupMediaServerScanScalarFieldEnum | Prisma.LibraryCleanupMediaServerScanScalarFieldEnum[]
 }
 
 /**

@@ -406,6 +406,20 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 
 	const deps: CleanupExecutorDeps = {
 		prisma: {
+			libraryCleanupRule: {
+				findFirst: vi.fn(({ where }: { where: { id: string } }) =>
+					Promise.resolve(
+						[
+							...(options.seriesPolicyAction === null
+								? []
+								: [seriesCleanupRule(options.seriesPolicyAction ?? options.action ?? "delete")]),
+							episodeCleanupRule(),
+							episodeCleanupRule("delete_files"),
+							episodeCleanupRule("unmonitor"),
+						].find((rule) => rule.id === where.id) ?? null,
+					),
+				),
+			},
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({
 					id: "config-1",

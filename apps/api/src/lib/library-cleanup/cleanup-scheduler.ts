@@ -36,6 +36,7 @@ import {
 	CleanupMaintenanceConflictError,
 	withCleanupOperationGuard,
 } from "./cleanup-maintenance-gate.js";
+import { retryAllPendingMediaServerRescans } from "./media-server-rescan.js";
 import type { CleanupExecutorDeps, CleanupRunResult } from "./types.js";
 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
@@ -483,6 +484,16 @@ export class CleanupScheduler {
 				if (!config?.dryRunMode) {
 					await this.repairMissingTerminalAuditEvents().catch((err) => {
 						this.logger.warn({ err }, "Failed to load cleanup terminal audit repairs");
+					});
+					await retryAllPendingMediaServerRescans({
+						prisma: this.prisma,
+						encryptor: this.encryptor,
+						log: this.logger,
+					}).catch((err) => {
+						this.logger.warn(
+							{ err },
+							"Failed to retry durable media-server scans; cleanup deletion will not be repeated",
+						);
 					});
 
 					// Expire stale pending approvals. The status CAS remains authoritative;

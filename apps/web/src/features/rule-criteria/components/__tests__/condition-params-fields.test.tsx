@@ -35,6 +35,7 @@ const fieldOptions: CleanupFieldOptionsResponse = {
 	jellyfinUsers: ["Alex", "Robin"],
 	jellyfinLibraries: [],
 	arrTags: [],
+	mediaServerInstances: [],
 	hasPlex: false,
 	hasJellyfin: true,
 };

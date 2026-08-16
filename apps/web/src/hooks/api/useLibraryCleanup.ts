@@ -53,6 +53,7 @@ export function useCleanupApprovalQueue(page = 1, pageSize = 20, statusFilter = 
 	return useQuery({
 		queryKey: libraryCleanupKeys.approvalQueue(page, statusFilter),
 		queryFn: () => libraryCleanupApi.getApprovalQueue(page, pageSize, statusFilter),
+		refetchInterval: POLLING_STANDARD,
 	});
 }
 

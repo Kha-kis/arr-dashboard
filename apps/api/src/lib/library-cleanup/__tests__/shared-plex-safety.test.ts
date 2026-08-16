@@ -451,6 +451,9 @@ function makeDeps(options: TestOptions = {}) {
 				findUnique: vi.fn().mockResolvedValue(currentCleanupConfig),
 				updateMany: cleanupConfigUpdateMany,
 			},
+			libraryCleanupRule: {
+				findFirst: vi.fn().mockResolvedValue(currentCleanupConfig.rules[0]),
+			},
 			serviceInstance: {
 				findMany: serviceInstanceFindMany,
 				findFirst: vi.fn().mockResolvedValue(targetInstance),
@@ -874,6 +877,8 @@ function dryRunConfig(maxRemovalsPerRun = 10) {
 				excludeTitles: null,
 				plexLibraryFilter: null,
 				action: "delete",
+				scanMediaServerAfterDelete: false,
+				scanMediaServerInstanceIds: null as string | null,
 				operator: null,
 				conditions: null,
 				configId: "config-1",
@@ -5858,6 +5863,221 @@ describe("shared Plex deletion safety", () => {
 		expect(deps.prisma.libraryCache.updateMany).not.toHaveBeenCalled();
 		expect(result).toMatchObject({ status: "partial", itemsFilesDeleted: 0, itemsSkipped: 1 });
 		expect(result.warnings).toContainEqual(expect.stringContaining("not persisted"));
+	});
+
+	it("prepares an approved media-server scan before ARR mutation and dispatches after terminal state", async () => {
+		const { deps, deleteMovie } = makeDeps({ mediaPartCount: 1 });
+		const currentConfig = dryRunConfig();
+		currentConfig.dryRunMode = false;
+		currentConfig.requireApproval = true;
+		currentConfig.rules[0]!.scanMediaServerAfterDelete = true;
+		currentConfig.rules[0]!.scanMediaServerInstanceIds = '["plex-1"]';
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
+			currentConfig as never,
+		);
+		vi.mocked(deps.prisma.libraryCleanupRule.findFirst).mockResolvedValue(
+			currentConfig.rules[0] as never,
+		);
+		const storedApproval = approvalRecord({
+			configId: "config-1",
+			scanMediaServerAfterDelete: true,
+			scanMediaServerInstanceIds: '["plex-1"]',
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		vi.mocked(appendCleanupTerminalAuditEvent).mockClear();
+		const prepare = vi.fn(async () => {
+			expect(deleteMovie).not.toHaveBeenCalled();
+			return 1;
+		});
+		const trigger = vi.fn(async () => {
+			expect(storedApproval.status).toBe("executed");
+			expect(appendCleanupTerminalAuditEvent).toHaveBeenCalled();
+			return { targets: 1, triggered: 1, failed: 0, warnings: [] };
+		});
+		deps.mediaServerRescan = { prepare, trigger };
+
+		await expect(executeApprovedItems(deps, "user-1", ["approval-1"])).resolves.toEqual({
+			removed: 1,
+			failed: 0,
+			errors: [],
+		});
+
+		expect(prepare).toHaveBeenCalledOnce();
+		expect(deleteMovie).toHaveBeenCalledOnce();
+		expect(trigger).toHaveBeenCalledWith("user-1", ["approval-1"]);
+	});
+
+	it("blocks ARR mutation when durable media-server scan preparation fails", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const currentConfig = dryRunConfig();
+		currentConfig.dryRunMode = false;
+		currentConfig.requireApproval = true;
+		currentConfig.rules[0]!.scanMediaServerAfterDelete = true;
+		currentConfig.rules[0]!.scanMediaServerInstanceIds = '["plex-1"]';
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
+			currentConfig as never,
+		);
+		vi.mocked(deps.prisma.libraryCleanupRule.findFirst).mockResolvedValue(
+			currentConfig.rules[0] as never,
+		);
+		const storedApproval = approvalRecord({
+			configId: "config-1",
+			scanMediaServerAfterDelete: true,
+			scanMediaServerInstanceIds: '["plex-1"]',
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		const trigger = vi.fn();
+		deps.mediaServerRescan = {
+			prepare: vi.fn().mockRejectedValue(new Error("scan intent persistence unavailable")),
+			trigger,
+		};
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(trigger).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "pending" });
+	});
+
+	it("expires an approval when its selected media-server scan targets changed", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const currentConfig = dryRunConfig();
+		currentConfig.dryRunMode = false;
+		currentConfig.requireApproval = true;
+		currentConfig.rules[0]!.scanMediaServerAfterDelete = true;
+		currentConfig.rules[0]!.scanMediaServerInstanceIds = '["jellyfin-1"]';
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
+			currentConfig as never,
+		);
+		vi.mocked(deps.prisma.libraryCleanupRule.findFirst).mockResolvedValue(
+			currentConfig.rules[0] as never,
+		);
+		const storedApproval = approvalRecord({
+			configId: "config-1",
+			scanMediaServerAfterDelete: true,
+			scanMediaServerInstanceIds: '["plex-1"]',
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		const prepare = vi.fn();
+		const trigger = vi.fn();
+		deps.mediaServerRescan = { prepare, trigger };
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toEqual({
+			removed: 0,
+			failed: 1,
+			errors: [
+				"Skipped for safety: the selected post-delete media-server scan policy changed after this item was queued.",
+			],
+		});
+		expect(prepare).not.toHaveBeenCalled();
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(trigger).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired" });
+	});
+
+	it("expires an approval when its rule newly requires a media-server scan", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const currentConfig = dryRunConfig();
+		currentConfig.dryRunMode = false;
+		currentConfig.requireApproval = true;
+		currentConfig.rules[0]!.scanMediaServerAfterDelete = true;
+		currentConfig.rules[0]!.scanMediaServerInstanceIds = '["plex-1"]';
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
+			currentConfig as never,
+		);
+		vi.mocked(deps.prisma.libraryCleanupRule.findFirst).mockResolvedValue(
+			currentConfig.rules[0] as never,
+		);
+		const storedApproval = approvalRecord({
+			configId: "config-1",
+			scanMediaServerAfterDelete: false,
+			scanMediaServerInstanceIds: null,
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		const prepare = vi.fn();
+		const trigger = vi.fn();
+		deps.mediaServerRescan = { prepare, trigger };
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toEqual({
+			removed: 0,
+			failed: 1,
+			errors: [
+				"Skipped for safety: the selected post-delete media-server scan policy changed after this item was queued.",
+			],
+		});
+		expect(prepare).not.toHaveBeenCalled();
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(trigger).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired" });
+	});
+
+	it("keeps a direct cleanup successful when ancillary scan dispatch must retry", async () => {
+		const { deps, deleteMovie } = makeDeps({ mediaPartCount: 1 });
+		const currentConfig = dryRunConfig();
+		currentConfig.dryRunMode = false;
+		currentConfig.requireApproval = false;
+		currentConfig.rules[0]!.scanMediaServerAfterDelete = true;
+		currentConfig.rules[0]!.scanMediaServerInstanceIds = '["plex-1"]';
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
+			currentConfig as never,
+		);
+		vi.mocked(deps.prisma.libraryCleanupRule.findFirst).mockResolvedValue(
+			currentConfig.rules[0] as never,
+		);
+		const prepare = vi.fn(async () => {
+			expect(deleteMovie).not.toHaveBeenCalled();
+			return 1;
+		});
+		const trigger = vi.fn().mockRejectedValue(new Error("media server unavailable"));
+		deps.mediaServerRescan = { prepare, trigger };
+		const flaggedItem = {
+			cacheItem: {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				title: "Example Movie",
+				year: 2024,
+				...radarrCachedFileIdentity,
+				sizeOnDisk: 2_000n,
+			},
+			match: {
+				ruleId: "rule-1",
+				ruleName: "Old media",
+				reason: "Matched old-media rule",
+				action: "delete",
+				scanMediaServerAfterDelete: true,
+				scanMediaServerInstanceIds: '["plex-1"]',
+			},
+			rating: 8,
+		} as never;
+
+		const result = await executeDirectRemoval(
+			deps,
+			currentConfig as never,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result).toMatchObject({ status: "completed", itemsRemoved: 1 });
+		expect(prepare).toHaveBeenCalledOnce();
+		expect(trigger).toHaveBeenCalledOnce();
+		expect(deps.prisma.libraryCleanupApproval.create).toHaveBeenCalledWith({
+			data: expect.objectContaining({
+				scanMediaServerAfterDelete: true,
+				scanMediaServerInstanceIds: '["plex-1"]',
+			}),
+		});
 	});
 
 	it("does not reset a concurrently claimed direct retry to pending", async () => {

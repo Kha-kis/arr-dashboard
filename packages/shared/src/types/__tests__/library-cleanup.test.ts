@@ -73,3 +73,84 @@ describe("library cleanup target scope", () => {
 		).toBeNull();
 	});
 });
+
+describe("library cleanup media-server rescans", () => {
+	it("defaults new rules to no media-server rescan targets", () => {
+		const parsed = createCleanupRuleSchema.parse({
+			name: "Delete old media",
+			ruleType: "age",
+			parameters: { days: 30 },
+		});
+
+		expect(parsed.scanMediaServerAfterDelete).toBe(false);
+		expect(parsed.scanMediaServerInstanceIds).toEqual([]);
+	});
+
+	it.each(["delete", "delete_files"] as const)(
+		"accepts exact media-server targets for %s rules",
+		(action) => {
+			const parsed = createCleanupRuleSchema.parse({
+				name: "Delete old media",
+				ruleType: "age",
+				parameters: { days: 30 },
+				action,
+				scanMediaServerAfterDelete: true,
+				scanMediaServerInstanceIds: ["plex-primary", "jellyfin-primary"],
+			});
+
+			expect(parsed.scanMediaServerAfterDelete).toBe(true);
+			expect(parsed.scanMediaServerInstanceIds).toEqual(["plex-primary", "jellyfin-primary"]);
+		},
+	);
+
+	it.each([
+		[
+			{ action: "delete", scanMediaServerAfterDelete: true, scanMediaServerInstanceIds: [] },
+			"at least one media-server instance",
+		],
+		[
+			{
+				action: "unmonitor",
+				scanMediaServerAfterDelete: true,
+				scanMediaServerInstanceIds: ["plex-primary"],
+			},
+			"delete or delete-files",
+		],
+		[
+			{
+				action: "delete",
+				retentionMode: true,
+				scanMediaServerAfterDelete: true,
+				scanMediaServerInstanceIds: ["plex-primary"],
+			},
+			"retention",
+		],
+		[
+			{
+				action: "delete",
+				scanMediaServerAfterDelete: false,
+				scanMediaServerInstanceIds: ["plex-primary"],
+			},
+			"must be empty",
+		],
+	] as const)("rejects an invalid media-server rescan policy %#", (fields, message) => {
+		const result = createCleanupRuleSchema.safeParse({
+			name: "Delete old media",
+			ruleType: "age",
+			parameters: { days: 30 },
+			...fields,
+		});
+
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues.some((issue) => issue.message.includes(message))).toBe(true);
+		}
+	});
+
+	it("does not inject media-server rescan fields into partial updates", () => {
+		const parsed = updateCleanupRuleSchema.parse({ name: "Renamed" });
+
+		expect(parsed.scanMediaServerAfterDelete).toBeUndefined();
+		expect(parsed.scanMediaServerInstanceIds).toBeUndefined();
+	});
+});

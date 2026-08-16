@@ -3,6 +3,7 @@
 import type {
 	CleanupAuditEventResponse,
 	CleanupAuditTimelineResponse,
+	CleanupApprovalResponse,
 	CleanupExplainResponse,
 	CleanupPreviewResponse,
 	CleanupRuleResponse,
@@ -916,6 +917,9 @@ function ConfigTab({
 											{rule.action === "unmonitor" ? "Unmonitor" : "Delete Files"}
 										</StatusBadge>
 									)}
+									{rule.scanMediaServerAfterDelete && (
+										<StatusBadge status="info">Media scan</StatusBadge>
+									)}
 									<StatusBadge status={rule.enabled ? "success" : "default"}>
 										{rule.enabled ? "Active" : "Off"}
 									</StatusBadge>
@@ -981,6 +985,75 @@ function ConfigTab({
 // ============================================================================
 // Approvals Tab
 // ============================================================================
+
+function mediaServerScanPresentation(
+	status: CleanupApprovalResponse["mediaServerScans"][number]["status"],
+): { label: string; badge: "default" | "info" | "success" | "warning" } {
+	switch (status) {
+		case "triggered":
+			return { label: "Refresh requested", badge: "success" };
+		case "triggering":
+			return { label: "Requesting refresh", badge: "info" };
+		case "failed":
+			return { label: "Retry scheduled", badge: "warning" };
+		case "ambiguous":
+			return { label: "Confirmation pending", badge: "warning" };
+		case "skipped":
+			return { label: "Refresh skipped", badge: "default" };
+		default:
+			return { label: "Waiting to request", badge: "info" };
+	}
+}
+
+function MediaServerScanOutcomes({
+	item,
+	incognitoMode,
+}: {
+	item: CleanupApprovalResponse;
+	incognitoMode: boolean;
+}) {
+	if (!item.scanMediaServerAfterDelete) return null;
+	const scans = item.mediaServerScans ?? [];
+	if (scans.length === 0) {
+		const didNotRun = item.status === "rejected" || item.status === "expired";
+		return (
+			<p className="mt-1 text-xs text-muted-foreground">
+				{didNotRun
+					? "Media refresh was not requested because cleanup did not complete."
+					: `Media refresh planned for ${item.scanMediaServerInstanceIds.length} selected server${item.scanMediaServerInstanceIds.length === 1 ? "" : "s"}.`}
+			</p>
+		);
+	}
+
+	return (
+		<div className="mt-1.5 space-y-1" aria-label="Media-server refresh outcomes">
+			{scans.map((scan) => {
+				const presentation = mediaServerScanPresentation(scan.status);
+				const rawLabel = scan.instanceLabel ?? scan.service;
+				const displayLabel = incognitoMode ? getLinuxInstanceName(rawLabel) : rawLabel;
+				const sectionProgress =
+					scan.plannedSectionCount == null
+						? null
+						: `${scan.completedSectionCount}/${scan.plannedSectionCount} sections`;
+				return (
+					<div key={scan.id} className="flex flex-wrap items-center gap-1.5 text-xs">
+						<span className="text-muted-foreground">{displayLabel}</span>
+						<StatusBadge status={presentation.badge}>{presentation.label}</StatusBadge>
+						{sectionProgress && <span className="text-muted-foreground">{sectionProgress}</span>}
+						{scan.nextAttemptAt && scan.status !== "triggered" && (
+							<span className="text-muted-foreground">
+								Next attempt {new Date(scan.nextAttemptAt).toLocaleString()}
+							</span>
+						)}
+						{scan.lastError && scan.status !== "triggered" && (
+							<span className="basis-full text-muted-foreground">{scan.lastError}</span>
+						)}
+					</div>
+				);
+			})}
+		</div>
+	);
+}
 
 function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => void }) {
 	const [incognitoMode] = useIncognitoMode();
@@ -1237,6 +1310,7 @@ function ApprovalsTab({ onExplain }: { onExplain: (target: ExplainTarget) => voi
 													: item.lastExecutionError}
 											</p>
 										)}
+										<MediaServerScanOutcomes item={item} incognitoMode={incognitoMode} />
 									</div>
 									<span className="text-xs text-muted-foreground shrink-0">
 										{(Number(item.sizeOnDisk) / 1073741824).toFixed(1)} GB

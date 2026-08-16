@@ -218,6 +218,17 @@ export type LibraryCleanupRule = Prisma.LibraryCleanupRuleModel
  */
 export type LibraryCleanupApproval = Prisma.LibraryCleanupApprovalModel
 /**
+ * Model LibraryCleanupMediaServerScan
+ * Durable, independently retryable media-server scan requests created before
+ * cleanup deletion. Scan failure never reopens or repeats the ARR mutation.
+ */
+export type LibraryCleanupMediaServerScan = Prisma.LibraryCleanupMediaServerScanModel
+/**
+ * Model LibraryCleanupMediaServerScanLease
+ * Cross-worker lease for one physical media-server refresh operation.
+ */
+export type LibraryCleanupMediaServerScanLease = Prisma.LibraryCleanupMediaServerScanLeaseModel
+/**
  * Model LibraryCleanupAuditEvent
  * Immutable event history for the native 3.0 library-cleanup lifecycle.
  * Only the dedicated append writer creates rows; callers never supply the

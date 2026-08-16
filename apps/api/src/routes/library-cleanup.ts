@@ -9,6 +9,7 @@ import {
 	bulkApprovalSchema,
 	cleanupExplainRequestSchema,
 	createCleanupRuleSchema,
+	getCleanupMediaServerScanValidationError,
 	getCleanupRuleScopeValidationError,
 	isKindLegalForContext,
 	reorderRulesSchema,
@@ -123,6 +124,8 @@ function serializeRule(rule: Record<string, unknown>) {
 		plexLibraryFilter: safeJsonParse(rule.plexLibraryFilter as string | null),
 		targetScope: rule.targetScope === "episode" ? "episode" : "series",
 		action: (rule.action as string) ?? "delete",
+		scanMediaServerAfterDelete: rule.scanMediaServerAfterDelete === true,
+		scanMediaServerInstanceIds: parseMediaServerInstanceIds(rule.scanMediaServerInstanceIds),
 		operator: (rule.operator as string) ?? null,
 		conditions: safeJsonParse(rule.conditions as string | null),
 		retentionMode: rule.retentionMode ?? false,
@@ -133,7 +136,47 @@ function serializeRule(rule: Record<string, unknown>) {
 	};
 }
 
-export function serializeApproval(a: Record<string, unknown>) {
+function storedStringArrayCount(value: unknown): number {
+	const parsed = safeJsonParse(value as string | null);
+	return Array.isArray(parsed)
+		? new Set(parsed.filter((entry): entry is string => typeof entry === "string")).size
+		: 0;
+}
+
+function optionalDateIso(value: unknown): string | null {
+	return value instanceof Date ? value.toISOString() : null;
+}
+
+export function serializeMediaServerScan(
+	scan: Record<string, unknown>,
+	instanceLabels: ReadonlyMap<string, string> = new Map(),
+) {
+	return {
+		id: scan.id,
+		instanceId: scan.instanceId,
+		instanceLabel: instanceLabels.get(String(scan.instanceId)) ?? null,
+		service: scan.service,
+		status: scan.status,
+		attemptCount: typeof scan.attemptCount === "number" ? scan.attemptCount : 0,
+		plannedSectionCount:
+			scan.plannedSectionIds == null ? null : storedStringArrayCount(scan.plannedSectionIds),
+		completedSectionCount: storedStringArrayCount(scan.completedSectionIds),
+		lastError: (scan.lastError as string | null) ?? null,
+		nextAttemptAt: optionalDateIso(scan.nextAttemptAt),
+		triggeredAt: optionalDateIso(scan.triggeredAt),
+	};
+}
+
+export function serializeApproval(
+	a: Record<string, unknown>,
+	instanceLabels: ReadonlyMap<string, string> = new Map(),
+) {
+	const mediaServerScans = Array.isArray(a.mediaServerScans)
+		? a.mediaServerScans.filter(
+				(scan): scan is Record<string, unknown> =>
+					typeof scan === "object" && scan !== null && !Array.isArray(scan),
+			)
+		: [];
 	return {
 		id: a.id,
 		instanceId: a.instanceId,
@@ -150,6 +193,11 @@ export function serializeApproval(a: Record<string, unknown>) {
 		matchedRuleName: a.matchedRuleName,
 		reason: a.reason,
 		action: (a.action as string) ?? "delete",
+		scanMediaServerAfterDelete: a.scanMediaServerAfterDelete === true,
+		scanMediaServerInstanceIds: parseMediaServerInstanceIds(a.scanMediaServerInstanceIds),
+		mediaServerScans: mediaServerScans.map((scan) =>
+			serializeMediaServerScan(scan, instanceLabels),
+		),
 		sizeOnDisk: String(a.sizeOnDisk),
 		year: a.year,
 		rating: a.rating,
@@ -160,6 +208,18 @@ export function serializeApproval(a: Record<string, unknown>) {
 		createdAt: (a.createdAt as Date).toISOString(),
 		expiresAt: (a.expiresAt as Date).toISOString(),
 	};
+}
+
+function canonicalMediaServerInstanceIds(instanceIds: readonly string[]): string[] {
+	return [...new Set(instanceIds)].sort((left, right) => left.localeCompare(right));
+}
+
+function parseMediaServerInstanceIds(value: unknown): string[] {
+	const parsed = safeJsonParse(value as string | null);
+	if (!Array.isArray(parsed)) return [];
+	return canonicalMediaServerInstanceIds(
+		parsed.filter((entry): entry is string => typeof entry === "string" && entry.length > 0),
+	);
 }
 
 function serializeLog(l: Record<string, unknown>) {
@@ -405,6 +465,26 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					});
 		assertCompleteCacheRefresh(source, result);
 	};
+	const getMediaServerSelectionError = async (
+		userId: string,
+		instanceIds: readonly string[],
+	): Promise<string | null> => {
+		if (instanceIds.length === 0) return null;
+		const instances = await app.prisma.serviceInstance.findMany({
+			where: {
+				id: { in: [...instanceIds] },
+				userId,
+				enabled: true,
+				service: { in: ["PLEX", "JELLYFIN", "EMBY"] },
+			},
+			select: { id: true },
+		});
+		const foundIds = new Set(instances.map((instance) => instance.id));
+		return foundIds.size === instanceIds.length &&
+			instanceIds.every((instanceId) => foundIds.has(instanceId))
+			? null
+			: "Every media-server scan target must be an enabled Plex, Jellyfin, or Emby instance owned by the current user";
+	};
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
 			return reply.status(401).send({ error: "Authentication required" });
@@ -519,8 +599,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const plexCollections = new Set<string>();
 		const plexLabels = new Set<string>();
 		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX" },
-			select: { id: true },
+			where: { userId, enabled: true, service: "PLEX" },
+			select: { id: true, label: true, service: true },
 		});
 		if (plexInstances.length > 0) {
 			const plexInstanceIds = plexInstances.map((i) => i.id);
@@ -555,8 +635,8 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const jellyfinUsers = new Set<string>();
 		const jellyfinLibraries = new Set<string>();
 		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
-			select: { id: true },
+			where: { userId, enabled: true, service: { in: ["JELLYFIN", "EMBY"] } },
+			select: { id: true, label: true, service: true },
 		});
 		if (jellyfinInstances.length > 0) {
 			const jellyfinInstanceIds = jellyfinInstances.map((i) => i.id);
@@ -600,6 +680,20 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			}
 		}
 		arrTags.sort((a, b) => a.label.localeCompare(b.label));
+		const mediaServerInstances = [
+			...plexInstances.map((instance) => ({
+				id: instance.id,
+				label: instance.label || "Plex",
+				service: "PLEX" as const,
+			})),
+			...jellyfinInstances.map((instance) => ({
+				id: instance.id,
+				label: instance.label || (instance.service === "EMBY" ? "Emby" : "Jellyfin"),
+				service: instance.service as "JELLYFIN" | "EMBY",
+			})),
+		].sort(
+			(left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id),
+		);
 
 		const sorted = (s: Set<string>) => [...s].sort((a, b) => a.localeCompare(b));
 
@@ -616,6 +710,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			jellyfinUsers: sorted(jellyfinUsers),
 			jellyfinLibraries: sorted(jellyfinLibraries),
 			arrTags,
+			mediaServerInstances,
 			hasPlex: plexInstances.length > 0,
 			hasJellyfin: jellyfinInstances.length > 0,
 		};
@@ -711,6 +806,13 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		if (scopeValidationError) {
 			return reply.status(400).send({ error: scopeValidationError });
 		}
+		const scanMediaServerInstanceIds = canonicalMediaServerInstanceIds(
+			data.scanMediaServerInstanceIds,
+		);
+		if (data.scanMediaServerAfterDelete) {
+			const selectionError = await getMediaServerSelectionError(userId, scanMediaServerInstanceIds);
+			if (selectionError) return reply.status(400).send({ error: selectionError });
+		}
 
 		const config = await app.prisma.libraryCleanupConfig.findUnique({
 			where: { userId },
@@ -740,6 +842,10 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 							: null,
 						targetScope: data.targetScope ?? "series",
 						action: data.action ?? "delete",
+						scanMediaServerAfterDelete: data.scanMediaServerAfterDelete,
+						scanMediaServerInstanceIds: data.scanMediaServerAfterDelete
+							? JSON.stringify(scanMediaServerInstanceIds)
+							: null,
 						operator: data.operator ?? null,
 						conditions: data.conditions ? JSON.stringify(data.conditions) : null,
 						retentionMode: data.retentionMode ?? false,
@@ -857,13 +963,30 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const effectivePlexLibraryFilter = hasSuppliedField("plexLibraryFilter")
 			? (data.plexLibraryFilter ?? null)
 			: (utilSafeJsonParse(existing.plexLibraryFilter ?? "") as string[] | null);
+		const effectiveAction = hasSuppliedField("action")
+			? data.action!
+			: existing.action === "unmonitor" || existing.action === "delete_files"
+				? existing.action
+				: "delete";
+		const effectiveRetentionMode = hasSuppliedField("retentionMode")
+			? (data.retentionMode ?? false)
+			: existing.retentionMode;
+		const effectiveScanMediaServerAfterDelete = hasSuppliedField("scanMediaServerAfterDelete")
+			? (data.scanMediaServerAfterDelete ?? false)
+			: existing.scanMediaServerAfterDelete;
+		const existingMediaServerInstanceIds = parseMediaServerInstanceIds(
+			existing.scanMediaServerInstanceIds,
+		);
+		const effectiveScanMediaServerInstanceIds = hasSuppliedField("scanMediaServerInstanceIds")
+			? canonicalMediaServerInstanceIds(data.scanMediaServerInstanceIds ?? [])
+			: hasSuppliedField("scanMediaServerAfterDelete") && !effectiveScanMediaServerAfterDelete
+				? []
+				: existingMediaServerInstanceIds;
 		const scopeValidationError = getCleanupRuleScopeValidationError({
 			targetScope: effectiveTargetScope,
 			serviceFilter: effectiveServiceFilter,
 			plexLibraryFilter: effectivePlexLibraryFilter,
-			retentionMode: hasSuppliedField("retentionMode")
-				? data.retentionMode
-				: existing.retentionMode,
+			retentionMode: effectiveRetentionMode,
 			ruleType: effectiveRuleType,
 			parameters: effectiveParams ?? {},
 			operator: hasSuppliedField("operator") ? data.operator : existing.operator,
@@ -871,6 +994,22 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		});
 		if (scopeValidationError) {
 			return reply.status(400).send({ error: scopeValidationError });
+		}
+		const scanValidationError = getCleanupMediaServerScanValidationError({
+			action: effectiveAction,
+			retentionMode: effectiveRetentionMode,
+			scanMediaServerAfterDelete: effectiveScanMediaServerAfterDelete,
+			scanMediaServerInstanceIds: effectiveScanMediaServerInstanceIds,
+		});
+		if (scanValidationError) {
+			return reply.status(400).send({ error: scanValidationError });
+		}
+		if (effectiveScanMediaServerAfterDelete) {
+			const selectionError = await getMediaServerSelectionError(
+				userId,
+				effectiveScanMediaServerInstanceIds,
+			);
+			if (selectionError) return reply.status(400).send({ error: selectionError });
 		}
 		if (
 			hasSuppliedField("ruleType") ||
@@ -907,6 +1046,17 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				: null;
 		if (hasSuppliedField("targetScope")) updateData.targetScope = data.targetScope;
 		if (hasSuppliedField("action")) updateData.action = data.action;
+		if (hasSuppliedField("scanMediaServerAfterDelete")) {
+			updateData.scanMediaServerAfterDelete = effectiveScanMediaServerAfterDelete;
+			if (!effectiveScanMediaServerAfterDelete && !hasSuppliedField("scanMediaServerInstanceIds")) {
+				updateData.scanMediaServerInstanceIds = null;
+			}
+		}
+		if (hasSuppliedField("scanMediaServerInstanceIds")) {
+			updateData.scanMediaServerInstanceIds = effectiveScanMediaServerAfterDelete
+				? JSON.stringify(effectiveScanMediaServerInstanceIds)
+				: null;
+		}
 		if (hasSuppliedField("operator")) updateData.operator = data.operator ?? null;
 		if (hasSuppliedField("conditions"))
 			updateData.conditions = data.conditions?.length ? JSON.stringify(data.conditions) : null;
@@ -1230,6 +1380,9 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				orderBy: { createdAt: "desc" },
 				skip: (page - 1) * pageSize,
 				take: pageSize,
+				include: {
+					mediaServerScans: { orderBy: { createdAt: "asc" } },
+				},
 			}),
 			app.prisma.libraryCleanupApproval.count({
 				where: {
@@ -1241,7 +1394,14 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		]);
 
 		// Enrich with instance labels
-		const distinctInstanceIds = [...new Set(approvals.map((a) => a.instanceId))];
+		const distinctInstanceIds = [
+			...new Set([
+				...approvals.map((approval) => approval.instanceId),
+				...approvals.flatMap((approval) =>
+					(approval.mediaServerScans ?? []).map((scan) => scan.instanceId),
+				),
+			]),
+		];
 		const instanceLabelMap = new Map<string, string>();
 		if (distinctInstanceIds.length > 0) {
 			const instances = await app.prisma.serviceInstance.findMany({
@@ -1255,7 +1415,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 
 		return reply.send({
 			items: approvals.map((a) => ({
-				...serializeApproval(a as unknown as Record<string, unknown>),
+				...serializeApproval(a as unknown as Record<string, unknown>, instanceLabelMap),
 				instanceLabel: instanceLabelMap.get(a.instanceId) ?? null,
 			})),
 			total,

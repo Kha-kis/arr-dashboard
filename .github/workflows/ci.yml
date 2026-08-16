@@ -68,8 +68,8 @@ jobs:
         env:
           DATABASE_URL: file:./prisma/test-integration.db
 
-      - name: Run deployment-state persistence contract
-        run: pnpm exec vitest run src/lib/trash-guides/__tests__/deployment-state-persistence.test.ts
+      - name: Run durable persistence contracts
+        run: pnpm exec vitest run src/lib/trash-guides/__tests__/deployment-state-persistence.test.ts src/lib/library-cleanup/__tests__/media-server-rescan-database.test.ts
         working-directory: apps/api
         env:
           TEST_DB: "true"
