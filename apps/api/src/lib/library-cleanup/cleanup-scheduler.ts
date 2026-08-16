@@ -31,6 +31,9 @@ import {
 	CleanupRunAlreadyInProgressError,
 	executeCleanupRun,
 	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
 } from "./cleanup-executor.js";
 import {
 	CleanupMaintenanceConflictError,
@@ -151,6 +154,55 @@ function buildSchedulerTransitionAuditInput(
 	};
 }
 
+function buildSchedulerRecoveryExpiredAuditInput(
+	approval: SchedulerAuditApproval,
+	fromStatus: string,
+	reason: string,
+	recoveryAt: Date,
+): AppendCleanupAuditEventInput {
+	const eventType = "expired" as const;
+	const correlationId = `recovery:${approval.id}:episode-phase:${fromStatus}:${recoveryAt.getTime()}`;
+	return {
+		userId: approval.config.userId,
+		configId: approval.configId,
+		eventKey: createCleanupAuditEventKey({ actionId: approval.id, correlationId, eventType }),
+		actionId: approval.id,
+		correlationId,
+		actorType: "scheduler",
+		eventType,
+		trigger: "recovery",
+		target: schedulerAuditTarget(approval),
+		summary: schedulerAuditSummary(approval, reason),
+		outcome: "blocked",
+		evidence: {
+			stateTransitionPersisted: true,
+			fromStatus,
+			toStatus: "expired",
+			mutationOutcome: "unknown",
+		},
+	};
+}
+
+function episodeRecoverySourceStatus(
+	correlationId: string,
+): "executing" | "retry_executing" | null {
+	const marker = ":episode-phase:";
+	const markerIndex = correlationId.lastIndexOf(marker);
+	if (!correlationId.startsWith("recovery:") || markerIndex < 0) return null;
+	const [fromStatus, timestamp, ...remainder] = correlationId
+		.slice(markerIndex + marker.length)
+		.split(":");
+	if (
+		remainder.length > 0 ||
+		(fromStatus !== "executing" && fromStatus !== "retry_executing") ||
+		!timestamp ||
+		!/^[0-9]+$/.test(timestamp)
+	) {
+		return null;
+	}
+	return fromStatus;
+}
+
 function buildPersistedTerminalAuditInput(
 	approval: SchedulerAuditApproval,
 ): AppendCleanupAuditEventInput | null {
@@ -189,7 +241,16 @@ function buildPersistedTerminalAuditInput(
 	if (eventType === "approval_reviewed") {
 		evidence = { decision: "rejected" };
 	} else if (eventType === "expired") {
-		evidence = { stateTransitionPersisted: true, fromStatus: "pending", toStatus: "expired" };
+		const recoverySourceStatus =
+			trigger === "recovery" ? episodeRecoverySourceStatus(correlationId) : null;
+		evidence = recoverySourceStatus
+			? {
+					stateTransitionPersisted: true,
+					fromStatus: recoverySourceStatus,
+					toStatus: "expired",
+					mutationOutcome: "unknown",
+				}
+			: { stateTransitionPersisted: true, fromStatus: "pending", toStatus: "expired" };
 	} else {
 		evidence = {
 			authoritativeTerminalStatePersisted: true,
@@ -406,6 +467,7 @@ export class CleanupScheduler {
 		stuckThreshold: Date,
 		staleRunLeaseThreshold: Date,
 		logMessage: string,
+		excludedLastExecutionErrors: string[] = [],
 	): Promise<void> {
 		const leaseIsRecoverable = {
 			OR: [
@@ -414,8 +476,22 @@ export class CleanupScheduler {
 				{ runClaimedAt: { lt: staleRunLeaseThreshold } },
 			],
 		};
+		const lastExecutionErrorFilter =
+			excludedLastExecutionErrors.length > 0
+				? {
+						OR: [
+							{ lastExecutionError: null },
+							{ lastExecutionError: { notIn: excludedLastExecutionErrors } },
+						],
+					}
+				: {};
 		const approvals = await this.prisma.libraryCleanupApproval.findMany({
-			where: { status: fromStatus, reviewedAt: { lt: stuckThreshold }, config: leaseIsRecoverable },
+			where: {
+				status: fromStatus,
+				reviewedAt: { lt: stuckThreshold },
+				config: leaseIsRecoverable,
+				...lastExecutionErrorFilter,
+			},
 			include: { config: { select: { userId: true } } },
 			orderBy: { id: "asc" },
 			take: TRANSITION_AUDIT_BATCH_LIMIT,
@@ -441,6 +517,7 @@ export class CleanupScheduler {
 							config: { userId: approval.config.userId, ...leaseIsRecoverable },
 							status: fromStatus,
 							reviewedAt: { lt: stuckThreshold },
+							...lastExecutionErrorFilter,
 						},
 						data: {
 							status: toStatus,
@@ -461,6 +538,147 @@ export class CleanupScheduler {
 			}
 		}
 		if (recoveredCount > 0) this.logger.warn({ recoveredCount }, logMessage);
+	}
+
+	private async recoverInterruptedSonarrEpisodePhases(
+		stuckThreshold: Date,
+		staleRunLeaseThreshold: Date,
+	): Promise<void> {
+		const leaseIsRecoverable = {
+			OR: [
+				{ runClaimToken: null },
+				{ runClaimedAt: null },
+				{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+			],
+		};
+		const transitions = [
+			{
+				fromStatus: "executing",
+				toStatus: "expired",
+				reason: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+			},
+			{
+				fromStatus: "retry_executing",
+				toStatus: "expired",
+				reason: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+			},
+			{
+				fromStatus: "executing",
+				toStatus: "retry_pending",
+				reason: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+			},
+			{
+				fromStatus: "retry_executing",
+				toStatus: "retry_pending",
+				reason: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+			},
+			{
+				fromStatus: "executing",
+				toStatus: "retry_pending",
+				reason: SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+			},
+			{
+				fromStatus: "retry_executing",
+				toStatus: "retry_pending",
+				reason: SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+			},
+		] as const;
+
+		for (const transition of transitions) {
+			const approvals = await this.prisma.libraryCleanupApproval.findMany({
+				where: {
+					status: transition.fromStatus,
+					lastExecutionError: transition.reason,
+					reviewedAt: { lt: stuckThreshold },
+					config: leaseIsRecoverable,
+				},
+				include: { config: { select: { userId: true } } },
+				orderBy: { id: "asc" },
+				take: TRANSITION_AUDIT_BATCH_LIMIT,
+			});
+			let recoveredCount = 0;
+			for (const approval of approvals) {
+				const recoveryAt = new Date();
+				const terminalRecovery = transition.toStatus === "expired";
+				const auditInput = terminalRecovery
+					? buildSchedulerRecoveryExpiredAuditInput(
+							approval,
+							transition.fromStatus,
+							transition.reason,
+							recoveryAt,
+						)
+					: buildSchedulerTransitionAuditInput(approval, {
+							eventType: "recovered",
+							fromStatus: transition.fromStatus,
+							toStatus: transition.toStatus,
+							reason: transition.reason,
+						});
+				try {
+					let changed = false;
+					if (terminalRecovery) {
+						const result = await this.prisma.libraryCleanupApproval.updateMany({
+							where: {
+								id: approval.id,
+								config: { userId: approval.config.userId, ...leaseIsRecoverable },
+								status: transition.fromStatus,
+								lastExecutionError: transition.reason,
+								reviewedAt: { lt: stuckThreshold },
+							},
+							data: {
+								status: transition.toStatus,
+								executionToken: null,
+								reviewedAt: recoveryAt,
+								...createCleanupTerminalAuditState(auditInput),
+							},
+						});
+						changed = result.count === 1;
+						if (changed) {
+							await appendCleanupTerminalAuditEvent(this.prisma, auditInput, {
+								approvalId: approval.id,
+								status: "expired",
+							}).catch((error) => {
+								this.logger.warn(
+									{ err: error, approvalId: approval.id },
+									"Failed to append Sonarr episode recovery terminal audit; its envelope remains repairable",
+								);
+							});
+						}
+					} else {
+						changed = await this.prisma.$transaction(async (tx) => {
+							const result = await tx.libraryCleanupApproval.updateMany({
+								where: {
+									id: approval.id,
+									config: { userId: approval.config.userId, ...leaseIsRecoverable },
+									status: transition.fromStatus,
+									lastExecutionError: transition.reason,
+									reviewedAt: { lt: stuckThreshold },
+								},
+								data: {
+									status: transition.toStatus,
+									executionToken: null,
+									reviewedAt: recoveryAt,
+								},
+							});
+							if (result.count !== 1) return false;
+							await appendCleanupAuditEvent(tx, auditInput);
+							return true;
+						});
+					}
+					if (changed) recoveredCount++;
+				} catch (error) {
+					this.logger.warn(
+						{ err: error, approvalId: approval.id, phase: transition.reason },
+						"Failed to recover an interrupted Sonarr episode cleanup phase",
+					);
+				}
+			}
+			if (recoveredCount > 0) {
+				this.logger.warn(
+					{ recoveredCount, phase: transition.reason },
+					"Recovered interrupted Sonarr episode cleanup phase",
+				);
+			}
+		}
 	}
 
 	/**
@@ -552,6 +770,17 @@ export class CleanupScheduler {
 					).catch((err) => {
 						this.logger.warn({ err }, "Failed to recover stuck approved cleanup items");
 					});
+					await this.recoverInterruptedSonarrEpisodePhases(
+						stuckThreshold,
+						staleRunLeaseThreshold,
+					).catch((err) => {
+						this.logger.warn({ err }, "Failed to recover interrupted Sonarr episode phases");
+					});
+					const durableEpisodeRecoveryMessages = [
+						SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+						SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+						SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+					];
 					await this.recoverStaleApprovals(
 						"executing",
 						"pending",
@@ -559,6 +788,7 @@ export class CleanupScheduler {
 						stuckThreshold,
 						staleRunLeaseThreshold,
 						"Recovered stuck executing approval items — returned them to pending review",
+						durableEpisodeRecoveryMessages,
 					).catch((err) => {
 						this.logger.warn({ err }, "Failed to recover stuck executing approvals");
 					});
@@ -569,6 +799,7 @@ export class CleanupScheduler {
 						stuckThreshold,
 						staleRunLeaseThreshold,
 						"Recovered stuck record-only cleanup retries — returned them to retry pending",
+						durableEpisodeRecoveryMessages,
 					).catch((err) => {
 						this.logger.warn({ err }, "Failed to recover stuck record-only cleanup retries");
 					});

@@ -1322,8 +1322,29 @@ class ArrDeletePartialError extends Error {
 	}
 }
 
-const SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE =
+export const SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE =
 	"Partial cleanup: Sonarr accepted the episode unmonitor, but its file was not deleted. The upstream change was recorded and the mutation will remain retryable.";
+const EPISODE_UNMONITOR_STARTED_PHASE = "episode_unmonitor_started";
+const EPISODE_UNMONITOR_CONFIRMED_PHASE = "episode_unmonitor_confirmed";
+type EpisodeUnmonitorPhase =
+	| typeof EPISODE_UNMONITOR_STARTED_PHASE
+	| typeof EPISODE_UNMONITOR_CONFIRMED_PHASE;
+export const SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE =
+	"Sonarr confirmed the episode unmonitor, but arr-dashboard did not durably record the episode file deletion outcome. The deletion outcome is unknown and the mutation remains retryable.";
+export const SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE =
+	"Cleanup stopped because an interrupted episode unmonitor could not be safely attributed. No file deletion was attempted; review the episode in Sonarr before trying again.";
+const SONARR_EPISODE_UNMONITOR_DURABLE_RECOVERY_MESSAGES: string[] = [
+	SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+];
+
+function isSonarrEpisodeUnmonitorConfirmedRecovery(message: string | null): boolean {
+	return (
+		message === SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE ||
+		message === SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE
+	);
+}
 
 class SonarrEpisodeUnmonitorPartialError extends Error {
 	constructor(cause: unknown) {
@@ -1338,6 +1359,37 @@ class SonarrEpisodeUnmonitorOutcomeUnknownError extends Error {
 			{ cause },
 		);
 	}
+}
+
+class SonarrEpisodeUnmonitorStartPersistenceError extends Error {
+	constructor(cause: unknown) {
+		super(
+			"Cleanup could not durably record the episode unmonitor before contacting Sonarr. Sonarr was not called and the mutation remains retryable.",
+			{ cause },
+		);
+	}
+}
+
+class SonarrEpisodeUnmonitorConfirmationPersistenceError extends Error {
+	constructor(cause: unknown) {
+		super(
+			"Sonarr confirmed the episode unmonitor, but arr-dashboard could not durably advance its recovery phase. No file deletion was attempted and the mutation remains retryable.",
+			{ cause },
+		);
+	}
+}
+
+class SonarrEpisodeUnmonitorUncertaintyTombstoneError extends Error {
+	constructor() {
+		super(
+			"Skipped for safety: an earlier episode unmonitor has an unknown outcome. Review the episode in Sonarr and use approval mode before allowing another cleanup mutation.",
+		);
+	}
+}
+
+interface EpisodeUnmonitorRecoveryBoundary {
+	phase: EpisodeUnmonitorPhase | null;
+	persist(phase: EpisodeUnmonitorPhase): Promise<void>;
 }
 
 class CleanupApprovalOwnershipLostError extends Error {
@@ -2357,6 +2409,25 @@ async function persistAndClaimDirectMutationIntent(
 	const executablePlan = asExecutableSafetyPlan(safetyPlan);
 	if (!executablePlan) {
 		throw new Error("No executable cleanup safety plan was available for the mutation intent");
+	}
+	if (item.episodeTarget && item.match.action === "delete") {
+		const uncertaintyTombstone = await deps.prisma.libraryCleanupApproval.findFirst({
+			where: {
+				configId: config.id,
+				config: { userId },
+				instanceId: item.cacheItem.instanceId,
+				arrItemId: item.cacheItem.arrItemId,
+				targetScope: "episode",
+				arrEpisodeId: item.episodeTarget.arrEpisodeId,
+				episodeFileId: item.episodeTarget.episodeFileId,
+				status: "expired",
+				lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+			},
+			select: { id: true },
+		});
+		if (uncertaintyTombstone) {
+			throw new SonarrEpisodeUnmonitorUncertaintyTombstoneError();
+		}
 	}
 	const mediaServerScanPolicy = normalizeCleanupMediaServerScanPolicy(item.match);
 	const retryEventFingerprint = createHash("sha256")
@@ -4445,6 +4516,61 @@ async function executeQueuedCleanupItems(
 				unclaimedIds.push(approval.id);
 				continue;
 			}
+			const approvedEnvelope = parseExecutableSafetyEnvelope(approval.safetySnapshot);
+			let approvedPlan = approvedEnvelope?.plan ?? null;
+			let approvedProviderEvidence = approvedEnvelope?.providerEvidence;
+			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
+			let recoveringEpisodeUnmonitorPartial = isSonarrEpisodeUnmonitorConfirmedRecovery(
+				approval.lastExecutionError,
+			);
+			const durableEpisodeUnmonitorRecoveryMessage =
+				approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE ||
+				recoveringEpisodeUnmonitorPartial
+					? approval.lastExecutionError
+					: null;
+			if (
+				options.claimStatus === "retry_pending" &&
+				approvedPlan?.kind === "verified_sonarr_episode" &&
+				approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE
+			) {
+				const executionError = SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE;
+				errors.push(executionError);
+				failed++;
+				await updateClaimedCleanupApproval(
+					prisma,
+					userId,
+					approval.id,
+					options.executeStatus,
+					claimedExecutionToken,
+					{
+						status: "expired",
+						executionToken: null,
+						lastExecutionError: executionError,
+						reviewedAt: new Date(),
+						...buildCleanupTerminalAuditState(
+							userId,
+							approval,
+							executionAuditCorrelationId,
+							"blocked",
+							options.auditContext,
+							false,
+							executionError,
+						),
+					},
+				);
+				expiredIds.push(approval.id);
+				await appendCleanupTerminalAudit(
+					deps,
+					userId,
+					approval,
+					executionAuditCorrelationId,
+					"blocked",
+					options.auditContext,
+					false,
+					executionError,
+				);
+				continue;
+			}
 			let instance: ServiceInstance | null = null;
 			try {
 				instance = await prisma.serviceInstance.findFirst({
@@ -4457,9 +4583,10 @@ async function executeQueuedCleanupItems(
 				);
 			}
 			if (!instance) {
-				const executionError =
+				const instanceLoadError =
 					"Cleanup item was not executed because its ARR instance could not be loaded.";
-				errors.push(executionError);
+				const executionError = durableEpisodeUnmonitorRecoveryMessage ?? instanceLoadError;
+				errors.push(instanceLoadError);
 				failed++;
 				try {
 					await persistCleanupFailureTransition(
@@ -4495,9 +4622,10 @@ async function executeQueuedCleanupItems(
 			try {
 				action = validateCleanupMutationShape(instance, approval.itemType, approval.action);
 			} catch (error) {
-				const executionError =
+				const invalidMutationError =
 					"Cleanup item was not executed because its stored action or media type is invalid.";
-				errors.push(executionError);
+				const executionError = durableEpisodeUnmonitorRecoveryMessage ?? invalidMutationError;
+				errors.push(invalidMutationError);
 				failed++;
 				log.error(
 					{ err: error, approvalId: approval.id, instanceId: approval.instanceId },
@@ -4535,16 +4663,10 @@ async function executeQueuedCleanupItems(
 
 			let sharedPlexBlock: string | undefined;
 			let approvalIdentityChanged = false;
-			const approvedEnvelope = parseExecutableSafetyEnvelope(approval.safetySnapshot);
-			let approvedPlan = approvedEnvelope?.plan ?? null;
-			let approvedProviderEvidence = approvedEnvelope?.providerEvidence;
-			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
 			const durableEpisodePostPartialMutation =
 				approvedEnvelope?.mutationCheckpoint === "post_partial_mutation" &&
 				approvedPlan?.kind === "verified_sonarr_episode" &&
 				action === "delete";
-			let recoveringEpisodeUnmonitorPartial =
-				approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE;
 			let postFileOwnershipPlan:
 				| Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_radarr" }>
 				| undefined;
@@ -4898,6 +5020,29 @@ async function executeQueuedCleanupItems(
 			let executionCompleted = false;
 			let reconciledWithoutMutation = false;
 			let mutationStartedAuditAttempted = false;
+			const episodeUnmonitorRecovery: EpisodeUnmonitorRecoveryBoundary = {
+				phase: recoveringEpisodeUnmonitorPartial
+					? EPISODE_UNMONITOR_CONFIRMED_PHASE
+					: approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE
+						? EPISODE_UNMONITOR_STARTED_PHASE
+						: null,
+				persist: async (phase) => {
+					const durableMessage =
+						phase === EPISODE_UNMONITOR_CONFIRMED_PHASE
+							? SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE
+							: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE;
+					await updateClaimedCleanupApproval(
+						prisma,
+						userId,
+						approval.id,
+						options.executeStatus,
+						claimedExecutionToken,
+						{ lastExecutionError: durableMessage },
+					);
+					approval.lastExecutionError = durableMessage;
+					episodeUnmonitorRecovery.phase = phase;
+				},
+			};
 			try {
 				await options.assertExecutionAllowed?.();
 				const ownership = await prisma.libraryCleanupApproval.updateMany({
@@ -5151,6 +5296,7 @@ async function executeQueuedCleanupItems(
 								approval.arrItemId,
 								safetyPlan!,
 								assertMutationAuthorityWithAudit,
+								episodeUnmonitorRecovery,
 							),
 					);
 					executionCompleted = true;
@@ -5227,7 +5373,13 @@ async function executeQueuedCleanupItems(
 				}
 			} catch (error) {
 				if (error instanceof CleanupRunLeaseLostError) {
-					const leaseError = "Cleanup execution paused because its database run lease was lost.";
+					const phaseRecoveryError = approval.lastExecutionError;
+					const leaseError =
+						(isSonarrEpisodeUnmonitorConfirmedRecovery(phaseRecoveryError) ||
+							phaseRecoveryError === SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE) &&
+						phaseRecoveryError
+							? phaseRecoveryError
+							: "Cleanup execution paused because its database run lease was lost.";
 					try {
 						await persistCleanupFailureTransition(
 							deps,
@@ -5314,14 +5466,20 @@ async function executeQueuedCleanupItems(
 					(action === "delete" || action === "delete_files") &&
 					safetyPlan?.kind === "verified_sonarr_episode";
 				const executionError = preserveEpisodeUnmonitorPartial
-					? SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE
-					: error instanceof CleanupExemptionAuthorityError ||
-							error instanceof ArrFileChangedDuringSafetyCheckError ||
-							error instanceof ArrDeletePartialError ||
-							error instanceof SonarrEpisodeUnmonitorPartialError ||
-							error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError
-						? error.message
-						: "Cleanup item could not be executed. Review the API logs for details.";
+					? (approval.lastExecutionError ?? SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE)
+					: ((action === "delete" || action === "delete_files") &&
+								error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError) ||
+							error instanceof SonarrEpisodeUnmonitorConfirmationPersistenceError
+						? SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE
+						: error instanceof CleanupExemptionAuthorityError ||
+								error instanceof ArrFileChangedDuringSafetyCheckError ||
+								error instanceof ArrDeletePartialError ||
+								error instanceof SonarrEpisodeUnmonitorPartialError ||
+								error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
+								error instanceof SonarrEpisodeUnmonitorStartPersistenceError ||
+								error instanceof SonarrEpisodeUnmonitorConfirmationPersistenceError
+							? error.message
+							: "Cleanup item could not be executed. Review the API logs for details.";
 				const mutationAuthorityChanged =
 					(error instanceof ArrMutationAuthorityChangedDuringSafetyCheckError &&
 						!preserveEpisodeUnmonitorPartial) ||
@@ -5347,6 +5505,8 @@ async function executeQueuedCleanupItems(
 				const nextFailureStatus =
 					error instanceof SonarrEpisodeUnmonitorPartialError ||
 					error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
+					error instanceof SonarrEpisodeUnmonitorStartPersistenceError ||
+					error instanceof SonarrEpisodeUnmonitorConfirmationPersistenceError ||
 					episodeFileDeletePartial ||
 					preserveEpisodeUnmonitorPartial
 						? ("retry_pending" as const)
@@ -5475,27 +5635,50 @@ async function executeQueuedCleanupItems(
 	} finally {
 		for (const [approvalId, executionToken] of claimedApprovalTokens) {
 			if (mutationAttemptedApprovalIds.has(approvalId)) continue;
-			await prisma.libraryCleanupApproval
-				.updateMany({
+			const releaseWhere = {
+				id: approvalId,
+				config: { userId },
+				status: options.executeStatus,
+				executionToken,
+			};
+			try {
+				const preservedPhase = await prisma.libraryCleanupApproval.updateMany({
 					where: {
-						id: approvalId,
-						config: { userId },
-						status: options.executeStatus,
-						executionToken,
+						...releaseWhere,
+						lastExecutionError: { in: SONARR_EPISODE_UNMONITOR_DURABLE_RECOVERY_MESSAGES },
 					},
 					data: {
 						status: options.retryStatus,
 						executionToken: null,
-						lastExecutionError:
-							"Cleanup execution was interrupted before this item reached a terminal state.",
 					},
-				})
-				.catch((error) => {
-					log.error(
-						{ err: error, approvalId },
-						"Cleanup could not release an unprocessed claimed approval",
-					);
 				});
+				if (preservedPhase.count === 0) {
+					await prisma.libraryCleanupApproval.updateMany({
+						where: {
+							...releaseWhere,
+							OR: [
+								{ lastExecutionError: null },
+								{
+									lastExecutionError: {
+										notIn: SONARR_EPISODE_UNMONITOR_DURABLE_RECOVERY_MESSAGES,
+									},
+								},
+							],
+						},
+						data: {
+							status: options.retryStatus,
+							executionToken: null,
+							lastExecutionError:
+								"Cleanup execution was interrupted before this item reached a terminal state.",
+						},
+					});
+				}
+			} catch (error) {
+				log.error(
+					{ err: error, approvalId },
+					"Cleanup could not release an unprocessed claimed approval",
+				);
+			}
 		}
 	}
 }
@@ -8455,6 +8638,20 @@ export async function executeDirectRemoval(
 			directMutationExecutionToken = intent.executionToken;
 			directMutationAuditCorrelationId = intent.executionAuditCorrelationId;
 		} catch (error) {
+			if (error instanceof SonarrEpisodeUnmonitorUncertaintyTombstoneError) {
+				runtimeSafetyBlocks++;
+				details.push(buildDetail(item, "skipped", error.message));
+				log.warn(
+					{
+						title: item.cacheItem.title,
+						instanceId: instance.id,
+						arrItemId: item.cacheItem.arrItemId,
+						arrEpisodeId: item.episodeTarget?.arrEpisodeId,
+					},
+					"Cleanup direct mutation blocked by an unresolved episode-unmonitor tombstone",
+				);
+				continue;
+			}
 			directRetryPersistenceFailures++;
 			log.error(
 				{
@@ -8493,6 +8690,24 @@ export async function executeDirectRemoval(
 			...normalizeCleanupMediaServerScanPolicy(item.match),
 		} as const;
 		let directMutationStartedAuditAttempted = false;
+		const directEpisodeUnmonitorRecovery: EpisodeUnmonitorRecoveryBoundary = {
+			phase: null,
+			persist: async (phase) => {
+				const durableMessage =
+					phase === EPISODE_UNMONITOR_CONFIRMED_PHASE
+						? SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE
+						: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE;
+				await updateClaimedCleanupApproval(
+					prisma,
+					userId,
+					directMutationIntentId,
+					"retry_executing",
+					directMutationExecutionToken,
+					{ lastExecutionError: durableMessage },
+				);
+				directEpisodeUnmonitorRecovery.phase = phase;
+			},
+		};
 		try {
 			await assertRunLease?.();
 			const ownership = await prisma.libraryCleanupApproval.updateMany({
@@ -8720,6 +8935,7 @@ export async function executeDirectRemoval(
 						item.cacheItem.arrItemId,
 						safetyPlan!,
 						assertDirectMutationAuthorityWithAudit,
+						directEpisodeUnmonitorRecovery,
 					),
 				);
 				await reconcileSonarrEpisodeFileCache(
@@ -8799,7 +9015,12 @@ export async function executeDirectRemoval(
 			}
 		} catch (error) {
 			if (error instanceof CleanupRunLeaseLostError) {
-				const leaseError = "Cleanup execution paused because its database run lease was lost.";
+				const leaseError =
+					directEpisodeUnmonitorRecovery.phase === EPISODE_UNMONITOR_CONFIRMED_PHASE
+						? SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE
+						: directEpisodeUnmonitorRecovery.phase === EPISODE_UNMONITOR_STARTED_PHASE
+							? SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE
+							: "Cleanup execution paused because its database run lease was lost.";
 				try {
 					await persistCleanupFailureTransition(
 						deps,
@@ -8879,9 +9100,18 @@ export async function executeDirectRemoval(
 			}
 			if (
 				error instanceof SonarrEpisodeUnmonitorPartialError ||
-				error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError
+				error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
+				error instanceof SonarrEpisodeUnmonitorStartPersistenceError ||
+				error instanceof SonarrEpisodeUnmonitorConfirmationPersistenceError
 			) {
-				partialArrDeletes++;
+				if (!(error instanceof SonarrEpisodeUnmonitorStartPersistenceError)) {
+					partialArrDeletes++;
+				}
+				const episodeExecutionError =
+					error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
+					error instanceof SonarrEpisodeUnmonitorConfirmationPersistenceError
+						? SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE
+						: error.message;
 				const postEpisodeUnmonitorSnapshot =
 					error instanceof SonarrEpisodeUnmonitorPartialError
 						? serializeExecutableSafetyPlan(
@@ -8900,7 +9130,7 @@ export async function executeDirectRemoval(
 						{
 							status: "retry_pending",
 							executionToken: null,
-							lastExecutionError: error.message,
+							lastExecutionError: episodeExecutionError,
 							...(postEpisodeUnmonitorSnapshot
 								? { safetySnapshot: postEpisodeUnmonitorSnapshot }
 								: {}),
@@ -8910,7 +9140,7 @@ export async function executeDirectRemoval(
 						{
 							durableStatus: "retry_pending",
 							mutationAttempted: directMutationStartedAuditAttempted,
-							reason: error.message,
+							reason: episodeExecutionError,
 						},
 					);
 				} catch (retryError) {
@@ -8925,7 +9155,7 @@ export async function executeDirectRemoval(
 						"Cleanup could not persist the partial episode unmonitor",
 					);
 				}
-				details.push(buildDetail(item, "skipped", error.message));
+				details.push(buildDetail(item, "skipped", episodeExecutionError));
 				log.error(
 					{ err: error, title: item.cacheItem.title, instanceId: instance.id },
 					"Cleanup could not complete the exact Sonarr episode mutation",
@@ -9829,6 +10059,7 @@ async function deleteFromArr(
 	arrItemId: number,
 	safetyPlan: SharedMediaSafetyPlan,
 	assertMutationAuthority?: MutationAuthorityCheck,
+	episodeUnmonitorRecovery?: EpisodeUnmonitorRecoveryBoundary,
 ): Promise<void> {
 	const client = arrClientFactory.create(instance);
 
@@ -9880,21 +10111,50 @@ async function deleteFromArr(
 				await assertVerifiedSonarrEpisodeUnchanged(sonarr, arrItemId, safetyPlan, {
 					monitoredMode: "allow_unmonitored",
 				});
-				await assertMutationAuthority?.();
 				if (safetyPlan.episode.monitored) {
-					try {
-						await sonarr.episode.setMonitored([safetyPlan.episode.arrEpisodeId], false);
-					} catch (error) {
+					if (episodeUnmonitorRecovery?.phase !== EPISODE_UNMONITOR_CONFIRMED_PHASE) {
+						try {
+							await episodeUnmonitorRecovery?.persist(EPISODE_UNMONITOR_STARTED_PHASE);
+						} catch (error) {
+							throw new SonarrEpisodeUnmonitorStartPersistenceError(error);
+						}
+						await assertMutationAuthority?.();
+						try {
+							await sonarr.episode.setMonitored([safetyPlan.episode.arrEpisodeId], false);
+						} catch (error) {
+							const unmonitored = await sonarrEpisodeRemainsUnmonitored(
+								sonarr,
+								arrItemId,
+								safetyPlan,
+							);
+							if (unmonitored === false) throw error;
+							if (unmonitored === null) {
+								throw new SonarrEpisodeUnmonitorOutcomeUnknownError(error);
+							}
+						}
 						const unmonitored = await sonarrEpisodeRemainsUnmonitored(
 							sonarr,
 							arrItemId,
 							safetyPlan,
 						);
-						if (unmonitored === false) throw error;
-						if (unmonitored === null) {
-							throw new SonarrEpisodeUnmonitorOutcomeUnknownError(error);
+						if (unmonitored === false) {
+							throw new Error("Sonarr did not apply the approved episode unmonitor");
 						}
+						if (unmonitored === null) {
+							throw new SonarrEpisodeUnmonitorOutcomeUnknownError(
+								new Error("Sonarr episode unmonitor readback was unavailable"),
+							);
+						}
+						try {
+							await episodeUnmonitorRecovery?.persist(EPISODE_UNMONITOR_CONFIRMED_PHASE);
+						} catch (error) {
+							throw new SonarrEpisodeUnmonitorConfirmationPersistenceError(error);
+						}
+					} else {
+						await assertMutationAuthority?.();
 					}
+				} else {
+					await assertMutationAuthority?.();
 				}
 				try {
 					await deleteVerifiedSonarrEpisodeFile(

@@ -2,11 +2,14 @@ import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { PlexSeriesNotFoundError } from "../../plex/plex-client.js";
 import { plexConnectionFingerprint } from "../../plex/service-instance-fingerprint.js";
+import { appendCleanupAuditEvent } from "../cleanup-audit.js";
 import {
 	executeApprovedItems,
 	executeDirectRemoval,
 	executeRetryItems,
 	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
 	selectApprovalCandidatesBeforeLimit,
 } from "../cleanup-executor.js";
 import {
@@ -459,6 +462,7 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			libraryCleanupApproval: {
 				updateMany: approvalUpdate,
 				findMany: vi.fn().mockResolvedValue([]),
+				findFirst: vi.fn().mockResolvedValue(null),
 				create: vi.fn().mockResolvedValue({}),
 				update: vi.fn().mockResolvedValue({}),
 			},
@@ -2029,6 +2033,34 @@ describe("verified Sonarr mutation handoff", () => {
 
 	function configureRetryStore(deps: CleanupExecutorDeps) {
 		const retries: Array<Record<string, unknown>> = [];
+		vi.mocked(deps.prisma.libraryCleanupApproval.findFirst).mockImplementation(
+			(async ({
+				where,
+			}: {
+				where: {
+					id?: string;
+					configId?: string;
+					instanceId?: string;
+					arrItemId?: number;
+					arrEpisodeId?: number;
+					episodeFileId?: number;
+					status?: string;
+					lastExecutionError?: string;
+				};
+			}) =>
+				retries.find(
+					(retry) =>
+						(where.id === undefined || retry.id === where.id) &&
+						(where.configId === undefined || retry.configId === where.configId) &&
+						(where.instanceId === undefined || retry.instanceId === where.instanceId) &&
+						(where.arrItemId === undefined || retry.arrItemId === where.arrItemId) &&
+						(where.arrEpisodeId === undefined || retry.arrEpisodeId === where.arrEpisodeId) &&
+						(where.episodeFileId === undefined || retry.episodeFileId === where.episodeFileId) &&
+						(where.status === undefined || retry.status === where.status) &&
+						(where.lastExecutionError === undefined ||
+							retry.lastExecutionError === where.lastExecutionError),
+				) ?? null) as never,
+		);
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
 			where,
 		}: {
@@ -2103,14 +2135,37 @@ describe("verified Sonarr mutation handoff", () => {
 			where,
 			data,
 		}: {
-			where: { id?: string; status?: string; executionToken?: string };
+			where: {
+				id?: string;
+				status?: string;
+				executionToken?: string;
+				lastExecutionError?: { in?: string[]; notIn?: string[] } | null;
+				OR?: Array<{ lastExecutionError: { notIn?: string[] } | null }>;
+			};
 			data: Record<string, unknown>;
 		}) => {
+			const matchesLastExecutionError = (
+				filter: { in?: string[]; notIn?: string[] } | null | undefined,
+			) => {
+				const current = (storedApproval.lastExecutionError as string | null | undefined) ?? null;
+				if (filter === null) return current === null;
+				if (!filter) return true;
+				if (filter.in && !filter.in.includes(current ?? "")) return false;
+				if (filter.notIn && (current === null || filter.notIn.includes(current))) return false;
+				return true;
+			};
 			if (where.id && where.id !== storedApproval.id) return { count: 0 };
 			if (where.status && where.status !== storedApproval.status) return { count: 0 };
 			if (
 				where.executionToken !== undefined &&
 				where.executionToken !== storedApproval.executionToken
+			) {
+				return { count: 0 };
+			}
+			if (!matchesLastExecutionError(where.lastExecutionError)) return { count: 0 };
+			if (
+				where.OR &&
+				!where.OR.some((condition) => matchesLastExecutionError(condition.lastExecutionError))
 			) {
 				return { count: 0 };
 			}
@@ -2187,6 +2242,264 @@ describe("verified Sonarr mutation handoff", () => {
 		}
 		return serializeExecutableSafetyPlan(plan);
 	}
+
+	async function storedEpisodeApproval(
+		fixture: ReturnType<typeof makeSonarrDeps>,
+		overrides: Record<string, unknown> = {},
+	) {
+		return {
+			...approval(),
+			matchedRuleId: "episode-rule",
+			matchedRuleName: "Remove watched episodes",
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: await verifiedEpisodeSafetySnapshot(fixture),
+			...overrides,
+		} as unknown as Record<string, unknown>;
+	}
+
+	it("does not call Sonarr when the episode unmonitor phase cannot be persisted", async () => {
+		const fixture = makeSonarrDeps({ seriesPolicyAction: null });
+		vi.mocked(appendCleanupAuditEvent).mockClear();
+		const storedApproval = await storedEpisodeApproval(fixture);
+		const update = configureApprovalStore(fixture.deps, storedApproval);
+		const baseUpdate = update.getMockImplementation()!;
+		update.mockImplementation((async (args: { data: { lastExecutionError?: string } }) => {
+			if (args.data.lastExecutionError === SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE) {
+				throw new Error("Database phase write failed");
+			}
+			return baseUpdate(args as never);
+		}) as never);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "retry_pending",
+			lastExecutionError: expect.stringContaining("Sonarr was not called"),
+		});
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(appendCleanupAuditEvent).not.toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ eventType: "mutation_started" }),
+		);
+	});
+
+	it("does not delete the episode file when the confirmed phase cannot be persisted", async () => {
+		const fixture = makeSonarrDeps({ seriesPolicyAction: null });
+		const storedApproval = await storedEpisodeApproval(fixture);
+		const update = configureApprovalStore(fixture.deps, storedApproval);
+		const baseUpdate = update.getMockImplementation()!;
+		update.mockImplementation((async (args: { data: { lastExecutionError?: string } }) => {
+			if (args.data.lastExecutionError === SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE) {
+				throw new Error("Database confirmation write failed");
+			}
+			return baseUpdate(args as never);
+		}) as never);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "retry_pending",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+		});
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("expires an interrupted started phase without repeating an upstream mutation", async () => {
+		const fixture = makeSonarrDeps();
+		const storedApproval = await storedEpisodeApproval(fixture, {
+			status: "retry_pending",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+		});
+		configureApprovalStore(fixture.deps, storedApproval);
+		vi.mocked(fixture.deps.prisma.serviceInstance.findFirst).mockRejectedValue(
+			new Error("database offline"),
+		);
+
+		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "expired",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+		});
+		expect(fixture.deps.prisma.serviceInstance.findFirst).not.toHaveBeenCalled();
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("resumes a confirmed unmonitor without sending the unmonitor twice", async () => {
+		const fixture = makeSonarrDeps({ seriesPolicyAction: null });
+		const storedApproval = await storedEpisodeApproval(fixture, {
+			status: "retry_pending",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+		});
+		fixture.setLiveEpisodeMonitored(9_001, false);
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 1, failed: 0 });
+		expect(storedApproval).toMatchObject({ status: "executed", lastExecutionError: null });
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+	});
+
+	it("preserves a confirmed recovery across a transient instance lookup failure", async () => {
+		const fixture = makeSonarrDeps({ seriesPolicyAction: null });
+		const storedApproval = await storedEpisodeApproval(fixture, {
+			status: "retry_pending",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+		});
+		fixture.setLiveEpisodeMonitored(9_001, false);
+		configureApprovalStore(fixture.deps, storedApproval);
+		vi.mocked(fixture.deps.prisma.serviceInstance.findFirst).mockRejectedValueOnce(
+			new Error("database offline"),
+		);
+
+		const first = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(first).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "retry_pending",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+		});
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+
+		const retry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(retry).toMatchObject({ removed: 1, failed: 0 });
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+	});
+
+	it("does not call Sonarr for direct cleanup when the started phase cannot be persisted", async () => {
+		const fixture = makeSonarrDeps({ seriesPolicyAction: null });
+		vi.mocked(appendCleanupAuditEvent).mockClear();
+		const intents = configureRetryStore(fixture.deps);
+		const update = vi.mocked(fixture.deps.prisma.libraryCleanupApproval.updateMany);
+		const baseUpdate = update.getMockImplementation()!;
+		update.mockImplementation((async (args: { data: { lastExecutionError?: string } }) => {
+			if (args.data.lastExecutionError === SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE) {
+				throw new Error("Database phase write failed");
+			}
+			return baseUpdate(args as never);
+		}) as never);
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{
+				id: "config-1",
+				maxRemovalsPerRun: 10,
+				respectQuiSeeding: true,
+				rules: [episodeCleanupRule()],
+			} as never,
+			"user-1",
+			[directEpisodeFlaggedItem(fixture)],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 0, itemsSkipped: 1 });
+		expect(intents).toEqual([
+			expect.objectContaining({
+				status: "retry_pending",
+				lastExecutionError: expect.stringContaining("Sonarr was not called"),
+			}),
+		]);
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(appendCleanupAuditEvent).not.toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ eventType: "mutation_started" }),
+		);
+	});
+
+	it("blocks a fresh direct intent for an expired unknown episode unmonitor", async () => {
+		const fixture = makeSonarrDeps({ seriesPolicyAction: null });
+		const intents = configureRetryStore(fixture.deps);
+		intents.push({
+			id: "expired-unknown-unmonitor",
+			configId: "config-1",
+			instanceId: "sonarr-4k",
+			arrItemId: 201,
+			arrEpisodeId: 9_001,
+			episodeFileId: 3_001,
+			targetScope: "episode",
+			status: "expired",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+		});
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{
+				id: "config-1",
+				maxRemovalsPerRun: 10,
+				respectQuiSeeding: true,
+				rules: [episodeCleanupRule()],
+			} as never,
+			"user-1",
+			[directEpisodeFlaggedItem(fixture)],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result).toMatchObject({
+			itemsRemoved: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 1,
+			details: [expect.objectContaining({ reason: expect.stringContaining("approval mode") })],
+		});
+		expect(intents).toHaveLength(1);
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("does not let an old unknown-unmonitor tombstone block a replacement episode file", async () => {
+		const fixture = makeSonarrDeps({ seriesPolicyAction: null });
+		const intents = configureRetryStore(fixture.deps);
+		intents.push({
+			id: "expired-unknown-old-file",
+			configId: "config-1",
+			instanceId: "sonarr-4k",
+			arrItemId: 201,
+			arrEpisodeId: 9_001,
+			episodeFileId: 2_999,
+			targetScope: "episode",
+			status: "expired",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+		});
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{
+				id: "config-1",
+				maxRemovalsPerRun: 10,
+				respectQuiSeeding: true,
+				rules: [episodeCleanupRule()],
+			} as never,
+			"user-1",
+			[directEpisodeFlaggedItem(fixture)],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result).toMatchObject({ itemsRemoved: 1, itemsFilesDeleted: 0, itemsSkipped: 0 });
+		expect(intents).toHaveLength(2);
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+	});
 
 	it("deduplicates approval candidates by physical episode file using legacy snapshot identity", async () => {
 		const fixture = makeSonarrDeps();
