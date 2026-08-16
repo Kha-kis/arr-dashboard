@@ -190,6 +190,12 @@ describe("library cleanup rule scope persistence", () => {
 	});
 
 	it("round-trips episode coordinates through preview without changing the series title", async () => {
+		const providerEvidence = {
+			version: 1 as const,
+			dependencies: ["plex", "plex_episode"],
+			fingerprint: "a".repeat(64),
+			sources: [],
+		};
 		executorMocks.executeCleanupPreview.mockResolvedValueOnce({
 			isDryRun: true,
 			status: "completed",
@@ -219,12 +225,14 @@ describe("library cleanup rule scope persistence", () => {
 				},
 			],
 			durationMs: 1,
-		});
+			providerEvidence,
+		} as never);
 
 		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/preview");
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
+			providerEvidence,
 			items: [
 				{
 					targetScope: "episode",

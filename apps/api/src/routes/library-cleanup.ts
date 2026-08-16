@@ -944,6 +944,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						};
 					}),
 					prefetchHealth: result.prefetchHealth,
+					providerEvidence: result.providerEvidence,
 					warnings: [
 						...(result.warnings ?? []),
 						...(hiddenPreviewItems > 0
