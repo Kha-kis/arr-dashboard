@@ -11,9 +11,11 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { useIncognitoMode } from "@/contexts/IncognitoContext";
 import { useCleanupFieldOptions } from "@/hooks/api/useLibraryCleanup";
 import { useServicesQuery } from "@/hooks/api/useServicesQuery";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { getLinuxInstanceName } from "@/lib/incognito";
 import { getServiceGradient } from "@/lib/theme-gradients";
 import { getInputStyles } from "@/lib/theme-input-styles";
 import {
@@ -44,6 +46,17 @@ interface CleanupRuleDialogProps {
 	isSaving: boolean;
 }
 
+function getMediaServerServiceLabel(service: "PLEX" | "JELLYFIN" | "EMBY"): string {
+	return service === "JELLYFIN" ? "Jellyfin" : service === "EMBY" ? "Emby" : "Plex";
+}
+
+function canScanAfterAction(
+	action: "delete" | "unmonitor" | "delete_files",
+	retentionMode: boolean,
+) {
+	return !retentionMode && action !== "unmonitor";
+}
+
 // ============================================================================
 // Component
 // ============================================================================
@@ -57,9 +70,11 @@ export function CleanupRuleDialog({
 	isSaving,
 }: CleanupRuleDialogProps) {
 	const { gradient } = useThemeGradient();
+	const [incognitoMode] = useIncognitoMode();
 	const isEdit = !!editRule;
 	const { data: fieldOptions, isLoading: fieldOptionsLoading } = useCleanupFieldOptions();
 	const { data: allServices } = useServicesQuery();
+	const mediaServerInstances = fieldOptions?.mediaServerInstances ?? [];
 	const arrInstances = useMemo(
 		() => (allServices ?? []).filter((s) => s.service === "sonarr" || s.service === "radarr"),
 		[allServices],
@@ -145,6 +160,9 @@ export function CleanupRuleDialog({
 
 	// ── Action (Phase A) ────────────────────────────────────────────
 	const [action, setAction] = useState<"delete" | "unmonitor" | "delete_files">("delete");
+	const [scanMediaServerAfterDelete, setScanMediaServerAfterDelete] = useState(false);
+	const [scanMediaServerInstanceIds, setScanMediaServerInstanceIds] = useState<string[]>([]);
+	const [mediaScanError, setMediaScanError] = useState<string | null>(null);
 
 	// ── Composite mode (Phase B) ────────────────────────────────────
 	const [isComposite, setIsComposite] = useState(false);
@@ -209,12 +227,18 @@ export function CleanupRuleDialog({
 	useEffect(() => {
 		if (!open) return;
 		if (editRule) {
+			const editAction = (editRule.action as "delete" | "unmonitor" | "delete_files") ?? "delete";
+			const editRetentionMode = editRule.retentionMode ?? false;
+			const canHydrateMediaScan = canScanAfterAction(editAction, editRetentionMode);
 			setTargetScope(editRule.targetScope);
 			setName(editRule.name);
 			setRuleType(editRule.ruleType);
 			setEnabled(editRule.enabled);
-			setAction((editRule.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
-			setRetentionMode(editRule.retentionMode ?? false);
+			setAction(editAction);
+			setRetentionMode(editRetentionMode);
+			setScanMediaServerAfterDelete(canHydrateMediaScan && editRule.scanMediaServerAfterDelete);
+			setScanMediaServerInstanceIds(canHydrateMediaScan ? editRule.scanMediaServerInstanceIds : []);
+			setMediaScanError(null);
 			setUseGlobalRejectionMemory(editRule.useGlobalRejectionMemory ?? true);
 			setRejectionMode(
 				editRule.rejectionMemoryDays === null
@@ -517,6 +541,9 @@ export function CleanupRuleDialog({
 			// Phase A/B
 			setAction("delete");
 			setRetentionMode(false);
+			setScanMediaServerAfterDelete(false);
+			setScanMediaServerInstanceIds([]);
+			setMediaScanError(null);
 			setIsComposite(false);
 			setCompositeOperator("AND");
 			setConditions([]);
@@ -554,10 +581,20 @@ export function CleanupRuleDialog({
 
 			// Overlay template data on top of defaults (create mode only)
 			if (templateData) {
+				const templateAction =
+					(templateData.action as "delete" | "unmonitor" | "delete_files") ?? "delete";
+				const templateRetentionMode = templateData.retentionMode ?? false;
+				const canHydrateMediaScan = canScanAfterAction(templateAction, templateRetentionMode);
 				setTargetScope(templateData.targetScope);
 				setName(templateData.name);
-				setAction((templateData.action as "delete" | "unmonitor" | "delete_files") ?? "delete");
-				setRetentionMode(templateData.retentionMode ?? false);
+				setAction(templateAction);
+				setRetentionMode(templateRetentionMode);
+				setScanMediaServerAfterDelete(
+					canHydrateMediaScan && templateData.scanMediaServerAfterDelete,
+				);
+				setScanMediaServerInstanceIds(
+					canHydrateMediaScan ? templateData.scanMediaServerInstanceIds : [],
+				);
 				if (templateData.serviceFilter) {
 					setServiceFilter(templateData.serviceFilter);
 				}
@@ -709,9 +746,33 @@ export function CleanupRuleDialog({
 		}
 	};
 
+	const clearMediaScan = () => {
+		setScanMediaServerAfterDelete(false);
+		setScanMediaServerInstanceIds([]);
+		setMediaScanError(null);
+	};
+
+	const selectAction = (nextAction: "delete" | "unmonitor" | "delete_files") => {
+		setAction(nextAction);
+		if (nextAction === "unmonitor") clearMediaScan();
+	};
+
+	const setRetention = (nextRetentionMode: boolean) => {
+		setRetentionMode(nextRetentionMode);
+		if (nextRetentionMode) clearMediaScan();
+	};
+
+	const canScanMediaServers = canScanAfterAction(action, retentionMode);
+
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
 		const isEpisodeScope = targetScope === "episode";
+		const shouldScanMediaServers = canScanMediaServers && scanMediaServerAfterDelete;
+		if (shouldScanMediaServers && scanMediaServerInstanceIds.length === 0) {
+			setMediaScanError("Select at least one media server to scan after deletion.");
+			return;
+		}
+		setMediaScanError(null);
 		if (!isEpisodeScope && isComposite && conditions.length === 0) {
 			setCompositeError("Composite rules must have at least one condition");
 			return;
@@ -767,6 +828,8 @@ export function CleanupRuleDialog({
 					: buildParams(),
 			action,
 			retentionMode: isEpisodeScope ? false : retentionMode,
+			scanMediaServerAfterDelete: shouldScanMediaServers,
+			scanMediaServerInstanceIds: shouldScanMediaServers ? scanMediaServerInstanceIds : [],
 			useGlobalRejectionMemory,
 			// When override is off, omit `rejectionMemoryDays` from the payload
 			// entirely. The PATCH route's `!== undefined` discipline preserves
@@ -935,7 +998,8 @@ export function CleanupRuleDialog({
 								</div>
 								<Switch
 									checked={retentionMode}
-									onCheckedChange={setRetentionMode}
+									onCheckedChange={setRetention}
+									aria-label="Retention Rule"
 									style={retentionMode ? { backgroundColor: "rgb(16 185 129)" } : undefined}
 								/>
 							</div>
@@ -998,7 +1062,7 @@ export function CleanupRuleDialog({
 									<button
 										key={a}
 										type="button"
-										onClick={() => setAction(a)}
+										onClick={() => selectAction(a)}
 										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
 										style={
 											action === a
@@ -1028,6 +1092,75 @@ export function CleanupRuleDialog({
 											: "Delete verified media files but keep the item in the ARR library. Exact live Plex matching blocks merged or unverifiable items, and other unverified media-server updates are blocked."}
 							</p>
 						</div>
+
+						{canScanMediaServers && (
+							<div className="space-y-2 rounded-lg border border-border/30 bg-card/20 p-3">
+								<div className="flex items-center justify-between gap-3">
+									<div>
+										<span className="text-sm font-medium">Scan media servers after deletion</span>
+										<p className="text-xs text-muted-foreground">
+											Refresh only the selected Plex, Jellyfin, or Emby libraries after this rule
+											runs.
+										</p>
+									</div>
+									<Switch
+										checked={scanMediaServerAfterDelete}
+										disabled={mediaServerInstances.length === 0}
+										aria-label="Scan media servers after deletion"
+										onCheckedChange={(checked) => {
+											setScanMediaServerAfterDelete(checked);
+											if (!checked) setScanMediaServerInstanceIds([]);
+											setMediaScanError(null);
+										}}
+									/>
+								</div>
+								{mediaServerInstances.length === 0 ? (
+									<p className="text-xs text-muted-foreground">
+										No media server instances are configured.
+									</p>
+								) : scanMediaServerAfterDelete ? (
+									<div className="space-y-1.5">
+										<p className="text-xs text-muted-foreground">
+											Select the exact instances to scan.
+										</p>
+										<div className="flex flex-wrap gap-2">
+											{mediaServerInstances.map((instance) => {
+												const selected = scanMediaServerInstanceIds.includes(instance.id);
+												const serviceLabel = getMediaServerServiceLabel(instance.service);
+												const displayInstanceName = incognitoMode
+													? getLinuxInstanceName(instance.label)
+													: instance.label;
+												return (
+													<button
+														key={instance.id}
+														type="button"
+														aria-pressed={selected}
+														aria-label={`${displayInstanceName} (${serviceLabel})`}
+														onClick={() => {
+															setScanMediaServerInstanceIds((current) =>
+																selected
+																	? current.filter((id) => id !== instance.id)
+																	: [...current, instance.id],
+															);
+															setMediaScanError(null);
+														}}
+														className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
+															selected
+																? "border-primary/30 bg-primary/20 text-primary"
+																: "border-border/30 bg-card/30 text-muted-foreground hover:bg-card/50"
+														}`}
+													>
+														{displayInstanceName}{" "}
+														<span className="opacity-70">({serviceLabel})</span>
+													</button>
+												);
+											})}
+										</div>
+									</div>
+								) : null}
+								{mediaScanError && <p className="text-xs text-destructive">{mediaScanError}</p>}
+							</div>
+						)}
 
 						{/* ── Rule Mode toggle ──────────────────────── */}
 						{targetScope === "series" && (

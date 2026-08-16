@@ -107,6 +107,41 @@ afterEach(async () => {
 });
 
 describe("GET /library-cleanup/field-options — cursor pagination (issue #427)", () => {
+	it("returns only the user's enabled media-server instances as explicit scan targets", async () => {
+		serviceInstanceFindMany.mockImplementation(({ where }: { where: { service: unknown } }) => {
+			if (where.service === "PLEX") {
+				return Promise.resolve([{ id: "plex-primary", label: "Primary Plex", service: "PLEX" }]);
+			}
+			if (
+				typeof where.service === "object" &&
+				where.service &&
+				"in" in where.service &&
+				Array.isArray((where.service as { in: unknown[] }).in) &&
+				(where.service as { in: string[] }).in.includes("JELLYFIN")
+			) {
+				return Promise.resolve([
+					{ id: "emby-primary", label: "Primary Emby", service: "EMBY" },
+					{ id: "jellyfin-primary", label: "Primary Jellyfin", service: "JELLYFIN" },
+				]);
+			}
+			return Promise.resolve([]);
+		});
+
+		const res = await createInjectAuthenticated(app)("GET", "/library-cleanup/field-options");
+
+		expect(res.statusCode).toBe(200);
+		expect(res.json().mediaServerInstances).toEqual([
+			{ id: "emby-primary", label: "Primary Emby", service: "EMBY" },
+			{ id: "jellyfin-primary", label: "Primary Jellyfin", service: "JELLYFIN" },
+			{ id: "plex-primary", label: "Primary Plex", service: "PLEX" },
+		]);
+		expect(serviceInstanceFindMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ userId: expect.any(String), enabled: true }),
+			}),
+		);
+	});
+
 	it("walks libraryCache via cursor across multiple batches and aggregates values from BOTH", async () => {
 		// One Sonarr instance — only the libraryCache scan kicks in. The
 		// other cache scans are gated behind their own `findMany` for

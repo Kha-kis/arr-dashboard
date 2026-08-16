@@ -33,6 +33,10 @@ if (!Element.prototype.releasePointerCapture) {
 
 const mockFieldOptions = {
 	hasPlex: false,
+	mediaServerInstances: [
+		{ id: "plex-primary", label: "Primary Plex", service: "PLEX" as const },
+		{ id: "jellyfin-family", label: "Family Jellyfin", service: "JELLYFIN" as const },
+	],
 	videoCodecs: [],
 	audioCodecs: [],
 	resolutions: [],
@@ -134,6 +138,8 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 		excludeTitles: null,
 		plexLibraryFilter: null,
 		action: "delete",
+		scanMediaServerAfterDelete: false,
+		scanMediaServerInstanceIds: [],
 		operator: null,
 		conditions: null,
 		retentionMode: false,
@@ -426,6 +432,8 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "unmonitor",
+					scanMediaServerAfterDelete: false,
+					scanMediaServerInstanceIds: [],
 					retentionMode: true,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -446,6 +454,8 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: { operator: "older_than", days: 90 },
 					action: "delete",
+					scanMediaServerAfterDelete: false,
+					scanMediaServerInstanceIds: [],
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -465,6 +475,8 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "unmonitor",
+					scanMediaServerAfterDelete: false,
+					scanMediaServerInstanceIds: [],
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -485,6 +497,8 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "delete",
+					scanMediaServerAfterDelete: false,
+					scanMediaServerInstanceIds: [],
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -510,6 +524,8 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "delete",
+					scanMediaServerAfterDelete: false,
+					scanMediaServerInstanceIds: [],
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -528,6 +544,8 @@ describe("CleanupRuleDialog", () => {
 					priority: 0,
 					parameters: {},
 					action: "delete",
+					scanMediaServerAfterDelete: false,
+					scanMediaServerInstanceIds: [],
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,
@@ -668,6 +686,101 @@ describe("CleanupRuleDialog", () => {
 	// ================================================================
 
 	describe("submit behavior", () => {
+		it("masks media-server selector labels and accessible names in incognito mode", async () => {
+			localStorage.setItem("arr-dashboard-incognito-mode", "true");
+			renderDialog();
+
+			fireEvent.click(screen.getByRole("switch", { name: "Scan media servers after deletion" }));
+
+			await waitFor(() => {
+				expect(screen.getByRole("button", { name: "Instance (Plex)" })).toBeInTheDocument();
+			});
+			expect(screen.getByRole("button", { name: "Instance (Jellyfin)" })).toBeInTheDocument();
+			expect(screen.queryByText("Primary Plex")).not.toBeInTheDocument();
+			expect(screen.queryByText("Family Jellyfin")).not.toBeInTheDocument();
+		});
+
+		it("requires an exact media-server selection before enabling a post-delete scan", () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Refresh media" },
+			});
+			fireEvent.click(screen.getByRole("switch", { name: "Scan media servers after deletion" }));
+			fireEvent.click(screen.getByRole("button", { name: "Add Rule" }));
+
+			expect(
+				screen.getByText("Select at least one media server to scan after deletion."),
+			).toBeInTheDocument();
+			expect(onSave).not.toHaveBeenCalled();
+		});
+
+		it("submits only the selected media servers for a post-delete scan", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Refresh media" },
+			});
+			fireEvent.click(screen.getByRole("switch", { name: "Scan media servers after deletion" }));
+			fireEvent.click(screen.getByRole("button", { name: "Primary Plex (Plex)" }));
+			fireEvent.click(screen.getByRole("button", { name: "Add Rule" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toEqual(
+				expect.objectContaining({
+					scanMediaServerAfterDelete: true,
+					scanMediaServerInstanceIds: ["plex-primary"],
+				}),
+			);
+		});
+
+		it("hydrates selected media servers when editing a rule", () => {
+			renderDialog({
+				editRule: makeEditRule({
+					scanMediaServerAfterDelete: true,
+					scanMediaServerInstanceIds: ["jellyfin-family"],
+				}),
+			});
+
+			expect(
+				screen.getByRole("switch", { name: "Scan media servers after deletion" }),
+			).toBeChecked();
+			expect(screen.getByRole("button", { name: "Family Jellyfin (Jellyfin)" })).toHaveAttribute(
+				"aria-pressed",
+				"true",
+			);
+		});
+
+		it("clears media-server scan state for unmonitor and retention rules", () => {
+			renderDialog();
+
+			fireEvent.click(screen.getByRole("switch", { name: "Scan media servers after deletion" }));
+			fireEvent.click(screen.getByRole("button", { name: "Primary Plex (Plex)" }));
+			fireEvent.click(screen.getByRole("button", { name: "Unmonitor" }));
+			expect(
+				screen.queryByRole("switch", { name: "Scan media servers after deletion" }),
+			).not.toBeInTheDocument();
+
+			fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+			expect(
+				screen.getByRole("switch", { name: "Scan media servers after deletion" }),
+			).not.toBeChecked();
+
+			fireEvent.click(screen.getByRole("switch", { name: "Scan media servers after deletion" }));
+			fireEvent.click(screen.getByRole("button", { name: "Primary Plex (Plex)" }));
+
+			fireEvent.click(screen.getByRole("switch", { name: "Retention Rule" }));
+			expect(
+				screen.queryByRole("switch", { name: "Scan media servers after deletion" }),
+			).not.toBeInTheDocument();
+			fireEvent.click(screen.getByRole("switch", { name: "Retention Rule" }));
+			expect(
+				screen.getByRole("switch", { name: "Scan media servers after deletion" }),
+			).not.toBeChecked();
+		});
+
 		it("calls onSave with correct data for a single-condition rule", async () => {
 			const onSave = vi.fn();
 			renderDialog({ onSave });

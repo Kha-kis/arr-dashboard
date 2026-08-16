@@ -3,11 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const executorMocks = vi.hoisted(() => ({
 	executeCleanupRun: vi.fn(),
 }));
+const mediaServerRescanMocks = vi.hoisted(() => ({
+	retryAllPendingMediaServerRescans: vi.fn(),
+}));
 
 vi.mock("../cleanup-executor.js", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../cleanup-executor.js")>()),
 	executeCleanupRun: executorMocks.executeCleanupRun,
 }));
+vi.mock("../media-server-rescan.js", () => mediaServerRescanMocks);
 
 import { CleanupScheduler } from "../cleanup-scheduler.js";
 
@@ -25,6 +29,12 @@ describe("library cleanup scheduler dependencies", () => {
 			details: [],
 			durationMs: 1,
 			prefetchHealth: { seerr: "skipped", plex: "skipped", jellyfin: "skipped" },
+		});
+		mediaServerRescanMocks.retryAllPendingMediaServerRescans.mockReset().mockResolvedValue({
+			targets: 0,
+			triggered: 0,
+			failed: 0,
+			warnings: [],
 		});
 	});
 
@@ -73,6 +83,11 @@ describe("library cleanup scheduler dependencies", () => {
 			"user-1",
 			{ actorType: "scheduler", trigger: "scheduled" },
 		);
+		expect(mediaServerRescanMocks.retryAllPendingMediaServerRescans).toHaveBeenCalledWith({
+			prisma,
+			encryptor: expect.any(Object),
+			log: expect.any(Object),
+		});
 	});
 
 	it("keeps scheduled dry-run cadence read-only and in process", async () => {
@@ -125,6 +140,7 @@ describe("library cleanup scheduler dependencies", () => {
 		expect(executorMocks.executeCleanupRun).toHaveBeenCalledOnce();
 		expect(prisma.libraryCleanupApproval.findMany).not.toHaveBeenCalled();
 		expect(prisma.libraryCleanupApproval.updateMany).not.toHaveBeenCalled();
+		expect(mediaServerRescanMocks.retryAllPendingMediaServerRescans).not.toHaveBeenCalled();
 		expect(update).not.toHaveBeenCalled();
 		expect(notify).not.toHaveBeenCalled();
 	});

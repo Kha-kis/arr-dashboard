@@ -1306,6 +1306,8 @@ model LibraryCleanupRule {
   plexLibraryFilter String?                    // JSON array of Plex section names
   targetScope       String   @default("series") // "series" | "episode"
   action            String   @default("delete") // "delete" | "unmonitor" | "delete_files"
+  scanMediaServerAfterDelete Boolean @default(false) // enabled only with selected media-server instance ids
+  scanMediaServerInstanceIds String? // JSON sorted unique non-empty ServiceInstance ids when scanMediaServerAfterDelete is true
   operator          String?                    // "AND" | "OR" for composite rules
   conditions        String?                    // JSON array of sub-conditions
   retentionMode     Boolean  @default(false)   // true = retention (protect items), false = cleanup (flag items)
@@ -1345,6 +1347,8 @@ model LibraryCleanupApproval {
   matchedRuleName String                       // Denormalized
   reason          String
   action          String?  @default("delete")
+  scanMediaServerAfterDelete Boolean @default(false)
+  scanMediaServerInstanceIds String? // JSON sorted unique non-empty ServiceInstance ids copied from the approved rule
   sizeOnDisk      BigInt
   year            Int?
   rating          Float?
@@ -1368,10 +1372,53 @@ model LibraryCleanupApproval {
   createdAt       DateTime @default(now())
 
   config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  mediaServerScans LibraryCleanupMediaServerScan[]
 
   @@index([configId, status])
   @@index([expiresAt])
   @@map("library_cleanup_approvals")
+}
+
+/// Durable, independently retryable media-server scan requests created before
+/// cleanup deletion. Scan failure never reopens or repeats the ARR mutation.
+model LibraryCleanupMediaServerScan {
+  id                  String   @id @default(cuid())
+  approvalId          String
+  instanceId          String
+  service             String
+  serverIdentity      String? // live Plex machine id or Jellyfin/Emby server id
+  mediaType           String   // "movie" | "show"
+  plannedSectionIds   String?  // sorted JSON Plex section ids; null for global refresh
+  targetKey           String
+  status              String   @default("pending") // pending | triggering | triggered | skipped | failed | ambiguous
+  executionToken      String?
+  attemptCount        Int      @default(0)
+  completedSectionIds String   @default("[]")
+  lastError           String?
+  nextAttemptAt       DateTime?
+  requestStartedAt    DateTime?
+  triggeredAt         DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  approval LibraryCleanupApproval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+
+  @@unique([approvalId, targetKey])
+  @@index([status, nextAttemptAt, updatedAt])
+  @@index([approvalId, status])
+  @@map("library_cleanup_media_server_scans")
+}
+
+/// Cross-worker lease for one physical media-server refresh operation.
+model LibraryCleanupMediaServerScanLease {
+  operationKey   String   @id
+  userId         String
+  executionToken String   @unique
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+  @@map("library_cleanup_media_server_scan_leases")
 }
 
 /// Immutable event history for the native 3.0 library-cleanup lifecycle.

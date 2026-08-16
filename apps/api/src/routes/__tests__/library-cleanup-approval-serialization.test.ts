@@ -78,4 +78,52 @@ describe("library cleanup approval serialization", () => {
 			}).lastExecutionError,
 		).toBeNull();
 	});
+
+	it("serializes durable media-server refresh outcomes without internal identities", () => {
+		const timestamp = new Date("2026-08-12T12:00:00.000Z");
+
+		const serialized = serializeApproval(
+			{
+				id: "approval-1",
+				sizeOnDisk: 0n,
+				createdAt: timestamp,
+				expiresAt: timestamp,
+				mediaServerScans: [
+					{
+						id: "scan-1",
+						instanceId: "plex-1",
+						service: "PLEX",
+						serverIdentity: "PLEX:sensitive-machine-id",
+						targetKey: "internal-target-key",
+						status: "ambiguous",
+						attemptCount: 2,
+						plannedSectionIds: '["1","2"]',
+						completedSectionIds: '["1"]',
+						lastError: "Refresh confirmation is pending",
+						nextAttemptAt: timestamp,
+						triggeredAt: null,
+					},
+				],
+			},
+			new Map([["plex-1", "Primary Plex"]]),
+		);
+
+		expect(serialized.mediaServerScans).toEqual([
+			{
+				id: "scan-1",
+				instanceId: "plex-1",
+				instanceLabel: "Primary Plex",
+				service: "PLEX",
+				status: "ambiguous",
+				attemptCount: 2,
+				plannedSectionCount: 2,
+				completedSectionCount: 1,
+				lastError: "Refresh confirmation is pending",
+				nextAttemptAt: timestamp.toISOString(),
+				triggeredAt: null,
+			},
+		]);
+		expect(JSON.stringify(serialized)).not.toContain("sensitive-machine-id");
+		expect(JSON.stringify(serialized)).not.toContain("internal-target-key");
+	});
 });

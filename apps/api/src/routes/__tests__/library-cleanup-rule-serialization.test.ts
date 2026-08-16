@@ -42,6 +42,8 @@ function makeRule(overrides: Record<string, unknown> = {}) {
 		plexLibraryFilter: null,
 		targetScope: "episode",
 		action: "delete",
+		scanMediaServerAfterDelete: false,
+		scanMediaServerInstanceIds: null,
 		operator: null,
 		conditions: null,
 		retentionMode: false,
@@ -58,6 +60,7 @@ let configFindUnique: ReturnType<typeof vi.fn>;
 let ruleFindFirst: ReturnType<typeof vi.fn>;
 let ruleCreate: ReturnType<typeof vi.fn>;
 let ruleUpdate: ReturnType<typeof vi.fn>;
+let serviceInstanceFindMany: ReturnType<typeof vi.fn>;
 
 beforeEach(async () => {
 	const rule = makeRule();
@@ -78,6 +81,9 @@ beforeEach(async () => {
 	ruleFindFirst = vi.fn().mockResolvedValue(rule);
 	ruleCreate = vi.fn().mockImplementation(async ({ data }) => ({ ...rule, ...data }));
 	ruleUpdate = vi.fn().mockImplementation(async ({ data }) => ({ ...rule, ...data }));
+	serviceInstanceFindMany = vi
+		.fn()
+		.mockResolvedValue([{ id: "sonarr-1", label: "Sonarr", service: "SONARR" }]);
 
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: USER_ID, username: "admin" });
@@ -89,7 +95,7 @@ beforeEach(async () => {
 			create: ruleCreate,
 			update: ruleUpdate,
 		},
-		serviceInstance: { findMany: vi.fn().mockResolvedValue([{ id: "sonarr-1", label: "Sonarr" }]) },
+		serviceInstance: { findMany: serviceInstanceFindMany },
 		episodeFileCache: { findMany: vi.fn().mockResolvedValue([]) },
 	} as never);
 	app.decorate("arrClientFactory", {} as never);
@@ -103,6 +109,86 @@ afterEach(async () => {
 });
 
 describe("library cleanup rule scope persistence", () => {
+	it("stores and serializes an exact canonical media-server rescan selection", async () => {
+		serviceInstanceFindMany.mockResolvedValueOnce([
+			{ id: "jellyfin-primary" },
+			{ id: "plex-primary" },
+		]);
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/rules", {
+			body: {
+				name: "Delete old media",
+				ruleType: "age",
+				parameters: { field: "arrAddedAt", operator: "older_than", days: 30 },
+				action: "delete",
+				scanMediaServerAfterDelete: true,
+				scanMediaServerInstanceIds: ["plex-primary", "jellyfin-primary"],
+			},
+		});
+
+		expect(response.statusCode).toBe(201);
+		expect(ruleCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					scanMediaServerAfterDelete: true,
+					scanMediaServerInstanceIds: JSON.stringify(["jellyfin-primary", "plex-primary"]),
+				}),
+			}),
+		);
+		expect(response.json()).toMatchObject({
+			scanMediaServerAfterDelete: true,
+			scanMediaServerInstanceIds: ["jellyfin-primary", "plex-primary"],
+		});
+	});
+
+	it("rejects media-server targets that are not enabled and owned by the current user", async () => {
+		serviceInstanceFindMany.mockResolvedValueOnce([{ id: "plex-primary" }]);
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/rules", {
+			body: {
+				name: "Delete old media",
+				ruleType: "age",
+				parameters: { field: "arrAddedAt", operator: "older_than", days: 30 },
+				action: "delete",
+				scanMediaServerAfterDelete: true,
+				scanMediaServerInstanceIds: ["plex-primary", "foreign-server"],
+			},
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(response.json()).toMatchObject({
+			error: expect.stringContaining("enabled Plex, Jellyfin, or Emby"),
+		});
+		expect(ruleCreate).not.toHaveBeenCalled();
+	});
+
+	it("clears stored media-server targets when scanning is disabled", async () => {
+		const stored = makeRule({
+			targetScope: "series",
+			scanMediaServerAfterDelete: true,
+			scanMediaServerInstanceIds: JSON.stringify(["plex-primary"]),
+		});
+		ruleFindFirst.mockResolvedValueOnce(stored);
+		ruleUpdate.mockImplementationOnce(async ({ data }) => ({ ...stored, ...data }));
+
+		const response = await createInjectAuthenticated(app)("PUT", "/library-cleanup/rules/rule-1", {
+			body: { scanMediaServerAfterDelete: false },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(ruleUpdate).toHaveBeenCalledWith({
+			where: { id: "rule-1" },
+			data: {
+				scanMediaServerAfterDelete: false,
+				scanMediaServerInstanceIds: null,
+			},
+		});
+		expect(response.json()).toMatchObject({
+			scanMediaServerAfterDelete: false,
+			scanMediaServerInstanceIds: [],
+		});
+	});
+
 	it.each([
 		["a legacy row", undefined, "series"],
 		["an unknown persisted scope", "future-scope", "series"],

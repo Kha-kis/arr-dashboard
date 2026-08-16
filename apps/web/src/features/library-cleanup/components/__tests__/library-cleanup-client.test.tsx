@@ -192,6 +192,8 @@ function makeConfig(overrides: Partial<CleanupConfigResponse> = {}): CleanupConf
 				excludeTitles: null,
 				plexLibraryFilter: null,
 				action: "delete",
+				scanMediaServerAfterDelete: false,
+				scanMediaServerInstanceIds: [],
 				operator: null,
 				conditions: null,
 				retentionMode: false,
@@ -303,6 +305,9 @@ function makeEpisodeApproval(
 		matchedRuleName: "Watched episodes",
 		reason: "Plex watch count 2 > 1",
 		action: "delete",
+		scanMediaServerAfterDelete: false,
+		scanMediaServerInstanceIds: [],
+		mediaServerScans: [],
 		sizeOnDisk: "1073741824",
 		year: 2026,
 		rating: 8,
@@ -525,6 +530,24 @@ describe("LibraryCleanupClient", () => {
 		});
 	});
 
+	describe("rule list indicators", () => {
+		it("shows a Media scan badge for rules that rescan selected media servers", () => {
+			setupDefaultMocks({
+				rules: [
+					{
+						...makeConfig().rules[0]!,
+						scanMediaServerAfterDelete: true,
+						scanMediaServerInstanceIds: ["plex-primary"],
+					},
+				] as CleanupConfigResponse["rules"],
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getByText("Media scan")).toBeInTheDocument();
+		});
+	});
+
 	// ================================================================
 	// Approval selection reset on filter change
 	// ================================================================
@@ -733,6 +756,95 @@ describe("LibraryCleanupClient", () => {
 				arrItemId: 42,
 				arrEpisodeId: 9001,
 			});
+		});
+
+		it("shows durable media-server refresh outcomes without claiming cleanup failed", async () => {
+			mockUseCleanupApprovalQueue.mockReturnValue({
+				data: {
+					items: [
+						makeEpisodeApproval({
+							status: "executed",
+							lastExecutionError: null,
+							scanMediaServerAfterDelete: true,
+							scanMediaServerInstanceIds: ["plex-primary"],
+							mediaServerScans: [
+								{
+									id: "scan-1",
+									instanceId: "plex-primary",
+									instanceLabel: "Primary Plex",
+									service: "PLEX",
+									status: "triggered",
+									attemptCount: 1,
+									plannedSectionCount: 2,
+									completedSectionCount: 2,
+									lastError: null,
+									nextAttemptAt: null,
+									triggeredAt: "2026-08-12T12:01:00Z",
+								},
+							],
+						}),
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Approval Queue"));
+			fireEvent.click(await screen.findByRole("button", { name: "Approved" }));
+
+			expect(await screen.findByText("Primary Plex")).toBeInTheDocument();
+			expect(screen.getByText("Refresh requested")).toBeInTheDocument();
+			expect(screen.getByText("2/2 sections")).toBeInTheDocument();
+			expect(screen.queryByText(/cleanup failed/i)).not.toBeInTheDocument();
+		});
+
+		it("shows a safe actionable reason when a media-server refresh must retry", async () => {
+			mockUseCleanupApprovalQueue.mockReturnValue({
+				data: {
+					items: [
+						makeEpisodeApproval({
+							status: "executed",
+							lastExecutionError: null,
+							scanMediaServerAfterDelete: true,
+							scanMediaServerInstanceIds: ["plex-primary"],
+							mediaServerScans: [
+								{
+									id: "scan-1",
+									instanceId: "plex-primary",
+									instanceLabel: "Primary Plex",
+									service: "PLEX",
+									status: "failed",
+									attemptCount: 2,
+									plannedSectionCount: 2,
+									completedSectionCount: 0,
+									lastError: "Media-server identity changed after cleanup was prepared.",
+									nextAttemptAt: "2026-08-12T12:05:00Z",
+									triggeredAt: null,
+								},
+							],
+						}),
+					],
+					total: 1,
+					page: 1,
+					pageSize: 20,
+				},
+				isLoading: false,
+				isError: false,
+				refetch: vi.fn(),
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			fireEvent.click(screen.getByText("Approval Queue"));
+			fireEvent.click(await screen.findByRole("button", { name: "Approved" }));
+
+			expect(
+				await screen.findByText("Media-server identity changed after cleanup was prepared."),
+			).toBeInTheDocument();
 		});
 
 		it("shows structured episode identity in cleanup log details", () => {

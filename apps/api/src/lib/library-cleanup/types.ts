@@ -9,7 +9,12 @@ import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
 import type { PlexClient } from "../plex/plex-client.js";
-import type { LibraryItemType, PrismaClient, ServiceInstance } from "../prisma.js";
+import type {
+	LibraryCleanupApproval,
+	LibraryItemType,
+	PrismaClient,
+	ServiceInstance,
+} from "../prisma.js";
 import type { QuiClient } from "../qui/client-factory.js";
 import type { EpisodeTargetMetadata } from "./episode-scope.js";
 
@@ -46,6 +51,18 @@ export interface CleanupExecutorDeps {
 		instance: ServiceInstance,
 		context?: { cleanupRunClaimToken?: string },
 	) => Promise<void>;
+	/** Test seam for durable ancillary media-server scan work. */
+	mediaServerRescan?: {
+		prepare: (
+			userId: string,
+			approval: LibraryCleanupApproval,
+			mediaType: "movie" | "show",
+		) => Promise<number>;
+		trigger: (
+			userId: string,
+			approvalIds: string[],
+		) => Promise<{ targets: number; triggered: number; failed: number; warnings: string[] }>;
+	};
 	log: FastifyBaseLogger;
 }
 
@@ -213,6 +230,9 @@ export interface RuleMatch {
 	ruleName: string;
 	reason: string;
 	action: RuleAction;
+	/** Exact persisted ancillary scan policy copied into durable approvals/intents. */
+	scanMediaServerAfterDelete?: true;
+	scanMediaServerInstanceIds?: string | null;
 }
 
 /** An item flagged by the cleanup engine */

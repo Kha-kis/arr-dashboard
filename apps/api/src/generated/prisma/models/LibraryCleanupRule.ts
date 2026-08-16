@@ -51,6 +51,8 @@ export type LibraryCleanupRuleMinAggregateOutputType = {
   plexLibraryFilter: string | null
   targetScope: string | null
   action: string | null
+  scanMediaServerAfterDelete: boolean | null
+  scanMediaServerInstanceIds: string | null
   operator: string | null
   conditions: string | null
   retentionMode: boolean | null
@@ -75,6 +77,8 @@ export type LibraryCleanupRuleMaxAggregateOutputType = {
   plexLibraryFilter: string | null
   targetScope: string | null
   action: string | null
+  scanMediaServerAfterDelete: boolean | null
+  scanMediaServerInstanceIds: string | null
   operator: string | null
   conditions: string | null
   retentionMode: boolean | null
@@ -99,6 +103,8 @@ export type LibraryCleanupRuleCountAggregateOutputType = {
   plexLibraryFilter: number
   targetScope: number
   action: number
+  scanMediaServerAfterDelete: number
+  scanMediaServerInstanceIds: number
   operator: number
   conditions: number
   retentionMode: number
@@ -135,6 +141,8 @@ export type LibraryCleanupRuleMinAggregateInputType = {
   plexLibraryFilter?: true
   targetScope?: true
   action?: true
+  scanMediaServerAfterDelete?: true
+  scanMediaServerInstanceIds?: true
   operator?: true
   conditions?: true
   retentionMode?: true
@@ -159,6 +167,8 @@ export type LibraryCleanupRuleMaxAggregateInputType = {
   plexLibraryFilter?: true
   targetScope?: true
   action?: true
+  scanMediaServerAfterDelete?: true
+  scanMediaServerInstanceIds?: true
   operator?: true
   conditions?: true
   retentionMode?: true
@@ -183,6 +193,8 @@ export type LibraryCleanupRuleCountAggregateInputType = {
   plexLibraryFilter?: true
   targetScope?: true
   action?: true
+  scanMediaServerAfterDelete?: true
+  scanMediaServerInstanceIds?: true
   operator?: true
   conditions?: true
   retentionMode?: true
@@ -294,6 +306,8 @@ export type LibraryCleanupRuleGroupByOutputType = {
   plexLibraryFilter: string | null
   targetScope: string
   action: string
+  scanMediaServerAfterDelete: boolean
+  scanMediaServerInstanceIds: string | null
   operator: string | null
   conditions: string | null
   retentionMode: boolean
@@ -341,6 +355,8 @@ export type LibraryCleanupRuleWhereInput = {
   plexLibraryFilter?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   targetScope?: Prisma.StringFilter<"LibraryCleanupRule"> | string
   action?: Prisma.StringFilter<"LibraryCleanupRule"> | string
+  scanMediaServerAfterDelete?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
+  scanMediaServerInstanceIds?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   operator?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   conditions?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   retentionMode?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
@@ -366,6 +382,8 @@ export type LibraryCleanupRuleOrderByWithRelationInput = {
   plexLibraryFilter?: Prisma.SortOrderInput | Prisma.SortOrder
   targetScope?: Prisma.SortOrder
   action?: Prisma.SortOrder
+  scanMediaServerAfterDelete?: Prisma.SortOrder
+  scanMediaServerInstanceIds?: Prisma.SortOrderInput | Prisma.SortOrder
   operator?: Prisma.SortOrderInput | Prisma.SortOrder
   conditions?: Prisma.SortOrderInput | Prisma.SortOrder
   retentionMode?: Prisma.SortOrder
@@ -394,6 +412,8 @@ export type LibraryCleanupRuleWhereUniqueInput = Prisma.AtLeast<{
   plexLibraryFilter?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   targetScope?: Prisma.StringFilter<"LibraryCleanupRule"> | string
   action?: Prisma.StringFilter<"LibraryCleanupRule"> | string
+  scanMediaServerAfterDelete?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
+  scanMediaServerInstanceIds?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   operator?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   conditions?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   retentionMode?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
@@ -419,6 +439,8 @@ export type LibraryCleanupRuleOrderByWithAggregationInput = {
   plexLibraryFilter?: Prisma.SortOrderInput | Prisma.SortOrder
   targetScope?: Prisma.SortOrder
   action?: Prisma.SortOrder
+  scanMediaServerAfterDelete?: Prisma.SortOrder
+  scanMediaServerInstanceIds?: Prisma.SortOrderInput | Prisma.SortOrder
   operator?: Prisma.SortOrderInput | Prisma.SortOrder
   conditions?: Prisma.SortOrderInput | Prisma.SortOrder
   retentionMode?: Prisma.SortOrder
@@ -451,6 +473,8 @@ export type LibraryCleanupRuleScalarWhereWithAggregatesInput = {
   plexLibraryFilter?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
   targetScope?: Prisma.StringWithAggregatesFilter<"LibraryCleanupRule"> | string
   action?: Prisma.StringWithAggregatesFilter<"LibraryCleanupRule"> | string
+  scanMediaServerAfterDelete?: Prisma.BoolWithAggregatesFilter<"LibraryCleanupRule"> | boolean
+  scanMediaServerInstanceIds?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
   operator?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
   conditions?: Prisma.StringNullableWithAggregatesFilter<"LibraryCleanupRule"> | string | null
   retentionMode?: Prisma.BoolWithAggregatesFilter<"LibraryCleanupRule"> | boolean
@@ -474,6 +498,8 @@ export type LibraryCleanupRuleCreateInput = {
   plexLibraryFilter?: string | null
   targetScope?: string
   action?: string
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
@@ -499,6 +525,8 @@ export type LibraryCleanupRuleUncheckedCreateInput = {
   plexLibraryFilter?: string | null
   targetScope?: string
   action?: string
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
@@ -522,6 +550,8 @@ export type LibraryCleanupRuleUpdateInput = {
   plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   targetScope?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.StringFieldUpdateOperationsInput | string
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -547,6 +577,8 @@ export type LibraryCleanupRuleUncheckedUpdateInput = {
   plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   targetScope?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.StringFieldUpdateOperationsInput | string
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -571,6 +603,8 @@ export type LibraryCleanupRuleCreateManyInput = {
   plexLibraryFilter?: string | null
   targetScope?: string
   action?: string
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
@@ -594,6 +628,8 @@ export type LibraryCleanupRuleUpdateManyMutationInput = {
   plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   targetScope?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.StringFieldUpdateOperationsInput | string
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -618,6 +654,8 @@ export type LibraryCleanupRuleUncheckedUpdateManyInput = {
   plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   targetScope?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.StringFieldUpdateOperationsInput | string
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -652,6 +690,8 @@ export type LibraryCleanupRuleCountOrderByAggregateInput = {
   plexLibraryFilter?: Prisma.SortOrder
   targetScope?: Prisma.SortOrder
   action?: Prisma.SortOrder
+  scanMediaServerAfterDelete?: Prisma.SortOrder
+  scanMediaServerInstanceIds?: Prisma.SortOrder
   operator?: Prisma.SortOrder
   conditions?: Prisma.SortOrder
   retentionMode?: Prisma.SortOrder
@@ -681,6 +721,8 @@ export type LibraryCleanupRuleMaxOrderByAggregateInput = {
   plexLibraryFilter?: Prisma.SortOrder
   targetScope?: Prisma.SortOrder
   action?: Prisma.SortOrder
+  scanMediaServerAfterDelete?: Prisma.SortOrder
+  scanMediaServerInstanceIds?: Prisma.SortOrder
   operator?: Prisma.SortOrder
   conditions?: Prisma.SortOrder
   retentionMode?: Prisma.SortOrder
@@ -705,6 +747,8 @@ export type LibraryCleanupRuleMinOrderByAggregateInput = {
   plexLibraryFilter?: Prisma.SortOrder
   targetScope?: Prisma.SortOrder
   action?: Prisma.SortOrder
+  scanMediaServerAfterDelete?: Prisma.SortOrder
+  scanMediaServerInstanceIds?: Prisma.SortOrder
   operator?: Prisma.SortOrder
   conditions?: Prisma.SortOrder
   retentionMode?: Prisma.SortOrder
@@ -775,6 +819,8 @@ export type LibraryCleanupRuleCreateWithoutConfigInput = {
   plexLibraryFilter?: string | null
   targetScope?: string
   action?: string
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
@@ -798,6 +844,8 @@ export type LibraryCleanupRuleUncheckedCreateWithoutConfigInput = {
   plexLibraryFilter?: string | null
   targetScope?: string
   action?: string
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
@@ -850,6 +898,8 @@ export type LibraryCleanupRuleScalarWhereInput = {
   plexLibraryFilter?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   targetScope?: Prisma.StringFilter<"LibraryCleanupRule"> | string
   action?: Prisma.StringFilter<"LibraryCleanupRule"> | string
+  scanMediaServerAfterDelete?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
+  scanMediaServerInstanceIds?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   operator?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   conditions?: Prisma.StringNullableFilter<"LibraryCleanupRule"> | string | null
   retentionMode?: Prisma.BoolFilter<"LibraryCleanupRule"> | boolean
@@ -873,6 +923,8 @@ export type LibraryCleanupRuleCreateManyConfigInput = {
   plexLibraryFilter?: string | null
   targetScope?: string
   action?: string
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: string | null
   operator?: string | null
   conditions?: string | null
   retentionMode?: boolean
@@ -896,6 +948,8 @@ export type LibraryCleanupRuleUpdateWithoutConfigInput = {
   plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   targetScope?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.StringFieldUpdateOperationsInput | string
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -919,6 +973,8 @@ export type LibraryCleanupRuleUncheckedUpdateWithoutConfigInput = {
   plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   targetScope?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.StringFieldUpdateOperationsInput | string
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -942,6 +998,8 @@ export type LibraryCleanupRuleUncheckedUpdateManyWithoutConfigInput = {
   plexLibraryFilter?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   targetScope?: Prisma.StringFieldUpdateOperationsInput | string
   action?: Prisma.StringFieldUpdateOperationsInput | string
+  scanMediaServerAfterDelete?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  scanMediaServerInstanceIds?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   operator?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   conditions?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   retentionMode?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -968,6 +1026,8 @@ export type LibraryCleanupRuleSelect<ExtArgs extends runtime.Types.Extensions.In
   plexLibraryFilter?: boolean
   targetScope?: boolean
   action?: boolean
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: boolean
   operator?: boolean
   conditions?: boolean
   retentionMode?: boolean
@@ -993,6 +1053,8 @@ export type LibraryCleanupRuleSelectCreateManyAndReturn<ExtArgs extends runtime.
   plexLibraryFilter?: boolean
   targetScope?: boolean
   action?: boolean
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: boolean
   operator?: boolean
   conditions?: boolean
   retentionMode?: boolean
@@ -1018,6 +1080,8 @@ export type LibraryCleanupRuleSelectUpdateManyAndReturn<ExtArgs extends runtime.
   plexLibraryFilter?: boolean
   targetScope?: boolean
   action?: boolean
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: boolean
   operator?: boolean
   conditions?: boolean
   retentionMode?: boolean
@@ -1043,6 +1107,8 @@ export type LibraryCleanupRuleSelectScalar = {
   plexLibraryFilter?: boolean
   targetScope?: boolean
   action?: boolean
+  scanMediaServerAfterDelete?: boolean
+  scanMediaServerInstanceIds?: boolean
   operator?: boolean
   conditions?: boolean
   retentionMode?: boolean
@@ -1052,7 +1118,7 @@ export type LibraryCleanupRuleSelectScalar = {
   updatedAt?: boolean
 }
 
-export type LibraryCleanupRuleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "name" | "enabled" | "priority" | "ruleType" | "parameters" | "serviceFilter" | "instanceFilter" | "excludeTags" | "excludeTitles" | "plexLibraryFilter" | "targetScope" | "action" | "operator" | "conditions" | "retentionMode" | "useGlobalRejectionMemory" | "rejectionMemoryDays" | "createdAt" | "updatedAt", ExtArgs["result"]["libraryCleanupRule"]>
+export type LibraryCleanupRuleOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "configId" | "name" | "enabled" | "priority" | "ruleType" | "parameters" | "serviceFilter" | "instanceFilter" | "excludeTags" | "excludeTitles" | "plexLibraryFilter" | "targetScope" | "action" | "scanMediaServerAfterDelete" | "scanMediaServerInstanceIds" | "operator" | "conditions" | "retentionMode" | "useGlobalRejectionMemory" | "rejectionMemoryDays" | "createdAt" | "updatedAt", ExtArgs["result"]["libraryCleanupRule"]>
 export type LibraryCleanupRuleInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   config?: boolean | Prisma.LibraryCleanupConfigDefaultArgs<ExtArgs>
 }
@@ -1083,6 +1149,8 @@ export type $LibraryCleanupRulePayload<ExtArgs extends runtime.Types.Extensions.
     plexLibraryFilter: string | null
     targetScope: string
     action: string
+    scanMediaServerAfterDelete: boolean
+    scanMediaServerInstanceIds: string | null
     operator: string | null
     conditions: string | null
     retentionMode: boolean
@@ -1539,6 +1607,8 @@ export interface LibraryCleanupRuleFieldRefs {
   readonly plexLibraryFilter: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
   readonly targetScope: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
   readonly action: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
+  readonly scanMediaServerAfterDelete: Prisma.FieldRef<"LibraryCleanupRule", 'Boolean'>
+  readonly scanMediaServerInstanceIds: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
   readonly operator: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
   readonly conditions: Prisma.FieldRef<"LibraryCleanupRule", 'String'>
   readonly retentionMode: Prisma.FieldRef<"LibraryCleanupRule", 'Boolean'>

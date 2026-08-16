@@ -91,7 +91,18 @@ export function evaluateRuleViaEngine(
 
 	const result = evaluateDocument(doc, evalPredicate);
 	return result.matched
-		? { ruleId: rule.id, ruleName: rule.name, reason: result.reason, action }
+		? {
+				ruleId: rule.id,
+				ruleName: rule.name,
+				reason: result.reason,
+				action,
+				...(rule.scanMediaServerAfterDelete
+					? {
+							scanMediaServerAfterDelete: true as const,
+							scanMediaServerInstanceIds: rule.scanMediaServerInstanceIds,
+						}
+					: {}),
+			}
 		: null;
 }
 

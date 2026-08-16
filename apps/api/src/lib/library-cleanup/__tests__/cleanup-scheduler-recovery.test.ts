@@ -7,6 +7,15 @@ import {
 } from "../cleanup-maintenance-gate.js";
 import { CleanupScheduler } from "../cleanup-scheduler.js";
 
+vi.mock("../media-server-rescan.js", () => ({
+	retryAllPendingMediaServerRescans: vi.fn().mockResolvedValue({
+		targets: 0,
+		triggered: 0,
+		failed: 0,
+		warnings: [],
+	}),
+}));
+
 vi.mock("../cleanup-audit.js", () => ({
 	appendCleanupAuditEvent: vi.fn().mockResolvedValue({}),
 	appendCleanupTerminalAuditEvent: vi.fn().mockResolvedValue({}),

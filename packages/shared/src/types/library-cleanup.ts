@@ -67,6 +67,12 @@ const baseCleanupRuleSchema = z.object({
 	plexLibraryFilter: z.array(z.string()).nullable().optional(),
 	targetScope: cleanupTargetScopeSchema.optional().default("series"),
 	action: cleanupActionSchema.optional().default("delete"),
+	scanMediaServerAfterDelete: z.boolean().optional().default(false),
+	scanMediaServerInstanceIds: z
+		.array(z.string().trim().min(1).max(128))
+		.max(50)
+		.optional()
+		.default([]),
 	operator: compositeOperatorSchema.nullable().optional(),
 	conditions: z.array(conditionSchema).nullable().optional(),
 	retentionMode: z.boolean().optional().default(false),
@@ -95,6 +101,37 @@ interface CleanupRuleScopeInput {
 	parameters?: Record<string, unknown> | null;
 	operator?: CompositeOperator | string | null;
 	conditions?: readonly unknown[] | null;
+}
+
+interface CleanupMediaServerScanInput {
+	action?: CleanupAction | string | null;
+	retentionMode?: boolean | null;
+	scanMediaServerAfterDelete?: boolean | null;
+	scanMediaServerInstanceIds?: readonly string[] | null;
+}
+
+export function getCleanupMediaServerScanValidationError(
+	rule: CleanupMediaServerScanInput,
+): string | null {
+	const instanceIds = rule.scanMediaServerInstanceIds ?? [];
+	if (rule.scanMediaServerAfterDelete !== true) {
+		return instanceIds.length > 0
+			? "Media-server instance selection must be empty when post-delete scanning is disabled"
+			: null;
+	}
+	if (rule.retentionMode === true) {
+		return "Media-server scans cannot be enabled on retention rules";
+	}
+	if (rule.action !== "delete" && rule.action !== "delete_files") {
+		return "Media-server scans require a delete or delete-files action";
+	}
+	if (instanceIds.length === 0) {
+		return "Media-server scans require at least one media-server instance";
+	}
+	if (new Set(instanceIds).size !== instanceIds.length) {
+		return "Media-server instance selection cannot contain duplicates";
+	}
+	return null;
 }
 
 /**
@@ -147,6 +184,14 @@ export const createCleanupRuleSchema = baseCleanupRuleSchema.superRefine((data, 
 			path: ["targetScope"],
 		});
 	}
+	const scanError = getCleanupMediaServerScanValidationError(data);
+	if (scanError) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: scanError,
+			path: ["scanMediaServerAfterDelete"],
+		});
+	}
 });
 
 export const updateCleanupRuleSchema = baseCleanupRuleSchema
@@ -154,7 +199,13 @@ export const updateCleanupRuleSchema = baseCleanupRuleSchema
 	// Zod 4 preserves inner defaults through `partial()`. A PATCH/PUT body
 	// that omits targetScope must not silently rewrite an existing episode
 	// rule back to series scope.
-	.extend({ targetScope: cleanupTargetScopeSchema.optional() })
+	.extend({
+		targetScope: cleanupTargetScopeSchema.optional(),
+		action: cleanupActionSchema.optional(),
+		retentionMode: z.boolean().optional(),
+		scanMediaServerAfterDelete: z.boolean().optional(),
+		scanMediaServerInstanceIds: z.array(z.string().trim().min(1).max(128)).max(50).optional(),
+	})
 	.superRefine((data, ctx) => {
 		if (data.operator != null && (!data.conditions || data.conditions.length === 0)) {
 			ctx.addIssue({
@@ -162,6 +213,19 @@ export const updateCleanupRuleSchema = baseCleanupRuleSchema
 				message: "Composite rules must have at least one condition",
 				path: ["conditions"],
 			});
+		}
+		if (
+			data.scanMediaServerAfterDelete !== undefined &&
+			data.scanMediaServerInstanceIds !== undefined
+		) {
+			const scanError = getCleanupMediaServerScanValidationError(data);
+			if (scanError) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: scanError,
+					path: ["scanMediaServerAfterDelete"],
+				});
+			}
 		}
 	});
 
@@ -231,6 +295,8 @@ export interface CleanupRuleResponse {
 	plexLibraryFilter: string[] | null;
 	targetScope: CleanupTargetScope;
 	action: string;
+	scanMediaServerAfterDelete: boolean;
+	scanMediaServerInstanceIds: string[];
 	operator: CompositeOperator | null;
 	conditions: Condition[] | null;
 	retentionMode: boolean;
@@ -275,6 +341,9 @@ export interface CleanupApprovalResponse {
 	matchedRuleName: string;
 	reason: string;
 	action: string;
+	scanMediaServerAfterDelete: boolean;
+	scanMediaServerInstanceIds: string[];
+	mediaServerScans: CleanupMediaServerScanResponse[];
 	sizeOnDisk: string; // BigInt serialized as string
 	year: number | null;
 	rating: number | null;
@@ -284,6 +353,28 @@ export interface CleanupApprovalResponse {
 	executedAt: string | null;
 	createdAt: string;
 	expiresAt: string;
+}
+
+export type CleanupMediaServerScanStatus =
+	| "pending"
+	| "triggering"
+	| "triggered"
+	| "skipped"
+	| "failed"
+	| "ambiguous";
+
+export interface CleanupMediaServerScanResponse {
+	id: string;
+	instanceId: string;
+	instanceLabel: string | null;
+	service: "PLEX" | "JELLYFIN" | "EMBY";
+	status: CleanupMediaServerScanStatus;
+	attemptCount: number;
+	plannedSectionCount: number | null;
+	completedSectionCount: number;
+	lastError: string | null;
+	nextAttemptAt: string | null;
+	triggeredAt: string | null;
 }
 
 export interface CleanupLogResponse {
@@ -364,6 +455,11 @@ export interface CleanupFieldOptionsResponse {
 	jellyfinUsers: string[];
 	jellyfinLibraries: string[];
 	arrTags: Array<{ id: number; label: string }>;
+	mediaServerInstances: Array<{
+		id: string;
+		label: string;
+		service: "PLEX" | "JELLYFIN" | "EMBY";
+	}>;
 	hasPlex: boolean;
 	hasJellyfin: boolean;
 }

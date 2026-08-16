@@ -1398,6 +1398,18 @@ export function evaluateRule(
 	// Parse Plex library filter once for all Plex evaluators
 	const plexLibFilter = safeJsonParse(rule.plexLibraryFilter) as string[] | null;
 	const action = (rule.action ?? "delete") as RuleAction;
+	const match = (reason: string): RuleMatch => ({
+		ruleId: rule.id,
+		ruleName: rule.name,
+		reason,
+		action,
+		...(rule.scanMediaServerAfterDelete
+			? {
+					scanMediaServerAfterDelete: true as const,
+					scanMediaServerInstanceIds: rule.scanMediaServerInstanceIds,
+				}
+			: {}),
+	});
 
 	// ── Composite rule path ────────────────────────────────────────
 	if (rule.operator && rule.conditions) {
@@ -1417,7 +1429,7 @@ export function evaluateRule(
 				if (!reason) return null; // ALL must match
 				reasons.push(reason);
 			}
-			return { ruleId: rule.id, ruleName: rule.name, reason: reasons.join(" AND "), action };
+			return match(reasons.join(" AND "));
 		}
 
 		if (rule.operator === "OR") {
@@ -1430,7 +1442,7 @@ export function evaluateRule(
 					plexLibFilter,
 				);
 				if (reason) {
-					return { ruleId: rule.id, ruleName: rule.name, reason, action };
+					return match(reason);
 				}
 			}
 			return null; // AT LEAST ONE must match
@@ -1442,7 +1454,7 @@ export function evaluateRule(
 	if (!params) return null;
 
 	const reason = evaluateSingleCondition(item, rule.ruleType, params, ctx, plexLibFilter);
-	return reason ? { ruleId: rule.id, ruleName: rule.name, reason, action } : null;
+	return reason ? match(reason) : null;
 }
 
 /**

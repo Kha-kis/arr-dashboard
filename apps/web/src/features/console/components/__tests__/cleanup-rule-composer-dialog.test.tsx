@@ -189,6 +189,8 @@ describe("CleanupRuleComposerDialog — edit", () => {
 					excludeTitles: ["Keep me"],
 					plexLibraryFilter: null,
 					action: "unmonitor",
+					scanMediaServerAfterDelete: false,
+					scanMediaServerInstanceIds: [],
 					operator: "AND",
 					conditions: [
 						{ ruleType: "age", parameters: { operator: "older_than", days: 90 } },
@@ -259,6 +261,8 @@ describe("CleanupRuleComposerDialog — edit", () => {
 					excludeTitles: null,
 					plexLibraryFilter: null,
 					action: "delete",
+					scanMediaServerAfterDelete: false,
+					scanMediaServerInstanceIds: [],
 					operator: null,
 					conditions: null,
 					retentionMode: false,

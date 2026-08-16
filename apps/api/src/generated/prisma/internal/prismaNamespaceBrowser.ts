@@ -87,6 +87,8 @@ export const ModelName = {
   LibraryCleanupConfig: 'LibraryCleanupConfig',
   LibraryCleanupRule: 'LibraryCleanupRule',
   LibraryCleanupApproval: 'LibraryCleanupApproval',
+  LibraryCleanupMediaServerScan: 'LibraryCleanupMediaServerScan',
+  LibraryCleanupMediaServerScanLease: 'LibraryCleanupMediaServerScanLease',
   LibraryCleanupAuditEvent: 'LibraryCleanupAuditEvent',
   LibraryCleanupLog: 'LibraryCleanupLog',
   NotificationChannel: 'NotificationChannel',
@@ -830,6 +832,8 @@ export const LibraryCleanupRuleScalarFieldEnum = {
   plexLibraryFilter: 'plexLibraryFilter',
   targetScope: 'targetScope',
   action: 'action',
+  scanMediaServerAfterDelete: 'scanMediaServerAfterDelete',
+  scanMediaServerInstanceIds: 'scanMediaServerInstanceIds',
   operator: 'operator',
   conditions: 'conditions',
   retentionMode: 'retentionMode',
@@ -859,6 +863,8 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
   matchedRuleName: 'matchedRuleName',
   reason: 'reason',
   action: 'action',
+  scanMediaServerAfterDelete: 'scanMediaServerAfterDelete',
+  scanMediaServerInstanceIds: 'scanMediaServerInstanceIds',
   sizeOnDisk: 'sizeOnDisk',
   year: 'year',
   rating: 'rating',
@@ -883,6 +889,41 @@ export const LibraryCleanupApprovalScalarFieldEnum = {
 } as const
 
 export type LibraryCleanupApprovalScalarFieldEnum = (typeof LibraryCleanupApprovalScalarFieldEnum)[keyof typeof LibraryCleanupApprovalScalarFieldEnum]
+
+
+export const LibraryCleanupMediaServerScanScalarFieldEnum = {
+  id: 'id',
+  approvalId: 'approvalId',
+  instanceId: 'instanceId',
+  service: 'service',
+  serverIdentity: 'serverIdentity',
+  mediaType: 'mediaType',
+  plannedSectionIds: 'plannedSectionIds',
+  targetKey: 'targetKey',
+  status: 'status',
+  executionToken: 'executionToken',
+  attemptCount: 'attemptCount',
+  completedSectionIds: 'completedSectionIds',
+  lastError: 'lastError',
+  nextAttemptAt: 'nextAttemptAt',
+  requestStartedAt: 'requestStartedAt',
+  triggeredAt: 'triggeredAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LibraryCleanupMediaServerScanScalarFieldEnum = (typeof LibraryCleanupMediaServerScanScalarFieldEnum)[keyof typeof LibraryCleanupMediaServerScanScalarFieldEnum]
+
+
+export const LibraryCleanupMediaServerScanLeaseScalarFieldEnum = {
+  operationKey: 'operationKey',
+  userId: 'userId',
+  executionToken: 'executionToken',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type LibraryCleanupMediaServerScanLeaseScalarFieldEnum = (typeof LibraryCleanupMediaServerScanLeaseScalarFieldEnum)[keyof typeof LibraryCleanupMediaServerScanLeaseScalarFieldEnum]
 
 
 export const LibraryCleanupAuditEventScalarFieldEnum = {

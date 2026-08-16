@@ -64,6 +64,11 @@ import {
 	type CleanupAuditTrigger,
 } from "./cleanup-audit.js";
 import {
+	prepareMediaServerRescans,
+	rescanMediaType,
+	triggerCoalescedMediaServerRescans,
+} from "./media-server-rescan.js";
+import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
 	evaluateEpisodeWatchCountRule,
@@ -142,6 +147,135 @@ import type {
 	SeerrRequestInfo,
 	SeerrRequestMap,
 } from "./types.js";
+
+interface CleanupMediaServerScanPolicy {
+	scanMediaServerAfterDelete: boolean;
+	scanMediaServerInstanceIds: string | null;
+}
+
+type ExpectedMutationRule = {
+	matchedRuleId: string;
+	action: RuleAction;
+	scanMediaServerAfterDelete?: boolean;
+	scanMediaServerInstanceIds?: string | null;
+};
+
+function normalizeCleanupMediaServerScanPolicy(input: {
+	action?: string | null;
+	scanMediaServerAfterDelete?: boolean | null;
+	scanMediaServerInstanceIds?: string | null;
+}): CleanupMediaServerScanPolicy {
+	if (input.scanMediaServerAfterDelete !== true) {
+		return { scanMediaServerAfterDelete: false, scanMediaServerInstanceIds: null };
+	}
+	if (input.action !== "delete" && input.action !== "delete_files") {
+		throw new Error("The stored media-server scan policy is incompatible with this cleanup action");
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(input.scanMediaServerInstanceIds ?? "");
+	} catch {
+		throw new Error("The stored media-server scan target selection is invalid");
+	}
+	if (
+		!Array.isArray(parsed) ||
+		parsed.length === 0 ||
+		parsed.some((entry) => typeof entry !== "string" || entry.length === 0)
+	) {
+		throw new Error("The stored media-server scan target selection is invalid");
+	}
+	const instanceIds = parsed as string[];
+	const canonical = [...new Set(instanceIds)].sort((left, right) => left.localeCompare(right));
+	if (
+		canonical.length !== instanceIds.length ||
+		canonical.some((instanceId, index) => instanceId !== instanceIds[index])
+	) {
+		throw new Error("The stored media-server scan target selection is invalid");
+	}
+	return {
+		scanMediaServerAfterDelete: true,
+		scanMediaServerInstanceIds: JSON.stringify(canonical),
+	};
+}
+
+function mediaServerScanPoliciesEqual(
+	left: Parameters<typeof normalizeCleanupMediaServerScanPolicy>[0],
+	right: Parameters<typeof normalizeCleanupMediaServerScanPolicy>[0],
+): boolean {
+	const normalizedLeft = normalizeCleanupMediaServerScanPolicy(left);
+	const normalizedRight = normalizeCleanupMediaServerScanPolicy(right);
+	return (
+		normalizedLeft.scanMediaServerAfterDelete === normalizedRight.scanMediaServerAfterDelete &&
+		normalizedLeft.scanMediaServerInstanceIds === normalizedRight.scanMediaServerInstanceIds
+	);
+}
+
+function expectedMutationRule(
+	matchedRuleId: string,
+	action: RuleAction,
+	input: Parameters<typeof normalizeCleanupMediaServerScanPolicy>[0],
+): ExpectedMutationRule {
+	return { matchedRuleId, action, ...normalizeCleanupMediaServerScanPolicy(input) };
+}
+
+async function prepareCleanupMediaServerRescans(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	approval: LibraryCleanupApproval,
+): Promise<number> {
+	const policy = normalizeCleanupMediaServerScanPolicy(approval);
+	if (!policy.scanMediaServerAfterDelete) return 0;
+	return deps.mediaServerRescan?.prepare
+		? deps.mediaServerRescan.prepare(userId, approval, rescanMediaType(approval.itemType))
+		: prepareMediaServerRescans(deps, userId, approval, rescanMediaType(approval.itemType));
+}
+
+async function assertCurrentMediaServerScanRuleAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	expected: ExpectedMutationRule,
+): Promise<void> {
+	const currentRule = await deps.prisma.libraryCleanupRule.findFirst({
+		where: { id: expected.matchedRuleId, enabled: true, config: { userId } },
+		select: {
+			action: true,
+			scanMediaServerAfterDelete: true,
+			scanMediaServerInstanceIds: true,
+		},
+	});
+	if (
+		!currentRule ||
+		currentRule.action !== expected.action ||
+		!mediaServerScanPoliciesEqual(expected, currentRule)
+	) {
+		throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+			"Skipped for safety: the selected post-delete media-server scan policy changed after this item was queued.",
+		);
+	}
+}
+
+async function triggerCleanupMediaServerRescansBestEffort(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	approvalIds: string[],
+): Promise<void> {
+	try {
+		const result = deps.mediaServerRescan?.trigger
+			? await deps.mediaServerRescan.trigger(userId, approvalIds)
+			: await triggerCoalescedMediaServerRescans(deps, userId, approvalIds);
+		if (result.failed > 0 || result.warnings.length > 0) {
+			deps.log.warn(
+				{ approvalIds, failed: result.failed, warnings: result.warnings },
+				"Cleanup completed, but media-server scan work remains retryable",
+			);
+		}
+	} catch (error) {
+		deps.log.warn(
+			{ err: error, approvalIds },
+			"Cleanup completed, but media-server scan dispatch could not be started",
+		);
+	}
+}
 
 // Default approval expiry: 7 days
 const APPROVAL_EXPIRY_DAYS = 7;
@@ -1437,7 +1571,7 @@ async function appendCleanupMutationStartedAudit(
 }
 
 async function appendCleanupTerminalAudit(
-	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+	deps: CleanupExecutorDeps,
 	userId: string,
 	approval: Parameters<typeof buildCleanupClaimAuditInput>[1],
 	correlationId: string,
@@ -1465,6 +1599,12 @@ async function appendCleanupTerminalAudit(
 			{ err: error, actionId: input.actionId, eventType: input.eventType },
 			"Cleanup terminal audit append failed; its durable envelope remains repairable",
 		);
+	}
+	if (
+		outcome === "success" &&
+		(approval as { scanMediaServerAfterDelete?: boolean }).scanMediaServerAfterDelete === true
+	) {
+		await triggerCleanupMediaServerRescansBestEffort(deps, userId, [approval.id]);
 	}
 }
 
@@ -2216,12 +2356,14 @@ async function persistAndClaimDirectMutationIntent(
 	if (!executablePlan) {
 		throw new Error("No executable cleanup safety plan was available for the mutation intent");
 	}
+	const mediaServerScanPolicy = normalizeCleanupMediaServerScanPolicy(item.match);
 	const retryEventFingerprint = createHash("sha256")
 		.update(
 			JSON.stringify([
 				serializeExecutableSafetyPlan(executablePlan, providerEvidence),
 				item.cacheItem.cachedAt?.toISOString() ?? null,
 				item.match.action,
+				mediaServerScanPolicy,
 			]),
 		)
 		.digest("hex")
@@ -2259,6 +2401,8 @@ async function persistAndClaimDirectMutationIntent(
 					matchedRuleName: item.match.ruleName,
 					reason: item.match.reason,
 					action: item.match.action,
+					scanMediaServerAfterDelete: mediaServerScanPolicy.scanMediaServerAfterDelete,
+					scanMediaServerInstanceIds: mediaServerScanPolicy.scanMediaServerInstanceIds,
 					sizeOnDisk: item.cacheItem.sizeOnDisk,
 					year: item.cacheItem.year,
 					rating: item.rating,
@@ -4771,6 +4915,9 @@ async function executeQueuedCleanupItems(
 					);
 					continue;
 				}
+				const expectedRule = expectedMutationRule(approval.matchedRuleId, action, approval);
+				await assertCurrentMediaServerScanRuleAuthority(deps, userId, expectedRule);
+				await prepareCleanupMediaServerRescans(deps, userId, approval);
 				mutationAttemptedApprovalIds.add(approval.id);
 				const mutationInstance = await loadCurrentMutationInstance(
 					deps,
@@ -4808,7 +4955,7 @@ async function executeQueuedCleanupItems(
 								userId,
 								mutationInstance,
 								approval.arrItemId,
-								{ matchedRuleId: approval.matchedRuleId, action },
+								expectedRule,
 								await getMutationPolicySnapshot(),
 							);
 							authorizedResource = authorizedSeriesPolicy.rawItem;
@@ -4818,7 +4965,7 @@ async function executeQueuedCleanupItems(
 								userId,
 								mutationInstance,
 								approval.arrItemId,
-								{ matchedRuleId: approval.matchedRuleId, action },
+								expectedRule,
 								authorizedSeriesPolicy,
 								evidence.seriesTransition,
 								getMutationPolicySnapshot,
@@ -4850,7 +4997,7 @@ async function executeQueuedCleanupItems(
 								mutationInstance,
 								mutationTarget,
 								safetyPlan,
-								{ matchedRuleId: approval.matchedRuleId, action },
+								expectedRule,
 								assertMutationAuthority,
 								options.cleanupRunClaimToken,
 							)
@@ -7807,6 +7954,7 @@ async function executeWithApproval(
 
 		try {
 			const memWindow = memoryByRuleId.get(item.match.ruleId) ?? { mode: "off" as const };
+			const mediaServerScanPolicy = normalizeCleanupMediaServerScanPolicy(item.match);
 
 			// Dedup query: always preserve active approval/execution ownership;
 			// additionally skip rejected approvals when the rule's memory window says so (#474).
@@ -7864,6 +8012,8 @@ async function executeWithApproval(
 						matchedRuleName: item.match.ruleName,
 						reason: item.match.reason,
 						action: item.match.action,
+						scanMediaServerAfterDelete: mediaServerScanPolicy.scanMediaServerAfterDelete,
+						scanMediaServerInstanceIds: mediaServerScanPolicy.scanMediaServerInstanceIds,
 						sizeOnDisk: item.cacheItem.sizeOnDisk,
 						year: item.cacheItem.year,
 						rating: item.rating,
@@ -8301,6 +8451,7 @@ export async function executeDirectRemoval(
 			matchedRuleName: item.match.ruleName,
 			reason: item.match.reason,
 			action: ruleAction,
+			...normalizeCleanupMediaServerScanPolicy(item.match),
 		} as const;
 		let directMutationStartedAuditAttempted = false;
 		try {
@@ -8325,6 +8476,15 @@ export async function executeDirectRemoval(
 				);
 				continue;
 			}
+			const directExpectedRule = expectedMutationRule(item.match.ruleId, ruleAction, item.match);
+			if (directExpectedRule.scanMediaServerAfterDelete) {
+				await assertCurrentMediaServerScanRuleAuthority(deps, userId, directExpectedRule);
+			}
+			await prepareCleanupMediaServerRescans(
+				deps,
+				userId,
+				directAuditApproval as unknown as LibraryCleanupApproval,
+			);
 			const mutationInstance = await loadCurrentMutationInstance(
 				deps,
 				userId,
@@ -8359,7 +8519,7 @@ export async function executeDirectRemoval(
 						userId,
 						mutationInstance,
 						item.cacheItem.arrItemId,
-						{ matchedRuleId: item.match.ruleId, action: ruleAction },
+						directExpectedRule,
 						await getMutationPolicySnapshot(),
 					);
 					authorizedResource = authorizedSeriesPolicy.rawItem;
@@ -8369,7 +8529,7 @@ export async function executeDirectRemoval(
 						userId,
 						mutationInstance,
 						item.cacheItem.arrItemId,
-						{ matchedRuleId: item.match.ruleId, action: ruleAction },
+						directExpectedRule,
 						authorizedSeriesPolicy,
 						evidence.seriesTransition,
 						getMutationPolicySnapshot,
@@ -8389,7 +8549,7 @@ export async function executeDirectRemoval(
 							mutationInstance,
 							mutationTarget,
 							safetyPlan,
-							{ matchedRuleId: item.match.ruleId, action: ruleAction },
+							directExpectedRule,
 							assertDirectExecutionAuthority,
 							cleanupRunClaimToken,
 						)
