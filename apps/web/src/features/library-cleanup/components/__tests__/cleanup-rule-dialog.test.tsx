@@ -1,6 +1,6 @@
 import type { CleanupRuleResponse, CreateCleanupRule } from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
@@ -312,6 +312,80 @@ describe("CleanupRuleDialog", () => {
 			renderDialog();
 			expect(screen.queryByText(/Template applied/)).not.toBeInTheDocument();
 		});
+
+		it("authors a bounded nested expression without using legacy composite fields", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Nested cleanup" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Nested Rule" }));
+
+			expect(screen.getByLabelText("ALL group")).toBeInTheDocument();
+			expect(screen.getByText("Age")).toBeInTheDocument();
+			fireEvent.change(screen.getByRole("spinbutton", { name: "Days" }), {
+				target: { value: "45" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Add NOT to ALL group" }));
+			const notGroup = screen.getByLabelText("NOT group");
+			expect(notGroup).toBeInTheDocument();
+			expect(within(notGroup).getAllByRole("button", { name: "Remove node" })).toHaveLength(1);
+
+			fireEvent.click(screen.getByRole("button", { name: "Add Rule" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			const payload = onSave.mock.calls[0]![0] as CreateCleanupRule;
+			expect(payload.ruleType).toBe("composite");
+			expect(payload.operator).toBeNull();
+			expect(payload.conditions).toBeNull();
+			expect(payload.expression).toEqual({
+				version: 1,
+				root: {
+					all: [
+						{
+							kind: "age",
+							params: { field: "arrAddedAt", operator: "older_than", days: 45 },
+						},
+						{ not: { kind: "age", params: { operator: "older_than", days: 30 } } },
+					],
+				},
+			});
+		});
+
+		it("blocks an empty nested group before calling the API", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Invalid nested cleanup" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Nested Rule" }));
+			fireEvent.click(screen.getByRole("button", { name: "Remove node" }));
+
+			fireEvent.click(screen.getByRole("button", { name: "Add Rule" }));
+
+			expect(await screen.findByText(/add at least one condition/i)).toBeInTheDocument();
+			expect(onSave).not.toHaveBeenCalled();
+		});
+
+		it("blocks negated list membership until complete negative evidence exists", async () => {
+			const onSave = vi.fn();
+			renderDialog({ onSave });
+			fireEvent.change(screen.getByPlaceholderText("e.g., Old low-rated movies"), {
+				target: { value: "Unsafe negative list" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Nested Rule" }));
+			fireEvent.click(screen.getByRole("button", { name: "Add NOT to ALL group" }));
+			const conditionTypes = screen.getAllByRole("combobox", { name: "Condition type" });
+			fireEvent.change(conditionTypes[1]!, { target: { value: "tmdb_list_member" } });
+
+			fireEvent.click(screen.getByRole("button", { name: "Add Rule" }));
+
+			expect(
+				await screen.findByText(/list membership conditions cannot be used inside NOT/i),
+			).toBeInTheDocument();
+			expect(onSave).not.toHaveBeenCalled();
+		});
 	});
 
 	// ================================================================
@@ -319,7 +393,131 @@ describe("CleanupRuleDialog", () => {
 	// ================================================================
 
 	describe("edit mode", () => {
-		it("keeps recursive expressions read-only instead of flattening them", () => {
+		it("preserves explicitly edited flat criteria when converting to nested mode", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "size",
+					parameters: { operator: "greater_than", sizeGb: 100 },
+				}),
+			});
+
+			expect(screen.getByRole("button", { name: "Single Condition" })).not.toBeDisabled();
+			expect(screen.getByRole("button", { name: "Composite Rule" })).not.toBeDisabled();
+			expect(screen.getByRole("button", { name: "Nested Rule" })).not.toBeDisabled();
+
+			fireEvent.change(screen.getByRole("spinbutton", { name: "Size (GB)" }), {
+				target: { value: "120" },
+			});
+			fireEvent.click(screen.getByRole("button", { name: "Nested Rule" }));
+			expect(screen.getByRole("combobox", { name: "Condition type" })).toHaveValue("size");
+			fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "composite",
+				expression: {
+					version: 1,
+					root: { kind: "size", params: { operator: "greater_than", sizeGb: 120 } },
+				},
+			});
+		});
+
+		it("preserves untouched normalization-sensitive parameters byte-for-byte", async () => {
+			const onSave = vi.fn();
+			const parameters = { profileNames: [" HD-1080p "] };
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({ ruleType: "quality_profile", parameters }),
+			});
+
+			fireEvent.click(screen.getByRole("button", { name: "Nested Rule" }));
+			fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				expression: {
+					version: 1,
+					root: { kind: "quality_profile", params: parameters },
+				},
+			});
+		});
+
+		it("preserves an existing legacy composite when converting it to nested mode", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					operator: "OR",
+					conditions: [
+						{ ruleType: "age", parameters: { operator: "older_than", days: 365 } },
+						{ ruleType: "size", parameters: { operator: "greater_than", sizeGb: 100 } },
+					],
+				}),
+			});
+
+			fireEvent.click(screen.getByRole("button", { name: "Nested Rule" }));
+			expect(screen.getByLabelText("ANY group")).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				expression: {
+					version: 1,
+					root: {
+						any: [
+							{ kind: "age", params: { operator: "older_than", days: 365 } },
+							{ kind: "size", params: { operator: "greater_than", sizeGb: 100 } },
+						],
+					},
+				},
+			});
+		});
+
+		it("round-trips recursive expressions through the visual editor", async () => {
+			const onSave = vi.fn();
+			const expression = {
+				version: 1 as const,
+				root: {
+					all: [
+						{ kind: "age", params: { operator: "older_than", days: 30 } },
+						{
+							any: [{ kind: "year_range", params: { operator: "before", year: 2000 } }],
+						},
+					],
+				},
+			};
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					expression,
+				}),
+			});
+
+			expect(screen.queryByText(/recursive rule is read-only/i)).not.toBeInTheDocument();
+			expect(screen.getByLabelText("ALL group")).toBeInTheDocument();
+			expect(screen.getByLabelText("ANY group")).toBeInTheDocument();
+			expect(screen.getByRole("button", { name: "Single Condition" })).toBeDisabled();
+			expect(screen.getByRole("button", { name: "Composite Rule" })).toBeDisabled();
+			expect(screen.getByRole("button", { name: "Nested Rule" })).toBeDisabled();
+
+			fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "composite",
+				operator: null,
+				conditions: null,
+				expression,
+			});
+		});
+
+		it("wraps a recursive root predicate so more conditions can be added", async () => {
 			const onSave = vi.fn();
 			renderDialog({
 				onSave,
@@ -328,21 +526,27 @@ describe("CleanupRuleDialog", () => {
 					parameters: {},
 					expression: {
 						version: 1,
-						root: {
-							all: [
-								{ kind: "age", params: { operator: "older_than", days: 30 } },
-								{
-									any: [{ kind: "year_range", params: { operator: "before", year: 2000 } }],
-								},
-							],
-						},
+						root: { kind: "age", params: { operator: "older_than", days: 90 } },
 					},
 				}),
 			});
 
-			expect(screen.getByText(/recursive rule is read-only/i)).toBeInTheDocument();
-			expect(screen.queryByRole("button", { name: /save changes/i })).not.toBeInTheDocument();
-			expect(onSave).not.toHaveBeenCalled();
+			fireEvent.click(screen.getByRole("button", { name: "Wrap root in ALL group" }));
+			fireEvent.click(screen.getByRole("button", { name: "Add condition to ALL group" }));
+			fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				expression: {
+					version: 1,
+					root: {
+						all: [
+							{ kind: "age", params: { operator: "older_than", days: 90 } },
+							{ kind: "age", params: { operator: "older_than", days: 30 } },
+						],
+					},
+				},
+			});
 		});
 
 		it("renders the dialog title for edit mode", () => {

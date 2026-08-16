@@ -532,6 +532,36 @@ describe("LibraryCleanupClient", () => {
 	});
 
 	describe("rule list indicators", () => {
+		it("labels recursive rules by their authored predicate count", () => {
+			setupDefaultMocks({
+				rules: [
+					{
+						...makeConfig().rules[0]!,
+						ruleType: "composite",
+						parameters: {},
+						expression: {
+							version: 1,
+							root: {
+								all: [
+									{ kind: "age", params: { operator: "older_than", days: 30 } },
+									{
+										not: {
+											kind: "rating",
+											params: { source: "tmdb", operator: "less_than", score: 5 },
+										},
+									},
+								],
+							},
+						},
+					},
+				] as CleanupConfigResponse["rules"],
+			});
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getByText("Nested (2 conditions)")).toBeInTheDocument();
+		});
+
 		it("shows a Media scan badge for rules that rescan selected media servers", () => {
 			setupDefaultMocks({
 				rules: [
