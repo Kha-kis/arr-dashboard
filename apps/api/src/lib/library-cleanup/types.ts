@@ -4,6 +4,7 @@
  * Internal types for the cleanup rule evaluation pipeline.
  */
 
+import type { CleanupProviderEvidence } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
@@ -287,4 +288,6 @@ export interface CleanupRunResult {
 	error?: string;
 	prefetchHealth?: PrefetchResults;
 	warnings?: string[];
+	/** Sanitized provider generations and row fingerprints used by this preview. */
+	providerEvidence?: CleanupProviderEvidence;
 }

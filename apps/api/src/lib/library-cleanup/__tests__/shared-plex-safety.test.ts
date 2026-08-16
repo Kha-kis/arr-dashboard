@@ -1367,7 +1367,7 @@ describe("shared Plex deletion safety", () => {
 		).toBeNull();
 	});
 
-	it("does not acquire the mutation lease for a dry run", async () => {
+	it("holds the provider publication lease across a configured dry run", async () => {
 		const { deps } = makeDeps();
 		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
 			dryRunConfig() as never,
@@ -1381,8 +1381,93 @@ describe("shared Plex deletion safety", () => {
 			itemsEvaluated: 0,
 			itemsRemoved: 0,
 		});
-		expect(deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
+		expect(deps.prisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
+		expect(deps.prisma.libraryCleanupConfig.updateMany).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({
+				data: { runClaimToken: expect.any(String), runClaimedAt: expect.any(Date) },
+			}),
+		);
+		expect(deps.prisma.libraryCleanupConfig.updateMany).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ data: { runClaimToken: null, runClaimedAt: null } }),
+		);
 		expect(deps.prisma.libraryCleanupLog.create).not.toHaveBeenCalled();
+	});
+
+	it.each(["interactive preview", "configured dry run"] as const)(
+		"returns the captured provider authority with an %s",
+		async (mode) => {
+			const fixture = makeDeps({ mediaPartCount: 1 });
+			const config = plexPolicyCleanupConfig({
+				ruleType: "plex_watch_count",
+				parameters: { operator: "less_than", count: 1 },
+			});
+			vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+				...config,
+				dryRunMode: mode === "configured dry run",
+				requireApproval: false,
+			} as never);
+			vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([
+				matchingDryRunCacheItem(),
+			] as never);
+			configurePublishedPlexEvidence(fixture, { itemCount: 1, rowCount: 1 });
+			const evidence = plexProviderEvidence();
+			const capture = vi.fn().mockResolvedValue(evidence);
+			Object.assign(fixture.deps, { providerEvidenceCapturer: capture });
+
+			const result =
+				mode === "interactive preview"
+					? await executeCleanupPreview(fixture.deps, "user-1")
+					: await executeCleanupRun(fixture.deps, "user-1");
+
+			expect(capture).toHaveBeenCalledWith("user-1", ["plex"]);
+			expect(result.providerEvidence).toEqual(evidence);
+			const leaseWrites = vi.mocked(fixture.deps.prisma.libraryCleanupConfig.updateMany);
+			expect(leaseWrites).toHaveBeenCalledTimes(2);
+			expect(leaseWrites.mock.invocationCallOrder[0]).toBeLessThan(
+				capture.mock.invocationCallOrder[0]!,
+			);
+			expect(capture.mock.invocationCallOrder[0]).toBeLessThan(
+				leaseWrites.mock.invocationCallOrder[1]!,
+			);
+		},
+	);
+
+	it("retains provider authority when only a durable retry is selected", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const config = plexPolicyCleanupConfig({
+			ruleType: "plex_watch_count",
+			parameters: { operator: "less_than", count: 1 },
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...config,
+			dryRunMode: false,
+			requireApproval: false,
+		} as never);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([] as never);
+		configurePublishedPlexEvidence(fixture, { itemCount: 0, rowCount: 0 });
+		const evidence = plexProviderEvidence();
+		const capture = vi.fn().mockResolvedValue(evidence);
+		Object.assign(fixture.deps, { providerEvidenceCapturer: capture });
+		const retries = configureRetryStore(fixture.deps);
+		retries.push({
+			...approvalRecord({ status: "retry_pending", executionToken: null }),
+			configId: "config-1",
+			sizeOnDisk: 2_000n,
+			year: 2024,
+			createdAt: new Date("2026-08-15T04:00:00.000Z"),
+			reviewedAt: new Date("2026-08-15T04:00:00.000Z"),
+		});
+
+		const result = await executeCleanupPreview(fixture.deps, "user-1");
+
+		expect(result).toMatchObject({
+			itemsFlagged: 0,
+			previewSelection: { selectedFresh: 0, selectedRetries: 1 },
+			providerEvidence: evidence,
+		});
+		expect(capture).toHaveBeenCalledWith("user-1", ["plex"]);
 	});
 
 	it.each([
@@ -2118,7 +2203,7 @@ describe("shared Plex deletion safety", () => {
 			}),
 		);
 		expect(targetClient.movie.getById).not.toHaveBeenCalled();
-		expect(deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
+		expect(deps.prisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
 	});
 
 	it("uses the same frozen direct selection for preview, configured dry run, and live execution", async () => {
@@ -2557,7 +2642,7 @@ describe("shared Plex deletion safety", () => {
 			],
 		});
 		expect(targetClient.movie.getById).not.toHaveBeenCalled();
-		expect(deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
+		expect(deps.prisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
 	});
 
 	it("blocks when another Radarr instance may mount the same storage under a different path", async () => {
@@ -3115,6 +3200,8 @@ describe("shared Plex deletion safety", () => {
 			matchingDryRunCacheItem(),
 		] as never);
 		configurePublishedPlexEvidence(fixture, { itemCount: 1, rowCount: 1 });
+		const capture = vi.fn().mockRejectedValue(new Error("Plex authority unavailable"));
+		Object.assign(fixture.deps, { providerEvidenceCapturer: capture });
 
 		const result = await executeCleanupPreview(fixture.deps, "user-1");
 
@@ -3124,6 +3211,45 @@ describe("shared Plex deletion safety", () => {
 			prefetchHealth: { plex: "failed" },
 		});
 		expect(result.warnings).toContainEqual(expect.stringContaining("plex data unavailable"));
+		expect(result.warnings).toContainEqual(
+			expect.stringContaining("provider evidence was unavailable"),
+		);
+		expect(result.providerEvidence).toBeUndefined();
+		expect(capture).toHaveBeenCalledWith("user-1", ["plex"]);
+	});
+
+	it("keeps ARR-only matches when Jellyfin or Emby authority is unavailable", async () => {
+		const fixture = makeDeps();
+		const config = dryRunConfig();
+		config.rules.push({
+			...config.rules[0]!,
+			id: "provider-rule",
+			name: "Jellyfin or Emby policy",
+			priority: 2,
+			ruleType: "jellyfin_watch_count",
+			parameters: JSON.stringify({ operator: "less_than", count: 1 }),
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
+			config as never,
+		);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([
+			matchingDryRunCacheItem(),
+		] as never);
+		const capture = vi.fn().mockRejectedValue(new Error("Jellyfin authority unavailable"));
+		Object.assign(fixture.deps, { providerEvidenceCapturer: capture });
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result).toMatchObject({
+			status: "partial",
+			itemsEvaluated: 1,
+			itemsFlagged: 1,
+		});
+		expect(result.warnings).toContainEqual(
+			expect.stringContaining("provider evidence was unavailable"),
+		);
+		expect(result.providerEvidence).toBeUndefined();
+		expect(capture).toHaveBeenCalledWith("user-1", ["jellyfin"]);
 	});
 
 	it("does not select a Plex cleanup candidate when the published row count mismatches", async () => {

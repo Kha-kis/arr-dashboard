@@ -2555,6 +2555,13 @@ export async function executeCleanupPreview(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<CleanupRunResult> {
+	return await withCleanupOperationGuard(() => executeCleanupPreviewGuarded(deps, userId));
+}
+
+async function executeCleanupPreviewGuarded(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<CleanupRunResult> {
 	const startTime = Date.now();
 	const { prisma, log } = deps;
 
@@ -2614,11 +2621,17 @@ export async function executeCleanupPreview(
 		};
 	}
 
-	const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
-		deps,
-		config,
-		config.rules,
-	);
+	const {
+		flagged,
+		totalEvaluated,
+		prefetchHealth,
+		warnings,
+		providerEvidence,
+		providerEvidenceWarning,
+	} = await evaluateCleanupPreviewWithProviderEvidence(deps, userId, config);
+	const previewWarnings = providerEvidenceWarning
+		? [...warnings, providerEvidenceWarning]
+		: warnings;
 	if (!config.requireApproval) {
 		const configuredRunLimitIsValid =
 			Number.isSafeInteger(config.maxRemovalsPerRun) &&
@@ -2649,7 +2662,7 @@ export async function executeCleanupPreview(
 		);
 		const allWarnings = withSharedPlexWarning(
 			[
-				...warnings,
+				...previewWarnings,
 				...directSelection.warnings,
 				...(configuredRunLimitIsValid ? [] : [INVALID_CLEANUP_RUN_LIMIT_WARNING]),
 			],
@@ -2698,6 +2711,7 @@ export async function executeCleanupPreview(
 			durationMs: Date.now() - startTime,
 			prefetchHealth,
 			warnings: allWarnings,
+			providerEvidence,
 		};
 	}
 
@@ -2730,7 +2744,7 @@ export async function executeCleanupPreview(
 	);
 	const allWarnings = withSharedPlexWarning(
 		[
-			...warnings,
+			...previewWarnings,
 			...approvalSelection.warnings,
 			...(configuredRunLimitIsValid ? [] : [INVALID_CLEANUP_RUN_LIMIT_WARNING]),
 		],
@@ -2789,6 +2803,7 @@ export async function executeCleanupPreview(
 		durationMs: Date.now() - startTime,
 		prefetchHealth,
 		warnings: allWarnings,
+		providerEvidence,
 	};
 }
 
@@ -2837,11 +2852,17 @@ async function executeCleanupRunGuarded(
 	}
 
 	if (config.dryRunMode) {
-		const { flagged, totalEvaluated, prefetchHealth, warnings } = await evaluateAllItems(
-			deps,
-			config,
-			config.rules,
-		);
+		const {
+			flagged,
+			totalEvaluated,
+			prefetchHealth,
+			warnings,
+			providerEvidence,
+			providerEvidenceWarning,
+		} = await evaluateCleanupPreviewWithProviderEvidence(deps, userId, config);
+		const previewWarnings = providerEvidenceWarning
+			? [...warnings, providerEvidenceWarning]
+			: warnings;
 		const configuredRunLimitIsValid =
 			Number.isSafeInteger(config.maxRemovalsPerRun) &&
 			config.maxRemovalsPerRun > 0 &&
@@ -2872,7 +2893,7 @@ async function executeCleanupRunGuarded(
 			);
 			const allWarnings = withSharedPlexWarning(
 				[
-					...warnings,
+					...previewWarnings,
 					...directSelection.warnings,
 					...(configuredRunLimitIsValid ? [] : [INVALID_CLEANUP_RUN_LIMIT_WARNING]),
 				],
@@ -2896,6 +2917,7 @@ async function executeCleanupRunGuarded(
 				durationMs: Date.now() - startTime,
 				prefetchHealth,
 				warnings: allWarnings,
+				providerEvidence,
 			};
 
 			await createRunLog(prisma, config.id, result, log);
@@ -2925,7 +2947,7 @@ async function executeCleanupRunGuarded(
 		);
 		const allWarnings = withSharedPlexWarning(
 			[
-				...warnings,
+				...previewWarnings,
 				...approvalSelection.warnings,
 				...(configuredRunLimitIsValid ? [] : [INVALID_CLEANUP_RUN_LIMIT_WARNING]),
 			],
@@ -2957,6 +2979,7 @@ async function executeCleanupRunGuarded(
 			durationMs: Date.now() - startTime,
 			prefetchHealth,
 			warnings: allWarnings,
+			providerEvidence,
 		};
 
 		await createRunLog(prisma, config.id, result, log);
@@ -3774,6 +3797,10 @@ async function executeQueuedCleanupItems(
 			let approvedPlan = approvedEnvelope?.plan ?? null;
 			let approvedProviderEvidence = approvedEnvelope?.providerEvidence;
 			let safetyPlan: SharedMediaSafetyPlan | undefined = approvedPlan ?? undefined;
+			const durableEpisodePostPartialMutation =
+				approvedEnvelope?.mutationCheckpoint === "post_partial_mutation" &&
+				approvedPlan?.kind === "verified_sonarr_episode" &&
+				action === "delete";
 			let recoveringEpisodeUnmonitorPartial =
 				approval.lastExecutionError === SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE;
 			let postFileOwnershipPlan:
@@ -3795,7 +3822,8 @@ async function executeQueuedCleanupItems(
 				try {
 					if (
 						recoveringInterruptedMutation &&
-						approvedEnvelope?.mutationCheckpoint === "post_partial_mutation"
+						approvedEnvelope?.mutationCheckpoint === "post_partial_mutation" &&
+						!durableEpisodePostPartialMutation
 					) {
 						approvedProviderEvidence = await renewCurrentProviderRetryAuthority(
 							deps,
@@ -6642,6 +6670,47 @@ function providerEvidenceDependenciesForRules(rules: LibraryCleanupRule[]): Prov
 		dependencies.add("jellyfin_episode");
 	}
 	return [...dependencies].sort();
+}
+
+async function evaluateCleanupPreviewWithProviderEvidence(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	config: LibraryCleanupConfig & { rules: LibraryCleanupRule[] },
+) {
+	// Provider publication uses the same durable run claim as cleanup. Holding
+	// it across evaluation and evidence capture binds the response to one cache
+	// generation without turning the preview into an upstream mutation.
+	const lease = await startCleanupRunLease(deps, userId, config.id);
+	try {
+		const evaluation = await evaluateAllItems(deps, config, config.rules);
+		const { providerEvidence, warning: providerEvidenceWarning } =
+			await capturePreviewProviderEvidence(deps, userId, config.rules);
+		return { ...evaluation, providerEvidence, providerEvidenceWarning };
+	} finally {
+		await lease.release();
+	}
+}
+
+async function capturePreviewProviderEvidence(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	rules: LibraryCleanupRule[],
+): Promise<{ providerEvidence?: SanitizedProviderEvidence; warning?: string }> {
+	try {
+		return {
+			providerEvidence: await captureCurrentProviderEvidenceAuthority(
+				deps,
+				userId,
+				providerEvidenceDependenciesForRules(rules),
+			),
+		};
+	} catch (error) {
+		deps.log.warn({ err: error }, "Library cleanup preview provider evidence was unavailable");
+		return {
+			warning:
+				"Cleanup provider evidence was unavailable. Provider-backed decisions were not attributed to a durable cache generation.",
+		};
+	}
 }
 
 function buildApprovalDedupSkipReason(

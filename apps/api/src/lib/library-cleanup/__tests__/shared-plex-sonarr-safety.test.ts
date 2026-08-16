@@ -13,6 +13,7 @@ import {
 	assertVerifiedSonarrPeerOwnershipRetained,
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
+	createSanitizedProviderEvidence,
 	createSharedPlexSafetyContext,
 	findSharedPlexDeleteBlocks,
 	serializeExecutableSafetyPlan,
@@ -41,6 +42,40 @@ const sonarrServiceFingerprint = createArrServiceFingerprint({
 	encryptedHttpAuthCredentials: null,
 	httpAuthEncryptionIv: null,
 } as never);
+
+function plexProviderEvidence() {
+	return createSanitizedProviderEvidence(
+		["plex", "plex_episode"],
+		[
+			{
+				service: "PLEX",
+				identityKind: "PLEX_MACHINE_IDENTIFIER",
+				identityFingerprint: "b".repeat(64),
+				connectionGeneration: 3,
+				identityGeneration: 7,
+				cacheType: "plex",
+				completedAt: "2026-08-15T04:00:00.000Z",
+				itemCount: 1,
+				verifiedAt: "2026-08-15T03:00:00.000Z",
+				statusFingerprint: "c".repeat(64),
+				rowFingerprint: "d".repeat(64),
+			},
+			{
+				service: "PLEX",
+				identityKind: "PLEX_MACHINE_IDENTIFIER",
+				identityFingerprint: "b".repeat(64),
+				connectionGeneration: 3,
+				identityGeneration: 7,
+				cacheType: "plex_episode",
+				completedAt: "2026-08-15T04:00:00.000Z",
+				itemCount: 1,
+				verifiedAt: "2026-08-15T03:00:00.000Z",
+				statusFingerprint: "e".repeat(64),
+				rowFingerprint: "f".repeat(64),
+			},
+		],
+	);
+}
 
 function episodeCleanupRule(action: "delete" | "delete_files" | "unmonitor" = "delete") {
 	return {
@@ -2597,6 +2632,69 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.bulkDelete).toHaveBeenCalledOnce();
 		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
 		expect(fixture.deleteSeries).not.toHaveBeenCalled();
+	});
+
+	it("uses the durable checkpoint when a partial episode error label is replaced", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const matchingConfig = {
+			id: "config-1",
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule()],
+		};
+		let currentConfig = matchingConfig;
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockImplementation(
+			(async () => currentConfig) as never,
+		);
+		fixture.setEpisodeMonitored.mockImplementation(async (episodeIds, monitored) => {
+			for (const episodeId of episodeIds) fixture.setLiveEpisodeMonitored(episodeId, monitored);
+			currentConfig = {
+				...matchingConfig,
+				rules: [{ ...episodeCleanupRule(), enabled: false }],
+			};
+		});
+		const evidence = plexProviderEvidence();
+		const authorityChecker = vi.fn().mockResolvedValue(undefined);
+		const retryRenewer = vi.fn().mockResolvedValue(evidence);
+		Object.assign(fixture.deps, {
+			providerEvidenceAuthorityChecker: authorityChecker,
+			providerRetryAuthorityRenewer: retryRenewer,
+		});
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			matchedRuleId: "episode-rule",
+			matchedRuleName: "Remove watched episodes",
+			safetySnapshot: serializeExecutableSafetyPlan(plan, evidence),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const first = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+		expect(first).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({ status: "retry_pending" });
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+
+		currentConfig = matchingConfig;
+		storedApproval.lastExecutionError =
+			"Cleanup item could not be executed. Review the API logs for details.";
+		authorityChecker.mockRejectedValue(new Error("provider cache rows changed"));
+		const retry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(retry).toMatchObject({ removed: 0, failed: 1 });
+		expect(authorityChecker).toHaveBeenLastCalledWith("user-1", evidence, expect.any(Function));
+		expect(retryRenewer).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired" });
 	});
 
 	it("persists a direct episode delete after its exact unmonitor step", async () => {
