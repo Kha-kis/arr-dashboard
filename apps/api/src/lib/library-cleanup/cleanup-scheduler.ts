@@ -474,92 +474,94 @@ export class CleanupScheduler {
 		let isScheduledDryRun = false;
 		try {
 			await withCleanupOperationGuard(async () => {
-				await this.repairMissingTerminalAuditEvents().catch((err) => {
-					this.logger.warn({ err }, "Failed to load cleanup terminal audit repairs");
-				});
-
-				// Expire stale pending approvals. The status CAS remains authoritative;
-				// the audit is appended only for rows that this scheduler actually changed.
-				const expiryNow = new Date();
-				const expiredCandidates = await this.prisma.libraryCleanupApproval.findMany({
-					where: { status: "pending", expiresAt: { lt: expiryNow } },
-					include: { config: { select: { userId: true } } },
-					orderBy: { id: "asc" },
-					take: TRANSITION_AUDIT_BATCH_LIMIT,
-				});
-				for (const approval of expiredCandidates) {
-					const auditInput = buildSchedulerTransitionAuditInput(approval, {
-						eventType: "expired",
-						fromStatus: "pending",
-						toStatus: "expired",
-						reason: "Cleanup approval expired before execution.",
-					});
-					const result = await this.prisma.libraryCleanupApproval.updateMany({
-						where: {
-							id: approval.id,
-							config: { userId: approval.config.userId },
-							status: "pending",
-							expiresAt: { lt: expiryNow },
-						},
-						data: {
-							status: "expired",
-							...createCleanupTerminalAuditState(auditInput),
-						},
-					});
-					if (result.count === 1) {
-						await appendCleanupTerminalAuditEvent(this.prisma, auditInput, {
-							approvalId: approval.id,
-							status: "expired",
-						}).catch((error) => {
-							this.logger.warn(
-								{ err: error, approvalId: approval.id },
-								"Failed to append expired cleanup audit; its envelope remains repairable",
-							);
-						});
-					}
-				}
-
-				// Recover stuck "executing" items (crash recovery: >1 hour since approval).
-				// The persisted safety snapshot is reconciled against the live file
-				// remainder when the operator approves it again.
-				const stuckThreshold = new Date(Date.now() - 60 * 60 * 1000);
-				const staleRunLeaseThreshold = new Date(Date.now() - CLEANUP_RUN_LEASE_MS);
-				await this.recoverStaleApprovals(
-					"approved",
-					"pending",
-					"Recovered an interrupted approval request. Review and approve again.",
-					stuckThreshold,
-					staleRunLeaseThreshold,
-					"Recovered stuck approved cleanup items — returned them to pending review",
-				).catch((err) => {
-					this.logger.warn({ err }, "Failed to recover stuck approved cleanup items");
-				});
-				await this.recoverStaleApprovals(
-					"executing",
-					"pending",
-					INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
-					stuckThreshold,
-					staleRunLeaseThreshold,
-					"Recovered stuck executing approval items — returned them to pending review",
-				).catch((err) => {
-					this.logger.warn({ err }, "Failed to recover stuck executing approvals");
-				});
-				await this.recoverStaleApprovals(
-					"retry_executing",
-					"retry_pending",
-					undefined,
-					stuckThreshold,
-					staleRunLeaseThreshold,
-					"Recovered stuck record-only cleanup retries — returned them to retry pending",
-				).catch((err) => {
-					this.logger.warn({ err }, "Failed to recover stuck record-only cleanup retries");
-				});
-
-				// Find any user's config that is enabled and due for a run.
-				// (Single-admin app, so there's at most one config.)
+				// Load the active mode before lifecycle maintenance. A configured dry run
+				// is fully read-only, including stale-approval recovery and audit repair.
 				const config = await this.prisma.libraryCleanupConfig.findFirst({
 					where: { enabled: true },
 				});
+
+				if (!config?.dryRunMode) {
+					await this.repairMissingTerminalAuditEvents().catch((err) => {
+						this.logger.warn({ err }, "Failed to load cleanup terminal audit repairs");
+					});
+
+					// Expire stale pending approvals. The status CAS remains authoritative;
+					// the audit is appended only for rows that this scheduler actually changed.
+					const expiryNow = new Date();
+					const expiredCandidates = await this.prisma.libraryCleanupApproval.findMany({
+						where: { status: "pending", expiresAt: { lt: expiryNow } },
+						include: { config: { select: { userId: true } } },
+						orderBy: { id: "asc" },
+						take: TRANSITION_AUDIT_BATCH_LIMIT,
+					});
+					for (const approval of expiredCandidates) {
+						const auditInput = buildSchedulerTransitionAuditInput(approval, {
+							eventType: "expired",
+							fromStatus: "pending",
+							toStatus: "expired",
+							reason: "Cleanup approval expired before execution.",
+						});
+						const result = await this.prisma.libraryCleanupApproval.updateMany({
+							where: {
+								id: approval.id,
+								config: { userId: approval.config.userId },
+								status: "pending",
+								expiresAt: { lt: expiryNow },
+							},
+							data: {
+								status: "expired",
+								...createCleanupTerminalAuditState(auditInput),
+							},
+						});
+						if (result.count === 1) {
+							await appendCleanupTerminalAuditEvent(this.prisma, auditInput, {
+								approvalId: approval.id,
+								status: "expired",
+							}).catch((error) => {
+								this.logger.warn(
+									{ err: error, approvalId: approval.id },
+									"Failed to append expired cleanup audit; its envelope remains repairable",
+								);
+							});
+						}
+					}
+
+					// Recover stuck "executing" items (crash recovery: >1 hour since approval).
+					// The persisted safety snapshot is reconciled against the live file
+					// remainder when the operator approves it again.
+					const stuckThreshold = new Date(Date.now() - 60 * 60 * 1000);
+					const staleRunLeaseThreshold = new Date(Date.now() - CLEANUP_RUN_LEASE_MS);
+					await this.recoverStaleApprovals(
+						"approved",
+						"pending",
+						"Recovered an interrupted approval request. Review and approve again.",
+						stuckThreshold,
+						staleRunLeaseThreshold,
+						"Recovered stuck approved cleanup items — returned them to pending review",
+					).catch((err) => {
+						this.logger.warn({ err }, "Failed to recover stuck approved cleanup items");
+					});
+					await this.recoverStaleApprovals(
+						"executing",
+						"pending",
+						INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+						stuckThreshold,
+						staleRunLeaseThreshold,
+						"Recovered stuck executing approval items — returned them to pending review",
+					).catch((err) => {
+						this.logger.warn({ err }, "Failed to recover stuck executing approvals");
+					});
+					await this.recoverStaleApprovals(
+						"retry_executing",
+						"retry_pending",
+						undefined,
+						stuckThreshold,
+						staleRunLeaseThreshold,
+						"Recovered stuck record-only cleanup retries — returned them to retry pending",
+					).catch((err) => {
+						this.logger.warn({ err }, "Failed to recover stuck record-only cleanup retries");
+					});
+				}
 
 				if (!config) return;
 

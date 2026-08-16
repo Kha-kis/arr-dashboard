@@ -123,6 +123,8 @@ describe("library cleanup scheduler dependencies", () => {
 		await checkAndRun();
 
 		expect(executorMocks.executeCleanupRun).toHaveBeenCalledOnce();
+		expect(prisma.libraryCleanupApproval.findMany).not.toHaveBeenCalled();
+		expect(prisma.libraryCleanupApproval.updateMany).not.toHaveBeenCalled();
 		expect(update).not.toHaveBeenCalled();
 		expect(notify).not.toHaveBeenCalled();
 	});

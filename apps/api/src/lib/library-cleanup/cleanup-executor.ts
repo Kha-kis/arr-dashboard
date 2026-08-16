@@ -1308,16 +1308,26 @@ function buildCleanupProposalAuditInput(
 	};
 }
 
-async function appendCleanupProposalAudit(
+async function ensureCleanupProposalAudit(
 	deps: Pick<CleanupExecutorDeps, "prisma">,
 	userId: string,
 	approval: Parameters<typeof buildCleanupProposalAuditInput>[1],
-	auditContext: CleanupAuditContext,
 ): Promise<void> {
-	await appendCleanupAuditEvent(
-		deps.prisma,
-		buildCleanupProposalAuditInput(userId, approval, auditContext),
-	);
+	const repairInput = buildCleanupProposalAuditInput(userId, approval, {
+		actorType: "system",
+		trigger: "recovery",
+	});
+	const existing = await deps.prisma.libraryCleanupAuditEvent.findUnique({
+		where: {
+			configId_eventKey: {
+				configId: approval.configId,
+				eventKey: repairInput.eventKey,
+			},
+		},
+		select: { id: true },
+	});
+	if (existing) return;
+	await appendCleanupAuditEvent(deps.prisma, repairInput);
 }
 
 function buildCleanupClaimAuditInput(
@@ -1362,6 +1372,38 @@ function buildCleanupClaimAuditInput(
 		summary: cleanupAuditSummary(approval),
 		outcome: "info",
 		evidence: { executionClaimed: true },
+	};
+}
+
+function buildCleanupApprovalReleaseAuditInput(
+	userId: string,
+	configId: string,
+	approvalId: string,
+	correlationId: string,
+	auditContext: CleanupAuditContext,
+): AppendCleanupAuditEventInput {
+	const eventType = "recovered" as const;
+	return {
+		userId,
+		configId,
+		eventKey: createCleanupAuditEventKey({ actionId: approvalId, correlationId, eventType }),
+		actionId: approvalId,
+		correlationId,
+		actorType: auditContext.actorType,
+		...(auditContext.actorId ? { actorId: auditContext.actorId } : {}),
+		eventType,
+		trigger: auditContext.trigger,
+		target: { kind: "approval", id: approvalId },
+		summary: {
+			reason: "Execution ownership was not secured; returned to pending approval.",
+		},
+		outcome: "blocked",
+		evidence: {
+			executionOwnershipSecured: false,
+			fromStatus: "approved",
+			stateTransitionPersisted: true,
+			toStatus: "pending",
+		},
 	};
 }
 
@@ -2242,7 +2284,7 @@ async function persistAndClaimDirectMutationIntent(
 		}));
 	if (!intent) throw new Error("Cleanup mutation intent could not be loaded after persistence");
 	if (!createdIntent) {
-		await appendCleanupProposalAudit(deps, userId, intent, auditContext);
+		await ensureCleanupProposalAudit(deps, userId, intent);
 	}
 
 	const claimAuditInput = buildCleanupClaimAuditInput(
@@ -3567,29 +3609,50 @@ async function executeApprovedItemsGuarded(
 			errors: ["Cleanup items could not be executed because their configuration was not found."],
 		};
 	}
-	const releaseUnclaimedApprovals = () =>
-		deps.prisma.libraryCleanupApproval.updateMany({
-			where: {
-				id: { in: approvalIds },
-				config: { userId },
-				status: "approved",
-				...(approvalRequestToken ? { executionToken: approvalRequestToken } : {}),
-			},
-			data: {
-				status: "pending",
-				executionToken: null,
-				lastExecutionError: "Cleanup execution did not claim this approved item; retry approval.",
-			},
+	const releaseAuditCorrelationId = approvalRequestToken ?? randomUUID();
+	const releaseUnclaimedApprovals = (ids: string[]) =>
+		deps.prisma.$transaction(async (tx) => {
+			let released = 0;
+			for (const approvalId of [...new Set(ids)]) {
+				const result = await tx.libraryCleanupApproval.updateMany({
+					where: {
+						id: approvalId,
+						config: { userId },
+						status: "approved",
+						...(approvalRequestToken ? { executionToken: approvalRequestToken } : {}),
+					},
+					data: {
+						status: "pending",
+						executionToken: null,
+						lastExecutionError:
+							"Cleanup execution did not claim this approved item; retry approval.",
+					},
+				});
+				if (result.count !== 1) continue;
+				await appendCleanupAuditEvent(
+					tx,
+					buildCleanupApprovalReleaseAuditInput(
+						userId,
+						config.id,
+						approvalId,
+						releaseAuditCorrelationId,
+						auditContext,
+					),
+				);
+				released++;
+			}
+			return { count: released };
 		});
 
 	let runLease: Awaited<ReturnType<typeof startCleanupRunLease>>;
 	try {
 		runLease = await startCleanupRunLease(deps, userId, config.id);
 	} catch (error) {
-		await releaseUnclaimedApprovals();
+		await releaseUnclaimedApprovals(approvalIds);
 		throw error;
 	}
 
+	let approvalsToRelease = approvalIds;
 	try {
 		const result = await executeQueuedCleanupItems(deps, userId, approvalIds, {
 			claimStatus: "approved",
@@ -3601,6 +3664,7 @@ async function executeApprovedItemsGuarded(
 			cleanupRunClaimToken: runLease.runClaimToken,
 			auditContext,
 		});
+		approvalsToRelease = [...result.unclaimedIds, ...result.claimFailedIds];
 		const unclaimedErrors = result.unclaimedIds.map(
 			() => "Cleanup approval was not found, expired, no longer approved, or changed ownership.",
 		);
@@ -3610,7 +3674,7 @@ async function executeApprovedItemsGuarded(
 			errors: [...result.errors, ...unclaimedErrors],
 		};
 	} finally {
-		await releaseUnclaimedApprovals().catch((error) => {
+		await releaseUnclaimedApprovals(approvalsToRelease).catch((error) => {
 			deps.log.error(
 				{ err: error, approvalIds },
 				"Cleanup could not return unclaimed approved items to pending",
@@ -3693,6 +3757,7 @@ interface QueuedCleanupExecutionResult {
 	recordingFailureIds: string[];
 	reconciledIds: string[];
 	unclaimedIds: string[];
+	claimFailedIds: string[];
 	mutationBudgetConsumedIds: string[];
 	confirmedPartialFileDeletionIds: string[];
 }
@@ -4140,6 +4205,7 @@ async function executeQueuedCleanupItems(
 	const mutationBudgetConsumedIds = new Set<string>();
 	const confirmedPartialFileDeletionIds = new Set<string>();
 	const unclaimedIds: string[] = [];
+	const claimFailedIds: string[] = [];
 	const claimErrors: string[] = [];
 	for (const approvalId of [...new Set(approvalIds)]) {
 		try {
@@ -4196,6 +4262,7 @@ async function executeQueuedCleanupItems(
 			} else unclaimedIds.push(approvalId);
 		} catch (error) {
 			claimErrors.push("A cleanup approval could not be claimed and was not executed.");
+			claimFailedIds.push(approvalId);
 			log.error({ err: error, approvalId }, "Failed to claim cleanup approval for execution");
 		}
 	}
@@ -4208,6 +4275,7 @@ async function executeQueuedCleanupItems(
 			recordingFailureIds: [],
 			reconciledIds: [],
 			unclaimedIds,
+			claimFailedIds,
 			mutationBudgetConsumedIds: [],
 			confirmedPartialFileDeletionIds: [],
 		};
@@ -5251,6 +5319,7 @@ async function executeQueuedCleanupItems(
 			recordingFailureIds,
 			reconciledIds,
 			unclaimedIds,
+			claimFailedIds,
 			mutationBudgetConsumedIds: [...mutationBudgetConsumedIds],
 			confirmedPartialFileDeletionIds: [...confirmedPartialFileDeletionIds],
 		};
@@ -7768,7 +7837,7 @@ async function executeWithApproval(
 
 			if (existing) {
 				if (existing.status === "pending") {
-					await appendCleanupProposalAudit(deps, config.userId, existing, auditContext);
+					await ensureCleanupProposalAudit(deps, config.userId, existing);
 				}
 				details.push(
 					buildDetail(item, "skipped", buildApprovalDedupSkipReason(existing.status, memWindow)),
