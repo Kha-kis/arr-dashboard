@@ -292,26 +292,38 @@ fi
 
 echo ""
 echo "Synchronizing database schema..."
-# Use 'db push' instead of 'migrate deploy' to support multi-provider (SQLite/PostgreSQL).
-# Prisma migrations are provider-specific SQL, but db push generates correct SQL for any provider.
-# Deliberately do NOT pass --accept-data-loss here. A release that needs a destructive
-# schema transition must ship an explicit, reviewed migration/backup path instead of
-# silently discarding operator data merely because a new container started.
-# Note: Prisma 7 removed --skip-generate flag (db push no longer regenerates by default)
-if ! run_as_user ./node_modules/.bin/prisma db push --schema prisma/schema.prisma; then
-    echo "ERROR: Database schema synchronization failed" >&2
-    if [ "$ROOTLESS" = true ]; then
-        echo "  - In rootless mode, ensure the database file is readable/writable by UID:$PUID" >&2
-        echo "  - If switching from root to rootless, run: chown $PUID:$PGID /path/to/config/prod.db" >&2
+# v2.24 broadens the TMDb and Trakt list-cache identity to include mediaType.
+# The previous unique indexes are stricter, so an existing row set that
+# satisfies them must also satisfy the replacements. Prisma still classifies
+# replacement unique indexes as potentially destructive. Apply this reviewed,
+# transactional PostgreSQL migration first so db push can remain fail-closed
+# without --accept-data-loss.
+if [ "$DB_PROVIDER" = "postgresql" ]; then
+    echo "  - Applying serialized PostgreSQL schema synchronization..."
+    if ! run_as_user node /app/api/sync-postgresql-schema.cjs; then
+        echo "ERROR: PostgreSQL schema synchronization failed" >&2
+        echo "  - The migration outcome may be unknown; the next startup will reconcile it safely" >&2
+        exit 1
     fi
-    echo "  - Destructive schema changes are intentionally rejected at startup" >&2
-    echo "  - Restore the previous image and consult the release notes for an explicit upgrade path" >&2
-    echo "  - Ensure DATABASE_URL is correct and the database is accessible" >&2
-    echo "  - For PostgreSQL: Check that the database exists and user has permissions" >&2
-    echo "  - Detected database provider: $DB_PROVIDER" >&2
-    exit 1
+    echo "  - PostgreSQL schema synchronized successfully"
+else
+    # Use 'db push' instead of 'migrate deploy' to support SQLite without a
+    # provider-specific migration history. Deliberately do NOT pass
+    # --accept-data-loss: destructive transitions require an explicit path.
+    if ! run_as_user ./node_modules/.bin/prisma db push --schema prisma/schema.prisma; then
+        echo "ERROR: Database schema synchronization failed" >&2
+        if [ "$ROOTLESS" = true ]; then
+            echo "  - In rootless mode, ensure the database file is readable/writable by UID:$PUID" >&2
+            echo "  - If switching from root to rootless, run: chown $PUID:$PGID /path/to/config/prod.db" >&2
+        fi
+        echo "  - Destructive schema changes are intentionally rejected at startup" >&2
+        echo "  - Restore the previous image and consult the release notes for an explicit upgrade path" >&2
+        echo "  - Ensure DATABASE_URL is correct and the database is accessible" >&2
+        echo "  - Detected database provider: $DB_PROVIDER" >&2
+        exit 1
+    fi
+    echo "  - Database schema synchronized successfully"
 fi
-echo "  - Database schema synchronized successfully"
 
 # ============================================
 # Read system settings from database
