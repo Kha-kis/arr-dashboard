@@ -127,9 +127,11 @@ export class TemplateUpdater {
 				id: true,
 				name: true,
 				serviceType: true,
+				sourceQualityProfileTrashId: true,
 				trashGuidesCommitHash: true,
 				hasUserModifications: true,
 				configData: true,
+				instanceOverrides: true,
 				changeLog: true,
 				lastSyncedAt: true,
 				qualityProfileMappings: {
@@ -156,15 +158,21 @@ export class TemplateUpdater {
 		const templatesWithUpdates: TemplateUpdateInfo[] = [];
 
 		for (const template of templates) {
-			if (!template.trashGuidesCommitHash) {
+			const autoSyncInstanceCount = template.qualityProfileMappings.filter(
+				(mapping) => mapping.syncStrategy === "auto",
+			).length;
+
+			// A transient version lookup during a known TRaSH profile import can leave an
+			// explicitly auto-synced template without its initial commit. Custom, duplicated,
+			// and JSON-imported templates have no TRaSH profile identity and remain untracked.
+			if (
+				!template.trashGuidesCommitHash &&
+				(!template.sourceQualityProfileTrashId || autoSyncInstanceCount === 0)
+			) {
 				continue;
 			}
 
 			if (template.trashGuidesCommitHash !== latestCommit.commitHash) {
-				const autoSyncInstanceCount = template.qualityProfileMappings.filter(
-					(m) => m.syncStrategy === "auto",
-				).length;
-
 				const canAutoSync = autoSyncInstanceCount > 0 && !template.hasUserModifications;
 				const serviceType = template.serviceType as "RADARR" | "SONARR";
 
@@ -223,12 +231,14 @@ export class TemplateUpdater {
 					pendingCFGroupAdditions: pendingCFGroupAdditions?.length
 						? pendingCFGroupAdditions
 						: undefined,
+					...(canAutoSync && !needsApproval
+						? { automationStateToken: createAutomationCatchUpTemplateStateToken(template) }
+						: {}),
 				});
 			} else {
 				const autoMappings = template.qualityProfileMappings.filter(
 					(mapping) => mapping.syncStrategy === "auto",
 				);
-				const autoSyncInstanceCount = autoMappings.length;
 				const pendingEnabledDeployments = template.lastSyncedAt
 					? autoMappings.filter(
 							(mapping) =>
@@ -390,6 +400,7 @@ export class TemplateUpdater {
 		options?: {
 			includeQualityProfileCFs?: boolean;
 			applyScoreUpdates?: boolean;
+			expectedAutomationStateToken?: string;
 		},
 	): Promise<SyncResult> {
 		const owner = await this.prisma.trashTemplate.findUnique({
@@ -428,6 +439,7 @@ export class TemplateUpdater {
 		options?: {
 			includeQualityProfileCFs?: boolean;
 			applyScoreUpdates?: boolean;
+			expectedAutomationStateToken?: string;
 		},
 	): Promise<SyncResult> {
 		const metrics = getSyncMetrics();
@@ -476,6 +488,34 @@ export class TemplateUpdater {
 				errors: ["Template not found"],
 				errorType: "not_found",
 			};
+		}
+
+		if (options?.expectedAutomationStateToken) {
+			const autoMapping = await this.prisma.templateQualityProfileMapping.findFirst({
+				where: { templateId, syncStrategy: "auto" },
+				select: { id: true },
+			});
+			if (
+				!userId ||
+				template.userId !== userId ||
+				template.deletedAt ||
+				template.hasUserModifications ||
+				(!template.trashGuidesCommitHash && !template.sourceQualityProfileTrashId) ||
+				!autoMapping ||
+				createAutomationCatchUpTemplateStateToken(template) !== options.expectedAutomationStateToken
+			) {
+				completeMetrics().recordFailure("Automatic sync authority changed");
+				return {
+					success: false,
+					templateId,
+					previousCommit: template.trashGuidesCommitHash,
+					newCommit: targetCommitHash || "",
+					errors: [
+						"Automatic sync is no longer authorized because the template or Auto mapping changed after selection.",
+					],
+					errorType: "sync_failed",
+				};
+			}
 		}
 
 		let targetCommit: VersionInfo;
@@ -723,13 +763,15 @@ export class TemplateUpdater {
 
 			const updatedChangeLog = [...existingChangeLog, autoSyncChangeLogEntry];
 
+			const syncedAt = new Date();
+			const syncedConfigData = JSON.stringify(mergeResult.mergedConfig);
 			await this.prisma.trashTemplate.update({
 				where: { id: templateId },
 				data: {
 					changeLog: JSON.stringify(updatedChangeLog),
-					configData: JSON.stringify(mergeResult.mergedConfig),
+					configData: syncedConfigData,
 					trashGuidesCommitHash: targetCommit.commitHash,
-					lastSyncedAt: new Date(),
+					lastSyncedAt: syncedAt,
 				},
 			});
 
@@ -741,6 +783,15 @@ export class TemplateUpdater {
 				templateId,
 				previousCommit,
 				newCommit: targetCommit.commitHash,
+				automationStateToken: options?.expectedAutomationStateToken
+					? createAutomationCatchUpTemplateStateToken({
+							configData: syncedConfigData,
+							instanceOverrides: template.instanceOverrides,
+							trashGuidesCommitHash: targetCommit.commitHash,
+							lastSyncedAt: syncedAt,
+							hasUserModifications: template.hasUserModifications,
+						})
+					: undefined,
 				mergeStats: mergeResult.stats,
 				scoreConflicts:
 					mergeResult.scoreConflicts.length > 0 ? mergeResult.scoreConflicts : undefined,
@@ -844,6 +895,18 @@ export class TemplateUpdater {
 		let templatesWithScoreConflicts = 0;
 
 		for (const template of autoSyncTemplates) {
+			if (!template.deploymentCatchUp && !template.automationStateToken) {
+				results.push({
+					success: false,
+					templateId: template.templateId,
+					previousCommit: template.currentCommit,
+					newCommit: template.latestCommit,
+					errors: ["Automatic sync selection is missing its required template authority."],
+					errorType: "sync_failed",
+				});
+				failed++;
+				continue;
+			}
 			const result: SyncResult = template.deploymentCatchUp
 				? {
 						success: true,
@@ -851,14 +914,24 @@ export class TemplateUpdater {
 						previousCommit: template.currentCommit,
 						newCommit: template.latestCommit,
 					}
-				: await this.syncTemplate(template.templateId, template.latestCommit, undefined, {
+				: await this.syncTemplate(template.templateId, template.latestCommit, userId, {
 						includeQualityProfileCFs: true,
 						applyScoreUpdates: true,
+						expectedAutomationStateToken: template.automationStateToken,
 					});
 
 			results.push(result);
 
 			if (result.success) {
+				if (!template.deploymentCatchUp && !result.automationStateToken) {
+					result.success = false;
+					result.errors = [
+						...(result.errors ?? []),
+						"Automatic deployment is missing the post-sync template authority token.",
+					];
+					failed++;
+					continue;
+				}
 				if (result.scoreConflicts && result.scoreConflicts.length > 0) {
 					templatesWithScoreConflicts++;
 				}
@@ -866,7 +939,11 @@ export class TemplateUpdater {
 				try {
 					const deploymentOutcomes = template.deploymentCatchUp
 						? await this.deployToMappedInstances(template.templateId, true)
-						: await this.deployToMappedInstances(template.templateId);
+						: await this.deployToMappedInstances(
+								template.templateId,
+								false,
+								result.automationStateToken,
+							);
 					const failedDeployments = deploymentOutcomes.filter(
 						(outcome) => outcome.status === "FAILED",
 					);
@@ -935,6 +1012,7 @@ export class TemplateUpdater {
 	private async deployToMappedInstances(
 		templateId: string,
 		catchUpOnly = false,
+		expectedTemplateStateToken?: string,
 	): Promise<AutomationDeploymentOutcome[]> {
 		if (!this.deploymentExecutor) {
 			return [];
@@ -1126,11 +1204,20 @@ export class TemplateUpdater {
 								? createAutomationCatchUpTemplateStateToken(template)
 								: undefined,
 						)
-					: await this.deploymentExecutor.deploySingleInstanceFromAutomation(
-							templateId,
-							mapping.instanceId,
-							template.userId,
-						);
+					: expectedTemplateStateToken
+						? await this.deploymentExecutor.deploySingleInstanceFromAutomation(
+								templateId,
+								mapping.instanceId,
+								template.userId,
+								undefined,
+								undefined,
+								expectedTemplateStateToken,
+							)
+						: await this.deploymentExecutor.deploySingleInstanceFromAutomation(
+								templateId,
+								mapping.instanceId,
+								template.userId,
+							);
 
 				if (result.status === "UNCERTAIN") {
 					const errors =
