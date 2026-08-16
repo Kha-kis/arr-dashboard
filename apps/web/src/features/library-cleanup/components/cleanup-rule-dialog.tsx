@@ -183,6 +183,7 @@ export function CleanupRuleDialog({
 	>([]);
 	const [recursiveExpression, setRecursiveExpression] = useState<RuleDocument | null>(null);
 	const [recursiveError, setRecursiveError] = useState<string | null>(null);
+	const [flatParametersDirty, setFlatParametersDirty] = useState(false);
 
 	// ── New rule params (Phase C) ───────────────────────────────────
 	const [imdbRatingOp, setImdbRatingOp] = useState("less_than");
@@ -240,6 +241,7 @@ export function CleanupRuleDialog({
 	useEffect(() => {
 		if (!open) return;
 		if (editRule) {
+			setFlatParametersDirty(false);
 			const editAction = (editRule.action as "delete" | "unmonitor" | "delete_files") ?? "delete";
 			const editRetentionMode = editRule.retentionMode ?? false;
 			const canHydrateMediaScan = canScanAfterAction(editAction, editRetentionMode);
@@ -494,6 +496,7 @@ export function CleanupRuleDialog({
 			setExcludeTitles(editRule.excludeTitles ? editRule.excludeTitles.join(", ") : "");
 		} else {
 			// Reset to defaults for create mode
+			setFlatParametersDirty(false);
 			setName("");
 			setTargetScope("series");
 			setRuleType("age");
@@ -748,6 +751,31 @@ export function CleanupRuleDialog({
 		behaviorParams,
 	};
 	const buildParams = () => buildParamsPure(buildParamsState);
+	const buildRecursiveSeed = (): RuleDocument => {
+		if (isComposite) {
+			const children = conditions
+				.filter((condition) => condition.ruleType !== "composite")
+				.map((condition) => ({ kind: condition.ruleType, params: condition.params }));
+			return {
+				version: 1,
+				root: compositeOperator === "AND" ? { all: children } : { any: children },
+			};
+		}
+		const kind = ruleType === "composite" ? "age" : ruleType;
+		const predicate = {
+			kind,
+			params:
+				ruleType === "composite"
+					? getDefaultConditionParams("age")
+					: isEdit && editRule && !flatParametersDirty
+						? editRule.parameters
+						: buildParams(),
+		};
+		return {
+			version: 1,
+			root: isEdit ? predicate : { all: [predicate] },
+		};
+	};
 	const effectiveRuleType: CleanupRuleType =
 		targetScope === "episode" ? "plex_watch_count" : ruleType;
 	const visibleArrInstances =
@@ -1258,23 +1286,10 @@ export function CleanupRuleDialog({
 										type="button"
 										disabled={isRecursiveEdit}
 										onClick={() => {
+											setRecursiveExpression((current) => current ?? buildRecursiveSeed());
 											setIsComposite(false);
 											setConditions([]);
 											setCompositeError(null);
-											setRecursiveExpression(
-												(current) =>
-													current ?? {
-														version: 1,
-														root: {
-															all: [
-																{
-																	kind: "age",
-																	params: getDefaultConditionParams("age"),
-																},
-															],
-														},
-													},
-											);
 											setRecursiveError(null);
 										}}
 										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1547,6 +1562,7 @@ export function CleanupRuleDialog({
 								<span className="text-sm font-medium">Parameters</span>
 							</div>
 							<ParamsFields
+								onParametersChange={() => setFlatParametersDirty(true)}
 								model={{
 									ruleType: effectiveRuleType,
 									targetScope,

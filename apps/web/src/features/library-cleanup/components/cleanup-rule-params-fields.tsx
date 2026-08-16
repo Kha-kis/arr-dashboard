@@ -236,10 +236,31 @@ export interface ParamsFieldsModel {
 	presentation: PresentationFields;
 }
 
-export function ParamsFields({ model }: { model: ParamsFieldsModel }) {
+function trackParameterSetters(
+	props: ParamsFieldsProps,
+	onParametersChange: () => void,
+): ParamsFieldsProps {
+	const tracked = { ...props } as Record<string, unknown>;
+	for (const [key, value] of Object.entries(props)) {
+		if (!key.startsWith("set") || typeof value !== "function") continue;
+		tracked[key] = (...args: unknown[]) => {
+			onParametersChange();
+			return (value as (...input: unknown[]) => unknown)(...args);
+		};
+	}
+	return tracked as unknown as ParamsFieldsProps;
+}
+
+export function ParamsFields({
+	model,
+	onParametersChange,
+}: {
+	model: ParamsFieldsModel;
+	onParametersChange?: () => void;
+}) {
 	const [incognitoMode] = useIncognitoMode();
 	const { targetScope } = model;
-	const props: ParamsFieldsProps = {
+	const rawProps: ParamsFieldsProps = {
 		ruleType: model.ruleType,
 		...model.criteria,
 		...model.seerr,
@@ -249,6 +270,7 @@ export function ParamsFields({ model }: { model: ParamsFieldsModel }) {
 		...model.behavior,
 		...model.presentation,
 	};
+	const props = onParametersChange ? trackParameterSetters(rawProps, onParametersChange) : rawProps;
 	const {
 		ruleType,
 		days,

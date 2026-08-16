@@ -343,7 +343,10 @@ describe("CleanupRuleDialog", () => {
 				version: 1,
 				root: {
 					all: [
-						{ kind: "age", params: { operator: "older_than", days: 45 } },
+						{
+							kind: "age",
+							params: { field: "arrAddedAt", operator: "older_than", days: 45 },
+						},
 						{ not: { kind: "age", params: { operator: "older_than", days: 30 } } },
 					],
 				},
@@ -390,15 +393,88 @@ describe("CleanupRuleDialog", () => {
 	// ================================================================
 
 	describe("edit mode", () => {
-		it("keeps rule-mode conversion available for existing flat rules", () => {
-			renderDialog({ editRule: makeEditRule() });
+		it("preserves explicitly edited flat criteria when converting to nested mode", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "size",
+					parameters: { operator: "greater_than", sizeGb: 100 },
+				}),
+			});
 
 			expect(screen.getByRole("button", { name: "Single Condition" })).not.toBeDisabled();
 			expect(screen.getByRole("button", { name: "Composite Rule" })).not.toBeDisabled();
 			expect(screen.getByRole("button", { name: "Nested Rule" })).not.toBeDisabled();
 
+			fireEvent.change(screen.getByRole("spinbutton", { name: "Size (GB)" }), {
+				target: { value: "120" },
+			});
 			fireEvent.click(screen.getByRole("button", { name: "Nested Rule" }));
-			expect(screen.getByLabelText("ALL group")).toBeInTheDocument();
+			expect(screen.getByRole("combobox", { name: "Condition type" })).toHaveValue("size");
+			fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				ruleType: "composite",
+				expression: {
+					version: 1,
+					root: { kind: "size", params: { operator: "greater_than", sizeGb: 120 } },
+				},
+			});
+		});
+
+		it("preserves untouched normalization-sensitive parameters byte-for-byte", async () => {
+			const onSave = vi.fn();
+			const parameters = { profileNames: [" HD-1080p "] };
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({ ruleType: "quality_profile", parameters }),
+			});
+
+			fireEvent.click(screen.getByRole("button", { name: "Nested Rule" }));
+			fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				expression: {
+					version: 1,
+					root: { kind: "quality_profile", params: parameters },
+				},
+			});
+		});
+
+		it("preserves an existing legacy composite when converting it to nested mode", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					operator: "OR",
+					conditions: [
+						{ ruleType: "age", parameters: { operator: "older_than", days: 365 } },
+						{ ruleType: "size", parameters: { operator: "greater_than", sizeGb: 100 } },
+					],
+				}),
+			});
+
+			fireEvent.click(screen.getByRole("button", { name: "Nested Rule" }));
+			expect(screen.getByLabelText("ANY group")).toBeInTheDocument();
+			fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				expression: {
+					version: 1,
+					root: {
+						any: [
+							{ kind: "age", params: { operator: "older_than", days: 365 } },
+							{ kind: "size", params: { operator: "greater_than", sizeGb: 100 } },
+						],
+					},
+				},
+			});
 		});
 
 		it("round-trips recursive expressions through the visual editor", async () => {
@@ -438,6 +514,38 @@ describe("CleanupRuleDialog", () => {
 				operator: null,
 				conditions: null,
 				expression,
+			});
+		});
+
+		it("wraps a recursive root predicate so more conditions can be added", async () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					expression: {
+						version: 1,
+						root: { kind: "age", params: { operator: "older_than", days: 90 } },
+					},
+				}),
+			});
+
+			fireEvent.click(screen.getByRole("button", { name: "Wrap root in ALL group" }));
+			fireEvent.click(screen.getByRole("button", { name: "Add condition to ALL group" }));
+			fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+			await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+			expect(onSave.mock.calls[0]![0]).toMatchObject({
+				expression: {
+					version: 1,
+					root: {
+						all: [
+							{ kind: "age", params: { operator: "older_than", days: 90 } },
+							{ kind: "age", params: { operator: "older_than", days: 30 } },
+						],
+					},
+				},
 			});
 		});
 

@@ -285,7 +285,27 @@ function RuleNodeEditor(props: RuleNodeEditorProps) {
 function NodeActions(props: RuleNodeEditorProps) {
 	const { node, path, isRoot = false, canRemove = true, onReplace, onRemove } = props;
 	return (
-		<div className="flex items-center gap-1.5">
+		<div className="flex flex-wrap items-center gap-1.5">
+			{isRoot && isRulePredicate(node) && (
+				<>
+					<button
+						type="button"
+						aria-label="Wrap root in ALL group"
+						onClick={() => onReplace(path, { all: [node] })}
+						className="inline-flex items-center gap-1 rounded-md border border-border/40 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+					>
+						<GitBranch className="h-3 w-3" aria-hidden="true" /> Wrap in ALL
+					</button>
+					<button
+						type="button"
+						aria-label="Wrap root in ANY group"
+						onClick={() => onReplace(path, { any: [node] })}
+						className="inline-flex items-center gap-1 rounded-md border border-border/40 px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+					>
+						<GitBranch className="h-3 w-3" aria-hidden="true" /> Wrap in ANY
+					</button>
+				</>
+			)}
 			<button
 				type="button"
 				onClick={() => onReplace(path, { not: node })}
