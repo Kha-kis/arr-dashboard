@@ -1,3 +1,4 @@
+import type { TrashQualitySize } from "@arr/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ cacheGet: vi.fn() }));
@@ -81,7 +82,9 @@ function createHarness() {
 
 	return {
 		scheduler: scheduler as unknown as {
-			processQualitySizeSync: () => Promise<{ autoSynced: number; errors: string[] }>;
+			processQualitySizeSync: (
+				verifiedData: ReadonlyMap<"RADARR" | "SONARR", readonly TrashQualitySize[]>,
+			) => Promise<{ autoSynced: number; errors: string[] }>;
 			processNamingSync: () => Promise<{ autoSynced: number; errors: string[] }>;
 		},
 		prisma,
@@ -89,6 +92,10 @@ function createHarness() {
 		create,
 		runWithEndpointMutation,
 	};
+}
+
+function verifiedQualitySizeData(): ReadonlyMap<"RADARR" | "SONARR", TrashQualitySize[]> {
+	return new Map([["RADARR", [{ trash_id: "preset-1", type: "movie", qualities: [] }]]]);
 }
 
 describe("TRaSH scheduler ARR writer safety", () => {
@@ -107,9 +114,8 @@ describe("TRaSH scheduler ARR writer safety", () => {
 				instance,
 			},
 		]);
-		mocks.cacheGet.mockResolvedValueOnce([{ trash_id: "preset-1", qualities: [] }]);
 
-		const result = await harness.scheduler.processQualitySizeSync();
+		const result = await harness.scheduler.processQualitySizeSync(verifiedQualitySizeData());
 
 		expect(harness.runWithEndpointMutation).toHaveBeenCalledWith(
 			"user-1",
@@ -178,13 +184,89 @@ describe("TRaSH scheduler ARR writer safety", () => {
 			{ ...instance, connectionGeneration: 1 },
 		]);
 		harness.prisma.trashSyncHistory.findMany.mockResolvedValueOnce([]);
-		mocks.cacheGet.mockResolvedValueOnce([{ trash_id: "preset-1", qualities: [] }]);
 
-		const result = await harness.scheduler.processQualitySizeSync();
+		const result = await harness.scheduler.processQualitySizeSync(verifiedQualitySizeData());
 
 		expect(result.autoSynced).toBe(0);
 		expect(result.errors[0]).toContain("connection changed");
 		expect(harness.rawRequest).not.toHaveBeenCalled();
 		expect(harness.create).not.toHaveBeenCalled();
+	});
+
+	it("does not read retained quality-size data when the tick did not verify it", async () => {
+		const harness = createHarness();
+		harness.prisma.qualitySizeMapping.findMany.mockResolvedValueOnce([
+			{
+				id: "quality-size-1",
+				instanceId: instance.id,
+				serviceType: "RADARR",
+				presetTrashId: "preset-1",
+				appliedDataHash: "stale",
+				syncStrategy: "auto",
+				instance,
+			},
+		]);
+		mocks.cacheGet.mockResolvedValueOnce([{ trash_id: "replacement", qualities: [] }]);
+
+		const result = await harness.scheduler.processQualitySizeSync(new Map());
+
+		expect(result.autoSynced).toBe(0);
+		expect(mocks.cacheGet).not.toHaveBeenCalled();
+		expect(harness.runWithEndpointMutation).not.toHaveBeenCalled();
+		expect(harness.rawRequest).not.toHaveBeenCalled();
+	});
+
+	it("executes with the verified payload even if the shared cache is replaced", async () => {
+		const harness = createHarness();
+		harness.prisma.qualitySizeMapping.findMany.mockResolvedValueOnce([
+			{
+				id: "quality-size-1",
+				instanceId: instance.id,
+				serviceType: "RADARR",
+				presetTrashId: "preset-1",
+				appliedDataHash: "stale",
+				syncStrategy: "auto",
+				instance,
+			},
+		]);
+		harness.prisma.trashSyncHistory.findMany.mockResolvedValueOnce([]);
+		mocks.cacheGet.mockResolvedValueOnce([{ trash_id: "replacement", qualities: [] }]);
+		harness.rawRequest.mockResolvedValueOnce({ ok: true });
+		const updateAll = vi.fn().mockResolvedValue(undefined);
+		harness.create.mockReturnValueOnce({
+			qualityDefinition: {
+				getAll: vi.fn().mockResolvedValue([]),
+				updateAll,
+			},
+		});
+
+		const result = await harness.scheduler.processQualitySizeSync(verifiedQualitySizeData());
+
+		expect(result.autoSynced).toBe(1);
+		expect(mocks.cacheGet).not.toHaveBeenCalled();
+		expect(harness.rawRequest).toHaveBeenCalledTimes(1);
+		expect(updateAll).toHaveBeenCalledTimes(1);
+	});
+
+	it("rejects a stale mapping whose service type differs from its selected instance", async () => {
+		const harness = createHarness();
+		harness.prisma.qualitySizeMapping.findMany.mockResolvedValueOnce([
+			{
+				id: "quality-size-1",
+				instanceId: instance.id,
+				serviceType: "RADARR",
+				presetTrashId: "preset-1",
+				appliedDataHash: "stale",
+				syncStrategy: "auto",
+				instance: { ...instance, service: "SONARR" },
+			},
+		]);
+
+		const result = await harness.scheduler.processQualitySizeSync(verifiedQualitySizeData());
+
+		expect(result.autoSynced).toBe(0);
+		expect(result.errors[0]).toContain("service type changed");
+		expect(harness.runWithEndpointMutation).not.toHaveBeenCalled();
+		expect(harness.rawRequest).not.toHaveBeenCalled();
 	});
 });

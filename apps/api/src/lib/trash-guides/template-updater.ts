@@ -20,6 +20,7 @@ import type {
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
 	TrashQualityProfile,
+	TrashQualitySize,
 } from "@arr/shared";
 import { z } from "zod";
 import type { PrismaClient } from "../../lib/prisma.js";
@@ -42,6 +43,7 @@ import {
 	trashCustomFormatGroupSchema,
 	trashCustomFormatSchema,
 	trashQualityProfileSchema,
+	trashQualitySizeSchema,
 } from "./github-schemas.js";
 
 const log = loggers.trashGuides;
@@ -1472,6 +1474,8 @@ export class TemplateUpdater {
 		refreshed: number;
 		failed: number;
 		errors: string[];
+		verifiedConfigTypes: TrashConfigType[];
+		verifiedQualitySizeData: TrashQualitySize[] | null;
 	}> {
 		const configTypes: TrashConfigType[] = [
 			"CUSTOM_FORMATS",
@@ -1485,6 +1489,8 @@ export class TemplateUpdater {
 		let refreshed = 0;
 		let failed = 0;
 		const errors: string[] = [];
+		const verifiedConfigTypes: TrashConfigType[] = [];
+		let verifiedQualitySizeData: TrashQualitySize[] | null = null;
 
 		let latestCommit: VersionInfo;
 		let expectedProvenance: TrashCacheProvenance;
@@ -1494,15 +1500,50 @@ export class TemplateUpdater {
 		} catch (error) {
 			const errorMsg = `[TemplateUpdater] Failed to establish commit provenance: ${getErrorMessage(error)}`;
 			errors.push(errorMsg);
-			return { refreshed: 0, failed: configTypes.length, errors };
+			return {
+				refreshed: 0,
+				failed: configTypes.length,
+				errors,
+				verifiedConfigTypes,
+				verifiedQualitySizeData,
+			};
 		}
 
 		for (const configType of configTypes) {
 			try {
+				if (configType === "QUALITY_SIZE") {
+					const snapshot = await this.cacheManager.getSnapshot<TrashQualitySize[]>(
+						serviceType,
+						configType,
+						z.array(trashQualitySizeSchema),
+					);
+					if (sameCacheProvenance(snapshot?.provenance ?? null, expectedProvenance)) {
+						verifiedQualitySizeData = snapshot!.data;
+						verifiedConfigTypes.push(configType);
+						continue;
+					}
+
+					const data = z
+						.array(trashQualitySizeSchema)
+						.parse(
+							await this.githubFetcher.fetchConfigsAtCommit(
+								serviceType,
+								configType,
+								latestCommit.commitHash,
+							),
+						);
+					await this.cacheManager.setVerified(serviceType, configType, data, expectedProvenance);
+					verifiedQualitySizeData = data;
+					refreshed++;
+					verifiedConfigTypes.push(configType);
+					continue;
+				}
+
 				const currentProvenance = await this.cacheManager.getProvenance(serviceType, configType);
 
 				if (sameCacheProvenance(currentProvenance, expectedProvenance)) {
 					await this.cacheManager.touchCache(serviceType, configType);
+					verifiedConfigTypes.push(configType);
 					continue;
 				}
 
@@ -1514,13 +1555,14 @@ export class TemplateUpdater {
 				await this.cacheManager.setVerified(serviceType, configType, data, expectedProvenance);
 
 				refreshed++;
+				verifiedConfigTypes.push(configType);
 			} catch (error) {
 				failed++;
 				errors.push(`${configType}: ${getErrorMessage(error)}`);
 			}
 		}
 
-		return { refreshed, failed, errors };
+		return { refreshed, failed, errors, verifiedConfigTypes, verifiedQualitySizeData };
 	}
 }
 
