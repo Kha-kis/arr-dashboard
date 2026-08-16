@@ -107,6 +107,7 @@ describe("TemplateUpdater automation authority", () => {
 			id: template.id,
 			name: template.name,
 			serviceType: "RADARR",
+			sourceQualityProfileTrashId: "trash-profile",
 			trashGuidesCommitHash: null,
 			hasUserModifications: false,
 			configData: '{"customFormats":[],"customFormatGroups":[]}',
@@ -157,6 +158,10 @@ describe("TemplateUpdater automation authority", () => {
 		expect(modifiedResult.templatesWithUpdates).toEqual([
 			expect.objectContaining({ templateId: template.id, canAutoSync: false }),
 		]);
+
+		findMany.mockResolvedValueOnce([{ ...storedTemplate, sourceQualityProfileTrashId: null }]);
+		const untrackedResult = await updater.checkForUpdates(template.userId);
+		expect(untrackedResult.templatesWithUpdates).toEqual([]);
 
 		findMany.mockResolvedValueOnce([{ ...storedTemplate, qualityProfileMappings: [] }]);
 		const unauthorizedResult = await updater.checkForUpdates(template.userId);
@@ -498,6 +503,37 @@ describe("TemplateUpdater automation authority", () => {
 		const prisma = {
 			trashTemplate: {
 				findUnique: vi.fn().mockResolvedValue(changedTemplate),
+				update: vi.fn(),
+			},
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue({ id: "mapping-1" }),
+			},
+		};
+		const updater = new TemplateUpdater(prisma as never, {} as never, {} as never, {} as never);
+
+		const result = await updater.syncTemplate(template.id, "new", template.userId, {
+			expectedAutomationStateToken: createAutomationCatchUpTemplateStateToken(selectedTemplate),
+		});
+
+		expect(result).toMatchObject({
+			success: false,
+			errors: [expect.stringContaining("template or Auto mapping changed")],
+		});
+		expect(prisma.trashTemplate.update).not.toHaveBeenCalled();
+	});
+
+	it("blocks initial automatic sync when TRaSH provenance is removed after selection", async () => {
+		const selectedTemplate = {
+			...template,
+			deletedAt: null,
+			trashGuidesCommitHash: null,
+			sourceQualityProfileTrashId: "trash-profile",
+		};
+		const prisma = {
+			trashTemplate: {
+				findUnique: vi
+					.fn()
+					.mockResolvedValue({ ...selectedTemplate, sourceQualityProfileTrashId: null }),
 				update: vi.fn(),
 			},
 			templateQualityProfileMapping: {

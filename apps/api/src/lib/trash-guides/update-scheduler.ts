@@ -292,6 +292,10 @@ export class UpdateScheduler {
 				this.prisma.trashTemplate.count({
 					where: {
 						deletedAt: null,
+						OR: [
+							{ trashGuidesCommitHash: { not: null } },
+							{ sourceQualityProfileTrashId: { not: null } },
+						],
 						qualityProfileMappings: {
 							some: {
 								syncStrategy: "auto",
@@ -363,7 +367,10 @@ export class UpdateScheduler {
 					deletedAt: null,
 					OR: [
 						{ trashGuidesCommitHash: { not: null } },
-						{ qualityProfileMappings: { some: { syncStrategy: "auto" } } },
+						{
+							sourceQualityProfileTrashId: { not: null },
+							qualityProfileMappings: { some: { syncStrategy: "auto" } },
+						},
 					],
 				},
 				select: { userId: true },

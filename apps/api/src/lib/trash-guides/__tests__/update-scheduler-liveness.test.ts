@@ -77,7 +77,10 @@ describe("TRaSH update scheduler liveness", () => {
 					deletedAt: null,
 					OR: [
 						{ trashGuidesCommitHash: { not: null } },
-						{ qualityProfileMappings: { some: { syncStrategy: "auto" } } },
+						{
+							sourceQualityProfileTrashId: { not: null },
+							qualityProfileMappings: { some: { syncStrategy: "auto" } },
+						},
 					],
 				},
 			}),

@@ -127,6 +127,7 @@ export class TemplateUpdater {
 				id: true,
 				name: true,
 				serviceType: true,
+				sourceQualityProfileTrashId: true,
 				trashGuidesCommitHash: true,
 				hasUserModifications: true,
 				configData: true,
@@ -161,10 +162,13 @@ export class TemplateUpdater {
 				(mapping) => mapping.syncStrategy === "auto",
 			).length;
 
-			// A transient version lookup during import can leave an explicitly auto-synced
-			// template without its initial commit. Treat that as pending initial sync instead
-			// of excluding the mapping forever. Templates without auto authority remain untracked.
-			if (!template.trashGuidesCommitHash && autoSyncInstanceCount === 0) {
+			// A transient version lookup during a known TRaSH profile import can leave an
+			// explicitly auto-synced template without its initial commit. Custom, duplicated,
+			// and JSON-imported templates have no TRaSH profile identity and remain untracked.
+			if (
+				!template.trashGuidesCommitHash &&
+				(!template.sourceQualityProfileTrashId || autoSyncInstanceCount === 0)
+			) {
 				continue;
 			}
 
@@ -496,6 +500,7 @@ export class TemplateUpdater {
 				template.userId !== userId ||
 				template.deletedAt ||
 				template.hasUserModifications ||
+				(!template.trashGuidesCommitHash && !template.sourceQualityProfileTrashId) ||
 				!autoMapping ||
 				createAutomationCatchUpTemplateStateToken(template) !== options.expectedAutomationStateToken
 			) {
