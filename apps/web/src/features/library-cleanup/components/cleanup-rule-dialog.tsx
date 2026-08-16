@@ -1,6 +1,11 @@
 "use client";
 
-import type { CleanupRuleResponse, CleanupRuleType, CreateCleanupRule } from "@arr/shared";
+import type {
+	CleanupRuleResponse,
+	CleanupRuleType,
+	CreateCleanupRule,
+	RuleDocument,
+} from "@arr/shared";
 import { ChevronDown, Loader2, Save, ShieldOff, SlidersHorizontal, Target } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -28,7 +33,12 @@ import {
 	buildParams as buildParamsPure,
 	splitCsv,
 } from "../lib/rule-dialog-logic";
+import {
+	stripCleanupRuleAnnotations,
+	validateCleanupRuleDocument,
+} from "../lib/recursive-rule-editor";
 import { ExcludeTagsPicker, ParamsFields } from "./cleanup-rule-params-fields";
+import { RecursiveCleanupRuleEditor } from "./recursive-cleanup-rule-editor";
 import { RULE_CATEGORIES, RULE_TYPE_MAP, RULE_TYPES } from "./rule-type-catalog";
 
 // ============================================================================
@@ -72,7 +82,7 @@ export function CleanupRuleDialog({
 	const { gradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
 	const isEdit = !!editRule;
-	const isRecursiveReadOnly = Boolean(editRule?.expression);
+	const isRecursiveEdit = Boolean(editRule?.expression);
 	const { data: fieldOptions, isLoading: fieldOptionsLoading } = useCleanupFieldOptions();
 	const { data: allServices } = useServicesQuery();
 	const mediaServerInstances = fieldOptions?.mediaServerInstances ?? [];
@@ -171,6 +181,8 @@ export function CleanupRuleDialog({
 	const [conditions, setConditions] = useState<
 		Array<{ id: string; ruleType: CleanupRuleType; params: Record<string, unknown> }>
 	>([]);
+	const [recursiveExpression, setRecursiveExpression] = useState<RuleDocument | null>(null);
+	const [recursiveError, setRecursiveError] = useState<string | null>(null);
 
 	// ── New rule params (Phase C) ───────────────────────────────────
 	const [imdbRatingOp, setImdbRatingOp] = useState("less_than");
@@ -251,8 +263,16 @@ export function CleanupRuleDialog({
 			if (editRule.rejectionMemoryDays && editRule.rejectionMemoryDays > 0) {
 				setRejectionDays(String(editRule.rejectionMemoryDays));
 			}
-			// Composite mode
-			if (editRule.operator && editRule.conditions) {
+			// Flat composite and recursive modes are mutually exclusive on the wire.
+			if (editRule.expression) {
+				setRecursiveExpression(editRule.expression);
+				setRecursiveError(null);
+				setIsComposite(false);
+				setCompositeOperator("AND");
+				setConditions([]);
+			} else if (editRule.operator && editRule.conditions) {
+				setRecursiveExpression(null);
+				setRecursiveError(null);
 				setIsComposite(true);
 				setCompositeOperator(editRule.operator as "AND" | "OR");
 				setConditions(
@@ -264,6 +284,8 @@ export function CleanupRuleDialog({
 					).map((c, i) => ({ id: `cond-${i}`, ruleType: c.ruleType, params: c.parameters ?? {} })),
 				);
 			} else {
+				setRecursiveExpression(null);
+				setRecursiveError(null);
 				setIsComposite(false);
 				setCompositeOperator("AND");
 				setConditions([]);
@@ -548,6 +570,8 @@ export function CleanupRuleDialog({
 			setIsComposite(false);
 			setCompositeOperator("AND");
 			setConditions([]);
+			setRecursiveExpression(null);
+			setRecursiveError(null);
 			// Phase C
 			setImdbRatingOp("less_than");
 			setImdbRatingScore(5);
@@ -599,7 +623,12 @@ export function CleanupRuleDialog({
 				if (templateData.serviceFilter) {
 					setServiceFilter(templateData.serviceFilter);
 				}
-				if (templateData.operator && templateData.conditions) {
+				if (templateData.expression) {
+					setRecursiveExpression(templateData.expression);
+					setRecursiveError(null);
+					setIsComposite(false);
+					setRuleType("composite");
+				} else if (templateData.operator && templateData.conditions) {
 					// Composite template
 					setIsComposite(true);
 					setCompositeOperator(templateData.operator as "AND" | "OR");
@@ -742,6 +771,8 @@ export function CleanupRuleDialog({
 			setIsComposite(false);
 			setConditions([]);
 			setCompositeError(null);
+			setRecursiveExpression(null);
+			setRecursiveError(null);
 			setRetentionMode(false);
 			setExpandedCategories(new Set(["plex"]));
 		}
@@ -767,8 +798,17 @@ export function CleanupRuleDialog({
 
 	const handleSubmit = (e: React.FormEvent) => {
 		e.preventDefault();
-		if (isRecursiveReadOnly) return;
 		const isEpisodeScope = targetScope === "episode";
+		let recursiveDocument: RuleDocument | null = null;
+		if (!isEpisodeScope && recursiveExpression) {
+			recursiveDocument = stripCleanupRuleAnnotations(recursiveExpression);
+			const validationError = validateCleanupRuleDocument(recursiveDocument);
+			if (validationError) {
+				setRecursiveError(validationError);
+				return;
+			}
+		}
+		setRecursiveError(null);
 		const shouldScanMediaServers = canScanMediaServers && scanMediaServerAfterDelete;
 		if (shouldScanMediaServers && scanMediaServerInstanceIds.length === 0) {
 			setMediaScanError("Select at least one media server to scan after deletion.");
@@ -818,14 +858,14 @@ export function CleanupRuleDialog({
 			targetScope,
 			ruleType: isEpisodeScope
 				? ("plex_watch_count" as const)
-				: isComposite
+				: recursiveDocument || isComposite
 					? ("composite" as const)
 					: ruleType,
 			enabled,
 			priority: editRule?.priority ?? 0,
 			parameters: isEpisodeScope
 				? { operator: "greater_than", count: plexWatchCountVal }
-				: isComposite
+				: recursiveDocument || isComposite
 					? {}
 					: buildParams(),
 			action,
@@ -846,9 +886,9 @@ export function CleanupRuleDialog({
 			excludeTitles: excludeTitles.trim() ? splitCsv(excludeTitles) : null,
 			plexLibraryFilter:
 				!isEpisodeScope && selectedPlexLibraries.length > 0 ? selectedPlexLibraries : null,
-			operator: !isEpisodeScope && isComposite ? compositeOperator : null,
+			operator: !isEpisodeScope && isComposite && !recursiveDocument ? compositeOperator : null,
 			conditions:
-				!isEpisodeScope && isComposite
+				!isEpisodeScope && isComposite && !recursiveDocument
 					? conditions
 							.filter((c) => c.ruleType !== "composite")
 							.map((c) => ({
@@ -856,6 +896,7 @@ export function CleanupRuleDialog({
 								parameters: c.params,
 							}))
 					: null,
+			expression: recursiveDocument,
 		};
 		onSave(base);
 	};
@@ -900,27 +941,7 @@ export function CleanupRuleDialog({
 					</div>
 				)}
 
-				{isRecursiveReadOnly && (
-					<div className="mt-2 space-y-4 rounded-lg border border-amber-500/20 bg-amber-500/10 p-4">
-						<p className="text-sm font-medium text-foreground">Recursive rule is read-only</p>
-						<p className="text-sm text-muted-foreground">
-							This editor cannot safely represent nested cleanup conditions yet. The stored rule has
-							not been changed; close this dialog to keep it intact.
-						</p>
-						<div className="flex justify-end">
-							<button
-								type="button"
-								onClick={() => onOpenChange(false)}
-								className="rounded-lg px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
-							>
-								Close
-							</button>
-						</div>
-					</div>
-				)}
-
 				<form
-					hidden={isRecursiveReadOnly}
 					onSubmit={handleSubmit}
 					className="space-y-5 mt-2"
 					onFocus={(e) => {
@@ -1191,14 +1212,17 @@ export function CleanupRuleDialog({
 								<div className="flex gap-2 mt-1.5">
 									<button
 										type="button"
+										disabled={isRecursiveEdit}
 										onClick={() => {
+											setRecursiveExpression(null);
+											setRecursiveError(null);
 											setIsComposite(false);
 											setConditions([]);
 											setCompositeError(null);
 										}}
-										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
+										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60"
 										style={
-											!isComposite
+											!isComposite && !recursiveExpression
 												? {
 														borderColor: gradient.from,
 														backgroundColor: gradient.fromLight,
@@ -1211,10 +1235,15 @@ export function CleanupRuleDialog({
 									</button>
 									<button
 										type="button"
-										onClick={() => setIsComposite(true)}
-										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200"
+										disabled={isRecursiveEdit}
+										onClick={() => {
+											setRecursiveExpression(null);
+											setRecursiveError(null);
+											setIsComposite(true);
+										}}
+										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60"
 										style={
-											isComposite
+											isComposite && !recursiveExpression
 												? {
 														borderColor: gradient.from,
 														backgroundColor: gradient.fromLight,
@@ -1224,6 +1253,42 @@ export function CleanupRuleDialog({
 										}
 									>
 										Composite Rule
+									</button>
+									<button
+										type="button"
+										disabled={isRecursiveEdit}
+										onClick={() => {
+											setIsComposite(false);
+											setConditions([]);
+											setCompositeError(null);
+											setRecursiveExpression(
+												(current) =>
+													current ?? {
+														version: 1,
+														root: {
+															all: [
+																{
+																	kind: "age",
+																	params: getDefaultConditionParams("age"),
+																},
+															],
+														},
+													},
+											);
+											setRecursiveError(null);
+										}}
+										className="rounded-lg border px-3 py-1.5 text-sm font-medium transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60"
+										style={
+											recursiveExpression
+												? {
+														borderColor: gradient.from,
+														backgroundColor: gradient.fromLight,
+														color: gradient.from,
+													}
+												: { borderColor: "var(--color-border)" }
+										}
+									>
+										Nested Rule
 									</button>
 								</div>
 							</div>
@@ -1247,6 +1312,19 @@ export function CleanupRuleDialog({
 									Only Plex Watch Count is supported for episode targets.
 								</span>
 							</div>
+						) : recursiveExpression ? (
+							<RecursiveCleanupRuleEditor
+								document={recursiveExpression}
+								onChange={(document) => {
+									setRecursiveExpression(document);
+									setRecursiveError(null);
+								}}
+								fieldOptions={fieldOptions}
+								fieldOptionsLoading={fieldOptionsLoading}
+								inputClass={inputClass}
+								labelClass={labelClass}
+								error={recursiveError}
+							/>
 						) : isComposite ? (
 							<div className="space-y-4">
 								<div>
@@ -1462,7 +1540,7 @@ export function CleanupRuleDialog({
 					</div>
 
 					{/* ── Parameters Section ───────────────────────── */}
-					{(targetScope === "episode" || !isComposite) && (
+					{(targetScope === "episode" || (!isComposite && !recursiveExpression)) && (
 						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-3">
 							<div className="flex items-center gap-2 mb-2">
 								<SlidersHorizontal className="h-4 w-4" style={{ color: gradient.from }} />

@@ -9,6 +9,7 @@ import type {
 	CleanupRuleResponse,
 	CreateCleanupRule,
 } from "@arr/shared";
+import { walkPredicates } from "@arr/shared";
 import {
 	AlertTriangle,
 	BarChart3,
@@ -893,9 +894,11 @@ function ConfigTab({
 									<div className="flex-1 min-w-0">
 										<span className="font-medium text-sm">{rule.name}</span>
 										<span className="text-xs text-muted-foreground ml-2">
-											{rule.operator
-												? `${rule.operator} (${(rule.conditions as unknown[])?.length ?? 0} conditions)`
-												: rule.ruleType}
+											{rule.expression
+												? `Nested (${[...walkPredicates(rule.expression.root)].length} conditions)`
+												: rule.operator
+													? `${rule.operator} (${(rule.conditions as unknown[])?.length ?? 0} conditions)`
+													: rule.ruleType}
 										</span>
 										{rule.serviceFilter && rule.serviceFilter.length > 0 && (
 											<span className="text-xs text-muted-foreground ml-2">
