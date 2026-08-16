@@ -215,4 +215,4 @@ For deep dives, see these files (create as needed):
 
 ---
 
-**Version:** 2.23.0 | **Node:** 22+ | **pnpm:** 10+
+**Version:** 2.24.0 | **Node:** 22+ | **pnpm:** 10+

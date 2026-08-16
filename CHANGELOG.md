@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.0] - 2026-08-16 — Safer cleanup & resilient automation
+
+Library Cleanup can now target individual Sonarr episodes. This release also
+tightens deletion checks for shared media and helps TRaSH Guides deployments
+recover cleanly after restarts or interrupted runs. Automatic sync now refuses
+to write when it cannot verify the source data or live service.
+
+### Added
+
+- **Episode-scoped Sonarr cleanup** — Cleanup rules can target individual
+  episodes while preserving series-level behavior, approvals, previews, and
+  deletion safety (#661).
+- **Durable TRaSH deployment recovery** — Deployment state, reviewed plans,
+  rollback evidence, and interrupted-operation recovery now survive restarts.
+  Profile cloning preserves the selected target and automatic deployment
+  revalidates the live instance before writing (#676–#682).
+- **Durable provider identity** — Plex, Jellyfin, Emby, and Tautulli cache
+  generations are tied to the verified upstream service identity so restored,
+  replaced, or repointed services cannot inherit stale cleanup authority
+  (#720, #721).
+
+### Changed
+
+- Provider cache publication is bounded to reduce refresh-time memory pressure,
+  and retry fixtures retain current evidence rather than silently aging out
+  (#718, #744).
+- CI, formatting, and E2E coverage were stabilized, including signed cleanup
+  policy and Authentik account-linking paths (#653, #669, #691, #709, #717).
+
+### Fixed
+
+- **Shared-library cleanup safety** — Radarr variants and Sonarr series or
+  episodes sharing Plex media are revalidated at execution time. Cleanup keeps
+  retained editions, rejects changed provider evidence, refreshes watch state
+  before selection, restores Jellyfin composite controls, and keeps approval
+  history and Pulse action links accurate (#629, #634, #640, #642, #656, #658,
+  #668, #688, #714).
+- **TRaSH Guides automation** — Auto-sync skips disabled targets, recovers jobs
+  that lost their initial commit state, and consumes exact immutable,
+  provenance-verified payloads. Stale mappings, partial cache generations, and
+  source refresh failures now fail closed before an ARR write (#686, #687,
+  #743, #745, #747).
+- **Plex cache refreshes** — Accepts null player tokens, uses history requests
+  compatible with Plex 1.43.3, and ignores retained watch-history rows only
+  when a complete current-library inventory proves that media is no longer
+  present (#636, #685, #693).
+- **Authentication and external URLs** — Secure OIDC admin linking works with
+  proxy providers such as Authentik and Authelia, and external URL handling no
+  longer weakens the application security posture (#648, #651).
+- **qUI and Seerr integrations** — qUI webhook registration is repaired. Seerr
+  attention indicators now focus on failed requests, approval routes honor the
+  selected server, and sensitive routing choices are masked in incognito mode
+  (#644, #646, #710, #711).
+- Jellyfin cache failures now provide actionable diagnostics instead of a
+  generic stale-cache warning (#670).
+- **PostgreSQL upgrades** — Docker startup now recovers safely when an existing
+  PostgreSQL database has schema objects but no Prisma migration history, while
+  preserving normal migration behavior for tracked databases (#748).
+
+### Security
+
+- Cleanup authorization now fails closed when provider identity, topology,
+  mutable policy evidence, or the exact ARR target changes between preview and
+  mutation (#629, #634, #656, #658, #668, #720, #721).
+- TRaSH deployment plans no longer expose sensitive instance details, and
+  automatic writes are bound to the exact reviewed source and live target
+  (#679, #680, #687, #745, #747).
+- Updated vulnerable runtime and build dependencies reported by Dependabot,
+  including `nanoid`, `DOMPurify`, `PostCSS`, `fast-uri`, `undici`, `Valibot`,
+  `find-my-way`, and `brace-expansion`. Security-scan fixtures now avoid unsafe
+  mass-assignment patterns (#749, #750).
+
 ## [2.23.0] - 2026-07-23 — Torrent payload safeguards
 
 This release adds an opt-in Queue Cleaner policy for rejecting torrents whose
