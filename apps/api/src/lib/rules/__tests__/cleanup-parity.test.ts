@@ -595,6 +595,101 @@ describe("parity — composites", () => {
 		expect(result?.reason).toBe("NOT");
 	});
 
+	it("keeps NOT unknown when a weighted staleness input lacks ARR evidence", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem({
+				sizeOnDisk: 0n,
+				data: JSON.stringify({
+					remoteIds: { tmdbId: 12345 },
+					_arrDashboardEvidence: { sizeOnDisk: false },
+				}),
+			}),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: {
+							kind: "staleness_score",
+							params: {
+								operator: "greater_than",
+								threshold: 1,
+								weights: {
+									daysSinceLastWatch: 0,
+									inverseWatchCount: 0,
+									notOnDeck: 0,
+									lowUserRating: 0,
+									lowTmdbRating: 0,
+									sizeOnDisk: 1,
+								},
+							},
+						},
+					},
+				}),
+			}),
+			"RADARR",
+			baseCtx({ plexMap: new Map([["movie:12345", makePlexInfo()]]) }),
+		);
+
+		expect(result).toBeNull();
+	});
+
+	it("uses an authoritative empty tag inventory as negative evidence", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem({
+				data: JSON.stringify({
+					remoteIds: { tmdbId: 12345 },
+					_arrDashboardEvidence: { tags: true },
+				}),
+			}),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: {
+							kind: "tag_match",
+							params: { operator: "includes_any", tagIds: [1] },
+						},
+					},
+				}),
+			}),
+			"RADARR",
+			baseCtx(),
+		);
+
+		expect(result?.reason).toBe("NOT");
+	});
+
+	it("uses an explicit normalized SDR marker as hdr_type evidence", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem({
+				data: JSON.stringify({
+					remoteIds: { tmdbId: 12345 },
+					movieFile: { id: 1 },
+					_arrDashboardEvidence: { hdrType: true },
+				}),
+			}),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: { kind: "hdr_type", params: { operator: "none" } },
+				}),
+			}),
+			"RADARR",
+			baseCtx(),
+		);
+
+		expect(result).toMatchObject({ ruleId: "rule-1" });
+	});
+
 	it("allows NOT to invert a provider predicate with item-level evidence", () => {
 		const plexMap = new Map([["movie:12345", makePlexInfo({ onDeck: false })]]);
 		const result = evaluateRuleViaEngine(

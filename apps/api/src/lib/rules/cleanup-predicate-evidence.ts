@@ -11,11 +11,69 @@ export type CleanupPredicateResult =
 
 type ExternalSource = "seerr" | "plex" | "jellyfin";
 
+const DEFAULT_STALENESS_WEIGHTS = {
+	daysSinceLastWatch: 0.3,
+	inverseWatchCount: 0.2,
+	notOnDeck: 0.1,
+	lowUserRating: 0.15,
+	lowTmdbRating: 0.15,
+	sizeOnDisk: 0.1,
+} as const;
+
+type StalenessEvidence = {
+	plex: boolean;
+	rating: boolean;
+	sizeOnDisk: boolean;
+};
+
+function stalenessWeight(params: Record<string, unknown>, key: string): number | null {
+	const weights = params.weights;
+	const configured =
+		typeof weights === "object" && weights !== null && !Array.isArray(weights)
+			? (weights as Record<string, unknown>)[key]
+			: DEFAULT_STALENESS_WEIGHTS[key as keyof typeof DEFAULT_STALENESS_WEIGHTS];
+	return typeof configured === "number" && Number.isFinite(configured) && configured >= 0
+		? configured
+		: null;
+}
+
+/** Keep preview and mutation authorization aligned on weighted score inputs. */
+export function hasRequiredStalenessInputEvidence(
+	params: Record<string, unknown>,
+	evidence: StalenessEvidence,
+): boolean {
+	const weights = Object.fromEntries(
+		Object.keys(DEFAULT_STALENESS_WEIGHTS).map((key) => [key, stalenessWeight(params, key)]),
+	) as Record<keyof typeof DEFAULT_STALENESS_WEIGHTS, number | null>;
+	if (Object.values(weights).some((weight) => weight === null)) return false;
+
+	const needsPlex =
+		weights.daysSinceLastWatch! > 0 ||
+		weights.inverseWatchCount! > 0 ||
+		weights.notOnDeck! > 0 ||
+		weights.lowUserRating! > 0;
+	return (
+		(!needsPlex || evidence.plex) &&
+		(weights.lowTmdbRating === 0 || evidence.rating) &&
+		(weights.sizeOnDisk === 0 || evidence.sizeOnDisk)
+	);
+}
+
 function dataRecord(item: CacheItemForEval): Record<string, unknown> | null {
 	const parsed = safeJsonParse(item.data);
 	return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
 		? (parsed as Record<string, unknown>)
 		: null;
+}
+
+function evidenceFlag(data: Record<string, unknown> | null, flag: string): boolean {
+	const evidence = data?._arrDashboardEvidence;
+	return (
+		typeof evidence === "object" &&
+		evidence !== null &&
+		!Array.isArray(evidence) &&
+		(evidence as Record<string, unknown>)[flag] === true
+	);
 }
 
 function tmdbId(item: CacheItemForEval): number | null {
@@ -194,12 +252,13 @@ function hasPredicateEvidence(
 		}
 		case "tag_match":
 			return (
-				Array.isArray(data?.tags) &&
-				data.tags.every(
-					(tag) =>
-						(typeof tag === "number" && Number.isSafeInteger(tag) && tag >= 0) ||
-						(typeof tag === "string" && tag.trim().length > 0),
-				)
+				(Array.isArray(data?.tags) &&
+					data.tags.every(
+						(tag) =>
+							(typeof tag === "number" && Number.isSafeInteger(tag) && tag >= 0) ||
+							(typeof tag === "string" && tag.trim().length > 0),
+					)) ||
+				(data?.tags === undefined && evidenceFlag(data, "tags"))
 			);
 		case "video_codec":
 		case "audio_codec":
@@ -231,8 +290,9 @@ function hasPredicateEvidence(
 			const file = fileRecord(data);
 			return (
 				file !== null &&
-				Object.hasOwn(file, "videoDynamicRange") &&
-				(typeof file.videoDynamicRange === "string" || file.videoDynamicRange === null)
+				((Object.hasOwn(file, "videoDynamicRange") &&
+					(typeof file.videoDynamicRange === "string" || file.videoDynamicRange === null)) ||
+					evidenceFlag(data, "hdrType"))
 			);
 		}
 		case "seerr_requested_by":
@@ -284,7 +344,14 @@ function hasPredicateEvidence(
 				hasPlexEvidence(item, ctx, plexLibraryFilter)
 			);
 		case "staleness_score":
-			return data !== null && hasPlexEvidence(item, ctx, plexLibraryFilter);
+			return (
+				data !== null &&
+				hasRequiredStalenessInputEvidence(params, {
+					plex: hasPlexEvidence(item, ctx, plexLibraryFilter),
+					rating: hasRatingEvidence(data, "rating", instanceService),
+					sizeOnDisk: evidenceFlag(data, "sizeOnDisk"),
+				})
+			);
 		case "recently_active": {
 			if (!(item.arrAddedAt instanceof Date) || Number.isNaN(item.arrAddedAt.getTime()))
 				return false;

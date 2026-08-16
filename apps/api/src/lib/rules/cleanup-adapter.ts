@@ -44,7 +44,10 @@ import type {
 } from "../library-cleanup/types.js";
 import type { LibraryCleanupRule } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
-import { evaluateCleanupPredicate } from "./cleanup-predicate-evidence.js";
+import {
+	evaluateCleanupPredicate,
+	hasRequiredStalenessInputEvidence,
+} from "./cleanup-predicate-evidence.js";
 import { evaluateDocument, type PredicateEvaluator, UNKNOWN } from "./engine.js";
 import { mapCriteriaV0ToDocument } from "./v0-mappers.js";
 
@@ -344,8 +347,13 @@ function ruleTypeHasMutationEvidence(
 		case "plex_label":
 		case "plex_added_at":
 		case "user_retention":
-		case "staleness_score":
 			return key !== null && ctx.plexMap?.has(key) === true;
+		case "staleness_score":
+			return hasRequiredStalenessInputEvidence(parameters, {
+				plex: key !== null && ctx.plexMap?.has(key) === true,
+				rating: evidenceFlag(data, "rating"),
+				sizeOnDisk: evidenceFlag(data, "sizeOnDisk"),
+			});
 		case "recently_active":
 			return (
 				item.arrAddedAt instanceof Date &&
