@@ -21,8 +21,23 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { mockCreateQuiClient, mockRequireQuiInstance } = vi.hoisted(() => ({
+	mockCreateQuiClient: vi.fn(),
+	mockRequireQuiInstance: vi.fn(),
+}));
+
+vi.mock("../client-factory.js", () => ({
+	createQuiClient: mockCreateQuiClient,
+}));
+
+vi.mock("../instance-helpers.js", () => ({
+	requireQuiInstance: mockRequireQuiInstance,
+}));
+
 import { executeQuiAction } from "../action-service.js";
 import type { QuiClient } from "../client-factory.js";
+import { withQuiObservationTopologyGuard } from "../observation-topology-guard.js";
 
 const silentLog = {
 	info: vi.fn(),
@@ -60,7 +75,7 @@ function makeApp(opts: { txReturn?: { id: string }[] } = {}) {
 }
 
 function makeClient(overrides: Partial<QuiClient> = {}): QuiClient {
-	return {
+	const client = {
 		getTorrentsByHash: vi.fn().mockResolvedValue([]),
 		getTorrentByHash: vi.fn().mockResolvedValue(null),
 		getTrackers: vi.fn().mockResolvedValue([]),
@@ -112,20 +127,30 @@ function makeClient(overrides: Partial<QuiClient> = {}): QuiClient {
 		}),
 		...overrides,
 	};
+	mockCreateQuiClient.mockReturnValue(client);
+	return client;
+}
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
 }
 
 describe("executeQuiAction — per-hash audit granularity", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockRequireQuiInstance.mockResolvedValue({ id: "svc-qui-1", service: "QUI" });
 	});
 
 	it("writes one pending row per hash, then transitions all to success", async () => {
 		const app = makeApp();
-		const client = makeClient();
+		makeClient();
 
 		const result = await executeQuiAction({
 			app,
-			client,
 			userId: "user-1",
 			serviceInstanceId: "svc-qui-1",
 			qbitInstanceId: 7,
@@ -147,9 +172,43 @@ describe("executeQuiAction — per-hash audit granularity", () => {
 		expect(updateArgs.data.completedAt).toBeInstanceOf(Date);
 	});
 
+	it("re-resolves the qUI instance and client after a cleanup physical-file guard", async () => {
+		const app = makeApp();
+		const client = makeClient();
+		const currentInstance = { id: "svc-qui-1", service: "QUI", url: "https://new-qui" };
+		mockRequireQuiInstance.mockResolvedValue(currentInstance);
+		const guardStarted = deferred();
+		const releaseGuard = deferred();
+		const cleanupGuard = withQuiObservationTopologyGuard("user-1", async () => {
+			guardStarted.resolve();
+			await releaseGuard.promise;
+		});
+		await guardStarted.promise;
+
+		const action = executeQuiAction({
+			app,
+			userId: "user-1",
+			serviceInstanceId: "svc-qui-1",
+			qbitInstanceId: 7,
+			hashes: ["aaa"],
+			action: "resume",
+		});
+		await Promise.resolve();
+		expect(mockRequireQuiInstance).not.toHaveBeenCalled();
+		expect(mockCreateQuiClient).not.toHaveBeenCalled();
+		expect(app.__transaction).not.toHaveBeenCalled();
+		expect(client.bulkAction).not.toHaveBeenCalled();
+
+		releaseGuard.resolve();
+		await Promise.all([cleanupGuard, action]);
+		expect(mockRequireQuiInstance).toHaveBeenCalledWith(app, "user-1", "svc-qui-1");
+		expect(mockCreateQuiClient).toHaveBeenCalledWith(app, currentInstance);
+		expect(client.bulkAction).toHaveBeenCalledOnce();
+	});
+
 	it("translates qui errors to `failed` rows without throwing", async () => {
 		const app = makeApp();
-		const client = makeClient({
+		makeClient({
 			bulkAction: vi
 				.fn()
 				.mockRejectedValue(new Error("qui request to /api/... failed: 502 Bad Gateway")),
@@ -157,7 +216,6 @@ describe("executeQuiAction — per-hash audit granularity", () => {
 
 		const result = await executeQuiAction({
 			app,
-			client,
 			userId: "user-1",
 			serviceInstanceId: "svc-qui-1",
 			qbitInstanceId: 7,
@@ -183,7 +241,6 @@ describe("executeQuiAction — per-hash audit granularity", () => {
 
 		const result = await executeQuiAction({
 			app,
-			client,
 			userId: "user-1",
 			serviceInstanceId: "svc-qui-1",
 			qbitInstanceId: 7,
@@ -198,12 +255,11 @@ describe("executeQuiAction — per-hash audit granularity", () => {
 
 	it("stores `setTags` tag list as JSON payload, not other actions", async () => {
 		const app = makeApp();
-		const client = makeClient();
+		makeClient();
 
 		// With tags: payload should be JSON.stringify({ tags })
 		await executeQuiAction({
 			app,
-			client,
 			userId: "user-1",
 			serviceInstanceId: "svc-qui-1",
 			qbitInstanceId: 7,
@@ -234,7 +290,6 @@ describe("executeQuiAction — per-hash audit granularity", () => {
 		// Without tags (pause/resume/etc.): payload should be null
 		await executeQuiAction({
 			app,
-			client,
 			userId: "user-1",
 			serviceInstanceId: "svc-qui-1",
 			qbitInstanceId: 7,
@@ -253,11 +308,10 @@ describe("executeQuiAction — per-hash audit granularity", () => {
 
 	it("scopes the audit row to the caller's (userId, serviceInstanceId)", async () => {
 		const app = makeApp();
-		const client = makeClient();
+		makeClient();
 
 		await executeQuiAction({
 			app,
-			client,
 			userId: "user-42",
 			serviceInstanceId: "svc-qui-foo",
 			qbitInstanceId: 3,
