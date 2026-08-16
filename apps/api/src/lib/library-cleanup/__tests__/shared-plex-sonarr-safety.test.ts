@@ -66,8 +66,39 @@ function episodeCleanupRule(action: "delete" | "delete_files" | "unmonitor" = "d
 	};
 }
 
+function seriesCleanupRule(action: "delete" | "delete_files" = "delete") {
+	return {
+		id: "rule-1",
+		configId: "config-1",
+		name: "Example series cleanup",
+		enabled: true,
+		priority: 1,
+		ruleType: "file_path",
+		parameters: JSON.stringify({
+			operator: "matches",
+			pattern: "^/tv-4k/Example Series$",
+			field: "path",
+		}),
+		serviceFilter: JSON.stringify(["SONARR"]),
+		instanceFilter: null,
+		excludeTags: null,
+		excludeTitles: null,
+		plexLibraryFilter: null,
+		targetScope: "series",
+		action,
+		operator: null,
+		conditions: null,
+		retentionMode: false,
+		useGlobalRejectionMemory: true,
+		rejectionMemoryDays: 0,
+		createdAt: new Date("2026-07-27T12:00:00.000Z"),
+		updatedAt: new Date("2026-07-27T12:00:00.000Z"),
+	};
+}
+
 interface SonarrTestOptions {
 	action?: "delete" | "delete_files";
+	seriesPolicyAction?: "delete" | "delete_files" | null;
 	livePlexWatchCount?: number;
 	notificationKind?: "plex" | "mediabrowser" | "kodi" | "synology" | "none";
 	onSeriesDelete?: boolean;
@@ -169,9 +200,14 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		tvdbId: 123,
 		tmdbId: 456,
 		title: "Example Series",
+		year: 2024,
 		path: "/tv-4k/Example Series",
+		rootFolderPath: "/tv-4k",
 		tags: options.seriesTags ?? [],
 		monitored: true,
+		added: "2020-01-01T00:00:00.000Z",
+		status: "continuing",
+		qualityProfileId: 1,
 	};
 	const episodeFiles = options.episodeFiles ?? [
 		{
@@ -236,7 +272,13 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		series: {
 			getById: vi.fn(async () => {
 				if (!liveSeriesExists) throw new NotFoundError("Series not found");
-				return series;
+				return {
+					...series,
+					statistics: {
+						episodeFileCount: liveEpisodeFiles.length,
+						sizeOnDisk: liveEpisodeFiles.reduce((total, file) => total + (file.size ?? 0), 0),
+					},
+				};
 			}),
 			delete: deleteSeries,
 		},
@@ -303,8 +345,16 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({
 					id: "config-1",
+					userId: "user-1",
+					enabled: true,
+					dryRunMode: false,
+					requireApproval: true,
+					maxRemovalsPerRun: 10,
 					respectQuiSeeding: false,
 					rules: [
+						...(options.seriesPolicyAction === null
+							? []
+							: [seriesCleanupRule(options.seriesPolicyAction ?? options.action ?? "delete")]),
 						episodeCleanupRule(),
 						episodeCleanupRule("delete_files"),
 						episodeCleanupRule("unmonitor"),
@@ -1848,6 +1898,8 @@ describe("verified Sonarr mutation handoff", () => {
 			itemType: "series",
 			action,
 			title: "Example Series",
+			matchedRuleId: "rule-1",
+			matchedRuleName: "Example series cleanup",
 			safetySnapshot: serializeExecutableSafetyPlan({
 				kind: "verified_sonarr",
 				target: {
@@ -1954,6 +2006,8 @@ describe("verified Sonarr mutation handoff", () => {
 		deps: CleanupExecutorDeps,
 		storedApproval: Record<string, unknown>,
 	) {
+		storedApproval.matchedRuleId ??= "rule-1";
+		storedApproval.matchedRuleName ??= "Example series cleanup";
 		storedApproval.status ??= "approved";
 		storedApproval.executionToken ??= null;
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
@@ -2209,7 +2263,7 @@ describe("verified Sonarr mutation handoff", () => {
 	});
 
 	it("unmonitors and deletes only the approved episode without removing its series", async () => {
-		const fixture = makeSonarrDeps();
+		const fixture = makeSonarrDeps({ seriesPolicyAction: null });
 		const episodeTarget = exactEpisodeTarget();
 		const context = createSharedPlexSafetyContext();
 		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
@@ -2301,7 +2355,7 @@ describe("verified Sonarr mutation handoff", () => {
 	);
 
 	it("executes a direct episode delete through the same exact durable boundary", async () => {
-		const fixture = makeSonarrDeps();
+		const fixture = makeSonarrDeps({ seriesPolicyAction: null });
 		const intents = configureRetryStore(fixture.deps);
 		const result = await executeDirectRemoval(
 			fixture.deps,

@@ -135,6 +135,8 @@ function approvalRecord(overrides: Record<string, unknown> = {}) {
 		itemType: "movie",
 		title: "Example Movie",
 		reason: "Matched 4K cleanup rule",
+		matchedRuleId: "rule-1",
+		matchedRuleName: "Old media",
 		action: "delete",
 		safetySnapshot: radarrSafetySnapshot(),
 		...overrides,
@@ -214,6 +216,10 @@ function notificationFields(options: TestOptions) {
 }
 
 function makeDeps(options: TestOptions = {}) {
+	const currentCleanupConfig = dryRunConfig();
+	currentCleanupConfig.dryRunMode = false;
+	currentCleanupConfig.requireApproval = true;
+	currentCleanupConfig.rules[0]!.action = options.action ?? "delete";
 	const targetInstance = {
 		id: "radarr-4k",
 		userId: "user-1",
@@ -252,8 +258,14 @@ function makeDeps(options: TestOptions = {}) {
 		id: 101,
 		tmdbId: 42,
 		title: "Example Movie",
+		year: 2024,
 		tags: options.movieTags ?? [],
+		monitored: true,
 		hasFile: true,
+		sizeOnDisk: 2_000,
+		added: "2020-01-01T00:00:00.000Z",
+		status: "released",
+		qualityProfileId: 1,
 		movieFileId: 1001,
 		path: "/movies-4k/Example Movie (2024)",
 		rootFolderPath: "/movies-4k",
@@ -300,8 +312,13 @@ function makeDeps(options: TestOptions = {}) {
 						return {
 							...targetMovie,
 							hasFile: liveMovieFileId !== undefined,
+							sizeOnDisk: liveMovieFileId !== undefined ? 2_000 : 0,
 							movieFileId: liveMovieFileId,
 							movieFile: liveMovieFileId !== undefined ? targetMovieFile : undefined,
+							statistics: {
+								movieFileCount: liveMovieFileId !== undefined ? 1 : 0,
+								sizeOnDisk: liveMovieFileId !== undefined ? 2_000 : 0,
+							},
 						};
 					}),
 			delete: deleteMovie,
@@ -376,7 +393,7 @@ function makeDeps(options: TestOptions = {}) {
 	const deps: CleanupExecutorDeps = {
 		prisma: {
 			libraryCleanupConfig: {
-				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
+				findUnique: vi.fn().mockResolvedValue(currentCleanupConfig),
 				updateMany: cleanupConfigUpdateMany,
 			},
 			serviceInstance: {
@@ -654,6 +671,8 @@ function configureApprovalStore(
 	deps: CleanupExecutorDeps,
 	storedApproval: Record<string, unknown>,
 ) {
+	storedApproval.matchedRuleId ??= "rule-1";
+	storedApproval.matchedRuleName ??= "Old media";
 	storedApproval.status ??= "approved";
 	storedApproval.executionToken ??= null;
 	vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
@@ -692,6 +711,8 @@ function configureApprovalStores(
 	storedApprovals: Array<Record<string, unknown>>,
 ) {
 	for (const approval of storedApprovals) {
+		approval.matchedRuleId ??= "rule-1";
+		approval.matchedRuleName ??= "Old media";
 		approval.status ??= "approved";
 		approval.executionToken ??= null;
 	}
@@ -762,6 +783,53 @@ function dryRunConfig(maxRemovalsPerRun = 10) {
 			},
 		],
 	};
+}
+
+function configureFreshRadarrUnmonitorPolicy(fixture: ReturnType<typeof makeDeps>) {
+	const currentConfig = dryRunConfig(1);
+	currentConfig.dryRunMode = false;
+	(currentConfig.rules[0] as { excludeTitles: string | null }).excludeTitles = JSON.stringify([
+		"^Fresh Movie$",
+	]);
+	currentConfig.rules.push({
+		...currentConfig.rules[0]!,
+		id: "rule-2",
+		name: "Fresh unmonitor",
+		priority: 2,
+		action: "unmonitor",
+		excludeTitles: null,
+	});
+	vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
+		currentConfig as never,
+	);
+	const getMovieById = fixture.targetClient.movie.getById.getMockImplementation();
+	if (!getMovieById) throw new Error("Expected a Radarr movie lookup implementation");
+	fixture.targetClient.movie.getById.mockImplementation(async (arrItemId: number) =>
+		Number(arrItemId) === 102
+			? {
+					id: 102,
+					tmdbId: 43,
+					title: "Fresh Movie",
+					year: 2024,
+					tags: [],
+					monitored: true,
+					hasFile: true,
+					sizeOnDisk: 2_000,
+					added: "2020-01-01T00:00:00.000Z",
+					status: "released",
+					qualityProfileId: 1,
+					movieFileId: 1002,
+					path: "/movies-4k/Fresh Movie (2024)",
+					rootFolderPath: "/movies-4k",
+					movieFile: {
+						id: 1002,
+						path: "/movies-4k/Fresh Movie (2024)/Fresh.Movie.2160p.mkv",
+						size: 2_000,
+					},
+					statistics: { movieFileCount: 1, sizeOnDisk: 2_000 },
+				}
+			: getMovieById(arrItemId),
+	);
 }
 
 function plexPolicyCleanupConfig(options: {
@@ -4476,15 +4544,7 @@ describe("shared Plex deletion safety", () => {
 			mediaPartCount: 1,
 		});
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
-			{
-				id: "approval-1",
-				instanceId: "radarr-4k",
-				arrItemId: 101,
-				itemType: "movie",
-				action: "delete",
-				title: "Example Movie",
-				safetySnapshot: radarrSafetySnapshot(null),
-			} as never,
+			approvalRecord({ safetySnapshot: radarrSafetySnapshot(null) }) as never,
 		]);
 
 		await expect(executeApprovedItems(deps, "user-1", ["approval-1"])).resolves.toEqual({
@@ -4614,15 +4674,7 @@ describe("shared Plex deletion safety", () => {
 			setLiveMovieFileId(1002);
 		});
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
-			{
-				id: "approval-1",
-				instanceId: "radarr-4k",
-				arrItemId: 101,
-				itemType: "movie",
-				action: "delete",
-				title: "Example Movie",
-				safetySnapshot: radarrSafetySnapshot(),
-			} as never,
+			approvalRecord() as never,
 		]);
 
 		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
@@ -4648,15 +4700,7 @@ describe("shared Plex deletion safety", () => {
 			throw new Error("response lost");
 		});
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
-			{
-				id: "approval-1",
-				instanceId: "radarr-4k",
-				arrItemId: 101,
-				itemType: "movie",
-				action: "delete_files",
-				title: "Example Movie",
-				safetySnapshot: radarrSafetySnapshot(),
-			} as never,
+			approvalRecord({ action: "delete_files" }) as never,
 		]);
 
 		await expect(executeApprovedItems(deps, "user-1", ["approval-1"])).resolves.toEqual({
@@ -4673,15 +4717,7 @@ describe("shared Plex deletion safety", () => {
 			throw new Error("response lost");
 		});
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
-			{
-				id: "approval-1",
-				instanceId: "radarr-4k",
-				arrItemId: 101,
-				itemType: "movie",
-				action: "delete",
-				title: "Example Movie",
-				safetySnapshot: radarrSafetySnapshot(),
-			} as never,
+			approvalRecord() as never,
 		]);
 
 		await expect(executeApprovedItems(deps, "user-1", ["approval-1"])).resolves.toEqual({
@@ -5096,8 +5132,14 @@ describe("shared Plex deletion safety", () => {
 			id: 101,
 			tmdbId: 42,
 			title: "Example Movie",
+			year: 2024,
 			tags: [],
+			monitored: true,
 			hasFile: true,
+			sizeOnDisk: 2_000,
+			added: "2020-01-01T00:00:00.000Z",
+			status: "released",
+			qualityProfileId: 1,
 			movieFileId: 1001,
 			path: "/movies-4k/Example Movie (2024)",
 			rootFolderPath: "/movies-4k",
@@ -5637,9 +5679,11 @@ describe("shared Plex deletion safety", () => {
 	});
 
 	it("defers a dispatched failed retry for one run so fresh work can make progress safely", async () => {
-		const { deps, targetClient, deleteMovie, deleteMovieFile } = makeDeps({
+		const fixture = makeDeps({
 			mediaPartCount: 1,
 		});
+		configureFreshRadarrUnmonitorPolicy(fixture);
+		const { deps, targetClient, deleteMovie, deleteMovieFile } = fixture;
 		const retries = configureRetryStore(deps);
 		retries.push({
 			...approvalRecord(),
@@ -5661,7 +5705,20 @@ describe("shared Plex deletion safety", () => {
 				title: "Fresh Movie",
 				year: 2024,
 				monitored: true,
-				...radarrCachedFileIdentity,
+				hasFile: true,
+				cachedAt: new Date("2026-07-27T12:05:00.000Z"),
+				data: JSON.stringify({
+					_arrDashboardSource: {
+						serviceFingerprint: radarrTargetIdentity.serviceFingerprint,
+					},
+					remoteIds: { tmdbId: 43 },
+					path: "/movies-4k/Fresh Movie (2024)",
+					movieFile: {
+						id: 1002,
+						path: "/movies-4k/Fresh Movie (2024)/Fresh.Movie.2160p.mkv",
+						size: 2_000,
+					},
+				}),
 				sizeOnDisk: 2_000n,
 			},
 			match: {
@@ -6026,16 +6083,7 @@ describe("shared Plex deletion safety", () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
 		deleteMovie.mockRejectedValue(new Error("Radarr movie delete unavailable"));
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
-			{
-				id: "approval-1",
-				instanceId: "radarr-4k",
-				arrItemId: 101,
-				itemType: "movie",
-				title: "Example Movie",
-				reason: "Matched 4K cleanup rule",
-				action: "delete",
-				safetySnapshot: radarrPostPartialSafetySnapshot(),
-			} as never,
+			approvalRecord({ safetySnapshot: radarrPostPartialSafetySnapshot() }) as never,
 		]);
 
 		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
@@ -6228,7 +6276,7 @@ describe("shared Plex deletion safety", () => {
 		).toBeLessThan(deleteMovie.mock.invocationCallOrder[0]!);
 	});
 
-	it("explicitly resumes a durable retry while safer cleanup modes are enabled", async () => {
+	it("retains a durable retry while dry-run mode prevents current mutation authority", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
 		const storedRetry = approvalRecord({
 			status: "retry_pending",
@@ -6243,10 +6291,15 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeRetryItems(deps, "user-1", ["approval-1"]);
 
-		expect(result).toEqual({ removed: 1, reconciled: 0, failed: 0, errors: [] });
-		expect(deleteMovieFile).toHaveBeenCalledOnce();
-		expect(deleteMovie).toHaveBeenCalledOnce();
-		expect(storedRetry).toMatchObject({ status: "executed", executionToken: null });
+		expect(result).toEqual({
+			removed: 0,
+			reconciled: 0,
+			failed: 1,
+			errors: ["Cleanup item could not be executed. Review the API logs for details."],
+		});
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(storedRetry).toMatchObject({ status: "retry_pending", executionToken: null });
 	});
 
 	it("rechecks deployed exemptions before executing an approved mutation", async () => {
@@ -6836,16 +6889,7 @@ describe("shared Plex deletion safety", () => {
 	it("does not requeue a successful approved delete when its cache cleanup fails", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
-			{
-				id: "approval-1",
-				instanceId: "radarr-4k",
-				arrItemId: 101,
-				itemType: "movie",
-				title: "Example Movie",
-				reason: "Matched 4K cleanup rule",
-				action: "delete",
-				safetySnapshot: radarrSafetySnapshot(),
-			} as never,
+			approvalRecord() as never,
 		]);
 		vi.mocked(deps.prisma.libraryCache.deleteMany).mockRejectedValue(
 			new Error("cache unavailable"),
@@ -6869,16 +6913,7 @@ describe("shared Plex deletion safety", () => {
 	it("retries only the executed-status write after an approved delete succeeds", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
 		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockResolvedValue([
-			{
-				id: "approval-1",
-				instanceId: "radarr-4k",
-				arrItemId: 101,
-				itemType: "movie",
-				title: "Example Movie",
-				reason: "Matched 4K cleanup rule",
-				action: "delete",
-				safetySnapshot: radarrSafetySnapshot(),
-			} as never,
+			approvalRecord() as never,
 		]);
 		let terminalWriteAttempts = 0;
 		vi.mocked(deps.prisma.libraryCleanupApproval.updateMany).mockImplementation((async ({
@@ -6910,18 +6945,10 @@ describe("shared Plex deletion safety", () => {
 
 	it("exclusively claims an approval across concurrent execution requests", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
-		const approval = {
-			id: "approval-1",
-			instanceId: "radarr-4k",
-			arrItemId: 101,
-			itemType: "movie",
-			title: "Example Movie",
-			reason: "Matched 4K cleanup rule",
-			action: "delete",
-			safetySnapshot: radarrSafetySnapshot(),
+		const approval = approvalRecord({
 			status: "approved",
 			executionToken: null,
-		} as unknown as Record<string, unknown>;
+		}) as Record<string, unknown>;
 		configureApprovalStore(deps, approval);
 		let releaseFileDelete!: () => void;
 		const originalFileDelete = deleteMovieFile.getMockImplementation()!;
@@ -7002,16 +7029,7 @@ describe("shared Plex deletion safety", () => {
 
 	it("cannot replay an approval when both executed-status writes fail", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
-		const approval = {
-			id: "approval-1",
-			instanceId: "radarr-4k",
-			arrItemId: 101,
-			itemType: "movie",
-			title: "Example Movie",
-			reason: "Matched 4K cleanup rule",
-			action: "delete",
-			safetySnapshot: radarrSafetySnapshot(),
-		} as never;
+		const approval = approvalRecord() as never;
 		let state = "approved";
 		let executionToken: string | null = null;
 		vi.mocked(deps.prisma.libraryCleanupApproval.updateMany).mockImplementation((async ({
@@ -7051,16 +7069,7 @@ describe("shared Plex deletion safety", () => {
 
 	it("executes earlier claims when a later approval claim fails", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
-		const approval = {
-			id: "approval-1",
-			instanceId: "radarr-4k",
-			arrItemId: 101,
-			itemType: "movie",
-			title: "Example Movie",
-			reason: "Matched 4K cleanup rule",
-			action: "delete",
-			safetySnapshot: radarrSafetySnapshot(),
-		} as never;
+		const approval = approvalRecord() as never;
 		vi.mocked(deps.prisma.libraryCleanupApproval.updateMany).mockImplementation(((args: {
 			where: { id: string };
 		}) =>

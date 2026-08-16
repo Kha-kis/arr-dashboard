@@ -41,6 +41,7 @@ import type {
 } from "../prisma.js";
 import {
 	evaluateItemAgainstRulesViaEngine,
+	evaluateItemMutationPolicyStateViaEngine,
 	evaluateRuleViaEngine,
 } from "../rules/cleanup-adapter.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
@@ -51,6 +52,7 @@ import {
 	withCleanupOperationGuard,
 	withExclusiveCleanupOperationGuard,
 } from "./cleanup-maintenance-gate.js";
+import { deriveArrPolicyEvidence } from "./arr-policy-evidence.js";
 import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
@@ -137,6 +139,610 @@ const APPROVAL_EXPIRY_DAYS = 7;
 // Batch size for LibraryCache queries
 const CACHE_QUERY_BATCH_SIZE = 500;
 const PROVIDER_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
+
+export type SeriesMutationTransition = "unchanged" | "all_files_deleted";
+
+type MutationAuthorityEvidence =
+	| { liveEpisodeWatchSources: VerifiedEpisodePlexWatchSource[] }
+	| { seriesTransition: SeriesMutationTransition };
+
+type MutationAuthorityCheck = (
+	evidence?: MutationAuthorityEvidence,
+) => Promise<Record<string, unknown> | undefined>;
+
+export interface MutationPolicySnapshot {
+	capturedAt: Date;
+	configFingerprint: string;
+	rules: LibraryCleanupRule[];
+	ruleFingerprint: string;
+	ctx: EvalContext;
+	failedSources: Set<DataSourceDependency>;
+	providerTopologyFingerprint: string;
+}
+
+interface AuthorizedSeriesMutationPolicy {
+	snapshot: MutationPolicySnapshot;
+	rawItem: Record<string, unknown>;
+	policyItem: CacheItemForEval;
+}
+
+/** A snapshot is captured for one target/write and is never reused by a later run. */
+export const MUTATION_POLICY_SNAPSHOT_MAX_AGE_MS = 2 * 60 * 1000;
+
+function compareCanonicalPolicyValues(left: unknown, right: unknown): number {
+	return JSON.stringify(left).localeCompare(JSON.stringify(right));
+}
+
+function canonicalPolicyValue(value: unknown): unknown {
+	if (value instanceof Date) return value.toISOString();
+	if (typeof value === "bigint") return `${value}n`;
+	if (value instanceof Set) {
+		return [...value].map(canonicalPolicyValue).sort(compareCanonicalPolicyValues);
+	}
+	if (value instanceof Map) {
+		return [...value.entries()]
+			.map(([key, entry]) => [canonicalPolicyValue(key), canonicalPolicyValue(entry)])
+			.sort((left, right) => compareCanonicalPolicyValues(left[0], right[0]));
+	}
+	if (Array.isArray(value)) return value.map(canonicalPolicyValue);
+	if (typeof value !== "object" || value === null) return value;
+	return Object.fromEntries(
+		Object.entries(value as Record<string, unknown>)
+			.sort(([left], [right]) => left.localeCompare(right))
+			.map(([key, entry]) => [key, canonicalPolicyValue(entry)]),
+	);
+}
+
+function mutationPolicyFingerprint(value: unknown): string {
+	return createHash("sha256")
+		.update(JSON.stringify(canonicalPolicyValue(value)))
+		.digest("hex");
+}
+
+function completeMutationConfigFingerprint(config: {
+	id?: unknown;
+	enabled?: unknown;
+	dryRunMode?: unknown;
+	requireApproval?: unknown;
+	maxRemovalsPerRun?: unknown;
+	respectQuiSeeding?: unknown;
+}): string | undefined {
+	if (
+		typeof config.id !== "string" ||
+		typeof config.enabled !== "boolean" ||
+		typeof config.dryRunMode !== "boolean" ||
+		typeof config.requireApproval !== "boolean" ||
+		typeof config.respectQuiSeeding !== "boolean" ||
+		typeof config.maxRemovalsPerRun !== "number" ||
+		!Number.isSafeInteger(config.maxRemovalsPerRun) ||
+		config.maxRemovalsPerRun < 1 ||
+		config.maxRemovalsPerRun > 100
+	) {
+		return undefined;
+	}
+	return mutationPolicyFingerprint({
+		id: config.id,
+		enabled: config.enabled,
+		dryRunMode: config.dryRunMode,
+		requireApproval: config.requireApproval,
+		maxRemovalsPerRun: config.maxRemovalsPerRun,
+		respectQuiSeeding: config.respectQuiSeeding,
+	});
+}
+
+function orderedMutationRules(rules: LibraryCleanupRule[]): LibraryCleanupRule[] {
+	return [...rules].sort(
+		(left, right) => left.priority - right.priority || left.id.localeCompare(right.id),
+	);
+}
+
+const MUTATION_POLICY_PROVIDER_SERVICES: ServiceInstance["service"][] = [
+	"PLEX",
+	"JELLYFIN",
+	"EMBY",
+	"SEERR",
+];
+
+async function loadMutationPolicyProviderInstances(
+	deps: CleanupExecutorDeps,
+	userId: string,
+): Promise<ServiceInstance[]> {
+	return await deps.prisma.serviceInstance.findMany({
+		where: {
+			userId,
+			enabled: true,
+			service: { in: MUTATION_POLICY_PROVIDER_SERVICES },
+		},
+		orderBy: { id: "asc" },
+	});
+}
+
+function providerTopologyFingerprint(instances: ServiceInstance[]): string {
+	return mutationPolicyFingerprint(
+		[...instances]
+			.sort((left, right) => left.id.localeCompare(right.id))
+			.map((instance) => ({
+				id: instance.id,
+				service: instance.service,
+				baseUrl: instance.baseUrl,
+				enabled: instance.enabled,
+				encryptedApiKey: instance.encryptedApiKey,
+				encryptionIv: instance.encryptionIv,
+				encryptedHttpAuthCredentials: instance.encryptedHttpAuthCredentials,
+				httpAuthEncryptionIv: instance.httpAuthEncryptionIv,
+				expectedIdentity: instance.expectedIdentity,
+				identityStatus: instance.identityStatus,
+				connectionGeneration: instance.connectionGeneration,
+				identityGeneration: instance.identityGeneration,
+			})),
+	);
+}
+
+function mutationPolicyUsesProviderTopology(rules: LibraryCleanupRule[]): boolean {
+	const activeTypes = collectActiveRuleTypes(rules);
+	return (
+		rules.some((rule) => getRuleDataSources(rule).size > 0) ||
+		activeTypes.has("user_retention") ||
+		activeTypes.has("staleness_score") ||
+		activeTypes.has("recently_active") ||
+		activeTypes.has("seerr_requester_watched") ||
+		activeTypes.has("seerr_requester_not_watched")
+	);
+}
+
+async function createMutationPolicySnapshot(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	expectedConfigFingerprint?: string,
+	cleanupRunClaimToken?: string,
+): Promise<MutationPolicySnapshot> {
+	const capturedAt = new Date();
+	const config = await deps.prisma.libraryCleanupConfig.findUnique({
+		where: { userId },
+		include: { rules: true },
+	});
+	if (!config?.enabled || config.dryRunMode) {
+		throw new Error("The cleanup configuration is no longer enabled for mutation");
+	}
+	const configFingerprint = completeMutationConfigFingerprint(config);
+	if (!configFingerprint) throw new Error("Cleanup mutation settings were incomplete");
+	if (expectedConfigFingerprint && configFingerprint !== expectedConfigFingerprint) {
+		throw new Error("Cleanup mutation settings changed after run authorization");
+	}
+
+	const rules = orderedMutationRules(config.rules.filter((rule) => rule.targetScope !== "episode"));
+	const ruleFingerprint = mutationPolicyFingerprint(rules);
+	const needsProviderTopology = mutationPolicyUsesProviderTopology(rules);
+	const topologyBefore = needsProviderTopology
+		? await loadMutationPolicyProviderInstances(deps, userId)
+		: [];
+	const ctx = await buildEvalContext(deps, userId, rules, {
+		destructiveAuthority: true,
+		requireAvailableEvidence: true,
+		cleanupRunClaimToken,
+	});
+	const topologyAfter = needsProviderTopology
+		? await loadMutationPolicyProviderInstances(deps, userId)
+		: [];
+	const beforeTopologyFingerprint = providerTopologyFingerprint(topologyBefore);
+	const afterTopologyFingerprint = providerTopologyFingerprint(topologyAfter);
+	if (beforeTopologyFingerprint !== afterTopologyFingerprint) {
+		throw new Error("Provider topology changed while cleanup authority was being captured");
+	}
+
+	const currentConfig = await deps.prisma.libraryCleanupConfig.findUnique({
+		where: { userId },
+		include: { rules: true },
+	});
+	const currentRules = currentConfig
+		? orderedMutationRules(currentConfig.rules.filter((rule) => rule.targetScope !== "episode"))
+		: [];
+	if (
+		!currentConfig?.enabled ||
+		currentConfig.dryRunMode ||
+		completeMutationConfigFingerprint(currentConfig) !== configFingerprint ||
+		mutationPolicyFingerprint(currentRules) !== ruleFingerprint
+	) {
+		throw new Error("Cleanup rules or mutation settings changed while authority was captured");
+	}
+	if (Date.now() - capturedAt.getTime() > MUTATION_POLICY_SNAPSHOT_MAX_AGE_MS) {
+		throw new Error("Cleanup mutation authority capture exceeded its freshness window");
+	}
+	return {
+		capturedAt,
+		configFingerprint,
+		rules,
+		ruleFingerprint,
+		ctx,
+		failedSources: new Set<DataSourceDependency>(),
+		providerTopologyFingerprint: afterTopologyFingerprint,
+	};
+}
+
+/** Capture fresh policy evidence for one mutation boundary. */
+export function createMutationPolicySnapshotGetter(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	expectedConfigFingerprint?: string,
+	cleanupRunClaimToken?: string,
+): () => Promise<MutationPolicySnapshot> {
+	return async () =>
+		await createMutationPolicySnapshot(
+			deps,
+			userId,
+			expectedConfigFingerprint,
+			cleanupRunClaimToken,
+		);
+}
+
+function assertMutationPolicySnapshotFresh(snapshot: MutationPolicySnapshot): void {
+	const age = Date.now() - snapshot.capturedAt.getTime();
+	if (age < 0 || age > MUTATION_POLICY_SNAPSHOT_MAX_AGE_MS) {
+		throw new Error("Cleanup mutation authority snapshot is stale");
+	}
+}
+
+function toLiveSeriesPolicyItem(
+	instance: ServiceInstance,
+	arrItemId: number,
+	rawItem: Record<string, unknown>,
+): CacheItemForEval {
+	if (instance.service !== "RADARR" && instance.service !== "SONARR") {
+		throw new Error(`Unsupported cleanup service: ${instance.service}`);
+	}
+	const service = instance.service === "RADARR" ? "radarr" : "sonarr";
+	const liveItem = buildLibraryItem(instance, service, rawItem);
+	const liveItemId =
+		typeof liveItem.id === "number" ? liveItem.id : Number.parseInt(String(liveItem.id), 10);
+	const expectedType = instance.service === "RADARR" ? "movie" : "series";
+	if (
+		liveItemId !== arrItemId ||
+		liveItem.type !== expectedType ||
+		typeof rawItem.title !== "string" ||
+		rawItem.title.trim() === "" ||
+		typeof liveItem.title !== "string" ||
+		liveItem.title.trim() === ""
+	) {
+		throw new Error(
+			`Live ARR item identity did not match the cleanup target (expected ${expectedType} ${arrItemId}, received ${liveItem.type} ${liveItemId})`,
+		);
+	}
+	const addedAt = liveItem.added ? new Date(liveItem.added) : null;
+	const rawStatistics =
+		typeof rawItem.statistics === "object" && rawItem.statistics !== null
+			? (rawItem.statistics as Record<string, unknown>)
+			: {};
+	return {
+		id: `live:${instance.id}:${expectedType}:${arrItemId}`,
+		instanceId: instance.id,
+		arrItemId,
+		itemType: expectedType,
+		title: liveItem.title,
+		year: liveItem.year ?? null,
+		monitored: liveItem.monitored ?? true,
+		hasFile: liveItem.hasFile ?? false,
+		status: liveItem.status ?? null,
+		qualityProfileId: liveItem.qualityProfileId ?? null,
+		qualityProfileName:
+			liveItem.qualityProfileName ??
+			(typeof rawItem.profileName === "string" ? rawItem.profileName : null),
+		sizeOnDisk: BigInt(Math.max(0, Math.trunc(liveItem.sizeOnDisk ?? 0))),
+		arrAddedAt: addedAt && !Number.isNaN(addedAt.getTime()) ? addedAt : null,
+		cachedAt: new Date(),
+		data: JSON.stringify({
+			...rawItem,
+			...liveItem,
+			statistics: { ...rawStatistics, ...liveItem.statistics },
+			_arrDashboardSource: { serviceFingerprint: createArrServiceFingerprint(instance) },
+			_arrDashboardEvidence: deriveArrPolicyEvidence(service, rawItem),
+		}),
+		infoHash: null,
+		torrentState: null,
+	};
+}
+
+async function loadLiveSeriesPolicyItem(
+	deps: CleanupExecutorDeps,
+	instance: ServiceInstance,
+	arrItemId: number,
+	rules: LibraryCleanupRule[],
+): Promise<{ rawItem: Record<string, unknown>; item: CacheItemForEval }> {
+	const client = deps.arrClientFactory.create(instance);
+	let rawItem =
+		instance.service === "RADARR"
+			? ((await (client as InstanceType<typeof RadarrClient>).movie.getById(
+					arrItemId,
+				)) as unknown as Record<string, unknown>)
+			: instance.service === "SONARR"
+				? ((await (client as InstanceType<typeof SonarrClient>).series.getById(
+						arrItemId,
+					)) as unknown as Record<string, unknown>)
+				: (() => {
+						throw new Error(`Unsupported cleanup service: ${instance.service}`);
+					})();
+	let item = toLiveSeriesPolicyItem(instance, arrItemId, rawItem);
+	if (
+		collectActiveRuleTypes(rules).has("quality_profile") &&
+		(!item.qualityProfileName || item.qualityProfileName.trim().length === 0)
+	) {
+		const qualityProfileId = item.qualityProfileId;
+		if (
+			typeof qualityProfileId !== "number" ||
+			!Number.isSafeInteger(qualityProfileId) ||
+			qualityProfileId <= 0
+		) {
+			throw new Error("Live ARR quality-profile identity was incomplete");
+		}
+		const profile =
+			instance.service === "RADARR"
+				? await (client as InstanceType<typeof RadarrClient>).qualityProfile.getById(
+						qualityProfileId,
+					)
+				: await (client as InstanceType<typeof SonarrClient>).qualityProfile.getById(
+						qualityProfileId,
+					);
+		if (typeof profile.name !== "string" || profile.name.trim().length === 0) {
+			throw new Error("Live ARR quality-profile name was incomplete");
+		}
+		rawItem = { ...rawItem, profileName: profile.name };
+		item = toLiveSeriesPolicyItem(instance, arrItemId, rawItem);
+	}
+	return { rawItem, item };
+}
+
+const RADARR_FILE_TRANSITION_FIELDS = new Set([
+	"hasFile",
+	"movieFile",
+	"movieFileId",
+	"sizeOnDisk",
+]);
+const RADARR_STATISTICS_FILE_TRANSITION_FIELDS = new Set([
+	"movieFileCount",
+	"releaseGroups",
+	"sizeOnDisk",
+]);
+const SONARR_FILE_TRANSITION_FIELDS = new Set([
+	"episodeFile",
+	"episodeFileCount",
+	"hasFile",
+	"sizeOnDisk",
+]);
+const SONARR_STATISTICS_FILE_TRANSITION_FIELDS = new Set([
+	"episodeCount",
+	"episodeFileCount",
+	"percentOfEpisodes",
+	"releaseGroups",
+	"sizeOnDisk",
+]);
+
+function policyStateOutsideExpectedFileDeletion(
+	value: unknown,
+	service: "RADARR" | "SONARR",
+	context: "root" | "statistics" | "nested" = "root",
+): unknown {
+	if (Array.isArray(value)) {
+		return value.map((entry) => policyStateOutsideExpectedFileDeletion(entry, service, "nested"));
+	}
+	if (typeof value !== "object" || value === null) return value;
+	const result: Record<string, unknown> = {};
+	for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+		if (
+			context === "root" &&
+			(service === "RADARR"
+				? RADARR_FILE_TRANSITION_FIELDS.has(key)
+				: SONARR_FILE_TRANSITION_FIELDS.has(key))
+		) {
+			continue;
+		}
+		if (
+			context === "statistics" &&
+			(service === "RADARR"
+				? RADARR_STATISTICS_FILE_TRANSITION_FIELDS.has(key)
+				: SONARR_STATISTICS_FILE_TRANSITION_FIELDS.has(key))
+		) {
+			continue;
+		}
+		result[key] = policyStateOutsideExpectedFileDeletion(
+			entry,
+			service,
+			key === "statistics" ? "statistics" : "nested",
+		);
+	}
+	return result;
+}
+
+function assertExpectedSeriesArrTransition(
+	instance: ServiceInstance,
+	before: Record<string, unknown>,
+	after: Record<string, unknown>,
+	afterItem: CacheItemForEval,
+	transition: SeriesMutationTransition,
+): void {
+	if (instance.service !== "RADARR" && instance.service !== "SONARR") {
+		throw new Error("Unsupported ARR service for cleanup policy mutation");
+	}
+	if (transition === "unchanged") {
+		if (mutationPolicyFingerprint(before) !== mutationPolicyFingerprint(after)) {
+			throw new Error("Live ARR policy state changed before the authorized mutation");
+		}
+		return;
+	}
+	if (
+		mutationPolicyFingerprint(policyStateOutsideExpectedFileDeletion(before, instance.service)) !==
+		mutationPolicyFingerprint(policyStateOutsideExpectedFileDeletion(after, instance.service))
+	) {
+		throw new Error("Live ARR policy state changed outside the expected file transition");
+	}
+	if (afterItem.hasFile || afterItem.sizeOnDisk !== 0n) {
+		throw new Error("ARR did not expose the expected complete file-deletion transition");
+	}
+	const evidence = deriveArrPolicyEvidence(
+		instance.service === "RADARR" ? "radarr" : "sonarr",
+		after,
+	);
+	if (!evidence.hasFile || !evidence.sizeOnDisk) {
+		throw new Error("ARR did not provide complete post-file-deletion policy evidence");
+	}
+	if (instance.service === "RADARR") {
+		if (
+			after.hasFile !== false ||
+			after.sizeOnDisk !== 0 ||
+			(typeof after.movieFileId === "number" && after.movieFileId > 0) ||
+			(typeof after.movieFile === "object" && after.movieFile !== null)
+		) {
+			throw new Error("Radarr's post-file-deletion state was missing or ambiguous");
+		}
+		return;
+	}
+	const statistics =
+		typeof after.statistics === "object" && after.statistics !== null
+			? (after.statistics as Record<string, unknown>)
+			: null;
+	if (statistics?.episodeFileCount !== 0 || statistics.sizeOnDisk !== 0) {
+		throw new Error("Sonarr's post-file-deletion statistics were missing or ambiguous");
+	}
+}
+
+export async function assertCurrentSeriesMutationAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	instance: ServiceInstance,
+	arrItemId: number,
+	expectedRule: { matchedRuleId: string; action: RuleAction },
+	snapshot: MutationPolicySnapshot,
+): Promise<AuthorizedSeriesMutationPolicy> {
+	try {
+		assertMutationPolicySnapshotFresh(snapshot);
+		if (instance.userId !== userId) {
+			throw new Error("The live ARR instance does not belong to the cleanup owner");
+		}
+		const { rawItem, item } = await loadLiveSeriesPolicyItem(
+			deps,
+			instance,
+			arrItemId,
+			snapshot.rules,
+		);
+		await assertSeriesMutationInstanceStillCurrent(deps, userId, instance);
+		const policy = evaluateItemMutationPolicyStateViaEngine(
+			item,
+			snapshot.rules,
+			instance.service,
+			snapshot.ctx,
+			snapshot.failedSources,
+		);
+		if (
+			policy.kind !== "cleanup" ||
+			policy.match.ruleId !== expectedRule.matchedRuleId ||
+			policy.match.action !== expectedRule.action
+		) {
+			throw new Error("The exact matched cleanup policy is no longer authoritative");
+		}
+		return { snapshot, rawItem, policyItem: item };
+	} catch (error) {
+		deps.log.warn(
+			{ err: error, instanceId: instance.id, arrItemId, ruleId: expectedRule.matchedRuleId },
+			"Cleanup could not revalidate current series/movie policy authority",
+		);
+		throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+			"Skipped for safety: live ARR state, current cleanup precedence, retention policy, or required provider evidence could not re-authorize this item.",
+		);
+	}
+}
+
+export async function assertCurrentSeriesPostStepMutationAuthority(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	instance: ServiceInstance,
+	arrItemId: number,
+	expectedRule: { matchedRuleId: string; action: RuleAction },
+	authorizedPolicy: AuthorizedSeriesMutationPolicy,
+	transition: SeriesMutationTransition,
+	getSnapshot: () => Promise<MutationPolicySnapshot> = createMutationPolicySnapshotGetter(
+		deps,
+		userId,
+		authorizedPolicy.snapshot.configFingerprint,
+	),
+): Promise<Record<string, unknown>> {
+	try {
+		const currentSnapshot = await getSnapshot();
+		assertMutationPolicySnapshotFresh(currentSnapshot);
+		if (
+			currentSnapshot.configFingerprint !== authorizedPolicy.snapshot.configFingerprint ||
+			currentSnapshot.ruleFingerprint !== authorizedPolicy.snapshot.ruleFingerprint ||
+			currentSnapshot.providerTopologyFingerprint !==
+				authorizedPolicy.snapshot.providerTopologyFingerprint
+		) {
+			throw new Error(
+				"Cleanup rules, settings, or provider topology changed after the first write",
+			);
+		}
+		const { rawItem, item } = await loadLiveSeriesPolicyItem(
+			deps,
+			instance,
+			arrItemId,
+			currentSnapshot.rules,
+		);
+		await assertSeriesMutationInstanceStillCurrent(deps, userId, instance);
+		assertExpectedSeriesArrTransition(
+			instance,
+			authorizedPolicy.rawItem,
+			rawItem,
+			item,
+			transition,
+		);
+
+		const cleanupPolicy = evaluateItemMutationPolicyStateViaEngine(
+			authorizedPolicy.policyItem,
+			currentSnapshot.rules,
+			instance.service,
+			currentSnapshot.ctx,
+			currentSnapshot.failedSources,
+		);
+		if (
+			cleanupPolicy.kind !== "cleanup" ||
+			cleanupPolicy.match.ruleId !== expectedRule.matchedRuleId ||
+			cleanupPolicy.match.action !== expectedRule.action
+		) {
+			throw new Error("The exact matched cleanup policy is no longer authoritative");
+		}
+		const retentionPolicy = evaluateItemMutationPolicyStateViaEngine(
+			item,
+			currentSnapshot.rules.filter((rule) => rule.retentionMode),
+			instance.service,
+			currentSnapshot.ctx,
+			currentSnapshot.failedSources,
+		);
+		if (retentionPolicy.kind === "retained") {
+			throw new Error("Current retention policy protects the post-step ARR state");
+		}
+		return rawItem;
+	} catch (error) {
+		deps.log.warn(
+			{ err: error, instanceId: instance.id, arrItemId, ruleId: expectedRule.matchedRuleId },
+			"Cleanup could not revalidate post-step series/movie authority",
+		);
+		throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+			"Skipped for safety: the verified post-step ARR state, current retention policy, provider authority, topology, or cleanup configuration could not authorize the next write.",
+		);
+	}
+}
+
+async function assertSeriesMutationInstanceStillCurrent(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	expected: ServiceInstance,
+): Promise<void> {
+	const current = await deps.prisma.serviceInstance.findFirst({
+		where: { id: expected.id, userId, enabled: true },
+	});
+	if (
+		!current ||
+		(current.service !== "RADARR" && current.service !== "SONARR") ||
+		createArrServiceFingerprint(current) !== createArrServiceFingerprint(expected)
+	) {
+		throw new Error("The ARR instance identity changed before the authorized mutation");
+	}
+}
 
 type ProviderEvidenceAuthority = {
 	id: string;
@@ -1370,14 +1976,14 @@ function createRadarrDestructiveMutationAuthority(
 	userId: string,
 	target: CleanupDeleteTarget,
 	safetyPlan: SharedMediaSafetyPlan,
-	assertExecutionAllowed?: () => Promise<void>,
+	assertExecutionAllowed?: MutationAuthorityCheck,
 	postFileOwnershipPlan?: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_radarr" }>,
-): () => Promise<void> {
+): MutationAuthorityCheck {
 	let fileDeleteAuthorityConsumed = false;
 	const ownershipPlan = safetyPlan.kind === "verified_radarr" ? safetyPlan : postFileOwnershipPlan;
 
-	return async () => {
-		await assertExecutionAllowed?.();
+	return async (evidence) => {
+		const authorizedResource = await assertExecutionAllowed?.(evidence);
 		if (safetyPlan.kind === "verified_radarr_empty") {
 			if (postFileOwnershipPlan && postFileOwnershipPlan.ownership.length > 0) {
 				await assertVerifiedRadarrPeerOwnershipRetained(
@@ -1386,7 +1992,7 @@ function createRadarrDestructiveMutationAuthority(
 					target.arrItemId,
 					postFileOwnershipPlan,
 				);
-				return;
+				return authorizedResource;
 			}
 			const context = createSharedPlexSafetyContext();
 			const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
@@ -1400,10 +2006,10 @@ function createRadarrDestructiveMutationAuthority(
 					"Skipped for safety: verified Radarr ownership changed at the mutation boundary. Run cleanup again before deleting the record.",
 				);
 			}
-			return;
+			return authorizedResource;
 		}
-		if (!ownershipPlan) return;
-		if (ownershipPlan.ownership.length === 0) return;
+		if (!ownershipPlan) return authorizedResource;
+		if (ownershipPlan.ownership.length === 0) return authorizedResource;
 		if (!fileDeleteAuthorityConsumed && safetyPlan.kind === "verified_radarr") {
 			const context = createSharedPlexSafetyContext();
 			const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
@@ -1418,9 +2024,10 @@ function createRadarrDestructiveMutationAuthority(
 				);
 			}
 			fileDeleteAuthorityConsumed = true;
-			return;
+			return authorizedResource;
 		}
 		await assertVerifiedRadarrPeerOwnershipRetained(deps, userId, target.arrItemId, ownershipPlan);
+		return authorizedResource;
 	};
 }
 
@@ -1429,11 +2036,11 @@ function createSonarrDestructiveMutationAuthority(
 	userId: string,
 	target: CleanupDeleteTarget,
 	safetyPlan: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr" }>,
-	assertExecutionAllowed?: () => Promise<void>,
-): () => Promise<void> {
+	assertExecutionAllowed?: MutationAuthorityCheck,
+): MutationAuthorityCheck {
 	let fileDeleteAuthorityConsumed = false;
-	return async () => {
-		await assertExecutionAllowed?.();
+	return async (evidence) => {
+		const authorizedResource = await assertExecutionAllowed?.(evidence);
 		if (fileDeleteAuthorityConsumed || safetyPlan.files.episodeFiles.length === 0) {
 			if (safetyPlan.ownership.length === 0) {
 				const context = createSharedPlexSafetyContext();
@@ -1452,10 +2059,10 @@ function createSonarrDestructiveMutationAuthority(
 						"Skipped for safety: verified Sonarr ownership changed at the mutation boundary. Run cleanup again before deleting the file.",
 					);
 				}
-				return;
+				return authorizedResource;
 			}
 			await assertVerifiedSonarrPeerOwnershipRetained(deps, userId, target.arrItemId, safetyPlan);
-			return;
+			return authorizedResource;
 		}
 		const context = createSharedPlexSafetyContext();
 		const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
@@ -1470,6 +2077,7 @@ function createSonarrDestructiveMutationAuthority(
 			);
 		}
 		fileDeleteAuthorityConsumed = true;
+		return authorizedResource;
 	};
 }
 
@@ -1480,9 +2088,9 @@ function createSonarrEpisodeMutationAuthority(
 	target: CleanupDeleteTarget,
 	safetyPlan: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr_episode" }>,
 	expectedRule: { matchedRuleId: string; action: RuleAction },
-	assertExecutionAllowed?: () => Promise<void>,
+	assertExecutionAllowed?: MutationAuthorityCheck,
 	cleanupRunClaimToken?: string,
-): () => Promise<void> {
+): MutationAuthorityCheck {
 	let revalidationCount = 0;
 	return async () => {
 		await assertExecutionAllowed?.();
@@ -1548,6 +2156,7 @@ function createSonarrEpisodeMutationAuthority(
 			cleanupRunClaimToken,
 		);
 		await assertExecutionAllowed?.();
+		return undefined;
 	};
 }
 
@@ -2911,9 +3520,25 @@ async function executeQueuedCleanupItems(
 	const { prisma, arrClientFactory, log } = deps;
 	const currentConfig = await prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
-		select: { respectQuiSeeding: true },
+		select: {
+			id: true,
+			enabled: true,
+			dryRunMode: true,
+			requireApproval: true,
+			maxRemovalsPerRun: true,
+			respectQuiSeeding: true,
+		},
 	});
 	const currentRespectQuiSeeding = currentConfig?.respectQuiSeeding === true;
+	const expectedConfigFingerprint = currentConfig
+		? completeMutationConfigFingerprint(currentConfig)
+		: undefined;
+	const getMutationPolicySnapshot = createMutationPolicySnapshotGetter(
+		deps,
+		userId,
+		expectedConfigFingerprint,
+		options.cleanupRunClaimToken,
+	);
 
 	// Atomically transition approved → executing to prevent double-execution
 	// Also enforce expiry — don't execute items past their expiration
@@ -3403,9 +4028,46 @@ async function executeQueuedCleanupItems(
 						approval.itemType,
 					);
 				}
-				const assertMutationAuthority = async () => {
+				let authorizedSeriesPolicy: AuthorizedSeriesMutationPolicy | undefined;
+				const assertMutationAuthority: MutationAuthorityCheck = async (evidence) => {
 					await options.assertExecutionAllowed?.();
+					let authorizedResource: Record<string, unknown> | undefined;
+					if (safetyPlan!.kind !== "verified_sonarr_episode") {
+						if (!evidence || !("seriesTransition" in evidence)) {
+							throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+								"Skipped for safety: the expected ARR mutation transition was unavailable.",
+							);
+						}
+						if (!authorizedSeriesPolicy) {
+							if (evidence.seriesTransition !== "unchanged") {
+								throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+									"Skipped for safety: no original ARR policy state was captured before the file transition.",
+								);
+							}
+							authorizedSeriesPolicy = await assertCurrentSeriesMutationAuthority(
+								deps,
+								userId,
+								mutationInstance,
+								approval.arrItemId,
+								{ matchedRuleId: approval.matchedRuleId, action },
+								await getMutationPolicySnapshot(),
+							);
+							authorizedResource = authorizedSeriesPolicy.rawItem;
+						} else {
+							authorizedResource = await assertCurrentSeriesPostStepMutationAuthority(
+								deps,
+								userId,
+								mutationInstance,
+								approval.arrItemId,
+								{ matchedRuleId: approval.matchedRuleId, action },
+								authorizedSeriesPolicy,
+								evidence.seriesTransition,
+								getMutationPolicySnapshot,
+							);
+						}
+					}
 					mutationBudgetConsumedIds.add(approval.id);
+					return authorizedResource;
 				};
 				const mutationTarget: CleanupDeleteTarget = {
 					instanceId: approval.instanceId,
@@ -6346,6 +7008,12 @@ export async function executeDirectRemoval(
 	let retriedUnmonitored = 0;
 	let retriedFilesDeleted = 0;
 	const sharedPlexSafetyContext = createSharedPlexSafetyContext();
+	const getMutationPolicySnapshot = createMutationPolicySnapshotGetter(
+		deps,
+		userId,
+		completeMutationConfigFingerprint(config),
+		cleanupRunClaimToken,
+	);
 	const configuredRunLimitIsValid =
 		Number.isSafeInteger(config.maxRemovalsPerRun) &&
 		config.maxRemovalsPerRun > 0 &&
@@ -6687,6 +7355,45 @@ export async function executeDirectRemoval(
 				item.cacheItem.arrItemId,
 				item.cacheItem.itemType,
 			);
+			let authorizedSeriesPolicy: AuthorizedSeriesMutationPolicy | undefined;
+			const assertDirectExecutionAuthority: MutationAuthorityCheck = async (evidence) => {
+				await assertRunLease?.();
+				if (safetyPlan!.kind === "verified_sonarr_episode") return;
+				if (!evidence || !("seriesTransition" in evidence)) {
+					throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+						"Skipped for safety: the expected ARR mutation transition was unavailable.",
+					);
+				}
+				let authorizedResource: Record<string, unknown>;
+				if (!authorizedSeriesPolicy) {
+					if (evidence.seriesTransition !== "unchanged") {
+						throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+							"Skipped for safety: no original ARR policy state was captured before the file transition.",
+						);
+					}
+					authorizedSeriesPolicy = await assertCurrentSeriesMutationAuthority(
+						deps,
+						userId,
+						mutationInstance,
+						item.cacheItem.arrItemId,
+						{ matchedRuleId: item.match.ruleId, action: ruleAction },
+						await getMutationPolicySnapshot(),
+					);
+					authorizedResource = authorizedSeriesPolicy.rawItem;
+				} else {
+					authorizedResource = await assertCurrentSeriesPostStepMutationAuthority(
+						deps,
+						userId,
+						mutationInstance,
+						item.cacheItem.arrItemId,
+						{ matchedRuleId: item.match.ruleId, action: ruleAction },
+						authorizedSeriesPolicy,
+						evidence.seriesTransition,
+						getMutationPolicySnapshot,
+					);
+				}
+				return authorizedResource;
+			};
 			const assertDestructiveMutationAuthority =
 				safetyPlan?.kind === "verified_sonarr_episode"
 					? createSonarrEpisodeMutationAuthority(
@@ -6696,7 +7403,7 @@ export async function executeDirectRemoval(
 							{ ...flaggedDeleteTarget(item), action: ruleAction },
 							safetyPlan,
 							{ matchedRuleId: item.match.ruleId, action: ruleAction },
-							assertRunLease,
+							assertDirectExecutionAuthority,
 							cleanupRunClaimToken,
 						)
 					: mutationInstance.service === "RADARR"
@@ -6705,7 +7412,7 @@ export async function executeDirectRemoval(
 								userId,
 								{ ...flaggedDeleteTarget(item), action: ruleAction },
 								safetyPlan!,
-								assertRunLease,
+								assertDirectExecutionAuthority,
 							)
 						: mutationInstance.service === "SONARR" && safetyPlan?.kind === "verified_sonarr"
 							? createSonarrDestructiveMutationAuthority(
@@ -6713,9 +7420,9 @@ export async function executeDirectRemoval(
 									userId,
 									{ ...flaggedDeleteTarget(item), action: ruleAction },
 									safetyPlan,
-									assertRunLease,
+									assertDirectExecutionAuthority,
 								)
-							: assertRunLease;
+							: assertDirectExecutionAuthority;
 
 			if (ruleAction === "unmonitor") {
 				await unmonitorInArr(
@@ -7330,12 +8037,12 @@ async function deleteVerifiedRadarrFile(
 	arrItemId: number,
 	expectedTarget: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_radarr" }>["target"],
 	expected: VerifiedRadarrFileIdentity,
-	assertMutationAuthority?: () => Promise<void>,
+	assertMutationAuthority?: MutationAuthorityCheck,
 ): Promise<void> {
 	await assertVerifiedRadarrFileUnchanged(radarr, arrItemId, expectedTarget, expected);
+	await assertMutationAuthority?.({ seriesTransition: "unchanged" });
 	let deleteError: unknown;
 	try {
-		await assertMutationAuthority?.();
 		await radarr.movieFile.delete(expected.movieFileId);
 	} catch (error) {
 		deleteError = error;
@@ -7380,7 +8087,7 @@ async function deleteRadarrRecordWithoutFiles(
 		{ kind: "verified_radarr_empty" }
 	>["target"],
 	deletedFileIds: number[],
-	assertMutationAuthority?: () => Promise<void>,
+	assertMutationAuthority?: MutationAuthorityCheck,
 ): Promise<void> {
 	let lastDeleteError: unknown;
 	for (let attempt = 0; attempt < 2; attempt++) {
@@ -7409,24 +8116,28 @@ async function deleteRadarrRecordWithoutFiles(
 		}
 
 		try {
-			await assertMutationAuthority?.();
+			await assertMutationAuthority?.({
+				seriesTransition: deletedFileIds.length > 0 ? "all_files_deleted" : "unchanged",
+			});
+		} catch (error) {
+			if (deletedFileIds.length === 0) throw error;
+			throw new ArrDeletePartialError({
+				cause: error,
+				service: "RADARR",
+				deletedFileIds,
+				hasRemainingFiles: false,
+				message:
+					"Partial cleanup: the verified Radarr movie file was deleted, but execution authority was lost or changed before the movie record could be removed.",
+			});
+		}
+
+		try {
 			await radarr.movie.delete(arrItemId, {
 				deleteFiles: false,
 				addImportExclusion: false,
 			});
 			return;
 		} catch (error) {
-			if (error instanceof CleanupRunLeaseLostError) {
-				if (deletedFileIds.length === 0) throw error;
-				throw new ArrDeletePartialError({
-					cause: error,
-					service: "RADARR",
-					deletedFileIds,
-					hasRemainingFiles: false,
-					message:
-						"Partial cleanup: the verified Radarr movie file was deleted, but execution authority was lost before the movie record could be removed.",
-				});
-			}
 			lastDeleteError = error;
 			try {
 				await radarr.movie.getById(arrItemId);
@@ -7458,15 +8169,15 @@ async function deleteVerifiedSonarrFiles(
 	arrItemId: number,
 	expectedTarget: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr" }>["target"],
 	expected: VerifiedSonarrFileIdentity,
-	assertMutationAuthority?: () => Promise<void>,
+	assertMutationAuthority?: MutationAuthorityCheck,
 ): Promise<number[]> {
 	await assertVerifiedSonarrFilesUnchanged(sonarr, arrItemId, expectedTarget, expected);
 	const expectedIds = expected.episodeFiles.map((file) => file.episodeFileId);
 	if (expectedIds.length === 0) return [];
 
+	await assertMutationAuthority?.({ seriesTransition: "unchanged" });
 	let bulkError: unknown;
 	try {
-		await assertMutationAuthority?.();
 		await sonarr.episodeFile.bulkDelete(expectedIds);
 	} catch (error) {
 		bulkError = error;
@@ -7527,7 +8238,7 @@ async function deleteVerifiedSonarrEpisodeFile(
 	sonarr: InstanceType<typeof SonarrClient>,
 	arrItemId: number,
 	plan: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr_episode" }>,
-	assertMutationAuthority?: () => Promise<void>,
+	assertMutationAuthority?: MutationAuthorityCheck,
 	monitoredMode: "exact" | "require_unmonitored" = "exact",
 ): Promise<void> {
 	await assertVerifiedSonarrEpisodeUnchanged(sonarr, arrItemId, plan, {
@@ -7599,7 +8310,7 @@ async function deleteSonarrRecordWithoutFiles(
 	expectedTarget: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr" }>["target"],
 	expected: VerifiedSonarrFileIdentity,
 	deletedFileIds: number[],
-	assertMutationAuthority?: () => Promise<void>,
+	assertMutationAuthority?: MutationAuthorityCheck,
 ): Promise<void> {
 	let lastDeleteError: unknown;
 	const emptyExpected: VerifiedSonarrFileIdentity = {
@@ -7642,24 +8353,28 @@ async function deleteSonarrRecordWithoutFiles(
 		}
 
 		try {
-			await assertMutationAuthority?.();
+			await assertMutationAuthority?.({
+				seriesTransition: deletedFileIds.length > 0 ? "all_files_deleted" : "unchanged",
+			});
+		} catch (error) {
+			if (deletedFileIds.length === 0) throw error;
+			throw new ArrDeletePartialError({
+				cause: error,
+				service: "SONARR",
+				deletedFileIds,
+				hasRemainingFiles: false,
+				message:
+					"Partial cleanup: the verified Sonarr episode files were deleted, but execution authority was lost or changed before the series record could be removed.",
+			});
+		}
+
+		try {
 			await sonarr.series.delete(arrItemId, {
 				deleteFiles: false,
 				addImportListExclusion: false,
 			});
 			return;
 		} catch (error) {
-			if (error instanceof CleanupRunLeaseLostError) {
-				if (deletedFileIds.length === 0) throw error;
-				throw new ArrDeletePartialError({
-					cause: error,
-					service: "SONARR",
-					deletedFileIds,
-					hasRemainingFiles: false,
-					message:
-						"Partial cleanup: the verified Sonarr episode files were deleted, but execution authority was lost before the series record could be removed.",
-				});
-			}
 			lastDeleteError = error;
 			try {
 				await sonarr.series.getById(arrItemId);
@@ -7809,7 +8524,7 @@ async function deleteFromArr(
 	instance: ServiceInstance,
 	arrItemId: number,
 	safetyPlan: SharedMediaSafetyPlan,
-	assertMutationAuthority?: () => Promise<void>,
+	assertMutationAuthority?: MutationAuthorityCheck,
 ): Promise<void> {
 	const client = arrClientFactory.create(instance);
 
@@ -7930,7 +8645,7 @@ async function unmonitorInArr(
 	instance: ServiceInstance,
 	arrItemId: number,
 	safetyPlan: SharedMediaSafetyPlan,
-	assertMutationAuthority?: () => Promise<void>,
+	assertMutationAuthority?: MutationAuthorityCheck,
 ): Promise<void> {
 	if (safetyPlan.kind !== "verified_arr_target" && safetyPlan.kind !== "verified_sonarr_episode") {
 		throw new Error("A verified ARR target identity is required before unmonitoring");
@@ -7942,8 +8657,26 @@ async function unmonitorInArr(
 			const radarr = client as InstanceType<typeof RadarrClient>;
 			const movie = await radarr.movie.getById(arrItemId);
 			assertVerifiedArrTargetUnchanged(instance, movie.tmdbId, movie.path, safetyPlan.target);
-			await assertMutationAuthority?.();
-			await radarr.movie.update(arrItemId, { ...movie, id: arrItemId, monitored: false });
+			const authorizedResource = await assertMutationAuthority?.({
+				seriesTransition: "unchanged",
+			});
+			if (!authorizedResource) {
+				throw new Error("Final Radarr mutation authority did not return the authorized resource");
+			}
+			const authorizedMovie = authorizedResource as Awaited<
+				ReturnType<typeof radarr.movie.getById>
+			>;
+			assertVerifiedArrTargetUnchanged(
+				instance,
+				authorizedMovie.tmdbId,
+				authorizedMovie.path,
+				safetyPlan.target,
+			);
+			await radarr.movie.update(arrItemId, {
+				...authorizedMovie,
+				id: arrItemId,
+				monitored: false,
+			});
 			break;
 		}
 		case "SONARR": {
@@ -7972,9 +8705,23 @@ async function unmonitorInArr(
 			}
 			const series = await sonarr.series.getById(arrItemId);
 			assertVerifiedArrTargetUnchanged(instance, series.tvdbId, series.path, safetyPlan.target);
-			await assertMutationAuthority?.();
+			const authorizedResource = await assertMutationAuthority?.({
+				seriesTransition: "unchanged",
+			});
+			if (!authorizedResource) {
+				throw new Error("Final Sonarr mutation authority did not return the authorized resource");
+			}
+			const authorizedSeries = authorizedResource as Awaited<
+				ReturnType<typeof sonarr.series.getById>
+			>;
+			assertVerifiedArrTargetUnchanged(
+				instance,
+				authorizedSeries.tvdbId,
+				authorizedSeries.path,
+				safetyPlan.target,
+			);
 			await sonarr.series.update(arrItemId, {
-				...series,
+				...authorizedSeries,
 				id: arrItemId,
 				monitored: false,
 			} as Parameters<typeof sonarr.series.update>[1]);
@@ -7994,7 +8741,7 @@ async function deleteFilesFromArr(
 	instance: ServiceInstance,
 	arrItemId: number,
 	safetyPlan: SharedMediaSafetyPlan,
-	assertMutationAuthority?: () => Promise<void>,
+	assertMutationAuthority?: MutationAuthorityCheck,
 ): Promise<boolean> {
 	const client = arrClientFactory.create(instance);
 
