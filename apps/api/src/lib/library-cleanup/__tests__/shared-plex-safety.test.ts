@@ -1144,7 +1144,16 @@ describe("shared Plex deletion safety", () => {
 					title: "Fresh approval candidate",
 				}),
 			] as never);
-			const retryTarget = approvalRecord({ status: retryStatus }) as Record<string, unknown>;
+			const retryTarget = approvalRecord({
+				status: retryStatus,
+				sizeOnDisk: 2_000n,
+				year: 2024,
+				rating: 8,
+				matchedRuleId: "rule-1",
+				matchedRuleName: "Old media",
+				createdAt: new Date("2026-07-27T12:00:00.000Z"),
+				reviewedAt: null,
+			}) as Record<string, unknown>;
 			vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
 				where,
 				select,
@@ -1823,6 +1832,271 @@ describe("shared Plex deletion safety", () => {
 		expect(liveFixture.targetClient.movie.update).toHaveBeenCalledWith(
 			101,
 			expect.objectContaining({ monitored: false }),
+		);
+	});
+
+	it("uses the same frozen approval selection for preview, configured dry run, and live queueing", async () => {
+		const cacheItems = [
+			matchingDryRunCacheItem({ id: "cache-pending", arrItemId: 101, title: "Pending" }),
+			matchingDryRunCacheItem({ id: "cache-selected", arrItemId: 102, title: "Selected" }),
+			matchingDryRunCacheItem({ id: "cache-deferred", arrItemId: 103, title: "Deferred" }),
+		];
+		const config = {
+			...dryRunConfig(1),
+			requireApproval: true,
+			rules: [{ ...dryRunConfig(1).rules[0]!, action: "unmonitor" }],
+		};
+		const pendingApproval = approvalRecord({
+			id: "approval-pending",
+			arrItemId: 101,
+			status: "pending",
+			action: "unmonitor",
+		});
+		const configureSelectionState = (deps: CleanupExecutorDeps) => {
+			vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
+				where,
+			}: {
+				where: { status?: { in: string[] }; OR?: unknown[] };
+			}) => {
+				if (where.status?.in) return [];
+				if (where.OR) return [pendingApproval];
+				return [];
+			}) as never);
+		};
+		const selectedIds = (result: Awaited<ReturnType<typeof executeCleanupRun>>) =>
+			result.details
+				.filter((detail) => detail.action !== "skipped")
+				.map((detail) => detail.arrItemId);
+
+		const previewFixture = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(previewFixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...config,
+			dryRunMode: false,
+		} as never);
+		vi.mocked(previewFixture.deps.prisma.libraryCache.findMany).mockResolvedValue(
+			cacheItems as never,
+		);
+		configureSelectionState(previewFixture.deps);
+		const preview = await executeCleanupPreview(previewFixture.deps, "user-1");
+
+		const dryRunFixture = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(dryRunFixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...config,
+			dryRunMode: true,
+		} as never);
+		vi.mocked(dryRunFixture.deps.prisma.libraryCache.findMany).mockResolvedValue(
+			cacheItems as never,
+		);
+		configureSelectionState(dryRunFixture.deps);
+		const dryRun = await executeCleanupRun(dryRunFixture.deps, "user-1");
+
+		const liveFixture = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(liveFixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...config,
+			dryRunMode: false,
+		} as never);
+		vi.mocked(liveFixture.deps.prisma.libraryCache.findMany).mockResolvedValue(cacheItems as never);
+		configureSelectionState(liveFixture.deps);
+		const live = await executeCleanupRun(liveFixture.deps, "user-1");
+
+		expect(selectedIds(preview)).toEqual([102]);
+		expect(selectedIds(dryRun)).toEqual([102]);
+		expect(selectedIds(live)).toEqual([102]);
+		expect(previewFixture.deps.prisma.libraryCleanupApproval.create).not.toHaveBeenCalled();
+		expect(dryRunFixture.deps.prisma.libraryCleanupApproval.create).not.toHaveBeenCalled();
+		expect(liveFixture.deps.prisma.libraryCleanupApproval.create).toHaveBeenCalledOnce();
+		expect(liveFixture.deps.prisma.libraryCleanupApproval.create).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ arrItemId: 102 }) }),
+		);
+	});
+
+	it("does not backfill a later approval candidate when selected safety fails closed", async () => {
+		const fixture = makeDeps({ targetFailure: new Error("Radarr unavailable") });
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...dryRunConfig(1),
+			dryRunMode: false,
+			requireApproval: true,
+		} as never);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([
+			matchingDryRunCacheItem({ id: "cache-selected", arrItemId: 101, title: "Selected" }),
+			matchingDryRunCacheItem({ id: "cache-deferred", arrItemId: 102, title: "Deferred" }),
+		] as never);
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result.status).toBe("partial");
+		expect(result.details).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ arrItemId: 101, action: "skipped" }),
+				expect.objectContaining({
+					arrItemId: 102,
+					action: "skipped",
+					reason: expect.stringContaining("budget is full"),
+				}),
+			]),
+		);
+		expect(fixture.deps.prisma.libraryCleanupApproval.create).not.toHaveBeenCalled();
+	});
+
+	it("fails approval queueing closed when durable selection state is unavailable", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...dryRunConfig(1),
+			dryRunMode: false,
+			requireApproval: true,
+		} as never);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([
+			matchingDryRunCacheItem({ arrItemId: 101 }),
+		] as never);
+		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockRejectedValue(
+			new Error("database unavailable"),
+		);
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result).toMatchObject({ status: "partial", itemsFlagged: 0 });
+		expect(result.warnings).toContainEqual(
+			expect.stringContaining("Fresh cleanup targets were deferred for safety"),
+		);
+		expect(fixture.deps.prisma.libraryCleanupApproval.create).not.toHaveBeenCalled();
+		expect(fixture.targetClient.movie.update).not.toHaveBeenCalled();
+		expect(fixture.deleteMovieFile).not.toHaveBeenCalled();
+		expect(fixture.deleteMovie).not.toHaveBeenCalled();
+	});
+
+	it("paginates a large retry backlog and finds a relevant collision beyond the first page", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...dryRunConfig(1),
+			dryRunMode: false,
+			requireApproval: true,
+		} as never);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([
+			matchingDryRunCacheItem({ id: "cache-collision", arrItemId: 101 }),
+			matchingDryRunCacheItem({ id: "cache-selected", arrItemId: 102 }),
+		] as never);
+		const retryBacklog = Array.from({ length: 501 }, (_, index) =>
+			approvalRecord({
+				id: `retry-${String(index).padStart(4, "0")}`,
+				arrItemId: index === 500 ? 101 : 1_000 + index,
+				status: "retry_pending",
+			}),
+		);
+		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
+			where,
+			cursor,
+			take,
+		}: {
+			where: { status?: { in: string[] } };
+			cursor?: { id: string };
+			take: number;
+		}) => {
+			if (!where.status?.in) return [];
+			const start = cursor ? retryBacklog.findIndex((retry) => retry.id === cursor.id) + 1 : 0;
+			return retryBacklog.slice(start, start + take);
+		}) as never);
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result).toMatchObject({ status: "partial", itemsFlagged: 1 });
+		expect(fixture.deps.prisma.libraryCleanupApproval.create).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ arrItemId: 102 }) }),
+		);
+		expect(fixture.deps.prisma.libraryCleanupApproval.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({ cursor: { id: "retry-0499" }, skip: 1 }),
+		);
+	});
+
+	it.each([
+		{ label: "still matches", includeFreshMatch: true },
+		{ label: "no longer matches", includeFreshMatch: false },
+	])(
+		"renders one distinct approval preview row for an in-flight target that $label",
+		async ({ includeFreshMatch }) => {
+			const fixture = makeDeps({ mediaPartCount: 1 });
+			vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+				...dryRunConfig(1),
+				dryRunMode: false,
+				requireApproval: true,
+			} as never);
+			vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue(
+				includeFreshMatch ? ([matchingDryRunCacheItem({ arrItemId: 101 })] as never) : [],
+			);
+			const retry = approvalRecord({
+				id: "retry-executing",
+				arrItemId: 101,
+				status: "retry_executing",
+				lastExecutionError: "Previous attempt is still being reconciled",
+				sizeOnDisk: 2_000n,
+				year: 2024,
+				rating: 8,
+				matchedRuleId: "rule-1",
+				matchedRuleName: "Old media",
+				createdAt: new Date("2026-07-27T12:00:00.000Z"),
+				reviewedAt: null,
+			});
+			vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
+				where,
+			}: {
+				where: { status?: { in: string[] } };
+			}) => (where.status?.in ? [retry] : [])) as never);
+
+			const result = await executeCleanupPreview(fixture.deps, "user-1");
+
+			expect(result).toMatchObject({
+				status: "partial",
+				itemsFlagged: 0,
+				itemsSkipped: 1,
+				previewItemCount: 1,
+			});
+			expect(result.details).toEqual([
+				expect.objectContaining({
+					arrItemId: 101,
+					action: "skipped",
+					reason: expect.stringContaining("already executing"),
+				}),
+			]);
+		},
+	);
+
+	it("reserves a target held by an unrecovered approved queue item", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...dryRunConfig(1),
+			dryRunMode: false,
+			requireApproval: true,
+		} as never);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([
+			matchingDryRunCacheItem({ id: "cache-approved", arrItemId: 101 }),
+			matchingDryRunCacheItem({ id: "cache-selected", arrItemId: 102 }),
+		] as never);
+		const approved = approvalRecord({
+			id: "approval-approved",
+			arrItemId: 101,
+			status: "approved",
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockImplementation((async ({
+			where,
+		}: {
+			where: { status?: { in: string[] }; OR?: unknown[] };
+		}) => (where.OR ? [approved] : [])) as never);
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result.itemsFlagged).toBe(1);
+		expect(fixture.deps.prisma.libraryCleanupApproval.create).toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ arrItemId: 102 }) }),
+		);
+		expect(fixture.deps.prisma.libraryCleanupApproval.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					OR: expect.arrayContaining([
+						expect.objectContaining({
+							status: { in: ["pending", "approved", "executing"] },
+						}),
+					]),
+				}),
+			}),
 		);
 	});
 

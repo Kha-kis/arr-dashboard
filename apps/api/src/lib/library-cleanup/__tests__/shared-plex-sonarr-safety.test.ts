@@ -2096,11 +2096,8 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(result.skippedDetails).toHaveLength(2);
 		expect(fixture.deps.prisma.libraryCleanupApproval.findMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				select: expect.objectContaining({
-					episodeFileId: true,
-					action: true,
-					safetySnapshot: true,
-				}),
+				take: 501,
+				where: expect.objectContaining({ OR: expect.any(Array) }),
 			}),
 		);
 	});

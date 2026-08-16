@@ -62,6 +62,7 @@ import type { ProviderCacheType } from "./provider-cache-evidence.js";
 import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
 import {
 	type DirectCleanupSelectionPlan,
+	planApprovalCleanupSelection,
 	planDirectCleanupSelection,
 } from "./selection-planner.js";
 import {
@@ -257,6 +258,7 @@ function parsePublishedStringArray(value: string, label: string): string[] {
 // the caller cannot inspect.
 const PREVIEW_SAFETY_INSPECTION_LIMIT = 200;
 const DIRECT_RETRY_INVENTORY_LIMIT = 500;
+const APPROVAL_SELECTION_PAGE_SIZE = 500;
 const INVALID_CLEANUP_RUN_LIMIT_WARNING =
 	"Cleanup did not select any items because the stored per-run removal limit is invalid. Set it to a whole number from 1 through 100.";
 
@@ -749,8 +751,8 @@ export function resolveRejectionMemoryWindow(
 
 /**
  * Build the Prisma `OR` clauses for the cleanup-approval dedup query
- * (issue #474). Always returns the `pending` skip; additionally appends a
- * `rejected`-skip clause when the memory window is non-off. Exported and
+ * (issue #474). Always excludes every active operator/execution state;
+ * additionally appends a `rejected`-skip clause when the memory window is non-off. Exported and
  * `now`-parameterised so unit tests can pin the cutoff math without
  * monkey-patching Date.now.
  */
@@ -758,7 +760,9 @@ export function buildDedupOrClauses(
 	memWindow: RejectionMemoryWindow,
 	now: Date = new Date(),
 ): Prisma.LibraryCleanupApprovalWhereInput[] {
-	const clauses: Prisma.LibraryCleanupApprovalWhereInput[] = [{ status: "pending" }];
+	const clauses: Prisma.LibraryCleanupApprovalWhereInput[] = [
+		{ status: { in: ["pending", "approved", "executing"] } },
+	];
 	if (memWindow.mode === "forever") {
 		clauses.push({ status: "rejected" });
 	} else if (memWindow.mode === "days") {
@@ -1678,6 +1682,17 @@ interface DirectSelectionState {
 	warnings: string[];
 }
 
+interface ApprovalSelectionState {
+	plan: DirectCleanupSelectionPlan<FlaggedItem, LibraryCleanupApproval>;
+	selected: FlaggedItem[];
+	skippedDetails: CleanupRunResult["details"];
+	pendingRetryCount: number | null;
+	inFlightRetryTargetCount: number;
+	unmatchedInFlightRetryTargetCount: number;
+	retryStateLoaded: boolean;
+	warnings: string[];
+}
+
 async function loadDirectSelectionState(
 	deps: CleanupExecutorDeps,
 	userId: string,
@@ -1958,43 +1973,60 @@ export async function executeCleanupPreview(
 		};
 	}
 
-	const retryPreview = await loadDurableRetryPreview(deps, userId, config.id);
-	const freshCandidates = flagged.filter(
-		(item) => !retryPreview.targetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item))),
+	const configuredRunLimitIsValid =
+		Number.isSafeInteger(config.maxRemovalsPerRun) &&
+		config.maxRemovalsPerRun > 0 &&
+		config.maxRemovalsPerRun <= 100;
+	const configuredRunLimit = configuredRunLimitIsValid ? config.maxRemovalsPerRun : 0;
+	const approvalSelection = await loadApprovalSelectionState(
+		deps,
+		config,
+		userId,
+		flagged,
+		configuredRunLimit,
 	);
-	const retryDetails = retryPreview.details.slice(0, PREVIEW_SAFETY_INSPECTION_LIMIT);
-	const inspected = selectInspectableCleanupPreviewItems(
-		freshCandidates,
-		PREVIEW_SAFETY_INSPECTION_LIMIT - retryDetails.length,
-	);
+	const selectedFresh = approvalSelection.selected;
 	const safetyContext = createSharedPlexSafetyContext();
 	const sharedPlexBlocks = await findSharedPlexDeleteBlocks(
 		deps,
 		userId,
-		toDeleteTargets(inspected),
+		toDeleteTargets(selectedFresh),
 		safetyContext,
 	);
 	await blockPlansThatDifferFromEvaluatedCache(
 		deps,
 		userId,
-		inspected,
+		selectedFresh,
 		safetyContext,
 		sharedPlexBlocks,
 	);
 	const allWarnings = withSharedPlexWarning(
-		retryPreview.warning ? [...warnings, retryPreview.warning] : warnings,
+		[
+			...warnings,
+			...approvalSelection.warnings,
+			...(configuredRunLimitIsValid ? [] : [INVALID_CLEANUP_RUN_LIMIT_WARNING]),
+		],
 		sharedPlexBlocks.size,
 	);
-
-	const details = [...retryDetails, ...buildCleanupPreviewDetails(inspected, sharedPlexBlocks)];
+	const details = [
+		...buildCleanupPreviewDetails(selectedFresh, sharedPlexBlocks),
+		...approvalSelection.skippedDetails,
+	].slice(0, PREVIEW_SAFETY_INSPECTION_LIMIT);
+	const selectionDeferred =
+		approvalSelection.plan.decisions.filter((decision) => decision.disposition !== "selected")
+			.length +
+		Math.max(
+			0,
+			approvalSelection.inFlightRetryTargetCount - approvalSelection.plan.counts.inFlight,
+		);
 
 	const hasWarnings = allWarnings.length > 0;
 	log.info(
 		{
 			totalEvaluated,
 			totalRuleMatches: flagged.length,
-			totalFlagged: freshCandidates.length,
-			pendingRetryCount: retryPreview.total,
+			selectedFresh: approvalSelection.plan.selectedFresh.length,
+			pendingRetryCount: approvalSelection.pendingRetryCount,
 			sharedPlexBlocks: sharedPlexBlocks.size,
 			hasWarnings,
 		},
@@ -2005,13 +2037,18 @@ export async function executeCleanupPreview(
 		isDryRun: true,
 		status: hasWarnings ? ("partial" as const) : ("completed" as const),
 		itemsEvaluated: totalEvaluated,
-		itemsFlagged: freshCandidates.length,
-		pendingRetryCount: retryPreview.total,
-		previewItemCount: retryPreview.targetKeys.size + freshCandidates.length,
+		itemsFlagged: approvalSelection.plan.selectedFresh.length,
+		pendingRetryCount: approvalSelection.pendingRetryCount ?? undefined,
+		previewItemCount:
+			approvalSelection.plan.counts.total +
+			Math.max(
+				0,
+				approvalSelection.inFlightRetryTargetCount - approvalSelection.plan.counts.inFlight,
+			),
 		itemsRemoved: 0,
 		itemsUnmonitored: 0,
 		itemsFilesDeleted: 0,
-		itemsSkipped: sharedPlexBlocks.size,
+		itemsSkipped: selectionDeferred + sharedPlexBlocks.size,
 		details,
 		durationMs: Date.now() - startTime,
 		prefetchHealth,
@@ -2128,51 +2165,58 @@ async function executeCleanupRunGuarded(
 			await createRunLog(prisma, config.id, result, log);
 			return result;
 		}
-		const retryPreview = await loadDurableRetryPreview(deps, userId, config.id, configuredRunLimit);
-		const freshCandidates = flagged.filter(
-			(item) => !retryPreview.targetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item))),
+		const approvalSelection = await loadApprovalSelectionState(
+			deps,
+			config,
+			userId,
+			flagged,
+			configuredRunLimit,
 		);
-		const freshBudget = retryPreview.loaded
-			? Math.max(0, configuredRunLimit - retryPreview.retries.length)
-			: 0;
-		const limited = freshCandidates.slice(0, freshBudget);
+		const selectedFresh = approvalSelection.selected;
 		const safetyContext = createSharedPlexSafetyContext();
 		const sharedPlexBlocks = await findSharedPlexDeleteBlocks(
 			deps,
 			userId,
-			toDeleteTargets(limited),
+			toDeleteTargets(selectedFresh),
 			safetyContext,
 		);
 		await blockPlansThatDifferFromEvaluatedCache(
 			deps,
 			userId,
-			limited,
+			selectedFresh,
 			safetyContext,
 			sharedPlexBlocks,
 		);
 		const allWarnings = withSharedPlexWarning(
-			retryPreview.warning ? [...warnings, retryPreview.warning] : warnings,
+			[
+				...warnings,
+				...approvalSelection.warnings,
+				...(configuredRunLimitIsValid ? [] : [INVALID_CLEANUP_RUN_LIMIT_WARNING]),
+			],
 			sharedPlexBlocks.size,
 		);
 		const details = [
-			...retryPreview.details,
-			...buildCleanupPreviewDetails(limited, sharedPlexBlocks),
-		];
+			...buildCleanupPreviewDetails(selectedFresh, sharedPlexBlocks),
+			...approvalSelection.skippedDetails,
+		].slice(0, PREVIEW_SAFETY_INSPECTION_LIMIT);
+		const selectionDeferred =
+			approvalSelection.plan.decisions.filter((decision) => decision.disposition !== "selected")
+				.length +
+			Math.max(
+				0,
+				approvalSelection.inFlightRetryTargetCount - approvalSelection.plan.counts.inFlight,
+			);
 
 		const result: CleanupRunResult = {
 			isDryRun: true,
 			status: allWarnings.length > 0 ? "partial" : "completed",
 			itemsEvaluated: totalEvaluated,
-			itemsFlagged: retryPreview.retries.length + limited.length,
-			pendingRetryCount: retryPreview.total,
+			itemsFlagged: approvalSelection.plan.selectedFresh.length,
+			pendingRetryCount: approvalSelection.pendingRetryCount ?? undefined,
 			itemsRemoved: 0,
 			itemsUnmonitored: 0,
 			itemsFilesDeleted: 0,
-			itemsSkipped:
-				freshCandidates.length -
-				limited.length +
-				sharedPlexBlocks.size +
-				retryPreview.inFlightRetries.length,
+			itemsSkipped: selectionDeferred + sharedPlexBlocks.size,
 			details,
 			durationMs: Date.now() - startTime,
 			prefetchHealth,
@@ -2197,35 +2241,17 @@ async function executeCleanupRunGuarded(
 		);
 		// Real execution
 		if (config.requireApproval) {
-			const nonterminalRetryTargets = await prisma.libraryCleanupApproval.findMany({
-				where: {
-					configId: config.id,
-					config: { userId },
-					status: { in: ["retry_pending", "retry_executing"] },
-				},
-				select: {
-					instanceId: true,
-					arrItemId: true,
-					itemType: true,
-					targetScope: true,
-					arrEpisodeId: true,
-					episodeFileId: true,
-					action: true,
-					safetySnapshot: true,
-				},
-			});
-			const retryTargetKeys = new Set(
-				nonterminalRetryTargets.map((retry) => cleanupApprovalTargetKey(retry)),
-			);
-			const freshCandidates = flagged.filter(
-				(item) => !retryTargetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item))),
-			);
-			const approvalSelection = await selectApprovalCandidatesBeforeLimit(
+			const configuredRunLimitIsValid =
+				Number.isSafeInteger(config.maxRemovalsPerRun) &&
+				config.maxRemovalsPerRun > 0 &&
+				config.maxRemovalsPerRun <= 100;
+			const configuredRunLimit = configuredRunLimitIsValid ? config.maxRemovalsPerRun : 0;
+			const approvalSelection = await loadApprovalSelectionState(
 				deps,
 				config,
 				userId,
-				freshCandidates,
-				config.maxRemovalsPerRun,
+				flagged,
+				configuredRunLimit,
 			);
 			const limited = approvalSelection.selected;
 			const safetyContext = createSharedPlexSafetyContext();
@@ -2242,7 +2268,14 @@ async function executeCleanupRunGuarded(
 				safetyContext,
 				sharedPlexBlocks,
 			);
-			const allWarnings = withSharedPlexWarning(warnings, sharedPlexBlocks.size);
+			const allWarnings = withSharedPlexWarning(
+				[
+					...warnings,
+					...approvalSelection.warnings,
+					...(configuredRunLimitIsValid ? [] : [INVALID_CLEANUP_RUN_LIMIT_WARNING]),
+				],
+				sharedPlexBlocks.size,
+			);
 			return await executeWithApproval(
 				deps,
 				config,
@@ -2256,6 +2289,7 @@ async function executeCleanupRunGuarded(
 				safetyContext.plans,
 				providerEvidence,
 				approvalSelection.skippedDetails,
+				approvalSelection.unmatchedInFlightRetryTargetCount,
 			);
 		}
 
@@ -5834,6 +5868,88 @@ export async function selectApprovalCandidatesBeforeLimit(
 	selected: FlaggedItem[];
 	skippedDetails: CleanupRunResult["details"];
 }> {
+	const selection = await loadApprovalSelectionState(deps, config, userId, flagged, limit);
+	return { selected: selection.selected, skippedDetails: selection.skippedDetails };
+}
+
+function buildApprovalSelectionDetails(
+	selectionPlan: DirectCleanupSelectionPlan<FlaggedItem, LibraryCleanupApproval>,
+): CleanupRunResult["details"] {
+	const details: CleanupRunResult["details"] = [];
+	for (const decision of selectionPlan.decisions) {
+		if (details.length >= PREVIEW_SAFETY_INSPECTION_LIMIT) break;
+		if (decision.disposition === "selected") continue;
+		const value = decision.candidate.value;
+		details.push(
+			"cacheItem" in value
+				? buildDetail(value, "skipped", decision.reason)
+				: buildRetryDetail(value, "skipped", decision.reason),
+		);
+	}
+	return details;
+}
+
+function unavailableApprovalSelectionState(
+	flagged: FlaggedItem[],
+	limit: number,
+	warning: string,
+): ApprovalSelectionState {
+	const plan = planApprovalCleanupSelection<FlaggedItem, LibraryCleanupApproval>({
+		limit,
+		fresh: flagged.map((item) => ({
+			key: cleanupDeleteTargetKey(flaggedDeleteTarget(item)),
+			value: item,
+		})),
+		approvalExclusions: new Map(),
+		nonterminalRetryKeys: new Set(),
+		inFlightRetries: [],
+		retryStateLoaded: false,
+	});
+	return {
+		plan,
+		selected: [],
+		skippedDetails: buildApprovalSelectionDetails(plan),
+		pendingRetryCount: null,
+		inFlightRetryTargetCount: 0,
+		unmatchedInFlightRetryTargetCount: 0,
+		retryStateLoaded: false,
+		warnings: [warning],
+	};
+}
+
+async function visitApprovalSelectionPages(
+	deps: CleanupExecutorDeps,
+	where: Prisma.LibraryCleanupApprovalWhereInput,
+	visit: (row: LibraryCleanupApproval) => void,
+): Promise<void> {
+	let cursorId: string | undefined;
+	while (true) {
+		const page = await deps.prisma.libraryCleanupApproval.findMany({
+			where,
+			orderBy: { id: "asc" },
+			take: APPROVAL_SELECTION_PAGE_SIZE + 1,
+			...(cursorId ? { cursor: { id: cursorId }, skip: 1 } : {}),
+		});
+		const rows = page.slice(0, APPROVAL_SELECTION_PAGE_SIZE);
+		for (const row of rows) visit(row);
+		if (page.length <= APPROVAL_SELECTION_PAGE_SIZE) return;
+		const nextCursorId = rows.at(-1)?.id;
+		if (!nextCursorId || nextCursorId === cursorId) {
+			throw new Error("Approval selection pagination did not advance");
+		}
+		cursorId = nextCursorId;
+	}
+}
+
+async function loadApprovalSelectionState(
+	deps: CleanupExecutorDeps,
+	config: LibraryCleanupConfig & { rules: LibraryCleanupRule[] },
+	userId: string,
+	flagged: FlaggedItem[],
+	limit: number,
+): Promise<ApprovalSelectionState> {
+	const unavailableWarning =
+		"Durable cleanup retry or approval state could not be loaded. Fresh cleanup targets were deferred for safety.";
 	const memoryByRuleId = new Map<string, RejectionMemoryWindow>();
 	for (const rule of config.rules) {
 		memoryByRuleId.set(rule.id, resolveRejectionMemoryWindow(rule, config));
@@ -5849,56 +5965,95 @@ export async function selectApprovalCandidatesBeforeLimit(
 			.map((window) => window.days),
 	);
 	const now = new Date();
-	const approvalDedupRows = await deps.prisma.libraryCleanupApproval.findMany({
-		where: {
-			configId: config.id,
-			config: { userId },
-			OR: [
-				{ status: "pending" },
-				...(remembersForever
-					? [{ status: "rejected" }]
-					: maxRememberedDays > 0
-						? [
-								{
-									status: "rejected",
-									reviewedAt: {
-										gt: new Date(now.getTime() - maxRememberedDays * 24 * 60 * 60 * 1000),
-									},
-								},
-							]
-						: []),
-			],
-		},
-		select: {
-			instanceId: true,
-			arrItemId: true,
-			itemType: true,
-			targetScope: true,
-			arrEpisodeId: true,
-			episodeFileId: true,
-			action: true,
-			safetySnapshot: true,
-			status: true,
-			reviewedAt: true,
-		},
-	});
-	const approvalDedupRowsByTarget = new Map<string, typeof approvalDedupRows>();
-	for (const row of approvalDedupRows) {
-		const targetKey = cleanupApprovalTargetKey(row);
-		const rows = approvalDedupRowsByTarget.get(targetKey);
-		if (rows) rows.push(row);
-		else approvalDedupRowsByTarget.set(targetKey, [row]);
+	const candidateKeys = new Set(
+		flagged.map((item) => cleanupDeleteTargetKey(flaggedDeleteTarget(item))),
+	);
+	const approvalDedupRowsByTarget = new Map<string, LibraryCleanupApproval[]>();
+	const nonterminalRetryKeys = new Set<string>();
+	const inFlightRetryTargetKeys = new Set<string>();
+	const inFlightRetries: Array<{
+		id: string;
+		key: string;
+		value: LibraryCleanupApproval;
+		reviewedAt: Date | null;
+		createdAt: Date;
+	}> = [];
+	let pendingRetryCount = 0;
+	try {
+		await Promise.all([
+			visitApprovalSelectionPages(
+				deps,
+				{
+					configId: config.id,
+					config: { userId },
+					status: { in: ["retry_pending", "retry_executing"] },
+				},
+				(retry) => {
+					const targetKey = cleanupApprovalTargetKey(retry);
+					if (candidateKeys.has(targetKey)) nonterminalRetryKeys.add(targetKey);
+					if (retry.status === "retry_pending") pendingRetryCount++;
+					if (retry.status === "retry_executing" && !inFlightRetryTargetKeys.has(targetKey)) {
+						inFlightRetryTargetKeys.add(targetKey);
+						if (
+							inFlightRetries.length < PREVIEW_SAFETY_INSPECTION_LIMIT ||
+							candidateKeys.has(targetKey)
+						) {
+							inFlightRetries.push({
+								id: retry.id,
+								key: targetKey,
+								value: retry,
+								reviewedAt: retry.reviewedAt,
+								createdAt: retry.createdAt,
+							});
+						}
+					}
+				},
+			),
+			visitApprovalSelectionPages(
+				deps,
+				{
+					configId: config.id,
+					config: { userId },
+					OR: [
+						{ status: { in: ["pending", "approved", "executing"] } },
+						...(remembersForever
+							? [{ status: "rejected" }]
+							: maxRememberedDays > 0
+								? [
+										{
+											status: "rejected",
+											reviewedAt: {
+												gt: new Date(now.getTime() - maxRememberedDays * 24 * 60 * 60 * 1000),
+											},
+										},
+									]
+								: []),
+					],
+				},
+				(row) => {
+					const targetKey = cleanupApprovalTargetKey(row);
+					if (!candidateKeys.has(targetKey)) return;
+					const rows = approvalDedupRowsByTarget.get(targetKey);
+					if (rows) rows.push(row);
+					else approvalDedupRowsByTarget.set(targetKey, [row]);
+				},
+			),
+		]);
+	} catch (error) {
+		deps.log.error(
+			{ err: error, configId: config.id },
+			"Cleanup could not load durable approval selection state",
+		);
+		return unavailableApprovalSelectionState(flagged, limit, unavailableWarning);
 	}
 
-	const selected: FlaggedItem[] = [];
-	const skippedDetails: CleanupRunResult["details"] = [];
+	const approvalExclusions = new Map<string, string>();
 	for (const item of flagged) {
-		if (selected.length >= limit) break;
 		const memWindow = memoryByRuleId.get(item.match.ruleId) ?? { mode: "off" as const };
 		const targetRows =
 			approvalDedupRowsByTarget.get(cleanupDeleteTargetKey(flaggedDeleteTarget(item))) ?? [];
 		const existing = targetRows.find((row) => {
-			if (row.status === "pending") return true;
+			if (["pending", "approved", "executing"].includes(row.status)) return true;
 			if (row.status !== "rejected") return false;
 			if (memWindow.mode === "forever") return true;
 			if (memWindow.mode === "days" && row.reviewedAt) {
@@ -5907,14 +6062,51 @@ export async function selectApprovalCandidatesBeforeLimit(
 			return false;
 		});
 		if (existing) {
-			skippedDetails.push(
-				buildDetail(item, "skipped", buildApprovalDedupSkipReason(existing.status, memWindow)),
+			approvalExclusions.set(
+				cleanupDeleteTargetKey(flaggedDeleteTarget(item)),
+				buildApprovalDedupSkipReason(existing.status, memWindow) ??
+					"Already owned by a nonterminal approval queue item",
 			);
-			continue;
 		}
-		selected.push(item);
 	}
-	return { selected, skippedDetails };
+	const plan = planApprovalCleanupSelection<FlaggedItem, LibraryCleanupApproval>({
+		limit,
+		fresh: flagged.map((item) => ({
+			key: cleanupDeleteTargetKey(flaggedDeleteTarget(item)),
+			value: item,
+		})),
+		approvalExclusions,
+		nonterminalRetryKeys,
+		inFlightRetries,
+		retryStateLoaded: true,
+	});
+	const warnings: string[] = [];
+	if (pendingRetryCount > 0) {
+		warnings.push(
+			`${pendingRetryCount} durable cleanup ${
+				pendingRetryCount === 1 ? "retry is" : "retries are"
+			} pending outside the approval-run budget.`,
+		);
+	}
+	if (inFlightRetryTargetKeys.size > 0) {
+		warnings.push(
+			`${inFlightRetryTargetKeys.size} durable cleanup ${
+				inFlightRetryTargetKeys.size === 1 ? "retry is" : "retries are"
+			} already executing and deferred from this approval run.`,
+		);
+	}
+	return {
+		plan,
+		selected: plan.selectedFresh.map((candidate) => candidate.value),
+		skippedDetails: buildApprovalSelectionDetails(plan),
+		pendingRetryCount,
+		inFlightRetryTargetCount: inFlightRetryTargetKeys.size,
+		unmatchedInFlightRetryTargetCount: [...inFlightRetryTargetKeys].filter(
+			(targetKey) => !candidateKeys.has(targetKey),
+		).length,
+		retryStateLoaded: true,
+		warnings,
+	};
 }
 
 /**
@@ -5934,6 +6126,7 @@ async function executeWithApproval(
 	safetyPlans: Map<string, SharedMediaSafetyPlan> = new Map(),
 	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
 	preSkippedDetails: CleanupRunResult["details"] = [],
+	additionalSkippedCount = 0,
 ): Promise<CleanupRunResult> {
 	const { prisma, log } = deps;
 	const now = new Date();
@@ -5967,8 +6160,8 @@ async function executeWithApproval(
 		try {
 			const memWindow = memoryByRuleId.get(item.match.ruleId) ?? { mode: "off" as const };
 
-			// Dedup query: always skip pending approvals; additionally skip
-			// rejected approvals when the rule's memory window says so (#474).
+			// Dedup query: always preserve active approval/execution ownership;
+			// additionally skip rejected approvals when the rule's memory window says so (#474).
 			const orClauses = buildDedupOrClauses(memWindow);
 
 			const existing = await prisma.libraryCleanupApproval.findFirst({
@@ -6058,6 +6251,7 @@ async function executeWithApproval(
 		itemsSkipped:
 			totalFlaggedBeforeLimit -
 			flagged.length +
+			additionalSkippedCount +
 			sharedPlexBlocks.size +
 			approvalDedupSkipped +
 			approvalQueueFailures,

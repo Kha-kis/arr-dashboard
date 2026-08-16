@@ -103,7 +103,7 @@ describe("resolveRejectionMemoryWindow — per-rule override", () => {
 // `buildDedupOrClauses` — the Prisma OR-clause shape that drives the actual
 // dedup query inside executeWithApproval. The helper exists so we can pin the
 // cutoff math + clause structure without mocking Prisma. Per-mode boundaries:
-//   - off:     only the pending-dedup clause, no rejected-skip
+//   - off:     active approval/execution states only, no rejected-skip
 //   - days:    rejected-skip with `reviewedAt: { gt: now - days }`
 //   - forever: rejected-skip with no time bound
 // ============================================================================
@@ -112,14 +112,17 @@ describe("buildDedupOrClauses", () => {
 	// Fixed reference instant so the cutoff math is deterministic across runs.
 	const NOW = new Date("2026-05-27T12:00:00.000Z");
 
-	it("mode 'off' → only the pending-dedup clause (no rejection skip)", () => {
+	it("mode 'off' → active ownership only (no rejection skip)", () => {
 		const clauses = buildDedupOrClauses({ mode: "off" }, NOW);
-		expect(clauses).toEqual([{ status: "pending" }]);
+		expect(clauses).toEqual([{ status: { in: ["pending", "approved", "executing"] } }]);
 	});
 
 	it("mode 'forever' → pending + unconditional rejected skip", () => {
 		const clauses = buildDedupOrClauses({ mode: "forever" }, NOW);
-		expect(clauses).toEqual([{ status: "pending" }, { status: "rejected" }]);
+		expect(clauses).toEqual([
+			{ status: { in: ["pending", "approved", "executing"] } },
+			{ status: "rejected" },
+		]);
 		// No reviewedAt clause on the rejected branch — forever means
 		// "remember this rejection regardless of when it happened."
 		const rejectedClause = clauses[1] as { status: string; reviewedAt?: unknown };
@@ -129,7 +132,9 @@ describe("buildDedupOrClauses", () => {
 	it("mode 'days' → rejected skip with cutoff = now - N days", () => {
 		const clauses = buildDedupOrClauses({ mode: "days", days: 7 }, NOW);
 		expect(clauses).toHaveLength(2);
-		expect(clauses[0]).toEqual({ status: "pending" });
+		expect(clauses[0]).toEqual({
+			status: { in: ["pending", "approved", "executing"] },
+		});
 		const rejectedClause = clauses[1] as { status: string; reviewedAt: { gt: Date } };
 		expect(rejectedClause.status).toBe("rejected");
 		// Cutoff: 7 days before NOW = 2026-05-20T12:00:00Z
