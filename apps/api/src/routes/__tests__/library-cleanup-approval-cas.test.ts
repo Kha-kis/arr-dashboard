@@ -332,6 +332,23 @@ describe("library cleanup approval compare-and-set routes", () => {
 			status: "completed",
 			itemsEvaluated: 201,
 			itemsFlagged: 201,
+			pendingRetryCount: 0,
+			selectionCountsComplete: true,
+			previewItemCount: 201,
+			previewSelection: {
+				selectedFresh: 100,
+				selectedRetries: 0,
+				deferredBudget: 101,
+				deferredApproval: 0,
+				deferredRetryFairness: 0,
+				deferredInFlightTarget: 0,
+				deferredDuplicateTarget: 0,
+				inFlight: 0,
+				blocked: 0,
+				retryStateUnavailable: 0,
+				retryState: "complete" as const,
+				total: 201,
+			},
 			itemsRemoved: 0,
 			itemsUnmonitored: 0,
 			itemsFilesDeleted: 0,
@@ -345,8 +362,16 @@ describe("library cleanup approval compare-and-set routes", () => {
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
+			totalEvaluated: 201,
 			totalFlagged: 201,
-			warnings: ["Existing warning", "Showing 200 of 201 preview items"],
+			pendingRetryCount: 0,
+			selectionCountsComplete: true,
+			selection: { selectedFresh: 100, deferredBudget: 101, total: 201 },
+			display: { shown: 200, hidden: 1, limit: 200, complete: false },
+			warnings: [
+				"Existing warning",
+				"Display capped at 200 of 201 preview items; selection counts remain complete.",
+			],
 		});
 		expect(response.json().items).toHaveLength(200);
 	});
@@ -387,6 +412,8 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect(response.json()).toMatchObject({
 			totalFlagged: 0,
 			pendingRetryCount: 1,
+			selectionCountsComplete: true,
+			display: { shown: 1, hidden: 0, limit: 200, complete: true },
 			warnings: [],
 		});
 		expect(response.json().items).toHaveLength(1);
@@ -426,7 +453,9 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({
 			pendingRetryCount: 0,
-			warnings: ["Showing 200 of 201 preview items"],
+			selectionCountsComplete: true,
+			display: { shown: 200, hidden: 1, limit: 200, complete: false },
+			warnings: ["Display capped at 200 of 201 preview items; selection counts remain complete."],
 		});
 		expect(response.json().items).toHaveLength(200);
 	});

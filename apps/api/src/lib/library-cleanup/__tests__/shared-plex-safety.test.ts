@@ -2045,7 +2045,7 @@ describe("shared Plex deletion safety", () => {
 
 			expect(result).toMatchObject({
 				status: "partial",
-				itemsFlagged: 0,
+				itemsFlagged: includeFreshMatch ? 1 : 0,
 				itemsSkipped: 1,
 				previewItemCount: 1,
 			});
@@ -2700,6 +2700,67 @@ describe("shared Plex deletion safety", () => {
 		expect(targetClient.movie.update).not.toHaveBeenCalled();
 	});
 
+	it("reports complete direct preview selection counts separately from rule matches", async () => {
+		const { deps } = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
+			dryRunConfig(100) as never,
+		);
+		vi.mocked(deps.prisma.libraryCache.findMany).mockResolvedValue(
+			Array.from({ length: 250 }, (_, index) =>
+				matchingDryRunCacheItem({
+					id: `cache-${String(index + 1).padStart(3, "0")}`,
+					arrItemId: index + 1,
+					title: `Movie ${index + 1}`,
+				}),
+			) as never,
+		);
+
+		const result = await executeCleanupPreview(deps, "user-1");
+
+		expect(result.itemsFlagged).toBe(250);
+		expect(result.selectionCountsComplete).toBe(true);
+		expect(result.previewSelection).toMatchObject({
+			selectedFresh: 100,
+			selectedRetries: 0,
+			deferredBudget: 150,
+			blocked: 0,
+			retryState: "complete",
+			total: 250,
+		});
+		expect(result.previewItemCount).toBe(250);
+	});
+
+	it("fails closed with unavailable direct preview selection counts when retry state cannot load", async () => {
+		const { deps } = makeDeps({ mediaPartCount: 1 });
+		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
+			dryRunConfig(100) as never,
+		);
+		vi.mocked(deps.prisma.libraryCleanupApproval.findMany).mockRejectedValue(
+			new Error("retry store unavailable"),
+		);
+		vi.mocked(deps.prisma.libraryCache.findMany).mockResolvedValue(
+			Array.from({ length: 250 }, (_, index) =>
+				matchingDryRunCacheItem({
+					id: `cache-${String(index + 1).padStart(3, "0")}`,
+					arrItemId: index + 1,
+					title: `Movie ${index + 1}`,
+				}),
+			) as never,
+		);
+
+		const result = await executeCleanupPreview(deps, "user-1");
+
+		expect(result.pendingRetryCount).toBeNull();
+		expect(result.selectionCountsComplete).toBe(false);
+		expect(result.previewSelection).toMatchObject({
+			selectedFresh: 0,
+			selectedRetries: 0,
+			retryStateUnavailable: 250,
+			retryState: "unavailable",
+			total: 250,
+		});
+	});
+
 	it("does not preview a filtered Plex rule when the configured section is unavailable", async () => {
 		const fixture = makeDeps();
 		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
@@ -2824,7 +2885,7 @@ describe("shared Plex deletion safety", () => {
 		expect(result.warnings).toContainEqual(expect.stringContaining("plex data unavailable"));
 	});
 
-	it("does not count a rule match twice when a durable retry already represents its target", async () => {
+	it("counts a current rule match separately from its durable retry", async () => {
 		const { deps } = makeDeps({ mediaPartCount: 1 });
 		vi.mocked(deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue(
 			dryRunConfig() as never,
@@ -2856,7 +2917,7 @@ describe("shared Plex deletion safety", () => {
 
 		expect(result).toMatchObject({
 			itemsEvaluated: 1,
-			itemsFlagged: 0,
+			itemsFlagged: 1,
 			pendingRetryCount: 1,
 		});
 		expect(result.details).toHaveLength(2);
@@ -5827,7 +5888,11 @@ describe("shared Plex deletion safety", () => {
 						? await executeCleanupPreview(deps, "user-1")
 						: await executeCleanupRun(deps, "user-1");
 
-				expect(result).toMatchObject({ status: "partial", itemsFlagged: 0, itemsSkipped: 1 });
+				expect(result).toMatchObject({
+					status: "partial",
+					itemsFlagged: mode === "preview" ? 1 : 0,
+					itemsSkipped: 1,
+				});
 				expect(result.warnings).toContainEqual(
 					expect.stringContaining("whole number from 1 through 100"),
 				);

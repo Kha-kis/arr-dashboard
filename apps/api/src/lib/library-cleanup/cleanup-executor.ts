@@ -1868,7 +1868,22 @@ export async function executeCleanupPreview(
 			status: "completed",
 			itemsEvaluated: 0,
 			itemsFlagged: 0,
+			selectionCountsComplete: true,
 			previewItemCount: 0,
+			previewSelection: {
+				selectedFresh: 0,
+				selectedRetries: 0,
+				deferredBudget: 0,
+				deferredApproval: 0,
+				deferredRetryFairness: 0,
+				deferredInFlightTarget: 0,
+				deferredDuplicateTarget: 0,
+				inFlight: 0,
+				blocked: 0,
+				retryStateUnavailable: 0,
+				retryState: "complete",
+				total: 0,
+			},
 			itemsRemoved: 0,
 			itemsUnmonitored: 0,
 			itemsFilesDeleted: 0,
@@ -1880,13 +1895,29 @@ export async function executeCleanupPreview(
 
 	if (config.rules.length === 0) {
 		const retryPreview = await loadDurableRetryPreview(deps, userId, config.id);
+		const retryState = retryPreview.loaded ? "complete" : "unavailable";
 		return {
 			isDryRun: true,
 			status: retryPreview.warning ? "partial" : "completed",
 			itemsEvaluated: 0,
 			itemsFlagged: 0,
-			pendingRetryCount: retryPreview.total,
+			pendingRetryCount: retryPreview.loaded ? retryPreview.total : null,
+			selectionCountsComplete: retryPreview.loaded,
 			previewItemCount: retryPreview.targetKeys.size,
+			previewSelection: {
+				selectedFresh: 0,
+				selectedRetries: 0,
+				deferredBudget: 0,
+				deferredApproval: 0,
+				deferredRetryFairness: 0,
+				deferredInFlightTarget: 0,
+				deferredDuplicateTarget: 0,
+				inFlight: 0,
+				blocked: 0,
+				retryStateUnavailable: 0,
+				retryState,
+				total: retryPreview.targetKeys.size,
+			},
 			itemsRemoved: 0,
 			itemsUnmonitored: 0,
 			itemsFilesDeleted: 0,
@@ -1939,9 +1970,10 @@ export async function executeCleanupPreview(
 			sharedPlexBlocks.size,
 		);
 		const details = buildDirectSelectionDetails(directSelection, sharedPlexBlocks);
-		const selectionDeferred = directSelection.plan.decisions.filter(
-			(decision) => decision.disposition !== "selected",
-		).length;
+		const previewSelection = {
+			...directSelection.plan.counts,
+			blocked: sharedPlexBlocks.size,
+		};
 
 		log.info(
 			{
@@ -1959,13 +1991,23 @@ export async function executeCleanupPreview(
 			isDryRun: true,
 			status: allWarnings.length > 0 ? "partial" : "completed",
 			itemsEvaluated: totalEvaluated,
-			itemsFlagged: directSelection.plan.selectedFresh.length,
-			pendingRetryCount: directSelection.pendingRetryCount ?? undefined,
-			previewItemCount: directSelection.plan.counts.total,
+			itemsFlagged: flagged.length,
+			pendingRetryCount: directSelection.pendingRetryCount,
+			selectionCountsComplete: directSelection.retryStateLoaded,
+			previewItemCount: previewSelection.total,
+			previewSelection,
 			itemsRemoved: 0,
 			itemsUnmonitored: 0,
 			itemsFilesDeleted: 0,
-			itemsSkipped: selectionDeferred + sharedPlexBlocks.size,
+			itemsSkipped:
+				previewSelection.deferredBudget +
+				previewSelection.deferredApproval +
+				previewSelection.deferredRetryFairness +
+				previewSelection.deferredInFlightTarget +
+				previewSelection.deferredDuplicateTarget +
+				previewSelection.inFlight +
+				previewSelection.retryStateUnavailable +
+				previewSelection.blocked,
 			details,
 			durationMs: Date.now() - startTime,
 			prefetchHealth,
@@ -2012,13 +2054,16 @@ export async function executeCleanupPreview(
 		...buildCleanupPreviewDetails(selectedFresh, sharedPlexBlocks),
 		...approvalSelection.skippedDetails,
 	].slice(0, PREVIEW_SAFETY_INSPECTION_LIMIT);
-	const selectionDeferred =
-		approvalSelection.plan.decisions.filter((decision) => decision.disposition !== "selected")
-			.length +
-		Math.max(
-			0,
-			approvalSelection.inFlightRetryTargetCount - approvalSelection.plan.counts.inFlight,
-		);
+	const additionalInFlightTargets = Math.max(
+		0,
+		approvalSelection.inFlightRetryTargetCount - approvalSelection.plan.counts.inFlight,
+	);
+	const previewSelection = {
+		...approvalSelection.plan.counts,
+		inFlight: approvalSelection.plan.counts.inFlight + additionalInFlightTargets,
+		blocked: sharedPlexBlocks.size,
+		total: approvalSelection.plan.counts.total + additionalInFlightTargets,
+	};
 
 	const hasWarnings = allWarnings.length > 0;
 	log.info(
@@ -2037,18 +2082,23 @@ export async function executeCleanupPreview(
 		isDryRun: true,
 		status: hasWarnings ? ("partial" as const) : ("completed" as const),
 		itemsEvaluated: totalEvaluated,
-		itemsFlagged: approvalSelection.plan.selectedFresh.length,
-		pendingRetryCount: approvalSelection.pendingRetryCount ?? undefined,
-		previewItemCount:
-			approvalSelection.plan.counts.total +
-			Math.max(
-				0,
-				approvalSelection.inFlightRetryTargetCount - approvalSelection.plan.counts.inFlight,
-			),
+		itemsFlagged: flagged.length,
+		pendingRetryCount: approvalSelection.pendingRetryCount,
+		selectionCountsComplete: approvalSelection.retryStateLoaded,
+		previewItemCount: previewSelection.total,
+		previewSelection,
 		itemsRemoved: 0,
 		itemsUnmonitored: 0,
 		itemsFilesDeleted: 0,
-		itemsSkipped: selectionDeferred + sharedPlexBlocks.size,
+		itemsSkipped:
+			previewSelection.deferredBudget +
+			previewSelection.deferredApproval +
+			previewSelection.deferredRetryFairness +
+			previewSelection.deferredInFlightTarget +
+			previewSelection.deferredDuplicateTarget +
+			previewSelection.inFlight +
+			previewSelection.retryStateUnavailable +
+			previewSelection.blocked,
 		details,
 		durationMs: Date.now() - startTime,
 		prefetchHealth,

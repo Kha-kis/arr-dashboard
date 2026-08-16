@@ -813,11 +813,17 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				}
 
 				const MAX_PREVIEW_ITEMS = 200;
+				const selectionCountsComplete =
+					result.selectionCountsComplete ?? result.previewSelection?.retryState !== "unavailable";
 				const totalPreviewItems =
 					result.previewItemCount ??
-					Math.max(result.itemsFlagged + (result.pendingRetryCount ?? 0), result.details.length);
+					Math.max(
+						result.itemsFlagged +
+							(typeof result.pendingRetryCount === "number" ? result.pendingRetryCount : 0),
+						result.details.length,
+					);
 				const previewDetails = result.details.slice(0, MAX_PREVIEW_ITEMS);
-				const truncated = totalPreviewItems > previewDetails.length;
+				const hiddenPreviewItems = Math.max(0, totalPreviewItems - previewDetails.length);
 
 				// qui-derived safety hint (Phase 3.3). Single bulk query joins
 				// LibraryCache for every previewed item so operators see
@@ -901,7 +907,15 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 				return reply.send({
 					totalEvaluated: result.itemsEvaluated,
 					totalFlagged: result.itemsFlagged,
-					pendingRetryCount: result.pendingRetryCount ?? 0,
+					pendingRetryCount: result.pendingRetryCount === undefined ? 0 : result.pendingRetryCount,
+					selectionCountsComplete,
+					selection: result.previewSelection,
+					display: {
+						shown: previewDetails.length,
+						hidden: hiddenPreviewItems,
+						limit: MAX_PREVIEW_ITEMS,
+						complete: hiddenPreviewItems === 0,
+					},
 					items: previewDetails.map((d) => {
 						const itemType = d.itemType ?? "movie";
 						const key =
@@ -932,8 +946,12 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 					prefetchHealth: result.prefetchHealth,
 					warnings: [
 						...(result.warnings ?? []),
-						...(truncated
-							? [`Showing ${previewDetails.length} of ${totalPreviewItems} preview items`]
+						...(hiddenPreviewItems > 0
+							? [
+									selectionCountsComplete
+										? `Display capped at ${previewDetails.length} of ${totalPreviewItems} preview items; selection counts remain complete.`
+										: `Display capped at ${previewDetails.length} of ${totalPreviewItems} known preview items; retry-backed selection counts are incomplete because durable retry state could not be loaded.`,
+								]
 							: []),
 					],
 				});

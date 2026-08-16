@@ -822,7 +822,80 @@ describe("LibraryCleanupClient", () => {
 			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
 
 			expect(
-				screen.getByText("Preview Results (0 of 0 items flagged · 1 retry pending)"),
+				screen.getByText("Preview Results (0 of 0 rule matches · 1 retry pending)"),
+			).toBeInTheDocument();
+		});
+
+		it("explains complete and unavailable next-run selection counts", () => {
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 5,
+						totalFlagged: 2,
+						pendingRetryCount: 1,
+						selectionCountsComplete: true,
+						selection: {
+							selectedFresh: 1,
+							selectedRetries: 1,
+							deferredBudget: 3,
+							deferredApproval: 0,
+							deferredRetryFairness: 0,
+							deferredInFlightTarget: 0,
+							deferredDuplicateTarget: 0,
+							inFlight: 0,
+							blocked: 1,
+							retryStateUnavailable: 0,
+							retryState: "complete",
+							total: 5,
+						},
+						items: [],
+					},
+				}),
+			);
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			expect(
+				screen.getByText("Preview Results (2 of 5 rule matches · 1 retry pending)"),
+			).toBeInTheDocument();
+			expect(
+				screen.getByText(/Next run reserves 1 fresh slot \+ 1 retry attempt\. 3 deferred\./),
+			).toBeInTheDocument();
+			expect(
+				screen.getByText(/Selected fresh slots include 1 currently safety-blocked item\./),
+			).toBeInTheDocument();
+		});
+
+		it("fails closed when durable retry state is unavailable", () => {
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 5,
+						totalFlagged: 2,
+						pendingRetryCount: null,
+						selectionCountsComplete: false,
+						selection: {
+							selectedFresh: 0,
+							selectedRetries: 0,
+							deferredBudget: 0,
+							deferredApproval: 0,
+							deferredRetryFairness: 0,
+							deferredInFlightTarget: 0,
+							deferredDuplicateTarget: 0,
+							inFlight: 0,
+							blocked: 0,
+							retryStateUnavailable: 2,
+							retryState: "unavailable",
+							total: 2,
+						},
+						items: [],
+					},
+				}),
+			);
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+			expect(
+				screen.getByText("Preview Results (2 of 5 rule matches · retry count unavailable)"),
+			).toBeInTheDocument();
+			expect(
+				screen.getByText(/Next run cannot be determined: durable retry state is unavailable\./),
 			).toBeInTheDocument();
 		});
 
