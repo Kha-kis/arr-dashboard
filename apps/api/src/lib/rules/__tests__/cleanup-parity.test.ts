@@ -392,6 +392,80 @@ describe("parity — composites", () => {
 	it("legacy quirk — unparseable composite conditions no-match", () => {
 		assertParity(makeRule({ ruleType: "composite", operator: "AND", conditions: "not-json{{{" }));
 	});
+
+	it("evaluates a self-describing recursive document stored in conditions", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem(),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						all: [
+							{ kind: "age", params: ageCond.parameters },
+							{
+								any: [
+									{ kind: "size", params: noMatchCond.parameters },
+									{ kind: "size", params: sizeCond.parameters },
+								],
+							},
+						],
+					},
+				}),
+			}),
+			"RADARR",
+			baseCtx(),
+		);
+
+		expect(result?.reason).toContain(" AND ");
+	});
+
+	it("fails closed when NOT receives unavailable cleanup evidence", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem(),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: { kind: "plex_last_watched", params: { operator: "older_than", days: 30 } },
+					},
+				}),
+			}),
+			"RADARR",
+			baseCtx({ plexMap: new Map() }),
+		);
+
+		expect(result).toBeNull();
+	});
+
+	it("temporarily treats a legacy false leaf as unknown under NOT until Task 3", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem({ arrAddedAt: new Date("2026-02-28T00:00:00Z") }),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: { kind: "age", params: { operator: "older_than", days: 30 } },
+					},
+				}),
+			}),
+			"RADARR",
+			baseCtx(),
+		);
+
+		// evaluateSingleCondition currently collapses proven false and unavailable
+		// evidence to null. Wave 3A converts that null to unknown so NOT cannot
+		// authorize deletion; Task 3 will supply evidence-aware leaf states.
+		expect(result).toBeNull();
+	});
 });
 
 // ---------------------------------------------------------------------------

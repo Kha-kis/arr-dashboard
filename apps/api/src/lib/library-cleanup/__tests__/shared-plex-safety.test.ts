@@ -7153,6 +7153,41 @@ describe("shared Plex deletion safety", () => {
 		});
 	});
 
+	it("fails closed for a NOT exemption before executing an approved mutation", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const storedApproval = approvalRecord() as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		vi.mocked(deps.prisma.crossDomainRule.findMany).mockResolvedValue([
+			deployedCleanupExemption({
+				version: 1,
+				root: {
+					not: {
+						kind: "year_range",
+						params: { operator: "after", year: 2030 },
+					},
+				},
+			}),
+		] as never);
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toEqual({
+			removed: 0,
+			failed: 1,
+			errors: [
+				"Skipped for safety: current deployed cleanup exemption policy covers this ARR target.",
+			],
+		});
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({
+			status: "pending",
+			executionToken: null,
+			lastExecutionError:
+				"Skipped for safety: current deployed cleanup exemption policy covers this ARR target.",
+		});
+	});
+
 	it("evaluates execution-time exemptions from the live ARR resource", async () => {
 		const { deps, deleteMovie, deleteMovieFile } = makeDeps({
 			mediaPartCount: 1,
@@ -7284,6 +7319,45 @@ describe("shared Plex deletion safety", () => {
 				root: {
 					kind: "year_range",
 					params: { operator: "before", year: 2030 },
+				},
+			}),
+		] as never);
+
+		const result = await executeRetryItems(deps, "user-1", ["approval-1"]);
+
+		expect(result).toEqual({
+			removed: 0,
+			reconciled: 0,
+			failed: 1,
+			errors: [
+				"Skipped for safety: current deployed cleanup exemption policy covers this ARR target.",
+			],
+		});
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(storedRetry).toMatchObject({
+			status: "expired",
+			executionToken: null,
+			lastExecutionError:
+				"Skipped for safety: current deployed cleanup exemption policy covers this ARR target.",
+		});
+	});
+
+	it("fails closed for a NOT exemption before resuming a durable retry mutation", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const storedRetry = approvalRecord({
+			status: "retry_pending",
+			executionToken: null,
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedRetry);
+		vi.mocked(deps.prisma.crossDomainRule.findMany).mockResolvedValue([
+			deployedCleanupExemption({
+				version: 1,
+				root: {
+					not: {
+						kind: "year_range",
+						params: { operator: "after", year: 2030 },
+					},
 				},
 			}),
 		] as never);

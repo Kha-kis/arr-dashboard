@@ -39,6 +39,34 @@ describe("<RuleDocumentView />", () => {
 		expect(screen.getByText("Any of")).toBeInTheDocument();
 	});
 
+	it("renders nested groups and NOT without dropping predicates", () => {
+		const doc: RuleDocument = {
+			version: 1,
+			root: {
+				all: [
+					{ kind: "age", params: { operator: "older_than", days: 90 } },
+					{
+						not: {
+							any: [
+								{ kind: "genre", params: { genres: ["Horror"] } },
+								{ kind: "no_file", params: {} },
+							],
+						},
+					},
+				],
+			},
+		};
+
+		render(<RuleDocumentView document={doc} context="library-cleanup" incognito={false} />);
+
+		expect(screen.getByText("All of")).toBeInTheDocument();
+		expect(screen.getByText("Not")).toBeInTheDocument();
+		expect(screen.getByText("Any of")).toBeInTheDocument();
+		expect(screen.getByText("Age")).toBeInTheDocument();
+		expect(screen.getByText("Genre")).toBeInTheDocument();
+		expect(screen.getByText("No file")).toBeInTheDocument();
+	});
+
 	it("annotates an empty group as 'matches every event' for notifications", () => {
 		const doc: RuleDocument = { version: 1, root: { all: [] } };
 		render(<RuleDocumentView document={doc} context="notifications" incognito={false} />);

@@ -28,6 +28,7 @@ import {
 	type RuleDocument,
 	type RuleNode,
 	ruleDocumentSchema,
+	validateV1Bounds,
 } from "@arr/shared";
 
 // ============================================================================
@@ -93,6 +94,49 @@ function parseJsonObject(raw: string, what: string): Record<string, unknown> {
 	return parsed as Record<string, unknown>;
 }
 
+function parseStoredV1Document(row: CriteriaV0Row): RuleDocument | null {
+	if (row.conditions === null) return null;
+
+	let conditions: unknown;
+	try {
+		conditions = JSON.parse(row.conditions);
+	} catch {
+		if (row.ruleType === "composite" && row.operator === null) {
+			throw new V0MapperError("composite conditions must be a self-describing v1 document");
+		}
+		return null;
+	}
+	const isEnvelope =
+		conditions !== null &&
+		typeof conditions === "object" &&
+		!Array.isArray(conditions) &&
+		Object.hasOwn(conditions, "version");
+
+	if (!isEnvelope) {
+		if (row.ruleType === "composite" && row.operator === null) {
+			throw new V0MapperError("composite conditions must be a self-describing v1 document");
+		}
+		return null;
+	}
+	if (row.ruleType !== "composite") {
+		throw new V0MapperError("v1 cleanup document requires ruleType composite");
+	}
+	if (row.operator !== null) {
+		throw new V0MapperError("v1 cleanup document requires operator null");
+	}
+	const params = parseJsonObject(row.parameters || "{}", "rule parameters");
+	if (Object.keys(params).length > 0) {
+		throw new V0MapperError("v1 cleanup document cannot mix legacy parameters");
+	}
+	const parsed = ruleDocumentSchema.safeParse(conditions);
+	if (!parsed.success) {
+		throw new V0MapperError("v1 cleanup document is invalid", parsed.error.flatten());
+	}
+	const boundsError = validateV1Bounds(parsed.data);
+	if (boundsError) throw new V0MapperError(boundsError);
+	return parsed.data;
+}
+
 /**
  * Map a cleanup/auto-tag v0 row to a v1 document (near-identity, §3).
  *
@@ -105,6 +149,9 @@ function parseJsonObject(raw: string, what: string): Record<string, unknown> {
  * crashed boot or a 500'd list.
  */
 export function mapCriteriaV0ToDocument(row: CriteriaV0Row): RuleDocument {
+	const v1Document = parseStoredV1Document(row);
+	if (v1Document) return v1Document;
+
 	// Composite-mode discriminator MUST match legacy `evaluateRule`
 	// (`rule.operator && rule.conditions`), NOT `ruleType === "composite"`.
 	// A stored row with a leaf ruleType plus operator+conditions evaluates
@@ -115,6 +162,9 @@ export function mapCriteriaV0ToDocument(row: CriteriaV0Row): RuleDocument {
 	// rejects the mixed shape, but stored rows predating that guard must
 	// keep their legacy meaning forever.
 	if (!(row.operator && row.conditions)) {
+		if (row.ruleType.length === 0) {
+			throw new V0MapperError("single rule has no ruleType");
+		}
 		const doc: RuleDocument = {
 			version: 1,
 			root: {
@@ -122,7 +172,7 @@ export function mapCriteriaV0ToDocument(row: CriteriaV0Row): RuleDocument {
 				params: parseJsonObject(row.parameters || "{}", "rule parameters"),
 			},
 		};
-		return ruleDocumentSchema.parse(doc);
+		return doc;
 	}
 
 	if (row.operator !== "AND" && row.operator !== "OR") {
@@ -158,7 +208,7 @@ export function mapCriteriaV0ToDocument(row: CriteriaV0Row): RuleDocument {
 		version: 1,
 		root: row.operator === "AND" ? { all: children } : { any: children },
 	};
-	return ruleDocumentSchema.parse(doc);
+	return doc;
 }
 
 // ============================================================================
@@ -197,5 +247,5 @@ export function mapNotificationsV0ToDocument(conditions: unknown): RuleDocument 
 	});
 
 	const doc: RuleDocument = { version: 1, root: { all: children } };
-	return ruleDocumentSchema.parse(doc);
+	return doc;
 }

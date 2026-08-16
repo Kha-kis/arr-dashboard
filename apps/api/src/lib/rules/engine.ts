@@ -32,6 +32,7 @@
 
 import {
 	groupChildren,
+	isRuleNot,
 	isRulePredicate,
 	type RuleDocument,
 	type RuleGroup,
@@ -44,21 +45,29 @@ import {
 // ============================================================================
 
 /**
- * A predicate evaluator returns the human-readable match reason, or
- * null for no-match. Unknown/retired kinds and stale params MUST return
- * null (tier-3 permissive null), never throw.
+ * `null` retains the legacy no-match contract used by notifications and
+ * auto-tag. Cleanup v1 callers opt into `UNKNOWN` when their source evidence
+ * is unavailable; that distinction is necessary for NOT to fail closed.
  */
-export type PredicateEvaluator = (predicate: RulePredicate) => string | null;
+export const UNKNOWN = Symbol("rule-evaluation-unknown");
 
-export type EvalResult = { matched: true; reason: string } | { matched: false };
+export type PredicateEvaluator = (predicate: RulePredicate) => string | null | typeof UNKNOWN;
+
+export type EvalResult =
+	| { matched: true; reason: string }
+	| { matched: false; unknown?: false }
+	| { matched: false; unknown: true };
 
 const NO_MATCH: EvalResult = { matched: false };
+const UNKNOWN_RESULT: EvalResult = { matched: false, unknown: true };
 
 export function evaluateNode(node: RuleNode, evalPredicate: PredicateEvaluator): EvalResult {
 	if (isRulePredicate(node)) {
 		const reason = evalPredicate(node);
+		if (reason === UNKNOWN) return UNKNOWN_RESULT;
 		return reason === null ? NO_MATCH : { matched: true, reason };
 	}
+	if (isRuleNot(node)) return evaluateNot(node, evalPredicate);
 	return evaluateGroup(node, evalPredicate);
 }
 
@@ -69,20 +78,39 @@ function evaluateGroup(group: RuleGroup, evalPredicate: PredicateEvaluator): Eva
 		// Vacuous truth on []: notifications' "no conditions = match all
 		// events". Cleanup never reaches here with [] (adapter guard).
 		const reasons: string[] = [];
+		let hasUnknown = false;
 		for (const child of children) {
 			const result = evaluateNode(child, evalPredicate);
-			if (!result.matched) return NO_MATCH;
-			reasons.push(result.reason);
+			if (result.matched) {
+				reasons.push(result.reason);
+			} else if (result.unknown) {
+				hasUnknown = true;
+			} else {
+				return NO_MATCH;
+			}
 		}
+		if (hasUnknown) return UNKNOWN_RESULT;
 		return { matched: true, reason: reasons.join(" AND ") };
 	}
 
 	// any: first matching child's reason only (legacy OR semantics)
+	let hasUnknown = false;
 	for (const child of children) {
 		const result = evaluateNode(child, evalPredicate);
 		if (result.matched) return result;
+		if (result.unknown) hasUnknown = true;
 	}
-	return NO_MATCH;
+	return hasUnknown ? UNKNOWN_RESULT : NO_MATCH;
+}
+
+function evaluateNot(
+	node: Extract<RuleNode, { not: RuleNode }>,
+	evalPredicate: PredicateEvaluator,
+): EvalResult {
+	const result = evaluateNode(node.not, evalPredicate);
+	if (!result.matched && result.unknown) return UNKNOWN_RESULT;
+	if (result.matched) return NO_MATCH;
+	return { matched: true, reason: "NOT" };
 }
 
 export function evaluateDocument(doc: RuleDocument, evalPredicate: PredicateEvaluator): EvalResult {
@@ -119,6 +147,7 @@ function annotateNode(node: RuleNode, legalKinds: ReadonlySet<string>): RuleNode
 		}
 		return { ...node, unavailableKind: true };
 	}
+	if (isRuleNot(node)) return { not: annotateNode(node.not, legalKinds) };
 	if ("all" in node) {
 		return { all: node.all.map((child) => annotateNode(child, legalKinds)) };
 	}
@@ -131,6 +160,10 @@ export function listUnavailableKinds(doc: RuleDocument, legalKinds: ReadonlySet<
 	const walk = (node: RuleNode): void => {
 		if (isRulePredicate(node)) {
 			if (!legalKinds.has(node.kind)) found.add(node.kind);
+			return;
+		}
+		if (isRuleNot(node)) {
+			walk(node.not);
 			return;
 		}
 		for (const child of groupChildren(node)) walk(child);

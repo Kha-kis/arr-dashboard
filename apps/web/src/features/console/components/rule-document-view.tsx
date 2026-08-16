@@ -3,9 +3,8 @@
 /**
  * Read-only renderer for a v1 {@link RuleDocument} (charter §5.1 read surface).
  *
- * Walks the document tree with the grammar helpers and renders each predicate
- * as a humanized row. Depth is v1-limited to 1 (one group level), so the tree
- * is a root predicate OR a single all/any group of predicates.
+ * Walks the bounded recursive document tree and renders every all/any/not node
+ * and predicate without flattening its meaning.
  *
  * Empty-group honesty: the three domains' live evaluators disagree on an empty
  * group, so the annotation is context-aware — cleanup and auto-tag no-match an
@@ -14,7 +13,7 @@
  */
 
 import type { RuleContextId, RuleDocument, RuleNode } from "@arr/shared";
-import { groupChildren, isRulePredicate } from "@arr/shared";
+import { groupChildren, isRuleNot, isRulePredicate } from "@arr/shared";
 import { AlertTriangle } from "lucide-react";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { describePredicate } from "../lib/describe-predicate";
@@ -70,33 +69,50 @@ export function RuleDocumentView({
 	context: RuleContextId;
 	incognito: boolean;
 }) {
-	const root = document.root;
+	return <RuleNodeView node={document.root} context={context} incognito={incognito} />;
+}
 
-	if (isRulePredicate(root)) {
-		return <PredicateRow node={root} incognito={incognito} />;
+function RuleNodeView({
+	node,
+	context,
+	incognito,
+}: {
+	node: RuleNode;
+	context: RuleContextId;
+	incognito: boolean;
+}) {
+	if (isRulePredicate(node)) return <PredicateRow node={node} incognito={incognito} />;
+
+	if (isRuleNot(node)) {
+		return (
+			<div className="space-y-1.5">
+				<span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+					Not
+				</span>
+				<div className="border-l border-border/50 pl-3">
+					<RuleNodeView node={node.not} context={context} incognito={incognito} />
+				</div>
+			</div>
+		);
 	}
 
-	const children = groupChildren(root);
+	const children = groupChildren(node);
 	if (children.length === 0) {
 		return <p className="text-sm italic text-muted-foreground">{emptyGroupNote(context)}</p>;
 	}
 
-	const joiner = "all" in root ? "All of" : "Any of";
+	const joiner = "all" in node ? "All of" : "Any of";
 
 	return (
 		<div className="space-y-1.5">
 			<span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
 				{joiner}
 			</span>
-			<div className="space-y-1">
-				{children.map((child, index) =>
-					isRulePredicate(child) ? (
-						// Stable enough: v1 depth-1 means children are a flat predicate
-						// list rendered in document order.
-						// biome-ignore lint/suspicious/noArrayIndexKey: predicates have no id; order is stable
-						<PredicateRow key={index} node={child} incognito={incognito} />
-					) : null,
-				)}
+			<div className="space-y-1 border-l border-border/50 pl-3">
+				{children.map((child, index) => (
+					// biome-ignore lint/suspicious/noArrayIndexKey: rule nodes have no id; order is stable
+					<RuleNodeView key={index} node={child} context={context} incognito={incognito} />
+				))}
 			</div>
 		</div>
 	);

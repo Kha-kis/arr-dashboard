@@ -508,6 +508,41 @@ describe("mutation policy evidence authority", () => {
 		},
 	);
 
+	it("preserves a matching v0 retention rule with 64 conditions", () => {
+		const conditions = Array.from({ length: 64 }, () => ({
+			ruleType: "year_range",
+			parameters: { operator: "before", year: 2030 },
+		}));
+		const retentionRule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-retain-64",
+				priority: 1,
+				retentionMode: true,
+				operator: "AND",
+				conditions: JSON.stringify(conditions),
+			},
+		);
+		const deleteRule = mutationEvidenceRule("year_range", {
+			operator: "before",
+			year: 2030,
+		});
+
+		const result = evaluateItemMutationPolicyStateViaEngine(
+			mutationEvidenceItem({ _arrDashboardEvidence: {} }) as never,
+			[deleteRule, retentionRule] as never,
+			"RADARR",
+			{ now: new Date() },
+		);
+
+		expect(result).toEqual({
+			kind: "retained",
+			ruleId: "rule-retain-64",
+			evidence: "true",
+		});
+	});
+
 	it("authorizes hdr_type only when the dynamic-range field was explicit", () => {
 		const rule = mutationEvidenceRule("hdr_type", { operator: "is", types: ["HDR10"] });
 		const explicit = evaluateItemMutationPolicyStateViaEngine(

@@ -18,6 +18,7 @@ import {
 	type DataSourceDependency,
 	groupChildren,
 	isKindLegalForContext,
+	isRuleNot,
 	isRulePredicate,
 	type RuleDocument,
 	type RuleNode,
@@ -6451,6 +6452,17 @@ function cleanupExemptionScopeApplies(
 	return true;
 }
 
+function containsRuleNot(root: RuleNode): boolean {
+	const pending = [root];
+	while (pending.length > 0) {
+		const node = pending.pop();
+		if (!node || isRulePredicate(node)) continue;
+		if (isRuleNot(node)) return true;
+		pending.push(...groupChildren(node));
+	}
+	return false;
+}
+
 async function loadCleanupExemptionPolicy(
 	deps: CleanupExecutorDeps,
 	userId: string,
@@ -6516,7 +6528,12 @@ async function loadCleanupExemptionPolicy(
 			if (!isKindLegalForContext("library-cleanup", predicate.kind)) return true;
 			return !ruleParamSchemaMap[predicate.kind]?.safeParse(predicate.params).success;
 		});
-		if (predicates.length === 0 || invalidPredicate || validateV1Depth(parsedDocument.data)) {
+		if (
+			predicates.length === 0 ||
+			invalidPredicate ||
+			containsRuleNot(parsedDocument.data.root) ||
+			validateV1Depth(parsedDocument.data)
+		) {
 			policy.unusableScopes.push(parsedScope.data);
 			deps.log.error(
 				{ ruleId: row.id },
