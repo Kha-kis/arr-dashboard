@@ -1,6 +1,6 @@
 # API Routes Reference
 
-> Reference documentation extracted from CLAUDE.md for detailed deep dives into the API route structure.
+> Versioned developer reference for the API route structure.
 
 All routes in `apps/api/src/routes/`. Protected routes use preHandler authentication.
 

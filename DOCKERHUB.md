@@ -128,7 +128,7 @@ services:
 | `2.7.0` | Major stack upgrade (Node 22, Next.js 16, Prisma 7, Tailwind 4) |
 | `2.5.0` | **Breaking:** Volume path changed to `/config` (LinuxServer.io convention) |
 
-> **Upgrading from 2.4.x?** The volume mount path changed from `/app/data` to `/config`. See [migration instructions](https://github.com/Kha-kis/arr-dashboard/blob/main/RELEASE_NOTES.md).
+> **Upgrading from 2.4.x?** The volume mount path changed from `/app/data` to `/config`. See the [2.5.0 migration instructions](https://github.com/Kha-kis/arr-dashboard/blob/main/CHANGELOG.md#250---2025-10-01).
 
 ## First Time Setup
 

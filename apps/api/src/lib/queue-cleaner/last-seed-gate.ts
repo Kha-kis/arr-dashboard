@@ -68,7 +68,7 @@ export function partitionByReferencedHashes(
  * unique-hash set matters for the `in` clause.
  *
  * @param prisma           Prisma client
- * @param userId           Owner of the library caches (CLAUDE.md §Ownership)
+ * @param userId           Owner of the library caches (AGENTS.md ownership invariant)
  * @param hashesByItemId   Map of *arr queueItemId → normalized lowercase hash
  *                         for every item the caller wants to consider
  * @returns                Subset of itemIds whose hashes are still referenced

@@ -1,6 +1,6 @@
 # UI Theming System
 
-> Reference documentation extracted from CLAUDE.md for detailed deep dives into the theming and UI system.
+> Versioned developer reference for the theming and UI system.
 
 The application uses a centralized, three-tier color system with CSS variables for instant theme switching.
 

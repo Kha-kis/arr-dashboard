@@ -4,11 +4,11 @@
 		"scripts/**",
 		"docker/**",
 		"e2e/**",
+		"apps/web/public/sw.js",
 		"**/generated/**",
 		"**/test-*.ts",
 		"**/analyze-*.ts"
 	],
-	"ignoreDependencies": ["pino-roll"],
 	"exclude": ["unlisted", "binaries", "duplicates", "unresolved"],
 	"ignoreExportsUsedInFile": true
 }

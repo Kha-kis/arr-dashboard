@@ -139,7 +139,7 @@ A new media or request service (more common):
 6. Frontend: `apps/web/src/lib/api-client/<service>.ts`,
    `apps/web/src/hooks/api/use<Service>.ts`, and a query-key entry in
    `apps/web/src/lib/query-keys.ts` (mirror the existing pairs;
-   inline string arrays are forbidden by `CLAUDE.md`).
+   inline string arrays are forbidden by `AGENTS.md`).
 7. If the integration emits validation stats, wire them into
    `lib/validation/integration-health.ts` so they surface in
    `/system/validation-health` automatically.

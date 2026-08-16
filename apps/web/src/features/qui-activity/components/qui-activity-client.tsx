@@ -641,7 +641,7 @@ interface ActionRowProps {
 const ActionRow = ({ entry, animationDelay }: ActionRowProps) => {
 	const [isIncognito] = useIncognitoMode();
 	const StatusIcon = ACTION_STATUS_ICON[entry.status];
-	// Incognito guidance per CLAUDE.md rule 6 — anonymize the qui instance
+	// Incognito guidance per AGENTS.md — anonymize the qui instance
 	// label so screenshots don't leak operator setups. The hash is already
 	// pseudo-anonymous (no PII), but instance labels can be personal.
 	const instanceLabel = isIncognito
