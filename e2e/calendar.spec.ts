@@ -168,3 +168,69 @@ test.describe("Calendar - Refresh", () => {
 		await expect(page.getByRole("heading", { name: /calendar/i, level: 1 })).toBeVisible();
 	});
 });
+
+test.describe("Calendar - Timezone Bucketing", () => {
+	test.use({ timezoneId: "Europe/Stockholm" });
+
+	test("places an early-morning Sonarr episode on the viewer's local day", async ({ page }) => {
+		const dateParts = new Intl.DateTimeFormat("en-US", {
+			timeZone: "Europe/Stockholm",
+			year: "numeric",
+			month: "2-digit",
+		}).formatToParts(new Date());
+		const year = dateParts.find((part) => part.type === "year")?.value;
+		const month = dateParts.find((part) => part.type === "month")?.value;
+		expect(year).toBeTruthy();
+		expect(month).toBeTruthy();
+
+		const networkDate = `${year}-${month}-15`;
+		const localDate = `${year}-${month}-16`;
+		const title = "Stockholm timezone regression";
+
+		await page.route("**/api/services", async (route) => {
+			await route.fulfill({
+				contentType: "application/json",
+				body: JSON.stringify({ services: [] }),
+			});
+		});
+		await page.route("**/api/dashboard/calendar?**", async (route) => {
+			const item = {
+				id: 756,
+				title,
+				seriesTitle: title,
+				service: "sonarr",
+				type: "episode",
+				airDate: networkDate,
+				airDateUtc: `${localDate}T00:00:00Z`,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				instanceId: "sonarr-1",
+				instanceName: "Sonarr",
+			};
+
+			await route.fulfill({
+				contentType: "application/json",
+				body: JSON.stringify({
+					instances: [
+						{
+							instanceId: "sonarr-1",
+							instanceName: "Sonarr",
+							service: "sonarr",
+							data: [item],
+						},
+					],
+					aggregated: [item],
+					totalCount: 1,
+				}),
+			});
+		});
+
+		const baseUrl = process.env.TEST_BASE_URL ?? "";
+		await page.goto(`${baseUrl}${ROUTES.calendar}`);
+		const eventChip = page.getByText(title, { exact: true });
+		await expect(eventChip).toBeVisible({ timeout: TIMEOUTS.medium });
+
+		const eventCell = eventChip.locator("xpath=ancestor::button[1]");
+		await expect(eventCell.locator("span").filter({ hasText: /^16$/ })).toBeVisible();
+	});
+});
