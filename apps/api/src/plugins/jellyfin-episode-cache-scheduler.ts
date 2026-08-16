@@ -7,17 +7,55 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { createJellyfinClient } from "../lib/jellyfin/jellyfin-client.js";
-import {
-	recordJellyfinEpisodeCacheRefreshFailure,
-	refreshJellyfinEpisodeCache,
-} from "../lib/jellyfin/jellyfin-episode-cache-refresher.js";
-import { jellyfinConnectionFingerprint } from "../lib/jellyfin/service-instance-fingerprint.js";
+import { createOwnedJellyfinPublicationSnapshot } from "../lib/jellyfin/jellyfin-cache-refresher.js";
+import { refreshJellyfinEpisodeCache } from "../lib/jellyfin/jellyfin-episode-cache-refresher.js";
+import type { ServiceInstance } from "../lib/prisma.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import { getErrorMessage } from "../lib/utils/error-message.js";
+import { recordWatchProviderCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
+import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 6 * 60 * 1000; // 6 minutes (after jellyfin-cache populates)
+
+export async function refreshScheduledJellyfinEpisodeCacheInstance(
+	app: Pick<FastifyInstance, "encryptor" | "prisma" | "log">,
+	instance: ServiceInstance,
+): Promise<void> {
+	const authority = createProviderPublicationAuthority(instance);
+	let publicationInstance: ReturnType<typeof createOwnedJellyfinPublicationSnapshot>;
+	try {
+		publicationInstance = createOwnedJellyfinPublicationSnapshot(app.encryptor, instance);
+	} catch (err) {
+		app.log.error(
+			{ err, instanceId: instance.id, label: instance.label },
+			"Jellyfin episode cache refresh failed for instance",
+		);
+		await recordWatchProviderCacheRefreshFailure(
+			app.prisma,
+			"jellyfin_episode",
+			"Provider credentials could not be decrypted.",
+			authority,
+			app.log,
+		);
+		return;
+	}
+	try {
+		const result = await refreshJellyfinEpisodeCache({
+			prisma: app.prisma,
+			instance: publicationInstance,
+			log: app.log,
+		});
+		app.log.info(
+			{ instanceId: instance.id, label: instance.label, ...result },
+			"Jellyfin episode cache refresh completed",
+		);
+	} catch (err) {
+		app.log.error(
+			{ err, instanceId: instance.id, label: instance.label },
+			"Jellyfin episode cache refresh failed for instance",
+		);
+	}
+}
 
 const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
@@ -40,33 +78,7 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					if (instances.length === 0) return;
 
 					for (const instance of instances) {
-						const connectionFingerprint = jellyfinConnectionFingerprint(instance);
-						try {
-							const client = createJellyfinClient(app.encryptor, instance, app.log);
-							const result = await refreshJellyfinEpisodeCache(
-								client,
-								app.prisma,
-								instance.id,
-								app.log,
-								connectionFingerprint,
-							);
-							app.log.info(
-								{ instanceId: instance.id, label: instance.label, ...result },
-								"Jellyfin episode cache refresh completed",
-							);
-						} catch (err) {
-							app.log.error(
-								{ err, instanceId: instance.id, label: instance.label },
-								"Jellyfin episode cache refresh failed for instance",
-							);
-							await recordJellyfinEpisodeCacheRefreshFailure(
-								app.prisma,
-								instance.id,
-								connectionFingerprint,
-								getErrorMessage(err, "Unknown Jellyfin episode refresh error"),
-								app.log,
-							);
-						}
+						await refreshScheduledJellyfinEpisodeCacheInstance(app, instance);
 					}
 				});
 			} finally {

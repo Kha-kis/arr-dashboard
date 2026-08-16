@@ -4,14 +4,55 @@ import { toast } from "sonner";
 import {
 	useCreateServiceMutation,
 	useDeleteServiceMutation,
+	useReplaceServiceIdentityMutation,
 	useTestConnectionBeforeAdd,
 	useTestServiceConnection,
 	useUpdateServiceMutation,
+	useVerifyServiceIdentityMutation,
 } from "../../../hooks/api/useServiceMutations";
-import type { UpdateServicePayload } from "../../../lib/api-client/services";
 import { ApiError } from "../../../lib/api-client/base";
+import {
+	inspectServiceIdentity,
+	type ServiceIdentityCandidate,
+	type UpdateServicePayload,
+} from "../../../lib/api-client/services";
 import { getErrorMessage } from "../../../lib/error-utils";
-import { supportsHttpBasicAuth, type ServiceFormState } from "../lib/settings-utils";
+import { type ServiceFormState, supportsHttpBasicAuth } from "../lib/settings-utils";
+
+export type IdentityFlow = {
+	instanceId: string;
+	mode: "verify" | "replace";
+	candidate: ServiceIdentityCandidate;
+	connectionGeneration: number;
+	identityGeneration: number;
+	replacementPayload: UpdateServicePayload;
+	analyticsUnavailableConfirmedFor?: AnalyticsProvider;
+	requiresReinspection: boolean;
+	message: string;
+};
+
+function getIdentityConflict(error: unknown) {
+	if (!(error instanceof ApiError) || error.status !== 409 || !error.payload) return null;
+	const payload = error.payload as { details?: unknown };
+	const details = payload.details;
+	if (!details || typeof details !== "object") return null;
+	const value = details as Record<string, unknown>;
+	if (
+		value.code !== "IDENTITY_REPLACEMENT_REQUIRED" &&
+		value.code !== "IDENTITY_CANDIDATE_CHANGED" &&
+		value.code !== "IDENTITY_GENERATION_STALE"
+	)
+		return null;
+	return value as {
+		code:
+			| "IDENTITY_REPLACEMENT_REQUIRED"
+			| "IDENTITY_CANDIDATE_CHANGED"
+			| "IDENTITY_GENERATION_STALE";
+		candidate?: ServiceIdentityCandidate;
+		connectionGeneration: number;
+		identityGeneration: number;
+	};
+}
 
 type AnalyticsUnavailableConfirmation = {
 	selected: AnalyticsProvider;
@@ -45,6 +86,9 @@ export const useServicesManagement = () => {
 	const deleteServiceMutation = useDeleteServiceMutation();
 	const testServiceConnectionMutation = useTestServiceConnection();
 	const testConnectionBeforeAddMutation = useTestConnectionBeforeAdd();
+	const verifyIdentityMutation = useVerifyServiceIdentityMutation();
+	const replaceIdentityMutation = useReplaceServiceIdentityMutation();
+	const [identityFlow, setIdentityFlow] = useState<IdentityFlow | null>(null);
 
 	const [testingConnection, setTestingConnection] = useState<string | null>(null);
 	const [testResult, setTestResult] = useState<{
@@ -156,12 +200,14 @@ export const useServicesManagement = () => {
 			return;
 		}
 
+		let identityReplacementPayload: UpdateServicePayload | undefined;
 		try {
 			if (selectedServiceForEdit) {
 				const updatePayload: UpdateServicePayload = { ...basePayload };
 				if (!basePayload.apiKey) {
 					updatePayload.apiKey = undefined;
 				}
+				identityReplacementPayload = updatePayload;
 				const updateVariables = {
 					id: selectedServiceForEdit.id,
 					payload: updatePayload,
@@ -171,14 +217,34 @@ export const useServicesManagement = () => {
 				} catch (error) {
 					if (
 						requestAnalyticsUnavailableConfirmation(error, async (selected) => {
-							await updateServiceMutation.mutateAsync({
-								...updateVariables,
-								payload: {
-									...updateVariables.payload,
-									confirmAnalyticsUnavailableFor: selected,
-								},
-							});
-							resetForm(basePayload.service);
+							try {
+								await updateServiceMutation.mutateAsync({
+									...updateVariables,
+									payload: {
+										...updateVariables.payload,
+										confirmAnalyticsUnavailableFor: selected,
+									},
+								});
+								resetForm(basePayload.service);
+							} catch (retryError) {
+								const conflict = getIdentityConflict(retryError);
+								if (conflict?.candidate && identityReplacementPayload) {
+									setIdentityFlow({
+										instanceId: selectedServiceForEdit.id,
+										mode: "replace",
+										candidate: conflict.candidate,
+										connectionGeneration: conflict.connectionGeneration,
+										identityGeneration: conflict.identityGeneration,
+										replacementPayload: identityReplacementPayload,
+										analyticsUnavailableConfirmedFor: selected,
+										requiresReinspection: false,
+										message:
+											"This connection points at a different provider. Review and explicitly replace it.",
+									});
+									return;
+								}
+								throw retryError;
+							}
 						})
 					) {
 						return;
@@ -191,6 +257,21 @@ export const useServicesManagement = () => {
 
 			resetForm(basePayload.service);
 		} catch (error) {
+			const conflict = getIdentityConflict(error);
+			if (conflict?.candidate && identityReplacementPayload && selectedServiceForEdit) {
+				setIdentityFlow({
+					instanceId: selectedServiceForEdit!.id,
+					mode: "replace",
+					candidate: conflict.candidate,
+					connectionGeneration: conflict.connectionGeneration,
+					identityGeneration: conflict.identityGeneration,
+					replacementPayload: identityReplacementPayload,
+					requiresReinspection: false,
+					message:
+						"This connection points at a different provider. Review and explicitly replace it.",
+				});
+				return;
+			}
 			toast.error(getErrorMessage(error, "Failed to save service"));
 		}
 	};
@@ -398,9 +479,102 @@ export const useServicesManagement = () => {
 
 	const resetFormTestResult = () => setFormTestResult(null);
 
+	const inspectIdentity = async (instance: ServiceInstanceSummary) => {
+		try {
+			const priorFlow = identityFlow?.instanceId === instance.id ? identityFlow : null;
+			const stagedReplacementCandidate =
+				priorFlow?.mode === "replace" && priorFlow.requiresReinspection
+					? priorFlow.replacementPayload
+					: undefined;
+			const inspection = await inspectServiceIdentity(instance.id, stagedReplacementCandidate);
+			setIdentityFlow({
+				instanceId: instance.id,
+				mode: priorFlow?.mode ?? (instance.identity.status === "mismatch" ? "replace" : "verify"),
+				candidate: inspection.candidate,
+				connectionGeneration: inspection.connectionGeneration,
+				identityGeneration: inspection.identityGeneration,
+				replacementPayload: priorFlow?.replacementPayload ?? {},
+				requiresReinspection: false,
+				message:
+					instance.identity.status === "mismatch"
+						? "The provider differs from the enrolled server. Replacement clears cache data and expires affected pending approvals."
+						: "Confirm this provider identity to verify the saved connection.",
+			});
+		} catch (error) {
+			toast.error(getErrorMessage(error, "Unable to inspect provider identity"));
+		}
+	};
+
+	const confirmIdentity = async () => {
+		if (!identityFlow || identityFlow.requiresReinspection) return;
+		const confirmation = {
+			confirmationDigest: identityFlow.candidate.confirmationDigest,
+			expectedConnectionGeneration: identityFlow.connectionGeneration,
+			expectedIdentityGeneration: identityFlow.identityGeneration,
+		};
+		try {
+			if (identityFlow.mode === "replace") {
+				await replaceIdentityMutation.mutateAsync({
+					id: identityFlow.instanceId,
+					payload: identityFlow.replacementPayload,
+					...(identityFlow.analyticsUnavailableConfirmedFor
+						? {
+								confirmAnalyticsUnavailableFor: identityFlow.analyticsUnavailableConfirmedFor,
+							}
+						: {}),
+					...confirmation,
+				});
+			} else {
+				await verifyIdentityMutation.mutateAsync({ id: identityFlow.instanceId, ...confirmation });
+			}
+			setIdentityFlow(null);
+		} catch (error) {
+			if (
+				identityFlow.mode === "replace" &&
+				requestAnalyticsUnavailableConfirmation(error, async (selected) => {
+					await replaceIdentityMutation.mutateAsync({
+						id: identityFlow.instanceId,
+						payload: identityFlow.replacementPayload,
+						confirmAnalyticsUnavailableFor: selected,
+						...confirmation,
+					});
+					setIdentityFlow(null);
+				})
+			) {
+				return;
+			}
+			const conflict = getIdentityConflict(error);
+			if (conflict) {
+				setIdentityFlow((current) =>
+					current
+						? {
+								...current,
+								...(conflict.candidate ? { candidate: conflict.candidate } : {}),
+								...(conflict.code === "IDENTITY_REPLACEMENT_REQUIRED"
+									? { mode: "replace" as const, requiresReinspection: false }
+									: { requiresReinspection: true }),
+								connectionGeneration: conflict.connectionGeneration,
+								identityGeneration: conflict.identityGeneration,
+								message:
+									"The provider changed while you were confirming. Inspect it again before continuing.",
+							}
+						: current,
+				);
+				return;
+			}
+			toast.error(getErrorMessage(error, "Unable to confirm provider identity"));
+		}
+	};
+
 	return {
 		createServiceMutation,
 		updateServiceMutation,
+		verifyIdentityMutation,
+		replaceIdentityMutation,
+		identityFlow,
+		inspectIdentity,
+		confirmIdentity,
+		dismissIdentityFlow: () => setIdentityFlow(null),
 		deleteServiceMutation,
 		testingConnection,
 		testResult,

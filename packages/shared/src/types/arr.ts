@@ -14,11 +14,11 @@ export const LIBRARY_SERVICES = ["sonarr", "radarr", "lidarr", "readarr"] as con
 export const INTEGRATION_SERVICES = [
 	"seerr",
 	"plex",
+	"tautulli",
 	"jellyfin",
 	"emby",
 	"qui",
 	"tracearr",
-	"tautulli",
 ] as const;
 
 /** All supported service types */

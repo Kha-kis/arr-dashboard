@@ -88,6 +88,13 @@ export function buildCleanupNotification(
 export class CleanupScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
 	private _isRunning = false;
+	private dryRunSchedule: {
+		configId: string;
+		configuredNextRunAtMs: number;
+		configUpdatedAtMs: number | null;
+		intervalHours: number;
+		nextRunAtMs: number;
+	} | null = null;
 	private notifyFn?: (payload: NotificationPayload) => Promise<void>;
 	private trackTick: TickWrapper;
 	private quiClientFactory?: CleanupExecutorDeps["quiClientFactory"];
@@ -179,6 +186,7 @@ export class CleanupScheduler {
 			return;
 		}
 
+		let isScheduledDryRun = false;
 		try {
 			await withCleanupOperationGuard(async () => {
 				// Expire stale pending approvals
@@ -293,9 +301,26 @@ export class CleanupScheduler {
 				if (!config) return;
 
 				const now = new Date();
-				if (!config.nextRunAt || config.nextRunAt > now) return;
+				if (!config.nextRunAt) return;
+				const configuredNextRunAtMs = config.nextRunAt.getTime();
+				const configUpdatedAtMs = config.updatedAt?.getTime() ?? null;
+				if (
+					this.dryRunSchedule &&
+					(this.dryRunSchedule.configId !== config.id ||
+						this.dryRunSchedule.configuredNextRunAtMs !== configuredNextRunAtMs ||
+						this.dryRunSchedule.configUpdatedAtMs !== configUpdatedAtMs ||
+						this.dryRunSchedule.intervalHours !== config.intervalHours)
+				) {
+					this.dryRunSchedule = null;
+				}
+				const effectiveNextRunAtMs =
+					config.dryRunMode && this.dryRunSchedule
+						? this.dryRunSchedule.nextRunAtMs
+						: configuredNextRunAtMs;
+				if (effectiveNextRunAtMs > now.getTime()) return;
 
 				this._isRunning = true;
+				isScheduledDryRun = config.dryRunMode;
 
 				this.logger.info(
 					{ intervalHours: config.intervalHours, dryRunMode: config.dryRunMode },
@@ -319,10 +344,23 @@ export class CleanupScheduler {
 					// Calculate next run time
 					const nextRunAt = new Date(now.getTime() + config.intervalHours * 60 * 60 * 1000);
 
-					await this.prisma.libraryCleanupConfig.update({
-						where: { id: config.id },
-						data: { lastRunAt: now, nextRunAt },
-					});
+					if (config.dryRunMode) {
+						// A dry run is read-only, including its scheduling and notification
+						// side effects. Preserve cadence in process without writing the config.
+						this.dryRunSchedule = {
+							configId: config.id,
+							configuredNextRunAtMs,
+							configUpdatedAtMs,
+							intervalHours: config.intervalHours,
+							nextRunAtMs: nextRunAt.getTime(),
+						};
+					} else {
+						this.dryRunSchedule = null;
+						await this.prisma.libraryCleanupConfig.update({
+							where: { id: config.id },
+							data: { lastRunAt: now, nextRunAt },
+						});
+					}
 
 					this.logger.info(
 						{
@@ -334,9 +372,11 @@ export class CleanupScheduler {
 						"Scheduled library cleanup completed",
 					);
 
-					const notification = buildCleanupNotification(result);
-					if (notification) {
-						await this.sendNotification(notification, "Failed to send cleanup notification");
+					if (!config.dryRunMode) {
+						const notification = buildCleanupNotification(result);
+						if (notification) {
+							await this.sendNotification(notification, "Failed to send cleanup notification");
+						}
 					}
 				} finally {
 					this._isRunning = false;
@@ -353,6 +393,7 @@ export class CleanupScheduler {
 				return;
 			}
 			this.logger.error({ err: error }, "Error checking/running scheduled cleanup");
+			if (isScheduledDryRun) return;
 
 			await this.sendNotification(
 				{

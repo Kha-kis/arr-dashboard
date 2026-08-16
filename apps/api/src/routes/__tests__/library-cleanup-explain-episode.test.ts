@@ -11,7 +11,7 @@ import {
 const USER_ID = "user-episode-explain";
 const SONARR_INSTANCE_ID = "sonarr-1";
 const PLEX_INSTANCE_ID = "plex-1";
-const NOW = new Date("2026-08-12T12:00:00.000Z");
+const NOW = new Date();
 
 const sonarrInstance = {
 	id: SONARR_INSTANCE_ID,
@@ -132,7 +132,25 @@ beforeEach(async () => {
 		libraryCleanupConfig: {
 			findUnique: libraryCleanupConfigFindUnique,
 		},
-		plexEpisodeCache: { findMany: plexEpisodeCacheFindMany },
+		plexEpisodeCache: {
+			findMany: plexEpisodeCacheFindMany,
+			groupBy: vi.fn().mockResolvedValue([{ instanceId: PLEX_INSTANCE_ID, _count: { id: 1 } }]),
+		},
+		cacheRefreshStatus: {
+			findMany: vi.fn().mockResolvedValue([
+				{
+					instanceId: PLEX_INSTANCE_ID,
+					lastRefreshedAt: NOW,
+					lastResult: "success",
+					lastErrorMessage: null,
+					lastAttemptResult: "success",
+					lastAttemptErrorMessage: null,
+					itemCount: 1,
+					connectionGeneration: 4,
+					identityGeneration: 9,
+				},
+			]),
+		},
 		plexCache: { findMany: vi.fn().mockResolvedValue([]) },
 	} as never);
 	app.decorate("arrClientFactory", {

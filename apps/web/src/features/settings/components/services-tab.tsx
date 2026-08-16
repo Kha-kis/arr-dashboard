@@ -24,6 +24,8 @@ interface ServicesTabProps {
 	onToggleEnabled: (instance: ServiceInstanceSummary) => void;
 	/** Handler for delete */
 	onDelete: (instance: ServiceInstanceSummary) => void;
+	/** Starts identity inspection for a supported provider. */
+	onInspectIdentity: (instance: ServiceInstanceSummary) => void;
 	/** ID of instance currently being tested */
 	testingConnection: string | null;
 	/** Test result */
@@ -52,6 +54,7 @@ export const ServicesTab = ({
 	onToggleDefault,
 	onToggleEnabled,
 	onDelete,
+	onInspectIdentity,
 	testingConnection,
 	testResult,
 	mutationPending,
@@ -122,6 +125,7 @@ export const ServicesTab = ({
 								onToggleDefault={onToggleDefault}
 								onToggleEnabled={onToggleEnabled}
 								onDelete={onDelete}
+								onInspectIdentity={onInspectIdentity}
 								isTesting={testingConnection === instance.id}
 								mutationPending={mutationPending}
 								testResult={testResult}

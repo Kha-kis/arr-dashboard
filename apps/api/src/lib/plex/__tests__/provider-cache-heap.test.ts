@@ -13,8 +13,84 @@ import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { refreshJellyfinCache } from "../../jellyfin/jellyfin-cache-refresher.js";
 import type { JellyfinClient, JellyfinItem } from "../../jellyfin/jellyfin-client.js";
 import type { PrismaClient } from "../../prisma.js";
+import { refreshTautulliCache } from "../../tautulli/tautulli-cache-refresher.js";
+import type { TautulliClient } from "../../tautulli/tautulli-client.js";
 import { refreshPlexCache } from "../plex-cache-refresher.js";
 import type { PlexClient, PlexLibraryItem } from "../plex-client.js";
+
+const publication = vi.hoisted(() => ({
+	plexClient: undefined as PlexClient | undefined,
+	jellyfinClient: undefined as JellyfinClient | undefined,
+	tautulliClient: undefined as TautulliClient | undefined,
+}));
+
+vi.mock("../plex-client.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../plex-client.js")>();
+	return {
+		...actual,
+		PlexClient: class {
+			constructor() {
+				if (!publication.plexClient) throw new Error("Plex heap client was not configured");
+				Object.assign(this, publication.plexClient);
+			}
+		},
+	};
+});
+
+vi.mock("../../utils/delay.js", () => ({ delay: vi.fn(async () => {}) }));
+
+vi.mock("../../jellyfin/jellyfin-client.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../jellyfin/jellyfin-client.js")>();
+	return {
+		...actual,
+		JellyfinClient: class {
+			constructor() {
+				if (!publication.jellyfinClient) {
+					throw new Error("Jellyfin heap client was not configured");
+				}
+				Object.assign(this, publication.jellyfinClient);
+			}
+		},
+	};
+});
+
+vi.mock("../../tautulli/tautulli-client.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../tautulli/tautulli-client.js")>();
+	return {
+		...actual,
+		TautulliClient: class {
+			constructor() {
+				if (!publication.tautulliClient) {
+					throw new Error("Tautulli heap client was not configured");
+				}
+				Object.assign(this, publication.tautulliClient);
+			}
+		},
+	};
+});
+
+vi.mock("../../services/provider-identity-guard.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../services/provider-identity-guard.js")>();
+	return {
+		...actual,
+		withGuardedProviderPublication: vi.fn(
+			async (
+				prisma: PrismaClient,
+				_instance: unknown,
+				_log: unknown,
+				collect: () => Promise<unknown>,
+				publish: (tx: unknown, snapshot: unknown) => Promise<unknown>,
+				options: unknown,
+			) => {
+				const snapshot = await collect();
+				return await prisma.$transaction(
+					async (tx) => await publish(tx, snapshot),
+					options as never,
+				);
+			},
+		),
+	};
+});
 
 const RUN_HEAP_TESTS = process.env.TEST_HEAP === "true";
 const MIB = 1024 * 1024;
@@ -48,6 +124,7 @@ function reportHeap(message: string): void {
 		let prisma: PrismaClient;
 		let plexClient: PlexClient;
 		let jellyfinClient: JellyfinClient;
+		let tautulliClient: TautulliClient;
 
 		beforeAll(async () => {
 			const testDb = process.env.PROVIDER_CACHE_TEST_DB_PATH;
@@ -72,6 +149,15 @@ function reportHeap(message: string): void {
 						service: "EMBY",
 						label: "Heap Emby",
 						baseUrl: "http://emby.invalid",
+						encryptedApiKey: "x",
+						encryptionIv: "y",
+					},
+					{
+						id: "heap-tautulli",
+						userId: "heap-user",
+						service: "TAUTULLI",
+						label: "Heap Tautulli",
+						baseUrl: "http://tautulli.invalid",
 						encryptedApiKey: "x",
 						encryptionIv: "y",
 					},
@@ -120,6 +206,36 @@ function reportHeap(message: string): void {
 				getResumeItems: vi.fn().mockResolvedValue([]),
 				getNextUp: vi.fn().mockResolvedValue([]),
 			} as unknown as JellyfinClient;
+
+			const tautulliHistory = Array.from({ length: 201 }, (_, index) => ({
+				row_id: index + 1,
+				rating_key: `tautulli-${index}`,
+				parent_rating_key: "",
+				grandparent_rating_key: "",
+				title: `Tautulli Movie ${index}`,
+				grandparent_title: "",
+				media_type: "movie",
+				user: "Alice",
+				date: 1_700_000_000 + index,
+				play_count: 1,
+			}));
+			tautulliClient = {
+				getLibraries: vi
+					.fn()
+					.mockResolvedValue([
+						{ section_id: "1", section_name: "Movies", section_type: "movie", count: "201" },
+					]),
+				getHistory: vi.fn(async ({ start, length }: { start: number; length: number }) => ({
+					data: tautulliHistory.slice(start, start + length),
+					recordsFiltered: tautulliHistory.length,
+					recordsTotal: tautulliHistory.length,
+				})),
+				getMetadata: vi.fn(async (ratingKey: string) => ({
+					guids: [`tmdb://${300_000 + Number(ratingKey.replace("tautulli-", ""))}`],
+					media_type: "movie",
+					title: ratingKey,
+				})),
+			} as unknown as TautulliClient;
 		}, 120_000);
 
 		afterAll(async () => {
@@ -127,13 +243,83 @@ function reportHeap(message: string): void {
 		});
 
 		async function refreshPlexAndAssert(): Promise<void> {
-			const plex = await refreshPlexCache(plexClient, prisma, "heap-plex", silentLog, undefined);
+			publication.plexClient = plexClient;
+			const plex = await refreshPlexCache({
+				prisma,
+				instance: {
+					id: "heap-plex",
+					userId: "heap-user",
+					service: "PLEX",
+					label: "Heap Plex",
+					baseUrl: "http://plex.invalid",
+					apiKey: "token",
+					httpAuthHeaders: {},
+					enabled: true,
+					encryptedApiKey: "x",
+					encryptionIv: "y",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
+					expectedIdentity: "plex-a",
+					identityStatus: "VERIFIED",
+					connectionGeneration: 0,
+					identityGeneration: 0,
+				},
+				log: silentLog,
+			});
 			expect(plex).toMatchObject({ complete: true, errors: 0, upserted: PLEX_ITEMS });
 		}
 
 		async function refreshJellyfinAndAssert(): Promise<void> {
-			const jellyfin = await refreshJellyfinCache(jellyfinClient, prisma, "heap-emby", silentLog);
+			publication.jellyfinClient = jellyfinClient;
+			const jellyfin = await refreshJellyfinCache({
+				prisma,
+				instance: {
+					id: "heap-emby",
+					userId: "heap-user",
+					service: "EMBY",
+					label: "Heap Emby",
+					baseUrl: "http://emby.invalid",
+					apiKey: "token",
+					httpAuthHeaders: {},
+					enabled: true,
+					encryptedApiKey: "x",
+					encryptionIv: "y",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
+					expectedIdentity: "emby-a",
+					identityStatus: "VERIFIED",
+					connectionGeneration: 0,
+					identityGeneration: 0,
+				},
+				log: silentLog,
+			});
 			expect(jellyfin).toMatchObject({ complete: true, errors: 0, upserted: JELLYFIN_ITEMS });
+		}
+
+		async function refreshTautulli(): Promise<Awaited<ReturnType<typeof refreshTautulliCache>>> {
+			publication.tautulliClient = tautulliClient;
+			return await refreshTautulliCache({
+				prisma,
+				instance: {
+					id: "heap-tautulli",
+					userId: "heap-user",
+					service: "TAUTULLI",
+					label: "Heap Tautulli",
+					baseUrl: "http://tautulli.invalid",
+					apiKey: "token",
+					httpAuthHeaders: {},
+					enabled: true,
+					encryptedApiKey: "x",
+					encryptionIv: "y",
+					encryptedHttpAuthCredentials: null,
+					httpAuthEncryptionIv: null,
+					expectedIdentity: "plex-a",
+					identityStatus: "VERIFIED",
+					connectionGeneration: 0,
+					identityGeneration: 0,
+				},
+				log: silentLog,
+			});
 		}
 
 		async function refreshBoth(): Promise<void> {
@@ -194,13 +380,29 @@ function reportHeap(message: string): void {
 			`);
 
 			try {
-				const result = await refreshPlexCache(
-					plexClient,
+				publication.plexClient = plexClient;
+				const result = await refreshPlexCache({
 					prisma,
-					"heap-plex",
-					silentLog,
-					undefined,
-				);
+					instance: {
+						id: "heap-plex",
+						userId: "heap-user",
+						service: "PLEX",
+						label: "Heap Plex",
+						baseUrl: "http://plex.invalid",
+						apiKey: "token",
+						httpAuthHeaders: {},
+						enabled: true,
+						encryptedApiKey: "x",
+						encryptionIv: "y",
+						encryptedHttpAuthCredentials: null,
+						httpAuthEncryptionIv: null,
+						expectedIdentity: "plex-a",
+						identityStatus: "VERIFIED",
+						connectionGeneration: 0,
+						identityGeneration: 0,
+					},
+					log: silentLog,
+				});
 				expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
 				expect(result.errorMessages.join(" ")).toMatch(
 					/Atomic Plex cache publication failed:.*constraint/is,
@@ -210,6 +412,66 @@ function reportHeap(message: string): void {
 				]);
 			} finally {
 				await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS fail_plex_second_chunk");
+			}
+		}, 120_000);
+
+		it("rolls back Plex rows when the success-status write fails", async () => {
+			await prisma.plexCache.deleteMany({ where: { instanceId: "heap-plex" } });
+			await prisma.plexCache.create({
+				data: {
+					instanceId: "heap-plex",
+					tmdbId: 100_000,
+					mediaType: "movie",
+					sectionId: "1",
+					sectionTitle: "Movies",
+					title: "Preserved before status failure",
+					ratingKey: "old-status-plex",
+					watchedByUsers: "[]",
+					collections: "[]",
+					labels: "[]",
+				},
+			});
+			const previousStatusAt = new Date("2026-01-01T00:00:00.000Z");
+			await prisma.cacheRefreshStatus.upsert({
+				where: { instanceId_cacheType: { instanceId: "heap-plex", cacheType: "plex" } },
+				create: {
+					instanceId: "heap-plex",
+					cacheType: "plex",
+					lastRefreshedAt: previousStatusAt,
+					lastResult: "success",
+					itemCount: 1,
+				},
+				update: {
+					lastRefreshedAt: previousStatusAt,
+					lastResult: "success",
+					itemCount: 1,
+				},
+			});
+			await prisma.$executeRawUnsafe(`
+				CREATE TRIGGER fail_plex_success_status
+				BEFORE UPDATE ON cache_refresh_status
+				WHEN NEW.instanceId = 'heap-plex' AND NEW.cacheType = 'plex'
+				BEGIN
+					SELECT RAISE(ABORT, 'injected Plex status failure');
+				END
+			`);
+
+			try {
+				await expect(refreshPlexAndAssert()).rejects.toThrow();
+				const rows = await prisma.plexCache.findMany({ where: { instanceId: "heap-plex" } });
+				expect(rows).toEqual([
+					expect.objectContaining({
+						title: "Preserved before status failure",
+						ratingKey: "old-status-plex",
+					}),
+				]);
+				expect(
+					await prisma.cacheRefreshStatus.findUnique({
+						where: { instanceId_cacheType: { instanceId: "heap-plex", cacheType: "plex" } },
+					}),
+				).toEqual(expect.objectContaining({ lastRefreshedAt: previousStatusAt, itemCount: 1 }));
+			} finally {
+				await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS fail_plex_success_status");
 			}
 		}, 120_000);
 
@@ -238,7 +500,29 @@ function reportHeap(message: string): void {
 			`);
 
 			try {
-				const result = await refreshJellyfinCache(jellyfinClient, prisma, "heap-emby", silentLog);
+				publication.jellyfinClient = jellyfinClient;
+				const result = await refreshJellyfinCache({
+					prisma,
+					instance: {
+						id: "heap-emby",
+						userId: "heap-user",
+						service: "EMBY",
+						label: "Heap Emby",
+						baseUrl: "http://emby.invalid",
+						apiKey: "token",
+						httpAuthHeaders: {},
+						enabled: true,
+						encryptedApiKey: "x",
+						encryptionIv: "y",
+						encryptedHttpAuthCredentials: null,
+						httpAuthEncryptionIv: null,
+						expectedIdentity: "emby-a",
+						identityStatus: "VERIFIED",
+						connectionGeneration: 0,
+						identityGeneration: 0,
+					},
+					log: silentLog,
+				});
 				expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
 				expect(result.errorMessages.join(" ")).toMatch(
 					/Atomic cache publication failed:.*constraint/is,
@@ -248,6 +532,94 @@ function reportHeap(message: string): void {
 				);
 			} finally {
 				await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS fail_jellyfin_second_chunk");
+			}
+		}, 120_000);
+
+		it("rolls back Tautulli deletion and earlier chunks when a later chunk fails", async () => {
+			await prisma.tautulliCache.deleteMany({ where: { instanceId: "heap-tautulli" } });
+			await prisma.tautulliCache.create({
+				data: {
+					instanceId: "heap-tautulli",
+					tmdbId: 1,
+					mediaType: "movie",
+					lastWatchedAt: new Date("2025-01-01T00:00:00.000Z"),
+					watchCount: 1,
+					watchedByUsers: "[]",
+				},
+			});
+			await prisma.$executeRawUnsafe(`
+				CREATE TRIGGER fail_tautulli_second_chunk
+				BEFORE INSERT ON tautulli_cache
+				WHEN NEW.tmdbId = 300100
+				BEGIN
+					SELECT RAISE(ABORT, 'injected Tautulli second chunk failure');
+				END
+			`);
+
+			try {
+				const result = await refreshTautulli();
+				expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
+				expect(
+					await prisma.tautulliCache.findMany({ where: { instanceId: "heap-tautulli" } }),
+				).toEqual([expect.objectContaining({ tmdbId: 1, watchCount: 1 })]);
+			} finally {
+				await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS fail_tautulli_second_chunk");
+			}
+		}, 120_000);
+
+		it("rolls back Tautulli rows when the success-status write fails", async () => {
+			await prisma.tautulliCache.deleteMany({ where: { instanceId: "heap-tautulli" } });
+			await prisma.tautulliCache.create({
+				data: {
+					instanceId: "heap-tautulli",
+					tmdbId: 2,
+					mediaType: "movie",
+					lastWatchedAt: new Date("2025-01-01T00:00:00.000Z"),
+					watchCount: 1,
+					watchedByUsers: "[]",
+				},
+			});
+			const previousStatusAt = new Date("2026-01-01T00:00:00.000Z");
+			await prisma.cacheRefreshStatus.upsert({
+				where: {
+					instanceId_cacheType: { instanceId: "heap-tautulli", cacheType: "tautulli" },
+				},
+				create: {
+					instanceId: "heap-tautulli",
+					cacheType: "tautulli",
+					lastRefreshedAt: previousStatusAt,
+					lastResult: "success",
+					itemCount: 1,
+				},
+				update: { lastRefreshedAt: previousStatusAt, lastResult: "success", itemCount: 1 },
+			});
+			await prisma.$executeRawUnsafe(`
+				CREATE TRIGGER fail_tautulli_success_status
+				BEFORE UPDATE ON cache_refresh_status
+				WHEN NEW.instanceId = 'heap-tautulli' AND NEW.cacheType = 'tautulli'
+				BEGIN
+					SELECT RAISE(ABORT, 'injected Tautulli status failure');
+				END
+			`);
+
+			try {
+				const result = await refreshTautulli();
+				expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
+				expect(
+					await prisma.tautulliCache.findMany({ where: { instanceId: "heap-tautulli" } }),
+				).toEqual([expect.objectContaining({ tmdbId: 2, watchCount: 1 })]);
+				expect(
+					await prisma.cacheRefreshStatus.findUnique({
+						where: {
+							instanceId_cacheType: {
+								instanceId: "heap-tautulli",
+								cacheType: "tautulli",
+							},
+						},
+					}),
+				).toEqual(expect.objectContaining({ lastRefreshedAt: previousStatusAt, itemCount: 1 }));
+			} finally {
+				await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS fail_tautulli_success_status");
 			}
 		}, 120_000);
 	},

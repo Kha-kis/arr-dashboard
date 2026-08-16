@@ -55,7 +55,7 @@ export function registerSchedulers(app: FastifyInstance): void {
 	app.register(trashUpdateSchedulerPlugin);
 	app.register(trashSyncSchedulerPlugin);
 
-	// Media server caches (Plex / Jellyfin / Emby / Tautulli)
+	// Media server caches (Plex / Jellyfin / Emby / optional Tautulli)
 	app.register(plexCacheSchedulerPlugin);
 	app.register(plexEpisodeCacheSchedulerPlugin);
 	app.register(jellyfinCacheSchedulerPlugin);

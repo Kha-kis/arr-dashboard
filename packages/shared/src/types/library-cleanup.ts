@@ -339,6 +339,29 @@ export interface CleanupFieldOptionsResponse {
  */
 export type CleanupQuiStatus = "seeding" | "paused_or_error" | "not_in_qui" | "no_signal";
 
+export interface CleanupProviderEvidenceSource {
+	service: "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI";
+	identityKind: string;
+	identityFingerprint: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+	cacheType: string;
+	completedAt: string;
+	itemCount: number;
+	verifiedAt: string;
+	statusFingerprint: string;
+	rowFingerprint: string;
+	fingerprint: string;
+}
+
+/** Sanitized, deterministic provider authority attached to cleanup decisions. */
+export interface CleanupProviderEvidence {
+	version: 1;
+	dependencies: string[];
+	fingerprint: string;
+	sources: CleanupProviderEvidenceSource[];
+}
+
 export interface CleanupPreviewItem {
 	instanceId: string;
 	instanceLabel: string | null;
@@ -370,6 +393,7 @@ export interface CleanupPreviewResponse {
 	items: CleanupPreviewItem[];
 	prefetchHealth?: PrefetchHealthStatus;
 	warnings?: string[];
+	providerEvidence?: CleanupProviderEvidence;
 }
 
 // ============================================================================
@@ -442,6 +466,7 @@ export interface CleanupExplainResponse {
 	};
 	results: CleanupExplainResult[];
 	retentionProtected: boolean;
+	providerEvidence?: CleanupProviderEvidence;
 }
 
 // ============================================================================

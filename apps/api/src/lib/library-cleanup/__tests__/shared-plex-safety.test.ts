@@ -19,8 +19,10 @@ import {
 	buildRadarrCacheSafetyPlan,
 	cleanupDeleteTargetKey,
 	createArrServiceFingerprint,
+	createSanitizedProviderEvidence,
 	createSharedPlexSafetyContext,
 	findSharedPlexDeleteBlocks,
+	parseExecutableSafetyEnvelope,
 	parseExecutableSafetyPlan,
 	serializeExecutableSafetyPlan,
 } from "../shared-plex-safety.js";
@@ -48,6 +50,27 @@ const radarrTargetIdentity = {
 		windows: false,
 	},
 };
+
+function plexProviderEvidence(completedAt = "2026-08-15T04:00:00.000Z") {
+	return createSanitizedProviderEvidence(
+		["plex"],
+		[
+			{
+				service: "PLEX",
+				identityKind: "PLEX_MACHINE_IDENTIFIER",
+				identityFingerprint: "b".repeat(64),
+				connectionGeneration: 3,
+				identityGeneration: 7,
+				cacheType: "plex",
+				completedAt,
+				itemCount: 1,
+				verifiedAt: "2026-08-15T03:00:00.000Z",
+				statusFingerprint: "c".repeat(64),
+				rowFingerprint: "d".repeat(64),
+			},
+		],
+	);
+}
 
 function radarrSafetySnapshot(
 	file: {
@@ -93,6 +116,14 @@ function radarrTargetOnlySnapshot() {
 		kind: "verified_arr_target",
 		target: radarrTargetIdentity,
 	});
+}
+
+function radarrPostPartialSafetySnapshot() {
+	return serializeExecutableSafetyPlan(
+		parseExecutableSafetyPlan(radarrSafetySnapshot())!,
+		createSanitizedProviderEvidence([], []),
+		"post_partial_mutation",
+	);
 }
 
 function approvalRecord(overrides: Record<string, unknown> = {}) {
@@ -204,6 +235,7 @@ function makeDeps(options: TestOptions = {}) {
 		enabled: false,
 		encryptedApiKey: "encrypted",
 		encryptionIv: "iv",
+		updatedAt: new Date("2026-07-27T12:00:00.000Z"),
 	};
 
 	let liveMovieExists = true;
@@ -349,6 +381,19 @@ function makeDeps(options: TestOptions = {}) {
 			serviceInstance: {
 				findMany: serviceInstanceFindMany,
 				findFirst: vi.fn().mockResolvedValue(targetInstance),
+			},
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "plex-1",
+						lastRefreshedAt: new Date(),
+						lastResult: "success",
+						lastErrorMessage: null,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
+						itemCount: 1,
+					},
+				]),
 			},
 			crossDomainRule: {
 				findMany: vi.fn().mockResolvedValue([]),
@@ -747,6 +792,12 @@ function configurePublishedPlexEvidence(
 	const completedAt = new Date();
 	Object.assign(fixture.plexInstance, {
 		enabled: true,
+		expectedIdentity: "plex-machine-a",
+		identityKind: "PLEX_MACHINE_IDENTIFIER",
+		identityStatus: "VERIFIED",
+		identityVerifiedAt: new Date(completedAt.getTime() - 1_000),
+		connectionGeneration: 3,
+		identityGeneration: 7,
 		updatedAt: new Date(0),
 	});
 	Object.assign(fixture.deps.prisma, {
@@ -760,6 +811,8 @@ function configurePublishedPlexEvidence(
 					lastAttemptResult: "success",
 					lastAttemptErrorMessage: null,
 					itemCount: options.itemCount,
+					connectionGeneration: 3,
+					identityGeneration: 7,
 					generationId: "plex-generation-1",
 					generationMetadata: JSON.stringify({
 						sections: (options.sectionTitles ?? ["Movies"]).map((title, index) => ({
@@ -788,6 +841,8 @@ function configurePublishedPlexEvidence(
 					collections: "[]",
 					labels: "[]",
 					addedAt: new Date("2026-01-01T00:00:00.000Z"),
+					connectionGeneration: 3,
+					identityGeneration: 7,
 				},
 			]),
 		},
@@ -886,7 +941,85 @@ describe("shared Plex deletion safety", () => {
 			itemsRemoved: 0,
 		});
 		expect(deps.prisma.libraryCleanupConfig.updateMany).not.toHaveBeenCalled();
-		expect(deps.prisma.libraryCleanupLog.create).toHaveBeenCalledOnce();
+		expect(deps.prisma.libraryCleanupLog.create).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ requireApproval: true, expectedStatus: "pending" },
+		{ requireApproval: false, expectedStatus: "retry_pending" },
+	])(
+		"persists captured provider evidence for $expectedStatus cleanup intents",
+		async ({ requireApproval, expectedStatus }) => {
+			const fixture = makeDeps({ mediaPartCount: 1 });
+			const baseConfig = plexPolicyCleanupConfig({
+				ruleType: "plex_watch_count",
+				parameters: { operator: "less_than", count: 1 },
+			});
+			vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+				...baseConfig,
+				dryRunMode: false,
+				requireApproval,
+				rules: baseConfig.rules.map((rule) => ({
+					...rule,
+					action: requireApproval ? "unmonitor" : "delete",
+				})),
+			} as never);
+			vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([
+				matchingDryRunCacheItem(),
+			] as never);
+			configurePublishedPlexEvidence(fixture, { itemCount: 1, rowCount: 1 });
+			const evidence = plexProviderEvidence();
+			const capture = vi.fn().mockResolvedValue(evidence);
+			Object.assign(fixture.deps, {
+				providerEvidenceCapturer: capture,
+				providerEvidenceAuthorityChecker: vi.fn().mockResolvedValue(undefined),
+			});
+			configureRetryStore(fixture.deps);
+
+			const result = await executeCleanupRun(fixture.deps, "user-1");
+			expect(capture).toHaveBeenCalledWith("user-1", ["plex"]);
+			expect(result).toMatchObject({ itemsFlagged: 1 });
+			const persisted = vi.mocked(fixture.deps.prisma.libraryCleanupApproval.create).mock
+				.calls[0]?.[0].data;
+			expect(persisted).toMatchObject({ status: expectedStatus });
+			expect(parseExecutableSafetyEnvelope(persisted?.safetySnapshot)?.providerEvidence).toEqual(
+				evidence,
+			);
+		},
+	);
+
+	it("blocks direct cleanup before persisting or calling ARR when provider evidence changes", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const baseConfig = plexPolicyCleanupConfig({
+			ruleType: "plex_watch_count",
+			parameters: { operator: "less_than", count: 1 },
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...baseConfig,
+			dryRunMode: false,
+			requireApproval: false,
+			rules: baseConfig.rules.map((rule) => ({ ...rule, action: "unmonitor" })),
+		} as never);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany).mockResolvedValue([
+			matchingDryRunCacheItem(),
+		] as never);
+		configurePublishedPlexEvidence(fixture, { itemCount: 1, rowCount: 1 });
+		const evidence = plexProviderEvidence();
+		const authorityChecker = vi.fn().mockRejectedValue(new Error("provider rows changed"));
+		Object.assign(fixture.deps, {
+			providerEvidenceCapturer: vi.fn().mockResolvedValue(evidence),
+			providerEvidenceAuthorityChecker: authorityChecker,
+		});
+		configureRetryStore(fixture.deps);
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(authorityChecker).toHaveBeenCalledWith("user-1", evidence, expect.any(Function));
+		expect(fixture.deps.prisma.libraryCleanupApproval.create).not.toHaveBeenCalled();
+		expect(fixture.targetClient.movie.update).not.toHaveBeenCalled();
+		expect(fixture.deleteMovieFile).not.toHaveBeenCalled();
+		expect(fixture.deleteMovie).not.toHaveBeenCalled();
+		expect(result).toMatchObject({ itemsRemoved: 0, itemsUnmonitored: 0, itemsSkipped: 1 });
 	});
 
 	it.each(["retry_pending", "retry_executing"])(
@@ -4989,7 +5122,7 @@ describe("shared Plex deletion safety", () => {
 		expect(targetClient.movie.update).not.toHaveBeenCalled();
 		expect(retries[0]).toMatchObject({
 			status: "retry_pending",
-			safetySnapshot: radarrSafetySnapshot(),
+			safetySnapshot: radarrPostPartialSafetySnapshot(),
 		});
 		expect(result).toMatchObject({
 			status: "partial",
@@ -5216,7 +5349,7 @@ describe("shared Plex deletion safety", () => {
 				title: "Example Movie",
 				reason: "Matched 4K cleanup rule",
 				action: "delete",
-				safetySnapshot: radarrSafetySnapshot(),
+				safetySnapshot: radarrPostPartialSafetySnapshot(),
 			} as never,
 		]);
 
@@ -5235,9 +5368,99 @@ describe("shared Plex deletion safety", () => {
 			data: expect.objectContaining({
 				status: "pending",
 				lastExecutionError: expect.stringContaining("movie record could not be removed"),
-				safetySnapshot: radarrSafetySnapshot(),
+				safetySnapshot: radarrPostPartialSafetySnapshot(),
 			}),
 		});
+	});
+
+	it("blocks an approved mutation when its persisted provider evidence changed", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const evidence = plexProviderEvidence();
+		const storedApproval = approvalRecord({
+			safetySnapshot: serializeExecutableSafetyPlan(
+				parseExecutableSafetyPlan(radarrSafetySnapshot())!,
+				evidence,
+			),
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedApproval);
+		const authorityChecker = vi.fn().mockRejectedValue(new Error("provider changed"));
+		Object.assign(deps, { providerEvidenceAuthorityChecker: authorityChecker });
+
+		const result = await executeApprovedItems(deps, "user-1", ["approval-1"]);
+
+		expect(authorityChecker).toHaveBeenCalledWith("user-1", evidence, expect.any(Function));
+		expect(result).toEqual({
+			removed: 0,
+			failed: 1,
+			errors: [
+				"Cleanup item was not executed: Skipped for safety: the provider evidence used by this cleanup decision changed. Run cleanup again and review a new approval.",
+			],
+		});
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({ status: "expired", executionToken: null });
+	});
+
+	it("renews and persists provider authority before resuming a durable retry", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const acceptedEvidence = plexProviderEvidence();
+		const renewedEvidence = plexProviderEvidence("2026-08-15T05:00:00.000Z");
+		const storedRetry = approvalRecord({
+			status: "retry_pending",
+			executionToken: null,
+			safetySnapshot: serializeExecutableSafetyPlan(
+				parseExecutableSafetyPlan(radarrSafetySnapshot())!,
+				acceptedEvidence,
+				"post_partial_mutation",
+			),
+		}) as Record<string, unknown>;
+		const approvalUpdate = configureApprovalStore(deps, storedRetry);
+		const renewer = vi.fn().mockResolvedValue(renewedEvidence);
+		Object.assign(deps, { providerRetryAuthorityRenewer: renewer });
+
+		const result = await executeRetryItems(deps, "user-1", ["approval-1"]);
+
+		expect(renewer).toHaveBeenCalledWith("user-1", acceptedEvidence, expect.any(Function));
+		expect(result).toEqual({ removed: 1, reconciled: 0, failed: 0, errors: [] });
+		expect(parseExecutableSafetyEnvelope(storedRetry.safetySnapshot)?.providerEvidence).toEqual(
+			renewedEvidence,
+		);
+		const evidenceUpdateIndex = approvalUpdate.mock.calls.findIndex(
+			(call) => call[0].data.safetySnapshot,
+		);
+		expect(approvalUpdate.mock.invocationCallOrder[evidenceUpdateIndex]).toBeLessThan(
+			deleteMovieFile.mock.invocationCallOrder[0]!,
+		);
+		expect(deleteMovie).toHaveBeenCalledOnce();
+	});
+
+	it("requires exact provider evidence for a retry with no proven partial mutation", async () => {
+		const { deps, deleteMovie, deleteMovieFile } = makeDeps({ mediaPartCount: 1 });
+		const evidence = plexProviderEvidence();
+		const storedRetry = approvalRecord({
+			status: "retry_pending",
+			executionToken: null,
+			safetySnapshot: serializeExecutableSafetyPlan(
+				parseExecutableSafetyPlan(radarrSafetySnapshot())!,
+				evidence,
+			),
+		}) as Record<string, unknown>;
+		configureApprovalStore(deps, storedRetry);
+		const authorityChecker = vi.fn().mockRejectedValue(new Error("provider rows changed"));
+		const renewer = vi.fn();
+		Object.assign(deps, {
+			providerEvidenceAuthorityChecker: authorityChecker,
+			providerRetryAuthorityRenewer: renewer,
+		});
+
+		const result = await executeRetryItems(deps, "user-1", ["approval-1"]);
+
+		expect(authorityChecker).toHaveBeenCalledWith("user-1", evidence, expect.any(Function));
+		expect(renewer).not.toHaveBeenCalled();
+		expect(result).toMatchObject({ removed: 0, reconciled: 0, failed: 1 });
+		expect(deleteMovieFile).not.toHaveBeenCalled();
+		expect(deleteMovie).not.toHaveBeenCalled();
+		expect(storedRetry).toMatchObject({ status: "expired", executionToken: null });
 	});
 
 	it("does not rewrite cache state before an approved partial retry is durable", async () => {
@@ -5277,7 +5500,7 @@ describe("shared Plex deletion safety", () => {
 		expect(firstResult).toMatchObject({ removed: 0, failed: 1 });
 		expect(storedApproval).toMatchObject({
 			status: "pending",
-			safetySnapshot: radarrSafetySnapshot(),
+			safetySnapshot: radarrPostPartialSafetySnapshot(),
 		});
 
 		storedApproval.status = "approved";
@@ -5487,7 +5710,7 @@ describe("shared Plex deletion safety", () => {
 		expect(storedApproval).toMatchObject({
 			status: "pending",
 			executionToken: null,
-			safetySnapshot: radarrSafetySnapshot(),
+			safetySnapshot: radarrPostPartialSafetySnapshot(),
 			lastExecutionError: expect.stringContaining("execution authority was lost"),
 		});
 	});

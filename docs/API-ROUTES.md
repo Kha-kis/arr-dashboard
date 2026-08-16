@@ -210,6 +210,7 @@ Per-row sleep is 100ms regardless of phase — that's the politeness budget agai
 | `/api/notifications` | Channels, subscriptions, rules, delivery, aggregation |
 | `/api/oidc-providers` | OIDC provider admin configuration |
 | `/api/plex` | Now playing, on-deck, watch history, collections, analytics (bandwidth, codec, device, transcode, user), forecasts, episode completion, quality scores |
+| `/api/tautulli` | Optional Tautulli watch-history cache status and refresh controls; Tracearr remains the primary 3.0 activity provider |
 | `/api/seerr` | Request management, discovery, library enrichment, issues, notifications, user info |
 
 ## System Routes (`/api/system`)

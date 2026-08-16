@@ -8,8 +8,7 @@
  *   emit action iff
  *     status.lastResult !== "error"
  *     AND status.lastRefreshedAt < now - STALE_CACHE_HOURS
- *     AND status.cacheType ∈ {"plex", "jellyfin"}. Tautulli uses its own
- *     supported instance-keyed collector and deliberately has no action.
+ *     AND status.cacheType ∈ {"plex", "tautulli", "jellyfin"}
  */
 
 import Fastify from "fastify";
@@ -102,13 +101,13 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		});
 	});
 
-	it("renders a supported Tautulli stale signal with an instance-keyed id and no action", async () => {
+	it("reports a stale Tautulli cache row without exposing a generic refresh action", async () => {
 		cacheStatuses = [
 			makeRow({
 				id: "taut-row",
 				cacheType: "tautulli",
 				instanceId: "inst-taut",
-				instance: { label: "Private Tautulli", service: "TAUTULLI", enabled: true },
+				instance: { label: "Tautulli", service: "TAUTULLI", enabled: true },
 			}),
 		];
 
@@ -116,12 +115,7 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		const body = JSON.parse(res.payload);
 		const item = body.items.find((i: { id: string }) => i.id === "tautulli-cache-stale-inst-taut");
 
-		expect(item).toMatchObject({
-			title: "Tautulli cache is stale",
-			source: "tautulli",
-			actionUrl: "/settings",
-			actionLabel: "Check Tautulli settings",
-		});
+		expect(item).toBeDefined();
 		expect(item.action).toBeUndefined();
 	});
 

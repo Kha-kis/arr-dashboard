@@ -36,6 +36,30 @@ export type UpdateServicePayload = Partial<CreateServicePayload> & {
 	confirmAnalyticsUnavailableFor?: AnalyticsProvider;
 };
 
+export type ServiceIdentityCandidate = {
+	service: "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI";
+	identityKind: string;
+	fingerprint: string;
+	displayName?: string;
+	confirmationDigest: string;
+};
+
+export type ServiceIdentityInspection = {
+	candidate: ServiceIdentityCandidate;
+	connectionGeneration: number;
+	identityGeneration: number;
+};
+
+export type ServiceIdentityConfirmation = {
+	confirmationDigest: string;
+	expectedConnectionGeneration: number;
+	expectedIdentityGeneration: number;
+};
+
+export type ServiceIdentityReplacementConfirmation = ServiceIdentityConfirmation & {
+	confirmAnalyticsUnavailableFor?: AnalyticsProvider;
+};
+
 export async function createService(
 	payload: CreateServicePayload,
 ): Promise<ServiceInstanceSummary> {
@@ -68,6 +92,39 @@ export async function removeService(
 	await apiRequest<void>(`/api/services/${id}${query}`, {
 		method: "DELETE",
 	});
+}
+
+export async function inspectServiceIdentity(
+	id: string,
+	candidate?: UpdateServicePayload,
+): Promise<ServiceIdentityInspection> {
+	return await apiRequest<ServiceIdentityInspection>(`/api/services/${id}/identity/inspect`, {
+		method: "POST",
+		json: candidate ? { candidate } : {},
+	});
+}
+
+export async function verifyServiceIdentity(
+	id: string,
+	confirmation: ServiceIdentityConfirmation,
+): Promise<ServiceInstanceSummary> {
+	const data = await apiRequest<ServiceResponse>(`/api/services/${id}/identity/verify`, {
+		method: "POST",
+		json: confirmation,
+	});
+	return data.service;
+}
+
+export async function replaceServiceIdentity(
+	id: string,
+	candidate: UpdateServicePayload,
+	confirmation: ServiceIdentityReplacementConfirmation,
+): Promise<ServiceInstanceSummary> {
+	const data = await apiRequest<ServiceResponse>(`/api/services/${id}/identity/replace`, {
+		method: "POST",
+		json: { candidate, ...confirmation },
+	});
+	return data.service;
 }
 
 export type TestConnectionResponse = {

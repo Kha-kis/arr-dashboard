@@ -600,17 +600,15 @@ const collectSeerrCircuitBreaker: Collector = async (app, userId) => {
 };
 
 // ============================================================================
-// 4. Cache Staleness (Plex / Jellyfin)
+// 4. Cache Staleness (Plex / Tautulli / Jellyfin)
 // ============================================================================
 
 // Cache types the pulse-action dispatcher knows how to refresh. Must stay
 // in sync with `pulseCacheTypeSchema` in @arr/shared and with the dispatcher
-// in apps/api/src/lib/pulse/actions.ts. Stale cache rows for other
-// cacheType values (e.g. "plex_episode", or pre-migration "tautulli" rows
-// that linger until the 3.0 dialog deletes their instances) still emit a
-// warning — just without an action button, so we don't ship a click the
-// backend can't fulfil. Tautulli is handled by its dedicated collector below.
-const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>(["plex", "jellyfin"]);
+// in apps/api/src/lib/pulse/actions.ts. Stale cache rows for other cacheType
+// values (for example "plex_episode") still emit a warning, just without an
+// action button, so we don't ship a click the backend can't fulfil.
+const REFRESHABLE_CACHE_TYPES = new Set<PulseCacheType>(["plex", "tautulli", "jellyfin"]);
 
 function actionForCache(
 	instanceId: string,

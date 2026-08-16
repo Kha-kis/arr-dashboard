@@ -31,10 +31,28 @@ const { mockTestConnection } = vi.hoisted(() => ({
 	mockTestConnection: vi.fn(),
 }));
 
+const { mockReadProviderIdentity } = vi.hoisted(() => ({
+	mockReadProviderIdentity: vi.fn(),
+}));
+
 vi.mock("../../lib/services/connection-tester.js", () => ({
 	testServiceConnection: (...args: unknown[]) => mockTestConnection(...args),
 }));
 
+vi.mock("../../lib/services/service-identity.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/services/service-identity.js")>()),
+	readProviderIdentity: (...args: unknown[]) => mockReadProviderIdentity(...args),
+	confirmProviderIdentity: (expected: string, actual: string) => expected === actual,
+}));
+
+import {
+	createSanitizedProviderEvidence,
+	serializeExecutableSafetyPlan,
+} from "../../lib/library-cleanup/shared-plex-safety.js";
+import {
+	providerIdentityAuthorityFingerprint,
+	providerInstanceAuthorityFingerprint,
+} from "../../lib/services/service-identity.js";
 import {
 	createDeploymentConnectionBinding,
 	createDeploymentConnectionStateToken,
@@ -56,6 +74,40 @@ const ENCRYPTED_V2 = "encrypted-v2-bytes";
 const IV_V1 = "iv-v1";
 const IV_V2 = "iv-v2";
 
+function providerSafetySnapshot(source: {
+	service: "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI";
+	instanceFingerprint?: string;
+	identityKind: string;
+	identityFingerprint: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+}) {
+	return serializeExecutableSafetyPlan(
+		{
+			kind: "verified_arr_target",
+			target: {
+				serviceFingerprint: "a".repeat(64),
+				externalId: 42,
+				mediaPath: { value: "/movies/Example", windows: false },
+			},
+		},
+		createSanitizedProviderEvidence(
+			[source.service.toLowerCase()],
+			[
+				{
+					...source,
+					cacheType: source.service === "TAUTULLI" ? "tautulli" : "plex",
+					completedAt: "2026-08-15T04:00:00.000Z",
+					itemCount: 1,
+					verifiedAt: "2026-08-15T03:00:00.000Z",
+					statusFingerprint: "c".repeat(64),
+					rowFingerprint: "d".repeat(64),
+				},
+			],
+		),
+	);
+}
+
 /**
  * In-memory prisma stub that persists state across requests.
  *
@@ -67,9 +119,18 @@ function createPrismaStub() {
 	const instances = new Map<string, any>();
 	const mappings = new Map<string, any>();
 	const overrides = new Map<string, any>();
+	const approvals = new Map<string, any>();
 	let nextId = 1;
 
 	const serviceInstance = {
+		count: vi.fn(async ({ where }: any) => {
+			return [...instances.values()].filter(
+				(row) =>
+					(!where.userId || row.userId === where.userId) &&
+					(!where.service || row.service === where.service) &&
+					(where.enabled === undefined || row.enabled === where.enabled),
+			).length;
+		}),
 		findMany: vi.fn(async ({ where }: any) => {
 			return [...instances.values()]
 				.filter(
@@ -144,6 +205,20 @@ function createPrismaStub() {
 		_instances: instances,
 		_mappings: mappings,
 		_overrides: overrides,
+		_approvals: approvals,
+		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		systemSettings: {
+			findUnique: vi.fn().mockResolvedValue({
+				analyticsProvider: "tautulli",
+				analyticsProviderSource: "explicit",
+			}),
+			upsert: vi.fn(),
+		},
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
@@ -151,7 +226,7 @@ function createPrismaStub() {
 		serviceInstance,
 		serviceTag: {
 			findMany: vi.fn().mockResolvedValue([]),
-			upsert: vi.fn(),
+			upsert: vi.fn(async ({ where }: any) => ({ id: `tag-${where.name}`, name: where.name })),
 			delete: vi.fn(),
 		},
 		serviceInstanceTag: {
@@ -212,11 +287,45 @@ function createPrismaStub() {
 				return { count: 1 };
 			}),
 		},
+		libraryCleanupApproval: {
+			findMany: vi.fn(async ({ where }: any) =>
+				[...approvals.values()].filter((row) => {
+					if (where.config?.userId && row.config?.userId !== where.config.userId) return false;
+					if (where.status?.in && !where.status.in.includes(row.status)) return false;
+					return true;
+				}),
+			),
+			updateMany: vi.fn(async ({ where, data }: any) => {
+				let count = 0;
+				for (const row of approvals.values()) {
+					if (where.id && row.id !== where.id) continue;
+					if (where.config?.userId && row.config?.userId !== where.config.userId) continue;
+					if (where.status?.in && !where.status.in.includes(row.status)) continue;
+					if (typeof where.status === "string" && row.status !== where.status) continue;
+					Object.assign(row, data);
+					count++;
+				}
+				return { count };
+			}),
+		},
 	};
 	return Object.assign(prisma, {
-		$transaction: vi.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) =>
-			callback(prisma),
-		),
+		$transaction: vi.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) => {
+			const snapshots = [instances, mappings, overrides, approvals].map(
+				(map) => new Map([...map.entries()].map(([key, value]) => [key, { ...value }])),
+			);
+			try {
+				return await callback(prisma);
+			} catch (error) {
+				for (const [map, snapshot] of [instances, mappings, overrides, approvals].map(
+					(map, index) => [map, snapshots[index]!] as const,
+				)) {
+					map.clear();
+					for (const [key, value] of snapshot) map.set(key, value);
+				}
+				throw error;
+			}
+		}),
 	});
 }
 
@@ -297,6 +406,7 @@ describe("Service instance lifecycle", () => {
 	beforeEach(async () => {
 		vi.clearAllMocks();
 		mockTestConnection.mockReset();
+		mockReadProviderIdentity.mockReset();
 
 		prisma = createPrismaStub();
 		encryptor = createEncryptorStub();
@@ -346,6 +456,844 @@ describe("Service instance lifecycle", () => {
 
 	afterEach(async () => {
 		await app?.close();
+	});
+
+	async function createExistingUnverifiedProvider(service: "PLEX" | "JELLYFIN" = "PLEX") {
+		const created = await inject("POST", "/services", {
+			body: {
+				label: "Legacy provider",
+				baseUrl: "http://legacy-provider.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "sonarr",
+			},
+		});
+		const id = JSON.parse(created.payload).service.id;
+		const instance = prisma._instances.get(id);
+		if (!instance) throw new Error("Expected created provider instance");
+		instance.service = service;
+		instance.expectedIdentity = null;
+		instance.identityKind = null;
+		instance.identityStatus = "UNVERIFIED";
+		instance.identityGeneration = 0;
+		instance.identityVerifiedAt = null;
+		instance.identityLastCheckedAt = null;
+		return id;
+	}
+
+	async function createExistingVerifiedProvider() {
+		const id = await createExistingUnverifiedProvider();
+		const instance = prisma._instances.get(id);
+		if (!instance) throw new Error("Expected created provider instance");
+		instance.expectedIdentity = "enrolled-plex-machine";
+		instance.identityKind = "PLEX_MACHINE_IDENTIFIER";
+		instance.identityStatus = "VERIFIED";
+		instance.identityGeneration = 3;
+		instance.identityVerifiedAt = new Date("2026-08-15T00:00:00.000Z");
+		return id;
+	}
+
+	it.each([
+		["plex", "PLEX", "plex-machine-identifier", "plex-identity"],
+		["jellyfin", "JELLYFIN", "jellyfin-server-id", "jellyfin-identity"],
+		["emby", "EMBY", "emby-server-id", "emby-identity"],
+		["tautulli", "TAUTULLI", "tautulli-pms-identifier", "tautulli-identity"],
+	] as const)(
+		"enrolls a verified %s connection at identity generation one",
+		async (service, serviceEnum, identityKind, rawIdentity) => {
+			mockReadProviderIdentity.mockResolvedValueOnce({
+				service: serviceEnum,
+				identityKind,
+				rawIdentity,
+				fingerprint: "safe-fingerprint",
+				confirmationDigest: "a".repeat(64),
+			});
+
+			const response = await inject("POST", "/services", {
+				body: {
+					label: `${service} server`,
+					baseUrl: `http://${service}.test`,
+					apiKey: PLAINTEXT_KEY_V1,
+					service,
+				},
+			});
+
+			expect(response.statusCode).toBe(201);
+			const id = JSON.parse(response.payload).service.id;
+			expect(prisma._instances.get(id)).toMatchObject({
+				service: serviceEnum,
+				expectedIdentity: rawIdentity,
+				identityKind: identityKind.toUpperCase().replaceAll("-", "_"),
+				identityStatus: "VERIFIED",
+				identityGeneration: 1,
+			});
+		},
+	);
+
+	it("rejects supported-provider creation when its identity cannot be read", async () => {
+		mockReadProviderIdentity.mockRejectedValueOnce(new Error("identity unavailable"));
+
+		const response = await inject("POST", "/services", {
+			body: {
+				label: "Plex server",
+				baseUrl: "http://plex.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "plex",
+			},
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(prisma._instances.size).toBe(0);
+	});
+
+	it("uses submitted reverse-proxy credentials while enrolling a provider", async () => {
+		mockReadProviderIdentity.mockResolvedValueOnce({
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "plex-machine",
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		});
+
+		const response = await inject("POST", "/services", {
+			body: {
+				label: "Protected Plex",
+				baseUrl: "https://plex.example.test",
+				apiKey: PLAINTEXT_KEY_V1,
+				service: "plex",
+				httpAuth: { username: "proxy-user", password: "proxy-password" },
+			},
+		});
+
+		expect(response.statusCode).toBe(201);
+		expect(mockReadProviderIdentity).toHaveBeenCalledWith(
+			expect.objectContaining({
+				httpAuthHeaders: { Authorization: "Basic cHJveHktdXNlcjpwcm94eS1wYXNzd29yZA==" },
+			}),
+			expect.anything(),
+		);
+	});
+
+	it("inspects an existing unverified provider without exposing its raw identity", async () => {
+		const id = await createExistingUnverifiedProvider();
+		mockReadProviderIdentity.mockResolvedValueOnce({
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "raw-plex-machine-id",
+			fingerprint: "safe-fingerprint",
+			displayName: "Living Room",
+			confirmationDigest: "a".repeat(64),
+		});
+
+		const response = await inject("POST", `/services/${id}/identity/inspect`, { body: {} });
+
+		expect(response.statusCode).toBe(200);
+		expect(JSON.parse(response.payload)).toEqual({
+			candidate: {
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				fingerprint: "safe-fingerprint",
+				displayName: "Living Room",
+				confirmationDigest: "a".repeat(64),
+			},
+			connectionGeneration: 0,
+			identityGeneration: 0,
+		});
+		expect(response.payload).not.toContain("raw-plex-machine-id");
+		expect(response.payload).not.toContain(PLAINTEXT_KEY_V1);
+		expect(prisma._instances.get(id)).toMatchObject({
+			expectedIdentity: null,
+			identityGeneration: 0,
+		});
+	});
+
+	it("verifies the inspected identity only after a matching second read", async () => {
+		const id = await createExistingUnverifiedProvider();
+		const observation = {
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "raw-plex-machine-id",
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValueOnce(observation).mockResolvedValueOnce(observation);
+
+		const inspected = await inject("POST", `/services/${id}/identity/inspect`, { body: {} });
+		const verified = await inject("POST", `/services/${id}/identity/verify`, {
+			body: {
+				confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 0,
+			},
+		});
+
+		expect(verified.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			expectedIdentity: "raw-plex-machine-id",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityGeneration: 1,
+		});
+	});
+
+	it("rejects verification when the provider changes after inspection", async () => {
+		const id = await createExistingUnverifiedProvider();
+		mockReadProviderIdentity
+			.mockResolvedValueOnce({
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				rawIdentity: "first-machine",
+				fingerprint: "first-safe-fingerprint",
+				confirmationDigest: "a".repeat(64),
+			})
+			.mockResolvedValueOnce({
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				rawIdentity: "second-machine",
+				fingerprint: "second-safe-fingerprint",
+				confirmationDigest: "b".repeat(64),
+			});
+
+		const inspected = await inject("POST", `/services/${id}/identity/inspect`, { body: {} });
+		const verified = await inject("POST", `/services/${id}/identity/verify`, {
+			body: {
+				confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 0,
+			},
+		});
+
+		expect(verified.statusCode).toBe(409);
+		expect(JSON.parse(verified.payload).details).toMatchObject({
+			code: "IDENTITY_CANDIDATE_CHANGED",
+		});
+		expect(verified.payload).not.toContain("second-machine");
+		expect(prisma._instances.get(id)).toMatchObject({
+			expectedIdentity: null,
+			identityGeneration: 0,
+		});
+	});
+
+	it("keeps a verified identity generation while advancing the connection generation for the same provider", async () => {
+		const id = await createExistingVerifiedProvider();
+		mockReadProviderIdentity.mockResolvedValueOnce({
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "enrolled-plex-machine",
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		});
+
+		const response = await inject("PUT", `/services/${id}`, {
+			body: { baseUrl: "http://updated-provider.test" },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			baseUrl: "http://updated-provider.test",
+			connectionGeneration: 1,
+			identityGeneration: 3,
+			expectedIdentity: "enrolled-plex-machine",
+		});
+	});
+
+	it("resets provider identity authority when changing service families so it can be enrolled again", async () => {
+		const id = await createExistingVerifiedProvider();
+
+		const switchedAway = await inject("PUT", `/services/${id}`, {
+			body: { service: "sonarr" },
+		});
+
+		expect(switchedAway.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			service: "SONARR",
+			expectedIdentity: null,
+			identityKind: null,
+			identityStatus: "UNVERIFIED",
+			identityGeneration: 4,
+			identityVerifiedAt: null,
+			identityLastCheckedAt: null,
+			connectionGeneration: 1,
+		});
+
+		const observation = {
+			service: "PLEX" as const,
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "re-enrolled-plex-machine",
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValue(observation);
+		const switchedBack = await inject("PUT", `/services/${id}`, {
+			body: { service: "plex" },
+		});
+		expect(switchedBack.statusCode).toBe(200);
+
+		const inspected = await inject("POST", `/services/${id}/identity/inspect`, { body: {} });
+		const verified = await inject("POST", `/services/${id}/identity/verify`, {
+			body: {
+				confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
+				expectedConnectionGeneration: 2,
+				expectedIdentityGeneration: 4,
+			},
+		});
+
+		expect(verified.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			service: "PLEX",
+			expectedIdentity: "re-enrolled-plex-machine",
+			identityStatus: "VERIFIED",
+			identityGeneration: 5,
+		});
+	});
+
+	it("keeps an existing unverified provider unverified after an ordinary same-server update", async () => {
+		const id = await createExistingUnverifiedProvider();
+		mockReadProviderIdentity.mockResolvedValueOnce({
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "legacy-plex-machine",
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		});
+
+		const response = await inject("PUT", `/services/${id}`, {
+			body: { baseUrl: "http://legacy-provider-updated.test" },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			baseUrl: "http://legacy-provider-updated.test",
+			expectedIdentity: null,
+			identityStatus: "UNVERIFIED",
+			identityGeneration: 0,
+			connectionGeneration: 1,
+		});
+	});
+
+	it("allows a provider to be disabled under the topology lease without requiring it to be reachable", async () => {
+		const id = await createExistingVerifiedProvider();
+		mockReadProviderIdentity.mockRejectedValueOnce(new Error("provider unavailable"));
+
+		const response = await inject("PUT", `/services/${id}`, { body: { enabled: false } });
+
+		expect(response.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			enabled: false,
+			connectionGeneration: 1,
+			identityGeneration: 3,
+		});
+	});
+
+	it("does not save a verified provider connection when its candidate identity is unavailable", async () => {
+		const id = await createExistingVerifiedProvider();
+		const before = { ...prisma._instances.get(id) };
+		mockReadProviderIdentity.mockRejectedValueOnce(new Error("provider unavailable"));
+
+		const response = await inject("PUT", `/services/${id}`, {
+			body: { baseUrl: "http://unavailable-provider.test" },
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(prisma._instances.get(id)).toMatchObject({
+			baseUrl: before.baseUrl,
+			connectionGeneration: before.connectionGeneration,
+			identityGeneration: before.identityGeneration,
+		});
+	});
+
+	it("returns a safe replacement candidate without saving an ordinary update to a different provider", async () => {
+		const id = await createExistingVerifiedProvider();
+		const before = { ...prisma._instances.get(id) };
+		mockReadProviderIdentity.mockResolvedValueOnce({
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			displayName: "Replacement server",
+			confirmationDigest: "b".repeat(64),
+		});
+
+		const response = await inject("PUT", `/services/${id}`, {
+			body: { baseUrl: "http://replacement-provider.test" },
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(JSON.parse(response.payload).details).toEqual({
+			code: "IDENTITY_REPLACEMENT_REQUIRED",
+			candidate: {
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				fingerprint: "replacement-fingerprint",
+				displayName: "Replacement server",
+				confirmationDigest: "b".repeat(64),
+			},
+			connectionGeneration: 0,
+			identityGeneration: 3,
+		});
+		expect(response.payload).not.toContain("replacement-plex-machine");
+		expect(prisma._instances.get(id)).toMatchObject({
+			baseUrl: before.baseUrl,
+			connectionGeneration: before.connectionGeneration,
+			identityGeneration: before.identityGeneration,
+		});
+	});
+
+	it("replaces a verified provider atomically, preserving submitted tags and one default", async () => {
+		const id = await createExistingVerifiedProvider();
+		prisma._instances.set("other-plex", {
+			id: "other-plex",
+			userId: USER_ID,
+			service: "PLEX",
+			isDefault: true,
+		});
+		prisma._approvals.set("untagged-approval", {
+			id: "untagged-approval",
+			config: { userId: USER_ID },
+			status: "pending",
+			safetySnapshot: null,
+		});
+		prisma._approvals.set("tagged-approval", {
+			id: "tagged-approval",
+			config: { userId: USER_ID },
+			status: "approved",
+			safetySnapshot: providerSafetySnapshot({
+				service: "PLEX",
+				instanceFingerprint: providerInstanceAuthorityFingerprint(id),
+				identityKind: "PLEX_MACHINE_IDENTIFIER",
+				identityFingerprint: providerIdentityAuthorityFingerprint({
+					expectedIdentity: "enrolled-plex-machine",
+					identityKind: "PLEX_MACHINE_IDENTIFIER",
+					service: "PLEX",
+				}),
+				connectionGeneration: 0,
+				identityGeneration: 3,
+			}),
+		});
+		prisma._approvals.set("unrelated-approval", {
+			id: "unrelated-approval",
+			config: { userId: USER_ID },
+			status: "pending",
+			safetySnapshot: providerSafetySnapshot({
+				service: "TAUTULLI",
+				identityKind: "TAUTULLI_PMS_IDENTIFIER",
+				identityFingerprint: "b".repeat(64),
+				connectionGeneration: 0,
+				identityGeneration: 3,
+			}),
+		});
+		const replacement = {
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "b".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValueOnce(replacement).mockResolvedValueOnce(replacement);
+
+		const inspected = await inject("POST", `/services/${id}/identity/inspect`, {
+			body: {
+				candidate: {
+					baseUrl: "http://replacement-provider.test",
+					isDefault: true,
+					tags: ["movies"],
+				},
+			},
+		});
+		const response = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: {
+					baseUrl: "http://replacement-provider.test",
+					isDefault: true,
+					tags: ["movies"],
+				},
+				confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			baseUrl: "http://replacement-provider.test",
+			expectedIdentity: "replacement-plex-machine",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			isDefault: true,
+			connectionGeneration: 1,
+			identityGeneration: 4,
+		});
+		expect(prisma._instances.get("other-plex")).toMatchObject({ isDefault: false });
+		expect(prisma.serviceInstanceTag.deleteMany).toHaveBeenCalledWith({
+			where: { instanceId: id },
+		});
+		expect(prisma.serviceTag.upsert).toHaveBeenCalledWith({
+			where: { name: "movies" },
+			update: {},
+			create: { name: "movies" },
+		});
+		expect(prisma.serviceInstanceTag.createMany).toHaveBeenCalledWith({
+			data: [{ instanceId: id, tagId: "tag-movies" }],
+		});
+		for (const cache of [
+			prisma.plexCache,
+			prisma.plexEpisodeCache,
+			prisma.tautulliCache,
+			prisma.jellyfinCache,
+			prisma.jellyfinEpisodeCache,
+			prisma.cacheRefreshStatus,
+		]) {
+			expect(cache.deleteMany).toHaveBeenCalledWith({ where: { instanceId: id } });
+		}
+		expect(prisma._approvals.get("untagged-approval")).toMatchObject({ status: "expired" });
+		expect(prisma._approvals.get("tagged-approval")).toMatchObject({ status: "expired" });
+		expect(prisma._approvals.get("unrelated-approval")).toMatchObject({ status: "pending" });
+	});
+
+	it("requires and consumes analytics confirmation when replacing the selected Tautulli identity", async () => {
+		const id = await createExistingVerifiedProvider();
+		const instance = prisma._instances.get(id);
+		if (!instance) throw new Error("Expected Tautulli instance");
+		instance.service = "TAUTULLI";
+		instance.expectedIdentity = "enrolled-tautulli-server";
+		instance.identityKind = "TAUTULLI_PMS_IDENTIFIER";
+		const replacement = {
+			service: "TAUTULLI",
+			identityKind: "tautulli-pms-identifier",
+			rawIdentity: "replacement-tautulli-server",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "c".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValue(replacement);
+
+		const blocked = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: { baseUrl: "http://replacement-tautulli.test" },
+				confirmationDigest: replacement.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(blocked.statusCode).toBe(409);
+		expect(blocked.json()).toEqual({
+			code: "ANALYTICS_PROVIDER_CONFIRMATION_REQUIRED",
+			selected: "tautulli",
+			alternativeEnabled: false,
+		});
+		expect(instance.expectedIdentity).toBe("enrolled-tautulli-server");
+
+		const replaced = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: { baseUrl: "http://replacement-tautulli.test" },
+				confirmationDigest: replacement.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+				confirmAnalyticsUnavailableFor: "tautulli",
+			},
+		});
+
+		expect(replaced.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			expectedIdentity: "replacement-tautulli-server",
+			identityGeneration: 4,
+		});
+		expect(prisma._instances.get(id)).not.toHaveProperty("confirmAnalyticsUnavailableFor");
+	});
+
+	it("preserves defaults and tags when a replacement loses its generation race", async () => {
+		const id = await createExistingVerifiedProvider();
+		prisma._instances.set("other-plex", {
+			id: "other-plex",
+			userId: USER_ID,
+			service: "PLEX",
+			isDefault: true,
+		});
+		const updateMany = prisma.serviceInstance.updateMany;
+		const originalUpdateMany = updateMany.getMockImplementation();
+		updateMany.mockImplementation(async (args: any) => {
+			if (args.where.id === id && args.where.identityGeneration === 3) return { count: 0 };
+			return await originalUpdateMany!(args);
+		});
+		mockReadProviderIdentity.mockResolvedValueOnce({
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		});
+
+		const response = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: { isDefault: true, tags: ["movies"] },
+				confirmationDigest: "a".repeat(64),
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(prisma._instances.get(id)).toMatchObject({ isDefault: false, identityGeneration: 3 });
+		expect(prisma._instances.get("other-plex")).toMatchObject({ isDefault: true });
+		expect(prisma.serviceInstanceTag.deleteMany).not.toHaveBeenCalled();
+		expect(prisma.serviceTag.upsert).not.toHaveBeenCalled();
+		expect(prisma.serviceInstanceTag.createMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects a replacement that is no longer owned before reading a provider", async () => {
+		const id = await createExistingVerifiedProvider();
+		prisma._instances.get(id).userId = "another-user";
+
+		const response = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: {},
+				confirmationDigest: "a".repeat(64),
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(response.statusCode).toBe(404);
+		expect(mockReadProviderIdentity).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["connection", 1, 3],
+		["identity", 0, 4],
+	] as const)(
+		"rejects replacement with a stale %s generation",
+		async (_generation, expectedConnectionGeneration, expectedIdentityGeneration) => {
+			const id = await createExistingVerifiedProvider();
+			mockReadProviderIdentity.mockResolvedValueOnce({
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				rawIdentity: "replacement-plex-machine",
+				fingerprint: "replacement-fingerprint",
+				confirmationDigest: "a".repeat(64),
+			});
+
+			const response = await inject("POST", `/services/${id}/identity/replace`, {
+				body: {
+					candidate: { baseUrl: "http://stale-candidate-provider.test" },
+					confirmationDigest: "a".repeat(64),
+					expectedConnectionGeneration,
+					expectedIdentityGeneration,
+				},
+			});
+
+			expect(response.statusCode).toBe(409);
+			expect(JSON.parse(response.payload).details).toMatchObject({
+				code: "IDENTITY_GENERATION_STALE",
+				connectionGeneration: 0,
+				identityGeneration: 3,
+			});
+			expect(prisma._instances.get(id)).toMatchObject({
+				expectedIdentity: "enrolled-plex-machine",
+				identityGeneration: 3,
+			});
+			expect(mockReadProviderIdentity).not.toHaveBeenCalled();
+		},
+	);
+
+	it("rejects a replacement when the inspected candidate digest changed", async () => {
+		const id = await createExistingVerifiedProvider();
+		mockReadProviderIdentity.mockResolvedValueOnce({
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "b".repeat(64),
+		});
+
+		const response = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: {},
+				confirmationDigest: "a".repeat(64),
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(JSON.parse(response.payload).details).toMatchObject({
+			code: "IDENTITY_CANDIDATE_CHANGED",
+			candidate: {
+				fingerprint: "replacement-fingerprint",
+				confirmationDigest: "b".repeat(64),
+			},
+		});
+		expect(prisma._instances.get(id)).toMatchObject({ identityGeneration: 3 });
+	});
+
+	it("rolls back a failed replacement and accepts a later retry exactly once", async () => {
+		const id = await createExistingVerifiedProvider();
+		const replacement = {
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		prisma._approvals.set("approval", {
+			id: "approval",
+			config: { userId: USER_ID },
+			status: "pending",
+			safetySnapshot: null,
+		});
+		prisma.plexCache.deleteMany.mockRejectedValueOnce(new Error("cache unavailable"));
+		mockReadProviderIdentity.mockResolvedValueOnce(replacement).mockResolvedValueOnce(replacement);
+
+		const failed = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: {},
+				confirmationDigest: "a".repeat(64),
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+		expect(failed.statusCode).toBe(500);
+		expect(prisma._instances.get(id)).toMatchObject({
+			expectedIdentity: "enrolled-plex-machine",
+			identityGeneration: 3,
+		});
+		expect(prisma._approvals.get("approval")).toMatchObject({ status: "pending" });
+
+		const retried = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: {},
+				confirmationDigest: "a".repeat(64),
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+		expect(retried.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			expectedIdentity: "replacement-plex-machine",
+			connectionGeneration: 0,
+			identityGeneration: 4,
+		});
+	});
+
+	it("treats an immediately retried replacement as an idempotent success", async () => {
+		const id = await createExistingVerifiedProvider();
+		const replacement = {
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		mockReadProviderIdentity
+			.mockResolvedValueOnce(replacement)
+			.mockResolvedValueOnce(replacement)
+			.mockResolvedValueOnce(replacement);
+
+		const inspected = await inject("POST", `/services/${id}/identity/inspect`, { body: {} });
+		const body = {
+			candidate: {},
+			confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
+			expectedConnectionGeneration: 0,
+			expectedIdentityGeneration: 3,
+		};
+		const first = await inject("POST", `/services/${id}/identity/replace`, { body });
+		const retry = await inject("POST", `/services/${id}/identity/replace`, { body });
+
+		expect(first.statusCode).toBe(200);
+		expect(retry.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({ identityGeneration: 4 });
+		expect(prisma.serviceInstance.updateMany).toHaveBeenCalledTimes(1);
+	});
+
+	it("rejects a concurrent replacement with a different inspected connection for the same provider", async () => {
+		const id = await createExistingVerifiedProvider();
+		const replacement = {
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValue(replacement);
+
+		const firstCandidate = { baseUrl: "http://first-provider.test" };
+		const secondCandidate = { baseUrl: "http://second-provider.test" };
+		const firstInspection = await inject("POST", `/services/${id}/identity/inspect`, {
+			body: { candidate: firstCandidate },
+		});
+		const secondInspection = await inject("POST", `/services/${id}/identity/inspect`, {
+			body: { candidate: secondCandidate },
+		});
+
+		const first = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: firstCandidate,
+				confirmationDigest: firstInspection.json().candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+		const staleSecond = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: secondCandidate,
+				confirmationDigest: secondInspection.json().candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(first.statusCode).toBe(200);
+		expect(staleSecond.statusCode).toBe(409);
+		expect(staleSecond.json().details).toMatchObject({
+			code: "IDENTITY_GENERATION_STALE",
+		});
+		expect(prisma._instances.get(id)).toMatchObject({
+			baseUrl: "http://first-provider.test",
+			identityGeneration: 4,
+		});
+	});
+
+	it("rejects a stale same-identity replacement requesting a different enabled state", async () => {
+		const id = await createExistingVerifiedProvider();
+		mockReadProviderIdentity.mockResolvedValue({
+			service: "PLEX",
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "replacement-plex-machine",
+			fingerprint: "replacement-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		});
+		const disabledCandidate = { enabled: false };
+		const enabledCandidate = { enabled: true };
+		const disabledInspection = await inject("POST", `/services/${id}/identity/inspect`, {
+			body: { candidate: disabledCandidate },
+		});
+		const enabledInspection = await inject("POST", `/services/${id}/identity/inspect`, {
+			body: { candidate: enabledCandidate },
+		});
+
+		const first = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: disabledCandidate,
+				confirmationDigest: disabledInspection.json().candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+		const staleSecond = await inject("POST", `/services/${id}/identity/replace`, {
+			body: {
+				candidate: enabledCandidate,
+				confirmationDigest: enabledInspection.json().candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(first.statusCode).toBe(200);
+		expect(staleSecond.statusCode).toBe(409);
+		expect(staleSecond.json().details).toMatchObject({ code: "IDENTITY_GENERATION_STALE" });
+		expect(prisma._instances.get(id)).toMatchObject({
+			enabled: false,
+			connectionGeneration: 1,
+			identityGeneration: 4,
+		});
 	});
 
 	it("encrypts HTTP auth credentials and exposes only a configured flag", async () => {

@@ -23,6 +23,8 @@ import {
 	tautulliMetadataSchema,
 	tautulliPlaysByDateDataSchema,
 	tautulliResponseWrapperSchema,
+	tautulliServerInfoSchema,
+	tautulliServersInfoSchema,
 	tautulliUserSchema,
 	tautulliUserWatchTimeStatsSchema,
 } from "./tautulli-schemas.js";
@@ -99,6 +101,16 @@ export type TautulliClientInstanceData = Omit<ClientInstanceData, "service"> & {
 	service: "TAUTULLI";
 };
 
+export interface TautulliServerIdentity {
+	identifier: string;
+	displayName?: string;
+}
+
+function normalizeDisplayName(value: string | undefined): string | undefined {
+	const displayName = value?.trim();
+	return displayName || undefined;
+}
+
 export class TautulliClient {
 	private readonly baseUrl: string;
 	private readonly apiKey: string;
@@ -125,6 +137,33 @@ export class TautulliClient {
 
 	getInfo(): Promise<TautulliInfo> {
 		return this.command("get_tautulli_info", undefined, tautulliInfoSchema);
+	}
+
+	async getServerIdentity(): Promise<TautulliServerIdentity> {
+		try {
+			const serverInfo = await this.command("get_server_info", undefined, tautulliServerInfoSchema);
+			const primaryIdentifier = serverInfo.pms_identifier?.trim();
+			if (primaryIdentifier) {
+				return {
+					identifier: primaryIdentifier,
+					displayName: normalizeDisplayName(serverInfo.pms_name),
+				};
+			}
+
+			const servers = await this.command("get_servers_info", undefined, tautulliServersInfoSchema);
+			if (servers.length !== 1) throw new Error("ambiguous fallback identity");
+			const fallbackServer = servers[0]!;
+			const fallbackIdentifier = fallbackServer.machine_identifier.trim();
+			if (!fallbackIdentifier) throw new Error("ambiguous fallback identity");
+			return {
+				identifier: fallbackIdentifier,
+				displayName:
+					normalizeDisplayName(fallbackServer.name) ??
+					normalizeDisplayName(fallbackServer.pms_name),
+			};
+		} catch {
+			throw new Error("Tautulli server identity is unavailable");
+		}
 	}
 
 	getLibraries(): Promise<TautulliLibrary[]> {
@@ -380,7 +419,7 @@ export class TautulliClient {
 
 export function createTautulliClient(
 	encryptor: Encryptor,
-	instance: TautulliClientInstanceData,
+	instance: ClientInstanceData,
 	log: FastifyBaseLogger,
 	beforeRequest?: () => Promise<void>,
 ): TautulliClient {
