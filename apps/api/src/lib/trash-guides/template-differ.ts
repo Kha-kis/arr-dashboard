@@ -17,16 +17,25 @@ import type {
 	TemplateCustomFormatGroup,
 	TemplateDiffResult,
 	TemplateMigrationNotice,
-	TrashConfigType,
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
 	TrashQualityProfile,
 } from "@arr/shared";
 import { dequal as deepEqual } from "dequal";
+import { z } from "zod";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import type { TrashCacheManager } from "./cache-manager.js";
+import type {
+	TrashCacheManager,
+	TrashCacheProvenance,
+	TrashCacheSnapshot,
+} from "./cache-manager.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
+import {
+	trashCustomFormatGroupSchema,
+	trashCustomFormatSchema,
+	trashQualityProfileSchema,
+} from "./github-schemas.js";
 import { getMigrationNotices } from "./migration-notices.js";
 import {
 	getCurrentScore,
@@ -50,6 +59,10 @@ export interface DiffTemplateInput {
 	hasUserModifications: boolean;
 	changeLog: string | null;
 	sourceQualityProfileTrashId: string | null;
+}
+
+function snapshotFromVerified<T>(data: T, provenance: TrashCacheProvenance): TrashCacheSnapshot<T> {
+	return { data, commitHash: provenance.commitHash, provenance };
 }
 
 // ============================================================================
@@ -104,30 +117,81 @@ export async function computeTemplateDiff(
 		};
 	}
 
-	// Validate cache commit matches target; auto-refresh if stale
-	const cacheCommitHash = await cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS");
-	if (!cacheCommitHash || cacheCommitHash !== targetCommitHash) {
-		const requiredCacheTypes: TrashConfigType[] = [
-			"CUSTOM_FORMATS",
-			"CF_GROUPS",
-			"QUALITY_PROFILES",
-		];
+	const expectedProvenance = githubFetcher.getCommitProvenance(targetCommitHash);
+	const matchesExpected = (snapshot: TrashCacheSnapshot<unknown> | null) =>
+		snapshot?.provenance?.version === expectedProvenance.version &&
+		snapshot.provenance.repository === expectedProvenance.repository &&
+		snapshot.provenance.commitHash === expectedProvenance.commitHash;
 
-		for (const configType of requiredCacheTypes) {
-			try {
-				const data = await githubFetcher.fetchConfigs(serviceType, configType);
-				await cacheManager.set(serviceType, configType, data, targetCommitHash);
-			} catch (fetchError) {
-				const errorMsg = getErrorMessage(fetchError);
-				throw new Error(`Failed to refresh ${configType} cache for ${serviceType}: ${errorMsg}`);
-			}
+	let [customFormatsSnapshot, cfGroupsSnapshot, qualityProfilesSnapshot] = await Promise.all([
+		cacheManager.getSnapshot<TrashCustomFormat[]>(
+			serviceType,
+			"CUSTOM_FORMATS",
+			z.array(trashCustomFormatSchema),
+		),
+		cacheManager.getSnapshot<TrashCustomFormatGroup[]>(
+			serviceType,
+			"CF_GROUPS",
+			z.array(trashCustomFormatGroupSchema),
+		),
+		cacheManager.getSnapshot<TrashQualityProfile[]>(
+			serviceType,
+			"QUALITY_PROFILES",
+			z.array(trashQualityProfileSchema),
+		),
+	]);
+
+	if (
+		!customFormatsSnapshot ||
+		!cfGroupsSnapshot ||
+		!qualityProfilesSnapshot ||
+		!matchesExpected(customFormatsSnapshot) ||
+		!matchesExpected(cfGroupsSnapshot) ||
+		!matchesExpected(qualityProfilesSnapshot)
+	) {
+		try {
+			const [rawCustomFormats, rawGroups, rawQualityProfiles] = await Promise.all([
+				githubFetcher.fetchConfigsAtCommit(serviceType, "CUSTOM_FORMATS", targetCommitHash),
+				githubFetcher.fetchConfigsAtCommit(serviceType, "CF_GROUPS", targetCommitHash),
+				githubFetcher.fetchConfigsAtCommit(serviceType, "QUALITY_PROFILES", targetCommitHash),
+			]);
+			const customFormats = z.array(trashCustomFormatSchema).parse(rawCustomFormats);
+			const customFormatGroups = z.array(trashCustomFormatGroupSchema).parse(rawGroups);
+			const qualityProfiles = z.array(trashQualityProfileSchema).parse(rawQualityProfiles);
+			await Promise.all([
+				cacheManager.setVerified(serviceType, "CUSTOM_FORMATS", customFormats, expectedProvenance),
+				cacheManager.setVerified(serviceType, "CF_GROUPS", customFormatGroups, expectedProvenance),
+				cacheManager.setVerified(
+					serviceType,
+					"QUALITY_PROFILES",
+					qualityProfiles,
+					expectedProvenance,
+				),
+			]);
+			customFormatsSnapshot = snapshotFromVerified(customFormats, expectedProvenance);
+			cfGroupsSnapshot = snapshotFromVerified(customFormatGroups, expectedProvenance);
+			qualityProfilesSnapshot = snapshotFromVerified(qualityProfiles, expectedProvenance);
+		} catch (fetchError) {
+			throw new Error(
+				`Failed to refresh verified TRaSH cache for ${serviceType}: ${getErrorMessage(fetchError)}`,
+			);
 		}
 	}
 
-	// Get latest cache data for comparison
-	const customFormatsCache = await cacheManager.get(serviceType, "CUSTOM_FORMATS");
-	const cfGroupsCache = await cacheManager.get(serviceType, "CF_GROUPS");
-	const qualityProfilesCache = await cacheManager.get(serviceType, "QUALITY_PROFILES");
+	if (
+		!customFormatsSnapshot ||
+		!cfGroupsSnapshot ||
+		!qualityProfilesSnapshot ||
+		!matchesExpected(customFormatsSnapshot) ||
+		!matchesExpected(cfGroupsSnapshot) ||
+		!matchesExpected(qualityProfilesSnapshot)
+	) {
+		throw new Error(`TRaSH cache provenance could not be verified at ${targetCommitHash}`);
+	}
+
+	const customFormatsCache = customFormatsSnapshot.data;
+	const cfGroupsCache = cfGroupsSnapshot.data;
+	const qualityProfilesCache = qualityProfilesSnapshot.data;
 
 	// Parse template config — throw on corruption so callers get a clear error
 	// instead of silently returning an empty diff
