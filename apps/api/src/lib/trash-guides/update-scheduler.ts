@@ -15,7 +15,6 @@ import {
 	type TrashRepoConfig,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
-import { z } from "zod";
 import type { PrismaClient, ServiceInstance } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
@@ -28,7 +27,6 @@ import {
 	getEquivalentServiceInstanceIds,
 } from "./deployment-target.js";
 import { createTrashFetcher } from "./github-fetcher.js";
-import { trashQualitySizeSchema } from "./github-schemas.js";
 import { computeNamingHash, resolvePayload } from "./naming-deployer.js";
 import { applyQualitySizeToDefinitions } from "./quality-size-matcher.js";
 import type {
@@ -265,13 +263,15 @@ export class UpdateScheduler {
 		}
 
 		this.isCheckInProgress = true;
+		try {
+			await this.checkForUpdatesAttempt();
+		} finally {
+			this.isCheckInProgress = false;
+		}
+	}
+
+	private async checkForUpdatesAttempt(): Promise<void> {
 		const startTime = Date.now();
-
-		// Re-read repo config and rebuild services if the user changed settings
-		await this.refreshRepoConfigIfNeeded();
-
-		this.logger.info("Checking for TRaSH Guides updates...");
-
 		const errors: string[] = [];
 		let templatesAutoSynced = 0;
 		let templatesNeedingAttention = 0;
@@ -282,34 +282,44 @@ export class UpdateScheduler {
 		let qualitySizeUpdatesPending = 0;
 		let namingAutoSynced = 0;
 		let namingUpdatesPending = 0;
-
-		// Count templates by sync strategy (unique templates with at least one mapping of each type)
-		const [templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
-			this.prisma.trashTemplate.count({
-				where: {
-					deletedAt: null,
-					trashGuidesCommitHash: { not: null },
-					qualityProfileMappings: {
-						some: {
-							syncStrategy: "auto",
-						},
-					},
-				},
-			}),
-			this.prisma.trashTemplate.count({
-				where: {
-					deletedAt: null,
-					trashGuidesCommitHash: { not: null },
-					qualityProfileMappings: {
-						some: {
-							syncStrategy: "notify",
-						},
-					},
-				},
-			}),
-		]);
+		let templatesWithAutoStrategy = 0;
+		let templatesWithNotifyStrategy = 0;
 
 		try {
+			// Re-read repo config and rebuild services if the user changed settings
+			await this.refreshRepoConfigIfNeeded();
+
+			this.logger.info("Checking for TRaSH Guides updates...");
+
+			// Count templates by sync strategy (unique templates with at least one mapping of each type)
+			[templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
+				this.prisma.trashTemplate.count({
+					where: {
+						deletedAt: null,
+						OR: [
+							{ trashGuidesCommitHash: { not: null } },
+							{ sourceQualityProfileTrashId: { not: null } },
+						],
+						qualityProfileMappings: {
+							some: {
+								syncStrategy: "auto",
+							},
+						},
+					},
+				}),
+				this.prisma.trashTemplate.count({
+					where: {
+						deletedAt: null,
+						trashGuidesCommitHash: { not: null },
+						qualityProfileMappings: {
+							some: {
+								syncStrategy: "notify",
+							},
+						},
+					},
+				}),
+			]);
+
 			// Get latest version info
 			const latestCommit = await this.versionTracker.getLatestCommit();
 			this.logger.debug(
@@ -339,8 +349,18 @@ export class UpdateScheduler {
 				errors.push(...sonarrCacheResult.errors.map((e: string) => `Sonarr: ${e}`));
 			}
 
+			// Only service caches whose repository-and-commit provenance was verified
+			// during this tick may authorize an upstream quality-size write.
+			const verifiedQualitySizeData = new Map<"RADARR" | "SONARR", readonly TrashQualitySize[]>();
+			if (radarrCacheResult.verifiedQualitySizeData) {
+				verifiedQualitySizeData.set("RADARR", radarrCacheResult.verifiedQualitySizeData);
+			}
+			if (sonarrCacheResult.verifiedQualitySizeData) {
+				verifiedQualitySizeData.set("SONARR", sonarrCacheResult.verifiedQualitySizeData);
+			}
+
 			// Process quality size auto-sync after caches are refreshed
-			const qsResult = await this.processQualitySizeSync();
+			const qsResult = await this.processQualitySizeSync(verifiedQualitySizeData);
 			qualitySizeAutoSynced = qsResult.autoSynced;
 			qualitySizeUpdatesPending = qsResult.updatesPending;
 			if (qsResult.errors.length > 0) {
@@ -359,7 +379,13 @@ export class UpdateScheduler {
 			const templatesWithUsers = await this.prisma.trashTemplate.findMany({
 				where: {
 					deletedAt: null,
-					trashGuidesCommitHash: { not: null },
+					OR: [
+						{ trashGuidesCommitHash: { not: null } },
+						{
+							sourceQualityProfileTrashId: { not: null },
+							qualityProfileMappings: { some: { syncStrategy: "auto" } },
+						},
+					],
 				},
 				select: { userId: true },
 				distinct: ["userId"],
@@ -558,8 +584,6 @@ export class UpdateScheduler {
 			});
 
 			throw error;
-		} finally {
-			this.isCheckInProgress = false;
 		}
 	}
 
@@ -624,7 +648,9 @@ export class UpdateScheduler {
 	 * Compares current preset hash to the stored appliedDataHash and applies changes
 	 * for "auto" mappings, or counts pending updates for "notify" mappings.
 	 */
-	private async processQualitySizeSync(): Promise<{
+	private async processQualitySizeSync(
+		verifiedData: ReadonlyMap<"RADARR" | "SONARR", readonly TrashQualitySize[]>,
+	): Promise<{
 		autoSynced: number;
 		updatesPending: number;
 		errors: string[];
@@ -654,21 +680,25 @@ export class UpdateScheduler {
 
 		if (mappings.length === 0) return result;
 
-		const cacheManager = createCacheManager(this.prisma);
+		const warnedUnverifiedServiceTypes = new Set<"RADARR" | "SONARR">();
 
 		for (const mapping of mappings) {
 			try {
-				// Get latest preset data from cache
-				const cached = await cacheManager.get<TrashQualitySize[]>(
-					mapping.serviceType as "RADARR" | "SONARR",
-					"QUALITY_SIZE",
-					z.array(trashQualitySizeSchema),
-				);
+				const serviceType = mapping.serviceType as "RADARR" | "SONARR";
+				const cached = verifiedData.get(serviceType);
 				if (!cached) {
-					this.logger.warn(
-						`Quality size cache empty for ${mapping.serviceType} — skipping sync for instance ${mapping.instance.label}`,
-					);
+					if (!warnedUnverifiedServiceTypes.has(serviceType)) {
+						warnedUnverifiedServiceTypes.add(serviceType);
+						this.logger.warn(
+							`Quality size cache provenance was not verified for ${serviceType} during this scheduler tick — skipping sync`,
+						);
+					}
 					continue;
+				}
+				if (mapping.instance.service !== serviceType) {
+					throw new Error(
+						`Quality size mapping service type changed from ${serviceType} to ${mapping.instance.service}`,
+					);
 				}
 
 				const preset = cached.find((p) => p.trash_id === mapping.presetTrashId);
@@ -696,7 +726,6 @@ export class UpdateScheduler {
 					continue;
 				}
 
-				// Auto-sync: reset to factory defaults first, then apply
 				if (!mapping.instance.enabled) {
 					this.logger.debug(
 						`Skipping quality size sync for disabled instance ${mapping.instance.label}`,
@@ -708,6 +737,18 @@ export class UpdateScheduler {
 					mapping.instance,
 					"Scheduled quality-size sync",
 					async (verifiedInstance) => {
+						if (verifiedInstance.service !== serviceType) {
+							throw new Error(
+								`Quality size mapping service type changed before execution for instance ${mapping.instance.label}`,
+							);
+						}
+						if (!verifiedInstance.enabled) {
+							this.logger.debug(
+								`Skipping quality size sync for disabled instance ${verifiedInstance.label}`,
+							);
+							return;
+						}
+
 						// Reset to factory defaults before applying (matches manual apply flow)
 						const resetResponse = await this.arrClientFactory!.rawRequest(
 							verifiedInstance,
