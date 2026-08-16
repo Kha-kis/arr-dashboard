@@ -122,6 +122,7 @@ COPY --from=builder --chown=abc:abc /app/apps/web/public ./web/apps/web/public
 # Copy startup scripts and fix line endings (single layer)
 COPY --chown=abc:abc docker/start-combined.sh ./
 COPY --chown=abc:abc docker/read-base-path.cjs ./api/
+COPY --chown=abc:abc docker/sync-postgresql-schema.cjs ./api/
 COPY --chown=abc:abc docker/validate-runtime.sh ./api/
 # Heap-snapshot helper for operators (issue #427). Installed in PATH so
 # users can run `docker exec <container> dump-heap` without needing to
