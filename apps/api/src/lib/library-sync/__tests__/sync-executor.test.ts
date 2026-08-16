@@ -437,6 +437,29 @@ describe("syncInstance", () => {
 				),
 			).toBeNull();
 		});
+
+		it("drops Radarr zero sentinels instead of matching them as low ratings", async () => {
+			const { data, cacheItem } = await syncRating("RADARR", {
+				imdb: { value: 0, votes: 0 },
+				tmdb: { value: "0", votes: 0 },
+			});
+			expect(data.ratings).toBeUndefined();
+			expect(extractRating(cacheItem)).toBeNull();
+			expect(
+				evaluateSingleCondition(
+					cacheItem,
+					"imdb_rating",
+					{ operator: "less_than", score: 5 },
+					{ now: new Date("2026-07-30T00:00:00Z") },
+				),
+			).toBeNull();
+		});
+
+		it("drops Sonarr zero sentinels instead of caching a general rating", async () => {
+			const { data, cacheItem } = await syncRating("SONARR", { value: "0", votes: 0 });
+			expect(data.ratings).toBeUndefined();
+			expect(extractRating(cacheItem)).toBeNull();
+		});
 	});
 
 	// --- Data column selection tests ----------------------------------------

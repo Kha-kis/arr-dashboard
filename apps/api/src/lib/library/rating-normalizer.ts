@@ -11,7 +11,8 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function normalizeRatingValue(value: unknown): number | undefined {
 	if (typeof value === "string" && value.trim() === "") return undefined;
-	return toNumber(value);
+	const rating = toNumber(value);
+	return rating !== undefined && rating > 0 ? rating : undefined;
 }
 
 function normalizeRatingChild(value: unknown) {
