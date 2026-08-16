@@ -564,6 +564,120 @@ describe("TemplateUpdater automation authority", () => {
 		expect(prisma.trashTemplate.update).not.toHaveBeenCalled();
 	});
 
+	it("blocks automatic sync when the last Auto mapping is revoked before persistence", async () => {
+		const storedTemplate = {
+			...template,
+			serviceType: "RADARR",
+			sourceQualityProfileTrashId: "trash-profile",
+			deletedAt: null,
+			changeLog: null,
+		};
+		const update = vi.fn();
+		const transactionUpdate = vi.fn();
+		const transaction = {
+			trashTemplate: {
+				findUnique: vi.fn().mockResolvedValue(storedTemplate),
+				update: transactionUpdate,
+			},
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue(null),
+			},
+		};
+		const prisma = {
+			trashTemplate: {
+				findUnique: vi.fn().mockResolvedValue(storedTemplate),
+				update,
+			},
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue({ id: "mapping-1" }),
+			},
+			$transaction: vi.fn(async (action: (tx: typeof transaction) => Promise<unknown>) =>
+				action(transaction),
+			),
+		};
+		const updater = new TemplateUpdater(
+			prisma as never,
+			{
+				getCommitInfo: vi.fn().mockResolvedValue({
+					commitHash: "new",
+					commitDate: "2026-08-16",
+					commitMessage: "update",
+					commitUrl: "https://example.com/commit/new",
+				}),
+			} as never,
+			{
+				get: vi.fn().mockResolvedValue([]),
+				getCommitHash: vi.fn().mockResolvedValue("new"),
+			} as never,
+			{ fetchConfigs: vi.fn() } as never,
+		);
+
+		const result = await updater.syncTemplate(template.id, "new", template.userId, {
+			expectedAutomationStateToken: createAutomationCatchUpTemplateStateToken(storedTemplate),
+		});
+
+		expect(result).toMatchObject({
+			success: false,
+			errors: [expect.stringContaining("no longer authorized")],
+		});
+		expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+			isolationLevel: "Serializable",
+			timeout: 10000,
+		});
+		expect(update).not.toHaveBeenCalled();
+		expect(transactionUpdate).not.toHaveBeenCalled();
+	});
+
+	it("blocks null-commit recovery when cache commit provenance is unavailable", async () => {
+		const storedTemplate = {
+			...template,
+			serviceType: "RADARR",
+			sourceQualityProfileTrashId: "trash-profile",
+			trashGuidesCommitHash: null,
+			deletedAt: null,
+			changeLog: null,
+		};
+		const update = vi.fn();
+		const fetchConfigs = vi.fn().mockRejectedValue(new Error("cache refresh unavailable"));
+		const prisma = {
+			trashTemplate: {
+				findUnique: vi.fn().mockResolvedValue(storedTemplate),
+				update,
+			},
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue({ id: "mapping-1" }),
+			},
+		};
+		const updater = new TemplateUpdater(
+			prisma as never,
+			{
+				getCommitInfo: vi.fn().mockResolvedValue({
+					commitHash: "new",
+					commitDate: "2026-08-16",
+					commitMessage: "update",
+					commitUrl: "https://example.com/commit/new",
+				}),
+			} as never,
+			{
+				get: vi.fn().mockResolvedValue([]),
+				getCommitHash: vi.fn().mockResolvedValue(null),
+				set: vi.fn(),
+			} as never,
+			{ fetchConfigs } as never,
+		);
+
+		const result = await updater.syncTemplate(template.id, "new", template.userId, {
+			expectedAutomationStateToken: createAutomationCatchUpTemplateStateToken(storedTemplate),
+		});
+
+		expect(result).toMatchObject({
+			success: false,
+			errors: [expect.stringContaining("Failed to refresh CUSTOM_FORMATS cache")],
+		});
+		expect(fetchConfigs).toHaveBeenCalledWith("RADARR", "CUSTOM_FORMATS");
+		expect(update).not.toHaveBeenCalled();
+	});
+
 	it("preserves an uncertain auto-deployment as needing review", async () => {
 		const target = instance("instance-1", "http://radarr:7878");
 		const { updater } = createUpdater([mapping(target)], {
