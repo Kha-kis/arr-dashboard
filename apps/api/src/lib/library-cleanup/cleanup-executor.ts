@@ -33,7 +33,12 @@ import { isNotFoundError } from "../arr/client-factory.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import { buildMovieFile } from "../library/movie-normalizer.js";
 import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
-import type { LibraryCleanupConfig, LibraryCleanupRule, ServiceInstance } from "../prisma.js";
+import type {
+	LibraryCleanupApproval,
+	LibraryCleanupConfig,
+	LibraryCleanupRule,
+	ServiceInstance,
+} from "../prisma.js";
 import {
 	evaluateItemAgainstRulesViaEngine,
 	evaluateRuleViaEngine,
@@ -55,6 +60,10 @@ import {
 } from "./episode-scope.js";
 import type { ProviderCacheType } from "./provider-cache-evidence.js";
 import { applyQuiSeedingFilter, isQuiSeedingState } from "./qui-filter.js";
+import {
+	type DirectCleanupSelectionPlan,
+	planDirectCleanupSelection,
+} from "./selection-planner.js";
 import {
 	evaluateSingleCondition,
 	extractRating,
@@ -247,6 +256,9 @@ function parsePublishedStringArray(value: string, label: string): string[] {
 // The route returns at most 200 preview rows; avoid live safety I/O for rows
 // the caller cannot inspect.
 const PREVIEW_SAFETY_INSPECTION_LIMIT = 200;
+const DIRECT_RETRY_INVENTORY_LIMIT = 500;
+const INVALID_CLEANUP_RUN_LIMIT_WARNING =
+	"Cleanup did not select any items because the stored per-run removal limit is invalid. Set it to a whole number from 1 through 100.";
 
 // Circuit breaker: abort after N consecutive ARR API failures
 const CIRCUIT_BREAKER_THRESHOLD = 3;
@@ -1659,6 +1671,166 @@ async function loadDurableRetryPreview(
 	}
 }
 
+interface DirectSelectionState {
+	plan: DirectCleanupSelectionPlan<FlaggedItem, LibraryCleanupApproval>;
+	pendingRetryCount: number | null;
+	retryStateLoaded: boolean;
+	warnings: string[];
+}
+
+async function loadDirectSelectionState(
+	deps: CleanupExecutorDeps,
+	userId: string,
+	configId: string,
+	flagged: FlaggedItem[],
+	limit: number,
+): Promise<DirectSelectionState> {
+	const warnings: string[] = [];
+	let previousRunStartedAt: Date | undefined;
+	try {
+		const previousRun = await deps.prisma.libraryCleanupLog.findFirst({
+			where: { configId, isDryRun: false, completedAt: { not: null } },
+			orderBy: { startedAt: "desc" },
+			select: { startedAt: true },
+		});
+		previousRunStartedAt = previousRun?.startedAt;
+	} catch (error) {
+		deps.log.warn(
+			{ err: error, configId },
+			"Cleanup could not load its prior run boundary for retry fairness",
+		);
+		warnings.push(
+			"Retry fairness history could not be loaded; existing retries retain their normal deterministic order.",
+		);
+	}
+
+	try {
+		const [pendingRetries, inFlightRetries] = await Promise.all([
+			deps.prisma.libraryCleanupApproval.findMany({
+				where: { configId, config: { userId }, status: "retry_pending" },
+				orderBy: [
+					{ reviewedAt: { sort: "asc", nulls: "first" } },
+					{ createdAt: "asc" },
+					{ id: "asc" },
+				],
+				take: DIRECT_RETRY_INVENTORY_LIMIT + 1,
+			}),
+			deps.prisma.libraryCleanupApproval.findMany({
+				where: { configId, config: { userId }, status: "retry_executing" },
+				orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+				take: DIRECT_RETRY_INVENTORY_LIMIT + 1,
+			}),
+		]);
+		if (pendingRetries.length + inFlightRetries.length > DIRECT_RETRY_INVENTORY_LIMIT) {
+			throw new Error(
+				`Durable retry inventory exceeds the safe load limit of ${DIRECT_RETRY_INVENTORY_LIMIT}`,
+			);
+		}
+		const plan = planDirectCleanupSelection<FlaggedItem, LibraryCleanupApproval>({
+			limit,
+			fresh: flagged.map((item) => ({
+				key: cleanupDeleteTargetKey(flaggedDeleteTarget(item)),
+				value: item,
+			})),
+			pendingRetries: pendingRetries.map((retry) => ({
+				id: retry.id,
+				key: cleanupApprovalTargetKey(retry),
+				value: retry,
+				reviewedAt: retry.reviewedAt,
+				createdAt: retry.createdAt,
+			})),
+			inFlightRetries: inFlightRetries.map((retry) => ({
+				id: retry.id,
+				key: cleanupApprovalTargetKey(retry),
+				value: retry,
+				reviewedAt: retry.reviewedAt,
+				createdAt: retry.createdAt,
+			})),
+			previousRunStartedAt,
+			retryStateLoaded: true,
+		});
+		if (pendingRetries.length > 0) {
+			warnings.push(
+				`${pendingRetries.length} durable cleanup ${
+					pendingRetries.length === 1 ? "retry is" : "retries are"
+				} pending resume from the Approval Queue or the next live direct cleanup run.`,
+			);
+		}
+		if (inFlightRetries.length > 0) {
+			warnings.push(
+				`${inFlightRetries.length} durable cleanup ${
+					inFlightRetries.length === 1 ? "retry is" : "retries are"
+				} already executing and deferred from this run.`,
+			);
+		}
+		return {
+			plan,
+			pendingRetryCount: pendingRetries.length,
+			retryStateLoaded: true,
+			warnings,
+		};
+	} catch (error) {
+		deps.log.error({ err: error, configId }, "Cleanup could not load durable ARR retries");
+		warnings.push(
+			"Durable cleanup retry state could not be loaded. Fresh cleanup work is deferred for safety.",
+		);
+		return {
+			plan: planDirectCleanupSelection<FlaggedItem, LibraryCleanupApproval>({
+				limit,
+				fresh: flagged.map((item) => ({
+					key: cleanupDeleteTargetKey(flaggedDeleteTarget(item)),
+					value: item,
+				})),
+				pendingRetries: [],
+				inFlightRetries: [],
+				previousRunStartedAt,
+				retryStateLoaded: false,
+			}),
+			pendingRetryCount: null,
+			retryStateLoaded: false,
+			warnings,
+		};
+	}
+}
+
+function buildDirectSelectionDetails(
+	state: DirectSelectionState,
+	sharedPlexBlocks: Map<string, string>,
+	limit = PREVIEW_SAFETY_INSPECTION_LIMIT,
+): CleanupRunResult["details"] {
+	const details: CleanupRunResult["details"] = [];
+	for (const { value: retry } of state.plan.selectedRetries) {
+		if (details.length >= limit) break;
+		const action: DetailAction =
+			retry.action === "delete" || retry.action === "delete_files" || retry.action === "unmonitor"
+				? retry.action
+				: "skipped";
+		details.push(
+			buildRetryDetail(
+				retry,
+				action,
+				"Selected for a retry attempt in the next cleanup run. The outcome depends on live ARR safety checks.",
+			),
+		);
+	}
+	for (const { value: item } of state.plan.selectedFresh) {
+		if (details.length >= limit) break;
+		const safetyReason = sharedPlexBlocks.get(cleanupDeleteTargetKey(flaggedDeleteTarget(item)));
+		details.push(buildDetail(item, safetyReason ? "skipped" : item.match.action, safetyReason));
+	}
+	for (const decision of state.plan.decisions) {
+		if (details.length >= limit) break;
+		if (decision.disposition === "selected") continue;
+		const value = decision.candidate.value;
+		details.push(
+			"cacheItem" in value
+				? buildDetail(value, "skipped", decision.reason)
+				: buildRetryDetail(value, "skipped", decision.reason),
+		);
+	}
+	return details;
+}
+
 /**
  * Run a preview evaluation without making any changes.
  * Returns all items that would be flagged by the current rule set.
@@ -1691,8 +1863,8 @@ export async function executeCleanupPreview(
 		};
 	}
 
-	const retryPreview = await loadDurableRetryPreview(deps, userId, config.id);
 	if (config.rules.length === 0) {
+		const retryPreview = await loadDurableRetryPreview(deps, userId, config.id);
 		return {
 			isDryRun: true,
 			status: retryPreview.warning ? "partial" : "completed",
@@ -1715,6 +1887,78 @@ export async function executeCleanupPreview(
 		config,
 		config.rules,
 	);
+	if (!config.requireApproval) {
+		const configuredRunLimitIsValid =
+			Number.isSafeInteger(config.maxRemovalsPerRun) &&
+			config.maxRemovalsPerRun > 0 &&
+			config.maxRemovalsPerRun <= 100;
+		const configuredRunLimit = configuredRunLimitIsValid ? config.maxRemovalsPerRun : 0;
+		const directSelection = await loadDirectSelectionState(
+			deps,
+			userId,
+			config.id,
+			flagged,
+			configuredRunLimit,
+		);
+		const selectedFresh = directSelection.plan.selectedFresh.map((candidate) => candidate.value);
+		const safetyContext = createSharedPlexSafetyContext();
+		const sharedPlexBlocks = await findSharedPlexDeleteBlocks(
+			deps,
+			userId,
+			toDeleteTargets(selectedFresh),
+			safetyContext,
+		);
+		await blockPlansThatDifferFromEvaluatedCache(
+			deps,
+			userId,
+			selectedFresh,
+			safetyContext,
+			sharedPlexBlocks,
+		);
+		const allWarnings = withSharedPlexWarning(
+			[
+				...warnings,
+				...directSelection.warnings,
+				...(configuredRunLimitIsValid ? [] : [INVALID_CLEANUP_RUN_LIMIT_WARNING]),
+			],
+			sharedPlexBlocks.size,
+		);
+		const details = buildDirectSelectionDetails(directSelection, sharedPlexBlocks);
+		const selectionDeferred = directSelection.plan.decisions.filter(
+			(decision) => decision.disposition !== "selected",
+		).length;
+
+		log.info(
+			{
+				totalEvaluated,
+				totalRuleMatches: flagged.length,
+				selectedFresh: directSelection.plan.selectedFresh.length,
+				selectedRetries: directSelection.plan.selectedRetries.length,
+				pendingRetryCount: directSelection.pendingRetryCount,
+				sharedPlexBlocks: sharedPlexBlocks.size,
+			},
+			"Library cleanup preview completed",
+		);
+
+		return {
+			isDryRun: true,
+			status: allWarnings.length > 0 ? "partial" : "completed",
+			itemsEvaluated: totalEvaluated,
+			itemsFlagged: directSelection.plan.selectedFresh.length,
+			pendingRetryCount: directSelection.pendingRetryCount ?? undefined,
+			previewItemCount: directSelection.plan.counts.total,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: selectionDeferred + sharedPlexBlocks.size,
+			details,
+			durationMs: Date.now() - startTime,
+			prefetchHealth,
+			warnings: allWarnings,
+		};
+	}
+
+	const retryPreview = await loadDurableRetryPreview(deps, userId, config.id);
 	const freshCandidates = flagged.filter(
 		(item) => !retryPreview.targetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item))),
 	);
@@ -1825,10 +2069,65 @@ async function executeCleanupRunGuarded(
 			config,
 			config.rules,
 		);
-		const configuredRunLimit =
-			Number.isSafeInteger(config.maxRemovalsPerRun) && config.maxRemovalsPerRun > 0
-				? config.maxRemovalsPerRun
-				: Number.MAX_SAFE_INTEGER;
+		const configuredRunLimitIsValid =
+			Number.isSafeInteger(config.maxRemovalsPerRun) &&
+			config.maxRemovalsPerRun > 0 &&
+			config.maxRemovalsPerRun <= 100;
+		const configuredRunLimit = configuredRunLimitIsValid ? config.maxRemovalsPerRun : 0;
+		if (!config.requireApproval) {
+			const directSelection = await loadDirectSelectionState(
+				deps,
+				userId,
+				config.id,
+				flagged,
+				configuredRunLimit,
+			);
+			const selectedFresh = directSelection.plan.selectedFresh.map((candidate) => candidate.value);
+			const safetyContext = createSharedPlexSafetyContext();
+			const sharedPlexBlocks = await findSharedPlexDeleteBlocks(
+				deps,
+				userId,
+				toDeleteTargets(selectedFresh),
+				safetyContext,
+			);
+			await blockPlansThatDifferFromEvaluatedCache(
+				deps,
+				userId,
+				selectedFresh,
+				safetyContext,
+				sharedPlexBlocks,
+			);
+			const allWarnings = withSharedPlexWarning(
+				[
+					...warnings,
+					...directSelection.warnings,
+					...(configuredRunLimitIsValid ? [] : [INVALID_CLEANUP_RUN_LIMIT_WARNING]),
+				],
+				sharedPlexBlocks.size,
+			);
+			const selectionDeferred = directSelection.plan.decisions.filter(
+				(decision) => decision.disposition !== "selected",
+			).length;
+			const result: CleanupRunResult = {
+				isDryRun: true,
+				status: allWarnings.length > 0 ? "partial" : "completed",
+				itemsEvaluated: totalEvaluated,
+				itemsFlagged:
+					directSelection.plan.selectedFresh.length + directSelection.plan.selectedRetries.length,
+				pendingRetryCount: directSelection.pendingRetryCount ?? undefined,
+				itemsRemoved: 0,
+				itemsUnmonitored: 0,
+				itemsFilesDeleted: 0,
+				itemsSkipped: selectionDeferred + sharedPlexBlocks.size,
+				details: buildDirectSelectionDetails(directSelection, sharedPlexBlocks),
+				durationMs: Date.now() - startTime,
+				prefetchHealth,
+				warnings: allWarnings,
+			};
+
+			await createRunLog(prisma, config.id, result, log);
+			return result;
+		}
 		const retryPreview = await loadDurableRetryPreview(deps, userId, config.id, configuredRunLimit);
 		const freshCandidates = flagged.filter(
 			(item) => !retryPreview.targetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item))),
@@ -5817,113 +6116,33 @@ export async function executeDirectRemoval(
 	let retriedRemoved = 0;
 	let retriedUnmonitored = 0;
 	let retriedFilesDeleted = 0;
-	let directRetryCount = 0;
-	let directRetryMutationBudgetConsumed = 0;
 	const sharedPlexSafetyContext = createSharedPlexSafetyContext();
-	const directRetryTargetKeys = new Set<string>();
-	const selectedDirectRetryTargetKeys = new Set<string>();
-	const inFlightDirectRetryTargetKeys = new Set<string>();
 	const configuredRunLimitIsValid =
 		Number.isSafeInteger(config.maxRemovalsPerRun) &&
 		config.maxRemovalsPerRun > 0 &&
 		config.maxRemovalsPerRun <= 100;
 	const configuredRunLimit = configuredRunLimitIsValid ? config.maxRemovalsPerRun : 0;
-
-	let directRetries: Awaited<ReturnType<typeof prisma.libraryCleanupApproval.findMany>> = [];
-	let fairnessDeferredRetries: typeof directRetries = [];
-	let previousRunStartedAt: Date | undefined;
-	try {
-		const previousRun = await prisma.libraryCleanupLog.findFirst({
-			where: {
-				configId: config.id,
-				isDryRun: false,
-				completedAt: { not: null },
-			},
-			orderBy: { startedAt: "desc" },
-			select: { startedAt: true },
-		});
-		previousRunStartedAt = previousRun?.startedAt;
-	} catch (error) {
-		log.warn(
-			{ err: error, configId: config.id },
-			"Cleanup could not load its prior run boundary for retry fairness",
-		);
-	}
-	try {
-		const nonterminalRetryTargets = await prisma.libraryCleanupApproval.findMany({
-			where: {
-				configId: config.id,
-				config: { userId },
-				status: { in: ["retry_pending", "retry_executing"] },
-			},
-			select: {
-				instanceId: true,
-				arrItemId: true,
-				itemType: true,
-				targetScope: true,
-				arrEpisodeId: true,
-				episodeFileId: true,
-				action: true,
-				safetySnapshot: true,
-			},
-		});
-		const loadedDirectRetries = await prisma.libraryCleanupApproval.findMany({
-			where: {
-				configId: config.id,
-				config: { userId },
-				status: "retry_pending",
-			},
-			orderBy: [{ reviewedAt: { sort: "asc", nulls: "first" } }, { createdAt: "asc" }],
-			take: configuredRunLimit,
-		});
-		const executingDirectRetries = await prisma.libraryCleanupApproval.findMany({
-			where: {
-				configId: config.id,
-				config: { userId },
-				status: "retry_executing",
-			},
-		});
-		for (const retry of executingDirectRetries) {
-			const targetKey = cleanupApprovalTargetKey(retry);
-			directRetryTargetKeys.add(targetKey);
-			inFlightDirectRetryTargetKeys.add(targetKey);
-		}
-		for (const retry of loadedDirectRetries) {
-			directRetryTargetKeys.add(cleanupApprovalTargetKey(retry));
-		}
-		for (const retryTarget of nonterminalRetryTargets) {
-			directRetryTargetKeys.add(cleanupApprovalTargetKey(retryTarget));
-		}
-		const hasDistinctFreshCandidate = flagged.some(
-			(item) => !directRetryTargetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item))),
-		);
-		if (previousRunStartedAt && hasDistinctFreshCandidate) {
-			fairnessDeferredRetries = loadedDirectRetries.filter(
-				(retry) => retry.reviewedAt && retry.reviewedAt >= previousRunStartedAt,
-			);
-		}
-		const fairnessDeferredIds = new Set(fairnessDeferredRetries.map((retry) => retry.id));
-		directRetries = loadedDirectRetries.filter((retry) => !fairnessDeferredIds.has(retry.id));
-		directRetryFairnessDeferred = fairnessDeferredRetries.length;
-		directRetryCount = loadedDirectRetries.length;
-	} catch (error) {
-		directRetryLoadFailures++;
-		log.error({ err: error, configId: config.id }, "Cleanup could not load durable ARR retries");
-	}
-
-	for (const retry of fairnessDeferredRetries) {
+	const directSelection = await loadDirectSelectionState(
+		deps,
+		userId,
+		config.id,
+		flagged,
+		configuredRunLimit,
+	);
+	const directRetries = directSelection.plan.selectedRetries.map((retry) => retry.value);
+	directRetryLoadFailures = directSelection.retryStateLoaded ? 0 : 1;
+	directRetryFairnessDeferred = directSelection.plan.counts.deferredRetryFairness;
+	for (const decision of directSelection.plan.decisions) {
+		if (decision.disposition === "selected") continue;
+		const value = decision.candidate.value;
 		details.push(
-			buildRetryDetail(
-				retry,
-				"skipped",
-				"Deferred for one run after its previous attempt so fresh cleanup work can make progress",
-			),
+			"cacheItem" in value
+				? buildDetail(value, "skipped", decision.reason)
+				: buildRetryDetail(value, "skipped", decision.reason),
 		);
 	}
 
 	for (const retry of directRetries) {
-		const targetKey = cleanupApprovalTargetKey(retry);
-		selectedDirectRetryTargetKeys.add(targetKey);
 		try {
 			const retryResult = await executeQueuedCleanupItems(deps, userId, [retry.id], {
 				claimStatus: "retry_pending",
@@ -5933,9 +6152,6 @@ export async function executeDirectRemoval(
 				assertExecutionAllowed: assertRunLease,
 				cleanupRunClaimToken,
 			});
-			if (retryResult.mutationBudgetConsumedIds.includes(retry.id)) {
-				directRetryMutationBudgetConsumed++;
-			}
 			if (retryResult.unclaimedIds.includes(retry.id)) {
 				directRetryConcurrent++;
 				details.push(
@@ -6046,33 +6262,11 @@ export async function executeDirectRemoval(
 		}
 	}
 
-	const freshCandidates = flagged.filter((item) => {
-		if (!directRetryTargetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item)))) return true;
-		return false;
-	});
-	const inFlightDeferredItems = flagged.filter(
-		(item) =>
-			!(
-				selectedDirectRetryTargetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item))) ||
-				!inFlightDirectRetryTargetKeys.has(cleanupDeleteTargetKey(flaggedDeleteTarget(item)))
-			),
-	);
-	for (const item of inFlightDeferredItems) {
-		details.push(
-			buildDetail(
-				item,
-				"skipped",
-				"Deferred: a durable record-only cleanup retry for this ARR target is already executing",
-			),
-		);
-	}
-	// Only retries that reached an ARR write consume the current run budget.
-	// Successful, partial, and indeterminate writes all count because ARR may
-	// have changed. reviewedAt plus the prior run boundary defers a just-tried
-	// retry for one later run when distinct fresh work exists.
-	const freshBudget = Math.max(0, configuredRunLimit - directRetryMutationBudgetConsumed);
-	const freshItems = freshCandidates.slice(0, freshBudget);
-	const budgetDeferredItems = freshCandidates.length - freshItems.length;
+	// The complete direct-run selection was fixed before retry attempts, safety
+	// checks, or writes. A selected target that fails closed keeps its slot; a
+	// later candidate is never pulled into the same run as backfill.
+	const freshItems = directSelection.plan.selectedFresh.map((candidate) => candidate.value);
+	const budgetDeferredItems = directSelection.plan.counts.deferredBudget;
 
 	for (const item of freshItems) {
 		if (directRetryLoadFailures > 0) {
@@ -6675,9 +6869,7 @@ export async function executeDirectRemoval(
 
 	const allWarnings = withSharedPlexWarning([...(warnings ?? [])], runtimeSafetyBlocks);
 	if (!configuredRunLimitIsValid) {
-		allWarnings.push(
-			"Cleanup did not mutate any items because the stored per-run removal limit is invalid. Set it to a whole number from 1 through 100.",
-		);
+		allWarnings.push(INVALID_CLEANUP_RUN_LIMIT_WARNING);
 	}
 	if (exemptionPolicyBlocks > 0) {
 		allWarnings.push(
@@ -6775,11 +6967,27 @@ export async function executeDirectRemoval(
 			} not persisted. Manual ARR recovery may be required.`,
 		);
 	}
-	if (inFlightDeferredItems.length > 0) {
+	if (directSelection.plan.counts.inFlight > 0) {
 		allWarnings.push(
-			`${inFlightDeferredItems.length} ${
-				inFlightDeferredItems.length === 1 ? "item was" : "items were"
-			} deferred because a durable record-only retry for the same ARR target is already executing.`,
+			`${directSelection.plan.counts.inFlight} ${
+				directSelection.plan.counts.inFlight === 1 ? "item was" : "items were"
+			} already executing in another cleanup run.`,
+		);
+	}
+	if (directSelection.plan.counts.deferredInFlightTarget > 0) {
+		allWarnings.push(
+			`${directSelection.plan.counts.deferredInFlightTarget} pending cleanup ${
+				directSelection.plan.counts.deferredInFlightTarget === 1 ? "retry was" : "retries were"
+			} deferred because an in-flight retry already owns the same target.`,
+		);
+	}
+	if (directSelection.plan.counts.deferredDuplicateTarget > 0) {
+		allWarnings.push(
+			`${directSelection.plan.counts.deferredDuplicateTarget} duplicate cleanup ${
+				directSelection.plan.counts.deferredDuplicateTarget === 1
+					? "candidate was"
+					: "candidates were"
+			} deferred because another candidate owns the same target.`,
 		);
 	}
 	const hasWarnings = allWarnings.length > 0;
@@ -6789,12 +6997,17 @@ export async function executeDirectRemoval(
 	const directFilesDeleted = filesDeleted - retriedFilesDeleted;
 	const unsuccessfulRetries = directRetryFailures + directRetryExpired + directRetryConcurrent;
 	const accountedUnsuccessfulRetries = unsuccessfulRetries + directRetryExecutionFailures;
+	const selectedOrActiveCount =
+		directSelection.plan.selectedFresh.length +
+		directSelection.plan.selectedRetries.length +
+		directSelection.plan.counts.deferredRetryFairness +
+		directSelection.plan.counts.inFlight;
 
 	const result: CleanupRunResult = {
 		isDryRun: false,
 		status: circuitBroken || hasWarnings ? "partial" : "completed",
 		itemsEvaluated: totalEvaluated,
-		itemsFlagged: directlyEvaluated + directRetryCount + inFlightDeferredItems.length,
+		itemsFlagged: selectedOrActiveCount,
 		itemsRemoved: removed,
 		itemsUnmonitored: unmonitored,
 		itemsFilesDeleted: filesDeleted,
@@ -6802,7 +7015,10 @@ export async function executeDirectRemoval(
 			totalFlaggedBeforeLimit -
 			flagged.length +
 			budgetDeferredItems +
-			inFlightDeferredItems.length +
+			directSelection.plan.counts.inFlight +
+			directSelection.plan.counts.deferredInFlightTarget +
+			directSelection.plan.counts.deferredDuplicateTarget +
+			directSelection.plan.counts.retryStateUnavailable +
 			directRetryFairnessDeferred +
 			(directlyEvaluated - directRemoved - directUnmonitored - directFilesDeleted) +
 			accountedUnsuccessfulRetries +
