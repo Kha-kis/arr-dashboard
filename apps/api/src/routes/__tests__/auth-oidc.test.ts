@@ -202,6 +202,7 @@ beforeEach(async () => {
 	app.decorate("config", {
 		PASSWORD_POLICY: "relaxed",
 		APP_URL: "http://localhost:3000",
+		WEBAUTHN_ORIGIN: undefined,
 		TRUST_PROXY: false,
 	});
 
@@ -282,17 +283,12 @@ describe("POST /auth/oidc/setup", () => {
 		});
 	});
 
-	it("uses the browser-facing proxy origin when APP_URL is still localhost", async () => {
-		Object.assign(app.config, { TRUST_PROXY: true });
+	it("uses the configured WebAuthn origin when APP_URL is still localhost", async () => {
+		Object.assign(app.config, { WEBAUTHN_ORIGIN: "https://arr.example.com" });
 
 		const res = await app.inject({
 			method: "POST",
 			url: "/auth/oidc/setup",
-			remoteAddress: "127.0.0.1",
-			headers: {
-				host: "localhost:3001",
-				"x-arr-dashboard-origin": "https://arr.example.com",
-			},
 			payload: {
 				displayName: "My OIDC Provider",
 				clientId: "my-client-id",
@@ -309,37 +305,32 @@ describe("POST /auth/oidc/setup", () => {
 		});
 	});
 
-	it("preserves the configured APP_URL path when replacing its loopback origin", async () => {
+	it("accepts a manual callback matching the configured WebAuthn origin", async () => {
 		Object.assign(app.config, {
-			APP_URL: "http://localhost:3000/dashboard",
-			TRUST_PROXY: true,
+			WEBAUTHN_ORIGIN: "https://arr.example.com",
 		});
 
 		const res = await app.inject({
 			method: "POST",
 			url: "/auth/oidc/setup",
-			remoteAddress: "127.0.0.1",
-			headers: {
-				host: "localhost:3001",
-				"x-arr-dashboard-origin": "https://arr.example.com",
-			},
 			payload: {
 				displayName: "My OIDC Provider",
 				clientId: "my-client-id",
 				clientSecret: "my-client-secret",
 				issuer: "https://provider.example.com",
+				redirectUri: "https://arr.example.com/auth/oidc/callback",
 			},
 		});
 
 		expect(res.statusCode).toBe(201);
 		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
 			data: expect.objectContaining({
-				redirectUri: "https://arr.example.com/dashboard/auth/oidc/callback",
+				redirectUri: "https://arr.example.com/auth/oidc/callback",
 			}),
 		});
 	});
 
-	it("accepts a manual callback on the browser-facing proxy origin", async () => {
+	it("does not trust request forwarding headers as the public OIDC origin", async () => {
 		Object.assign(app.config, { TRUST_PROXY: true });
 
 		const res = await app.inject({
@@ -355,19 +346,18 @@ describe("POST /auth/oidc/setup", () => {
 				clientId: "my-client-id",
 				clientSecret: "my-client-secret",
 				issuer: "https://provider.example.com",
-				redirectUri: "https://arr.example.com/auth/oidc/callback",
 			},
 		});
 
 		expect(res.statusCode).toBe(201);
 		expect(mockPrisma.oIDCProvider.create).toHaveBeenCalledWith({
 			data: expect.objectContaining({
-				redirectUri: "https://arr.example.com/auth/oidc/callback",
+				redirectUri: "http://localhost:3000/auth/oidc/callback",
 			}),
 		});
 	});
 
-	it("ignores forwarded origins from the local Next hop unless proxy trust is enabled", async () => {
+	it("ignores forwarded origins when proxy trust is disabled", async () => {
 		const res = await app.inject({
 			method: "POST",
 			url: "/auth/oidc/setup",
@@ -394,7 +384,7 @@ describe("POST /auth/oidc/setup", () => {
 		});
 	});
 
-	it("rejects a manual public callback when proxy trust is disabled", async () => {
+	it("rejects a manual public callback without a matching configured origin", async () => {
 		const res = await app.inject({
 			method: "POST",
 			url: "/auth/oidc/setup",
@@ -415,8 +405,11 @@ describe("POST /auth/oidc/setup", () => {
 		expect(mockPrisma.oIDCProvider.create).not.toHaveBeenCalled();
 	});
 
-	it("prefers the persisted External URL over APP_URL and proxy metadata", async () => {
-		Object.assign(app.config, { TRUST_PROXY: true });
+	it("prefers the persisted External URL over APP_URL and WebAuthn origin", async () => {
+		Object.assign(app.config, {
+			TRUST_PROXY: true,
+			WEBAUTHN_ORIGIN: "https://webauthn.example.com",
+		});
 		mockPrisma.systemSettings.findUnique.mockResolvedValue({
 			externalUrl: "https://canonical.example.com/dashboard",
 		});
@@ -471,9 +464,10 @@ describe("POST /auth/oidc/setup", () => {
 		});
 	});
 
-	it("keeps an explicit public APP_URL authoritative over proxy headers", async () => {
+	it("keeps an explicit public APP_URL authoritative over the WebAuthn origin", async () => {
 		Object.assign(app.config, {
 			APP_URL: "https://configured.example.com/dashboard",
+			WEBAUTHN_ORIGIN: "https://webauthn.example.com",
 			TRUST_PROXY: true,
 		});
 

@@ -126,8 +126,8 @@ export const OIDCSetup = () => {
 					className="rounded-xl"
 				/>
 				<p className="text-xs text-muted-foreground">
-					Leave empty to use External URL or APP_URL. When APP_URL is local, trusted proxy support
-					can detect the browser-facing origin. This must match your OIDC provider.
+					Leave empty to use External URL, APP_URL, or the public WEBAUTHN_ORIGIN. This must match
+					your OIDC provider.
 				</p>
 			</div>
 			<div className="space-y-2">

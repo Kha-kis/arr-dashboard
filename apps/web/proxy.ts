@@ -1,6 +1,5 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { buildTrustedProxyHeaders } from "./src/lib/trusted-proxy-origin";
 
 const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "arr_session";
 const PUBLIC_PATHS = new Set(["/login", "/setup", "/favicon.ico", "/robots.txt", "/sitemap.xml"]);
@@ -73,12 +72,7 @@ export async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
 	// Skip proxy for API/auth/health routes — handled by rewrites or route handlers
-	if (pathname.startsWith("/api/") || pathname.startsWith("/auth/")) {
-		return NextResponse.next({
-			request: { headers: buildTrustedProxyHeaders(request) },
-		});
-	}
-	if (pathname === "/health") {
+	if (pathname.startsWith("/api/") || pathname.startsWith("/auth/") || pathname === "/health") {
 		return NextResponse.next();
 	}
 

@@ -10,8 +10,9 @@ import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { validateRequest } from "../lib/utils/validate.js";
 import {
-	buildOidcRedirectUriForRequest,
-	oidcRedirectUriMatchesRequestOrigin,
+	buildOidcRedirectUriFromAppUrl,
+	oidcRedirectUriMatchesAppOrigin,
+	resolveOidcAppUrl,
 } from "../lib/auth/oidc-redirect-uri.js";
 
 /**
@@ -135,35 +136,27 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				where: { id: 1 },
 				select: { externalUrl: true },
 			});
-			const publicAppUrl = systemSettings?.externalUrl ?? app.config.APP_URL;
+			const publicAppUrl = resolveOidcAppUrl(
+				systemSettings?.externalUrl,
+				app.config.APP_URL,
+				app.config.WEBAUTHN_ORIGIN,
+			);
 
-			// Prefer the persisted External URL, then APP_URL. A loopback fallback
-			// may use the origin stamped by the local Next proxy only when proxy
-			// trust is explicitly enabled.
+			// Use only operator-controlled origins: External URL, public APP_URL,
+			// then the public WebAuthn origin when APP_URL still has its local default.
 			let redirectUri = parsed.redirectUri;
 			if (redirectUri) {
-				if (
-					!oidcRedirectUriMatchesRequestOrigin(
-						redirectUri,
-						publicAppUrl,
-						app.config.TRUST_PROXY,
-						request,
-					)
-				) {
+				if (!oidcRedirectUriMatchesAppOrigin(redirectUri, publicAppUrl)) {
 					return reply.status(400).send({
 						error: "Redirect URI must match the application URL origin",
 					});
 				}
 			} else {
-				const generatedRedirectUri = buildOidcRedirectUriForRequest(
-					publicAppUrl,
-					app.config.TRUST_PROXY,
-					request,
-				);
+				const generatedRedirectUri = buildOidcRedirectUriFromAppUrl(publicAppUrl);
 				if (!generatedRedirectUri) {
 					return reply.status(400).send({
 						error:
-							"External URL or APP_URL must be a credential-free HTTP(S) URL that can generate a valid OIDC redirect URI.",
+							"External URL, APP_URL, or WEBAUTHN_ORIGIN must be a credential-free HTTP(S) URL that can generate a valid OIDC redirect URI.",
 					});
 				}
 				redirectUri = generatedRedirectUri;

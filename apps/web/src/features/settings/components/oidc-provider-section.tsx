@@ -387,8 +387,7 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 											className="bg-card/30 border-border/50"
 										/>
 										<p className="text-xs text-muted-foreground">
-											Leave empty to use External URL or APP_URL. Trusted proxy support can detect
-											the browser-facing origin when APP_URL is local.
+											Leave empty to use External URL, APP_URL, or the public WEBAUTHN_ORIGIN.
 										</p>
 									</div>
 

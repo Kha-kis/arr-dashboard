@@ -110,7 +110,7 @@ backup and migration instructions before retrying the upgrade.
 |----------|---------|-------------|
 | `WEBAUTHN_RP_NAME` | `Arr Dashboard` | Display name shown during passkey registration |
 | `WEBAUTHN_RP_ID` | `localhost` | Your domain (no protocol, e.g., `dashboard.example.com`) |
-| `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Full URL with protocol |
+| `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Public browser origin; also an OIDC callback fallback when `APP_URL` is local |
 
 ### Logging
 
@@ -126,7 +126,7 @@ backup and migration instructions before retrying the upgrade.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GITHUB_TOKEN` | — | GitHub token for TRaSH Guides (higher rate limits) |
-| `APP_URL` | — | Public URL for OIDC callback (e.g., `https://dashboard.example.com`) |
+| `APP_URL` | `http://localhost:3000` | Preferred public URL for OIDC callbacks (e.g., `https://dashboard.example.com`) |
 
 ## Ports
 

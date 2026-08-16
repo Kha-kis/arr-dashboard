@@ -8,7 +8,10 @@ import {
 	updateOidcProviderSchema,
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
-import { buildOidcRedirectUriForRequest } from "../lib/auth/oidc-redirect-uri.js";
+import {
+	buildOidcRedirectUriFromAppUrl,
+	resolveOidcAppUrl,
+} from "../lib/auth/oidc-redirect-uri.js";
 import { resolveCanonicalIssuer } from "../lib/auth/oidc-utils.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.js";
@@ -101,22 +104,21 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				where: { id: 1 },
 				select: { externalUrl: true },
 			});
-			const publicAppUrl = systemSettings?.externalUrl ?? app.config.APP_URL;
+			const publicAppUrl = resolveOidcAppUrl(
+				systemSettings?.externalUrl,
+				app.config.APP_URL,
+				app.config.WEBAUTHN_ORIGIN,
+			);
 
-			// Prefer the persisted External URL, then APP_URL. A loopback fallback
-			// may use the origin stamped by the local Next proxy only when proxy
-			// trust is explicitly enabled.
+			// Use only operator-controlled origins: External URL, public APP_URL,
+			// then the public WebAuthn origin when APP_URL still has its local default.
 			let redirectUri = data.redirectUri;
 			if (!redirectUri) {
-				const generatedRedirectUri = buildOidcRedirectUriForRequest(
-					publicAppUrl,
-					app.config.TRUST_PROXY,
-					request,
-				);
+				const generatedRedirectUri = buildOidcRedirectUriFromAppUrl(publicAppUrl);
 				if (!generatedRedirectUri) {
 					return reply.status(400).send({
 						error:
-							"External URL or APP_URL must be a credential-free HTTP(S) URL that can generate a valid OIDC redirect URI.",
+							"External URL, APP_URL, or WEBAUTHN_ORIGIN must be a credential-free HTTP(S) URL that can generate a valid OIDC redirect URI.",
 					});
 				}
 				redirectUri = generatedRedirectUri;

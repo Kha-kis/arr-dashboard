@@ -1,7 +1,4 @@
 import { oidcRedirectUriSchema } from "@arr/shared";
-import type { FastifyRequest } from "fastify";
-
-type RedirectRequest = Pick<FastifyRequest, "headers" | "raw">;
 
 function isLoopbackAddress(value: string): boolean {
 	const normalized = value
@@ -16,39 +13,6 @@ function isLoopbackAddress(value: string): boolean {
 		/^127(?:\.\d{1,3}){3}$/.test(normalized) ||
 		/^::ffff:127(?:\.\d{1,3}){3}$/.test(normalized)
 	);
-}
-
-function resolveTrustedProxyOrigin(trustProxy: boolean, request: RedirectRequest): string | null {
-	if (!trustProxy) {
-		return null;
-	}
-
-	if (!isLoopbackAddress(request.raw.socket.remoteAddress ?? "")) {
-		return null;
-	}
-
-	const internalOrigin = request.headers["x-arr-dashboard-origin"];
-	if (typeof internalOrigin !== "string") {
-		return null;
-	}
-
-	try {
-		const candidate = new URL(internalOrigin);
-		if (
-			!["http:", "https:"].includes(candidate.protocol) ||
-			candidate.username ||
-			candidate.password ||
-			candidate.pathname !== "/" ||
-			candidate.search ||
-			candidate.hash ||
-			isLoopbackAddress(candidate.hostname)
-		) {
-			return null;
-		}
-		return candidate.origin;
-	} catch {
-		return null;
-	}
 }
 
 export function buildOidcRedirectUriFromAppUrl(appUrl: string): string | null {
@@ -72,41 +36,53 @@ export function buildOidcRedirectUriFromAppUrl(appUrl: string): string | null {
 	}
 }
 
-export function buildOidcRedirectUriForRequest(
-	appUrl: string,
-	trustProxy: boolean,
-	request: RedirectRequest,
-): string | null {
-	const configuredRedirectUri = buildOidcRedirectUriFromAppUrl(appUrl);
-	if (!configuredRedirectUri) {
-		return null;
+function isPublicHttpOrigin(value: string | undefined): boolean {
+	if (!value) {
+		return false;
 	}
 
-	const configuredHostname = new URL(appUrl).hostname;
-	if (!isLoopbackAddress(configuredHostname)) {
-		return configuredRedirectUri;
+	try {
+		const url = new URL(value);
+		return (
+			["http:", "https:"].includes(url.protocol) &&
+			!url.username &&
+			!url.password &&
+			!url.search &&
+			!url.hash &&
+			!isLoopbackAddress(url.hostname)
+		);
+	} catch {
+		return false;
 	}
-
-	const proxyOrigin = resolveTrustedProxyOrigin(trustProxy, request);
-	if (!proxyOrigin) {
-		return configuredRedirectUri;
-	}
-
-	const publicAppUrl = new URL(appUrl);
-	const proxyUrl = new URL(proxyOrigin);
-	publicAppUrl.protocol = proxyUrl.protocol;
-	publicAppUrl.hostname = proxyUrl.hostname;
-	publicAppUrl.port = proxyUrl.port;
-	return buildOidcRedirectUriFromAppUrl(publicAppUrl.toString());
 }
 
-export function oidcRedirectUriMatchesRequestOrigin(
-	redirectUri: string,
+/**
+ * Select a public OIDC base URL exclusively from operator-controlled settings.
+ * A WebAuthn origin is a safe fallback for installations where APP_URL still
+ * has its local default because both features share the browser-facing origin.
+ */
+export function resolveOidcAppUrl(
+	externalUrl: string | null | undefined,
 	appUrl: string,
-	trustProxy: boolean,
-	request: RedirectRequest,
-): boolean {
-	const expectedRedirectUri = buildOidcRedirectUriForRequest(appUrl, trustProxy, request);
+	webAuthnOrigin?: string,
+): string {
+	if (externalUrl) {
+		return externalUrl;
+	}
+
+	if (isPublicHttpOrigin(appUrl)) {
+		return appUrl;
+	}
+
+	if (webAuthnOrigin && isPublicHttpOrigin(webAuthnOrigin)) {
+		return new URL(webAuthnOrigin).origin;
+	}
+
+	return appUrl;
+}
+
+export function oidcRedirectUriMatchesAppOrigin(redirectUri: string, appUrl: string): boolean {
+	const expectedRedirectUri = buildOidcRedirectUriFromAppUrl(appUrl);
 	return (
 		expectedRedirectUri !== null &&
 		new URL(redirectUri).origin === new URL(expectedRedirectUri).origin

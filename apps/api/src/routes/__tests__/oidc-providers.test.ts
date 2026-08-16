@@ -103,7 +103,11 @@ beforeEach(async () => {
 		$transaction: runTransaction,
 	});
 	app.decorate("sessionService", { clearCookie });
-	app.decorate("config", { APP_URL: "https://arr.example.com", TRUST_PROXY: false });
+	app.decorate("config", {
+		APP_URL: "https://arr.example.com",
+		WEBAUTHN_ORIGIN: undefined,
+		TRUST_PROXY: false,
+	});
 	app.decorate("encryptor", {
 		encrypt: vi.fn().mockReturnValue({ value: "encrypted", iv: "iv" }),
 	});
@@ -157,17 +161,15 @@ describe("GET /api/oidc-providers", () => {
 });
 
 describe("POST /api/oidc-providers", () => {
-	it("uses the browser-facing proxy origin when APP_URL is still localhost", async () => {
-		Object.assign(app.config, { APP_URL: "http://localhost:3000", TRUST_PROXY: true });
+	it("uses the configured WebAuthn origin when APP_URL is still localhost", async () => {
+		Object.assign(app.config, {
+			APP_URL: "http://localhost:3000",
+			WEBAUTHN_ORIGIN: "https://arr.example.com",
+		});
 
 		const response = await app.inject({
 			method: "POST",
 			url: "/api/oidc-providers",
-			remoteAddress: "127.0.0.1",
-			headers: {
-				host: "localhost:3001",
-				"x-arr-dashboard-origin": "https://arr.example.com",
-			},
 			payload: {
 				displayName: "Authentik",
 				clientId: "arr-dashboard",
@@ -183,7 +185,10 @@ describe("POST /api/oidc-providers", () => {
 	});
 
 	it("prefers the persisted External URL when generating the admin callback", async () => {
-		Object.assign(app.config, { APP_URL: "http://localhost:3000", TRUST_PROXY: true });
+		Object.assign(app.config, {
+			APP_URL: "http://localhost:3000",
+			WEBAUTHN_ORIGIN: "https://webauthn.example.com",
+		});
 		findSystemSettings.mockResolvedValue({
 			externalUrl: "https://canonical.example.com/dashboard",
 		});
