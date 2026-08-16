@@ -142,6 +142,7 @@ function makeEditRule(overrides: Partial<CleanupRuleResponse> = {}): CleanupRule
 		scanMediaServerInstanceIds: [],
 		operator: null,
 		conditions: null,
+		expression: null,
 		retentionMode: false,
 		useGlobalRejectionMemory: true,
 		rejectionMemoryDays: 0,
@@ -318,6 +319,32 @@ describe("CleanupRuleDialog", () => {
 	// ================================================================
 
 	describe("edit mode", () => {
+		it("keeps recursive expressions read-only instead of flattening them", () => {
+			const onSave = vi.fn();
+			renderDialog({
+				onSave,
+				editRule: makeEditRule({
+					ruleType: "composite",
+					parameters: {},
+					expression: {
+						version: 1,
+						root: {
+							all: [
+								{ kind: "age", params: { operator: "older_than", days: 30 } },
+								{
+									any: [{ kind: "year_range", params: { operator: "before", year: 2000 } }],
+								},
+							],
+						},
+					},
+				}),
+			});
+
+			expect(screen.getByText(/recursive rule is read-only/i)).toBeInTheDocument();
+			expect(screen.queryByRole("button", { name: /save changes/i })).not.toBeInTheDocument();
+			expect(onSave).not.toHaveBeenCalled();
+		});
+
 		it("renders the dialog title for edit mode", () => {
 			renderDialog({ editRule: makeEditRule() });
 			expect(screen.getByText("Edit Rule")).toBeInTheDocument();

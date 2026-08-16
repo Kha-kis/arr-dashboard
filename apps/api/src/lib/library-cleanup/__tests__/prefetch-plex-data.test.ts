@@ -204,6 +204,46 @@ const unavailablePlexEvidenceCases = [
 ] satisfies ReadonlyArray<readonly [string, () => PlexStatusOverride]>;
 
 describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
+	it("discovers Plex evidence required by a canonical nested expression", async () => {
+		const serviceFindMany = vi.fn().mockResolvedValue([]);
+		const prisma = {
+			serviceInstance: { findMany: serviceFindMany },
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		await expect(
+			buildEvalContext(
+				{ prisma, log } as CleanupExecutorDeps,
+				"user-1",
+				[
+					{
+						enabled: true,
+						ruleType: "composite",
+						parameters: "{}",
+						operator: null,
+						conditions: JSON.stringify({
+							version: 1,
+							root: {
+								all: [
+									{ kind: "year_range", params: { operator: "before", year: 2030 } },
+									{
+										any: [
+											{
+												kind: "plex_watch_count",
+												params: { operator: "less_than", count: 1 },
+											},
+										],
+									},
+								],
+							},
+						}),
+					},
+				],
+				{ requireAvailableEvidence: true },
+			),
+		).rejects.toThrow(/required evaluation evidence is unavailable: plex/i);
+		expect(serviceFindMany).toHaveBeenCalled();
+	});
+
 	it.each(unavailablePlexEvidenceCases)(
 		"blocks Plex cleanup evidence for %s",
 		async (caseName, overrides) => {

@@ -196,6 +196,7 @@ describe("CleanupRuleComposerDialog — edit", () => {
 						{ ruleType: "age", parameters: { operator: "older_than", days: 90 } },
 						{ ruleType: "plex_watch_count", parameters: { operator: "less_than", count: 1 } },
 					],
+					expression: null,
 					retentionMode: true,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: null,
@@ -204,6 +205,43 @@ describe("CleanupRuleComposerDialog — edit", () => {
 				},
 			],
 		};
+	});
+
+	it("shows a real recursive response read-only without attempting to flatten it", async () => {
+		const expression = {
+			version: 1 as const,
+			root: {
+				all: [
+					{ kind: "age", params: { operator: "older_than", days: 90 } },
+					{
+						any: [{ kind: "year_range", params: { operator: "before", year: 2000 } }],
+					},
+				],
+			},
+		};
+		automationData.rules[0]!.document = expression;
+		configData!.rules[0]!.operator = null;
+		configData!.rules[0]!.conditions = null;
+		configData!.rules[0]!.expression = expression;
+
+		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} editRuleId="rule-1" />);
+
+		expect(await screen.findByText(/recursive rule is read-only/i)).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /save changes/i })).not.toBeInTheDocument();
+		expect(updateMutate).not.toHaveBeenCalled();
+	});
+
+	it("keeps a flat canonical expression read-only instead of submitting legacy fields", async () => {
+		const expression = automationData.rules[0]!.document!;
+		configData!.rules[0]!.operator = null;
+		configData!.rules[0]!.conditions = null;
+		configData!.rules[0]!.expression = expression;
+
+		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} editRuleId="rule-1" />);
+
+		expect(await screen.findByText(/recursive rule is read-only/i)).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /save changes/i })).not.toBeInTheDocument();
+		expect(updateMutate).not.toHaveBeenCalled();
 	});
 
 	it("prefills name + action + both composite conditions from the joined sources", async () => {
@@ -265,6 +303,7 @@ describe("CleanupRuleComposerDialog — edit", () => {
 					scanMediaServerInstanceIds: [],
 					operator: null,
 					conditions: null,
+					expression: null,
 					retentionMode: false,
 					useGlobalRejectionMemory: true,
 					rejectionMemoryDays: 0,

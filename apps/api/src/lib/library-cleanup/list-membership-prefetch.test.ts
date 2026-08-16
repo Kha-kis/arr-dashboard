@@ -74,6 +74,43 @@ describe("prefetchCleanupListMemberships", () => {
 		expect(map.get("1234")).toEqual(new Set([300]));
 	});
 
+	it("collects identifiers from every predicate in a canonical nested document", async () => {
+		const rules = [
+			{
+				...rule({}),
+				ruleType: "composite",
+				operator: null,
+				parameters: "{}",
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						all: [
+							{ kind: "age", params: { operator: "older_than", days: 30 } },
+							{
+								any: [
+									{
+										kind: "tmdb_list_member",
+										params: { listId: "nested-list", operator: "is_in" },
+									},
+								],
+							},
+						],
+					},
+				}),
+			},
+		] as LibraryCleanupRule[];
+		const { deps, findMany } = makeDeps([{ listId: "nested-list", tmdbId: 300 }]);
+
+		const map = await prefetchCleanupListMemberships(deps, "user-1", rules, "tmdb");
+
+		expect(findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { userId: "user-1", listId: { in: ["nested-list"] } },
+			}),
+		);
+		expect(map.get("nested-list")).toEqual(new Set([300]));
+	});
+
 	it("returns an empty map with ZERO queries when no rule references the kind", async () => {
 		const { deps, findMany } = makeDeps([]);
 		const map = await prefetchCleanupListMemberships(

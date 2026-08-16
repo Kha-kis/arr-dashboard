@@ -24,7 +24,7 @@
  * `evaluateRuleViaEngine` once the differential parity suite is green.
  */
 
-import type { DataSourceDependency, RuleDocument } from "@arr/shared";
+import { type DataSourceDependency, type RuleDocument, walkPredicates } from "@arr/shared";
 import {
 	evaluateSingleCondition,
 	getFilterReason,
@@ -376,42 +376,17 @@ function ruleHasMutationEvidence(
 		rule.excludeTags === null ? [] : (safeJsonParse(rule.excludeTags) as unknown[]);
 	if (excludedTags.length > 0 && !evidenceFlag(data, "tags")) return false;
 
-	if (rule.operator || rule.conditions) {
-		if (!rule.operator || !rule.conditions) return false;
-		const conditions = safeJsonParse(rule.conditions) as unknown;
-		if (!Array.isArray(conditions) || conditions.length === 0) return false;
-		return conditions.every((condition) => {
-			if (typeof condition !== "object" || condition === null || Array.isArray(condition)) {
-				return false;
-			}
-			const entry = condition as Record<string, unknown>;
-			return (
-				typeof entry.ruleType === "string" &&
-				typeof entry.parameters === "object" &&
-				entry.parameters !== null &&
-				!Array.isArray(entry.parameters) &&
-				ruleTypeHasMutationEvidence(
-					item,
-					entry.ruleType,
-					entry.parameters as Record<string, unknown>,
-					instanceService,
-					ctx,
-				)
-			);
-		});
+	let document: RuleDocument;
+	try {
+		document = mapCriteriaV0ToDocument(rule);
+	} catch {
+		return false;
 	}
-
-	const parameters = safeJsonParse(rule.parameters) as unknown;
+	const predicates = [...walkPredicates(document.root)];
 	return (
-		typeof parameters === "object" &&
-		parameters !== null &&
-		!Array.isArray(parameters) &&
-		ruleTypeHasMutationEvidence(
-			item,
-			rule.ruleType,
-			parameters as Record<string, unknown>,
-			instanceService,
-			ctx,
+		predicates.length > 0 &&
+		predicates.every((predicate) =>
+			ruleTypeHasMutationEvidence(item, predicate.kind, predicate.params, instanceService, ctx),
 		)
 	);
 }

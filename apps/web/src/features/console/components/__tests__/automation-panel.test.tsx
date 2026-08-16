@@ -133,6 +133,37 @@ describe("<AutomationPanel />", () => {
 		expect(screen.getByText(/could not be read/i)).toBeInTheDocument();
 	});
 
+	it("does not offer the flat editor for a recursive cleanup document", () => {
+		mockUseAutomationRules.mockReturnValue({
+			data: response([
+				{
+					id: "nested-cleanup",
+					name: "Nested cleanup",
+					enabled: true,
+					context: "library-cleanup",
+					document: {
+						version: 1,
+						root: {
+							all: [
+								{ kind: "age", params: { operator: "older_than", days: 30 } },
+								{
+									any: [{ kind: "year_range", params: { operator: "before", year: 2000 } }],
+								},
+							],
+						},
+					},
+					unavailableKinds: [],
+					unparseable: false,
+				},
+			]),
+		});
+
+		render(<AutomationPanel />, { wrapper: createWrapper() });
+
+		expect(screen.getByText("Nested cleanup")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /edit nested cleanup/i })).not.toBeInTheDocument();
+	});
+
 	it("shows cross-domain draft lifecycle actions and requires a preview before deploy", () => {
 		mockUseAutomationRules.mockReturnValue({
 			data: response([

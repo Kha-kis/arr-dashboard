@@ -25,6 +25,17 @@ import {
 
 const USER_ID = "user-rule-scope";
 const timestamp = new Date("2026-08-12T00:00:00.000Z");
+const recursiveExpression = {
+	version: 1,
+	root: {
+		all: [
+			{ kind: "age", params: { operator: "older_than", days: 30 } },
+			{
+				any: [{ kind: "year_range", params: { operator: "before", year: 2030 } }],
+			},
+		],
+	},
+};
 
 function makeRule(overrides: Record<string, unknown> = {}) {
 	return {
@@ -57,6 +68,9 @@ function makeRule(overrides: Record<string, unknown> = {}) {
 
 let app: FastifyInstance;
 let configFindUnique: ReturnType<typeof vi.fn>;
+let configUpsert: ReturnType<typeof vi.fn>;
+let configUpdate: ReturnType<typeof vi.fn>;
+let prismaTransaction: ReturnType<typeof vi.fn>;
 let ruleFindFirst: ReturnType<typeof vi.fn>;
 let ruleCreate: ReturnType<typeof vi.fn>;
 let ruleUpdate: ReturnType<typeof vi.fn>;
@@ -78,6 +92,9 @@ beforeEach(async () => {
 		rejectionMemoryDays: 0,
 		rules: [rule],
 	});
+	configUpsert = vi.fn().mockImplementation(async () => configFindUnique.mock.results[0]?.value);
+	configUpdate = vi.fn();
+	prismaTransaction = vi.fn().mockResolvedValue([]);
 	ruleFindFirst = vi.fn().mockResolvedValue(rule);
 	ruleCreate = vi.fn().mockImplementation(async ({ data }) => ({ ...rule, ...data }));
 	ruleUpdate = vi.fn().mockImplementation(async ({ data }) => ({ ...rule, ...data }));
@@ -89,7 +106,11 @@ beforeEach(async () => {
 	setupAuthInjection(app, { id: USER_ID, username: "admin" });
 	registerTestErrorHandler(app);
 	app.decorate("prisma", {
-		libraryCleanupConfig: { findUnique: configFindUnique },
+		libraryCleanupConfig: {
+			findUnique: configFindUnique,
+			upsert: configUpsert,
+			update: configUpdate,
+		},
 		libraryCleanupRule: {
 			findFirst: ruleFindFirst,
 			create: ruleCreate,
@@ -97,6 +118,7 @@ beforeEach(async () => {
 		},
 		serviceInstance: { findMany: serviceInstanceFindMany },
 		episodeFileCache: { findMany: vi.fn().mockResolvedValue([]) },
+		$transaction: prismaTransaction,
 	} as never);
 	app.decorate("arrClientFactory", {} as never);
 	app.decorate("encryptor", {} as never);
@@ -109,6 +131,367 @@ afterEach(async () => {
 });
 
 describe("library cleanup rule scope persistence", () => {
+	it("stores a recursive expression in the canonical composite representation", async () => {
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/rules", {
+			body: {
+				name: "Nested cleanup",
+				enabled: true,
+				priority: 0,
+				ruleType: "composite",
+				parameters: {},
+				expression: recursiveExpression,
+			},
+		});
+
+		expect(response.statusCode).toBe(201);
+		expect(ruleCreate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					ruleType: "composite",
+					parameters: "{}",
+					operator: null,
+					conditions: JSON.stringify(recursiveExpression),
+				}),
+			}),
+		);
+		expect(response.json()).toMatchObject({
+			expression: recursiveExpression,
+			conditions: null,
+		});
+	});
+
+	it("rejects NOT expressions until false evidence is authoritative", async () => {
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/rules", {
+			body: {
+				name: "Unsafe negation",
+				ruleType: "composite",
+				parameters: {},
+				expression: {
+					version: 1,
+					root: { not: { kind: "age", params: { operator: "older_than", days: 30 } } },
+				},
+			},
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(response.json().error).toContain("NOT cleanup expressions are not supported");
+		expect(ruleCreate).not.toHaveBeenCalled();
+	});
+
+	it("serializes canonical rows separately from legacy composite conditions", async () => {
+		const legacyConditions = [
+			{ ruleType: "age", parameters: { operator: "older_than", days: 30 } },
+		];
+		configFindUnique.mockResolvedValueOnce({
+			id: "cleanup-config",
+			enabled: false,
+			intervalHours: 24,
+			lastRunAt: null,
+			nextRunAt: null,
+			dryRunMode: true,
+			maxRemovalsPerRun: 10,
+			requireApproval: true,
+			respectQuiSeeding: false,
+			rejectionMemoryDays: 0,
+			rules: [
+				makeRule({
+					ruleType: "composite",
+					parameters: "{}",
+					operator: null,
+					conditions: JSON.stringify(recursiveExpression),
+					targetScope: "series",
+				}),
+				makeRule({
+					id: "rule-legacy",
+					ruleType: "composite",
+					parameters: "{}",
+					operator: "AND",
+					conditions: JSON.stringify(legacyConditions),
+					targetScope: "series",
+				}),
+				makeRule({
+					id: "rule-legacy-null-operator",
+					ruleType: "composite",
+					parameters: "{}",
+					operator: null,
+					conditions: JSON.stringify(legacyConditions),
+					targetScope: "series",
+				}),
+			],
+		});
+
+		const response = await createInjectAuthenticated(app)("GET", "/library-cleanup/config");
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json().rules).toEqual([
+			expect.objectContaining({ expression: recursiveExpression, conditions: null }),
+			expect.objectContaining({ expression: null, conditions: legacyConditions }),
+			expect.objectContaining({ expression: null, conditions: legacyConditions }),
+		]);
+	});
+
+	it("rejects a config mutation before changing authority when a stored expression is invalid", async () => {
+		configFindUnique.mockResolvedValueOnce({
+			id: "cleanup-config",
+			rules: [
+				makeRule({
+					ruleType: "composite",
+					operator: null,
+					conditions: '{"version":1,"root":{"not":false}}',
+				}),
+			],
+		});
+
+		const response = await createInjectAuthenticated(app)("PUT", "/library-cleanup/config", {
+			body: { dryRunMode: false },
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(configUpsert).not.toHaveBeenCalled();
+		expect(configUpdate).not.toHaveBeenCalled();
+	});
+
+	it("rejects a reorder before its transaction when a stored expression is invalid", async () => {
+		configFindUnique.mockResolvedValueOnce({ id: "cleanup-config" }).mockResolvedValueOnce({
+			id: "cleanup-config",
+			rules: [
+				makeRule({
+					ruleType: "composite",
+					operator: null,
+					conditions: '{"version":1,"root":{"not":false}}',
+				}),
+			],
+		});
+
+		const response = await createInjectAuthenticated(app)("PUT", "/library-cleanup/rules/reorder", {
+			body: { ruleIds: ["rule-1"] },
+		});
+
+		expect(response.statusCode).toBe(409);
+		expect(prismaTransaction).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["malformed", '{"version":1,"root":{"not":false}}', "invalid"],
+		["empty", JSON.stringify({ version: 1, root: { all: [] } }), "empty all group"],
+	] as const)(
+		"fails closed for a %s stored canonical expression",
+		async (_label, conditions, message) => {
+			configFindUnique.mockResolvedValueOnce({
+				id: "cleanup-config",
+				enabled: false,
+				intervalHours: 24,
+				lastRunAt: null,
+				nextRunAt: null,
+				dryRunMode: true,
+				maxRemovalsPerRun: 10,
+				requireApproval: true,
+				respectQuiSeeding: false,
+				rejectionMemoryDays: 0,
+				rules: [
+					makeRule({
+						ruleType: "composite",
+						parameters: "{}",
+						operator: null,
+						conditions,
+						targetScope: "series",
+					}),
+				],
+			});
+
+			const response = await createInjectAuthenticated(app)("GET", "/library-cleanup/config");
+
+			expect(response.statusCode).toBe(409);
+			expect(response.json().message).toContain(message);
+		},
+	);
+
+	it.each([
+		[
+			"legacy conditions",
+			{
+				operator: "AND",
+				conditions: [{ ruleType: "age", parameters: { operator: "older_than", days: 30 } }],
+			},
+		],
+		["legacy parameters", { parameters: { operator: "older_than", days: 30 } }],
+		["an empty group", { expression: { version: 1, root: { all: [] } } }],
+	] as const)("rejects an expression mixed with %s on create", async (_label, overrides) => {
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/rules", {
+			body: {
+				name: "Ambiguous cleanup",
+				enabled: true,
+				priority: 0,
+				ruleType: "composite",
+				parameters: {},
+				expression: recursiveExpression,
+				...overrides,
+			},
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(ruleCreate).not.toHaveBeenCalled();
+	});
+
+	it("rejects legacy composite conditions without an operator", async () => {
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/rules", {
+			body: {
+				name: "Incomplete legacy composite",
+				ruleType: "composite",
+				parameters: {},
+				conditions: [
+					{
+						ruleType: "age",
+						parameters: { operator: "older_than", days: 30 },
+					},
+				],
+			},
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(ruleCreate).not.toHaveBeenCalled();
+	});
+
+	it("preserves a canonical expression when an update changes unrelated fields", async () => {
+		const stored = makeRule({
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: JSON.stringify(recursiveExpression),
+			targetScope: "series",
+		});
+		ruleFindFirst.mockResolvedValueOnce(stored);
+		ruleUpdate.mockImplementationOnce(async ({ data }) => ({ ...stored, ...data }));
+
+		const response = await createInjectAuthenticated(app)("PUT", "/library-cleanup/rules/rule-1", {
+			body: { name: "Renamed nested cleanup" },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(ruleUpdate).toHaveBeenCalledWith({
+			where: { id: "rule-1" },
+			data: { name: "Renamed nested cleanup" },
+		});
+		expect(response.json()).toMatchObject({ expression: recursiveExpression, conditions: null });
+	});
+
+	it("preserves a stored retired predicate during an unrelated update", async () => {
+		const retiredExpression = {
+			version: 1,
+			root: { kind: "retired_cleanup_kind", params: {} },
+		};
+		const stored = makeRule({
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: JSON.stringify(retiredExpression),
+			targetScope: "series",
+		});
+		ruleFindFirst.mockResolvedValueOnce(stored);
+		ruleUpdate.mockImplementationOnce(async ({ data }) => ({ ...stored, ...data }));
+
+		const response = await createInjectAuthenticated(app)("PUT", "/library-cleanup/rules/rule-1", {
+			body: { name: "Renamed retired cleanup" },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(ruleUpdate).toHaveBeenCalledWith({
+			where: { id: "rule-1" },
+			data: { name: "Renamed retired cleanup" },
+		});
+		expect(response.json()).toMatchObject({ expression: retiredExpression, conditions: null });
+	});
+
+	it("rejects canonical representation edits when expression is omitted", async () => {
+		const stored = makeRule({
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: JSON.stringify(recursiveExpression),
+			targetScope: "series",
+		});
+		ruleFindFirst.mockResolvedValueOnce(stored);
+
+		const response = await createInjectAuthenticated(app)("PUT", "/library-cleanup/rules/rule-1", {
+			body: { parameters: { operator: "older_than", days: 60 } },
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(ruleUpdate).not.toHaveBeenCalled();
+	});
+
+	it("requires a complete legacy replacement when clearing a canonical expression", async () => {
+		const stored = makeRule({
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: JSON.stringify(recursiveExpression),
+			targetScope: "series",
+		});
+		ruleFindFirst.mockResolvedValueOnce(stored);
+
+		const response = await createInjectAuthenticated(app)("PUT", "/library-cleanup/rules/rule-1", {
+			body: { expression: null },
+		});
+
+		expect(response.statusCode).toBe(400);
+		expect(ruleUpdate).not.toHaveBeenCalled();
+	});
+
+	it("converts a canonical expression to a complete legacy replacement", async () => {
+		const stored = makeRule({
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: JSON.stringify(recursiveExpression),
+			targetScope: "series",
+		});
+		ruleFindFirst.mockResolvedValueOnce(stored);
+		ruleUpdate.mockImplementationOnce(async ({ data }) => ({ ...stored, ...data }));
+
+		const response = await createInjectAuthenticated(app)("PUT", "/library-cleanup/rules/rule-1", {
+			body: {
+				expression: null,
+				ruleType: "age",
+				parameters: { operator: "older_than", days: 60 },
+			},
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(ruleUpdate).toHaveBeenCalledWith({
+			where: { id: "rule-1" },
+			data: {
+				ruleType: "age",
+				parameters: JSON.stringify({ operator: "older_than", days: 60 }),
+				operator: null,
+				conditions: null,
+			},
+		});
+		expect(response.json()).toMatchObject({ expression: null, ruleType: "age", conditions: null });
+	});
+
+	it("converts a legacy rule to canonical recursive storage on update", async () => {
+		const stored = makeRule({ targetScope: "series" });
+		ruleFindFirst.mockResolvedValueOnce(stored);
+		ruleUpdate.mockImplementationOnce(async ({ data }) => ({ ...stored, ...data }));
+
+		const response = await createInjectAuthenticated(app)("PUT", "/library-cleanup/rules/rule-1", {
+			body: { expression: recursiveExpression },
+		});
+
+		expect(response.statusCode).toBe(200);
+		expect(ruleUpdate).toHaveBeenCalledWith({
+			where: { id: "rule-1" },
+			data: {
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify(recursiveExpression),
+			},
+		});
+		expect(response.json()).toMatchObject({ expression: recursiveExpression, conditions: null });
+	});
+
 	it("stores and serializes an exact canonical media-server rescan selection", async () => {
 		serviceInstanceFindMany.mockResolvedValueOnce([
 			{ id: "jellyfin-primary" },

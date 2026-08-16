@@ -13,6 +13,15 @@ const validEpisodeRule = {
 	targetScope: "episode" as const,
 };
 
+const recursiveExpression = {
+	version: 1 as const,
+	root: {
+		not: {
+			all: [{ kind: "age", params: { operator: "older_than", days: 30 } }],
+		},
+	},
+};
+
 describe("library cleanup target scope", () => {
 	it("defaults legacy rules to series scope", () => {
 		const parsed = createCleanupRuleSchema.parse({
@@ -32,6 +41,88 @@ describe("library cleanup target scope", () => {
 		expect(createCleanupRuleSchema.parse(validEpisodeRule).targetScope).toBe("episode");
 	});
 
+	it("accepts a recursive expression only for a composite cleanup rule", () => {
+		const parsed = createCleanupRuleSchema.parse({
+			name: "Keep recent items",
+			ruleType: "composite",
+			parameters: {},
+			expression: recursiveExpression,
+		});
+
+		expect(parsed.expression).toEqual(recursiveExpression);
+	});
+
+	it("accepts an explicit null expression on create", () => {
+		const parsed = createCleanupRuleSchema.parse({
+			name: "Legacy rule",
+			ruleType: "age",
+			parameters: { days: 30 },
+			expression: null,
+		});
+
+		expect(parsed.expression).toBeNull();
+	});
+
+	it.each([
+		[
+			{ ruleType: "age", parameters: {}, expression: recursiveExpression },
+			"must use ruleType composite",
+		],
+		[
+			{
+				ruleType: "composite",
+				parameters: {},
+				expression: recursiveExpression,
+				operator: "AND",
+			},
+			"cannot mix expression with operator",
+		],
+		[
+			{
+				ruleType: "composite",
+				parameters: {},
+				expression: recursiveExpression,
+				conditions: [{ ruleType: "age", parameters: {} }],
+			},
+			"cannot mix expression with conditions",
+		],
+	])("rejects an ambiguous recursive expression payload %#", (rule, message) => {
+		const result = createCleanupRuleSchema.safeParse({ name: "Ambiguous", ...rule });
+
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues.some((issue) => issue.message.includes(message))).toBe(true);
+		}
+	});
+
+	it("accepts an expression update without repeating the composite discriminator", () => {
+		expect(updateCleanupRuleSchema.parse({ expression: recursiveExpression }).expression).toEqual(
+			recursiveExpression,
+		);
+	});
+
+	it("accepts an explicit null expression update", () => {
+		expect(updateCleanupRuleSchema.parse({ expression: null }).expression).toBeNull();
+	});
+
+	it("rejects an expression update with an explicitly non-composite discriminator", () => {
+		expect(
+			updateCleanupRuleSchema.safeParse({
+				ruleType: "age",
+				expression: recursiveExpression,
+			}).success,
+		).toBe(false);
+	});
+
+	it("rejects a recursive expression explicitly paired with episode scope", () => {
+		expect(
+			updateCleanupRuleSchema.safeParse({
+				targetScope: "episode",
+				expression: recursiveExpression,
+			}).success,
+		).toBe(false);
+	});
+
 	it.each([
 		[{ ...validEpisodeRule, serviceFilter: ["RADARR"] }, "Sonarr only"],
 		[{ ...validEpisodeRule, serviceFilter: ["SONARR", "RADARR"] }, "Sonarr only"],
@@ -43,6 +134,15 @@ describe("library cleanup target scope", () => {
 				ruleType: "composite",
 				operator: "AND",
 				conditions: [{ ruleType: "plex_watch_count", parameters: validEpisodeRule.parameters }],
+			},
+			"cannot be composite",
+		],
+		[
+			{
+				...validEpisodeRule,
+				ruleType: "composite",
+				parameters: {},
+				expression: recursiveExpression,
 			},
 			"cannot be composite",
 		],

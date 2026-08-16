@@ -46,6 +46,7 @@ import {
 	evaluateItemMutationPolicyStateViaEngine,
 	evaluateRuleViaEngine,
 } from "../rules/cleanup-adapter.js";
+import { mapCriteriaV0ToDocument } from "../rules/v0-mappers.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
 import { hasAuthoritativeProviderCacheGeneration } from "../services/provider-identity-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
@@ -5507,17 +5508,35 @@ async function executeQueuedCleanupItems(
  * Collect all rule types from enabled rules, including conditions inside composite rules.
  * Used to decide which external data to prefetch (Seerr, Plex, Jellyfin).
  */
+type CleanupCriteriaStorageRow = {
+	ruleType: string;
+	parameters?: string;
+	operator?: string | null;
+	conditions: string | null;
+};
+
+function storedCleanupPredicates(rule: CleanupCriteriaStorageRow) {
+	try {
+		const document = mapCriteriaV0ToDocument({
+			ruleType: rule.ruleType,
+			parameters: rule.parameters ?? "{}",
+			operator: rule.operator ?? null,
+			conditions: rule.conditions,
+		});
+		return [...walkPredicates(document.root)];
+	} catch {
+		return [];
+	}
+}
+
 function collectActiveRuleTypes(
-	rules: Pick<LibraryCleanupRule, "enabled" | "ruleType" | "conditions">[],
+	rules: Array<CleanupCriteriaStorageRow & { enabled: boolean }>,
 ): Set<string> {
 	const types = new Set<string>();
 	for (const r of rules) {
 		if (!r.enabled) continue;
 		types.add(r.ruleType);
-		if (r.conditions) {
-			const conds = safeJsonParse(r.conditions) as Array<{ ruleType?: string }> | null;
-			if (Array.isArray(conds)) for (const c of conds) if (c.ruleType) types.add(c.ruleType);
-		}
+		for (const predicate of storedCleanupPredicates(r)) types.add(predicate.kind);
 	}
 	return types;
 }
@@ -7538,16 +7557,11 @@ export function seriesRetentionProtectsEpisode(
  */
 function getRuleDataSources(rule: LibraryCleanupRule): Set<DataSourceDependency> {
 	const sources = new Set<DataSourceDependency>();
-	const dep = ruleDataSourceMap[rule.ruleType];
-	if (dep) sources.add(dep);
-	if (rule.conditions) {
-		const conds = safeJsonParse(rule.conditions) as Array<{ ruleType?: string }> | null;
-		if (Array.isArray(conds)) {
-			for (const c of conds) {
-				const cdep = c.ruleType ? ruleDataSourceMap[c.ruleType] : undefined;
-				if (cdep) sources.add(cdep);
-			}
-		}
+	const topLevelDependency = ruleDataSourceMap[rule.ruleType];
+	if (topLevelDependency) sources.add(topLevelDependency);
+	for (const predicate of storedCleanupPredicates(rule)) {
+		const dependency = ruleDataSourceMap[predicate.kind];
+		if (dependency) sources.add(dependency);
 	}
 	return sources;
 }
@@ -10156,12 +10170,12 @@ async function refreshCurrentExternalRuleCaches(
 export async function buildEvalContext(
 	deps: CleanupExecutorDeps,
 	userId: string,
-	rules: Array<{
-		enabled: boolean;
-		ruleType: string;
-		conditions: string | null;
-		plexLibraryFilter?: string | null;
-	}>,
+	rules: Array<
+		CleanupCriteriaStorageRow & {
+			enabled: boolean;
+			plexLibraryFilter?: string | null;
+		}
+	>,
 	options: {
 		destructiveAuthority?: boolean;
 		requireAvailableEvidence?: boolean;
@@ -10313,7 +10327,7 @@ async function createRunLog(
 export async function prefetchCleanupListMemberships(
 	deps: CleanupExecutorDeps,
 	userId: string,
-	rules: Array<{ ruleType: string; parameters?: string; conditions: string | null }>,
+	rules: CleanupCriteriaStorageRow[],
 	cacheKind: "tmdb" | "trakt",
 ): Promise<Map<string, Set<number>>> {
 	const targetType = cacheKind === "tmdb" ? "tmdb_list_member" : "trakt_list_member";
@@ -10327,13 +10341,8 @@ export async function prefetchCleanupListMemberships(
 		if (typeof value === "string" && value.length > 0) identifiers.add(value);
 	};
 	for (const rule of rules) {
-		collectFromParams(rule.ruleType, safeJsonParse(rule.parameters ?? ""));
-		const conditions = safeJsonParse(rule.conditions ?? "") as Array<{
-			ruleType: string;
-			parameters: unknown;
-		}> | null;
-		if (Array.isArray(conditions)) {
-			for (const cond of conditions) collectFromParams(cond?.ruleType, cond?.parameters);
+		for (const predicate of storedCleanupPredicates(rule)) {
+			collectFromParams(predicate.kind, predicate.params);
 		}
 	}
 	if (identifiers.size === 0) return new Map();
