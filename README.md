@@ -308,7 +308,8 @@ The `/config` volume contains critical data that must be preserved:
 | `BACKUP_PASSWORD` | - | Password for encrypted backups (optional) |
 | `WEBAUTHN_RP_NAME` | `Arr Dashboard` | Passkey display name |
 | `WEBAUTHN_RP_ID` | `localhost` | Passkey relying party ID (your domain, no protocol) |
-| `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Passkey origin URL (full URL with protocol) |
+| `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Public browser origin for passkeys; also an OIDC callback fallback when `APP_URL` is local |
+| `APP_URL` | `http://localhost:3000` | Preferred public application URL for OIDC callbacks |
 | `LOG_LEVEL` | `info` | Logging level (`debug`, `info`, `warn`, `error`) |
 | `GITHUB_TOKEN` | - | Optional GitHub token for TRaSH Guides (higher rate limits) |
 | `HEAP_AUTO_SNAPSHOT` | `0` | Set to `1` to capture a V8 heap snapshot just before OOM (lands in `/config/heap-snapshots/`). Off by default — each snapshot is ~3x the heap (~2.3 GB at the 768 MB cap). Manual snapshots via `kill -USR2 <pid>` are always available regardless of this setting. |

@@ -386,7 +386,9 @@ export const OIDCProviderSection = ({ currentUser }: OIDCProviderSectionProps) =
 											}
 											className="bg-card/30 border-border/50"
 										/>
-										<p className="text-xs text-muted-foreground">Leave empty to auto-detect</p>
+										<p className="text-xs text-muted-foreground">
+											Leave empty to use External URL, APP_URL, or the public WEBAUTHN_ORIGIN.
+										</p>
 									</div>
 
 									<div className="space-y-2 sm:col-span-2">
