@@ -399,12 +399,12 @@ export interface CleanupPreviewResponse {
 		deferredBudget: number;
 		deferredApproval: number;
 		deferredRetryFairness: number;
-		deferredInFlightTarget?: number;
-		deferredDuplicateTarget?: number;
+		deferredInFlightTarget: number;
+		deferredDuplicateTarget: number;
 		inFlight: number;
 		blocked: number;
 		retryStateUnavailable: number;
-		retryState?: "complete" | "unavailable";
+		retryState: "complete" | "unavailable";
 		total: number;
 	};
 	display?: { shown: number; hidden: number; limit: number; complete: boolean };

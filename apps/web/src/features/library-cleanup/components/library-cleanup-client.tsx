@@ -675,9 +675,11 @@ function ConfigTab({
 									previewData.selection.deferredRetryFairness +
 									(previewData.selection.deferredInFlightTarget ?? 0) +
 									(previewData.selection.deferredDuplicateTarget ?? 0) +
-									previewData.selection.inFlight +
 									previewData.selection.retryStateUnavailable}{" "}
 								deferred.
+								{previewData.selection.inFlight > 0
+									? ` ${previewData.selection.inFlight} currently in flight.`
+									: ""}
 								{previewData.selection.blocked > 0
 									? ` Selected fresh slots include ${previewData.selection.blocked} currently safety-blocked ${previewData.selection.blocked === 1 ? "item" : "items"}.`
 									: ""}

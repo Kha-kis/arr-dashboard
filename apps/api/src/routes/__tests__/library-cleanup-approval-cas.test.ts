@@ -419,6 +419,67 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect(response.json().items).toHaveLength(1);
 	});
 
+	it("uses legacy preview counts when the executor omits selection metadata", async () => {
+		executorMocks.executeCleanupPreview.mockResolvedValueOnce({
+			isDryRun: true,
+			status: "completed",
+			itemsEvaluated: 2,
+			itemsFlagged: 2,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 0,
+			details: [],
+			durationMs: 1,
+		});
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/preview");
+		expect(response.json()).toMatchObject({
+			pendingRetryCount: 0,
+			selectionCountsComplete: true,
+			display: { shown: 0, hidden: 2, limit: 200, complete: false },
+		});
+		expect(response.json().selection).toBeUndefined();
+	});
+
+	it("preserves unavailable retry count with incomplete capped preview warning", async () => {
+		const details = Array.from({ length: 200 }, (_, index) => ({
+			instanceId: "radarr-1",
+			arrItemId: index + 1,
+			itemType: "movie",
+			title: `Movie ${index + 1}`,
+			rule: "Cleanup",
+			reason: "Deferred",
+			action: "skipped" as const,
+			sizeOnDisk: "1000",
+			year: 2024,
+			rating: 8,
+		}));
+		executorMocks.executeCleanupPreview.mockResolvedValueOnce({
+			isDryRun: true,
+			status: "partial",
+			itemsEvaluated: 201,
+			itemsFlagged: 201,
+			pendingRetryCount: null,
+			selectionCountsComplete: false,
+			previewItemCount: 201,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 201,
+			details,
+			durationMs: 1,
+		});
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/preview");
+		expect(response.json()).toMatchObject({
+			pendingRetryCount: null,
+			selectionCountsComplete: false,
+			display: { shown: 200, hidden: 1, limit: 200, complete: false },
+			warnings: [
+				"Display capped at 200 of 201 known preview items; retry-backed selection counts are incomplete because durable retry state could not be loaded.",
+			],
+		});
+	});
+
 	it("warns when executing retries exceed the rendered preview cap", async () => {
 		const details = Array.from({ length: 200 }, (_, index) => ({
 			instanceId: "radarr-1",

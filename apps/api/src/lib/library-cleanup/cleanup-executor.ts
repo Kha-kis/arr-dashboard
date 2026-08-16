@@ -1895,7 +1895,6 @@ export async function executeCleanupPreview(
 
 	if (config.rules.length === 0) {
 		const retryPreview = await loadDurableRetryPreview(deps, userId, config.id);
-		const retryState = retryPreview.loaded ? "complete" : "unavailable";
 		return {
 			isDryRun: true,
 			status: retryPreview.warning ? "partial" : "completed",
@@ -1904,20 +1903,6 @@ export async function executeCleanupPreview(
 			pendingRetryCount: retryPreview.loaded ? retryPreview.total : null,
 			selectionCountsComplete: retryPreview.loaded,
 			previewItemCount: retryPreview.targetKeys.size,
-			previewSelection: {
-				selectedFresh: 0,
-				selectedRetries: 0,
-				deferredBudget: 0,
-				deferredApproval: 0,
-				deferredRetryFairness: 0,
-				deferredInFlightTarget: 0,
-				deferredDuplicateTarget: 0,
-				inFlight: 0,
-				blocked: 0,
-				retryStateUnavailable: 0,
-				retryState,
-				total: retryPreview.targetKeys.size,
-			},
 			itemsRemoved: 0,
 			itemsUnmonitored: 0,
 			itemsFilesDeleted: 0,

@@ -824,9 +824,10 @@ describe("LibraryCleanupClient", () => {
 			expect(
 				screen.getByText("Preview Results (0 of 0 rule matches · 1 retry pending)"),
 			).toBeInTheDocument();
+			expect(screen.queryByText(/Next run reserves/)).not.toBeInTheDocument();
 		});
 
-		it("explains complete and unavailable next-run selection counts", () => {
+		it("explains complete next-run selection counts and in-flight retries separately", () => {
 			mockUseCleanupPreview.mockReturnValue(
 				defaultMutation({
 					data: {
@@ -842,7 +843,7 @@ describe("LibraryCleanupClient", () => {
 							deferredRetryFairness: 0,
 							deferredInFlightTarget: 0,
 							deferredDuplicateTarget: 0,
-							inFlight: 0,
+							inFlight: 2,
 							blocked: 1,
 							retryStateUnavailable: 0,
 							retryState: "complete",
@@ -857,7 +858,9 @@ describe("LibraryCleanupClient", () => {
 				screen.getByText("Preview Results (2 of 5 rule matches · 1 retry pending)"),
 			).toBeInTheDocument();
 			expect(
-				screen.getByText(/Next run reserves 1 fresh slot \+ 1 retry attempt\. 3 deferred\./),
+				screen.getByText(
+					/Next run reserves 1 fresh slot \+ 1 retry attempt\. 3 deferred\. 2 currently in flight\./,
+				),
 			).toBeInTheDocument();
 			expect(
 				screen.getByText(/Selected fresh slots include 1 currently safety-blocked item\./),

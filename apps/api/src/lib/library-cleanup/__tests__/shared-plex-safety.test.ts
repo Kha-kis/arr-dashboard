@@ -2695,6 +2695,7 @@ describe("shared Plex deletion safety", () => {
 			],
 			warnings: [expect.stringContaining("next live direct cleanup run")],
 		});
+		expect(result.previewSelection).toBeUndefined();
 		expect(deleteMovieFile).not.toHaveBeenCalled();
 		expect(deleteMovie).not.toHaveBeenCalled();
 		expect(targetClient.movie.update).not.toHaveBeenCalled();
