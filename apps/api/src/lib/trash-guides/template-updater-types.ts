@@ -35,6 +35,8 @@ export interface TemplateUpdateInfo {
 	lastAutoSyncTimestamp?: string;
 	/** True when the template is current but an enabled auto target still needs deployment */
 	deploymentCatchUp?: boolean;
+	/** Exact template state that authorized a pending automatic sync */
+	automationStateToken?: string;
 }
 
 export interface UpdateCheckResult {
@@ -65,6 +67,8 @@ export interface SyncResult {
 	mergeStats?: MergeStats;
 	/** Score conflicts that couldn't be auto-applied due to user overrides */
 	scoreConflicts?: ScoreConflict[];
+	/** Exact post-sync template state required by automatic deployment */
+	automationStateToken?: string;
 }
 
 export interface MergeStats {

@@ -419,7 +419,7 @@ export class DeploymentExecutorService {
 			createAutomationCatchUpTemplateStateToken(template) !== expectedStateToken
 		) {
 			throw new ConflictError(
-				"Automatic catch-up is no longer authorized because the template changed after target selection.",
+				"Automatic deployment is no longer authorized because the template changed after target selection.",
 			);
 		}
 	}
@@ -1794,7 +1794,7 @@ export class DeploymentExecutorService {
 					createAutomationCatchUpTemplateStateToken(template) !== catchUpTemplateStateToken)
 			) {
 				throw new ConflictError(
-					"Automatic catch-up is no longer authorized because the template changed after target selection.",
+					"Automatic deployment is no longer authorized because the template changed after target selection.",
 				);
 			}
 			if (!executionToken && !instance.enabled) {

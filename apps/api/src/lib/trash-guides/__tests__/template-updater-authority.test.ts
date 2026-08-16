@@ -102,6 +102,67 @@ function createUpdater(
 }
 
 describe("TemplateUpdater automation authority", () => {
+	it("recovers an auto-sync template whose initial commit could not be recorded", async () => {
+		const storedTemplate = {
+			id: template.id,
+			name: template.name,
+			serviceType: "RADARR",
+			trashGuidesCommitHash: null,
+			hasUserModifications: false,
+			configData: '{"customFormats":[],"customFormatGroups":[]}',
+			changeLog: null,
+			lastSyncedAt: null,
+			qualityProfileMappings: [
+				{
+					syncStrategy: "auto",
+					lastSyncedAt: new Date("2026-08-09T12:00:00.000Z"),
+					instance: { enabled: true },
+				},
+			],
+		};
+		const findMany = vi.fn().mockResolvedValue([storedTemplate]);
+		const prisma = {
+			trashTemplate: {
+				findMany,
+			},
+		};
+		const updater = new TemplateUpdater(
+			prisma as never,
+			{
+				getLatestCommit: vi.fn().mockResolvedValue({
+					commitHash: "current",
+					commitDate: "2026-08-10",
+					commitMessage: "current",
+					commitUrl: "https://example.com/commit/current",
+				}),
+			} as never,
+			{ get: vi.fn().mockResolvedValue([]) } as never,
+			{} as never,
+		);
+
+		const result = await updater.checkForUpdates(template.userId);
+
+		expect(result.templatesWithUpdates).toEqual([
+			expect.objectContaining({
+				templateId: template.id,
+				currentCommit: null,
+				latestCommit: "current",
+				canAutoSync: true,
+			}),
+		]);
+		expect(result.outdatedTemplates).toBe(1);
+
+		findMany.mockResolvedValueOnce([{ ...storedTemplate, hasUserModifications: true }]);
+		const modifiedResult = await updater.checkForUpdates(template.userId);
+		expect(modifiedResult.templatesWithUpdates).toEqual([
+			expect.objectContaining({ templateId: template.id, canAutoSync: false }),
+		]);
+
+		findMany.mockResolvedValueOnce([{ ...storedTemplate, qualityProfileMappings: [] }]);
+		const unauthorizedResult = await updater.checkForUpdates(template.userId);
+		expect(unauthorizedResult.templatesWithUpdates).toEqual([]);
+	});
+
 	it("reports deployment catch-up after a disabled auto target is re-enabled", async () => {
 		const templateSyncedAt = new Date("2026-08-10T12:00:00.000Z");
 		const prisma = {
@@ -345,6 +406,7 @@ describe("TemplateUpdater automation authority", () => {
 					autoSyncInstanceCount: 1,
 					canAutoSync: true,
 					serviceType: "RADARR",
+					automationStateToken: "selected-template-state",
 				},
 			],
 			latestCommit: {
@@ -361,6 +423,7 @@ describe("TemplateUpdater automation authority", () => {
 			templateId: template.id,
 			previousCommit: "old",
 			newCommit: "new",
+			automationStateToken: "synced-template-state",
 		});
 
 		const result = await updater.processAutoUpdates(template.userId);
@@ -373,6 +436,85 @@ describe("TemplateUpdater automation authority", () => {
 				errors: [expect.stringContaining("ARR rejected the deployment")],
 			}),
 		]);
+	});
+
+	it("binds automatic sync and deployment to the selected template states", async () => {
+		const target = instance("instance-1", "http://radarr:7878");
+		const { updater, privateUpdater } = createUpdater([mapping(target)]);
+		vi.spyOn(updater, "checkForUpdates").mockResolvedValue({
+			templatesWithUpdates: [
+				{
+					templateId: template.id,
+					templateName: template.name,
+					currentCommit: null,
+					latestCommit: "new",
+					hasUserModifications: false,
+					autoSyncInstanceCount: 1,
+					canAutoSync: true,
+					serviceType: "RADARR",
+					automationStateToken: "selected-template-state",
+				},
+			],
+			latestCommit: {
+				commitHash: "new",
+				commitDate: "2026-08-09",
+				commitMessage: "update",
+				commitUrl: "https://example.com/commit/new",
+			},
+			totalTemplates: 1,
+			outdatedTemplates: 1,
+		} as never);
+		const syncTemplate = vi.spyOn(updater, "syncTemplate").mockResolvedValue({
+			success: true,
+			templateId: template.id,
+			previousCommit: null,
+			newCommit: "new",
+			automationStateToken: "synced-template-state",
+		} as never);
+		const deployToMappedInstances = vi
+			.spyOn(privateUpdater, "deployToMappedInstances")
+			.mockResolvedValue([]);
+
+		await updater.processAutoUpdates(template.userId);
+
+		expect(syncTemplate).toHaveBeenCalledWith(template.id, "new", template.userId, {
+			includeQualityProfileCFs: true,
+			applyScoreUpdates: true,
+			expectedAutomationStateToken: "selected-template-state",
+		});
+		expect(deployToMappedInstances).toHaveBeenCalledWith(
+			template.id,
+			false,
+			"synced-template-state",
+		);
+	});
+
+	it("blocks automatic sync when the template changes after selection", async () => {
+		const selectedTemplate = { ...template, deletedAt: null };
+		const changedTemplate = {
+			...selectedTemplate,
+			configData: '{"customFormats":[{"name":"edited while queued"}]}',
+		};
+		const prisma = {
+			trashTemplate: {
+				findUnique: vi.fn().mockResolvedValue(changedTemplate),
+				update: vi.fn(),
+			},
+			templateQualityProfileMapping: {
+				findFirst: vi.fn().mockResolvedValue({ id: "mapping-1" }),
+			},
+		};
+		const updater = new TemplateUpdater(prisma as never, {} as never, {} as never, {} as never);
+
+		const result = await updater.syncTemplate(template.id, "new", template.userId, {
+			expectedAutomationStateToken: createAutomationCatchUpTemplateStateToken(selectedTemplate),
+		});
+
+		expect(result).toMatchObject({
+			success: false,
+			errors: [expect.stringContaining("template or Auto mapping changed")],
+		});
+		expect(prisma.trashTemplate.update).not.toHaveBeenCalled();
 	});
 
 	it("preserves an uncertain auto-deployment as needing review", async () => {
@@ -393,6 +535,7 @@ describe("TemplateUpdater automation authority", () => {
 					autoSyncInstanceCount: 1,
 					canAutoSync: true,
 					serviceType: "RADARR",
+					automationStateToken: "selected-template-state",
 				},
 			],
 			latestCommit: {
@@ -409,6 +552,7 @@ describe("TemplateUpdater automation authority", () => {
 			templateId: template.id,
 			previousCommit: "old",
 			newCommit: "new",
+			automationStateToken: "synced-template-state",
 		});
 
 		const result = await updater.processAutoUpdates(template.userId);
@@ -455,6 +599,7 @@ describe("TemplateUpdater automation authority", () => {
 					autoSyncInstanceCount: 2,
 					canAutoSync: true,
 					serviceType: "RADARR",
+					automationStateToken: "selected-template-state",
 				},
 			],
 			latestCommit: {
@@ -471,6 +616,7 @@ describe("TemplateUpdater automation authority", () => {
 			templateId: template.id,
 			previousCommit: "old",
 			newCommit: "new",
+			automationStateToken: "synced-template-state",
 		});
 
 		const result = await updater.processAutoUpdates(template.userId);
@@ -498,6 +644,7 @@ describe("TemplateUpdater automation authority", () => {
 					autoSyncInstanceCount: 1,
 					canAutoSync: true,
 					serviceType: "RADARR",
+					automationStateToken: "selected-template-state",
 				},
 			],
 			latestCommit: {
@@ -514,6 +661,7 @@ describe("TemplateUpdater automation authority", () => {
 			templateId: template.id,
 			previousCommit: "old",
 			newCommit: "new",
+			automationStateToken: "synced-template-state",
 		});
 
 		const result = await updater.processAutoUpdates(template.userId);

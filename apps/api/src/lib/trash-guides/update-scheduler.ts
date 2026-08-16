@@ -259,13 +259,15 @@ export class UpdateScheduler {
 		}
 
 		this.isCheckInProgress = true;
+		try {
+			await this.checkForUpdatesAttempt();
+		} finally {
+			this.isCheckInProgress = false;
+		}
+	}
+
+	private async checkForUpdatesAttempt(): Promise<void> {
 		const startTime = Date.now();
-
-		// Re-read repo config and rebuild services if the user changed settings
-		await this.refreshRepoConfigIfNeeded();
-
-		this.logger.info("Checking for TRaSH Guides updates...");
-
 		const errors: string[] = [];
 		let templatesAutoSynced = 0;
 		let templatesNeedingAttention = 0;
@@ -276,34 +278,40 @@ export class UpdateScheduler {
 		let qualitySizeUpdatesPending = 0;
 		let namingAutoSynced = 0;
 		let namingUpdatesPending = 0;
-
-		// Count templates by sync strategy (unique templates with at least one mapping of each type)
-		const [templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
-			this.prisma.trashTemplate.count({
-				where: {
-					deletedAt: null,
-					trashGuidesCommitHash: { not: null },
-					qualityProfileMappings: {
-						some: {
-							syncStrategy: "auto",
-						},
-					},
-				},
-			}),
-			this.prisma.trashTemplate.count({
-				where: {
-					deletedAt: null,
-					trashGuidesCommitHash: { not: null },
-					qualityProfileMappings: {
-						some: {
-							syncStrategy: "notify",
-						},
-					},
-				},
-			}),
-		]);
+		let templatesWithAutoStrategy = 0;
+		let templatesWithNotifyStrategy = 0;
 
 		try {
+			// Re-read repo config and rebuild services if the user changed settings
+			await this.refreshRepoConfigIfNeeded();
+
+			this.logger.info("Checking for TRaSH Guides updates...");
+
+			// Count templates by sync strategy (unique templates with at least one mapping of each type)
+			[templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
+				this.prisma.trashTemplate.count({
+					where: {
+						deletedAt: null,
+						qualityProfileMappings: {
+							some: {
+								syncStrategy: "auto",
+							},
+						},
+					},
+				}),
+				this.prisma.trashTemplate.count({
+					where: {
+						deletedAt: null,
+						trashGuidesCommitHash: { not: null },
+						qualityProfileMappings: {
+							some: {
+								syncStrategy: "notify",
+							},
+						},
+					},
+				}),
+			]);
+
 			// Get latest version info
 			const latestCommit = await this.versionTracker.getLatestCommit();
 			this.logger.debug(
@@ -353,7 +361,10 @@ export class UpdateScheduler {
 			const templatesWithUsers = await this.prisma.trashTemplate.findMany({
 				where: {
 					deletedAt: null,
-					trashGuidesCommitHash: { not: null },
+					OR: [
+						{ trashGuidesCommitHash: { not: null } },
+						{ qualityProfileMappings: { some: { syncStrategy: "auto" } } },
+					],
 				},
 				select: { userId: true },
 				distinct: ["userId"],
@@ -551,8 +562,6 @@ export class UpdateScheduler {
 			});
 
 			throw error;
-		} finally {
-			this.isCheckInProgress = false;
 		}
 	}
 
