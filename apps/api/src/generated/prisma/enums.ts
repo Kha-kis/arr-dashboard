@@ -27,6 +27,25 @@ export const ServiceType = {
 export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType]
 
 
+export const ProviderIdentityKind = {
+  PLEX_MACHINE_IDENTIFIER: 'PLEX_MACHINE_IDENTIFIER',
+  JELLYFIN_SERVER_ID: 'JELLYFIN_SERVER_ID',
+  EMBY_SERVER_ID: 'EMBY_SERVER_ID',
+  TAUTULLI_PMS_IDENTIFIER: 'TAUTULLI_PMS_IDENTIFIER'
+} as const
+
+export type ProviderIdentityKind = (typeof ProviderIdentityKind)[keyof typeof ProviderIdentityKind]
+
+
+export const ProviderIdentityStatus = {
+  UNVERIFIED: 'UNVERIFIED',
+  VERIFIED: 'VERIFIED',
+  MISMATCH: 'MISMATCH'
+} as const
+
+export type ProviderIdentityStatus = (typeof ProviderIdentityStatus)[keyof typeof ProviderIdentityStatus]
+
+
 export const LibraryItemType = {
   movie: 'movie',
   series: 'series',

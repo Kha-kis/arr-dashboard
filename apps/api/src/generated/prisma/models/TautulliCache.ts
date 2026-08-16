@@ -29,11 +29,15 @@ export type AggregateTautulliCache = {
 export type TautulliCacheAvgAggregateOutputType = {
   tmdbId: number | null
   watchCount: number | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type TautulliCacheSumAggregateOutputType = {
   tmdbId: number | null
   watchCount: number | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type TautulliCacheMinAggregateOutputType = {
@@ -44,6 +48,8 @@ export type TautulliCacheMinAggregateOutputType = {
   lastWatchedAt: Date | null
   watchCount: number | null
   watchedByUsers: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type TautulliCacheMaxAggregateOutputType = {
@@ -54,6 +60,8 @@ export type TautulliCacheMaxAggregateOutputType = {
   lastWatchedAt: Date | null
   watchCount: number | null
   watchedByUsers: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type TautulliCacheCountAggregateOutputType = {
@@ -64,6 +72,8 @@ export type TautulliCacheCountAggregateOutputType = {
   lastWatchedAt: number
   watchCount: number
   watchedByUsers: number
+  connectionGeneration: number
+  identityGeneration: number
   _all: number
 }
 
@@ -71,11 +81,15 @@ export type TautulliCacheCountAggregateOutputType = {
 export type TautulliCacheAvgAggregateInputType = {
   tmdbId?: true
   watchCount?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type TautulliCacheSumAggregateInputType = {
   tmdbId?: true
   watchCount?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type TautulliCacheMinAggregateInputType = {
@@ -86,6 +100,8 @@ export type TautulliCacheMinAggregateInputType = {
   lastWatchedAt?: true
   watchCount?: true
   watchedByUsers?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type TautulliCacheMaxAggregateInputType = {
@@ -96,6 +112,8 @@ export type TautulliCacheMaxAggregateInputType = {
   lastWatchedAt?: true
   watchCount?: true
   watchedByUsers?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type TautulliCacheCountAggregateInputType = {
@@ -106,6 +124,8 @@ export type TautulliCacheCountAggregateInputType = {
   lastWatchedAt?: true
   watchCount?: true
   watchedByUsers?: true
+  connectionGeneration?: true
+  identityGeneration?: true
   _all?: true
 }
 
@@ -203,6 +223,8 @@ export type TautulliCacheGroupByOutputType = {
   lastWatchedAt: Date | null
   watchCount: number
   watchedByUsers: string
+  connectionGeneration: number | null
+  identityGeneration: number | null
   _count: TautulliCacheCountAggregateOutputType | null
   _avg: TautulliCacheAvgAggregateOutputType | null
   _sum: TautulliCacheSumAggregateOutputType | null
@@ -236,6 +258,8 @@ export type TautulliCacheWhereInput = {
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"TautulliCache"> | Date | string | null
   watchCount?: Prisma.IntFilter<"TautulliCache"> | number
   watchedByUsers?: Prisma.StringFilter<"TautulliCache"> | string
+  connectionGeneration?: Prisma.IntNullableFilter<"TautulliCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"TautulliCache"> | number | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }
 
@@ -247,6 +271,8 @@ export type TautulliCacheOrderByWithRelationInput = {
   lastWatchedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
 }
 
@@ -262,6 +288,8 @@ export type TautulliCacheWhereUniqueInput = Prisma.AtLeast<{
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"TautulliCache"> | Date | string | null
   watchCount?: Prisma.IntFilter<"TautulliCache"> | number
   watchedByUsers?: Prisma.StringFilter<"TautulliCache"> | string
+  connectionGeneration?: Prisma.IntNullableFilter<"TautulliCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"TautulliCache"> | number | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }, "id" | "instanceId_tmdbId_mediaType">
 
@@ -273,6 +301,8 @@ export type TautulliCacheOrderByWithAggregationInput = {
   lastWatchedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.TautulliCacheCountOrderByAggregateInput
   _avg?: Prisma.TautulliCacheAvgOrderByAggregateInput
   _max?: Prisma.TautulliCacheMaxOrderByAggregateInput
@@ -291,6 +321,8 @@ export type TautulliCacheScalarWhereWithAggregatesInput = {
   lastWatchedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"TautulliCache"> | Date | string | null
   watchCount?: Prisma.IntWithAggregatesFilter<"TautulliCache"> | number
   watchedByUsers?: Prisma.StringWithAggregatesFilter<"TautulliCache"> | string
+  connectionGeneration?: Prisma.IntNullableWithAggregatesFilter<"TautulliCache"> | number | null
+  identityGeneration?: Prisma.IntNullableWithAggregatesFilter<"TautulliCache"> | number | null
 }
 
 export type TautulliCacheCreateInput = {
@@ -300,6 +332,8 @@ export type TautulliCacheCreateInput = {
   lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutTautulliCachesInput
 }
 
@@ -311,6 +345,8 @@ export type TautulliCacheUncheckedCreateInput = {
   lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type TautulliCacheUpdateInput = {
@@ -320,6 +356,8 @@ export type TautulliCacheUpdateInput = {
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutTautulliCachesNestedInput
 }
 
@@ -331,6 +369,8 @@ export type TautulliCacheUncheckedUpdateInput = {
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type TautulliCacheCreateManyInput = {
@@ -341,6 +381,8 @@ export type TautulliCacheCreateManyInput = {
   lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type TautulliCacheUpdateManyMutationInput = {
@@ -350,6 +392,8 @@ export type TautulliCacheUpdateManyMutationInput = {
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type TautulliCacheUncheckedUpdateManyInput = {
@@ -360,6 +404,8 @@ export type TautulliCacheUncheckedUpdateManyInput = {
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type TautulliCacheListRelationFilter = {
@@ -386,11 +432,15 @@ export type TautulliCacheCountOrderByAggregateInput = {
   lastWatchedAt?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type TautulliCacheAvgOrderByAggregateInput = {
   tmdbId?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type TautulliCacheMaxOrderByAggregateInput = {
@@ -401,6 +451,8 @@ export type TautulliCacheMaxOrderByAggregateInput = {
   lastWatchedAt?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type TautulliCacheMinOrderByAggregateInput = {
@@ -411,11 +463,15 @@ export type TautulliCacheMinOrderByAggregateInput = {
   lastWatchedAt?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type TautulliCacheSumOrderByAggregateInput = {
   tmdbId?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type TautulliCacheCreateNestedManyWithoutInstanceInput = {
@@ -467,6 +523,8 @@ export type TautulliCacheCreateWithoutInstanceInput = {
   lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type TautulliCacheUncheckedCreateWithoutInstanceInput = {
@@ -476,6 +534,8 @@ export type TautulliCacheUncheckedCreateWithoutInstanceInput = {
   lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type TautulliCacheCreateOrConnectWithoutInstanceInput = {
@@ -514,6 +574,8 @@ export type TautulliCacheScalarWhereInput = {
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"TautulliCache"> | Date | string | null
   watchCount?: Prisma.IntFilter<"TautulliCache"> | number
   watchedByUsers?: Prisma.StringFilter<"TautulliCache"> | string
+  connectionGeneration?: Prisma.IntNullableFilter<"TautulliCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"TautulliCache"> | number | null
 }
 
 export type TautulliCacheCreateManyInstanceInput = {
@@ -523,6 +585,8 @@ export type TautulliCacheCreateManyInstanceInput = {
   lastWatchedAt?: Date | string | null
   watchCount: number
   watchedByUsers: string
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type TautulliCacheUpdateWithoutInstanceInput = {
@@ -532,6 +596,8 @@ export type TautulliCacheUpdateWithoutInstanceInput = {
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type TautulliCacheUncheckedUpdateWithoutInstanceInput = {
@@ -541,6 +607,8 @@ export type TautulliCacheUncheckedUpdateWithoutInstanceInput = {
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type TautulliCacheUncheckedUpdateManyWithoutInstanceInput = {
@@ -550,6 +618,8 @@ export type TautulliCacheUncheckedUpdateManyWithoutInstanceInput = {
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   watchCount?: Prisma.IntFieldUpdateOperationsInput | number
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 
@@ -562,6 +632,8 @@ export type TautulliCacheSelect<ExtArgs extends runtime.Types.Extensions.Interna
   lastWatchedAt?: boolean
   watchCount?: boolean
   watchedByUsers?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["tautulliCache"]>
 
@@ -573,6 +645,8 @@ export type TautulliCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   lastWatchedAt?: boolean
   watchCount?: boolean
   watchedByUsers?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["tautulliCache"]>
 
@@ -584,6 +658,8 @@ export type TautulliCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   lastWatchedAt?: boolean
   watchCount?: boolean
   watchedByUsers?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["tautulliCache"]>
 
@@ -595,9 +671,11 @@ export type TautulliCacheSelectScalar = {
   lastWatchedAt?: boolean
   watchCount?: boolean
   watchedByUsers?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
 }
 
-export type TautulliCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "tmdbId" | "mediaType" | "lastWatchedAt" | "watchCount" | "watchedByUsers", ExtArgs["result"]["tautulliCache"]>
+export type TautulliCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "tmdbId" | "mediaType" | "lastWatchedAt" | "watchCount" | "watchedByUsers" | "connectionGeneration" | "identityGeneration", ExtArgs["result"]["tautulliCache"]>
 export type TautulliCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -621,6 +699,8 @@ export type $TautulliCachePayload<ExtArgs extends runtime.Types.Extensions.Inter
     lastWatchedAt: Date | null
     watchCount: number
     watchedByUsers: string
+    connectionGeneration: number | null
+    identityGeneration: number | null
   }, ExtArgs["result"]["tautulliCache"]>
   composites: {}
 }
@@ -1052,6 +1132,8 @@ export interface TautulliCacheFieldRefs {
   readonly lastWatchedAt: Prisma.FieldRef<"TautulliCache", 'DateTime'>
   readonly watchCount: Prisma.FieldRef<"TautulliCache", 'Int'>
   readonly watchedByUsers: Prisma.FieldRef<"TautulliCache", 'String'>
+  readonly connectionGeneration: Prisma.FieldRef<"TautulliCache", 'Int'>
+  readonly identityGeneration: Prisma.FieldRef<"TautulliCache", 'Int'>
 }
     
 

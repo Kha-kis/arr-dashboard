@@ -24,7 +24,37 @@ const executorMocks = vi.hoisted(() => ({
 	),
 }));
 
+const auditMocks = vi.hoisted(() => ({
+	appendCleanupAuditEvent: vi.fn().mockResolvedValue({}),
+	appendCleanupTerminalAuditEvent: vi.fn().mockResolvedValue({}),
+	createCleanupTerminalAuditState: vi.fn(
+		(input: {
+			actorId?: string | null;
+			actorType: string;
+			correlationId: string;
+			eventType: string;
+			outcome: string;
+			summary?: { reason?: string };
+			trigger: string;
+		}) => ({
+			terminalAuditCorrelationId: input.correlationId,
+			terminalAuditEventType: input.eventType,
+			terminalAuditOutcome: input.outcome,
+			terminalAuditActorType: input.actorType,
+			terminalAuditActorId: input.actorId ?? null,
+			terminalAuditTrigger: input.trigger,
+			terminalAuditReason: input.summary?.reason ?? null,
+			terminalAuditRecordedAt: null,
+		}),
+	),
+	createCleanupAuditEventKey: vi.fn(
+		(input: { actionId: string; correlationId: string; eventType: string }) =>
+			`${input.eventType}:${input.actionId}:${input.correlationId}`,
+	),
+}));
+
 vi.mock("../../lib/library-cleanup/cleanup-executor.js", () => executorMocks);
+vi.mock("../../lib/library-cleanup/cleanup-audit.js", () => auditMocks);
 
 import {
 	CleanupMaintenanceConflictError,
@@ -59,6 +89,23 @@ describe("library cleanup approval compare-and-set routes", () => {
 		app.decorate("prisma", {
 			libraryCleanupApproval: {
 				updateMany,
+				findFirst: vi.fn().mockResolvedValue({
+					id: "approval-1",
+					configId: "config-1",
+					instanceId: "radarr-1",
+					arrItemId: 101,
+					arrEpisodeId: null,
+					itemType: "movie",
+					targetScope: "series",
+					title: "Example Movie",
+					episodeTitle: null,
+					seasonNumber: null,
+					episodeNumber: null,
+					matchedRuleId: "rule-1",
+					matchedRuleName: "Cleanup",
+					reason: "Matched",
+					action: "delete",
+				}),
 				findMany: vi.fn(
 					async ({ where }: { where: { status?: string; OR?: Array<{ status: string }> } }) => [
 						{
@@ -112,6 +159,100 @@ describe("library cleanup approval compare-and-set routes", () => {
 		expect([first.statusCode, second.statusCode].sort()).toEqual([200, 404]);
 		expect(executorMocks.executeApprovedItems).toHaveBeenCalledOnce();
 		expect(updateMany).toHaveBeenCalledTimes(2);
+		expect(auditMocks.appendCleanupAuditEvent).toHaveBeenCalledOnce();
+	});
+
+	it("records operator approval after the durable compare-and-set", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/library-cleanup/approval-queue/approval-1/approve",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(auditMocks.appendCleanupAuditEvent).toHaveBeenCalledWith(
+			app.prisma,
+			expect.objectContaining({
+				userId: "user-1",
+				configId: "config-1",
+				actionId: "approval-1",
+				actorType: "operator",
+				actorId: "user-1",
+				eventType: "approval_reviewed",
+				trigger: "approval",
+				outcome: "info",
+				evidence: { decision: "approved" },
+			}),
+		);
+		expect(auditMocks.appendCleanupAuditEvent.mock.invocationCallOrder[0]).toBeLessThan(
+			executorMocks.executeApprovedItems.mock.invocationCallOrder[0]!,
+		);
+	});
+
+	it("does not let an audit outage block an authorized approval execution", async () => {
+		auditMocks.appendCleanupAuditEvent.mockRejectedValueOnce(new Error("audit unavailable"));
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/library-cleanup/approval-queue/approval-1/approve",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(executorMocks.executeApprovedItems).toHaveBeenCalledOnce();
+	});
+
+	it("records a rejected review only after its durable transition", async () => {
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/library-cleanup/approval-queue/approval-1/reject",
+		);
+
+		expect(response.statusCode).toBe(204);
+		expect(auditMocks.appendCleanupTerminalAuditEvent).toHaveBeenCalledWith(
+			app.prisma,
+			expect.objectContaining({
+				eventType: "approval_reviewed",
+				outcome: "blocked",
+				evidence: { decision: "rejected" },
+			}),
+			{ approvalId: "approval-1", status: "rejected" },
+		);
+		expect(updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "rejected",
+					terminalAuditEventType: "approval_reviewed",
+					terminalAuditOutcome: "blocked",
+					terminalAuditActorType: "operator",
+					terminalAuditActorId: "user-1",
+					terminalAuditTrigger: "approval",
+					terminalAuditReason: "Rejected by the operator",
+					terminalAuditRecordedAt: null,
+				}),
+			}),
+		);
+	});
+
+	it("leaves a rejected review durably repairable when its terminal append is unavailable", async () => {
+		auditMocks.appendCleanupTerminalAuditEvent.mockRejectedValueOnce(
+			new Error("audit unavailable"),
+		);
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/library-cleanup/approval-queue/approval-1/reject",
+		);
+
+		expect(response.statusCode).toBe(204);
+		expect(updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "rejected",
+					terminalAuditCorrelationId: expect.any(String),
+					terminalAuditEventType: "approval_reviewed",
+					terminalAuditRecordedAt: null,
+				}),
+			}),
+		);
 	});
 
 	it("returns a retryable conflict when another cleanup run owns the database lease", async () => {
@@ -294,6 +435,30 @@ describe("library cleanup approval compare-and-set routes", () => {
 
 		expect(response.statusCode).toBe(409);
 		expect(response.json()).toEqual({ error: "A cleanup operation is already in progress" });
+	});
+
+	it("attributes a manual cleanup run to the current operator", async () => {
+		executorMocks.executeCleanupRun.mockResolvedValueOnce({
+			isDryRun: false,
+			status: "completed",
+			itemsEvaluated: 0,
+			itemsFlagged: 0,
+			itemsRemoved: 0,
+			itemsUnmonitored: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 0,
+			details: [],
+			durationMs: 1,
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/execute");
+
+		expect(response.statusCode).toBe(200);
+		expect(executorMocks.executeCleanupRun).toHaveBeenCalledWith(expect.anything(), "user-1", {
+			actorId: "user-1",
+			actorType: "operator",
+			trigger: "manual",
+		});
 	});
 
 	it("returns a retryable conflict when maintenance blocks manual cleanup", async () => {

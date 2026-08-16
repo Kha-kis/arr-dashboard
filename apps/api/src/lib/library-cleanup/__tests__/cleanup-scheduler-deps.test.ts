@@ -34,6 +34,7 @@ describe("library cleanup scheduler dependencies", () => {
 		const externalRuleCacheRefresher = vi.fn();
 		const prisma = {
 			libraryCleanupApproval: {
+				findMany: vi.fn().mockResolvedValue([]),
 				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
 			libraryCleanupConfig: {
@@ -70,6 +71,7 @@ describe("library cleanup scheduler dependencies", () => {
 				externalRuleCacheRefresher,
 			}),
 			"user-1",
+			{ actorType: "scheduler", trigger: "scheduled" },
 		);
 	});
 
@@ -132,6 +134,7 @@ describe("library cleanup scheduler dependencies", () => {
 		const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 		const prisma = {
 			libraryCleanupApproval: {
+				findMany: vi.fn().mockResolvedValue([]),
 				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
 			libraryCleanupConfig: {
@@ -173,6 +176,7 @@ describe("library cleanup scheduler dependencies", () => {
 		const notify = vi.fn().mockResolvedValue(undefined);
 		const prisma = {
 			libraryCleanupApproval: {
+				findMany: vi.fn().mockResolvedValue([]),
 				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
 			libraryCleanupConfig: {

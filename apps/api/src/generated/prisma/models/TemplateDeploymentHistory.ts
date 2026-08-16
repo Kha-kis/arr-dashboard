@@ -65,6 +65,9 @@ export type TemplateDeploymentHistoryMinAggregateOutputType = {
   rolledBack: boolean | null
   rolledBackAt: Date | null
   rolledBackBy: string | null
+  undeployStatus: string | null
+  undeployAttemptedAt: Date | null
+  undeployProgress: string | null
   deploymentNotes: string | null
   templateSnapshot: string | null
 }
@@ -92,6 +95,9 @@ export type TemplateDeploymentHistoryMaxAggregateOutputType = {
   rolledBack: boolean | null
   rolledBackAt: Date | null
   rolledBackBy: string | null
+  undeployStatus: string | null
+  undeployAttemptedAt: Date | null
+  undeployProgress: string | null
   deploymentNotes: string | null
   templateSnapshot: string | null
 }
@@ -119,6 +125,9 @@ export type TemplateDeploymentHistoryCountAggregateOutputType = {
   rolledBack: number
   rolledBackAt: number
   rolledBackBy: number
+  undeployStatus: number
+  undeployAttemptedAt: number
+  undeployProgress: number
   deploymentNotes: number
   templateSnapshot: number
   _all: number
@@ -164,6 +173,9 @@ export type TemplateDeploymentHistoryMinAggregateInputType = {
   rolledBack?: true
   rolledBackAt?: true
   rolledBackBy?: true
+  undeployStatus?: true
+  undeployAttemptedAt?: true
+  undeployProgress?: true
   deploymentNotes?: true
   templateSnapshot?: true
 }
@@ -191,6 +203,9 @@ export type TemplateDeploymentHistoryMaxAggregateInputType = {
   rolledBack?: true
   rolledBackAt?: true
   rolledBackBy?: true
+  undeployStatus?: true
+  undeployAttemptedAt?: true
+  undeployProgress?: true
   deploymentNotes?: true
   templateSnapshot?: true
 }
@@ -218,6 +233,9 @@ export type TemplateDeploymentHistoryCountAggregateInputType = {
   rolledBack?: true
   rolledBackAt?: true
   rolledBackBy?: true
+  undeployStatus?: true
+  undeployAttemptedAt?: true
+  undeployProgress?: true
   deploymentNotes?: true
   templateSnapshot?: true
   _all?: true
@@ -332,6 +350,9 @@ export type TemplateDeploymentHistoryGroupByOutputType = {
   rolledBack: boolean
   rolledBackAt: Date | null
   rolledBackBy: string | null
+  undeployStatus: string | null
+  undeployAttemptedAt: Date | null
+  undeployProgress: string | null
   deploymentNotes: string | null
   templateSnapshot: string | null
   _count: TemplateDeploymentHistoryCountAggregateOutputType | null
@@ -382,6 +403,9 @@ export type TemplateDeploymentHistoryWhereInput = {
   rolledBack?: Prisma.BoolFilter<"TemplateDeploymentHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableFilter<"TemplateDeploymentHistory"> | Date | string | null
   rolledBackBy?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
+  undeployStatus?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
+  undeployAttemptedAt?: Prisma.DateTimeNullableFilter<"TemplateDeploymentHistory"> | Date | string | null
+  undeployProgress?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
   deploymentNotes?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
   templateSnapshot?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
   template?: Prisma.XOR<Prisma.TrashTemplateScalarRelationFilter, Prisma.TrashTemplateWhereInput>
@@ -412,6 +436,9 @@ export type TemplateDeploymentHistoryOrderByWithRelationInput = {
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrderInput | Prisma.SortOrder
   rolledBackBy?: Prisma.SortOrderInput | Prisma.SortOrder
+  undeployStatus?: Prisma.SortOrderInput | Prisma.SortOrder
+  undeployAttemptedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  undeployProgress?: Prisma.SortOrderInput | Prisma.SortOrder
   deploymentNotes?: Prisma.SortOrderInput | Prisma.SortOrder
   templateSnapshot?: Prisma.SortOrderInput | Prisma.SortOrder
   template?: Prisma.TrashTemplateOrderByWithRelationInput
@@ -445,6 +472,9 @@ export type TemplateDeploymentHistoryWhereUniqueInput = Prisma.AtLeast<{
   rolledBack?: Prisma.BoolFilter<"TemplateDeploymentHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableFilter<"TemplateDeploymentHistory"> | Date | string | null
   rolledBackBy?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
+  undeployStatus?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
+  undeployAttemptedAt?: Prisma.DateTimeNullableFilter<"TemplateDeploymentHistory"> | Date | string | null
+  undeployProgress?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
   deploymentNotes?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
   templateSnapshot?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
   template?: Prisma.XOR<Prisma.TrashTemplateScalarRelationFilter, Prisma.TrashTemplateWhereInput>
@@ -475,6 +505,9 @@ export type TemplateDeploymentHistoryOrderByWithAggregationInput = {
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrderInput | Prisma.SortOrder
   rolledBackBy?: Prisma.SortOrderInput | Prisma.SortOrder
+  undeployStatus?: Prisma.SortOrderInput | Prisma.SortOrder
+  undeployAttemptedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  undeployProgress?: Prisma.SortOrderInput | Prisma.SortOrder
   deploymentNotes?: Prisma.SortOrderInput | Prisma.SortOrder
   templateSnapshot?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.TemplateDeploymentHistoryCountOrderByAggregateInput
@@ -510,6 +543,9 @@ export type TemplateDeploymentHistoryScalarWhereWithAggregatesInput = {
   rolledBack?: Prisma.BoolWithAggregatesFilter<"TemplateDeploymentHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableWithAggregatesFilter<"TemplateDeploymentHistory"> | Date | string | null
   rolledBackBy?: Prisma.StringNullableWithAggregatesFilter<"TemplateDeploymentHistory"> | string | null
+  undeployStatus?: Prisma.StringNullableWithAggregatesFilter<"TemplateDeploymentHistory"> | string | null
+  undeployAttemptedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"TemplateDeploymentHistory"> | Date | string | null
+  undeployProgress?: Prisma.StringNullableWithAggregatesFilter<"TemplateDeploymentHistory"> | string | null
   deploymentNotes?: Prisma.StringNullableWithAggregatesFilter<"TemplateDeploymentHistory"> | string | null
   templateSnapshot?: Prisma.StringNullableWithAggregatesFilter<"TemplateDeploymentHistory"> | string | null
 }
@@ -534,6 +570,9 @@ export type TemplateDeploymentHistoryCreateInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
   template: Prisma.TrashTemplateCreateNestedOneWithoutDeploymentHistoryInput
@@ -564,6 +603,9 @@ export type TemplateDeploymentHistoryUncheckedCreateInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
 }
@@ -588,6 +630,9 @@ export type TemplateDeploymentHistoryUpdateInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   template?: Prisma.TrashTemplateUpdateOneRequiredWithoutDeploymentHistoryNestedInput
@@ -618,6 +663,9 @@ export type TemplateDeploymentHistoryUncheckedUpdateInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
@@ -645,6 +693,9 @@ export type TemplateDeploymentHistoryCreateManyInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
 }
@@ -669,6 +720,9 @@ export type TemplateDeploymentHistoryUpdateManyMutationInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
@@ -696,6 +750,9 @@ export type TemplateDeploymentHistoryUncheckedUpdateManyInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
@@ -733,6 +790,9 @@ export type TemplateDeploymentHistoryCountOrderByAggregateInput = {
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrder
   rolledBackBy?: Prisma.SortOrder
+  undeployStatus?: Prisma.SortOrder
+  undeployAttemptedAt?: Prisma.SortOrder
+  undeployProgress?: Prisma.SortOrder
   deploymentNotes?: Prisma.SortOrder
   templateSnapshot?: Prisma.SortOrder
 }
@@ -768,6 +828,9 @@ export type TemplateDeploymentHistoryMaxOrderByAggregateInput = {
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrder
   rolledBackBy?: Prisma.SortOrder
+  undeployStatus?: Prisma.SortOrder
+  undeployAttemptedAt?: Prisma.SortOrder
+  undeployProgress?: Prisma.SortOrder
   deploymentNotes?: Prisma.SortOrder
   templateSnapshot?: Prisma.SortOrder
 }
@@ -795,6 +858,9 @@ export type TemplateDeploymentHistoryMinOrderByAggregateInput = {
   rolledBack?: Prisma.SortOrder
   rolledBackAt?: Prisma.SortOrder
   rolledBackBy?: Prisma.SortOrder
+  undeployStatus?: Prisma.SortOrder
+  undeployAttemptedAt?: Prisma.SortOrder
+  undeployProgress?: Prisma.SortOrder
   deploymentNotes?: Prisma.SortOrder
   templateSnapshot?: Prisma.SortOrder
 }
@@ -953,6 +1019,9 @@ export type TemplateDeploymentHistoryCreateWithoutInstanceInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
   template: Prisma.TrashTemplateCreateNestedOneWithoutDeploymentHistoryInput
@@ -981,6 +1050,9 @@ export type TemplateDeploymentHistoryUncheckedCreateWithoutInstanceInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
 }
@@ -1036,6 +1108,9 @@ export type TemplateDeploymentHistoryScalarWhereInput = {
   rolledBack?: Prisma.BoolFilter<"TemplateDeploymentHistory"> | boolean
   rolledBackAt?: Prisma.DateTimeNullableFilter<"TemplateDeploymentHistory"> | Date | string | null
   rolledBackBy?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
+  undeployStatus?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
+  undeployAttemptedAt?: Prisma.DateTimeNullableFilter<"TemplateDeploymentHistory"> | Date | string | null
+  undeployProgress?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
   deploymentNotes?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
   templateSnapshot?: Prisma.StringNullableFilter<"TemplateDeploymentHistory"> | string | null
 }
@@ -1060,6 +1135,9 @@ export type TemplateDeploymentHistoryCreateWithoutTemplateInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutDeploymentHistoryInput
@@ -1088,6 +1166,9 @@ export type TemplateDeploymentHistoryUncheckedCreateWithoutTemplateInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
 }
@@ -1137,6 +1218,9 @@ export type TemplateDeploymentHistoryCreateWithoutBackupInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
   template: Prisma.TrashTemplateCreateNestedOneWithoutDeploymentHistoryInput
@@ -1165,6 +1249,9 @@ export type TemplateDeploymentHistoryUncheckedCreateWithoutBackupInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
 }
@@ -1216,6 +1303,9 @@ export type TemplateDeploymentHistoryCreateManyInstanceInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
 }
@@ -1240,6 +1330,9 @@ export type TemplateDeploymentHistoryUpdateWithoutInstanceInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   template?: Prisma.TrashTemplateUpdateOneRequiredWithoutDeploymentHistoryNestedInput
@@ -1268,6 +1361,9 @@ export type TemplateDeploymentHistoryUncheckedUpdateWithoutInstanceInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
@@ -1294,6 +1390,9 @@ export type TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
@@ -1320,6 +1419,9 @@ export type TemplateDeploymentHistoryCreateManyTemplateInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
 }
@@ -1344,6 +1446,9 @@ export type TemplateDeploymentHistoryUpdateWithoutTemplateInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutDeploymentHistoryNestedInput
@@ -1372,6 +1477,9 @@ export type TemplateDeploymentHistoryUncheckedUpdateWithoutTemplateInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
@@ -1398,6 +1506,9 @@ export type TemplateDeploymentHistoryUncheckedUpdateManyWithoutTemplateInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
@@ -1424,6 +1535,9 @@ export type TemplateDeploymentHistoryCreateManyBackupInput = {
   rolledBack?: boolean
   rolledBackAt?: Date | string | null
   rolledBackBy?: string | null
+  undeployStatus?: string | null
+  undeployAttemptedAt?: Date | string | null
+  undeployProgress?: string | null
   deploymentNotes?: string | null
   templateSnapshot?: string | null
 }
@@ -1448,6 +1562,9 @@ export type TemplateDeploymentHistoryUpdateWithoutBackupInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   template?: Prisma.TrashTemplateUpdateOneRequiredWithoutDeploymentHistoryNestedInput
@@ -1476,6 +1593,9 @@ export type TemplateDeploymentHistoryUncheckedUpdateWithoutBackupInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
@@ -1502,6 +1622,9 @@ export type TemplateDeploymentHistoryUncheckedUpdateManyWithoutBackupInput = {
   rolledBack?: Prisma.BoolFieldUpdateOperationsInput | boolean
   rolledBackAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   rolledBackBy?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployStatus?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  undeployAttemptedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  undeployProgress?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   deploymentNotes?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   templateSnapshot?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
 }
@@ -1531,6 +1654,9 @@ export type TemplateDeploymentHistorySelect<ExtArgs extends runtime.Types.Extens
   rolledBack?: boolean
   rolledBackAt?: boolean
   rolledBackBy?: boolean
+  undeployStatus?: boolean
+  undeployAttemptedAt?: boolean
+  undeployProgress?: boolean
   deploymentNotes?: boolean
   templateSnapshot?: boolean
   template?: boolean | Prisma.TrashTemplateDefaultArgs<ExtArgs>
@@ -1561,6 +1687,9 @@ export type TemplateDeploymentHistorySelectCreateManyAndReturn<ExtArgs extends r
   rolledBack?: boolean
   rolledBackAt?: boolean
   rolledBackBy?: boolean
+  undeployStatus?: boolean
+  undeployAttemptedAt?: boolean
+  undeployProgress?: boolean
   deploymentNotes?: boolean
   templateSnapshot?: boolean
   template?: boolean | Prisma.TrashTemplateDefaultArgs<ExtArgs>
@@ -1591,6 +1720,9 @@ export type TemplateDeploymentHistorySelectUpdateManyAndReturn<ExtArgs extends r
   rolledBack?: boolean
   rolledBackAt?: boolean
   rolledBackBy?: boolean
+  undeployStatus?: boolean
+  undeployAttemptedAt?: boolean
+  undeployProgress?: boolean
   deploymentNotes?: boolean
   templateSnapshot?: boolean
   template?: boolean | Prisma.TrashTemplateDefaultArgs<ExtArgs>
@@ -1621,11 +1753,14 @@ export type TemplateDeploymentHistorySelectScalar = {
   rolledBack?: boolean
   rolledBackAt?: boolean
   rolledBackBy?: boolean
+  undeployStatus?: boolean
+  undeployAttemptedAt?: boolean
+  undeployProgress?: boolean
   deploymentNotes?: boolean
   templateSnapshot?: boolean
 }
 
-export type TemplateDeploymentHistoryOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "templateId" | "instanceId" | "userId" | "deployedAt" | "deployedBy" | "duration" | "status" | "appliedCFs" | "failedCFs" | "totalCFs" | "conflictsCount" | "appliedConfigs" | "failedConfigs" | "conflictResolutions" | "errors" | "warnings" | "backupId" | "canRollback" | "rolledBack" | "rolledBackAt" | "rolledBackBy" | "deploymentNotes" | "templateSnapshot", ExtArgs["result"]["templateDeploymentHistory"]>
+export type TemplateDeploymentHistoryOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "templateId" | "instanceId" | "userId" | "deployedAt" | "deployedBy" | "duration" | "status" | "appliedCFs" | "failedCFs" | "totalCFs" | "conflictsCount" | "appliedConfigs" | "failedConfigs" | "conflictResolutions" | "errors" | "warnings" | "backupId" | "canRollback" | "rolledBack" | "rolledBackAt" | "rolledBackBy" | "undeployStatus" | "undeployAttemptedAt" | "undeployProgress" | "deploymentNotes" | "templateSnapshot", ExtArgs["result"]["templateDeploymentHistory"]>
 export type TemplateDeploymentHistoryInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   template?: boolean | Prisma.TrashTemplateDefaultArgs<ExtArgs>
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
@@ -1672,6 +1807,9 @@ export type $TemplateDeploymentHistoryPayload<ExtArgs extends runtime.Types.Exte
     rolledBack: boolean
     rolledBackAt: Date | null
     rolledBackBy: string | null
+    undeployStatus: string | null
+    undeployAttemptedAt: Date | null
+    undeployProgress: string | null
     deploymentNotes: string | null
     templateSnapshot: string | null
   }, ExtArgs["result"]["templateDeploymentHistory"]>
@@ -2122,6 +2260,9 @@ export interface TemplateDeploymentHistoryFieldRefs {
   readonly rolledBack: Prisma.FieldRef<"TemplateDeploymentHistory", 'Boolean'>
   readonly rolledBackAt: Prisma.FieldRef<"TemplateDeploymentHistory", 'DateTime'>
   readonly rolledBackBy: Prisma.FieldRef<"TemplateDeploymentHistory", 'String'>
+  readonly undeployStatus: Prisma.FieldRef<"TemplateDeploymentHistory", 'String'>
+  readonly undeployAttemptedAt: Prisma.FieldRef<"TemplateDeploymentHistory", 'DateTime'>
+  readonly undeployProgress: Prisma.FieldRef<"TemplateDeploymentHistory", 'String'>
   readonly deploymentNotes: Prisma.FieldRef<"TemplateDeploymentHistory", 'String'>
   readonly templateSnapshot: Prisma.FieldRef<"TemplateDeploymentHistory", 'String'>
 }

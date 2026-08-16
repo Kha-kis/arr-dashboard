@@ -55,6 +55,15 @@ import {
 } from "./cleanup-maintenance-gate.js";
 import { deriveArrPolicyEvidence } from "./arr-policy-evidence.js";
 import {
+	appendCleanupAuditEvent,
+	appendCleanupTerminalAuditEvent,
+	createCleanupAuditEventKey,
+	createCleanupTerminalAuditState,
+	type AppendCleanupAuditEventInput,
+	type CleanupAuditActorType,
+	type CleanupAuditTrigger,
+} from "./cleanup-audit.js";
+import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
 	evaluateEpisodeWatchCountRule,
@@ -142,6 +151,29 @@ const CACHE_QUERY_BATCH_SIZE = 500;
 const PROVIDER_EVIDENCE_FRESHNESS_MS = 24 * 60 * 60 * 1000;
 
 export type SeriesMutationTransition = "unchanged" | "all_files_deleted";
+
+export type CleanupAuditContext = {
+	actorType: CleanupAuditActorType;
+	actorId?: string;
+	trigger: CleanupAuditTrigger;
+};
+
+const DEFAULT_SCHEDULED_AUDIT_CONTEXT: CleanupAuditContext = {
+	actorType: "scheduler",
+	trigger: "scheduled",
+};
+
+const DEFAULT_DIRECT_AUDIT_CONTEXT: CleanupAuditContext = {
+	actorType: "system",
+	trigger: "scheduled",
+};
+
+function withCleanupAuditTrigger(
+	context: CleanupAuditContext,
+	trigger: CleanupAuditTrigger,
+): CleanupAuditContext {
+	return { ...context, trigger };
+}
 
 type MutationAuthorityEvidence =
 	| { liveEpisodeWatchSources: VerifiedEpisodePlexWatchSource[] }
@@ -1179,6 +1211,347 @@ class CleanupApprovalOwnershipLostError extends Error {
 	}
 }
 
+function cleanupAuditTarget(
+	approval: Pick<
+		LibraryCleanupApproval,
+		"action" | "arrEpisodeId" | "arrItemId" | "id" | "instanceId" | "itemType" | "targetScope"
+	>,
+) {
+	const itemType =
+		approval.itemType === "movie" || approval.itemType === "series" ? approval.itemType : undefined;
+	return {
+		kind: "approval",
+		id: approval.id,
+		instanceId: approval.instanceId,
+		...(itemType ? { itemType } : {}),
+		arrItemId: approval.arrItemId,
+		...(approval.arrEpisodeId === null ? {} : { arrEpisodeId: approval.arrEpisodeId }),
+		targetScope: approval.targetScope === "episode" ? "episode" : "series",
+	} as const;
+}
+
+function cleanupAuditSummary(
+	approval: Pick<
+		LibraryCleanupApproval,
+		| "action"
+		| "episodeNumber"
+		| "episodeTitle"
+		| "matchedRuleId"
+		| "matchedRuleName"
+		| "reason"
+		| "seasonNumber"
+		| "targetScope"
+		| "title"
+	>,
+	reason = approval.reason,
+) {
+	const title =
+		approval.targetScope === "episode" &&
+		typeof approval.seasonNumber === "number" &&
+		typeof approval.episodeNumber === "number"
+			? `${approval.title} S${String(approval.seasonNumber).padStart(2, "0")}E${String(approval.episodeNumber).padStart(2, "0")}${approval.episodeTitle ? ` · ${approval.episodeTitle}` : ""}`
+			: approval.title;
+	return {
+		action:
+			approval.action === "unmonitor" || approval.action === "delete_files"
+				? approval.action
+				: "delete",
+		title,
+		ruleId: approval.matchedRuleId,
+		ruleName: approval.matchedRuleName,
+		reason,
+	} as const;
+}
+
+async function appendCleanupAuditBestEffort(
+	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+	input: Parameters<typeof appendCleanupAuditEvent>[1],
+): Promise<boolean> {
+	try {
+		await appendCleanupAuditEvent(deps.prisma, input);
+		return true;
+	} catch (error) {
+		deps.log.warn(
+			{ err: error, actionId: input.actionId, eventType: input.eventType },
+			"Cleanup audit append failed; authoritative cleanup state remains unchanged",
+		);
+		return false;
+	}
+}
+
+async function appendCleanupProposalAudit(
+	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+	userId: string,
+	approval: Pick<
+		LibraryCleanupApproval,
+		| "action"
+		| "arrEpisodeId"
+		| "arrItemId"
+		| "configId"
+		| "episodeNumber"
+		| "episodeTitle"
+		| "id"
+		| "instanceId"
+		| "itemType"
+		| "matchedRuleId"
+		| "matchedRuleName"
+		| "reason"
+		| "seasonNumber"
+		| "targetScope"
+		| "title"
+	>,
+	auditContext: CleanupAuditContext,
+): Promise<void> {
+	const correlationId = `proposal:${approval.id}`;
+	const eventType = "proposal_created" as const;
+	await appendCleanupAuditBestEffort(deps, {
+		userId,
+		configId: approval.configId,
+		eventKey: createCleanupAuditEventKey({
+			actionId: approval.id,
+			correlationId,
+			eventType,
+		}),
+		actionId: approval.id,
+		correlationId,
+		actorType: auditContext.actorType,
+		...(auditContext.actorId ? { actorId: auditContext.actorId } : {}),
+		eventType,
+		trigger: auditContext.trigger,
+		target: cleanupAuditTarget(approval),
+		summary: cleanupAuditSummary(approval),
+		outcome: "info",
+		evidence: { durableState: "created" },
+	});
+}
+
+async function appendCleanupClaimAudit(
+	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+	userId: string,
+	approval: Pick<
+		LibraryCleanupApproval,
+		| "action"
+		| "arrEpisodeId"
+		| "arrItemId"
+		| "configId"
+		| "episodeNumber"
+		| "episodeTitle"
+		| "id"
+		| "instanceId"
+		| "itemType"
+		| "matchedRuleId"
+		| "matchedRuleName"
+		| "reason"
+		| "seasonNumber"
+		| "targetScope"
+		| "title"
+	>,
+	correlationId: string,
+	auditContext: CleanupAuditContext,
+): Promise<void> {
+	const eventType = "claim" as const;
+	await appendCleanupAuditBestEffort(deps, {
+		userId,
+		configId: approval.configId,
+		eventKey: createCleanupAuditEventKey({
+			actionId: approval.id,
+			correlationId,
+			eventType,
+		}),
+		actionId: approval.id,
+		correlationId,
+		actorType: auditContext.actorType,
+		...(auditContext.actorId ? { actorId: auditContext.actorId } : {}),
+		eventType,
+		trigger: auditContext.trigger,
+		target: cleanupAuditTarget(approval),
+		summary: cleanupAuditSummary(approval),
+		outcome: "info",
+		evidence: { executionClaimed: true },
+	});
+}
+
+async function appendCleanupMutationStartedAudit(
+	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+	userId: string,
+	approval: Parameters<typeof appendCleanupClaimAudit>[2],
+	correlationId: string,
+	auditContext: CleanupAuditContext,
+): Promise<void> {
+	const eventType = "mutation_started" as const;
+	await appendCleanupAuditBestEffort(deps, {
+		userId,
+		configId: approval.configId,
+		eventKey: createCleanupAuditEventKey({
+			actionId: approval.id,
+			correlationId,
+			eventType,
+		}),
+		actionId: approval.id,
+		correlationId,
+		actorType: auditContext.actorType,
+		...(auditContext.actorId ? { actorId: auditContext.actorId } : {}),
+		eventType,
+		trigger: auditContext.trigger,
+		target: cleanupAuditTarget(approval),
+		summary: cleanupAuditSummary(approval),
+		outcome: "info",
+		evidence: { liveAuthorityVerified: true },
+	});
+}
+
+async function appendCleanupTerminalAudit(
+	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+	userId: string,
+	approval: Parameters<typeof appendCleanupClaimAudit>[2],
+	correlationId: string,
+	outcome: "success" | "blocked" | "failed",
+	auditContext: CleanupAuditContext,
+	reconciledWithoutMutation = false,
+	reason?: string,
+): Promise<void> {
+	const input = buildCleanupTerminalAuditInput(
+		userId,
+		approval,
+		correlationId,
+		outcome,
+		auditContext,
+		reconciledWithoutMutation,
+		reason,
+	);
+	try {
+		await appendCleanupTerminalAuditEvent(deps.prisma, input, {
+			approvalId: approval.id,
+			status: outcome === "success" ? "executed" : "expired",
+		});
+	} catch (error) {
+		deps.log.warn(
+			{ err: error, actionId: input.actionId, eventType: input.eventType },
+			"Cleanup terminal audit append failed; its durable envelope remains repairable",
+		);
+	}
+}
+
+function cleanupTerminalReason(
+	outcome: "success" | "blocked" | "failed",
+	reconciledWithoutMutation: boolean,
+	reason?: string,
+): string {
+	if (reason) return reason;
+	if (outcome === "success") {
+		return reconciledWithoutMutation
+			? "Cleanup action was already complete in ARR and was reconciled without another mutation."
+			: "Cleanup action completed successfully.";
+	}
+	return outcome === "blocked"
+		? "Current cleanup safety policy blocked this action."
+		: "Cleanup action failed.";
+}
+
+function buildCleanupTerminalAuditInput(
+	userId: string,
+	approval: Parameters<typeof appendCleanupClaimAudit>[2],
+	correlationId: string,
+	outcome: "success" | "blocked" | "failed",
+	auditContext: CleanupAuditContext,
+	reconciledWithoutMutation = false,
+	reason?: string,
+): AppendCleanupAuditEventInput {
+	const eventType = outcome === "success" ? "succeeded" : "failed";
+	const terminalReason = cleanupTerminalReason(outcome, reconciledWithoutMutation, reason);
+	return {
+		userId,
+		configId: approval.configId,
+		eventKey: createCleanupAuditEventKey({
+			actionId: approval.id,
+			correlationId,
+			eventType,
+		}),
+		actionId: approval.id,
+		correlationId,
+		actorType: auditContext.actorType,
+		...(auditContext.actorId ? { actorId: auditContext.actorId } : {}),
+		eventType,
+		trigger: auditContext.trigger,
+		target: cleanupAuditTarget(approval),
+		summary: cleanupAuditSummary(approval, terminalReason),
+		outcome,
+		evidence: { authoritativeTerminalStatePersisted: true, reconciledWithoutMutation },
+	};
+}
+
+function buildCleanupTerminalAuditState(
+	userId: string,
+	approval: Parameters<typeof appendCleanupClaimAudit>[2],
+	correlationId: string,
+	outcome: "success" | "blocked" | "failed",
+	auditContext: CleanupAuditContext,
+	reconciledWithoutMutation = false,
+	reason?: string,
+) {
+	return createCleanupTerminalAuditState(
+		buildCleanupTerminalAuditInput(
+			userId,
+			approval,
+			correlationId,
+			outcome,
+			auditContext,
+			reconciledWithoutMutation,
+			reason,
+		),
+	);
+}
+
+const CLEAR_CLEANUP_TERMINAL_AUDIT_STATE = {
+	terminalAuditCorrelationId: null,
+	terminalAuditEventType: null,
+	terminalAuditOutcome: null,
+	terminalAuditActorType: null,
+	terminalAuditActorId: null,
+	terminalAuditTrigger: null,
+	terminalAuditReason: null,
+	terminalAuditRecordedAt: null,
+} as const;
+
+async function appendCleanupFailureAudit(
+	deps: Pick<CleanupExecutorDeps, "log" | "prisma">,
+	userId: string,
+	approval: Parameters<typeof appendCleanupClaimAudit>[2],
+	correlationId: string,
+	auditContext: CleanupAuditContext,
+	options: {
+		durableStatus: "pending" | "retry_pending";
+		mutationAttempted: boolean;
+		reason: string;
+		outcome?: "blocked" | "failed";
+	},
+): Promise<void> {
+	const eventType = "failed" as const;
+	await appendCleanupAuditBestEffort(deps, {
+		userId,
+		configId: approval.configId,
+		eventKey: createCleanupAuditEventKey({
+			actionId: approval.id,
+			correlationId,
+			eventType,
+		}),
+		actionId: approval.id,
+		correlationId,
+		actorType: auditContext.actorType,
+		...(auditContext.actorId ? { actorId: auditContext.actorId } : {}),
+		eventType,
+		trigger: auditContext.trigger,
+		target: cleanupAuditTarget(approval),
+		summary: cleanupAuditSummary(approval, options.reason),
+		outcome: options.outcome ?? "failed",
+		evidence: {
+			durableStatus: options.durableStatus,
+			mutationAttempted: options.mutationAttempted,
+			retryableStatePersisted: true,
+		},
+	});
+}
+
 async function updateClaimedCleanupApproval(
 	prisma: CleanupExecutorDeps["prisma"],
 	userId: string,
@@ -1763,7 +2136,13 @@ async function persistAndClaimDirectMutationIntent(
 	item: FlaggedItem,
 	safetyPlan: SharedMediaSafetyPlan,
 	providerEvidence: SanitizedProviderEvidence,
-): Promise<{ id: string; claimed: boolean; executionToken: string }> {
+	auditContext: CleanupAuditContext,
+): Promise<{
+	id: string;
+	claimed: boolean;
+	executionToken: string;
+	executionAuditCorrelationId: string;
+}> {
 	const executablePlan = asExecutableSafetyPlan(safetyPlan);
 	if (!executablePlan) {
 		throw new Error("No executable cleanup safety plan was available for the mutation intent");
@@ -1788,9 +2167,11 @@ async function persistAndClaimDirectMutationIntent(
 	].join(":");
 	const now = new Date();
 	const executionToken = randomUUID();
+	const executionAuditCorrelationId = randomUUID();
+	let createdIntent: LibraryCleanupApproval | null = null;
 
 	try {
-		await deps.prisma.libraryCleanupApproval.create({
+		createdIntent = await deps.prisma.libraryCleanupApproval.create({
 			data: {
 				id: intentId,
 				configId: config.id,
@@ -1820,6 +2201,9 @@ async function persistAndClaimDirectMutationIntent(
 	} catch (error) {
 		if ((error as { code?: string }).code !== "P2002") throw error;
 	}
+	if (createdIntent) {
+		await appendCleanupProposalAudit(deps, userId, createdIntent, auditContext);
+	}
 
 	const claim = await deps.prisma.libraryCleanupApproval.updateMany({
 		where: {
@@ -1827,9 +2211,21 @@ async function persistAndClaimDirectMutationIntent(
 			config: { userId },
 			status: "retry_pending",
 		},
-		data: { status: "retry_executing", reviewedAt: now, executionToken },
+		data: {
+			status: "retry_executing",
+			reviewedAt: now,
+			executionToken,
+			executionAuditCorrelationId,
+			reconciledWithoutMutation: false,
+			...CLEAR_CLEANUP_TERMINAL_AUDIT_STATE,
+		},
 	});
-	return { id: intentId, claimed: claim.count === 1, executionToken };
+	return {
+		id: intentId,
+		claimed: claim.count === 1,
+		executionToken,
+		executionAuditCorrelationId,
+	};
 }
 
 async function buildEvaluatedCacheSafetyPlan(
@@ -2820,13 +3216,17 @@ async function executeCleanupPreviewGuarded(
 export async function executeCleanupRun(
 	deps: CleanupExecutorDeps,
 	userId: string,
+	auditContext: CleanupAuditContext = DEFAULT_SCHEDULED_AUDIT_CONTEXT,
 ): Promise<CleanupRunResult> {
-	return await withCleanupOperationGuard(() => executeCleanupRunGuarded(deps, userId));
+	return await withCleanupOperationGuard(() =>
+		executeCleanupRunGuarded(deps, userId, auditContext),
+	);
 }
 
 async function executeCleanupRunGuarded(
 	deps: CleanupExecutorDeps,
 	userId: string,
+	auditContext: CleanupAuditContext,
 ): Promise<CleanupRunResult> {
 	const startTime = Date.now();
 	const { prisma, log } = deps;
@@ -3049,6 +3449,7 @@ async function executeCleanupRunGuarded(
 				providerEvidence,
 				approvalSelection.skippedDetails,
 				approvalSelection.unmatchedInFlightRetryTargetCount,
+				auditContext,
 			);
 		}
 
@@ -3066,6 +3467,7 @@ async function executeCleanupRunGuarded(
 			runLease.assertOwnership,
 			runLease.runClaimToken,
 			providerEvidence,
+			auditContext,
 		);
 	} finally {
 		await runLease.release();
@@ -3081,9 +3483,14 @@ export async function executeApprovedItems(
 	userId: string,
 	approvalIds: string[],
 	approvalRequestToken?: string,
+	auditContext: CleanupAuditContext = {
+		actorType: "operator",
+		actorId: userId,
+		trigger: "approval",
+	},
 ): Promise<{ removed: number; failed: number; errors: string[] }> {
 	return await withCleanupOperationGuard(() =>
-		executeApprovedItemsGuarded(deps, userId, approvalIds, approvalRequestToken),
+		executeApprovedItemsGuarded(deps, userId, approvalIds, approvalRequestToken, auditContext),
 	);
 }
 
@@ -3092,6 +3499,11 @@ async function executeApprovedItemsGuarded(
 	userId: string,
 	approvalIds: string[],
 	approvalRequestToken?: string,
+	auditContext: CleanupAuditContext = {
+		actorType: "operator",
+		actorId: userId,
+		trigger: "approval",
+	},
 ): Promise<{ removed: number; failed: number; errors: string[] }> {
 	const config = await deps.prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
@@ -3136,6 +3548,7 @@ async function executeApprovedItemsGuarded(
 			assertExecutionAllowed: runLease.assertOwnership,
 			claimExecutionToken: approvalRequestToken,
 			cleanupRunClaimToken: runLease.runClaimToken,
+			auditContext,
 		});
 		const unclaimedErrors = result.unclaimedIds.map(
 			() => "Cleanup approval was not found, expired, no longer approved, or changed ownership.",
@@ -3166,14 +3579,22 @@ export async function executeRetryItems(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	retryIds: string[],
+	auditContext: CleanupAuditContext = {
+		actorType: "operator",
+		actorId: userId,
+		trigger: "retry",
+	},
 ): Promise<{ removed: number; reconciled: number; failed: number; errors: string[] }> {
-	return await withCleanupOperationGuard(() => executeRetryItemsGuarded(deps, userId, retryIds));
+	return await withCleanupOperationGuard(() =>
+		executeRetryItemsGuarded(deps, userId, retryIds, auditContext),
+	);
 }
 
 async function executeRetryItemsGuarded(
 	deps: CleanupExecutorDeps,
 	userId: string,
 	retryIds: string[],
+	auditContext: CleanupAuditContext,
 ): Promise<{ removed: number; reconciled: number; failed: number; errors: string[] }> {
 	const config = await deps.prisma.libraryCleanupConfig.findUnique({
 		where: { userId },
@@ -3197,6 +3618,7 @@ async function executeRetryItemsGuarded(
 			enforceExpiry: false,
 			assertExecutionAllowed: runLease.assertOwnership,
 			cleanupRunClaimToken: runLease.runClaimToken,
+			auditContext,
 		});
 		const unclaimedErrors = result.unclaimedIds.map(
 			() => "Cleanup retry was not found, was no longer pending, or changed ownership.",
@@ -3630,6 +4052,7 @@ async function executeQueuedCleanupItems(
 		assertExecutionAllowed?: () => Promise<void>;
 		claimExecutionToken?: string;
 		cleanupRunClaimToken?: string;
+		auditContext: CleanupAuditContext;
 	},
 ): Promise<QueuedCleanupExecutionResult> {
 	const { prisma, arrClientFactory, log } = deps;
@@ -3660,6 +4083,7 @@ async function executeQueuedCleanupItems(
 	const now = new Date();
 	const claimedApprovalIds: string[] = [];
 	const claimedApprovalTokens = new Map<string, string>();
+	const claimedAuditCorrelationIds = new Map<string, string>();
 	const mutationAttemptedApprovalIds = new Set<string>();
 	const mutationBudgetConsumedIds = new Set<string>();
 	const confirmedPartialFileDeletionIds = new Set<string>();
@@ -3668,6 +4092,7 @@ async function executeQueuedCleanupItems(
 	for (const approvalId of [...new Set(approvalIds)]) {
 		try {
 			const executionToken = randomUUID();
+			const executionAuditCorrelationId = options.claimExecutionToken ?? randomUUID();
 			const claim = await prisma.libraryCleanupApproval.updateMany({
 				where: {
 					id: approvalId,
@@ -3676,11 +4101,19 @@ async function executeQueuedCleanupItems(
 					...(options.claimExecutionToken ? { executionToken: options.claimExecutionToken } : {}),
 					...(options.enforceExpiry ? { expiresAt: { gt: now } } : {}),
 				},
-				data: { status: options.executeStatus, reviewedAt: now, executionToken },
+				data: {
+					status: options.executeStatus,
+					reviewedAt: now,
+					executionToken,
+					executionAuditCorrelationId,
+					reconciledWithoutMutation: false,
+					...CLEAR_CLEANUP_TERMINAL_AUDIT_STATE,
+				},
 			});
 			if (claim.count === 1) {
 				claimedApprovalIds.push(approvalId);
 				claimedApprovalTokens.set(approvalId, executionToken);
+				claimedAuditCorrelationIds.set(approvalId, executionAuditCorrelationId);
 			} else unclaimedIds.push(approvalId);
 		} catch (error) {
 			claimErrors.push("A cleanup approval could not be claimed and was not executed.");
@@ -3720,10 +4153,18 @@ async function executeQueuedCleanupItems(
 
 		for (const approval of approvals) {
 			const claimedExecutionToken = claimedApprovalTokens.get(approval.id);
-			if (!claimedExecutionToken) {
+			const executionAuditCorrelationId = claimedAuditCorrelationIds.get(approval.id);
+			if (!claimedExecutionToken || !executionAuditCorrelationId) {
 				unclaimedIds.push(approval.id);
 				continue;
 			}
+			await appendCleanupClaimAudit(
+				deps,
+				userId,
+				approval,
+				executionAuditCorrelationId,
+				options.auditContext,
+			);
 			let instance: ServiceInstance | null = null;
 			try {
 				instance = await prisma.serviceInstance.findFirst({
@@ -3736,26 +4177,42 @@ async function executeQueuedCleanupItems(
 				);
 			}
 			if (!instance) {
-				errors.push("Cleanup item was not executed because its ARR instance could not be loaded.");
+				const executionError =
+					"Cleanup item was not executed because its ARR instance could not be loaded.";
+				errors.push(executionError);
 				failed++;
-				await updateClaimedCleanupApproval(
-					prisma,
-					userId,
-					approval.id,
-					options.executeStatus,
-					claimedExecutionToken,
-					{
-						status: options.retryStatus,
-						executionToken: null,
-						lastExecutionError:
-							"Cleanup item was not executed because its ARR instance could not be loaded.",
-					},
-				).catch((revertErr) => {
+				try {
+					await updateClaimedCleanupApproval(
+						prisma,
+						userId,
+						approval.id,
+						options.executeStatus,
+						claimedExecutionToken,
+						{
+							status: options.retryStatus,
+							executionToken: null,
+							lastExecutionError: executionError,
+						},
+					);
+					await appendCleanupFailureAudit(
+						deps,
+						userId,
+						approval,
+						executionAuditCorrelationId,
+						options.auditContext,
+						{
+							durableStatus: options.retryStatus,
+							mutationAttempted: false,
+							outcome: "blocked",
+							reason: executionError,
+						},
+					);
+				} catch (revertErr) {
 					log.warn(
 						{ err: revertErr, approvalId: approval.id },
 						"Failed to return approval with missing instance to pending",
 					);
-				});
+				}
 				continue;
 			}
 
@@ -3771,23 +4228,38 @@ async function executeQueuedCleanupItems(
 					{ err: error, approvalId: approval.id, instanceId: approval.instanceId },
 					"Approved cleanup item has an invalid mutation shape",
 				);
-				await updateClaimedCleanupApproval(
-					prisma,
-					userId,
-					approval.id,
-					options.executeStatus,
-					claimedExecutionToken,
-					{
-						status: options.retryStatus,
-						executionToken: null,
-						lastExecutionError: executionError,
-					},
-				).catch((revertErr) => {
+				try {
+					await updateClaimedCleanupApproval(
+						prisma,
+						userId,
+						approval.id,
+						options.executeStatus,
+						claimedExecutionToken,
+						{
+							status: options.retryStatus,
+							executionToken: null,
+							lastExecutionError: executionError,
+						},
+					);
+					await appendCleanupFailureAudit(
+						deps,
+						userId,
+						approval,
+						executionAuditCorrelationId,
+						options.auditContext,
+						{
+							durableStatus: options.retryStatus,
+							mutationAttempted: false,
+							outcome: "blocked",
+							reason: executionError,
+						},
+					);
+				} catch (revertErr) {
 					log.warn(
 						{ err: revertErr, approvalId: approval.id },
 						"Failed to return invalid approval to pending",
 					);
-				});
+				}
 				continue;
 			}
 
@@ -4099,9 +4571,46 @@ async function executeQueuedCleanupItems(
 							executionToken: null,
 							...(approvalIdentityChanged ? { reviewedAt: new Date() } : {}),
 							lastExecutionError: sharedPlexBlock,
+							...(approvalIdentityChanged
+								? buildCleanupTerminalAuditState(
+										userId,
+										approval,
+										executionAuditCorrelationId,
+										"blocked",
+										options.auditContext,
+										false,
+										sharedPlexBlock,
+									)
+								: {}),
 						},
 					);
-					if (approvalIdentityChanged) expiredIds.push(approval.id);
+					if (approvalIdentityChanged) {
+						expiredIds.push(approval.id);
+						await appendCleanupTerminalAudit(
+							deps,
+							userId,
+							approval,
+							executionAuditCorrelationId,
+							"blocked",
+							options.auditContext,
+							false,
+							sharedPlexBlock,
+						);
+					} else {
+						await appendCleanupFailureAudit(
+							deps,
+							userId,
+							approval,
+							executionAuditCorrelationId,
+							options.auditContext,
+							{
+								durableStatus: options.retryStatus,
+								mutationAttempted: false,
+								outcome: "blocked",
+								reason: sharedPlexBlock,
+							},
+						);
+					}
 				} catch (revertErr) {
 					log.warn(
 						{ err: revertErr, approvalId: approval.id, title: approval.title },
@@ -4113,6 +4622,7 @@ async function executeQueuedCleanupItems(
 
 			let executionCompleted = false;
 			let reconciledWithoutMutation = false;
+			let mutationStartedAuditAttempted = false;
 			try {
 				await options.assertExecutionAllowed?.();
 				const ownership = await prisma.libraryCleanupApproval.updateMany({
@@ -4233,6 +4743,20 @@ async function executeQueuedCleanupItems(
 										assertMutationAuthority,
 									)
 								: assertMutationAuthority;
+				const assertMutationAuthorityWithAudit: MutationAuthorityCheck = async (evidence) => {
+					const authorizedResource = await assertDestructiveMutationAuthority(evidence);
+					if (!mutationStartedAuditAttempted) {
+						mutationStartedAuditAttempted = true;
+						await appendCleanupMutationStartedAudit(
+							deps,
+							userId,
+							approval,
+							executionAuditCorrelationId,
+							options.auditContext,
+						);
+					}
+					return authorizedResource;
+				};
 
 				if (retryTargetAlreadyAbsent) {
 					executionCompleted = true;
@@ -4278,7 +4802,7 @@ async function executeQueuedCleanupItems(
 						mutationInstance,
 						approval.arrItemId,
 						safetyPlan!,
-						assertDestructiveMutationAuthority,
+						assertMutationAuthorityWithAudit,
 					);
 					executionCompleted = true;
 					if (safetyPlan!.kind !== "verified_sonarr_episode")
@@ -4307,10 +4831,12 @@ async function executeQueuedCleanupItems(
 								mutationInstance,
 								approval.arrItemId,
 								safetyPlan!,
-								assertDestructiveMutationAuthority,
+								assertMutationAuthorityWithAudit,
 							),
 					);
 					executionCompleted = true;
+					// A false result is the existing live-verified already-empty branch;
+					// no upstream write was issued, so this is reconciliation rather than removal.
 					reconciledWithoutMutation = !deletedFiles;
 					await reconcileSonarrEpisodeFileCache(
 						prisma,
@@ -4347,7 +4873,7 @@ async function executeQueuedCleanupItems(
 								mutationInstance,
 								approval.arrItemId,
 								safetyPlan!,
-								assertDestructiveMutationAuthority,
+								assertMutationAuthorityWithAudit,
 							),
 					);
 					executionCompleted = true;
@@ -4388,7 +4914,25 @@ async function executeQueuedCleanupItems(
 						executionToken: null,
 						executedAt: new Date(),
 						lastExecutionError: null,
+						reconciledWithoutMutation,
+						...buildCleanupTerminalAuditState(
+							userId,
+							approval,
+							executionAuditCorrelationId,
+							"success",
+							options.auditContext,
+							reconciledWithoutMutation,
+						),
 					},
+				);
+				await appendCleanupTerminalAudit(
+					deps,
+					userId,
+					approval,
+					executionAuditCorrelationId,
+					"success",
+					options.auditContext,
+					reconciledWithoutMutation,
 				);
 
 				if (reconciledWithoutMutation) {
@@ -4406,27 +4950,38 @@ async function executeQueuedCleanupItems(
 				}
 			} catch (error) {
 				if (error instanceof CleanupRunLeaseLostError) {
-					await prisma.libraryCleanupApproval
-						.updateMany({
-							where: {
-								id: approval.id,
-								config: { userId },
-								status: options.executeStatus,
-								executionToken: claimedExecutionToken,
-							},
-							data: {
+					const leaseError = "Cleanup execution paused because its database run lease was lost.";
+					try {
+						await updateClaimedCleanupApproval(
+							prisma,
+							userId,
+							approval.id,
+							options.executeStatus,
+							claimedExecutionToken,
+							{
 								status: options.retryStatus,
 								executionToken: null,
-								lastExecutionError:
-									"Cleanup execution paused because its database run lease was lost.",
+								lastExecutionError: leaseError,
 							},
-						})
-						.catch((revertErr) => {
-							log.error(
-								{ err: revertErr, approvalId: approval.id },
-								"Cleanup lost its run lease and could not return the item to retryable state",
-							);
-						});
+						);
+						await appendCleanupFailureAudit(
+							deps,
+							userId,
+							approval,
+							executionAuditCorrelationId,
+							options.auditContext,
+							{
+								durableStatus: options.retryStatus,
+								mutationAttempted: mutationStartedAuditAttempted,
+								reason: leaseError,
+							},
+						);
+					} catch (revertErr) {
+						log.error(
+							{ err: revertErr, approvalId: approval.id },
+							"Cleanup lost its run lease and could not return the item to retryable state",
+						);
+					}
 					throw error;
 				}
 				if (executionCompleted) {
@@ -4444,7 +4999,25 @@ async function executeQueuedCleanupItems(
 								executionToken: null,
 								executedAt: new Date(),
 								lastExecutionError: null,
+								reconciledWithoutMutation,
+								...buildCleanupTerminalAuditState(
+									userId,
+									approval,
+									executionAuditCorrelationId,
+									"success",
+									options.auditContext,
+									reconciledWithoutMutation,
+								),
 							},
+						);
+						await appendCleanupTerminalAudit(
+							deps,
+							userId,
+							approval,
+							executionAuditCorrelationId,
+							"success",
+							options.auditContext,
+							reconciledWithoutMutation,
 						);
 						if (reconciledWithoutMutation) reconciledIds.push(approval.id);
 						else removed++;
@@ -4499,6 +5072,15 @@ async function executeQueuedCleanupItems(
 				if (error instanceof ArrDeletePartialError && error.deletedFileIds.length > 0) {
 					confirmedPartialFileDeletionIds.add(approval.id);
 				}
+				const nextFailureStatus =
+					error instanceof SonarrEpisodeUnmonitorPartialError ||
+					error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
+					episodeFileDeletePartial ||
+					preserveEpisodeUnmonitorPartial
+						? ("retry_pending" as const)
+						: mutationAuthorityChanged
+							? ("expired" as const)
+							: options.retryStatus;
 				log.error(
 					{ err: error, title: approval.title, instanceId: approval.instanceId },
 					"Failed to execute approved cleanup item",
@@ -4512,18 +5094,21 @@ async function executeQueuedCleanupItems(
 						options.executeStatus,
 						claimedExecutionToken,
 						{
-							status:
-								error instanceof SonarrEpisodeUnmonitorPartialError ||
-								error instanceof SonarrEpisodeUnmonitorOutcomeUnknownError ||
-								episodeFileDeletePartial ||
-								preserveEpisodeUnmonitorPartial
-									? "retry_pending"
-									: mutationAuthorityChanged
-										? "expired"
-										: options.retryStatus,
+							status: nextFailureStatus,
 							executionToken: null,
 							lastExecutionError: executionError,
 							...(mutationAuthorityChanged ? { reviewedAt: new Date() } : {}),
+							...(mutationAuthorityChanged
+								? buildCleanupTerminalAuditState(
+										userId,
+										approval,
+										executionAuditCorrelationId,
+										"blocked",
+										options.auditContext,
+										false,
+										executionError,
+									)
+								: {}),
 							...(postPartialRetrySnapshot || postEpisodeUnmonitorSnapshot
 								? {
 										safetySnapshot: postPartialRetrySnapshot ?? postEpisodeUnmonitorSnapshot,
@@ -4532,7 +5117,32 @@ async function executeQueuedCleanupItems(
 						},
 					);
 					retryStatePersisted = true;
-					if (mutationAuthorityChanged) expiredIds.push(approval.id);
+					if (mutationAuthorityChanged) {
+						expiredIds.push(approval.id);
+						await appendCleanupTerminalAudit(
+							deps,
+							userId,
+							approval,
+							executionAuditCorrelationId,
+							"blocked",
+							options.auditContext,
+							false,
+							executionError,
+						);
+					} else {
+						await appendCleanupFailureAudit(
+							deps,
+							userId,
+							approval,
+							executionAuditCorrelationId,
+							options.auditContext,
+							{
+								durableStatus: nextFailureStatus === "retry_pending" ? "retry_pending" : "pending",
+								mutationAttempted: mutationStartedAuditAttempted,
+								reason: executionError,
+							},
+						);
+					}
 				} catch (revertErr) {
 					errors.push(
 						"Cleanup files changed, but arr-dashboard could not record retry state. Cached file state was left unchanged.",
@@ -7034,6 +7644,7 @@ async function executeWithApproval(
 	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
 	preSkippedDetails: CleanupRunResult["details"] = [],
 	additionalSkippedCount = 0,
+	auditContext: CleanupAuditContext = DEFAULT_DIRECT_AUDIT_CONTEXT,
 ): Promise<CleanupRunResult> {
 	const { prisma, log } = deps;
 	const now = new Date();
@@ -7102,7 +7713,7 @@ async function executeWithApproval(
 				continue;
 			}
 
-			await prisma.libraryCleanupApproval.create({
+			const approval = await prisma.libraryCleanupApproval.create({
 				data: {
 					configId: config.id,
 					instanceId: item.cacheItem.instanceId,
@@ -7133,6 +7744,7 @@ async function executeWithApproval(
 					expiresAt,
 				},
 			});
+			await appendCleanupProposalAudit(deps, config.userId, approval, auditContext);
 
 			details.push(buildDetail(item, "queued_for_approval"));
 			queued++;
@@ -7190,6 +7802,7 @@ export async function executeDirectRemoval(
 	assertRunLease?: () => Promise<void>,
 	cleanupRunClaimToken?: string,
 	providerEvidence: SanitizedProviderEvidence = createSanitizedProviderEvidence([], []),
+	auditContext: CleanupAuditContext = DEFAULT_DIRECT_AUDIT_CONTEXT,
 ): Promise<CleanupRunResult> {
 	const { prisma, arrClientFactory, log } = deps;
 
@@ -7258,6 +7871,7 @@ export async function executeDirectRemoval(
 				enforceExpiry: false,
 				assertExecutionAllowed: assertRunLease,
 				cleanupRunClaimToken,
+				auditContext: withCleanupAuditTrigger(auditContext, "retry"),
 			});
 			if (retryResult.unclaimedIds.includes(retry.id)) {
 				directRetryConcurrent++;
@@ -7486,6 +8100,7 @@ export async function executeDirectRemoval(
 
 		let directMutationIntentId: string;
 		let directMutationExecutionToken: string;
+		let directMutationAuditCorrelationId: string;
 		try {
 			await assertCurrentProviderEvidenceAuthority(deps, userId, providerEvidence, assertRunLease);
 			const intent = await persistAndClaimDirectMutationIntent(
@@ -7495,6 +8110,7 @@ export async function executeDirectRemoval(
 				item,
 				safetyPlan!,
 				providerEvidence,
+				auditContext,
 			);
 			if (!intent.claimed) {
 				directIntentConcurrent++;
@@ -7509,6 +8125,7 @@ export async function executeDirectRemoval(
 			}
 			directMutationIntentId = intent.id;
 			directMutationExecutionToken = intent.executionToken;
+			directMutationAuditCorrelationId = intent.executionAuditCorrelationId;
 		} catch (error) {
 			directRetryPersistenceFailures++;
 			log.error(
@@ -7529,7 +8146,32 @@ export async function executeDirectRemoval(
 			);
 			continue;
 		}
+		const directAuditApproval = {
+			id: directMutationIntentId,
+			configId: config.id,
+			instanceId: item.cacheItem.instanceId,
+			arrItemId: item.cacheItem.arrItemId,
+			itemType: item.cacheItem.itemType,
+			targetScope: item.episodeTarget ? "episode" : "series",
+			arrEpisodeId: item.episodeTarget?.arrEpisodeId ?? null,
+			seasonNumber: item.episodeTarget?.seasonNumber ?? null,
+			episodeNumber: item.episodeTarget?.episodeNumber ?? null,
+			episodeTitle: item.episodeTarget?.episodeTitle ?? null,
+			title: item.cacheItem.title,
+			matchedRuleId: item.match.ruleId,
+			matchedRuleName: item.match.ruleName,
+			reason: item.match.reason,
+			action: ruleAction,
+		} as const;
+		await appendCleanupClaimAudit(
+			deps,
+			userId,
+			directAuditApproval,
+			directMutationAuditCorrelationId,
+			auditContext,
+		);
 
+		let directMutationStartedAuditAttempted = false;
 		try {
 			await assertRunLease?.();
 			const ownership = await prisma.libraryCleanupApproval.updateMany({
@@ -7637,14 +8279,29 @@ export async function executeDirectRemoval(
 									assertDirectExecutionAuthority,
 								)
 							: assertDirectExecutionAuthority;
+			const assertDirectMutationAuthorityWithAudit: MutationAuthorityCheck = async (evidence) => {
+				const authorizedResource = await assertDestructiveMutationAuthority(evidence);
+				if (!directMutationStartedAuditAttempted) {
+					directMutationStartedAuditAttempted = true;
+					await appendCleanupMutationStartedAudit(
+						deps,
+						userId,
+						directAuditApproval,
+						directMutationAuditCorrelationId,
+						auditContext,
+					);
+				}
+				return authorizedResource;
+			};
 
+			let directReconciledWithoutMutation = false;
 			if (ruleAction === "unmonitor") {
 				await unmonitorInArr(
 					arrClientFactory,
 					mutationInstance,
 					item.cacheItem.arrItemId,
 					safetyPlan!,
-					assertDestructiveMutationAuthority,
+					assertDirectMutationAuthorityWithAudit,
 				);
 				if (safetyPlan!.kind !== "verified_sonarr_episode")
 					try {
@@ -7679,9 +8336,10 @@ export async function executeDirectRemoval(
 							mutationInstance,
 							item.cacheItem.arrItemId,
 							safetyPlan!,
-							assertDestructiveMutationAuthority,
+							assertDirectMutationAuthorityWithAudit,
 						),
 				);
+				directReconciledWithoutMutation = !deletedFiles;
 				await reconcileSonarrEpisodeFileCache(
 					prisma,
 					mutationInstance,
@@ -7732,7 +8390,7 @@ export async function executeDirectRemoval(
 						mutationInstance,
 						item.cacheItem.arrItemId,
 						safetyPlan!,
-						assertDestructiveMutationAuthority,
+						assertDirectMutationAuthorityWithAudit,
 					),
 				);
 				await reconcileSonarrEpisodeFileCache(
@@ -7767,52 +8425,8 @@ export async function executeDirectRemoval(
 					"Cleanup: removed item from ARR instance",
 				);
 			}
-			await updateClaimedCleanupApproval(
-				prisma,
-				userId,
-				directMutationIntentId,
-				"retry_executing",
-				directMutationExecutionToken,
-				{
-					status: "executed",
-					executionToken: null,
-					executedAt: new Date(),
-					lastExecutionError: null,
-				},
-			).catch((persistError) => {
-				directRetryPersistenceFailures++;
-				log.error(
-					{ err: persistError, intentId: directMutationIntentId },
-					"Cleanup action completed but its durable mutation intent was not finalized",
-				);
-			});
-		} catch (error) {
-			if (error instanceof CleanupRunLeaseLostError) {
-				await prisma.libraryCleanupApproval
-					.updateMany({
-						where: {
-							id: directMutationIntentId,
-							config: { userId },
-							status: "retry_executing",
-							executionToken: directMutationExecutionToken,
-						},
-						data: {
-							status: "retry_pending",
-							executionToken: null,
-							lastExecutionError:
-								"Cleanup execution paused because its database run lease was lost.",
-						},
-					})
-					.catch((persistError) => {
-						log.error(
-							{ err: persistError, intentId: directMutationIntentId },
-							"Cleanup lost its run lease and could not return its mutation intent to retry pending",
-						);
-					});
-				throw error;
-			}
-			if (error instanceof CleanupExemptionAuthorityError) {
-				exemptionPolicyBlocks++;
+			let terminalStatePersisted = true;
+			try {
 				await updateClaimedCleanupApproval(
 					prisma,
 					userId,
@@ -7820,18 +8434,118 @@ export async function executeDirectRemoval(
 					"retry_executing",
 					directMutationExecutionToken,
 					{
-						status: "expired",
+						status: "executed",
 						executionToken: null,
-						reviewedAt: new Date(),
-						lastExecutionError: error.message,
+						executedAt: new Date(),
+						lastExecutionError: null,
+						reconciledWithoutMutation: directReconciledWithoutMutation,
+						...buildCleanupTerminalAuditState(
+							userId,
+							directAuditApproval,
+							directMutationAuditCorrelationId,
+							"success",
+							auditContext,
+							directReconciledWithoutMutation,
+						),
 					},
-				).catch((persistError) => {
+				);
+			} catch (persistError) {
+				terminalStatePersisted = false;
+				directRetryPersistenceFailures++;
+				log.error(
+					{ err: persistError, intentId: directMutationIntentId },
+					"Cleanup action completed but its durable mutation intent was not finalized",
+				);
+			}
+			if (terminalStatePersisted) {
+				await appendCleanupTerminalAudit(
+					deps,
+					userId,
+					directAuditApproval,
+					directMutationAuditCorrelationId,
+					"success",
+					auditContext,
+					directReconciledWithoutMutation,
+				);
+			}
+		} catch (error) {
+			if (error instanceof CleanupRunLeaseLostError) {
+				const leaseError = "Cleanup execution paused because its database run lease was lost.";
+				try {
+					await updateClaimedCleanupApproval(
+						prisma,
+						userId,
+						directMutationIntentId,
+						"retry_executing",
+						directMutationExecutionToken,
+						{
+							status: "retry_pending",
+							executionToken: null,
+							lastExecutionError: leaseError,
+						},
+					);
+					await appendCleanupFailureAudit(
+						deps,
+						userId,
+						directAuditApproval,
+						directMutationAuditCorrelationId,
+						auditContext,
+						{
+							durableStatus: "retry_pending",
+							mutationAttempted: directMutationStartedAuditAttempted,
+							reason: leaseError,
+						},
+					);
+				} catch (persistError) {
+					log.error(
+						{ err: persistError, intentId: directMutationIntentId },
+						"Cleanup lost its run lease and could not return its mutation intent to retry pending",
+					);
+				}
+				throw error;
+			}
+			if (error instanceof CleanupExemptionAuthorityError) {
+				exemptionPolicyBlocks++;
+				try {
+					await updateClaimedCleanupApproval(
+						prisma,
+						userId,
+						directMutationIntentId,
+						"retry_executing",
+						directMutationExecutionToken,
+						{
+							status: "expired",
+							executionToken: null,
+							reviewedAt: new Date(),
+							lastExecutionError: error.message,
+							...buildCleanupTerminalAuditState(
+								userId,
+								directAuditApproval,
+								directMutationAuditCorrelationId,
+								"blocked",
+								auditContext,
+								false,
+								error.message,
+							),
+						},
+					);
+					await appendCleanupTerminalAudit(
+						deps,
+						userId,
+						directAuditApproval,
+						directMutationAuditCorrelationId,
+						"blocked",
+						auditContext,
+						false,
+						error.message,
+					);
+				} catch (persistError) {
 					directRetryPersistenceFailures++;
 					log.error(
 						{ err: persistError, intentId: directMutationIntentId },
 						"Cleanup could not expire an exemption-blocked mutation intent",
 					);
-				});
+				}
 				details.push(buildDetail(item, "skipped", error.message));
 				log.warn(
 					{ title: item.cacheItem.title, instanceId: instance.id },
@@ -7866,6 +8580,18 @@ export async function executeDirectRemoval(
 							...(postEpisodeUnmonitorSnapshot
 								? { safetySnapshot: postEpisodeUnmonitorSnapshot }
 								: {}),
+						},
+					);
+					await appendCleanupFailureAudit(
+						deps,
+						userId,
+						directAuditApproval,
+						directMutationAuditCorrelationId,
+						auditContext,
+						{
+							durableStatus: "retry_pending",
+							mutationAttempted: directMutationStartedAuditAttempted,
+							reason: error.message,
 						},
 					);
 				} catch (retryError) {
@@ -7931,6 +8657,18 @@ export async function executeDirectRemoval(
 					);
 				}
 				if (retryPersistenceSucceeded) {
+					await appendCleanupFailureAudit(
+						deps,
+						userId,
+						directAuditApproval,
+						directMutationAuditCorrelationId,
+						auditContext,
+						{
+							durableStatus: "retry_pending",
+							mutationAttempted: directMutationStartedAuditAttempted,
+							reason: error.message,
+						},
+					);
 					await reconcilePartialFileDeletion(
 						prisma,
 						instance,
@@ -7971,25 +8709,46 @@ export async function executeDirectRemoval(
 			}
 			if (error instanceof ArrFileChangedDuringSafetyCheckError) {
 				runtimeSafetyBlocks++;
-				await updateClaimedCleanupApproval(
-					prisma,
-					userId,
-					directMutationIntentId,
-					"retry_executing",
-					directMutationExecutionToken,
-					{
-						status: "expired",
-						executionToken: null,
-						lastExecutionError: error.message,
-						reviewedAt: new Date(),
-					},
-				).catch((persistError) => {
+				try {
+					await updateClaimedCleanupApproval(
+						prisma,
+						userId,
+						directMutationIntentId,
+						"retry_executing",
+						directMutationExecutionToken,
+						{
+							status: "expired",
+							executionToken: null,
+							lastExecutionError: error.message,
+							reviewedAt: new Date(),
+							...buildCleanupTerminalAuditState(
+								userId,
+								directAuditApproval,
+								directMutationAuditCorrelationId,
+								"blocked",
+								auditContext,
+								false,
+								error.message,
+							),
+						},
+					);
+					await appendCleanupTerminalAudit(
+						deps,
+						userId,
+						directAuditApproval,
+						directMutationAuditCorrelationId,
+						"blocked",
+						auditContext,
+						false,
+						error.message,
+					);
+				} catch (persistError) {
 					directRetryPersistenceFailures++;
 					log.error(
 						{ err: persistError, intentId: directMutationIntentId },
 						"Cleanup could not expire a safety-invalid mutation intent",
 					);
-				});
+				}
 				details.push(buildDetail(item, "skipped", error.message));
 				log.warn(
 					{ title: item.cacheItem.title, instanceId: instance.id },
@@ -7998,29 +8757,44 @@ export async function executeDirectRemoval(
 				continue;
 			}
 			consecutiveFailures++;
-			await updateClaimedCleanupApproval(
-				prisma,
-				userId,
-				directMutationIntentId,
-				"retry_executing",
-				directMutationExecutionToken,
-				{
-					status: "retry_pending",
-					executionToken: null,
-					lastExecutionError: `Action failed: ${getErrorMessage(error)}`,
-				},
-			).catch((persistError) => {
+			const directExecutionError = `Action failed: ${getErrorMessage(error)}`;
+			try {
+				await updateClaimedCleanupApproval(
+					prisma,
+					userId,
+					directMutationIntentId,
+					"retry_executing",
+					directMutationExecutionToken,
+					{
+						status: "retry_pending",
+						executionToken: null,
+						lastExecutionError: directExecutionError,
+					},
+				);
+				await appendCleanupFailureAudit(
+					deps,
+					userId,
+					directAuditApproval,
+					directMutationAuditCorrelationId,
+					auditContext,
+					{
+						durableStatus: "retry_pending",
+						mutationAttempted: directMutationStartedAuditAttempted,
+						reason: "Cleanup action failed and remains retryable. Review the API logs for details.",
+					},
+				);
+			} catch (persistError) {
 				directRetryPersistenceFailures++;
 				log.error(
 					{ err: persistError, intentId: directMutationIntentId },
 					"Cleanup could not return a failed mutation intent to retry pending",
 				);
-			});
+			}
 			log.error(
 				{ err: error, title: item.cacheItem.title, instanceId: instance.id, consecutiveFailures },
 				"Cleanup: failed to execute action on item",
 			);
-			details.push(buildDetail(item, "skipped", `Action failed: ${getErrorMessage(error)}`));
+			details.push(buildDetail(item, "skipped", directExecutionError));
 		}
 	}
 

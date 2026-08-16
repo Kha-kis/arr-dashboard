@@ -30,12 +30,16 @@ export type InstanceQualityProfileOverrideAvgAggregateOutputType = {
   qualityProfileId: number | null
   customFormatId: number | null
   score: number | null
+  intendedScore: number | null
+  connectionGeneration: number | null
 }
 
 export type InstanceQualityProfileOverrideSumAggregateOutputType = {
   qualityProfileId: number | null
   customFormatId: number | null
   score: number | null
+  intendedScore: number | null
+  connectionGeneration: number | null
 }
 
 export type InstanceQualityProfileOverrideMinAggregateOutputType = {
@@ -44,7 +48,12 @@ export type InstanceQualityProfileOverrideMinAggregateOutputType = {
   qualityProfileId: number | null
   customFormatId: number | null
   score: number | null
+  status: string | null
+  intentOperation: string | null
+  intendedScore: number | null
   userId: string | null
+  connectionGeneration: number | null
+  connectionStateToken: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -55,7 +64,12 @@ export type InstanceQualityProfileOverrideMaxAggregateOutputType = {
   qualityProfileId: number | null
   customFormatId: number | null
   score: number | null
+  status: string | null
+  intentOperation: string | null
+  intendedScore: number | null
   userId: string | null
+  connectionGeneration: number | null
+  connectionStateToken: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -66,7 +80,12 @@ export type InstanceQualityProfileOverrideCountAggregateOutputType = {
   qualityProfileId: number
   customFormatId: number
   score: number
+  status: number
+  intentOperation: number
+  intendedScore: number
   userId: number
+  connectionGeneration: number
+  connectionStateToken: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -77,12 +96,16 @@ export type InstanceQualityProfileOverrideAvgAggregateInputType = {
   qualityProfileId?: true
   customFormatId?: true
   score?: true
+  intendedScore?: true
+  connectionGeneration?: true
 }
 
 export type InstanceQualityProfileOverrideSumAggregateInputType = {
   qualityProfileId?: true
   customFormatId?: true
   score?: true
+  intendedScore?: true
+  connectionGeneration?: true
 }
 
 export type InstanceQualityProfileOverrideMinAggregateInputType = {
@@ -91,7 +114,12 @@ export type InstanceQualityProfileOverrideMinAggregateInputType = {
   qualityProfileId?: true
   customFormatId?: true
   score?: true
+  status?: true
+  intentOperation?: true
+  intendedScore?: true
   userId?: true
+  connectionGeneration?: true
+  connectionStateToken?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -102,7 +130,12 @@ export type InstanceQualityProfileOverrideMaxAggregateInputType = {
   qualityProfileId?: true
   customFormatId?: true
   score?: true
+  status?: true
+  intentOperation?: true
+  intendedScore?: true
   userId?: true
+  connectionGeneration?: true
+  connectionStateToken?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -113,7 +146,12 @@ export type InstanceQualityProfileOverrideCountAggregateInputType = {
   qualityProfileId?: true
   customFormatId?: true
   score?: true
+  status?: true
+  intentOperation?: true
+  intendedScore?: true
   userId?: true
+  connectionGeneration?: true
+  connectionStateToken?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -211,7 +249,12 @@ export type InstanceQualityProfileOverrideGroupByOutputType = {
   qualityProfileId: number
   customFormatId: number
   score: number
+  status: string
+  intentOperation: string | null
+  intendedScore: number | null
   userId: string
+  connectionGeneration: number
+  connectionStateToken: string | null
   createdAt: Date
   updatedAt: Date
   _count: InstanceQualityProfileOverrideCountAggregateOutputType | null
@@ -245,7 +288,12 @@ export type InstanceQualityProfileOverrideWhereInput = {
   qualityProfileId?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
   customFormatId?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
   score?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
+  status?: Prisma.StringFilter<"InstanceQualityProfileOverride"> | string
+  intentOperation?: Prisma.StringNullableFilter<"InstanceQualityProfileOverride"> | string | null
+  intendedScore?: Prisma.IntNullableFilter<"InstanceQualityProfileOverride"> | number | null
   userId?: Prisma.StringFilter<"InstanceQualityProfileOverride"> | string
+  connectionGeneration?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
+  connectionStateToken?: Prisma.StringNullableFilter<"InstanceQualityProfileOverride"> | string | null
   createdAt?: Prisma.DateTimeFilter<"InstanceQualityProfileOverride"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"InstanceQualityProfileOverride"> | Date | string
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
@@ -257,7 +305,12 @@ export type InstanceQualityProfileOverrideOrderByWithRelationInput = {
   qualityProfileId?: Prisma.SortOrder
   customFormatId?: Prisma.SortOrder
   score?: Prisma.SortOrder
+  status?: Prisma.SortOrder
+  intentOperation?: Prisma.SortOrderInput | Prisma.SortOrder
+  intendedScore?: Prisma.SortOrderInput | Prisma.SortOrder
   userId?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
@@ -273,7 +326,12 @@ export type InstanceQualityProfileOverrideWhereUniqueInput = Prisma.AtLeast<{
   qualityProfileId?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
   customFormatId?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
   score?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
+  status?: Prisma.StringFilter<"InstanceQualityProfileOverride"> | string
+  intentOperation?: Prisma.StringNullableFilter<"InstanceQualityProfileOverride"> | string | null
+  intendedScore?: Prisma.IntNullableFilter<"InstanceQualityProfileOverride"> | number | null
   userId?: Prisma.StringFilter<"InstanceQualityProfileOverride"> | string
+  connectionGeneration?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
+  connectionStateToken?: Prisma.StringNullableFilter<"InstanceQualityProfileOverride"> | string | null
   createdAt?: Prisma.DateTimeFilter<"InstanceQualityProfileOverride"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"InstanceQualityProfileOverride"> | Date | string
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
@@ -285,7 +343,12 @@ export type InstanceQualityProfileOverrideOrderByWithAggregationInput = {
   qualityProfileId?: Prisma.SortOrder
   customFormatId?: Prisma.SortOrder
   score?: Prisma.SortOrder
+  status?: Prisma.SortOrder
+  intentOperation?: Prisma.SortOrderInput | Prisma.SortOrder
+  intendedScore?: Prisma.SortOrderInput | Prisma.SortOrder
   userId?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.InstanceQualityProfileOverrideCountOrderByAggregateInput
@@ -304,7 +367,12 @@ export type InstanceQualityProfileOverrideScalarWhereWithAggregatesInput = {
   qualityProfileId?: Prisma.IntWithAggregatesFilter<"InstanceQualityProfileOverride"> | number
   customFormatId?: Prisma.IntWithAggregatesFilter<"InstanceQualityProfileOverride"> | number
   score?: Prisma.IntWithAggregatesFilter<"InstanceQualityProfileOverride"> | number
+  status?: Prisma.StringWithAggregatesFilter<"InstanceQualityProfileOverride"> | string
+  intentOperation?: Prisma.StringNullableWithAggregatesFilter<"InstanceQualityProfileOverride"> | string | null
+  intendedScore?: Prisma.IntNullableWithAggregatesFilter<"InstanceQualityProfileOverride"> | number | null
   userId?: Prisma.StringWithAggregatesFilter<"InstanceQualityProfileOverride"> | string
+  connectionGeneration?: Prisma.IntWithAggregatesFilter<"InstanceQualityProfileOverride"> | number
+  connectionStateToken?: Prisma.StringNullableWithAggregatesFilter<"InstanceQualityProfileOverride"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"InstanceQualityProfileOverride"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"InstanceQualityProfileOverride"> | Date | string
 }
@@ -314,7 +382,12 @@ export type InstanceQualityProfileOverrideCreateInput = {
   qualityProfileId: number
   customFormatId: number
   score: number
+  status?: string
+  intentOperation?: string | null
+  intendedScore?: number | null
   userId: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutQualityProfileOverridesInput
@@ -326,7 +399,12 @@ export type InstanceQualityProfileOverrideUncheckedCreateInput = {
   qualityProfileId: number
   customFormatId: number
   score: number
+  status?: string
+  intentOperation?: string | null
+  intendedScore?: number | null
   userId: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -336,7 +414,12 @@ export type InstanceQualityProfileOverrideUpdateInput = {
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   customFormatId?: Prisma.IntFieldUpdateOperationsInput | number
   score?: Prisma.IntFieldUpdateOperationsInput | number
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  intentOperation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  intendedScore?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   userId?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutQualityProfileOverridesNestedInput
@@ -348,7 +431,12 @@ export type InstanceQualityProfileOverrideUncheckedUpdateInput = {
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   customFormatId?: Prisma.IntFieldUpdateOperationsInput | number
   score?: Prisma.IntFieldUpdateOperationsInput | number
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  intentOperation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  intendedScore?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   userId?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -359,7 +447,12 @@ export type InstanceQualityProfileOverrideCreateManyInput = {
   qualityProfileId: number
   customFormatId: number
   score: number
+  status?: string
+  intentOperation?: string | null
+  intendedScore?: number | null
   userId: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -369,7 +462,12 @@ export type InstanceQualityProfileOverrideUpdateManyMutationInput = {
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   customFormatId?: Prisma.IntFieldUpdateOperationsInput | number
   score?: Prisma.IntFieldUpdateOperationsInput | number
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  intentOperation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  intendedScore?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   userId?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -380,7 +478,12 @@ export type InstanceQualityProfileOverrideUncheckedUpdateManyInput = {
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   customFormatId?: Prisma.IntFieldUpdateOperationsInput | number
   score?: Prisma.IntFieldUpdateOperationsInput | number
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  intentOperation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  intendedScore?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   userId?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -407,7 +510,12 @@ export type InstanceQualityProfileOverrideCountOrderByAggregateInput = {
   qualityProfileId?: Prisma.SortOrder
   customFormatId?: Prisma.SortOrder
   score?: Prisma.SortOrder
+  status?: Prisma.SortOrder
+  intentOperation?: Prisma.SortOrder
+  intendedScore?: Prisma.SortOrder
   userId?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -416,6 +524,8 @@ export type InstanceQualityProfileOverrideAvgOrderByAggregateInput = {
   qualityProfileId?: Prisma.SortOrder
   customFormatId?: Prisma.SortOrder
   score?: Prisma.SortOrder
+  intendedScore?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
 }
 
 export type InstanceQualityProfileOverrideMaxOrderByAggregateInput = {
@@ -424,7 +534,12 @@ export type InstanceQualityProfileOverrideMaxOrderByAggregateInput = {
   qualityProfileId?: Prisma.SortOrder
   customFormatId?: Prisma.SortOrder
   score?: Prisma.SortOrder
+  status?: Prisma.SortOrder
+  intentOperation?: Prisma.SortOrder
+  intendedScore?: Prisma.SortOrder
   userId?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -435,7 +550,12 @@ export type InstanceQualityProfileOverrideMinOrderByAggregateInput = {
   qualityProfileId?: Prisma.SortOrder
   customFormatId?: Prisma.SortOrder
   score?: Prisma.SortOrder
+  status?: Prisma.SortOrder
+  intentOperation?: Prisma.SortOrder
+  intendedScore?: Prisma.SortOrder
   userId?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  connectionStateToken?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -444,6 +564,8 @@ export type InstanceQualityProfileOverrideSumOrderByAggregateInput = {
   qualityProfileId?: Prisma.SortOrder
   customFormatId?: Prisma.SortOrder
   score?: Prisma.SortOrder
+  intendedScore?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
 }
 
 export type InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput = {
@@ -493,7 +615,12 @@ export type InstanceQualityProfileOverrideCreateWithoutInstanceInput = {
   qualityProfileId: number
   customFormatId: number
   score: number
+  status?: string
+  intentOperation?: string | null
+  intendedScore?: number | null
   userId: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -503,7 +630,12 @@ export type InstanceQualityProfileOverrideUncheckedCreateWithoutInstanceInput = 
   qualityProfileId: number
   customFormatId: number
   score: number
+  status?: string
+  intentOperation?: string | null
+  intendedScore?: number | null
   userId: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -542,7 +674,12 @@ export type InstanceQualityProfileOverrideScalarWhereInput = {
   qualityProfileId?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
   customFormatId?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
   score?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
+  status?: Prisma.StringFilter<"InstanceQualityProfileOverride"> | string
+  intentOperation?: Prisma.StringNullableFilter<"InstanceQualityProfileOverride"> | string | null
+  intendedScore?: Prisma.IntNullableFilter<"InstanceQualityProfileOverride"> | number | null
   userId?: Prisma.StringFilter<"InstanceQualityProfileOverride"> | string
+  connectionGeneration?: Prisma.IntFilter<"InstanceQualityProfileOverride"> | number
+  connectionStateToken?: Prisma.StringNullableFilter<"InstanceQualityProfileOverride"> | string | null
   createdAt?: Prisma.DateTimeFilter<"InstanceQualityProfileOverride"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"InstanceQualityProfileOverride"> | Date | string
 }
@@ -552,7 +689,12 @@ export type InstanceQualityProfileOverrideCreateManyInstanceInput = {
   qualityProfileId: number
   customFormatId: number
   score: number
+  status?: string
+  intentOperation?: string | null
+  intendedScore?: number | null
   userId: string
+  connectionGeneration?: number
+  connectionStateToken?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -562,7 +704,12 @@ export type InstanceQualityProfileOverrideUpdateWithoutInstanceInput = {
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   customFormatId?: Prisma.IntFieldUpdateOperationsInput | number
   score?: Prisma.IntFieldUpdateOperationsInput | number
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  intentOperation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  intendedScore?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   userId?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -572,7 +719,12 @@ export type InstanceQualityProfileOverrideUncheckedUpdateWithoutInstanceInput = 
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   customFormatId?: Prisma.IntFieldUpdateOperationsInput | number
   score?: Prisma.IntFieldUpdateOperationsInput | number
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  intentOperation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  intendedScore?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   userId?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -582,7 +734,12 @@ export type InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceInpu
   qualityProfileId?: Prisma.IntFieldUpdateOperationsInput | number
   customFormatId?: Prisma.IntFieldUpdateOperationsInput | number
   score?: Prisma.IntFieldUpdateOperationsInput | number
+  status?: Prisma.StringFieldUpdateOperationsInput | string
+  intentOperation?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  intendedScore?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   userId?: Prisma.StringFieldUpdateOperationsInput | string
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  connectionStateToken?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -595,7 +752,12 @@ export type InstanceQualityProfileOverrideSelect<ExtArgs extends runtime.Types.E
   qualityProfileId?: boolean
   customFormatId?: boolean
   score?: boolean
+  status?: boolean
+  intentOperation?: boolean
+  intendedScore?: boolean
   userId?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
@@ -607,7 +769,12 @@ export type InstanceQualityProfileOverrideSelectCreateManyAndReturn<ExtArgs exte
   qualityProfileId?: boolean
   customFormatId?: boolean
   score?: boolean
+  status?: boolean
+  intentOperation?: boolean
+  intendedScore?: boolean
   userId?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
@@ -619,7 +786,12 @@ export type InstanceQualityProfileOverrideSelectUpdateManyAndReturn<ExtArgs exte
   qualityProfileId?: boolean
   customFormatId?: boolean
   score?: boolean
+  status?: boolean
+  intentOperation?: boolean
+  intendedScore?: boolean
   userId?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
@@ -631,12 +803,17 @@ export type InstanceQualityProfileOverrideSelectScalar = {
   qualityProfileId?: boolean
   customFormatId?: boolean
   score?: boolean
+  status?: boolean
+  intentOperation?: boolean
+  intendedScore?: boolean
   userId?: boolean
+  connectionGeneration?: boolean
+  connectionStateToken?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type InstanceQualityProfileOverrideOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "qualityProfileId" | "customFormatId" | "score" | "userId" | "createdAt" | "updatedAt", ExtArgs["result"]["instanceQualityProfileOverride"]>
+export type InstanceQualityProfileOverrideOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "qualityProfileId" | "customFormatId" | "score" | "status" | "intentOperation" | "intendedScore" | "userId" | "connectionGeneration" | "connectionStateToken" | "createdAt" | "updatedAt", ExtArgs["result"]["instanceQualityProfileOverride"]>
 export type InstanceQualityProfileOverrideInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -658,7 +835,12 @@ export type $InstanceQualityProfileOverridePayload<ExtArgs extends runtime.Types
     qualityProfileId: number
     customFormatId: number
     score: number
+    status: string
+    intentOperation: string | null
+    intendedScore: number | null
     userId: string
+    connectionGeneration: number
+    connectionStateToken: string | null
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["instanceQualityProfileOverride"]>
@@ -1090,7 +1272,12 @@ export interface InstanceQualityProfileOverrideFieldRefs {
   readonly qualityProfileId: Prisma.FieldRef<"InstanceQualityProfileOverride", 'Int'>
   readonly customFormatId: Prisma.FieldRef<"InstanceQualityProfileOverride", 'Int'>
   readonly score: Prisma.FieldRef<"InstanceQualityProfileOverride", 'Int'>
+  readonly status: Prisma.FieldRef<"InstanceQualityProfileOverride", 'String'>
+  readonly intentOperation: Prisma.FieldRef<"InstanceQualityProfileOverride", 'String'>
+  readonly intendedScore: Prisma.FieldRef<"InstanceQualityProfileOverride", 'Int'>
   readonly userId: Prisma.FieldRef<"InstanceQualityProfileOverride", 'String'>
+  readonly connectionGeneration: Prisma.FieldRef<"InstanceQualityProfileOverride", 'Int'>
+  readonly connectionStateToken: Prisma.FieldRef<"InstanceQualityProfileOverride", 'String'>
   readonly createdAt: Prisma.FieldRef<"InstanceQualityProfileOverride", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"InstanceQualityProfileOverride", 'DateTime'>
 }

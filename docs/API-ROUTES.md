@@ -49,7 +49,7 @@ for the full rationale.
 | `/api/manual-import` | stable | Manual import candidates and submission |
 | `/api/hunting` | operator | Auto-search configuration and execution |
 | `/api/queue-cleaner` | operator | Queue cleanup rules, strikes, dry-run preview |
-| `/api/library-cleanup` | internal | Library cleanup rules, approvals, execution |
+| `/api/library-cleanup` | internal | Library cleanup rules, approvals, execution, and action history |
 | `/api/plex` | stable | Now playing, on-deck, history, analytics, forecasts |
 | `/api/jellyfin` | stable | Jellyfin activity and library data |
 | `/api/tautulli` | stable | Provider-specific Tautulli activity, historical analytics, and guarded cache refreshes |
@@ -194,6 +194,17 @@ Per-row sleep is 100ms regardless of phase — that's the politeness budget agai
 | `/trash-guides/quality-profiles` | Profile management |
 | `/trash-guides/custom-formats` | Custom format management |
 
+## Library Cleanup Activity (`/api/library-cleanup`)
+
+Aggregate cleanup-run logs remain separate from the append-only history of
+each proposed or executed action.
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| GET | `/library-cleanup/activity` | Paginated action timelines with a bounded recent-event window |
+| GET | `/library-cleanup/activity/:actionId/events` | Events older than a durable exclusive database-order cursor |
+| GET | `/library-cleanup/logs` | Aggregate manual and scheduled cleanup-run results |
+
 ## Additional Routes
 
 | Prefix | Purpose |
@@ -202,7 +213,7 @@ Per-row sleep is 100ms regardless of phase — that's the politeness budget agai
 | `/api/discover` | TMDB/Seerr discovery |
 | `/api/hunting` | Auto-search configuration and execution |
 | `/api/queue-cleaner` | Queue cleanup rules, strikes, dry-run preview |
-| `/api/library-cleanup` | Library cleanup rules, approvals, execution |
+| `/api/library-cleanup` | Library cleanup rules, approvals, execution, and action history |
 | `/api/manual-import` | Manual import candidates and submission |
 | `/api/backup` | Backup create, download, restore, scheduled backups |
 | `/api/system` | System settings, analytics-provider selection, info, restart |
