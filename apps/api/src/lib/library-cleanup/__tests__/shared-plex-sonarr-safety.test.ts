@@ -9,6 +9,8 @@ import {
 	executeDirectRemoval,
 	executeRetryItems,
 	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
 } from "../cleanup-executor.js";
 import {
 	assertVerifiedSonarrPeerOwnershipRetained,
@@ -2720,14 +2722,37 @@ describe("verified Sonarr mutation handoff", () => {
 			where,
 			data,
 		}: {
-			where: { id?: string; status?: string; executionToken?: string };
+			where: {
+				id?: string;
+				status?: string;
+				executionToken?: string;
+				lastExecutionError?: { in?: string[]; notIn?: string[] } | null;
+				OR?: Array<{ lastExecutionError: { notIn?: string[] } | null }>;
+			};
 			data: Record<string, unknown>;
 		}) => {
+			const matchesLastExecutionError = (
+				filter: { in?: string[]; notIn?: string[] } | null | undefined,
+			) => {
+				const current = (storedApproval.lastExecutionError as string | null | undefined) ?? null;
+				if (filter === null) return current === null;
+				if (!filter) return true;
+				if (filter.in && !filter.in.includes(current ?? "")) return false;
+				if (filter.notIn && (current === null || filter.notIn.includes(current))) return false;
+				return true;
+			};
 			if (where.id && where.id !== storedApproval.id) return { count: 0 };
 			if (where.status && where.status !== storedApproval.status) return { count: 0 };
 			if (
 				where.executionToken !== undefined &&
 				where.executionToken !== storedApproval.executionToken
+			) {
+				return { count: 0 };
+			}
+			if (!matchesLastExecutionError(where.lastExecutionError)) return { count: 0 };
+			if (
+				where.OR &&
+				!where.OR.some((condition) => matchesLastExecutionError(condition.lastExecutionError))
 			) {
 				return { count: 0 };
 			}
@@ -3286,6 +3311,358 @@ describe("verified Sonarr mutation handoff", () => {
 		});
 	});
 
+	it("does not call Sonarr when the episode unmonitor phase cannot be persisted", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		const update = configureApprovalStore(fixture.deps, storedApproval);
+		const baseUpdate = update.getMockImplementation()!;
+		update.mockImplementation((async (args: { data: { lastExecutionError?: string } }) => {
+			if (args.data.lastExecutionError?.includes("could not be safely attributed")) {
+				throw new Error("Database phase write failed");
+			}
+			return baseUpdate(args as never);
+		}) as never);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "retry_pending",
+			lastExecutionError: expect.stringContaining("Sonarr was not called"),
+		});
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("does not delete the episode file when the confirmed phase cannot be persisted", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const storedApproval = {
+			...approval(),
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		const update = configureApprovalStore(fixture.deps, storedApproval);
+		const baseUpdate = update.getMockImplementation()!;
+		update.mockImplementation((async (args: { data: { lastExecutionError?: string } }) => {
+			if (args.data.lastExecutionError === SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE) {
+				throw new Error("Database confirmation write failed");
+			}
+			return baseUpdate(args as never);
+		}) as never);
+
+		const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "retry_pending",
+			lastExecutionError: expect.stringContaining("could not be safely attributed"),
+		});
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("does not call Sonarr for direct cleanup when the started phase cannot be persisted", async () => {
+		const fixture = makeSonarrDeps();
+		const intents = configureRetryStore(fixture.deps);
+		const update = vi.mocked(fixture.deps.prisma.libraryCleanupApproval.updateMany);
+		const baseUpdate = update.getMockImplementation()!;
+		update.mockImplementation((async (args: { data: { lastExecutionError?: string } }) => {
+			if (args.data.lastExecutionError?.includes("could not be safely attributed")) {
+				throw new Error("Database phase write failed");
+			}
+			return baseUpdate(args as never);
+		}) as never);
+		const config = {
+			id: "config-1",
+			maxRemovalsPerRun: 10,
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule()],
+		} as never;
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			config,
+			"user-1",
+			[directEpisodeFlaggedItem(fixture)],
+			1,
+			1,
+			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_PROVIDER_EVIDENCE,
+		);
+
+		expect(result).toMatchObject({
+			status: "completed",
+			itemsRemoved: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 1,
+		});
+		expect(intents).toEqual([
+			expect.objectContaining({
+				status: "retry_pending",
+				lastExecutionError: expect.stringContaining("Sonarr was not called"),
+			}),
+		]);
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("does not delete a direct episode file when the confirmed phase cannot be persisted", async () => {
+		const fixture = makeSonarrDeps();
+		const intents = configureRetryStore(fixture.deps);
+		const update = vi.mocked(fixture.deps.prisma.libraryCleanupApproval.updateMany);
+		const baseUpdate = update.getMockImplementation()!;
+		update.mockImplementation((async (args: { data: { lastExecutionError?: string } }) => {
+			if (args.data.lastExecutionError === SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE) {
+				throw new Error("Database confirmation write failed");
+			}
+			return baseUpdate(args as never);
+		}) as never);
+		const config = {
+			id: "config-1",
+			maxRemovalsPerRun: 10,
+			respectQuiSeeding: true,
+			rules: [episodeCleanupRule()],
+		} as never;
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			config,
+			"user-1",
+			[directEpisodeFlaggedItem(fixture)],
+			1,
+			1,
+			Date.now(),
+			undefined,
+			undefined,
+			new Map(),
+			undefined,
+			TEST_PLEX_PROVIDER_EVIDENCE,
+		);
+
+		expect(result).toMatchObject({
+			status: "completed",
+			itemsRemoved: 0,
+			itemsFilesDeleted: 0,
+			itemsSkipped: 1,
+		});
+		expect(intents).toEqual([
+			expect.objectContaining({
+				status: "retry_pending",
+				lastExecutionError: expect.stringContaining("could not be safely attributed"),
+			}),
+		]);
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("expires an interrupted started phase without repeating an upstream mutation", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const storedApproval = {
+			...approval(),
+			status: "retry_pending",
+			lastExecutionError:
+				"Cleanup stopped because an interrupted episode unmonitor could not be safely attributed. No file deletion was attempted; review the episode in Sonarr before trying again.",
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "expired",
+			lastExecutionError: expect.stringContaining("could not be safely attributed"),
+		});
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("resumes a confirmed unmonitor without sending the unmonitor twice", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		fixture.setLiveEpisodeMonitored(9_001, false);
+		const storedApproval = {
+			...approval(),
+			status: "retry_pending",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+
+		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 1, failed: 0 });
+		expect(storedApproval).toMatchObject({ status: "executed", lastExecutionError: null });
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+	});
+
+	it("expires a started recovery before a transient instance lookup can erase its phase", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		const storedApproval = {
+			...approval(),
+			status: "retry_pending",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+		vi.mocked(fixture.deps.prisma.serviceInstance.findFirst).mockRejectedValue(
+			new Error("database offline"),
+		);
+
+		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "expired",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+		});
+		expect(fixture.deps.prisma.serviceInstance.findFirst).not.toHaveBeenCalled();
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("preserves a confirmed recovery across a transient instance lookup failure", async () => {
+		const fixture = makeSonarrDeps();
+		const episodeTarget = exactEpisodeTarget();
+		const context = createSharedPlexSafetyContext();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") {
+			throw new Error("Expected verified Sonarr episode plan");
+		}
+		fixture.setLiveEpisodeMonitored(9_001, false);
+		const storedApproval = {
+			...approval(),
+			status: "retry_pending",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan),
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+		vi.mocked(fixture.deps.prisma.serviceInstance.findFirst).mockRejectedValueOnce(
+			new Error("database offline"),
+		);
+
+		const firstAttempt = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(firstAttempt).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "retry_pending",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+		});
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+
+		const retry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(retry).toMatchObject({ removed: 1, failed: 0 });
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+	});
+
+	it.each([
+		SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+		SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+	])("preserves a durable episode phase when claimed approvals cannot be loaded", async (phase) => {
+		const fixture = makeSonarrDeps();
+		const storedApproval = {
+			...approval(),
+			status: "retry_pending",
+			lastExecutionError: phase,
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+		} as unknown as Record<string, unknown>;
+		configureApprovalStore(fixture.deps, storedApproval);
+		vi.mocked(fixture.deps.prisma.libraryCleanupApproval.findMany).mockRejectedValueOnce(
+			new Error("database offline"),
+		);
+
+		await expect(executeRetryItems(fixture.deps, "user-1", ["approval-1"])).rejects.toThrow(
+			"database offline",
+		);
+
+		expect(storedApproval).toMatchObject({
+			status: "retry_pending",
+			executionToken: null,
+			lastExecutionError: phase,
+		});
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
 	it("uses the Sonarr-to-Plex path mapping when revalidating an episode unmonitor", async () => {
 		const fixture = makeSonarrDeps({
 			mapFrom: "/tv-4k",
@@ -3489,7 +3866,7 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 	});
 
-	it("keeps an already-unmonitored episode retry durable across a new verified Plex mapping", async () => {
+	it("expires an unattributed episode retry even when a Plex mapping later becomes valid", async () => {
 		const fixture = makeSonarrDeps();
 		const episodeTarget = exactEpisodeTarget();
 		const context = createSharedPlexSafetyContext();
@@ -3556,9 +3933,12 @@ describe("verified Sonarr mutation handoff", () => {
 
 		const retry = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
 
-		expect(retry).toMatchObject({ removed: 1, failed: 0, errors: [] });
-		expect(storedApproval).toMatchObject({ status: "executed" });
-		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+		expect(retry).toMatchObject({ removed: 0, failed: 1 });
+		expect(storedApproval).toMatchObject({
+			status: "expired",
+			lastExecutionError: expect.stringContaining("could not be safely attributed"),
+		});
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 		expect(fixture.deleteSeries).not.toHaveBeenCalled();
 	});
 
@@ -3617,8 +3997,11 @@ describe("verified Sonarr mutation handoff", () => {
 
 		expect(retry).toMatchObject({ removed: 0, failed: 1 });
 		expect(storedApproval).toMatchObject({ status: "expired" });
-		expect(fixture.deps.quiFileHashIndexFactory).toHaveBeenCalled();
-		expect(fixture.deps.quiClientFactory).toHaveBeenCalled();
+		expect(storedApproval).toMatchObject({
+			lastExecutionError: expect.stringContaining("could not be safely attributed"),
+		});
+		expect(fixture.deps.quiFileHashIndexFactory).not.toHaveBeenCalled();
+		expect(fixture.deps.quiClientFactory).not.toHaveBeenCalled();
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 		expect(fixture.deleteSeries).not.toHaveBeenCalled();
 	});
@@ -4417,7 +4800,7 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(intents).toEqual([
 			expect.objectContaining({
 				status: "retry_pending",
-				lastExecutionError: expect.stringContaining("database run lease"),
+				lastExecutionError: expect.stringContaining("accepted the episode unmonitor"),
 			}),
 		]);
 
@@ -4464,6 +4847,7 @@ describe("verified Sonarr mutation handoff", () => {
 			itemsFlagged: 0,
 		});
 		expect(intents).toEqual([expect.objectContaining({ status: "executed" })]);
+		expect(fixture.setEpisodeMonitored).toHaveBeenCalledTimes(1);
 		expect(fixture.bulkDelete).toHaveBeenCalledOnce();
 		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
 	});
@@ -4493,8 +4877,7 @@ describe("verified Sonarr mutation handoff", () => {
 			seasonNumber: 1,
 			episodeNumber: 1,
 			episodeTitle: "Episode 1",
-			lastExecutionError:
-				"Partial cleanup: Sonarr accepted the episode unmonitor, but its file was not deleted. The upstream change was recorded and the mutation will remain retryable.",
+			lastExecutionError: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
 			safetySnapshot: serializeExecutableSafetyPlan(stalePlan),
 		};
 		configureApprovalStore(fixture.deps, storedRetry);
@@ -4503,7 +4886,7 @@ describe("verified Sonarr mutation handoff", () => {
 
 		expect(result).toMatchObject({ removed: 1, failed: 0 });
 		expect(storedRetry).toMatchObject({ status: "executed" });
-		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
 		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
 	});
 
@@ -4542,7 +4925,7 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(storedApproval).toMatchObject({
 			status: "retry_pending",
 			executionToken: null,
-			lastExecutionError: expect.stringContaining("accepted the episode unmonitor"),
+			lastExecutionError: expect.stringContaining("its file was not deleted"),
 		});
 		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
@@ -4589,7 +4972,7 @@ describe("verified Sonarr mutation handoff", () => {
 			expect.objectContaining({
 				status: "retry_pending",
 				executionToken: null,
-				lastExecutionError: expect.stringContaining("accepted the episode unmonitor"),
+				lastExecutionError: expect.stringContaining("its file was not deleted"),
 			}),
 		]);
 		expect(fixture.setEpisodeMonitored).toHaveBeenCalledWith([9_001], false);

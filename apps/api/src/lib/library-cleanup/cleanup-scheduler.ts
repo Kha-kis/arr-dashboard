@@ -30,6 +30,9 @@ import {
 	CleanupRunAlreadyInProgressError,
 	executeCleanupRun,
 	INTERRUPTED_CLEANUP_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+	SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
 } from "./cleanup-executor.js";
 import {
 	CleanupMaintenanceConflictError,
@@ -172,6 +175,125 @@ export class CleanupScheduler {
 				return;
 			}
 			this.logger.warn({ err: error }, failureMessage);
+		}
+	}
+
+	private async recoverInterruptedSonarrEpisodePhases(
+		stuckThreshold: Date,
+		staleRunLeaseThreshold: Date,
+	): Promise<void> {
+		const recoverableConfigWhere = {
+			OR: [
+				{ runClaimToken: null },
+				{ runClaimedAt: null },
+				{ runClaimedAt: { lt: staleRunLeaseThreshold } },
+			],
+		};
+		const transitions = [
+			{
+				fromStatus: "executing",
+				toStatus: "expired",
+				reason: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+				mutationOutcome: "unknown",
+			},
+			{
+				fromStatus: "retry_executing",
+				toStatus: "expired",
+				reason: SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+				mutationOutcome: "unknown",
+			},
+			{
+				fromStatus: "executing",
+				toStatus: "retry_pending",
+				reason: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+				mutationOutcome: "unknown",
+			},
+			{
+				fromStatus: "retry_executing",
+				toStatus: "retry_pending",
+				reason: SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+				mutationOutcome: "unknown",
+			},
+			{
+				fromStatus: "executing",
+				toStatus: "retry_pending",
+				reason: SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+				mutationOutcome: "unknown",
+			},
+			{
+				fromStatus: "retry_executing",
+				toStatus: "retry_pending",
+				reason: SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+				mutationOutcome: "unknown",
+			},
+		] as const;
+
+		for (const transition of transitions) {
+			const recoveryAt = new Date();
+			const auditRows = cleanupAuditEnabled(this.prisma)
+				? await this.prisma.libraryCleanupApproval.findMany({
+						where: {
+							status: transition.fromStatus,
+							lastExecutionError: transition.reason,
+							reviewedAt: { lt: stuckThreshold },
+							config: recoverableConfigWhere,
+						},
+					})
+				: [];
+			try {
+				const result = await this.prisma.libraryCleanupApproval.updateMany({
+					where: {
+						status: transition.fromStatus,
+						lastExecutionError: transition.reason,
+						reviewedAt: { lt: stuckThreshold },
+						config: recoverableConfigWhere,
+					},
+					data: {
+						status: transition.toStatus,
+						executionToken: null,
+						reviewedAt: recoveryAt,
+					},
+				});
+				if (result.count === 0) continue;
+				this.logger.warn(
+					{ recoveredCount: result.count, phase: transition.reason },
+					"Recovered interrupted Sonarr episode cleanup phase",
+				);
+				await runCleanupAuditBestEffort(
+					async () => {
+						const transitioned = await this.prisma.libraryCleanupApproval.findMany({
+							where: {
+								id: { in: auditRows.map((approval) => approval.id) },
+								status: transition.toStatus,
+								reviewedAt: recoveryAt,
+								lastExecutionError: transition.reason,
+							},
+						});
+						for (const approval of transitioned) {
+							await recordApprovalRecoveryTransition(
+								this.prisma,
+								{
+									approval: approvalRecordToAuditSnapshot(approval),
+									correlationId: `recovery:${approval.id}:episode-phase:${approval.reviewedAt?.getTime() ?? 0}`,
+									fromStatus: transition.fromStatus,
+									toStatus: transition.toStatus,
+									reason: transition.reason,
+									mutationOutcome: transition.mutationOutcome,
+									trigger: "scheduled",
+								},
+								this.logger,
+							);
+						}
+					},
+					this.logger,
+					"scheduler Sonarr episode phase recovery",
+				);
+			} catch (error) {
+				this.logger.warn(
+					{ err: error, phase: transition.reason },
+					"Failed to recover interrupted Sonarr episode cleanup phase",
+				);
+			}
 		}
 	}
 
@@ -343,6 +465,7 @@ export class CleanupScheduler {
 					.catch((err) => {
 						this.logger.warn({ err }, "Failed to recover stuck approved cleanup items");
 					});
+				await this.recoverInterruptedSonarrEpisodePhases(stuckThreshold, staleRunLeaseThreshold);
 				const executingRecoveryAuditRows = cleanupAuditEnabled(this.prisma)
 					? await this.prisma.libraryCleanupApproval.findMany({
 							where: {
@@ -357,6 +480,18 @@ export class CleanupScheduler {
 					.updateMany({
 						where: {
 							status: "executing",
+							OR: [
+								{ lastExecutionError: null },
+								{
+									lastExecutionError: {
+										notIn: [
+											SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+											SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+											SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+										],
+									},
+								},
+							],
 							reviewedAt: { lt: stuckThreshold },
 							config: recoverableConfigWhere,
 						},
@@ -423,6 +558,18 @@ export class CleanupScheduler {
 					.updateMany({
 						where: {
 							status: "retry_executing",
+							OR: [
+								{ lastExecutionError: null },
+								{
+									lastExecutionError: {
+										notIn: [
+											SONARR_EPISODE_UNMONITOR_STARTED_RECOVERY_MESSAGE,
+											SONARR_EPISODE_UNMONITOR_CONFIRMED_RECOVERY_MESSAGE,
+											SONARR_EPISODE_UNMONITOR_PARTIAL_MESSAGE,
+										],
+									},
+								},
+							],
 							reviewedAt: { lt: stuckThreshold },
 							config: recoverableConfigWhere,
 						},
