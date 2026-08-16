@@ -443,7 +443,7 @@ describe("parity — composites", () => {
 		expect(result).toBeNull();
 	});
 
-	it("temporarily treats a legacy false leaf as unknown under NOT until Task 3", () => {
+	it("allows NOT to invert a locally proven false predicate", () => {
 		const result = evaluateRuleViaEngine(
 			makeCacheItem({ arrAddedAt: new Date("2026-02-28T00:00:00Z") }),
 			makeRule({
@@ -461,10 +461,225 @@ describe("parity — composites", () => {
 			baseCtx(),
 		);
 
-		// evaluateSingleCondition currently collapses proven false and unavailable
-		// evidence to null. Wave 3A converts that null to unknown so NOT cannot
-		// authorize deletion; Task 3 will supply evidence-aware leaf states.
+		expect(result?.reason).toBe("NOT");
+	});
+
+	it("keeps NOT unknown when a local predicate lacks its required evidence", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem({ arrAddedAt: null }),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: { kind: "age", params: { operator: "older_than", days: 30 } },
+					},
+				}),
+			}),
+			"RADARR",
+			baseCtx(),
+		);
+
 		expect(result).toBeNull();
+	});
+
+	it.each([
+		[
+			"rating without a source",
+			"rating",
+			{ operator: "greater_than", score: 8 },
+			{ ratings: {} },
+			"RADARR",
+		],
+		[
+			"rating with a zero sentinel",
+			"rating",
+			{ operator: "greater_than", score: 8 },
+			{ ratings: { tmdb: { value: 0 } } },
+			"RADARR",
+		],
+		[
+			"IMDb rating on Sonarr",
+			"imdb_rating",
+			{ operator: "greater_than", score: 8 },
+			{ ratings: { imdb: { value: 7 } } },
+			"SONARR",
+		],
+		[
+			"non-TMDb rating on Radarr",
+			"rating",
+			{ operator: "greater_than", score: 8 },
+			{ ratings: { imdb: { value: 7 } } },
+			"RADARR",
+		],
+		[
+			"blank language",
+			"language",
+			{ operator: "includes_any", languages: ["English"] },
+			{ originalLanguage: "" },
+			"RADARR",
+		],
+		[
+			"null custom-format score",
+			"custom_format_score",
+			{ operator: "greater_than", score: 0 },
+			{ movieFile: { customFormatScore: null } },
+			"RADARR",
+		],
+		[
+			"blank codec",
+			"video_codec",
+			{ operator: "is", codecs: ["h265"] },
+			{ movieFile: { videoCodec: "" } },
+			"RADARR",
+		],
+		[
+			"missing dynamic-range field",
+			"hdr_type",
+			{ operator: "is", types: ["HDR10"] },
+			{ movieFile: {} },
+			"RADARR",
+		],
+		["blank path", "file_path", { operator: "matches", pattern: "movie" }, { path: "" }, "RADARR"],
+		[
+			"runtime available only through an unsupported fallback",
+			"runtime",
+			{ operator: "greater_than", minutes: 60 },
+			{ statistics: { runtime: 120 } },
+			"RADARR",
+		],
+		[
+			"malformed tag inventory",
+			"tag_match",
+			{ operator: "includes_any", tagIds: [1] },
+			{ tags: [null] },
+			"RADARR",
+		],
+	] as const)(
+		"keeps NOT unknown for incomplete %s evidence",
+		(_label, kind, params, data, service) => {
+			const result = evaluateRuleViaEngine(
+				makeCacheItem({ data: JSON.stringify({ remoteIds: { tmdbId: 12345 }, ...data }) }),
+				makeRule({
+					ruleType: "composite",
+					parameters: "{}",
+					operator: null,
+					conditions: JSON.stringify({ version: 1, root: { not: { kind, params } } }),
+				}),
+				service,
+				baseCtx(),
+			);
+
+			expect(result).toBeNull();
+		},
+	);
+
+	it("allows NOT to invert a rating comparison with a complete source value", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem(),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: { not: { kind: "rating", params: { operator: "greater_than", score: 8 } } },
+				}),
+			}),
+			"RADARR",
+			baseCtx(),
+		);
+
+		expect(result?.reason).toBe("NOT");
+	});
+
+	it("allows NOT to invert a provider predicate with item-level evidence", () => {
+		const plexMap = new Map([["movie:12345", makePlexInfo({ onDeck: false })]]);
+		const result = evaluateRuleViaEngine(
+			makeCacheItem(),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: { not: { kind: "plex_on_deck", params: { isDeck: true } } },
+				}),
+			}),
+			"RADARR",
+			baseCtx({ plexMap }),
+		);
+
+		expect(result?.reason).toBe("NOT");
+	});
+
+	it("keeps NOT unknown when a successful media snapshot lacks the exact item", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem(),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: { not: { kind: "plex_on_deck", params: { isDeck: true } } },
+				}),
+			}),
+			"RADARR",
+			baseCtx({ plexMap: new Map(), availableDataSources: new Set(["plex"]) }),
+		);
+
+		expect(result).toBeNull();
+	});
+
+	it("uses an explicit successful empty source snapshot as negative evidence", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem(),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: { kind: "seerr_is_requested", params: { isRequested: true } },
+					},
+				}),
+			}),
+			"RADARR",
+			baseCtx({ seerrMap: new Map(), availableDataSources: new Set(["seerr"]) }),
+		);
+
+		expect(result?.reason).toBe("NOT");
+	});
+
+	it("uses a successful episode-only provider snapshot as false evidence", () => {
+		const result = evaluateRuleViaEngine(
+			makeCacheItem({ itemType: "series" }),
+			makeRule({
+				ruleType: "composite",
+				parameters: "{}",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: {
+							kind: "jellyfin_episode_completion",
+							params: { operator: "less_than", percentage: 50 },
+						},
+					},
+				}),
+			}),
+			"SONARR",
+			baseCtx({
+				availableDataSources: new Set(["jellyfin"]),
+				jellyfinEpisodeMap: new Map([[12345, { total: 10, watched: 10, seasons: new Map() }]]),
+			}),
+		);
+
+		expect(result?.reason).toBe("NOT");
 	});
 });
 
@@ -551,6 +766,34 @@ describe("parity — evaluateItemAgainstRules (two-phase loop)", () => {
 			parameters: JSON.stringify({ operator: "older_than", days: 30 }),
 		});
 		const result = assertLoopParity([plexRule], makeCacheItem(), new Set(["plex"]));
+		expect(result).toBeNull();
+	});
+
+	it("lets unknown canonical retention evidence block a later cleanup match", () => {
+		const canonicalRetention = makeRule({
+			id: "retention-v1",
+			retentionMode: true,
+			ruleType: "composite",
+			parameters: "{}",
+			operator: null,
+			conditions: JSON.stringify({
+				version: 1,
+				root: { kind: "age", params: { operator: "newer_than", days: 30 } },
+			}),
+		});
+		const cleanup = matchingRule({
+			id: "cleanup-no-file",
+			ruleType: "no_file",
+			parameters: "{}",
+		});
+
+		const result = evaluateItemAgainstRulesViaEngine(
+			makeCacheItem({ arrAddedAt: null, hasFile: false }),
+			[canonicalRetention, cleanup],
+			"RADARR",
+			baseCtx(),
+		);
+
 		expect(result).toBeNull();
 	});
 });

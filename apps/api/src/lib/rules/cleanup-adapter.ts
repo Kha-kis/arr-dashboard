@@ -44,6 +44,7 @@ import type {
 } from "../library-cleanup/types.js";
 import type { LibraryCleanupRule } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
+import { evaluateCleanupPredicate } from "./cleanup-predicate-evidence.js";
 import { evaluateDocument, type PredicateEvaluator, UNKNOWN } from "./engine.js";
 import { mapCriteriaV0ToDocument } from "./v0-mappers.js";
 
@@ -51,19 +52,24 @@ import { mapCriteriaV0ToDocument } from "./v0-mappers.js";
  * Engine-backed equivalent of `evaluateRule` (rule-evaluators.ts).
  * Identical inputs, identical outputs — proven by the parity suite.
  */
-export function evaluateRuleViaEngine(
+type CleanupRuleEvaluation =
+	| { state: "match"; match: RuleMatch }
+	| { state: "no_match" }
+	| { state: "unknown" };
+
+function evaluateCleanupRuleState(
 	item: CacheItemForEval,
 	rule: LibraryCleanupRule,
 	instanceService: string,
 	ctx: EvalContext,
-): RuleMatch | null {
-	if (!rule.enabled) return null;
+): CleanupRuleEvaluation {
+	if (!rule.enabled) return { state: "no_match" };
 
 	// Pre-filters — the legacy functions, not copies.
-	if (!passesServiceFilter(instanceService, rule.serviceFilter)) return null;
-	if (!passesInstanceFilter(item.instanceId, rule.instanceFilter)) return null;
-	if (!passesTagExclusion(item, rule.excludeTags)) return null;
-	if (!passesTitleExclusion(item.title, rule.excludeTitles)) return null;
+	if (!passesServiceFilter(instanceService, rule.serviceFilter)) return { state: "no_match" };
+	if (!passesInstanceFilter(item.instanceId, rule.instanceFilter)) return { state: "no_match" };
+	if (!passesTagExclusion(item, rule.excludeTags)) return { state: "no_match" };
+	if (!passesTitleExclusion(item.title, rule.excludeTitles)) return { state: "no_match" };
 
 	const plexLibFilter = safeJsonParse(rule.plexLibraryFilter) as string[] | null;
 	const action = (rule.action ?? "delete") as RuleAction;
@@ -74,10 +80,10 @@ export function evaluateRuleViaEngine(
 		rule.ruleType === "composite" && rule.operator === null && rule.conditions !== null;
 	if (rule.operator && rule.conditions) {
 		const conditions = safeJsonParse(rule.conditions) as unknown[] | null;
-		if (!conditions?.length) return null;
+		if (!conditions?.length) return { state: "no_match" };
 	} else if (!isStoredV1Document) {
 		const params = safeJsonParse(rule.parameters) as Record<string, unknown> | null;
-		if (!params) return null;
+		if (!params) return { state: "no_match" };
 	}
 
 	let doc: RuleDocument;
@@ -85,10 +91,15 @@ export function evaluateRuleViaEngine(
 		doc = mapCriteriaV0ToDocument(rule);
 	} catch {
 		// Unrepresentable row (see header) — no-match, never a thrown run.
-		return null;
+		return isStoredV1Document ? { state: "unknown" } : { state: "no_match" };
 	}
 
 	const evalPredicate: PredicateEvaluator = (predicate) => {
+		if (isStoredV1Document) {
+			const result = evaluateCleanupPredicate(item, predicate, ctx, instanceService, plexLibFilter);
+			if (result.state === "unknown") return UNKNOWN;
+			return result.state === "match" ? result.reason : null;
+		}
 		const reason = evaluateSingleCondition(
 			item,
 			predicate.kind,
@@ -96,28 +107,36 @@ export function evaluateRuleViaEngine(
 			ctx,
 			plexLibFilter,
 		);
-		// Temporary Wave 3A bridge: the legacy evaluator collapses proven false
-		// and unavailable evidence to null. Recursive cleanup documents treat that
-		// null as unknown so NOT cannot create deletion authority. Task 3 replaces
-		// this bridge with evidence-aware true/false/unknown predicate results.
-		return reason ?? (isStoredV1Document ? UNKNOWN : null);
+		return reason;
 	};
 
 	const result = evaluateDocument(doc, evalPredicate);
-	return result.matched
-		? {
-				ruleId: rule.id,
-				ruleName: rule.name,
-				reason: result.reason,
-				action,
-				...(rule.scanMediaServerAfterDelete
-					? {
-							scanMediaServerAfterDelete: true as const,
-							scanMediaServerInstanceIds: rule.scanMediaServerInstanceIds,
-						}
-					: {}),
-			}
-		: null;
+	if (!result.matched) return result.unknown ? { state: "unknown" } : { state: "no_match" };
+	return {
+		state: "match",
+		match: {
+			ruleId: rule.id,
+			ruleName: rule.name,
+			reason: result.reason,
+			action,
+			...(rule.scanMediaServerAfterDelete
+				? {
+						scanMediaServerAfterDelete: true as const,
+						scanMediaServerInstanceIds: rule.scanMediaServerInstanceIds,
+					}
+				: {}),
+		},
+	};
+}
+
+export function evaluateRuleViaEngine(
+	item: CacheItemForEval,
+	rule: LibraryCleanupRule,
+	instanceService: string,
+	ctx: EvalContext,
+): RuleMatch | null {
+	const result = evaluateCleanupRuleState(item, rule, instanceService, ctx);
+	return result.state === "match" ? result.match : null;
 }
 
 /**
@@ -139,16 +158,16 @@ export function evaluateItemAgainstRulesViaEngine(
 		if (!rule.retentionMode) continue;
 		if (!passesCleanupRuleFilters(item, rule, instanceService)) continue;
 		if (ruleUsesUnavailableData(rule, failedSources)) return null;
-		const match = evaluateRuleViaEngine(item, rule, instanceService, ctx);
-		if (match) return null;
+		const result = evaluateCleanupRuleState(item, rule, instanceService, ctx);
+		if (result.state !== "no_match") return null;
 	}
 
 	// Phase 2: cleanup rules — first match wins
 	for (const rule of rules) {
 		if (rule.retentionMode) continue;
 		if (ruleUsesUnavailableData(rule, failedSources)) continue;
-		const match = evaluateRuleViaEngine(item, rule, instanceService, ctx);
-		if (match) return match;
+		const result = evaluateCleanupRuleState(item, rule, instanceService, ctx);
+		if (result.state === "match") return result.match;
 	}
 	return null;
 }

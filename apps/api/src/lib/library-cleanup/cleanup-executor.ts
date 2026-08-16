@@ -7086,7 +7086,12 @@ async function evaluateAllItems(
 					? "ok"
 					: "failed"
 				: "skipped",
-		jellyfin: hasJellyfinRules ? (jellyfinMap ? "ok" : "failed") : "skipped",
+		jellyfin:
+			hasJellyfinRules || hasJellyfinEpisodeRules
+				? (!hasJellyfinRules || jellyfinMap) && (!hasJellyfinEpisodeRules || jellyfinEpisodeMap)
+					? "ok"
+					: "failed"
+				: "skipped",
 	};
 
 	// Check for failed prefetches that have dependent rules — generate warnings
@@ -7116,6 +7121,9 @@ async function evaluateAllItems(
 	// Build evaluation context
 	const ctx: EvalContext = {
 		now,
+		availableDataSources: new Set(
+			(["seerr", "plex", "jellyfin"] as const).filter((source) => prefetchHealth[source] === "ok"),
+		),
 		seerrMap,
 		plexMap,
 		plexSectionTitles: plexEvidence?.plexSectionTitles,
@@ -10264,6 +10272,13 @@ export async function buildEvalContext(
 
 	return {
 		now: new Date(),
+		availableDataSources: new Set([
+			...(needsSeerr && seerrMap ? (["seerr"] as const) : []),
+			...(plexEvidence ? (["plex"] as const) : []),
+			...((needsJellyfin && jellyfinMap) || (needsJellyfinEpisodes && jellyfinEpisodeMap)
+				? (["jellyfin"] as const)
+				: []),
+		]),
 		seerrMap: seerrMap ?? undefined,
 		plexMap: plexEvidence?.plexMap,
 		plexSectionTitles: plexEvidence?.plexSectionTitles,

@@ -503,6 +503,80 @@ describe("mutation policy evidence authority", () => {
 		).toMatchObject({ kind: "cleanup", match: { ruleId: "rule-recursive" } });
 	});
 
+	it("uses the same proven NOT expression for preview and mutation authorization", () => {
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive-not",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: { not: { kind: "year_range", params: { operator: "after", year: 2030 } } },
+				}),
+			},
+		);
+		const item = mutationEvidenceItem({ _arrDashboardEvidence: {} });
+		const context = { now: new Date() };
+
+		expect(evaluateRuleViaEngine(item as never, rule as never, "RADARR", context)).toMatchObject({
+			ruleId: "rule-recursive-not",
+			reason: "NOT",
+		});
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(item as never, [rule] as never, "RADARR", context),
+		).toMatchObject({ kind: "cleanup", match: { ruleId: "rule-recursive-not" } });
+	});
+
+	it("fails closed when NOT lacks the field needed to prove false", () => {
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive-not-missing",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: { not: { kind: "year_range", params: { operator: "after", year: 2030 } } },
+				}),
+			},
+		);
+		const item = { ...mutationEvidenceItem({ _arrDashboardEvidence: {} }), year: null };
+		const context = { now: new Date() };
+
+		expect(evaluateRuleViaEngine(item as never, rule as never, "RADARR", context)).toBeNull();
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(item as never, [rule] as never, "RADARR", context),
+		).toEqual({ kind: "unknown", ruleId: "rule-recursive-not-missing" });
+	});
+
+	it("keeps partial file evidence unknown in both NOT preview and mutation authorization", () => {
+		const rule = mutationEvidenceRule(
+			"composite",
+			{},
+			{
+				id: "rule-recursive-not-partial-file",
+				operator: null,
+				conditions: JSON.stringify({
+					version: 1,
+					root: {
+						not: { kind: "custom_format_score", params: { operator: "greater_than", score: 0 } },
+					},
+				}),
+			},
+		);
+		const item = mutationEvidenceItem({
+			movieFile: { customFormatScore: null },
+			_arrDashboardEvidence: { hasFile: true },
+		});
+		const context = { now: new Date() };
+
+		expect(evaluateRuleViaEngine(item as never, rule as never, "RADARR", context)).toBeNull();
+		expect(
+			evaluateItemMutationPolicyStateViaEngine(item as never, [rule] as never, "RADARR", context),
+		).toEqual({ kind: "unknown", ruleId: "rule-recursive-not-partial-file" });
+	});
+
 	it("fails closed when a nested expression depends on a failed provider", () => {
 		const rule = mutationEvidenceRule(
 			"composite",
