@@ -18,6 +18,7 @@ describe("TemplateUpdater cache provenance", () => {
 				getLatestCommit: vi.fn().mockResolvedValue({ commitHash }),
 			} as never,
 			{
+				getSnapshot: vi.fn().mockResolvedValue(null),
 				getProvenance: vi.fn().mockResolvedValue({
 					...expectedProvenance,
 					commitHash: "old",
