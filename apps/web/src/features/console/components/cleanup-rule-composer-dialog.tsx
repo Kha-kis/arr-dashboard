@@ -47,7 +47,6 @@ import { getDefaultConditionParams } from "../../rule-criteria/components/condit
 import {
 	type CriteriaEditorState,
 	decomposeCriteriaDocument,
-	isCriteriaDocumentV0Editable,
 	toCriteriaV0Payload,
 } from "../lib/rule-document-editor";
 import { CriteriaConditionEditor } from "./criteria-condition-editor";
@@ -118,11 +117,7 @@ export function CleanupRuleComposerDialog({
 	// retentionMode:false) and write them over the stored values — on a media-
 	// deletion rule, silently flipping e.g. "unmonitor" → "delete". So we gate.
 	const editDataReady = !isEdit || (Boolean(summary) && Boolean(configRule));
-	const isRecursiveReadOnly = Boolean(
-		isEdit &&
-			configRule?.expression &&
-			(!summary?.document || !isCriteriaDocumentV0Editable(summary.document)),
-	);
+	const isRecursiveReadOnly = Boolean(isEdit && configRule?.expression);
 
 	const [name, setName] = useState("");
 	const [enabled, setEnabled] = useState(true);

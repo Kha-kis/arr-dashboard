@@ -231,6 +231,19 @@ describe("CleanupRuleComposerDialog — edit", () => {
 		expect(updateMutate).not.toHaveBeenCalled();
 	});
 
+	it("keeps a flat canonical expression read-only instead of submitting legacy fields", async () => {
+		const expression = automationData.rules[0]!.document!;
+		configData!.rules[0]!.operator = null;
+		configData!.rules[0]!.conditions = null;
+		configData!.rules[0]!.expression = expression;
+
+		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} editRuleId="rule-1" />);
+
+		expect(await screen.findByText(/recursive rule is read-only/i)).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /save changes/i })).not.toBeInTheDocument();
+		expect(updateMutate).not.toHaveBeenCalled();
+	});
+
 	it("prefills name + action + both composite conditions from the joined sources", async () => {
 		wrapper(<CleanupRuleComposerDialog open onOpenChange={() => {}} editRuleId="rule-1" />);
 
