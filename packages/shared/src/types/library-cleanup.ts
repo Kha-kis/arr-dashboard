@@ -388,9 +388,26 @@ export interface CleanupPreviewItem {
 export interface CleanupPreviewResponse {
 	totalEvaluated: number;
 	totalFlagged: number;
-	/** Durable mutation retries displayed separately from current rule matches. */
-	pendingRetryCount?: number;
+	/** Null means durable retry storage was unavailable and the count is unknown. */
+	pendingRetryCount?: number | null;
+	/** True only when durable retry ownership and all selection counts are trustworthy. */
+	selectionCountsComplete: boolean;
 	items: CleanupPreviewItem[];
+	selection?: {
+		selectedFresh: number;
+		selectedRetries: number;
+		deferredBudget: number;
+		deferredApproval: number;
+		deferredRetryFairness: number;
+		deferredInFlightTarget: number;
+		deferredDuplicateTarget: number;
+		inFlight: number;
+		blocked: number;
+		retryStateUnavailable: number;
+		retryState: "complete" | "unavailable";
+		total: number;
+	};
+	display?: { shown: number; hidden: number; limit: number; complete: boolean };
 	prefetchHealth?: PrefetchHealthStatus;
 	warnings?: string[];
 	providerEvidence?: CleanupProviderEvidence;

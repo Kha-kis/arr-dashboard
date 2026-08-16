@@ -234,9 +234,29 @@ export interface CleanupRunResult {
 	itemsEvaluated: number;
 	itemsFlagged: number;
 	/** Durable retries shown alongside current rule matches in preview responses. */
-	pendingRetryCount?: number;
-	/** Distinct retry and fresh-candidate targets available to an interactive preview. */
+	pendingRetryCount?: number | null;
+	/** Whether retry ownership and planner counts were loaded completely. */
+	selectionCountsComplete?: boolean;
+	/** Known retry and fresh-candidate targets available to an interactive preview. */
 	previewItemCount?: number;
+	/**
+	 * Next-run slot selection counts; blocked is an overlapping subset of
+	 * selectedFresh because safety-blocked slots are never backfilled.
+	 */
+	previewSelection?: {
+		selectedFresh: number;
+		selectedRetries: number;
+		deferredBudget: number;
+		deferredApproval: number;
+		deferredRetryFairness: number;
+		deferredInFlightTarget: number;
+		deferredDuplicateTarget: number;
+		inFlight: number;
+		blocked: number;
+		retryStateUnavailable: number;
+		retryState: "complete" | "unavailable";
+		total: number;
+	};
 	itemsRemoved: number;
 	itemsUnmonitored: number;
 	itemsFilesDeleted: number;

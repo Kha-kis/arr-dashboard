@@ -646,15 +646,45 @@ function ConfigTab({
 					/>
 					<div className="relative p-5">
 						<h4 className="text-h4 mb-3">
-							Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} items
-							flagged
-							{previewData.pendingRetryCount
-								? ` · ${previewData.pendingRetryCount} ${
-										previewData.pendingRetryCount === 1 ? "retry" : "retries"
-									} pending`
-								: ""}
+							Preview Results ({previewData.totalFlagged} of {previewData.totalEvaluated} rule
+							matches
+							{previewData.pendingRetryCount === null
+								? " · retry count unavailable"
+								: previewData.pendingRetryCount
+									? ` · ${previewData.pendingRetryCount} ${
+											previewData.pendingRetryCount === 1 ? "retry" : "retries"
+										} pending`
+									: ""}
 							)
 						</h4>
+						{previewData.selectionCountsComplete === false ||
+						previewData.selection?.retryState === "unavailable" ? (
+							<p className="mb-3 text-sm text-muted-foreground">
+								Next run cannot be determined: durable retry state is unavailable.
+							</p>
+						) : previewData.selection ? (
+							<p className="mb-3 text-sm text-muted-foreground">
+								Next run reserves {previewData.selection.selectedFresh} fresh{" "}
+								{previewData.selection.selectedFresh === 1 ? "slot" : "slots"}
+								{previewData.selection.selectedRetries > 0
+									? ` + ${previewData.selection.selectedRetries} retry ${previewData.selection.selectedRetries === 1 ? "attempt" : "attempts"}`
+									: ""}
+								.{" "}
+								{previewData.selection.deferredBudget +
+									previewData.selection.deferredApproval +
+									previewData.selection.deferredRetryFairness +
+									(previewData.selection.deferredInFlightTarget ?? 0) +
+									(previewData.selection.deferredDuplicateTarget ?? 0) +
+									previewData.selection.retryStateUnavailable}{" "}
+								deferred.
+								{previewData.selection.inFlight > 0
+									? ` ${previewData.selection.inFlight} currently in flight.`
+									: ""}
+								{previewData.selection.blocked > 0
+									? ` Selected fresh slots include ${previewData.selection.blocked} currently safety-blocked ${previewData.selection.blocked === 1 ? "item" : "items"}.`
+									: ""}
+							</p>
+						) : null}
 						{previewData.prefetchHealth &&
 							Object.entries(previewData.prefetchHealth).some(([, s]) => s === "failed") && (
 								<div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
