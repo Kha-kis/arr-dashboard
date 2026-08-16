@@ -645,7 +645,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			if (!result.triggered) {
-				// Use standard error format per CLAUDE.md
+				// Use the standard API error format
 				return reply.status(429).send({
 					error: result.message,
 				});

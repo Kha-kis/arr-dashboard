@@ -22,7 +22,7 @@ export interface QuiRequestContext {
  * Issue a request to qui and validate the response with the supplied
  * Zod schema. Errors are normalised:
  *  - network/timeout → QuiInstanceUnreachableError (HTTP 503)
- *  - 4xx/5xx HTTP   → QuiApiError (status mapped per CLAUDE.md error convention)
+ *  - 4xx/5xx HTTP   → QuiApiError (status mapped per the development error convention)
  *  - shape drift    → QuiApiError(502)
  *
  * Validation lives at this boundary so handlers receive already-typed

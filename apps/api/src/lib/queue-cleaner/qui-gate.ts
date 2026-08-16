@@ -65,7 +65,7 @@ export function partitionByGatedHashes(
  * Resolve the set of item IDs whose torrent qui considers gated (paused/error).
  *
  * @param prisma  Prisma client (used to query LibraryCache scoped to userId)
- * @param userId  Owner of the LibraryCache rows (CLAUDE.md §Ownership)
+ * @param userId  Owner of the LibraryCache rows (AGENTS.md ownership invariant)
  * @param hashesByItemId  Map of *arr queueItemId → normalized lowercase hash
  *                        for every matched item the caller wants to consider
  *

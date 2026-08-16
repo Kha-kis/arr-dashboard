@@ -13,20 +13,18 @@ pnpm install && pnpm run dev  # API (3001) + Web (3000)
 ## Development Guide
 
 Start with [`AGENTS.md`](AGENTS.md) for branch, safety, and verification rules.
-The detailed development reference is [`CLAUDE.md`](CLAUDE.md) — it covers:
+The detailed development reference is
+[`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) — it covers:
 - Architecture (Fastify + Next.js + Prisma monorepo)
 - Code style and conventions (Biome, TypeScript strict mode)
 - Key patterns (auth, encryption, API proxy, theming)
 - How to add features (routes, pages, database changes)
 
-Codex users also get repository-scoped workflows from `.agents/skills/` and
-project reviewers from `.codex/agents/`; no personal installation is required.
-
 ## Submitting Changes
 
 1. **Fork** the repo and choose the correct base: `next` for 3.0 work, or
    `main` only for stable 2.x maintenance
-2. **Follow existing patterns** — check `CLAUDE.md` for conventions
+2. **Follow existing patterns** — check `docs/DEVELOPMENT.md` for conventions
 3. **Test your changes**:
    ```bash
    pnpm run format
@@ -42,7 +40,7 @@ project reviewers from `.codex/agents/`; no personal installation is required.
 
 - **Focused** — One concern per PR
 - **Tested** — Types pass, lint clean, tests pass
-- **Documented** — Update CLAUDE.md if you add patterns, routes, or conventions
+- **Documented** — Update the development or domain documentation when you add patterns, routes, or conventions
 
 ## Architecture-Affecting Changes
 

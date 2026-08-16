@@ -25,9 +25,8 @@ Before bumping any version numbers, decide *what* this release contains.
 - [ ] Write `CHANGELOG.md` entry following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format
 - [ ] Update `README.md` — version tagline at top + version tags table
 - [ ] Update `DOCKERHUB.md` — version tagline at top + version tags table
-- [ ] Update `CLAUDE.md` — version at bottom
-- [ ] Update **Wiki** — version in `Home.md` and `Troubleshooting.md` (`/tmp/arr-wiki` or clone from `arr-dashboard.wiki.git`)
-- [ ] Update `CLAUDE.md` if new routes, models, patterns, or conventions were added
+- [ ] Update **Wiki** — version in `Home.md` and `Troubleshooting.md` using a fresh temporary clone of `arr-dashboard.wiki.git`
+- [ ] Update `docs/DEVELOPMENT.md` or the relevant domain reference if routes, models, patterns, or conventions changed
 
 ### 2. Code Quality
 
@@ -150,9 +149,8 @@ decisions). They are independent of the existing `vX.Y.Z` "Released in …"
 labels, which are applied *after* a release to record what shipped — keep
 both. When preparing a release, see [Step 0: Determine Release Scope](#0-determine-release-scope).
 
-The `/release-ops` slash command (`.claude/commands/release-ops.md`) automates
-the audit-and-classify pass and produces a release-draft summary; review its
-proposed labels before applying.
+Maintainer-local release tooling may automate the audit-and-classify pass, but
+its proposed labels must be reviewed before applying.
 
 ## Hotfix Process
 

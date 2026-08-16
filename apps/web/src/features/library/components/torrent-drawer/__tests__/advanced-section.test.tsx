@@ -6,7 +6,7 @@
  * `renameValue` and `locationValue` seeded their initial state from
  * `copy.name` and `copy.savePath` directly — so a screen-share with
  * incognito mode ON would show a masked drawer header but unmasked
- * path/name inside the inputs. CLAUDE.md Critical Rule 6 violation
+ * path/name inside the inputs. This violates the AGENTS.md incognito invariant.
  * (any component displaying sensitive data must use `useIncognitoMode()`
  * and anonymize via `lib/incognito`).
  *

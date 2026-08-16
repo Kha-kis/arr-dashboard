@@ -1,6 +1,6 @@
 # Authentication System
 
-> Reference documentation extracted from CLAUDE.md for detailed deep dives into the authentication system.
+> Versioned developer reference for the authentication system.
 
 ## Overview
 

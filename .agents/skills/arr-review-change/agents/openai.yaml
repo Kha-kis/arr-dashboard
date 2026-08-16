@@ -1,4 +1,0 @@
-interface:
-  display_name: "Review arr-dashboard change"
-  short_description: "Review changes for regressions and safety"
-  default_prompt: "Use $arr-review-change to assess this branch for correctness and merge risk."

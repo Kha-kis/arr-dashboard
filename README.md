@@ -4,7 +4,7 @@
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
-Now integrates with **[autobrr/qui](https://github.com/autobrr/qui)** as a federated peer for torrent-layer observability — surface seed health, ratios, and cross-seed siblings alongside your *arr/library data without arr-dashboard owning torrent-layer logic. See [docs/QUI.md](docs/QUI.md) for setup.
+Now integrates with **[autobrr/qui](https://github.com/autobrr/qui)** as a federated peer for torrent-layer observability — surface seed health, ratios, and cross-seed siblings alongside your *arr/library data without arr-dashboard owning torrent-layer logic. See the [qUI integration guide](https://github.com/Kha-kis/arr-dashboard/wiki/qUI-Integration) for setup.
 
 [![CI](https://github.com/Kha-kis/arr-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Kha-kis/arr-dashboard/actions/workflows/ci.yml)
 [![Dev Build](https://github.com/Kha-kis/arr-dashboard/actions/workflows/docker-dev.yml/badge.svg)](https://github.com/Kha-kis/arr-dashboard/actions/workflows/docker-dev.yml)
@@ -274,7 +274,7 @@ First-class support is reserved for services listed in the table above.
 | `2.7.0` | Major stack upgrade (Node 22, Next.js 16, Prisma 7, Tailwind 4) |
 | `2.5.0` | **Breaking:** Volume path changed to `/config` (LinuxServer.io convention) |
 
-> **Upgrading from 2.4.x?** See [RELEASE_NOTES.md](RELEASE_NOTES.md) for migration instructions. The volume mount path changed from `/app/data` to `/config`.
+> **Upgrading from 2.4.x?** See the [2.5.0 changelog entry](CHANGELOG.md#250---2025-10-01) for migration instructions. The volume mount path changed from `/app/data` to `/config`.
 
 ## Configuration
 
@@ -497,6 +497,7 @@ docker-compose up -d
 | [Statistics](https://github.com/Kha-kis/arr-dashboard/wiki/Statistics) | Aggregated health and library metrics |
 | [Discover](https://github.com/Kha-kis/arr-dashboard/wiki/Discover) | TMDB trending, popular, and upcoming content |
 | [Plex & Tautulli](https://github.com/Kha-kis/arr-dashboard/wiki/Plex-and-Tautulli-Integration) | Now playing, analytics, watch history |
+| [qUI](https://github.com/Kha-kis/arr-dashboard/wiki/qUI-Integration) | Torrent state, seed health, ratios, cross-seed visibility, and audited actions |
 | [Seerr](https://github.com/Kha-kis/arr-dashboard/wiki/Seerr-Integration) | Request management and approval |
 | [Notifications](https://github.com/Kha-kis/arr-dashboard/wiki/Notification-System) | Discord, Telegram, Email, and 5 more channels |
 | [Library Cleanup](https://github.com/Kha-kis/arr-dashboard/wiki/Library-Cleanup) | Rule-based cleanup with approval workflow |
@@ -515,7 +516,8 @@ docker-compose up -d
 | [Troubleshooting](https://github.com/Kha-kis/arr-dashboard/wiki/Troubleshooting) | Common issues and solutions |
 | [FAQ](https://github.com/Kha-kis/arr-dashboard/wiki/FAQ) | Frequently asked questions |
 
-**For Contributors:** See [CLAUDE.md](CLAUDE.md) for technical architecture and development guide.
+**For Contributors:** See [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[development reference](docs/DEVELOPMENT.md).
 
 ## Contributing
 

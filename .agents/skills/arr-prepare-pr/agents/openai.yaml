@@ -1,4 +1,0 @@
-interface:
-  display_name: "Prepare arr-dashboard PR"
-  short_description: "Prepare a focused and evidence-backed PR"
-  default_prompt: "Use $arr-prepare-pr to assess readiness, draft the pull request, and complete its final GitHub review audit."

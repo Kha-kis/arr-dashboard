@@ -42,14 +42,14 @@ coverage/
 # Database files
 *.db
 *.db-journal
-data/
-data-dev/
+/data/
+/data-dev/
 
-# Development config (local overrides)
-config/
-config-dev/
-config-test/
-test-config/
+# Development config (local overrides at the repository root)
+/config/
+/config-dev/
+/config-test/
+/test-config/
 
 # Sensitive data — must never be committed
 secrets.json
@@ -68,19 +68,17 @@ backups/
 **/.playwright-cli/
 auth-state.json
 **/auth-state.json
+/e2e/**/screenshots/
 
-# Claude Code
-.claude/*
-!.claude/agents/
-!.claude/commands/
-!.claude/skills/
-# Ignore fetched skill symlinks, keep owned .md files
-.claude/skills/next-best-practices
-.claude/skills/shadcn
-.claude/skills/web-design-guidelines
-.agents/*
-!.agents/skills/
+# Maintainer-local agent tooling and state
+.claude/
+.agents/
+.codex/
 skills-lock.json
+/HANDOVER.md
+/.worktrees/
+/worktrees/
+/docs/plans/
 
 # AI/ML development tool artifacts
 .auditor_venv/

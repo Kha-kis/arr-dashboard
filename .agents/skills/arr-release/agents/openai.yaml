@@ -1,4 +1,0 @@
-interface:
-  display_name: "Release arr-dashboard"
-  short_description: "Prepare stable and prerelease releases safely"
-  default_prompt: "Use $arr-release to prepare and verify this arr-dashboard release."

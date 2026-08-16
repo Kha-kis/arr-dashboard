@@ -231,7 +231,7 @@ export function registerWebhookRoutes(app: FastifyInstance): void {
 
 	// `secret` is part of the validated body schema so we never reach for
 	// `request.body as Record<string, unknown>` (a previous shape leaked
-	// the unvalidated path through a bypass cast — see CLAUDE.md rule 5).
+	// the unvalidated path through a bypass cast — see AGENTS.md validation invariant).
 	const REGISTER_BODY = z.object({
 		secret: z.string().min(16, "secret must be at least 16 characters"),
 		eventTypes: z.array(z.string()).optional(),

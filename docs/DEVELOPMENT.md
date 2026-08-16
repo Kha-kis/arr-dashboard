@@ -1,10 +1,12 @@
-# CLAUDE.md
+# Development Reference
 
 ## Quick Start
 
 ```bash
 pnpm install && pnpm run dev  # API (3001) + Web (3000)
 ```
+
+Requirements: Node.js 22+ and pnpm 10+.
 
 ## Critical Rules
 
@@ -57,7 +59,7 @@ packages/shared/src/types/ # Shared Zod schemas + TypeScript types
 - **TypeScript**: Strict mode, `noUncheckedIndexedAccess: true`
 - **Imports**: Feature modules use relative imports. Base UI components use `@/` alias
 - **Components**: Default to Server Components; add `"use client"` when using hooks/interactivity
-- **Theming**: Use `useThemeGradient()` hook for theme colors. Never use the old 2-line pattern (`useColorTheme` + `THEME_GRADIENTS[colorTheme]`). See `@docs/THEMING.md` for full reference
+- **Theming**: Use `useThemeGradient()` hook for theme colors. Never use the old 2-line pattern (`useColorTheme` + `THEME_GRADIENTS[colorTheme]`). See [`THEMING.md`](THEMING.md) for full reference
 - **Colors**: Never hardcode colors. Use `getServiceGradient()` for runtime service lookups, `SEMANTIC_COLORS` for status, `BRAND_COLORS` for external services
 - **Z-Index**: Use semantic classes (`z-modal`, `z-toast`, `z-dropdown`), never arbitrary `z-[9999]`
 - **Premium Components**: Check `premium-components.tsx` before creating custom UI (has GlassmorphicCard, ServiceBadge, StatusBadge, PremiumTabs, PremiumTable, GradientButton, etc.)
@@ -96,7 +98,7 @@ When adding features that surface data to users (pages, panels, signals, notific
 2. **Signal accuracy**: Every user-facing count or status must be precise, not a proxy. If you can't compute the exact value cheaply, don't show it — overclaiming erodes trust
 3. **Duplicate surface check**: Before adding a signal, check where the same data already appears. Justify the overlap (cross-system synthesis is good, pure duplication is not)
 4. **Action link verification**: Every action link must point to an existing page that shows the relevant data with any required query params
-5. **Run `/trust-check`** on new user-facing features before marking them ready for review
+5. **Perform a trust check** on new user-facing features before marking them ready for review
 
 ## Safety-Critical Mutations
 
@@ -118,17 +120,9 @@ ordinary reads:
 5. **Production-shaped tests**: Cover shared-library/multi-instance cases,
    same-title collisions, dependency failure, dry-run, mutation, retry, and
    concurrency as applicable.
-6. **Independent review**: Delegate deletion-adjacent diffs to Codex's
-   read-only `data_safety_reviewer` project agent before merge, in addition to
-   normal regression and browser verification.
-
-## Codex Workflows
-
-- Repository skills live in `.agents/skills/` and use the `arr-*` namespace.
-- Project reviewers live in `.codex/agents/`; use `regression_reviewer` for
-  substantial changes and `data_safety_reviewer` for mutation boundaries.
-- `AGENTS.md` is the durable instruction entry point. `.claude/` remains only
-  for compatibility with contributors using Claude Code.
+6. **Independent review**: Give deletion-adjacent diffs a separate read-only
+   data-safety review before merge, in addition to normal regression and
+   browser verification.
 
 ## Database
 
@@ -198,21 +192,17 @@ pnpm run lint
 
 ## Release Checklist
 
-When preparing a release, update ALL of these before tagging:
+When preparing a release, follow [`RELEASING.md`](RELEASING.md). At minimum,
+update all of these before tagging:
 1. `package.json` — version field
 2. `CHANGELOG.md` — new version section
 3. `README.md` — version tagline at top + version tags table
 4. `DOCKERHUB.md` — version tagline at top + version tags table
-5. `CLAUDE.md` — version at bottom
-6. **Wiki** — update version in `Home.md` and `Troubleshooting.md` (`/tmp/arr-wiki` or clone from `arr-dashboard.wiki.git`)
+5. **Wiki** — update version in `Home.md` and `Troubleshooting.md` (use a fresh temporary clone of `arr-dashboard.wiki.git`)
 
 ## Detailed Reference (not loaded by default)
 
 For deep dives, see these files (create as needed):
-- `@docs/THEMING.md` — full UI theming system (gradients, colors, premium components, z-index, typography, animations)
-- `@docs/AUTH.md` — detailed auth internals (session flow, OIDC with PKCE, passkeys, encryption, lockout)
-- `@docs/API-ROUTES.md` — complete API route table with methods, auth requirements, and purposes
-
----
-
-**Version:** 2.24.0 | **Node:** 22+ | **pnpm:** 10+
+- [`THEMING.md`](THEMING.md) — full UI theming system (gradients, colors, premium components, z-index, typography, animations)
+- [`AUTH.md`](AUTH.md) — detailed auth internals (session flow, OIDC with PKCE, passkeys, encryption, lockout)
+- [`API-ROUTES.md`](API-ROUTES.md) — complete API route table with methods, auth requirements, and purposes

@@ -939,7 +939,7 @@ function actionForDisabledScheduler(jobId: string): PulseAction | undefined {
 const collectSchedulerHealth: Collector = async (app) => {
 	// Scheduler state is a process-global registry — all jobs are system-wide
 	// (backup, library-sync, trash-sync, etc.), not per-user. arr-dashboard is
-	// a single-admin self-hosted app (see CLAUDE.md), so the one operator
+	// a single-admin self-hosted app (see docs/DEVELOPMENT.md), so the one operator
 	// should see every job's health. If this ever becomes multi-user, this
 	// collector needs per-user gating or the registry needs userId tracking.
 	const jobs = app.schedulerRegistry.list();

@@ -1,18 +1,12 @@
 # AGENTS.md — arr-dashboard
 
-Read `CLAUDE.md` for the tracked architecture and pattern reference. If a local
+Read `docs/DEVELOPMENT.md` for the tracked architecture and pattern reference. If a local
 `HANDOVER.md` exists, read it for machine-specific state and recent project
 history; do not assume it exists in a fresh clone.
 
-Codex-native task workflows live in `.agents/skills/` and are automatically
-discoverable. Use the matching `arr-*` skill for issue fixes, validation,
-reviews, integration changes, PR preparation, and releases. Project reviewers
-live in `.codex/agents/`. `.claude/` files are compatibility material, not the
-canonical Codex workflow.
-
-Keep durable contributor guidance and reusable project skills tracked here.
-Store temporary agent execution plans, parity ledgers, worktree state, and
-maintainer-only coordination outside the public repository.
+Keep durable contributor guidance tracked here. Personal agent definitions,
+reusable workflow skills, temporary execution plans, parity ledgers, worktree
+state, and maintainer-only coordination belong outside the public repository.
 
 ## Branch and issue discipline
 
@@ -55,11 +49,11 @@ TRaSH deployment, and upstream write paths are safety-critical.
   partial completion, retry/idempotency, and concurrent invocation as
   applicable.
 - Run an independent data-safety review before merging deletion-adjacent work.
-  Delegate it to the read-only `data_safety_reviewer` project agent; the
-  implementer must not be the only reviewer of the mutation boundary.
-- Delegate a separate `regression_reviewer` pass for substantial,
-  data-dependent, or deletion-adjacent code changes. Do not spend subagents on
-  trivial documentation-only changes.
+  Use a local read-only data-safety reviewer when available; the implementer
+  must not be the only reviewer of the mutation boundary.
+- Run a separate read-only regression review for substantial, data-dependent,
+  or deletion-adjacent code changes. Do not spend subagents on trivial
+  documentation-only changes.
 
 ## Layered development loop
 
@@ -100,7 +94,8 @@ pnpm run test
 pnpm run lint
 ```
 
-Use `$arr-validate` to apply and report this gauntlet consistently.
+Use the matching local validation workflow when available, but the commands
+above remain the repository's authoritative gate.
 
 Run `pnpm run build` for release-sensitive, dependency, Docker, routing, or
 substantial frontend changes. Live-verify user-visible behavior in a real
