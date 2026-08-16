@@ -179,9 +179,8 @@ export function useValidateSync(options?: UseValidateSyncOptions) {
 			);
 		},
 		onError: (error) => {
-			// Enhanced error logging with timestamp
+			// Keep browser logs useful without exposing upstream error details.
 			console.error("[useValidateSync] Validation failed:", {
-				message: error.message,
 				name: error.name,
 				timestamp: new Date().toISOString(),
 			});
@@ -204,7 +203,6 @@ export function useValidateSync(options?: UseValidateSyncOptions) {
 					"[useValidateSync] Silent failure detected - validation invalid with no errors:",
 					logContext,
 				);
-				console.warn("[useValidateSync] Full validation response:", data);
 			} else if (process.env.NODE_ENV === "development") {
 				// eslint-disable-next-line no-console -- dev-only debug logging
 				console.log("[useValidateSync] Validation completed:", logContext);
