@@ -220,6 +220,8 @@ export interface FlaggedItem {
 	match: RuleMatch;
 	/** Preferred available *arr rating from the data blob */
 	rating: number | null;
+	/** Apply fresh qUI physical-file protection to destructive actions. */
+	respectQuiSeeding?: boolean;
 	/** Exact Sonarr episode/file identity for a supported episode candidate. */
 	episodeTarget?: EpisodeTargetMetadata;
 }

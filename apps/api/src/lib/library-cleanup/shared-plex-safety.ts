@@ -110,6 +110,50 @@ export function createSharedPlexSafetyContext(): SharedPlexSafetyContext {
 
 class FileMatchVerificationError extends Error {}
 class EpisodeWatchProofError extends FileMatchVerificationError {}
+class QuiProtectedTorrentStateError extends FileMatchVerificationError {}
+
+type VerifiedQuiInactiveTorrentState = "pausedUP" | "pausedDL" | "error" | "missingFiles";
+
+const QUI_INACTIVE_TORRENT_STATES = new Set<string>([
+	"pausedUP",
+	"pausedDL",
+	"error",
+	"missingFiles",
+]);
+
+const QUI_PROTECTED_TORRENT_STATES = new Set([
+	"downloading",
+	"uploading",
+	"stalledUP",
+	"stalledDL",
+	"queuedUP",
+	"queuedDL",
+	"checkingUP",
+	"checkingDL",
+	"metaDL",
+	"moving",
+	"forcedUP",
+	"forcedDL",
+]);
+
+function isQuiInactiveTorrentState(state: string): state is VerifiedQuiInactiveTorrentState {
+	return QUI_INACTIVE_TORRENT_STATES.has(state);
+}
+
+function assertQuiTorrentStateAllowsDeletion(
+	state: string,
+): asserts state is VerifiedQuiInactiveTorrentState {
+	if (QUI_PROTECTED_TORRENT_STATES.has(state)) {
+		throw new QuiProtectedTorrentStateError(
+			"Target physical file has an active or transitional torrent in qUI",
+		);
+	}
+	if (!isQuiInactiveTorrentState(state)) {
+		throw new FileMatchVerificationError(
+			"Target physical-file qUI state is unknown or unsupported",
+		);
+	}
+}
 
 function isQuiSeedingTorrentState(state: string | null | undefined): boolean {
 	return state === "seeding" || state === "downloading";
@@ -174,6 +218,23 @@ export interface VerifiedEpisodeQuiIdentity {
 	enabled: boolean;
 	infoHash: string | null;
 	torrentState: string | null;
+}
+
+export interface VerifiedQuiPhysicalFileEvidence {
+	enabled: boolean;
+	instances: Array<{
+		instanceId: string;
+		serviceFingerprint: string;
+		files: Array<{
+			fullPath: NormalizedMediaPath;
+			hashes: string[];
+		}>;
+		torrents: Array<{
+			hash: string;
+			qbitInstanceId: number;
+			state: VerifiedQuiInactiveTorrentState;
+		}>;
+	}>;
 }
 
 export interface VerifiedSonarrPeerIdentity {
@@ -259,6 +320,7 @@ export type SharedMediaSafetyPlan =
 			kind: "verified_radarr";
 			target: VerifiedArrTargetIdentity;
 			file: VerifiedRadarrFileIdentity;
+			quiEvidence?: VerifiedQuiPhysicalFileEvidence;
 			peers: VerifiedRadarrPeerIdentity[];
 			peerInventoryComplete?: true;
 			ownership: VerifiedRadarrPlexOwnership[];
@@ -268,6 +330,7 @@ export type SharedMediaSafetyPlan =
 			kind: "verified_sonarr";
 			target: VerifiedArrTargetIdentity;
 			files: VerifiedSonarrFileIdentity;
+			quiEvidence?: VerifiedQuiPhysicalFileEvidence;
 			peers: VerifiedSonarrPeerIdentity[];
 			peerInventoryComplete?: true;
 			ownership: VerifiedSonarrPlexOwnership[];
@@ -281,6 +344,7 @@ export type SharedMediaSafetyPlan =
 			retainedTargetFiles: VerifiedSonarrEpisodeFileIdentity[];
 			watchProof: VerifiedEpisodePlexWatchProof;
 			quiIdentity: VerifiedEpisodeQuiIdentity;
+			quiEvidence?: VerifiedQuiPhysicalFileEvidence;
 			peers: VerifiedSonarrPeerIdentity[];
 			peerInventoryComplete?: true;
 			ownership: VerifiedSonarrPlexOwnership[];
@@ -532,6 +596,111 @@ function canonicalRetainedSonarrEpisodeFiles(
 		throw new FileMatchVerificationError("Sonarr retained file inventory is ambiguous");
 	}
 	return files;
+}
+
+function canonicalQuiPhysicalFileEvidence(value: unknown): VerifiedQuiPhysicalFileEvidence {
+	if (!value || typeof value !== "object") {
+		throw new FileMatchVerificationError("qUI physical-file evidence is unavailable");
+	}
+	const evidence = value as Record<string, unknown>;
+	if (typeof evidence.enabled !== "boolean" || !Array.isArray(evidence.instances)) {
+		throw new FileMatchVerificationError("qUI physical-file evidence is invalid");
+	}
+	if (!evidence.enabled) {
+		if (evidence.instances.length !== 0) {
+			throw new FileMatchVerificationError("Disabled qUI evidence must not contain instances");
+		}
+		return { enabled: false, instances: [] };
+	}
+	if (evidence.instances.length === 0) {
+		throw new FileMatchVerificationError("Enabled qUI evidence has no service instances");
+	}
+	const seenInstances = new Set<string>();
+	const instances = evidence.instances.map((rawInstance) => {
+		if (!rawInstance || typeof rawInstance !== "object") {
+			throw new FileMatchVerificationError("qUI evidence instance is invalid");
+		}
+		const instance = rawInstance as Record<string, unknown>;
+		const instanceId = requiredNonEmptyString(instance.instanceId, "qUI instance ID");
+		if (seenInstances.has(instanceId)) {
+			throw new FileMatchVerificationError("qUI evidence contains a duplicate service instance");
+		}
+		seenInstances.add(instanceId);
+		const serviceFingerprint = requiredNonEmptyString(
+			instance.serviceFingerprint,
+			"qUI service fingerprint",
+		);
+		if (!Array.isArray(instance.files) || !Array.isArray(instance.torrents)) {
+			throw new FileMatchVerificationError("qUI evidence file inventory is invalid");
+		}
+		const seenPaths = new Set<string>();
+		const files = instance.files.map((rawFile) => {
+			if (!rawFile || typeof rawFile !== "object") {
+				throw new FileMatchVerificationError("qUI evidence file is invalid");
+			}
+			const file = rawFile as Record<string, unknown>;
+			if (!file.fullPath || typeof file.fullPath !== "object") {
+				throw new FileMatchVerificationError("qUI target file path is invalid");
+			}
+			const fullPath = normalizeMediaPath((file.fullPath as Record<string, unknown>).value);
+			const pathKey = JSON.stringify(fullPath);
+			if (seenPaths.has(pathKey)) {
+				throw new FileMatchVerificationError("qUI evidence contains a duplicate file path");
+			}
+			seenPaths.add(pathKey);
+			if (!Array.isArray(file.hashes)) {
+				throw new FileMatchVerificationError("qUI evidence hashes are invalid");
+			}
+			const hashes = file.hashes.map((hash) =>
+				requiredNonEmptyString(hash, "qUI torrent hash").toLowerCase(),
+			);
+			if (new Set(hashes).size !== hashes.length) {
+				throw new FileMatchVerificationError("qUI evidence contains duplicate file hashes");
+			}
+			return { fullPath, hashes: hashes.sort() };
+		});
+		const seenTorrents = new Set<string>();
+		const torrents = instance.torrents.map((rawTorrent) => {
+			if (!rawTorrent || typeof rawTorrent !== "object") {
+				throw new FileMatchVerificationError("qUI torrent evidence is invalid");
+			}
+			const torrent = rawTorrent as Record<string, unknown>;
+			const hash = requiredNonEmptyString(torrent.hash, "qUI torrent hash").toLowerCase();
+			const qbitInstanceId = requiredPositiveSafeInteger(
+				torrent.qbitInstanceId,
+				"qUI qBittorrent instance ID",
+			);
+			const state = requiredNonEmptyString(torrent.state, "qUI torrent state");
+			if (!isQuiInactiveTorrentState(state)) {
+				throw new FileMatchVerificationError(
+					"qUI evidence contains a non-authorizing torrent state",
+				);
+			}
+			const torrentKey = `${qbitInstanceId}\0${hash}`;
+			if (seenTorrents.has(torrentKey)) {
+				throw new FileMatchVerificationError("qUI evidence contains an ambiguous torrent");
+			}
+			seenTorrents.add(torrentKey);
+			return { hash, qbitInstanceId, state };
+		});
+		return {
+			instanceId,
+			serviceFingerprint,
+			files: files.sort((left, right) =>
+				JSON.stringify(left.fullPath).localeCompare(JSON.stringify(right.fullPath)),
+			),
+			torrents: torrents.sort(
+				(left, right) =>
+					left.hash.localeCompare(right.hash) ||
+					left.qbitInstanceId - right.qbitInstanceId ||
+					left.state.localeCompare(right.state),
+			),
+		};
+	});
+	return {
+		enabled: true,
+		instances: instances.sort((left, right) => left.instanceId.localeCompare(right.instanceId)),
+	};
 }
 
 function canonicalSonarrPeers(value: unknown): VerifiedSonarrPeerIdentity[] {
@@ -873,6 +1042,10 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 			kind: "verified_radarr",
 			target: canonicalTargetIdentity(candidate.target),
 			file: canonicalRadarrFileIdentity(candidate.file),
+			quiEvidence:
+				candidate.quiEvidence === undefined
+					? undefined
+					: canonicalQuiPhysicalFileEvidence(candidate.quiEvidence),
 			peers: canonicalRadarrPeers(candidate.peers),
 			...(candidate.peerInventoryComplete === true ? { peerInventoryComplete: true as const } : {}),
 			ownership: canonicalRadarrOwnership(candidate.ownership),
@@ -886,6 +1059,10 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 			kind: "verified_sonarr",
 			target: canonicalTargetIdentity(candidate.target),
 			files: canonicalSonarrFiles(candidate.files),
+			quiEvidence:
+				candidate.quiEvidence === undefined
+					? undefined
+					: canonicalQuiPhysicalFileEvidence(candidate.quiEvidence),
 			peers: canonicalSonarrPeers(candidate.peers),
 			...(candidate.peerInventoryComplete === true ? { peerInventoryComplete: true as const } : {}),
 			ownership: canonicalSonarrOwnership(candidate.ownership),
@@ -914,6 +1091,10 @@ function canonicalExecutableSafetyPlan(plan: unknown): ExecutableSharedMediaSafe
 			),
 			watchProof: canonicalEpisodeWatchProof(candidate.watchProof),
 			quiIdentity: canonicalEpisodeQuiIdentity(candidate.quiIdentity),
+			quiEvidence:
+				candidate.quiEvidence === undefined
+					? undefined
+					: canonicalQuiPhysicalFileEvidence(candidate.quiEvidence),
 			peers: canonicalSonarrPeers(candidate.peers),
 			...(candidate.peerInventoryComplete === true ? { peerInventoryComplete: true as const } : {}),
 			ownership: canonicalSonarrOwnership(candidate.ownership),
@@ -4039,6 +4220,155 @@ async function verifyEpisodePlexWatchProof(
 	);
 }
 
+function createQuiSafetyFingerprint(instance: ServiceInstance): string {
+	return createHash("sha256")
+		.update(
+			JSON.stringify([
+				createArrServiceFingerprint(instance),
+				instance.hasLocalFilesystemAccess,
+				instance.pathPrefix,
+			]),
+		)
+		.digest("hex");
+}
+
+/**
+ * Build a fresh, complete qUI proof for every physical file a cleanup action
+ * may delete. The proof is serialized into the executable safety plan so a
+ * queued approval and the final mutation boundary can detect qUI topology,
+ * inode ownership, torrent identity, or state changes.
+ */
+export async function verifyFreshQuiPhysicalFileSafety(
+	deps: CleanupExecutorDeps,
+	context: SharedPlexSafetyContext,
+	userId: string,
+	filePaths: string[],
+	respectQuiSeeding: boolean,
+): Promise<VerifiedQuiPhysicalFileEvidence> {
+	if (!respectQuiSeeding || filePaths.length === 0) {
+		return { enabled: false, instances: [] };
+	}
+	context.quiInstances ??= deps.prisma.serviceInstance.findMany({
+		where: { userId, service: "QUI", enabled: true },
+	});
+	const quiInstances = [...(await context.quiInstances)].sort((left, right) =>
+		left.id.localeCompare(right.id),
+	);
+	if (quiInstances.length === 0) {
+		return { enabled: false, instances: [] };
+	}
+	if (!deps.quiClientFactory || !deps.quiFileHashIndexFactory) {
+		throw new FileMatchVerificationError(
+			"Target physical-file qUI state could not be verified live",
+		);
+	}
+	const normalizedPaths = [
+		...new Map(
+			filePaths.map((filePath) => {
+				const normalized = normalizeMediaPath(filePath);
+				return [JSON.stringify(normalized), normalized] as const;
+			}),
+		).values(),
+	].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+	const hashes = new Set<string>();
+	const evidenceInstances: VerifiedQuiPhysicalFileEvidence["instances"] = [];
+	for (const instance of quiInstances) {
+		if (instance.hasLocalFilesystemAccess !== true) {
+			throw new FileMatchVerificationError(
+				"Target physical-file qUI state could not be verified live",
+			);
+		}
+		let index = context.quiFileIndexes.get(instance.id);
+		if (!index) {
+			index = deps.quiFileHashIndexFactory(instance);
+			context.quiFileIndexes.set(instance.id, index);
+		}
+		const files: VerifiedQuiPhysicalFileEvidence["instances"][number]["files"] = [];
+		for (const fullPath of normalizedPaths) {
+			try {
+				const resolution = await (await index).resolve(fullPath.value);
+				if (resolution.complete !== true) {
+					throw new Error("Incomplete qUI inode resolution");
+				}
+				const fileHashes = [...new Set(resolution.hashes.map((hash) => hash.toLowerCase()))].sort();
+				for (const hash of fileHashes) {
+					if (hash.trim() === "") throw new Error("Empty qUI torrent hash");
+					hashes.add(hash);
+				}
+				files.push({ fullPath, hashes: fileHashes });
+			} catch {
+				throw new FileMatchVerificationError(
+					"Target physical-file qUI state could not be verified live",
+				);
+			}
+		}
+		evidenceInstances.push({
+			instanceId: instance.id,
+			serviceFingerprint: createQuiSafetyFingerprint(instance),
+			files,
+			torrents: [],
+		});
+	}
+	for (const instanceEvidence of evidenceInstances) {
+		const instance = quiInstances.find(
+			(candidate) => candidate.id === instanceEvidence.instanceId,
+		)!;
+		const ownedHashes = new Set(instanceEvidence.files.flatMap((file) => file.hashes));
+		for (const hash of [...hashes].sort()) {
+			const cacheKey = `${instance.id}\0${hash}`;
+			let torrents = context.quiHashTorrents.get(cacheKey);
+			if (!torrents) {
+				torrents = deps.quiClientFactory(instance).getTorrentsByHash(hash);
+				context.quiHashTorrents.set(cacheKey, torrents);
+			}
+			let exactResults: Awaited<typeof torrents>;
+			try {
+				exactResults = await torrents;
+			} catch {
+				throw new FileMatchVerificationError(
+					"Target physical-file qUI state could not be verified live",
+				);
+			}
+			if (ownedHashes.has(hash) && exactResults.length === 0) {
+				throw new FileMatchVerificationError(
+					"qUI inode ownership did not match its exact-hash inventory",
+				);
+			}
+			const seenExact = new Set<string>();
+			for (const torrent of exactResults) {
+				if (torrent.hash.toLowerCase() !== hash) {
+					throw new FileMatchVerificationError("qUI returned a mismatched torrent identity");
+				}
+				if (
+					typeof torrent.instanceId !== "number" ||
+					!Number.isSafeInteger(torrent.instanceId) ||
+					torrent.instanceId <= 0
+				) {
+					throw new FileMatchVerificationError(
+						"qUI did not identify the owning qBittorrent instance",
+					);
+				}
+				const state = requiredNonEmptyString(torrent.state, "qUI torrent state");
+				const exactKey = `${torrent.instanceId}\0${hash}`;
+				if (seenExact.has(exactKey)) {
+					throw new FileMatchVerificationError("qUI returned an ambiguous torrent identity");
+				}
+				seenExact.add(exactKey);
+				assertQuiTorrentStateAllowsDeletion(state);
+				instanceEvidence.torrents.push({
+					hash,
+					qbitInstanceId: torrent.instanceId,
+					state,
+				});
+			}
+		}
+	}
+	return canonicalQuiPhysicalFileEvidence({
+		enabled: true,
+		instances: evidenceInstances,
+	});
+}
+
 async function verifyFreshEpisodeQuiState(
 	deps: CleanupExecutorDeps,
 	context: SharedPlexSafetyContext,
@@ -5082,6 +5412,55 @@ export async function findSharedPlexDeleteBlocks(
 					service: "SONARR",
 				},
 				"Cleanup shared-Plex safety check failed closed",
+			);
+		}
+	}
+
+	for (const target of deleteTargets) {
+		if (target.respectQuiSeeding !== true || !isDestructiveTarget(target)) continue;
+		const targetKey = cleanupDeleteTargetKey(target);
+		if (blocks.has(targetKey)) continue;
+		const plan = context.plans.get(targetKey);
+		if (!plan || plan.kind === "blocked" || plan.kind === "not_required") continue;
+		let filePaths: string[];
+		if (plan.kind === "verified_radarr") {
+			filePaths = [plan.file.fullPath.value];
+		} else if (plan.kind === "verified_sonarr") {
+			filePaths = plan.files.episodeFiles.map((file) => file.fullPath.value);
+		} else if (plan.kind === "verified_sonarr_episode") {
+			filePaths = [plan.selectedFile.fullPath.value];
+		} else {
+			continue;
+		}
+		if (filePaths.length === 0) continue;
+		try {
+			const quiEvidence = await verifyFreshQuiPhysicalFileSafety(
+				deps,
+				context,
+				userId,
+				filePaths,
+				true,
+			);
+			// Respecting qUI remains a no-op when no enabled qUI participates.
+			context.plans.set(targetKey, quiEvidence.enabled ? { ...plan, quiEvidence } : plan);
+		} catch (error) {
+			const active = error instanceof QuiProtectedTorrentStateError;
+			const targetDescription =
+				target.targetScope === "episode"
+					? "the exact Sonarr episode files"
+					: "every target physical file";
+			const reason = active
+				? `Skipped for safety: qUI reports that at least one of ${targetDescription} has an active or transitional torrent.`
+				: `Skipped for safety: complete fresh qUI evidence for ${targetDescription} could not be established.`;
+			blocks.set(targetKey, reason);
+			context.plans.set(targetKey, { kind: "blocked", reason });
+			deps.log.warn(
+				{
+					err: getErrorMessage(error),
+					instanceId: target.instanceId,
+					arrItemId: target.arrItemId,
+				},
+				"Cleanup qUI physical-file safety check failed closed",
 			);
 		}
 	}

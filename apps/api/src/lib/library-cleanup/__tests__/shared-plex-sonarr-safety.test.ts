@@ -470,7 +470,9 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		} as unknown as CleanupExecutorDeps["arrClientFactory"],
 		plexClientFactory,
 		quiClientFactory: vi.fn(() => ({
-			getTorrentsByHash: vi.fn().mockResolvedValue([{ hash: "episode-hash", state: "pausedUP" }]),
+			getTorrentsByHash: vi
+				.fn()
+				.mockResolvedValue([{ hash: "episode-hash", state: "pausedUP", instanceId: 7 }]),
 		})),
 		quiFileHashIndexFactory: vi.fn().mockResolvedValue({
 			resolve: vi.fn().mockResolvedValue({ hashes: ["episode-hash"], complete: true }),

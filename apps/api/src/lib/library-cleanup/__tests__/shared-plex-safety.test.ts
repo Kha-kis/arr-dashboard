@@ -2,6 +2,7 @@ import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { buildMovieItem } from "../../library/movie-normalizer.js";
 import { PlexMovieNotFoundError } from "../../plex/plex-client.js";
+import { withQuiObservationTopologyGuard } from "../../qui/observation-topology-guard.js";
 import {
 	buildCleanupPreviewDetails,
 	cleanupApprovalTargetKey,
@@ -34,6 +35,14 @@ const silentLog = {
 	error: vi.fn(),
 	info: vi.fn(),
 } as unknown as CleanupExecutorDeps["log"];
+
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+	let resolve!: () => void;
+	const promise = new Promise<void>((done) => {
+		resolve = done;
+	});
+	return { promise, resolve };
+}
 
 const radarrTargetIdentity = {
 	serviceFingerprint: createArrServiceFingerprint({
@@ -477,6 +486,43 @@ function makeDeps(options: TestOptions = {}) {
 		setLiveMovieIdentity: (tmdbId: number, path: string) => {
 			targetMovie.tmdbId = tmdbId;
 			targetMovie.path = path;
+		},
+	};
+}
+
+function configureQuiSafety(fixture: ReturnType<typeof makeDeps>, initialState = "pausedUP") {
+	const quiInstance = {
+		id: "qui-1",
+		userId: "user-1",
+		service: "QUI",
+		label: "qUI",
+		baseUrl: "http://qui.internal:7476",
+		encryptedApiKey: "encrypted-qui-key",
+		encryptionIv: "qui-iv",
+		encryptedHttpAuthCredentials: null,
+		httpAuthEncryptionIv: null,
+		enabled: true,
+		hasLocalFilesystemAccess: true,
+		pathPrefix: null,
+	};
+	let state = initialState;
+	const getTorrentsByHash = vi.fn(async (hash: string) => [{ hash, state, instanceId: 7 }]);
+	vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation(
+		(args) =>
+			(args?.where?.service === "PLEX"
+				? Promise.resolve([fixture.plexInstance])
+				: args?.where?.service === "QUI"
+					? Promise.resolve([quiInstance])
+					: Promise.resolve([fixture.targetInstance])) as never,
+	);
+	fixture.deps.quiClientFactory = vi.fn(() => ({ getTorrentsByHash })) as never;
+	fixture.deps.quiFileHashIndexFactory = vi.fn().mockResolvedValue({
+		resolve: vi.fn().mockResolvedValue({ hashes: ["movie-hash"], complete: true }),
+	});
+	return {
+		getTorrentsByHash,
+		setState: (nextState: string) => {
+			state = nextState;
 		},
 	};
 }
@@ -958,6 +1004,232 @@ describe("shared Plex deletion safety", () => {
 		itemType: "movie",
 		action: "delete",
 	};
+
+	it.each(["delete", "delete_files"] as const)(
+		"blocks direct Radarr %s when qUI becomes active at the final mutation boundary",
+		async (action) => {
+			const fixture = makeDeps({ action, mediaPartCount: 1 });
+			const qui = configureQuiSafety(fixture);
+			qui.getTorrentsByHash
+				.mockResolvedValueOnce([{ hash: "movie-hash", state: "pausedUP", instanceId: 7 }])
+				.mockResolvedValue([{ hash: "movie-hash", state: "stalledUP", instanceId: 7 }]);
+			configureRetryStore(fixture.deps);
+			const flaggedItem = {
+				cacheItem: {
+					instanceId: "radarr-4k",
+					arrItemId: 101,
+					itemType: "movie",
+					title: "Example Movie",
+					year: 2024,
+					...radarrCachedFileIdentity,
+					sizeOnDisk: 2_000n,
+				},
+				match: {
+					ruleId: "rule-1",
+					ruleName: "Remove old movie",
+					reason: "Matched cleanup rule",
+					action,
+				},
+				rating: 8,
+				respectQuiSeeding: true,
+			} as never;
+
+			const result = await executeDirectRemoval(
+				fixture.deps,
+				{
+					id: "config-1",
+					maxRemovalsPerRun: 10,
+					respectQuiSeeding: true,
+					rules: [],
+				} as never,
+				"user-1",
+				[flaggedItem],
+				1,
+				1,
+				Date.now(),
+			);
+
+			expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 0 });
+			expect(result.details).toEqual([
+				expect.objectContaining({
+					action: "skipped",
+					reason: expect.stringContaining("qUI physical-file evidence changed"),
+				}),
+			]);
+			expect(fixture.deleteMovieFile).not.toHaveBeenCalled();
+			expect(fixture.deleteMovie).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["delete", "delete_files"] as const)(
+		"blocks queued Radarr %s when persisted qUI evidence becomes active",
+		async (action) => {
+			const fixture = makeDeps({ action, mediaPartCount: 1 });
+			const qui = configureQuiSafety(fixture);
+			const quiTarget = {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				action,
+				respectQuiSeeding: true,
+			};
+			const context = createSharedPlexSafetyContext();
+			await expect(
+				findSharedPlexDeleteBlocks(fixture.deps, "user-1", [quiTarget], context),
+			).resolves.toEqual(new Map());
+			const plan = context.plans.get(cleanupDeleteTargetKey(quiTarget));
+			if (plan?.kind !== "verified_radarr") throw new Error("Expected Radarr safety plan");
+			qui.setState("stalledUP");
+			configureApprovalStore(
+				fixture.deps,
+				approvalRecord({ action, safetySnapshot: serializeExecutableSafetyPlan(plan) }),
+			);
+
+			const result = await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+			expect(result).toMatchObject({ removed: 0, failed: 1 });
+			expect(fixture.deleteMovieFile).not.toHaveBeenCalled();
+			expect(fixture.deleteMovie).not.toHaveBeenCalled();
+		},
+	);
+
+	it.each(["delete", "delete_files"] as const)(
+		"holds qUI state changes until direct Radarr %s finishes its physical mutation",
+		async (action) => {
+			const fixture = makeDeps({ action, mediaPartCount: 1 });
+			const qui = configureQuiSafety(fixture);
+			configureRetryStore(fixture.deps);
+			const finalProofStarted = deferred();
+			const releaseFinalProof = deferred();
+			const fileMutationStarted = deferred();
+			const releaseFileMutation = deferred();
+			const events: string[] = [];
+			qui.getTorrentsByHash
+				.mockResolvedValueOnce([{ hash: "movie-hash", state: "pausedUP", instanceId: 7 }])
+				.mockImplementationOnce(async (hash: string) => {
+					events.push("proof");
+					finalProofStarted.resolve();
+					await releaseFinalProof.promise;
+					return [{ hash, state: "pausedUP", instanceId: 7 }];
+				});
+			fixture.deleteMovieFile.mockImplementationOnce(async () => {
+				events.push("file-start");
+				fileMutationStarted.resolve();
+				await releaseFileMutation.promise;
+				events.push("file-end");
+			});
+			const flaggedItem = {
+				cacheItem: {
+					instanceId: "radarr-4k",
+					arrItemId: 101,
+					itemType: "movie",
+					title: "Example Movie",
+					year: 2024,
+					...radarrCachedFileIdentity,
+					sizeOnDisk: 2_000n,
+				},
+				match: {
+					ruleId: "rule-1",
+					ruleName: "Remove old movie",
+					reason: "Matched cleanup rule",
+					action,
+				},
+				rating: 8,
+				respectQuiSeeding: true,
+			} as never;
+
+			const execution = executeDirectRemoval(
+				fixture.deps,
+				{
+					id: "config-1",
+					maxRemovalsPerRun: 10,
+					respectQuiSeeding: true,
+					rules: [],
+				} as never,
+				"user-1",
+				[flaggedItem],
+				1,
+				1,
+				Date.now(),
+			);
+			await finalProofStarted.promise;
+			const stateChange = withQuiObservationTopologyGuard("user-1", async () => {
+				events.push("state-change");
+			});
+			await Promise.resolve();
+			expect(events).toEqual(["proof"]);
+
+			releaseFinalProof.resolve();
+			await fileMutationStarted.promise;
+			await Promise.resolve();
+			expect(events).toEqual(["proof", "file-start"]);
+
+			releaseFileMutation.resolve();
+			await execution;
+			await stateChange;
+			expect(events).toEqual(["proof", "file-start", "file-end", "state-change"]);
+		},
+	);
+
+	it.each(["delete", "delete_files"] as const)(
+		"holds qUI state changes until queued Radarr %s finishes its physical mutation",
+		async (action) => {
+			const fixture = makeDeps({ action, mediaPartCount: 1 });
+			const qui = configureQuiSafety(fixture);
+			const quiTarget = {
+				instanceId: "radarr-4k",
+				arrItemId: 101,
+				itemType: "movie",
+				action,
+				respectQuiSeeding: true,
+			};
+			const context = createSharedPlexSafetyContext();
+			await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [quiTarget], context);
+			const plan = context.plans.get(cleanupDeleteTargetKey(quiTarget));
+			if (plan?.kind !== "verified_radarr") throw new Error("Expected Radarr safety plan");
+			configureApprovalStore(
+				fixture.deps,
+				approvalRecord({ action, safetySnapshot: serializeExecutableSafetyPlan(plan) }),
+			);
+			const finalProofStarted = deferred();
+			const releaseFinalProof = deferred();
+			const fileMutationStarted = deferred();
+			const releaseFileMutation = deferred();
+			const events: string[] = [];
+			qui.getTorrentsByHash
+				.mockResolvedValueOnce([{ hash: "movie-hash", state: "pausedUP", instanceId: 7 }])
+				.mockImplementationOnce(async (hash: string) => {
+					events.push("proof");
+					finalProofStarted.resolve();
+					await releaseFinalProof.promise;
+					return [{ hash, state: "pausedUP", instanceId: 7 }];
+				});
+			fixture.deleteMovieFile.mockImplementationOnce(async () => {
+				events.push("file-start");
+				fileMutationStarted.resolve();
+				await releaseFileMutation.promise;
+				events.push("file-end");
+			});
+
+			const execution = executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+			await finalProofStarted.promise;
+			const stateChange = withQuiObservationTopologyGuard("user-1", async () => {
+				events.push("state-change");
+			});
+			await Promise.resolve();
+			expect(events).toEqual(["proof"]);
+
+			releaseFinalProof.resolve();
+			await fileMutationStarted.promise;
+			await Promise.resolve();
+			expect(events).toEqual(["proof", "file-start"]);
+
+			releaseFileMutation.resolve();
+			await execution;
+			await stateChange;
+			expect(events).toEqual(["proof", "file-start", "file-end", "state-change"]);
+		},
+	);
 
 	it("keys file-changing episode work by physical file and unmonitoring by episode", () => {
 		const episodeTarget = (

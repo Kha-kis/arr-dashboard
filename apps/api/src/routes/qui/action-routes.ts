@@ -7,8 +7,6 @@ import {
 } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { executeQuiAction } from "../../lib/qui/action-service.js";
-import { createQuiClient } from "../../lib/qui/client-factory.js";
-import { requireQuiInstance } from "../../lib/qui/instance-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import {
 	ACTION_LOG_QUERY,
@@ -44,14 +42,10 @@ export function registerActionRoutes(app: FastifyInstance): void {
 
 			// Ownership: requireQuiInstance only returns the row when (userId, id)
 			// match AND service=QUI. Other users' ids surface as 404, not 403.
-			const instance = await requireQuiInstance(app, userId, id);
-			const client = createQuiClient(app, instance);
-
 			const result = await executeQuiAction({
 				app,
-				client,
 				userId,
-				serviceInstanceId: instance.id,
+				serviceInstanceId: id,
 				qbitInstanceId,
 				hashes: [hash],
 				action,
@@ -102,14 +96,10 @@ export function registerActionRoutes(app: FastifyInstance): void {
 		const { hashes: _omitHashes, ...payloadBody } = rawBody;
 		const payload = validateRequest(payloadSchema, payloadBody) as QuiActionPayload;
 
-		const instance = await requireQuiInstance(app, userId, id);
-		const client = createQuiClient(app, instance);
-
 		const result = await executeQuiAction({
 			app,
-			client,
 			userId,
-			serviceInstanceId: instance.id,
+			serviceInstanceId: id,
 			qbitInstanceId,
 			hashes: envelope.hashes,
 			action,

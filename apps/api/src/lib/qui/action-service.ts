@@ -14,10 +14,8 @@
  *      (with `completedAt` + sanitized `error`).
  *
  * Trust posture (per qui-integration-design.md §9):
- *   - Ownership is verified by the caller (route handler uses
- *     `requireQuiInstance` which scopes to `request.currentUser.id`).
- *   - This service trusts the caller has already done that check —
- *     re-checking here would double-fetch the ServiceInstance row.
+ *   - Ownership is resolved inside the topology guard with
+ *     `requireQuiInstance`, immediately before constructing the client.
  *   - `error` strings are passed through verbatim from qui's response
  *     body; we don't try to redact, but qui itself doesn't echo the
  *     API key on errors. If that ever changes upstream, the redaction
@@ -27,11 +25,12 @@
 import type { QuiAction, QuiActionPayload } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { getErrorMessage } from "../utils/error-message.js";
-import type { QuiClient } from "./client-factory.js";
+import { createQuiClient } from "./client-factory.js";
+import { requireQuiInstance } from "./instance-helpers.js";
+import { withQuiObservationTopologyGuard } from "./observation-topology-guard.js";
 
 export interface ExecuteQuiActionArgs {
 	app: FastifyInstance;
-	client: QuiClient;
 	/** Pre-validated user id from `request.currentUser.id`. */
 	userId: string;
 	/** Pre-validated qui ServiceInstance id (FK target). */
@@ -75,7 +74,6 @@ export async function executeQuiAction(
 ): Promise<ExecuteQuiActionResult> {
 	const {
 		app,
-		client,
 		userId,
 		serviceInstanceId,
 		qbitInstanceId,
@@ -92,113 +90,121 @@ export async function executeQuiAction(
 		return { logRowCount: 0, status: "success", error: null };
 	}
 
-	// Audit log captures the entire payload so an operator can reconstruct
-	// exactly what was sent. `null` for actions with no extras (pause/resume
-	// /recheck/reannounce/forceStart) — empty `{}` would also work but null
-	// reads as "no payload" more clearly.
-	const payloadString =
-		payload !== undefined && Object.keys(payload).length > 0 ? JSON.stringify(payload) : null;
+	return withQuiObservationTopologyGuard(userId, async () => {
+		// Re-resolve ownership and construct the client only after obtaining
+		// the topology guard. A queued action must never retain an endpoint or
+		// credentials that were replaced or deleted while it was waiting.
+		const instance = await requireQuiInstance(app, userId, serviceInstanceId);
+		const client = createQuiClient(app, instance);
 
-	// 1. Create pending audit rows in one batch — atomic so we don't leak
-	//    half-recorded intent if the DB layer fails between rows.
-	const requestedAt = new Date();
-	const createdRows = await app.prisma.$transaction(
-		hashes.map((torrentHash) =>
-			app.prisma.quiActionLog.create({
-				data: {
+		// Audit log captures the entire payload so an operator can reconstruct
+		// exactly what was sent. `null` for actions with no extras (pause/resume
+		// /recheck/reannounce/forceStart) — empty `{}` would also work but null
+		// reads as "no payload" more clearly.
+		const payloadString =
+			payload !== undefined && Object.keys(payload).length > 0 ? JSON.stringify(payload) : null;
+
+		// 1. Create pending audit rows in one batch — atomic so we don't leak
+		//    half-recorded intent if the DB layer fails between rows.
+		const requestedAt = new Date();
+		const createdRows = await app.prisma.$transaction(
+			hashes.map((torrentHash) =>
+				app.prisma.quiActionLog.create({
+					data: {
+						userId,
+						serviceInstanceId,
+						qbitInstanceId,
+						torrentHash,
+						action,
+						payload: payloadString,
+						status: "pending",
+						requestedAt,
+					},
+					select: { id: true },
+				}),
+			),
+		);
+		const rowIds = createdRows.map((r) => r.id);
+
+		// 2. Invoke qui. Failure semantics for the two halves of this dance are
+		//    DIFFERENT, so we deliberately split the try blocks:
+		//      a. If qui itself fails (non-2xx, network), mark the audit rows
+		//         `failed` so the operator sees the failure in My Actions.
+		//      b. If qui SUCCEEDED but the post-success bookkeeping update fails
+		//         (transient DB error between qui's 200 and our updateMany), we
+		//         must NOT mark the rows `failed` — that would lie to the operator
+		//         and prompt a duplicate action. Leave the rows `pending` and log
+		//         loudly; a follow-up reconciler can drain pending rows later.
+		let quiOutcome: "ok" | "fail" = "ok";
+		let quiError: unknown = null;
+		try {
+			// Pass extras as undefined when payload is empty so the client
+			// doesn't spread `{}` into qui's POST body (cleaner wire shape, and
+			// preserves the existing test contract that a no-extras action
+			// receives `extras: undefined`).
+			const hasExtras = payload !== undefined && Object.keys(payload).length > 0;
+			await client.bulkAction({
+				qbitInstanceId,
+				hashes,
+				action,
+				extras: hasExtras ? (payload as Record<string, unknown>) : undefined,
+			});
+		} catch (error) {
+			quiOutcome = "fail";
+			quiError = error;
+		}
+
+		const completedAt = new Date();
+		if (quiOutcome === "fail") {
+			const message = getErrorMessage(quiError, "qui action failed");
+			// Mark rows failed. If THIS write itself fails, the rows stay pending —
+			// which is correct ("we tried, we don't know the outcome"). Surface
+			// the secondary failure so an operator can reconcile manually.
+			try {
+				await app.prisma.quiActionLog.updateMany({
+					where: { id: { in: rowIds } },
+					data: { status: "failed", completedAt, error: message },
+				});
+			} catch (updateErr) {
+				log.error(
+					{ err: updateErr, rowIds, userId, serviceInstanceId, action },
+					"qui action failed AND audit-log update failed — pending rows require manual reconciliation",
+				);
+			}
+			log.warn(
+				{
+					err: quiError,
 					userId,
 					serviceInstanceId,
 					qbitInstanceId,
-					torrentHash,
 					action,
-					payload: payloadString,
-					status: "pending",
-					requestedAt,
+					hashCount: hashes.length,
 				},
-				select: { id: true },
-			}),
-		),
-	);
-	const rowIds = createdRows.map((r) => r.id);
+				"qui action failed",
+			);
+			return { logRowCount: rowIds.length, status: "failed", error: message };
+		}
 
-	// 2. Invoke qui. Failure semantics for the two halves of this dance are
-	//    DIFFERENT, so we deliberately split the try blocks:
-	//      a. If qui itself fails (non-2xx, network), mark the audit rows
-	//         `failed` so the operator sees the failure in My Actions.
-	//      b. If qui SUCCEEDED but the post-success bookkeeping update fails
-	//         (transient DB error between qui's 200 and our updateMany), we
-	//         must NOT mark the rows `failed` — that would lie to the operator
-	//         and prompt a duplicate action. Leave the rows `pending` and log
-	//         loudly; a follow-up reconciler can drain pending rows later.
-	let quiOutcome: "ok" | "fail" = "ok";
-	let quiError: unknown = null;
-	try {
-		// Pass extras as undefined when payload is empty so the client
-		// doesn't spread `{}` into qui's POST body (cleaner wire shape, and
-		// preserves the existing test contract that a no-extras action
-		// receives `extras: undefined`).
-		const hasExtras = payload !== undefined && Object.keys(payload).length > 0;
-		await client.bulkAction({
-			qbitInstanceId,
-			hashes,
-			action,
-			extras: hasExtras ? (payload as Record<string, unknown>) : undefined,
-		});
-	} catch (error) {
-		quiOutcome = "fail";
-		quiError = error;
-	}
-
-	const completedAt = new Date();
-	if (quiOutcome === "fail") {
-		const message = getErrorMessage(quiError, "qui action failed");
-		// Mark rows failed. If THIS write itself fails, the rows stay pending —
-		// which is correct ("we tried, we don't know the outcome"). Surface
-		// the secondary failure so an operator can reconcile manually.
+		// qui succeeded. The action HAS happened on the remote system; the
+		// bookkeeping below cannot un-happen it. So a write failure here must
+		// not be misreported as a failed mutation — return success and let the
+		// operator's audit row stay `pending` (the operator can see the gap and
+		// we have an error log for triage).
 		try {
 			await app.prisma.quiActionLog.updateMany({
 				where: { id: { in: rowIds } },
-				data: { status: "failed", completedAt, error: message },
+				data: { status: "success", completedAt },
 			});
 		} catch (updateErr) {
 			log.error(
-				{ err: updateErr, rowIds, userId, serviceInstanceId, action },
-				"qui action failed AND audit-log update failed — pending rows require manual reconciliation",
+				{ err: updateErr, rowIds, userId, serviceInstanceId, action, hashCount: hashes.length },
+				"qui action succeeded but audit-log success-update failed — rows left pending; manual reconciliation required",
 			);
 		}
-		log.warn(
-			{
-				err: quiError,
-				userId,
-				serviceInstanceId,
-				qbitInstanceId,
-				action,
-				hashCount: hashes.length,
-			},
-			"qui action failed",
+		log.info(
+			{ userId, serviceInstanceId, qbitInstanceId, action, hashCount: hashes.length },
+			"qui action succeeded",
 		);
-		return { logRowCount: rowIds.length, status: "failed", error: message };
-	}
-
-	// qui succeeded. The action HAS happened on the remote system; the
-	// bookkeeping below cannot un-happen it. So a write failure here must
-	// not be misreported as a failed mutation — return success and let the
-	// operator's audit row stay `pending` (the operator can see the gap and
-	// we have an error log for triage).
-	try {
-		await app.prisma.quiActionLog.updateMany({
-			where: { id: { in: rowIds } },
-			data: { status: "success", completedAt },
-		});
-	} catch (updateErr) {
-		log.error(
-			{ err: updateErr, rowIds, userId, serviceInstanceId, action, hashCount: hashes.length },
-			"qui action succeeded but audit-log success-update failed — rows left pending; manual reconciliation required",
-		);
-	}
-	log.info(
-		{ userId, serviceInstanceId, qbitInstanceId, action, hashCount: hashes.length },
-		"qui action succeeded",
-	);
-	return { logRowCount: rowIds.length, status: "success", error: null };
+		return { logRowCount: rowIds.length, status: "success", error: null };
+	});
 }

@@ -33,6 +33,7 @@ import { isNotFoundError } from "../arr/client-factory.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import { buildMovieFile } from "../library/movie-normalizer.js";
 import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
+import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import type {
 	LibraryCleanupApproval,
 	LibraryCleanupConfig,
@@ -1240,6 +1241,7 @@ function buildPostPartialRetrySnapshot(
 				seriesPath: safetyPlan.files.seriesPath,
 				episodeFiles: [],
 			},
+			quiEvidence: undefined,
 		},
 		providerEvidence,
 		"post_partial_mutation",
@@ -1254,6 +1256,49 @@ function verifiedTargetsEqual(
 		{ kind: "verified_arr_target", target: left },
 		{ kind: "verified_arr_target", target: right },
 	);
+}
+
+function quiEvidenceMatchesRemainingFiles(
+	approvedPlan: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr" }>,
+	livePlan: Extract<ExecutableSharedMediaSafetyPlan, { kind: "verified_sonarr" }>,
+): boolean {
+	const approvedEvidence = approvedPlan.quiEvidence ?? { enabled: false, instances: [] };
+	const liveEvidence = livePlan.quiEvidence ?? { enabled: false, instances: [] };
+	if (approvedEvidence.enabled !== liveEvidence.enabled) return false;
+	if (!liveEvidence.enabled) return true;
+
+	const liveInstancesById = new Map(
+		liveEvidence.instances.map((instance) => [instance.instanceId, instance]),
+	);
+	if (
+		approvedEvidence.instances.length !== liveEvidence.instances.length ||
+		approvedEvidence.instances.some(
+			(instance) =>
+				liveInstancesById.get(instance.instanceId)?.serviceFingerprint !==
+				instance.serviceFingerprint,
+		)
+	) {
+		return false;
+	}
+
+	const liveHashes = new Set(
+		liveEvidence.instances.flatMap((instance) => instance.files.flatMap((file) => file.hashes)),
+	);
+	const projectedApprovedEvidence = {
+		enabled: true as const,
+		instances: approvedEvidence.instances.map((approvedInstance) => {
+			const liveInstance = liveInstancesById.get(approvedInstance.instanceId)!;
+			const livePathKeys = new Set(liveInstance.files.map((file) => JSON.stringify(file.fullPath)));
+			return {
+				...approvedInstance,
+				files: approvedInstance.files.filter((file) =>
+					livePathKeys.has(JSON.stringify(file.fullPath)),
+				),
+				torrents: approvedInstance.torrents.filter((torrent) => liveHashes.has(torrent.hash)),
+			};
+		}),
+	};
+	return JSON.stringify(projectedApprovedEvidence) === JSON.stringify(liveEvidence);
 }
 
 /**
@@ -1283,8 +1328,10 @@ function isVerifiedFileRemainder(
 	const approvedFiles = new Map(
 		approvedPlan.files.episodeFiles.map((file) => [file.episodeFileId, JSON.stringify(file)]),
 	);
-	return livePlan.files.episodeFiles.every(
-		(file) => approvedFiles.get(file.episodeFileId) === JSON.stringify(file),
+	return (
+		livePlan.files.episodeFiles.every(
+			(file) => approvedFiles.get(file.episodeFileId) === JSON.stringify(file),
+		) && quiEvidenceMatchesRemainingFiles(approvedPlan, livePlan)
 	);
 }
 
@@ -1491,7 +1538,7 @@ function toDeleteTargets(items: FlaggedItem[]): CleanupDeleteTarget[] {
 		episodeFileId: item.episodeTarget?.episodeFileId,
 		episodeFileConsumerIds: item.episodeTarget?.episodeFileConsumerIds,
 		plexWatchEvidence: item.episodeTarget?.plexWatchEvidence,
-		respectQuiSeeding: item.episodeTarget?.respectQuiSeeding,
+		respectQuiSeeding: item.respectQuiSeeding ?? item.episodeTarget?.respectQuiSeeding,
 		episodeFileInfoHash: item.episodeTarget?.fileInfoHash,
 		episodeFileTorrentState: item.episodeTarget?.fileTorrentState,
 	}));
@@ -1505,7 +1552,13 @@ function episodePlanTargetFields(
 	plan: ExecutableSharedMediaSafetyPlan | null | undefined,
 	currentRespectQuiSeeding = false,
 ): Partial<CleanupDeleteTarget> {
-	if (plan?.kind !== "verified_sonarr_episode") return {};
+	if (!plan) return { respectQuiSeeding: currentRespectQuiSeeding };
+	const respectQuiSeeding =
+		currentRespectQuiSeeding ||
+		(plan.kind !== "verified_arr_target" &&
+			plan.kind !== "verified_radarr_empty" &&
+			plan.quiEvidence?.enabled === true);
+	if (plan.kind !== "verified_sonarr_episode") return { respectQuiSeeding };
 	return {
 		episodeFileId: plan.episode.episodeFileId,
 		episodeFileConsumerIds: plan.episode.episodeFileConsumerIds,
@@ -1518,7 +1571,7 @@ function episodePlanTargetFields(
 				refreshedAt: plan.watchProof.refreshedAt,
 			},
 		],
-		respectQuiSeeding: currentRespectQuiSeeding || plan.quiIdentity.enabled,
+		respectQuiSeeding: respectQuiSeeding || plan.quiIdentity.enabled,
 		episodeFileInfoHash: plan.quiIdentity.infoHash,
 		episodeFileTorrentState: plan.quiIdentity.torrentState,
 	};
@@ -1799,7 +1852,17 @@ async function buildEvaluatedCacheSafetyPlan(
 		return buildCacheTargetSafetyPlan(data, item.itemType, livePlan.target);
 	}
 	if (livePlan.kind === "verified_radarr" || livePlan.kind === "verified_radarr_empty") {
-		return buildRadarrCacheSafetyPlan(data, item.hasFile, livePlan.target);
+		const cachePlan = buildRadarrCacheSafetyPlan(data, item.hasFile, livePlan.target);
+		return cachePlan?.kind === "verified_radarr" && livePlan.kind === "verified_radarr"
+			? {
+					...cachePlan,
+					quiEvidence: livePlan.quiEvidence,
+					peers: livePlan.peers,
+					peerInventoryComplete: livePlan.peerInventoryComplete,
+					ownership: livePlan.ownership,
+					targetDeleteNotifications: livePlan.targetDeleteNotifications,
+				}
+			: cachePlan;
 	}
 	const seriesPath =
 		data && typeof data === "object" && "path" in data
@@ -1852,6 +1915,7 @@ async function buildEvaluatedCacheSafetyPlan(
 			),
 			watchProof: livePlan.watchProof,
 			quiIdentity: livePlan.quiIdentity,
+			quiEvidence: livePlan.quiEvidence,
 			peers: livePlan.peers,
 			peerInventoryComplete: livePlan.peerInventoryComplete,
 			ownership: livePlan.ownership,
@@ -1861,6 +1925,7 @@ async function buildEvaluatedCacheSafetyPlan(
 	return cachePlan?.kind === "verified_sonarr"
 		? {
 				...cachePlan,
+				quiEvidence: livePlan.quiEvidence,
 				peers: livePlan.peers,
 				peerInventoryComplete: livePlan.peerInventoryComplete,
 				ownership: livePlan.ownership,
@@ -2009,8 +2074,13 @@ function createRadarrDestructiveMutationAuthority(
 			return authorizedResource;
 		}
 		if (!ownershipPlan) return authorizedResource;
-		if (ownershipPlan.ownership.length === 0) return authorizedResource;
-		if (!fileDeleteAuthorityConsumed && safetyPlan.kind === "verified_radarr") {
+		const requiresPhysicalRevalidation =
+			ownershipPlan.ownership.length > 0 || ownershipPlan.quiEvidence?.enabled === true;
+		if (
+			!fileDeleteAuthorityConsumed &&
+			safetyPlan.kind === "verified_radarr" &&
+			requiresPhysicalRevalidation
+		) {
 			const context = createSharedPlexSafetyContext();
 			const blocks = await findSharedPlexDeleteBlocks(deps, userId, [target], context);
 			const livePlan = asExecutableSafetyPlan(context.plans.get(cleanupDeleteTargetKey(target)));
@@ -2020,12 +2090,13 @@ function createRadarrDestructiveMutationAuthority(
 				!executableSafetyPlansEqual(ownershipPlan, livePlan)
 			) {
 				throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
-					"Skipped for safety: verified Radarr ownership changed at the mutation boundary. Run cleanup again before deleting the file.",
+					"Skipped for safety: verified Radarr ownership changed, or qUI physical-file evidence changed at the mutation boundary. Run cleanup again before deleting the file.",
 				);
 			}
 			fileDeleteAuthorityConsumed = true;
 			return authorizedResource;
 		}
+		if (ownershipPlan.ownership.length === 0) return authorizedResource;
 		await assertVerifiedRadarrPeerOwnershipRetained(deps, userId, target.arrItemId, ownershipPlan);
 		return authorizedResource;
 	};
@@ -2041,6 +2112,19 @@ function createSonarrDestructiveMutationAuthority(
 	let fileDeleteAuthorityConsumed = false;
 	return async (evidence) => {
 		const authorizedResource = await assertExecutionAllowed?.(evidence);
+		if (
+			fileDeleteAuthorityConsumed &&
+			safetyPlan.ownership.length === 0 &&
+			safetyPlan.quiEvidence?.enabled === true
+		) {
+			// qUI-only authority is consumed immediately before the one physical
+			// file mutation. Later record-only writes must not stat the removed path.
+			return authorizedResource;
+		}
+		if (fileDeleteAuthorityConsumed && safetyPlan.ownership.length > 0) {
+			await assertVerifiedSonarrPeerOwnershipRetained(deps, userId, target.arrItemId, safetyPlan);
+			return authorizedResource;
+		}
 		if (fileDeleteAuthorityConsumed || safetyPlan.files.episodeFiles.length === 0) {
 			if (safetyPlan.ownership.length === 0) {
 				const context = createSharedPlexSafetyContext();
@@ -2073,7 +2157,7 @@ function createSonarrDestructiveMutationAuthority(
 			!executableSafetyPlansEqual(safetyPlan, livePlan)
 		) {
 			throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
-				"Skipped for safety: verified Sonarr ownership changed at the mutation boundary. Run cleanup again before deleting the file.",
+				"Skipped for safety: verified Sonarr ownership changed, or qUI physical-file evidence changed at the mutation boundary. Run cleanup again before deleting the file.",
 			);
 		}
 		fileDeleteAuthorityConsumed = true;
@@ -2119,7 +2203,7 @@ function createSonarrEpisodeMutationAuthority(
 				));
 		if (blocks.has(targetKey) || !plansMatch) {
 			throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
-				"Skipped for safety: the verified Sonarr episode identity or Plex ownership changed at the mutation boundary.",
+				"Skipped for safety: the verified Sonarr episode identity, Plex ownership, or qUI physical-file evidence changed at the mutation boundary.",
 			);
 		}
 		if (
@@ -2158,6 +2242,14 @@ function createSonarrEpisodeMutationAuthority(
 		await assertExecutionAllowed?.();
 		return undefined;
 	};
+}
+
+async function withQuiPhysicalMutationGuard<T>(
+	userId: string,
+	respectQuiSeeding: boolean,
+	operation: () => Promise<T>,
+): Promise<T> {
+	return respectQuiSeeding ? withQuiObservationTopologyGuard(userId, operation) : operation();
 }
 
 function withSharedPlexWarning(warnings: string[], blockCount: number): string[] {
@@ -4178,12 +4270,17 @@ async function executeQueuedCleanupItems(
 								);
 							});
 				} else if (action === "delete_files") {
-					const deletedFiles = await deleteFilesFromArr(
-						arrClientFactory,
-						mutationInstance,
-						approval.arrItemId,
-						safetyPlan!,
-						assertDestructiveMutationAuthority,
+					const deletedFiles = await withQuiPhysicalMutationGuard(
+						userId,
+						mutationTarget.respectQuiSeeding === true,
+						() =>
+							deleteFilesFromArr(
+								arrClientFactory,
+								mutationInstance,
+								approval.arrItemId,
+								safetyPlan!,
+								assertDestructiveMutationAuthority,
+							),
 					);
 					executionCompleted = true;
 					reconciledWithoutMutation = !deletedFiles;
@@ -4213,12 +4310,17 @@ async function executeQueuedCleanupItems(
 								);
 							});
 				} else {
-					await deleteFromArr(
-						arrClientFactory,
-						mutationInstance,
-						approval.arrItemId,
-						safetyPlan!,
-						assertDestructiveMutationAuthority,
+					await withQuiPhysicalMutationGuard(
+						userId,
+						mutationTarget.respectQuiSeeding === true,
+						() =>
+							deleteFromArr(
+								arrClientFactory,
+								mutationInstance,
+								approval.arrItemId,
+								safetyPlan!,
+								assertDestructiveMutationAuthority,
+							),
 					);
 					executionCompleted = true;
 					await reconcileSonarrEpisodeFileCache(
@@ -6165,6 +6267,7 @@ async function evaluateAllItems(
 					cacheItem: item,
 					match,
 					rating: extractRating(item),
+					respectQuiSeeding,
 				});
 			}
 			if (
@@ -7394,13 +7497,17 @@ export async function executeDirectRemoval(
 				}
 				return authorizedResource;
 			};
+			const mutationTarget: CleanupDeleteTarget = {
+				...flaggedDeleteTarget(item),
+				action: ruleAction,
+			};
 			const assertDestructiveMutationAuthority =
 				safetyPlan?.kind === "verified_sonarr_episode"
 					? createSonarrEpisodeMutationAuthority(
 							deps,
 							userId,
 							mutationInstance,
-							{ ...flaggedDeleteTarget(item), action: ruleAction },
+							mutationTarget,
 							safetyPlan,
 							{ matchedRuleId: item.match.ruleId, action: ruleAction },
 							assertDirectExecutionAuthority,
@@ -7410,7 +7517,7 @@ export async function executeDirectRemoval(
 						? createRadarrDestructiveMutationAuthority(
 								deps,
 								userId,
-								{ ...flaggedDeleteTarget(item), action: ruleAction },
+								mutationTarget,
 								safetyPlan!,
 								assertDirectExecutionAuthority,
 							)
@@ -7418,7 +7525,7 @@ export async function executeDirectRemoval(
 							? createSonarrDestructiveMutationAuthority(
 									deps,
 									userId,
-									{ ...flaggedDeleteTarget(item), action: ruleAction },
+									mutationTarget,
 									safetyPlan,
 									assertDirectExecutionAuthority,
 								)
@@ -7456,12 +7563,17 @@ export async function executeDirectRemoval(
 					"Cleanup: unmonitored item in ARR instance",
 				);
 			} else if (ruleAction === "delete_files") {
-				const deletedFiles = await deleteFilesFromArr(
-					arrClientFactory,
-					mutationInstance,
-					item.cacheItem.arrItemId,
-					safetyPlan!,
-					assertDestructiveMutationAuthority,
+				const deletedFiles = await withQuiPhysicalMutationGuard(
+					userId,
+					mutationTarget.respectQuiSeeding === true,
+					() =>
+						deleteFilesFromArr(
+							arrClientFactory,
+							mutationInstance,
+							item.cacheItem.arrItemId,
+							safetyPlan!,
+							assertDestructiveMutationAuthority,
+						),
 				);
 				await reconcileSonarrEpisodeFileCache(
 					prisma,
@@ -7507,12 +7619,14 @@ export async function executeDirectRemoval(
 				);
 			} else {
 				// Default: delete
-				await deleteFromArr(
-					arrClientFactory,
-					mutationInstance,
-					item.cacheItem.arrItemId,
-					safetyPlan!,
-					assertDestructiveMutationAuthority,
+				await withQuiPhysicalMutationGuard(userId, mutationTarget.respectQuiSeeding === true, () =>
+					deleteFromArr(
+						arrClientFactory,
+						mutationInstance,
+						item.cacheItem.arrItemId,
+						safetyPlan!,
+						assertDestructiveMutationAuthority,
+					),
 				);
 				await reconcileSonarrEpisodeFileCache(
 					prisma,
