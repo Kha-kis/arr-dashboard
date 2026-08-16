@@ -2,6 +2,7 @@ import type { LibraryItem, LibraryService } from "@arr/shared";
 import type { ServiceInstance } from "../../lib/prisma.js";
 import { normalizeImages } from "./image-normalizer.js";
 import { extractYear } from "./movie-normalizer.js";
+import { normalizeRatings } from "./rating-normalizer.js";
 import {
 	normalizeGenres,
 	normalizeTags,
@@ -108,6 +109,7 @@ export const buildSeriesItem = (
 			imdbId: toStringValue(raw?.imdbId),
 			tvdbId: toNumber(raw?.tvdbId),
 		},
+		ratings: normalizeRatings(raw?.ratings, service),
 		seasons: normalizeSeasons(raw?.seasons),
 		statistics: {
 			seasonCount: toNumber(stats?.seasonCount),
