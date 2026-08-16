@@ -70,15 +70,15 @@ describe("TrashGitHubFetcher URL construction (issue #406)", () => {
 		);
 		// 2nd & 3rd calls: per-file raw fetches. We return invalid bodies so
 		// validateAndCollect logs+drops them; this test only cares about URLs.
-		fetchSpy.mockResolvedValueOnce(buildJsonResponse({}));
-		fetchSpy.mockResolvedValueOnce(buildJsonResponse({}));
+		fetchSpy.mockResolvedValueOnce(buildJsonResponse([]));
+		fetchSpy.mockResolvedValueOnce(buildJsonResponse([]));
 
-		const fetcher = new TrashGitHubFetcher();
+		const fetcher = new TrashGitHubFetcher({ retries: 1 });
 		await fetcher.fetchCustomFormats("RADARR");
 
 		const calls = fetchSpy.mock.calls.map((call) => call[0] as string);
 		expect(calls[0]).toBe(
-			"https://api.github.com/repos/TRaSH-Guides/Guides/contents/docs/json/radarr/cf",
+			"https://api.github.com/repos/TRaSH-Guides/Guides/contents/docs/json/radarr/cf?ref=master",
 		);
 		expect(calls[1]).toBe(
 			"https://raw.githubusercontent.com/TRaSH-Guides/Guides/refs/heads/master/docs/json/radarr/cf/1080p.json",
@@ -86,6 +86,66 @@ describe("TrashGitHubFetcher URL construction (issue #406)", () => {
 		expect(calls[2]).toBe(
 			"https://raw.githubusercontent.com/TRaSH-Guides/Guides/refs/heads/master/docs/json/radarr/cf/2160p.json",
 		);
+	});
+
+	it("fetches directory listings and payloads from the requested commit", async () => {
+		const commitHash = "0123456789abcdef0123456789abcdef01234567";
+		fetchSpy.mockResolvedValueOnce(buildJsonResponse([{ name: "1080p.json", type: "file" }]));
+		fetchSpy.mockResolvedValueOnce(buildJsonResponse([]));
+
+		const fetcher = new TrashGitHubFetcher();
+		await fetcher.fetchConfigsAtCommit("RADARR", "CUSTOM_FORMATS", commitHash);
+
+		const calls = fetchSpy.mock.calls.map((call) => call[0] as string);
+		expect(calls[0]).toBe(
+			`https://api.github.com/repos/TRaSH-Guides/Guides/contents/docs/json/radarr/cf?ref=${commitHash}`,
+		);
+		expect(calls[1]).toBe(
+			`https://raw.githubusercontent.com/TRaSH-Guides/Guides/${commitHash}/docs/json/radarr/cf/1080p.json`,
+		);
+	});
+
+	it("rejects a partial commit-addressed category", async () => {
+		const commitHash = "0123456789abcdef0123456789abcdef01234567";
+		fetchSpy.mockResolvedValueOnce(buildJsonResponse([{ name: "1080p.json", type: "file" }]));
+		fetchSpy.mockResolvedValueOnce(buildJsonResponse({}, 500));
+
+		const fetcher = new TrashGitHubFetcher({ retries: 1 });
+		await expect(
+			fetcher.fetchConfigsAtCommit("RADARR", "CUSTOM_FORMATS", commitHash),
+		).rejects.toThrow("HTTP 500");
+	});
+
+	it("pins CF description discovery to the requested commit", async () => {
+		const commitHash = "0123456789abcdef0123456789abcdef01234567";
+		fetchSpy.mockResolvedValueOnce(buildJsonResponse([]));
+
+		const fetcher = new TrashGitHubFetcher();
+		await fetcher.fetchConfigsAtCommit("RADARR", "CF_DESCRIPTIONS", commitHash);
+
+		expect(fetchSpy.mock.calls[0]?.[0]).toBe(
+			`https://api.github.com/repos/TRaSH-Guides/Guides/contents/includes/cf-descriptions?ref=${commitHash}`,
+		);
+	});
+
+	it("fails closed for commit-addressed supplementary merges", async () => {
+		const fetcher = new TrashGitHubFetcher({
+			repoConfig: {
+				owner: "example",
+				name: "custom-guides",
+				branch: "main",
+				mode: "supplementary",
+			},
+		});
+
+		await expect(
+			fetcher.fetchConfigsAtCommit(
+				"RADARR",
+				"CUSTOM_FORMATS",
+				"0123456789abcdef0123456789abcdef01234567",
+			),
+		).rejects.toThrow("supplementary");
+		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 });
 
