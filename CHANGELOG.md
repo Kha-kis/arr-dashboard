@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.1] - 2026-08-16 — Recovery and timezone correctness
+
+This patch makes partial Sonarr episode cleanup recover safely, fixes public
+OIDC callback selection behind reverse proxies, and keeps Sonarr calendar
+dates correct at viewer-timezone and visible-grid boundaries.
+
+### Changed
+
+- Maintainer-local agent tooling, temporary plans, generated screenshots, and
+  source files proven unreachable from the application were removed from the
+  public repository. Durable contributor guidance remains in
+  `docs/DEVELOPMENT.md` (#754).
+- Docker Login Action and CodeQL Action were refreshed across the stable
+  workflows while retaining immutable commit pins (#683).
+
+### Fixed
+
+- **Sonarr episode cleanup recovery** — The cleanup executor now records each
+  upstream phase durably, resumes confirmed partial work without repeating the
+  unmonitor request, and refuses file deletion when the unmonitor outcome
+  cannot be attributed safely (#755, related to #659).
+- **OIDC callbacks behind reverse proxies** — Setup and authenticated provider
+  management now derive callbacks from operator-controlled public origins,
+  including `WEBAUTHN_ORIGIN` when `APP_URL` is local. Forwarded host and
+  protocol headers cannot select the callback origin (#759, closes #752).
+- **Sonarr calendar dates** — Sonarr episodes are bucketed by the viewer's
+  local day from `airDateUtc`, with a padded fetch range so timezone conversion
+  cannot drop events at the first or last visible grid day (#761, #763, closes
+  #756).
+
 ## [2.24.0] - 2026-08-16 — Safer cleanup & resilient automation
 
 Library Cleanup can now target individual Sonarr episodes. This release also
