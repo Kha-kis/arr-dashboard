@@ -1,6 +1,10 @@
 import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
 import { useMemo } from "react";
-import { getCalendarDateKey } from "../lib/calendar-formatters";
+import {
+	type CalendarDateRange,
+	getCalendarDateKey,
+	isCalendarItemInDateRange,
+} from "../lib/calendar-formatters";
 import type { CalendarFilters } from "./use-calendar-state";
 
 /**
@@ -130,6 +134,7 @@ export const useCalendarData = (
 		| undefined,
 	services: ServiceInstanceSummary[] | undefined,
 	filters: CalendarFilters,
+	visibleRange: CalendarDateRange,
 ): CalendarDataHookResult => {
 	const aggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
 	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
@@ -156,6 +161,9 @@ export const useCalendarData = (
 	const filteredEvents = useMemo(() => {
 		const term = filters.searchTerm.trim().toLowerCase();
 		const filtered = aggregated.filter((item) => {
+			if (!isCalendarItemInDateRange(item, visibleRange)) {
+				return false;
+			}
 			if (filters.serviceFilter !== "all" && item.service !== filters.serviceFilter) {
 				return false;
 			}
@@ -186,7 +194,7 @@ export const useCalendarData = (
 		});
 		// Deduplicate events that appear in multiple instances
 		return deduplicateEvents(filtered);
-	}, [aggregated, filters]);
+	}, [aggregated, filters, visibleRange]);
 
 	const eventsByDate = useMemo(() => {
 		const map = new Map<string, DeduplicatedCalendarItem[]>();
