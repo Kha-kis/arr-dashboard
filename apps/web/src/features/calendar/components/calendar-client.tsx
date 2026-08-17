@@ -10,7 +10,7 @@ import { useCalendarData } from "../hooks/use-calendar-data";
 import { useCalendarPlexLinks } from "../hooks/use-calendar-plex-links";
 import { useFirstDayOfWeek } from "../../../hooks/useFirstDayOfWeek";
 import { useCalendarState } from "../hooks/use-calendar-state";
-import { formatDateOnly } from "../lib/calendar-formatters";
+import { formatDateOnly, getPaddedCalendarDateRange } from "../lib/calendar-formatters";
 import { CalendarEventList } from "./calendar-event-list";
 import { CalendarFilters } from "./calendar-filters";
 import { CalendarGrid } from "./calendar-grid";
@@ -22,10 +22,16 @@ export const CalendarClient = () => {
 	const { calendarStart, calendarEnd, filters, monthStart, selectedDate, daysInView } =
 		calendarState;
 
-	const queryParams = useMemo(
+	const visibleRange = useMemo(
 		() => ({
 			start: formatDateOnly(calendarStart),
 			end: formatDateOnly(calendarEnd),
+		}),
+		[calendarStart, calendarEnd],
+	);
+	const queryParams = useMemo(
+		() => ({
+			...getPaddedCalendarDateRange(calendarStart, calendarEnd),
 			unmonitored: filters.includeUnmonitored,
 		}),
 		[calendarStart, calendarEnd, filters.includeUnmonitored],
@@ -36,7 +42,7 @@ export const CalendarClient = () => {
 
 	const { data: services } = useServicesQuery();
 
-	const calendarData = useCalendarData(data, services, filters);
+	const calendarData = useCalendarData(data, services, filters, visibleRange);
 	const { eventsByDate, serviceMap, instanceOptions, filteredEvents } = calendarData;
 
 	// Plex deep links — only fetched when Plex is configured

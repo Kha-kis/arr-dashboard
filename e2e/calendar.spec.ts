@@ -168,3 +168,125 @@ test.describe("Calendar - Refresh", () => {
 		await expect(page.getByRole("heading", { name: /calendar/i, level: 1 })).toBeVisible();
 	});
 });
+
+test.describe("Calendar - Timezone Bucketing", () => {
+	test.use({ timezoneId: "Europe/Stockholm" });
+
+	test("places an early-morning Sonarr episode on the viewer's local day", async ({ page }) => {
+		await page.clock.setFixedTime(new Date("2026-08-16T12:00:00Z"));
+		const networkDate = "2026-08-15";
+		const localDate = "2026-08-16";
+		const title = "Stockholm timezone regression";
+
+		await page.route("**/api/services", async (route) => {
+			await route.fulfill({
+				contentType: "application/json",
+				body: JSON.stringify({ services: [] }),
+			});
+		});
+		await page.route("**/api/dashboard/calendar?**", async (route) => {
+			const item = {
+				id: 756,
+				title,
+				seriesTitle: title,
+				service: "sonarr",
+				type: "episode",
+				airDate: networkDate,
+				airDateUtc: `${localDate}T00:00:00Z`,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				instanceId: "sonarr-1",
+				instanceName: "Sonarr",
+			};
+
+			await route.fulfill({
+				contentType: "application/json",
+				body: JSON.stringify({
+					instances: [
+						{
+							instanceId: "sonarr-1",
+							instanceName: "Sonarr",
+							service: "sonarr",
+							data: [item],
+						},
+					],
+					aggregated: [item],
+					totalCount: 1,
+				}),
+			});
+		});
+
+		const baseUrl = process.env.TEST_BASE_URL ?? "";
+		await page.goto(`${baseUrl}${ROUTES.calendar}`);
+		const eventChip = page.getByText(title, { exact: true });
+		await expect(eventChip).toBeVisible({ timeout: TIMEOUTS.medium });
+
+		const eventCell = eventChip.locator("xpath=ancestor::button[1]");
+		await expect(eventCell.locator("span").filter({ hasText: /^16$/ })).toBeVisible();
+	});
+
+	test("fetches and clips timezone padding around the visible grid", async ({ page }) => {
+		await page.clock.setFixedTime(new Date("2026-08-16T12:00:00Z"));
+		const boundaryTitle = "Visible boundary episode";
+		const paddingOnlyTitle = "Padding-only episode";
+
+		await page.route("**/api/services", async (route) => {
+			await route.fulfill({
+				contentType: "application/json",
+				body: JSON.stringify({ services: [] }),
+			});
+		});
+		await page.route("**/api/dashboard/calendar?**", async (route) => {
+			const url = new URL(route.request().url());
+			expect(url.searchParams.get("start")).toBe("2026-07-25");
+			expect(url.searchParams.get("end")).toBe("2026-09-06");
+
+			const boundaryItem = {
+				id: 757,
+				title: boundaryTitle,
+				seriesTitle: boundaryTitle,
+				service: "sonarr",
+				type: "episode",
+				airDate: "2026-07-25",
+				airDateUtc: "2026-07-25T23:30:00Z",
+				seasonNumber: 1,
+				episodeNumber: 1,
+				instanceId: "sonarr-1",
+				instanceName: "Sonarr",
+			};
+			const paddingOnlyItem = {
+				...boundaryItem,
+				id: 758,
+				title: paddingOnlyTitle,
+				seriesTitle: paddingOnlyTitle,
+				airDateUtc: "2026-07-25T12:00:00Z",
+				episodeNumber: 2,
+			};
+
+			await route.fulfill({
+				contentType: "application/json",
+				body: JSON.stringify({
+					instances: [
+						{
+							instanceId: "sonarr-1",
+							instanceName: "Sonarr",
+							service: "sonarr",
+							data: [boundaryItem, paddingOnlyItem],
+						},
+					],
+					aggregated: [boundaryItem, paddingOnlyItem],
+					totalCount: 2,
+				}),
+			});
+		});
+
+		const baseUrl = process.env.TEST_BASE_URL ?? "";
+		await page.goto(`${baseUrl}${ROUTES.calendar}`);
+		const boundaryChip = page.getByText(boundaryTitle, { exact: true });
+		await expect(boundaryChip).toBeVisible({ timeout: TIMEOUTS.medium });
+		await expect(page.getByText(paddingOnlyTitle, { exact: true })).toHaveCount(0);
+
+		const boundaryCell = boundaryChip.locator("xpath=ancestor::button[1]");
+		await expect(boundaryCell.locator("span").filter({ hasText: /^26$/ })).toBeVisible();
+	});
+});

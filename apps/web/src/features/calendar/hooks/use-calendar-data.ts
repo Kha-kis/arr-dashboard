@@ -1,5 +1,10 @@
 import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
 import { useMemo } from "react";
+import {
+	type CalendarDateRange,
+	getCalendarDateKey,
+	isCalendarItemInDateRange,
+} from "../lib/calendar-formatters";
 import type { CalendarFilters } from "./use-calendar-state";
 
 /**
@@ -129,6 +134,7 @@ export const useCalendarData = (
 		| undefined,
 	services: ServiceInstanceSummary[] | undefined,
 	filters: CalendarFilters,
+	visibleRange: CalendarDateRange,
 ): CalendarDataHookResult => {
 	const aggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
 	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
@@ -155,6 +161,9 @@ export const useCalendarData = (
 	const filteredEvents = useMemo(() => {
 		const term = filters.searchTerm.trim().toLowerCase();
 		const filtered = aggregated.filter((item) => {
+			if (!isCalendarItemInDateRange(item, visibleRange)) {
+				return false;
+			}
 			if (filters.serviceFilter !== "all" && item.service !== filters.serviceFilter) {
 				return false;
 			}
@@ -185,20 +194,15 @@ export const useCalendarData = (
 		});
 		// Deduplicate events that appear in multiple instances
 		return deduplicateEvents(filtered);
-	}, [aggregated, filters]);
+	}, [aggregated, filters, visibleRange]);
 
 	const eventsByDate = useMemo(() => {
 		const map = new Map<string, DeduplicatedCalendarItem[]>();
 		for (const item of filteredEvents) {
-			// Prefer local date (airDate/releaseDate) over UTC for bucketing into grid cells.
-			// airDateUtc can shift events to the next day for users in negative UTC offsets
-			// (e.g., a Sunday 8pm ET show has airDateUtc on Monday UTC). See issue #207.
-			const iso = item.airDate ?? item.releaseDate ?? item.airDateUtc;
-			if (!iso) {
+			const dateKey = getCalendarDateKey(item);
+			if (!dateKey) {
 				continue;
 			}
-			const separatorIndex = iso.indexOf("T");
-			const dateKey = separatorIndex === -1 ? iso : iso.slice(0, separatorIndex);
 			const existing = map.get(dateKey);
 			if (existing) {
 				existing.push(item);
