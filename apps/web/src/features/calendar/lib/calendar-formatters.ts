@@ -9,6 +9,52 @@ export const formatDateOnly = (date: Date): string => {
 	return index === -1 ? iso : iso.slice(0, index);
 };
 
+const extractDatePart = (value: string): string => {
+	const separatorIndex = value.indexOf("T");
+	return separatorIndex === -1 ? value : value.slice(0, separatorIndex);
+};
+
+const formatDateInTimeZone = (value: string, timeZone?: string): string | undefined => {
+	const parsed = new Date(value);
+	if (Number.isNaN(parsed.getTime())) {
+		return undefined;
+	}
+
+	const parts = new Intl.DateTimeFormat("en-US", {
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		timeZone,
+	}).formatToParts(parsed);
+	const year = parts.find((part) => part.type === "year")?.value;
+	const month = parts.find((part) => part.type === "month")?.value;
+	const day = parts.find((part) => part.type === "day")?.value;
+
+	return year && month && day ? `${year}-${month}-${day}` : undefined;
+};
+
+/**
+ * Selects the calendar grid day for an event.
+ * Sonarr provides a precise UTC airing time, which must be converted to the
+ * viewer's local day. Other services use release dates with date-only meaning.
+ */
+export const getCalendarDateKey = (item: CalendarItem, timeZone?: string): string | undefined => {
+	if (item.service === "sonarr") {
+		if (item.airDateUtc) {
+			const localDate = formatDateInTimeZone(item.airDateUtc, timeZone);
+			if (localDate) {
+				return localDate;
+			}
+		}
+
+		const fallback = item.airDate ?? item.releaseDate;
+		return fallback ? extractDatePart(fallback) : undefined;
+	}
+
+	const date = item.airDate ?? item.releaseDate ?? item.airDateUtc;
+	return date ? extractDatePart(date) : undefined;
+};
+
 /**
  * Creates a date at the start of the specified month in UTC
  */
