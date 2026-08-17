@@ -91,13 +91,13 @@ docker run -d \
 
 wait_health "http://localhost:${PORT_API}/health" 120 || {
   log "Container logs:"
-  docker logs "$CONTAINER_APP" 2>&1 | tail -20
+  docker logs --tail 20 "$CONTAINER_APP" 2>&1
   fail "arr-dashboard did not start with PostgreSQL"
 }
 pass "arr-dashboard started with PostgreSQL"
 
 # Check startup logs for provider switch
-STARTUP_LOGS=$(docker logs "$CONTAINER_APP" 2>&1 | head -100)
+STARTUP_LOGS=$(docker logs "$CONTAINER_APP" 2>&1 | sed -n '1,100p')
 if echo "$STARTUP_LOGS" | grep -qi "postgresql"; then
   pass "PostgreSQL provider detected in logs"
 fi
@@ -106,7 +106,7 @@ if echo "$STARTUP_LOGS" | grep -q "synchronized successfully\|already in sync"; 
   pass "Database schema sync succeeded"
 else
   log "  Schema sync logs:"
-  echo "$STARTUP_LOGS" | grep -i "schema\|database\|prisma" | head -10
+  grep -i -m 10 "schema\|database\|prisma" <<<"$STARTUP_LOGS" || true
   fail "Database schema sync could not be confirmed on PostgreSQL"
 fi
 

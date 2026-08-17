@@ -161,10 +161,10 @@ NEW_VERSION=$(curl -sf "http://localhost:${PORT_API}/health" | python3 -c "impor
 log "  New version: ${NEW_VERSION}"
 
 # Check startup logs for migration issues
-STARTUP_LOGS=$(docker logs "$CONTAINER" 2>&1 | head -100)
+STARTUP_LOGS=$(docker logs "$CONTAINER" 2>&1 | sed -n '1,100p')
 if echo "$STARTUP_LOGS" | grep -qi "panic\|FATAL\|cannot open database"; then
   log "  Fatal errors found in startup logs:"
-  echo "$STARTUP_LOGS" | grep -i "panic\|FATAL\|cannot open database" | head -5
+  grep -i -m 5 "panic\|FATAL\|cannot open database" <<<"$STARTUP_LOGS"
   fail "Fatal startup errors detected"
 fi
 
@@ -173,7 +173,7 @@ if echo "$STARTUP_LOGS" | grep -q "already in sync\|synchronized successfully"; 
   pass "Database schema sync succeeded"
 else
   log "  Schema sync logs:"
-  echo "$STARTUP_LOGS" | grep -i "schema\|database\|prisma" | head -10
+  grep -i -m 10 "schema\|database\|prisma" <<<"$STARTUP_LOGS" || true
   fail "Database schema sync could not be confirmed"
 fi
 
