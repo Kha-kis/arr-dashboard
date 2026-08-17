@@ -39,4 +39,4 @@ export async function withTrashTemplateDeploymentGuard<T>(
 	);
 }
 
-import { withCleanupTopologyMutationLease } from "../library-cleanup/cleanup-executor.js";
+import { withCleanupTopologyMutationLease } from "../library-cleanup/cleanup-run-lease.js";

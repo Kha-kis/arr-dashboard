@@ -8,7 +8,7 @@ import {
 	resolveAnalyticsProviderSelection,
 	selectAnalyticsProvider,
 } from "../lib/analytics/provider-selection.js";
-import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
+import { withCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-run-lease.js";
 import { LOG_DIR, LOG_LEVEL, LOG_MAX_FILES, LOG_MAX_SIZE } from "../lib/logger.js";
 import { readTautulliPassReport } from "../lib/rules-migration/tautulli-pass.js";
 import { evaluateSecurityPosture } from "../lib/security/security-posture.js";

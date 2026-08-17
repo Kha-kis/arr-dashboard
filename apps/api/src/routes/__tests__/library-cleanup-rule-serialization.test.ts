@@ -15,6 +15,11 @@ const executorMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../lib/library-cleanup/cleanup-executor.js", () => executorMocks);
+vi.mock("../../lib/library-cleanup/cleanup-run-lease.js", () => ({
+	CleanupPolicyMutationConflictError: executorMocks.CleanupPolicyMutationConflictError,
+	CleanupRunAlreadyInProgressError: executorMocks.CleanupRunAlreadyInProgressError,
+	withCleanupPolicyMutationLease: executorMocks.withCleanupPolicyMutationLease,
+}));
 
 import { registerLibraryCleanupRoutes } from "../library-cleanup.js";
 import {
