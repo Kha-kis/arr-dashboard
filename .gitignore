@@ -75,7 +75,7 @@ auth-state.json
 .agents/
 .codex/
 skills-lock.json
-/HANDOVER.md
+/AGENTS.local.md
 /.worktrees/
 /worktrees/
 /docs/plans/

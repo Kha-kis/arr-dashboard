@@ -1,7 +1,7 @@
 # AGENTS.md — arr-dashboard
 
 Read `docs/DEVELOPMENT.md` for the tracked architecture and pattern reference. If a local
-`HANDOVER.md` exists, read it for machine-specific state and recent project
+`AGENTS.local.md` exists, read it for machine-specific state and recent project
 history; do not assume it exists in a fresh clone.
 
 Keep durable contributor guidance tracked here. Personal agent definitions,
