@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+	withCleanupOperationGuard,
+	withExclusiveCleanupOperationGuard,
+} from "./cleanup-maintenance-gate.js";
 import type { CleanupExecutorDeps } from "./types.js";
 
 export const CLEANUP_RUN_LEASE_MS = 2 * 60 * 60 * 1000;
@@ -15,6 +19,24 @@ export class CleanupRunLeaseLostError extends Error {
 	constructor() {
 		super("The cleanup run lost its database execution lease");
 		this.name = "CleanupRunLeaseLostError";
+	}
+}
+
+export class CleanupTopologyMutationConflictError extends Error {
+	readonly statusCode = 409;
+
+	constructor() {
+		super("Service instances cannot be changed while a library cleanup operation is in progress");
+		this.name = "CleanupTopologyMutationConflictError";
+	}
+}
+
+export class CleanupPolicyMutationConflictError extends Error {
+	readonly statusCode = 409;
+
+	constructor() {
+		super("Library cleanup settings cannot be changed while a cleanup operation is in progress");
+		this.name = "CleanupPolicyMutationConflictError";
 	}
 }
 
@@ -130,4 +152,102 @@ export async function startCleanupRunLease(
 				});
 		},
 	};
+}
+
+async function withCleanupMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: () => Promise<T>,
+	conflictError: () => Error,
+	options: {
+		configId?: string;
+		leaseRowMayBeDeleted?: boolean;
+		exclusiveOperation?: boolean;
+	} = {},
+): Promise<T> {
+	const runWithOperationGuard = options.exclusiveOperation
+		? withExclusiveCleanupOperationGuard
+		: withCleanupOperationGuard;
+	return await runWithOperationGuard(async () => {
+		const { prisma, log } = deps;
+		// Ensure the per-user coordination row exists when the caller does not
+		// already have its ID. This closes the initialization race between a
+		// cleanup-sensitive write and the first cleanup run.
+		const config = options.configId
+			? { id: options.configId }
+			: await prisma.libraryCleanupConfig.upsert({
+					where: { userId },
+					update: {},
+					create: { userId },
+					select: { id: true },
+				});
+		const runClaimToken = await acquireCleanupRunLease(prisma, userId, config.id);
+		if (!runClaimToken) throw conflictError();
+
+		try {
+			return await mutate();
+		} finally {
+			await releaseCleanupRunLease(prisma, userId, config.id, runClaimToken)
+				.then((released) => {
+					if (!released && !options.leaseRowMayBeDeleted) {
+						log.warn(
+							{ configId: config.id },
+							"Service topology mutation finished after its cleanup lease ownership changed",
+						);
+					}
+				})
+				.catch((error) => {
+					log.error(
+						{ err: error, configId: config.id },
+						"Service topology mutation finished but its cleanup lease could not be released",
+					);
+				});
+		}
+	});
+}
+
+export async function withCleanupTopologyMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: () => Promise<T>,
+	options: { leaseRowMayBeDeleted?: boolean } = {},
+): Promise<T> {
+	return await withCleanupMutationLease(
+		deps,
+		userId,
+		mutate,
+		() => new CleanupTopologyMutationConflictError(),
+		options,
+	);
+}
+
+/** Serialize destructive ARR service deletion against every cleanup/TRaSH mutation. */
+export async function withExclusiveCleanupTopologyMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: () => Promise<T>,
+	options: { leaseRowMayBeDeleted?: boolean } = {},
+): Promise<T> {
+	return await withCleanupMutationLease(
+		deps,
+		userId,
+		mutate,
+		() => new CleanupTopologyMutationConflictError(),
+		{ ...options, exclusiveOperation: true },
+	);
+}
+
+export async function withCleanupPolicyMutationLease<T>(
+	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
+	userId: string,
+	mutate: () => Promise<T>,
+	options: { configId?: string } = {},
+): Promise<T> {
+	return await withCleanupMutationLease(
+		deps,
+		userId,
+		mutate,
+		() => new CleanupPolicyMutationConflictError(),
+		options,
+	);
 }

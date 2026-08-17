@@ -30,8 +30,6 @@ import {
 } from "../lib/library-cleanup/cleanup-audit.js";
 import {
 	buildEvalContext,
-	CleanupPolicyMutationConflictError,
-	CleanupRunAlreadyInProgressError,
 	episodeCoordinateKey,
 	executeApprovedItems,
 	executeCleanupPreview,
@@ -39,8 +37,12 @@ import {
 	executeRetryItems,
 	extractSeriesTmdbId,
 	prefetchFreshPlexEpisodeWatchData,
-	withCleanupPolicyMutationLease,
 } from "../lib/library-cleanup/cleanup-executor.js";
+import {
+	CleanupPolicyMutationConflictError,
+	CleanupRunAlreadyInProgressError,
+	withCleanupPolicyMutationLease,
+} from "../lib/library-cleanup/cleanup-run-lease.js";
 import {
 	CleanupMaintenanceConflictError,
 	withCleanupOperationGuard,

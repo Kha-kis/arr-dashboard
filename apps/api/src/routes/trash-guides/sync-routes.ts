@@ -8,7 +8,7 @@ import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
+import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-run-lease.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import {
 	assertSharedDeploymentRestorationAllowed,

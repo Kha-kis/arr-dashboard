@@ -7,7 +7,7 @@ import {
 	renewCleanupRunLease,
 	withCleanupTopologyMutationLease,
 	withCleanupPolicyMutationLease,
-} from "../cleanup-executor.js";
+} from "../cleanup-run-lease.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
 describe("library cleanup database run lease", () => {

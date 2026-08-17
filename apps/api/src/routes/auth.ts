@@ -7,7 +7,7 @@ import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { parseUserAgent } from "../lib/auth/user-agent-parser.js";
 import { ConflictError } from "../lib/errors.js";
-import { withExclusiveCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-executor.js";
+import { withExclusiveCleanupTopologyMutationLease } from "../lib/library-cleanup/cleanup-run-lease.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 const loginSchema = z.object({

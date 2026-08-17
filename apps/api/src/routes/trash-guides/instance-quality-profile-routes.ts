@@ -8,7 +8,7 @@ import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { AppValidationError, ConflictError } from "../../lib/errors.js";
-import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
+import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-run-lease.js";
 import { readPersistedManagedCustomFormatIdentities } from "../../lib/trash-guides/deployment-managed-format-state.js";
 import { assertNoPendingDeploymentOperation } from "../../lib/trash-guides/deployment-operation-gate.js";
 import {

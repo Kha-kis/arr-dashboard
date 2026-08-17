@@ -54,6 +54,11 @@ const auditMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../../lib/library-cleanup/cleanup-executor.js", () => executorMocks);
+vi.mock("../../lib/library-cleanup/cleanup-run-lease.js", () => ({
+	CleanupPolicyMutationConflictError: executorMocks.CleanupPolicyMutationConflictError,
+	CleanupRunAlreadyInProgressError: executorMocks.CleanupRunAlreadyInProgressError,
+	withCleanupPolicyMutationLease: executorMocks.withCleanupPolicyMutationLease,
+}));
 vi.mock("../../lib/library-cleanup/cleanup-audit.js", () => auditMocks);
 
 import {

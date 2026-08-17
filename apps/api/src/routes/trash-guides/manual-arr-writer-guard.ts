@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { AppValidationError, ConflictError } from "../../lib/errors.js";
-import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
+import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-run-lease.js";
 import type { ServiceInstance } from "../../lib/prisma.js";
 import { assertNoPendingDeploymentOperation } from "../../lib/trash-guides/deployment-operation-gate.js";
 import {

@@ -28,7 +28,7 @@ import {
 import {
 	acquireCleanupRunLease,
 	releaseCleanupRunLease,
-} from "../lib/library-cleanup/cleanup-executor.js";
+} from "../lib/library-cleanup/cleanup-run-lease.js";
 import { withCleanupOperationGuard } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { validateRequest } from "../lib/utils/validate.js";
 

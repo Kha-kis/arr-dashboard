@@ -11,7 +11,7 @@ vi.mock("../../../lib/trash-guides/deployment-operation-gate.js", () => ({
 	assertNoPendingDeploymentOperation,
 }));
 
-vi.mock("../../../lib/library-cleanup/cleanup-executor.js", () => ({
+vi.mock("../../../lib/library-cleanup/cleanup-run-lease.js", () => ({
 	withCleanupTopologyMutationLease,
 }));
 

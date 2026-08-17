@@ -12,7 +12,7 @@ import { AppValidationError, ConflictError } from "../lib/errors.js";
 import {
 	withCleanupTopologyMutationLease,
 	withExclusiveCleanupTopologyMutationLease,
-} from "../lib/library-cleanup/cleanup-executor.js";
+} from "../lib/library-cleanup/cleanup-run-lease.js";
 import { clearFileIdIndexCache } from "../lib/library-sync/infohash-backfill-by-inode.js";
 import type { ServiceInstance, ServiceType } from "../lib/prisma.js";
 import { withQuiObservationTopologyGuard } from "../lib/qui/observation-topology-guard.js";

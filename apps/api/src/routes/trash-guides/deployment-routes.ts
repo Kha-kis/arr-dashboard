@@ -9,7 +9,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { ConflictError } from "../../lib/errors.js";
-import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
+import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-run-lease.js";
 import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
 import { assertEquivalentDeploymentMappingAuthority } from "../../lib/trash-guides/deployment-target.js";
 import { validateRequest } from "../../lib/utils/validate.js";

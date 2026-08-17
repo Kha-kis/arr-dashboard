@@ -8,7 +8,7 @@ import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginAsync } from "fastify";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { isNonterminalUndeploy } from "../../lib/backup/backup-validation.js";
-import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
+import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-run-lease.js";
 import {
 	assertSharedDeploymentRestorationAllowed,
 	assertSharedDeploymentState,
