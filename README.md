@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.24.0** — The **safer cleanup & resilient automation release**. Library Cleanup can now target individual Sonarr episodes and does more to protect shared media before deletion. TRaSH deployments and auto-sync recover from interrupted runs and refuse to write from stale or unverified data. This release also fixes Plex cache refreshes, OIDC linking behind proxy providers, qUI webhook registration, Seerr approval routing, PostgreSQL upgrades, vulnerable dependencies, and refresh-time memory use.
+> **Version 2.24.1** — The **recovery and timezone correctness patch**. Sonarr episode cleanup now resumes safely after partial failures, OIDC callbacks honor configured public origins behind reverse proxies, and Sonarr calendar dates remain correct across viewer timezones and visible-grid boundaries. Workflow action pins and public repository hygiene are also refreshed.
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -233,6 +233,7 @@ First-class support is reserved for services listed in the table above.
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.24.1` | **Recovery and timezone correctness** — Makes Sonarr episode cleanup recovery durable, fixes OIDC callback origins behind reverse proxies, and corrects Sonarr calendar bucketing and fetch boundaries in the viewer's timezone (#755, #759, #761, #763). |
 | `2.24.0` | **Safer cleanup & resilient automation** — Adds episode-scoped Sonarr cleanup and tighter shared-library deletion checks. TRaSH deployments and auto-sync recover from interrupted runs and refuse stale or unverified data. Also fixes Plex cache refreshes, OIDC linking, qUI webhooks, Seerr routing, PostgreSQL upgrades, vulnerable dependencies, and provider-cache memory (#629, #661, #685, #693, #718, #721, #743, #745, #747–#750). |
 | `2.23.0` | **Torrent payload safeguards** — Adds an opt-in Queue Cleaner torrent file-extension allowlist inspected through qui. Mixed torrents containing any unexpected file are removed in full through Sonarr or Radarr when existing safety gates permit cleanup; unavailable manifest metadata fails closed and is retried later (#565, #612). Updates PostCSS to 8.5.20 to resolve GHSA-6g55-p6wh-862q (#611). |
 | `2.22.0` | **Authenticated services & hardened maintenance** — Adds optional encrypted HTTP Basic Auth for service instances behind authenticated reverse proxies (#600), restores new-library notifications for between-poll imports (#601, #543), supports Sonarr flat ratings in Library Cleanup (#604), refreshes production/development dependencies and GitHub Actions, restores a zero-diagnostic quality baseline, and pins third-party actions with dependency release-age and provenance policies (#547, #582, #583, #597, #598, #603, #605). |
