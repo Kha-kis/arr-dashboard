@@ -1,5 +1,6 @@
 import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
 import { useMemo } from "react";
+import { getCalendarDateKey } from "../lib/calendar-formatters";
 import type { CalendarFilters } from "./use-calendar-state";
 
 /**
@@ -190,15 +191,10 @@ export const useCalendarData = (
 	const eventsByDate = useMemo(() => {
 		const map = new Map<string, DeduplicatedCalendarItem[]>();
 		for (const item of filteredEvents) {
-			// Prefer local date (airDate/releaseDate) over UTC for bucketing into grid cells.
-			// airDateUtc can shift events to the next day for users in negative UTC offsets
-			// (e.g., a Sunday 8pm ET show has airDateUtc on Monday UTC). See issue #207.
-			const iso = item.airDate ?? item.releaseDate ?? item.airDateUtc;
-			if (!iso) {
+			const dateKey = getCalendarDateKey(item);
+			if (!dateKey) {
 				continue;
 			}
-			const separatorIndex = iso.indexOf("T");
-			const dateKey = separatorIndex === -1 ? iso : iso.slice(0, separatorIndex);
 			const existing = map.get(dateKey);
 			if (existing) {
 				existing.push(item);
