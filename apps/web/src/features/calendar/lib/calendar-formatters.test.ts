@@ -1,6 +1,10 @@
 import type { CalendarItem } from "@arr/shared";
 import { describe, expect, it } from "vitest";
-import { getCalendarDateKey } from "./calendar-formatters";
+import {
+	getCalendarDateKey,
+	getPaddedCalendarDateRange,
+	isCalendarItemInDateRange,
+} from "./calendar-formatters";
 
 const createItem = (overrides: Partial<CalendarItem> = {}): CalendarItem => ({
 	id: 1,
@@ -53,5 +57,61 @@ describe("getCalendarDateKey", () => {
 
 	it("returns undefined when an item has no calendar date", () => {
 		expect(getCalendarDateKey(createItem(), "Europe/Stockholm")).toBeUndefined();
+	});
+});
+
+describe("calendar fetch boundaries", () => {
+	it("pads the visible grid by one UTC day on both sides", () => {
+		expect(
+			getPaddedCalendarDateRange(
+				new Date("2026-07-26T00:00:00Z"),
+				new Date("2026-09-05T00:00:00Z"),
+			),
+		).toEqual({ start: "2026-07-25", end: "2026-09-06" });
+	});
+
+	it("keeps a padded UTC event that rebuckets onto the first visible day", () => {
+		const item = createItem({
+			airDate: "2026-07-25",
+			airDateUtc: "2026-07-25T23:30:00Z",
+		});
+
+		expect(
+			isCalendarItemInDateRange(
+				item,
+				{ start: "2026-07-26", end: "2026-09-05" },
+				"Europe/Stockholm",
+			),
+		).toBe(true);
+	});
+
+	it("drops an event that remains outside the visible range after rebucketing", () => {
+		const item = createItem({
+			airDate: "2026-07-25",
+			airDateUtc: "2026-07-25T12:00:00Z",
+		});
+
+		expect(
+			isCalendarItemInDateRange(
+				item,
+				{ start: "2026-07-26", end: "2026-09-05" },
+				"Europe/Stockholm",
+			),
+		).toBe(false);
+	});
+
+	it("keeps a UTC event that rebuckets onto the last visible day west of UTC", () => {
+		const item = createItem({
+			airDate: "2026-09-07",
+			airDateUtc: "2026-09-07T00:30:00Z",
+		});
+
+		expect(
+			isCalendarItemInDateRange(
+				item,
+				{ start: "2026-07-26", end: "2026-09-06" },
+				"America/New_York",
+			),
+		).toBe(true);
 	});
 });

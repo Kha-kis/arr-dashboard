@@ -9,6 +9,27 @@ export const formatDateOnly = (date: Date): string => {
 	return index === -1 ? iso : iso.slice(0, index);
 };
 
+export interface CalendarDateRange {
+	start: string;
+	end: string;
+}
+
+/**
+ * Expands the visible grid range enough to cover every valid viewer timezone.
+ * A UTC timestamp can move by at most one calendar day after local conversion.
+ */
+export const getPaddedCalendarDateRange = (start: Date, end: Date): CalendarDateRange => {
+	const paddedStart = new Date(start);
+	paddedStart.setUTCDate(paddedStart.getUTCDate() - 1);
+	const paddedEnd = new Date(end);
+	paddedEnd.setUTCDate(paddedEnd.getUTCDate() + 1);
+
+	return {
+		start: formatDateOnly(paddedStart),
+		end: formatDateOnly(paddedEnd),
+	};
+};
+
 const extractDatePart = (value: string): string => {
 	const separatorIndex = value.indexOf("T");
 	return separatorIndex === -1 ? value : value.slice(0, separatorIndex);
@@ -53,6 +74,20 @@ export const getCalendarDateKey = (item: CalendarItem, timeZone?: string): strin
 
 	const date = item.airDate ?? item.releaseDate ?? item.airDateUtc;
 	return date ? extractDatePart(date) : undefined;
+};
+
+/**
+ * Checks visibility after service dates have been normalized to calendar keys.
+ * This clips the extra fetch padding without dropping events that rebucket onto
+ * the first or last visible day.
+ */
+export const isCalendarItemInDateRange = (
+	item: CalendarItem,
+	range: CalendarDateRange,
+	timeZone?: string,
+): boolean => {
+	const dateKey = getCalendarDateKey(item, timeZone);
+	return dateKey !== undefined && dateKey >= range.start && dateKey <= range.end;
 };
 
 /**
