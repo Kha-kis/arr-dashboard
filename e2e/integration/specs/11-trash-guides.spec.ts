@@ -32,11 +32,15 @@ test.describe("TRaSH Guides with Real Services", () => {
 	test("should show connected service instances for deployment", async ({ page }) => {
 		// The deploy/instance selection should list real services
 		const serviceRefs = page.getByText(/E2E Sonarr|E2E Radarr|sonarr|radarr/i);
-		expect(await serviceRefs.count()).toBeGreaterThan(0);
+		await expect(serviceRefs.first()).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
 
-	test("should not show error alerts", async ({ page }) => {
-		await page.waitForTimeout(2000);
+	test("should not show error alerts once content has loaded", async ({ page }) => {
+		// TRaSH guide content is fetched from GitHub at runtime; a transient
+		// upstream failure can surface an honest, retryable error state. Only
+		// assert absence of blocking errors after the page has actually loaded.
+		const serviceRefs = page.getByText(/E2E Sonarr|E2E Radarr|sonarr|radarr/i);
+		await expect(serviceRefs.first()).toBeVisible({ timeout: TIMEOUTS.medium });
 
 		const errorAlert = page.locator('[role="alert"]').filter({ hasText: /error|failed/i });
 		expect(await errorAlert.count()).toBe(0);

@@ -3,7 +3,8 @@
  *
  * Validates that the dashboard overview displays real data from connected services:
  * - Stat cards show actual instance counts (not zero)
- * - Configured Instances table lists all registered services
+ * - Configured Instances section is a collapsed summary that expands to a
+ *   per-instance table listing all registered services
  * - Service type badges appear correctly
  */
 
@@ -17,6 +18,14 @@ test.describe("Dashboard Overview with Real Data", () => {
 		await waitForLoadingComplete(page);
 		await ensureAuthenticated(page);
 	});
+
+	// The Configured Instances section is collapsed by default and shows a
+	// one-line summary. Expand it to reveal the per-instance table.
+	async function expandConfiguredInstances(page: import("@playwright/test").Page) {
+		const toggle = page.getByRole("button", { name: /configured instances/i });
+		await toggle.click();
+		await expect(toggle).toHaveAttribute("aria-expanded", "true", { timeout: TIMEOUTS.short });
+	}
 
 	test("should display welcome message", async ({ page }) => {
 		await expect(page.getByText(/welcome back/i)).toBeVisible({
@@ -51,21 +60,29 @@ test.describe("Dashboard Overview with Real Data", () => {
 		}
 	});
 
-	test("should display Configured Instances section", async ({ page }) => {
+	test("should display Configured Instances section collapsed with summary", async ({ page }) => {
 		// "Configured Instances" is an h2 in the overview tab
-		await expect(
-			page.getByRole("heading", { name: /configured instances/i }),
-		).toBeVisible({ timeout: TIMEOUTS.long });
+		const section = page.getByRole("heading", { name: /configured instances/i });
+		await expect(section).toBeVisible({ timeout: TIMEOUTS.long });
+
+		// Collapsed by default: summary line shows the active-service count
+		await expect(page.getByText(/active services? across/i)).toBeVisible({
+			timeout: TIMEOUTS.short,
+		});
 	});
 
-	test("should show all three services in instances table", async ({ page }) => {
+	test("should expand to show all three services in instances table", async ({ page }) => {
 		// Wait for instances section to render
 		await expect(
 			page.getByRole("heading", { name: /configured instances/i }),
 		).toBeVisible({ timeout: TIMEOUTS.long });
 
+		await expandConfiguredInstances(page);
+
 		for (const label of ["E2E Sonarr", "E2E Radarr", "E2E Prowlarr"]) {
-			await expect(page.getByText(label)).toBeVisible({ timeout: TIMEOUTS.medium });
+			// Scope to the instance row link — getByText(label) can also match
+			// service warning cards on the dashboard
+			await expect(page.getByRole("link", { name: label })).toBeVisible({ timeout: TIMEOUTS.medium });
 		}
 	});
 
@@ -74,6 +91,8 @@ test.describe("Dashboard Overview with Real Data", () => {
 		await expect(
 			page.getByRole("heading", { name: /configured instances/i }),
 		).toBeVisible({ timeout: TIMEOUTS.long });
+
+		await expandConfiguredInstances(page);
 
 		// Service type indicators (sonarr/radarr/prowlarr) should appear
 		const serviceTypes = page.getByText(/sonarr|radarr|prowlarr/i);

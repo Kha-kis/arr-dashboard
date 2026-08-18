@@ -770,6 +770,8 @@ export const DashboardClient = () => {
 								<button
 									type="button"
 									onClick={() => setInstancesExpanded((v) => !v)}
+									aria-expanded={instancesExpanded}
+									aria-controls="configured-instances-panel"
 									className="w-full flex items-center justify-between gap-3 px-6 py-4 hover:bg-card/50 transition-colors duration-200"
 								>
 									<div className="flex items-center gap-3">
@@ -816,7 +818,7 @@ export const DashboardClient = () => {
 								</button>
 
 								{instancesExpanded && (
-									<div className="border-t border-border/50">
+									<div id="configured-instances-panel" className="border-t border-border/50">
 										<div className="p-6">
 											{enabledServices.length === 0 ? (
 												<div className="text-center py-12">

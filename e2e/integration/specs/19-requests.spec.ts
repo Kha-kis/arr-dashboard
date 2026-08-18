@@ -3,9 +3,9 @@
  *
  * Tests the approval queue inline preview, request lifecycle timeline,
  * ARIA semantics, and keyboard navigation against a real Jellyseerr
- * instance with pending requests seeded by bootstrap-services.sh.
+ * instance with pending requests seeded by the jellyfin-setup fixture.
  *
- * Requires: Jellyseerr container with pending requests (created in bootstrap).
+ * Requires: Jellyseerr container with pending requests (seeded by setup).
  */
 
 import { test, expect } from "@playwright/test";
@@ -111,6 +111,10 @@ test.describe("Requests - Approval Queue", () => {
 
 		const hasSeerr = await waitForSeerrTabs(page);
 		test.skip(!hasSeerr, "No Seerr instance registered");
+
+		// Wait for cards to render before counting (all cards commit together)
+		const hasPreview = await waitForPreviewButton(page);
+		test.skip(!hasPreview, "No pending requests");
 
 		const previewButtons = page.locator("button[aria-label='Preview request']");
 		const count = await previewButtons.count();
