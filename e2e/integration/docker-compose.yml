@@ -7,11 +7,10 @@
 # media server to create its first admin user. There is no API-only path.
 #
 # Usage:
-#   docker compose up -d --build          # Start all services
-#   npx playwright test jellyfin-setup \  # Complete Jellyfin wizard via UI
-#     --config=e2e/integration/playwright.integration.config.ts
-#   bash bootstrap-services.sh            # Extract API keys, bootstrap Seerr
-#   docker compose down -v --remove-orphans  # Teardown
+#   pnpm run e2e:integration:up    # compose up --build + bootstrap-services.sh
+#   pnpm run e2e:integration       # Playwright setup fixtures (Jellyfin wizard,
+#                                  # Seerr seeding) then integration specs
+#   pnpm run e2e:integration:down  # compose down -v (teardown, wipes volumes)
 
 services:
   # ── Core *arr services ──────────────────────────────────────────────

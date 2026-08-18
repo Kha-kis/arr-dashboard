@@ -95,7 +95,35 @@ setup("register user and add services", async ({ page }) => {
 
 		await page.getByRole("textbox", { name: /username/i }).fill(TEST_USERNAME);
 		await page.getByRole("textbox", { name: /password/i }).fill(TEST_PASSWORD);
-		await page.getByRole("button", { name: /sign in with password/i }).click();
+
+		// /auth/login is rate-limited (10/min). A transient burst of logins
+		// from any source can 429 the request and leave us stuck on /login,
+		// so retry the click with a backoff instead of failing the setup.
+		const signInButton = page.getByRole("button", { name: /sign in with password/i });
+		const MAX_LOGIN_ATTEMPTS = 3;
+		const LOGIN_RETRY_BACKOFF_MS = [3_000, 12_000];
+
+		for (let attempt = 0; attempt < MAX_LOGIN_ATTEMPTS; attempt += 1) {
+			if (page.url().includes("/dashboard")) {
+				break;
+			}
+
+			await signInButton.click();
+
+			try {
+				await page.waitForURL(/\/dashboard/, { timeout: 10_000 });
+				break;
+			} catch {
+				// Still on /login: the request was rejected (rate limit,
+				// invalid credentials, etc.) and the inline alert explains
+				// why. Back off and retry the click.
+			}
+
+			if (attempt < MAX_LOGIN_ATTEMPTS - 1) {
+				console.log(`[setup] Login attempt ${attempt + 1} did not land; retrying...`);
+				await page.waitForTimeout(LOGIN_RETRY_BACKOFF_MS[attempt] ?? 10_000);
+			}
+		}
 
 		await expect(page).toHaveURL(/\/dashboard/, { timeout: 15_000 });
 	}
