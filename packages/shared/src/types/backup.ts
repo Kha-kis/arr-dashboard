@@ -74,7 +74,7 @@ export const restoreBackupFromFileRequestSchema = z.object({
 export type RestoreBackupFromFileRequest = z.infer<typeof restoreBackupFromFileRequestSchema>;
 
 // Backup structure (internal, not exposed via API)
-export type BackupFormatVersion = "1.0" | "1.1";
+export type BackupFormatVersion = "1.0" | "1.1" | "1.2";
 
 export interface BackupData {
 	version: BackupFormatVersion;
@@ -119,6 +119,23 @@ export interface BackupData {
 		huntConfigs?: unknown[];
 		huntLogs?: unknown[];
 		huntSearchHistory?: unknown[];
+
+		// Durable user configuration (required in v1.2+; absent in legacy backups).
+		// These are always present as arrays in new-format backups, even when
+		// empty, so "empty" is distinguishable from "legacy backup that never
+		// carried configuration coverage". Keys match the Prisma model names.
+		notificationChannel?: unknown[];
+		notificationSubscription?: unknown[];
+		notificationRule?: unknown[];
+		notificationAggregationConfig?: unknown[];
+		autoTagRule?: unknown[];
+		labelSyncRule?: unknown[];
+		crossDomainRule?: unknown[];
+		queueCleanerConfig?: unknown[];
+		libraryCleanupConfig?: unknown[];
+		libraryCleanupRule?: unknown[];
+		namingConfig?: unknown[];
+		userCustomFormat?: unknown[];
 	};
 	secrets: {
 		encryptionKey: string;

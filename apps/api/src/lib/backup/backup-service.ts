@@ -32,7 +32,7 @@ import { withCleanupMaintenanceGuard } from "../library-cleanup/cleanup-maintena
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { decryptBackupData, encryptBackupData } from "./backup-crypto.js";
-import { exportDatabase, restoreDatabase } from "./backup-database.js";
+import { assertRestoreCompatibility, exportDatabase, restoreDatabase } from "./backup-database.js";
 import {
 	ensureBackupsDirectory,
 	generateBackupId,
@@ -743,6 +743,13 @@ export class BackupService {
 		let secretsBackedUp = false;
 
 		try {
+			// Phase 0: Compatibility preflight against the current database, before
+			// any filesystem mutation. A known-incompatible restore (legacy backup
+			// over a populated target) must be rejected here so the active secrets
+			// file is never touched. The database-layer recheck inside
+			// restoreDatabase() remains as defense-in-depth against TOCTOU.
+			await assertRestoreCompatibility(this.prisma, backup.data);
+
 			// Phase 1: Backup current secrets before making any changes
 			try {
 				const currentSecrets = await fs.readFile(this.secretsPath, "utf-8");

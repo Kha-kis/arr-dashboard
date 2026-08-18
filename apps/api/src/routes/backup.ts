@@ -12,6 +12,7 @@ import {
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { BackupService } from "../lib/backup/backup-service.js";
+import { BackupCompatibilityError } from "../lib/errors.js";
 import { CleanupMaintenanceConflictError } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
@@ -151,6 +152,11 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				return reply.status(409).send({ error: error.message });
 			}
 
+			if (error instanceof BackupCompatibilityError) {
+				request.log.warn({ err: error }, "Backup restore rejected: incompatible backup format");
+				return reply.status(409).send({ error: error.message });
+			}
+
 			request.log.error({ err: error }, "Failed to restore backup");
 			const errorMessage = getErrorMessage(error);
 
@@ -209,6 +215,14 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					request.log.warn(
 						{ err: error },
 						"Backup restore from file blocked by active cleanup maintenance",
+					);
+					return reply.status(409).send({ error: error.message });
+				}
+
+				if (error instanceof BackupCompatibilityError) {
+					request.log.warn(
+						{ err: error },
+						"Backup restore from file rejected: incompatible backup format",
 					);
 					return reply.status(409).send({ error: error.message });
 				}

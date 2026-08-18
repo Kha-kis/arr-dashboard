@@ -2,12 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loggers } from "../../logger.js";
-import type { PrismaClient } from "../../prisma.js";
 import {
 	CleanupMaintenanceConflictError,
 	withCleanupOperationGuard,
 } from "../../library-cleanup/cleanup-maintenance-gate.js";
+import { loggers } from "../../logger.js";
+import type { PrismaClient } from "../../prisma.js";
 import { decryptBackupData, type EncryptedBackupEnvelope } from "../backup-crypto.js";
 import { BackupService } from "../backup-service.js";
 
@@ -35,6 +35,18 @@ const TABLE_NAMES = [
 	"huntLog",
 	"huntSearchHistory",
 	"trashBackup",
+	"notificationChannel",
+	"notificationSubscription",
+	"notificationRule",
+	"notificationAggregationConfig",
+	"autoTagRule",
+	"labelSyncRule",
+	"crossDomainRule",
+	"queueCleanerConfig",
+	"libraryCleanupConfig",
+	"libraryCleanupRule",
+	"namingConfig",
+	"userCustomFormat",
 ] as const;
 
 function makePrismaWithCoordinationEvidence(): PrismaClient {
@@ -148,7 +160,7 @@ describe("BackupService coordination safety", () => {
 			};
 
 			expect(envelope.version).toBe("1.0");
-			expect(payload.version).toBe("1.1");
+			expect(payload.version).toBe("1.2");
 			expect(payload.data.trashSyncHistory).toEqual([
 				expect.objectContaining({ id: "rollback-active" }),
 			]);
