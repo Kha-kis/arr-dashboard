@@ -218,6 +218,36 @@ describe("PlexClient authoritative inventory completeness", () => {
 		);
 	});
 
+	it("rejects a librarySectionID change between collection and verification", async () => {
+		const base = {
+			historyKey: "/status/sessions/history/1",
+			ratingKey: "",
+			title: "Home Video",
+			type: "movie",
+			viewedAt: 1_700_000_000,
+			accountID: 1,
+		};
+		const initial = [{ ...base, librarySectionID: "personal-section" }];
+		const changed = [{ ...base, librarySectionID: "supported-section" }];
+		vi.stubGlobal(
+			"fetch",
+			vi
+				.fn()
+				.mockResolvedValueOnce(
+					response({ offset: 0, size: 1, totalSize: 1, Metadata: initial }),
+				)
+				.mockResolvedValueOnce(
+					response({ offset: 0, size: 1, totalSize: 1, Metadata: changed }),
+				),
+		);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		const snapshot = await client.getHistory({ maxResults: 100_000, requireComplete: true });
+		await expect(client.verifyHistorySnapshot(snapshot)).rejects.toThrow(
+			/changed before.*snapshot/i,
+		);
+	});
+
 	it("rejects equal-count churn in a middle page during complete verification", async () => {
 		const history = Array.from({ length: 401 }, (_, index) => ({
 			historyKey: `/status/sessions/history/${index}`,
@@ -271,6 +301,86 @@ describe("PlexClient authoritative inventory completeness", () => {
 
 		await expect(client.getLibrarySections()).resolves.toHaveLength(1);
 		await expect(client.getAccounts()).resolves.toEqual([{ id: 1, name: "Admin" }]);
+	});
+
+	it("preserves the section agent through the wire mapping", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			response({
+				size: 1,
+				Directory: [
+					{ key: "7", title: "Personal", type: "movie", agent: "com.plexapp.agents.none" },
+				],
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getLibrarySections()).resolves.toEqual([
+			{ key: "7", title: "Personal", type: "movie", agent: "com.plexapp.agents.none" },
+		]);
+	});
+
+	it("leaves an absent section agent undefined rather than defaulting it", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			response({ size: 1, Directory: [{ key: "1", title: "Movies", type: "movie" }] }),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		const sections = await client.getLibrarySections();
+		expect(sections[0]).toEqual({ key: "1", title: "Movies", type: "movie" });
+		expect(sections[0]?.agent).toBeUndefined();
+	});
+
+	it("coerces a numeric librarySectionID to a string through getHistory", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			response({
+				offset: 0,
+				size: 1,
+				totalSize: 1,
+				Metadata: [
+					{
+						historyKey: "/status/sessions/history/1",
+						ratingKey: "movie-1",
+						title: "Movie",
+						type: "movie",
+						viewedAt: 1_700_000_000,
+						accountID: 1,
+						librarySectionID: 7,
+					},
+				],
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		const history = await client.getHistory({ maxResults: 100_000, requireComplete: true });
+		expect(history[0]?.librarySectionID).toBe("7");
+	});
+
+	it("leaves a missing librarySectionID undefined through getHistory", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			response({
+				offset: 0,
+				size: 1,
+				totalSize: 1,
+				Metadata: [
+					{
+						historyKey: "/status/sessions/history/1",
+						ratingKey: "movie-1",
+						title: "Movie",
+						type: "movie",
+						viewedAt: 1_700_000_000,
+						accountID: 1,
+					},
+				],
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		const history = await client.getHistory({ maxResults: 100_000, requireComplete: true });
+		expect(history[0]?.librarySectionID).toBeUndefined();
 	});
 
 	it("rejects inconsistent optional pagination metadata on sections and accounts", async () => {

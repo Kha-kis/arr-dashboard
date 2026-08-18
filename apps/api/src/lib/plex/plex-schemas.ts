@@ -43,6 +43,7 @@ export const plexSectionsResponseSchema = z.looseObject({
 					key: z.string(),
 					title: z.string().optional().default(""),
 					type: z.string(),
+					agent: z.string().optional(),
 				}),
 			)
 			.optional(),
@@ -148,6 +149,7 @@ export const plexHistoryResponseSchema = z.looseObject({
 					type: z.string(),
 					viewedAt: z.number(),
 					accountID: z.number(),
+					librarySectionID: z.coerce.string().optional(),
 				}),
 			)
 			.optional(),
