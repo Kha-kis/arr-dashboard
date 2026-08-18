@@ -891,6 +891,7 @@ describe("BackupService - legacy restore normalization", () => {
 		vi.doMock("../backup-database.js", () => ({
 			exportDatabase: vi.fn(),
 			restoreDatabase: restoreSpy,
+			assertRestoreCompatibility: vi.fn().mockResolvedValue(undefined),
 		}));
 		vi.resetModules();
 		const { BackupService: IsolatedBackupService } = await import("../backup-service.js");

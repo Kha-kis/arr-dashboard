@@ -35,6 +35,18 @@ const TABLE_NAMES = [
 	"huntLog",
 	"huntSearchHistory",
 	"trashBackup",
+	"notificationChannel",
+	"notificationSubscription",
+	"notificationRule",
+	"notificationAggregationConfig",
+	"autoTagRule",
+	"labelSyncRule",
+	"crossDomainRule",
+	"queueCleanerConfig",
+	"libraryCleanupConfig",
+	"libraryCleanupRule",
+	"namingConfig",
+	"userCustomFormat",
 ] as const;
 
 type TableName = (typeof TABLE_NAMES)[number];
@@ -651,6 +663,20 @@ describe("restoreDatabase — current coordination preservation", () => {
 		currentNaming?: Array<Record<string, unknown>>;
 	}) {
 		const firstDelete = vi.fn().mockResolvedValue({ count: 0 });
+		const durableConfigModels = [
+			"notificationChannel",
+			"notificationSubscription",
+			"notificationRule",
+			"notificationAggregationConfig",
+			"autoTagRule",
+			"labelSyncRule",
+			"crossDomainRule",
+			"queueCleanerConfig",
+			"libraryCleanupConfig",
+			"libraryCleanupRule",
+			"namingConfig",
+			"userCustomFormat",
+		] as const;
 		const tx = {
 			trashSyncHistory: {
 				findMany: vi.fn().mockResolvedValue(options.currentSync ?? []),
@@ -671,6 +697,15 @@ describe("restoreDatabase — current coordination preservation", () => {
 				deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
 			huntSearchHistory: { deleteMany: firstDelete },
+			...Object.fromEntries(
+				durableConfigModels.map((model) => [
+					model,
+					{
+						count: vi.fn().mockResolvedValue(0),
+						deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+					},
+				]),
+			),
 		};
 		const prisma = {
 			$transaction: vi.fn(async (operation: (transaction: typeof tx) => Promise<void>) =>

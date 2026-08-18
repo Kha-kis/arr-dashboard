@@ -23,10 +23,45 @@ import {
 } from "../trash-guides/deployment-target.js";
 import type { EncryptedBackupEnvelope } from "./backup-crypto.js";
 
-export const BACKUP_VERSION = "1.1";
+export const BACKUP_VERSION = "1.2";
 export const LEGACY_BACKUP_VERSION = "1.0";
+export const PRE_CONFIG_BACKUP_VERSION = "1.1";
 
-const SUPPORTED_BACKUP_VERSIONS = new Set([LEGACY_BACKUP_VERSION, BACKUP_VERSION]);
+const SUPPORTED_BACKUP_VERSIONS = new Set([
+	LEGACY_BACKUP_VERSION,
+	PRE_CONFIG_BACKUP_VERSION,
+	BACKUP_VERSION,
+]);
+
+/**
+ * Durable user configuration models that MUST survive a full backup/restore.
+ *
+ * This is the single source of truth for the F-01 contract. Each entry maps a
+ * backup payload key to the Prisma model accessor it round-trips through. The
+ * list is deliberately limited to operator configuration — rebuildable caches,
+ * logs, strikes, approvals, snapshots, leases, and sync cursors are excluded.
+ */
+export const DURABLE_CONFIG_MODELS = [
+	"notificationChannel",
+	"notificationSubscription",
+	"notificationRule",
+	"notificationAggregationConfig",
+	"autoTagRule",
+	"labelSyncRule",
+	"crossDomainRule",
+	"queueCleanerConfig",
+	"libraryCleanupConfig",
+	"libraryCleanupRule",
+	"namingConfig",
+	"userCustomFormat",
+] as const;
+
+export type DurableConfigModel = (typeof DURABLE_CONFIG_MODELS)[number];
+
+/** Backup payload key for a durable config model (matches the Prisma model name). */
+export function durableConfigPayloadKey(model: DurableConfigModel): string {
+	return model;
+}
 
 type CoordinationRecord = Record<string, unknown>;
 type CoordinationValidationOptions = {
@@ -586,11 +621,25 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 		"huntConfigs",
 		"huntLogs",
 		"huntSearchHistory",
+		// Durable user configuration (required in v1.2+, optional in legacy)
+		...DURABLE_CONFIG_MODELS.map(durableConfigPayloadKey),
 	];
 
 	for (const field of optionalArrayFields) {
 		if (dataRecord[field] !== undefined && !Array.isArray(dataRecord[field])) {
 			throw new Error(`Invalid backup format: ${field} must be an array`);
+		}
+	}
+
+	// A v1.2+ backup must explicitly carry every durable-config array, even when
+	// empty. Absence here means the backup is malformed/incomplete, not a
+	// legitimate legacy backup — reject it before any destructive work.
+	if (b.version === BACKUP_VERSION) {
+		for (const model of DURABLE_CONFIG_MODELS) {
+			const key = durableConfigPayloadKey(model);
+			if (!Array.isArray(dataRecord[key])) {
+				throw new Error(`Invalid backup format: ${key} is required for version ${BACKUP_VERSION}`);
+			}
 		}
 	}
 
@@ -602,7 +651,7 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 		throw new Error("Invalid backup format: missing or invalid secrets");
 	}
 
-	if (b.version === BACKUP_VERSION) {
+	if (b.version === BACKUP_VERSION || b.version === PRE_CONFIG_BACKUP_VERSION) {
 		const encryptionKey = b.secrets.encryptionKey;
 		let credentialFactory: ArrClientFactory | undefined;
 		validateCoordinationEvidence(dataRecord, {

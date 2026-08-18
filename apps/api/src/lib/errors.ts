@@ -38,6 +38,20 @@ export class AppValidationError extends Error {
 }
 
 /**
+ * Thrown when a backup cannot be safely restored over the current installation
+ * because the backup predates complete durable-configuration backup support and
+ * the target already contains configuration the backup cannot restore. Maps to
+ * HTTP 409 (conflict between backup format and target state).
+ */
+export class BackupCompatibilityError extends Error {
+	readonly statusCode = 409;
+	constructor(message: string) {
+		super(message);
+		this.name = "BackupCompatibilityError";
+	}
+}
+
+/**
  * Thrown when a qui API call fails. Maps the upstream HTTP status to a
  * client-facing status using the same convention the centralised error
  * handler in server.ts already understands (statusCode property).

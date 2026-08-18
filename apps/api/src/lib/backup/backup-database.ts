@@ -6,10 +6,13 @@
  */
 
 import type { BackupData } from "@arr/shared";
+import { BackupCompatibilityError } from "../errors.js";
 import { loggers } from "../logger.js";
 import type { Prisma, PrismaClient, TrashBackup } from "../prisma.js";
 import {
 	type CoordinationState,
+	DURABLE_CONFIG_MODELS,
+	durableConfigPayloadKey,
 	isAuditOnlyUncertainDeployment,
 	isAuditOnlyUncertainSync,
 	isNonterminalRollback,
@@ -487,6 +490,22 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 				(take) => prisma.huntSearchHistory.findMany({ take, orderBy: { searchedAt: "desc" } }),
 			);
 
+	// Durable user configuration (always full — these are config, not history).
+	// Exported as explicit arrays so a new-format backup always carries coverage
+	// for every durable-config model, even when empty.
+	const notificationChannels = await prisma.notificationChannel.findMany();
+	const notificationSubscriptions = await prisma.notificationSubscription.findMany();
+	const notificationRules = await prisma.notificationRule.findMany();
+	const notificationAggregationConfigs = await prisma.notificationAggregationConfig.findMany();
+	const autoTagRules = await prisma.autoTagRule.findMany();
+	const labelSyncRules = await prisma.labelSyncRule.findMany();
+	const crossDomainRules = await prisma.crossDomainRule.findMany();
+	const queueCleanerConfigs = await prisma.queueCleanerConfig.findMany();
+	const libraryCleanupConfigs = await prisma.libraryCleanupConfig.findMany();
+	const libraryCleanupRules = await prisma.libraryCleanupRule.findMany();
+	const namingConfigs = await prisma.namingConfig.findMany();
+	const userCustomFormats = await prisma.userCustomFormat.findMany();
+
 	// Optionally include recent TRaSH instance backups. Snapshots referenced by
 	// nonterminal rollback/undeploy rows are added below regardless of age/expiry.
 	let trashBackups: TrashBackup[] = [];
@@ -566,6 +585,19 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
 		huntConfigs,
 		huntLogs,
 		huntSearchHistory,
+		// Durable user configuration
+		notificationChannel: notificationChannels,
+		notificationSubscription: notificationSubscriptions,
+		notificationRule: notificationRules,
+		notificationAggregationConfig: notificationAggregationConfigs,
+		autoTagRule: autoTagRules,
+		labelSyncRule: labelSyncRules,
+		crossDomainRule: crossDomainRules,
+		queueCleanerConfig: queueCleanerConfigs,
+		libraryCleanupConfig: libraryCleanupConfigs,
+		libraryCleanupRule: libraryCleanupRules,
+		namingConfig: namingConfigs,
+		userCustomFormat: userCustomFormats,
 	};
 }
 
@@ -577,9 +609,62 @@ export async function exportDatabase(prisma: PrismaClient, options: ExportDataba
  * - Performs bulk createMany() operations for all records in a single transaction
  * - Transaction ensures atomicity but can be long-running for large datasets
  */
+
+/**
+ * True when the incoming backup data carries explicit array coverage for every
+ * durable-config model. New-format backups always satisfy this (even with empty
+ * arrays); legacy backups that predate config export do not.
+ */
+function hasDurableConfigCoverage(data: BackupData["data"]): boolean {
+	const record = data as Record<string, unknown>;
+	return DURABLE_CONFIG_MODELS.every((model) =>
+		Array.isArray(record[durableConfigPayloadKey(model)]),
+	);
+}
+
+/**
+ * True when the target database currently contains any durable configuration.
+ * Uses cheap existence checks (count) rather than loading full tables.
+ */
+async function targetHasDurableConfig(
+	prisma: Prisma.TransactionClient | PrismaClient,
+): Promise<boolean> {
+	const client = prisma as unknown as Record<string, { count: () => Promise<number> }>;
+	for (const model of DURABLE_CONFIG_MODELS) {
+		const accessor = client[model];
+		if (accessor && (await accessor.count()) > 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Reject a backup that lacks durable-config coverage when the target already
+ * contains durable configuration. This is the single compatibility policy used
+ * both by the orchestration preflight (before any filesystem mutation) and by
+ * the database-layer recheck (inside the restore transaction, as defense-in-depth
+ * against a stale preflight decision).
+ */
+export async function assertRestoreCompatibility(
+	prisma: Prisma.TransactionClient | PrismaClient,
+	data: BackupData["data"],
+): Promise<void> {
+	if (!hasDurableConfigCoverage(data) && (await targetHasDurableConfig(prisma))) {
+		throw new BackupCompatibilityError(
+			"This backup was created before complete configuration backup support and cannot safely be restored over an installation that currently contains configuration. Restore it into a clean installation, or create a new backup from the current installation.",
+		);
+	}
+}
+
 export async function restoreDatabase(prisma: PrismaClient, data: BackupData["data"]) {
 	// Use a transaction to ensure atomicity
 	await prisma.$transaction(async (tx) => {
+		// Database-layer compatibility recheck: protects direct/internal callers
+		// and closes the TOCTOU window between the orchestration preflight and
+		// destructive mutation. Runs before any delete.
+		await assertRestoreCompatibility(tx, data);
+
 		await validateCurrentCoordinationPreserved(tx, data);
 
 		// =================================================================
@@ -608,6 +693,23 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 
 		// System settings (singleton)
 		await tx.systemSettings.deleteMany();
+
+		// Durable user configuration (reverse dependency order: children first).
+		// These are deleted explicitly so a restore that carries config coverage
+		// replaces them deterministically rather than relying on user/instance
+		// cascades (which would also fire for legacy backups that lack coverage).
+		await tx.notificationSubscription.deleteMany();
+		await tx.notificationChannel.deleteMany();
+		await tx.notificationRule.deleteMany();
+		await tx.notificationAggregationConfig.deleteMany();
+		await tx.autoTagRule.deleteMany();
+		await tx.labelSyncRule.deleteMany();
+		await tx.crossDomainRule.deleteMany();
+		await tx.queueCleanerConfig.deleteMany();
+		await tx.libraryCleanupRule.deleteMany();
+		await tx.libraryCleanupConfig.deleteMany();
+		await tx.namingConfig.deleteMany();
+		await tx.userCustomFormat.deleteMany();
 
 		// Core tables (existing)
 		await tx.serviceInstanceTag.deleteMany();
@@ -823,6 +925,98 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 			validateRecords(data.huntSearchHistory, "huntSearchHistory", ["id", "configId"]);
 			await tx.huntSearchHistory.createMany({
 				data: data.huntSearchHistory as Prisma.HuntSearchHistoryCreateManyInput[],
+			});
+		}
+
+		// --- Durable user configuration (dependency order: parents first) ---
+
+		if (data.notificationChannel && data.notificationChannel.length > 0) {
+			validateRecords(data.notificationChannel, "notificationChannel", ["id", "userId"]);
+			await tx.notificationChannel.createMany({
+				data: data.notificationChannel as Prisma.NotificationChannelCreateManyInput[],
+			});
+		}
+
+		if (data.notificationSubscription && data.notificationSubscription.length > 0) {
+			validateRecords(data.notificationSubscription, "notificationSubscription", [
+				"channelId",
+				"eventType",
+			]);
+			await tx.notificationSubscription.createMany({
+				data: data.notificationSubscription as Prisma.NotificationSubscriptionCreateManyInput[],
+			});
+		}
+
+		if (data.notificationRule && data.notificationRule.length > 0) {
+			validateRecords(data.notificationRule, "notificationRule", ["id", "userId"]);
+			await tx.notificationRule.createMany({
+				data: data.notificationRule as Prisma.NotificationRuleCreateManyInput[],
+			});
+		}
+
+		if (data.notificationAggregationConfig && data.notificationAggregationConfig.length > 0) {
+			validateRecords(data.notificationAggregationConfig, "notificationAggregationConfig", [
+				"id",
+				"userId",
+			]);
+			await tx.notificationAggregationConfig.createMany({
+				data: data.notificationAggregationConfig as Prisma.NotificationAggregationConfigCreateManyInput[],
+			});
+		}
+
+		if (data.autoTagRule && data.autoTagRule.length > 0) {
+			validateRecords(data.autoTagRule, "autoTagRule", ["id", "userId"]);
+			await tx.autoTagRule.createMany({
+				data: data.autoTagRule as Prisma.AutoTagRuleCreateManyInput[],
+			});
+		}
+
+		if (data.labelSyncRule && data.labelSyncRule.length > 0) {
+			validateRecords(data.labelSyncRule, "labelSyncRule", ["id", "userId"]);
+			await tx.labelSyncRule.createMany({
+				data: data.labelSyncRule as Prisma.LabelSyncRuleCreateManyInput[],
+			});
+		}
+
+		if (data.crossDomainRule && data.crossDomainRule.length > 0) {
+			validateRecords(data.crossDomainRule, "crossDomainRule", ["id", "userId"]);
+			await tx.crossDomainRule.createMany({
+				data: data.crossDomainRule as Prisma.CrossDomainRuleCreateManyInput[],
+			});
+		}
+
+		if (data.queueCleanerConfig && data.queueCleanerConfig.length > 0) {
+			validateRecords(data.queueCleanerConfig, "queueCleanerConfig", ["id", "instanceId"]);
+			await tx.queueCleanerConfig.createMany({
+				data: data.queueCleanerConfig as Prisma.QueueCleanerConfigCreateManyInput[],
+			});
+		}
+
+		if (data.libraryCleanupConfig && data.libraryCleanupConfig.length > 0) {
+			validateRecords(data.libraryCleanupConfig, "libraryCleanupConfig", ["id", "userId"]);
+			await tx.libraryCleanupConfig.createMany({
+				data: data.libraryCleanupConfig as Prisma.LibraryCleanupConfigCreateManyInput[],
+			});
+		}
+
+		if (data.libraryCleanupRule && data.libraryCleanupRule.length > 0) {
+			validateRecords(data.libraryCleanupRule, "libraryCleanupRule", ["id", "configId"]);
+			await tx.libraryCleanupRule.createMany({
+				data: data.libraryCleanupRule as Prisma.LibraryCleanupRuleCreateManyInput[],
+			});
+		}
+
+		if (data.namingConfig && data.namingConfig.length > 0) {
+			validateRecords(data.namingConfig, "namingConfig", ["id", "instanceId", "userId"]);
+			await tx.namingConfig.createMany({
+				data: data.namingConfig as Prisma.NamingConfigCreateManyInput[],
+			});
+		}
+
+		if (data.userCustomFormat && data.userCustomFormat.length > 0) {
+			validateRecords(data.userCustomFormat, "userCustomFormat", ["id", "userId"]);
+			await tx.userCustomFormat.createMany({
+				data: data.userCustomFormat as Prisma.UserCustomFormatCreateManyInput[],
 			});
 		}
 	});
