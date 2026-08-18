@@ -12,7 +12,7 @@ import {
 	Tv,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { DataFreshness, PremiumSkeleton } from "../../../components/layout";
+import { DataFreshness, PremiumPageHeader, PremiumSkeleton } from "../../../components/layout";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
@@ -178,72 +178,50 @@ export const StatisticsClient = () => {
 
 	return (
 		<>
-			{/* Header */}
-			<header
-				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
-				style={{ animationFillMode: "backwards" }}
-			>
-				<div className="flex items-start justify-between gap-4">
-					<div className="space-y-1">
-						<div className="flex items-center gap-2 text-sm text-muted-foreground">
-							<BarChart3 className="h-4 w-4" />
-							<span>Systems Overview</span>
-						</div>
-						<h1 className="text-3xl font-bold tracking-tight">
-							<span
-								style={{
-									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-									WebkitBackgroundClip: "text",
-									WebkitTextFillColor: "transparent",
-									backgroundClip: "text",
-								}}
-							>
-								Statistics
-							</span>
-						</h1>
-						<p className="text-muted-foreground max-w-xl">
-							Aggregated health and library metrics across all configured instances
-						</p>
-					</div>
-
-					{/* Freshness of the aggregated statistics feed. Hidden on the
-					    Plex/Jellyfin tabs — their analytics come from separate
-					    non-polled queries, so this timestamp would mislead there. */}
-					{activeTab !== "plex" && activeTab !== "jellyfin" && (
-						<DataFreshness
-							dataUpdatedAt={dataUpdatedAt}
-							isFetching={isFetching}
-							isError={isError}
-							pollIntervalMs={POLLING_STATS}
-						/>
-					)}
-					<Button
-						variant="secondary"
-						onClick={() => void handleRefresh()}
-						disabled={isFetching}
-						className={cn(
-							"relative overflow-hidden transition-all duration-300",
-							isRefreshing && "pointer-events-none",
-						)}
-					>
-						<RefreshCw
-							className={cn(
-								"h-4 w-4 mr-2 transition-transform duration-500",
-								isRefreshing && "animate-spin",
-							)}
-						/>
-						Refresh
-						{isRefreshing && (
-							<div
-								className="absolute inset-0 animate-shimmer"
-								style={{
-									background: `linear-gradient(90deg, transparent, ${themeGradient.glow}, transparent)`,
-								}}
+			<PremiumPageHeader
+				label="Systems overview"
+				labelIcon={BarChart3}
+				title="Statistics"
+				gradientTitle
+				description="Aggregated health and library metrics across all configured instances."
+				actions={
+					<>
+						{activeTab !== "plex" && activeTab !== "jellyfin" && (
+							<DataFreshness
+								dataUpdatedAt={dataUpdatedAt}
+								isFetching={isFetching}
+								isError={isError}
+								pollIntervalMs={POLLING_STATS}
 							/>
 						)}
-					</Button>
-				</div>
-			</header>
+						<Button
+							variant="secondary"
+							onClick={() => void handleRefresh()}
+							disabled={isFetching}
+							className={cn(
+								"relative overflow-hidden transition-all duration-300",
+								isRefreshing && "pointer-events-none",
+							)}
+						>
+							<RefreshCw
+								className={cn(
+									"mr-2 h-4 w-4 transition-transform duration-500",
+									isRefreshing && "animate-spin",
+								)}
+							/>
+							Refresh
+							{isRefreshing && (
+								<div
+									className="absolute inset-0 animate-shimmer"
+									style={{
+										background: `linear-gradient(90deg, transparent, ${themeGradient.glow}, transparent)`,
+									}}
+								/>
+							)}
+						</Button>
+					</>
+				}
+			/>
 
 			{/* Tab Navigation */}
 			<div

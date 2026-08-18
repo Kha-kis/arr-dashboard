@@ -20,8 +20,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Suspense, lazy, useCallback, useMemo, useState } from "react";
-import { PremiumSkeleton } from "../../../components/layout/premium-components";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import { PremiumPageHeader, PremiumSkeleton } from "../../../components/layout";
 import { springs } from "../../../components/motion";
 import { QueueFilters, ServiceInstancesTable } from "../../../components/presentational";
 import {
@@ -42,13 +42,16 @@ import { anonymizeHealthMessage, getLinuxUsername, useIncognitoMode } from "../.
 import { POLLING_REALTIME, POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
+
 const ManualImportModal = lazy(() => import("../../manual-import/components/manual-import-modal"));
+
 import { useQueueGrouping } from "../hooks";
 import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
-import { NeedsAttentionPanel } from "./needs-attention-panel";
+import type { InstanceUrlMap } from "../types";
 import { type DashboardTab, DashboardTabs } from "./dashboard-tabs";
+import { NeedsAttentionPanel } from "./needs-attention-panel";
 import { NowPlayingWidget } from "./now-playing-widget";
 import { OnDeckWidget } from "./on-deck-widget";
 import { PlexServerInfoWidget } from "./plex-server-info-widget";
@@ -56,8 +59,6 @@ import { QueueTable } from "./queue-table";
 import { RecentlyAddedWidget } from "./recently-added-widget";
 import { SeerrRequestsWidget } from "./seerr-requests-widget";
 import { WatchHistorySection } from "./watch-history-section";
-
-import type { InstanceUrlMap } from "../types";
 
 /**
  * Service-specific config combining imported gradients with icons
@@ -507,42 +508,19 @@ export const DashboardClient = () => {
 
 	return (
 		<>
-			{/* Header */}
-			<header
-				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
-				style={{ animationDelay: "0ms" }}
-			>
-				<div className="flex items-start justify-between gap-4">
-					<div className="space-y-1">
-						<div className="flex items-center gap-2 text-sm text-muted-foreground">
-							<Activity className="h-4 w-4" />
-							<span>Welcome back</span>
-						</div>
-						<h1 className="text-3xl font-bold tracking-tight">
-							<span
-								style={{
-									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-									WebkitBackgroundClip: "text",
-									WebkitTextFillColor: "transparent",
-									backgroundClip: "text",
-								}}
-							>
-								Hi, {incognitoMode ? getLinuxUsername(currentUser.username) : currentUser.username}
-							</span>
-						</h1>
-						<p className="text-muted-foreground max-w-xl">
-							Your media server command center. {totalInstances} active instance
-							{totalInstances !== 1 ? "s" : ""}
-							{totalInstances === 0 && services.length > 0 ? ` (${services.length} disabled)` : ""}
-							{totalQueueItems > 0 && (
-								<span className="font-medium" style={{ color: themeGradient.from }}>
-									{" "}
-									with {totalQueueItems} items in queue
-								</span>
-							)}
-						</p>
-					</div>
-
+			<PremiumPageHeader
+				label="Dashboard"
+				labelIcon={Activity}
+				title={`Hi, ${incognitoMode ? getLinuxUsername(currentUser.username) : currentUser.username}`}
+				gradientTitle
+				description={`Your media server command center. ${totalInstances} active instance${
+					totalInstances !== 1 ? "s" : ""
+				}${totalInstances === 0 && services.length > 0 ? ` (${services.length} disabled)` : ""}${
+					totalQueueItems > 0
+						? ` · ${totalQueueItems} item${totalQueueItems !== 1 ? "s" : ""} in queue`
+						: ""
+				}`}
+				actions={
 					<Button
 						variant="secondary"
 						onClick={() => void handleRefresh()}
@@ -553,7 +531,7 @@ export const DashboardClient = () => {
 					>
 						<RefreshCw
 							className={cn(
-								"h-4 w-4 mr-2 transition-transform duration-500",
+								"mr-2 h-4 w-4 transition-transform duration-500",
 								isRefreshing && "animate-spin",
 							)}
 						/>
@@ -567,8 +545,8 @@ export const DashboardClient = () => {
 							/>
 						)}
 					</Button>
-				</div>
-			</header>
+				}
+			/>
 
 			{/* Needs Attention — curated subset of /pulse. Rendered above other
 			    widgets so actionable critical/warning items are the first

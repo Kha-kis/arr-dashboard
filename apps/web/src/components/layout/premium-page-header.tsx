@@ -72,8 +72,8 @@ export const PremiumPageHeader = ({
 				animationFillMode: "backwards",
 			}}
 		>
-			<div className="flex items-start justify-between gap-4">
-				<div className="space-y-1">
+			<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+				<div className="min-w-0 space-y-1">
 					{/* Label with optional icon */}
 					{label && (
 						<div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -115,7 +115,9 @@ export const PremiumPageHeader = ({
 				</div>
 
 				{/* Actions */}
-				{actions && <div className="flex items-center gap-2">{actions}</div>}
+				{actions && (
+					<div className="flex flex-wrap items-center gap-2 sm:justify-end">{actions}</div>
+				)}
 			</div>
 		</header>
 	);
