@@ -68,6 +68,31 @@ function parsePlexTvdbId(guids: Array<{ id: string }> | undefined): number | nul
 }
 
 // ============================================================================
+// Library Classification
+// ============================================================================
+
+/**
+ * Plex agents that never produce TMDB/TVDB GUIDs. A section using one of these
+ * (e.g. an "Other Videos" / "Personal Media" library) cannot participate in
+ * ARR/Plex cleanup correlation, so it is excluded from the authority domain
+ * rather than treated as incomplete supported evidence.
+ *
+ * This is deliberately a closed allowlist of "no metadata" agents. A section
+ * with a metadata agent (or a missing/unknown agent) is still treated as
+ * supported media and fails closed when its items lack the required identity.
+ *
+ * `com.plexapp.agents.none` is Plex's Personal Media primary agent. Local Media
+ * Assets (`com.plexapp.agents.localmedia`) is NOT included: it is an asset
+ * source, not a section-level primary agent, and is not equivalent to a
+ * Personal Media library.
+ */
+const PERSONAL_MEDIA_AGENTS = new Set(["com.plexapp.agents.none"]);
+
+function isPersonalMediaSection(section: { type: string; agent?: string }): boolean {
+	return section.agent !== undefined && PERSONAL_MEDIA_AGENTS.has(section.agent);
+}
+
+// ============================================================================
 // Aggregation Types
 // ============================================================================
 
@@ -379,9 +404,24 @@ export async function collectPlexCacheLiveEvidence(
 			accountMap.set(account.id, account.name);
 		}
 
-		// 2. Get library sections (movie and show only)
+		// 2. Get library sections (movie and show only). Personal Media / Other
+		// Videos sections report a movie/show type but use a "no metadata" agent,
+		// so they are excluded from the cleanup-authority domain rather than
+		// poisoning completeness for supported media.
 		const sections = await client.getLibrarySections();
-		const mediaLibs = sections.filter((s) => s.type === "movie" || s.type === "show");
+		const mediaLibs = sections.filter(
+			(s) => (s.type === "movie" || s.type === "show") && !isPersonalMediaSection(s),
+		);
+		// Retain the Personal Media section IDs so history rows can be attributed
+		// to an unsupported section even when they lack a usable media key.
+		// Unknown/missing section IDs are never treated as safe.
+		const personalMediaSectionIds = new Set<string>();
+		for (const section of sections) {
+			if (section.type !== "movie" && section.type !== "show") continue;
+			if (isPersonalMediaSection(section)) {
+				personalMediaSectionIds.add(section.key);
+			}
+		}
 		const initialMediaLibrarySignature = mediaLibrarySignature(mediaLibs);
 		if (mediaLibs.length === 0) {
 			markIncomplete("noMediaLibraries");
@@ -477,7 +517,16 @@ export async function collectPlexCacheLiveEvidence(
 			const isRelevantHistory = entry.type === "movie" || entry.type === "episode";
 			const itemRatingKey = entry.type === "episode" ? entry.grandparentRatingKey : entry.ratingKey;
 			if (!itemRatingKey?.trim()) {
-				if (isRelevantHistory) markIncomplete("historyItemsWithoutUsableMediaKey");
+				if (isRelevantHistory) {
+					// A movie/episode history row without a usable media key is only
+					// safe to ignore when it belongs to a known Personal Media
+					// section. Supported sections and unknown/missing section IDs
+					// must fail closed.
+					if (entry.librarySectionID && personalMediaSectionIds.has(entry.librarySectionID)) {
+						continue;
+					}
+					markIncomplete("historyItemsWithoutUsableMediaKey");
+				}
 				continue;
 			}
 
@@ -604,7 +653,9 @@ export async function collectPlexCacheLiveEvidence(
 		if (errors === 0 && complete) {
 			const latestSections = await client.getLibrarySections();
 			const latestMediaLibs = latestSections.filter(
-				(section) => section.type === "movie" || section.type === "show",
+				(section) =>
+					(section.type === "movie" || section.type === "show") &&
+					!isPersonalMediaSection(section),
 			);
 			if (
 				JSON.stringify(mediaLibrarySignature(latestMediaLibs)) !==

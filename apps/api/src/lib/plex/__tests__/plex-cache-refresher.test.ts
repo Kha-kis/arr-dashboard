@@ -759,4 +759,322 @@ describe("collectPlexCacheLiveEvidence", () => {
 		expect(result.errors).toBeGreaterThan(0);
 		expect(deleteMany).not.toHaveBeenCalled();
 	});
+
+	describe("Personal Media / Other Videos libraries (#769)", () => {
+		const supportedMovie = {
+			ratingKey: "movie-1",
+			title: "Supported Movie",
+			type: "movie",
+			Guid: [{ id: "tmdb://42" }],
+		};
+		const personalMediaItem = {
+			ratingKey: "personal-1",
+			title: "Home Video",
+			type: "movie",
+			Guid: [],
+		};
+		const mixedSections = [
+			{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
+			{ key: "2", title: "Other Videos", type: "movie", agent: "com.plexapp.agents.none" },
+		];
+
+		it("excludes a Personal Media section from the supported-media authority domain", async () => {
+			const mockClient = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi.fn().mockResolvedValue(mixedSections),
+				getLibraryItems: vi
+					.fn()
+					.mockImplementation((key: string) => (key === "1" ? [supportedMovie] : [personalMediaItem])),
+				getHistory: vi.fn().mockResolvedValue([]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: true, errors: 0 });
+			expect(result.snapshot?.rows).toHaveLength(1);
+			expect(result.snapshot?.rows[0]).toEqual(expect.objectContaining({ tmdbId: 42 }));
+			expect(result.snapshot?.sections).toEqual([{ key: "1", title: "Movies", type: "movie" }]);
+			expect(result.inventoryTargets).toEqual([
+				{ mediaType: "movie", tmdbId: 42, ratingKey: "movie-1" },
+			]);
+		});
+
+		it("does not poison completeness when Personal Media history cannot map", async () => {
+			const mockClient = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi.fn().mockResolvedValue(mixedSections),
+				getLibraryItems: vi
+					.fn()
+					.mockImplementation((key: string) => (key === "1" ? [supportedMovie] : [personalMediaItem])),
+				getHistory: vi.fn().mockResolvedValue([
+					{ type: "movie", ratingKey: "personal-1", accountID: 1, viewedAt: 1_700_000_000 },
+				]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: true, errors: 0 });
+			expect(result.snapshot?.rows).toHaveLength(1);
+			expect(result.snapshot?.rows[0]).toEqual(expect.objectContaining({ tmdbId: 42 }));
+		});
+
+		it("still fails closed when a supported movie lacks TMDB metadata", async () => {
+			const mockClient = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi.fn().mockResolvedValue([
+					{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
+				]),
+				getLibraryItems: vi.fn().mockResolvedValue([
+					{ ratingKey: "broken-1", title: "Broken Movie", type: "movie", Guid: [] },
+				]),
+				getHistory: vi.fn().mockResolvedValue([]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: false });
+			expect(result.errorMessages).toContain(
+				"Plex cache incomplete: 1 current library item(s) without TMDB metadata",
+			);
+		});
+
+		it("still fails closed when supported history cannot map to TMDB metadata", async () => {
+			const mockClient = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi.fn().mockResolvedValue([
+					{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
+				]),
+				getLibraryItems: vi.fn().mockResolvedValue([
+					{ ratingKey: "broken-1", title: "Broken Movie", type: "movie", Guid: [] },
+				]),
+				getHistory: vi.fn().mockResolvedValue([
+					{ type: "movie", ratingKey: "broken-1", accountID: 1, viewedAt: 1_700_000_000 },
+				]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: false });
+			expect(result.errorMessages).toContain(
+				"Plex cache incomplete: 1 current history item(s) without mapped TMDB metadata",
+			);
+		});
+
+		it("does not exclude a section with an unknown agent merely for lacking TMDB", async () => {
+			const mockClient = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi.fn().mockResolvedValue([
+					{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
+					{ key: "3", title: "Custom", type: "movie", agent: "com.example.agents.custom" },
+				]),
+				getLibraryItems: vi
+					.fn()
+					.mockImplementation((key: string) =>
+						key === "1"
+							? [supportedMovie]
+							: [{ ratingKey: "custom-1", title: "Custom", type: "movie", Guid: [] }],
+					),
+				getHistory: vi.fn().mockResolvedValue([]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: false });
+			expect(result.errorMessages).toContain(
+				"Plex cache incomplete: 1 current library item(s) without TMDB metadata",
+			);
+		});
+	});
+
+	describe("Personal Media history with missing media keys (#769)", () => {
+		const supportedMovie = {
+			ratingKey: "movie-1",
+			title: "Supported Movie",
+			type: "movie",
+			Guid: [{ id: "tmdb://42" }],
+		};
+		const sections = [
+			{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
+			{ key: "2", title: "Other Videos", type: "movie", agent: "com.plexapp.agents.none" },
+		];
+
+		function clientWith(history: unknown[]) {
+			return {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi.fn().mockResolvedValue(sections),
+				getLibraryItems: vi.fn().mockResolvedValue([supportedMovie]),
+				getHistory: vi.fn().mockResolvedValue(history),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+		}
+
+		it("ignores Personal Media movie history with a missing rating key", async () => {
+			const mockClient = clientWith([
+				{
+					type: "movie",
+					ratingKey: "",
+					librarySectionID: "2",
+					accountID: 1,
+					viewedAt: 1_700_000_000,
+				},
+			]);
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: true, errors: 0 });
+		});
+
+		it("ignores Personal Media episode history with a missing grandparent key", async () => {
+			const mockClient = clientWith([
+				{
+					type: "episode",
+					ratingKey: "episode-1",
+					librarySectionID: "2",
+					accountID: 1,
+					viewedAt: 1_700_000_000,
+				},
+			]);
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: true, errors: 0 });
+		});
+
+		it("fails closed for supported movie history with a missing rating key", async () => {
+			const mockClient = clientWith([
+				{
+					type: "movie",
+					ratingKey: "",
+					librarySectionID: "1",
+					accountID: 1,
+					viewedAt: 1_700_000_000,
+				},
+			]);
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: false });
+			expect(result.errorMessages).toContain(
+				"Plex cache incomplete: 1 history item(s) without a usable media key",
+			);
+		});
+
+		it("fails closed for supported episode history with a missing grandparent key", async () => {
+			const mockClient = clientWith([
+				{
+					type: "episode",
+					ratingKey: "episode-1",
+					librarySectionID: "1",
+					accountID: 1,
+					viewedAt: 1_700_000_000,
+				},
+			]);
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: false });
+			expect(result.errorMessages).toContain(
+				"Plex cache incomplete: 1 history item(s) without a usable media key",
+			);
+		});
+
+		it("fails closed for history with a missing librarySectionID and missing key", async () => {
+			const mockClient = clientWith([
+				{ type: "movie", ratingKey: "", accountID: 1, viewedAt: 1_700_000_000 },
+			]);
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: false });
+			expect(result.errorMessages).toContain(
+				"Plex cache incomplete: 1 history item(s) without a usable media key",
+			);
+		});
+
+		it("fails closed for history with an unknown librarySectionID and missing key", async () => {
+			const mockClient = clientWith([
+				{
+					type: "movie",
+					ratingKey: "",
+					librarySectionID: "999",
+					accountID: 1,
+					viewedAt: 1_700_000_000,
+				},
+			]);
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: false });
+			expect(result.errorMessages).toContain(
+				"Plex cache incomplete: 1 history item(s) without a usable media key",
+			);
+		});
+
+		it("preserves stale-history protection for a usable key outside current inventory", async () => {
+			const mockClient = clientWith([
+				{
+					type: "movie",
+					ratingKey: "stale",
+					librarySectionID: "1",
+					accountID: 1,
+					viewedAt: 1_700_000_000,
+				},
+			]);
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: true, errors: 0 });
+			expect(result.snapshot?.rows).toHaveLength(1);
+			expect(result.snapshot?.rows[0]).toEqual(expect.objectContaining({ tmdbId: 42 }));
+		});
+
+		it("completes a mixed production topology with Personal Media history missing keys", async () => {
+			const mockClient = clientWith([
+				{
+					type: "movie",
+					ratingKey: "",
+					librarySectionID: "2",
+					accountID: 1,
+					viewedAt: 1_700_000_000,
+				},
+				{
+					type: "episode",
+					ratingKey: "episode-1",
+					librarySectionID: "2",
+					accountID: 1,
+					viewedAt: 1_700_000_000,
+				},
+			]);
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog, undefined);
+
+			expect(result).toMatchObject({ complete: true, errors: 0 });
+			expect(result.snapshot?.rows).toHaveLength(1);
+			expect(result.snapshot?.rows[0]).toEqual(expect.objectContaining({ tmdbId: 42 }));
+		});
+	});
 });
