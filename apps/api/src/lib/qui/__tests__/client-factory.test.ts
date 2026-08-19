@@ -538,6 +538,215 @@ describe("createQuiClient", () => {
 		expect(result).toBeNull();
 	});
 
+	// ── qUI v1.26.0 compatibility boundary (#770) ─────────────────────
+	// qUI v1.26.0's TorrentResponse.CrossInstanceTorrents carries
+	// `json:"cross_instance_torrents,omitempty"` (sync_manager.go:234). Go's
+	// omitempty drops the field entirely when the slice is empty, so a
+	// complete empty inventory is serialized WITHOUT the key — not as `[]`
+	// and not as `null`. Completeness is still proven by the always-present
+	// `total`/`hasMore`/`partialResults` fields (none carry omitempty).
+
+	it("accepts a complete empty inventory where qUI v1.26.0 omits cross_instance_torrents (#770)", async () => {
+		// Exact v1.26.0 wire shape for a complete zero-torrent inventory:
+		// cross_instance_torrents is absent, but total/hasMore/partialResults
+		// are present and prove completeness.
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					total: 0,
+					hasMore: false,
+					partialResults: false,
+					isCrossInstance: true,
+					trackerHealthSupported: false,
+					useSubcategories: false,
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const inventory = await client.listTorrentInventory();
+
+		expect(inventory.complete).toBe(true);
+		expect(inventory.torrents).toEqual([]);
+	});
+
+	it("accepts a complete empty inventory via requireComplete listAllTorrents (#770)", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					total: 0,
+					hasMore: false,
+					partialResults: false,
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const torrents = await client.listAllTorrents({ requireComplete: true });
+
+		expect(torrents).toEqual([]);
+	});
+
+	it("accepts a complete empty inventory for exact-hash lookup (#770)", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					total: 0,
+					hasMore: false,
+					partialResults: false,
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const results = await client.getTorrentsByHash("abc123");
+
+		expect(results).toEqual([]);
+	});
+
+	it("tolerates additive unknown fields alongside a known complete inventory (#770)", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					total: 0,
+					hasMore: false,
+					partialResults: false,
+					someFutureField: { nested: true },
+					anotherFutureField: "hello",
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const inventory = await client.listTorrentInventory();
+
+		expect(inventory.complete).toBe(true);
+		expect(inventory.torrents).toEqual([]);
+	});
+
+	it("rejects an unknown wrapper that lacks completeness metadata (#770)", async () => {
+		// A torrent-looking payload under an unverified semantic shape must
+		// not be guessed into an authoritative empty inventory.
+		fetchSpy.mockResolvedValueOnce(
+			new Response(JSON.stringify({ torrents: [] }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		await expect(client.listAllTorrents({ requireComplete: true })).rejects.toThrow();
+	});
+
+	it("does not treat a missing cross_instance_torrents with partialResults as empty (#770)", async () => {
+		// partialResults=true means some instances failed; absence is NOT
+		// authoritative even though the collection key is missing.
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					total: 0,
+					hasMore: false,
+					partialResults: true,
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		await expect(client.listAllTorrents({ requireComplete: true })).rejects.toThrow(
+			"partial results",
+		);
+	});
+
+	// ── Metadata-consistency safety matrix (#770) ─────────────────────
+	// The normalization rule is NOT "missing cross_instance_torrents => []".
+	// It is: known qUI semantic response AND omitted collection AND metadata
+	// proves zero results => []. Any contradiction fails closed.
+
+	it("rejects a non-empty total with an omitted collection (CASE B)", async () => {
+		// total=5 claims torrents exist but no collection is supplied.
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({ total: 5, hasMore: false, partialResults: false }),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		await expect(client.listAllTorrents({ requireComplete: true })).rejects.toThrow(
+			"ended before its declared total",
+		);
+	});
+
+	it("rejects an omitted collection while more pages supposedly exist (CASE C)", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({ total: 5, hasMore: true, partialResults: false }),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		await expect(client.listAllTorrents({ requireComplete: true })).rejects.toThrow(
+			"empty page with more results",
+		);
+	});
+
+	it("fails closed for requireComplete when partialResults metadata is missing (CASE E)", async () => {
+		// Missing partialResults means completeness cannot be proven; the
+		// strict requireComplete schema rejects it outright.
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({ total: 0, hasMore: false }),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		await expect(client.listAllTorrents({ requireComplete: true })).rejects.toThrow();
+	});
+
+	it("reports incomplete (not authoritative) for read-only inventory missing partialResults (CASE E)", async () => {
+		// The non-requireComplete path tolerates the missing metadata but
+		// must NOT claim completeness, so absence is not authoritative.
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({ total: 0, hasMore: false }),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		const inventory = await client.listTorrentInventory();
+
+		expect(inventory.complete).toBe(false);
+		expect(inventory.torrents).toEqual([]);
+	});
+
+	it("rejects a returned count greater than total with an omitted collection (CASE F)", async () => {
+		// total=0 but a collection is supplied — impossible, must fail closed.
+		fetchSpy.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					total: 0,
+					hasMore: false,
+					partialResults: false,
+					cross_instance_torrents: [wireTorrent({ hash: "abc123", instance_id: 1 })],
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			),
+		);
+
+		const client = createQuiClient(buildApp(), buildInstance());
+		await expect(client.listAllTorrents({ requireComplete: true })).rejects.toThrow(
+			"more rows than its total",
+		);
+	});
+
 	it("derives tracker health from the raw qBit status int", async () => {
 		fetchSpy.mockResolvedValueOnce(
 			new Response(
