@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolveActiveDeploymentOwnership } from "../deployment-active-ownership.js";
+import {
+	resolveActiveDeploymentOwnership,
+	UNVERIFIABLE_DEPLOYMENT_OWNERSHIP,
+} from "../deployment-active-ownership.js";
 
 function state(overrides: Record<string, unknown> = {}) {
 	return JSON.stringify({
@@ -21,6 +24,13 @@ function state(overrides: Record<string, unknown> = {}) {
 		},
 		namingDeployment: null,
 		...overrides,
+	});
+}
+
+function legacyState() {
+	return JSON.stringify({
+		customFormats: [],
+		qualityProfile: null,
 	});
 }
 
@@ -719,6 +729,156 @@ describe("active deployment ownership", () => {
 		});
 
 		expect(result.restorableSharedQualityProfileIds).not.toContain(3);
+	});
+
+	it.each([
+		{ label: "SUCCESS", status: "SUCCESS" },
+		{ label: "PARTIAL_SUCCESS", status: "PARTIAL_SUCCESS" },
+		{ label: "FAILED", status: "FAILED" },
+	])(
+		"fails closed when an unrolled legacy $label history may still own live resources",
+		async ({ status }) => {
+			const rows = [
+				{
+					templateId: "template-1",
+					backupId: "target",
+					status: "SUCCESS",
+					deployedAt: new Date("2026-01-02"),
+					backup: { backupData: state() },
+				},
+				{
+					templateId: "template-legacy",
+					backupId: "legacy",
+					status,
+					deployedAt: new Date("2026-01-01"),
+					backup: { backupData: legacyState() },
+				},
+			];
+			const prisma = {
+				templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue(rows) },
+				trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+			};
+
+			await expect(
+				resolveActiveDeploymentOwnership(prisma as never, "user", ["instance"], {
+					backupId: "target",
+					templateId: "template-1",
+				}),
+			).rejects.toThrow("legacy or invalid ownership metadata");
+		},
+	);
+
+	it("tags legacy ownership failures with the structured discriminator", async () => {
+		const rows = [
+			{
+				templateId: "template-1",
+				backupId: "target",
+				status: "SUCCESS",
+				deployedAt: new Date("2026-01-02"),
+				backup: { backupData: state() },
+			},
+			{
+				templateId: "template-legacy",
+				backupId: "legacy",
+				status: "FAILED",
+				deployedAt: new Date("2026-01-01"),
+				backup: { backupData: legacyState() },
+			},
+		];
+		const prisma = {
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue(rows) },
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			resolveActiveDeploymentOwnership(prisma as never, "user", ["instance"], {
+				backupId: "target",
+				templateId: "template-1",
+			}),
+		).rejects.toMatchObject({ details: { reason: UNVERIFIABLE_DEPLOYMENT_OWNERSHIP } });
+	});
+
+	it("does not tag a newer-deployment conflict with the discriminator", async () => {
+		const rows = [
+			{
+				templateId: "template-1",
+				backupId: "target",
+				status: "SUCCESS",
+				deployedAt: new Date("2026-01-01"),
+				backup: { backupData: state() },
+			},
+			{
+				templateId: "template-1",
+				backupId: "newer",
+				status: "SUCCESS",
+				deployedAt: new Date("2026-01-02"),
+				backup: { backupData: state() },
+			},
+		];
+		const prisma = {
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue(rows) },
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			resolveActiveDeploymentOwnership(prisma as never, "user", ["instance"], {
+				backupId: "target",
+				templateId: "template-1",
+			}),
+		).rejects.toMatchObject({ details: undefined });
+	});
+
+	it("fails closed when a malformed non-v2 backup cannot be parsed", async () => {
+		const rows = [
+			{
+				templateId: "template-1",
+				backupId: "target",
+				status: "SUCCESS",
+				deployedAt: new Date("2026-01-02"),
+				backup: { backupData: state() },
+			},
+			{
+				templateId: "template-legacy",
+				backupId: "legacy",
+				status: "FAILED",
+				deployedAt: new Date("2026-01-01"),
+				backup: { backupData: "not-json" },
+			},
+		];
+		const prisma = {
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue(rows) },
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			resolveActiveDeploymentOwnership(prisma as never, "user", ["instance"], {
+				backupId: "target",
+				templateId: "template-1",
+			}),
+		).rejects.toThrow("legacy or invalid ownership metadata");
+	});
+
+	it("fails closed when the target backup itself is legacy", async () => {
+		const rows = [
+			{
+				templateId: "template-1",
+				backupId: "target",
+				status: "SUCCESS",
+				deployedAt: new Date("2026-01-02"),
+				backup: { backupData: legacyState() },
+			},
+		];
+		const prisma = {
+			templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue(rows) },
+			trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		};
+
+		await expect(
+			resolveActiveDeploymentOwnership(prisma as never, "user", ["instance"], {
+				backupId: "target",
+				templateId: "template-1",
+			}),
+		).rejects.toThrow("legacy or invalid ownership metadata");
 	});
 
 	it("does not restore shared naming after manual drift broke the ownership chain", async () => {
