@@ -19,7 +19,7 @@ import {
 } from "../../lib/trash-guides/deployment-active-ownership.js";
 import {
 	type DeploymentBackupState,
-	hasPendingDeploymentMutation,
+	deploymentBackupBlocksNewWork,
 	parseDeploymentBackupState,
 } from "../../lib/trash-guides/deployment-backup-state.js";
 import { rollbackCustomFormatDeployment } from "../../lib/trash-guides/deployment-custom-format-state.js";
@@ -387,8 +387,8 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		// schema-v2 pending ledger) still requires recovery would leave an invisible
 		// assertNoPendingDeploymentOperation blocker with no supported way to resolve it.
 		if (history.backupId) {
-			const [pairedSync, backup] = await Promise.all([
-				app.prisma.trashSyncHistory.findFirst({
+			const [pairedSyncs, backup] = await Promise.all([
+				app.prisma.trashSyncHistory.findMany({
 					where: { backupId: history.backupId, userId, rolledBack: false },
 					select: { id: true, status: true, rollbackStatus: true },
 				}),
@@ -397,24 +397,22 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					select: { backupData: true },
 				}),
 			]);
-			const pairedSyncUnresolved =
-				pairedSync !== null &&
-				(pairedSync.status === "UNCERTAIN" ||
-					pairedSync.status === "IN_PROGRESS" ||
-					pairedSync.status === "RUNNING" ||
-					pairedSync.rollbackStatus === "IN_PROGRESS" ||
-					pairedSync.rollbackStatus === "PARTIAL");
-			let pendingLedger = false;
-			if (backup) {
-				try {
-					const state = parseDeploymentBackupState(backup.backupData);
-					pendingLedger = hasPendingDeploymentMutation(state);
-				} catch {
-					// A legacy or malformed backup cannot prove a pending ledger; the
-					// paired-sync check above remains the authoritative blocker.
-				}
-			}
-			if (pairedSyncUnresolved || pendingLedger) {
+			const pairedSyncUnresolved = pairedSyncs.some(
+				(sync) =>
+					sync.status === "UNCERTAIN" ||
+					sync.status === "IN_PROGRESS" ||
+					sync.status === "RUNNING" ||
+					sync.rollbackStatus === "IN_PROGRESS" ||
+					sync.rollbackStatus === "PARTIAL",
+			);
+			// If any unrolled paired sync row will remain after this deletion, its
+			// backup must not independently block new work. Mirror the new-work gate:
+			// invalid JSON, malformed schema-v2, and pending v2 mutations all block.
+			const backupBlocksNewWork =
+				pairedSyncs.length > 0 &&
+				backup !== null &&
+				deploymentBackupBlocksNewWork(backup.backupData);
+			if (pairedSyncUnresolved || backupBlocksNewWork) {
 				return reply.status(409).send({
 					statusCode: 409,
 					error: "Conflict",

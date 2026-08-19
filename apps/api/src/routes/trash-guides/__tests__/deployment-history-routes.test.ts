@@ -1264,7 +1264,7 @@ describe("deployment history delete", () => {
 	let app: FastifyInstance;
 	const historyFindFirst = vi.fn();
 	const historyDeleteMany = vi.fn();
-	const syncFindFirst = vi.fn();
+	const syncFindMany = vi.fn();
 	const backupFindFirst = vi.fn();
 
 	beforeEach(async () => {
@@ -1277,12 +1277,12 @@ describe("deployment history delete", () => {
 				findFirst: historyFindFirst,
 				deleteMany: historyDeleteMany,
 			},
-			trashSyncHistory: { findFirst: syncFindFirst },
+			trashSyncHistory: { findMany: syncFindMany },
 			trashBackup: { findFirst: backupFindFirst },
 		};
 		app.decorate("prisma", prisma as never);
 		historyDeleteMany.mockResolvedValue({ count: 1 });
-		syncFindFirst.mockResolvedValue(null);
+		syncFindMany.mockResolvedValue([]);
 		backupFindFirst.mockResolvedValue(null);
 		await app.register(deploymentHistoryRoutes);
 		await app.ready();
@@ -1308,9 +1308,44 @@ describe("deployment history delete", () => {
 		};
 	}
 
+	function syncRow(overrides: Record<string, unknown> = {}) {
+		return {
+			id: "sync-1",
+			status: "SUCCESS",
+			rollbackStatus: null,
+			...overrides,
+		};
+	}
+
 	it("rejects deleting an UNCERTAIN deployment with an unresolved paired sync", async () => {
 		historyFindFirst.mockResolvedValue(historyRow({ status: "UNCERTAIN" }));
-		syncFindFirst.mockResolvedValue({ id: "sync-1", status: "UNCERTAIN", rollbackStatus: null });
+		syncFindMany.mockResolvedValue([syncRow({ status: "UNCERTAIN" })]);
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects deleting when a benign SUCCESS paired sync precedes an unresolved UNCERTAIN one", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "UNCERTAIN" }));
+		syncFindMany.mockResolvedValue([
+			syncRow({ id: "sync-a", status: "SUCCESS" }),
+			syncRow({ id: "sync-b", status: "UNCERTAIN" }),
+		]);
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects deleting when a paired sync has rollbackStatus PARTIAL", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "SUCCESS" }));
+		syncFindMany.mockResolvedValue([
+			syncRow({ id: "sync-a", status: "SUCCESS" }),
+			syncRow({ id: "sync-b", status: "SUCCESS", rollbackStatus: "PARTIAL" }),
+		]);
 
 		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
 
@@ -1320,7 +1355,7 @@ describe("deployment history delete", () => {
 
 	it("rejects deleting a deployment whose schema-v2 backup has a pending mutation", async () => {
 		historyFindFirst.mockResolvedValue(historyRow({ status: "FAILED" }));
-		syncFindFirst.mockResolvedValue(null);
+		syncFindMany.mockResolvedValue([syncRow({ status: "SUCCESS" })]);
 		backupFindFirst.mockResolvedValue({
 			backupData: JSON.stringify({
 				schemaVersion: 2,
@@ -1356,6 +1391,43 @@ describe("deployment history delete", () => {
 		expect(historyDeleteMany).not.toHaveBeenCalled();
 	});
 
+	it("rejects deleting when a paired sync references a malformed schema-v2 ledger", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "FAILED" }));
+		syncFindMany.mockResolvedValue([syncRow({ status: "SUCCESS" })]);
+		backupFindFirst.mockResolvedValue({
+			backupData: JSON.stringify({ schemaVersion: 2, customFormatDeployments: [] }),
+		});
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects deleting when a paired sync references invalid JSON backup", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "FAILED" }));
+		syncFindMany.mockResolvedValue([syncRow({ status: "SUCCESS" })]);
+		backupFindFirst.mockResolvedValue({ backupData: "{invalid" });
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("allows deleting when a paired sync references a genuine legacy non-v2 backup", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "SUCCESS" }));
+		syncFindMany.mockResolvedValue([syncRow({ status: "SUCCESS" })]);
+		backupFindFirst.mockResolvedValue({
+			backupData: JSON.stringify({ customFormats: [], qualityProfile: null }),
+		});
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(200);
+		expect(historyDeleteMany).toHaveBeenCalled();
+	});
+
 	it("rejects deleting a deployment with undeployStatus PARTIAL", async () => {
 		historyFindFirst.mockResolvedValue(historyRow({ undeployStatus: "PARTIAL" }));
 
@@ -1376,7 +1448,7 @@ describe("deployment history delete", () => {
 
 	it("allows deleting a rolled-back deployment with a resolved paired sync", async () => {
 		historyFindFirst.mockResolvedValue(historyRow({ rolledBack: true }));
-		syncFindFirst.mockResolvedValue(null);
+		syncFindMany.mockResolvedValue([]);
 
 		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
 

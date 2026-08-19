@@ -102,6 +102,40 @@ export function hasPendingDeploymentMutation(state: DeploymentBackupState): bool
 	);
 }
 
+/**
+ * Mirror the new-work gate's backup evaluation: does this backup, if still
+ * referenced by an unrolled history row, block assertNoPendingDeploymentOperation?
+ *
+ * - invalid JSON => blocks (invalid deployment ledger)
+ * - genuine pre-v2 legacy shape => no pending v2 ledger, does not block
+ * - schemaVersion 2 but unparseable => blocks (invalid deployment ledger)
+ * - valid schema-v2 with a pending mutation => blocks
+ */
+export function deploymentBackupBlocksNewWork(value: string): boolean {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(value);
+	} catch {
+		return true;
+	}
+	if (
+		typeof parsed !== "object" ||
+		parsed === null ||
+		Array.isArray(parsed) ||
+		!("schemaVersion" in parsed) ||
+		parsed.schemaVersion !== 2
+	) {
+		return false;
+	}
+	let state: DeploymentBackupState;
+	try {
+		state = parseDeploymentBackupState(value);
+	} catch {
+		return true;
+	}
+	return hasPendingDeploymentMutation(state);
+}
+
 /** Fail closed when cleanup cannot prove a current deployment ledger is terminal. */
 export function shouldRetainDeploymentBackup(value: string): boolean {
 	let parsed: unknown;
