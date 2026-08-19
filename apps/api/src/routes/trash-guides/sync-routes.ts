@@ -639,6 +639,9 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			});
 		}
 
+		const priorRollbackStatus = sync.rollbackStatus;
+		const priorRollbackAttemptedAt = sync.rollbackAttemptedAt;
+		const priorRollbackProgress = sync.rollbackProgress;
 		const rollbackAttemptedAt = new Date();
 		const claim = await app.prisma.trashSyncHistory.updateMany({
 			where: {
@@ -677,13 +680,36 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 				throw new Error("Rollback recovery state changed before progress could be persisted");
 			}
 		};
+		// Release this request's claim back to the exact recovery state that existed
+		// before the claim. The compare-and-set guard ensures a stale request cannot
+		// release a newer claim that another process has since taken over.
+		const releaseRollbackClaim = async () => {
+			const result = await app.prisma.trashSyncHistory.updateMany({
+				where: {
+					id: syncId,
+					userId,
+					rolledBack: false,
+					rollbackStatus: "IN_PROGRESS",
+					rollbackAttemptedAt,
+				},
+				data: {
+					rollbackStatus: priorRollbackStatus,
+					rollbackAttemptedAt: priorRollbackAttemptedAt,
+					rollbackProgress: priorRollbackProgress,
+				},
+			});
+			if (result.count !== 1) {
+				throw new Error("Rollback recovery state changed before the claim could be released");
+			}
+		};
 		const stopClaimedRollback = async (
 			statusCode: number,
 			payload: { error: string; message: string },
 		) => {
-			await persistPartialRollback();
+			await releaseRollbackClaim();
 			return reply.status(statusCode).send(payload);
 		};
+		let upstreamMutationAttempted = false;
 
 		// Start metrics tracking
 		const metrics = getSyncMetrics();
@@ -1038,6 +1064,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 												`${resourceLabel} is shared, but this deployment has no prior state from which to restore the surviving deployment state.`,
 											);
 										}
+										upstreamMutationAttempted = true;
 										await rollbackQualityProfileDeployment(client, backupQualityProfileDeployment);
 										const restoredProfile = await client.qualityProfile.getById(
 											backupQualityProfileDeployment.profileId,
@@ -1071,6 +1098,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								!isFinished(profileStepKey, "quality_profile", profileStepName)
 							) {
 								try {
+									upstreamMutationAttempted = true;
 									await rollbackQualityProfileDeployment(client, backupQualityProfileDeployment);
 									request.log.info(
 										{
@@ -1149,6 +1177,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 													`${resourceLabel} is shared, but this deployment has no prior state from which to restore the surviving deployment state.`,
 												);
 											}
+											upstreamMutationAttempted = true;
 											await rollbackCustomFormatDeployment(client, state);
 											const restoredFormat = await client.customFormat.getById(state.resourceId);
 											assertSharedDeploymentState(
@@ -1177,6 +1206,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 									continue;
 								}
 								try {
+									upstreamMutationAttempted = true;
 									const result = await rollbackCustomFormatDeployment(client, state);
 									if (result === "restored") {
 										setStep({
@@ -1245,6 +1275,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 											ownership.sharedNamingRestorationAllowed,
 											"naming configuration",
 										);
+										upstreamMutationAttempted = true;
 										await restoreNamingDeployment(
 											app.arrClientFactory,
 											currentInstance,
@@ -1289,6 +1320,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 								!isFinished("naming:configuration", "naming", "Naming configuration")
 							) {
 								try {
+									upstreamMutationAttempted = true;
 									await restoreNamingDeployment(
 										app.arrClientFactory,
 										currentInstance,
@@ -1400,7 +1432,11 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			// Specialized catch: records failure metrics before propagating
 			const errorMessage = getErrorMessage(error, "Rollback failed");
 			try {
-				await persistPartialRollback();
+				if (upstreamMutationAttempted) {
+					await persistPartialRollback();
+				} else {
+					await releaseRollbackClaim();
+				}
 			} catch (stateError) {
 				request.log.error(
 					{ err: stateError, syncId, rollbackAttemptedAt },
@@ -1418,7 +1454,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 				typeof error.statusCode === "number"
 					? error.statusCode
 					: 500;
-			return reply.status(statusCode).send({
+			return reply.status(upstreamMutationAttempted ? 207 : statusCode).send({
 				error: "ROLLBACK_FAILED",
 				message: errorMessage,
 			});

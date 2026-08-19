@@ -14,14 +14,18 @@ import {
 	assertSharedDeploymentState,
 	getExpectedSharedDeploymentStateToken,
 	resolveActiveDeploymentOwnership,
+	UNVERIFIABLE_DEPLOYMENT_OWNERSHIP,
+	type ActiveDeploymentOwnership,
 } from "../../lib/trash-guides/deployment-active-ownership.js";
 import {
 	type DeploymentBackupState,
+	deploymentBackupBlocksNewWork,
 	parseDeploymentBackupState,
 } from "../../lib/trash-guides/deployment-backup-state.js";
 import { rollbackCustomFormatDeployment } from "../../lib/trash-guides/deployment-custom-format-state.js";
 import { restoreNamingDeployment } from "../../lib/trash-guides/deployment-naming-state.js";
 import { rollbackQualityProfileDeployment } from "../../lib/trash-guides/deployment-profile-state.js";
+import { classifyTargetReversal } from "../../lib/trash-guides/deployment-reversal-classification.js";
 import {
 	createDeploymentEndpointKey,
 	createQualityProfileStateToken,
@@ -378,6 +382,46 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			});
 		}
 
+		// A deployment that still blocks new work must not lose its recovery handle.
+		// Deleting only TemplateDeploymentHistory while a paired TrashSyncHistory (or a
+		// schema-v2 pending ledger) still requires recovery would leave an invisible
+		// assertNoPendingDeploymentOperation blocker with no supported way to resolve it.
+		if (history.backupId) {
+			const [pairedSyncs, backup] = await Promise.all([
+				app.prisma.trashSyncHistory.findMany({
+					where: { backupId: history.backupId, userId, rolledBack: false },
+					select: { id: true, status: true, rollbackStatus: true },
+				}),
+				app.prisma.trashBackup.findFirst({
+					where: { id: history.backupId, userId },
+					select: { backupData: true },
+				}),
+			]);
+			const pairedSyncUnresolved = pairedSyncs.some(
+				(sync) =>
+					sync.status === "UNCERTAIN" ||
+					sync.status === "IN_PROGRESS" ||
+					sync.status === "RUNNING" ||
+					sync.rollbackStatus === "IN_PROGRESS" ||
+					sync.rollbackStatus === "PARTIAL",
+			);
+			// If any unrolled paired sync row will remain after this deletion, its
+			// backup must not independently block new work. Mirror the new-work gate:
+			// invalid JSON, malformed schema-v2, and pending v2 mutations all block.
+			const backupBlocksNewWork =
+				pairedSyncs.length > 0 &&
+				backup !== null &&
+				deploymentBackupBlocksNewWork(backup.backupData);
+			if (pairedSyncUnresolved || backupBlocksNewWork) {
+				return reply.status(409).send({
+					statusCode: 409,
+					error: "Conflict",
+					message:
+						"This deployment still requires recovery. Complete or explicitly resolve it before deleting its deployment history.",
+				});
+			}
+		}
+
 		// Delete only if ownership and terminal undeploy state still match at mutation time.
 		// Note: Associated backup will be cascade deleted if configured, otherwise it remains.
 		const deletion = await app.prisma.templateDeploymentHistory.deleteMany({
@@ -468,6 +512,10 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			});
 		}
 
+		const priorUndeployStatus = history.undeployStatus;
+		const priorUndeployAttemptedAt = history.undeployAttemptedAt;
+		const priorUndeployProgress = history.undeployProgress;
+		const priorStatus = history.status;
 		const undeployAttemptedAt = new Date();
 		const claim = await app.prisma.templateDeploymentHistory.updateMany({
 			where: {
@@ -507,8 +555,31 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				throw new Error("Undeploy recovery state changed before progress could be persisted");
 			}
 		};
+		// Release this request's claim back to the exact recovery state that existed
+		// before the claim. The compare-and-set guard ensures a stale request cannot
+		// release a newer claim that another process has since taken over.
+		const releaseUndeployClaim = async () => {
+			const result = await app.prisma.templateDeploymentHistory.updateMany({
+				where: {
+					id: historyId,
+					userId,
+					rolledBack: false,
+					undeployStatus: "IN_PROGRESS",
+					undeployAttemptedAt,
+				},
+				data: {
+					status: priorStatus,
+					undeployStatus: priorUndeployStatus,
+					undeployAttemptedAt: priorUndeployAttemptedAt,
+					undeployProgress: priorUndeployProgress,
+				},
+			});
+			if (result.count !== 1) {
+				throw new Error("Undeploy recovery state changed before the claim could be released");
+			}
+		};
 		const stopClaimedUndeploy = async (statusCode: number, payload: Record<string, unknown>) => {
-			await persistPartialUndeploy();
+			await releaseUndeployClaim();
 			return reply.status(statusCode).send(payload);
 		};
 		let upstreamMutationAttempted = false;
@@ -602,6 +673,11 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						});
 					}
 
+					const client = app.arrClientFactory.create(currentInstance) as
+						| SonarrClient
+						| RadarrClient;
+					await client.system.get();
+
 					const aliases = await app.prisma.serviceInstance.findMany({
 						where: { userId, service: currentInstance.service },
 					});
@@ -614,17 +690,55 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						})),
 						{ ...currentInstance, credentialIdentity },
 					);
-					const ownership = await resolveActiveDeploymentOwnership(
-						app.prisma,
-						userId,
-						equivalentInstanceIds,
-						{ backupId: deploymentBackup.id, templateId: history.templateId },
-					);
+					let ownership: ActiveDeploymentOwnership | null;
+					try {
+						ownership = await resolveActiveDeploymentOwnership(
+							app.prisma,
+							userId,
+							equivalentInstanceIds,
+							{ backupId: deploymentBackup.id, templateId: history.templateId },
+						);
+					} catch (error) {
+						// Competing ownership could not be resolved because an unrolled
+						// history carries legacy or invalid ownership metadata. If every
+						// mutation owned by THIS deployment is already reversed on the live
+						// ARR endpoint, no upstream write remains, so competing ownership is
+						// not required to authorize anything. Other ownership conflicts (e.g.
+						// a newer deployment) still fail closed.
+						const reason =
+							error && typeof error === "object" && "details" in error
+								? (error as { details?: { reason?: string } }).details?.reason
+								: undefined;
+						if (reason !== UNVERIFIABLE_DEPLOYMENT_OWNERSHIP) {
+							throw error;
+						}
+						const targetReversal = await classifyTargetReversal(
+							client,
+							app.arrClientFactory,
+							currentInstance,
+							backupState,
+						);
+						if (targetReversal !== "already_reversed") {
+							throw error;
+						}
+						ownership = null;
+					}
+					// When every target mutation is already reversed, no write is required,
+					// so competing ownership is not consulted. The empty ownership view keeps
+					// the per-resource loops on their no-op path (no shared resources, no
+					// writes) while still recording durable "already_reversed" steps.
+					const ownershipView: ActiveDeploymentOwnership = ownership ?? {
+						sharedCustomFormatIds: new Set(),
+						sharedQualityProfileIds: new Set(),
+						namingOwnedByAnotherDeployment: false,
+						restorableSharedCustomFormatIds: new Set(),
+						restorableSharedQualityProfileIds: new Set(),
+						sharedNamingRestorationAllowed: false,
+						sharedCustomFormatStateTokens: new Map(),
+						sharedQualityProfileStateTokens: new Map(),
+						sharedNamingStateTokens: new Set(),
+					};
 
-					const client = app.arrClientFactory.create(currentInstance) as
-						| SonarrClient
-						| RadarrClient;
-					await client.system.get();
 					let existingProgress: UndeployStep[];
 					try {
 						existingProgress = parseUndeployProgress(history.undeployProgress);
@@ -685,7 +799,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						if (!isFinished(key)) {
 							if (
 								profileState.profileId !== null &&
-								ownership.sharedQualityProfileIds.has(profileState.profileId)
+								ownershipView.sharedQualityProfileIds.has(profileState.profileId)
 							) {
 								try {
 									const currentProfile = await client.qualityProfile.getById(
@@ -693,7 +807,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 									);
 									const resourceLabel = `quality profile "${profileState.profileName ?? profileState.profileId}"`;
 									const expectedSurvivorToken = getExpectedSharedDeploymentStateToken(
-										ownership.sharedQualityProfileStateTokens.get(profileState.profileId),
+										ownershipView.sharedQualityProfileStateTokens.get(profileState.profileId),
 										resourceLabel,
 									);
 									if (createQualityProfileStateToken(currentProfile) === expectedSurvivorToken) {
@@ -705,7 +819,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 										});
 									} else {
 										assertSharedDeploymentRestorationAllowed(
-											ownership.restorableSharedQualityProfileIds.has(profileState.profileId),
+											ownershipView.restorableSharedQualityProfileIds.has(profileState.profileId),
 											resourceLabel,
 										);
 										if (profileState.action === "created") {
@@ -786,13 +900,13 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						if (isFinished(key)) continue;
 						if (
 							state.resourceId !== null &&
-							ownership.sharedCustomFormatIds.has(state.resourceId)
+							ownershipView.sharedCustomFormatIds.has(state.resourceId)
 						) {
 							try {
 								const currentFormat = await client.customFormat.getById(state.resourceId);
 								const resourceLabel = `Custom Format "${state.name}"`;
 								const expectedSurvivorToken = getExpectedSharedDeploymentStateToken(
-									ownership.sharedCustomFormatStateTokens.get(state.resourceId),
+									ownershipView.sharedCustomFormatStateTokens.get(state.resourceId),
 									resourceLabel,
 								);
 								if (createUpstreamResourceStateToken(currentFormat) === expectedSurvivorToken) {
@@ -804,7 +918,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 									});
 								} else {
 									assertSharedDeploymentRestorationAllowed(
-										ownership.restorableSharedCustomFormatIds.has(state.resourceId),
+										ownershipView.restorableSharedCustomFormatIds.has(state.resourceId),
 										resourceLabel,
 									);
 									if (state.action === "created") {
@@ -877,7 +991,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 							namingState.postStateToken ??
 							(namingState.status === "pending" ? namingState.intendedPostStateToken : null);
 						if (!isFinished(key)) {
-							if (ownership.namingOwnedByAnotherDeployment) {
+							if (ownershipView.namingOwnedByAnotherDeployment) {
 								try {
 									const currentResponse = await app.arrClientFactory.rawRequest(
 										currentInstance,
@@ -888,7 +1002,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 									}
 									const currentConfig = (await currentResponse.json()) as Record<string, unknown>;
 									const expectedSurvivorToken = getExpectedSharedDeploymentStateToken(
-										ownership.sharedNamingStateTokens,
+										ownershipView.sharedNamingStateTokens,
 										"naming configuration",
 									);
 									if (createUpstreamResourceStateToken(currentConfig) === expectedSurvivorToken) {
@@ -900,7 +1014,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 										});
 									} else {
 										assertSharedDeploymentRestorationAllowed(
-											ownership.sharedNamingRestorationAllowed,
+											ownershipView.sharedNamingRestorationAllowed,
 											"naming configuration",
 										);
 										if (!rollbackNamingStateToken) {
@@ -1064,7 +1178,11 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		).catch(async (error) => {
 			const message = getErrorMessage(error, "Undeploy failed");
 			try {
-				await persistPartialUndeploy();
+				if (upstreamMutationAttempted) {
+					await persistPartialUndeploy();
+				} else {
+					await releaseUndeployClaim();
+				}
 			} catch (stateError) {
 				request.log.error(
 					{ err: stateError, historyId, undeployAttemptedAt },

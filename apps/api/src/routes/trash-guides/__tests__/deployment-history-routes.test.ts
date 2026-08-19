@@ -90,8 +90,11 @@ describe("deployment history undeploy", () => {
 	const historyFindMany = vi.fn();
 	const historyUpdate = vi.fn();
 	const historyUpdateMany = vi.fn();
+	const historyDeleteMany = vi.fn();
 	const syncUpdateMany = vi.fn();
 	const syncFindMany = vi.fn();
+	const syncFindFirst = vi.fn();
+	const backupFindFirst = vi.fn();
 	const instanceFindFirst = vi.fn();
 	const instanceFindMany = vi.fn();
 	const deleteFormat = vi.fn();
@@ -126,8 +129,14 @@ describe("deployment history undeploy", () => {
 				findMany: historyFindMany,
 				update: historyUpdate,
 				updateMany: historyUpdateMany,
+				deleteMany: historyDeleteMany,
 			},
-			trashSyncHistory: { findMany: syncFindMany, updateMany: syncUpdateMany },
+			trashSyncHistory: {
+				findMany: syncFindMany,
+				findFirst: syncFindFirst,
+				updateMany: syncUpdateMany,
+			},
+			trashBackup: { findFirst: backupFindFirst },
 			serviceInstance: {
 				findFirst: instanceFindFirst,
 				findMany: instanceFindMany,
@@ -169,8 +178,11 @@ describe("deployment history undeploy", () => {
 		instanceFindFirst.mockResolvedValue(instance);
 		instanceFindMany.mockResolvedValue([instance]);
 		syncFindMany.mockResolvedValue([]);
+		syncFindFirst.mockResolvedValue(null);
+		backupFindFirst.mockResolvedValue(null);
 		historyUpdate.mockResolvedValue({});
 		historyUpdateMany.mockResolvedValue({ count: 1 });
+		historyDeleteMany.mockResolvedValue({ count: 1 });
 		syncUpdateMany.mockResolvedValue({ count: 1 });
 		await app.register(deploymentHistoryRoutes);
 		await app.ready();
@@ -262,8 +274,54 @@ describe("deployment history undeploy", () => {
 		expect(historyFindFirst).toHaveBeenCalledOnce();
 	});
 
-	it("releases the claim as retryable when ARR validation fails unexpectedly", async () => {
-		const history = currentHistory(backupData());
+	it("releases the undeploy claim back to null when ARR is unreachable", async () => {
+		const history = {
+			...currentHistory(backupData()),
+			undeployStatus: null,
+			undeployAttemptedAt: null,
+		};
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+		systemGet.mockRejectedValueOnce(new Error("ARR read failed"));
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode).toBe(500);
+		expect(historyUpdateMany).toHaveBeenLastCalledWith({
+			where: {
+				id: "history-1",
+				userId,
+				rolledBack: false,
+				undeployStatus: "IN_PROGRESS",
+				undeployAttemptedAt: expect.any(Date),
+			},
+			data: {
+				status: "SUCCESS",
+				undeployStatus: null,
+				undeployAttemptedAt: null,
+				undeployProgress: null,
+			},
+		});
+		expect(deleteFormat).not.toHaveBeenCalled();
+	});
+
+	it("restores prior PARTIAL recovery state when a retry fails before mutation", async () => {
+		const priorAttemptedAt = new Date("2026-08-08T12:05:00.000Z");
+		const priorProgress = JSON.stringify([
+			{
+				key: "custom_format:7",
+				kind: "custom_format",
+				name: "Managed CF",
+				outcome: "restored",
+			},
+		]);
+		const history = {
+			...currentHistory(backupData()),
+			status: "PARTIAL_UNDEPLOY",
+			undeployStatus: "PARTIAL",
+			undeployAttemptedAt: priorAttemptedAt,
+			undeployProgress: priorProgress,
+		};
 		historyFindFirst.mockResolvedValue(history);
 		historyFindMany.mockResolvedValue([history]);
 		systemGet.mockRejectedValueOnce(new Error("ARR read failed"));
@@ -282,6 +340,38 @@ describe("deployment history undeploy", () => {
 			data: {
 				status: "PARTIAL_UNDEPLOY",
 				undeployStatus: "PARTIAL",
+				undeployAttemptedAt: priorAttemptedAt,
+				undeployProgress: priorProgress,
+			},
+		});
+		expect(deleteFormat).not.toHaveBeenCalled();
+	});
+
+	it("releases the undeploy claim when a legacy backup cannot be undeployed", async () => {
+		const history = {
+			...currentHistory(JSON.stringify({ customFormats: [], qualityProfile: null })),
+			undeployStatus: null,
+			undeployAttemptedAt: null,
+		};
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyUpdateMany).toHaveBeenLastCalledWith({
+			where: {
+				id: "history-1",
+				userId,
+				rolledBack: false,
+				undeployStatus: "IN_PROGRESS",
+				undeployAttemptedAt: expect.any(Date),
+			},
+			data: {
+				status: "SUCCESS",
+				undeployStatus: null,
+				undeployAttemptedAt: null,
+				undeployProgress: null,
 			},
 		});
 		expect(deleteFormat).not.toHaveBeenCalled();
@@ -1073,5 +1163,314 @@ describe("deployment history undeploy", () => {
 		expect(response.statusCode).toBe(409);
 		expect(response.json().message).toContain("newer deployment");
 		expect(deleteFormat).not.toHaveBeenCalled();
+	});
+
+	it("fails closed when a created CF still exists and a legacy competitor is unresolved", async () => {
+		const createdFormat = { id: 123, name: "Anime Dual Audio", specifications: [] };
+		const data = backupData({
+			customFormatDeployments: [
+				{
+					beforeFormat: null,
+					action: "created",
+					resourceId: 123,
+					name: "Anime Dual Audio",
+					status: "applied",
+					postStateToken: createUpstreamResourceStateToken(createdFormat),
+					intendedPostStateToken: null,
+				},
+			],
+		});
+		const history = currentHistory(data);
+		const legacy = {
+			...history,
+			id: "history-legacy",
+			templateId: "template-legacy",
+			backupId: "backup-legacy",
+			deployedAt: new Date("2025-12-31"),
+			backup: {
+				id: "backup-legacy",
+				backupData: JSON.stringify({ customFormats: [], qualityProfile: null }),
+			},
+		};
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history, legacy]);
+		getAllFormats.mockResolvedValue([createdFormat]);
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json().message).toContain("legacy or invalid ownership metadata");
+		expect(deleteFormat).not.toHaveBeenCalled();
+	});
+
+	it("finalizes recovery when a created CF was already manually deleted", async () => {
+		const createdFormat = { id: 123, name: "Anime Dual Audio", specifications: [] };
+		const data = backupData({
+			customFormatDeployments: [
+				{
+					beforeFormat: null,
+					action: "created",
+					resourceId: 123,
+					name: "Anime Dual Audio",
+					status: "applied",
+					postStateToken: createUpstreamResourceStateToken(createdFormat),
+					intendedPostStateToken: null,
+				},
+			],
+		});
+		const history = currentHistory(data);
+		const legacy = {
+			...history,
+			id: "history-legacy",
+			templateId: "template-legacy",
+			backupId: "backup-legacy",
+			deployedAt: new Date("2025-12-31"),
+			backup: {
+				id: "backup-legacy",
+				backupData: JSON.stringify({ customFormats: [], qualityProfile: null }),
+			},
+		};
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history, legacy]);
+		getAllFormats.mockResolvedValue([]);
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(response.json().success).toBe(true);
+		expect(deleteFormat).not.toHaveBeenCalled();
+		expect(historyUpdate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { id: "history-1" },
+				data: expect.objectContaining({
+					rolledBack: true,
+					undeployStatus: "COMPLETED",
+				}),
+			}),
+		);
+		expect(syncUpdateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { backupId: "backup-1", userId },
+				data: expect.objectContaining({
+					rolledBack: true,
+					rollbackStatus: "COMPLETED",
+				}),
+			}),
+		);
+	});
+});
+
+describe("deployment history delete", () => {
+	let app: FastifyInstance;
+	const historyFindFirst = vi.fn();
+	const historyDeleteMany = vi.fn();
+	const syncFindMany = vi.fn();
+	const backupFindFirst = vi.fn();
+
+	beforeEach(async () => {
+		vi.resetAllMocks();
+		app = Fastify({ logger: false });
+		setupAuthInjection(app, { id: userId, username: "admin" });
+		registerTestErrorHandler(app);
+		const prisma = {
+			templateDeploymentHistory: {
+				findFirst: historyFindFirst,
+				deleteMany: historyDeleteMany,
+			},
+			trashSyncHistory: { findMany: syncFindMany },
+			trashBackup: { findFirst: backupFindFirst },
+		};
+		app.decorate("prisma", prisma as never);
+		historyDeleteMany.mockResolvedValue({ count: 1 });
+		syncFindMany.mockResolvedValue([]);
+		backupFindFirst.mockResolvedValue(null);
+		await app.register(deploymentHistoryRoutes);
+		await app.ready();
+	});
+
+	afterEach(async () => {
+		await app.close();
+		vi.clearAllMocks();
+	});
+
+	function historyRow(overrides: Record<string, unknown> = {}) {
+		return {
+			id: "history-1",
+			templateId: "template-1",
+			instanceId: "instance-1",
+			userId,
+			status: "SUCCESS",
+			rolledBack: false,
+			undeployStatus: null,
+			backupId: "backup-1",
+			template: { userId },
+			...overrides,
+		};
+	}
+
+	function syncRow(overrides: Record<string, unknown> = {}) {
+		return {
+			id: "sync-1",
+			status: "SUCCESS",
+			rollbackStatus: null,
+			...overrides,
+		};
+	}
+
+	it("rejects deleting an UNCERTAIN deployment with an unresolved paired sync", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "UNCERTAIN" }));
+		syncFindMany.mockResolvedValue([syncRow({ status: "UNCERTAIN" })]);
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects deleting when a benign SUCCESS paired sync precedes an unresolved UNCERTAIN one", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "UNCERTAIN" }));
+		syncFindMany.mockResolvedValue([
+			syncRow({ id: "sync-a", status: "SUCCESS" }),
+			syncRow({ id: "sync-b", status: "UNCERTAIN" }),
+		]);
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects deleting when a paired sync has rollbackStatus PARTIAL", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "SUCCESS" }));
+		syncFindMany.mockResolvedValue([
+			syncRow({ id: "sync-a", status: "SUCCESS" }),
+			syncRow({ id: "sync-b", status: "SUCCESS", rollbackStatus: "PARTIAL" }),
+		]);
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects deleting a deployment whose schema-v2 backup has a pending mutation", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "FAILED" }));
+		syncFindMany.mockResolvedValue([syncRow({ status: "SUCCESS" })]);
+		backupFindFirst.mockResolvedValue({
+			backupData: JSON.stringify({
+				schemaVersion: 2,
+				endpointKey: "endpoint",
+				connectionStateToken: "connection",
+				customFormats: [],
+				customFormatDeployments: [
+					{
+						beforeFormat: null,
+						action: "created",
+						resourceId: null,
+						name: "CF",
+						status: "pending",
+						postStateToken: null,
+					},
+				],
+				managedCustomFormats: [],
+				managedCustomFormatsCaptured: false,
+				qualityProfileDeployment: {
+					beforeProfile: null,
+					status: "not_started",
+					action: "created",
+					profileId: null,
+					postStateToken: null,
+				},
+				namingDeployment: null,
+			}),
+		});
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects deleting when a paired sync references a malformed schema-v2 ledger", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "FAILED" }));
+		syncFindMany.mockResolvedValue([syncRow({ status: "SUCCESS" })]);
+		backupFindFirst.mockResolvedValue({
+			backupData: JSON.stringify({ schemaVersion: 2, customFormatDeployments: [] }),
+		});
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects deleting when a paired sync references invalid JSON backup", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "FAILED" }));
+		syncFindMany.mockResolvedValue([syncRow({ status: "SUCCESS" })]);
+		backupFindFirst.mockResolvedValue({ backupData: "{invalid" });
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("allows deleting when a paired sync references a genuine legacy non-v2 backup", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "SUCCESS" }));
+		syncFindMany.mockResolvedValue([syncRow({ status: "SUCCESS" })]);
+		backupFindFirst.mockResolvedValue({
+			backupData: JSON.stringify({ customFormats: [], qualityProfile: null }),
+		});
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(200);
+		expect(historyDeleteMany).toHaveBeenCalled();
+	});
+
+	it("rejects deleting a deployment with undeployStatus PARTIAL", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ undeployStatus: "PARTIAL" }));
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rejects deleting a deployment with status PARTIAL_UNDEPLOY", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "PARTIAL_UNDEPLOY" }));
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(409);
+		expect(historyDeleteMany).not.toHaveBeenCalled();
+	});
+
+	it("allows deleting a rolled-back deployment with a resolved paired sync", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ rolledBack: true }));
+		syncFindMany.mockResolvedValue([]);
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(200);
+		expect(historyDeleteMany).toHaveBeenCalled();
+	});
+
+	it("allows deleting a deployment with undeployStatus COMPLETED", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ undeployStatus: "COMPLETED" }));
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(200);
+		expect(historyDeleteMany).toHaveBeenCalled();
+	});
+
+	it("allows deleting an ordinary terminal audit row that cannot block new work", async () => {
+		historyFindFirst.mockResolvedValue(historyRow({ status: "SUCCESS", backupId: null }));
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode).toBe(200);
+		expect(historyDeleteMany).toHaveBeenCalled();
 	});
 });

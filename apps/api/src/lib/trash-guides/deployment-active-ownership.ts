@@ -18,6 +18,13 @@ const ACTIVE_STATUSES = new Set([
 	"RUNNING",
 ]);
 
+/**
+ * Structured discriminator for ownership failures caused by legacy or invalid
+ * backup metadata. Callers may attempt read-only target-local reconciliation
+ * only for this reason, never for other ownership conflicts.
+ */
+export const UNVERIFIABLE_DEPLOYMENT_OWNERSHIP = "UNVERIFIABLE_DEPLOYMENT_OWNERSHIP";
+
 interface OwnershipCandidate {
 	backupId: string;
 	templateId: string;
@@ -219,6 +226,7 @@ export async function resolveActiveDeploymentOwnership(
 			} catch {
 				throw new ConflictError(
 					"An unrolled deployment has legacy or invalid ownership metadata, so this operation was stopped.",
+					{ reason: UNVERIFIABLE_DEPLOYMENT_OWNERSHIP },
 				);
 			}
 		}
@@ -272,6 +280,7 @@ export async function resolveActiveDeploymentOwnership(
 		if (!candidate.state) {
 			throw new ConflictError(
 				"Another active deployment has legacy or invalid ownership metadata, so this operation was stopped.",
+				{ reason: UNVERIFIABLE_DEPLOYMENT_OWNERSHIP },
 			);
 		}
 		if (!candidate.state.managedCustomFormatsCaptured) {
@@ -363,6 +372,7 @@ export async function resolveActiveDeploymentOwnership(
 	if (!latestTarget.state) {
 		throw new ConflictError(
 			"The target deployment has legacy or invalid ownership metadata, so this operation was stopped.",
+			{ reason: UNVERIFIABLE_DEPLOYMENT_OWNERSHIP },
 		);
 	}
 	const targetCustomFormatIds = new Set([

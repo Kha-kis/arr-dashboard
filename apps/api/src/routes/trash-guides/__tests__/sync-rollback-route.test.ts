@@ -112,6 +112,8 @@ describe("sync rollback route", () => {
 			instance,
 			template: { id: "template-1", userId },
 			backup: { id: "backup-1", backupData },
+			rollbackStatus: null,
+			rollbackAttemptedAt: null,
 			rollbackProgress: null,
 		};
 		syncRecord = sync;
@@ -292,7 +294,52 @@ describe("sync rollback route", () => {
 				rollbackStatus: "IN_PROGRESS",
 				rollbackAttemptedAt: expect.any(Date),
 			},
-			data: expect.objectContaining({ rollbackStatus: "PARTIAL" }),
+			data: {
+				rollbackStatus: null,
+				rollbackAttemptedAt: null,
+				rollbackProgress: null,
+			},
+		});
+	});
+
+	it("restores prior PARTIAL rollback state when a retry fails before mutation", async () => {
+		const priorAttemptedAt = new Date("2026-08-08T12:05:00.000Z");
+		const priorProgress = JSON.stringify([
+			{
+				key: "custom_format:7",
+				kind: "custom_format",
+				name: "Updated CF",
+				outcome: "restored",
+			},
+		]);
+		syncRecord = {
+			...syncRecord,
+			rollbackStatus: "PARTIAL",
+			rollbackAttemptedAt: priorAttemptedAt,
+			rollbackProgress: priorProgress,
+			appliedConfigs: "not-json",
+		};
+		syncFindFirst.mockResolvedValue(syncRecord);
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode).toBe(500);
+		expect(profileUpdate).not.toHaveBeenCalled();
+		expect(formatUpdate).not.toHaveBeenCalled();
+		expect(formatDelete).not.toHaveBeenCalled();
+		expect(syncUpdate).toHaveBeenLastCalledWith({
+			where: {
+				id: "sync-1",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+				rollbackAttemptedAt: expect.any(Date),
+			},
+			data: {
+				rollbackStatus: "PARTIAL",
+				rollbackAttemptedAt: priorAttemptedAt,
+				rollbackProgress: priorProgress,
+			},
 		});
 	});
 
