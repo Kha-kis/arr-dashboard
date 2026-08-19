@@ -289,21 +289,55 @@ const wireTorrentSchema = z
 		}),
 	);
 
-const wireCrossInstanceLookupResponseSchema = z.object({
-	cross_instance_torrents: z.array(wireTorrentSchema).nullable(),
-});
+// qUI's TorrentResponse.CrossInstanceTorrents carries
+// `json:"cross_instance_torrents,omitempty"` (upstream sync_manager.go). Go's
+// omitempty drops the key entirely when the slice is empty, so a complete
+// empty inventory serializes WITHOUT `cross_instance_torrents` — not `[]` and
+// not `null`. The collection field is therefore NOT a completeness signal:
+// completeness is proven by `total`/`hasMore`/`partialResults`, which are
+// always emitted (no omitempty). We tolerate an absent collection and
+// normalize it to `[]` at the call sites via `?? []`; the completeness gate
+// lives on the metadata fields, not on the collection.
+//
+// A valid cross-instance response is discriminated by the presence of at
+// least one known semantic field: the `cross_instance_torrents` collection
+// (older metadata-free releases) or `total` (current releases, which always
+// emit it). An object with neither is an unknown wrapper and is rejected
+// rather than guessed into an authoritative empty inventory. `.passthrough()`
+// tolerates additive unknown fields so future qUI releases that add metadata
+// do not require an arr-dashboard patch.
+const wireCrossInstanceCollection = {
+	cross_instance_torrents: z.array(wireTorrentSchema).nullable().optional(),
+};
 
-const wireCrossInstanceInventoryResponseSchema = wireCrossInstanceLookupResponseSchema.extend({
-	hasMore: z.boolean().optional(),
-	partialResults: z.boolean().optional(),
-	total: z.number().int().nonnegative().optional(),
-});
+const crossInstanceShapeGuard = (obj: {
+	cross_instance_torrents?: unknown;
+	total?: unknown;
+}): boolean => obj.cross_instance_torrents !== undefined || obj.total !== undefined;
 
-const wireCrossInstanceResponseSchema = wireCrossInstanceLookupResponseSchema.extend({
-	hasMore: z.boolean(),
-	partialResults: z.boolean(),
-	total: z.number().int().nonnegative(),
-});
+const wireCrossInstanceLookupResponseSchema = z
+	.object(wireCrossInstanceCollection)
+	.passthrough()
+	.refine(crossInstanceShapeGuard, { message: "unrecognized cross-instance response shape" });
+
+const wireCrossInstanceInventoryResponseSchema = z
+	.object({
+		...wireCrossInstanceCollection,
+		hasMore: z.boolean().optional(),
+		partialResults: z.boolean().optional(),
+		total: z.number().int().nonnegative().optional(),
+	})
+	.passthrough()
+	.refine(crossInstanceShapeGuard, { message: "unrecognized cross-instance response shape" });
+
+const wireCrossInstanceResponseSchema = z
+	.object({
+		...wireCrossInstanceCollection,
+		hasMore: z.boolean(),
+		partialResults: z.boolean(),
+		total: z.number().int().nonnegative(),
+	})
+	.passthrough();
 
 function crossInstanceTorrentIdentity(torrent: QuiTorrent, operation: string): string {
 	if (
