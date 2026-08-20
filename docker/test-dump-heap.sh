@@ -279,7 +279,7 @@ echo ""
 echo "=== [F] rootless: selection + snapshot ==="
 docker rm -f "$CTR" >/dev/null 2>&1 || true
 chown -R 1000:1000 "$CONFIG_DIR" 2>/dev/null || true
-chmod 700 "$CONFIG_DIR"
+chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 docker run -d --name "$CTR" --user 1000:1000 \
     -v "$CONFIG_DIR":/config \
     -e NODE_OPTIONS="--max-old-space-size=256 --dns-result-order=ipv4first --heapsnapshot-signal=SIGUSR2" \

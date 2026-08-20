@@ -95,7 +95,7 @@ start_stubborn() {
     docker rm -f "$name" >/dev/null 2>&1 || true
     if [ "$rootless" = "rootless" ]; then
         chown -R 1000:1000 "$CONFIG_DIR" 2>/dev/null || true
-        chmod 700 "$CONFIG_DIR"
+        chmod 700 "$CONFIG_DIR" 2>/dev/null || true
         docker run -d --name "$name" --user 1000:1000 \
             -v "$CONFIG_DIR":/config \
             -v "$SHIM_DIR/server.js":/app/web/server.js:ro \
@@ -253,7 +253,7 @@ case_default_normal() {
         docker rm -f "$ctr" >/dev/null 2>&1 || true
         if [ "$mode" = "rootless" ]; then
             chown -R 1000:1000 "$CONFIG_DIR" 2>/dev/null || true
-            chmod 700 "$CONFIG_DIR"
+            chmod 700 "$CONFIG_DIR" 2>/dev/null || true
             docker run -d --name "$ctr" --user 1000:1000 \
                 -v "$CONFIG_DIR":/config \
                 -p "$HOST_API_PORT":3001 -p "$HOST_WEB_PORT":3000 \
@@ -328,7 +328,7 @@ prompt_exit_once() {
     docker rm -f "$ctr" >/dev/null 2>&1 || true
     if [ "$rootless" = "rootless" ]; then
         chown -R 1000:1000 "$CONFIG_DIR" 2>/dev/null || true
-        chmod 700 "$CONFIG_DIR"
+        chmod 700 "$CONFIG_DIR" 2>/dev/null || true
         docker run -d --name "$ctr" --user 1000:1000 \
             -v "$CONFIG_DIR":/config \
             -p "$HOST_API_PORT":3001 -p "$HOST_WEB_PORT":3000 \

@@ -93,7 +93,7 @@ trap cleanup EXIT
 mkdir -p "$CONFIG_DIR"
 if [ "$ROOTLESS" = true ]; then
     chown -R 1000:1000 "$CONFIG_DIR" 2>/dev/null || true
-    chmod 700 "$CONFIG_DIR"
+    chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 fi
 
 # ---------------------------------------------------------------------------
