@@ -55,8 +55,11 @@ jobs:
         run: pnpm audit --audit-level=high
         continue-on-error: true
 
-      - name: Generate Prisma Client
-        run: cd apps/api && pnpm exec prisma generate
+      - name: Verify committed Prisma client is up to date
+        run: pnpm run check:prisma-generated
+
+      - name: Verify Prisma guard path-safety helpers
+        run: node --test scripts/check-prisma-generated.test.mjs
 
       - name: Initialize deployment-state contract database
         run: pnpm exec prisma db push --schema prisma/schema.prisma

@@ -31,6 +31,8 @@ export type PlexEpisodeCacheAvgAggregateOutputType = {
   seasonNumber: number | null
   episodeNumber: number | null
   watchCount: number | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type PlexEpisodeCacheSumAggregateOutputType = {
@@ -38,6 +40,8 @@ export type PlexEpisodeCacheSumAggregateOutputType = {
   seasonNumber: number | null
   episodeNumber: number | null
   watchCount: number | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type PlexEpisodeCacheMinAggregateOutputType = {
@@ -54,6 +58,8 @@ export type PlexEpisodeCacheMinAggregateOutputType = {
   watchCount: number | null
   refreshedAt: Date | null
   sourceFingerprint: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type PlexEpisodeCacheMaxAggregateOutputType = {
@@ -70,6 +76,8 @@ export type PlexEpisodeCacheMaxAggregateOutputType = {
   watchCount: number | null
   refreshedAt: Date | null
   sourceFingerprint: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type PlexEpisodeCacheCountAggregateOutputType = {
@@ -86,6 +94,8 @@ export type PlexEpisodeCacheCountAggregateOutputType = {
   watchCount: number
   refreshedAt: number
   sourceFingerprint: number
+  connectionGeneration: number
+  identityGeneration: number
   _all: number
 }
 
@@ -95,6 +105,8 @@ export type PlexEpisodeCacheAvgAggregateInputType = {
   seasonNumber?: true
   episodeNumber?: true
   watchCount?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type PlexEpisodeCacheSumAggregateInputType = {
@@ -102,6 +114,8 @@ export type PlexEpisodeCacheSumAggregateInputType = {
   seasonNumber?: true
   episodeNumber?: true
   watchCount?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type PlexEpisodeCacheMinAggregateInputType = {
@@ -118,6 +132,8 @@ export type PlexEpisodeCacheMinAggregateInputType = {
   watchCount?: true
   refreshedAt?: true
   sourceFingerprint?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type PlexEpisodeCacheMaxAggregateInputType = {
@@ -134,6 +150,8 @@ export type PlexEpisodeCacheMaxAggregateInputType = {
   watchCount?: true
   refreshedAt?: true
   sourceFingerprint?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type PlexEpisodeCacheCountAggregateInputType = {
@@ -150,6 +168,8 @@ export type PlexEpisodeCacheCountAggregateInputType = {
   watchCount?: true
   refreshedAt?: true
   sourceFingerprint?: true
+  connectionGeneration?: true
+  identityGeneration?: true
   _all?: true
 }
 
@@ -253,6 +273,8 @@ export type PlexEpisodeCacheGroupByOutputType = {
   watchCount: number | null
   refreshedAt: Date | null
   sourceFingerprint: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
   _count: PlexEpisodeCacheCountAggregateOutputType | null
   _avg: PlexEpisodeCacheAvgAggregateOutputType | null
   _sum: PlexEpisodeCacheSumAggregateOutputType | null
@@ -292,6 +314,8 @@ export type PlexEpisodeCacheWhereInput = {
   watchCount?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
   refreshedAt?: Prisma.DateTimeNullableFilter<"PlexEpisodeCache"> | Date | string | null
   sourceFingerprint?: Prisma.StringNullableFilter<"PlexEpisodeCache"> | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }
 
@@ -309,6 +333,8 @@ export type PlexEpisodeCacheOrderByWithRelationInput = {
   watchCount?: Prisma.SortOrderInput | Prisma.SortOrder
   refreshedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   sourceFingerprint?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
 }
 
@@ -330,6 +356,8 @@ export type PlexEpisodeCacheWhereUniqueInput = Prisma.AtLeast<{
   watchCount?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
   refreshedAt?: Prisma.DateTimeNullableFilter<"PlexEpisodeCache"> | Date | string | null
   sourceFingerprint?: Prisma.StringNullableFilter<"PlexEpisodeCache"> | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }, "id" | "instanceId_showTmdbId_seasonNumber_episodeNumber">
 
@@ -347,6 +375,8 @@ export type PlexEpisodeCacheOrderByWithAggregationInput = {
   watchCount?: Prisma.SortOrderInput | Prisma.SortOrder
   refreshedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   sourceFingerprint?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.PlexEpisodeCacheCountOrderByAggregateInput
   _avg?: Prisma.PlexEpisodeCacheAvgOrderByAggregateInput
   _max?: Prisma.PlexEpisodeCacheMaxOrderByAggregateInput
@@ -371,6 +401,8 @@ export type PlexEpisodeCacheScalarWhereWithAggregatesInput = {
   watchCount?: Prisma.IntNullableWithAggregatesFilter<"PlexEpisodeCache"> | number | null
   refreshedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"PlexEpisodeCache"> | Date | string | null
   sourceFingerprint?: Prisma.StringNullableWithAggregatesFilter<"PlexEpisodeCache"> | string | null
+  connectionGeneration?: Prisma.IntNullableWithAggregatesFilter<"PlexEpisodeCache"> | number | null
+  identityGeneration?: Prisma.IntNullableWithAggregatesFilter<"PlexEpisodeCache"> | number | null
 }
 
 export type PlexEpisodeCacheCreateInput = {
@@ -386,6 +418,8 @@ export type PlexEpisodeCacheCreateInput = {
   watchCount?: number | null
   refreshedAt?: Date | string | null
   sourceFingerprint?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutPlexEpisodeCachesInput
 }
 
@@ -403,6 +437,8 @@ export type PlexEpisodeCacheUncheckedCreateInput = {
   watchCount?: number | null
   refreshedAt?: Date | string | null
   sourceFingerprint?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type PlexEpisodeCacheUpdateInput = {
@@ -418,6 +454,8 @@ export type PlexEpisodeCacheUpdateInput = {
   watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutPlexEpisodeCachesNestedInput
 }
 
@@ -435,6 +473,8 @@ export type PlexEpisodeCacheUncheckedUpdateInput = {
   watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type PlexEpisodeCacheCreateManyInput = {
@@ -451,6 +491,8 @@ export type PlexEpisodeCacheCreateManyInput = {
   watchCount?: number | null
   refreshedAt?: Date | string | null
   sourceFingerprint?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type PlexEpisodeCacheUpdateManyMutationInput = {
@@ -466,6 +508,8 @@ export type PlexEpisodeCacheUpdateManyMutationInput = {
   watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type PlexEpisodeCacheUncheckedUpdateManyInput = {
@@ -482,6 +526,8 @@ export type PlexEpisodeCacheUncheckedUpdateManyInput = {
   watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type PlexEpisodeCacheListRelationFilter = {
@@ -515,6 +561,8 @@ export type PlexEpisodeCacheCountOrderByAggregateInput = {
   watchCount?: Prisma.SortOrder
   refreshedAt?: Prisma.SortOrder
   sourceFingerprint?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type PlexEpisodeCacheAvgOrderByAggregateInput = {
@@ -522,6 +570,8 @@ export type PlexEpisodeCacheAvgOrderByAggregateInput = {
   seasonNumber?: Prisma.SortOrder
   episodeNumber?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type PlexEpisodeCacheMaxOrderByAggregateInput = {
@@ -538,6 +588,8 @@ export type PlexEpisodeCacheMaxOrderByAggregateInput = {
   watchCount?: Prisma.SortOrder
   refreshedAt?: Prisma.SortOrder
   sourceFingerprint?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type PlexEpisodeCacheMinOrderByAggregateInput = {
@@ -554,6 +606,8 @@ export type PlexEpisodeCacheMinOrderByAggregateInput = {
   watchCount?: Prisma.SortOrder
   refreshedAt?: Prisma.SortOrder
   sourceFingerprint?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type PlexEpisodeCacheSumOrderByAggregateInput = {
@@ -561,6 +615,8 @@ export type PlexEpisodeCacheSumOrderByAggregateInput = {
   seasonNumber?: Prisma.SortOrder
   episodeNumber?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type PlexEpisodeCacheCreateNestedManyWithoutInstanceInput = {
@@ -618,6 +674,8 @@ export type PlexEpisodeCacheCreateWithoutInstanceInput = {
   watchCount?: number | null
   refreshedAt?: Date | string | null
   sourceFingerprint?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type PlexEpisodeCacheUncheckedCreateWithoutInstanceInput = {
@@ -633,6 +691,8 @@ export type PlexEpisodeCacheUncheckedCreateWithoutInstanceInput = {
   watchCount?: number | null
   refreshedAt?: Date | string | null
   sourceFingerprint?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type PlexEpisodeCacheCreateOrConnectWithoutInstanceInput = {
@@ -677,6 +737,8 @@ export type PlexEpisodeCacheScalarWhereInput = {
   watchCount?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
   refreshedAt?: Prisma.DateTimeNullableFilter<"PlexEpisodeCache"> | Date | string | null
   sourceFingerprint?: Prisma.StringNullableFilter<"PlexEpisodeCache"> | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"PlexEpisodeCache"> | number | null
 }
 
 export type PlexEpisodeCacheCreateManyInstanceInput = {
@@ -692,6 +754,8 @@ export type PlexEpisodeCacheCreateManyInstanceInput = {
   watchCount?: number | null
   refreshedAt?: Date | string | null
   sourceFingerprint?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type PlexEpisodeCacheUpdateWithoutInstanceInput = {
@@ -707,6 +771,8 @@ export type PlexEpisodeCacheUpdateWithoutInstanceInput = {
   watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type PlexEpisodeCacheUncheckedUpdateWithoutInstanceInput = {
@@ -722,6 +788,8 @@ export type PlexEpisodeCacheUncheckedUpdateWithoutInstanceInput = {
   watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceInput = {
@@ -737,6 +805,8 @@ export type PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceInput = {
   watchCount?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   refreshedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   sourceFingerprint?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 
@@ -755,6 +825,8 @@ export type PlexEpisodeCacheSelect<ExtArgs extends runtime.Types.Extensions.Inte
   watchCount?: boolean
   refreshedAt?: boolean
   sourceFingerprint?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["plexEpisodeCache"]>
 
@@ -772,6 +844,8 @@ export type PlexEpisodeCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Ty
   watchCount?: boolean
   refreshedAt?: boolean
   sourceFingerprint?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["plexEpisodeCache"]>
 
@@ -789,6 +863,8 @@ export type PlexEpisodeCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Ty
   watchCount?: boolean
   refreshedAt?: boolean
   sourceFingerprint?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["plexEpisodeCache"]>
 
@@ -806,9 +882,11 @@ export type PlexEpisodeCacheSelectScalar = {
   watchCount?: boolean
   refreshedAt?: boolean
   sourceFingerprint?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
 }
 
-export type PlexEpisodeCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "showTmdbId" | "seasonNumber" | "episodeNumber" | "ratingKey" | "title" | "watched" | "watchedByUsers" | "lastWatchedAt" | "watchCount" | "refreshedAt" | "sourceFingerprint", ExtArgs["result"]["plexEpisodeCache"]>
+export type PlexEpisodeCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "showTmdbId" | "seasonNumber" | "episodeNumber" | "ratingKey" | "title" | "watched" | "watchedByUsers" | "lastWatchedAt" | "watchCount" | "refreshedAt" | "sourceFingerprint" | "connectionGeneration" | "identityGeneration", ExtArgs["result"]["plexEpisodeCache"]>
 export type PlexEpisodeCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -847,6 +925,8 @@ export type $PlexEpisodeCachePayload<ExtArgs extends runtime.Types.Extensions.In
      * Null means the row predates connection-bound refresh evidence.
      */
     sourceFingerprint: string | null
+    connectionGeneration: number | null
+    identityGeneration: number | null
   }, ExtArgs["result"]["plexEpisodeCache"]>
   composites: {}
 }
@@ -1284,6 +1364,8 @@ export interface PlexEpisodeCacheFieldRefs {
   readonly watchCount: Prisma.FieldRef<"PlexEpisodeCache", 'Int'>
   readonly refreshedAt: Prisma.FieldRef<"PlexEpisodeCache", 'DateTime'>
   readonly sourceFingerprint: Prisma.FieldRef<"PlexEpisodeCache", 'String'>
+  readonly connectionGeneration: Prisma.FieldRef<"PlexEpisodeCache", 'Int'>
+  readonly identityGeneration: Prisma.FieldRef<"PlexEpisodeCache", 'Int'>
 }
     
 

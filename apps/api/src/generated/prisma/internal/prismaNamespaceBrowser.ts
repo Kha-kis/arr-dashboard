@@ -189,6 +189,12 @@ export const ServiceInstanceScalarFieldEnum = {
   hasLocalFilesystemAccess: 'hasLocalFilesystemAccess',
   pathPrefix: 'pathPrefix',
   connectionGeneration: 'connectionGeneration',
+  expectedIdentity: 'expectedIdentity',
+  identityKind: 'identityKind',
+  identityStatus: 'identityStatus',
+  identityGeneration: 'identityGeneration',
+  identityVerifiedAt: 'identityVerifiedAt',
+  identityLastCheckedAt: 'identityLastCheckedAt',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -1052,7 +1058,9 @@ export const PlexCacheScalarFieldEnum = {
   collections: 'collections',
   labels: 'labels',
   addedAt: 'addedAt',
-  thumb: 'thumb'
+  thumb: 'thumb',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
 } as const
 
 export type PlexCacheScalarFieldEnum = (typeof PlexCacheScalarFieldEnum)[keyof typeof PlexCacheScalarFieldEnum]
@@ -1071,7 +1079,9 @@ export const PlexEpisodeCacheScalarFieldEnum = {
   lastWatchedAt: 'lastWatchedAt',
   watchCount: 'watchCount',
   refreshedAt: 'refreshedAt',
-  sourceFingerprint: 'sourceFingerprint'
+  sourceFingerprint: 'sourceFingerprint',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
 } as const
 
 export type PlexEpisodeCacheScalarFieldEnum = (typeof PlexEpisodeCacheScalarFieldEnum)[keyof typeof PlexEpisodeCacheScalarFieldEnum]
@@ -1093,7 +1103,9 @@ export const JellyfinCacheScalarFieldEnum = {
   userRating: 'userRating',
   collections: 'collections',
   addedAt: 'addedAt',
-  thumb: 'thumb'
+  thumb: 'thumb',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
 } as const
 
 export type JellyfinCacheScalarFieldEnum = (typeof JellyfinCacheScalarFieldEnum)[keyof typeof JellyfinCacheScalarFieldEnum]
@@ -1109,7 +1121,9 @@ export const JellyfinEpisodeCacheScalarFieldEnum = {
   title: 'title',
   watched: 'watched',
   watchedByUsers: 'watchedByUsers',
-  lastWatchedAt: 'lastWatchedAt'
+  lastWatchedAt: 'lastWatchedAt',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
 } as const
 
 export type JellyfinEpisodeCacheScalarFieldEnum = (typeof JellyfinEpisodeCacheScalarFieldEnum)[keyof typeof JellyfinEpisodeCacheScalarFieldEnum]
@@ -1122,7 +1136,9 @@ export const TautulliCacheScalarFieldEnum = {
   mediaType: 'mediaType',
   lastWatchedAt: 'lastWatchedAt',
   watchCount: 'watchCount',
-  watchedByUsers: 'watchedByUsers'
+  watchedByUsers: 'watchedByUsers',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
 } as const
 
 export type TautulliCacheScalarFieldEnum = (typeof TautulliCacheScalarFieldEnum)[keyof typeof TautulliCacheScalarFieldEnum]
@@ -1140,7 +1156,9 @@ export const CacheRefreshStatusScalarFieldEnum = {
   generationMetadata: 'generationMetadata',
   lastAttemptAt: 'lastAttemptAt',
   lastAttemptResult: 'lastAttemptResult',
-  lastAttemptErrorMessage: 'lastAttemptErrorMessage'
+  lastAttemptErrorMessage: 'lastAttemptErrorMessage',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
 } as const
 
 export type CacheRefreshStatusScalarFieldEnum = (typeof CacheRefreshStatusScalarFieldEnum)[keyof typeof CacheRefreshStatusScalarFieldEnum]

@@ -8,6 +8,11 @@ pnpm-lock.yaml -diff linguist-generated
 # Prisma schema — better syntax highlighting on GitHub
 *.prisma linguist-language=GraphQL
 
+# Prisma generated client — mark as generated, silence generator-produced
+# trailing-whitespace errors (narrow to this directory only)
+apps/api/src/generated/prisma/** whitespace=-trailing-space,-space-before-tab,-blank-at-eol,-blank-at-eof,-tab-in-indent,-cr-at-eol
+apps/api/src/generated/prisma/** linguist-generated
+
 # Binary files
 *.png binary
 *.jpg binary

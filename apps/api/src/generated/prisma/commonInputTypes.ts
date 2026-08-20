@@ -178,6 +178,20 @@ export type EnumServiceTypeFilter<$PrismaModel = never> = {
   not?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel> | $Enums.ServiceType
 }
 
+export type EnumProviderIdentityKindNullableFilter<$PrismaModel = never> = {
+  equals?: $Enums.ProviderIdentityKind | Prisma.EnumProviderIdentityKindFieldRefInput<$PrismaModel> | null
+  in?: $Enums.ProviderIdentityKind[] | null
+  notIn?: $Enums.ProviderIdentityKind[] | null
+  not?: Prisma.NestedEnumProviderIdentityKindNullableFilter<$PrismaModel> | $Enums.ProviderIdentityKind | null
+}
+
+export type EnumProviderIdentityStatusFilter<$PrismaModel = never> = {
+  equals?: $Enums.ProviderIdentityStatus | Prisma.EnumProviderIdentityStatusFieldRefInput<$PrismaModel>
+  in?: $Enums.ProviderIdentityStatus[]
+  notIn?: $Enums.ProviderIdentityStatus[]
+  not?: Prisma.NestedEnumProviderIdentityStatusFilter<$PrismaModel> | $Enums.ProviderIdentityStatus
+}
+
 export type EnumServiceTypeWithAggregatesFilter<$PrismaModel = never> = {
   equals?: $Enums.ServiceType | Prisma.EnumServiceTypeFieldRefInput<$PrismaModel>
   in?: $Enums.ServiceType[]
@@ -186,6 +200,26 @@ export type EnumServiceTypeWithAggregatesFilter<$PrismaModel = never> = {
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel>
   _max?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel>
+}
+
+export type EnumProviderIdentityKindNullableWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.ProviderIdentityKind | Prisma.EnumProviderIdentityKindFieldRefInput<$PrismaModel> | null
+  in?: $Enums.ProviderIdentityKind[] | null
+  notIn?: $Enums.ProviderIdentityKind[] | null
+  not?: Prisma.NestedEnumProviderIdentityKindNullableWithAggregatesFilter<$PrismaModel> | $Enums.ProviderIdentityKind | null
+  _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumProviderIdentityKindNullableFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumProviderIdentityKindNullableFilter<$PrismaModel>
+}
+
+export type EnumProviderIdentityStatusWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.ProviderIdentityStatus | Prisma.EnumProviderIdentityStatusFieldRefInput<$PrismaModel>
+  in?: $Enums.ProviderIdentityStatus[]
+  notIn?: $Enums.ProviderIdentityStatus[]
+  not?: Prisma.NestedEnumProviderIdentityStatusWithAggregatesFilter<$PrismaModel> | $Enums.ProviderIdentityStatus
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumProviderIdentityStatusFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumProviderIdentityStatusFilter<$PrismaModel>
 }
 
 export type BytesFilter<$PrismaModel = never> = {
@@ -541,6 +575,20 @@ export type NestedEnumServiceTypeFilter<$PrismaModel = never> = {
   not?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel> | $Enums.ServiceType
 }
 
+export type NestedEnumProviderIdentityKindNullableFilter<$PrismaModel = never> = {
+  equals?: $Enums.ProviderIdentityKind | Prisma.EnumProviderIdentityKindFieldRefInput<$PrismaModel> | null
+  in?: $Enums.ProviderIdentityKind[] | null
+  notIn?: $Enums.ProviderIdentityKind[] | null
+  not?: Prisma.NestedEnumProviderIdentityKindNullableFilter<$PrismaModel> | $Enums.ProviderIdentityKind | null
+}
+
+export type NestedEnumProviderIdentityStatusFilter<$PrismaModel = never> = {
+  equals?: $Enums.ProviderIdentityStatus | Prisma.EnumProviderIdentityStatusFieldRefInput<$PrismaModel>
+  in?: $Enums.ProviderIdentityStatus[]
+  notIn?: $Enums.ProviderIdentityStatus[]
+  not?: Prisma.NestedEnumProviderIdentityStatusFilter<$PrismaModel> | $Enums.ProviderIdentityStatus
+}
+
 export type NestedEnumServiceTypeWithAggregatesFilter<$PrismaModel = never> = {
   equals?: $Enums.ServiceType | Prisma.EnumServiceTypeFieldRefInput<$PrismaModel>
   in?: $Enums.ServiceType[]
@@ -549,6 +597,26 @@ export type NestedEnumServiceTypeWithAggregatesFilter<$PrismaModel = never> = {
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel>
   _max?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel>
+}
+
+export type NestedEnumProviderIdentityKindNullableWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.ProviderIdentityKind | Prisma.EnumProviderIdentityKindFieldRefInput<$PrismaModel> | null
+  in?: $Enums.ProviderIdentityKind[] | null
+  notIn?: $Enums.ProviderIdentityKind[] | null
+  not?: Prisma.NestedEnumProviderIdentityKindNullableWithAggregatesFilter<$PrismaModel> | $Enums.ProviderIdentityKind | null
+  _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumProviderIdentityKindNullableFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumProviderIdentityKindNullableFilter<$PrismaModel>
+}
+
+export type NestedEnumProviderIdentityStatusWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.ProviderIdentityStatus | Prisma.EnumProviderIdentityStatusFieldRefInput<$PrismaModel>
+  in?: $Enums.ProviderIdentityStatus[]
+  notIn?: $Enums.ProviderIdentityStatus[]
+  not?: Prisma.NestedEnumProviderIdentityStatusWithAggregatesFilter<$PrismaModel> | $Enums.ProviderIdentityStatus
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumProviderIdentityStatusFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumProviderIdentityStatusFilter<$PrismaModel>
 }
 
 export type NestedBytesFilter<$PrismaModel = never> = {
