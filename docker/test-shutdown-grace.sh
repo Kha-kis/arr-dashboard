@@ -22,7 +22,7 @@ cleanup() {
     for c in "${WORK##*/}-"*; do
         docker rm -f "$c" >/dev/null 2>&1 || true
     done
-    rm -rf "$WORK"
+    rm -rf "$WORK" 2>/dev/null || true
 }
 trap cleanup EXIT
 

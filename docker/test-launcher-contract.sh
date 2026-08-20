@@ -27,7 +27,7 @@ FAIL=0
 
 cleanup() {
     docker rm -f "$CTR" >/dev/null 2>&1 || true
-    rm -rf "$WORK"
+    rm -rf "$WORK" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -60,8 +60,10 @@ setInterval(() => {}, 1000);
 EOF
 
 # Remove all mock fixture state from the host config dir before each container.
+# Files may be owned by the container's remapped user; tolerate permission
+# errors.
 reset_launcher_fixture() {
-    rm -f "$CONFIG_DIR/.launcher-ctl" "$CONFIG_DIR/.mock-pid"
+    rm -f "$CONFIG_DIR/.launcher-ctl" "$CONFIG_DIR/.mock-pid" 2>/dev/null || true
 }
 
 start_ctr() {

@@ -86,7 +86,7 @@ cleanup() {
         docker rm -f "$c" >/dev/null 2>&1 || true
     done
     docker rm -f "${WORK##*/}-restart" >/dev/null 2>&1 || true
-    rm -rf "$WORK"
+    rm -rf "$WORK" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -322,9 +322,11 @@ EOF
 
 # Remove all shim control files from the host config dir before each new
 # container, so a previous case's mode (exit0/exit3/ignore-term/etc.) can
-# never leak into a later case.
+# never leak into a later case. The files may be owned by the container's
+# remapped user (uid 1000); tolerate permission errors because start.sh
+# re-chowns /config on the next container start.
 reset_shim_fixture() {
-    rm -f "$CONFIG_DIR/.shim-api-control" "$CONFIG_DIR/.shim-web-control"
+    rm -f "$CONFIG_DIR/.shim-api-control" "$CONFIG_DIR/.shim-web-control" 2>/dev/null || true
 }
 
 start_shim_container() {

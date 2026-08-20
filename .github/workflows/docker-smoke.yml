@@ -322,4 +322,4 @@ jobs:
           for c in $(docker ps -a --format '{{.Names}}' | grep '^test-'); do
             docker rm -f "$c" 2>/dev/null || true
           done
-          rm -rf /tmp/test-*
+          rm -rf /tmp/test-* 2>/dev/null || true

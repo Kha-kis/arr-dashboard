@@ -31,7 +31,7 @@ FAIL=0
 
 cleanup() {
     docker rm -f "$CTR" >/dev/null 2>&1 || true
-    rm -rf "$WORK"
+    rm -rf "$WORK" 2>/dev/null || true
 }
 trap cleanup EXIT
 

@@ -39,7 +39,7 @@ cleanup() {
     for c in "${WORK##*/}-"*; do
         docker rm -f "$c" >/dev/null 2>&1 || true
     done
-    rm -rf "$WORK"
+    rm -rf "$WORK" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -324,7 +324,7 @@ prompt_exit_once() {
     service=$2
     rootless=$3
     rm -f "$CONFIG_DIR/.launcher-ctl" "$CONFIG_DIR/.mock-pid" \
-          "$CONFIG_DIR/.shim-api-control" "$CONFIG_DIR/.shim-web-control"
+          "$CONFIG_DIR/.shim-api-control" "$CONFIG_DIR/.shim-web-control" 2>/dev/null || true
     docker rm -f "$ctr" >/dev/null 2>&1 || true
     if [ "$rootless" = "rootless" ]; then
         chown -R 1000:1000 "$CONFIG_DIR" 2>/dev/null || true
