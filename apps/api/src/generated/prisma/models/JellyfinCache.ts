@@ -30,12 +30,16 @@ export type JellyfinCacheAvgAggregateOutputType = {
   tmdbId: number | null
   watchCount: number | null
   userRating: number | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type JellyfinCacheSumAggregateOutputType = {
   tmdbId: number | null
   watchCount: number | null
   userRating: number | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type JellyfinCacheMinAggregateOutputType = {
@@ -55,6 +59,8 @@ export type JellyfinCacheMinAggregateOutputType = {
   collections: string | null
   addedAt: Date | null
   thumb: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type JellyfinCacheMaxAggregateOutputType = {
@@ -74,6 +80,8 @@ export type JellyfinCacheMaxAggregateOutputType = {
   collections: string | null
   addedAt: Date | null
   thumb: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type JellyfinCacheCountAggregateOutputType = {
@@ -93,6 +101,8 @@ export type JellyfinCacheCountAggregateOutputType = {
   collections: number
   addedAt: number
   thumb: number
+  connectionGeneration: number
+  identityGeneration: number
   _all: number
 }
 
@@ -101,12 +111,16 @@ export type JellyfinCacheAvgAggregateInputType = {
   tmdbId?: true
   watchCount?: true
   userRating?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type JellyfinCacheSumAggregateInputType = {
   tmdbId?: true
   watchCount?: true
   userRating?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type JellyfinCacheMinAggregateInputType = {
@@ -126,6 +140,8 @@ export type JellyfinCacheMinAggregateInputType = {
   collections?: true
   addedAt?: true
   thumb?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type JellyfinCacheMaxAggregateInputType = {
@@ -145,6 +161,8 @@ export type JellyfinCacheMaxAggregateInputType = {
   collections?: true
   addedAt?: true
   thumb?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type JellyfinCacheCountAggregateInputType = {
@@ -164,6 +182,8 @@ export type JellyfinCacheCountAggregateInputType = {
   collections?: true
   addedAt?: true
   thumb?: true
+  connectionGeneration?: true
+  identityGeneration?: true
   _all?: true
 }
 
@@ -270,6 +290,8 @@ export type JellyfinCacheGroupByOutputType = {
   collections: string
   addedAt: Date | null
   thumb: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
   _count: JellyfinCacheCountAggregateOutputType | null
   _avg: JellyfinCacheAvgAggregateOutputType | null
   _sum: JellyfinCacheSumAggregateOutputType | null
@@ -312,6 +334,8 @@ export type JellyfinCacheWhereInput = {
   collections?: Prisma.StringFilter<"JellyfinCache"> | string
   addedAt?: Prisma.DateTimeNullableFilter<"JellyfinCache"> | Date | string | null
   thumb?: Prisma.StringNullableFilter<"JellyfinCache"> | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"JellyfinCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"JellyfinCache"> | number | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }
 
@@ -332,6 +356,8 @@ export type JellyfinCacheOrderByWithRelationInput = {
   collections?: Prisma.SortOrder
   addedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   thumb?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
 }
 
@@ -356,6 +382,8 @@ export type JellyfinCacheWhereUniqueInput = Prisma.AtLeast<{
   collections?: Prisma.StringFilter<"JellyfinCache"> | string
   addedAt?: Prisma.DateTimeNullableFilter<"JellyfinCache"> | Date | string | null
   thumb?: Prisma.StringNullableFilter<"JellyfinCache"> | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"JellyfinCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"JellyfinCache"> | number | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }, "id" | "instanceId_tmdbId_mediaType_libraryId">
 
@@ -376,6 +404,8 @@ export type JellyfinCacheOrderByWithAggregationInput = {
   collections?: Prisma.SortOrder
   addedAt?: Prisma.SortOrderInput | Prisma.SortOrder
   thumb?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.JellyfinCacheCountOrderByAggregateInput
   _avg?: Prisma.JellyfinCacheAvgOrderByAggregateInput
   _max?: Prisma.JellyfinCacheMaxOrderByAggregateInput
@@ -403,6 +433,8 @@ export type JellyfinCacheScalarWhereWithAggregatesInput = {
   collections?: Prisma.StringWithAggregatesFilter<"JellyfinCache"> | string
   addedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"JellyfinCache"> | Date | string | null
   thumb?: Prisma.StringNullableWithAggregatesFilter<"JellyfinCache"> | string | null
+  connectionGeneration?: Prisma.IntNullableWithAggregatesFilter<"JellyfinCache"> | number | null
+  identityGeneration?: Prisma.IntNullableWithAggregatesFilter<"JellyfinCache"> | number | null
 }
 
 export type JellyfinCacheCreateInput = {
@@ -421,6 +453,8 @@ export type JellyfinCacheCreateInput = {
   collections: string
   addedAt?: Date | string | null
   thumb?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutJellyfinCachesInput
 }
 
@@ -441,6 +475,8 @@ export type JellyfinCacheUncheckedCreateInput = {
   collections: string
   addedAt?: Date | string | null
   thumb?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type JellyfinCacheUpdateInput = {
@@ -459,6 +495,8 @@ export type JellyfinCacheUpdateInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutJellyfinCachesNestedInput
 }
 
@@ -479,6 +517,8 @@ export type JellyfinCacheUncheckedUpdateInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type JellyfinCacheCreateManyInput = {
@@ -498,6 +538,8 @@ export type JellyfinCacheCreateManyInput = {
   collections: string
   addedAt?: Date | string | null
   thumb?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type JellyfinCacheUpdateManyMutationInput = {
@@ -516,6 +558,8 @@ export type JellyfinCacheUpdateManyMutationInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type JellyfinCacheUncheckedUpdateManyInput = {
@@ -535,6 +579,8 @@ export type JellyfinCacheUncheckedUpdateManyInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type JellyfinCacheListRelationFilter = {
@@ -571,12 +617,16 @@ export type JellyfinCacheCountOrderByAggregateInput = {
   collections?: Prisma.SortOrder
   addedAt?: Prisma.SortOrder
   thumb?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type JellyfinCacheAvgOrderByAggregateInput = {
   tmdbId?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   userRating?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type JellyfinCacheMaxOrderByAggregateInput = {
@@ -596,6 +646,8 @@ export type JellyfinCacheMaxOrderByAggregateInput = {
   collections?: Prisma.SortOrder
   addedAt?: Prisma.SortOrder
   thumb?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type JellyfinCacheMinOrderByAggregateInput = {
@@ -615,12 +667,16 @@ export type JellyfinCacheMinOrderByAggregateInput = {
   collections?: Prisma.SortOrder
   addedAt?: Prisma.SortOrder
   thumb?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type JellyfinCacheSumOrderByAggregateInput = {
   tmdbId?: Prisma.SortOrder
   watchCount?: Prisma.SortOrder
   userRating?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type JellyfinCacheCreateNestedManyWithoutInstanceInput = {
@@ -681,6 +737,8 @@ export type JellyfinCacheCreateWithoutInstanceInput = {
   collections: string
   addedAt?: Date | string | null
   thumb?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type JellyfinCacheUncheckedCreateWithoutInstanceInput = {
@@ -699,6 +757,8 @@ export type JellyfinCacheUncheckedCreateWithoutInstanceInput = {
   collections: string
   addedAt?: Date | string | null
   thumb?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type JellyfinCacheCreateOrConnectWithoutInstanceInput = {
@@ -746,6 +806,8 @@ export type JellyfinCacheScalarWhereInput = {
   collections?: Prisma.StringFilter<"JellyfinCache"> | string
   addedAt?: Prisma.DateTimeNullableFilter<"JellyfinCache"> | Date | string | null
   thumb?: Prisma.StringNullableFilter<"JellyfinCache"> | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"JellyfinCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"JellyfinCache"> | number | null
 }
 
 export type JellyfinCacheCreateManyInstanceInput = {
@@ -764,6 +826,8 @@ export type JellyfinCacheCreateManyInstanceInput = {
   collections: string
   addedAt?: Date | string | null
   thumb?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type JellyfinCacheUpdateWithoutInstanceInput = {
@@ -782,6 +846,8 @@ export type JellyfinCacheUpdateWithoutInstanceInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type JellyfinCacheUncheckedUpdateWithoutInstanceInput = {
@@ -800,6 +866,8 @@ export type JellyfinCacheUncheckedUpdateWithoutInstanceInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type JellyfinCacheUncheckedUpdateManyWithoutInstanceInput = {
@@ -818,6 +886,8 @@ export type JellyfinCacheUncheckedUpdateManyWithoutInstanceInput = {
   collections?: Prisma.StringFieldUpdateOperationsInput | string
   addedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   thumb?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 
@@ -839,6 +909,8 @@ export type JellyfinCacheSelect<ExtArgs extends runtime.Types.Extensions.Interna
   collections?: boolean
   addedAt?: boolean
   thumb?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["jellyfinCache"]>
 
@@ -859,6 +931,8 @@ export type JellyfinCacheSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   collections?: boolean
   addedAt?: boolean
   thumb?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["jellyfinCache"]>
 
@@ -879,6 +953,8 @@ export type JellyfinCacheSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   collections?: boolean
   addedAt?: boolean
   thumb?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["jellyfinCache"]>
 
@@ -899,9 +975,11 @@ export type JellyfinCacheSelectScalar = {
   collections?: boolean
   addedAt?: boolean
   thumb?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
 }
 
-export type JellyfinCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "tmdbId" | "mediaType" | "libraryId" | "libraryName" | "title" | "jellyfinId" | "lastWatchedAt" | "watchCount" | "watchedByUsers" | "onDeck" | "userRating" | "collections" | "addedAt" | "thumb", ExtArgs["result"]["jellyfinCache"]>
+export type JellyfinCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "tmdbId" | "mediaType" | "libraryId" | "libraryName" | "title" | "jellyfinId" | "lastWatchedAt" | "watchCount" | "watchedByUsers" | "onDeck" | "userRating" | "collections" | "addedAt" | "thumb" | "connectionGeneration" | "identityGeneration", ExtArgs["result"]["jellyfinCache"]>
 export type JellyfinCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -934,6 +1012,8 @@ export type $JellyfinCachePayload<ExtArgs extends runtime.Types.Extensions.Inter
     collections: string
     addedAt: Date | null
     thumb: string | null
+    connectionGeneration: number | null
+    identityGeneration: number | null
   }, ExtArgs["result"]["jellyfinCache"]>
   composites: {}
 }
@@ -1374,6 +1454,8 @@ export interface JellyfinCacheFieldRefs {
   readonly collections: Prisma.FieldRef<"JellyfinCache", 'String'>
   readonly addedAt: Prisma.FieldRef<"JellyfinCache", 'DateTime'>
   readonly thumb: Prisma.FieldRef<"JellyfinCache", 'String'>
+  readonly connectionGeneration: Prisma.FieldRef<"JellyfinCache", 'Int'>
+  readonly identityGeneration: Prisma.FieldRef<"JellyfinCache", 'Int'>
 }
     
 

@@ -10,6 +10,7 @@
 		"typecheck": "turbo run typecheck",
 		"test": "turbo run test",
 		"format": "turbo run format",
+		"check:prisma-generated": "node scripts/check-prisma-generated.mjs",
 		"clean": "turbo prune --scope='@arr/*' --docker",
 		"e2e:integration:up": "cd e2e/integration && docker compose up -d --build && bash bootstrap-services.sh",
 		"e2e:integration": "playwright test --config=e2e/integration/playwright.integration.config.ts",

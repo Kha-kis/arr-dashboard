@@ -28,10 +28,14 @@ export type AggregateCacheRefreshStatus = {
 
 export type CacheRefreshStatusAvgAggregateOutputType = {
   itemCount: number | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type CacheRefreshStatusSumAggregateOutputType = {
   itemCount: number | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type CacheRefreshStatusMinAggregateOutputType = {
@@ -47,6 +51,8 @@ export type CacheRefreshStatusMinAggregateOutputType = {
   lastAttemptAt: Date | null
   lastAttemptResult: string | null
   lastAttemptErrorMessage: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type CacheRefreshStatusMaxAggregateOutputType = {
@@ -62,6 +68,8 @@ export type CacheRefreshStatusMaxAggregateOutputType = {
   lastAttemptAt: Date | null
   lastAttemptResult: string | null
   lastAttemptErrorMessage: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type CacheRefreshStatusCountAggregateOutputType = {
@@ -77,16 +85,22 @@ export type CacheRefreshStatusCountAggregateOutputType = {
   lastAttemptAt: number
   lastAttemptResult: number
   lastAttemptErrorMessage: number
+  connectionGeneration: number
+  identityGeneration: number
   _all: number
 }
 
 
 export type CacheRefreshStatusAvgAggregateInputType = {
   itemCount?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type CacheRefreshStatusSumAggregateInputType = {
   itemCount?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type CacheRefreshStatusMinAggregateInputType = {
@@ -102,6 +116,8 @@ export type CacheRefreshStatusMinAggregateInputType = {
   lastAttemptAt?: true
   lastAttemptResult?: true
   lastAttemptErrorMessage?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type CacheRefreshStatusMaxAggregateInputType = {
@@ -117,6 +133,8 @@ export type CacheRefreshStatusMaxAggregateInputType = {
   lastAttemptAt?: true
   lastAttemptResult?: true
   lastAttemptErrorMessage?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type CacheRefreshStatusCountAggregateInputType = {
@@ -132,6 +150,8 @@ export type CacheRefreshStatusCountAggregateInputType = {
   lastAttemptAt?: true
   lastAttemptResult?: true
   lastAttemptErrorMessage?: true
+  connectionGeneration?: true
+  identityGeneration?: true
   _all?: true
 }
 
@@ -234,6 +254,8 @@ export type CacheRefreshStatusGroupByOutputType = {
   lastAttemptAt: Date | null
   lastAttemptResult: string | null
   lastAttemptErrorMessage: string | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
   _count: CacheRefreshStatusCountAggregateOutputType | null
   _avg: CacheRefreshStatusAvgAggregateOutputType | null
   _sum: CacheRefreshStatusSumAggregateOutputType | null
@@ -272,6 +294,8 @@ export type CacheRefreshStatusWhereInput = {
   lastAttemptAt?: Prisma.DateTimeNullableFilter<"CacheRefreshStatus"> | Date | string | null
   lastAttemptResult?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
   lastAttemptErrorMessage?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"CacheRefreshStatus"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"CacheRefreshStatus"> | number | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }
 
@@ -288,6 +312,8 @@ export type CacheRefreshStatusOrderByWithRelationInput = {
   lastAttemptAt?: Prisma.SortOrderInput | Prisma.SortOrder
   lastAttemptResult?: Prisma.SortOrderInput | Prisma.SortOrder
   lastAttemptErrorMessage?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
 }
 
@@ -308,6 +334,8 @@ export type CacheRefreshStatusWhereUniqueInput = Prisma.AtLeast<{
   lastAttemptAt?: Prisma.DateTimeNullableFilter<"CacheRefreshStatus"> | Date | string | null
   lastAttemptResult?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
   lastAttemptErrorMessage?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"CacheRefreshStatus"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"CacheRefreshStatus"> | number | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }, "id" | "instanceId_cacheType">
 
@@ -324,6 +352,8 @@ export type CacheRefreshStatusOrderByWithAggregationInput = {
   lastAttemptAt?: Prisma.SortOrderInput | Prisma.SortOrder
   lastAttemptResult?: Prisma.SortOrderInput | Prisma.SortOrder
   lastAttemptErrorMessage?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.CacheRefreshStatusCountOrderByAggregateInput
   _avg?: Prisma.CacheRefreshStatusAvgOrderByAggregateInput
   _max?: Prisma.CacheRefreshStatusMaxOrderByAggregateInput
@@ -347,6 +377,8 @@ export type CacheRefreshStatusScalarWhereWithAggregatesInput = {
   lastAttemptAt?: Prisma.DateTimeNullableWithAggregatesFilter<"CacheRefreshStatus"> | Date | string | null
   lastAttemptResult?: Prisma.StringNullableWithAggregatesFilter<"CacheRefreshStatus"> | string | null
   lastAttemptErrorMessage?: Prisma.StringNullableWithAggregatesFilter<"CacheRefreshStatus"> | string | null
+  connectionGeneration?: Prisma.IntNullableWithAggregatesFilter<"CacheRefreshStatus"> | number | null
+  identityGeneration?: Prisma.IntNullableWithAggregatesFilter<"CacheRefreshStatus"> | number | null
 }
 
 export type CacheRefreshStatusCreateInput = {
@@ -361,6 +393,8 @@ export type CacheRefreshStatusCreateInput = {
   lastAttemptAt?: Date | string | null
   lastAttemptResult?: string | null
   lastAttemptErrorMessage?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutCacheRefreshStatusesInput
 }
 
@@ -377,6 +411,8 @@ export type CacheRefreshStatusUncheckedCreateInput = {
   lastAttemptAt?: Date | string | null
   lastAttemptResult?: string | null
   lastAttemptErrorMessage?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type CacheRefreshStatusUpdateInput = {
@@ -391,6 +427,8 @@ export type CacheRefreshStatusUpdateInput = {
   lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutCacheRefreshStatusesNestedInput
 }
 
@@ -407,6 +445,8 @@ export type CacheRefreshStatusUncheckedUpdateInput = {
   lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type CacheRefreshStatusCreateManyInput = {
@@ -422,6 +462,8 @@ export type CacheRefreshStatusCreateManyInput = {
   lastAttemptAt?: Date | string | null
   lastAttemptResult?: string | null
   lastAttemptErrorMessage?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type CacheRefreshStatusUpdateManyMutationInput = {
@@ -436,6 +478,8 @@ export type CacheRefreshStatusUpdateManyMutationInput = {
   lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type CacheRefreshStatusUncheckedUpdateManyInput = {
@@ -451,6 +495,8 @@ export type CacheRefreshStatusUncheckedUpdateManyInput = {
   lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type CacheRefreshStatusListRelationFilter = {
@@ -481,10 +527,14 @@ export type CacheRefreshStatusCountOrderByAggregateInput = {
   lastAttemptAt?: Prisma.SortOrder
   lastAttemptResult?: Prisma.SortOrder
   lastAttemptErrorMessage?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type CacheRefreshStatusAvgOrderByAggregateInput = {
   itemCount?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type CacheRefreshStatusMaxOrderByAggregateInput = {
@@ -500,6 +550,8 @@ export type CacheRefreshStatusMaxOrderByAggregateInput = {
   lastAttemptAt?: Prisma.SortOrder
   lastAttemptResult?: Prisma.SortOrder
   lastAttemptErrorMessage?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type CacheRefreshStatusMinOrderByAggregateInput = {
@@ -515,10 +567,14 @@ export type CacheRefreshStatusMinOrderByAggregateInput = {
   lastAttemptAt?: Prisma.SortOrder
   lastAttemptResult?: Prisma.SortOrder
   lastAttemptErrorMessage?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type CacheRefreshStatusSumOrderByAggregateInput = {
   itemCount?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type CacheRefreshStatusCreateNestedManyWithoutInstanceInput = {
@@ -575,6 +631,8 @@ export type CacheRefreshStatusCreateWithoutInstanceInput = {
   lastAttemptAt?: Date | string | null
   lastAttemptResult?: string | null
   lastAttemptErrorMessage?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type CacheRefreshStatusUncheckedCreateWithoutInstanceInput = {
@@ -589,6 +647,8 @@ export type CacheRefreshStatusUncheckedCreateWithoutInstanceInput = {
   lastAttemptAt?: Date | string | null
   lastAttemptResult?: string | null
   lastAttemptErrorMessage?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type CacheRefreshStatusCreateOrConnectWithoutInstanceInput = {
@@ -632,6 +692,8 @@ export type CacheRefreshStatusScalarWhereInput = {
   lastAttemptAt?: Prisma.DateTimeNullableFilter<"CacheRefreshStatus"> | Date | string | null
   lastAttemptResult?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
   lastAttemptErrorMessage?: Prisma.StringNullableFilter<"CacheRefreshStatus"> | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"CacheRefreshStatus"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"CacheRefreshStatus"> | number | null
 }
 
 export type CacheRefreshStatusCreateManyInstanceInput = {
@@ -646,6 +708,8 @@ export type CacheRefreshStatusCreateManyInstanceInput = {
   lastAttemptAt?: Date | string | null
   lastAttemptResult?: string | null
   lastAttemptErrorMessage?: string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type CacheRefreshStatusUpdateWithoutInstanceInput = {
@@ -660,6 +724,8 @@ export type CacheRefreshStatusUpdateWithoutInstanceInput = {
   lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type CacheRefreshStatusUncheckedUpdateWithoutInstanceInput = {
@@ -674,6 +740,8 @@ export type CacheRefreshStatusUncheckedUpdateWithoutInstanceInput = {
   lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type CacheRefreshStatusUncheckedUpdateManyWithoutInstanceInput = {
@@ -688,6 +756,8 @@ export type CacheRefreshStatusUncheckedUpdateManyWithoutInstanceInput = {
   lastAttemptAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastAttemptResult?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastAttemptErrorMessage?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 
@@ -705,6 +775,8 @@ export type CacheRefreshStatusSelect<ExtArgs extends runtime.Types.Extensions.In
   lastAttemptAt?: boolean
   lastAttemptResult?: boolean
   lastAttemptErrorMessage?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["cacheRefreshStatus"]>
 
@@ -721,6 +793,8 @@ export type CacheRefreshStatusSelectCreateManyAndReturn<ExtArgs extends runtime.
   lastAttemptAt?: boolean
   lastAttemptResult?: boolean
   lastAttemptErrorMessage?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["cacheRefreshStatus"]>
 
@@ -737,6 +811,8 @@ export type CacheRefreshStatusSelectUpdateManyAndReturn<ExtArgs extends runtime.
   lastAttemptAt?: boolean
   lastAttemptResult?: boolean
   lastAttemptErrorMessage?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["cacheRefreshStatus"]>
 
@@ -753,9 +829,11 @@ export type CacheRefreshStatusSelectScalar = {
   lastAttemptAt?: boolean
   lastAttemptResult?: boolean
   lastAttemptErrorMessage?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
 }
 
-export type CacheRefreshStatusOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "cacheType" | "lastRefreshedAt" | "lastResult" | "lastErrorMessage" | "itemCount" | "generationId" | "generationMetadata" | "lastAttemptAt" | "lastAttemptResult" | "lastAttemptErrorMessage", ExtArgs["result"]["cacheRefreshStatus"]>
+export type CacheRefreshStatusOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "cacheType" | "lastRefreshedAt" | "lastResult" | "lastErrorMessage" | "itemCount" | "generationId" | "generationMetadata" | "lastAttemptAt" | "lastAttemptResult" | "lastAttemptErrorMessage" | "connectionGeneration" | "identityGeneration", ExtArgs["result"]["cacheRefreshStatus"]>
 export type CacheRefreshStatusInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -784,6 +862,8 @@ export type $CacheRefreshStatusPayload<ExtArgs extends runtime.Types.Extensions.
     lastAttemptAt: Date | null
     lastAttemptResult: string | null
     lastAttemptErrorMessage: string | null
+    connectionGeneration: number | null
+    identityGeneration: number | null
   }, ExtArgs["result"]["cacheRefreshStatus"]>
   composites: {}
 }
@@ -1220,6 +1300,8 @@ export interface CacheRefreshStatusFieldRefs {
   readonly lastAttemptAt: Prisma.FieldRef<"CacheRefreshStatus", 'DateTime'>
   readonly lastAttemptResult: Prisma.FieldRef<"CacheRefreshStatus", 'String'>
   readonly lastAttemptErrorMessage: Prisma.FieldRef<"CacheRefreshStatus", 'String'>
+  readonly connectionGeneration: Prisma.FieldRef<"CacheRefreshStatus", 'Int'>
+  readonly identityGeneration: Prisma.FieldRef<"CacheRefreshStatus", 'Int'>
 }
     
 

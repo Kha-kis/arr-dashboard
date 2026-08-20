@@ -30,12 +30,16 @@ export type JellyfinEpisodeCacheAvgAggregateOutputType = {
   showTmdbId: number | null
   seasonNumber: number | null
   episodeNumber: number | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type JellyfinEpisodeCacheSumAggregateOutputType = {
   showTmdbId: number | null
   seasonNumber: number | null
   episodeNumber: number | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type JellyfinEpisodeCacheMinAggregateOutputType = {
@@ -49,6 +53,8 @@ export type JellyfinEpisodeCacheMinAggregateOutputType = {
   watched: boolean | null
   watchedByUsers: string | null
   lastWatchedAt: Date | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type JellyfinEpisodeCacheMaxAggregateOutputType = {
@@ -62,6 +68,8 @@ export type JellyfinEpisodeCacheMaxAggregateOutputType = {
   watched: boolean | null
   watchedByUsers: string | null
   lastWatchedAt: Date | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
 }
 
 export type JellyfinEpisodeCacheCountAggregateOutputType = {
@@ -75,6 +83,8 @@ export type JellyfinEpisodeCacheCountAggregateOutputType = {
   watched: number
   watchedByUsers: number
   lastWatchedAt: number
+  connectionGeneration: number
+  identityGeneration: number
   _all: number
 }
 
@@ -83,12 +93,16 @@ export type JellyfinEpisodeCacheAvgAggregateInputType = {
   showTmdbId?: true
   seasonNumber?: true
   episodeNumber?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type JellyfinEpisodeCacheSumAggregateInputType = {
   showTmdbId?: true
   seasonNumber?: true
   episodeNumber?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type JellyfinEpisodeCacheMinAggregateInputType = {
@@ -102,6 +116,8 @@ export type JellyfinEpisodeCacheMinAggregateInputType = {
   watched?: true
   watchedByUsers?: true
   lastWatchedAt?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type JellyfinEpisodeCacheMaxAggregateInputType = {
@@ -115,6 +131,8 @@ export type JellyfinEpisodeCacheMaxAggregateInputType = {
   watched?: true
   watchedByUsers?: true
   lastWatchedAt?: true
+  connectionGeneration?: true
+  identityGeneration?: true
 }
 
 export type JellyfinEpisodeCacheCountAggregateInputType = {
@@ -128,6 +146,8 @@ export type JellyfinEpisodeCacheCountAggregateInputType = {
   watched?: true
   watchedByUsers?: true
   lastWatchedAt?: true
+  connectionGeneration?: true
+  identityGeneration?: true
   _all?: true
 }
 
@@ -228,6 +248,8 @@ export type JellyfinEpisodeCacheGroupByOutputType = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt: Date | null
+  connectionGeneration: number | null
+  identityGeneration: number | null
   _count: JellyfinEpisodeCacheCountAggregateOutputType | null
   _avg: JellyfinEpisodeCacheAvgAggregateOutputType | null
   _sum: JellyfinEpisodeCacheSumAggregateOutputType | null
@@ -264,6 +286,8 @@ export type JellyfinEpisodeCacheWhereInput = {
   watched?: Prisma.BoolFilter<"JellyfinEpisodeCache"> | boolean
   watchedByUsers?: Prisma.StringFilter<"JellyfinEpisodeCache"> | string
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"JellyfinEpisodeCache"> | Date | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"JellyfinEpisodeCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"JellyfinEpisodeCache"> | number | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }
 
@@ -278,6 +302,8 @@ export type JellyfinEpisodeCacheOrderByWithRelationInput = {
   watched?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
 }
 
@@ -296,6 +322,8 @@ export type JellyfinEpisodeCacheWhereUniqueInput = Prisma.AtLeast<{
   watched?: Prisma.BoolFilter<"JellyfinEpisodeCache"> | boolean
   watchedByUsers?: Prisma.StringFilter<"JellyfinEpisodeCache"> | string
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"JellyfinEpisodeCache"> | Date | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"JellyfinEpisodeCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"JellyfinEpisodeCache"> | number | null
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
 }, "id" | "instanceId_showTmdbId_seasonNumber_episodeNumber">
 
@@ -310,6 +338,8 @@ export type JellyfinEpisodeCacheOrderByWithAggregationInput = {
   watched?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrderInput | Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrderInput | Prisma.SortOrder
   _count?: Prisma.JellyfinEpisodeCacheCountOrderByAggregateInput
   _avg?: Prisma.JellyfinEpisodeCacheAvgOrderByAggregateInput
   _max?: Prisma.JellyfinEpisodeCacheMaxOrderByAggregateInput
@@ -331,6 +361,8 @@ export type JellyfinEpisodeCacheScalarWhereWithAggregatesInput = {
   watched?: Prisma.BoolWithAggregatesFilter<"JellyfinEpisodeCache"> | boolean
   watchedByUsers?: Prisma.StringWithAggregatesFilter<"JellyfinEpisodeCache"> | string
   lastWatchedAt?: Prisma.DateTimeNullableWithAggregatesFilter<"JellyfinEpisodeCache"> | Date | string | null
+  connectionGeneration?: Prisma.IntNullableWithAggregatesFilter<"JellyfinEpisodeCache"> | number | null
+  identityGeneration?: Prisma.IntNullableWithAggregatesFilter<"JellyfinEpisodeCache"> | number | null
 }
 
 export type JellyfinEpisodeCacheCreateInput = {
@@ -343,6 +375,8 @@ export type JellyfinEpisodeCacheCreateInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutJellyfinEpisodeCachesInput
 }
 
@@ -357,6 +391,8 @@ export type JellyfinEpisodeCacheUncheckedCreateInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type JellyfinEpisodeCacheUpdateInput = {
@@ -369,6 +405,8 @@ export type JellyfinEpisodeCacheUpdateInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutJellyfinEpisodeCachesNestedInput
 }
 
@@ -383,6 +421,8 @@ export type JellyfinEpisodeCacheUncheckedUpdateInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type JellyfinEpisodeCacheCreateManyInput = {
@@ -396,6 +436,8 @@ export type JellyfinEpisodeCacheCreateManyInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type JellyfinEpisodeCacheUpdateManyMutationInput = {
@@ -408,6 +450,8 @@ export type JellyfinEpisodeCacheUpdateManyMutationInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type JellyfinEpisodeCacheUncheckedUpdateManyInput = {
@@ -421,6 +465,8 @@ export type JellyfinEpisodeCacheUncheckedUpdateManyInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type JellyfinEpisodeCacheListRelationFilter = {
@@ -451,12 +497,16 @@ export type JellyfinEpisodeCacheCountOrderByAggregateInput = {
   watched?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type JellyfinEpisodeCacheAvgOrderByAggregateInput = {
   showTmdbId?: Prisma.SortOrder
   seasonNumber?: Prisma.SortOrder
   episodeNumber?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type JellyfinEpisodeCacheMaxOrderByAggregateInput = {
@@ -470,6 +520,8 @@ export type JellyfinEpisodeCacheMaxOrderByAggregateInput = {
   watched?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type JellyfinEpisodeCacheMinOrderByAggregateInput = {
@@ -483,12 +535,16 @@ export type JellyfinEpisodeCacheMinOrderByAggregateInput = {
   watched?: Prisma.SortOrder
   watchedByUsers?: Prisma.SortOrder
   lastWatchedAt?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type JellyfinEpisodeCacheSumOrderByAggregateInput = {
   showTmdbId?: Prisma.SortOrder
   seasonNumber?: Prisma.SortOrder
   episodeNumber?: Prisma.SortOrder
+  connectionGeneration?: Prisma.SortOrder
+  identityGeneration?: Prisma.SortOrder
 }
 
 export type JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput = {
@@ -543,6 +599,8 @@ export type JellyfinEpisodeCacheCreateWithoutInstanceInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type JellyfinEpisodeCacheUncheckedCreateWithoutInstanceInput = {
@@ -555,6 +613,8 @@ export type JellyfinEpisodeCacheUncheckedCreateWithoutInstanceInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type JellyfinEpisodeCacheCreateOrConnectWithoutInstanceInput = {
@@ -596,6 +656,8 @@ export type JellyfinEpisodeCacheScalarWhereInput = {
   watched?: Prisma.BoolFilter<"JellyfinEpisodeCache"> | boolean
   watchedByUsers?: Prisma.StringFilter<"JellyfinEpisodeCache"> | string
   lastWatchedAt?: Prisma.DateTimeNullableFilter<"JellyfinEpisodeCache"> | Date | string | null
+  connectionGeneration?: Prisma.IntNullableFilter<"JellyfinEpisodeCache"> | number | null
+  identityGeneration?: Prisma.IntNullableFilter<"JellyfinEpisodeCache"> | number | null
 }
 
 export type JellyfinEpisodeCacheCreateManyInstanceInput = {
@@ -608,6 +670,8 @@ export type JellyfinEpisodeCacheCreateManyInstanceInput = {
   watched: boolean
   watchedByUsers: string
   lastWatchedAt?: Date | string | null
+  connectionGeneration?: number | null
+  identityGeneration?: number | null
 }
 
 export type JellyfinEpisodeCacheUpdateWithoutInstanceInput = {
@@ -620,6 +684,8 @@ export type JellyfinEpisodeCacheUpdateWithoutInstanceInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type JellyfinEpisodeCacheUncheckedUpdateWithoutInstanceInput = {
@@ -632,6 +698,8 @@ export type JellyfinEpisodeCacheUncheckedUpdateWithoutInstanceInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 export type JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceInput = {
@@ -644,6 +712,8 @@ export type JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceInput = {
   watched?: Prisma.BoolFieldUpdateOperationsInput | boolean
   watchedByUsers?: Prisma.StringFieldUpdateOperationsInput | string
   lastWatchedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  connectionGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  identityGeneration?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
 }
 
 
@@ -659,6 +729,8 @@ export type JellyfinEpisodeCacheSelect<ExtArgs extends runtime.Types.Extensions.
   watched?: boolean
   watchedByUsers?: boolean
   lastWatchedAt?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["jellyfinEpisodeCache"]>
 
@@ -673,6 +745,8 @@ export type JellyfinEpisodeCacheSelectCreateManyAndReturn<ExtArgs extends runtim
   watched?: boolean
   watchedByUsers?: boolean
   lastWatchedAt?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["jellyfinEpisodeCache"]>
 
@@ -687,6 +761,8 @@ export type JellyfinEpisodeCacheSelectUpdateManyAndReturn<ExtArgs extends runtim
   watched?: boolean
   watchedByUsers?: boolean
   lastWatchedAt?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["jellyfinEpisodeCache"]>
 
@@ -701,9 +777,11 @@ export type JellyfinEpisodeCacheSelectScalar = {
   watched?: boolean
   watchedByUsers?: boolean
   lastWatchedAt?: boolean
+  connectionGeneration?: boolean
+  identityGeneration?: boolean
 }
 
-export type JellyfinEpisodeCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "showTmdbId" | "seasonNumber" | "episodeNumber" | "jellyfinId" | "title" | "watched" | "watchedByUsers" | "lastWatchedAt", ExtArgs["result"]["jellyfinEpisodeCache"]>
+export type JellyfinEpisodeCacheOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "showTmdbId" | "seasonNumber" | "episodeNumber" | "jellyfinId" | "title" | "watched" | "watchedByUsers" | "lastWatchedAt" | "connectionGeneration" | "identityGeneration", ExtArgs["result"]["jellyfinEpisodeCache"]>
 export type JellyfinEpisodeCacheInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -730,6 +808,8 @@ export type $JellyfinEpisodeCachePayload<ExtArgs extends runtime.Types.Extension
     watched: boolean
     watchedByUsers: string
     lastWatchedAt: Date | null
+    connectionGeneration: number | null
+    identityGeneration: number | null
   }, ExtArgs["result"]["jellyfinEpisodeCache"]>
   composites: {}
 }
@@ -1164,6 +1244,8 @@ export interface JellyfinEpisodeCacheFieldRefs {
   readonly watched: Prisma.FieldRef<"JellyfinEpisodeCache", 'Boolean'>
   readonly watchedByUsers: Prisma.FieldRef<"JellyfinEpisodeCache", 'String'>
   readonly lastWatchedAt: Prisma.FieldRef<"JellyfinEpisodeCache", 'DateTime'>
+  readonly connectionGeneration: Prisma.FieldRef<"JellyfinEpisodeCache", 'Int'>
+  readonly identityGeneration: Prisma.FieldRef<"JellyfinEpisodeCache", 'Int'>
 }
     
 

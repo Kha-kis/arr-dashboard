@@ -48,7 +48,7 @@ afterEach(() => {
 
 describe("ServiceInstance dormant identity schema", () => {
 	it("keeps legacy provider cache rows readable while leaving them without generation authority", () => {
-		const schema = readFileSync(schemaPath, "utf8");
+		const schema = normalizeSchemaText(readFileSync(schemaPath, "utf8"));
 		for (const model of [
 			"PlexCache",
 			"PlexEpisodeCache",
@@ -129,6 +129,72 @@ describe("ServiceInstance dormant identity schema", () => {
 		}
 	}, 30_000);
 
+	it("removeIdentityState tolerates CRLF schema text", () => {
+		const schema = readFileSync(schemaPath, "utf8");
+		const crlfSchema = schema.replace(/\r?\n/g, "\r\n");
+		expect(crlfSchema).toContain("\r\n");
+		expect(crlfSchema.replace(/\r\n/g, ""), "no lone LF after CRLF normalization").not.toContain(
+			"\n",
+		);
+
+		expect(crlfSchema, "CRLF schema must contain provider identity enums").toContain(
+			"enum ProviderIdentityKind",
+		);
+		expect(crlfSchema, "CRLF schema must contain identity fields").toContain("expectedIdentity");
+		expect(crlfSchema, "CRLF schema must contain identity index").toContain(
+			"@@index([service, enabled, identityStatus])",
+		);
+
+		const removed = removeIdentityState(crlfSchema);
+		expect(removed, "identity enums removed").not.toContain("ProviderIdentityKind");
+		expect(removed, "identity fields removed").not.toContain("expectedIdentity");
+		expect(removed, "identity index removed").not.toContain(
+			"@@index([service, enabled, identityStatus])",
+		);
+	});
+
+	it("removeCacheGenerationState tolerates CRLF schema text", () => {
+		const schema = readFileSync(schemaPath, "utf8");
+		const crlfSchema = schema.replace(/\r?\n/g, "\r\n");
+		expect(crlfSchema).toContain("\r\n");
+		expect(crlfSchema.replace(/\r\n/g, ""), "no lone LF after CRLF normalization").not.toContain(
+			"\n",
+		);
+
+		for (const model of [
+			"PlexCache",
+			"PlexEpisodeCache",
+			"JellyfinCache",
+			"JellyfinEpisodeCache",
+			"TautulliCache",
+			"CacheRefreshStatus",
+		]) {
+			expect(crlfSchema, `${model} generation fields`).toContain("connectionGeneration");
+			expect(crlfSchema, `${model} generation index`).toContain(
+				"@@index([instanceId, connectionGeneration, identityGeneration])",
+			);
+		}
+
+		const removed = removeCacheGenerationState(crlfSchema);
+		for (const model of [
+			"PlexCache",
+			"PlexEpisodeCache",
+			"JellyfinCache",
+			"JellyfinEpisodeCache",
+			"TautulliCache",
+			"CacheRefreshStatus",
+		]) {
+			const block = removed.match(new RegExp(`model ${model} \\{[\\s\\S]*?^\\}`, "m"))?.[0];
+			expect(block, `${model} model after removal`).toBeDefined();
+			expect(block, `${model} cache generation fields removed`).not.toContain(
+				cacheGenerationFields,
+			);
+			expect(block, `${model} cache generation index removed`).not.toContain(
+				"@@index([instanceId, connectionGeneration, identityGeneration])",
+			);
+		}
+	});
+
 	it("exposes a safe provider identity summary without raw identity or credentials", () => {
 		const formatted = formatServiceInstance({
 			id: "instance-1",
@@ -170,29 +236,38 @@ describe("ServiceInstance dormant identity schema", () => {
 	});
 });
 
+function normalizeSchemaText(schema: string): string {
+	return schema.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 function removeIdentityState(schema: string): string {
-	if (!schema.includes(identityEnums)) {
+	const normalized = normalizeSchemaText(schema);
+	if (!normalized.includes(identityEnums)) {
 		throw new Error("Provider identity enums are missing from the Prisma schema");
 	}
-	if (!schema.includes(identityFields)) {
+	if (!normalized.includes(identityFields)) {
 		throw new Error("ServiceInstance identity fields are missing from the Prisma schema");
 	}
-	if (!schema.includes(identityIndexes)) {
+	if (!normalized.includes(identityIndexes)) {
 		throw new Error("ServiceInstance identity indexes are missing from the Prisma schema");
 	}
 
-	return schema.replace(identityEnums, "").replace(identityFields, "").replace(identityIndexes, "");
+	return normalized
+		.replace(identityEnums, "")
+		.replace(identityFields, "")
+		.replace(identityIndexes, "");
 }
 
 function removeCacheGenerationState(schema: string): string {
-	const fieldCount = schema.split(cacheGenerationFields).length - 1;
-	const indexCount = schema.split(cacheGenerationIndex).length - 1;
+	const normalized = normalizeSchemaText(schema);
+	const fieldCount = normalized.split(cacheGenerationFields).length - 1;
+	const indexCount = normalized.split(cacheGenerationIndex).length - 1;
 	if (fieldCount !== 6 || indexCount !== 6) {
 		throw new Error(
 			"Provider cache generation fields or indexes are missing from the Prisma schema",
 		);
 	}
-	return schema.replaceAll(cacheGenerationFields, "").replaceAll(cacheGenerationIndex, "");
+	return normalized.replaceAll(cacheGenerationFields, "").replaceAll(cacheGenerationIndex, "");
 }
 
 function syncSchema(schema: string, databasePath: string): void {
