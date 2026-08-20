@@ -55,6 +55,21 @@ TRaSH deployment, and upstream write paths are safety-critical.
   or deletion-adjacent code changes. Do not spend subagents on trivial
   documentation-only changes.
 
+## Code Review Rules
+
+- In deletion, cleanup, restore, deployment, or upstream-write paths, report a
+  high-severity finding when preview/dry-run and execution derive different
+  targets or actions, or when execution trusts a cached or client-supplied
+  selection instead of resolving the target again.
+- In API routes and services, report a high-severity finding when a Prisma
+  query for user-owned data omits `userId: request.currentUser!.id`, or when a
+  mutation authorizes a client-supplied owner or instance identifier rather
+  than the execution-time resource.
+- In service or library mutation paths, report a high-severity finding when
+  ambiguous identity, shared-library correlation, or same-title collisions can
+  select a target instead of failing closed. Require a regression test for the
+  ambiguous case.
+
 ## Layered development loop
 
 Use the cheapest loop that can answer the current question. Do not run the
