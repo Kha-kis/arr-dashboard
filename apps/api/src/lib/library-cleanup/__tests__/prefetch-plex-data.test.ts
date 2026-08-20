@@ -102,11 +102,35 @@ function completeStatus(instanceId: string, completedAt = new Date(), itemCount 
 			sections: [{ key: "1", title: "Movies", type: "movie" }],
 		}),
 		lastErrorMessage: null,
+		lastAttemptAt: completedAt,
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
 		connectionGeneration: 3,
 		identityGeneration: 7,
 	};
+}
+
+function completeEpisodeStatus(instanceId: string, completedAt: Date, itemCount: number) {
+	return {
+		...completeStatus(instanceId, completedAt, itemCount),
+		cacheType: "plex_episode",
+		generationId: `episode-generation-${instanceId}`,
+		generationMetadata: JSON.stringify({
+			version: 1,
+			parentPlexGenerationId: `generation-${instanceId}`,
+			parentPublicationLevel: "authoritative",
+			connectionGeneration: 3,
+			identityGeneration: 7,
+		}),
+	};
+}
+
+function episodeStatuses(instanceId: string, completedAt: Date, itemCount: number) {
+	const parent = completeStatus(instanceId, completedAt, 1);
+	const episode = completeEpisodeStatus(instanceId, completedAt, itemCount);
+	return vi.fn(async ({ where }: { where: { cacheType: string } }) =>
+		where.cacheType === "plex" ? [parent] : [episode],
+	);
 }
 
 function plexCleanupRule(ruleType = "plex_watch_count") {
@@ -175,7 +199,6 @@ const unavailablePlexEvidenceCases = [
 	["stale timestamp", () => ({ lastRefreshedAt: new Date(Date.now() - 25 * 60 * 60 * 1000) })],
 	["failed result", () => ({ lastResult: "error" })],
 	["failed latest attempt", () => ({ lastAttemptResult: "error" })],
-	["completed-generation error", () => ({ lastErrorMessage: "refresh failed" })],
 	["latest-attempt error", () => ({ lastAttemptErrorMessage: "refresh failed" })],
 	["missing connection generation", () => ({ connectionGeneration: null })],
 	["missing identity generation", () => ({ identityGeneration: null })],
@@ -297,6 +320,40 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			).toBeNull();
 		},
 	);
+
+	it("preserves prior rows while withholding cleanup authority after a failed latest attempt", async () => {
+		const instance = verifiedPlexInstance();
+		const publishedAt = new Date(Date.now() - 60_000);
+		const status = {
+			...completeStatus(instance.id, publishedAt, 1),
+			lastErrorMessage: "refresh failed after publication",
+			lastAttemptAt: new Date(),
+			lastAttemptResult: "error",
+			lastAttemptErrorMessage: "refresh failed after publication",
+		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
+			plexCache: {
+				count: vi.fn().mockResolvedValue(1),
+				findMany: vi
+					.fn()
+					.mockResolvedValue([
+						makePlexRow({ id: "row-1", tmdbId: 42, mediaType: "series", sectionId: "1" }),
+					]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[plexCleanupRule()],
+		);
+
+		expect(result.failedSources).toContain("plex");
+		expect(result.ctx.plexMap).toBeUndefined();
+		expect(prisma.plexCache.findMany).toHaveBeenCalled();
+	});
 
 	it("keeps a complete Plex generation available for cleanup evaluation", async () => {
 		const completedAt = new Date();
@@ -466,7 +523,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			],
 		);
 
-		expect(statusReads).toHaveBeenCalledTimes(4);
+		expect(statusReads).toHaveBeenCalledTimes(3);
 		expect(result.failedSources).toContain("plex");
 		expect(result.ctx.plexMap).toBeUndefined();
 		expect(result.ctx.plexSectionTitles).toBeUndefined();
@@ -524,7 +581,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			cacheRefreshStatus: {
 				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 501)]),
 			},
-			plexCache: { findMany: findManySpy },
+			plexCache: { findMany: findManySpy, count: vi.fn().mockResolvedValue(501) },
 		} as unknown as CleanupExecutorDeps["prisma"];
 
 		const map = await prefetchPlexData({ prisma, log } as never, "user-1");
@@ -568,7 +625,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			cacheRefreshStatus: {
 				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 1)]),
 			},
-			plexCache: { findMany: findManySpy },
+			plexCache: { findMany: findManySpy, count: vi.fn().mockResolvedValue(1) },
 		} as unknown as CleanupExecutorDeps["prisma"];
 
 		const map = await prefetchPlexData({ prisma, log } as never, "user-1");
@@ -606,6 +663,7 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 			encryptionIv: "old-iv",
 		} as never);
 		const prisma = {
+			plexCache: { count: vi.fn().mockResolvedValue(1) },
 			plexEpisodeCache: {
 				groupBy: vi.fn().mockResolvedValue([{ instanceId: "plex-inst-1", _count: { id: 1 } }]),
 				findMany: vi.fn().mockResolvedValue([
@@ -628,11 +686,7 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 				]),
 			},
 			cacheRefreshStatus: {
-				findMany: vi
-					.fn()
-					.mockResolvedValue([
-						completeStatus("plex-inst-1", new Date("2026-07-30T11:45:00.000Z"), 1),
-					]),
+				findMany: episodeStatuses("plex-inst-1", new Date("2026-07-30T11:45:00.000Z"), 1),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -669,6 +723,7 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 			updatedAt: new Date("2026-07-30T10:00:00.000Z"),
 		};
 		const prisma = {
+			plexCache: { count: vi.fn().mockResolvedValue(1) },
 			plexEpisodeCache: {
 				groupBy: vi.fn().mockResolvedValue([{ instanceId: "plex-inst-1", _count: { id: 1 } }]),
 				findMany: vi.fn().mockResolvedValue([
@@ -689,7 +744,7 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 				]),
 			},
 			cacheRefreshStatus: {
-				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", completedAt, 1)]),
+				findMany: episodeStatuses("plex-inst-1", completedAt, 1),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 
@@ -725,6 +780,7 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 			updatedAt: new Date("2026-07-30T10:00:00.000Z"),
 		};
 		const prisma = {
+			plexCache: { count: vi.fn().mockResolvedValue(1) },
 			plexEpisodeCache: {
 				groupBy: vi.fn().mockResolvedValue([{ instanceId: "plex-inst-1", _count: { id: 1 } }]),
 				findMany: vi.fn().mockResolvedValue([
@@ -745,11 +801,7 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 				]),
 			},
 			cacheRefreshStatus: {
-				findMany: vi
-					.fn()
-					.mockResolvedValue([
-						completeStatus("plex-inst-1", new Date("2026-07-30T11:45:00.000Z"), 1),
-					]),
+				findMany: episodeStatuses("plex-inst-1", new Date("2026-07-30T11:45:00.000Z"), 1),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 

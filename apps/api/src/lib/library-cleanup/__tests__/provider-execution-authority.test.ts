@@ -24,7 +24,7 @@ function fingerprint(value: unknown): string {
 		.digest("hex");
 }
 
-function fixture() {
+function fixture(statusOverrides: Record<string, unknown> = {}) {
 	const now = new Date();
 	const instance = {
 		id: "plex-1",
@@ -54,13 +54,17 @@ function fixture() {
 		lastRefreshedAt: now,
 		lastResult: "success",
 		lastErrorMessage: null,
+		lastAttemptAt: now,
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null as string | null,
 		itemCount: 1,
 		connectionGeneration: 3,
 		identityGeneration: 7,
 		generationId: "generation-a",
-		generationMetadata: "{}",
+		generationMetadata: JSON.stringify({
+			sections: [{ key: "1", title: "Movies", type: "movie" }],
+		}),
+		...statusOverrides,
 	};
 	let rows = [
 		{
@@ -310,13 +314,25 @@ function cacheTypeFixture(cacheType: keyof typeof cacheCases) {
 		lastRefreshedAt: now,
 		lastResult: "success",
 		lastErrorMessage: null,
+		lastAttemptAt: now,
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
 		itemCount: 1,
 		connectionGeneration: 3,
 		identityGeneration: 7,
 		generationId: "generation-a",
-		generationMetadata: "{}",
+		generationMetadata:
+			cacheType === "plex"
+				? JSON.stringify({ sections: [{ key: "1", title: "Movies", type: "movie" }] })
+				: cacheType === "plex_episode"
+					? JSON.stringify({
+							version: 1,
+							parentPlexGenerationId: "parent-generation-a",
+							parentPublicationLevel: "authoritative",
+							connectionGeneration: 3,
+							identityGeneration: 7,
+						})
+					: "{}",
 	};
 	const statusPayload = {
 		instanceId: status.instanceId,
@@ -373,8 +389,23 @@ function cacheTypeFixture(cacheType: keyof typeof cacheCases) {
 	const tx = {
 		$queryRawUnsafe: vi.fn(),
 		serviceInstance: { findMany: vi.fn(async () => [provider]) },
-		cacheRefreshStatus: { findMany: vi.fn(async () => [status]) },
-		plexCache: { findMany: findRows },
+		cacheRefreshStatus: {
+			findMany: vi.fn(async ({ where }: { where: { cacheType: string } }) =>
+				cacheType === "plex_episode" && where.cacheType === "plex"
+					? [
+							{
+								...status,
+								cacheType: "plex",
+								generationId: "parent-generation-a",
+								generationMetadata: JSON.stringify({
+									sections: [{ key: "1", title: "Movies", type: "movie" }],
+								}),
+							},
+						]
+					: [status],
+			),
+		},
+		plexCache: { findMany: findRows, count: vi.fn().mockResolvedValue(1) },
 		plexEpisodeCache: { findMany: findRows },
 		jellyfinCache: { findMany: findRows },
 		jellyfinEpisodeCache: { findMany: findRows },
@@ -503,6 +534,19 @@ describe("provider execution authority", () => {
 		await expect(
 			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
 		).rejects.toThrow("Provider execution authority changed");
+	});
+
+	it("does not authorize retry or direct execution after a failed latest Plex attempt", async () => {
+		const subject = fixture({
+			lastAttemptResult: "error",
+			lastAttemptErrorMessage: "Plex inventory changed",
+			lastErrorMessage: "Plex inventory changed",
+		});
+
+		await expect(
+			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
+		).rejects.toThrow("Provider execution authority changed");
+		expect(subject.identityReader).not.toHaveBeenCalled();
 	});
 
 	it("rejects identity dependency failure without entering the database fence", async () => {

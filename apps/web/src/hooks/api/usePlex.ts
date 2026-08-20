@@ -95,11 +95,12 @@ export const useWatchEnrichment = (items: LibraryItem[]) => {
 // Sections (F2)
 // ============================================================================
 
-export const usePlexSections = () => {
+export const usePlexSections = (enabled = true) => {
 	return useQuery<PlexSectionsResponse>({
 		queryKey: plexKeys.sections(),
 		queryFn: fetchPlexSections,
 		staleTime: 10 * 60_000,
+		enabled,
 	});
 };
 
@@ -157,6 +158,7 @@ export const usePlexTags = (instanceId: string | null | undefined) => {
 			return {
 				collections: collections.collections,
 				labels: labels.labels,
+				evidence: collections.evidence ?? labels.evidence,
 			};
 		},
 		staleTime: 5 * 60_000,

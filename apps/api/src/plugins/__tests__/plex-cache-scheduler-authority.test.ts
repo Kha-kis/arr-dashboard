@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
 	refreshLibrary: vi.fn(),
 	refreshEpisodes: vi.fn(),
 	recordFailure: vi.fn(),
+	loadGenerationObservationsForOwnedInstances: vi.fn(),
+	getPublishedEpisodeGenerationObservation: vi.fn(),
 }));
 
 vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
@@ -22,6 +24,10 @@ vi.mock("../../lib/services/provider-cache-status.js", () => ({
 }));
 vi.mock("../../lib/services/provider-identity-guard.js", () => ({
 	createProviderPublicationAuthority: mocks.createAuthority,
+}));
+vi.mock("../../lib/plex/plex-evidence-repository.js", () => ({
+	loadGenerationObservationsForOwnedInstances: mocks.loadGenerationObservationsForOwnedInstances,
+	getPublishedEpisodeGenerationObservation: mocks.getPublishedEpisodeGenerationObservation,
 }));
 
 import plexCacheSchedulerPlugin from "../plex-cache-scheduler.js";
@@ -61,6 +67,24 @@ describe("Plex scheduler publication authority", () => {
 			capacityDegraded: false,
 		});
 		mocks.recordFailure.mockReset();
+		mocks.loadGenerationObservationsForOwnedInstances.mockReset().mockResolvedValue([
+			{
+				available: true,
+				evidence: {
+					publicationLevel: "authoritative",
+					completeness: "complete",
+					reasonCodes: [],
+				},
+			},
+		]);
+		mocks.getPublishedEpisodeGenerationObservation.mockReset().mockResolvedValue({
+			available: true,
+			evidence: {
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				reasonCodes: [],
+			},
+		});
 
 		app = Fastify({ logger: false });
 		await app.register(
@@ -161,32 +185,31 @@ describe("Plex scheduler publication authority", () => {
 		expect(mocks.recordFailure).not.toHaveBeenCalled();
 	});
 
-	it("records sanitized library and episode failures when credentials cannot decrypt", async () => {
+	it("excludes disabled instances from both stale-status scans", async () => {
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+		expect(app.prisma.cacheRefreshStatus.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { cacheType: "plex", instance: { enabled: true } },
+			}),
+		);
+		expect(app.prisma.cacheRefreshStatus.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { cacheType: "plex_episode", instance: { enabled: true } },
+			}),
+		);
+	});
+
+	it("does not claim an upstream attempt when credentials cannot decrypt", async () => {
 		mocks.createSnapshot.mockImplementation(() => {
 			throw new Error("secret decrypt detail");
 		});
 
 		await vi.advanceTimersByTimeAsync(5 * 60_000);
 
-		expect(mocks.createAuthority).toHaveBeenCalledTimes(2);
+		expect(mocks.createAuthority).not.toHaveBeenCalled();
 		expect(mocks.refreshLibrary).not.toHaveBeenCalled();
 		expect(mocks.refreshEpisodes).not.toHaveBeenCalled();
-		expect(mocks.recordFailure).toHaveBeenCalledTimes(2);
-		expect(mocks.recordFailure).toHaveBeenNthCalledWith(
-			1,
-			app.prisma,
-			"plex",
-			"Provider credentials could not be decrypted.",
-			{ authority: instance },
-			app.log,
-		);
-		expect(mocks.recordFailure).toHaveBeenNthCalledWith(
-			2,
-			app.prisma,
-			"plex_episode",
-			"Provider credentials could not be decrypted.",
-			{ authority: instance },
-			app.log,
-		);
+		expect(mocks.recordFailure).not.toHaveBeenCalled();
 	});
 });

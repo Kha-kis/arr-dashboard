@@ -7,6 +7,11 @@
 import type { PlexEpisodeStatus, PlexEpisodeStatusResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import {
+	isCurrentAuthoritativePlexEvidence,
+	loadInstanceEpisodeEvidence,
+	summarizePlexEvidence,
+} from "../../lib/plex/plex-evidence-repository.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const episodeQuery = z.object({
@@ -32,23 +37,19 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 		const { instanceId, showTmdbId } = validateRequest(episodeQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		// Verify instance ownership
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: instanceId, userId, service: "PLEX", enabled: true },
-			select: { id: true },
-		});
-
-		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found or access denied" });
+		const evidence = await loadInstanceEpisodeEvidence(app.prisma, { userId, instanceId });
+		const summary = summarizePlexEvidence([evidence]);
+		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
+			return reply
+				.status(503)
+				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
 		}
-
-		const episodes = await app.prisma.plexEpisodeCache.findMany({
-			where: {
-				instanceId,
-				showTmdbId,
-			},
-			orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
-		});
+		const episodes = evidence.rows
+			.filter((episode) => episode.showTmdbId === showTmdbId)
+			.sort(
+				(left, right) =>
+					left.seasonNumber - right.seasonNumber || left.episodeNumber - right.episodeNumber,
+			);
 
 		const items: PlexEpisodeStatus[] = episodes.map((e) => {
 			let watchedByUsers: string[] = [];
@@ -71,6 +72,7 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 		const response: PlexEpisodeStatusResponse = {
 			showTmdbId,
 			episodes: items,
+			evidence: summary,
 		};
 
 		return reply.send(response);

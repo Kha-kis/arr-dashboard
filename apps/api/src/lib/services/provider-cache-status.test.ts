@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	beginPlexCacheRefreshAttempt,
+	finishPlexCacheRefreshAttemptFailure,
 	recordPlexCacheRefreshFailure,
 	recordWatchProviderCacheRefreshFailure,
 } from "./provider-cache-status.js";
@@ -57,6 +59,7 @@ function publicationFixture(
 		cacheRefreshStatus: {
 			findUnique: vi.fn().mockResolvedValue(status),
 			upsert: vi.fn().mockResolvedValue({}),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
 	};
 	const prisma = {
@@ -66,6 +69,96 @@ function publicationFixture(
 	};
 	return { prisma, tx };
 }
+
+describe("Plex cache refresh attempt lifecycle", () => {
+	it.each(["plex", "plex_episode"] as const)(
+		"marks %s in progress without replacing prior publication fields",
+		async (cacheType) => {
+			const current = plexSnapshot();
+			const state = publicationFixture(current, {
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			});
+
+			const attempt = await beginPlexCacheRefreshAttempt(state.prisma as never, cacheType, current);
+
+			expect(attempt?.resultMarker).toMatch(/^in_progress:/);
+			expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+				expect.objectContaining({
+					update: expect.objectContaining({
+						lastAttemptAt: attempt?.attemptedAt,
+						lastAttemptResult: attempt?.resultMarker,
+						lastAttemptErrorMessage: null,
+					}),
+				}),
+			);
+			expect(state.tx.cacheRefreshStatus.upsert.mock.calls[0]![0].update).not.toEqual(
+				expect.objectContaining({
+					lastRefreshedAt: expect.anything(),
+					lastResult: expect.anything(),
+					itemCount: expect.anything(),
+					generationId: expect.anything(),
+				}),
+			);
+		},
+	);
+
+	it("finishes only the exact still-current attempt token", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, {
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		});
+		const attempt = {
+			attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+			resultMarker: "in_progress:attempt-a",
+		};
+
+		const result = await finishPlexCacheRefreshAttemptFailure(
+			state.prisma as never,
+			"plex",
+			"upstream failed",
+			current,
+			attempt,
+			log,
+		);
+
+		expect(result).toBe("recorded");
+		expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith({
+			where: expect.objectContaining({
+				lastAttemptAt: attempt.attemptedAt,
+				lastAttemptResult: attempt.resultMarker,
+			}),
+			data: {
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "upstream failed",
+			},
+		});
+	});
+
+	it("cannot overwrite a newer attempt marker with an older failure", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, {
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		});
+		state.tx.cacheRefreshStatus.updateMany.mockResolvedValue({ count: 0 });
+
+		const result = await finishPlexCacheRefreshAttemptFailure(
+			state.prisma as never,
+			"plex",
+			"older attempt failed",
+			current,
+			{
+				attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+				resultMarker: "in_progress:attempt-a",
+			},
+			log,
+		);
+
+		expect(result).toBe("superseded");
+	});
+});
 
 describe("recordPlexCacheRefreshFailure", () => {
 	it.each(["plex", "plex_episode"] as const)(

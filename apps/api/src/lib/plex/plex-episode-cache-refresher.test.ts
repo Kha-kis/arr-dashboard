@@ -38,6 +38,14 @@ vi.mock("../services/provider-identity-guard.js", async (importOriginal) => {
 	};
 });
 
+vi.mock("../services/provider-cache-status.js", () => ({
+	beginPlexCacheRefreshAttempt: vi.fn().mockResolvedValue({
+		attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+		resultMarker: "in_progress:test-attempt",
+	}),
+	finishPlexCacheRefreshAttemptFailure: vi.fn().mockResolvedValue("recorded"),
+}));
+
 vi.mock("./service-instance-fingerprint.js", () => ({
 	plexConnectionFingerprint: vi.fn(() => "fingerprint-1"),
 }));
@@ -113,7 +121,51 @@ async function refreshPlexEpisodeCache(
 function prisma(
 	shows = [{ tmdbId: 42, ratingKey: "show-1" }],
 	currentConnection = { service: "PLEX", enabled: true, connectionGeneration: 7 },
+	parentStatuses: Array<Record<string, unknown> | null> = [],
 ) {
+	const parentStatus = (overrides: Record<string, unknown> = {}) => ({
+		id: "plex-status-1",
+		instanceId: "plex-1",
+		cacheType: "plex",
+		lastRefreshedAt: new Date(),
+		lastResult: "success",
+		lastErrorMessage: null,
+		itemCount: shows.length,
+		generationId: "parent-generation-1",
+		generationMetadata: JSON.stringify({
+			sections: [{ key: "shows", title: "Shows", type: "show" }],
+		}),
+		lastAttemptAt: new Date(),
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		connectionGeneration: 7,
+		identityGeneration: 11,
+		...overrides,
+	});
+	const statuses =
+		parentStatuses.length > 0
+			? [...parentStatuses]
+			: [parentStatus(), parentStatus(), parentStatus(), parentStatus()];
+	const fullShows = shows.map((show, index) => ({
+		id: `plex-row-${index + 1}`,
+		instanceId: "plex-1",
+		mediaType: "series",
+		sectionId: "shows",
+		sectionTitle: "Shows",
+		title: `Show ${index + 1}`,
+		lastWatchedAt: new Date(),
+		watchCount: 1,
+		watchedByUsers: "[]",
+		onDeck: false,
+		userRating: null,
+		collections: "[]",
+		labels: "[]",
+		addedAt: null,
+		thumb: null,
+		connectionGeneration: 7,
+		identityGeneration: 11,
+		...show,
+	}));
 	const published: unknown[] = [];
 	const tx = {
 		serviceInstance: { findUnique: vi.fn().mockResolvedValue(currentConnection) },
@@ -124,15 +176,37 @@ function prisma(
 				return { count: data.length };
 			}),
 		},
-		cacheRefreshStatus: { upsert: vi.fn().mockResolvedValue({}) },
+		cacheRefreshStatus: {
+			upsert: vi.fn().mockResolvedValue({}),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		},
 	};
 	const db = {
-		plexCache: { findMany: vi.fn().mockResolvedValue(shows) },
+		serviceInstance: {
+			findFirst: vi.fn().mockResolvedValue({
+				id: "plex-1",
+				userId: "user-1",
+				service: "PLEX",
+				enabled: true,
+				label: "Plex",
+				connectionGeneration: 7,
+				identityGeneration: 11,
+				identityStatus: "VERIFIED",
+				expectedIdentity: "plex-a",
+				identityKind: "plex-machine-identifier",
+				identityVerifiedAt: new Date(0),
+				updatedAt: new Date(0),
+			}),
+		},
+		cacheRefreshStatus: {
+			findMany: vi.fn(async () => [statuses.shift() ?? parentStatus()]),
+		},
+		plexCache: { findMany: vi.fn().mockResolvedValue(fullShows) },
 		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
 			callback(tx),
 		),
 	} as unknown as PrismaClientInstance;
-	return { db, tx, published };
+	return { db, tx, published, parentStatus };
 }
 
 describe("refreshPlexEpisodeCache authoritative publication", () => {
@@ -161,11 +235,103 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 				refreshedAt: result.completedAt,
 			}),
 		]);
-		expect(fixture.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+		expect(fixture.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({ lastRefreshedAt: result.completedAt, itemCount: 1 }),
+				data: expect.objectContaining({
+					lastRefreshedAt: result.completedAt,
+					itemCount: 1,
+					generationId: expect.any(String),
+					generationMetadata: expect.any(String),
+				}),
 			}),
 		);
+		const metadata = JSON.parse(
+			fixture.tx.cacheRefreshStatus.updateMany.mock.calls[0]![0].data.generationMetadata,
+		);
+		expect(metadata).toEqual({
+			version: 1,
+			parentPlexGenerationId: "parent-generation-1",
+			parentPublicationLevel: "authoritative",
+			connectionGeneration: 7,
+			identityGeneration: 11,
+		});
+	});
+
+	it("keeps prior episode rows when the authoritative parent metadata is unavailable", async () => {
+		const fixture = prisma([{ tmdbId: 42, ratingKey: "show-1" }], undefined, [
+			{
+				...prisma().parentStatus(),
+				generationMetadata: null,
+			},
+		]);
+		const plexClient = client();
+
+		const result = await refreshPlexEpisodeCache(
+			plexClient,
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0, coverageIncomplete: true });
+		expect(plexClient.getHistory).not.toHaveBeenCalled();
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it("keeps prior episode rows when the parent latest attempt failed", async () => {
+		const failedParent = prisma().parentStatus({
+			lastAttemptAt: new Date(Date.now() + 1_000),
+			lastAttemptResult: "error",
+			lastAttemptErrorMessage: "parent inventory changed",
+			lastErrorMessage: "parent inventory changed",
+		});
+		const fixture = prisma([{ tmdbId: 42, ratingKey: "show-1" }], undefined, [
+			failedParent,
+			{ ...failedParent },
+		]);
+		const plexClient = client();
+
+		const result = await refreshPlexEpisodeCache(
+			plexClient,
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0, coverageIncomplete: true });
+		expect(plexClient.getHistory).not.toHaveBeenCalled();
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it("keeps prior episode rows when the parent generation changes during collection", async () => {
+		const base = prisma().parentStatus();
+		const changed = { ...base, generationId: "parent-generation-2" };
+		const fixture = prisma([{ tmdbId: 42, ratingKey: "show-1" }], undefined, [
+			base,
+			{ ...base },
+			changed,
+			{ ...changed },
+		]);
+
+		const result = await refreshPlexEpisodeCache(
+			client(),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0, coverageIncomplete: true });
+		expect(result.errorMessages.join(" ")).toMatch(/parent Plex generation changed/i);
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
 	it("publishes a complete eligible-empty inventory and evicts stale rows", async () => {
@@ -182,7 +348,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 0 });
 		expect(fixture.tx.plexEpisodeCache.deleteMany).toHaveBeenCalledOnce();
 		expect(fixture.tx.plexEpisodeCache.createMany).not.toHaveBeenCalled();
-		expect(fixture.tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
+		expect(fixture.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledOnce();
 	});
 
 	it("leaves the previous generation unchanged when one duplicate show copy fails", async () => {

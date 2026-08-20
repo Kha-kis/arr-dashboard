@@ -320,7 +320,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
-	it("records an errors-zero incomplete refresh as failed instead of publishing success", async () => {
+	it("leaves incomplete Plex attempt recording to the sealed refresher", async () => {
 		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
 		refreshPlexCache.mockResolvedValue({
 			upserted: 42,
@@ -332,16 +332,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
 		await result.backgroundTask;
 
-		expect(cacheStatusUpsert).toHaveBeenCalledWith(
-			expect.objectContaining({
-				create: expect.objectContaining({
-					lastResult: "error",
-					connectionGeneration: 7,
-					identityGeneration: 3,
-				}),
-				update: expect.objectContaining({ lastAttemptResult: "error" }),
-			}),
-		);
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("does not record a superseded Plex refresh as a failure", async () => {
@@ -398,7 +389,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
-	it("does NOT write through when the BACKGROUND refresher throws — stale row must keep emitting", async () => {
+	it("does not race the sealed refresher's attempt lifecycle when its background promise rejects", async () => {
 		// If the refresher throws mid-refresh, lastRefreshedAt must stay
 		// unchanged so the staleness collector re-emits the row on the next
 		// poll. Writing on failure would tell operators "it's fresh" when
@@ -409,18 +400,11 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
 		expect(result.status).toBe("ok");
 
-		// Background task runs; it should swallow the error (logged) and
-		// record a failed attempt without advancing the successful pointer.
+		// The sealed refresher owns its durable attempt marker. The dispatcher
+		// only logs a rejected promise and must not overwrite a newer attempt.
 		await result.backgroundTask;
 
-		expect(cacheStatusUpsert).toHaveBeenCalledWith(
-			expect.objectContaining({
-				update: expect.objectContaining({
-					lastAttemptResult: "error",
-					lastAttemptErrorMessage: "upstream Plex timeout",
-				}),
-			}),
-		);
+		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
 	it("does NOT call cacheRefreshStatus.upsert when the refresher rejects before completing", async () => {

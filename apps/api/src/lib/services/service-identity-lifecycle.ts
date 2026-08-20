@@ -6,6 +6,7 @@ import {
 	type ProviderIdentityService,
 } from "./service-identity.js";
 import type { PrismaClientInstance } from "../prisma.js";
+import { deletePlexCacheRows, deleteProviderCacheStatuses } from "../plex/plex-cache-storage.js";
 
 const PROVIDER_IDENTITY_SERVICES = new Set<ProviderIdentityService>([
 	"PLEX",
@@ -100,12 +101,11 @@ export async function clearDurableProviderCacheState(
 	prisma: ProviderCacheStatePrisma,
 	instanceId: string,
 ): Promise<void> {
-	await prisma.plexCache.deleteMany({ where: { instanceId } });
-	await prisma.plexEpisodeCache.deleteMany({ where: { instanceId } });
+	await deletePlexCacheRows(prisma as never, instanceId);
 	await prisma.tautulliCache.deleteMany({ where: { instanceId } });
 	await prisma.jellyfinCache.deleteMany({ where: { instanceId } });
 	await prisma.jellyfinEpisodeCache.deleteMany({ where: { instanceId } });
-	await prisma.cacheRefreshStatus.deleteMany({ where: { instanceId } });
+	await deleteProviderCacheStatuses(prisma as never, instanceId);
 }
 
 const NONTERMINAL_APPROVAL_STATUSES: string[] = [

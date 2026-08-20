@@ -11,6 +11,7 @@
  */
 
 import { z } from "zod";
+import type { PlexEvidenceSummary } from "./plex.js";
 import { getRegexSafetyError, REGEX_MAX_LENGTH } from "./regex-safety.js";
 import {
 	type CompositeOperator,
@@ -728,6 +729,8 @@ export interface CleanupFieldOptionsResponse {
 	hasPlex: boolean;
 	hasTautulli: boolean;
 	hasJellyfin: boolean;
+	/** Present only when Plex is configured; distinguishes unavailable values from an empty set. */
+	plexEvidence?: PlexEvidenceSummary;
 }
 
 /** Preview result: items that would be flagged by current rules */

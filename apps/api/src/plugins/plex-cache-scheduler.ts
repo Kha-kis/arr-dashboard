@@ -11,10 +11,8 @@ import {
 	createOwnedPlexPublicationSnapshot,
 	refreshPlexCache,
 } from "../lib/plex/plex-cache-refresher.js";
+import { loadGenerationObservationsForOwnedInstances } from "../lib/plex/plex-evidence-repository.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import { recordPlexCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
-import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
-import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 30_000; // 30 seconds — staggers with tautulli (2min), episode (5min), snapshot (60s)
@@ -51,7 +49,6 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
-						const authority = createProviderPublicationAuthority(instance);
 						let publicationInstance:
 							| ReturnType<typeof createOwnedPlexPublicationSnapshot>
 							| undefined;
@@ -66,51 +63,38 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 								{ instanceId: instance.id, label: instance.label, ...result },
 								"Plex cache refresh completed for instance",
 							);
-
-							try {
-								if ((!result.complete || !result.completedAt) && !result.superseded) {
-									await recordPlexCacheRefreshFailure(
-										app.prisma,
-										"plex",
-										result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
-											"Plex refresh did not produce a complete generation",
-										publicationInstance,
-										app.log,
-									);
-								}
-							} catch (trackErr) {
-								app.log.warn(
-									{ err: trackErr, instanceId: instance.id },
-									"Plex cache refreshed successfully but failed to record status",
-								);
-							}
 						} catch (err) {
 							app.log.error(
 								{ err, instanceId: instance.id, label: instance.label },
 								"Plex cache refresh failed for instance",
-							);
-
-							await recordPlexCacheRefreshFailure(
-								app.prisma,
-								"plex",
-								publicationInstance
-									? getErrorMessage(err, "Unknown error")
-									: "Provider credentials could not be decrypted.",
-								publicationInstance ?? authority,
-								app.log,
 							);
 						}
 					}
 
 					// Check for stale caches (>12h since last successful refresh)
 					const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000);
-					const staleEntries = await app.prisma.cacheRefreshStatus.findMany({
+					const publishedEntries = await app.prisma.cacheRefreshStatus.findMany({
 						where: {
 							cacheType: "plex",
-							lastRefreshedAt: { lt: staleThreshold },
+							instance: { enabled: true },
 						},
-						include: { instance: { select: { label: true } } },
+						include: { instance: true },
 					});
+					const staleEntries = [];
+					for (const entry of publishedEntries) {
+						const [evidence] = await loadGenerationObservationsForOwnedInstances(app.prisma, {
+							instances: [entry.instance],
+							maxAgeMs: 12 * 60 * 60 * 1000,
+						});
+						if (
+							entry.lastRefreshedAt < staleThreshold ||
+							!evidence?.available ||
+							evidence.evidence.publicationLevel !== "authoritative" ||
+							evidence.evidence.completeness !== "complete"
+						) {
+							staleEntries.push(entry);
+						}
+					}
 					if (staleEntries.length > 0) {
 						const names = staleEntries
 							.map((e) => e.instance.label.replace(/[<>&"']/g, "").slice(0, 50))

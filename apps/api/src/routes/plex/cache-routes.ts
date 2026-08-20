@@ -12,9 +12,13 @@ import {
 	createOwnedPlexPublicationSnapshot,
 	refreshPlexCache,
 } from "../../lib/plex/plex-cache-refresher.js";
+import {
+	getPublishedEpisodeGenerationObservation,
+	getPublishedGenerationObservation,
+	isCurrentAuthoritativePlexEvidence,
+	loadUserGenerationObservations,
+} from "../../lib/plex/plex-evidence-repository.js";
 import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
-import { recordPlexCacheRefreshFailure } from "../../lib/services/provider-cache-status.js";
-import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { buildCacheHealthItems } from "./lib/cache-health-helpers.js";
 
@@ -37,12 +41,19 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		// Verify ownership
 		await requirePlexClient(app, userId, instanceId);
 
-		const count = await app.prisma.plexCache.count({ where: { instanceId } });
+		const evidence = await getPublishedGenerationObservation(app.prisma, { userId, instanceId });
+		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
+			return reply.status(503).send({
+				error: "Plex cache evidence is unavailable",
+				evidence: evidence.evidence,
+			});
+		}
 
 		return reply.send({
 			instanceId,
-			cachedItems: count,
-			hasCacheData: count > 0,
+			cachedItems: evidence.itemCount,
+			hasCacheData: evidence.itemCount > 0,
+			evidence: evidence.evidence,
 		});
 	});
 
@@ -62,41 +73,17 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 			const { instance } = await requirePlexClient(app, userId, instanceId);
 			const publicationInstance = createOwnedPlexPublicationSnapshot(app.encryptor, instance);
 
-			try {
-				const result = await refreshPlexCache({
-					prisma: app.prisma,
-					instance: publicationInstance,
-					log: request.log,
-				});
+			const result = await refreshPlexCache({
+				prisma: app.prisma,
+				instance: publicationInstance,
+				log: request.log,
+			});
 
-				if ((!result.complete || !result.completedAt) && !result.superseded) {
-					await recordPlexCacheRefreshFailure(
-						app.prisma,
-						"plex",
-						result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
-							"Plex refresh did not publish a complete generation",
-						publicationInstance,
-						request.log,
-					);
-				}
-
-				return reply.send({
-					success: result.complete && Boolean(result.completedAt),
-					upserted: result.upserted,
-					errors: result.errors,
-				});
-			} catch (err) {
-				// Track failure in status table
-				await recordPlexCacheRefreshFailure(
-					app.prisma,
-					"plex",
-					getErrorMessage(err, "Unknown error"),
-					publicationInstance,
-					request.log,
-				);
-
-				throw err;
-			}
+			return reply.send({
+				success: result.complete && Boolean(result.completedAt),
+				upserted: result.upserted,
+				errors: result.errors,
+			});
 		},
 	);
 
@@ -130,8 +117,24 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		const statuses = await app.prisma.cacheRefreshStatus.findMany({
 			where: { instanceId: { in: instanceIds } },
 		});
+		const plexEvidenceByStatus = new Map();
+		for (const entry of await loadUserGenerationObservations(app.prisma, { userId })) {
+			if (entry.instanceId) plexEvidenceByStatus.set(`${entry.instanceId}:plex`, entry.evidence);
+		}
+		for (const instance of instances) {
+			const status = statuses.find(
+				(candidate) =>
+					candidate.instanceId === instance.id && candidate.cacheType === "plex_episode",
+			);
+			if (!status) continue;
+			const evidence = await getPublishedEpisodeGenerationObservation(app.prisma, {
+				userId,
+				instanceId: instance.id,
+			});
+			plexEvidenceByStatus.set(`${instance.id}:plex_episode`, evidence.evidence);
+		}
 
-		const items = buildCacheHealthItems(statuses, instanceMap);
+		const items = buildCacheHealthItems(statuses, instanceMap, undefined, plexEvidenceByStatus);
 		const response: CacheHealthResponse = { items };
 		return reply.send(response);
 	});

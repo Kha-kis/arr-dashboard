@@ -25,11 +25,22 @@ import {
 	ProviderIdentityGuardError,
 	withGuardedProviderPublication,
 } from "../services/provider-identity-guard.js";
+import {
+	beginPlexCacheRefreshAttempt,
+	finishPlexCacheRefreshAttemptFailure,
+	type PlexCacheRefreshAttempt,
+} from "../services/provider-cache-status.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import {
+	PLEX_CACHE_WRITE_CHUNK_SIZE,
+	PlexRefreshAttemptSupersededError,
+	publishAuthoritativePlexCacheGeneration,
+} from "./plex-cache-storage.js";
 import { PlexClient } from "./plex-client.js";
+import { encodeAuthoritativePlexGenerationMetadata } from "./plex-generation-metadata.js";
 
 /** Bound Prisma's cached createMany query plans for production-sized libraries. */
-export const PLEX_CACHE_PUBLICATION_CHUNK_SIZE = 100;
+export const PLEX_CACHE_PUBLICATION_CHUNK_SIZE = PLEX_CACHE_WRITE_CHUNK_SIZE;
 /** Allow bounded publication batches to complete on higher-latency databases. */
 export const PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS = 60_000;
 
@@ -256,7 +267,10 @@ function plexClientForSnapshot(
 }
 
 function unpublishedResult(error: unknown): PlexCacheRefreshResult {
-	if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") {
+	if (
+		(error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") ||
+		error instanceof PlexRefreshAttemptSupersededError
+	) {
 		return {
 			upserted: 0,
 			errors: 0,
@@ -286,22 +300,65 @@ export async function refreshPlexCache(
 	context: PlexPublicationContext,
 ): Promise<PlexCacheRefreshResult> {
 	const { prisma, instance, log } = context;
+	let attempt: PlexCacheRefreshAttempt | null = null;
 	try {
-		return await withGuardedProviderPublication(
+		attempt = await beginPlexCacheRefreshAttempt(prisma, "plex", instance, {
+			cleanupRunClaimToken: context.cleanupRunClaimToken,
+		});
+		if (!attempt) return unpublishedResult(new PlexRefreshAttemptSupersededError());
+		const result = await withGuardedProviderPublication(
 			prisma,
 			instance,
 			log,
 			async () =>
 				await collectPlexCacheLiveEvidence(plexClientForSnapshot(instance, log), instance.id, log),
-			async (tx, collected) => await publishPlexCacheSnapshot(tx, instance, collected),
+			async (tx, collected) => await publishPlexCacheSnapshot(tx, instance, attempt!, collected),
 			{
 				cleanupRunClaimToken: context.cleanupRunClaimToken,
 				timeout: PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
 			},
 		);
+		if (!result.complete || !result.completedAt) {
+			const finished = await finishPlexCacheRefreshAttemptFailure(
+				prisma,
+				"plex",
+				result.errorMessages.slice(0, 3).join("; ").slice(0, 500) ||
+					"Plex refresh did not produce a complete generation",
+				instance,
+				attempt,
+				log,
+				{ cleanupRunClaimToken: context.cleanupRunClaimToken },
+			);
+			if (finished === "superseded") {
+				return unpublishedResult(new PlexRefreshAttemptSupersededError());
+			}
+		}
+		return result;
 	} catch (error) {
-		const result = unpublishedResult(error);
-		log.error({ err: error, instanceId: instance.id }, "Plex cache publication rejected");
+		let publicationError = error;
+		if (
+			attempt &&
+			!(error instanceof PlexRefreshAttemptSupersededError) &&
+			!(error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED")
+		) {
+			const finished = await finishPlexCacheRefreshAttemptFailure(
+				prisma,
+				"plex",
+				getErrorMessage(error, "Unknown Plex cache refresh failure"),
+				instance,
+				attempt,
+				log,
+				{ cleanupRunClaimToken: context.cleanupRunClaimToken },
+			);
+			if (!(error instanceof ProviderIdentityGuardError) && finished === "superseded") {
+				publicationError = new PlexRefreshAttemptSupersededError();
+			}
+		}
+		const result = unpublishedResult(publicationError);
+		log.error(
+			{ err: publicationError, instanceId: instance.id },
+			"Plex cache publication rejected",
+		);
 		return result;
 	}
 }
@@ -309,51 +366,28 @@ export async function refreshPlexCache(
 async function publishPlexCacheSnapshot(
 	tx: Prisma.TransactionClient,
 	instance: OwnedProviderPublicationSnapshot,
+	attempt: PlexCacheRefreshAttempt,
 	collected: PlexCacheRefreshResult,
 ): Promise<PlexCacheRefreshResult> {
 	if (!collected.complete || !collected.completedAt || !collected.snapshot) return collected;
 
 	const rows = collected.snapshot.rows;
 	const generationId = randomUUID();
-	const generationMetadata = JSON.stringify({ sections: collected.snapshot.sections });
-	await tx.plexCache.deleteMany({ where: { instanceId: instance.id } });
-	for (let start = 0; start < rows.length; start += PLEX_CACHE_PUBLICATION_CHUNK_SIZE) {
-		await tx.plexCache.createMany({
-			data: rows.slice(start, start + PLEX_CACHE_PUBLICATION_CHUNK_SIZE).map((row) => ({
-				...row,
-				connectionGeneration: instance.connectionGeneration,
-				identityGeneration: instance.identityGeneration,
-			})),
-		});
-	}
-	await tx.cacheRefreshStatus.upsert({
-		where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex" } },
-		create: {
-			instanceId: instance.id,
-			cacheType: "plex",
-			lastRefreshedAt: collected.completedAt,
-			lastResult: "success",
-			itemCount: rows.length,
-			generationId,
-			generationMetadata,
-			lastAttemptAt: collected.completedAt,
-			lastAttemptResult: "success",
+	const generationMetadata = encodeAuthoritativePlexGenerationMetadata({
+		sections: collected.snapshot.sections,
+		itemCount: rows.length,
+	});
+	await publishAuthoritativePlexCacheGeneration(tx, {
+		instance,
+		rows: rows.map((row) => ({
+			...row,
 			connectionGeneration: instance.connectionGeneration,
 			identityGeneration: instance.identityGeneration,
-		},
-		update: {
-			lastRefreshedAt: collected.completedAt,
-			lastResult: "success",
-			lastErrorMessage: null,
-			itemCount: rows.length,
-			generationId,
-			generationMetadata,
-			lastAttemptAt: collected.completedAt,
-			lastAttemptResult: "success",
-			lastAttemptErrorMessage: null,
-			connectionGeneration: instance.connectionGeneration,
-			identityGeneration: instance.identityGeneration,
-		},
+		})),
+		completedAt: collected.completedAt,
+		generationId,
+		generationMetadata,
+		attempt,
 	});
 	return {
 		...collected,

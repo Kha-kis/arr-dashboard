@@ -6,6 +6,11 @@
 
 import type { PlexSectionsResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import {
+	hasAuthoritativeSelectedPlexEvidence,
+	loadUserSelectedEvidence,
+	summarizePlexEvidence,
+} from "../../lib/plex/plex-evidence-repository.js";
 import { mapToSections } from "./lib/section-helpers.js";
 
 export async function registerSectionRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
@@ -18,27 +23,37 @@ export async function registerSectionRoutes(app: FastifyInstance, _opts: Fastify
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true, label: true },
+		const evidence = await loadUserSelectedEvidence(app.prisma, {
+			userId,
+			selection: { kind: "authority-only" },
 		});
-
-		if (plexInstances.length === 0) {
-			return reply.send({ sections: [] } satisfies PlexSectionsResponse);
+		const summary = summarizePlexEvidence(evidence);
+		if (!hasAuthoritativeSelectedPlexEvidence(evidence)) {
+			return reply.status(503).send({
+				error: "Plex cache evidence is unavailable",
+				evidence: summary,
+			});
 		}
+		const publishedSections = evidence.flatMap((entry) =>
+			entry.sections.map((section) => ({
+				...section,
+				instanceId: entry.instanceId,
+				instanceName: entry.instanceName,
+			})),
+		);
+		const instanceMap = new Map(
+			publishedSections.map((section) => [section.instanceId, section.instanceName]),
+		);
+		const sections = mapToSections(
+			publishedSections.map((section) => ({
+				instanceId: section.instanceId,
+				sectionId: section.key,
+				sectionTitle: section.title,
+				mediaType: section.type === "show" ? "series" : "movie",
+			})),
+			instanceMap,
+		);
 
-		const instanceMap = new Map(plexInstances.map((i) => [i.id, i.label]));
-
-		// Get distinct sections from cache using groupBy
-		const groupedSections = await app.prisma.plexCache.groupBy({
-			by: ["instanceId", "sectionId", "sectionTitle", "mediaType"],
-			where: {
-				instanceId: { in: plexInstances.map((i) => i.id) },
-			},
-		});
-
-		const sections = mapToSections(groupedSections, instanceMap);
-
-		return reply.send({ sections } satisfies PlexSectionsResponse);
+		return reply.send({ sections, evidence: summary } satisfies PlexSectionsResponse);
 	});
 }

@@ -4,8 +4,13 @@
  * Aggregates collection and label item counts with watched percentages from PlexCache.
  */
 
-import type { CollectionStats } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import {
+	hasAuthoritativePlexEvidence,
+	listObservedRows,
+	loadUserEvidence,
+	summarizePlexEvidence,
+} from "../../lib/plex/plex-evidence-repository.js";
 import { aggregateCollectionStats } from "./lib/collection-stats-helpers.js";
 
 export async function registerCollectionStatsRoutes(
@@ -15,23 +20,14 @@ export async function registerCollectionStatsRoutes(
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true },
-		});
-
-		if (plexInstances.length === 0) {
-			const response: CollectionStats = { collections: [], labels: [] };
-			return reply.send(response);
+		const evidence = await loadUserEvidence(app.prisma, { userId });
+		const summary = summarizePlexEvidence(evidence);
+		if (!hasAuthoritativePlexEvidence(evidence)) {
+			return reply
+				.status(503)
+				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
 		}
-
-		const instanceIds = plexInstances.map((i) => i.id);
-
-		const entries = await app.prisma.plexCache.findMany({
-			where: { instanceId: { in: instanceIds } },
-			select: { collections: true, labels: true, watchCount: true },
-			take: 10000,
-		});
+		const entries = listObservedRows(evidence);
 
 		const { parseFailures, totalEntries, failedPreviews, ...stats } =
 			aggregateCollectionStats(entries);
@@ -41,6 +37,6 @@ export async function registerCollectionStatsRoutes(
 				"PlexCache JSON parse failures detected",
 			);
 		}
-		return reply.send(stats);
+		return reply.send({ ...stats, evidence: summary });
 	});
 }

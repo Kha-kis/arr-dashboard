@@ -1,4 +1,9 @@
-import type { Prisma } from "../prisma.js";
+import type { Prisma, ServiceInstance } from "../prisma.js";
+import {
+	listObservedRows,
+	loadAuthoritativePolicySnapshot,
+	loadInstanceEpisodeEvidence,
+} from "../plex/plex-evidence-repository.js";
 
 export const PROVIDER_CACHE_ROW_SELECTS = {
 	plex: {
@@ -119,27 +124,37 @@ export async function loadExactProviderCacheRows(
 	tx: Prisma.TransactionClient,
 	cacheType: ProviderCacheType,
 	instanceIds: string[],
+	userId?: string,
+	instances?: ServiceInstance[],
 ): Promise<Map<string, unknown[]>> {
 	const where = { instanceId: { in: instanceIds } };
 	switch (cacheType) {
-		case "plex":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.plexCache.findMany({
-					where,
-					select: PROVIDER_CACHE_ROW_SELECTS.plex,
-					orderBy: { id: "asc" },
-				}),
-			);
-		case "plex_episode":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.plexEpisodeCache.findMany({
-					where,
-					select: PROVIDER_CACHE_ROW_SELECTS.plex_episode,
-					orderBy: { id: "asc" },
-				}),
-			);
+		case "plex": {
+			if (!userId) return groupProviderRowsByInstance(instanceIds, []);
+			const evidence = await loadAuthoritativePolicySnapshot(tx as never, { userId });
+			if (
+				!evidence ||
+				evidence.length !== instanceIds.length ||
+				evidence.some((entry) => !instanceIds.includes(entry.instanceId))
+			) {
+				return groupProviderRowsByInstance(instanceIds, []);
+			}
+			return groupProviderRowsByInstance(instanceIds, listObservedRows(evidence));
+		}
+		case "plex_episode": {
+			if (!userId || !instances) return groupProviderRowsByInstance(instanceIds, []);
+			const rows = [];
+			for (const instance of instances.filter((candidate) => instanceIds.includes(candidate.id))) {
+				const evidence = await loadInstanceEpisodeEvidence(tx as never, {
+					userId,
+					instanceId: instance.id,
+					instance,
+				});
+				if (!evidence.available) return groupProviderRowsByInstance(instanceIds, []);
+				rows.push(...evidence.rows);
+			}
+			return groupProviderRowsByInstance(instanceIds, rows);
+		}
 		case "jellyfin":
 			return groupProviderRowsByInstance(
 				instanceIds,

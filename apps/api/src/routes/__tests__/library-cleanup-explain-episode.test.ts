@@ -76,10 +76,13 @@ beforeEach(async () => {
 		.mockResolvedValueOnce([]);
 	plexEpisodeCacheFindMany = vi.fn().mockResolvedValue([
 		{
+			id: "plex-episode-row-202",
 			instanceId: PLEX_INSTANCE_ID,
 			showTmdbId: 12345,
 			seasonNumber: 1,
 			episodeNumber: 2,
+			title: "The Second Episode",
+			watched: true,
 			watchCount: 1,
 			lastWatchedAt: NOW,
 			watchedByUsers: "[]",
@@ -145,26 +148,51 @@ beforeEach(async () => {
 		libraryCleanupConfig: {
 			findUnique: libraryCleanupConfigFindUnique,
 		},
-		plexEpisodeCache: {
-			findMany: plexEpisodeCacheFindMany,
-			groupBy: vi.fn().mockResolvedValue([{ instanceId: PLEX_INSTANCE_ID, _count: { id: 1 } }]),
-		},
 		cacheRefreshStatus: {
-			findMany: vi.fn().mockResolvedValue([
-				{
+			findMany: vi.fn(({ where }: { where: { cacheType: string } }) => {
+				const parentGenerationId = "plex-parent-generation-1";
+				const common = {
 					instanceId: PLEX_INSTANCE_ID,
 					lastRefreshedAt: NOW,
 					lastResult: "success",
 					lastErrorMessage: null,
+					lastAttemptAt: NOW,
 					lastAttemptResult: "success",
 					lastAttemptErrorMessage: null,
 					itemCount: 1,
 					connectionGeneration: 4,
 					identityGeneration: 9,
-				},
-			]),
+				};
+				return Promise.resolve([
+					where.cacheType === "plex"
+						? {
+								...common,
+								cacheType: "plex",
+								generationId: parentGenerationId,
+								generationMetadata: JSON.stringify({
+									sections: [{ key: "1", title: "TV", type: "show" }],
+								}),
+							}
+						: {
+								...common,
+								cacheType: "plex_episode",
+								generationId: "plex-episode-generation-1",
+								generationMetadata: JSON.stringify({
+									version: 1,
+									parentPlexGenerationId: parentGenerationId,
+									parentPublicationLevel: "authoritative",
+									connectionGeneration: 4,
+									identityGeneration: 9,
+								}),
+							},
+				]);
+			}),
 		},
-		plexCache: { findMany: plexCacheFindMany },
+		plexCache: { findMany: plexCacheFindMany, count: vi.fn().mockResolvedValue(1) },
+		plexEpisodeCache: {
+			findMany: plexEpisodeCacheFindMany,
+			count: vi.fn().mockResolvedValue(1),
+		},
 	} as never);
 	app.decorate("arrClientFactory", {
 		createSonarrClient: vi.fn().mockReturnValue({
@@ -225,12 +253,7 @@ describe("POST /library-cleanup/explain episode scope", () => {
 		});
 		expect(plexEpisodeCacheFindMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: {
-					instanceId: { in: [PLEX_INSTANCE_ID] },
-					showTmdbId: 12345,
-					seasonNumber: 1,
-					episodeNumber: 2,
-				},
+				where: { instanceId: PLEX_INSTANCE_ID },
 			}),
 		);
 		expect(plexCacheFindMany).not.toHaveBeenCalled();

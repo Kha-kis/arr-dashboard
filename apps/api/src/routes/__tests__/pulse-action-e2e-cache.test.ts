@@ -70,8 +70,28 @@ type CacheStatusRow = {
 	lastRefreshedAt: Date;
 	lastResult: "success" | "error";
 	lastErrorMessage: string | null;
+	lastAttemptAt?: Date | null;
+	lastAttemptResult?: string | null;
+	lastAttemptErrorMessage?: string | null;
 	itemCount: number;
-	instance: { label: string; service: string; enabled: boolean };
+	generationId?: string;
+	generationMetadata?: string;
+	connectionGeneration?: number;
+	identityGeneration?: number;
+	instance: {
+		id?: string;
+		userId?: string;
+		label: string;
+		service: string;
+		enabled: boolean;
+		expectedIdentity?: string;
+		identityKind?: string;
+		identityStatus?: string;
+		identityVerifiedAt?: Date;
+		connectionGeneration?: number;
+		identityGeneration?: number;
+		updatedAt?: Date;
+	};
 };
 
 const HOURS = 60 * 60 * 1000;
@@ -81,11 +101,30 @@ function makeStaleRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
 		id: "plex-row",
 		instanceId: "inst-plex",
 		cacheType: "plex",
-		lastRefreshedAt: new Date(Date.now() - 24 * HOURS),
+		lastRefreshedAt: new Date(Date.now() - 13 * HOURS),
 		lastResult: "success",
 		lastErrorMessage: null,
+		lastAttemptAt: new Date(Date.now() - 13 * HOURS),
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
 		itemCount: 0,
-		instance: { label: "Home Plex", service: "PLEX", enabled: true },
+		generationId: "plex-generation-1",
+		generationMetadata: '{"sections":[]}',
+		connectionGeneration: 1,
+		identityGeneration: 1,
+		instance: {
+			id: "inst-plex",
+			label: "Home Plex",
+			service: "PLEX",
+			enabled: true,
+			expectedIdentity: "plex-machine-1",
+			identityKind: "plex-machine-identifier",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date(Date.now() - 48 * HOURS),
+			connectionGeneration: 1,
+			identityGeneration: 1,
+			updatedAt: new Date(Date.now() - 48 * HOURS),
+		},
 		...overrides,
 	};
 }
@@ -143,6 +182,16 @@ beforeEach(async () => {
 	// genuinely lets the staleness collector drop the row on the next poll
 	// — without the upsert, the row would persist indefinitely.
 	app.decorate("prisma", {
+		serviceInstance: {
+			findMany: async () =>
+				cacheStatuses
+					.filter((status) => status.cacheType === "plex")
+					.map((status) => ({
+						...status.instance,
+						id: status.instanceId,
+						userId: `e2e-cache-user-${userCounter}`,
+					})),
+		},
 		cacheRefreshStatus: {
 			findMany: async () => cacheStatuses,
 			upsert: async (args: {
@@ -165,6 +214,7 @@ beforeEach(async () => {
 				return cacheStatuses[idx >= 0 ? idx : cacheStatuses.length - 1]!;
 			},
 		},
+		plexCache: { count: async () => 0 },
 	} as unknown as never);
 	registerTestErrorHandler(app);
 	await app.register(registerPulseRoutes);

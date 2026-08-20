@@ -7,6 +7,11 @@
 import type { UserEpisodeCompletion } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import {
+	hasCompleteAuthoritativePlexEvidence,
+	loadInstanceEpisodeEvidence,
+	summarizePlexEvidence,
+} from "../../lib/plex/plex-evidence-repository.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateUserEpisodeCompletion } from "./lib/user-episode-helpers.js";
 
@@ -48,15 +53,21 @@ export async function registerUserEpisodeCompletionRoutes(
 			return reply.send(response);
 		}
 
-		const instanceIds = plexInstances.map((i) => i.id);
-
-		const episodes = await app.prisma.plexEpisodeCache.findMany({
-			where: {
-				instanceId: { in: instanceIds },
-				showTmdbId: { in: tmdbIds },
-			},
-			select: { showTmdbId: true, watched: true, watchedByUsers: true },
-		});
+		const evidence = [];
+		for (const instance of plexInstances) {
+			evidence.push(
+				await loadInstanceEpisodeEvidence(app.prisma, { userId, instanceId: instance.id }),
+			);
+		}
+		const summary = summarizePlexEvidence(evidence);
+		if (!hasCompleteAuthoritativePlexEvidence(evidence)) {
+			return reply
+				.status(503)
+				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
+		}
+		const episodes = evidence.flatMap((entry) =>
+			entry.available ? entry.rows.filter((episode) => tmdbIds.includes(episode.showTmdbId)) : [],
+		);
 
 		const { parseFailures, totalEpisodes, failedPreviews, ...completion } =
 			aggregateUserEpisodeCompletion(episodes);
@@ -66,6 +77,6 @@ export async function registerUserEpisodeCompletionRoutes(
 				"Episode cache JSON parse failures detected",
 			);
 		}
-		return reply.send(completion);
+		return reply.send({ ...completion, evidence: summary });
 	});
 }

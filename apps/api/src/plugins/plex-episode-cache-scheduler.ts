@@ -9,11 +9,9 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { createOwnedPlexPublicationSnapshot } from "../lib/plex/plex-cache-refresher.js";
+import { getPublishedEpisodeGenerationObservation } from "../lib/plex/plex-evidence-repository.js";
 import { refreshPlexEpisodeCache } from "../lib/plex/plex-episode-cache-refresher.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
-import { recordPlexCacheRefreshFailure } from "../lib/services/provider-cache-status.js";
-import { createProviderPublicationAuthority } from "../lib/services/provider-identity-guard.js";
-import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 5 * 60_000; // 5 minutes — staggered well after plex-cache (30s) + tautulli (2min) to avoid overlapping memory peaks
@@ -59,7 +57,6 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
-						const authority = createProviderPublicationAuthority(instance);
 						let publicationInstance:
 							| ReturnType<typeof createOwnedPlexPublicationSnapshot>
 							| undefined;
@@ -74,59 +71,35 @@ const plexEpisodeCacheSchedulerPlugin = fastifyPlugin(
 								{ instanceId: instance.id, label: instance.label, ...result },
 								"Plex episode cache refresh completed for instance",
 							);
-
-							try {
-								const coverageMessage = result.coverageIncomplete
-									? result.capacityDegraded
-										? `Capacity degraded: ${result.eligibleShows} watched shows exceed the 200-show/24-hour freshness capacity; only ${result.refreshedShows} were refreshed this cycle.`
-										: `Coverage incomplete: refreshed ${result.refreshedShows} of ${result.eligibleShows} watched shows; rotation will continue next run.`
-									: null;
-								const statusMessage =
-									result.errorMessages.length > 0
-										? result.errorMessages.slice(0, 3).join("; ").slice(0, 200)
-										: coverageMessage;
-								if ((!result.complete || !result.completedAt) && !result.superseded) {
-									await recordPlexCacheRefreshFailure(
-										app.prisma,
-										"plex_episode",
-										statusMessage ?? "Plex episode refresh did not produce a complete generation",
-										publicationInstance,
-										app.log,
-									);
-								}
-							} catch (trackErr) {
-								app.log.warn(
-									{ err: trackErr, instanceId: instance.id },
-									"Episode cache refreshed successfully but failed to record status",
-								);
-							}
 						} catch (err) {
 							app.log.error(
 								{ err, instanceId: instance.id, label: instance.label },
 								"Plex episode cache refresh failed for instance",
-							);
-
-							await recordPlexCacheRefreshFailure(
-								app.prisma,
-								"plex_episode",
-								publicationInstance
-									? getErrorMessage(err, "Unknown error")
-									: "Provider credentials could not be decrypted.",
-								publicationInstance ?? authority,
-								app.log,
 							);
 						}
 					}
 
 					// Check for stale caches (>12h since last successful refresh)
 					const staleThreshold = new Date(Date.now() - 12 * 60 * 60 * 1000);
-					const staleEntries = await app.prisma.cacheRefreshStatus.findMany({
+					const publishedEntries = await app.prisma.cacheRefreshStatus.findMany({
 						where: {
 							cacheType: "plex_episode",
-							lastRefreshedAt: { lt: staleThreshold },
+							instance: { enabled: true },
 						},
-						include: { instance: { select: { label: true } } },
+						include: { instance: true },
 					});
+					const staleEntries = [];
+					for (const entry of publishedEntries) {
+						const evidence = await getPublishedEpisodeGenerationObservation(app.prisma, {
+							userId: entry.instance.userId,
+							instanceId: entry.instanceId,
+							instance: entry.instance,
+							maxAgeMs: 12 * 60 * 60 * 1000,
+						});
+						if (entry.lastRefreshedAt < staleThreshold || !evidence.available) {
+							staleEntries.push(entry);
+						}
+					}
 					if (staleEntries.length > 0) {
 						const names = staleEntries
 							.map((e) => e.instance.label.replace(/[<>&"']/g, "").slice(0, 50))

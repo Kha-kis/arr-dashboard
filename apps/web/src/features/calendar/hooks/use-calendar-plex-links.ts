@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { usePlexIdentity } from "../../../hooks/api/usePlex";
-import { plexKeys } from "../../../lib/query-keys";
 import { fetchWatchEnrichment } from "../../../lib/api-client/plex";
+import { plexKeys } from "../../../lib/query-keys";
 import { buildPlexUrl } from "../../library/lib/library-utils";
 import type { DeduplicatedCalendarItem } from "./use-calendar-data";
 
@@ -11,10 +11,7 @@ import type { DeduplicatedCalendarItem } from "./use-calendar-data";
  * Only fetches when Plex is configured (hasPlex=true) and events have tmdbIds.
  * Returns an empty map when Plex is not configured — zero overhead.
  */
-export const useCalendarPlexLinks = (
-	events: DeduplicatedCalendarItem[],
-	hasPlex: boolean,
-): Map<string, string> => {
+export const useCalendarPlexLinks = (events: DeduplicatedCalendarItem[], hasPlex: boolean) => {
 	// Extract unique tmdbIds and types from calendar events
 	const enrichable = useMemo(() => {
 		if (!hasPlex || events.length === 0) {
@@ -64,7 +61,7 @@ export const useCalendarPlexLinks = (
 	}, [identityQuery.data]);
 
 	// Build final Plex URL map: "type:tmdbId" → deep link URL
-	return useMemo(() => {
+	const plexUrlMap = useMemo(() => {
 		const map = new Map<string, string>();
 		const items = enrichmentQuery.data?.items;
 		if (!items || machineIdMap.size === 0) return map;
@@ -78,4 +75,10 @@ export const useCalendarPlexLinks = (
 
 		return map;
 	}, [enrichmentQuery.data, machineIdMap]);
+
+	return {
+		plexUrlMap,
+		error: enrichmentQuery.error,
+		evidence: enrichmentQuery.data?.evidence,
+	};
 };

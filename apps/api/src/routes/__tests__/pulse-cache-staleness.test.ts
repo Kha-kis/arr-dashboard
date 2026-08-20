@@ -14,6 +14,16 @@
 import Fastify from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const evidenceMocks = vi.hoisted(() => ({
+	loadUserGenerationObservations: vi.fn(),
+	getPublishedEpisodeGenerationObservation: vi.fn(),
+}));
+
+vi.mock("../../lib/plex/plex-evidence-repository.js", () => ({
+	loadUserGenerationObservations: evidenceMocks.loadUserGenerationObservations,
+	getPublishedEpisodeGenerationObservation: evidenceMocks.getPublishedEpisodeGenerationObservation,
+}));
+
 vi.mock("../../lib/pulse/collectors.js", async () => {
 	const actual = await vi.importActual<typeof import("../../lib/pulse/collectors.js")>(
 		"../../lib/pulse/collectors.js",
@@ -41,6 +51,8 @@ type CacheStatusRow = {
 	lastAttemptResult?: string | null;
 	lastAttemptErrorMessage?: string | null;
 	itemCount: number;
+	generationId?: string | null;
+	generationMetadata?: string | null;
 	instance: { label: string; service: string; enabled: boolean };
 };
 
@@ -55,6 +67,8 @@ function makeRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
 		lastResult: "success",
 		lastErrorMessage: null,
 		itemCount: 0,
+		generationId: "generation-1",
+		generationMetadata: JSON.stringify({ sections: [] }),
 		instance: { label: "Home Plex", service: "PLEX", enabled: true },
 		...overrides,
 	};
@@ -65,6 +79,30 @@ beforeEach(async () => {
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: `user-cache-${userCounter}`, username: "admin" });
 	findCacheStatuses = vi.fn(async () => cacheStatuses.filter((row) => row.instance.enabled));
+	evidenceMocks.loadUserGenerationObservations.mockImplementation(async () =>
+		cacheStatuses
+			.filter((row) => row.cacheType === "plex")
+			.map((row) => ({
+				available: true,
+				instanceId: row.instanceId,
+				evidence: {
+					publicationLevel: "authoritative",
+					completeness: "complete",
+					reasonCodes: [],
+				},
+			})),
+	);
+	evidenceMocks.getPublishedEpisodeGenerationObservation.mockImplementation(
+		async (_prisma, input) => ({
+			available: true,
+			instanceId: input.instanceId,
+			evidence: {
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				reasonCodes: [],
+			},
+		}),
+	);
 	app.decorate("prisma", {
 		cacheRefreshStatus: {
 			findMany: findCacheStatuses,
@@ -122,6 +160,99 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		});
 	});
 
+	it.each(["missing_metadata", "unknown_metadata_version", "row_count_mismatch"] as const)(
+		"reports successful-looking Plex status as unavailable for %s",
+		async (reasonCode) => {
+			cacheStatuses = [makeRow({ id: `invalid-${reasonCode}`, lastRefreshedAt: new Date() })];
+			evidenceMocks.loadUserGenerationObservations.mockResolvedValueOnce([
+				{
+					available: false,
+					instanceId: "inst-1",
+					evidence: {
+						publicationLevel: "unavailable",
+						completeness: "unknown",
+						reasonCodes: [reasonCode],
+					},
+				},
+			]);
+
+			const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+			const item = body.items.find((candidate: { id: string }) =>
+				candidate.id.includes(`invalid-${reasonCode}`),
+			);
+
+			expect(item).toMatchObject({
+				severity: "warning",
+				title: "Home Plex: Plex cache refresh failed",
+			});
+			expect(item.detail).toContain(reasonCode);
+		},
+	);
+
+	it("reports future positive-only Plex evidence as degraded", async () => {
+		cacheStatuses = [makeRow({ id: "positive-only", lastRefreshedAt: new Date() })];
+		evidenceMocks.loadUserGenerationObservations.mockResolvedValueOnce([
+			{
+				available: true,
+				instanceId: "inst-1",
+				evidence: {
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					reasonCodes: [],
+				},
+			},
+		]);
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find((candidate: { id: string }) =>
+			candidate.id.includes("positive-only"),
+		);
+
+		expect(item).toMatchObject({
+			id: "cache-partial-positive-only",
+			title: "Home Plex: Plex cache coverage is degraded",
+		});
+	});
+
+	it("reports an opaque active Plex attempt as refreshing without exposing its token", async () => {
+		const token = "in_progress:do-not-expose";
+		cacheStatuses = [
+			makeRow({
+				id: "refreshing",
+				lastRefreshedAt: new Date(),
+				lastAttemptAt: new Date(),
+				lastAttemptResult: token,
+			}),
+		];
+		evidenceMocks.loadUserGenerationObservations.mockResolvedValueOnce([
+			{
+				available: true,
+				instanceId: "inst-1",
+				evidence: {
+					availability: "last-known",
+					authority: "unavailable",
+					attemptState: "in_progress",
+					publicationLevel: "unavailable",
+					completeness: "unknown",
+					reasonCodes: ["latest_attempt_in_progress"],
+				},
+			},
+		]);
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find((candidate: { id: string }) =>
+			candidate.id.includes("refreshing"),
+		);
+
+		expect(item).toMatchObject({
+			id: "cache-refreshing-refreshing",
+			severity: "info",
+			title: "Home Plex: Plex cache refresh is in progress",
+		});
+		expect(item.detail).toContain("Current Plex values are unavailable");
+		expect(JSON.stringify(item)).not.toContain(token);
+	});
+
 	it("emits a cache.refresh action on a stale Tautulli cache row", async () => {
 		cacheStatuses = [makeRow({ id: "taut-row", cacheType: "tautulli", instanceId: "inst-taut" })];
 
@@ -138,7 +269,18 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		// support it. The row still renders (so the operator sees the
 		// problem) but without a button they can't usefully click.
 		cacheStatuses = [
-			makeRow({ id: "episode-row", cacheType: "plex_episode", instanceId: "inst-plex" }),
+			makeRow({
+				id: "episode-row",
+				cacheType: "plex_episode",
+				instanceId: "inst-plex",
+				generationMetadata: JSON.stringify({
+					version: 1,
+					parentPlexGenerationId: "parent-1",
+					parentPublicationLevel: "authoritative",
+					connectionGeneration: 1,
+					identityGeneration: 1,
+				}),
+			}),
 		];
 
 		const res = await injectAuthenticated("GET", "/pulse");
@@ -147,6 +289,35 @@ describe("GET /pulse — cache.refresh action emission", () => {
 
 		expect(item).toBeDefined();
 		expect(item.action).toBeUndefined();
+	});
+
+	it("reports a successful-looking episode status as unavailable when its parent is unavailable", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "episode-parent-unavailable",
+				cacheType: "plex_episode",
+				lastRefreshedAt: new Date(),
+			}),
+		];
+		evidenceMocks.getPublishedEpisodeGenerationObservation.mockResolvedValueOnce({
+			available: false,
+			instanceId: "inst-1",
+			evidence: {
+				publicationLevel: "unavailable",
+				completeness: "unknown",
+				reasonCodes: ["parent_generation_unavailable"],
+			},
+		});
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find((candidate: { id: string }) =>
+			candidate.id.includes("episode-parent-unavailable"),
+		);
+
+		expect(item).toMatchObject({
+			title: "Home Plex: Plex episodes cache refresh failed",
+		});
+		expect(item.detail).toContain("parent_generation_unavailable");
 	});
 
 	it("emits a retry action on a cache-error row when the cache type is supported", async () => {
@@ -260,6 +431,13 @@ describe("GET /pulse — cache.refresh action emission", () => {
 				lastRefreshedAt: new Date(),
 				lastErrorMessage:
 					"Capacity degraded: 201 watched shows exceed the 200-show/24-hour freshness capacity.",
+				generationMetadata: JSON.stringify({
+					version: 1,
+					parentPlexGenerationId: "parent-1",
+					parentPublicationLevel: "authoritative",
+					connectionGeneration: 1,
+					identityGeneration: 1,
+				}),
 			}),
 		];
 

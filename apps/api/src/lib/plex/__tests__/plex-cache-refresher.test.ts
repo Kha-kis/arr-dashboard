@@ -525,7 +525,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 		},
 	);
 
-	it("preserves every current rating key when duplicate editions share one cache row", async () => {
+	it("keeps the complete edition set only in live inventory targets when persistence collapses rows", async () => {
 		const editions = [
 			{
 				ratingKey: "edition-a",
@@ -555,6 +555,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 		});
 
 		expect(result.snapshot?.rows).toHaveLength(1);
+		expect(result.snapshot?.rows[0]?.ratingKey).toBe("edition-a");
 		expect(result.inventoryTargets).toEqual([
 			{ mediaType: "movie", tmdbId: 42, ratingKey: "edition-a" },
 			{ mediaType: "movie", tmdbId: 42, ratingKey: "edition-b" },

@@ -4,9 +4,14 @@ import { ChevronLeft, ChevronRight, Film, PlayCircle, Tv } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PlexEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
 import { useJellyfinOnDeck } from "../../../hooks/api/useJellyfin";
 import { useOnDeck } from "../../../hooks/api/usePlex";
 import { getLinuxIsoName, getLinuxSectionName, useIncognitoMode } from "../../../lib/incognito";
+import {
+	getPlexEvidenceFromError,
+	isCurrentAuthoritativePlexEvidence,
+} from "../../../lib/plex-evidence";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
 const mediaGradient = SERVICE_GRADIENTS.plex;
@@ -75,12 +80,11 @@ export const OnDeckWidget = ({
 
 	const isLoading = plexQuery.isLoading || jellyfinQuery.isLoading;
 	// Only error if all enabled sources failed
-	const enabledErrors = [
-		hasPlexInstances && plexQuery.isError,
-		hasJellyfinInstances && jellyfinQuery.isError,
-	].filter(Boolean).length;
-	const enabledCount = [hasPlexInstances, hasJellyfinInstances].filter(Boolean).length;
-	const isError = enabledCount > 0 && enabledErrors === enabledCount;
+	const plexEvidence = plexQuery.data?.evidence ?? getPlexEvidenceFromError(plexQuery.error);
+	const plexUnavailable =
+		hasPlexInstances &&
+		(plexQuery.isError ||
+			(plexEvidence !== undefined && !isCurrentAuthoritativePlexEvidence(plexEvidence)));
 	const [failedThumbs, setFailedThumbs] = useState<Set<string>>(new Set());
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -108,7 +112,23 @@ export const OnDeckWidget = ({
 		el.scrollBy({ left: direction === "left" ? -300 : 300, behavior: "smooth" });
 	}, []);
 
-	if (!enabled || isLoading || isError || items.length === 0) return null;
+	if (!enabled || isLoading) return null;
+	if (items.length === 0 && !plexUnavailable) return null;
+	if (items.length === 0 && plexUnavailable) {
+		return (
+			<div
+				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
+				style={{ animationDelay: `${animationDelay}ms`, animationFillMode: "backwards" }}
+			>
+				<div className="overflow-hidden rounded-xl border border-border/30 bg-muted/10">
+					<div className="px-6 py-4">
+						<h3 className="text-sm font-semibold text-foreground">Continue Watching</h3>
+					</div>
+					<PlexEvidenceNotice evidence={plexEvidence} />
+				</div>
+			</div>
+		);
+	}
 
 	const displayItems = items.slice(0, MAX_DISPLAY);
 	const remaining = items.length - MAX_DISPLAY;
@@ -138,10 +158,13 @@ export const OnDeckWidget = ({
 					<div>
 						<h3 className="text-sm font-semibold text-foreground">Continue Watching</h3>
 						<p className="text-xs text-muted-foreground">
-							{items.length} item{items.length !== 1 ? "s" : ""} on deck
+							{plexUnavailable
+								? "Showing available items; Plex coverage is unavailable"
+								: `${items.length} item${items.length !== 1 ? "s" : ""} on deck`}
 						</p>
 					</div>
 				</div>
+				{plexUnavailable && <PlexEvidenceNotice evidence={plexEvidence} />}
 
 				<div className="relative group/scroll">
 					<div

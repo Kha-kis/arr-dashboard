@@ -26,6 +26,7 @@ import {
 	Tv,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { PlexQueryEvidenceNotice } from "@/components/presentational/plex-evidence-notice";
 import {
 	Dialog,
 	DialogContent,
@@ -1715,6 +1716,11 @@ export function CleanupRuleDialog({
 							: "Configure when items should be flagged for cleanup."}
 					</DialogDescription>
 				</DialogHeader>
+
+				<PlexQueryEvidenceNotice
+					evidence={fieldOptions?.plexEvidence}
+					label="Cleanup Plex selectors"
+				/>
 
 				{!isEdit && templateData && (
 					<div className="rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2 text-xs text-blue-400">

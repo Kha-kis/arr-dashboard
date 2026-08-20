@@ -176,6 +176,7 @@ async function dispatchCacheRefresh(
 			instanceId,
 			cacheType: "plex",
 			refresh: () => refreshPlexCache({ prisma: app.prisma, instance: publicationInstance, log }),
+			failureRecordedByRefresh: true,
 			publicationAuthority: publicationInstance,
 		});
 		log.info({ instanceId, cacheType }, "pulse-action: plex cache refresh dispatched");

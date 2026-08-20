@@ -57,6 +57,13 @@ import {
 	buildFreshCompleteFileIdIndex,
 	getAllHashesForFileIdComplete,
 } from "../lib/library-sync/infohash-backfill-by-inode.js";
+import {
+	hasAuthoritativePlexEvidence,
+	listObservedRows,
+	listPublishedSections,
+	loadUserEvidence,
+	summarizePlexEvidence,
+} from "../lib/plex/plex-evidence-repository.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { safeJsonParse as utilSafeJsonParse } from "../lib/utils/json.js";
@@ -515,36 +522,15 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const plexLibraries = new Set<string>();
 		const plexCollections = new Set<string>();
 		const plexLabels = new Set<string>();
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX" },
-			select: { id: true },
-		});
-		if (plexInstances.length > 0) {
-			const plexInstanceIds = plexInstances.map((i) => i.id);
-			let cursor: string | undefined;
-			while (true) {
-				const batch = await app.prisma.plexCache.findMany({
-					where: { instanceId: { in: plexInstanceIds } },
-					select: {
-						id: true,
-						sectionTitle: true,
-						watchedByUsers: true,
-						collections: true,
-						labels: true,
-					},
-					take: FIELD_OPTIONS_BATCH_SIZE,
-					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-					orderBy: { id: "asc" },
-				});
-				if (batch.length === 0) break;
-				for (const row of batch) {
-					if (row.sectionTitle) plexLibraries.add(row.sectionTitle);
-					collectStrings(row.watchedByUsers, plexUsers);
-					collectStrings(row.collections, plexCollections);
-					collectStrings(row.labels, plexLabels);
-				}
-				cursor = batch[batch.length - 1]!.id;
-				if (batch.length < FIELD_OPTIONS_BATCH_SIZE) break;
+		const plexEvidence = await loadUserEvidence(app.prisma, { userId });
+		if (hasAuthoritativePlexEvidence(plexEvidence)) {
+			for (const section of listPublishedSections(plexEvidence)) {
+				plexLibraries.add(section.title);
+			}
+			for (const row of listObservedRows(plexEvidence)) {
+				collectStrings(row.watchedByUsers, plexUsers);
+				collectStrings(row.collections, plexCollections);
+				collectStrings(row.labels, plexLabels);
 			}
 		}
 
@@ -614,9 +600,10 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			jellyfinUsers: sorted(jellyfinUsers),
 			jellyfinLibraries: sorted(jellyfinLibraries),
 			arrTags,
-			hasPlex: plexInstances.length > 0,
+			hasPlex: plexEvidence.length > 0,
 			hasTautulli: tautulliInstances.length > 0,
 			hasJellyfin: jellyfinInstances.length > 0,
+			...(plexEvidence.length > 0 ? { plexEvidence: summarizePlexEvidence(plexEvidence) } : {}),
 		};
 
 		// Store in cache

@@ -5,6 +5,79 @@
  */
 
 // ============================================================================
+// Published cache evidence
+// ============================================================================
+
+export type PlexPublicationLevel = "authoritative" | "positive-only";
+
+export type PlexAttemptState = "success" | "in_progress" | "error" | "partial" | "unknown";
+
+export type PlexEvidenceAvailability = "current" | "last-known" | "unavailable";
+
+export type PlexCoverageReasonCode =
+	| "disabled_instance"
+	| "missing_status"
+	| "unpublished_generation"
+	| "missing_generation_id"
+	| "missing_metadata"
+	| "malformed_metadata"
+	| "unknown_metadata_version"
+	| "invalid_publication_level"
+	| "invalid_completeness"
+	| "invalid_item_count"
+	| "invalid_sections"
+	| "duplicate_sections"
+	| "stale_generation"
+	| "generation_changed"
+	| "published_timestamp_changed"
+	| "row_count_mismatch"
+	| "connection_generation_mismatch"
+	| "identity_generation_mismatch"
+	| "latest_attempt_failed"
+	| "latest_attempt_in_progress"
+	| "latest_attempt_partial"
+	| "latest_attempt_unknown"
+	| "latest_attempt_missing"
+	| "latest_attempt_future_dated"
+	| "published_generation_stale"
+	| "metadata_invalid"
+	| "mutation_authority_unavailable"
+	| "query_failed"
+	| "parent_generation_unavailable";
+
+export interface PlexEvidenceSummary {
+	/** Current trust, retained under the original field name for older clients. */
+	publicationLevel: PlexPublicationLevel | "unavailable";
+	completeness: "complete" | "partial" | "unknown";
+	reasonCodes: PlexCoverageReasonCode[];
+	/** Additive current-trust fields. Older clients may safely ignore them. */
+	availability?: PlexEvidenceAvailability;
+	authority?: PlexPublicationLevel | "unavailable";
+	attemptState?: PlexAttemptState;
+	/** Immutable facts about the last generation that was actually published. */
+	publishedGeneration?: {
+		generationId: string;
+		publicationLevel: PlexPublicationLevel;
+		publishedAt: string;
+		itemCount: number;
+	};
+}
+
+export interface PlexGenerationSection {
+	key: string;
+	title: string;
+	type: "movie" | "show";
+}
+
+export interface PlexGenerationMetadataV2 {
+	version: 2;
+	publicationLevel: PlexPublicationLevel;
+	completeness: "complete" | "partial";
+	itemCount: number;
+	sections: PlexGenerationSection[];
+}
+
+// ============================================================================
 // Watch Enrichment (F1)
 // ============================================================================
 
@@ -29,6 +102,7 @@ export interface WatchEnrichmentItem {
 
 export interface WatchEnrichmentResponse {
 	items: Record<string, WatchEnrichmentItem>;
+	evidence?: PlexEvidenceSummary;
 }
 
 // ============================================================================
@@ -45,6 +119,7 @@ export interface PlexSection {
 
 export interface PlexSectionsResponse {
 	sections: PlexSection[];
+	evidence?: PlexEvidenceSummary;
 }
 
 // ============================================================================
@@ -104,6 +179,7 @@ export interface PlexEpisodeStatus {
 export interface PlexEpisodeStatusResponse {
 	showTmdbId: number;
 	episodes: PlexEpisodeStatus[];
+	evidence?: PlexEvidenceSummary;
 }
 
 // ============================================================================
@@ -118,6 +194,7 @@ export interface PlexTagItem {
 export interface PlexTagsResponse {
 	collections: PlexTagItem[];
 	labels: PlexTagItem[];
+	evidence?: PlexEvidenceSummary;
 }
 
 export interface PlexTagUpdateRequest {
@@ -153,6 +230,7 @@ export interface PlexRecentlyAddedItem {
 
 export interface PlexRecentlyAddedResponse {
 	items: PlexRecentlyAddedItem[];
+	evidence?: PlexEvidenceSummary;
 }
 
 // ============================================================================
@@ -189,6 +267,7 @@ export interface PlexOnDeckItem {
 
 export interface PlexOnDeckResponse {
 	items: PlexOnDeckItem[];
+	evidence?: PlexEvidenceSummary;
 }
 
 // ============================================================================
@@ -215,10 +294,11 @@ export interface CacheHealthItem {
 		| "emby"
 		| "emby_episode";
 	lastRefreshedAt: string;
-	lastResult: "success" | "partial" | "error";
+	lastResult: "success" | "partial" | "error" | "in_progress";
 	lastErrorMessage: string | null;
-	itemCount: number;
+	itemCount: number | null;
 	isStale: boolean;
+	evidence?: PlexEvidenceSummary;
 }
 
 export interface CacheHealthResponse {
@@ -237,6 +317,7 @@ export interface SeriesProgressItem {
 
 export interface SeriesProgressResponse {
 	progress: Record<number, SeriesProgressItem>;
+	evidence?: PlexEvidenceSummary;
 }
 
 // ============================================================================
@@ -345,6 +426,7 @@ export interface CollectionStats {
 		watchedItems: number;
 		watchPercent: number;
 	}>;
+	evidence?: PlexEvidenceSummary;
 }
 
 // ============================================================================
@@ -361,6 +443,7 @@ export interface UserEpisodeCompletion {
 			percent: number;
 		}>;
 	}>;
+	evidence?: PlexEvidenceSummary;
 }
 
 // ============================================================================

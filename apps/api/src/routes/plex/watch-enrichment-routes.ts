@@ -8,6 +8,11 @@
 import type { WatchEnrichmentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import {
+	hasAuthoritativeSelectedPlexEvidence,
+	loadUserSelectedEvidence,
+	summarizePlexEvidence,
+} from "../../lib/plex/plex-evidence-repository.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateWatchEnrichment } from "./lib/watch-enrichment-helpers.js";
 
@@ -71,28 +76,34 @@ export async function registerWatchEnrichmentRoutes(
 
 		const tmdbIdList = [...new Set(tmdbIds)];
 
-		// Fetch user's Plex instances (for ownership scoping)
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true },
+		const plexEvidence = await loadUserSelectedEvidence(app.prisma, {
+			userId,
+			selection: {
+				kind: "targets",
+				targets: tmdbIdList.flatMap((tmdbId) => [
+					{ tmdbId, mediaType: "movie" as const },
+					{ tmdbId, mediaType: "series" as const },
+				]),
+			},
 		});
+		const evidenceSummary = summarizePlexEvidence(plexEvidence);
+		if (plexEvidence.length > 0 && !hasAuthoritativeSelectedPlexEvidence(plexEvidence)) {
+			return reply.status(503).send({
+				error: "Plex cache evidence is unavailable",
+				evidence: evidenceSummary,
+			});
+		}
 		const tautulliInstances = await app.prisma.serviceInstance.findMany({
 			where: { userId, service: "TAUTULLI", enabled: true },
 			select: { id: true },
 		});
 
-		const plexInstanceIds = plexInstances.map((i) => i.id);
 		const tautulliInstanceIds = tautulliInstances.map((i) => i.id);
 
 		// Query PlexCache and TautulliCache in parallel
 		const [plexEntries, tautulliEntries] = await Promise.all([
-			plexInstanceIds.length > 0
-				? app.prisma.plexCache.findMany({
-						where: {
-							instanceId: { in: plexInstanceIds },
-							tmdbId: { in: tmdbIdList },
-						},
-					})
+			hasAuthoritativeSelectedPlexEvidence(plexEvidence)
+				? plexEvidence.flatMap((entry) => entry.rows)
 				: [],
 			tautulliInstanceIds.length > 0
 				? app.prisma.tautulliCache.findMany({
@@ -113,7 +124,10 @@ export async function registerWatchEnrichmentRoutes(
 			request.log,
 		);
 
-		const response: WatchEnrichmentResponse = { items };
+		const response: WatchEnrichmentResponse = {
+			items,
+			...(plexEvidence.length > 0 ? { evidence: evidenceSummary } : {}),
+		};
 		return reply.send(response);
 	});
 }

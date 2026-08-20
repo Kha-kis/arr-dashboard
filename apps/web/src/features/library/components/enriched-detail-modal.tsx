@@ -34,6 +34,7 @@ import {
 	X,
 } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
 import { Button } from "../../../components/ui";
 import { useMovieFileQuery } from "../../../hooks/api/useLibrary";
 import { useEpisodeWatchStatus } from "../../../hooks/api/usePlex";
@@ -348,6 +349,14 @@ export const EnrichedDetailModal: React.FC<EnrichedDetailModalProps> = ({
 
 				{/* Hero backdrop */}
 				{!incognitoMode && <BackdropHero backdropPath={backdropPath} title={title} />}
+
+				{!isMovie && (
+					<PlexQueryEvidenceNotice
+						error={episodeWatchQuery.error}
+						evidence={episodeWatchQuery.data?.evidence}
+						label="Episode watch status"
+					/>
+				)}
 
 				{/* Content */}
 				<div className="relative -mt-24 px-6 pb-6 space-y-6">

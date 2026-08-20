@@ -102,7 +102,7 @@ function dataClient(itemCount = 1): PlexClient {
 	} as unknown as PlexClient;
 }
 
-function prisma(finalPredicateMatches = true) {
+function prisma(finalPredicateMatches = true, publicationClaimMatches = true) {
 	const rows: unknown[] = [];
 	const tx = {
 		libraryCleanupConfig: {
@@ -132,9 +132,19 @@ function prisma(finalPredicateMatches = true) {
 			createMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
 		cacheRefreshStatus: {
-			upsert: vi.fn(async () => {
-				authority.events.push("status");
+			findUnique: vi.fn().mockResolvedValue({
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			}),
+			upsert: vi.fn(async ({ create }: { create: { lastAttemptResult?: string } }) => {
+				authority.events.push(
+					create.lastAttemptResult?.startsWith("in_progress:") ? "attempt" : "status",
+				);
 				return {};
+			}),
+			updateMany: vi.fn(async ({ data }: { data: { lastAttemptResult?: string } }) => {
+				authority.events.push(data.lastAttemptResult === "success" ? "status" : "failure");
+				return { count: publicationClaimMatches ? 1 : 0 };
 			}),
 		},
 	};
@@ -170,15 +180,17 @@ describe("Plex publication authority", () => {
 		]);
 		expect(authority.identityReads).toEqual([instance, instance]);
 		expect(authority.events).toEqual([
+			"predicate",
+			"attempt",
 			"identity",
 			"collect",
 			"identity",
 			"predicate",
+			"status",
 			"delete",
 			"create",
 			"create",
 			"create",
-			"status",
 		]);
 		expect(fixture.rows).toHaveLength(205);
 		expect(fixture.rows[0]).toEqual(
@@ -195,9 +207,38 @@ describe("Plex publication authority", () => {
 		expect(fixture.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
 			expect.objectContaining({
 				create: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 9 }),
-				update: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 9 }),
+				update: expect.objectContaining({
+					lastAttemptResult: expect.stringMatching(/^in_progress:/),
+				}),
 			}),
 		);
+		expect(fixture.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					lastAttemptResult: "success",
+					connectionGeneration: 4,
+					identityGeneration: 9,
+				}),
+			}),
+		);
+	});
+
+	it("durably revokes prior mutation authority before the first Plex identity read", async () => {
+		authority.identityError = new Error("upstream unavailable");
+		const fixture = prisma();
+
+		await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+
+		expect(authority.events.indexOf("attempt")).toBeGreaterThanOrEqual(0);
+		expect(authority.events.indexOf("attempt")).toBeLessThan(authority.events.indexOf("identity"));
+		expect(fixture.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				update: expect.objectContaining({
+					lastAttemptResult: expect.stringMatching(/^in_progress:/),
+				}),
+			}),
+		);
+		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
 	});
 
 	it("rejects a stable wrong server before data collection or publication", async () => {
@@ -213,7 +254,10 @@ describe("Plex publication authority", () => {
 		expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
 		expect(authority.clientConnections).toHaveLength(0);
 		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
-		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
+		expect(fixture.tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ lastAttemptResult: "success" }) }),
+		);
 	});
 
 	it("rejects an identity switch after collection without publishing", async () => {
@@ -227,9 +271,18 @@ describe("Plex publication authority", () => {
 		});
 
 		expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
-		expect(authority.events).toEqual(["identity", "collect", "identity", "predicate"]);
+		expect(authority.events).toEqual([
+			"predicate",
+			"attempt",
+			"identity",
+			"collect",
+			"identity",
+			"predicate",
+			"predicate",
+			"failure",
+		]);
 		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
-		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 	});
 
 	it("preserves enrolled identity state when the identity dependency is unavailable", async () => {
@@ -248,7 +301,7 @@ describe("Plex publication authority", () => {
 		expect(result.errorMessages.join(" ")).not.toMatch(/secret|plaintext|ECONNREFUSED/);
 		expect(fixture.tx.serviceInstance.updateMany).not.toHaveBeenCalled();
 		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
-		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.upsert).toHaveBeenCalledOnce();
 	});
 
 	it("rejects a concurrent service update at the final exact predicate", async () => {
@@ -261,7 +314,7 @@ describe("Plex publication authority", () => {
 		});
 
 		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0, errors: 0 });
-		expect(authority.events).toEqual(["identity", "collect", "identity", "predicate"]);
+		expect(authority.events).toEqual(["predicate"]);
 		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
 		expect(fixture.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
@@ -281,10 +334,77 @@ describe("Plex publication authority", () => {
 		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
 	});
 
+	it("does not let an older same-identity attempt publish after its marker is superseded", async () => {
+		const fixture = prisma(true, false);
+
+		const result = await refreshPlexCache({
+			prisma: fixture.db,
+			instance: ownedSnapshot(),
+			log,
+		});
+
+		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0, errors: 0 });
+		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.plexCache.createMany).not.toHaveBeenCalled();
+	});
+
 	it("publishes episode rows and status with the same two generations", async () => {
 		const fixture = prisma();
-		(fixture.db as never as { plexCache: { findMany: ReturnType<typeof vi.fn> } }).plexCache = {
-			findMany: vi.fn().mockResolvedValue([{ tmdbId: 42, ratingKey: "show-1" }]),
+		const parentPublishedAt = new Date();
+		const parentRow = {
+			id: "plex-row-1",
+			instanceId: "plex-1",
+			tmdbId: 42,
+			mediaType: "series",
+			sectionId: "shows",
+			sectionTitle: "Shows",
+			title: "Example Show",
+			ratingKey: "show-1",
+			lastWatchedAt: parentPublishedAt,
+			watchCount: 1,
+			watchedByUsers: "[]",
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			labels: "[]",
+			addedAt: null,
+			thumb: null,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		};
+		const parentStatus = {
+			instanceId: "plex-1",
+			cacheType: "plex",
+			lastRefreshedAt: parentPublishedAt,
+			lastResult: "success",
+			lastErrorMessage: null,
+			lastAttemptAt: parentPublishedAt,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			itemCount: 1,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			generationId: "parent-generation-1",
+			generationMetadata: JSON.stringify({
+				sections: [{ key: "shows", title: "Shows", type: "show" }],
+			}),
+		};
+		const parentInstance = {
+			...ownedSnapshot(),
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityVerifiedAt: new Date(0),
+			updatedAt: new Date(0),
+		};
+		const db = fixture.db as never as {
+			serviceInstance: { findFirst: ReturnType<typeof vi.fn> };
+			cacheRefreshStatus: { findMany: ReturnType<typeof vi.fn> };
+			plexCache: { findMany: ReturnType<typeof vi.fn>; count: ReturnType<typeof vi.fn> };
+		};
+		db.serviceInstance = { findFirst: vi.fn().mockResolvedValue(parentInstance) };
+		db.cacheRefreshStatus = { findMany: vi.fn().mockResolvedValue([parentStatus]) };
+		db.plexCache = {
+			findMany: vi.fn().mockResolvedValue([parentRow]),
+			count: vi.fn().mockResolvedValue(1),
 		};
 		authority.client = {
 			getHistory: vi.fn().mockResolvedValue([
@@ -318,10 +438,9 @@ describe("Plex publication authority", () => {
 		expect(fixture.tx.plexEpisodeCache.createMany).toHaveBeenCalledWith({
 			data: [expect.objectContaining({ connectionGeneration: 4, identityGeneration: 9 })],
 		});
-		expect(fixture.tx.cacheRefreshStatus.upsert).toHaveBeenLastCalledWith(
+		expect(fixture.tx.cacheRefreshStatus.updateMany).toHaveBeenLastCalledWith(
 			expect.objectContaining({
-				create: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 9 }),
-				update: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 9 }),
+				data: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 9 }),
 			}),
 		);
 	});

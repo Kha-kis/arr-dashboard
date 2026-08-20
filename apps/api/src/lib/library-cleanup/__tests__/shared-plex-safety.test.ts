@@ -926,6 +926,7 @@ function configurePlexApprovalAuthority(
 		items?: Array<{ id: string; arrItemId: number; title: string }>;
 		driftBeforeApproval?: boolean;
 		driftAfterFirstApproval?: "rows" | "rows_and_status";
+		statusOverrides?: Record<string, unknown>;
 	} = {},
 ) {
 	const providerInstance = {
@@ -940,7 +941,7 @@ function configurePlexApprovalAuthority(
 		updatedAt: new Date("2026-08-14T00:00:00.000Z"),
 	};
 	const completedAt = new Date();
-	let statusVersion = 1;
+	let generationRevision = 1;
 	let rows = [
 		{
 			id: "plex-cache-1",
@@ -966,16 +967,21 @@ function configurePlexApprovalAuthority(
 		lastRefreshedAt: completedAt,
 		lastResult: "success",
 		lastErrorMessage: null,
+		lastAttemptAt: completedAt,
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
 		itemCount: rows.length,
 		connectionGeneration: 3,
 		identityGeneration: 7,
-		generationId: `plex-generation-${statusVersion}`,
+		generationId: `plex-generation-${generationRevision}`,
 		generationMetadata: JSON.stringify({
-			version: statusVersion,
+			version: 2,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			itemCount: rows.length,
 			sections: [{ key: "movies", title: "Movies", type: "movie" }],
 		}),
+		...options.statusOverrides,
 	});
 	const items = options.items ?? [
 		{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" },
@@ -1029,7 +1035,7 @@ function configurePlexApprovalAuthority(
 		const ordinal = transactionCreate.mock.calls.length;
 		if (ordinal === 1 && options.driftAfterFirstApproval) {
 			rows = [{ ...rows[0]!, watchCount: rows[0]!.watchCount + 1 }];
-			if (options.driftAfterFirstApproval === "rows_and_status") statusVersion++;
+			if (options.driftAfterFirstApproval === "rows_and_status") generationRevision++;
 		}
 		return { id: `approval-transaction-${ordinal}` };
 	});
@@ -1829,6 +1835,24 @@ describe("shared Plex deletion safety", () => {
 		expect(authority.transactionCreate).not.toHaveBeenCalled();
 		expect(authority.rootCreate).not.toHaveBeenCalled();
 		expect(result).toMatchObject({ itemsSkipped: 1, itemsRemoved: 0, status: "partial" });
+	});
+
+	it("does not create an approval from prior Plex evidence after a failed latest attempt", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture, {
+			items: [{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" }],
+			statusOverrides: {
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "Plex inventory changed",
+				lastErrorMessage: "Plex inventory changed",
+			},
+		});
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result.itemsFlagged).toBe(0);
+		expect(authority.transactionCreate).not.toHaveBeenCalled();
+		expect(authority.rootCreate).not.toHaveBeenCalled();
 	});
 
 	it("stops before a later approval when provider rows and status drift between targets", async () => {
