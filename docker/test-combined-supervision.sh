@@ -320,7 +320,15 @@ process.on("SIGTERM", () => {
 setInterval(() => {}, 1000);
 EOF
 
+# Remove all shim control files from the host config dir before each new
+# container, so a previous case's mode (exit0/exit3/ignore-term/etc.) can
+# never leak into a later case.
+reset_shim_fixture() {
+    rm -f "$CONFIG_DIR/.shim-api-control" "$CONFIG_DIR/.shim-web-control"
+}
+
 start_shim_container() {
+    reset_shim_fixture
     docker rm -f "$SHIM_CTR" >/dev/null 2>&1 || true
     if [ "$ROOTLESS" = true ]; then
         docker run -d --name "$SHIM_CTR" --user 1000:1000 \

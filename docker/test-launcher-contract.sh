@@ -45,6 +45,12 @@ function mode() {
 }
 setInterval(() => {
   const m = mode();
+  if (m === "exit42-once") {
+    // Atomically clear the control so the replacement child stays alive.
+    fs.writeFileSync(ctl, "idle");
+    console.log("[mock-api] exiting 42 (once)");
+    process.exit(42);
+  }
   if (m === "exit42") { console.log("[mock-api] exiting 42"); process.exit(42); }
   if (m === "exit3") { console.log("[mock-api] exiting 3"); process.exit(3); }
   if (m === "exit0") { console.log("[mock-api] exiting 0"); process.exit(0); }
@@ -53,7 +59,13 @@ process.on("SIGTERM", () => { console.log("[mock-api] SIGTERM -> exit 0"); proce
 setInterval(() => {}, 1000);
 EOF
 
+# Remove all mock fixture state from the host config dir before each container.
+reset_launcher_fixture() {
+    rm -f "$CONFIG_DIR/.launcher-ctl" "$CONFIG_DIR/.mock-pid"
+}
+
 start_ctr() {
+    reset_launcher_fixture
     docker rm -f "$CTR" >/dev/null 2>&1 || true
     docker run -d --name "$CTR" \
         -v "$CONFIG_DIR":/config \
@@ -65,8 +77,14 @@ set_mode() {
     docker exec "$CTR" sh -c "printf '%s' '$1' > /config/.launcher-ctl"
 }
 
+# Return the mock API PID, but verify it belongs to THIS container's mock
+# process (not a stale file from a previous container).
 inner_pid() {
-    docker exec "$CTR" sh -c "cat /config/.mock-pid 2>/dev/null || true"
+    p=$(docker exec "$CTR" sh -c "cat /config/.mock-pid 2>/dev/null || true")
+    [ -n "$p" ] || return 1
+    # Verify the PID is a live node process in this container.
+    docker exec "$CTR" sh -c "test -d /proc/$p" 2>/dev/null || return 1
+    echo "$p"
 }
 
 wait_inner() {
@@ -120,7 +138,7 @@ if docker logs "$CTR" 2>&1 | grep -q "LAUNCHER_MANAGED=true"; then
 else
     bad "LAUNCHER_MANAGED=true missing"
 fi
-set_mode exit42
+set_mode exit42-once
 sleep 4
 p2=$(inner_pid)
 state=$(docker inspect "$CTR" --format '{{.State.Status}}' 2>/dev/null)
@@ -138,6 +156,22 @@ if docker logs "$CTR" 2>&1 | grep -q "Restart requested"; then
     ok "launcher logged the restart request"
 else
     bad "missing 'Restart requested' log"
+fi
+# Prove the replacement stays alive (not a restart loop): observe for 5s that
+# the inner PID does not change again.
+sleep 5
+p3=$(inner_pid)
+if [ "$p3" = "$p2" ]; then
+    ok "replacement inner stayed alive (no restart loop)"
+else
+    bad "replacement inner changed (pid $p2 -> $p3) — possible restart loop"
+fi
+# Only one "Restart requested" log should exist for the single-restart case.
+restart_count=$(docker logs "$CTR" 2>&1 | grep -c "Restart requested" || true)
+if [ "$restart_count" = "1" ]; then
+    ok "exactly one restart request logged"
+else
+    bad "expected 1 restart request, got $restart_count"
 fi
 
 # --- Non-42 propagation ---

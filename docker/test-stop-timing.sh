@@ -171,13 +171,14 @@ run_green_stubborn_once() {
     elapsed=$((end - start))
     code=$(docker inspect "$ctr" --format '{{.State.ExitCode}}' 2>/dev/null || echo '?')
     oom=$(docker inspect "$ctr" --format '{{.State.OOMKilled}}' 2>/dev/null || echo '?')
+    state=$(docker inspect "$ctr" --format '{{.State.Status}}' 2>/dev/null || echo '?')
     logs=$(docker logs "$ctr" 2>&1 || true)
     sigkill=$(echo "$logs" | grep -c 'sending SIGKILL' || true)
     graceful=$(echo "$logs" | grep -c 'Services stopped gracefully' || true)
-    echo "  run: elapsed=${elapsed}s exit=$code oom=$oom internal_sigkill=$sigkill graceful=$graceful"
+    echo "  run: elapsed=${elapsed}s exit=$code oom=$oom state=$state internal_sigkill=$sigkill graceful=$graceful"
     docker rm -f "$ctr" >/dev/null 2>&1 || true
-    # return elapsed via stdout for aggregation
-    echo "$elapsed"
+    # Structured result: elapsed|exit|oom|sigkill|graceful|state
+    echo "${elapsed}|${code}|${oom}|${sigkill}|${graceful}|${state}"
 }
 
 case_green_stubborn() {
@@ -196,26 +197,47 @@ case_green_stubborn() {
         i=1
         while [ "$i" -le "$runs" ]; do
             ctr="${WORK##*/}-green-${mode}-${i}"
-            e=$(run_green_stubborn_once "$ctr" "$mode")
-            # e is the elapsed seconds (last line of output)
-            e=$(echo "$e" | tail -1)
-            case "$e" in
-                ''|*[!0-9]*) allpass=0; i=$((i+1)); continue ;;
+            raw=$(run_green_stubborn_once "$ctr" "$mode")
+            result=$(echo "$raw" | tail -1)
+            case "$result" in
+                ''|*[!0-9|]*) allpass=0; i=$((i+1)); continue ;;
             esac
+            e=$(echo "$result" | cut -d'|' -f1)
+            rc=$(echo "$result" | cut -d'|' -f2)
+            ok_=$(echo "$result" | cut -d'|' -f3)
+            sk=$(echo "$result" | cut -d'|' -f4)
+            gc=$(echo "$result" | cut -d'|' -f5)
+            st=$(echo "$result" | cut -d'|' -f6)
+            # Assert every field, not just elapsed.
+            if [ "$e" -gt 9 ]; then
+                echo "  run $i FAIL: elapsed ${e}s > 9s"; allpass=0
+            fi
+            if [ "$rc" != "0" ]; then
+                echo "  run $i FAIL: exit code $rc (expected 0)"; allpass=0
+            fi
+            if [ "$ok_" != "false" ]; then
+                echo "  run $i FAIL: OOMKilled=$ok_ (expected false)"; allpass=0
+            fi
+            if [ "$sk" -lt 1 ]; then
+                echo "  run $i FAIL: no internal SIGKILL log"; allpass=0
+            fi
+            if [ "$gc" -lt 1 ]; then
+                echo "  run $i FAIL: no graceful-completion log"; allpass=0
+            fi
+            if [ "$st" != "exited" ]; then
+                echo "  run $i FAIL: state $st (expected exited)"; allpass=0
+            fi
             total=$((total + e))
             [ "$e" -lt "$min" ] && min=$e
             [ "$e" -gt "$max" ] && max=$e
-            if [ "$e" -gt 9 ]; then
-                allpass=0
-            fi
             i=$((i+1))
         done
         avg=$((total / runs))
         echo "  $mode: min=${min}s max=${max}s avg=${avg}s (runs=$runs)"
         if [ "$allpass" = "1" ] && [ "$max" -le 9 ]; then
-            ok "$mode stubborn stop within 9s (max ${max}s)"
+            ok "$mode stubborn stop: all fields pass (max ${max}s)"
         else
-            bad "$mode stubborn stop exceeded 9s (max ${max}s)"
+            bad "$mode stubborn stop: one or more assertions failed (max ${max}s)"
         fi
     done
 }
@@ -301,6 +323,8 @@ prompt_exit_once() {
     ctr=$1
     service=$2
     rootless=$3
+    rm -f "$CONFIG_DIR/.launcher-ctl" "$CONFIG_DIR/.mock-pid" \
+          "$CONFIG_DIR/.shim-api-control" "$CONFIG_DIR/.shim-web-control"
     docker rm -f "$ctr" >/dev/null 2>&1 || true
     if [ "$rootless" = "rootless" ]; then
         chown -R 1000:1000 "$CONFIG_DIR" 2>/dev/null || true
@@ -321,19 +345,30 @@ prompt_exit_once() {
     start=$(date +%s)
     docker exec "$ctr" sh -c "kill -KILL $pid 2>/dev/null || true"
     # wait for container exit
-    elapsed=0
-    while [ "$elapsed" -lt 30 ]; do
+    pe_elapsed=0
+    while [ "$pe_elapsed" -lt 30 ]; do
         state=$(docker inspect "$ctr" --format '{{.State.Status}}' 2>/dev/null || echo missing)
         [ "$state" != "running" ] && break
         sleep 1
-        elapsed=$((elapsed + 1))
+        pe_elapsed=$((pe_elapsed + 1))
     done
     end=$(date +%s)
     wall=$((end - start))
     code=$(docker inspect "$ctr" --format '{{.State.ExitCode}}' 2>/dev/null || echo '?')
-    echo "  $rootless $service death: wall=${wall}s exit=$code"
+    oom=$(docker inspect "$ctr" --format '{{.State.OOMKilled}}' 2>/dev/null || echo '?')
+    logs=$(docker logs "$ctr" 2>&1 || true)
+    fatal_log=$(echo "$logs" | grep -c "$service service exited unexpectedly" || true)
+    term_log=$(echo "$logs" | grep -c "Terminating" || true)
+    # Check no matching service process remains alive.
+    case "$service" in
+        API)   match="launcher.js" ;;
+        Web)   match="server.js" ;;
+    esac
+    survivors=$(docker exec "$ctr" sh -c "for p in /proc/[0-9]*; do c=\$(tr '\0' ' ' < \"\$p/cmdline\" 2>/dev/null); case \"\$c\" in *\"$match\"*) echo found;; esac; done" 2>/dev/null | grep -c found || true)
+    echo "  $rootless $service death: wall=${wall}s exit=$code oom=$oom fatal_log=$fatal_log term_log=$term_log survivors=$survivors"
     docker rm -f "$ctr" >/dev/null 2>&1 || true
-    echo "$wall"
+    # Structured result: wall|exit|oom|fatal_log|term_log|survivors
+    echo "${wall}|${code}|${oom}|${fatal_log}|${term_log}|${survivors}"
 }
 
 case_prompt_exit() {
@@ -342,15 +377,28 @@ case_prompt_exit() {
     for mode in rootful rootless; do
         for svc in API Web; do
             ctr="${WORK##*/}-prompt-${mode}-${svc}"
-            w=$(prompt_exit_once "$ctr" "$svc" "$mode")
-            w=$(echo "$w" | tail -1)
-            case "$w" in
-                ''|*[!0-9]*) bad "$mode $svc death: no timing"; continue ;;
+            raw=$(prompt_exit_once "$ctr" "$svc" "$mode")
+            result=$(echo "$raw" | tail -1)
+            case "$result" in
+                ''|*[!0-9|]*) bad "$mode $svc death: no result"; continue ;;
             esac
-            if [ "$w" -le 4 ]; then
-                ok "$mode $svc death detected in ${w}s (<=4s)"
+            w=$(echo "$result" | cut -d'|' -f1)
+            rc=$(echo "$result" | cut -d'|' -f2)
+            ok_=$(echo "$result" | cut -d'|' -f3)
+            fl=$(echo "$result" | cut -d'|' -f4)
+            tl=$(echo "$result" | cut -d'|' -f5)
+            sv=$(echo "$result" | cut -d'|' -f6)
+            pass=1
+            if [ "$w" -gt 4 ]; then echo "  FAIL: ${w}s > 4s"; pass=0; fi
+            if [ "$rc" = "0" ]; then echo "  FAIL: exit code 0 (expected nonzero)"; pass=0; fi
+            if [ "$ok_" != "false" ]; then echo "  FAIL: OOMKilled=$ok_"; pass=0; fi
+            if [ "$fl" -lt 1 ]; then echo "  FAIL: no fatal service exit log"; pass=0; fi
+            if [ "$tl" -lt 1 ]; then echo "  FAIL: no sibling termination log"; pass=0; fi
+            if [ "$sv" != "0" ]; then echo "  FAIL: $sv matching service process(es) survived"; pass=0; fi
+            if [ "$pass" = "1" ]; then
+                ok "$mode $svc death: all assertions pass (${w}s)"
             else
-                bad "$mode $svc death took ${w}s (>4s)"
+                bad "$mode $svc death: one or more assertions failed"
             fi
         done
     done

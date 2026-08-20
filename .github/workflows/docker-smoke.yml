@@ -295,6 +295,12 @@ jobs:
 
       - name: Combined supervision tests
         run: |
+          test -x docker/test-combined-supervision.sh
+          test -x docker/test-launcher-contract.sh
+          test -x docker/test-combined-restart.sh
+          test -x docker/test-dump-heap.sh
+          test -x docker/test-shutdown-grace.sh
+          test -x docker/test-stop-timing.sh
           docker/test-combined-supervision.sh arr-dashboard:smoke
           docker/test-launcher-contract.sh arr-dashboard:smoke
           docker/test-combined-restart.sh arr-dashboard:smoke
