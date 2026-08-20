@@ -9,6 +9,7 @@ import {
 	countPlexCacheRows,
 	listPlexCacheRows,
 	listPlexEpisodeCacheRows,
+	listPlexEpisodeRowsForShows,
 	listSelectedPlexCacheRows,
 	type PlexCacheRowSelection,
 	readPlexEpisodeGenerationStatus,
@@ -96,6 +97,8 @@ export type AvailablePlexEpisodeEvidence = {
 };
 
 export type PlexEpisodeEvidence = AvailablePlexEpisodeEvidence | UnavailablePlexInstanceEvidence;
+
+export type SelectedPlexEpisodeEvidence = PlexEpisodeEvidence;
 
 function unavailable(reasonCode: PlexCoverageReasonCode): UnavailablePlexInstanceEvidence {
 	return {
@@ -901,6 +904,164 @@ export async function loadInstanceEpisodeEvidence(
 		}
 		const rows = await listPlexEpisodeCacheRows(prisma, instance.id);
 		if (rows.length !== before.itemCount) return unavailable("row_count_mismatch");
+		if (
+			rows.some(
+				(row) =>
+					row.instanceId !== instance.id ||
+					row.connectionGeneration !== instance.connectionGeneration ||
+					row.identityGeneration !== instance.identityGeneration,
+			)
+		) {
+			return unavailable("connection_generation_mismatch");
+		}
+		const after = await readPlexEpisodeGenerationStatus(prisma, instance.id);
+		if (
+			after?.lastResult !== "success" ||
+			after.generationId !== before.generationId ||
+			after.lastRefreshedAt.getTime() !== before.lastRefreshedAt.getTime() ||
+			after.lastErrorMessage !== before.lastErrorMessage ||
+			after.lastAttemptAt?.getTime() !== before.lastAttemptAt?.getTime() ||
+			after.lastAttemptResult !== before.lastAttemptResult ||
+			after.lastAttemptErrorMessage !== before.lastAttemptErrorMessage ||
+			after.itemCount !== before.itemCount ||
+			after.generationMetadata !== before.generationMetadata
+		) {
+			return unavailable("generation_changed");
+		}
+		const afterBinding = validateStatusBinding(instance, after);
+		if (afterBinding) return unavailable(afterBinding);
+		const parentAfter = await loadOwnedPublishedGenerationObservation(prisma, instance, options);
+		if (
+			!parentAfter.available ||
+			!hasCurrentPlexMutationAuthority(parentAfter) ||
+			parentAfter.generationId !== parentBefore.generationId
+		) {
+			return unavailable("parent_generation_unavailable");
+		}
+		return {
+			available: true,
+			instanceId: instance.id,
+			generationId: before.generationId,
+			parentGenerationId: parentMetadata.parentGenerationId,
+			publishedAt: before.lastRefreshedAt,
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+			rows,
+			generationStatus: {
+				instanceId: before.instanceId,
+				lastRefreshedAt: before.lastRefreshedAt,
+				lastResult: before.lastResult,
+				lastErrorMessage: before.lastErrorMessage,
+				lastAttemptAt: before.lastAttemptAt,
+				lastAttemptResult: before.lastAttemptResult,
+				lastAttemptErrorMessage: before.lastAttemptErrorMessage,
+				itemCount: before.itemCount,
+				connectionGeneration: before.connectionGeneration,
+				identityGeneration: before.identityGeneration,
+				generationId: before.generationId,
+				generationMetadata: before.generationMetadata,
+			},
+			evidence: {
+				availability: "current",
+				authority: "authoritative",
+				attemptState: "success",
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				reasonCodes: [],
+				publishedGeneration: {
+					generationId: before.generationId,
+					publicationLevel: "authoritative",
+					publishedAt: before.lastRefreshedAt.toISOString(),
+					itemCount: before.itemCount,
+				},
+			},
+		};
+	} catch {
+		return unavailable("query_failed");
+	}
+}
+
+/**
+ * Reads selected episode rows without weakening the full-generation authority
+ * checks that make a partial selection safe to return.
+ */
+export async function loadInstanceSelectedEpisodeEvidence(
+	prisma: PlexEvidencePrisma,
+	input: {
+		userId: string;
+		instanceId: string;
+		showTmdbIds: number[];
+		instance?: PlexEvidenceInstance;
+		now?: Date;
+		maxAgeMs?: number;
+	},
+): Promise<SelectedPlexEpisodeEvidence> {
+	try {
+		const options = withDefaultFreshness(input);
+		const instance =
+			input.instance ??
+			((await prisma.serviceInstance.findFirst({
+				where: { id: input.instanceId, userId: input.userId, service: "PLEX" },
+			})) as PlexEvidenceInstance | null);
+		if (!instance) return unavailable("missing_status");
+		const parentBefore = await loadOwnedPublishedGenerationObservation(prisma, instance, options);
+		if (!parentBefore.available) return parentBefore;
+		if (!hasCurrentPlexMutationAuthority(parentBefore)) {
+			return unavailableFromEvidence(parentBefore.evidence);
+		}
+		const before = await readPlexEpisodeGenerationStatus(prisma, instance.id);
+		if (before?.lastResult !== "success") return unavailable("missing_status");
+		if (!before.generationId?.trim()) return unavailable("missing_generation_id");
+		const episodePublishedAt = before.lastRefreshedAt.getTime();
+		const now = options.now ?? new Date();
+		const episodeAttempt = evaluatePlexLatestAttemptTrust(before, now);
+		if (episodeAttempt.reasonCode !== null) {
+			const result = unavailable(episodeAttempt.reasonCode);
+			result.evidence.availability = "last-known";
+			result.evidence.attemptState = episodeAttempt.attemptState;
+			result.evidence.publishedGeneration = {
+				generationId: before.generationId,
+				publicationLevel: "authoritative",
+				publishedAt: before.lastRefreshedAt.toISOString(),
+				itemCount: before.itemCount,
+			};
+			return result;
+		}
+		if (!Number.isFinite(episodePublishedAt) || episodePublishedAt > now.getTime()) {
+			return unavailable("published_timestamp_changed");
+		}
+		if (now.getTime() - episodePublishedAt > options.maxAgeMs) {
+			return unavailable("published_generation_stale");
+		}
+		const binding = validateStatusBinding(instance, before);
+		if (binding) return unavailable(binding);
+		const parentMetadata = decodePlexEpisodeGenerationMetadata(before.generationMetadata);
+		if (!parentMetadata.ok) return unavailable("malformed_metadata");
+		if (
+			parentMetadata.parentGenerationId !== parentBefore.generationId ||
+			parentMetadata.connectionGeneration !== instance.connectionGeneration ||
+			parentMetadata.identityGeneration !== instance.identityGeneration
+		) {
+			return unavailable("parent_generation_unavailable");
+		}
+		const [totalCount, boundCount, rows] = await Promise.all([
+			countPlexEpisodeCacheRows(prisma, { instanceId: instance.id }),
+			countPlexEpisodeCacheRows(prisma, {
+				instanceId: instance.id,
+				connectionGeneration: instance.connectionGeneration,
+				identityGeneration: instance.identityGeneration,
+			}),
+			listPlexEpisodeRowsForShows(
+				prisma,
+				instance.id,
+				input.showTmdbIds,
+				instance.connectionGeneration,
+				instance.identityGeneration,
+			),
+		]);
+		if (totalCount !== before.itemCount || boundCount !== totalCount) {
+			return unavailable("row_count_mismatch");
+		}
 		if (
 			rows.some(
 				(row) =>

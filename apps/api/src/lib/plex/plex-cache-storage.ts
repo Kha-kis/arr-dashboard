@@ -10,6 +10,7 @@ import type { PlexCacheRefreshAttempt } from "../services/provider-cache-status.
 
 export const PLEX_CACHE_READ_PAGE_SIZE = 500;
 export const PLEX_CACHE_WRITE_CHUNK_SIZE = 100;
+export const PLEX_EPISODE_SHOW_SELECTION_BATCH_SIZE = 250;
 
 export class PlexRefreshAttemptSupersededError extends Error {
 	constructor() {
@@ -221,6 +222,68 @@ export async function listPlexEpisodeCacheRows(
 		if (batch.length < PLEX_CACHE_READ_PAGE_SIZE) break;
 	}
 	return rows;
+}
+
+/**
+ * Reads only the requested episode-cache shows from one authoritative source
+ * generation. Full-generation completeness remains the repository's job.
+ */
+export async function listPlexEpisodeRowsForShows(
+	prisma: PlexEpisodeCacheReader,
+	instanceId: string,
+	showTmdbIds: number[],
+	expectedConnectionGeneration: number,
+	expectedIdentityGeneration: number,
+): Promise<PlexEpisodeCache[]> {
+	if (
+		!Number.isSafeInteger(expectedConnectionGeneration) ||
+		expectedConnectionGeneration < 0 ||
+		!Number.isSafeInteger(expectedIdentityGeneration) ||
+		expectedIdentityGeneration <= 0
+	) {
+		throw new RangeError("Expected Plex generations must be safe integers");
+	}
+	if (showTmdbIds.some((showTmdbId) => !Number.isSafeInteger(showTmdbId) || showTmdbId <= 0)) {
+		throw new RangeError("Plex episode show IDs must be positive safe integers");
+	}
+	const uniqueShowTmdbIds = [...new Set(showTmdbIds)];
+	if (uniqueShowTmdbIds.length === 0) return [];
+
+	const rows: PlexEpisodeCache[] = [];
+	for (
+		let start = 0;
+		start < uniqueShowTmdbIds.length;
+		start += PLEX_EPISODE_SHOW_SELECTION_BATCH_SIZE
+	) {
+		const showTmdbIdBatch = uniqueShowTmdbIds.slice(
+			start,
+			start + PLEX_EPISODE_SHOW_SELECTION_BATCH_SIZE,
+		);
+		rows.push(
+			...(await prisma.plexEpisodeCache.findMany({
+				where: {
+					instanceId,
+					showTmdbId: { in: showTmdbIdBatch },
+					connectionGeneration: expectedConnectionGeneration,
+					identityGeneration: expectedIdentityGeneration,
+				},
+				select: PLEX_EPISODE_CACHE_ROW_SELECT,
+				orderBy: [
+					{ showTmdbId: "asc" },
+					{ seasonNumber: "asc" },
+					{ episodeNumber: "asc" },
+					{ id: "asc" },
+				],
+			})),
+		);
+	}
+	return rows.sort(
+		(left, right) =>
+			left.showTmdbId - right.showTmdbId ||
+			left.seasonNumber - right.seasonNumber ||
+			left.episodeNumber - right.episodeNumber ||
+			left.id.localeCompare(right.id),
+	);
 }
 
 export async function countPlexEpisodeCacheRows(

@@ -5,6 +5,7 @@ import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/t
 const mocks = vi.hoisted(() => ({
 	loadInstanceEvidence: vi.fn(),
 	loadInstanceEpisodeEvidence: vi.fn(),
+	loadInstanceSelectedEpisodeEvidence: vi.fn(),
 	loadUserEvidence: vi.fn(),
 	loadUserSelectedEvidence: vi.fn(),
 }));
@@ -13,6 +14,7 @@ vi.mock("../../../lib/plex/plex-evidence-repository.js", async (importOriginal) 
 	...(await importOriginal<typeof import("../../../lib/plex/plex-evidence-repository.js")>()),
 	loadInstanceEvidence: mocks.loadInstanceEvidence,
 	loadInstanceEpisodeEvidence: mocks.loadInstanceEpisodeEvidence,
+	loadInstanceSelectedEpisodeEvidence: mocks.loadInstanceSelectedEpisodeEvidence,
 	loadUserEvidence: mocks.loadUserEvidence,
 	loadUserSelectedEvidence: mocks.loadUserSelectedEvidence,
 }));
@@ -77,10 +79,13 @@ const unavailable = {
 
 describe("Plex value route evidence contracts", () => {
 	let app: FastifyInstance;
+	let plexInstances: Array<{ id: string }>;
 
 	beforeEach(async () => {
+		plexInstances = [{ id: "plex-1" }];
 		mocks.loadInstanceEvidence.mockResolvedValue(unavailable);
 		mocks.loadInstanceEpisodeEvidence.mockResolvedValue(unavailable);
+		mocks.loadInstanceSelectedEpisodeEvidence.mockResolvedValue(unavailable);
 		mocks.loadUserEvidence.mockResolvedValue([unavailable]);
 		mocks.loadUserSelectedEvidence.mockResolvedValue([unavailable]);
 
@@ -89,7 +94,7 @@ describe("Plex value route evidence contracts", () => {
 		app.decorate("prisma", {
 			serviceInstance: {
 				findMany: vi.fn(async ({ where }: { where?: { service?: string } }) =>
-					where?.service === "PLEX" ? [{ id: "plex-1" }] : [],
+					where?.service === "PLEX" ? plexInstances : [],
 				),
 			},
 			tautulliCache: { findMany: vi.fn(async () => []) },
@@ -176,6 +181,7 @@ describe("Plex value route evidence contracts", () => {
 	] as const)("preserves the authoritative-success shape for %s", async (_name, url, expected) => {
 		mocks.loadInstanceEvidence.mockResolvedValue(currentSelected);
 		mocks.loadInstanceEpisodeEvidence.mockResolvedValue(currentEpisodes);
+		mocks.loadInstanceSelectedEpisodeEvidence.mockResolvedValue(currentEpisodes);
 		mocks.loadUserEvidence.mockResolvedValue([currentSelected]);
 		mocks.loadUserSelectedEvidence.mockResolvedValue([currentSelected]);
 
@@ -183,5 +189,108 @@ describe("Plex value route evidence contracts", () => {
 
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toEqual(expected);
+	});
+
+	it.each([
+		["series progress", "/api/plex/series-progress?tmdbIds=1,2,1"],
+		["episode status", "/api/plex/episodes?instanceId=plex-1&showTmdbId=1"],
+		["episode completion", "/api/plex/user-episode-completion?tmdbIds=1,2,1"],
+	] as const)(
+		"uses selected episode evidence for %s while preserving its response",
+		async (_name, url) => {
+			mocks.loadInstanceEpisodeEvidence.mockResolvedValue(currentEpisodes);
+			mocks.loadInstanceSelectedEpisodeEvidence.mockResolvedValue(currentEpisodes);
+
+			const response = await createInjectAuthenticated(app)("GET", url);
+
+			expect(response.statusCode).toBe(200);
+			expect(mocks.loadInstanceSelectedEpisodeEvidence).toHaveBeenCalled();
+			expect(mocks.loadInstanceEpisodeEvidence).not.toHaveBeenCalled();
+		},
+	);
+
+	it("aggregates selected episode progress from each enabled Plex instance", async () => {
+		plexInstances = [{ id: "plex-1" }, { id: "plex-2" }];
+		mocks.loadInstanceSelectedEpisodeEvidence.mockImplementation(
+			async (_prisma: unknown, input: { instanceId: string }) =>
+				input.instanceId === "plex-1"
+					? {
+							...currentEpisodes,
+							rows: [{ showTmdbId: 1, watched: true }],
+						}
+					: {
+							...currentEpisodes,
+							instanceId: "plex-2",
+							rows: [
+								{ showTmdbId: 1, watched: false },
+								{ showTmdbId: 2, watched: true },
+							],
+						},
+		);
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/plex/series-progress?tmdbIds=2,1,2",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({
+			progress: {
+				1: { total: 2, watched: 1, percent: 50 },
+				2: { total: 1, watched: 1, percent: 100 },
+			},
+			evidence: authoritativeEvidence,
+		});
+		expect(mocks.loadInstanceSelectedEpisodeEvidence).toHaveBeenNthCalledWith(
+			1,
+			expect.anything(),
+			{ userId: "user-1", instanceId: "plex-1", showTmdbIds: [2, 1] },
+		);
+		expect(mocks.loadInstanceSelectedEpisodeEvidence).toHaveBeenNthCalledWith(
+			2,
+			expect.anything(),
+			{ userId: "user-1", instanceId: "plex-2", showTmdbIds: [2, 1] },
+		);
+	});
+
+	it("aggregates selected episode completion from each enabled Plex instance", async () => {
+		plexInstances = [{ id: "plex-1" }, { id: "plex-2" }];
+		mocks.loadInstanceSelectedEpisodeEvidence.mockImplementation(
+			async (_prisma: unknown, input: { instanceId: string }) =>
+				input.instanceId === "plex-1"
+					? {
+							...currentEpisodes,
+							rows: [{ showTmdbId: 1, watched: true, watchedByUsers: '["alice"]' }],
+						}
+					: {
+							...currentEpisodes,
+							instanceId: "plex-2",
+							rows: [{ showTmdbId: 2, watched: true, watchedByUsers: '["bob"]' }],
+						},
+		);
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/api/plex/user-episode-completion?tmdbIds=2,1,2",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({
+			shows: [
+				{ tmdbId: 1, users: [{ username: "alice", watched: 1, total: 1, percent: 100 }] },
+				{ tmdbId: 2, users: [{ username: "bob", watched: 1, total: 1, percent: 100 }] },
+			],
+			evidence: authoritativeEvidence,
+		});
+		expect(mocks.loadInstanceSelectedEpisodeEvidence).toHaveBeenNthCalledWith(
+			1,
+			expect.anything(),
+			{ userId: "user-1", instanceId: "plex-1", showTmdbIds: [2, 1] },
+		);
+		expect(mocks.loadInstanceSelectedEpisodeEvidence).toHaveBeenNthCalledWith(
+			2,
+			expect.anything(),
+			{ userId: "user-1", instanceId: "plex-2", showTmdbIds: [2, 1] },
+		);
 	});
 });

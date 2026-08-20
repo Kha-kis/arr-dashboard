@@ -10,7 +10,7 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
 	hasCompleteAuthoritativePlexEvidence,
-	loadInstanceEpisodeEvidence,
+	loadInstanceSelectedEpisodeEvidence,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-evidence-repository.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -33,10 +33,14 @@ export async function registerSeriesProgressRoutes(
 	 */
 	app.get("/", async (request, reply) => {
 		const { tmdbIds: tmdbIdsRaw } = validateRequest(progressQuery, request.query);
-		const tmdbIds = tmdbIdsRaw
-			.split(",")
-			.map(Number)
-			.filter((id) => Number.isFinite(id) && id > 0);
+		const tmdbIds = [
+			...new Set(
+				tmdbIdsRaw
+					.split(",")
+					.map(Number)
+					.filter((id) => Number.isSafeInteger(id) && id > 0),
+			),
+		];
 		const userId = request.currentUser!.id;
 
 		if (tmdbIds.length === 0) {
@@ -62,7 +66,11 @@ export async function registerSeriesProgressRoutes(
 		const evidence = [];
 		for (const instance of plexInstances) {
 			evidence.push(
-				await loadInstanceEpisodeEvidence(app.prisma, { userId, instanceId: instance.id }),
+				await loadInstanceSelectedEpisodeEvidence(app.prisma, {
+					userId,
+					instanceId: instance.id,
+					showTmdbIds: tmdbIds,
+				}),
 			);
 		}
 		const summary = summarizePlexEvidence(evidence);
@@ -71,9 +79,7 @@ export async function registerSeriesProgressRoutes(
 				.status(503)
 				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
 		}
-		const episodes = evidence.flatMap((entry) =>
-			entry.available ? entry.rows.filter((episode) => tmdbIds.includes(episode.showTmdbId)) : [],
-		);
+		const episodes = evidence.flatMap((entry) => (entry.available ? entry.rows : []));
 
 		// Aggregate per show using extracted pure helper
 		const progressMap = aggregateSeriesProgress(episodes);

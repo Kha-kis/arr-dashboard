@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
 	isCurrentAuthoritativePlexEvidence,
-	loadInstanceEpisodeEvidence,
+	loadInstanceSelectedEpisodeEvidence,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-evidence-repository.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -21,7 +21,7 @@ const episodeQuery = z.object({
 		.min(1)
 		.transform((val) => {
 			const n = Number(val);
-			if (!Number.isFinite(n) || n <= 0) return 0;
+			if (!Number.isSafeInteger(n) || n <= 0) return 0;
 			return n;
 		})
 		.pipe(z.number().positive()),
@@ -37,19 +37,21 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 		const { instanceId, showTmdbId } = validateRequest(episodeQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const evidence = await loadInstanceEpisodeEvidence(app.prisma, { userId, instanceId });
+		const evidence = await loadInstanceSelectedEpisodeEvidence(app.prisma, {
+			userId,
+			instanceId,
+			showTmdbIds: [showTmdbId],
+		});
 		const summary = summarizePlexEvidence([evidence]);
 		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
 			return reply
 				.status(503)
 				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
 		}
-		const episodes = evidence.rows
-			.filter((episode) => episode.showTmdbId === showTmdbId)
-			.sort(
-				(left, right) =>
-					left.seasonNumber - right.seasonNumber || left.episodeNumber - right.episodeNumber,
-			);
+		const episodes = evidence.rows.sort(
+			(left, right) =>
+				left.seasonNumber - right.seasonNumber || left.episodeNumber - right.episodeNumber,
+		);
 
 		const items: PlexEpisodeStatus[] = episodes.map((e) => {
 			let watchedByUsers: string[] = [];

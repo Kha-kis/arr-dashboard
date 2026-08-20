@@ -672,6 +672,205 @@ describe("Plex episode evidence repository", () => {
 		});
 	}
 
+	async function loadSelectedEpisode(
+		repository: ReturnType<typeof episodeFixture>,
+		showTmdbIds: number[],
+	) {
+		const repositoryModule = (await import("../plex-evidence-repository.js")) as Record<
+			string,
+			unknown
+		>;
+		const loadSelected = repositoryModule.loadInstanceSelectedEpisodeEvidence as (
+			prisma: unknown,
+			input: {
+				userId: string;
+				instanceId: string;
+				instance: ReturnType<typeof instance>;
+				showTmdbIds: number[];
+				now: Date;
+				maxAgeMs: number;
+			},
+		) => Promise<unknown>;
+		return loadSelected(repository, {
+			userId: "user-1",
+			instanceId: "plex-1",
+			instance: instance(),
+			showTmdbIds,
+			now,
+			maxAgeMs: 3 * 60 * 60 * 1000,
+		});
+	}
+
+	it("reads selected episode rows while rejecting a full-generation bound-count mismatch", async () => {
+		const repositoryModule = (await import("../plex-evidence-repository.js")) as Record<
+			string,
+			unknown
+		>;
+		const loadSelected = repositoryModule.loadInstanceSelectedEpisodeEvidence as
+			| ((
+					prisma: unknown,
+					input: {
+						userId: string;
+						instanceId: string;
+						instance: ReturnType<typeof instance>;
+						showTmdbIds: number[];
+						now: Date;
+						maxAgeMs: number;
+					},
+			  ) => Promise<unknown>)
+			| undefined;
+		expect(loadSelected).toBeTypeOf("function");
+
+		const selected = episodeRow({ id: "selected", showTmdbId: 42 });
+		const unrelated = episodeRow({ id: "unrelated", showTmdbId: 99 });
+		const repository = episodeFixture({
+			episode: episodeStatus({ itemCount: 2 }),
+			episodeRows: [selected, unrelated],
+		});
+		repository.plexEpisodeCache.count.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
+		repository.plexEpisodeCache.findMany.mockImplementation(
+			async ({ where }: { where: { showTmdbId?: { in: number[] } } }) =>
+				where.showTmdbId ? [selected] : [selected, unrelated],
+		);
+
+		const result = await loadSelected!(repository, {
+			userId: "user-1",
+			instanceId: "plex-1",
+			instance: instance(),
+			showTmdbIds: [42, 42],
+			now,
+			maxAgeMs: 3 * 60 * 60 * 1000,
+		});
+
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["row_count_mismatch"] },
+		});
+		expect(repository.plexEpisodeCache.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ showTmdbId: { in: [42] } }),
+			}),
+		);
+	});
+
+	it("returns an authoritative empty selected result without loading all episode rows", async () => {
+		const emptyParent = status({ itemCount: 0 });
+		const emptyEpisode = episodeStatus({ itemCount: 0 });
+		const repository = episodeFixture({
+			parentStatus: emptyParent,
+			episode: emptyEpisode,
+			parentCount: 0,
+			episodeRows: [],
+		});
+
+		const result = await loadSelectedEpisode(repository, [42, 42]);
+
+		expect(result).toMatchObject({ available: true, rows: [] });
+		expect(repository.plexEpisodeCache.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ showTmdbId: { in: [42] } }),
+			}),
+		);
+	});
+
+	it("withholds selected rows when the full cache count disagrees with the publication", async () => {
+		const repository = episodeFixture({ episode: episodeStatus({ itemCount: 2 }) });
+		repository.plexEpisodeCache.count.mockResolvedValueOnce(3).mockResolvedValueOnce(3);
+
+		const result = await loadSelectedEpisode(repository, [42]);
+
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["row_count_mismatch"] },
+		});
+	});
+
+	it("returns only selected rows at production-shaped scale while keeping full count validation", async () => {
+		const selected = [
+			episodeRow({ id: "selected-42", showTmdbId: 42 }),
+			episodeRow({ id: "selected-84", showTmdbId: 84 }),
+		];
+		const unrelated = Array.from({ length: 5_000 }, (_, index) =>
+			episodeRow({ id: `unrelated-${index}`, showTmdbId: 1_000 + index }),
+		);
+		const total = selected.length + unrelated.length;
+		const repository = episodeFixture({ episode: episodeStatus({ itemCount: total }) });
+		repository.plexEpisodeCache.count.mockResolvedValue(total);
+		const expectedWhere = {
+			instanceId: "plex-1",
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			showTmdbId: { in: [84, 42] },
+		};
+		repository.plexEpisodeCache.findMany.mockImplementation(
+			async ({ where }: { where: typeof expectedWhere }) => {
+				expect(where).toEqual(expectedWhere);
+				return [...selected, ...unrelated].filter((row) =>
+					where.showTmdbId.in.includes(row.showTmdbId),
+				);
+			},
+		);
+
+		const result = await loadSelectedEpisode(repository, [84, 42, 42]);
+
+		expect(result).toMatchObject({
+			available: true,
+			rows: [{ id: "selected-42" }, { id: "selected-84" }],
+		});
+		expect((result as { rows: unknown[] }).rows).toHaveLength(2);
+		expect(repository.plexEpisodeCache.findMany).toHaveBeenCalledTimes(1);
+		expect(repository.plexEpisodeCache.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({ where: expectedWhere }),
+		);
+	});
+
+	it("fails closed when the episode status changes during selected reads", async () => {
+		for (let attempt = 0; attempt < 25; attempt++) {
+			const before = episodeStatus();
+			const after = episodeStatus({
+				lastAttemptAt: new Date(`2026-08-20T12:${String(attempt).padStart(2, "0")}:30.000Z`),
+			});
+			const parent = status();
+			const episodeStatuses = [before, after];
+			const repository = episodeFixture({ parentStatus: parent });
+			repository.cacheRefreshStatus.findMany.mockImplementation(
+				async ({ where }: { where: { cacheType: string } }) => [
+					where.cacheType === "plex" ? parent : episodeStatuses.shift()!,
+				],
+			);
+
+			const result = await loadSelectedEpisode(repository, [42]);
+
+			expect(result).toMatchObject({
+				available: false,
+				evidence: { reasonCodes: ["generation_changed"] },
+			});
+		}
+	});
+
+	it("fails closed when the parent generation changes after selected rows are read", async () => {
+		const parentStatuses = [
+			status(),
+			status(),
+			status({ generationId: "generation-2" }),
+			status({ generationId: "generation-2" }),
+		];
+		const episode = episodeStatus();
+		const repository = episodeFixture();
+		repository.cacheRefreshStatus.findMany.mockImplementation(
+			async ({ where }: { where: { cacheType: string } }) => [
+				where.cacheType === "plex" ? parentStatuses.shift()! : episode,
+			],
+		);
+
+		const result = await loadSelectedEpisode(repository, [42]);
+
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["parent_generation_unavailable"] },
+		});
+	});
+
 	it("loads rows only when the episode generation is bound to the authoritative parent", async () => {
 		const result = await loadEpisode(episodeFixture());
 
