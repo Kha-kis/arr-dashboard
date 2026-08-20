@@ -127,6 +127,7 @@ backup and migration instructions before retrying the upgrade.
 |----------|---------|-------------|
 | `GITHUB_TOKEN` | — | GitHub token for TRaSH Guides (higher rate limits) |
 | `APP_URL` | `http://localhost:3000` | Preferred public URL for OIDC callbacks (e.g., `https://dashboard.example.com`) |
+| `SHUTDOWN_GRACE` | `7` | Seconds to allow the API/web to stop before the container SIGKILLs them. Docker's default Linux stop timeout is 10s; if you raise `SHUTDOWN_GRACE`, also raise `docker run --stop-timeout`, `docker stop --time`, Compose `stop_grace_period`, or the equivalent orchestrator setting so the container can finish graceful cleanup before Docker force-kills it. |
 
 ## Ports
 

@@ -119,24 +119,126 @@ run_as_user() {
 }
 
 # ============================================
+# Process supervision helpers
+# ============================================
+
+# Seconds to allow a service to stop (after the sibling exits, or on an
+# intentional shutdown) before escalating to SIGKILL.
+#
+# Docker's default Linux container stop timeout is 10 seconds. The internal
+# default intentionally stays below it (7s) so start.sh can finish its own
+# SIGKILL escalation, child reaping, logging, and exit before Docker force-kills
+# PID 1. Operators who raise SHUTDOWN_GRACE must also raise the external
+# timeout: `docker run --stop-timeout`, `docker stop --time`, Compose
+# `stop_grace_period`, or the equivalent orchestrator setting.
+SHUTDOWN_GRACE="${SHUTDOWN_GRACE:-7}"
+
+# Validate SHUTDOWN_GRACE is a non-negative integer. Invalid input (e.g. "abc",
+# "-1", "1.5", whitespace) must not break cleanup under `set -e`, so fall back
+# to the documented default rather than failing mid-shutdown.
+case "$SHUTDOWN_GRACE" in
+    ''|*[!0-9]*)
+        echo "WARNING: invalid SHUTDOWN_GRACE='$SHUTDOWN_GRACE' (expected a non-negative integer); using default 7" >&2
+        SHUTDOWN_GRACE=7
+        ;;
+esac
+
+# Warn (but do not fail) when the operator configured a grace at or above
+# Docker's default 10s Linux stop timeout, which would leave no margin for
+# start.sh to finish cleanup before Docker force-kills PID 1.
+if [ "$SHUTDOWN_GRACE" -ge 10 ]; then
+    echo "WARNING: SHUTDOWN_GRACE is ${SHUTDOWN_GRACE} seconds." >&2
+    echo "  Docker's default Linux stop timeout is 10 seconds." >&2
+    echo "  Configure the container/orchestrator stop timeout above ${SHUTDOWN_GRACE} seconds" >&2
+    echo "  or Docker may force-kill the container before graceful cleanup completes." >&2
+fi
+
+# Zombie-aware liveness check. A process that has exited but not yet been
+# reaped still appears in /proc with state "Z"; kill -0 would wrongly report
+# it as alive, so we read the `State:` line from /proc/<pid>/status. This is
+# robust against comm values containing spaces/parentheses (e.g. the web
+# server's "next-server (v)" process title), which would break a naive
+# whitespace split of /proc/<pid>/stat.
+process_is_alive() {
+    [ -n "$1" ] || return 1
+    [ -d "/proc/$1" ] || return 1
+    state=$(sed -n 's/^State:[[:space:]]*\([A-Za-z]\).*/\1/p' "/proc/$1/status" 2>/dev/null)
+    case "$state" in
+        Z|X|x) return 1 ;;   # zombie or dead — not live
+        '')     return 1 ;;   # unreadable/absent — treat as not live
+    esac
+    return 0
+}
+
+# Signal only a known tracked process; ignore errors (it may already be gone).
+signal_tracked() {
+    [ -n "$1" ] && kill -s "$2" "$1" 2>/dev/null || true
+}
+
+# Wait up to $2 seconds for tracked process $1 to exit. Returns 0 when gone.
+wait_for_exit() {
+    pid=$1
+    timeout=$2
+    elapsed=0
+    while [ "$elapsed" -lt "$timeout" ]; do
+        process_is_alive "$pid" || return 0
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+    return 1
+}
+
+# Reap a dead tracked process and record its exit status (128+signal for
+# signal deaths). Never aborts the script under set -e.
+reap_tracked() {
+    set +e
+    wait "$1" 2>/dev/null
+    _REAPED=$?
+    set -e
+}
+
+# ============================================
 # Signal handling
 # ============================================
+
+# Signal both tracked services with SIGTERM, then wait for both to exit within
+# a single shared grace deadline. Any survivor after the deadline is SIGKILLed.
+# This is the one global shutdown window — it is NOT applied independently per
+# service, so a slow API cannot extend the total stop time beyond SHUTDOWN_GRACE.
+stop_services() {
+    signal_tracked "$WEB_PID" TERM
+    signal_tracked "$API_PID" TERM
+
+    elapsed=0
+    while [ "$elapsed" -lt "$SHUTDOWN_GRACE" ]; do
+        if ! process_is_alive "$WEB_PID" && ! process_is_alive "$API_PID"; then
+            break
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    # Escalate any survivor to SIGKILL (bounded follow-up wait).
+    if process_is_alive "$WEB_PID"; then
+        echo "  Web did not stop within ${SHUTDOWN_GRACE}s - sending SIGKILL" >&2
+        signal_tracked "$WEB_PID" KILL
+        wait_for_exit "$WEB_PID" 5
+    fi
+    if process_is_alive "$API_PID"; then
+        echo "  API did not stop within ${SHUTDOWN_GRACE}s - sending SIGKILL" >&2
+        signal_tracked "$API_PID" KILL
+        wait_for_exit "$API_PID" 5
+    fi
+
+    # Reap both so no orphan or zombie is left behind
+    reap_tracked "$WEB_PID"
+    reap_tracked "$API_PID"
+}
 
 shutdown() {
     echo ""
     echo "Shutting down services..."
-
-    # Send SIGTERM to both processes
-    if [ -n "$WEB_PID" ]; then
-        kill -TERM "$WEB_PID" 2>/dev/null || true
-    fi
-    if [ -n "$API_PID" ]; then
-        kill -TERM "$API_PID" 2>/dev/null || true
-    fi
-
-    # Wait for processes to finish
-    wait
-
+    stop_services
     echo "Services stopped gracefully"
     exit 0
 }
@@ -408,13 +510,33 @@ echo "  - MALLOC_ARENA_MAX: $MALLOC_ARENA_MAX (glibc arena cap — keeps RSS in 
 # via its pino-roll transport (writes to /config/logs/arr-dashboard.log).
 # Previous approach redirected stdout to api.log, which conflicted with Pino's
 # worker-thread transport and caused both log files to remain empty.
-run_as_user sh -c "cd /config/heap-snapshots && MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" &
+#
+# API service: /app/api/dist/launcher.js (the stable top-level process).
+#   - The launcher spawns the inner API server, sets LAUNCHER_MANAGED=true, and
+#     restarts it internally on the application-requested exit code 42 (backup
+#     restore, manual restart). start.sh supervises the launcher, so a
+#     legitimate app restart is never mistaken for an API crash.
+#   - A non-42 exit makes the launcher exit with that code, which the combined
+#     supervisor treats as a fatal API loss.
+#   - CWD = /config/heap-snapshots so V8's --heapsnapshot-signal writes land
+#     on the persisted volume (same as before).
+#   - The command is backgrounded as a simple external command so BusyBox ash
+#     exec's it directly and API_PID is the launcher node process itself. (A
+#     run_as_user() function call would fork an untracked subshell instead —
+#     verified against the shipped image.)
+if [ "$ROOTLESS" = true ]; then
+    sh -c "cd /config/heap-snapshots && MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/launcher.js" &
+else
+    su-exec abc sh -c "cd /config/heap-snapshots && MALLOC_ARENA_MAX=$MALLOC_ARENA_MAX API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/launcher.js" &
+fi
 API_PID=$!
 echo "API started with PID $API_PID"
 
-# Give API a moment to start, then verify it's still running
+# Give API a moment to start, then verify it's still running. Uses the
+# zombie-aware check: a process that exited but was not yet reaped would pass
+# kill -0, so inspect the /proc state explicitly (same as the supervision loop).
 sleep 3
-if ! kill -0 "$API_PID" 2>/dev/null; then
+if ! process_is_alive "$API_PID"; then
     echo ""
     echo "ERROR: API process (PID $API_PID) died during startup!" >&2
 
@@ -427,13 +549,17 @@ if ! kill -0 "$API_PID" 2>/dev/null; then
 
     # Re-run the API in the foreground with a timeout to capture the actual error.
     # Mirror the backgrounded launch above (cd into /config/heap-snapshots,
-    # use the absolute path to dist/index.js) so any heap snapshot V8 writes
+    # use the absolute path to dist/launcher.js) so any heap snapshot V8 writes
     # during the diagnostic re-run also lands on the persisted volume — and
     # so this branch doesn't silently break if a future edit changes the
     # outer shell's CWD between the two launch sites.
     echo "=== Re-running API in foreground (10s timeout) ===" >&2
     set +e
-    timeout 10 run_as_user sh -c "cd /config/heap-snapshots && API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/index.js" 2>&1
+    if [ "$ROOTLESS" = true ]; then
+        timeout 10 sh -c "cd /config/heap-snapshots && API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/launcher.js" 2>&1
+    else
+        timeout 10 su-exec abc sh -c "cd /config/heap-snapshots && API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node /app/api/dist/launcher.js" 2>&1
+    fi
     RERUN_EXIT=$?
     set -e
     echo "=== Foreground API exit code: $RERUN_EXIT ===" >&2
@@ -447,8 +573,14 @@ fi
 echo ""
 echo "Starting Web server on $HOST:$PORT..."
 cd /app/web
-# Use custom server wrapper for runtime API_HOST configuration
-run_as_user sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+# Use custom server wrapper for runtime API_HOST configuration.
+# Backgrounded as a simple external command so WEB_PID is the node process
+# itself (not a subshell wrapper) — same rationale as the API launch above.
+if [ "$ROOTLESS" = true ]; then
+    sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+else
+    su-exec abc sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
+fi
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"
 
@@ -460,9 +592,55 @@ echo "API: http://localhost:$API_PORT"
 echo "Running as UID:$PUID GID:$PGID"
 echo "=========================================="
 
-# Wait for both processes
-wait $API_PID $WEB_PID
+# ============================================
+# Service supervision
+# ============================================
+# State machine:
+#   RUNNING                - both top-level services alive (polled below)
+#   INTENTIONAL_SHUTDOWN   - SIGTERM/SIGINT received; shutdown() trap handles it
+#   UNEXPECTED_API_EXIT    - API launcher exited outside an intentional shutdown
+#   UNEXPECTED_WEB_EXIT    - web server exited outside an intentional shutdown
+#   CLEANUP_IN_PROGRESS    - sibling termination underway (fatal_exit())
+#
+# Any tracked top-level service exit outside an intentional shutdown is fatal,
+# including exit code 0: both services are required for a functioning install.
 
-# If we get here, one of the processes died
-echo "One of the services stopped unexpectedly"
-exit 1
+fatal_exit() {
+    service=$1
+    status=$2
+    sibling=$3
+    sibling_name=$4
+
+    echo ""
+    echo "ERROR: $service service exited unexpectedly (status: $status)." >&2
+    echo "  Terminating $sibling_name service and shutting down the container." >&2
+
+    # Terminate the surviving sibling (idempotent — safe if it already died)
+    signal_tracked "$sibling" TERM
+    if ! wait_for_exit "$sibling" "$SHUTDOWN_GRACE"; then
+        echo "  $sibling_name did not stop within ${SHUTDOWN_GRACE}s - sending SIGKILL" >&2
+        signal_tracked "$sibling" KILL
+        wait_for_exit "$sibling" 5
+    fi
+
+    # Reap the sibling so no orphan or zombie is left behind
+    reap_tracked "$sibling"
+
+    exit 1
+}
+
+# Poll both tracked services until one exits. The loop only exits through
+# fatal_exit() (unexpected service loss) or the SIGTERM/SIGINT trap
+# (intentional stop). Zombie-aware liveness means a service that just died
+# is detected on the next tick even before it is reaped.
+while :; do
+    if ! process_is_alive "$API_PID"; then
+        reap_tracked "$API_PID"
+        fatal_exit "API" "$_REAPED" "$WEB_PID" "Web"
+    fi
+    if ! process_is_alive "$WEB_PID"; then
+        reap_tracked "$WEB_PID"
+        fatal_exit "Web" "$_REAPED" "$API_PID" "API"
+    fi
+    sleep 1
+done
