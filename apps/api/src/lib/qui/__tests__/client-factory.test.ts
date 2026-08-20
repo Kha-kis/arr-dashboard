@@ -670,10 +670,10 @@ describe("createQuiClient", () => {
 	it("rejects a non-empty total with an omitted collection (CASE B)", async () => {
 		// total=5 claims torrents exist but no collection is supplied.
 		fetchSpy.mockResolvedValueOnce(
-			new Response(
-				JSON.stringify({ total: 5, hasMore: false, partialResults: false }),
-				{ status: 200, headers: { "content-type": "application/json" } },
-			),
+			new Response(JSON.stringify({ total: 5, hasMore: false, partialResults: false }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
 		);
 
 		const client = createQuiClient(buildApp(), buildInstance());
@@ -684,10 +684,10 @@ describe("createQuiClient", () => {
 
 	it("rejects an omitted collection while more pages supposedly exist (CASE C)", async () => {
 		fetchSpy.mockResolvedValueOnce(
-			new Response(
-				JSON.stringify({ total: 5, hasMore: true, partialResults: false }),
-				{ status: 200, headers: { "content-type": "application/json" } },
-			),
+			new Response(JSON.stringify({ total: 5, hasMore: true, partialResults: false }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
 		);
 
 		const client = createQuiClient(buildApp(), buildInstance());
@@ -700,10 +700,10 @@ describe("createQuiClient", () => {
 		// Missing partialResults means completeness cannot be proven; the
 		// strict requireComplete schema rejects it outright.
 		fetchSpy.mockResolvedValueOnce(
-			new Response(
-				JSON.stringify({ total: 0, hasMore: false }),
-				{ status: 200, headers: { "content-type": "application/json" } },
-			),
+			new Response(JSON.stringify({ total: 0, hasMore: false }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
 		);
 
 		const client = createQuiClient(buildApp(), buildInstance());
@@ -714,10 +714,10 @@ describe("createQuiClient", () => {
 		// The non-requireComplete path tolerates the missing metadata but
 		// must NOT claim completeness, so absence is not authoritative.
 		fetchSpy.mockResolvedValueOnce(
-			new Response(
-				JSON.stringify({ total: 0, hasMore: false }),
-				{ status: 200, headers: { "content-type": "application/json" } },
-			),
+			new Response(JSON.stringify({ total: 0, hasMore: false }), {
+				status: 200,
+				headers: { "content-type": "application/json" },
+			}),
 		);
 
 		const client = createQuiClient(buildApp(), buildInstance());

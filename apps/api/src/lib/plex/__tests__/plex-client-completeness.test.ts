@@ -233,12 +233,8 @@ describe("PlexClient authoritative inventory completeness", () => {
 			"fetch",
 			vi
 				.fn()
-				.mockResolvedValueOnce(
-					response({ offset: 0, size: 1, totalSize: 1, Metadata: initial }),
-				)
-				.mockResolvedValueOnce(
-					response({ offset: 0, size: 1, totalSize: 1, Metadata: changed }),
-				),
+				.mockResolvedValueOnce(response({ offset: 0, size: 1, totalSize: 1, Metadata: initial }))
+				.mockResolvedValueOnce(response({ offset: 0, size: 1, totalSize: 1, Metadata: changed })),
 		);
 		const client = new PlexClient("http://plex.test", "token", log);
 
@@ -321,9 +317,11 @@ describe("PlexClient authoritative inventory completeness", () => {
 	});
 
 	it("leaves an absent section agent undefined rather than defaulting it", async () => {
-		const fetchMock = vi.fn().mockResolvedValueOnce(
-			response({ size: 1, Directory: [{ key: "1", title: "Movies", type: "movie" }] }),
-		);
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response({ size: 1, Directory: [{ key: "1", title: "Movies", type: "movie" }] }),
+			);
 		vi.stubGlobal("fetch", fetchMock);
 		const client = new PlexClient("http://plex.test", "token", log);
 

@@ -76,6 +76,9 @@ jobs:
       - name: Build shared package
         run: pnpm --filter @arr/shared run build
 
+      - name: Check formatting
+        run: pnpm run format
+
       - name: Run linting
         run: pnpm run lint
 
