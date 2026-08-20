@@ -654,8 +654,7 @@ export async function collectPlexCacheLiveEvidence(
 			const latestSections = await client.getLibrarySections();
 			const latestMediaLibs = latestSections.filter(
 				(section) =>
-					(section.type === "movie" || section.type === "show") &&
-					!isPersonalMediaSection(section),
+					(section.type === "movie" || section.type === "show") && !isPersonalMediaSection(section),
 			);
 			if (
 				JSON.stringify(mediaLibrarySignature(latestMediaLibs)) !==

@@ -110,7 +110,12 @@ describe("classifyTargetReversal", () => {
 		const before = { id: 7, name: "CF", specifications: [] };
 		const state = baseState({
 			customFormatDeployments: [
-				cfMutation({ beforeFormat: before, action: "updated", resourceId: 7, postStateToken: "post" }),
+				cfMutation({
+					beforeFormat: before,
+					action: "updated",
+					resourceId: 7,
+					postStateToken: "post",
+				}),
 			],
 		});
 		const c = client({
@@ -126,7 +131,12 @@ describe("classifyTargetReversal", () => {
 		const before = { id: 7, name: "CF", specifications: [] };
 		const state = baseState({
 			customFormatDeployments: [
-				cfMutation({ beforeFormat: before, action: "updated", resourceId: 7, postStateToken: "post" }),
+				cfMutation({
+					beforeFormat: before,
+					action: "updated",
+					resourceId: 7,
+					postStateToken: "post",
+				}),
 			],
 		});
 		const c = client({
@@ -346,7 +356,12 @@ describe("classifyTargetReversal", () => {
 		const before = { id: 7, name: "CF", specifications: [] };
 		const state = baseState({
 			customFormatDeployments: [
-				cfMutation({ beforeFormat: before, action: "updated", resourceId: 7, postStateToken: "post" }),
+				cfMutation({
+					beforeFormat: before,
+					action: "updated",
+					resourceId: 7,
+					postStateToken: "post",
+				}),
 			],
 		});
 		const c = client({
@@ -362,7 +377,12 @@ describe("classifyTargetReversal", () => {
 		const before = { id: 7, name: "CF", specifications: [] };
 		const state = baseState({
 			customFormatDeployments: [
-				cfMutation({ beforeFormat: before, action: "updated", resourceId: 7, postStateToken: "post" }),
+				cfMutation({
+					beforeFormat: before,
+					action: "updated",
+					resourceId: 7,
+					postStateToken: "post",
+				}),
 				cfMutation({ resourceId: 8, name: "CF2", postStateToken: "post" }),
 			],
 		});
@@ -382,7 +402,12 @@ describe("classifyTargetReversal", () => {
 		const before = { id: 7, name: "CF", specifications: [] };
 		const state = baseState({
 			customFormatDeployments: [
-				cfMutation({ beforeFormat: before, action: "updated", resourceId: 7, postStateToken: "post" }),
+				cfMutation({
+					beforeFormat: before,
+					action: "updated",
+					resourceId: 7,
+					postStateToken: "post",
+				}),
 				cfMutation({ resourceId: null, name: "CF2", postStateToken: null }),
 			],
 		});

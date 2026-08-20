@@ -784,7 +784,9 @@ describe("collectPlexCacheLiveEvidence", () => {
 				getLibrarySections: vi.fn().mockResolvedValue(mixedSections),
 				getLibraryItems: vi
 					.fn()
-					.mockImplementation((key: string) => (key === "1" ? [supportedMovie] : [personalMediaItem])),
+					.mockImplementation((key: string) =>
+						key === "1" ? [supportedMovie] : [personalMediaItem],
+					),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
@@ -808,10 +810,14 @@ describe("collectPlexCacheLiveEvidence", () => {
 				getLibrarySections: vi.fn().mockResolvedValue(mixedSections),
 				getLibraryItems: vi
 					.fn()
-					.mockImplementation((key: string) => (key === "1" ? [supportedMovie] : [personalMediaItem])),
-				getHistory: vi.fn().mockResolvedValue([
-					{ type: "movie", ratingKey: "personal-1", accountID: 1, viewedAt: 1_700_000_000 },
-				]),
+					.mockImplementation((key: string) =>
+						key === "1" ? [supportedMovie] : [personalMediaItem],
+					),
+				getHistory: vi
+					.fn()
+					.mockResolvedValue([
+						{ type: "movie", ratingKey: "personal-1", accountID: 1, viewedAt: 1_700_000_000 },
+					]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
 			} as unknown as PlexClient;
@@ -827,12 +833,16 @@ describe("collectPlexCacheLiveEvidence", () => {
 		it("still fails closed when a supported movie lacks TMDB metadata", async () => {
 			const mockClient = {
 				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
-				getLibrarySections: vi.fn().mockResolvedValue([
-					{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
-				]),
-				getLibraryItems: vi.fn().mockResolvedValue([
-					{ ratingKey: "broken-1", title: "Broken Movie", type: "movie", Guid: [] },
-				]),
+				getLibrarySections: vi
+					.fn()
+					.mockResolvedValue([
+						{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
+					]),
+				getLibraryItems: vi
+					.fn()
+					.mockResolvedValue([
+						{ ratingKey: "broken-1", title: "Broken Movie", type: "movie", Guid: [] },
+					]),
 				getHistory: vi.fn().mockResolvedValue([]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
@@ -850,15 +860,21 @@ describe("collectPlexCacheLiveEvidence", () => {
 		it("still fails closed when supported history cannot map to TMDB metadata", async () => {
 			const mockClient = {
 				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
-				getLibrarySections: vi.fn().mockResolvedValue([
-					{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
-				]),
-				getLibraryItems: vi.fn().mockResolvedValue([
-					{ ratingKey: "broken-1", title: "Broken Movie", type: "movie", Guid: [] },
-				]),
-				getHistory: vi.fn().mockResolvedValue([
-					{ type: "movie", ratingKey: "broken-1", accountID: 1, viewedAt: 1_700_000_000 },
-				]),
+				getLibrarySections: vi
+					.fn()
+					.mockResolvedValue([
+						{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
+					]),
+				getLibraryItems: vi
+					.fn()
+					.mockResolvedValue([
+						{ ratingKey: "broken-1", title: "Broken Movie", type: "movie", Guid: [] },
+					]),
+				getHistory: vi
+					.fn()
+					.mockResolvedValue([
+						{ type: "movie", ratingKey: "broken-1", accountID: 1, viewedAt: 1_700_000_000 },
+					]),
 				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
 				getOnDeck: vi.fn().mockResolvedValue([]),
 			} as unknown as PlexClient;
