@@ -8,25 +8,29 @@
 // Detects:
 //   - modified tracked generated files
 //   - missing generated files (tracked, not produced by the generator)
-//   - newly generated untracked files
+//   - newly generated untracked files (including ignored output)
 //   - obsolete or foreign tracked files (tracked, not produced by the generator)
 //   - untracked foreign files
 //   - file-mode drift
 //
 // Method: verify no pre-existing untracked or ignored files sit beneath the
-// generated directory, remove the entire generated directory (after
-// path-safety checks that are separator-correct on every platform), run the
-// pinned generator to reconstruct it, then query Git for every difference
-// beneath that directory relative to the index. A clean tree matches the index
-// exactly. Pre-existing untracked or ignored files are never deleted: the
-// guard reports them and refuses to run.
+// generated directory, validate every existing path component from the real
+// repository root down to the generated directory (no symlink or junction may
+// escape the repository), remove the generated directory, run the pinned
+// generator to reconstruct it, then query Git for every difference beneath
+// that directory relative to the index. A clean tree matches the index
+// exactly.
+//
+// Pre-existing untracked or ignored files are never deleted: the guard reports
+// them and refuses to run. Ignored files that the generator produces after the
+// safe preflight are reported as missing from the committed exact tree.
 //
 // Usage: pnpm run check:prisma-generated
 // Exit:  0 = reconstructed tree matches the index; 1 = drift detected,
 //          pre-existing untracked files present, or generation failed.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, lstatSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -96,7 +100,49 @@ export function makePathValidator(pathImpl, repoRoot, generatedRel) {
 
 const validator = makePathValidator(path, REPO_ROOT, GENERATED_REL);
 
-const fsOps = { existsSync, lstatSync };
+// Filesystem-boundary validation. `pathImpl` is the host path module (or a
+// testable equivalent) and `fsOps` supplies realpathSync/lstatSync/existsSync.
+// The trust boundary is the real (symlink-resolved) repository root; every
+// existing component beneath it is inspected with lstat so that no symbolic
+// link or Windows junction in an ancestor can redirect recursive removal
+// outside the repository.
+export function makeDeletionBoundaryValidator(pathImpl, repoRoot, generatedRel, fsOps) {
+	const components = generatedRel.split("/");
+	const realRoot = fsOps.realpathSync(repoRoot);
+
+	function assertBoundary() {
+		let current = realRoot;
+		let lastExisting = realRoot;
+		for (const component of components) {
+			current = pathImpl.join(current, component);
+			if (!fsOps.existsSync(current)) {
+				break;
+			}
+			const st = fsOps.lstatSync(current);
+			if (st.isSymbolicLink()) {
+				throw new Error(`Refusing to remove through symbolic link: ${current}`);
+			}
+			if (!st.isDirectory()) {
+				throw new Error(`Expected directory at ${current}, found a non-directory`);
+			}
+			lastExisting = current;
+		}
+		// Real-path containment of the nearest existing ancestor: even after
+		// rejecting symlinks at every component, confirm the real path stays
+		// beneath the real repository root.
+		const realExisting = fsOps.realpathSync(lastExisting);
+		const rel = pathImpl.relative(realRoot, realExisting);
+		if (rel === "" || pathImpl.isAbsolute(rel) || rel.startsWith("..")) {
+			throw new Error(`Resolved path escapes repository root: ${realExisting}`);
+		}
+		return { realRoot, lastExisting };
+	}
+
+	return { assertBoundary, realRoot };
+}
+
+const fsOps = { existsSync, lstatSync, realpathSync };
+const deletionBoundary = makeDeletionBoundaryValidator(path, REPO_ROOT, GENERATED_REL, fsOps);
 
 // Refuse to remove anything that is missing, a symbolic link, or not a
 // directory. Uses lstat so a symlink (including one pointing at a directory)
@@ -117,19 +163,20 @@ export function assertSafeRemoval(abs, ops = fsOps) {
 // Safely remove the generated output directory after path-safety checks.
 function removeGeneratedDir() {
 	const abs = validator.validateGeneratedPath(GENERATED_PATH);
+	deletionBoundary.assertBoundary();
 	assertSafeRemoval(abs);
 	rmSync(abs, { recursive: true, force: true });
 }
 
 // Untracked, non-ignored files beneath the generated directory.
-function untrackedFiles(pathspec) {
-	const out = git(["ls-files", "--others", "--exclude-standard", "-z", "--", pathspec]);
+function untrackedFiles(gitRun, pathspec) {
+	const out = gitRun(["ls-files", "--others", "--exclude-standard", "-z", "--", pathspec]);
 	return out.split("\0").filter(Boolean);
 }
 
 // Untracked files that are also ignored, beneath the generated directory.
-function ignoredUntrackedFiles(pathspec) {
-	const out = git([
+function ignoredUntrackedFiles(gitRun, pathspec) {
+	const out = gitRun([
 		"ls-files",
 		"--others",
 		"--ignored",
@@ -145,8 +192,8 @@ function ignoredUntrackedFiles(pathspec) {
 // generated directory, via `git diff --name-status -z`. Returns modified and
 // deleted path lists. Deleted paths are committed files the generator no
 // longer produces (obsolete or foreign tracked files).
-function trackedDrift() {
-	const out = git(["diff", "--name-status", "-z", "--", `${GENERATED_REL}/`]);
+function trackedDrift(gitRun, pathspec) {
+	const out = gitRun(["diff", "--name-status", "-z", "--", pathspec]);
 	const tokens = out.split("\0");
 	const modified = [];
 	const deleted = [];
@@ -174,8 +221,8 @@ function trackedDrift() {
 
 // Paths with a file-mode change between the working tree and the index, from
 // `git diff --summary`. These also appear as modified in trackedDrift().
-function modeDrift() {
-	const out = git(["diff", "--summary", "--", `${GENERATED_REL}/`]);
+function modeDrift(gitRun, pathspec) {
+	const out = gitRun(["diff", "--summary", "--", pathspec]);
 	const modePaths = new Set();
 	for (const line of out.split("\n")) {
 		if (/^\s*mode change\s/.test(line)) {
@@ -188,6 +235,17 @@ function modeDrift() {
 	return modePaths;
 }
 
+// All post-generation difference categories beneath the generated directory,
+// including ignored output the generator produced after the safe preflight.
+// `gitRun` executes git in the repository (injectable for tests).
+export function collectPostGenerationDrift(gitRun, pathspec) {
+	const { modified, deleted } = trackedDrift(gitRun, pathspec);
+	const modePaths = modeDrift(gitRun, pathspec);
+	const untracked = untrackedFiles(gitRun, pathspec);
+	const ignored = ignoredUntrackedFiles(gitRun, pathspec);
+	return { modified, deleted, modePaths, untracked, ignored };
+}
+
 function main() {
 	if (!existsSync(REPO_ROOT)) {
 		console.error(`::error::Repository root not found: ${REPO_ROOT}`);
@@ -196,8 +254,8 @@ function main() {
 
 	// Pre-deletion preflight: refuse to destroy pre-existing untracked or
 	// ignored files. Nothing is removed and generation is not run.
-	const preExisting = untrackedFiles(`${GENERATED_REL}/`);
-	const preIgnored = ignoredUntrackedFiles(`${GENERATED_REL}/`);
+	const preExisting = untrackedFiles(git, `${GENERATED_REL}/`);
+	const preIgnored = ignoredUntrackedFiles(git, `${GENERATED_REL}/`);
 	if (preExisting.length > 0 || preIgnored.length > 0) {
 		console.error("::error::Pre-existing untracked files block the generated-client check.");
 		console.error(
@@ -230,11 +288,12 @@ function main() {
 		process.exit(1);
 	}
 
-	const { modified, deleted } = trackedDrift();
-	const modePaths = modeDrift();
-	const untracked = untrackedFiles(`${GENERATED_REL}/`);
+	const { modified, deleted, modePaths, untracked, ignored } = collectPostGenerationDrift(
+		git,
+		`${GENERATED_REL}/`,
+	);
 
-	const drift = [...modified, ...deleted, ...untracked];
+	const drift = [...modified, ...deleted, ...untracked, ...ignored];
 	if (drift.length === 0) {
 		console.log("Prisma generated client is up to date.");
 		process.exit(0);
@@ -258,6 +317,9 @@ function main() {
 	}
 	for (const filePath of untracked) {
 		console.error(`  untracked: ${filePath}`);
+	}
+	for (const filePath of ignored) {
+		console.error(`  ignored:   ${filePath}`);
 	}
 	process.exit(1);
 }
