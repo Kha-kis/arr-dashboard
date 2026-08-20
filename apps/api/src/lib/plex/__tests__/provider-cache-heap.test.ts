@@ -13,6 +13,10 @@ import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { refreshJellyfinCache } from "../../jellyfin/jellyfin-cache-refresher.js";
 import type { JellyfinClient, JellyfinItem } from "../../jellyfin/jellyfin-client.js";
 import type { PrismaClient } from "../../prisma.js";
+import {
+	createProviderPublicationAuthority,
+	type OwnedProviderPublicationSnapshot,
+} from "../../services/provider-identity-guard.js";
 import { refreshTautulliCache } from "../../tautulli/tautulli-cache-refresher.js";
 import type { TautulliClient } from "../../tautulli/tautulli-client.js";
 import { refreshPlexCache } from "../plex-cache-refresher.js";
@@ -123,6 +127,7 @@ function reportHeap(message: string): void {
 	() => {
 		let prisma: PrismaClient;
 		let plexClient: PlexClient;
+		let plexPublicationInstance: OwnedProviderPublicationSnapshot;
 		let jellyfinClient: JellyfinClient;
 		let tautulliClient: TautulliClient;
 
@@ -142,6 +147,15 @@ function reportHeap(message: string): void {
 						baseUrl: "http://plex.invalid",
 						encryptedApiKey: "x",
 						encryptionIv: "y",
+						encryptedHttpAuthCredentials: null,
+						httpAuthEncryptionIv: null,
+						enabled: true,
+						connectionGeneration: 0,
+						expectedIdentity: "plex-a",
+						identityKind: "PLEX_MACHINE_IDENTIFIER",
+						identityStatus: "VERIFIED",
+						identityGeneration: 0,
+						identityVerifiedAt: new Date("2020-01-01T00:00:00.000Z"),
 					},
 					{
 						id: "heap-emby",
@@ -163,6 +177,15 @@ function reportHeap(message: string): void {
 					},
 				],
 			});
+			const persistedPlex = await prisma.serviceInstance.findUniqueOrThrow({
+				where: { id: "heap-plex" },
+			});
+			plexPublicationInstance = {
+				...createProviderPublicationAuthority(persistedPlex),
+				apiKey: "token",
+				httpAuthHeaders: {},
+				label: persistedPlex.label,
+			};
 
 			const plexItems: PlexLibraryItem[] = Array.from({ length: PLEX_ITEMS }, (_, index) => ({
 				ratingKey: `plex-${index}`,
@@ -244,29 +267,32 @@ function reportHeap(message: string): void {
 
 		async function refreshPlexAndAssert(): Promise<void> {
 			publication.plexClient = plexClient;
+			const sectionCallsBefore = vi.mocked(plexClient.getLibrarySections).mock.calls.length;
+			const itemCallsBefore = vi.mocked(plexClient.getLibraryItems).mock.calls.length;
 			const plex = await refreshPlexCache({
 				prisma,
-				instance: {
-					id: "heap-plex",
-					userId: "heap-user",
-					service: "PLEX",
-					label: "Heap Plex",
-					baseUrl: "http://plex.invalid",
-					apiKey: "token",
-					httpAuthHeaders: {},
-					enabled: true,
-					encryptedApiKey: "x",
-					encryptionIv: "y",
-					encryptedHttpAuthCredentials: null,
-					httpAuthEncryptionIv: null,
-					expectedIdentity: "plex-a",
-					identityStatus: "VERIFIED",
-					connectionGeneration: 0,
-					identityGeneration: 0,
-				},
+				instance: plexPublicationInstance,
 				log: silentLog,
 			});
 			expect(plex).toMatchObject({ complete: true, errors: 0, upserted: PLEX_ITEMS });
+			expect(plex.superseded).not.toBe(true);
+			expect(vi.mocked(plexClient.getLibrarySections).mock.calls.length).toBeGreaterThan(
+				sectionCallsBefore,
+			);
+			expect(vi.mocked(plexClient.getLibraryItems).mock.calls.length).toBeGreaterThan(
+				itemCallsBefore,
+			);
+			expect(
+				await prisma.cacheRefreshStatus.findUniqueOrThrow({
+					where: { instanceId_cacheType: { instanceId: "heap-plex", cacheType: "plex" } },
+				}),
+			).toMatchObject({
+				lastResult: "success",
+				lastAttemptResult: "success",
+				itemCount: PLEX_ITEMS,
+				connectionGeneration: plexPublicationInstance.connectionGeneration,
+				identityGeneration: plexPublicationInstance.identityGeneration,
+			});
 		}
 
 		async function refreshJellyfinAndAssert(): Promise<void> {
@@ -381,33 +407,26 @@ function reportHeap(message: string): void {
 
 			try {
 				publication.plexClient = plexClient;
+				const sectionCallsBefore = vi.mocked(plexClient.getLibrarySections).mock.calls.length;
+				const itemCallsBefore = vi.mocked(plexClient.getLibraryItems).mock.calls.length;
 				const result = await refreshPlexCache({
 					prisma,
-					instance: {
-						id: "heap-plex",
-						userId: "heap-user",
-						service: "PLEX",
-						label: "Heap Plex",
-						baseUrl: "http://plex.invalid",
-						apiKey: "token",
-						httpAuthHeaders: {},
-						enabled: true,
-						encryptedApiKey: "x",
-						encryptionIv: "y",
-						encryptedHttpAuthCredentials: null,
-						httpAuthEncryptionIv: null,
-						expectedIdentity: "plex-a",
-						identityStatus: "VERIFIED",
-						connectionGeneration: 0,
-						identityGeneration: 0,
-					},
+					instance: plexPublicationInstance,
 					log: silentLog,
 				});
 				expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
+				expect(result.superseded).not.toBe(true);
 				expect(result.errorMessages.join(" ")).toMatch(
 					/Atomic Plex cache publication failed:.*constraint/is,
 				);
-				expect(await prisma.plexCache.findMany({ where: { instanceId: "heap-plex" } })).toEqual([
+				expect(vi.mocked(plexClient.getLibrarySections).mock.calls.length).toBeGreaterThan(
+					sectionCallsBefore,
+				);
+				expect(vi.mocked(plexClient.getLibraryItems).mock.calls.length).toBeGreaterThan(
+					itemCallsBefore,
+				);
+				const rows = await prisma.plexCache.findMany({ where: { instanceId: "heap-plex" } });
+				expect(rows).toEqual([
 					expect.objectContaining({ title: "Preserved Plex generation", ratingKey: "old-plex" }),
 				]);
 			} finally {
@@ -450,14 +469,35 @@ function reportHeap(message: string): void {
 			await prisma.$executeRawUnsafe(`
 				CREATE TRIGGER fail_plex_success_status
 				BEFORE UPDATE ON cache_refresh_status
-				WHEN NEW.instanceId = 'heap-plex' AND NEW.cacheType = 'plex'
+				WHEN NEW.instanceId = 'heap-plex'
+					AND NEW.cacheType = 'plex'
+					AND NEW.lastResult = 'success'
+					AND NEW.lastAttemptResult = 'success'
 				BEGIN
 					SELECT RAISE(ABORT, 'injected Plex status failure');
 				END
 			`);
 
 			try {
-				await expect(refreshPlexAndAssert()).rejects.toThrow();
+				publication.plexClient = plexClient;
+				const sectionCallsBefore = vi.mocked(plexClient.getLibrarySections).mock.calls.length;
+				const itemCallsBefore = vi.mocked(plexClient.getLibraryItems).mock.calls.length;
+				const result = await refreshPlexCache({
+					prisma,
+					instance: plexPublicationInstance,
+					log: silentLog,
+				});
+				expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
+				expect(result.superseded).not.toBe(true);
+				expect(result.errorMessages.join(" ")).toMatch(
+					/Atomic Plex cache publication failed:.*constraint/is,
+				);
+				expect(vi.mocked(plexClient.getLibrarySections).mock.calls.length).toBeGreaterThan(
+					sectionCallsBefore,
+				);
+				expect(vi.mocked(plexClient.getLibraryItems).mock.calls.length).toBeGreaterThan(
+					itemCallsBefore,
+				);
 				const rows = await prisma.plexCache.findMany({ where: { instanceId: "heap-plex" } });
 				expect(rows).toEqual([
 					expect.objectContaining({
@@ -469,7 +509,14 @@ function reportHeap(message: string): void {
 					await prisma.cacheRefreshStatus.findUnique({
 						where: { instanceId_cacheType: { instanceId: "heap-plex", cacheType: "plex" } },
 					}),
-				).toEqual(expect.objectContaining({ lastRefreshedAt: previousStatusAt, itemCount: 1 }));
+				).toEqual(
+					expect.objectContaining({
+						lastRefreshedAt: previousStatusAt,
+						lastResult: "success",
+						lastAttemptResult: "error",
+						itemCount: 1,
+					}),
+				);
 			} finally {
 				await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS fail_plex_success_status");
 			}
