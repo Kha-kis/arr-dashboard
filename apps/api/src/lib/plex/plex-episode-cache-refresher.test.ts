@@ -123,11 +123,14 @@ function prisma(
 	currentConnection = { service: "PLEX", enabled: true, connectionGeneration: 7 },
 	parentStatuses: Array<Record<string, unknown> | null> = [],
 ) {
-	const parentStatus = (overrides: Record<string, unknown> = {}) => ({
+	const fixtureNow = Date.now();
+	const publishedAt = new Date(fixtureNow - 60_000);
+	const attemptedAt = new Date(fixtureNow - 30_000);
+	const baseParentStatus = {
 		id: "plex-status-1",
 		instanceId: "plex-1",
 		cacheType: "plex",
-		lastRefreshedAt: new Date(),
+		lastRefreshedAt: publishedAt,
 		lastResult: "success",
 		lastErrorMessage: null,
 		itemCount: shows.length,
@@ -135,11 +138,14 @@ function prisma(
 		generationMetadata: JSON.stringify({
 			sections: [{ key: "shows", title: "Shows", type: "show" }],
 		}),
-		lastAttemptAt: new Date(),
+		lastAttemptAt: attemptedAt,
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
 		connectionGeneration: 7,
 		identityGeneration: 11,
+	};
+	const parentStatus = (overrides: Record<string, unknown> = {}) => ({
+		...baseParentStatus,
 		...overrides,
 	});
 	const statuses =
@@ -210,6 +216,51 @@ function prisma(
 }
 
 describe("refreshPlexEpisodeCache authoritative publication", () => {
+	it("uses stable parent authority timestamps within one fixture", () => {
+		vi.useFakeTimers();
+		try {
+			const initialTime = new Date("2026-08-20T12:00:00.000Z");
+			vi.setSystemTime(initialTime);
+			const statusFactory = prisma();
+			const firstStatus = statusFactory.parentStatus();
+			vi.setSystemTime(new Date(initialTime.getTime() + 1));
+			const laterStatus = statusFactory.parentStatus();
+
+			expect((firstStatus.lastRefreshedAt as Date).getTime()).toBe(
+				(laterStatus.lastRefreshedAt as Date).getTime(),
+			);
+			expect((firstStatus.lastAttemptAt as Date).getTime()).toBe(
+				(laterStatus.lastAttemptAt as Date).getTime(),
+			);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("rejects publication when the parent timestamp changes across authority reads", async () => {
+		const statusFactory = prisma();
+		const firstStatus = statusFactory.parentStatus();
+		const changedStatus = {
+			...firstStatus,
+			lastRefreshedAt: new Date((firstStatus.lastRefreshedAt as Date).getTime() + 1),
+		};
+		const fixture = prisma(undefined, undefined, [firstStatus, changedStatus]);
+
+		const result = await refreshPlexEpisodeCache(
+			client(),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: false, errors: 1, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/parent Plex generation is unavailable/i);
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalled();
+	});
+
 	it("atomically replaces one instance and binds every row to the published generation", async () => {
 		const fixture = prisma();
 		const result = await refreshPlexEpisodeCache(
@@ -283,7 +334,7 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 
 	it("keeps prior episode rows when the parent latest attempt failed", async () => {
 		const failedParent = prisma().parentStatus({
-			lastAttemptAt: new Date(Date.now() + 1_000),
+			lastAttemptAt: new Date(Date.now() - 1_000),
 			lastAttemptResult: "error",
 			lastAttemptErrorMessage: "parent inventory changed",
 			lastErrorMessage: "parent inventory changed",
