@@ -58,6 +58,9 @@ jobs:
       - name: Verify committed Prisma client is up to date
         run: pnpm run check:prisma-generated
 
+      - name: Verify Prisma guard path-safety helpers
+        run: node --test scripts/check-prisma-generated.test.mjs
+
       - name: Initialize deployment-state contract database
         run: pnpm exec prisma db push --schema prisma/schema.prisma
         working-directory: apps/api
