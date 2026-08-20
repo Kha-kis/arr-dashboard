@@ -20,16 +20,16 @@ import type { Encryptor } from "../auth/encryption.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import {
+	beginPlexCacheRefreshAttempt,
+	finishPlexCacheRefreshAttemptFailure,
+	type PlexCacheRefreshAttempt,
+} from "../services/provider-cache-status.js";
+import {
 	createProviderPublicationAuthority,
 	type OwnedProviderPublicationSnapshot,
 	ProviderIdentityGuardError,
 	withGuardedProviderPublication,
 } from "../services/provider-identity-guard.js";
-import {
-	beginPlexCacheRefreshAttempt,
-	finishPlexCacheRefreshAttemptFailure,
-	type PlexCacheRefreshAttempt,
-} from "../services/provider-cache-status.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import {
 	PLEX_CACHE_WRITE_CHUNK_SIZE,
@@ -300,12 +300,30 @@ export async function refreshPlexCache(
 	context: PlexPublicationContext,
 ): Promise<PlexCacheRefreshResult> {
 	const { prisma, instance, log } = context;
-	let attempt: PlexCacheRefreshAttempt | null = null;
 	try {
-		attempt = await beginPlexCacheRefreshAttempt(prisma, "plex", instance, {
+		const attempt = await beginPlexCacheRefreshAttempt(prisma, "plex", instance, {
 			cleanupRunClaimToken: context.cleanupRunClaimToken,
 		});
 		if (!attempt) return unpublishedResult(new PlexRefreshAttemptSupersededError());
+		return await refreshPlexCacheWithAttempt(context, attempt);
+	} catch (error) {
+		const result = unpublishedResult(error);
+		log.error({ err: error, instanceId: instance.id }, "Plex cache publication rejected");
+		return result;
+	}
+}
+
+/**
+ * Continue a Plex refresh with an attempt already acquired by the production
+ * pre-decryption boundary. The public refresher above remains the safe path
+ * for internal callers that begin from an already decrypted snapshot.
+ */
+export async function refreshPlexCacheWithAttempt(
+	context: PlexPublicationContext,
+	attempt: PlexCacheRefreshAttempt,
+): Promise<PlexCacheRefreshResult> {
+	const { prisma, instance, log } = context;
+	try {
 		const result = await withGuardedProviderPublication(
 			prisma,
 			instance,
@@ -337,7 +355,6 @@ export async function refreshPlexCache(
 	} catch (error) {
 		let publicationError = error;
 		if (
-			attempt &&
 			!(error instanceof PlexRefreshAttemptSupersededError) &&
 			!(error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED")
 		) {

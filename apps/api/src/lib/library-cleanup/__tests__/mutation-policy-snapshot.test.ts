@@ -17,11 +17,10 @@ const refreshMocks = vi.hoisted(() => ({
 
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
 	collectPlexCacheLiveEvidence: refreshMocks.plex,
-	createOwnedPlexPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
-	refreshPlexCache: refreshMocks.plex,
 }));
-vi.mock("../../plex/plex-episode-cache-refresher.js", () => ({
-	refreshPlexEpisodeCache: refreshMocks.plexEpisodes,
+vi.mock("../../plex/plex-refresh-orchestration.js", () => ({
+	refreshOwnedPlexCache: refreshMocks.plex,
+	refreshOwnedPlexEpisodeCache: refreshMocks.plexEpisodes,
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
 	collectTautulliCacheLiveEvidence: refreshMocks.tautulli,

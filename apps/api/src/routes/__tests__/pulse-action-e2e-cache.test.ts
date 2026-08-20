@@ -5,15 +5,15 @@
  * same chain across the cache.refresh dispatcher branch:
  *   1. A stale Plex cache surfaces with a cache.refresh envelope.
  *   2. POSTing the envelope invokes the real refresh pipeline
- *      (requirePlexClient + refreshPlexCache, both stubbed) and 200s.
+ *      (the owned Plex refresh boundary, stubbed) and 200s.
  *   3. The per-user Pulse cache is invalidated — next GET sees fresh
  *      state (we drop the stale row from the stub to model this).
- *   4. Ownership failure (InstanceNotFoundError from requirePlexClient)
+ *   4. Ownership failure (InstanceNotFoundError from the persisted instance lookup)
  *      surfaces as a 404 from the action route, matching the codebase's
  *      "don't leak existence" convention.
  *
- * Stubbing notes: requirePlexClient / refreshPlexCache are mocked
- * because the dispatcher reaches for them at module level. The Prisma
+ * Stubbing notes: refreshOwnedPlexCache is mocked because the dispatcher
+ * reaches for it at module level. The Prisma
  * `cacheRefreshStatus.findMany` surface is stubbed the same way the
  * staleness collector tests do it.
  */
@@ -22,16 +22,11 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Dispatcher collaborators — must be mocked before the route module imports.
-const refreshPlexCache = vi.fn();
-const requirePlexClient = vi.fn();
+const refreshOwnedPlexCache = vi.fn();
 const refreshJellyfinCache = vi.fn();
 const requireJellyfinClient = vi.fn();
-vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
-	createOwnedPlexPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
-	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
-}));
-vi.mock("../../lib/plex/plex-helpers.js", () => ({
-	requirePlexClient: (...args: unknown[]) => requirePlexClient(...args),
+vi.mock("../../lib/plex/plex-refresh-orchestration.js", () => ({
+	refreshOwnedPlexCache: (...args: unknown[]) => refreshOwnedPlexCache(...args),
 }));
 // Tautulli helpers are not exercised by this file but need stubs because
 // the dispatcher module imports them at top level.
@@ -59,7 +54,6 @@ vi.mock("../../lib/pulse/collectors.js", async () => {
 	return { pulseCollectors: [actual.collectCacheStaleness] };
 });
 
-import { InstanceNotFoundError } from "../../lib/errors.js";
 import { registerPulseRoutes } from "../pulse.js";
 import { registerTestErrorHandler } from "./test-helpers.js";
 
@@ -132,6 +126,7 @@ function makeStaleRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
 let app: FastifyInstance;
 let cacheStatuses: CacheStatusRow[];
 let userCounter = 0;
+const findPlexInstance = vi.fn();
 
 const AUTH_HEADER = "x-test-auth";
 
@@ -169,8 +164,7 @@ function deferred<T>() {
 
 beforeEach(async () => {
 	userCounter += 1;
-	refreshPlexCache.mockReset();
-	requirePlexClient.mockReset();
+	refreshOwnedPlexCache.mockReset();
 	refreshJellyfinCache.mockReset();
 	requireJellyfinClient.mockReset();
 
@@ -183,6 +177,7 @@ beforeEach(async () => {
 	// — without the upsert, the row would persist indefinitely.
 	app.decorate("prisma", {
 		serviceInstance: {
+			findFirst: findPlexInstance,
 			findMany: async () =>
 				cacheStatuses
 					.filter((status) => status.cacheType === "plex")
@@ -216,6 +211,17 @@ beforeEach(async () => {
 		},
 		plexCache: { count: async () => 0 },
 	} as unknown as never);
+	findPlexInstance.mockReset().mockImplementation(async ({ where }) => {
+		const row = cacheStatuses.find(
+			(status) =>
+				status.instanceId === where.id &&
+				status.instance.service === "PLEX" &&
+				status.instance.enabled,
+		);
+		return row && where.userId === `e2e-cache-user-${userCounter}` && where.enabled === true
+			? { ...row.instance, id: row.instanceId, userId: where.userId }
+			: null;
+	});
 	registerTestErrorHandler(app);
 	await app.register(registerPulseRoutes);
 	await app.ready();
@@ -228,8 +234,7 @@ afterEach(async () => {
 describe("Pulse actionability — cache.refresh end-to-end", () => {
 	it("stale Plex cache → action item → POST 200 → cache invalidation drops the row on next poll", async () => {
 		cacheStatuses = [makeStaleRow()];
-		requirePlexClient.mockResolvedValue({ client: { id: "plex-client" }, instance: {} });
-		refreshPlexCache.mockImplementation(async () => {
+		refreshOwnedPlexCache.mockImplementation(async () => {
 			cacheStatuses[0] = {
 				...cacheStatuses[0]!,
 				lastRefreshedAt: new Date(),
@@ -266,11 +271,9 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 		// returns before the refresh completes so we don't know the upsert
 		// count yet — `detail` is intentionally absent.
 		expect(JSON.parse(actionRes.payload)).toEqual({ status: "ok" });
-		expect(requirePlexClient).toHaveBeenCalledWith(
-			expect.any(Object), // app
-			`e2e-cache-user-${userCounter}`,
-			"inst-plex",
-		);
+		expect(findPlexInstance).toHaveBeenCalledWith({
+			where: { id: "inst-plex", userId: `e2e-cache-user-${userCounter}`, enabled: true },
+		});
 
 		// Flush microtasks + give the refresh mock (synchronously resolved)
 		// a tick to run its continuation + upsert the fresh lastRefreshedAt
@@ -278,7 +281,12 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 		// time; in the test it's essentially instant — but we still have
 		// to yield the event loop.
 		await new Promise((resolve) => setTimeout(resolve, 20));
-		expect(refreshPlexCache).toHaveBeenCalledTimes(1);
+		expect(refreshOwnedPlexCache).toHaveBeenCalledWith({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			instance: expect.objectContaining({ id: "inst-plex", service: "PLEX" }),
+			log: expect.anything(),
+		});
 
 		// 3. After the background task ran, the upsert callback has mutated
 		//    cacheStatuses[0].lastRefreshedAt to `now`. The collector should
@@ -384,7 +392,7 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 
 	it("ownership failure returns 404 (InstanceNotFoundError convention)", async () => {
 		cacheStatuses = [makeStaleRow()];
-		requirePlexClient.mockRejectedValue(new InstanceNotFoundError("inst-plex"));
+		findPlexInstance.mockResolvedValueOnce(null);
 
 		const listing = await injectGet("/pulse");
 		const staleItem = JSON.parse(listing.payload).items.find(
@@ -397,6 +405,6 @@ describe("Pulse actionability — cache.refresh end-to-end", () => {
 		);
 		expect(actionRes.statusCode).toBe(404);
 		expect(JSON.parse(actionRes.payload).error).toBe("InstanceNotFoundError");
-		expect(refreshPlexCache).not.toHaveBeenCalled();
+		expect(refreshOwnedPlexCache).not.toHaveBeenCalled();
 	});
 });

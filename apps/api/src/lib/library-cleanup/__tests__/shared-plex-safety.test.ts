@@ -1,6 +1,6 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
-import * as plexCacheRefresher from "../../plex/plex-cache-refresher.js";
+import * as plexRefreshOrchestration from "../../plex/plex-refresh-orchestration.js";
 import { withQuiObservationTopologyGuard } from "../../qui/observation-topology-guard.js";
 import {
 	buildCleanupPreviewDetails,
@@ -7414,7 +7414,7 @@ describe("shared Plex deletion safety", () => {
 			}
 			return fixture.targetInstance;
 		}) as never);
-		const refresh = vi.spyOn(plexCacheRefresher, "refreshPlexCache").mockResolvedValue({
+		const refresh = vi.spyOn(plexRefreshOrchestration, "refreshOwnedPlexCache").mockResolvedValue({
 			upserted: 1,
 			errors: 0,
 			errorMessages: [],

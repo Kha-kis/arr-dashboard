@@ -7,11 +7,8 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import {
-	createOwnedPlexPublicationSnapshot,
-	refreshPlexCache,
-} from "../lib/plex/plex-cache-refresher.js";
 import { loadGenerationObservationsForOwnedInstances } from "../lib/plex/plex-evidence-repository.js";
+import { refreshOwnedPlexCache } from "../lib/plex/plex-refresh-orchestration.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -49,14 +46,11 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 					);
 
 					for (const instance of instances) {
-						let publicationInstance:
-							| ReturnType<typeof createOwnedPlexPublicationSnapshot>
-							| undefined;
 						try {
-							publicationInstance = createOwnedPlexPublicationSnapshot(app.encryptor, instance);
-							const result = await refreshPlexCache({
+							const result = await refreshOwnedPlexCache({
 								prisma: app.prisma,
-								instance: publicationInstance,
+								encryptor: app.encryptor,
+								instance,
 								log: app.log,
 							});
 							app.log.info(

@@ -33,8 +33,8 @@ vi.mock("../../queue-cleaner/scheduler.js", () => ({
 	getQueueCleanerScheduler: () => queueCleanerScheduler,
 }));
 
-const refreshPlexCache = vi.fn();
-const plexPublicationInstance = {
+const refreshOwnedPlexCache = vi.fn();
+const plexInstance = {
 	id: "inst-plex-1",
 	userId: "user-1",
 	service: "PLEX" as const,
@@ -52,17 +52,12 @@ const plexPublicationInstance = {
 	connectionGeneration: 7,
 	identityGeneration: 3,
 };
-const createOwnedPlexPublicationSnapshot = vi.fn(
-	(_encryptor: unknown, _instance: unknown) => plexPublicationInstance,
-);
 const refreshTautulliCache = vi.fn();
 const createOwnedTautulliPublicationSnapshot = vi.fn(
 	(_encryptor: unknown, instance: unknown) => instance,
 );
-vi.mock("../../plex/plex-cache-refresher.js", () => ({
-	createOwnedPlexPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
-		createOwnedPlexPublicationSnapshot(encryptor, instance),
-	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
+vi.mock("../../plex/plex-refresh-orchestration.js", () => ({
+	refreshOwnedPlexCache: (...args: unknown[]) => refreshOwnedPlexCache(...args),
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
 	createOwnedTautulliPublicationSnapshot: (encryptor: unknown, instance: unknown) =>
@@ -70,11 +65,7 @@ vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
 	refreshTautulliCache: (...args: unknown[]) => refreshTautulliCache(...args),
 }));
 
-const requirePlexClient = vi.fn();
 const requireTautulliClient = vi.fn();
-vi.mock("../../plex/plex-helpers.js", () => ({
-	requirePlexClient: (...args: unknown[]) => requirePlexClient(...args),
-}));
 vi.mock("../../tautulli/tautulli-helpers.js", () => ({
 	requireTautulliClient: (...args: unknown[]) => requireTautulliClient(...args),
 }));
@@ -98,11 +89,13 @@ const fakeLog = {
 
 const markEnabled = vi.fn();
 const cacheStatusUpsert = vi.fn();
-const plexInstance = { service: "PLEX" as const, connectionGeneration: 7 };
 const tautulliInstance = { service: "TAUTULLI" as const, connectionGeneration: 11 };
 
 const fakeApp = {
 	prisma: {
+		serviceInstance: {
+			findFirst: vi.fn().mockResolvedValue(plexInstance),
+		},
 		$transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
 			callback({
 				$queryRawUnsafe: vi.fn().mockResolvedValue([]),
@@ -130,6 +123,7 @@ const fakeApp = {
 	schedulerRegistry: {
 		markEnabled: (jobId: string) => markEnabled(jobId),
 	},
+	encryptor: { decrypt: vi.fn() },
 } as unknown as FastifyInstance;
 
 beforeEach(() => {
@@ -137,10 +131,8 @@ beforeEach(() => {
 	huntingScheduler.start.mockReset();
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
-	refreshPlexCache.mockReset();
-	createOwnedPlexPublicationSnapshot.mockClear();
+	refreshOwnedPlexCache.mockReset();
 	refreshTautulliCache.mockReset();
-	requirePlexClient.mockReset();
 	requireTautulliClient.mockReset();
 	markEnabled.mockReset();
 	cacheStatusUpsert.mockReset();
@@ -247,10 +239,8 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		target: { instanceId: "inst-tautulli-1", cacheType: "tautulli" },
 	};
 
-	it("refreshes the plex cache via requirePlexClient + refreshPlexCache", async () => {
-		const fakeClient = { id: "plex-client" };
-		requirePlexClient.mockResolvedValue({ client: fakeClient, instance: plexInstance });
-		refreshPlexCache.mockResolvedValue({
+	it("refreshes the Plex cache through the pre-decryption authority boundary", async () => {
+		refreshOwnedPlexCache.mockResolvedValue({
 			upserted: 42,
 			errors: 0,
 			errorMessages: [],
@@ -266,7 +256,6 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// don't yet know the upsert count at return time.
 		expect(result.status).toBe("ok");
 		expect(result.detail).toBeUndefined();
-		expect(requirePlexClient).toHaveBeenCalledWith(fakeApp, "user-1", "inst-plex-1");
 		expect(requireTautulliClient).not.toHaveBeenCalled();
 
 		// Await the background task so the rest of the assertions see the
@@ -274,15 +263,12 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// this; the HTTP client has already received 200.
 		await result.backgroundTask;
 
-		expect(refreshPlexCache).toHaveBeenCalledWith({
+		expect(refreshOwnedPlexCache).toHaveBeenCalledWith({
 			prisma: fakeApp.prisma,
-			instance: plexPublicationInstance,
+			encryptor: fakeApp.encryptor,
+			instance: plexInstance,
 			log: fakeLog,
 		});
-		expect(createOwnedPlexPublicationSnapshot).toHaveBeenCalledWith(
-			fakeApp.encryptor,
-			plexInstance,
-		);
 		// The refresher transaction is the sole successful-generation publisher.
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
@@ -320,9 +306,8 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
-	it("leaves incomplete Plex attempt recording to the sealed refresher", async () => {
-		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
-		refreshPlexCache.mockResolvedValue({
+	it("leaves incomplete Plex attempt recording to the authority boundary", async () => {
+		refreshOwnedPlexCache.mockResolvedValue({
 			upserted: 42,
 			errors: 0,
 			errorMessages: [],
@@ -336,8 +321,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 	});
 
 	it("does not record a superseded Plex refresh as a failure", async () => {
-		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
-		refreshPlexCache.mockResolvedValue({
+		refreshOwnedPlexCache.mockResolvedValue({
 			upserted: 0,
 			errors: 0,
 			errorMessages: [],
@@ -356,12 +340,11 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// test times out or returns after the refresher resolves, someone
 		// has re-introduced the `await refreshPlexCache(...)` in the main
 		// code path.
-		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
 		let resolveRefresh: (v: unknown) => void = () => {};
 		const pendingRefresh = new Promise((r) => {
 			resolveRefresh = r;
 		});
-		refreshPlexCache.mockReturnValue(pendingRefresh);
+		refreshOwnedPlexCache.mockReturnValue(pendingRefresh);
 
 		const dispatchStart = Date.now();
 		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
@@ -394,8 +377,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// unchanged so the staleness collector re-emits the row on the next
 		// poll. Writing on failure would tell operators "it's fresh" when
 		// it isn't — trust regression.
-		requirePlexClient.mockResolvedValue({ client: {}, instance: plexInstance });
-		refreshPlexCache.mockRejectedValue(new Error("upstream Plex timeout"));
+		refreshOwnedPlexCache.mockRejectedValue(new Error("upstream Plex timeout"));
 
 		const result = await dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog);
 		expect(result.status).toBe("ok");
@@ -411,7 +393,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		// Regression guard: a thrown ownership error (404) should short-circuit
 		// before any write-through. Writing status on a failed refresh would
 		// advance lastRefreshedAt dishonestly.
-		requirePlexClient.mockRejectedValue(new InstanceNotFoundError("inst-plex-1"));
+		vi.mocked(fakeApp.prisma.serviceInstance.findFirst).mockResolvedValueOnce(null);
 
 		await expect(dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog)).rejects.toMatchObject(
 			{ statusCode: 404 },
@@ -420,8 +402,8 @@ describe("dispatchPulseAction — cache.refresh", () => {
 		expect(cacheStatusUpsert).not.toHaveBeenCalled();
 	});
 
-	it("propagates InstanceNotFoundError from requirePlexClient (ownership failure)", async () => {
-		requirePlexClient.mockRejectedValue(new InstanceNotFoundError("inst-plex-1"));
+	it("propagates InstanceNotFoundError before dispatching the Plex refresh", async () => {
+		vi.mocked(fakeApp.prisma.serviceInstance.findFirst).mockResolvedValueOnce(null);
 
 		await expect(dispatchPulseAction(fakeApp, "user-1", plexAction, fakeLog)).rejects.toMatchObject(
 			{
@@ -429,7 +411,7 @@ describe("dispatchPulseAction — cache.refresh", () => {
 				statusCode: 404,
 			},
 		);
-		expect(refreshPlexCache).not.toHaveBeenCalled();
+		expect(refreshOwnedPlexCache).not.toHaveBeenCalled();
 	});
 
 	it("propagates InstanceNotFoundError from requireTautulliClient", async () => {

@@ -33,11 +33,7 @@ import {
 } from "../jellyfin/jellyfin-cache-refresher.js";
 import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-singleflight.js";
 import { requireJellyfinClient } from "../jellyfin/jellyfin-helpers.js";
-import {
-	createOwnedPlexPublicationSnapshot,
-	refreshPlexCache,
-} from "../plex/plex-cache-refresher.js";
-import { requirePlexClient } from "../plex/plex-helpers.js";
+import { refreshOwnedPlexCache } from "../plex/plex-refresh-orchestration.js";
 import { getQueueCleanerScheduler } from "../queue-cleaner/scheduler.js";
 import { recordWatchProviderCacheRefreshFailure } from "../services/provider-cache-status.js";
 import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
@@ -168,16 +164,23 @@ async function dispatchCacheRefresh(
 	log: FastifyBaseLogger,
 ): Promise<PulseActionResult> {
 	if (cacheType === "plex") {
-		const { instance } = await requirePlexClient(app, userId, instanceId);
-		const publicationInstance = createOwnedPlexPublicationSnapshot(app.encryptor, instance);
+		const instance = await requireEnabledInstance(app, userId, instanceId);
+		if (instance.service !== "PLEX") {
+			throw new AppValidationError("Instance is not a Plex service");
+		}
 		const backgroundTask = runBackgroundCacheRefresh({
 			app,
 			log,
 			instanceId,
 			cacheType: "plex",
-			refresh: () => refreshPlexCache({ prisma: app.prisma, instance: publicationInstance, log }),
+			refresh: () =>
+				refreshOwnedPlexCache({
+					prisma: app.prisma,
+					encryptor: app.encryptor,
+					instance,
+					log,
+				}),
 			failureRecordedByRefresh: true,
-			publicationAuthority: publicationInstance,
 		});
 		log.info({ instanceId, cacheType }, "pulse-action: plex cache refresh dispatched");
 		return { status: "ok", backgroundTask };

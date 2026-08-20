@@ -12,9 +12,9 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import {
-	ruleDataSourceMap,
 	type CleanupRuleExpression,
 	type DataSourceDependency,
+	ruleDataSourceMap,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
@@ -31,10 +31,8 @@ import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import {
 	collectPlexCacheLiveEvidence,
-	createOwnedPlexPublicationSnapshot,
 	type PlexCacheSnapshotRow,
 	type PlexInventoryTarget,
-	refreshPlexCache,
 } from "../plex/plex-cache-refresher.js";
 import {
 	createPlexClient,
@@ -42,7 +40,6 @@ import {
 	PlexMovieNotFoundError,
 	PlexSeriesNotFoundError,
 } from "../plex/plex-client.js";
-import { refreshPlexEpisodeCache } from "../plex/plex-episode-cache-refresher.js";
 import {
 	type AvailablePlexInstanceEvidence,
 	getCurrentPlexMutationAuthorityForOwnedInstance,
@@ -52,6 +49,10 @@ import {
 	loadMutationEvidenceForOwnedInstances,
 	type PlexInstanceEvidence,
 } from "../plex/plex-evidence-repository.js";
+import {
+	refreshOwnedPlexCache,
+	refreshOwnedPlexEpisodeCache,
+} from "../plex/plex-refresh-orchestration.js";
 import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
 import type {
 	LibraryCleanupApproval,
@@ -124,8 +125,8 @@ import {
 	evaluateRuleState,
 	extractRating,
 	normalizeStoredCleanupRuleExpression,
-	type RuleEvidenceCondition,
 	passesCleanupRuleFilters,
+	type RuleEvidenceCondition,
 	ruleUsesUnavailableData,
 } from "./rule-evaluators.js";
 import { type CleanupSelectionPlan, planCleanupSelection } from "./selection-planner.js";
@@ -10092,10 +10093,10 @@ async function refreshPlexMutationEvidence(
 			);
 			for (const instance of initial) {
 				if (!deps.encryptor) throw new Error("Plex credentials were unavailable");
-				const publicationInstance = createOwnedPlexPublicationSnapshot(deps.encryptor, instance);
-				const refreshed = await refreshPlexCache({
+				const refreshed = await refreshOwnedPlexCache({
 					prisma: deps.prisma,
-					instance: publicationInstance,
+					encryptor: deps.encryptor,
+					instance,
 					log: deps.log,
 					cleanupRunClaimToken,
 				});
@@ -10119,9 +10120,10 @@ async function refreshPlexMutationEvidence(
 					}
 				}
 				if (includeEpisodes) {
-					const episodes = await refreshPlexEpisodeCache({
+					const episodes = await refreshOwnedPlexEpisodeCache({
 						prisma: deps.prisma,
-						instance: publicationInstance,
+						encryptor: deps.encryptor,
+						instance,
 						log: deps.log,
 						cleanupRunClaimToken,
 					});

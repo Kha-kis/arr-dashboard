@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/test-helpers.js";
 
 const mocks = vi.hoisted(() => ({
-	createSnapshot: vi.fn((_encryptor: unknown, instance: unknown) => ({ sealed: instance })),
 	refresh: vi.fn(),
 	requireClient: vi.fn(),
 	recordFailure: vi.fn(),
@@ -12,9 +11,8 @@ const mocks = vi.hoisted(() => ({
 	getPublishedEpisodeGenerationObservation: vi.fn(),
 }));
 
-vi.mock("../../../lib/plex/plex-cache-refresher.js", () => ({
-	createOwnedPlexPublicationSnapshot: mocks.createSnapshot,
-	refreshPlexCache: mocks.refresh,
+vi.mock("../../../lib/plex/plex-refresh-orchestration.js", () => ({
+	refreshOwnedPlexCache: mocks.refresh,
 }));
 vi.mock("../../../lib/plex/plex-helpers.js", () => ({
 	requirePlexClient: mocks.requireClient,
@@ -37,7 +35,6 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 	const instance = { id: "plex-1", service: "PLEX", connectionGeneration: 4 };
 
 	beforeEach(async () => {
-		mocks.createSnapshot.mockClear();
 		mocks.refresh.mockReset().mockResolvedValue({
 			complete: true,
 			completedAt: new Date(),
@@ -56,7 +53,10 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 
 		app = Fastify({ logger: false });
 		setupAuthInjection(app);
-		app.decorate("prisma", { plexCache: { count: vi.fn() } } as never);
+		app.decorate("prisma", {
+			plexCache: { count: vi.fn() },
+			serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
+		} as never);
 		app.decorate("encryptor", { decrypt: vi.fn() } as never);
 		await app.register(registerCacheRoutes, { prefix: "/api/plex" });
 		await app.ready();
@@ -66,31 +66,38 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 		await app.close();
 	});
 
-	it("passes only the owned snapshot to the sealed refresher", async () => {
+	it("uses the pre-decryption refresh boundary without forwarding a caller client", async () => {
 		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
 
 		expect(response.statusCode).toBe(200);
-		expect(mocks.createSnapshot).toHaveBeenCalledWith(app.encryptor, instance);
 		expect(mocks.refresh).toHaveBeenCalledWith({
 			prisma: app.prisma,
-			instance: { sealed: instance },
+			encryptor: app.encryptor,
+			instance,
 			log: expect.anything(),
 		});
+		expect(mocks.requireClient).not.toHaveBeenCalled();
 		expect(mocks.refresh.mock.calls[0]).not.toContainEqual({ server: "caller-controlled" });
 	});
 
-	it("leaves incomplete-attempt recording to the sealed refresher", async () => {
+	it("returns an actionable sanitized response when preparation cannot publish", async () => {
 		mocks.refresh.mockResolvedValue({
 			complete: false,
 			upserted: 0,
 			errors: 1,
-			errorMessages: ["identity unavailable"],
+			errorMessages: ["Plex refresh preparation failed before publication"],
 		});
 
 		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
 
-		expect(response.statusCode).toBe(200);
-		expect(mocks.recordFailure).not.toHaveBeenCalled();
+		expect(response.statusCode).toBe(503);
+		expect(response.json()).toEqual({
+			success: false,
+			upserted: 0,
+			errors: 1,
+			error: "Plex refresh preparation failed before publication",
+		});
+		expect(JSON.stringify(response.json())).not.toContain("caller-controlled");
 	});
 
 	it.each([0, 42])(

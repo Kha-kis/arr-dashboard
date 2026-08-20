@@ -40,15 +40,13 @@ vi.mock("../../lib/queue-cleaner/scheduler.js", () => ({
 	getQueueCleanerScheduler: () => queueCleanerScheduler,
 }));
 
-const refreshPlexCache = vi.fn();
+const refreshOwnedPlexCache = vi.fn();
 const refreshTautulliCache = vi.fn();
 const refreshJellyfinCache = vi.fn();
-const requirePlexClient = vi.fn();
 const requireTautulliClient = vi.fn();
 const requireJellyfinClient = vi.fn();
-vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
-	createOwnedPlexPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
-	refreshPlexCache: (...args: unknown[]) => refreshPlexCache(...args),
+vi.mock("../../lib/plex/plex-refresh-orchestration.js", () => ({
+	refreshOwnedPlexCache: (...args: unknown[]) => refreshOwnedPlexCache(...args),
 }));
 vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
 	createOwnedTautulliPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
@@ -57,9 +55,6 @@ vi.mock("../../lib/tautulli/tautulli-cache-refresher.js", () => ({
 vi.mock("../../lib/jellyfin/jellyfin-cache-refresher.js", () => ({
 	createOwnedJellyfinPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
 	refreshJellyfinCache: (...args: unknown[]) => refreshJellyfinCache(...args),
-}));
-vi.mock("../../lib/plex/plex-helpers.js", () => ({
-	requirePlexClient: (...args: unknown[]) => requirePlexClient(...args),
 }));
 vi.mock("../../lib/tautulli/tautulli-helpers.js", () => ({
 	requireTautulliClient: (...args: unknown[]) => requireTautulliClient(...args),
@@ -106,6 +101,13 @@ function setupAuthGate(app: FastifyInstance) {
 }
 
 let app: FastifyInstance;
+const plexInstance = {
+	id: "inst-plex-1",
+	userId: DEFAULT_USER.id,
+	service: "PLEX",
+	enabled: true,
+};
+const findPlexInstance = vi.fn();
 
 async function inject(
 	method: string,
@@ -130,12 +132,18 @@ beforeEach(async () => {
 	huntingScheduler.start.mockReset();
 	queueCleanerScheduler.isRunning.mockReset();
 	queueCleanerScheduler.start.mockReset();
-	refreshPlexCache.mockReset();
+	refreshOwnedPlexCache.mockReset();
 	refreshTautulliCache.mockReset();
 	refreshJellyfinCache.mockReset();
-	requirePlexClient.mockReset();
 	requireTautulliClient.mockReset();
 	requireJellyfinClient.mockReset();
+	findPlexInstance
+		.mockReset()
+		.mockImplementation(async ({ where }) =>
+			where.id === plexInstance.id && where.userId === DEFAULT_USER.id && where.enabled === true
+				? plexInstance
+				: null,
+		);
 
 	app = Fastify({ logger: false });
 	setupAuthGate(app);
@@ -145,6 +153,7 @@ beforeEach(async () => {
 	// doesn't throw on .markEnabled / .cacheRefreshStatus.upsert.
 	app.decorate("schedulerRegistry", { list: () => [], markEnabled: () => {} } as unknown as never);
 	app.decorate("prisma", {
+		serviceInstance: { findFirst: findPlexInstance },
 		cacheRefreshStatus: { upsert: async () => ({}) },
 	} as unknown as never);
 	registerTestErrorHandler(app);
@@ -223,8 +232,7 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 	};
 
 	it("200 immediately on dispatch; refresh runs in background (fire-and-forget)", async () => {
-		requirePlexClient.mockResolvedValue({ client: {}, instance: {} });
-		refreshPlexCache.mockResolvedValue({ upserted: 12, errors: 0, errorMessages: [] });
+		refreshOwnedPlexCache.mockResolvedValue({ upserted: 12, errors: 0, errorMessages: [] });
 
 		const res = await inject("POST", "/pulse/signal-1/action", { body });
 
@@ -237,17 +245,22 @@ describe("POST /pulse/:id/action — cache.refresh", () => {
 		// Flush the microtask queue so the background task's await of the
 		// refresh mock resolves within this test's lifetime.
 		await new Promise((resolve) => setTimeout(resolve, 10));
-		expect(refreshPlexCache).toHaveBeenCalledTimes(1);
+		expect(refreshOwnedPlexCache).toHaveBeenCalledWith({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			instance: plexInstance,
+			log: expect.anything(),
+		});
 	});
 
 	it("404 when the target instance is missing or not owned (InstanceNotFoundError)", async () => {
-		requirePlexClient.mockRejectedValue(new InstanceNotFoundError("inst-plex-1"));
+		findPlexInstance.mockResolvedValueOnce(null);
 
 		const res = await inject("POST", "/pulse/signal-1/action", { body });
 
 		expect(res.statusCode).toBe(404);
 		expect(JSON.parse(res.payload).error).toBe("InstanceNotFoundError");
-		expect(refreshPlexCache).not.toHaveBeenCalled();
+		expect(refreshOwnedPlexCache).not.toHaveBeenCalled();
 	});
 
 	it("dispatches a Jellyfin retry through the owned-instance helper", async () => {

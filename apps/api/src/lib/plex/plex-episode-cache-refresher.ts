@@ -8,14 +8,14 @@ import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
 import type { PlexCache, Prisma } from "../prisma.js";
 import {
-	ProviderIdentityGuardError,
-	withGuardedProviderPublication,
-} from "../services/provider-identity-guard.js";
-import {
 	beginPlexCacheRefreshAttempt,
 	finishPlexCacheRefreshAttemptFailure,
 	type PlexCacheRefreshAttempt,
 } from "../services/provider-cache-status.js";
+import {
+	ProviderIdentityGuardError,
+	withGuardedProviderPublication,
+} from "../services/provider-identity-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import type { PlexPublicationContext } from "./plex-cache-refresher.js";
 import {
@@ -268,14 +268,35 @@ export async function refreshPlexEpisodeCache(
 	context: PlexPublicationContext,
 ): Promise<PlexEpisodeRefreshResult> {
 	const { prisma, instance, log } = context;
-	let attempt: PlexCacheRefreshAttempt | null = null;
 	try {
-		attempt = await beginPlexCacheRefreshAttempt(prisma, "plex_episode", instance, {
+		const attempt = await beginPlexCacheRefreshAttempt(prisma, "plex_episode", instance, {
 			cleanupRunClaimToken: context.cleanupRunClaimToken,
 		});
 		if (!attempt) {
 			return { ...failedResult([], 0, 0), errors: 0, errorMessages: [], superseded: true };
 		}
+		return await refreshPlexEpisodeCacheWithAttempt(context, attempt);
+	} catch (error) {
+		const message =
+			error instanceof ProviderIdentityGuardError
+				? error.message
+				: `Atomic Plex episode publication failed: ${getErrorMessage(error)}`;
+		log.error({ err: error, instanceId: instance.id }, message);
+		return failedResult([message], 0, 0);
+	}
+}
+
+/**
+ * Continue an episode refresh with an attempt already acquired by the
+ * production pre-decryption boundary. The public refresher remains the safe
+ * internal path for callers that begin from an already decrypted snapshot.
+ */
+export async function refreshPlexEpisodeCacheWithAttempt(
+	context: PlexPublicationContext,
+	attempt: PlexCacheRefreshAttempt,
+): Promise<PlexEpisodeRefreshResult> {
+	const { prisma, instance, log } = context;
+	try {
 		const client = new PlexClient(
 			instance.baseUrl,
 			instance.apiKey,
@@ -361,7 +382,6 @@ export async function refreshPlexEpisodeCache(
 	} catch (error) {
 		let publicationError = error;
 		if (
-			attempt &&
 			!(error instanceof PlexRefreshAttemptSupersededError) &&
 			!(error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED")
 		) {
