@@ -61,6 +61,9 @@ jobs:
       - name: Verify Prisma guard path-safety helpers
         run: node --test scripts/check-prisma-generated.test.mjs
 
+      - name: Verify PR review contract checker
+        run: node --test scripts/check-pr-review-contract.test.mjs
+
       - name: Initialize deployment-state contract database
         run: pnpm exec prisma db push --schema prisma/schema.prisma
         working-directory: apps/api

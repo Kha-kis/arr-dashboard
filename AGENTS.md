@@ -70,6 +70,22 @@ TRaSH deployment, and upstream write paths are safety-critical.
   select a target instead of failing closed. Require a regression test for the
   ambiguous case.
 
+## Review contract
+
+Read [`docs/CODE-REVIEW.md`](docs/CODE-REVIEW.md) before preparing or reviewing
+a pull request. The detailed guide is the durable source of truth.
+
+- Use one broad review per review epoch.
+- Classify every finding against the actual base and declared PR contract;
+  severity and scope are separate.
+- Correct accepted in-scope findings together, then review only the correction
+  delta.
+- A second broad review requires a maintainer-declared material scope change.
+- Codex is an additional reviewer. The maintainer owns scope, stopping, and
+  merge decisions.
+- The final gate requires exact-head CI, dispositioned findings, resolved
+  in-scope threads, and maintainer approval.
+
 ## Layered development loop
 
 Use the cheapest loop that can answer the current question. Do not run the
