@@ -4,11 +4,13 @@ import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js
 
 const mocks = vi.hoisted(() => ({
 	loadUserEvidence: vi.fn(),
+	scanUserPolicyEvidence: vi.fn(),
 }));
 
 vi.mock("../../lib/plex/plex-evidence-repository.js", async (importOriginal) => ({
 	...(await importOriginal<typeof import("../../lib/plex/plex-evidence-repository.js")>()),
 	loadUserEvidence: mocks.loadUserEvidence,
+	scanUserPolicyEvidence: mocks.scanUserPolicyEvidence,
 }));
 
 import { registerInsightsRoutes } from "../library/insights-routes.js";
@@ -32,14 +34,16 @@ describe("library insight Plex authority contracts", () => {
 	let app: FastifyInstance;
 
 	beforeEach(async () => {
-		mocks.loadUserEvidence.mockResolvedValue([
+		const evidence = [
 			{
 				available: true,
 				instanceId: "plex-1",
 				rows: [],
 				evidence: unavailableEvidence,
 			},
-		]);
+		];
+		mocks.loadUserEvidence.mockResolvedValue(evidence);
+		mocks.scanUserPolicyEvidence.mockResolvedValue(evidence);
 
 		app = Fastify({ logger: false });
 		setupAuthInjection(app);

@@ -5,13 +5,21 @@ import type {
 } from "@arr/shared";
 import type { PlexCache, PlexEpisodeCache, PrismaClientInstance } from "../prisma.js";
 import {
+	createEvidenceFingerprintArrayAccumulator,
+	type EvidenceFingerprintArrayAccumulator,
+} from "../evidence-fingerprint.js";
+import {
 	countPlexEpisodeCacheRows,
 	countPlexCacheRows,
 	listPlexCacheRows,
 	listPlexEpisodeCacheRows,
 	listPlexEpisodeRowsForShows,
 	listSelectedPlexCacheRows,
+	scanPlexEpisodeParentPolicyRows,
+	scanPlexPolicyCacheRows,
 	type PlexCacheRowSelection,
+	type PlexEpisodeParentPolicyRow,
+	type PlexPolicyCacheRow,
 	readPlexEpisodeGenerationStatus,
 	readPlexGenerationStatus,
 } from "./plex-cache-storage.js";
@@ -71,7 +79,7 @@ export type AvailablePlexInstanceEvidence = {
 		generationMetadata: string | null;
 	};
 	sections: PlexGenerationSection[];
-	rows: PlexCache[];
+	rows: PlexPolicyCacheRow[];
 	evidence: PlexEvidenceSummary;
 };
 
@@ -82,6 +90,25 @@ export type UnavailablePlexInstanceEvidence = {
 };
 
 export type PlexInstanceEvidence = AvailablePlexInstanceEvidence | UnavailablePlexInstanceEvidence;
+
+export type AvailablePlexPolicyEvidence = Omit<AvailablePlexInstanceEvidence, "rows"> & {
+	rowCount: number;
+	rowFingerprint: string;
+};
+
+export type PlexPolicyScanEvidence = AvailablePlexPolicyEvidence | UnavailablePlexInstanceEvidence;
+
+export type PlexPolicyScanInstance = Omit<AvailablePlexInstanceEvidence, "rows">;
+
+export type PlexPolicyBatchHandler = (input: {
+	instance: PlexPolicyScanInstance;
+	rows: readonly PlexPolicyCacheRow[];
+}) => void | Promise<void>;
+
+export type PlexEpisodeParentPolicyBatchHandler = (input: {
+	instance: PlexPolicyScanInstance;
+	rows: readonly PlexEpisodeParentPolicyRow[];
+}) => void | Promise<void>;
 
 export type AvailablePlexEpisodeEvidence = {
 	available: true;
@@ -116,6 +143,13 @@ function unavailable(reasonCode: PlexCoverageReasonCode): UnavailablePlexInstanc
 
 function unavailableFromEvidence(evidence: PlexEvidenceSummary): UnavailablePlexInstanceEvidence {
 	return { available: false, evidence };
+}
+
+class PlexPolicyProvenanceError extends Error {
+	constructor(readonly reasonCode: PlexCoverageReasonCode) {
+		super(reasonCode);
+		this.name = "PlexPolicyProvenanceError";
+	}
 }
 
 function mutationUnavailable(evidence: {
@@ -319,6 +353,279 @@ async function loadOwnedInstanceEvidence(
 		};
 	} catch {
 		return unavailable("query_failed");
+	}
+}
+
+async function scanOwnedPolicyEvidence(
+	prisma: PlexEvidencePrisma,
+	instance: PlexEvidenceInstance,
+	options: { now?: Date; maxAgeMs?: number; onBatch?: PlexPolicyBatchHandler },
+): Promise<PlexPolicyScanEvidence> {
+	if (!instance.enabled) return unavailable("disabled_instance");
+	if (!isCurrentVerifiedPlexInstance(instance)) return unavailable("identity_generation_mismatch");
+	try {
+		const before = await readPlexGenerationStatus(prisma, instance.id);
+		const publishedBefore = evaluatePublishedPlexGeneration(before, options);
+		if (!publishedBefore.available) return publishedBefore;
+		const beforeBinding = validateExplicitStatusGenerationBinding(instance, before!);
+		if (beforeBinding) return unavailable(beforeBinding);
+
+		const policyInstance: PlexPolicyScanInstance = {
+			available: true,
+			instanceId: instance.id,
+			instanceName: instance.label,
+			generationId: publishedBefore.generationId,
+			publishedAt: publishedBefore.publishedAt,
+			itemCount: publishedBefore.itemCount,
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+			metadata: publishedBefore.metadata,
+			generationStatus: {
+				instanceId: before!.instanceId,
+				lastRefreshedAt: before!.lastRefreshedAt,
+				lastResult: before!.lastResult,
+				lastErrorMessage: before!.lastErrorMessage,
+				lastAttemptAt: before!.lastAttemptAt,
+				lastAttemptResult: before!.lastAttemptResult,
+				lastAttemptErrorMessage: before!.lastAttemptErrorMessage,
+				itemCount: before!.itemCount,
+				connectionGeneration: before!.connectionGeneration,
+				identityGeneration: before!.identityGeneration,
+				generationId: before!.generationId,
+				generationMetadata: before!.generationMetadata,
+			},
+			sections: publishedBefore.metadata.sections,
+			evidence: publishedBefore.evidence,
+		};
+		const fingerprint: EvidenceFingerprintArrayAccumulator =
+			createEvidenceFingerprintArrayAccumulator();
+		let rowCount = 0;
+		await scanPlexPolicyCacheRows(prisma, instance.id, async (rows) => {
+			for (const row of rows) {
+				if (
+					row.instanceId !== instance.id ||
+					row.connectionGeneration !== instance.connectionGeneration
+				) {
+					throw new PlexPolicyProvenanceError("connection_generation_mismatch");
+				}
+				if (row.identityGeneration !== instance.identityGeneration) {
+					throw new PlexPolicyProvenanceError("identity_generation_mismatch");
+				}
+				fingerprint.append(row);
+				rowCount += 1;
+			}
+			await options.onBatch?.({ instance: policyInstance, rows });
+		});
+
+		if (rowCount !== publishedBefore.itemCount) return unavailable("row_count_mismatch");
+		const after = await readPlexGenerationStatus(prisma, instance.id);
+		const publishedAfter = evaluatePublishedPlexGeneration(after, options);
+		if (!publishedAfter.available) return publishedAfter;
+		const afterBinding = validateExplicitStatusGenerationBinding(instance, after!);
+		if (afterBinding) return unavailable(afterBinding);
+		const generationMismatch = publishedGenerationsMatch(publishedBefore, publishedAfter);
+		if (generationMismatch) return unavailable(generationMismatch);
+
+		return { ...policyInstance, rowCount, rowFingerprint: fingerprint.digest() };
+	} catch (error) {
+		if (error instanceof PlexPolicyProvenanceError) return unavailable(error.reasonCode);
+		return unavailable("query_failed");
+	}
+}
+
+export async function scanInstancePolicyEvidence(
+	prisma: PlexEvidencePrisma,
+	input: {
+		userId: string;
+		instanceId: string;
+		now?: Date;
+		maxAgeMs?: number;
+		onBatch?: PlexPolicyBatchHandler;
+	},
+): Promise<PlexPolicyScanEvidence> {
+	try {
+		const instance = (await prisma.serviceInstance.findFirst({
+			where: { id: input.instanceId, userId: input.userId, service: "PLEX" },
+		})) as PlexEvidenceInstance | null;
+		if (!instance) return unavailable("missing_status");
+		return scanOwnedPolicyEvidence(prisma, instance, withDefaultFreshness(input));
+	} catch {
+		return unavailable("query_failed");
+	}
+}
+
+export async function scanInstanceEpisodeParentPolicyEvidence(
+	prisma: PlexEvidencePrisma,
+	input: {
+		userId: string;
+		instanceId: string;
+		now?: Date;
+		maxAgeMs?: number;
+		onBatch?: PlexEpisodeParentPolicyBatchHandler;
+	},
+): Promise<PlexPolicyScanEvidence> {
+	try {
+		const instance = (await prisma.serviceInstance.findFirst({
+			where: { id: input.instanceId, userId: input.userId, service: "PLEX" },
+		})) as PlexEvidenceInstance | null;
+		if (!instance) return unavailable("missing_status");
+		if (!instance.enabled) return unavailable("disabled_instance");
+		if (!isCurrentVerifiedPlexInstance(instance))
+			return unavailable("identity_generation_mismatch");
+
+		const options = withDefaultFreshness(input);
+		const before = await readPlexGenerationStatus(prisma, instance.id);
+		const publishedBefore = evaluatePublishedPlexGeneration(before, options);
+		if (!publishedBefore.available) return publishedBefore;
+		const beforeBinding = validateExplicitStatusGenerationBinding(instance, before!);
+		if (beforeBinding) return unavailable(beforeBinding);
+		const [totalCount, boundCount] = await Promise.all([
+			countPlexCacheRows(prisma, { instanceId: instance.id }),
+			countPlexCacheRows(prisma, {
+				instanceId: instance.id,
+				connectionGeneration: instance.connectionGeneration,
+				identityGeneration: instance.identityGeneration,
+			}),
+		]);
+		if (totalCount !== publishedBefore.itemCount || boundCount !== totalCount) {
+			return unavailable("row_count_mismatch");
+		}
+
+		const policyInstance: PlexPolicyScanInstance = {
+			available: true,
+			instanceId: instance.id,
+			instanceName: instance.label,
+			generationId: publishedBefore.generationId,
+			publishedAt: publishedBefore.publishedAt,
+			itemCount: publishedBefore.itemCount,
+			connectionGeneration: instance.connectionGeneration,
+			identityGeneration: instance.identityGeneration,
+			metadata: publishedBefore.metadata,
+			generationStatus: {
+				instanceId: before!.instanceId,
+				lastRefreshedAt: before!.lastRefreshedAt,
+				lastResult: before!.lastResult,
+				lastErrorMessage: before!.lastErrorMessage,
+				lastAttemptAt: before!.lastAttemptAt,
+				lastAttemptResult: before!.lastAttemptResult,
+				lastAttemptErrorMessage: before!.lastAttemptErrorMessage,
+				itemCount: before!.itemCount,
+				connectionGeneration: before!.connectionGeneration,
+				identityGeneration: before!.identityGeneration,
+				generationId: before!.generationId,
+				generationMetadata: before!.generationMetadata,
+			},
+			sections: publishedBefore.metadata.sections,
+			evidence: publishedBefore.evidence,
+		};
+		const fingerprint = createEvidenceFingerprintArrayAccumulator();
+		let rowCount = 0;
+		let provenanceFailure: PlexCoverageReasonCode | undefined;
+		await scanPlexEpisodeParentPolicyRows(prisma, instance.id, async (rows) => {
+			for (const row of rows) {
+				if (
+					row.instanceId !== instance.id ||
+					row.connectionGeneration !== instance.connectionGeneration
+				) {
+					provenanceFailure = "connection_generation_mismatch";
+					return;
+				}
+				if (row.identityGeneration !== instance.identityGeneration) {
+					provenanceFailure = "identity_generation_mismatch";
+					return;
+				}
+				fingerprint.append(row);
+				rowCount += 1;
+			}
+			if (!provenanceFailure) await input.onBatch?.({ instance: policyInstance, rows });
+		});
+		if (provenanceFailure) return unavailable(provenanceFailure);
+
+		const after = await readPlexGenerationStatus(prisma, instance.id);
+		const publishedAfter = evaluatePublishedPlexGeneration(after, options);
+		if (!publishedAfter.available) return publishedAfter;
+		const afterBinding = validateExplicitStatusGenerationBinding(instance, after!);
+		if (afterBinding) return unavailable(afterBinding);
+		const generationMismatch = publishedGenerationsMatch(publishedBefore, publishedAfter);
+		if (generationMismatch) return unavailable(generationMismatch);
+
+		return { ...policyInstance, rowCount, rowFingerprint: fingerprint.digest() };
+	} catch {
+		return unavailable("query_failed");
+	}
+}
+
+export async function scanPolicyEvidenceForOwnedInstances(
+	prisma: PlexEvidencePrisma,
+	input: {
+		instances: PlexEvidenceInstance[];
+		now?: Date;
+		maxAgeMs?: number;
+		onBatch?: PlexPolicyBatchHandler;
+	},
+): Promise<PlexPolicyScanEvidence[]> {
+	const evidence: PlexPolicyScanEvidence[] = [];
+	for (const instance of [...input.instances].sort((left, right) =>
+		left.id.localeCompare(right.id),
+	)) {
+		const entry = await scanOwnedPolicyEvidence(prisma, instance, withDefaultFreshness(input));
+		evidence.push(entry.available ? entry : { ...entry, instanceId: instance.id });
+	}
+	// Recheck every completed source after the last instance scan. This closes
+	// the multi-instance window where an earlier instance could publish while a
+	// later instance was still being consumed. Callers discard their incremental
+	// aggregates whenever any entry becomes unavailable.
+	for (const instance of [...input.instances].sort((left, right) =>
+		left.id.localeCompare(right.id),
+	)) {
+		const index = evidence.findIndex((entry) => entry.instanceId === instance.id);
+		const entry = evidence[index];
+		if (!entry?.available) continue;
+		const status = await readPlexGenerationStatus(prisma, instance.id);
+		const current = evaluatePublishedPlexGeneration(status, withDefaultFreshness(input));
+		const bindingFailure = current.available
+			? validateExplicitStatusGenerationBinding(instance, status!)
+			: undefined;
+		if (
+			!current.available ||
+			bindingFailure !== null ||
+			publishedGenerationsMatch(entry, current)
+		) {
+			evidence[index] = { ...unavailable("generation_changed"), instanceId: instance.id };
+		}
+	}
+	return evidence;
+}
+
+export async function scanMutationPolicyEvidenceForOwnedInstances(
+	prisma: PlexEvidencePrisma,
+	input: {
+		instances: PlexEvidenceInstance[];
+		now?: Date;
+		maxAgeMs?: number;
+		onBatch?: PlexPolicyBatchHandler;
+	},
+): Promise<PlexPolicyScanEvidence[]> {
+	const evidence = await scanPolicyEvidenceForOwnedInstances(prisma, input);
+	return evidence.map((entry) =>
+		hasCurrentPlexMutationAuthority(entry)
+			? entry
+			: { ...mutationUnavailable(entry), instanceId: entry.instanceId },
+	);
+}
+
+export async function scanUserPolicyEvidence(
+	prisma: PlexEvidencePrisma,
+	input: { userId: string; now?: Date; maxAgeMs?: number; onBatch?: PlexPolicyBatchHandler },
+): Promise<PlexPolicyScanEvidence[]> {
+	try {
+		const instances = (await prisma.serviceInstance.findMany({
+			where: { userId: input.userId, service: "PLEX", enabled: true },
+			orderBy: { id: "asc" },
+		})) as PlexEvidenceInstance[];
+		return scanPolicyEvidenceForOwnedInstances(prisma, { ...input, instances });
+	} catch {
+		return [unavailable("query_failed")];
 	}
 }
 
@@ -560,12 +867,12 @@ export function isCurrentAuthoritativePlexEvidence(evidence: PlexEvidenceSummary
 	);
 }
 
-export function listObservedRows(evidence: PlexInstanceEvidence[]): PlexCache[] {
+export function listObservedRows(evidence: PlexInstanceEvidence[]): PlexPolicyCacheRow[] {
 	return evidence.flatMap((entry) => (entry.available ? entry.rows : []));
 }
 
 export function listPublishedSections(
-	evidence: PlexInstanceEvidence[],
+	evidence: Array<PlexInstanceEvidence | PlexPolicyScanEvidence>,
 ): Array<PlexGenerationSection & { instanceId: string; instanceName: string }> {
 	return evidence.flatMap((entry) =>
 		entry.available
@@ -578,7 +885,9 @@ export function listPublishedSections(
 	);
 }
 
-export function hasAuthoritativePlexEvidence(evidence: PlexInstanceEvidence[]): boolean {
+export function hasAuthoritativePlexEvidence(
+	evidence: Array<PlexInstanceEvidence | PlexPolicyScanEvidence>,
+): boolean {
 	return (
 		evidence.length > 0 &&
 		evidence.every((entry) => entry.available && isCurrentAuthoritativePlexEvidence(entry.evidence))
@@ -1296,7 +1605,7 @@ export async function getPublishedEpisodeGenerationObservation(
 export function getTargetEvidence(
 	evidence: PlexInstanceEvidence,
 	target: { tmdbId: number; mediaType: "movie" | "series" },
-): PlexCache[] {
+): PlexPolicyCacheRow[] {
 	if (!evidence.available) return [];
 	return evidence.rows.filter(
 		(row) => row.tmdbId === target.tmdbId && row.mediaType === target.mediaType,

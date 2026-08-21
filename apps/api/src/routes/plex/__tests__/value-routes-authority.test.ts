@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
 	loadInstanceSelectedEpisodeEvidence: vi.fn(),
 	loadUserEvidence: vi.fn(),
 	loadUserSelectedEvidence: vi.fn(),
+	scanInstancePolicyEvidence: vi.fn(),
+	scanUserPolicyEvidence: vi.fn(),
 }));
 
 vi.mock("../../../lib/plex/plex-evidence-repository.js", async (importOriginal) => ({
@@ -17,6 +19,8 @@ vi.mock("../../../lib/plex/plex-evidence-repository.js", async (importOriginal) 
 	loadInstanceSelectedEpisodeEvidence: mocks.loadInstanceSelectedEpisodeEvidence,
 	loadUserEvidence: mocks.loadUserEvidence,
 	loadUserSelectedEvidence: mocks.loadUserSelectedEvidence,
+	scanInstancePolicyEvidence: mocks.scanInstancePolicyEvidence,
+	scanUserPolicyEvidence: mocks.scanUserPolicyEvidence,
 }));
 
 import { registerCollectionRoutes } from "../collection-routes.js";
@@ -80,19 +84,24 @@ const unavailable = {
 describe("Plex value route evidence contracts", () => {
 	let app: FastifyInstance;
 	let plexInstances: Array<{ id: string }>;
+	let findPlexInstance: ReturnType<typeof vi.fn>;
 
 	beforeEach(async () => {
 		plexInstances = [{ id: "plex-1" }];
+		findPlexInstance = vi.fn(async () => ({ id: "plex-1" }));
 		mocks.loadInstanceEvidence.mockResolvedValue(unavailable);
 		mocks.loadInstanceEpisodeEvidence.mockResolvedValue(unavailable);
 		mocks.loadInstanceSelectedEpisodeEvidence.mockResolvedValue(unavailable);
 		mocks.loadUserEvidence.mockResolvedValue([unavailable]);
 		mocks.loadUserSelectedEvidence.mockResolvedValue([unavailable]);
+		mocks.scanInstancePolicyEvidence.mockResolvedValue(unavailable);
+		mocks.scanUserPolicyEvidence.mockResolvedValue([unavailable]);
 
 		app = Fastify({ logger: false });
 		setupAuthInjection(app);
 		app.decorate("prisma", {
 			serviceInstance: {
+				findFirst: findPlexInstance,
 				findMany: vi.fn(async ({ where }: { where?: { service?: string } }) =>
 					where?.service === "PLEX" ? plexInstances : [],
 				),
@@ -184,6 +193,8 @@ describe("Plex value route evidence contracts", () => {
 		mocks.loadInstanceSelectedEpisodeEvidence.mockResolvedValue(currentEpisodes);
 		mocks.loadUserEvidence.mockResolvedValue([currentSelected]);
 		mocks.loadUserSelectedEvidence.mockResolvedValue([currentSelected]);
+		mocks.scanInstancePolicyEvidence.mockResolvedValue(currentSelected);
+		mocks.scanUserPolicyEvidence.mockResolvedValue([currentSelected]);
 
 		const response = await createInjectAuthenticated(app)("GET", url);
 
@@ -208,6 +219,19 @@ describe("Plex value route evidence contracts", () => {
 			expect(mocks.loadInstanceEpisodeEvidence).not.toHaveBeenCalled();
 		},
 	);
+
+	it.each([
+		["collections", "/api/plex/plex-1/collections"],
+		["labels", "/api/plex/plex-1/labels"],
+	] as const)("preserves the owned-enabled instance 404 for %s", async (_name, url) => {
+		findPlexInstance.mockResolvedValueOnce(null);
+
+		const response = await createInjectAuthenticated(app)("GET", url);
+
+		expect(response.statusCode).toBe(404);
+		expect(response.json()).toEqual({ error: "Instance not found or access denied" });
+		expect(mocks.scanInstancePolicyEvidence).not.toHaveBeenCalled();
+	});
 
 	it("aggregates selected episode progress from each enabled Plex instance", async () => {
 		plexInstances = [{ id: "plex-1" }, { id: "plex-2" }];

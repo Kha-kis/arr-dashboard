@@ -10,7 +10,7 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
 	isCurrentAuthoritativePlexEvidence,
-	loadInstanceEvidence,
+	scanInstancePolicyEvidence,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-evidence-repository.js";
 import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
@@ -48,26 +48,37 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 	app.get("/:instanceId/collections", async (request, reply) => {
 		const { instanceId } = validateRequest(instanceParams, request.params);
 		const userId = request.currentUser!.id;
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: { id: instanceId, userId, service: "PLEX", enabled: true },
+			select: { id: true },
+		});
+		if (!instance) {
+			return reply.status(404).send({ error: "Instance not found or access denied" });
+		}
 
-		const evidence = await loadInstanceEvidence(app.prisma, { userId, instanceId });
+		const collectionCounts = new Map<string, number>();
+		const evidence = await scanInstancePolicyEvidence(app.prisma, {
+			userId,
+			instanceId,
+			onBatch: ({ rows }) => {
+				for (const row of rows) {
+					try {
+						const parsed = JSON.parse(row.collections) as string[];
+						for (const name of parsed) {
+							if (name) collectionCounts.set(name, (collectionCounts.get(name) ?? 0) + 1);
+						}
+					} catch {
+						// Skip malformed JSON
+					}
+				}
+			},
+		});
 		const summary = summarizePlexEvidence([evidence]);
 		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
 			return reply
 				.status(503)
 				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
 		}
-		const collectionCounts = new Map<string, number>();
-		for (const row of evidence.rows) {
-			try {
-				const parsed = JSON.parse(row.collections) as string[];
-				for (const name of parsed) {
-					if (name) collectionCounts.set(name, (collectionCounts.get(name) ?? 0) + 1);
-				}
-			} catch {
-				// Skip malformed JSON
-			}
-		}
-
 		const collections: PlexTagItem[] = [...collectionCounts.entries()]
 			.sort((a, b) => a[0].localeCompare(b[0]))
 			.map(([name, count]) => ({ name, count }));
@@ -84,26 +95,37 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 	app.get("/:instanceId/labels", async (request, reply) => {
 		const { instanceId } = validateRequest(instanceParams, request.params);
 		const userId = request.currentUser!.id;
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: { id: instanceId, userId, service: "PLEX", enabled: true },
+			select: { id: true },
+		});
+		if (!instance) {
+			return reply.status(404).send({ error: "Instance not found or access denied" });
+		}
 
-		const evidence = await loadInstanceEvidence(app.prisma, { userId, instanceId });
+		const labelCounts = new Map<string, number>();
+		const evidence = await scanInstancePolicyEvidence(app.prisma, {
+			userId,
+			instanceId,
+			onBatch: ({ rows }) => {
+				for (const row of rows) {
+					try {
+						const parsed = JSON.parse(row.labels) as string[];
+						for (const name of parsed) {
+							if (name) labelCounts.set(name, (labelCounts.get(name) ?? 0) + 1);
+						}
+					} catch {
+						// Skip malformed JSON
+					}
+				}
+			},
+		});
 		const summary = summarizePlexEvidence([evidence]);
 		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
 			return reply
 				.status(503)
 				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
 		}
-		const labelCounts = new Map<string, number>();
-		for (const row of evidence.rows) {
-			try {
-				const parsed = JSON.parse(row.labels) as string[];
-				for (const name of parsed) {
-					if (name) labelCounts.set(name, (labelCounts.get(name) ?? 0) + 1);
-				}
-			} catch {
-				// Skip malformed JSON
-			}
-		}
-
 		const labels: PlexTagItem[] = [...labelCounts.entries()]
 			.sort((a, b) => a[0].localeCompare(b[0]))
 			.map(([name, count]) => ({ name, count }));

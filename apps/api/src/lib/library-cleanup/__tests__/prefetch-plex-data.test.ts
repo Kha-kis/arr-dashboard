@@ -807,6 +807,110 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		expect(merged?.lastWatchedAt?.toISOString()).toBe(new Date("2026-02-01").toISOString());
 	});
 
+	it("consumes each policy batch before requesting the next page", async () => {
+		let firstBatchConsumed = false;
+		const firstBatch = Array.from({ length: 500 }, (_, index) => {
+			const row = makePlexRow({
+				id: `pc-stream-${String(index).padStart(3, "0")}`,
+				tmdbId: 10_000 + index,
+				mediaType: "movie",
+				sectionId: "lib-1",
+			});
+			if (index === 0) {
+				Object.defineProperty(row, "watchCount", {
+					configurable: true,
+					enumerable: true,
+					get: () => {
+						firstBatchConsumed = true;
+						return 0;
+					},
+				});
+			}
+			return row;
+		});
+		const findMany = vi
+			.fn()
+			.mockResolvedValueOnce(firstBatch)
+			.mockImplementationOnce(async () => {
+				if (!firstBatchConsumed) {
+					throw new Error("second page was requested before the first page was consumed");
+				}
+				return [
+					makePlexRow({
+						id: "pc-stream-final",
+						tmdbId: 20_000,
+						mediaType: "movie",
+						sectionId: "lib-1",
+					}),
+				];
+			});
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([verifiedPlexInstance()]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([completeStatus("plex-inst-1", new Date(), 501)]),
+			},
+			plexCache: { findMany, count: vi.fn().mockResolvedValue(501) },
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const map = await prefetchPlexData({ prisma, log } as never, "user-1");
+
+		expect(firstBatchConsumed).toBe(true);
+		expect(map?.size).toBe(501);
+		expect(findMany).toHaveBeenCalledTimes(2);
+	});
+
+	it("consumes one instance's policy rows before reading the next instance", async () => {
+		let firstInstanceConsumed = false;
+		const instanceA = verifiedPlexInstance({ id: "plex-a", label: "Plex A" });
+		const instanceB = verifiedPlexInstance({ id: "plex-b", label: "Plex B" });
+		const completedAt = new Date(Date.now() - 60_000);
+		const rowA = makePlexRow({
+			id: "row-a",
+			instanceId: "plex-a",
+			tmdbId: 1,
+			mediaType: "movie",
+			sectionId: "movies-a",
+		});
+		Object.defineProperty(rowA, "watchCount", {
+			configurable: true,
+			enumerable: true,
+			get: () => {
+				firstInstanceConsumed = true;
+				return 0;
+			},
+		});
+		const findMany = vi.fn(async ({ where }: { where: { instanceId: string } }) => {
+			if (where.instanceId === "plex-a") return [rowA];
+			if (!firstInstanceConsumed) {
+				throw new Error("second instance was read before the first instance was consumed");
+			}
+			return [
+				makePlexRow({
+					id: "row-b",
+					instanceId: "plex-b",
+					tmdbId: 2,
+					mediaType: "movie",
+					sectionId: "movies-b",
+				}),
+			];
+		});
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instanceA, instanceB]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn(async ({ where }: { where: { instanceId: string } }) => [
+					completeStatus(where.instanceId, completedAt, 1),
+				]),
+			},
+			plexCache: { findMany, count: vi.fn().mockResolvedValue(1) },
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const map = await prefetchPlexData({ prisma, log } as never, "user-1");
+
+		expect(firstInstanceConsumed).toBe(true);
+		expect(map?.size).toBe(2);
+		expect(findMany).toHaveBeenCalledTimes(2);
+	});
+
 	it("returns undefined when no Plex instances are configured", async () => {
 		const prisma = {
 			serviceInstance: { findMany: vi.fn().mockResolvedValue([]) },

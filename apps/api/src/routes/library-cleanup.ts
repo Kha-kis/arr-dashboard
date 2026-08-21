@@ -59,9 +59,8 @@ import {
 } from "../lib/library-sync/infohash-backfill-by-inode.js";
 import {
 	hasAuthoritativePlexEvidence,
-	listObservedRows,
 	listPublishedSections,
-	loadUserEvidence,
+	scanUserPolicyEvidence,
 	summarizePlexEvidence,
 } from "../lib/plex/plex-evidence-repository.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
@@ -522,15 +521,25 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const plexLibraries = new Set<string>();
 		const plexCollections = new Set<string>();
 		const plexLabels = new Set<string>();
-		const plexEvidence = await loadUserEvidence(app.prisma, { userId });
+		const scannedPlexUsers = new Set<string>();
+		const scannedPlexCollections = new Set<string>();
+		const scannedPlexLabels = new Set<string>();
+		const plexEvidence = await scanUserPolicyEvidence(app.prisma, {
+			userId,
+			onBatch: ({ rows }) => {
+				for (const row of rows) {
+					collectStrings(row.watchedByUsers, scannedPlexUsers);
+					collectStrings(row.collections, scannedPlexCollections);
+					collectStrings(row.labels, scannedPlexLabels);
+				}
+			},
+		});
 		if (hasAuthoritativePlexEvidence(plexEvidence)) {
+			for (const value of scannedPlexUsers) plexUsers.add(value);
+			for (const value of scannedPlexCollections) plexCollections.add(value);
+			for (const value of scannedPlexLabels) plexLabels.add(value);
 			for (const section of listPublishedSections(plexEvidence)) {
 				plexLibraries.add(section.title);
-			}
-			for (const row of listObservedRows(plexEvidence)) {
-				collectStrings(row.watchedByUsers, plexUsers);
-				collectStrings(row.collections, plexCollections);
-				collectStrings(row.labels, plexLabels);
 			}
 		}
 

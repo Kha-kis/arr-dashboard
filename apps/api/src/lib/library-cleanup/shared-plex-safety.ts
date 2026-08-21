@@ -11,11 +11,12 @@ import type {
 	SonarrClient,
 	Notification as SonarrNotification,
 } from "arr-sdk/sonarr";
+import { evidenceFingerprint } from "../evidence-fingerprint.js";
 import { createOwnedJellyfinPublicationSnapshot } from "../jellyfin/jellyfin-cache-refresher.js";
 import { createOwnedPlexPublicationSnapshot } from "../plex/plex-cache-refresher.js";
 import {
 	loadInstanceEpisodeEvidence,
-	loadMutationEvidenceForOwnedInstances,
+	scanMutationPolicyEvidenceForOwnedInstances,
 } from "../plex/plex-evidence-repository.js";
 import {
 	createPlexClient,
@@ -1246,23 +1247,7 @@ export class ProviderExecutionAuthorityChangedError extends Error {
 	}
 }
 
-function providerExecutionFingerprint(value: unknown): string {
-	const canonicalize = (input: unknown): unknown => {
-		if (input instanceof Date) return input.toISOString();
-		if (Array.isArray(input)) return input.map(canonicalize);
-		if (typeof input === "object" && input !== null) {
-			return Object.fromEntries(
-				Object.entries(input as Record<string, unknown>)
-					.sort(([left], [right]) => left.localeCompare(right))
-					.map(([key, entry]) => [key, canonicalize(entry)]),
-			);
-		}
-		return input;
-	};
-	return createHash("sha256")
-		.update(JSON.stringify(canonicalize(value)))
-		.digest("hex");
-}
+const providerExecutionFingerprint = evidenceFingerprint;
 
 function providerExecutionInstanceFingerprint(instance: ServiceInstance): string {
 	return providerExecutionFingerprint({
@@ -1389,9 +1374,10 @@ async function loadProviderExecutionEvidence(
 		for (const cacheType of applicableTypes) {
 			let status = statusesByKey.get(`${instance.id}:${cacheType}`);
 			let rows = rowsByType.get(cacheType)?.get(instance.id) ?? [];
+			let plexRowAuthority: { rowCount: number; rowFingerprint: string } | undefined;
 			const isPlexEvidence = cacheType === "plex" || cacheType === "plex_episode";
 			if (cacheType === "plex") {
-				const [current] = await loadMutationEvidenceForOwnedInstances(prisma as never, {
+				const [current] = await scanMutationPolicyEvidenceForOwnedInstances(prisma as never, {
 					instances: [instance],
 					now,
 					maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
@@ -1404,7 +1390,10 @@ async function loadProviderExecutionEvidence(
 					throw new ProviderExecutionAuthorityChangedError();
 				}
 				status = { ...current.generationStatus, cacheType };
-				rows = current.rows;
+				plexRowAuthority = {
+					rowCount: current.rowCount,
+					rowFingerprint: current.rowFingerprint,
+				};
 			} else if (cacheType === "plex_episode") {
 				const current = await loadInstanceEpisodeEvidence(prisma as never, {
 					userId,
@@ -1435,7 +1424,9 @@ async function loadProviderExecutionEvidence(
 			) {
 				throw new ProviderExecutionAuthorityChangedError();
 			}
-			if (rows.length !== status.itemCount) throw new ProviderExecutionAuthorityChangedError();
+			if ((plexRowAuthority?.rowCount ?? rows.length) !== status.itemCount) {
+				throw new ProviderExecutionAuthorityChangedError();
+			}
 			sources.push({
 				service: instance.service as SanitizedProviderEvidenceSource["service"],
 				instanceFingerprint: providerInstanceAuthorityFingerprint(instance.id),
@@ -1471,7 +1462,7 @@ async function loadProviderExecutionEvidence(
 						generationMetadata: status.generationMetadata,
 					},
 				}),
-				rowFingerprint: providerExecutionFingerprint(rows),
+				rowFingerprint: plexRowAuthority?.rowFingerprint ?? providerExecutionFingerprint(rows),
 			});
 		}
 	}

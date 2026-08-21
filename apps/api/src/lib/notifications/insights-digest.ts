@@ -10,8 +10,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import {
 	hasAuthoritativePlexEvidence,
-	listObservedRows,
-	loadUserEvidence,
+	scanUserPolicyEvidence,
 } from "../plex/plex-evidence-repository.js";
 import type { PrismaClient } from "../prisma.js";
 import {
@@ -161,14 +160,17 @@ export class InsightsDigestScheduler {
 		if (!seerrInstance) return [];
 
 		// Get Plex watch data
-		const plexEvidence = await loadUserEvidence(this.prisma, { userId });
-		if (!hasAuthoritativePlexEvidence(plexEvidence)) return [];
-
 		const plexWatchCounts = new Map<string, number>();
-		for (const row of listObservedRows(plexEvidence)) {
-			const key = `${row.mediaType}:${row.tmdbId}`;
-			plexWatchCounts.set(key, (plexWatchCounts.get(key) ?? 0) + row.watchCount);
-		}
+		const plexEvidence = await scanUserPolicyEvidence(this.prisma, {
+			userId,
+			onBatch: ({ rows }) => {
+				for (const row of rows) {
+					const key = `${row.mediaType}:${row.tmdbId}`;
+					plexWatchCounts.set(key, (plexWatchCounts.get(key) ?? 0) + row.watchCount);
+				}
+			},
+		});
+		if (!hasAuthoritativePlexEvidence(plexEvidence)) return [];
 
 		// Fetch available Seerr requests
 		const seerrRequests: Array<{
@@ -255,16 +257,19 @@ export class InsightsDigestScheduler {
 		userId: string,
 	): Promise<Array<{ title: string; watchCount: number }>> {
 		// Get Plex watch data
-		const plexEvidence = await loadUserEvidence(this.prisma, { userId });
-		if (!hasAuthoritativePlexEvidence(plexEvidence)) return [];
-
 		const plexWatchData = new Map<string, { watchCount: number }>();
-		for (const row of listObservedRows(plexEvidence)) {
-			const key = `${row.mediaType}:${row.tmdbId}`;
-			const existing = plexWatchData.get(key);
-			if (existing) existing.watchCount += row.watchCount;
-			else plexWatchData.set(key, { watchCount: row.watchCount });
-		}
+		const plexEvidence = await scanUserPolicyEvidence(this.prisma, {
+			userId,
+			onBatch: ({ rows }) => {
+				for (const row of rows) {
+					const key = `${row.mediaType}:${row.tmdbId}`;
+					const existing = plexWatchData.get(key);
+					if (existing) existing.watchCount += row.watchCount;
+					else plexWatchData.set(key, { watchCount: row.watchCount });
+				}
+			},
+		});
+		if (!hasAuthoritativePlexEvidence(plexEvidence)) return [];
 
 		// Get monitored library items
 		const userInstances = await this.prisma.serviceInstance.findMany({

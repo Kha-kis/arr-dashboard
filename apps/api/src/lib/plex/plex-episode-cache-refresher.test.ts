@@ -207,7 +207,10 @@ function prisma(
 		cacheRefreshStatus: {
 			findMany: vi.fn(async () => [statuses.shift() ?? parentStatus()]),
 		},
-		plexCache: { findMany: vi.fn().mockResolvedValue(fullShows) },
+		plexCache: {
+			count: vi.fn().mockResolvedValue(fullShows.length),
+			findMany: vi.fn().mockResolvedValue(fullShows),
+		},
 		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
 			callback(tx),
 		),

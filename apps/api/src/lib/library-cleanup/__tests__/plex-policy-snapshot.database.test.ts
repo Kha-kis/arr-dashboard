@@ -102,7 +102,7 @@ async function publish(
 					identityGeneration: authority.identityGeneration,
 				},
 			],
-			completedAt: new Date(`2026-08-20T12:0${tmdbId}:00.000Z`),
+			completedAt: new Date(),
 			generationId,
 			generationMetadata: encodeAuthoritativePlexGenerationMetadata({
 				sections: [{ key: "movies", title: "Movies", type: "movie" }],

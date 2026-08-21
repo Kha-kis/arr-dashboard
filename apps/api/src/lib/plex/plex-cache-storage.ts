@@ -29,7 +29,54 @@ export type PlexCacheRowSelection =
 	| { kind: "recently-added"; limit: number }
 	| { kind: "label-membership"; label: string };
 
-const PLEX_CACHE_ROW_SELECT = {
+export const PLEX_POLICY_CACHE_ROW_SELECT = {
+	id: true,
+	instanceId: true,
+	tmdbId: true,
+	mediaType: true,
+	sectionId: true,
+	sectionTitle: true,
+	lastWatchedAt: true,
+	watchCount: true,
+	watchedByUsers: true,
+	onDeck: true,
+	userRating: true,
+	collections: true,
+	labels: true,
+	addedAt: true,
+	connectionGeneration: true,
+	identityGeneration: true,
+} as const;
+
+export const PLEX_EPISODE_PARENT_POLICY_ROW_SELECT = {
+	id: true,
+	instanceId: true,
+	tmdbId: true,
+	mediaType: true,
+	ratingKey: true,
+	lastWatchedAt: true,
+	watchCount: true,
+	connectionGeneration: true,
+	identityGeneration: true,
+} as const;
+
+export type PlexPolicyCacheRow = Prisma.PlexCacheGetPayload<{
+	select: typeof PLEX_POLICY_CACHE_ROW_SELECT;
+}>;
+
+export type PlexPolicyCacheBatchHandler = (
+	rows: readonly PlexPolicyCacheRow[],
+) => void | Promise<void>;
+
+export type PlexEpisodeParentPolicyRow = Prisma.PlexCacheGetPayload<{
+	select: typeof PLEX_EPISODE_PARENT_POLICY_ROW_SELECT;
+}>;
+
+export type PlexEpisodeParentPolicyBatchHandler = (
+	rows: readonly PlexEpisodeParentPolicyRow[],
+) => void | Promise<void>;
+
+const PLEX_SELECTED_CACHE_ROW_SELECT = {
 	id: true,
 	instanceId: true,
 	tmdbId: true,
@@ -83,23 +130,62 @@ export async function readPlexGenerationStatus(
 export async function listPlexCacheRows(
 	prisma: PlexCacheReader,
 	instanceId: string,
-): Promise<PlexCache[]> {
-	const rows: PlexCache[] = [];
+): Promise<PlexPolicyCacheRow[]> {
+	const rows: PlexPolicyCacheRow[] = [];
+	await scanPlexPolicyCacheRows(prisma, instanceId, (batch) => {
+		rows.push(...batch);
+	});
+	return rows;
+}
+
+/** Streams one instance's policy evidence in a fixed id-ordered projection. */
+export async function scanPlexPolicyCacheRows(
+	prisma: PlexCacheReader,
+	instanceId: string,
+	onBatch: PlexPolicyCacheBatchHandler,
+): Promise<void> {
 	let cursor: string | undefined;
 	while (true) {
 		const batch = await prisma.plexCache.findMany({
 			where: { instanceId },
-			select: PLEX_CACHE_ROW_SELECT,
+			select: PLEX_POLICY_CACHE_ROW_SELECT,
 			take: PLEX_CACHE_READ_PAGE_SIZE,
 			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 			orderBy: { id: "asc" },
 		});
-		if (batch.length === 0) break;
-		rows.push(...batch);
+		if (batch.length === 0) return;
+		if (batch.length > PLEX_CACHE_READ_PAGE_SIZE) {
+			throw new Error("Plex policy cache scan exceeded its page size");
+		}
+		await onBatch(batch);
 		cursor = batch[batch.length - 1]!.id;
-		if (batch.length < PLEX_CACHE_READ_PAGE_SIZE) break;
+		if (batch.length < PLEX_CACHE_READ_PAGE_SIZE) return;
 	}
-	return rows;
+}
+
+/** Streams watched series needed to authorize a bounded episode-parent read. */
+export async function scanPlexEpisodeParentPolicyRows(
+	prisma: PlexCacheReader,
+	instanceId: string,
+	onBatch: PlexEpisodeParentPolicyBatchHandler,
+): Promise<void> {
+	let cursor: string | undefined;
+	while (true) {
+		const batch = await prisma.plexCache.findMany({
+			where: { instanceId, mediaType: "series", watchCount: { gt: 0 } },
+			select: PLEX_EPISODE_PARENT_POLICY_ROW_SELECT,
+			take: PLEX_CACHE_READ_PAGE_SIZE,
+			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+			orderBy: { id: "asc" },
+		});
+		if (batch.length === 0) return;
+		if (batch.length > PLEX_CACHE_READ_PAGE_SIZE) {
+			throw new Error("Plex episode parent policy scan exceeded its page size");
+		}
+		await onBatch(batch);
+		cursor = batch[batch.length - 1]!.id;
+		if (batch.length < PLEX_CACHE_READ_PAGE_SIZE) return;
+	}
 }
 
 async function listPlexCacheRowsWhere(
@@ -117,7 +203,7 @@ async function listPlexCacheRowsWhere(
 		if (take <= 0) break;
 		const batch = await prisma.plexCache.findMany({
 			where,
-			select: PLEX_CACHE_ROW_SELECT,
+			select: PLEX_SELECTED_CACHE_ROW_SELECT,
 			take,
 			...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 			orderBy: options.orderBy ?? { id: "asc" },

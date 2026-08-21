@@ -1,9 +1,5 @@
 import type { Prisma, ServiceInstance } from "../prisma.js";
-import {
-	listObservedRows,
-	loadAuthoritativePolicySnapshot,
-	loadInstanceEpisodeEvidence,
-} from "../plex/plex-evidence-repository.js";
+import { loadInstanceEpisodeEvidence } from "../plex/plex-evidence-repository.js";
 
 export const PROVIDER_CACHE_ROW_SELECTS = {
 	plex: {
@@ -130,16 +126,10 @@ export async function loadExactProviderCacheRows(
 	const where = { instanceId: { in: instanceIds } };
 	switch (cacheType) {
 		case "plex": {
-			if (!userId) return groupProviderRowsByInstance(instanceIds, []);
-			const evidence = await loadAuthoritativePolicySnapshot(tx as never, { userId });
-			if (
-				!evidence ||
-				evidence.length !== instanceIds.length ||
-				evidence.some((entry) => !instanceIds.includes(entry.instanceId))
-			) {
-				return groupProviderRowsByInstance(instanceIds, []);
-			}
-			return groupProviderRowsByInstance(instanceIds, listObservedRows(evidence));
+			// Plex full-generation authority is scanned through the evidence
+			// repository so row fingerprints can be computed without materializing
+			// a complete row array. Callers must use that bounded contract.
+			return groupProviderRowsByInstance(instanceIds, []);
 		}
 		case "plex_episode": {
 			if (!userId || !instances) return groupProviderRowsByInstance(instanceIds, []);

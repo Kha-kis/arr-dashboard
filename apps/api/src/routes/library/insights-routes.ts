@@ -14,8 +14,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import {
 	hasAuthoritativePlexEvidence,
-	listObservedRows,
-	loadUserEvidence,
+	scanUserPolicyEvidence,
 	summarizePlexEvidence,
 } from "../../lib/plex/plex-evidence-repository.js";
 import { SeerrClient } from "../../lib/seerr/seerr-client.js";
@@ -103,8 +102,17 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		}
 
 		// Get user's media server instances to load watch data
+		const watchCounts = new Map<string, number>();
 		const [plexEvidence, jellyfinInstances] = await Promise.all([
-			loadUserEvidence(app.prisma, { userId }),
+			scanUserPolicyEvidence(app.prisma, {
+				userId,
+				onBatch: ({ rows }) => {
+					for (const row of rows) {
+						const key = `${row.mediaType}:${row.tmdbId}`;
+						watchCounts.set(key, (watchCounts.get(key) ?? 0) + row.watchCount);
+					}
+				},
+			}),
 			app.prisma.serviceInstance.findMany({
 				where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
 				select: { id: true },
@@ -118,15 +126,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		}
 
 		// Build watch count map: "movie:tmdbId" | "series:tmdbId" → watchCount
-		const watchCounts = new Map<string, number>();
 		const hasPlexAuthority = hasAuthoritativePlexEvidence(plexEvidence);
-		if (hasPlexAuthority) {
-			const plexRows = listObservedRows(plexEvidence);
-			for (const row of plexRows) {
-				const key = `${row.mediaType}:${row.tmdbId}`;
-				watchCounts.set(key, (watchCounts.get(key) ?? 0) + row.watchCount);
-			}
-		}
 		if (jellyfinInstances.length > 0) {
 			const jfRows = await app.prisma.jellyfinCache.findMany({
 				where: { instanceId: { in: jellyfinInstances.map((i) => i.id) } },
@@ -239,8 +239,27 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		}
 
 		// Get media server instances — Plex + Jellyfin/Emby
+		const watchData = new Map<string, { watchCount: number; lastWatchedAt: Date | null }>();
+		const mergeWatchRow = (key: string, watchCount: number, lastWatchedAt: Date | null) => {
+			const existing = watchData.get(key);
+			if (existing) {
+				existing.watchCount += watchCount;
+				if (lastWatchedAt && (!existing.lastWatchedAt || lastWatchedAt > existing.lastWatchedAt)) {
+					existing.lastWatchedAt = lastWatchedAt;
+				}
+			} else {
+				watchData.set(key, { watchCount, lastWatchedAt });
+			}
+		};
 		const [plexEvidence, jellyfinInstances] = await Promise.all([
-			loadUserEvidence(app.prisma, { userId }),
+			scanUserPolicyEvidence(app.prisma, {
+				userId,
+				onBatch: ({ rows }) => {
+					for (const row of rows) {
+						mergeWatchRow(`${row.mediaType}:${row.tmdbId}`, row.watchCount, row.lastWatchedAt);
+					}
+				},
+			}),
 			app.prisma.serviceInstance.findMany({
 				where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
 				select: { id: true },
@@ -260,27 +279,6 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			});
 		}
 
-		// Build watch data map: mediaType:tmdbId → { watchCount, lastWatchedAt }
-		const watchData = new Map<string, { watchCount: number; lastWatchedAt: Date | null }>();
-
-		const mergeWatchRow = (key: string, watchCount: number, lastWatchedAt: Date | null) => {
-			const existing = watchData.get(key);
-			if (existing) {
-				existing.watchCount += watchCount;
-				if (lastWatchedAt && (!existing.lastWatchedAt || lastWatchedAt > existing.lastWatchedAt)) {
-					existing.lastWatchedAt = lastWatchedAt;
-				}
-			} else {
-				watchData.set(key, { watchCount, lastWatchedAt });
-			}
-		};
-
-		if (hasAuthoritativePlexEvidence(plexEvidence)) {
-			const plexRows = listObservedRows(plexEvidence);
-			for (const row of plexRows) {
-				mergeWatchRow(`${row.mediaType}:${row.tmdbId}`, row.watchCount, row.lastWatchedAt);
-			}
-		}
 		if (jellyfinInstances.length > 0) {
 			const jfRows = await app.prisma.jellyfinCache.findMany({
 				where: { instanceId: { in: jellyfinInstances.map((i) => i.id) } },
@@ -390,8 +388,17 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		}
 
 		// Get media server watch data — Plex + Jellyfin/Emby
+		const watchCounts = new Map<string, number>();
 		const [plexEvidence, jellyfinInstances] = await Promise.all([
-			loadUserEvidence(app.prisma, { userId }),
+			scanUserPolicyEvidence(app.prisma, {
+				userId,
+				onBatch: ({ rows }) => {
+					for (const row of rows) {
+						const key = `${row.mediaType}:${row.tmdbId}`;
+						watchCounts.set(key, (watchCounts.get(key) ?? 0) + row.watchCount);
+					}
+				},
+			}),
 			app.prisma.serviceInstance.findMany({
 				where: { userId, service: { in: ["JELLYFIN", "EMBY"] } },
 				select: { id: true },
@@ -404,15 +411,7 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			});
 		}
 
-		const watchCounts = new Map<string, number>();
 		const hasPlexAuthority = hasAuthoritativePlexEvidence(plexEvidence);
-		if (hasPlexAuthority) {
-			const plexRows = listObservedRows(plexEvidence);
-			for (const row of plexRows) {
-				const key = `${row.mediaType}:${row.tmdbId}`;
-				watchCounts.set(key, (watchCounts.get(key) ?? 0) + row.watchCount);
-			}
-		}
 		if (jellyfinInstances.length > 0) {
 			const jfRows = await app.prisma.jellyfinCache.findMany({
 				where: { instanceId: { in: jellyfinInstances.map((i) => i.id) } },

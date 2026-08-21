@@ -6,7 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
-import type { PlexCache, Prisma } from "../prisma.js";
+import type { Prisma } from "../prisma.js";
 import {
 	beginPlexCacheRefreshAttempt,
 	finishPlexCacheRefreshAttemptFailure,
@@ -25,7 +25,7 @@ import {
 import { PlexClient, type PlexEpisodeItem } from "./plex-client.js";
 import {
 	DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
-	loadInstanceMutationEvidence,
+	scanInstanceEpisodeParentPolicyEvidence,
 } from "./plex-evidence-repository.js";
 import { plexConnectionFingerprint } from "./service-instance-fingerprint.js";
 
@@ -92,34 +92,11 @@ function failedResult(
 
 async function collectPlexEpisodeCache(
 	client: PlexClient,
-	parentRows: PlexCache[],
+	showMap: Map<number, Set<string>>,
 	instanceId: string,
 	log: FastifyBaseLogger,
 	sourceFingerprint: string,
-	connectionGeneration: number,
-	identityGeneration: number,
 ): Promise<CollectedPlexEpisodeRefresh> {
-	const recentlyWatchedShows = parentRows
-		.filter(
-			(row) =>
-				row.instanceId === instanceId &&
-				row.mediaType === "series" &&
-				row.ratingKey !== null &&
-				row.watchCount > 0 &&
-				row.connectionGeneration === connectionGeneration &&
-				row.identityGeneration === identityGeneration,
-		)
-		.sort(
-			(left, right) => (right.lastWatchedAt?.getTime() ?? 0) - (left.lastWatchedAt?.getTime() ?? 0),
-		);
-
-	const showMap = new Map<number, Set<string>>();
-	for (const show of recentlyWatchedShows) {
-		if (!show.ratingKey) continue;
-		const ratingKeys = showMap.get(show.tmdbId) ?? new Set<string>();
-		ratingKeys.add(show.ratingKey);
-		showMap.set(show.tmdbId, ratingKeys);
-	}
 	const eligibleShows = showMap.size;
 	if (eligibleShows > MAX_COMPLETE_SHOWS) {
 		const message = `Plex episode inventory exceeded ${MAX_COMPLETE_SHOWS} eligible shows`;
@@ -309,10 +286,19 @@ export async function refreshPlexEpisodeCacheWithAttempt(
 			instance,
 			log,
 			async () => {
-				const parentBefore = await loadInstanceMutationEvidence(prisma, {
+				const showMap = new Map<number, Set<string>>();
+				const parentBefore = await scanInstanceEpisodeParentPolicyEvidence(prisma, {
 					userId: instance.userId,
 					instanceId: instance.id,
 					maxAgeMs: DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
+					onBatch: ({ rows }) => {
+						for (const row of rows) {
+							if (!row.ratingKey) continue;
+							const ratingKeys = showMap.get(row.tmdbId) ?? new Set<string>();
+							ratingKeys.add(row.ratingKey);
+							showMap.set(row.tmdbId, ratingKeys);
+						}
+					},
 				});
 				if (
 					!parentBefore.available ||
@@ -323,15 +309,13 @@ export async function refreshPlexEpisodeCacheWithAttempt(
 				}
 				const collected = await collectPlexEpisodeCache(
 					client,
-					parentBefore.rows,
+					showMap,
 					instance.id,
 					log,
 					plexConnectionFingerprint(instance),
-					instance.connectionGeneration,
-					instance.identityGeneration,
 				);
 				if (!collected.complete) return collected;
-				const parentAfter = await loadInstanceMutationEvidence(prisma, {
+				const parentAfter = await scanInstanceEpisodeParentPolicyEvidence(prisma, {
 					userId: instance.userId,
 					instanceId: instance.id,
 					maxAgeMs: DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,

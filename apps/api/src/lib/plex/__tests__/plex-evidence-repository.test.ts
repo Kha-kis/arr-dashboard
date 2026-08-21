@@ -5,6 +5,9 @@ import {
 	loadInstanceEvidence,
 	loadInstanceMutationEvidence,
 	loadInstanceSelectedEvidence,
+	scanInstancePolicyEvidence,
+	scanInstanceEpisodeParentPolicyEvidence,
+	scanUserPolicyEvidence,
 	loadUserEvidence,
 } from "../plex-evidence-repository.js";
 import { verifiedIdentityData } from "../../services/service-identity-lifecycle.js";
@@ -186,6 +189,86 @@ describe("Plex evidence repository", () => {
 				reasonCodes: [],
 			},
 		});
+	});
+
+	it("streams generation-bound policy rows without materializing them in the result", async () => {
+		const testFixture = fixture();
+		const received: Array<{ instanceId: string; rowIds: string[] }> = [];
+
+		const result = await scanInstancePolicyEvidence(testFixture.prisma as never, {
+			userId: "user-1",
+			instanceId: "plex-1",
+			now,
+			maxAgeMs: 3 * 60 * 60 * 1000,
+			onBatch: ({ instance, rows }) => {
+				received.push({ instanceId: instance.instanceId, rowIds: rows.map((value) => value.id) });
+			},
+		});
+
+		expect(testFixture.events).toEqual(["instance", "status", "rows", "status"]);
+		expect(received).toEqual([{ instanceId: "plex-1", rowIds: ["row-1"] }]);
+		expect(result).toMatchObject({
+			available: true,
+			instanceId: "plex-1",
+			rowCount: 1,
+			rowFingerprint: expect.any(String),
+		});
+		expect(result).not.toHaveProperty("rows");
+	});
+
+	it("fails closed when a policy scan query fails", async () => {
+		const result = await scanInstancePolicyEvidence(
+			fixture({ rowError: new Error("database unavailable") }).prisma as never,
+			{ userId: "user-1", instanceId: "plex-1", now, maxAgeMs: 3 * 60 * 60 * 1000 },
+		);
+
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["query_failed"] },
+		});
+	});
+
+	it("reports an invalid policy-row generation as a provenance failure", async () => {
+		const result = await scanInstancePolicyEvidence(
+			fixture({ rows: [row({ identityGeneration: 10 })] }).prisma as never,
+			{ userId: "user-1", instanceId: "plex-1", now, maxAgeMs: 3 * 60 * 60 * 1000 },
+		);
+
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["identity_generation_mismatch"] },
+		});
+	});
+
+	it("streams only generation-bound watched-series rows for episode-parent policy evidence", async () => {
+		const testFixture = fixture();
+		const count = vi.fn().mockResolvedValue(1);
+		(
+			testFixture.prisma.plexCache as unknown as {
+				count: typeof count;
+			}
+		).count = count;
+		const received: string[] = [];
+
+		const result = await scanInstanceEpisodeParentPolicyEvidence(testFixture.prisma as never, {
+			userId: "user-1",
+			instanceId: "plex-1",
+			now,
+			maxAgeMs: 3 * 60 * 60 * 1000,
+			onBatch: ({ rows }) => {
+				for (const value of rows) {
+					if (value.ratingKey) received.push(value.ratingKey);
+				}
+			},
+		});
+
+		expect(received).toEqual(["rating-42"]);
+		expect(count).toHaveBeenNthCalledWith(1, { where: { instanceId: "plex-1" } });
+		expect(count).toHaveBeenNthCalledWith(2, {
+			where: { instanceId: "plex-1", connectionGeneration: 4, identityGeneration: 9 },
+		});
+		expect(result).toMatchObject({ available: true, rowCount: 1 });
+		expect(result).not.toHaveProperty("rows");
 	});
 
 	it.each([
@@ -685,6 +768,61 @@ describe("Plex evidence repository", () => {
 		expect(result.flatMap((entry) => (entry.available ? [entry.instanceId] : []))).toEqual([
 			"plex-1",
 			"plex-2",
+		]);
+	});
+
+	it("binds each streamed policy batch to its source instance in stable order", async () => {
+		const first = instance();
+		const second = instance({
+			id: "plex-2",
+			label: "Secondary Plex",
+			connectionGeneration: 7,
+			identityGeneration: 12,
+		});
+		const repository = {
+			serviceInstance: {
+				findMany: vi.fn().mockResolvedValue([second, first]),
+				findFirst: vi.fn(),
+			},
+			cacheRefreshStatus: {
+				findMany: vi.fn(async ({ where }: { where: { instanceId: string } }) => [
+					status({
+						instanceId: where.instanceId,
+						generationId: `generation-${where.instanceId}`,
+						connectionGeneration: where.instanceId === "plex-1" ? 4 : 7,
+						identityGeneration: where.instanceId === "plex-1" ? 9 : 12,
+					}),
+				]),
+			},
+			plexCache: {
+				findMany: vi.fn(async ({ where }: { where: { instanceId: string } }) => [
+					row({
+						id: `row-${where.instanceId}`,
+						instanceId: where.instanceId,
+						connectionGeneration: where.instanceId === "plex-1" ? 4 : 7,
+						identityGeneration: where.instanceId === "plex-1" ? 9 : 12,
+					}),
+				]),
+			},
+		};
+		const batches: Array<{ instanceId: string; rowId: string }> = [];
+
+		const result = await scanUserPolicyEvidence(repository as never, {
+			userId: "user-1",
+			now,
+			maxAgeMs: 3 * 60 * 60 * 1000,
+			onBatch: ({ instance, rows }) => {
+				batches.push({ instanceId: instance.instanceId, rowId: rows[0]!.id });
+			},
+		});
+
+		expect(result.flatMap((entry) => (entry.available ? [entry.instanceId] : []))).toEqual([
+			"plex-1",
+			"plex-2",
+		]);
+		expect(batches).toEqual([
+			{ instanceId: "plex-1", rowId: "row-plex-1" },
+			{ instanceId: "plex-2", rowId: "row-plex-2" },
 		]);
 	});
 
