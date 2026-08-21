@@ -1,0 +1,35 @@
+name: PR Review Contract
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-review-contract-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review-contract:
+    name: PR Review Contract
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Validate PR review contract
+        run: |
+          node scripts/check-pr-review-contract.mjs \
+            --event-path "$GITHUB_EVENT_PATH"

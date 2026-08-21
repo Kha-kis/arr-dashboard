@@ -172,6 +172,18 @@ pnpm run lint
 - Per-package `tsc` runs can hide stale `@arr/shared` output; only the root Turbo
   typecheck after building shared matches CI
 
+## Pull request review workflow
+
+Follow [`CODE-REVIEW.md`](CODE-REVIEW.md) for the finite review contract.
+
+- Select exactly one risk tier.
+- Declare scope, non-goals, and acceptance criteria before broad review.
+- Use one broad review, one consolidated correction pass, and a targeted delta
+  review within each review epoch.
+- Record each finding's severity, classification, reproduction, and
+  disposition.
+- Require exact-head CI and a maintainer-controlled merge decision.
+
 ## Environment & Deployment
 
 **Docker** (single container): Port 3000 exposed, `/config/` volume contains `prod.db` + `secrets.json`. Startup: `docker/start-combined.sh`. Production startup acquires a database-backed runtime lease; run exactly one API/container per database. Lease operations are deadline-bound and a process that cannot renew exits fail-closed. Schema sync is fail-closed and never approves destructive changes automatically.
