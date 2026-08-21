@@ -18,7 +18,20 @@ export const plexDestWriter: DestWriter = {
 		if (candidates.length === 0) {
 			return { matchesFound: 0, labelsApplied: 0, failures: 0 };
 		}
-		const targets = candidates.map((candidate) => ({
+		const mediaTypesByTmdbId = new Map<number, Set<"movie" | "series">>();
+		for (const candidate of candidates) {
+			const mediaTypes = mediaTypesByTmdbId.get(candidate.tmdbId) ?? new Set();
+			mediaTypes.add(candidate.mediaType);
+			mediaTypesByTmdbId.set(candidate.tmdbId, mediaTypes);
+		}
+		const unambiguousCandidates = candidates.filter(
+			(candidate) => mediaTypesByTmdbId.get(candidate.tmdbId)?.size === 1,
+		);
+		const ambiguousCandidateCount = candidates.length - unambiguousCandidates.length;
+		if (unambiguousCandidates.length === 0) {
+			return { matchesFound: 0, labelsApplied: 0, failures: ambiguousCandidateCount };
+		}
+		const targets = unambiguousCandidates.map((candidate) => ({
 			tmdbId: candidate.tmdbId,
 			mediaType: candidate.mediaType,
 		}));
@@ -41,18 +54,18 @@ export const plexDestWriter: DestWriter = {
 		const matched = evidence.rows.filter((row) => targetKeys.has(`${row.mediaType}:${row.tmdbId}`));
 
 		let labelsApplied = 0;
-		let failures = 0;
+		let failures = ambiguousCandidateCount;
 		const attemptedRatingKeys = new Set<string>();
 		for (const row of matched) {
 			if (row.mediaType !== "movie" && row.mediaType !== "series") {
 				failures++;
 				continue;
 			}
-			const ratingKey = row.ratingKey?.trim();
+			const ratingKey = resolveParitySafeCachedRatingKey(row);
 			if (!ratingKey) {
 				log.warn(
 					{ tmdbId: row.tmdbId, title: row.title },
-					"Plex label target lacks a persisted rating key",
+					"Plex label target lacks matching cached rating-key evidence",
 				);
 				failures++;
 				continue;
@@ -76,7 +89,7 @@ export const plexDestWriter: DestWriter = {
 					(current) =>
 						current.tmdbId === row.tmdbId &&
 						current.mediaType === row.mediaType &&
-						current.ratingKey?.trim() === ratingKey,
+						resolveParitySafeCachedRatingKey(current) === ratingKey,
 				)
 			) {
 				log.warn(
@@ -120,3 +133,13 @@ export const plexDestWriter: DestWriter = {
 		return { matchesFound: matched.length, labelsApplied, failures };
 	},
 };
+
+function resolveParitySafeCachedRatingKey(row: {
+	ratingKey: string | null;
+	thumb: string | null;
+}): string | undefined {
+	const explicitRatingKey = row.ratingKey?.trim();
+	if (!explicitRatingKey || !row.thumb) return undefined;
+	const legacyRatingKey = row.thumb.match(/\/library\/metadata\/(\d+)/)?.[1];
+	return legacyRatingKey === explicitRatingKey ? explicitRatingKey : undefined;
+}

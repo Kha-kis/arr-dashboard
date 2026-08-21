@@ -85,6 +85,17 @@ function failedLatestAttemptEvidence(rows: unknown[]) {
 	};
 }
 
+function inProgressLatestAttemptEvidence(rows: unknown[]) {
+	return {
+		...authoritativeEvidence(rows),
+		evidence: {
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			reasonCodes: ["latest_attempt_in_progress"],
+		},
+	};
+}
+
 function destinationPrisma(): DestWriterOpts["prisma"] {
 	return {
 		serviceInstance: {
@@ -209,15 +220,71 @@ describe("Plex label-sync evidence boundary", () => {
 		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
 	});
 
-	it("uses only a persisted exact rating key and never falls back to a thumbnail path", async () => {
+	it("does not authorize a Plex label write while the latest attempt is in progress", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			inProgressLatestAttemptEvidence([
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Target",
+					ratingKey: "123",
+					thumb: "/library/metadata/123/thumb/1",
+				},
+			]),
+		);
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 0, labelsApplied: 0, failures: 1 });
+		expect(mocks.createPlexClient).not.toHaveBeenCalled();
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it("writes when the legacy thumbnail key and explicit key agree", async () => {
 		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
 			authoritativeEvidence([
 				{
 					tmdbId: 42,
 					mediaType: "movie",
 					title: "Exact target",
-					ratingKey: null,
-					thumb: "/library/metadata/unsafe-fallback/thumb/1",
+					ratingKey: "123",
+					thumb: "/library/metadata/123/thumb/1",
+				},
+			]),
+		);
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 1, labelsApplied: 1, failures: 0 });
+		expect(mocks.updateMetadataTags).toHaveBeenCalledOnce();
+		expect(mocks.updateMetadataTags).toHaveBeenCalledWith("123", "label", "add", "Family");
+	});
+
+	it("rejects an explicit key when the legacy thumbnail is null", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			authoritativeEvidence([
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Exact target",
+					ratingKey: "123",
+					thumb: null,
 				},
 			]),
 		);
@@ -236,10 +303,109 @@ describe("Plex label-sync evidence boundary", () => {
 		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
 	});
 
-	it("does not infer a complete duplicate-edition set from one persisted rating key", async () => {
+	it.each([
+		"/metadata/123",
+		"/library/metadata/not-a-number",
+		"https://images.invalid/poster.jpg",
+		"",
+	])("rejects an explicit key when the legacy thumbnail is malformed: %j", async (thumb) => {
 		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
 			authoritativeEvidence([
-				{ tmdbId: 42, mediaType: "movie", title: "Observed copy", ratingKey: "rating-a" },
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Exact target",
+					ratingKey: "123",
+					thumb,
+				},
+			]),
+		);
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it("rejects a row when the legacy thumbnail key and explicit key disagree", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			authoritativeEvidence([
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Exact target",
+					ratingKey: "456",
+					thumb: "/library/metadata/123/thumb/1",
+				},
+			]),
+		);
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it("requires an explicit key and never falls back to a valid legacy thumbnail key", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			authoritativeEvidence([
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Exact target",
+					ratingKey: null,
+					thumb: "/library/metadata/123/thumb/1",
+				},
+			]),
+		);
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it("ignores a non-requested media type that shares the requested TMDB ID", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			authoritativeEvidence([
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Movie",
+					ratingKey: "123",
+					thumb: "/library/metadata/123/thumb/1",
+				},
+				{
+					tmdbId: 42,
+					mediaType: "series",
+					title: "Series",
+					ratingKey: "456",
+					thumb: "/library/metadata/456/thumb/1",
+				},
 			]),
 		);
 
@@ -255,14 +421,111 @@ describe("Plex label-sync evidence boundary", () => {
 
 		expect(result).toEqual({ matchesFound: 1, labelsApplied: 1, failures: 0 });
 		expect(mocks.updateMetadataTags).toHaveBeenCalledOnce();
-		expect(mocks.updateMetadataTags).toHaveBeenCalledWith("rating-a", "label", "add", "Family");
+		expect(mocks.updateMetadataTags).toHaveBeenCalledWith("123", "label", "add", "Family");
+	});
+
+	it("fails closed when movie and series candidates share a TMDB ID", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			authoritativeEvidence([
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Movie",
+					ratingKey: "123",
+					thumb: "/library/metadata/123/thumb/1",
+				},
+				{
+					tmdbId: 42,
+					mediaType: "series",
+					title: "Series",
+					ratingKey: "456",
+					thumb: "/library/metadata/456/thumb/1",
+				},
+			]),
+		);
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [
+				{ tmdbId: 42, mediaType: "movie", title: "Movie" },
+				{ tmdbId: 42, mediaType: "series", title: "Series" },
+			],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 0, labelsApplied: 0, failures: 2 });
+		expect(mocks.loadInstanceSelectedEvidence).not.toHaveBeenCalled();
+		expect(mocks.createPlexClient).not.toHaveBeenCalled();
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it("does not infer a complete duplicate-edition set from one persisted rating key", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			authoritativeEvidence([
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Observed copy",
+					ratingKey: "123",
+					thumb: "/library/metadata/123/thumb/1",
+				},
+			]),
+		);
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 1, labelsApplied: 1, failures: 0 });
+		expect(mocks.updateMetadataTags).toHaveBeenCalledOnce();
+		expect(mocks.updateMetadataTags).toHaveBeenCalledWith("123", "label", "add", "Family");
+	});
+
+	it("deduplicates repeated observations of one parity-safe cached key", async () => {
+		const row = {
+			tmdbId: 42,
+			mediaType: "movie",
+			title: "Observed copy",
+			ratingKey: "123",
+			thumb: "/library/metadata/123/thumb/1",
+		};
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(authoritativeEvidence([row, { ...row }]));
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 2, labelsApplied: 1, failures: 0 });
+		expect(mocks.updateMetadataTags).toHaveBeenCalledOnce();
 	});
 
 	it("does not mutate when exact destination evidence changes before the write", async () => {
 		mocks.loadInstanceSelectedEvidence
 			.mockResolvedValueOnce(
 				authoritativeEvidence([
-					{ tmdbId: 42, mediaType: "movie", title: "Target", ratingKey: "rating-a" },
+					{
+						tmdbId: 42,
+						mediaType: "movie",
+						title: "Target",
+						ratingKey: "123",
+						thumb: "/library/metadata/123/thumb/1",
+					},
 				]),
 			)
 			.mockResolvedValueOnce(unavailableEvidence());
@@ -281,10 +544,56 @@ describe("Plex label-sync evidence boundary", () => {
 		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
 	});
 
+	it("does not mutate when cached key agreement changes before the write", async () => {
+		mocks.loadInstanceSelectedEvidence
+			.mockResolvedValueOnce(
+				authoritativeEvidence([
+					{
+						tmdbId: 42,
+						mediaType: "movie",
+						title: "Target",
+						ratingKey: "123",
+						thumb: "/library/metadata/123/thumb/1",
+					},
+				]),
+			)
+			.mockResolvedValueOnce(
+				authoritativeEvidence([
+					{
+						tmdbId: 42,
+						mediaType: "movie",
+						title: "Target",
+						ratingKey: "123",
+						thumb: "/library/metadata/456/thumb/1",
+					},
+				]),
+			);
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+		expect(mocks.createPlexClient).not.toHaveBeenCalled();
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
 	it("does not send a current rating key to a destination connection that was repointed", async () => {
 		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
 			authoritativeEvidence([
-				{ tmdbId: 42, mediaType: "movie", title: "Target", ratingKey: "rating-a" },
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Target",
+					ratingKey: "123",
+					thumb: "/library/metadata/123/thumb/1",
+				},
 			]),
 		);
 		const oldDestination = {
@@ -318,5 +627,123 @@ describe("Plex label-sync evidence boundary", () => {
 		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
 		expect(mocks.createPlexClient).not.toHaveBeenCalled();
 		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		{ connectionGeneration: 5, identityGeneration: 9, changed: "connection" },
+		{ connectionGeneration: 4, identityGeneration: 10, changed: "identity" },
+	])("does not mutate when the current $changed generation changes", async (generations) => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			authoritativeEvidence([
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Target",
+					ratingKey: "123",
+					thumb: "/library/metadata/123/thumb/1",
+				},
+			]),
+		);
+		const prisma = {
+			serviceInstance: {
+				findFirst: vi.fn().mockResolvedValue({
+					...instance,
+					id: "plex-dest",
+					connectionGeneration: generations.connectionGeneration,
+					identityGeneration: generations.identityGeneration,
+				}),
+			},
+		} as unknown as DestWriterOpts["prisma"];
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma,
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+		expect(mocks.createPlexClient).not.toHaveBeenCalled();
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it("does not mutate when the destination is no longer owned and enabled", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			authoritativeEvidence([
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Target",
+					ratingKey: "123",
+					thumb: "/library/metadata/123/thumb/1",
+				},
+			]),
+		);
+		const prisma = {
+			serviceInstance: { findFirst: vi.fn().mockResolvedValue(null) },
+		} as unknown as DestWriterOpts["prisma"];
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma,
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+		expect(mocks.createPlexClient).not.toHaveBeenCalled();
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it("returns a clean no-match result without initializing the client", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(authoritativeEvidence([]));
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 0, labelsApplied: 0, failures: 0 });
+		expect(mocks.createPlexClient).not.toHaveBeenCalled();
+		expect(mocks.updateMetadataTags).not.toHaveBeenCalled();
+	});
+
+	it("counts an upstream label failure without recording success", async () => {
+		mocks.loadInstanceSelectedEvidence.mockResolvedValue(
+			authoritativeEvidence([
+				{
+					tmdbId: 42,
+					mediaType: "movie",
+					title: "Target",
+					ratingKey: "123",
+					thumb: "/library/metadata/123/thumb/1",
+				},
+			]),
+		);
+		mocks.updateMetadataTags.mockRejectedValueOnce(new Error("upstream rejected write"));
+
+		const result = await plexDestWriter.applyLabels({
+			rule,
+			destInstance: { ...instance, id: "plex-dest" } as DestWriterOpts["destInstance"],
+			candidates: [{ tmdbId: 42, mediaType: "movie", title: "Target" }],
+			prisma: destinationPrisma(),
+			arrClientFactory: {} as DestWriterOpts["arrClientFactory"],
+			encryptor: {} as DestWriterOpts["encryptor"],
+			log,
+		});
+
+		expect(result).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+		expect(mocks.updateMetadataTags).toHaveBeenCalledOnce();
 	});
 });
