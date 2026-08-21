@@ -29,6 +29,10 @@ import {
 } from "../arr/client-helpers.js";
 import { QuiApiError, QuiInstanceUnreachableError } from "../errors.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
+import {
+	getPublishedEpisodeGenerationObservation,
+	loadUserGenerationObservations,
+} from "../plex/plex-evidence-repository.js";
 import { createPlexClient } from "../plex/plex-client.js";
 import { createQuiClient } from "../qui/client-factory.js";
 import { listQuiInstances } from "../qui/instance-helpers.js";
@@ -620,6 +624,25 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 	});
 
 	if (cacheStatuses.length === 0) return [];
+	const plexEvidenceByStatus = new Map<
+		string,
+		Awaited<ReturnType<typeof loadUserGenerationObservations>>[number]["evidence"]
+	>();
+	if (cacheStatuses.some((status) => status.cacheType === "plex")) {
+		for (const evidence of await loadUserGenerationObservations(app.prisma, { userId })) {
+			if (evidence.instanceId) {
+				plexEvidenceByStatus.set(`${evidence.instanceId}:plex`, evidence.evidence);
+			}
+		}
+	}
+	for (const status of cacheStatuses) {
+		if (status.cacheType !== "plex_episode") continue;
+		const evidence = await getPublishedEpisodeGenerationObservation(app.prisma, {
+			userId,
+			instanceId: status.instanceId,
+		});
+		plexEvidenceByStatus.set(`${status.instanceId}:plex_episode`, evidence.evidence);
+	}
 
 	const items: PulseItem[] = [];
 	const staleThreshold = Date.now() - STALE_CACHE_HOURS * 60 * 60 * 1000;
@@ -643,14 +666,47 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 			status.lastAttemptResult === "error" &&
 			status.lastAttemptAt != null &&
 			status.lastAttemptAt.getTime() > status.lastRefreshedAt.getTime();
-		const effectiveResult =
+		let effectiveResult =
 			status.lastResult === "success" && (newerFailedAttempt || status.lastErrorMessage !== null)
 				? "partial"
 				: status.lastResult;
-		const effectiveError = status.lastAttemptErrorMessage ?? status.lastErrorMessage;
+		let effectiveError = status.lastAttemptErrorMessage ?? status.lastErrorMessage;
+		if (status.cacheType === "plex" || status.cacheType === "plex_episode") {
+			const evidence = plexEvidenceByStatus.get(`${status.instanceId}:${status.cacheType}`);
+			if (evidence?.attemptState === "in_progress") {
+				effectiveResult = "in_progress";
+				effectiveError =
+					"Current Plex values are unavailable while the latest cache refresh is in progress.";
+			} else if (status.lastResult === "success" && evidence?.publicationLevel === "unavailable") {
+				effectiveResult = "error";
+				effectiveError = `Published Plex evidence is unavailable (${evidence.reasonCodes.join(", ")})`;
+			} else if (
+				status.lastResult === "success" &&
+				(evidence?.publicationLevel === "positive-only" || evidence?.completeness === "partial")
+			) {
+				effectiveResult = "partial";
+			} else if (status.lastResult === "success" && !evidence) {
+				effectiveResult = "error";
+				effectiveError = "Published Plex evidence is unavailable (missing_status)";
+			}
+		}
 		const effectiveTimestamp = status.lastAttemptAt ?? status.lastRefreshedAt;
 
-		if (effectiveResult === "error") {
+		if (effectiveResult === "in_progress") {
+			items.push({
+				id: `cache-refreshing-${status.id}`,
+				severity: "info",
+				category: "health",
+				title: `${label}: ${cacheLabel} cache refresh is in progress`,
+				detail:
+					effectiveError ??
+					"Current Plex values are unavailable while the latest cache refresh is in progress.",
+				actionUrl: "/settings",
+				actionLabel: "View status",
+				source: cacheSource(status.cacheType, status.instance.service),
+				timestamp: effectiveTimestamp.toISOString(),
+			});
+		} else if (effectiveResult === "error") {
 			const action = actionForCache(status.instanceId, status.cacheType, "Retry refresh");
 			items.push({
 				id: `cache-error-${status.id}`,

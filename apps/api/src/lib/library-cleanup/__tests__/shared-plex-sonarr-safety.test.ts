@@ -429,6 +429,78 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 	}));
 	const approvalUpdate = vi.fn().mockResolvedValue({ count: 1 });
 	const episodeFileCacheDeleteMany = vi.fn().mockResolvedValue({ count: episodeFiles.length });
+	const publishedAt = new Date();
+	const parentGenerationId = "plex-parent-generation-1";
+	const parentRows = [
+		{
+			id: "plex-parent-row-1",
+			instanceId: plexInstance.id,
+			tmdbId: 456,
+			mediaType: "series",
+			sectionId: "shows",
+			sectionTitle: "Shows",
+			title: "Example Series",
+			ratingKey: "show-123",
+			lastWatchedAt: publishedAt,
+			watchCount: 1,
+			watchedByUsers: '["Owner"]',
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			labels: "[]",
+			addedAt: null,
+			thumb: null,
+			connectionGeneration: 1,
+			identityGeneration: 1,
+		},
+	];
+	const episodeRows = liveEpisodes.map((episode) => ({
+		id: `plex-episode-row-${episode.id}`,
+		instanceId: plexInstance.id,
+		showTmdbId: 456,
+		seasonNumber: episode.seasonNumber,
+		episodeNumber: episode.episodeNumber,
+		ratingKey: `episode-${episode.episodeNumber}`,
+		title: `Episode ${episode.episodeNumber}`,
+		watched: true,
+		watchedByUsers: '["Owner"]',
+		lastWatchedAt: publishedAt,
+		watchCount: 1,
+		refreshedAt: publishedAt,
+		sourceFingerprint: plexConnectionFingerprint(plexInstance),
+		connectionGeneration: 1,
+		identityGeneration: 1,
+	}));
+	const mainStatus = {
+		instanceId: plexInstance.id,
+		cacheType: "plex",
+		lastRefreshedAt: publishedAt,
+		lastResult: "success",
+		lastErrorMessage: null,
+		lastAttemptAt: publishedAt,
+		lastAttemptResult: "success",
+		lastAttemptErrorMessage: null,
+		itemCount: parentRows.length,
+		generationId: parentGenerationId,
+		generationMetadata: JSON.stringify({
+			sections: [{ key: "shows", title: "Shows", type: "show" }],
+		}),
+		connectionGeneration: 1,
+		identityGeneration: 1,
+	};
+	const episodeStatus = {
+		...mainStatus,
+		cacheType: "plex_episode",
+		itemCount: episodeRows.length,
+		generationId: "plex-episode-generation-1",
+		generationMetadata: JSON.stringify({
+			version: 1,
+			parentPlexGenerationId: parentGenerationId,
+			parentPublicationLevel: "authoritative",
+			connectionGeneration: 1,
+			identityGeneration: 1,
+		}),
+	};
 	let cleanupRunLeaseToken: string | null = null;
 	const cleanupConfigUpdateMany = vi.fn(
 		async ({
@@ -460,6 +532,11 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 	];
 	const deps: CleanupExecutorDeps = {
 		prisma: {
+			cacheRefreshStatus: {
+				findMany: vi.fn(async ({ where }: { where: { cacheType: string } }) => [
+					where.cacheType === "plex" ? mainStatus : episodeStatus,
+				]),
+			},
 			libraryCleanupConfig: {
 				findUnique: vi.fn(async () => ({
 					id: "config-1",
@@ -512,17 +589,12 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 				findFirst: vi.fn().mockResolvedValue({ infoHash: "episode-hash", torrentState: "paused" }),
 				deleteMany: episodeFileCacheDeleteMany,
 			},
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue(parentRows),
+				count: vi.fn().mockResolvedValue(parentRows.length),
+			},
 			plexEpisodeCache: {
-				findMany: vi.fn().mockImplementation((({ where }: { where: { episodeNumber: number } }) =>
-					Promise.resolve([
-						{
-							instanceId: plexInstance.id,
-							ratingKey: `episode-${where.episodeNumber}`,
-							watchCount: 1,
-							refreshedAt: new Date(),
-							sourceFingerprint: plexConnectionFingerprint(plexInstance),
-						},
-					])) as never),
+				findMany: vi.fn().mockResolvedValue(episodeRows),
 				findFirst: vi.fn().mockResolvedValue({
 					watchCount: 1,
 					refreshedAt: new Date(),
@@ -570,6 +642,10 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		approvalUpdate,
 		episodeFileCacheDeleteMany,
 		setEpisodeMonitored,
+		parentRows,
+		episodeRows,
+		mainStatus,
+		episodeStatus,
 		setLiveEpisodeMonitored: (episodeId: number, monitored: boolean) => {
 			const episode = liveEpisodes.find((candidate) => candidate.id === episodeId);
 			if (episode) episode.monitored = monitored;
@@ -995,7 +1071,6 @@ describe("shared Plex deletion safety for Sonarr", () => {
 						? Promise.resolve([])
 						: Promise.resolve([fixture.targetInstance])) as never,
 		);
-
 		const episodeTarget = { ...exactEpisodeTarget(), episodeFileTorrentState: "seeding" };
 		await expect(
 			findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context),
@@ -1029,45 +1104,10 @@ describe("shared Plex deletion safety for Sonarr", () => {
 							? Promise.resolve([fixture.targetInstance])
 							: Promise.resolve([fixture.targetInstance, fixture.plexInstance])) as never,
 		);
-		const generation = new Date();
 		vi.mocked(fixture.deps.prisma.plexEpisodeCache.findMany).mockResolvedValue([
-			{
-				id: "plex-episode-1",
-				instanceId: "plex-1",
-				showTmdbId: 456,
-				seasonNumber: 1,
-				episodeNumber: 1,
-				watchCount: 1,
-				watched: true,
-				lastWatchedAt: new Date(),
-				watchedByUsers: JSON.stringify(["Owner"]),
-				ratingKey: "episode-1",
-				refreshedAt: generation,
-				sourceFingerprint: PLEX_SOURCE_FINGERPRINT,
-				connectionGeneration: 1,
-				identityGeneration: 1,
-			},
+			fixture.episodeRows[0],
 		] as never);
-		Object.assign(fixture.deps.prisma.plexEpisodeCache, {
-			groupBy: vi.fn().mockResolvedValue([{ instanceId: "plex-1", _count: { id: 1 } }]),
-		});
-		Object.assign(fixture.deps.prisma, {
-			cacheRefreshStatus: {
-				findMany: vi.fn().mockResolvedValue([
-					{
-						instanceId: "plex-1",
-						lastRefreshedAt: generation,
-						lastResult: "success",
-						lastErrorMessage: null,
-						lastAttemptResult: "success",
-						lastAttemptErrorMessage: null,
-						itemCount: 1,
-						connectionGeneration: 1,
-						identityGeneration: 1,
-					},
-				]),
-			},
-		});
+		fixture.episodeStatus.itemCount = 1;
 		vi.mocked(fixture.deps.prisma.episodeFileCache.findMany).mockResolvedValue(
 			fixture.episodeFiles.map((file, index) => ({
 				arrEpisodeFileId: file.id,
@@ -2453,7 +2493,7 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 	});
 
-	it("blocks direct episode mutation when provider execution authority fails", async () => {
+	it("blocks direct episode mutation when its selected A provider evidence is superseded", async () => {
 		const fixture = makeSonarrDeps();
 		configureRetryStore(fixture.deps);
 		const checker = (
@@ -2488,6 +2528,39 @@ describe("verified Sonarr mutation handoff", () => {
 
 		expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 0, itemsSkipped: 1 });
 		expect(checker).toHaveBeenCalledTimes(2);
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("blocks retry episode mutation when its saved A provider evidence is superseded", async () => {
+		const fixture = makeSonarrDeps();
+		const context = createSharedPlexSafetyContext();
+		const episodeTarget = exactEpisodeTarget();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") throw new Error("Expected episode plan");
+		const storedRetry = {
+			...approval(),
+			status: "retry_pending",
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan, TEST_PLEX_PROVIDER_EVIDENCE),
+		};
+		configureApprovalStore(fixture.deps, storedRetry);
+		const checker = (
+			fixture.deps as CleanupExecutorDeps & {
+				providerEvidenceAuthorityChecker: ReturnType<typeof vi.fn>;
+			}
+		).providerEvidenceAuthorityChecker;
+		checker.mockRejectedValue(new ProviderExecutionAuthorityChangedError());
+
+		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, reconciled: 0, failed: 1 });
+		expect(storedRetry).toMatchObject({ status: "expired" });
 		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 	});
@@ -2947,6 +3020,49 @@ describe("verified Sonarr mutation handoff", () => {
 			},
 		]);
 		const secondGetEpisodeWatchCount = vi.fn().mockResolvedValue(options.liveWatchCount ?? 10);
+		const publishedAt = options.staleCache ? new Date("2020-01-01T00:00:00.000Z") : new Date();
+		const secondParentGenerationId = "plex-parent-generation-2";
+		const secondParentRows = [
+			{
+				...fixture.parentRows[0],
+				id: "plex-parent-row-2",
+				instanceId: secondPlexInstance.id,
+				ratingKey: "second-show-123",
+				lastWatchedAt: publishedAt,
+			},
+		];
+		const secondEpisodeRows = fixture.episodeRows.map((row, index) => ({
+			...row,
+			id: `plex-episode-row-2-${index + 1}`,
+			instanceId: secondPlexInstance.id,
+			ratingKey: `second-episode-${index + 1}`,
+			refreshedAt: publishedAt,
+			lastWatchedAt: publishedAt,
+			sourceFingerprint: plexConnectionFingerprint(secondPlexInstance),
+		}));
+		const secondMainStatus = {
+			...fixture.mainStatus,
+			instanceId: secondPlexInstance.id,
+			lastRefreshedAt: publishedAt,
+			lastAttemptAt: publishedAt,
+			itemCount: secondParentRows.length,
+			generationId: secondParentGenerationId,
+		};
+		const secondEpisodeStatus = {
+			...fixture.episodeStatus,
+			instanceId: secondPlexInstance.id,
+			lastRefreshedAt: publishedAt,
+			lastAttemptAt: publishedAt,
+			itemCount: secondEpisodeRows.length,
+			generationId: "plex-episode-generation-2",
+			generationMetadata: JSON.stringify({
+				version: 1,
+				parentPlexGenerationId: secondParentGenerationId,
+				parentPublicationLevel: "authoritative",
+				connectionGeneration: 1,
+				identityGeneration: 1,
+			}),
+		};
 		const plexFactory = vi.mocked(fixture.deps.plexClientFactory!);
 		const primaryClient = plexFactory(fixture.plexInstance as never);
 		plexFactory.mockClear();
@@ -2961,38 +3077,54 @@ describe("verified Sonarr mutation handoff", () => {
 				: primaryClient,
 		);
 		vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation(((args: {
-			where: { service: string };
+			where: { service: string; enabled?: boolean };
 		}) =>
 			args.where.service === "PLEX"
-				? Promise.resolve([fixture.plexInstance, secondPlexInstance])
+				? Promise.resolve(
+						[fixture.plexInstance, secondPlexInstance].filter(
+							(instance) => args.where.enabled !== true || instance.enabled,
+						),
+					)
 				: args.where.service === "QUI"
 					? Promise.resolve([fixture.quiInstance])
 					: Promise.resolve([fixture.targetInstance])) as never);
+		vi.mocked(fixture.deps.prisma.cacheRefreshStatus.findMany).mockImplementation((({
+			where,
+		}: {
+			where: { instanceId: string; cacheType: string };
+		}) => {
+			const isSecond = where.instanceId === secondPlexInstance.id;
+			if (where.cacheType === "plex") {
+				return Promise.resolve([isSecond ? secondMainStatus : fixture.mainStatus]);
+			}
+			return Promise.resolve([isSecond ? secondEpisodeStatus : fixture.episodeStatus]);
+		}) as never);
+		vi.mocked(fixture.deps.prisma.plexCache.findMany).mockImplementation((({
+			where,
+		}: {
+			where: { instanceId: string };
+		}) =>
+			Promise.resolve(
+				where.instanceId === secondPlexInstance.id ? secondParentRows : fixture.parentRows,
+			)) as never);
+		vi.mocked(fixture.deps.prisma.plexCache.count).mockImplementation((({
+			where,
+		}: {
+			where: { instanceId: string };
+		}) =>
+			Promise.resolve(
+				where.instanceId === secondPlexInstance.id
+					? secondParentRows.length
+					: fixture.parentRows.length,
+			)) as never);
 		vi.mocked(fixture.deps.prisma.plexEpisodeCache.findMany).mockImplementation((({
 			where,
 		}: {
-			where: { instanceId: { in: string[] } };
+			where: { instanceId: string };
 		}) =>
-			Promise.resolve([
-				{
-					instanceId: fixture.plexInstance.id,
-					ratingKey: "episode-1",
-					watchCount: 1,
-					refreshedAt: new Date(),
-					sourceFingerprint: plexConnectionFingerprint(fixture.plexInstance),
-				},
-				...(where.instanceId.in.includes(secondPlexInstance.id)
-					? [
-							{
-								instanceId: secondPlexInstance.id,
-								ratingKey: "second-episode-1",
-								watchCount: 1,
-								refreshedAt: options.staleCache ? new Date("2020-01-01T00:00:00.000Z") : new Date(),
-								sourceFingerprint: plexConnectionFingerprint(secondPlexInstance),
-							},
-						]
-					: []),
-			])) as never);
+			Promise.resolve(
+				where.instanceId === secondPlexInstance.id ? secondEpisodeRows : fixture.episodeRows,
+			)) as never);
 		const secondNotification = {
 			...fixture.notification,
 			fields: fixture.notification.fields.map((field) =>
@@ -4388,7 +4520,7 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
 	});
 
-	it("ignores stale policy evidence from an unrelated enabled Plex source", async () => {
+	it("fails closed for stale policy evidence from an enabled Plex source without target authority", async () => {
 		const fixture = makeSonarrDeps();
 		const episodeTarget = exactEpisodeTarget();
 		const context = createSharedPlexSafetyContext();
@@ -4413,13 +4545,14 @@ describe("verified Sonarr mutation handoff", () => {
 		configureApprovalStore(fixture.deps, storedApproval);
 
 		await expect(executeApprovedItems(fixture.deps, "user-1", ["approval-1"])).resolves.toEqual({
-			removed: 1,
-			failed: 0,
-			errors: [],
+			removed: 0,
+			failed: 1,
+			errors: [expect.stringContaining("could not be mapped")],
 		});
+		expect(storedApproval).toMatchObject({ status: "pending" });
 		expect(second.secondGetEpisodeWatchCount).not.toHaveBeenCalled();
 		expect(second.secondGetSeriesEpisodeMediaPartsByTvdbId).not.toHaveBeenCalled();
-		expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 	});
 
 	it("blocks direct cleanup when only a different Plex copy satisfies the edited rule", async () => {
@@ -6162,17 +6295,15 @@ describe("verified Sonarr mutation handoff", () => {
 						}
 					: plan;
 			if (mode === "missing") {
-				vi.mocked(fixture.deps.prisma.plexEpisodeCache.findFirst).mockResolvedValue(null);
+				vi.mocked(fixture.deps.prisma.plexEpisodeCache.findMany).mockResolvedValue([]);
 			} else if (mode === "reset") {
-				vi.mocked(fixture.deps.prisma.plexEpisodeCache.findFirst).mockResolvedValue({
-					watchCount: 0,
-					refreshedAt: new Date(),
-				} as never);
+				vi.mocked(fixture.deps.prisma.plexEpisodeCache.findMany).mockResolvedValue(
+					fixture.episodeRows.map((row, index) =>
+						index === 0 ? { ...row, watchCount: 0, watched: false } : row,
+					) as never,
+				);
 			} else if (mode === "stale") {
-				vi.mocked(fixture.deps.prisma.plexEpisodeCache.findFirst).mockResolvedValue({
-					watchCount: 1,
-					refreshedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
-				} as never);
+				fixture.episodeStatus.lastRefreshedAt = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 			}
 			const storedApproval = {
 				...approval(),

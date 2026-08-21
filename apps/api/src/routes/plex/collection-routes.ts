@@ -8,6 +8,11 @@
 import type { PlexTagItem, PlexTagsResponse, PlexTagUpdateRequest } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import {
+	isCurrentAuthoritativePlexEvidence,
+	scanInstancePolicyEvidence,
+	summarizePlexEvidence,
+} from "../../lib/plex/plex-evidence-repository.js";
 import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -34,11 +39,6 @@ const ratingKeyParams = z.object({
 // Routes
 // ============================================================================
 
-// Cursor-paginate plexCache scans (issue #427 follow-up). collections/labels
-// are JSON arrays per row; even with small per-row footprint a 50k-item
-// library can transient-peak well past 10 MB without bounds.
-const PLEX_TAG_QUERY_BATCH_SIZE = 1000;
-
 export async function registerCollectionRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
 	 * GET /api/plex/:instanceId/collections
@@ -48,32 +48,20 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 	app.get("/:instanceId/collections", async (request, reply) => {
 		const { instanceId } = validateRequest(instanceParams, request.params);
 		const userId = request.currentUser!.id;
-
-		// Verify ownership
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: { id: instanceId, userId, service: "PLEX", enabled: true },
 			select: { id: true },
 		});
-
 		if (!instance) {
 			return reply.status(404).send({ error: "Instance not found or access denied" });
 		}
 
-		// Get all PlexCache rows with non-empty collections for this instance.
-		// Cursor-paginated to bound peak heap.
 		const collectionCounts = new Map<string, number>();
-		{
-			let cursor: string | undefined;
-			while (true) {
-				const batch = await app.prisma.plexCache.findMany({
-					where: { instanceId },
-					select: { id: true, collections: true },
-					take: PLEX_TAG_QUERY_BATCH_SIZE,
-					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-					orderBy: { id: "asc" },
-				});
-				if (batch.length === 0) break;
-				for (const row of batch) {
+		const evidence = await scanInstancePolicyEvidence(app.prisma, {
+			userId,
+			instanceId,
+			onBatch: ({ rows }) => {
+				for (const row of rows) {
 					try {
 						const parsed = JSON.parse(row.collections) as string[];
 						for (const name of parsed) {
@@ -83,16 +71,19 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 						// Skip malformed JSON
 					}
 				}
-				cursor = batch[batch.length - 1]!.id;
-				if (batch.length < PLEX_TAG_QUERY_BATCH_SIZE) break;
-			}
+			},
+		});
+		const summary = summarizePlexEvidence([evidence]);
+		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
+			return reply
+				.status(503)
+				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
 		}
-
 		const collections: PlexTagItem[] = [...collectionCounts.entries()]
 			.sort((a, b) => a[0].localeCompare(b[0]))
 			.map(([name, count]) => ({ name, count }));
 
-		const response: PlexTagsResponse = { collections, labels: [] };
+		const response: PlexTagsResponse = { collections, labels: [], evidence: summary };
 		return reply.send(response);
 	});
 
@@ -104,29 +95,20 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 	app.get("/:instanceId/labels", async (request, reply) => {
 		const { instanceId } = validateRequest(instanceParams, request.params);
 		const userId = request.currentUser!.id;
-
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: { id: instanceId, userId, service: "PLEX", enabled: true },
 			select: { id: true },
 		});
-
 		if (!instance) {
 			return reply.status(404).send({ error: "Instance not found or access denied" });
 		}
 
 		const labelCounts = new Map<string, number>();
-		{
-			let cursor: string | undefined;
-			while (true) {
-				const batch = await app.prisma.plexCache.findMany({
-					where: { instanceId },
-					select: { id: true, labels: true },
-					take: PLEX_TAG_QUERY_BATCH_SIZE,
-					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-					orderBy: { id: "asc" },
-				});
-				if (batch.length === 0) break;
-				for (const row of batch) {
+		const evidence = await scanInstancePolicyEvidence(app.prisma, {
+			userId,
+			instanceId,
+			onBatch: ({ rows }) => {
+				for (const row of rows) {
 					try {
 						const parsed = JSON.parse(row.labels) as string[];
 						for (const name of parsed) {
@@ -136,16 +118,19 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 						// Skip malformed JSON
 					}
 				}
-				cursor = batch[batch.length - 1]!.id;
-				if (batch.length < PLEX_TAG_QUERY_BATCH_SIZE) break;
-			}
+			},
+		});
+		const summary = summarizePlexEvidence([evidence]);
+		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
+			return reply
+				.status(503)
+				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
 		}
-
 		const labels: PlexTagItem[] = [...labelCounts.entries()]
 			.sort((a, b) => a[0].localeCompare(b[0]))
 			.map(([name, count]) => ({ name, count }));
 
-		const response: PlexTagsResponse = { collections: [], labels };
+		const response: PlexTagsResponse = { collections: [], labels, evidence: summary };
 		return reply.send(response);
 	});
 

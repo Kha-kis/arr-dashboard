@@ -17,11 +17,10 @@ const refreshMocks = vi.hoisted(() => ({
 
 vi.mock("../../plex/plex-cache-refresher.js", () => ({
 	collectPlexCacheLiveEvidence: refreshMocks.plex,
-	createOwnedPlexPublicationSnapshot: (_encryptor: unknown, instance: unknown) => instance,
-	refreshPlexCache: refreshMocks.plex,
 }));
-vi.mock("../../plex/plex-episode-cache-refresher.js", () => ({
-	refreshPlexEpisodeCache: refreshMocks.plexEpisodes,
+vi.mock("../../plex/plex-refresh-orchestration.js", () => ({
+	refreshOwnedPlexCache: refreshMocks.plex,
+	refreshOwnedPlexEpisodeCache: refreshMocks.plexEpisodes,
 }));
 vi.mock("../../tautulli/tautulli-cache-refresher.js", () => ({
 	collectTautulliCacheLiveEvidence: refreshMocks.tautulli,
@@ -160,6 +159,7 @@ function makeDeps(
 						sections: [{ key: "1", title: "Movies", type: "movie" }],
 					}),
 					lastErrorMessage: null,
+					lastAttemptAt: publishedAt,
 					lastAttemptResult: "success",
 					lastAttemptErrorMessage: null,
 					connectionGeneration: source?.connectionGeneration ?? 1,
@@ -361,13 +361,13 @@ describe("authoritative mutation policy snapshots", () => {
 		expect(snapshot.failedSources).toEqual(new Set(["plex"]));
 	});
 
-	it("excludes disabled Plex episode caches from refreshed authority", async () => {
+	it("fails closed when an enabled Plex episode cache lacks parent-bound authority", async () => {
 		const { deps, findInstances } = makeDeps([rule("plex_episode_completion")], [instance("PLEX")]);
 
 		const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
 
-		expect(deps.log.warn).not.toHaveBeenCalled();
-		expect(snapshot.failedSources).toEqual(new Set());
+		expect(deps.log.warn).toHaveBeenCalled();
+		expect(snapshot.failedSources).toEqual(new Set(["plex"]));
 		for (const [query] of findInstances.mock.calls as Array<
 			[{ where: { service: string | { in: string[] }; enabled?: boolean } }]
 		>) {
@@ -641,12 +641,19 @@ describe("authoritative mutation policy snapshots", () => {
 				connectionGeneration: 1,
 				identityGeneration: 1,
 			};
-			vi.mocked(deps.prisma.plexCache.findMany).mockImplementation((async () => [
-				{
-					...publishedRow,
-					onDeck: policyChangesAfterSnapshot && policyChangedDuringTargetLookup,
-				},
-			]) as never);
+			vi.mocked(deps.prisma.plexCache.findMany).mockImplementation((async ({
+				where,
+			}: {
+				where: { instanceId: string };
+			}) =>
+				where.instanceId === plexB.id
+					? [
+							{
+								...publishedRow,
+								onDeck: policyChangesAfterSnapshot && policyChangedDuringTargetLookup,
+							},
+						]
+					: []) as never);
 			vi.mocked(deps.prisma.plexCache.count).mockImplementation((async ({
 				where,
 			}: {
@@ -657,23 +664,26 @@ describe("authoritative mutation policy snapshots", () => {
 			vi.mocked(deps.prisma.cacheRefreshStatus.findMany).mockImplementation((async ({
 				where,
 			}: {
-				where: { instanceId: { in: string[] } };
+				where: { instanceId: string | { in: string[] } };
 			}) =>
-				where.instanceId.in.map((instanceId) => ({
-					instanceId,
-					lastRefreshedAt: publishedAt,
-					lastResult: "success",
-					itemCount: instanceId === plexB.id ? 1 : 0,
-					generationId: generationIds.get(instanceId),
-					generationMetadata: JSON.stringify({
-						sections: [{ key: "movies", title: "Movies", type: "movie" }],
+				(typeof where.instanceId === "string" ? [where.instanceId] : where.instanceId.in).map(
+					(instanceId) => ({
+						instanceId,
+						lastRefreshedAt: publishedAt,
+						lastResult: "success",
+						itemCount: instanceId === plexB.id ? 1 : 0,
+						generationId: generationIds.get(instanceId),
+						generationMetadata: JSON.stringify({
+							sections: [{ key: "movies", title: "Movies", type: "movie" }],
+						}),
+						lastErrorMessage: null,
+						lastAttemptAt: publishedAt,
+						lastAttemptResult: "success",
+						lastAttemptErrorMessage: null,
+						connectionGeneration: 1,
+						identityGeneration: 1,
 					}),
-					lastErrorMessage: null,
-					lastAttemptResult: "success",
-					lastAttemptErrorMessage: null,
-					connectionGeneration: 1,
-					identityGeneration: 1,
-				}))) as never);
+				)) as never);
 			refreshMocks.plex.mockImplementation(async (...args: unknown[]) => {
 				const instanceId = plexRefreshInstanceId(args);
 				const pass = Math.floor(refreshCallCount / 2) + 1;

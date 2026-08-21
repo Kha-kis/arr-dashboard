@@ -11,8 +11,13 @@ import type {
 	SonarrClient,
 	Notification as SonarrNotification,
 } from "arr-sdk/sonarr";
+import { evidenceFingerprint } from "../evidence-fingerprint.js";
 import { createOwnedJellyfinPublicationSnapshot } from "../jellyfin/jellyfin-cache-refresher.js";
 import { createOwnedPlexPublicationSnapshot } from "../plex/plex-cache-refresher.js";
+import {
+	loadInstanceEpisodeEvidence,
+	scanMutationPolicyEvidenceForOwnedInstances,
+} from "../plex/plex-evidence-repository.js";
 import {
 	createPlexClient,
 	type PlexClient,
@@ -1242,23 +1247,7 @@ export class ProviderExecutionAuthorityChangedError extends Error {
 	}
 }
 
-function providerExecutionFingerprint(value: unknown): string {
-	const canonicalize = (input: unknown): unknown => {
-		if (input instanceof Date) return input.toISOString();
-		if (Array.isArray(input)) return input.map(canonicalize);
-		if (typeof input === "object" && input !== null) {
-			return Object.fromEntries(
-				Object.entries(input as Record<string, unknown>)
-					.sort(([left], [right]) => left.localeCompare(right))
-					.map(([key, entry]) => [key, canonicalize(entry)]),
-			);
-		}
-		return input;
-	};
-	return createHash("sha256")
-		.update(JSON.stringify(canonicalize(value)))
-		.digest("hex");
-}
+const providerExecutionFingerprint = evidenceFingerprint;
 
 function providerExecutionInstanceFingerprint(instance: ServiceInstance): string {
 	return providerExecutionFingerprint({
@@ -1358,12 +1347,18 @@ async function loadProviderExecutionEvidence(
 	);
 	const rowsByType = new Map<ProviderCacheType, Map<string, unknown[]>>();
 	for (const cacheType of uniqueCacheTypes) {
+		if (cacheType === "plex" || cacheType === "plex_episode") {
+			rowsByType.set(cacheType, new Map());
+			continue;
+		}
 		rowsByType.set(
 			cacheType,
 			await loadExactProviderCacheRows(
 				prisma as never,
 				cacheType,
 				instances.map((instance) => instance.id),
+				userId,
+				instances,
 			),
 		);
 	}
@@ -1377,24 +1372,61 @@ async function loadProviderExecutionEvidence(
 			),
 		) as ProviderCacheType[];
 		for (const cacheType of applicableTypes) {
-			const status = statusesByKey.get(`${instance.id}:${cacheType}`);
+			let status = statusesByKey.get(`${instance.id}:${cacheType}`);
+			let rows = rowsByType.get(cacheType)?.get(instance.id) ?? [];
+			let plexRowAuthority: { rowCount: number; rowFingerprint: string } | undefined;
+			const isPlexEvidence = cacheType === "plex" || cacheType === "plex_episode";
+			if (cacheType === "plex") {
+				const [current] = await scanMutationPolicyEvidenceForOwnedInstances(prisma as never, {
+					instances: [instance],
+					now,
+					maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
+				});
+				if (
+					!current?.available ||
+					current.evidence.publicationLevel !== "authoritative" ||
+					current.evidence.completeness !== "complete"
+				) {
+					throw new ProviderExecutionAuthorityChangedError();
+				}
+				status = { ...current.generationStatus, cacheType };
+				plexRowAuthority = {
+					rowCount: current.rowCount,
+					rowFingerprint: current.rowFingerprint,
+				};
+			} else if (cacheType === "plex_episode") {
+				const current = await loadInstanceEpisodeEvidence(prisma as never, {
+					userId,
+					instanceId: instance.id,
+					instance,
+					now,
+					maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
+				});
+				if (!current.available) throw new ProviderExecutionAuthorityChangedError();
+				status = { ...current.generationStatus, cacheType };
+				rows = current.rows;
+			}
 			if (
 				!status ||
 				instance.identityVerifiedAt === null ||
 				status.lastResult !== "success" ||
-				status.lastErrorMessage !== null ||
-				status.lastAttemptErrorMessage !== null ||
-				(status.lastAttemptResult !== null && status.lastAttemptResult !== "success") ||
+				(!isPlexEvidence && status.lastErrorMessage !== null) ||
+				(!isPlexEvidence && status.lastAttemptErrorMessage !== null) ||
+				(!isPlexEvidence &&
+					status.lastAttemptResult !== null &&
+					status.lastAttemptResult !== "success") ||
 				status.lastRefreshedAt.getTime() < freshnessThreshold ||
-				status.lastRefreshedAt.getTime() < instance.updatedAt.getTime() ||
-				status.lastRefreshedAt.getTime() < instance.identityVerifiedAt.getTime() ||
+				(!isPlexEvidence && status.lastRefreshedAt.getTime() < instance.updatedAt.getTime()) ||
+				(!isPlexEvidence &&
+					status.lastRefreshedAt.getTime() < instance.identityVerifiedAt.getTime()) ||
 				status.connectionGeneration !== instance.connectionGeneration ||
 				status.identityGeneration !== instance.identityGeneration
 			) {
 				throw new ProviderExecutionAuthorityChangedError();
 			}
-			const rows = rowsByType.get(cacheType)?.get(instance.id) ?? [];
-			if (rows.length !== status.itemCount) throw new ProviderExecutionAuthorityChangedError();
+			if ((plexRowAuthority?.rowCount ?? rows.length) !== status.itemCount) {
+				throw new ProviderExecutionAuthorityChangedError();
+			}
 			sources.push({
 				service: instance.service as SanitizedProviderEvidenceSource["service"],
 				instanceFingerprint: providerInstanceAuthorityFingerprint(instance.id),
@@ -1430,7 +1462,7 @@ async function loadProviderExecutionEvidence(
 						generationMetadata: status.generationMetadata,
 					},
 				}),
-				rowFingerprint: providerExecutionFingerprint(rows),
+				rowFingerprint: plexRowAuthority?.rowFingerprint ?? providerExecutionFingerprint(rows),
 			});
 		}
 	}
@@ -3762,21 +3794,30 @@ async function verifyEpisodePlexWatchProof(
 	const enabledPlexInstances = plexInstances.filter(
 		(instance) => instance.service === "PLEX" && instance.enabled === true,
 	);
-	const policyRows = await deps.prisma.plexEpisodeCache.findMany({
-		where: {
-			instanceId: { in: enabledPlexInstances.map((instance) => instance.id) },
-			showTmdbId,
-			seasonNumber,
-			episodeNumber: exactEpisodeNumber,
-		},
-		select: {
-			instanceId: true,
-			ratingKey: true,
-			watchCount: true,
-			refreshedAt: true,
-			sourceFingerprint: true,
-		},
-	});
+	const policyEvidence = [];
+	for (const instance of enabledPlexInstances) {
+		policyEvidence.push(
+			await loadInstanceEpisodeEvidence(deps.prisma, {
+				userId: instance.userId,
+				instanceId: instance.id,
+				instance,
+				maxAgeMs: 24 * 60 * 60 * 1000,
+			}),
+		);
+	}
+	if (policyEvidence.some((entry) => !entry.available)) {
+		throw new EpisodeWatchProofError(
+			"No complete Plex episode policy evidence was available at the mutation boundary",
+		);
+	}
+	const policyRows = policyEvidence
+		.flatMap((entry) => (entry.available ? entry.rows : []))
+		.filter(
+			(row) =>
+				row.showTmdbId === showTmdbId &&
+				row.seasonNumber === seasonNumber &&
+				row.episodeNumber === exactEpisodeNumber,
+		);
 	if (policyRows.length === 0) {
 		throw new EpisodeWatchProofError(
 			"No complete Plex episode policy evidence was available at the mutation boundary",
@@ -3798,7 +3839,6 @@ async function verifyEpisodePlexWatchProof(
 	for (const row of policyRows) {
 		const plexInstance = enabledPlexInstances.find((instance) => instance.id === row.instanceId);
 		const sourceFingerprint = plexInstance ? plexEvidenceSourceFingerprint(plexInstance) : null;
-		const sourceUpdatedAt = plexInstance?.updatedAt.getTime();
 		if (
 			!plexInstance ||
 			typeof sourceFingerprint !== "string" ||
@@ -3807,9 +3847,7 @@ async function verifyEpisodePlexWatchProof(
 			row.watchCount === null ||
 			row.refreshedAt === null ||
 			row.sourceFingerprint !== sourceFingerprint ||
-			!Number.isFinite(sourceUpdatedAt) ||
-			row.refreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000 ||
-			row.refreshedAt.getTime() < sourceUpdatedAt!
+			row.refreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000
 		) {
 			continue;
 		}
@@ -3978,16 +4016,21 @@ async function verifyEpisodePlexWatchProof(
 		if (!Number.isFinite(plexUpdatedAt) || approvedRefreshedAt.getTime() < plexUpdatedAt) {
 			continue;
 		}
-		const currentEvidence = await deps.prisma.plexEpisodeCache.findFirst({
-			where: {
-				instanceId: plexInstance.id,
-				showTmdbId,
-				seasonNumber,
-				episodeNumber: exactEpisodeNumber,
-				ratingKey: evidence.ratingKey,
-			},
-			select: { watchCount: true, refreshedAt: true, sourceFingerprint: true },
+		const currentGeneration = await loadInstanceEpisodeEvidence(deps.prisma, {
+			userId: plexInstance.userId,
+			instanceId: plexInstance.id,
+			instance: plexInstance,
+			maxAgeMs: 24 * 60 * 60 * 1000,
 		});
+		const currentEvidence = currentGeneration.available
+			? currentGeneration.rows.find(
+					(row) =>
+						row.showTmdbId === showTmdbId &&
+						row.seasonNumber === seasonNumber &&
+						row.episodeNumber === exactEpisodeNumber &&
+						row.ratingKey === evidence.ratingKey,
+				)
+			: undefined;
 		if (
 			!currentEvidence ||
 			currentEvidence.watchCount === null ||

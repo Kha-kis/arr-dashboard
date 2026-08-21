@@ -24,66 +24,85 @@ export interface CollectionStatsResult extends CollectionStats {
 	failedPreviews: string[];
 }
 
-export function aggregateCollectionStats(entries: PlexCacheEntry[]): CollectionStatsResult {
+export interface CollectionStatsAccumulator {
+	add(entries: Iterable<PlexCacheEntry>): void;
+	finish(): CollectionStatsResult;
+}
+
+export function createCollectionStatsAccumulator(): CollectionStatsAccumulator {
 	const collectionMap = new Map<string, { total: number; watched: number }>();
 	const labelMap = new Map<string, { total: number; watched: number }>();
 	let parseFailures = 0;
+	let totalEntries = 0;
 	const failedPreviews: string[] = [];
 
-	for (const entry of entries) {
-		const isWatched = entry.watchCount > 0;
-
-		// Parse collections
-		let collections: string[] = [];
-		try {
-			const parsed = JSON.parse(entry.collections);
-			if (Array.isArray(parsed)) collections = parsed;
-		} catch {
-			parseFailures++;
-			if (failedPreviews.length < 5)
-				failedPreviews.push(`collections: ${entry.collections.slice(0, 80)}`);
-		}
-
-		for (const name of collections) {
-			const existing = collectionMap.get(name) ?? { total: 0, watched: 0 };
-			existing.total++;
-			if (isWatched) existing.watched++;
-			collectionMap.set(name, existing);
-		}
-
-		// Parse labels
-		let labels: string[] = [];
-		try {
-			const parsed = JSON.parse(entry.labels);
-			if (Array.isArray(parsed)) labels = parsed;
-		} catch {
-			parseFailures++;
-			if (failedPreviews.length < 5) failedPreviews.push(`labels: ${entry.labels.slice(0, 80)}`);
-		}
-
-		for (const name of labels) {
-			const existing = labelMap.get(name) ?? { total: 0, watched: 0 };
-			existing.total++;
-			if (isWatched) existing.watched++;
-			labelMap.set(name, existing);
-		}
-	}
-
-	const toArray = (map: Map<string, { total: number; watched: number }>) =>
-		[...map.entries()]
-			.map(([name, data]) => ({
-				name,
-				totalItems: data.total,
-				watchedItems: data.watched,
-				watchPercent: data.total > 0 ? Math.round((data.watched / data.total) * 1000) / 10 : 0,
-			}))
-			.sort((a, b) => b.totalItems - a.totalItems);
-
 	return {
-		collections: toArray(collectionMap),
-		labels: toArray(labelMap),
-		parseFailures,
-		totalEntries: entries.length,
-		failedPreviews,
+		add(entries) {
+			for (const entry of entries) {
+				totalEntries += 1;
+				const isWatched = entry.watchCount > 0;
+
+				// Parse collections
+				let collections: string[] = [];
+				try {
+					const parsed = JSON.parse(entry.collections);
+					if (Array.isArray(parsed)) collections = parsed;
+				} catch {
+					parseFailures++;
+					if (failedPreviews.length < 5)
+						failedPreviews.push(`collections: ${entry.collections.slice(0, 80)}`);
+				}
+
+				for (const name of collections) {
+					const existing = collectionMap.get(name) ?? { total: 0, watched: 0 };
+					existing.total++;
+					if (isWatched) existing.watched++;
+					collectionMap.set(name, existing);
+				}
+
+				// Parse labels
+				let labels: string[] = [];
+				try {
+					const parsed = JSON.parse(entry.labels);
+					if (Array.isArray(parsed)) labels = parsed;
+				} catch {
+					parseFailures++;
+					if (failedPreviews.length < 5)
+						failedPreviews.push(`labels: ${entry.labels.slice(0, 80)}`);
+				}
+
+				for (const name of labels) {
+					const existing = labelMap.get(name) ?? { total: 0, watched: 0 };
+					existing.total++;
+					if (isWatched) existing.watched++;
+					labelMap.set(name, existing);
+				}
+			}
+		},
+		finish() {
+			const toArray = (map: Map<string, { total: number; watched: number }>) =>
+				[...map.entries()]
+					.map(([name, data]) => ({
+						name,
+						totalItems: data.total,
+						watchedItems: data.watched,
+						watchPercent: data.total > 0 ? Math.round((data.watched / data.total) * 1000) / 10 : 0,
+					}))
+					.sort((a, b) => b.totalItems - a.totalItems);
+
+			return {
+				collections: toArray(collectionMap),
+				labels: toArray(labelMap),
+				parseFailures,
+				totalEntries,
+				failedPreviews,
+			};
+		},
 	};
+}
+
+export function aggregateCollectionStats(entries: PlexCacheEntry[]): CollectionStatsResult {
+	const accumulator = createCollectionStatsAccumulator();
+	accumulator.add(entries);
+	return accumulator.finish();
 }

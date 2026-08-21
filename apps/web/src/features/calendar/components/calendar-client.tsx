@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo } from "react";
 import { PremiumSkeleton } from "../../../components/layout";
+import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { useMultiInstanceCalendarQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
@@ -46,7 +47,7 @@ export const CalendarClient = () => {
 
 	// Plex deep links — only fetched when Plex is configured
 	const hasPlex = useMemo(() => services?.some((s) => s.service === "plex") ?? false, [services]);
-	const plexUrlMap = useCalendarPlexLinks(filteredEvents, hasPlex);
+	const plexLinks = useCalendarPlexLinks(filteredEvents, hasPlex);
 
 	const handleOpenExternal = useCallback((href: string) => {
 		if (!href) return;
@@ -128,6 +129,12 @@ export const CalendarClient = () => {
 
 	return (
 		<div className="space-y-5">
+			<PlexQueryEvidenceNotice
+				error={plexLinks.error}
+				evidence={plexLinks.evidence}
+				label="Calendar Plex links"
+			/>
+
 			{/* Header with navigation */}
 			<CalendarHeader
 				monthStart={monthStart}
@@ -195,7 +202,7 @@ export const CalendarClient = () => {
 							selectedEvents={selectedEvents}
 							serviceMap={serviceMap}
 							onOpenExternal={handleOpenExternal}
-							plexUrlMap={plexUrlMap}
+							plexUrlMap={plexLinks.plexUrlMap}
 						/>
 					</div>
 				</div>

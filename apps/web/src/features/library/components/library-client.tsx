@@ -3,6 +3,7 @@
 import type { LibraryItem } from "@arr/shared";
 import { useSearchParams } from "next/navigation";
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
 import { toast } from "../../../components/ui";
 import {
 	useJellyfinIdentity,
@@ -300,6 +301,12 @@ export const LibraryClient: React.FC = () => {
 				instanceOptions={data.instanceOptions}
 				syncStatus={data.syncStatus}
 				isSyncing={data.isSyncing}
+			/>
+
+			<PlexQueryEvidenceNotice
+				error={plexWatchQuery.error ?? plexProgressQuery.error}
+				evidence={plexWatchQuery.data?.evidence ?? plexProgressQuery.data?.evidence}
+				label="Library watch and progress values"
 			/>
 
 			<LibraryInsightsSection />

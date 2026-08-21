@@ -8,6 +8,10 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import {
+	hasAuthoritativePlexEvidence,
+	scanUserPolicyEvidence,
+} from "../plex/plex-evidence-repository.js";
 import type { PrismaClient } from "../prisma.js";
 import {
 	passthroughTickWrapper,
@@ -22,12 +26,6 @@ const COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours between notifications
 const MIN_AGE_DAYS = 7; // Only consider items available for 7+ days
 
 const MIN_WATCH_COUNT = 1; // Minimum plays to qualify for watched-monitored signal
-
-// Cursor-paginate the plexCache scans (issue #427 follow-up). Per-row
-// footprint is small (3 scalar columns) but for a 100k-item Plex library
-// the unbounded findMany still allocates several MB of Prisma row objects
-// on every digest tick, on top of the user's normal request load.
-const PLEX_QUERY_BATCH_SIZE = 1000;
 
 export class InsightsDigestScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
@@ -162,34 +160,17 @@ export class InsightsDigestScheduler {
 		if (!seerrInstance) return [];
 
 		// Get Plex watch data
-		const plexInstances = await this.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX" },
-			select: { id: true },
-		});
-		if (plexInstances.length === 0) return [];
-
-		// Cursor-paginate plexCache to bound peak heap (issue #427).
 		const plexWatchCounts = new Map<string, number>();
-		{
-			const plexInstanceIds = plexInstances.map((i) => i.id);
-			let cursor: string | undefined;
-			while (true) {
-				const batch = await this.prisma.plexCache.findMany({
-					where: { instanceId: { in: plexInstanceIds } },
-					select: { id: true, tmdbId: true, mediaType: true, watchCount: true },
-					take: PLEX_QUERY_BATCH_SIZE,
-					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-					orderBy: { id: "asc" },
-				});
-				if (batch.length === 0) break;
-				for (const row of batch) {
+		const plexEvidence = await scanUserPolicyEvidence(this.prisma, {
+			userId,
+			onBatch: ({ rows }) => {
+				for (const row of rows) {
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					plexWatchCounts.set(key, (plexWatchCounts.get(key) ?? 0) + row.watchCount);
 				}
-				cursor = batch[batch.length - 1]!.id;
-				if (batch.length < PLEX_QUERY_BATCH_SIZE) break;
-			}
-		}
+			},
+		});
+		if (!hasAuthoritativePlexEvidence(plexEvidence)) return [];
 
 		// Fetch available Seerr requests
 		const seerrRequests: Array<{
@@ -276,39 +257,19 @@ export class InsightsDigestScheduler {
 		userId: string,
 	): Promise<Array<{ title: string; watchCount: number }>> {
 		// Get Plex watch data
-		const plexInstances = await this.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX" },
-			select: { id: true },
-		});
-		if (plexInstances.length === 0) return [];
-
-		// Cursor-paginate plexCache (issue #427).
 		const plexWatchData = new Map<string, { watchCount: number }>();
-		{
-			const plexInstanceIds = plexInstances.map((i) => i.id);
-			let cursor: string | undefined;
-			while (true) {
-				const batch = await this.prisma.plexCache.findMany({
-					where: { instanceId: { in: plexInstanceIds } },
-					select: { id: true, tmdbId: true, mediaType: true, watchCount: true },
-					take: PLEX_QUERY_BATCH_SIZE,
-					...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-					orderBy: { id: "asc" },
-				});
-				if (batch.length === 0) break;
-				for (const row of batch) {
+		const plexEvidence = await scanUserPolicyEvidence(this.prisma, {
+			userId,
+			onBatch: ({ rows }) => {
+				for (const row of rows) {
 					const key = `${row.mediaType}:${row.tmdbId}`;
 					const existing = plexWatchData.get(key);
-					if (existing) {
-						existing.watchCount += row.watchCount;
-					} else {
-						plexWatchData.set(key, { watchCount: row.watchCount });
-					}
+					if (existing) existing.watchCount += row.watchCount;
+					else plexWatchData.set(key, { watchCount: row.watchCount });
 				}
-				cursor = batch[batch.length - 1]!.id;
-				if (batch.length < PLEX_QUERY_BATCH_SIZE) break;
-			}
-		}
+			},
+		});
+		if (!hasAuthoritativePlexEvidence(plexEvidence)) return [];
 
 		// Get monitored library items
 		const userInstances = await this.prisma.serviceInstance.findMany({

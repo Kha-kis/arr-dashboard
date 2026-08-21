@@ -7,18 +7,25 @@
 import type { UserEpisodeCompletion } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import {
+	hasCompleteAuthoritativePlexEvidence,
+	loadInstanceSelectedEpisodeEvidence,
+	summarizePlexEvidence,
+} from "../../lib/plex/plex-evidence-repository.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateUserEpisodeCompletion } from "./lib/user-episode-helpers.js";
 
 const MAX_BATCH_SIZE = 200;
 
 const episodeCompletionQuery = z.object({
-	tmdbIds: z.string().transform((val) =>
-		val
-			.split(",")
-			.map((s) => Number.parseInt(s.trim(), 10))
-			.filter((n) => Number.isFinite(n) && n > 0),
-	),
+	tmdbIds: z.string().transform((val) => [
+		...new Set(
+			val
+				.split(",")
+				.map((s) => Number(s.trim()))
+				.filter((n) => Number.isSafeInteger(n) && n > 0),
+		),
+	]),
 });
 
 export async function registerUserEpisodeCompletionRoutes(
@@ -48,15 +55,23 @@ export async function registerUserEpisodeCompletionRoutes(
 			return reply.send(response);
 		}
 
-		const instanceIds = plexInstances.map((i) => i.id);
-
-		const episodes = await app.prisma.plexEpisodeCache.findMany({
-			where: {
-				instanceId: { in: instanceIds },
-				showTmdbId: { in: tmdbIds },
-			},
-			select: { showTmdbId: true, watched: true, watchedByUsers: true },
-		});
+		const evidence = [];
+		for (const instance of plexInstances) {
+			evidence.push(
+				await loadInstanceSelectedEpisodeEvidence(app.prisma, {
+					userId,
+					instanceId: instance.id,
+					showTmdbIds: tmdbIds,
+				}),
+			);
+		}
+		const summary = summarizePlexEvidence(evidence);
+		if (!hasCompleteAuthoritativePlexEvidence(evidence)) {
+			return reply
+				.status(503)
+				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
+		}
+		const episodes = evidence.flatMap((entry) => (entry.available ? entry.rows : []));
 
 		const { parseFailures, totalEpisodes, failedPreviews, ...completion } =
 			aggregateUserEpisodeCompletion(episodes);
@@ -66,6 +81,6 @@ export async function registerUserEpisodeCompletionRoutes(
 				"Episode cache JSON parse failures detected",
 			);
 		}
-		return reply.send(completion);
+		return reply.send({ ...completion, evidence: summary });
 	});
 }

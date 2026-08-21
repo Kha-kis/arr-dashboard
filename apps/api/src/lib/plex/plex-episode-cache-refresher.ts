@@ -4,18 +4,29 @@
  * proves complete.
  */
 
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger } from "fastify";
-import type { Prisma, PrismaClientInstance } from "../prisma.js";
+import type { Prisma } from "../prisma.js";
+import {
+	beginPlexCacheRefreshAttempt,
+	finishPlexCacheRefreshAttemptFailure,
+	type PlexCacheRefreshAttempt,
+} from "../services/provider-cache-status.js";
 import {
 	ProviderIdentityGuardError,
 	withGuardedProviderPublication,
 } from "../services/provider-identity-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import type { PlexPublicationContext } from "./plex-cache-refresher.js";
 import {
-	PLEX_CACHE_PUBLICATION_CHUNK_SIZE,
-	type PlexPublicationContext,
-} from "./plex-cache-refresher.js";
+	PlexRefreshAttemptSupersededError,
+	publishAuthoritativePlexEpisodeGeneration,
+} from "./plex-cache-storage.js";
 import { PlexClient, type PlexEpisodeItem } from "./plex-client.js";
+import {
+	DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
+	scanInstanceEpisodeParentPolicyEvidence,
+} from "./plex-evidence-repository.js";
 import { plexConnectionFingerprint } from "./service-instance-fingerprint.js";
 
 const MAX_SHOWS_PER_REFRESH = 50;
@@ -53,6 +64,12 @@ type PlexEpisodeRow = {
 
 type CollectedPlexEpisodeRefresh = PlexEpisodeRefreshResult & {
 	rows?: PlexEpisodeRow[];
+	parentAuthority?: {
+		generationId: string;
+		publicationLevel: "authoritative";
+		connectionGeneration: number;
+		identityGeneration: number;
+	};
 };
 
 function failedResult(
@@ -75,33 +92,11 @@ function failedResult(
 
 async function collectPlexEpisodeCache(
 	client: PlexClient,
-	prisma: PrismaClientInstance,
+	showMap: Map<number, Set<string>>,
 	instanceId: string,
 	log: FastifyBaseLogger,
 	sourceFingerprint: string,
-	connectionGeneration: number,
-	identityGeneration: number,
 ): Promise<CollectedPlexEpisodeRefresh> {
-	const recentlyWatchedShows = await prisma.plexCache.findMany({
-		where: {
-			instanceId,
-			mediaType: "series",
-			ratingKey: { not: null },
-			watchCount: { gt: 0 },
-			connectionGeneration,
-			identityGeneration,
-		},
-		orderBy: { lastWatchedAt: "desc" },
-		select: { tmdbId: true, ratingKey: true },
-	});
-
-	const showMap = new Map<number, Set<string>>();
-	for (const show of recentlyWatchedShows) {
-		if (!show.ratingKey) continue;
-		const ratingKeys = showMap.get(show.tmdbId) ?? new Set<string>();
-		ratingKeys.add(show.ratingKey);
-		showMap.set(show.tmdbId, ratingKeys);
-	}
 	const eligibleShows = showMap.size;
 	if (eligibleShows > MAX_COMPLETE_SHOWS) {
 		const message = `Plex episode inventory exceeded ${MAX_COMPLETE_SHOWS} eligible shows`;
@@ -250,33 +245,148 @@ export async function refreshPlexEpisodeCache(
 	context: PlexPublicationContext,
 ): Promise<PlexEpisodeRefreshResult> {
 	const { prisma, instance, log } = context;
-	const client = new PlexClient(
-		instance.baseUrl,
-		instance.apiKey,
-		log,
-		undefined,
-		instance.httpAuthHeaders,
-	);
 	try {
-		return await withGuardedProviderPublication(
+		const attempt = await beginPlexCacheRefreshAttempt(prisma, "plex_episode", instance, {
+			cleanupRunClaimToken: context.cleanupRunClaimToken,
+		});
+		if (!attempt) {
+			return { ...failedResult([], 0, 0), errors: 0, errorMessages: [], superseded: true };
+		}
+		return await refreshPlexEpisodeCacheWithAttempt(context, attempt);
+	} catch (error) {
+		const message =
+			error instanceof ProviderIdentityGuardError
+				? error.message
+				: `Atomic Plex episode publication failed: ${getErrorMessage(error)}`;
+		log.error({ err: error, instanceId: instance.id }, message);
+		return failedResult([message], 0, 0);
+	}
+}
+
+/**
+ * Continue an episode refresh with an attempt already acquired by the
+ * production pre-decryption boundary. The public refresher remains the safe
+ * internal path for callers that begin from an already decrypted snapshot.
+ */
+export async function refreshPlexEpisodeCacheWithAttempt(
+	context: PlexPublicationContext,
+	attempt: PlexCacheRefreshAttempt,
+): Promise<PlexEpisodeRefreshResult> {
+	const { prisma, instance, log } = context;
+	try {
+		const client = new PlexClient(
+			instance.baseUrl,
+			instance.apiKey,
+			log,
+			undefined,
+			instance.httpAuthHeaders,
+		);
+		const result = await withGuardedProviderPublication(
 			prisma,
 			instance,
 			log,
-			async () =>
-				await collectPlexEpisodeCache(
+			async () => {
+				const showMap = new Map<number, Set<string>>();
+				const parentBefore = await scanInstanceEpisodeParentPolicyEvidence(prisma, {
+					userId: instance.userId,
+					instanceId: instance.id,
+					maxAgeMs: DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
+					onBatch: ({ rows }) => {
+						for (const row of rows) {
+							if (!row.ratingKey) continue;
+							const ratingKeys = showMap.get(row.tmdbId) ?? new Set<string>();
+							ratingKeys.add(row.ratingKey);
+							showMap.set(row.tmdbId, ratingKeys);
+						}
+					},
+				});
+				if (
+					!parentBefore.available ||
+					parentBefore.evidence.publicationLevel !== "authoritative" ||
+					parentBefore.evidence.completeness !== "complete"
+				) {
+					return failedResult(["Authoritative parent Plex generation is unavailable"], 0, 0);
+				}
+				const collected = await collectPlexEpisodeCache(
 					client,
-					prisma,
+					showMap,
 					instance.id,
 					log,
 					plexConnectionFingerprint(instance),
-					instance.connectionGeneration,
-					instance.identityGeneration,
-				),
-			async (tx, collected) => await publishPlexEpisodeCache(tx, instance, collected),
+				);
+				if (!collected.complete) return collected;
+				const parentAfter = await scanInstanceEpisodeParentPolicyEvidence(prisma, {
+					userId: instance.userId,
+					instanceId: instance.id,
+					maxAgeMs: DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
+				});
+				if (
+					!parentAfter.available ||
+					parentAfter.evidence.publicationLevel !== "authoritative" ||
+					parentAfter.evidence.completeness !== "complete" ||
+					parentAfter.generationId !== parentBefore.generationId ||
+					parentAfter.connectionGeneration !== parentBefore.connectionGeneration ||
+					parentAfter.identityGeneration !== parentBefore.identityGeneration
+				) {
+					return failedResult(
+						["Authoritative parent Plex generation changed during episode collection"],
+						collected.eligibleShows,
+						collected.refreshedShows,
+					);
+				}
+				return {
+					...collected,
+					parentAuthority: {
+						generationId: parentBefore.generationId,
+						publicationLevel: "authoritative" as const,
+						connectionGeneration: parentBefore.connectionGeneration,
+						identityGeneration: parentBefore.identityGeneration,
+					},
+				};
+			},
+			async (tx, collected) => await publishPlexEpisodeCache(tx, instance, attempt!, collected),
 			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
 		);
+		if (!result.complete || !result.completedAt) {
+			const finished = await finishPlexCacheRefreshAttemptFailure(
+				prisma,
+				"plex_episode",
+				result.errorMessages.slice(0, 3).join("; ").slice(0, 500) ||
+					"Plex episode refresh did not produce a complete generation",
+				instance,
+				attempt,
+				log,
+				{ cleanupRunClaimToken: context.cleanupRunClaimToken },
+			);
+			if (finished === "superseded") {
+				return { ...failedResult([], 0, 0), errors: 0, errorMessages: [], superseded: true };
+			}
+		}
+		return result;
 	} catch (error) {
-		if (error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") {
+		let publicationError = error;
+		if (
+			!(error instanceof PlexRefreshAttemptSupersededError) &&
+			!(error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED")
+		) {
+			const finished = await finishPlexCacheRefreshAttemptFailure(
+				prisma,
+				"plex_episode",
+				getErrorMessage(error, "Unknown Plex episode refresh failure"),
+				instance,
+				attempt,
+				log,
+				{ cleanupRunClaimToken: context.cleanupRunClaimToken },
+			);
+			if (!(error instanceof ProviderIdentityGuardError) && finished === "superseded") {
+				publicationError = new PlexRefreshAttemptSupersededError();
+			}
+		}
+		if (
+			(publicationError instanceof ProviderIdentityGuardError &&
+				publicationError.code === "PUBLICATION_SUPERSEDED") ||
+			publicationError instanceof PlexRefreshAttemptSupersededError
+		) {
 			return {
 				upserted: 0,
 				errors: 0,
@@ -290,10 +400,10 @@ export async function refreshPlexEpisodeCache(
 			};
 		}
 		const message =
-			error instanceof ProviderIdentityGuardError
-				? error.message
-				: `Atomic Plex episode publication failed: ${getErrorMessage(error)}`;
-		log.error({ err: error, instanceId: instance.id }, message);
+			publicationError instanceof ProviderIdentityGuardError
+				? publicationError.message
+				: `Atomic Plex episode publication failed: ${getErrorMessage(publicationError)}`;
+		log.error({ err: publicationError, instanceId: instance.id }, message);
 		return failedResult([message], 0, 0);
 	}
 }
@@ -301,44 +411,37 @@ export async function refreshPlexEpisodeCache(
 async function publishPlexEpisodeCache(
 	tx: Prisma.TransactionClient,
 	instance: PlexPublicationContext["instance"],
+	attempt: PlexCacheRefreshAttempt,
 	collected: CollectedPlexEpisodeRefresh,
 ): Promise<PlexEpisodeRefreshResult> {
 	if (!collected.complete || !collected.completedAt || !collected.rows) return collected;
-	const rows = collected.rows;
-	await tx.plexEpisodeCache.deleteMany({ where: { instanceId: instance.id } });
-	for (let start = 0; start < rows.length; start += PLEX_CACHE_PUBLICATION_CHUNK_SIZE) {
-		await tx.plexEpisodeCache.createMany({
-			data: rows.slice(start, start + PLEX_CACHE_PUBLICATION_CHUNK_SIZE).map((row) => ({
-				...row,
-				connectionGeneration: instance.connectionGeneration,
-				identityGeneration: instance.identityGeneration,
-			})),
-		});
+	if (!collected.parentAuthority) {
+		return failedResult(
+			["Authoritative parent Plex generation is unavailable"],
+			collected.eligibleShows,
+			collected.refreshedShows,
+		);
 	}
-	await tx.cacheRefreshStatus.upsert({
-		where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex_episode" } },
-		create: {
-			instanceId: instance.id,
-			cacheType: "plex_episode",
-			lastRefreshedAt: collected.completedAt,
-			lastResult: "success",
-			itemCount: rows.length,
-			lastAttemptAt: collected.completedAt,
-			lastAttemptResult: "success",
+	const rows = collected.rows;
+	const generationId = randomUUID();
+	const generationMetadata = JSON.stringify({
+		version: 1,
+		parentPlexGenerationId: collected.parentAuthority.generationId,
+		parentPublicationLevel: collected.parentAuthority.publicationLevel,
+		connectionGeneration: collected.parentAuthority.connectionGeneration,
+		identityGeneration: collected.parentAuthority.identityGeneration,
+	});
+	await publishAuthoritativePlexEpisodeGeneration(tx, {
+		instance,
+		rows: rows.map((row) => ({
+			...row,
 			connectionGeneration: instance.connectionGeneration,
 			identityGeneration: instance.identityGeneration,
-		},
-		update: {
-			lastRefreshedAt: collected.completedAt,
-			lastResult: "success",
-			lastErrorMessage: null,
-			itemCount: rows.length,
-			lastAttemptAt: collected.completedAt,
-			lastAttemptResult: "success",
-			lastAttemptErrorMessage: null,
-			connectionGeneration: instance.connectionGeneration,
-			identityGeneration: instance.identityGeneration,
-		},
+		})),
+		completedAt: collected.completedAt,
+		generationId,
+		generationMetadata,
+		attempt,
 	});
 	return { ...collected, upserted: rows.length };
 }

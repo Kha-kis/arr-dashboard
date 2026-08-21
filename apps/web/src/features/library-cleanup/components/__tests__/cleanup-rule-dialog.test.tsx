@@ -1,4 +1,9 @@
-import type { CleanupRuleExpression, CleanupRuleResponse, CreateCleanupRule } from "@arr/shared";
+import type {
+	CleanupFieldOptionsResponse,
+	CleanupRuleExpression,
+	CleanupRuleResponse,
+	CreateCleanupRule,
+} from "@arr/shared";
 import { createCleanupRuleSchema } from "@arr/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -32,9 +37,10 @@ if (!Element.prototype.releasePointerCapture) {
 // Mocks — hooks and theme dependencies
 // ---------------------------------------------------------------------------
 
-const mockFieldOptions = {
+const mockFieldOptions: CleanupFieldOptionsResponse = {
 	hasPlex: false,
 	hasTautulli: false,
+	hasJellyfin: false,
 	videoCodecs: [],
 	audioCodecs: [],
 	resolutions: [],
@@ -45,7 +51,10 @@ const mockFieldOptions = {
 	plexCollections: [],
 	plexLabels: [],
 	plexLibraries: [],
+	jellyfinUsers: [],
+	jellyfinLibraries: [],
 	arrTags: [],
+	plexEvidence: undefined,
 };
 
 const mockServicesQueryState: {
@@ -171,6 +180,8 @@ describe("CleanupRuleDialog", () => {
 		mockServicesQueryState.isLoading = false;
 		mockServicesQueryState.isFetching = false;
 		mockServicesQueryState.isError = false;
+		mockFieldOptions.hasPlex = false;
+		mockFieldOptions.plexEvidence = undefined;
 	});
 
 	// ================================================================
@@ -178,6 +189,24 @@ describe("CleanupRuleDialog", () => {
 	// ================================================================
 
 	describe("create mode", () => {
+		it("shows unavailable Plex selector evidence without claiming empty current values", () => {
+			mockFieldOptions.hasPlex = true;
+			mockFieldOptions.plexEvidence = {
+				availability: "last-known",
+				authority: "unavailable",
+				attemptState: "error",
+				publicationLevel: "unavailable",
+				completeness: "unknown",
+				reasonCodes: ["latest_attempt_failed"],
+			};
+
+			renderDialog();
+
+			expect(screen.getByText(/Plex values are unavailable/i)).toBeInTheDocument();
+			expect(
+				screen.queryByText(/no Plex libraries|0 libraries|none available/i),
+			).not.toBeInTheDocument();
+		});
 		it("renders the dialog title for create mode", () => {
 			renderDialog();
 			expect(screen.getByText("New Cleanup Rule")).toBeInTheDocument();

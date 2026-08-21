@@ -7,6 +7,7 @@
  * Run with: npx vitest run cache-health.test.ts
  */
 
+import type { PlexEvidenceSummary } from "@arr/shared";
 import { describe, expect, it } from "vitest";
 import {
 	sanitizeErrorMessage,
@@ -124,7 +125,7 @@ describe("buildCacheHealthItems", () => {
 		expect(items[0]!.lastResult).toBe("partial");
 	});
 
-	it("reports a newer failed attempt as degraded without replacing the successful timestamp", () => {
+	it("reports a newer failed attempt as unavailable without replacing the historical timestamp", () => {
 		const failedAt = new Date(baseDateMs + 60_000);
 		const items = buildCacheHealthItems(
 			[
@@ -141,8 +142,111 @@ describe("buildCacheHealthItems", () => {
 
 		expect(items[0]).toMatchObject({
 			lastRefreshedAt: baseDate.toISOString(),
-			lastResult: "partial",
+			lastResult: "error",
 			lastErrorMessage: "upstream pagination failed",
+			itemCount: null,
 		});
+	});
+
+	it("reports future positive-only Plex evidence as partial instead of successful", () => {
+		const evidence = {
+			publicationLevel: "positive-only",
+			completeness: "partial",
+			reasonCodes: [],
+		} satisfies PlexEvidenceSummary;
+		const items = buildCacheHealthItems(
+			[makeRow()],
+			instanceNameMap,
+			baseDateMs,
+			new Map([["inst-1:plex", evidence]]),
+		);
+
+		expect(items[0]).toMatchObject({ lastResult: "partial", evidence });
+	});
+
+	it("reports unavailable Plex evidence as an error instead of a successful empty cache", () => {
+		const evidence = {
+			publicationLevel: "unavailable",
+			completeness: "unknown",
+			reasonCodes: ["missing_metadata"],
+		} satisfies PlexEvidenceSummary;
+		const items = buildCacheHealthItems(
+			[makeRow({ itemCount: 0 })],
+			instanceNameMap,
+			baseDateMs,
+			new Map([["inst-1:plex", evidence]]),
+		);
+
+		expect(items[0]).toMatchObject({
+			lastResult: "error",
+			lastErrorMessage: "Published Plex cache evidence is unavailable",
+			itemCount: null,
+			evidence,
+		});
+	});
+
+	it("fails closed when a Plex status has no matching observation result", () => {
+		const items = buildCacheHealthItems(
+			[makeRow({ itemCount: 42 })],
+			instanceNameMap,
+			baseDateMs,
+			new Map(),
+		);
+
+		expect(items[0]).toMatchObject({
+			lastResult: "error",
+			lastErrorMessage: "Published Plex cache evidence is unavailable",
+			itemCount: null,
+			evidence: {
+				publicationLevel: "unavailable",
+				completeness: "unknown",
+				reasonCodes: ["query_failed"],
+			},
+		});
+	});
+
+	it("withholds exact counts from degraded Plex health observations", () => {
+		const evidence = {
+			availability: "last-known",
+			authority: "unavailable",
+			attemptState: "error",
+			publicationLevel: "unavailable",
+			completeness: "unknown",
+			reasonCodes: ["latest_attempt_failed"],
+		} satisfies PlexEvidenceSummary;
+		const items = buildCacheHealthItems(
+			[makeRow({ itemCount: 42 })],
+			instanceNameMap,
+			baseDateMs,
+			new Map([["inst-1:plex", evidence]]),
+		);
+
+		expect(items[0]).toMatchObject({ lastResult: "error", itemCount: null, evidence });
+	});
+
+	it("normalizes an opaque active attempt as refreshing without exposing its token", () => {
+		const token = "in_progress:do-not-expose";
+		const evidence = {
+			availability: "last-known",
+			authority: "unavailable",
+			attemptState: "in_progress",
+			publicationLevel: "unavailable",
+			completeness: "unknown",
+			reasonCodes: ["latest_attempt_in_progress"],
+		} satisfies PlexEvidenceSummary;
+		const items = buildCacheHealthItems(
+			[makeRow({ lastAttemptResult: token, itemCount: 42 })],
+			instanceNameMap,
+			baseDateMs,
+			new Map([["inst-1:plex", evidence]]),
+		);
+
+		expect(items[0]).toMatchObject({
+			lastResult: "in_progress",
+			lastErrorMessage: "Plex cache refresh is in progress; current values are unavailable",
+			itemCount: null,
+			evidence,
+		});
+		expect(JSON.stringify(items[0])).not.toContain(token);
 	});
 });

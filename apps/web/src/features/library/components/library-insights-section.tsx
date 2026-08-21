@@ -2,6 +2,7 @@
 
 import { Lightbulb } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
 import { useDiskWasteInsights } from "../../../hooks/api/useDiskWasteInsights";
 import { useRequestedUnwatchedInsights } from "../../../hooks/api/useRequestedUnwatchedInsights";
 import { useWatchedMonitoredInsights } from "../../../hooks/api/useWatchedMonitoredInsights";
@@ -39,13 +40,15 @@ export function LibraryInsightsSection() {
 		false;
 	const isLoading =
 		diskWaste.isLoading || watchedMonitored.isLoading || requestedUnwatched.isLoading;
+	const evidenceError = diskWaste.error ?? watchedMonitored.error ?? requestedUnwatched.error;
+	const hasEvidenceError = evidenceError != null;
 
 	// Don't render the section if all panels are empty and done loading
 	const hasContent =
 		diskWasteCount > 0 ||
 		(watchedMonitoredCount > 0 && hasWatchData) ||
 		(requestedUnwatchedCount > 0 && hasSeerrData && hasRequestedWatchData);
-	if (!isLoading && !hasContent) return null;
+	if (!isLoading && !hasContent && !hasEvidenceError) return null;
 	if (isLoading) return null; // Don't flash the heading before data arrives
 
 	// Effective counts — only count signals where the required services are configured
@@ -77,13 +80,16 @@ export function LibraryInsightsSection() {
 			<div className="flex items-center gap-2 flex-wrap">
 				<Lightbulb className="h-4 w-4" style={{ color: SEMANTIC_COLORS.info.from }} />
 				<h2 className="text-sm font-semibold text-foreground">Library Insights</h2>
-				<span className="text-xs text-muted-foreground">
-					{totalCount} item{totalCount !== 1 ? "s" : ""} need attention
-				</span>
+				{!hasEvidenceError && (
+					<span className="text-xs text-muted-foreground">
+						{totalCount} item{totalCount !== 1 ? "s" : ""} need attention
+					</span>
+				)}
 				{segments.length > 1 && (
 					<span className="text-xs text-muted-foreground/60">— {segments.join(" · ")}</span>
 				)}
 			</div>
+			<PlexQueryEvidenceNotice error={evidenceError} label="Plex-based library insights" />
 			{priorityCue && (
 				<p className="text-xs text-muted-foreground/70 -mt-1 ml-6 italic">{priorityCue}</p>
 			)}

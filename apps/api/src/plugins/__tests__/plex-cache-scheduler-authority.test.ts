@@ -3,25 +3,19 @@ import fastifyPlugin from "fastify-plugin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-	createSnapshot: vi.fn((_encryptor: unknown, instance: unknown) => ({ sealed: instance })),
-	createAuthority: vi.fn((instance: unknown) => ({ authority: instance })),
 	refreshLibrary: vi.fn(),
 	refreshEpisodes: vi.fn(),
-	recordFailure: vi.fn(),
+	loadGenerationObservationsForOwnedInstances: vi.fn(),
+	getPublishedEpisodeGenerationObservation: vi.fn(),
 }));
 
-vi.mock("../../lib/plex/plex-cache-refresher.js", () => ({
-	createOwnedPlexPublicationSnapshot: mocks.createSnapshot,
-	refreshPlexCache: mocks.refreshLibrary,
+vi.mock("../../lib/plex/plex-refresh-orchestration.js", () => ({
+	refreshOwnedPlexCache: mocks.refreshLibrary,
+	refreshOwnedPlexEpisodeCache: mocks.refreshEpisodes,
 }));
-vi.mock("../../lib/plex/plex-episode-cache-refresher.js", () => ({
-	refreshPlexEpisodeCache: mocks.refreshEpisodes,
-}));
-vi.mock("../../lib/services/provider-cache-status.js", () => ({
-	recordPlexCacheRefreshFailure: mocks.recordFailure,
-}));
-vi.mock("../../lib/services/provider-identity-guard.js", () => ({
-	createProviderPublicationAuthority: mocks.createAuthority,
+vi.mock("../../lib/plex/plex-evidence-repository.js", () => ({
+	loadGenerationObservationsForOwnedInstances: mocks.loadGenerationObservationsForOwnedInstances,
+	getPublishedEpisodeGenerationObservation: mocks.getPublishedEpisodeGenerationObservation,
 }));
 
 import plexCacheSchedulerPlugin from "../plex-cache-scheduler.js";
@@ -40,8 +34,6 @@ describe("Plex scheduler publication authority", () => {
 
 	beforeEach(async () => {
 		vi.useFakeTimers();
-		mocks.createSnapshot.mockClear();
-		mocks.createAuthority.mockClear();
 		mocks.refreshLibrary.mockReset().mockResolvedValue({
 			complete: true,
 			completedAt: new Date(),
@@ -60,7 +52,24 @@ describe("Plex scheduler publication authority", () => {
 			coverageIncomplete: false,
 			capacityDegraded: false,
 		});
-		mocks.recordFailure.mockReset();
+		mocks.loadGenerationObservationsForOwnedInstances.mockReset().mockResolvedValue([
+			{
+				available: true,
+				evidence: {
+					publicationLevel: "authoritative",
+					completeness: "complete",
+					reasonCodes: [],
+				},
+			},
+		]);
+		mocks.getPublishedEpisodeGenerationObservation.mockReset().mockResolvedValue({
+			available: true,
+			evidence: {
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				reasonCodes: [],
+			},
+		});
 
 		app = Fastify({ logger: false });
 		await app.register(
@@ -112,24 +121,24 @@ describe("Plex scheduler publication authority", () => {
 		vi.useRealTimers();
 	});
 
-	it("uses sealed owned snapshots for startup and recurring publication paths", async () => {
+	it("uses the pre-decryption boundary for startup and recurring publication paths", async () => {
 		await vi.advanceTimersByTimeAsync(5 * 60_000);
 
-		expect(mocks.createSnapshot).toHaveBeenCalledTimes(2);
 		expect(mocks.refreshLibrary).toHaveBeenCalledWith({
 			prisma: app.prisma,
-			instance: { sealed: instance },
+			encryptor: app.encryptor,
+			instance,
 			log: app.log,
 		});
 		expect(mocks.refreshEpisodes).toHaveBeenCalledWith({
 			prisma: app.prisma,
-			instance: { sealed: instance },
+			encryptor: app.encryptor,
+			instance,
 			log: app.log,
 		});
 
 		await vi.advanceTimersByTimeAsync(385 * 60_000);
 
-		expect(mocks.createSnapshot).toHaveBeenCalledTimes(4);
 		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(2);
 		expect(mocks.refreshEpisodes).toHaveBeenCalledTimes(2);
 	});
@@ -158,35 +167,44 @@ describe("Plex scheduler publication authority", () => {
 
 		expect(mocks.refreshLibrary).toHaveBeenCalledTimes(1);
 		expect(mocks.refreshEpisodes).toHaveBeenCalledTimes(1);
-		expect(mocks.recordFailure).not.toHaveBeenCalled();
 	});
 
-	it("records sanitized library and episode failures when credentials cannot decrypt", async () => {
-		mocks.createSnapshot.mockImplementation(() => {
-			throw new Error("secret decrypt detail");
+	it("excludes disabled instances from both stale-status scans", async () => {
+		await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+		expect(app.prisma.cacheRefreshStatus.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { cacheType: "plex", instance: { enabled: true } },
+			}),
+		);
+		expect(app.prisma.cacheRefreshStatus.findMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: { cacheType: "plex_episode", instance: { enabled: true } },
+			}),
+		);
+	});
+
+	it("keeps scheduler iteration after a Plex preparation failure", async () => {
+		mocks.refreshLibrary.mockResolvedValueOnce({
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["Plex refresh preparation failed before publication"],
+		});
+		mocks.refreshEpisodes.mockResolvedValueOnce({
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			errorMessages: ["Plex refresh preparation failed before publication"],
+			eligibleShows: 0,
+			refreshedShows: 0,
+			coverageIncomplete: true,
+			capacityDegraded: false,
 		});
 
 		await vi.advanceTimersByTimeAsync(5 * 60_000);
 
-		expect(mocks.createAuthority).toHaveBeenCalledTimes(2);
-		expect(mocks.refreshLibrary).not.toHaveBeenCalled();
-		expect(mocks.refreshEpisodes).not.toHaveBeenCalled();
-		expect(mocks.recordFailure).toHaveBeenCalledTimes(2);
-		expect(mocks.recordFailure).toHaveBeenNthCalledWith(
-			1,
-			app.prisma,
-			"plex",
-			"Provider credentials could not be decrypted.",
-			{ authority: instance },
-			app.log,
-		);
-		expect(mocks.recordFailure).toHaveBeenNthCalledWith(
-			2,
-			app.prisma,
-			"plex_episode",
-			"Provider credentials could not be decrypted.",
-			{ authority: instance },
-			app.log,
-		);
+		expect(mocks.refreshLibrary).toHaveBeenCalledOnce();
+		expect(mocks.refreshEpisodes).toHaveBeenCalledOnce();
 	});
 });

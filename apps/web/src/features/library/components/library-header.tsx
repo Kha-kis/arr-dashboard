@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { FilterSelect } from "../../../components/layout";
+import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex-evidence-notice";
 import { Button, Input } from "../../../components/ui";
 import { usePlexAccounts, usePlexScanMutation, usePlexSections } from "../../../hooks/api/usePlex";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -195,7 +196,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 }) => {
 	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
-	const plexSectionsQuery = usePlexSections();
+	const plexSectionsQuery = usePlexSections(hasPlexInstances);
 	const plexScanMutation = usePlexScanMutation();
 	const [scanDropdownOpen, setScanDropdownOpen] = useState(false);
 
@@ -316,6 +317,12 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 					</div>
 				</div>
 			</div>
+
+			<PlexQueryEvidenceNotice
+				error={plexSectionsQuery.error}
+				evidence={plexSectionsQuery.data?.evidence}
+				label="Plex library sections"
+			/>
 
 			{/* Filters Card */}
 			<div

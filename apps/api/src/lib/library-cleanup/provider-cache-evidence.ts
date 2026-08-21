@@ -1,4 +1,5 @@
-import type { Prisma } from "../prisma.js";
+import type { Prisma, ServiceInstance } from "../prisma.js";
+import { loadInstanceEpisodeEvidence } from "../plex/plex-evidence-repository.js";
 
 export const PROVIDER_CACHE_ROW_SELECTS = {
 	plex: {
@@ -119,27 +120,31 @@ export async function loadExactProviderCacheRows(
 	tx: Prisma.TransactionClient,
 	cacheType: ProviderCacheType,
 	instanceIds: string[],
+	userId?: string,
+	instances?: ServiceInstance[],
 ): Promise<Map<string, unknown[]>> {
 	const where = { instanceId: { in: instanceIds } };
 	switch (cacheType) {
-		case "plex":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.plexCache.findMany({
-					where,
-					select: PROVIDER_CACHE_ROW_SELECTS.plex,
-					orderBy: { id: "asc" },
-				}),
-			);
-		case "plex_episode":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.plexEpisodeCache.findMany({
-					where,
-					select: PROVIDER_CACHE_ROW_SELECTS.plex_episode,
-					orderBy: { id: "asc" },
-				}),
-			);
+		case "plex": {
+			// Plex full-generation authority is scanned through the evidence
+			// repository so row fingerprints can be computed without materializing
+			// a complete row array. Callers must use that bounded contract.
+			return groupProviderRowsByInstance(instanceIds, []);
+		}
+		case "plex_episode": {
+			if (!userId || !instances) return groupProviderRowsByInstance(instanceIds, []);
+			const rows = [];
+			for (const instance of instances.filter((candidate) => instanceIds.includes(candidate.id))) {
+				const evidence = await loadInstanceEpisodeEvidence(tx as never, {
+					userId,
+					instanceId: instance.id,
+					instance,
+				});
+				if (!evidence.available) return groupProviderRowsByInstance(instanceIds, []);
+				rows.push(...evidence.rows);
+			}
+			return groupProviderRowsByInstance(instanceIds, rows);
+		}
 		case "jellyfin":
 			return groupProviderRowsByInstance(
 				instanceIds,

@@ -49,10 +49,24 @@ function makePlexRow(
 ) {
 	return {
 		id,
+		instanceId: PLEX_INSTANCE_ID,
+		tmdbId: Number(id.replace(/\D/g, "")) + 1,
+		mediaType: "movie",
+		sectionId: overrides.sectionTitle === "TV Shows" ? "shows" : "movies",
 		sectionTitle: overrides.sectionTitle ?? "Movies",
+		title: `Title ${id}`,
+		ratingKey: `rating-${id}`,
+		lastWatchedAt: null,
+		watchCount: 0,
 		watchedByUsers: JSON.stringify(overrides.watchedByUsers ?? []),
+		onDeck: false,
+		userRating: null,
 		collections: JSON.stringify(overrides.collections ?? []),
 		labels: JSON.stringify(overrides.labels ?? []),
+		addedAt: null,
+		thumb: null,
+		connectionGeneration: 1,
+		identityGeneration: 1,
 	};
 }
 
@@ -62,10 +76,13 @@ let plexCacheFindMany: ReturnType<typeof vi.fn>;
 let jellyfinCacheFindMany: ReturnType<typeof vi.fn>;
 let tautulliCacheFindMany: ReturnType<typeof vi.fn>;
 let serviceInstanceFindMany: ReturnType<typeof vi.fn>;
+let cacheRefreshStatusFindMany: ReturnType<typeof vi.fn>;
+let currentUserId: string;
 
 beforeEach(async () => {
 	counter.value += 1;
 	const userId = `user-${counter.value}`;
+	currentUserId = userId;
 	// Default to empty arrays so blocks tests don't exercise stay quiet —
 	// each test overrides only the cache it cares about.
 	libraryCacheFindMany = vi.fn().mockResolvedValue([]);
@@ -73,6 +90,7 @@ beforeEach(async () => {
 	jellyfinCacheFindMany = vi.fn().mockResolvedValue([]);
 	tautulliCacheFindMany = vi.fn().mockResolvedValue([]);
 	serviceInstanceFindMany = vi.fn().mockResolvedValue([]);
+	cacheRefreshStatusFindMany = vi.fn().mockResolvedValue([]);
 
 	app = Fastify({ logger: false });
 	setupAuthInjection(app, { id: userId, username: "admin" });
@@ -85,6 +103,7 @@ beforeEach(async () => {
 
 	app.decorate("prisma", {
 		serviceInstance: { findMany: serviceInstanceFindMany },
+		cacheRefreshStatus: { findMany: cacheRefreshStatusFindMany },
 		libraryCache: { findMany: libraryCacheFindMany },
 		plexCache: { findMany: plexCacheFindMany },
 		jellyfinCache: { findMany: jellyfinCacheFindMany },
@@ -209,7 +228,22 @@ describe("GET /library-cleanup/field-options — cursor pagination (issue #427)"
 		serviceInstanceFindMany.mockImplementation(({ where }: { where: { service: unknown } }) => {
 			const svc = where.service;
 			if (svc === "PLEX") {
-				return Promise.resolve([{ id: PLEX_INSTANCE_ID }]);
+				return Promise.resolve([
+					{
+						id: PLEX_INSTANCE_ID,
+						userId: currentUserId,
+						service: "PLEX",
+						enabled: true,
+						label: "Plex",
+						expectedIdentity: "plex-machine-1",
+						identityKind: "PLEX_MACHINE_IDENTIFIER",
+						identityStatus: "VERIFIED",
+						identityVerifiedAt: new Date(0),
+						connectionGeneration: 1,
+						identityGeneration: 1,
+						updatedAt: new Date(0),
+					},
+				]);
 			}
 			return Promise.resolve([]);
 		});
@@ -245,6 +279,28 @@ describe("GET /library-cleanup/field-options — cursor pagination (issue #427)"
 			}),
 		];
 		plexCacheFindMany.mockResolvedValueOnce(plexBatch1).mockResolvedValueOnce(plexBatch2);
+		cacheRefreshStatusFindMany.mockResolvedValue([
+			{
+				instanceId: PLEX_INSTANCE_ID,
+				cacheType: "plex",
+				lastRefreshedAt: new Date(),
+				lastResult: "success",
+				lastErrorMessage: null,
+				lastAttemptAt: new Date(),
+				lastAttemptResult: "success",
+				lastAttemptErrorMessage: null,
+				itemCount: 501,
+				connectionGeneration: 1,
+				identityGeneration: 1,
+				generationId: "generation-1",
+				generationMetadata: JSON.stringify({
+					sections: [
+						{ key: "movies", title: "Movies", type: "movie" },
+						{ key: "shows", title: "TV Shows", type: "show" },
+					],
+				}),
+			},
+		]);
 
 		const inject = createInjectAuthenticated(app);
 		const res = await inject("GET", "/library-cleanup/field-options");
@@ -255,6 +311,14 @@ describe("GET /library-cleanup/field-options — cursor pagination (issue #427)"
 		expect(body.plexLibraries).toEqual(expect.arrayContaining(["Movies", "TV Shows"]));
 		expect(body.plexCollections).toEqual(expect.arrayContaining(["Marvel", "Sci-Fi"]));
 		expect(body.plexLabels).toEqual(expect.arrayContaining(["fav", "new"]));
+		expect(body.plexEvidence).toMatchObject({
+			availability: "current",
+			authority: "authoritative",
+			attemptState: "success",
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			reasonCodes: [],
+		});
 
 		// CRITICAL: the merge means the same plex rows are scanned ONCE
 		// per batch, not three times (users + libraries + collections/labels
@@ -270,6 +334,63 @@ describe("GET /library-cleanup/field-options — cursor pagination (issue #427)"
 			watchedByUsers: true,
 			collections: true,
 			labels: true,
+		});
+	});
+
+	it("returns degraded evidence instead of treating unavailable Plex selectors as empty current values", async () => {
+		serviceInstanceFindMany.mockImplementation(({ where }: { where: { service: unknown } }) => {
+			if (where.service === "PLEX") {
+				return Promise.resolve([
+					{
+						id: PLEX_INSTANCE_ID,
+						userId: currentUserId,
+						service: "PLEX",
+						enabled: true,
+						label: "Plex",
+						expectedIdentity: "plex-machine-1",
+						identityKind: "PLEX_MACHINE_IDENTIFIER",
+						identityStatus: "VERIFIED",
+						identityVerifiedAt: new Date(0),
+						connectionGeneration: 1,
+						identityGeneration: 1,
+						updatedAt: new Date(0),
+					},
+				]);
+			}
+			return Promise.resolve([]);
+		});
+		plexCacheFindMany.mockResolvedValue([makePlexRow("pc-1", { collections: ["Historical"] })]);
+		cacheRefreshStatusFindMany.mockResolvedValue([
+			{
+				instanceId: PLEX_INSTANCE_ID,
+				cacheType: "plex",
+				lastRefreshedAt: new Date(),
+				lastResult: "success",
+				lastErrorMessage: null,
+				lastAttemptAt: new Date(),
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "refresh failed",
+				itemCount: 1,
+				connectionGeneration: 1,
+				identityGeneration: 1,
+				generationId: "generation-1",
+				generationMetadata: JSON.stringify({ sections: [] }),
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)("GET", "/library-cleanup/field-options");
+		const body = response.json();
+
+		expect(response.statusCode).toBe(200);
+		expect(body.plexCollections).toEqual([]);
+		expect(body.plexEvidence).toMatchObject({
+			availability: "last-known",
+			authority: "unavailable",
+			attemptState: "error",
+			publicationLevel: "unavailable",
+			completeness: "unknown",
+			reasonCodes: ["latest_attempt_failed"],
+			publishedGeneration: { publicationLevel: "authoritative" },
 		});
 	});
 });

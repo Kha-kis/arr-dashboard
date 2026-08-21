@@ -3,21 +3,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/test-helpers.js";
 
 const mocks = vi.hoisted(() => ({
-	createSnapshot: vi.fn((_encryptor: unknown, instance: unknown) => ({ sealed: instance })),
 	refresh: vi.fn(),
 	requireClient: vi.fn(),
 	recordFailure: vi.fn(),
+	getPublishedGenerationObservation: vi.fn(),
+	loadUserGenerationObservations: vi.fn().mockResolvedValue([]),
+	getPublishedEpisodeGenerationObservation: vi.fn(),
 }));
 
-vi.mock("../../../lib/plex/plex-cache-refresher.js", () => ({
-	createOwnedPlexPublicationSnapshot: mocks.createSnapshot,
-	refreshPlexCache: mocks.refresh,
+vi.mock("../../../lib/plex/plex-refresh-orchestration.js", () => ({
+	refreshOwnedPlexCache: mocks.refresh,
 }));
 vi.mock("../../../lib/plex/plex-helpers.js", () => ({
 	requirePlexClient: mocks.requireClient,
 }));
 vi.mock("../../../lib/services/provider-cache-status.js", () => ({
 	recordPlexCacheRefreshFailure: mocks.recordFailure,
+}));
+
+vi.mock("../../../lib/plex/plex-evidence-repository.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../../lib/plex/plex-evidence-repository.js")>()),
+	getPublishedGenerationObservation: mocks.getPublishedGenerationObservation,
+	loadUserGenerationObservations: mocks.loadUserGenerationObservations,
+	getPublishedEpisodeGenerationObservation: mocks.getPublishedEpisodeGenerationObservation,
 }));
 
 import { registerCacheRoutes } from "../cache-routes.js";
@@ -27,7 +35,6 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 	const instance = { id: "plex-1", service: "PLEX", connectionGeneration: 4 };
 
 	beforeEach(async () => {
-		mocks.createSnapshot.mockClear();
 		mocks.refresh.mockReset().mockResolvedValue({
 			complete: true,
 			completedAt: new Date(),
@@ -40,10 +47,16 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 			instance,
 		});
 		mocks.recordFailure.mockReset();
+		mocks.getPublishedGenerationObservation.mockReset();
+		mocks.loadUserGenerationObservations.mockReset().mockResolvedValue([]);
+		mocks.getPublishedEpisodeGenerationObservation.mockReset();
 
 		app = Fastify({ logger: false });
 		setupAuthInjection(app);
-		app.decorate("prisma", { plexCache: { count: vi.fn() } } as never);
+		app.decorate("prisma", {
+			plexCache: { count: vi.fn() },
+			serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
+		} as never);
 		app.decorate("encryptor", { decrypt: vi.fn() } as never);
 		await app.register(registerCacheRoutes, { prefix: "/api/plex" });
 		await app.ready();
@@ -53,36 +66,82 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 		await app.close();
 	});
 
-	it("passes only the owned snapshot to the sealed refresher", async () => {
+	it("uses the pre-decryption refresh boundary without forwarding a caller client", async () => {
 		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
 
 		expect(response.statusCode).toBe(200);
-		expect(mocks.createSnapshot).toHaveBeenCalledWith(app.encryptor, instance);
 		expect(mocks.refresh).toHaveBeenCalledWith({
 			prisma: app.prisma,
-			instance: { sealed: instance },
+			encryptor: app.encryptor,
+			instance,
 			log: expect.anything(),
 		});
+		expect(mocks.requireClient).not.toHaveBeenCalled();
 		expect(mocks.refresh.mock.calls[0]).not.toContainEqual({ server: "caller-controlled" });
 	});
 
-	it("records an incomplete attempt only through its full publication snapshot", async () => {
+	it("returns an actionable sanitized response when preparation cannot publish", async () => {
 		mocks.refresh.mockResolvedValue({
 			complete: false,
 			upserted: 0,
 			errors: 1,
-			errorMessages: ["identity unavailable"],
+			errorMessages: ["Plex refresh preparation failed before publication"],
 		});
 
 		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
 
-		expect(response.statusCode).toBe(200);
-		expect(mocks.recordFailure).toHaveBeenCalledWith(
-			app.prisma,
-			"plex",
-			"identity unavailable",
-			{ sealed: instance },
-			expect.anything(),
-		);
+		expect(response.statusCode).toBe(503);
+		expect(response.json()).toEqual({
+			success: false,
+			upserted: 0,
+			errors: 1,
+			error: "Plex refresh preparation failed before publication",
+		});
+		expect(JSON.stringify(response.json())).not.toContain("caller-controlled");
 	});
+
+	it.each([0, 42])(
+		"withholds exact status values after a failed latest attempt (prior count %i)",
+		async (itemCount) => {
+			mocks.getPublishedGenerationObservation.mockResolvedValue({
+				available: true,
+				itemCount,
+				evidence: {
+					availability: "last-known",
+					authority: "unavailable",
+					attemptState: "error",
+					publicationLevel: "unavailable",
+					completeness: "unknown",
+					reasonCodes: ["latest_attempt_failed"],
+					publishedGeneration: {
+						generationId: "generation-1",
+						publicationLevel: "authoritative",
+						publishedAt: "2026-08-20T12:00:00.000Z",
+						itemCount,
+					},
+				},
+			});
+
+			const response = await createInjectAuthenticated(app)("GET", "/api/plex/cache/plex-1/status");
+
+			expect(response.statusCode).toBe(503);
+			expect(response.json()).toEqual({
+				error: "Plex cache evidence is unavailable",
+				evidence: {
+					availability: "last-known",
+					authority: "unavailable",
+					attemptState: "error",
+					publicationLevel: "unavailable",
+					completeness: "unknown",
+					reasonCodes: ["latest_attempt_failed"],
+					publishedGeneration: {
+						generationId: "generation-1",
+						publicationLevel: "authoritative",
+						publishedAt: "2026-08-20T12:00:00.000Z",
+						itemCount,
+					},
+				},
+			});
+		},
+	);
 });

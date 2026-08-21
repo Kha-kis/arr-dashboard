@@ -7,6 +7,11 @@
 import type { PlexEpisodeStatus, PlexEpisodeStatusResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import {
+	isCurrentAuthoritativePlexEvidence,
+	loadInstanceSelectedEpisodeEvidence,
+	summarizePlexEvidence,
+} from "../../lib/plex/plex-evidence-repository.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const episodeQuery = z.object({
@@ -16,7 +21,7 @@ const episodeQuery = z.object({
 		.min(1)
 		.transform((val) => {
 			const n = Number(val);
-			if (!Number.isFinite(n) || n <= 0) return 0;
+			if (!Number.isSafeInteger(n) || n <= 0) return 0;
 			return n;
 		})
 		.pipe(z.number().positive()),
@@ -32,23 +37,21 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 		const { instanceId, showTmdbId } = validateRequest(episodeQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		// Verify instance ownership
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: instanceId, userId, service: "PLEX", enabled: true },
-			select: { id: true },
+		const evidence = await loadInstanceSelectedEpisodeEvidence(app.prisma, {
+			userId,
+			instanceId,
+			showTmdbIds: [showTmdbId],
 		});
-
-		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found or access denied" });
+		const summary = summarizePlexEvidence([evidence]);
+		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
+			return reply
+				.status(503)
+				.send({ error: "Plex cache evidence is unavailable", evidence: summary });
 		}
-
-		const episodes = await app.prisma.plexEpisodeCache.findMany({
-			where: {
-				instanceId,
-				showTmdbId,
-			},
-			orderBy: [{ seasonNumber: "asc" }, { episodeNumber: "asc" }],
-		});
+		const episodes = evidence.rows.sort(
+			(left, right) =>
+				left.seasonNumber - right.seasonNumber || left.episodeNumber - right.episodeNumber,
+		);
 
 		const items: PlexEpisodeStatus[] = episodes.map((e) => {
 			let watchedByUsers: string[] = [];
@@ -71,6 +74,7 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 		const response: PlexEpisodeStatusResponse = {
 			showTmdbId,
 			episodes: items,
+			evidence: summary,
 		};
 
 		return reply.send(response);

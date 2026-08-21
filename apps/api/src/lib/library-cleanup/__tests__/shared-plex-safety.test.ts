@@ -1,6 +1,6 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
-import * as plexCacheRefresher from "../../plex/plex-cache-refresher.js";
+import * as plexRefreshOrchestration from "../../plex/plex-refresh-orchestration.js";
 import { withQuiObservationTopologyGuard } from "../../qui/observation-topology-guard.js";
 import {
 	buildCleanupPreviewDetails,
@@ -926,6 +926,7 @@ function configurePlexApprovalAuthority(
 		items?: Array<{ id: string; arrItemId: number; title: string }>;
 		driftBeforeApproval?: boolean;
 		driftAfterFirstApproval?: "rows" | "rows_and_status";
+		statusOverrides?: Record<string, unknown>;
 	} = {},
 ) {
 	const providerInstance = {
@@ -940,7 +941,7 @@ function configurePlexApprovalAuthority(
 		updatedAt: new Date("2026-08-14T00:00:00.000Z"),
 	};
 	const completedAt = new Date();
-	let statusVersion = 1;
+	let generationRevision = 1;
 	let rows = [
 		{
 			id: "plex-cache-1",
@@ -966,16 +967,21 @@ function configurePlexApprovalAuthority(
 		lastRefreshedAt: completedAt,
 		lastResult: "success",
 		lastErrorMessage: null,
+		lastAttemptAt: completedAt,
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
 		itemCount: rows.length,
 		connectionGeneration: 3,
 		identityGeneration: 7,
-		generationId: `plex-generation-${statusVersion}`,
+		generationId: `plex-generation-${generationRevision}`,
 		generationMetadata: JSON.stringify({
-			version: statusVersion,
+			version: 2,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			itemCount: rows.length,
 			sections: [{ key: "movies", title: "Movies", type: "movie" }],
 		}),
+		...options.statusOverrides,
 	});
 	const items = options.items ?? [
 		{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" },
@@ -1029,7 +1035,7 @@ function configurePlexApprovalAuthority(
 		const ordinal = transactionCreate.mock.calls.length;
 		if (ordinal === 1 && options.driftAfterFirstApproval) {
 			rows = [{ ...rows[0]!, watchCount: rows[0]!.watchCount + 1 }];
-			if (options.driftAfterFirstApproval === "rows_and_status") statusVersion++;
+			if (options.driftAfterFirstApproval === "rows_and_status") generationRevision++;
 		}
 		return { id: `approval-transaction-${ordinal}` };
 	});
@@ -1831,6 +1837,24 @@ describe("shared Plex deletion safety", () => {
 		expect(result).toMatchObject({ itemsSkipped: 1, itemsRemoved: 0, status: "partial" });
 	});
 
+	it("does not create an approval from prior Plex evidence after a failed latest attempt", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const authority = configurePlexApprovalAuthority(fixture, {
+			items: [{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" }],
+			statusOverrides: {
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "Plex inventory changed",
+				lastErrorMessage: "Plex inventory changed",
+			},
+		});
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result.itemsFlagged).toBe(0);
+		expect(authority.transactionCreate).not.toHaveBeenCalled();
+		expect(authority.rootCreate).not.toHaveBeenCalled();
+	});
+
 	it("stops before a later approval when provider rows and status drift between targets", async () => {
 		const fixture = makeDeps({ mediaPartCount: 1 });
 		const authority = configurePlexApprovalAuthority(fixture, {
@@ -1901,6 +1925,171 @@ describe("shared Plex deletion safety", () => {
 		expect(JSON.parse(created.data.safetySnapshot)).toMatchObject({
 			providerEvidence: { dependencies: [], sources: [] },
 		});
+	});
+
+	it("does not persist approval evidence from another Plex instance when one section inventory is empty", async () => {
+		const fixture = makeDeps({ mediaPartCount: 1 });
+		const incomplete = {
+			...fixture.plexInstance,
+			id: "plex-incomplete",
+			enabled: true,
+			expectedIdentity: "plex-machine-incomplete",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date("2026-08-14T00:00:00.000Z"),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			updatedAt: new Date("2026-08-14T00:00:00.000Z"),
+		};
+		const complete = {
+			...incomplete,
+			id: "plex-complete",
+			expectedIdentity: "plex-machine-complete",
+		};
+		const completedAt = new Date();
+		const statuses = new Map([
+			[
+				incomplete.id,
+				{
+					instanceId: incomplete.id,
+					lastRefreshedAt: completedAt,
+					lastResult: "success",
+					lastErrorMessage: null,
+					lastAttemptAt: completedAt,
+					lastAttemptResult: "success",
+					lastAttemptErrorMessage: null,
+					itemCount: 1,
+					connectionGeneration: 3,
+					identityGeneration: 7,
+					generationId: "incomplete-generation",
+					generationMetadata: JSON.stringify({
+						version: 2,
+						publicationLevel: "authoritative",
+						completeness: "complete",
+						itemCount: 1,
+						sections: [],
+					}),
+				},
+			],
+			[
+				complete.id,
+				{
+					instanceId: complete.id,
+					lastRefreshedAt: completedAt,
+					lastResult: "success",
+					lastErrorMessage: null,
+					lastAttemptAt: completedAt,
+					lastAttemptResult: "success",
+					lastAttemptErrorMessage: null,
+					itemCount: 1,
+					connectionGeneration: 3,
+					identityGeneration: 7,
+					generationId: "complete-generation",
+					generationMetadata: JSON.stringify({
+						version: 2,
+						publicationLevel: "authoritative",
+						completeness: "complete",
+						itemCount: 1,
+						sections: [{ key: "movies", title: "Movies", type: "movie" }],
+					}),
+				},
+			],
+		]);
+		const rows = [
+			{
+				id: "plex-incomplete-row",
+				instanceId: incomplete.id,
+				tmdbId: 42,
+				mediaType: "movie",
+				sectionId: "unpublished",
+				sectionTitle: "Unpublished",
+				lastWatchedAt: completedAt,
+				watchCount: 5,
+				watchedByUsers: JSON.stringify(["owner"]),
+				onDeck: false,
+				userRating: null,
+				collections: "[]",
+				labels: "[]",
+				addedAt: completedAt,
+				connectionGeneration: 3,
+				identityGeneration: 7,
+			},
+			{
+				id: "plex-complete-row",
+				instanceId: complete.id,
+				tmdbId: 42,
+				mediaType: "movie",
+				sectionId: "movies",
+				sectionTitle: "Movies",
+				lastWatchedAt: completedAt,
+				watchCount: 5,
+				watchedByUsers: JSON.stringify(["owner"]),
+				onDeck: false,
+				userRating: null,
+				collections: "[]",
+				labels: "[]",
+				addedAt: completedAt,
+				connectionGeneration: 3,
+				identityGeneration: 7,
+			},
+		];
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			...dryRunConfig(1),
+			dryRunMode: false,
+			requireApproval: true,
+			rules: [
+				{
+					...dryRunConfig().rules[0]!,
+					ruleType: "plex_watch_count",
+					parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+					plexLibraryFilter: JSON.stringify(["Movies"]),
+				},
+			],
+		} as never);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany)
+			.mockResolvedValueOnce([
+				matchingDryRunCacheItem({
+					id: "cache-incomplete-plex",
+					arrItemId: 101,
+					title: "Example Movie",
+					data: radarrCachedFileIdentity.data,
+					sizeOnDisk: 2_000n,
+				}),
+			] as never)
+			.mockResolvedValue([] as never);
+		vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation((async ({
+			where,
+		}: {
+			where: { service?: string | { in?: string[] } };
+		}) => {
+			const services =
+				typeof where.service === "string" ? [where.service] : (where.service?.in ?? []);
+			return services.includes("PLEX")
+				? [incomplete, complete]
+				: [fixture.targetInstance, incomplete, complete];
+		}) as never);
+		Object.assign(fixture.deps.prisma, {
+			cacheRefreshStatus: {
+				findMany: vi.fn(async ({ where }: { where: { instanceId: string } }) => [
+					statuses.get(where.instanceId),
+				]),
+			},
+			plexCache: {
+				count: vi.fn(
+					async ({ where }: { where: { instanceId: string } }) =>
+						rows.filter((row) => row.instanceId === where.instanceId).length,
+				),
+				findMany: vi.fn(
+					async ({ where, cursor }: { where: { instanceId: string }; cursor?: { id: string } }) =>
+						cursor ? [] : rows.filter((row) => row.instanceId === where.instanceId),
+				),
+			},
+		});
+
+		const result = await executeCleanupRun(fixture.deps, "user-1");
+
+		expect(result).toMatchObject({ status: "partial", itemsFlagged: 0, itemsSkipped: 0 });
+		expect(fixture.deps.prisma.libraryCleanupApproval.create).not.toHaveBeenCalled();
 	});
 
 	it("serializes and revalidates Plex authority for a Plex-matched approval", async () => {
@@ -7390,7 +7579,7 @@ describe("shared Plex deletion safety", () => {
 			}
 			return fixture.targetInstance;
 		}) as never);
-		const refresh = vi.spyOn(plexCacheRefresher, "refreshPlexCache").mockResolvedValue({
+		const refresh = vi.spyOn(plexRefreshOrchestration, "refreshOwnedPlexCache").mockResolvedValue({
 			upserted: 1,
 			errors: 0,
 			errorMessages: [],

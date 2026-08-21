@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	beginPlexCacheRefreshAttempt,
+	classifyProviderCacheStatusGeneration,
+	finishPlexCacheRefreshAttemptFailure,
 	recordPlexCacheRefreshFailure,
 	recordWatchProviderCacheRefreshFailure,
 } from "./provider-cache-status.js";
@@ -38,7 +41,13 @@ function plexSnapshot(
 
 function publicationFixture(
 	current: OwnedProviderPublicationSnapshot,
-	status: { connectionGeneration: number | null; identityGeneration: number | null } | null,
+	status: {
+		id?: string;
+		connectionGeneration: number | null;
+		identityGeneration: number | null;
+		lastAttemptAt?: Date | null;
+		lastAttemptResult?: string | null;
+	} | null,
 ) {
 	const tx = {
 		libraryCleanupConfig: {
@@ -57,6 +66,7 @@ function publicationFixture(
 		cacheRefreshStatus: {
 			findUnique: vi.fn().mockResolvedValue(status),
 			upsert: vi.fn().mockResolvedValue({}),
+			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
 	};
 	const prisma = {
@@ -66,6 +76,363 @@ function publicationFixture(
 	};
 	return { prisma, tx };
 }
+
+describe("provider cache status generation classifier", () => {
+	it.each([
+		["null/null", { connectionGeneration: null, identityGeneration: null }, "obsolete"],
+		["current/current", { connectionGeneration: 4, identityGeneration: 9 }, "current"],
+		["current/null", { connectionGeneration: 4, identityGeneration: null }, "obsolete"],
+		["null/current", { connectionGeneration: null, identityGeneration: 9 }, "obsolete"],
+		["older connection", { connectionGeneration: 3, identityGeneration: 9 }, "obsolete"],
+		["older identity", { connectionGeneration: 4, identityGeneration: 8 }, "obsolete"],
+		["both older", { connectionGeneration: 3, identityGeneration: 8 }, "obsolete"],
+		[
+			"newer connection",
+			{ connectionGeneration: 5, identityGeneration: 9 },
+			"future-or-inconsistent",
+		],
+		[
+			"newer identity",
+			{ connectionGeneration: 4, identityGeneration: 10 },
+			"future-or-inconsistent",
+		],
+		[
+			"crossed older connection",
+			{ connectionGeneration: 3, identityGeneration: 10 },
+			"future-or-inconsistent",
+		],
+		[
+			"crossed older identity",
+			{ connectionGeneration: 5, identityGeneration: 8 },
+			"future-or-inconsistent",
+		],
+		["negative", { connectionGeneration: -1, identityGeneration: 9 }, "future-or-inconsistent"],
+		[
+			"unsafe",
+			{ connectionGeneration: Number.MAX_SAFE_INTEGER + 1, identityGeneration: 9 },
+			"future-or-inconsistent",
+		],
+		[
+			"fractional status connection",
+			{ connectionGeneration: 3.5, identityGeneration: 9 },
+			"future-or-inconsistent",
+		],
+		[
+			"fractional status identity",
+			{ connectionGeneration: 4, identityGeneration: 8.5 },
+			"future-or-inconsistent",
+		],
+		[
+			"malformed status",
+			{ connectionGeneration: "4", identityGeneration: 9 },
+			"future-or-inconsistent",
+		],
+		[
+			"malformed authority",
+			{ connectionGeneration: 4, identityGeneration: 9 },
+			"future-or-inconsistent",
+			{ connectionGeneration: 4, identityGeneration: Number.NaN },
+		],
+		[
+			"fractional authority connection",
+			{ connectionGeneration: 4, identityGeneration: 9 },
+			"future-or-inconsistent",
+			{ connectionGeneration: 4.5, identityGeneration: 9 },
+		],
+		[
+			"fractional authority identity",
+			{ connectionGeneration: 4, identityGeneration: 9 },
+			"future-or-inconsistent",
+			{ connectionGeneration: 4, identityGeneration: 9.5 },
+		],
+	] as const)(
+		"classifies %s provenance",
+		(_name, status, expected, authority = { connectionGeneration: 4, identityGeneration: 9 }) => {
+			expect(classifyProviderCacheStatusGeneration(status, authority)).toBe(expected);
+		},
+	);
+});
+
+describe("Plex cache refresh attempt lifecycle", () => {
+	it("creates an unpublished current-generation in-progress status when none exists", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, null);
+
+		const attempt = await beginPlexCacheRefreshAttempt(state.prisma as never, "plex", current);
+
+		expect(attempt?.resultMarker).toMatch(/^in_progress:/);
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					lastResult: "error",
+					lastErrorMessage: "Plex cache refresh has not published a generation",
+					connectionGeneration: current.connectionGeneration,
+					identityGeneration: current.identityGeneration,
+					lastAttemptResult: attempt?.resultMarker,
+				}),
+			}),
+		);
+	});
+
+	it.each([
+		["plex", "crossed future status", { connectionGeneration: 3, identityGeneration: 10 }, {}],
+		[
+			"plex_episode",
+			"crossed future status",
+			{ connectionGeneration: 3, identityGeneration: 10 },
+			{},
+		],
+		[
+			"plex",
+			"fractional status connection",
+			{ connectionGeneration: 3.5, identityGeneration: 9 },
+			{},
+		],
+		[
+			"plex_episode",
+			"fractional status connection",
+			{ connectionGeneration: 3.5, identityGeneration: 9 },
+			{},
+		],
+		[
+			"plex",
+			"fractional status identity",
+			{ connectionGeneration: 4, identityGeneration: 8.5 },
+			{},
+		],
+		[
+			"plex_episode",
+			"fractional status identity",
+			{ connectionGeneration: 4, identityGeneration: 8.5 },
+			{},
+		],
+		[
+			"plex",
+			"fractional authority connection",
+			{ connectionGeneration: 4, identityGeneration: 9 },
+			{ connectionGeneration: 4.5 },
+		],
+		[
+			"plex_episode",
+			"fractional authority connection",
+			{ connectionGeneration: 4, identityGeneration: 9 },
+			{ connectionGeneration: 4.5 },
+		],
+		[
+			"plex",
+			"fractional authority identity",
+			{ connectionGeneration: 4, identityGeneration: 9 },
+			{ identityGeneration: 9.5 },
+		],
+		[
+			"plex_episode",
+			"fractional authority identity",
+			{ connectionGeneration: 4, identityGeneration: 9 },
+			{ identityGeneration: 9.5 },
+		],
+	] as const)("does not modify or own %s %s", async (cacheType, _name, status, authority) => {
+		const current = plexSnapshot(authority);
+		const state = publicationFixture(current, {
+			id: "future-status",
+			...status,
+			lastAttemptAt: new Date("2026-08-20T11:00:00.000Z"),
+			lastAttemptResult: "success",
+		});
+
+		await expect(
+			beginPlexCacheRefreshAttempt(state.prisma as never, cacheType, current),
+		).resolves.toBeNull();
+
+		expect(state.tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalled();
+		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["plex", "null/null", null, null],
+		["plex_episode", "null/null", null, null],
+		["plex", "current/null", 4, null],
+		["plex_episode", "current/null", 4, null],
+		["plex", "null/current", null, 9],
+		["plex_episode", "null/current", null, 9],
+		["plex", "older connection", 3, 9],
+		["plex_episode", "older connection", 3, 9],
+		["plex", "older identity", 4, 8],
+		["plex_episode", "older identity", 4, 8],
+		["plex", "both older", 3, 8],
+		["plex_episode", "both older", 3, 8],
+	] as const)(
+		"takes over retained %s %s provenance through its exact CAS",
+		async (cacheType, _shape, connectionGeneration, identityGeneration) => {
+			const current = plexSnapshot();
+			const retainedAttemptAt = new Date("2026-08-20T11:00:00.000Z");
+			const state = publicationFixture(current, {
+				id: `${cacheType}-status`,
+				connectionGeneration,
+				identityGeneration,
+				lastAttemptAt: retainedAttemptAt,
+				lastAttemptResult: "success",
+			});
+
+			const attempt = await beginPlexCacheRefreshAttempt(state.prisma as never, cacheType, current);
+
+			expect(attempt?.resultMarker).toMatch(/^in_progress:/);
+			expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+			expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith({
+				where: {
+					id: `${cacheType}-status`,
+					instanceId: current.id,
+					cacheType,
+					connectionGeneration,
+					identityGeneration,
+					lastAttemptAt: retainedAttemptAt,
+					lastAttemptResult: "success",
+				},
+				data: expect.objectContaining({
+					lastRefreshedAt: attempt?.attemptedAt,
+					lastResult: "error",
+					lastErrorMessage: "Plex cache refresh has not published a generation",
+					itemCount: 0,
+					generationId: null,
+					generationMetadata: null,
+					lastAttemptAt: attempt?.attemptedAt,
+					lastAttemptResult: attempt?.resultMarker,
+					lastAttemptErrorMessage: null,
+					connectionGeneration: current.connectionGeneration,
+					identityGeneration: current.identityGeneration,
+				}),
+			});
+		},
+	);
+
+	it("supersedes a current in-progress attempt with a later current attempt", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, {
+			connectionGeneration: current.connectionGeneration,
+			identityGeneration: current.identityGeneration,
+			lastAttemptAt: new Date("2026-08-20T11:00:00.000Z"),
+			lastAttemptResult: "in_progress:older",
+		});
+
+		const older = await beginPlexCacheRefreshAttempt(state.prisma as never, "plex", current);
+		const later = await beginPlexCacheRefreshAttempt(state.prisma as never, "plex", current);
+
+		expect(older?.resultMarker).toMatch(/^in_progress:/);
+		expect(later?.resultMarker).toMatch(/^in_progress:/);
+		expect(later?.resultMarker).not.toBe(older?.resultMarker);
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledTimes(2);
+	});
+
+	it("rejects two CAS-losing obsolete takeover retries without weakening the fence", async () => {
+		const current = plexSnapshot();
+		const status = {
+			id: "retained-status",
+			connectionGeneration: 3,
+			identityGeneration: 8,
+			lastAttemptAt: new Date("2026-08-20T11:00:00.000Z"),
+			lastAttemptResult: "success",
+		};
+		const state = publicationFixture(current, status);
+		state.tx.cacheRefreshStatus.updateMany.mockResolvedValue({ count: 0 });
+
+		await expect(
+			beginPlexCacheRefreshAttempt(state.prisma as never, "plex", current),
+		).resolves.toBeNull();
+		await expect(
+			beginPlexCacheRefreshAttempt(state.prisma as never, "plex", current),
+		).resolves.toBeNull();
+
+		expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledTimes(2);
+		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it.each(["plex", "plex_episode"] as const)(
+		"marks %s in progress without replacing prior publication fields",
+		async (cacheType) => {
+			const current = plexSnapshot();
+			const state = publicationFixture(current, {
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			});
+
+			const attempt = await beginPlexCacheRefreshAttempt(state.prisma as never, cacheType, current);
+
+			expect(attempt?.resultMarker).toMatch(/^in_progress:/);
+			expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+				expect.objectContaining({
+					update: expect.objectContaining({
+						lastAttemptAt: attempt?.attemptedAt,
+						lastAttemptResult: attempt?.resultMarker,
+						lastAttemptErrorMessage: null,
+					}),
+				}),
+			);
+			expect(state.tx.cacheRefreshStatus.upsert.mock.calls[0]![0].update).not.toEqual(
+				expect.objectContaining({
+					lastRefreshedAt: expect.anything(),
+					lastResult: expect.anything(),
+					itemCount: expect.anything(),
+					generationId: expect.anything(),
+				}),
+			);
+		},
+	);
+
+	it("finishes only the exact still-current attempt token", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, {
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		});
+		const attempt = {
+			attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+			resultMarker: "in_progress:attempt-a",
+		};
+
+		const result = await finishPlexCacheRefreshAttemptFailure(
+			state.prisma as never,
+			"plex",
+			"upstream failed",
+			current,
+			attempt,
+			log,
+		);
+
+		expect(result).toBe("recorded");
+		expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith({
+			where: expect.objectContaining({
+				lastAttemptAt: attempt.attemptedAt,
+				lastAttemptResult: attempt.resultMarker,
+			}),
+			data: {
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "upstream failed",
+			},
+		});
+	});
+
+	it("cannot overwrite a newer attempt marker with an older failure", async () => {
+		const current = plexSnapshot();
+		const state = publicationFixture(current, {
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		});
+		state.tx.cacheRefreshStatus.updateMany.mockResolvedValue({ count: 0 });
+
+		const result = await finishPlexCacheRefreshAttemptFailure(
+			state.prisma as never,
+			"plex",
+			"older attempt failed",
+			current,
+			{
+				attemptedAt: new Date("2026-08-20T12:00:00.000Z"),
+				resultMarker: "in_progress:attempt-a",
+			},
+			log,
+		);
+
+		expect(result).toBe("superseded");
+	});
+});
 
 describe("recordPlexCacheRefreshFailure", () => {
 	it.each(["plex", "plex_episode"] as const)(

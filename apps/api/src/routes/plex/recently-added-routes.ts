@@ -8,6 +8,11 @@
 import type { PlexRecentlyAddedResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import {
+	hasAuthoritativeSelectedPlexEvidence,
+	loadUserSelectedEvidence,
+	summarizePlexEvidence,
+} from "../../lib/plex/plex-evidence-repository.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { mapToRecentlyAddedItems } from "./lib/recently-added-helpers.js";
 
@@ -35,32 +40,30 @@ export async function registerRecentlyAddedRoutes(
 		const { limit } = validateRequest(recentlyAddedQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		// Get user's enabled Plex instances
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true, label: true },
+		const evidence = await loadUserSelectedEvidence(app.prisma, {
+			userId,
+			selection: { kind: "recently-added", limit },
 		});
-
-		if (plexInstances.length === 0) {
-			const response: PlexRecentlyAddedResponse = { items: [] };
-			return reply.send(response);
+		const summary = summarizePlexEvidence(evidence);
+		if (!hasAuthoritativeSelectedPlexEvidence(evidence)) {
+			return reply.status(503).send({
+				error: "Plex cache evidence is unavailable",
+				evidence: summary,
+			});
 		}
-
-		const instanceIds = plexInstances.map((i) => i.id);
-		const instanceMap = new Map(plexInstances.map((i) => [i.id, i.label]));
-
-		const cacheEntries = await app.prisma.plexCache.findMany({
-			where: {
-				instanceId: { in: instanceIds },
-				addedAt: { not: null },
-			},
-			orderBy: { addedAt: "desc" },
-			take: limit,
-		});
+		const instanceMap = new Map(
+			evidence.flatMap((entry) =>
+				entry.available ? [[entry.instanceId, entry.instanceName] as const] : [],
+			),
+		);
+		const cacheEntries = evidence
+			.flatMap((entry) => entry.rows)
+			.sort((left, right) => right.addedAt!.getTime() - left.addedAt!.getTime())
+			.slice(0, limit);
 
 		const items = mapToRecentlyAddedItems(cacheEntries, instanceMap);
 
-		const response: PlexRecentlyAddedResponse = { items };
+		const response: PlexRecentlyAddedResponse = { items, evidence: summary };
 		return reply.send(response);
 	});
 }

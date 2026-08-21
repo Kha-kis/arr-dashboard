@@ -12,13 +12,14 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import {
-	ruleDataSourceMap,
 	type CleanupRuleExpression,
 	type DataSourceDependency,
+	ruleDataSourceMap,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
+import { evidenceFingerprint } from "../evidence-fingerprint.js";
 import {
 	collectJellyfinCacheLiveEvidence,
 	createOwnedJellyfinPublicationSnapshot,
@@ -31,10 +32,8 @@ import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import {
 	collectPlexCacheLiveEvidence,
-	createOwnedPlexPublicationSnapshot,
 	type PlexCacheSnapshotRow,
 	type PlexInventoryTarget,
-	refreshPlexCache,
 } from "../plex/plex-cache-refresher.js";
 import {
 	createPlexClient,
@@ -42,7 +41,19 @@ import {
 	PlexMovieNotFoundError,
 	PlexSeriesNotFoundError,
 } from "../plex/plex-client.js";
-import { refreshPlexEpisodeCache } from "../plex/plex-episode-cache-refresher.js";
+import {
+	type AvailablePlexInstanceEvidence,
+	getCurrentPlexMutationAuthorityForOwnedInstance,
+	loadInstanceEpisodeEvidence,
+	scanMutationPolicyEvidenceForOwnedInstances,
+	type AvailablePlexPolicyEvidence,
+	type PlexInstanceEvidence,
+	type PlexPolicyScanEvidence,
+} from "../plex/plex-evidence-repository.js";
+import {
+	refreshOwnedPlexCache,
+	refreshOwnedPlexEpisodeCache,
+} from "../plex/plex-refresh-orchestration.js";
 import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
 import type {
 	LibraryCleanupApproval,
@@ -115,8 +126,8 @@ import {
 	evaluateRuleState,
 	extractRating,
 	normalizeStoredCleanupRuleExpression,
-	type RuleEvidenceCondition,
 	passesCleanupRuleFilters,
+	type RuleEvidenceCondition,
 	ruleUsesUnavailableData,
 } from "./rule-evaluators.js";
 import { type CleanupSelectionPlan, planCleanupSelection } from "./selection-planner.js";
@@ -268,26 +279,129 @@ function isVerifiedProviderCacheSource(
 	);
 }
 
+function hasOnlyAuthoritativePlexEntries(
+	evidence: Array<PlexInstanceEvidence | PlexPolicyScanEvidence>,
+): evidence is Array<AvailablePlexInstanceEvidence | AvailablePlexPolicyEvidence> {
+	return (
+		evidence.length > 0 &&
+		evidence.every(
+			(entry) =>
+				entry.available &&
+				entry.evidence.publicationLevel === "authoritative" &&
+				entry.evidence.completeness === "complete",
+		)
+	);
+}
+
+type PlexCleanupEvidenceInstance = Pick<
+	ServiceInstance,
+	| "userId"
+	| "service"
+	| "label"
+	| "id"
+	| "enabled"
+	| "updatedAt"
+	| "expectedIdentity"
+	| "identityKind"
+	| "identityStatus"
+	| "identityVerifiedAt"
+	| "connectionGeneration"
+	| "identityGeneration"
+>;
+
+function plexGenerationsFromEvidence(
+	instances: PlexCleanupEvidenceInstance[],
+	evidence: Array<PlexInstanceEvidence | PlexPolicyScanEvidence>,
+): Map<string, ProviderCacheGeneration> | undefined {
+	if (!hasOnlyAuthoritativePlexEntries(evidence) || evidence.length !== instances.length) {
+		return undefined;
+	}
+	return new Map(
+		evidence.map((entry) => {
+			const instance = instances.find((candidate) => candidate.id === entry.instanceId);
+			if (!instance) throw new Error("Plex evidence did not match the owned instance set");
+			return [
+				entry.instanceId,
+				{
+					completedAt: entry.publishedAt,
+					itemCount: entry.itemCount,
+					connectionGeneration: entry.connectionGeneration,
+					identityGeneration: entry.identityGeneration,
+					statusFingerprint: evidenceFingerprint({
+						instance: {
+							id: instance.id,
+							expectedIdentity: instance.expectedIdentity,
+							identityKind: instance.identityKind,
+							identityVerifiedAt: instance.identityVerifiedAt,
+							connectionGeneration: instance.connectionGeneration,
+							identityGeneration: instance.identityGeneration,
+							updatedAt: instance.updatedAt,
+						},
+						status: entry.generationStatus,
+					}),
+				},
+			] as const;
+		}),
+	);
+}
+
 async function loadCompleteCacheGenerations(
 	deps: CleanupExecutorDeps,
-	instances: Array<
-		Pick<
-			ServiceInstance,
-			| "id"
-			| "enabled"
-			| "updatedAt"
-			| "expectedIdentity"
-			| "identityKind"
-			| "identityStatus"
-			| "identityVerifiedAt"
-			| "connectionGeneration"
-			| "identityGeneration"
-		>
-	>,
+	instances: PlexCleanupEvidenceInstance[],
 	cacheType: ProviderCacheType,
 	now: Date = new Date(),
 ): Promise<Map<string, ProviderCacheGeneration> | undefined> {
 	if (instances.length === 0) return undefined;
+	if (cacheType === "plex") {
+		const evidence: PlexPolicyScanEvidence[] = [];
+		for (const instance of instances) {
+			const current = await getCurrentPlexMutationAuthorityForOwnedInstance(deps.prisma, {
+				instance,
+				now,
+				maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+			});
+			evidence.push(current as PlexPolicyScanEvidence);
+		}
+		return plexGenerationsFromEvidence(instances, evidence);
+	}
+	if (cacheType === "plex_episode") {
+		const evidence = [];
+		for (const instance of instances) {
+			evidence.push(
+				await loadInstanceEpisodeEvidence(deps.prisma, {
+					userId: instance.userId,
+					instanceId: instance.id,
+					instance,
+					now,
+					maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+				}),
+			);
+		}
+		const generations = new Map<string, ProviderCacheGeneration>();
+		for (const entry of evidence) {
+			if (!entry.available) return undefined;
+			const instance = instances.find((candidate) => candidate.id === entry.instanceId)!;
+			generations.set(entry.instanceId, {
+				completedAt: entry.publishedAt,
+				itemCount: entry.rows.length,
+				connectionGeneration: entry.connectionGeneration,
+				identityGeneration: entry.identityGeneration,
+				statusFingerprint: evidenceFingerprint({
+					instance: {
+						id: instance.id,
+						expectedIdentity: instance.expectedIdentity,
+						identityKind: instance.identityKind,
+						identityVerifiedAt: instance.identityVerifiedAt,
+						connectionGeneration: instance.connectionGeneration,
+						identityGeneration: instance.identityGeneration,
+						updatedAt: instance.updatedAt,
+					},
+					status: entry.generationStatus,
+				}),
+			});
+		}
+		return generations;
+	}
 	const statuses = await deps.prisma.cacheRefreshStatus.findMany({
 		where: { instanceId: { in: instances.map((instance) => instance.id) }, cacheType },
 		select: {
@@ -366,6 +480,38 @@ async function revalidateProviderCacheAuthority(
 			return false;
 		}
 	}
+	if (authority.cacheType === "plex") {
+		for (const instance of currentInstances) {
+			const current = await getCurrentPlexMutationAuthorityForOwnedInstance(deps.prisma, {
+				instance,
+				now,
+				maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+			});
+			if (
+				!current.available ||
+				current.evidence.publicationLevel !== "authoritative" ||
+				current.evidence.completeness !== "complete"
+			) {
+				return false;
+			}
+			const statusFingerprint = evidenceFingerprint({
+				instance: {
+					id: instance.id,
+					expectedIdentity: instance.expectedIdentity,
+					identityKind: instance.identityKind,
+					identityVerifiedAt: instance.identityVerifiedAt,
+					connectionGeneration: instance.connectionGeneration,
+					identityGeneration: instance.identityGeneration,
+					updatedAt: instance.updatedAt,
+				},
+				status: current.generationStatus,
+			});
+			if (authority.generations.get(instance.id)?.statusFingerprint !== statusFingerprint) {
+				return false;
+			}
+		}
+		return currentInstances.length === authority.generations.size;
+	}
 	const current = await loadCompleteCacheGenerations(
 		deps,
 		currentInstances,
@@ -399,6 +545,22 @@ function createProviderCacheSnapshot<T>(
 			] as const;
 		}),
 	);
+	return createProviderCacheSnapshotFromRowAuthorities(
+		value,
+		cacheType,
+		instances,
+		generations,
+		rowAuthorities,
+	);
+}
+
+function createProviderCacheSnapshotFromRowAuthorities<T>(
+	value: T,
+	cacheType: ProviderCacheType,
+	instances: ServiceInstance[],
+	generations: Map<string, ProviderCacheGeneration>,
+	rowAuthorities: Map<string, ProviderCacheRowAuthority>,
+): ProviderCacheSnapshot<T> {
 	return {
 		value,
 		evidence: createSanitizedProviderEvidence(
@@ -446,6 +608,35 @@ async function revalidateExactProviderCacheAuthority(
 	) {
 		return false;
 	}
+	if (authority.cacheType === "plex") {
+		const currentEvidence = await scanMutationPolicyEvidenceForOwnedInstances(
+			transactionDeps.prisma,
+			{
+				instances: currentInstances,
+				now,
+				maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+			},
+		);
+		const currentGenerations = plexGenerationsFromEvidence(currentInstances, currentEvidence);
+		if (!currentGenerations || currentGenerations.size !== authority.generations.size) return false;
+		if (
+			![...authority.generations].every(
+				([instanceId, generation]) =>
+					currentGenerations.get(instanceId)?.statusFingerprint === generation.statusFingerprint,
+			)
+		) {
+			return false;
+		}
+		return currentEvidence.every((entry) => {
+			if (!entry.available) return false;
+			const expected = authority.rows.get(entry.instanceId);
+			return (
+				expected !== undefined &&
+				expected.rowCount === entry.rowCount &&
+				expected.rowFingerprint === entry.rowFingerprint
+			);
+		});
+	}
 	const currentGenerations = await loadCompleteCacheGenerations(
 		transactionDeps,
 		currentInstances,
@@ -462,7 +653,13 @@ async function revalidateExactProviderCacheAuthority(
 		return false;
 	}
 	const instanceIds = authority.instances.map((instance) => instance.id);
-	const currentRows = await loadExactProviderCacheRows(tx, authority.cacheType, instanceIds);
+	const currentRows = await loadExactProviderCacheRows(
+		tx,
+		authority.cacheType,
+		instanceIds,
+		authority.instances[0]!.userId,
+		authority.instances,
+	);
 	if (!currentRows) return false;
 	return instanceIds.every((instanceId) => {
 		const expected = authority.rows.get(instanceId);
@@ -5715,10 +5912,18 @@ async function prefetchTautulliData(
  * Also includes collections and labels from the PlexCache table.
  * Returns undefined if no Plex instance is configured.
  */
+interface PlexPolicyDataSnapshot extends ProviderCacheSnapshot<PlexWatchMap> {
+	plexSectionTitles: Set<string>;
+	plexSectionInventoryComplete: boolean;
+	completedAt: Date;
+	generationFingerprint: string;
+	generationIdsByInstance: Map<string, string>;
+}
+
 async function loadPlexDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<ProviderCacheSnapshot<PlexWatchMap> | undefined> {
+): Promise<PlexPolicyDataSnapshot | undefined> {
 	const { prisma, log } = deps;
 
 	const plexInstances = await loadProviderInstances(deps, userId, ["PLEX"]);
@@ -5726,133 +5931,103 @@ async function loadPlexDataSnapshot(
 	if (plexInstances.length === 0) return undefined;
 
 	try {
-		const generations = await loadCompleteCacheGenerations(deps, plexInstances, "plex");
+		const map: PlexWatchMap = new Map();
+		let totalRows = 0;
+		const authoritativeEvidence = await scanMutationPolicyEvidenceForOwnedInstances(prisma, {
+			instances: plexInstances,
+			maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+			onBatch: ({ rows }) => {
+				for (const row of rows) {
+					totalRows += 1;
+					try {
+						// Key is mediaType:tmdbId (aggregating across sections)
+						const key = `${row.mediaType}:${row.tmdbId}`;
+						const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+						const collections = (safeJsonParse(row.collections) as string[]) ?? [];
+						const labels = (safeJsonParse(row.labels) as string[]) ?? [];
+
+						const sectionInfo: PlexSectionWatchInfo = {
+							sectionId: row.sectionId,
+							sectionTitle: row.sectionTitle,
+							lastWatchedAt: row.lastWatchedAt,
+							watchCount: row.watchCount,
+							watchedByUsers,
+							onDeck: row.onDeck,
+							userRating: row.userRating,
+							collections,
+							labels,
+							addedAt: row.addedAt,
+						};
+
+						const existing = map.get(key);
+						if (existing) {
+							existing.sections.push(sectionInfo);
+							// Update aggregates: merge across sections
+							if (
+								row.lastWatchedAt &&
+								(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
+							) {
+								existing.lastWatchedAt = row.lastWatchedAt;
+							}
+							existing.watchCount += row.watchCount;
+							for (const user of watchedByUsers) {
+								if (!existing.watchedByUsers.includes(user)) {
+									existing.watchedByUsers.push(user);
+								}
+							}
+							existing.onDeck = existing.onDeck || row.onDeck;
+							if (row.userRating != null) {
+								existing.userRating =
+									existing.userRating != null
+										? Math.max(existing.userRating, row.userRating)
+										: row.userRating;
+							}
+							// Merge collections and labels
+							for (const c of collections) {
+								if (!existing.collections.includes(c)) existing.collections.push(c);
+							}
+							for (const l of labels) {
+								if (!existing.labels.includes(l)) existing.labels.push(l);
+							}
+							// Merge addedAt: take earliest (first appearance in any library)
+							if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
+								existing.addedAt = row.addedAt;
+							}
+						} else {
+							map.set(key, {
+								lastWatchedAt: row.lastWatchedAt,
+								watchCount: row.watchCount,
+								watchedByUsers: [...watchedByUsers],
+								onDeck: row.onDeck,
+								userRating: row.userRating,
+								collections: [...collections],
+								labels: [...labels],
+								addedAt: row.addedAt,
+								sections: [sectionInfo],
+							});
+						}
+					} catch (rowErr) {
+						log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Plex cache row with bad data");
+					}
+				}
+			},
+		});
+		const generations = plexGenerationsFromEvidence(plexInstances, authoritativeEvidence);
 		if (!generations) {
 			throw new Error("Plex cache did not have a complete fresh generation for every instance");
 		}
-		const map: PlexWatchMap = new Map();
-		const instanceIds = plexInstances.map((i) => i.id);
-		const rowCounts = new Map<string, number>();
-		const rowsByInstance = new Map<string, unknown[]>();
-		let cursor: string | undefined;
-		let totalRows = 0;
-
-		// Cursor-paginate to bound peak heap. Project only columns the watch-map
-		// builder reads — skipping ratingKey/thumb/title and the per-row instanceId.
-		while (true) {
-			const batch = await prisma.plexCache.findMany({
-				where: { instanceId: { in: instanceIds } },
-				select: PROVIDER_CACHE_ROW_SELECTS.plex,
-				take: CACHE_QUERY_BATCH_SIZE,
-				...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-				orderBy: { id: "asc" },
-			});
-
-			if (batch.length === 0) break;
-			totalRows += batch.length;
-
-			for (const row of batch) {
-				try {
-					const generation = generations.get(row.instanceId);
-					if (
-						!generation ||
-						row.connectionGeneration !== generation.connectionGeneration ||
-						row.identityGeneration !== generation.identityGeneration
-					) {
-						throw new Error("Plex cache row provenance was unavailable");
-					}
-					rowCounts.set(row.instanceId, (rowCounts.get(row.instanceId) ?? 0) + 1);
-					const sourceRows = rowsByInstance.get(row.instanceId) ?? [];
-					sourceRows.push(row);
-					rowsByInstance.set(row.instanceId, sourceRows);
-					// Key is mediaType:tmdbId (aggregating across sections)
-					const key = `${row.mediaType}:${row.tmdbId}`;
-					const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
-					const collections = (safeJsonParse(row.collections) as string[]) ?? [];
-					const labels = (safeJsonParse(row.labels) as string[]) ?? [];
-
-					const sectionInfo: PlexSectionWatchInfo = {
-						sectionId: row.sectionId,
-						sectionTitle: row.sectionTitle,
-						lastWatchedAt: row.lastWatchedAt,
-						watchCount: row.watchCount,
-						watchedByUsers,
-						onDeck: row.onDeck,
-						userRating: row.userRating,
-						collections,
-						labels,
-						addedAt: row.addedAt,
-					};
-
-					const existing = map.get(key);
-					if (existing) {
-						existing.sections.push(sectionInfo);
-						// Update aggregates: merge across sections
-						if (
-							row.lastWatchedAt &&
-							(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
-						) {
-							existing.lastWatchedAt = row.lastWatchedAt;
-						}
-						existing.watchCount += row.watchCount;
-						for (const user of watchedByUsers) {
-							if (!existing.watchedByUsers.includes(user)) {
-								existing.watchedByUsers.push(user);
-							}
-						}
-						existing.onDeck = existing.onDeck || row.onDeck;
-						if (row.userRating != null) {
-							existing.userRating =
-								existing.userRating != null
-									? Math.max(existing.userRating, row.userRating)
-									: row.userRating;
-						}
-						// Merge collections and labels
-						for (const c of collections) {
-							if (!existing.collections.includes(c)) existing.collections.push(c);
-						}
-						for (const l of labels) {
-							if (!existing.labels.includes(l)) existing.labels.push(l);
-						}
-						// Merge addedAt: take earliest (first appearance in any library)
-						if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
-							existing.addedAt = row.addedAt;
-						}
-					} else {
-						map.set(key, {
-							lastWatchedAt: row.lastWatchedAt,
-							watchCount: row.watchCount,
-							watchedByUsers: [...watchedByUsers],
-							onDeck: row.onDeck,
-							userRating: row.userRating,
-							collections: [...collections],
-							labels: [...labels],
-							addedAt: row.addedAt,
-							sections: [sectionInfo],
-						});
-					}
-				} catch (rowErr) {
-					log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Plex cache row with bad data");
-				}
-			}
-
-			cursor = batch[batch.length - 1]!.id;
-			if (batch.length < CACHE_QUERY_BATCH_SIZE) break;
-		}
-		if (
-			plexInstances.some(
-				(instance) => (rowCounts.get(instance.id) ?? 0) !== generations.get(instance.id)!.itemCount,
-			)
-		) {
-			throw new Error("Plex cache row count did not match its published generation");
-		}
-
-		const snapshot = createProviderCacheSnapshot(
+		const availableEvidence = authoritativeEvidence as AvailablePlexPolicyEvidence[];
+		const snapshot = createProviderCacheSnapshotFromRowAuthorities(
 			map,
 			"plex",
 			plexInstances,
 			generations,
-			rowsByInstance,
+			new Map(
+				availableEvidence.map((entry) => [
+					entry.instanceId,
+					{ rowCount: entry.rowCount, rowFingerprint: entry.rowFingerprint },
+				]),
+			),
 		);
 		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false))) {
 			throw new Error("Plex cache generation changed while rows were read");
@@ -5861,7 +6036,28 @@ async function loadPlexDataSnapshot(
 			{ totalRows, totalEntries: map.size },
 			"Plex watch data prefetch complete for cleanup",
 		);
-		return snapshot;
+		return {
+			...snapshot,
+			plexSectionTitles: new Set(
+				availableEvidence.flatMap((entry) => entry.sections.map((section) => section.title)),
+			),
+			plexSectionInventoryComplete: availableEvidence.every((entry) => entry.sections.length > 0),
+			completedAt: new Date(
+				Math.min(...availableEvidence.map((entry) => entry.publishedAt.getTime())),
+			),
+			generationFingerprint: evidenceFingerprint(
+				availableEvidence.map((entry) => ({
+					instanceId: entry.instanceId,
+					generationId: entry.generationId,
+					publishedAt: entry.publishedAt,
+					connectionGeneration: entry.connectionGeneration,
+					identityGeneration: entry.identityGeneration,
+				})),
+			),
+			generationIdsByInstance: new Map(
+				availableEvidence.map((entry) => [entry.instanceId, entry.generationId]),
+			),
+		};
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -6120,11 +6316,19 @@ async function loadPlexEpisodeDataSnapshot(
 		if (instanceIds.length === 0) return undefined;
 		const generations = await loadCompleteCacheGenerations(deps, instances, "plex_episode");
 		if (!generations) return undefined;
-		const generationRows = await prisma.plexEpisodeCache.findMany({
-			where: { instanceId: { in: instanceIds } },
-			select: PROVIDER_CACHE_ROW_SELECTS.plex_episode,
-			orderBy: { id: "asc" },
-		});
+		const episodeEvidence = [];
+		for (const instance of instances) {
+			episodeEvidence.push(
+				await loadInstanceEpisodeEvidence(prisma, {
+					userId,
+					instanceId: instance.id,
+					instance,
+					maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+				}),
+			);
+		}
+		if (episodeEvidence.some((entry) => !entry.available)) return undefined;
+		const generationRows = episodeEvidence.flatMap((entry) => (entry.available ? entry.rows : []));
 		const rowCounts = new Map<string, number>();
 		const rowsByInstance = new Map<string, unknown[]>();
 		for (const row of generationRows) {
@@ -6294,21 +6498,14 @@ async function evaluateAllItems(
 	];
 	const hasPlexRules = PLEX_RULE_TYPES.some((t) => activeTypes.has(t));
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(seriesRules).size > 0;
-	let plexSnapshot =
-		hasPlexRules || needsPlexSectionInventory
-			? await loadPlexDataSnapshot(deps, config.userId)
-			: undefined;
-	let publishedPlexEvidence = needsPlexSectionInventory
+	const publishedPlexEvidence = needsPlexSectionInventory
 		? await loadPublishedPlexPolicyEvidence(deps, config.userId, seriesRules)
 		: undefined;
-	if (
-		plexSnapshot &&
-		publishedPlexEvidence &&
-		!(await revalidateProviderCacheAuthority(deps, plexSnapshot.authority, false))
-	) {
-		plexSnapshot = undefined;
-		publishedPlexEvidence = undefined;
-	}
+	const plexSnapshot = needsPlexSectionInventory
+		? publishedPlexEvidence?.snapshot
+		: hasPlexRules
+			? await loadPlexDataSnapshot(deps, config.userId)
+			: undefined;
 	const plexMap = plexSnapshot?.value;
 	const plexSectionTitles =
 		publishedPlexEvidence?.plexSectionTitles ??
@@ -6595,11 +6792,6 @@ export async function prefetchFreshPlexEpisodeWatchData(
 	const plexInstanceIds = instances
 		.filter((instance) => instance.service === "PLEX" && instance.enabled)
 		.map((instance) => instance.id);
-	const plexUpdatedAtById = new Map(
-		instances
-			.filter((instance) => instance.service === "PLEX" && instance.enabled)
-			.map((instance) => [instance.id, instance.updatedAt.getTime()]),
-	);
 	const plexFingerprintById = new Map(
 		instances
 			.filter((instance) => instance.service === "PLEX" && instance.enabled)
@@ -6628,44 +6820,34 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			);
 			return new Map();
 		}
-		const generationCounts = await deps.prisma.plexEpisodeCache.groupBy({
-			by: ["instanceId"],
-			where: { instanceId: { in: plexInstanceIds } },
-			_count: { id: true },
-		});
-		const countByInstance = new Map(generationCounts.map((row) => [row.instanceId, row._count.id]));
-		if (
-			plexInstances.some(
-				(instance) =>
-					(countByInstance.get(instance.id) ?? 0) !== generations.get(instance.id)!.itemCount,
-			)
-		) {
+		const repositoryEvidence = [];
+		for (const instance of plexInstances) {
+			repositoryEvidence.push(
+				await loadInstanceEpisodeEvidence(deps.prisma, {
+					userId: instance.userId,
+					instanceId: instance.id,
+					instance,
+					now,
+					maxAgeMs: PLEX_EPISODE_FRESHNESS_MS,
+				}),
+			);
+		}
+		if (repositoryEvidence.some((entry) => !entry.available)) {
 			warnings.push(
-				"Plex episode evidence did not match its published generation; episode-scoped cleanup targets were skipped.",
+				"Plex episode evidence did not match its published parent generation; episode-scoped cleanup targets were skipped.",
 			);
 			return new Map();
 		}
-		const rows = await deps.prisma.plexEpisodeCache.findMany({
-			where: {
-				instanceId: { in: plexInstanceIds },
-				...(options.includeUnwatched ? {} : { watchCount: { gt: 0 } }),
-				...(options.coordinate ?? {}),
-			},
-			select: {
-				instanceId: true,
-				showTmdbId: true,
-				seasonNumber: true,
-				episodeNumber: true,
-				watchCount: true,
-				lastWatchedAt: true,
-				watchedByUsers: true,
-				ratingKey: true,
-				refreshedAt: true,
-				sourceFingerprint: true,
-				connectionGeneration: true,
-				identityGeneration: true,
-			},
-		});
+		const rows = repositoryEvidence
+			.flatMap((entry) => (entry.available ? entry.rows : []))
+			.filter((row) => options.includeUnwatched || (row.watchCount ?? 0) > 0)
+			.filter(
+				(row) =>
+					!options.coordinate ||
+					(row.showTmdbId === options.coordinate.showTmdbId &&
+						row.seasonNumber === options.coordinate.seasonNumber &&
+						row.episodeNumber === options.coordinate.episodeNumber),
+			);
 		const result = new Map<string, EpisodePlexWatchEvidence[]>();
 		const rowsByInstance = new Map<string, unknown[]>(
 			plexInstances.map((instance) => [instance.id, []]),
@@ -6684,20 +6866,16 @@ export async function prefetchFreshPlexEpisodeWatchData(
 				incompleteEvidenceCount++;
 				continue;
 			}
-			const sourceUpdatedAt = plexUpdatedAtById.get(row.instanceId);
 			const sourceFingerprint = plexFingerprintById.get(row.instanceId);
 			const generation = generations.get(row.instanceId);
 			if (
-				sourceUpdatedAt === undefined ||
-				!Number.isFinite(sourceUpdatedAt) ||
 				!sourceFingerprint ||
 				!generation ||
 				row.connectionGeneration !== generation.connectionGeneration ||
 				row.identityGeneration !== generation.identityGeneration ||
 				row.sourceFingerprint !== sourceFingerprint ||
 				row.refreshedAt.getTime() !== generation.completedAt.getTime() ||
-				row.refreshedAt.getTime() < freshnessThreshold ||
-				row.refreshedAt.getTime() < sourceUpdatedAt
+				row.refreshedAt.getTime() < freshnessThreshold
 			) {
 				staleEvidenceCount++;
 				continue;
@@ -9562,34 +9740,6 @@ async function deleteFilesFromArr(
  * Used by the explain endpoint so it can evaluate rules with real external data
  * rather than an empty context that always returns "not matched" for external rules.
  */
-function evidenceFingerprint(value: unknown): string {
-	const canonicalize = (input: unknown): unknown => {
-		if (input instanceof Date) return input.toISOString();
-		if (input instanceof Map) {
-			return [...input.entries()]
-				.map(([key, entry]) => [String(key), canonicalize(entry)])
-				.sort(([left], [right]) => String(left).localeCompare(String(right)));
-		}
-		if (input instanceof Set) {
-			return [...input]
-				.map(canonicalize)
-				.sort((left, right) => String(left).localeCompare(String(right)));
-		}
-		if (Array.isArray(input)) return input.map(canonicalize);
-		if (typeof input === "object" && input !== null) {
-			return Object.fromEntries(
-				Object.entries(input as Record<string, unknown>)
-					.sort(([left], [right]) => left.localeCompare(right))
-					.map(([key, entry]) => [key, canonicalize(entry)]),
-			);
-		}
-		return input;
-	};
-	return createHash("sha256")
-		.update(JSON.stringify(canonicalize(value)))
-		.digest("hex");
-}
-
 function mutationConfigFingerprint(config: {
 	id: string;
 	enabled: boolean;
@@ -9666,38 +9816,7 @@ interface PlexPolicyEvidence {
 
 interface PublishedPlexPolicyEvidence extends PlexPolicyEvidence {
 	generationIdsByInstance: Map<string, string>;
-}
-
-function parsePublishedPlexSections(metadata: string | null): Array<{
-	key: string;
-	title: string;
-	type: "movie" | "show";
-}> | null {
-	const parsed = safeJsonParse(metadata);
-	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
-	const sections = (parsed as Record<string, unknown>).sections;
-	if (!Array.isArray(sections)) return null;
-	const normalized: Array<{ key: string; title: string; type: "movie" | "show" }> = [];
-	for (const section of sections) {
-		if (typeof section !== "object" || section === null || Array.isArray(section)) return null;
-		const row = section as Record<string, unknown>;
-		if (
-			typeof row.key !== "string" ||
-			row.key.length === 0 ||
-			typeof row.title !== "string" ||
-			row.title.length === 0 ||
-			(row.type !== "movie" && row.type !== "show")
-		) {
-			return null;
-		}
-		normalized.push({ key: row.key, title: row.title, type: row.type });
-	}
-	return normalized.sort(
-		(left, right) =>
-			left.key.localeCompare(right.key) ||
-			left.title.localeCompare(right.title) ||
-			left.type.localeCompare(right.type),
-	);
+	snapshot: PlexPolicyDataSnapshot;
 }
 
 /**
@@ -9710,79 +9829,21 @@ async function loadPublishedPlexPolicyEvidenceUnsafe(
 	userId: string,
 	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
 ): Promise<PublishedPlexPolicyEvidence | undefined> {
-	const instances = await loadProviderInstances(deps, userId, ["PLEX"]);
-	if (instances.length === 0) return undefined;
-	const instanceIds = instances.map((instance) => instance.id);
-	const readStatuses = async () =>
-		await deps.prisma.cacheRefreshStatus.findMany({
-			where: { instanceId: { in: instanceIds }, cacheType: "plex" },
-			orderBy: { instanceId: "asc" },
-			select: {
-				instanceId: true,
-				lastRefreshedAt: true,
-				lastResult: true,
-				itemCount: true,
-				generationId: true,
-				generationMetadata: true,
-				lastErrorMessage: true,
-				lastAttemptResult: true,
-				lastAttemptErrorMessage: true,
-				connectionGeneration: true,
-				identityGeneration: true,
-			},
-		});
-	const before = await readStatuses();
-	if (
-		before.length !== instances.length ||
-		before.some((status) => {
-			const instance = instances.find((candidate) => candidate.id === status.instanceId);
-			return (
-				!instance ||
-				!isVerifiedProviderCacheSource(instance) ||
-				status.lastResult !== "success" ||
-				status.lastErrorMessage != null ||
-				status.lastAttemptErrorMessage != null ||
-				(status.lastAttemptResult != null && status.lastAttemptResult !== "success") ||
-				!status.generationId ||
-				!status.generationMetadata ||
-				Date.now() - status.lastRefreshedAt.getTime() > PROVIDER_EVIDENCE_FRESHNESS_MS ||
-				status.lastRefreshedAt.getTime() < instance.updatedAt.getTime() ||
-				status.lastRefreshedAt.getTime() < instance.identityVerifiedAt!.getTime() ||
-				status.connectionGeneration === null ||
-				status.identityGeneration === null ||
-				status.connectionGeneration !== instance.connectionGeneration ||
-				status.identityGeneration !== instance.identityGeneration
-			);
-		})
-	) {
+	const snapshot = await loadPlexDataSnapshot(deps, userId);
+	if (!snapshot?.plexSectionInventoryComplete || snapshot.plexSectionTitles.size === 0) {
 		return undefined;
-	}
-
-	const sectionTitles = new Set<string>();
-	for (const status of before) {
-		const sections = parsePublishedPlexSections(status.generationMetadata);
-		if (!sections || sections.length === 0) return undefined;
-		for (const section of sections) sectionTitles.add(section.title);
-		const count = await deps.prisma.plexCache.count({ where: { instanceId: status.instanceId } });
-		if (count !== status.itemCount) return undefined;
 	}
 	const configuredTitles = collectConfiguredPlexSectionTitles(rules);
 	for (const title of configuredTitles) {
-		if (!sectionTitles.has(title)) return undefined;
+		if (!snapshot.plexSectionTitles.has(title)) return undefined;
 	}
-
-	const plexMap = await prefetchPlexData(deps, userId);
-	if (!plexMap) return undefined;
-	const after = await readStatuses();
-	if (evidenceFingerprint(before) !== evidenceFingerprint(after)) return undefined;
 	return {
-		plexMap,
-		plexSectionTitles: sectionTitles,
-		completedAt: new Date(Math.min(...before.map((status) => status.lastRefreshedAt.getTime()))),
-		generationFingerprint: evidenceFingerprint(before),
-		generationIdsByInstance: new Map(
-			before.map((status) => [status.instanceId, status.generationId!]),
-		),
+		plexMap: snapshot.value,
+		plexSectionTitles: snapshot.plexSectionTitles,
+		completedAt: snapshot.completedAt,
+		generationFingerprint: snapshot.generationFingerprint,
+		generationIdsByInstance: snapshot.generationIdsByInstance,
+		snapshot,
 	};
 }
 
@@ -10029,10 +10090,10 @@ async function refreshPlexMutationEvidence(
 			);
 			for (const instance of initial) {
 				if (!deps.encryptor) throw new Error("Plex credentials were unavailable");
-				const publicationInstance = createOwnedPlexPublicationSnapshot(deps.encryptor, instance);
-				const refreshed = await refreshPlexCache({
+				const refreshed = await refreshOwnedPlexCache({
 					prisma: deps.prisma,
-					instance: publicationInstance,
+					encryptor: deps.encryptor,
+					instance,
 					log: deps.log,
 					cleanupRunClaimToken,
 				});
@@ -10056,9 +10117,10 @@ async function refreshPlexMutationEvidence(
 					}
 				}
 				if (includeEpisodes) {
-					const episodes = await refreshPlexEpisodeCache({
+					const episodes = await refreshOwnedPlexEpisodeCache({
 						prisma: deps.prisma,
-						instance: publicationInstance,
+						encryptor: deps.encryptor,
+						instance,
 						log: deps.log,
 						cleanupRunClaimToken,
 					});
@@ -10725,11 +10787,13 @@ export async function buildEvalContextWithHealth(
 	const needsTmdb = activeTypes.has("tmdb_list_member");
 	const needsTrakt = activeTypes.has("trakt_list_member");
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(rules).size > 0;
+	const plexEvidence = needsPlexSectionInventory
+		? await loadPublishedPlexPolicyEvidence(deps, userId, rules)
+		: undefined;
 	const [
 		seerrMap,
 		tautulliSnapshot,
 		plexSnapshot,
-		plexEvidence,
 		plexEpisodeSnapshot,
 		jellyfinSnapshot,
 		jellyfinEpisodeSnapshot,
@@ -10737,19 +10801,18 @@ export async function buildEvalContextWithHealth(
 	] = await Promise.all([
 		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
 		needsTautulli ? loadTautulliDataSnapshot(deps, userId) : undefined,
-		needsPlex || needsPlexSectionInventory ? loadPlexDataSnapshot(deps, userId) : undefined,
-		needsPlexSectionInventory ? loadPublishedPlexPolicyEvidence(deps, userId, rules) : undefined,
+		needsPlexSectionInventory
+			? plexEvidence?.snapshot
+			: needsPlex
+				? loadPlexDataSnapshot(deps, userId)
+				: undefined,
 		needsPlexEpisodes ? loadPlexEpisodeDataSnapshot(deps, userId) : undefined,
 		needsJellyfin ? loadJellyfinDataSnapshot(deps, userId) : undefined,
 		needsJellyfinEpisodes ? loadJellyfinEpisodeDataSnapshot(deps, userId) : undefined,
 		refreshListMutationEvidence(deps, userId, rules),
 	]);
-	const plexAuthorityConsistent =
-		!plexSnapshot ||
-		!plexEvidence ||
-		(await revalidateProviderCacheAuthority(deps, plexSnapshot.authority, false));
-	const effectivePlexSnapshot = plexAuthorityConsistent ? plexSnapshot : undefined;
-	const effectivePlexEvidence = plexAuthorityConsistent ? plexEvidence : undefined;
+	const effectivePlexSnapshot = plexSnapshot;
+	const effectivePlexEvidence = plexEvidence;
 	const tautulliMap = tautulliSnapshot?.value;
 	const plexEpisodeMap = plexEpisodeSnapshot?.value;
 	const jellyfinMap = jellyfinSnapshot?.value;
