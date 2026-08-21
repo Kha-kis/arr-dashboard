@@ -21,6 +21,43 @@ export type PlexCacheRefreshAttempt = {
 	resultMarker: string;
 };
 
+export type ProviderCacheStatusGenerationRelation =
+	| "current"
+	| "obsolete"
+	| "future-or-inconsistent";
+
+type ProviderCacheStatusGeneration = {
+	connectionGeneration: number | null;
+	identityGeneration: number | null;
+};
+
+/**
+ * Classify persisted cache provenance relative to the exact verified service
+ * authority. Unknown, unsafe, future, and crossed state fail closed.
+ */
+export function classifyProviderCacheStatusGeneration(
+	status: unknown,
+	authority: unknown,
+): ProviderCacheStatusGenerationRelation {
+	if (!isGenerationAuthority(authority) || !isStatusGeneration(status)) {
+		return "future-or-inconsistent";
+	}
+	if (
+		(status.connectionGeneration !== null &&
+			status.connectionGeneration > authority.connectionGeneration) ||
+		(status.identityGeneration !== null && status.identityGeneration > authority.identityGeneration)
+	) {
+		return "future-or-inconsistent";
+	}
+	if (
+		status.connectionGeneration === authority.connectionGeneration &&
+		status.identityGeneration === authority.identityGeneration
+	) {
+		return "current";
+	}
+	return "obsolete";
+}
+
 /**
  * Revoke prior Plex mutation authority before any upstream read. The opaque
  * marker doubles as a durable cross-process claim without requiring a schema
@@ -40,9 +77,45 @@ export async function beginPlexCacheRefreshAttempt(
 		async (tx) => {
 			const status = await tx.cacheRefreshStatus.findUnique({
 				where: { instanceId_cacheType: { instanceId: instance.id, cacheType } },
-				select: { connectionGeneration: true, identityGeneration: true },
+				select: {
+					id: true,
+					connectionGeneration: true,
+					identityGeneration: true,
+					lastAttemptAt: true,
+					lastAttemptResult: true,
+				},
 			});
-			if (status && !hasAuthoritativeProviderCacheGeneration(status, instance)) return false;
+			if (status) {
+				const relation = classifyProviderCacheStatusGeneration(status, instance);
+				if (relation === "future-or-inconsistent") return false;
+				if (relation === "obsolete") {
+					const takeover = await tx.cacheRefreshStatus.updateMany({
+						where: {
+							id: status.id,
+							instanceId: instance.id,
+							cacheType,
+							connectionGeneration: status.connectionGeneration,
+							identityGeneration: status.identityGeneration,
+							lastAttemptAt: status.lastAttemptAt,
+							lastAttemptResult: status.lastAttemptResult,
+						},
+						data: {
+							lastRefreshedAt: attemptedAt,
+							lastResult: "error",
+							lastErrorMessage: "Plex cache refresh has not published a generation",
+							itemCount: 0,
+							generationId: null,
+							generationMetadata: null,
+							lastAttemptAt: attemptedAt,
+							lastAttemptResult: resultMarker,
+							lastAttemptErrorMessage: null,
+							connectionGeneration: instance.connectionGeneration,
+							identityGeneration: instance.identityGeneration,
+						},
+					});
+					return takeover.count === 1;
+				}
+			}
 			await tx.cacheRefreshStatus.upsert({
 				where: { instanceId_cacheType: { instanceId: instance.id, cacheType } },
 				create: {
@@ -69,6 +142,37 @@ export async function beginPlexCacheRefreshAttempt(
 		options,
 	);
 	return result.matched && result.value ? { attemptedAt, resultMarker } : null;
+}
+
+function isGenerationAuthority(value: unknown): value is {
+	connectionGeneration: number;
+	identityGeneration: number;
+} {
+	return (
+		isRecord(value) &&
+		isSafeGeneration(value.connectionGeneration) &&
+		isSafeGeneration(value.identityGeneration)
+	);
+}
+
+function isStatusGeneration(value: unknown): value is ProviderCacheStatusGeneration {
+	return (
+		isRecord(value) &&
+		isNullableSafeGeneration(value.connectionGeneration) &&
+		isNullableSafeGeneration(value.identityGeneration)
+	);
+}
+
+function isNullableSafeGeneration(value: unknown): value is number | null {
+	return value === null || isSafeGeneration(value);
+}
+
+function isSafeGeneration(value: unknown): value is number {
+	return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
 }
 
 /** Finish only the exact still-current in-progress Plex attempt. */
