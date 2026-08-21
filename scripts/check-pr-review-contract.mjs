@@ -19,6 +19,15 @@ const REQUIRED_HEADINGS = [
 ];
 
 const RISK_TIERS = ["Trivial", "Standard", "Safety-critical"];
+const NON_BREAKING_SPACE_PATTERN = /(?:&nbsp;|&#160;|&#xA0;)/gi;
+const NARRATIVE_CONTENT_HEADINGS = [
+	"Summary",
+	"Related issue",
+	"Scope",
+	"Non-goals",
+	"Acceptance criteria",
+	"Changes",
+];
 const EXEMPT_ACTORS = new Set(["dependabot[bot]", "github-actions[bot]"]);
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE_RELATIVE_PATH = ".github/PULL_REQUEST_TEMPLATE.md";
@@ -53,7 +62,7 @@ function stripHtmlCommentsFromLine(line, startsInComment) {
 	return { line: output, inComment };
 }
 
-function markdownLinesOutsideFences(markdown) {
+function markdownLinesOutsideFences(markdown, { includeFenceContent = false } = {}) {
 	const lines = normalizeMarkdown(markdown).split("\n");
 	const visible = [];
 	let fence = null;
@@ -69,6 +78,10 @@ function markdownLinesOutsideFences(markdown) {
 				marker[2].trim() === ""
 			) {
 				fence = null;
+			} else if (includeFenceContent && rawLine.trim() !== "") {
+				// Four spaces keep fenced headings inert while the marker makes any
+				// non-empty code, including HTML-like code, visible to content checks.
+				visible.push(`    fenced-code ${rawLine}`);
 			}
 			continue;
 		}
@@ -154,12 +167,201 @@ function headingErrors(markdown) {
 	return errors;
 }
 
+function collectSections(markdown) {
+	const sections = new Map();
+	let currentHeading = null;
+
+	for (const line of markdownLinesOutsideFences(markdown, { includeFenceContent: true })) {
+		const heading = levelTwoHeading(line);
+		if (heading !== null) {
+			currentHeading = heading;
+			if (!sections.has(heading)) {
+				sections.set(heading, []);
+			}
+			continue;
+		}
+		if (currentHeading !== null) {
+			sections.get(currentHeading)?.push(line);
+		}
+	}
+
+	return sections;
+}
+
+function isAsciiLetter(character) {
+	return (
+		character !== undefined &&
+		((character >= "A" && character <= "Z") || (character >= "a" && character <= "z"))
+	);
+}
+
+function isTagNameCharacter(character) {
+	return isAsciiLetter(character) || (character !== undefined && character >= "0" && character <= "9") || character === "-";
+}
+
+function findUnquotedTerminator(value, start, terminator) {
+	let quote = null;
+	for (let index = start; index < value.length; index += 1) {
+		const character = value[index];
+		if (quote !== null) {
+			if (character === quote) {
+				quote = null;
+			}
+			continue;
+		}
+		if (character === '"' || character === "'") {
+			quote = character;
+			continue;
+		}
+		if (value.startsWith(terminator, index)) {
+			return index + terminator.length;
+		}
+	}
+	return null;
+}
+
+function rawHtmlConstructEnd(value, start) {
+	if (value.startsWith("<!--", start)) {
+		const end = value.indexOf("-->", start + 4);
+		return end === -1 ? null : end + 3;
+	}
+
+	if (value.startsWith("<![CDATA[", start)) {
+		const end = value.indexOf("]]>", start + 9);
+		return end === -1 ? null : end + 3;
+	}
+
+	if (value.slice(start, start + 9).toLowerCase() === "<!doctype") {
+		const boundary = value[start + 9];
+		if (boundary === ">" || /\s/.test(boundary ?? "")) {
+			return findUnquotedTerminator(value, start + 9, ">");
+		}
+	}
+
+	if (value.startsWith("<?", start)) {
+		return findUnquotedTerminator(value, start + 2, "?>");
+	}
+
+	let index = start + 1;
+	if (value[index] === "/") {
+		index += 1;
+	}
+	if (!isAsciiLetter(value[index])) {
+		return null;
+	}
+	index += 1;
+	while (isTagNameCharacter(value[index])) {
+		index += 1;
+	}
+
+	// Markdown URL and email autolinks remain text because ':' and '@' do not
+	// satisfy the whitespace, slash, or closing-angle tag boundary.
+	const boundary = value[index];
+	if (boundary !== ">" && boundary !== "/" && !/\s/.test(boundary ?? "")) {
+		return null;
+	}
+	return findUnquotedTerminator(value, index, ">");
+}
+
+function stripRawHtmlConstructs(value) {
+	let output = "";
+	let index = 0;
+	while (index < value.length) {
+		if (value[index] !== "<") {
+			output += value[index];
+			index += 1;
+			continue;
+		}
+
+		const end = rawHtmlConstructEnd(value, index);
+		if (end === null) {
+			output += value[index];
+			index += 1;
+			continue;
+		}
+		index = end;
+	}
+	return output;
+}
+
+function hasText(value) {
+	const normalized = value.replace(NON_BREAKING_SPACE_PATTERN, " ");
+	if (/(`+)([^`\n]*\S[^`\n]*)\1/.test(normalized)) {
+		return true;
+	}
+	return /[\p{L}\p{N}]/u.test(stripRawHtmlConstructs(normalized));
+}
+
+function hasNarrativeContent(lines) {
+	return hasText(
+		lines
+			.map((line) => line.replace(/^ {0,3}-[ \t]+\[[ xX]\][ \t]*/, ""))
+			.join("\n"),
+	);
+}
+
+function hasValidationContent(lines) {
+	const content = lines.map((line) => {
+		const checkbox = line.match(/^ {0,3}-[ \t]+\[([ xX])\][ \t]*(.*)$/);
+		if (!checkbox) {
+			return line;
+		}
+		return checkbox[1].toLowerCase() === "x" ? checkbox[2] : "";
+	});
+	return hasText(content.join("\n"));
+}
+
+function hasReviewPlanContent(lines) {
+	const values = lines.map((line) => {
+		const separator = line.indexOf(":");
+		return separator === -1 ? "" : line.slice(separator + 1);
+	});
+	return hasText(values.join("\n"));
+}
+
+function hasFindingDispositionContent(lines) {
+	const content = lines.map((line) => {
+		if (!line.trim().startsWith("|")) {
+			return line;
+		}
+
+		const cells = line
+			.split("|")
+			.slice(1, -1)
+			.map((cell) => cell.trim());
+		if (cells.length === 0 || cells[0] === "ID" || cells.every((cell) => /^:?-+:?$/.test(cell))) {
+			return "";
+		}
+		return cells.join(" ");
+	});
+	return hasText(content.join("\n"));
+}
+
+function sectionContentErrors(markdown) {
+	const sections = collectSections(markdown);
+	const errors = [];
+	const requireContent = (heading, predicate) => {
+		const lines = sections.get(heading);
+		if (lines && !predicate(lines)) {
+			errors.push(`Required section has no visible, non-placeholder content: ${heading}`);
+		}
+	};
+
+	for (const heading of NARRATIVE_CONTENT_HEADINGS) {
+		requireContent(heading, hasNarrativeContent);
+	}
+	requireContent("Validation", hasValidationContent);
+	requireContent("Review plan", hasReviewPlanContent);
+	requireContent("Finding disposition", hasFindingDispositionContent);
+	return errors;
+}
+
 export function validateReviewContractBody(markdown) {
 	if (typeof markdown !== "string") {
 		return { valid: false, errors: ["Pull request body must be Markdown text."], riskTier: null };
 	}
 
-	const errors = headingErrors(markdown);
+	const errors = [...headingErrors(markdown), ...sectionContentErrors(markdown)];
 	const options = collectRiskOptions(markdown);
 	for (const option of options) {
 		if (!RISK_TIERS.includes(option.tier)) {

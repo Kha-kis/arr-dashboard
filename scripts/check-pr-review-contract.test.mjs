@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -85,6 +85,18 @@ function omitSection(markdown, heading) {
 	return lines.join("\n");
 }
 
+function replaceSectionContent(markdown, heading, content) {
+	const lines = markdown.split("\n");
+	const start = lines.indexOf(`## ${heading}`);
+	assert.notEqual(start, -1, `fixture contains ${heading}`);
+	let end = start + 1;
+	while (end < lines.length && !lines[end].startsWith("## ")) {
+		end += 1;
+	}
+	lines.splice(start + 1, end - start - 1, "", content, "");
+	return lines.join("\n");
+}
+
 function assertFailure(result, messagePart) {
 	assert.equal(result.valid, false);
 	assert.ok(
@@ -118,6 +130,218 @@ test("valid safety-critical PR body passes", () => {
 
 test("valid trivial PR body passes", () => {
 	assert.equal(validateReviewContractBody(body("Trivial")).valid, true);
+});
+
+test("untouched repository template with a selected risk tier fails", () => {
+	const untouched = readFileSync(
+		path.join(REPO_ROOT, ".github/PULL_REQUEST_TEMPLATE.md"),
+		"utf8",
+	).replace("- [ ] Standard", "- [x] Standard");
+	const result = validateReviewContractBody(untouched);
+
+	assert.equal(result.valid, false);
+	for (const heading of [
+		"Summary",
+		"Related issue",
+		"Scope",
+		"Non-goals",
+		"Acceptance criteria",
+		"Changes",
+		"Validation",
+		"Review plan",
+	]) {
+		assert.ok(
+			result.errors.some((message) => message.includes(heading)),
+			`expected an empty-section error for ${heading}; got ${JSON.stringify(result.errors)}`,
+		);
+	}
+});
+
+test("review plan labels without values are placeholders", () => {
+	const labelsOnly = body().replace(
+		"- Initial broad-reviewed head: pending",
+		"- Initial broad-reviewed head: <!-- SHA, or pending -->",
+	);
+	assertFailure(validateReviewContractBody(labelsOnly), "Review plan");
+});
+
+test("retains the initial No-findings row", () => {
+	assert.equal(validateReviewContractBody(body()).valid, true);
+});
+
+test("HTML tags without visible text do not satisfy a required section", () => {
+	for (const content of ["<br>", "<hr />", "<div></div>", "<p></p>", "<p>   </p>"]) {
+		assertFailure(
+			validateReviewContractBody(replaceSectionContent(body(), "Scope", content)),
+			"Scope",
+		);
+	}
+});
+
+test("rejects multiline raw HTML tags without visible text", () => {
+	const htmlOnly = replaceSectionContent(
+		body(),
+		"Scope",
+		"<details\n  open\n>\n</details>",
+	);
+	assertFailure(validateReviewContractBody(htmlOnly), "Scope");
+});
+
+test("rejects doctype-only section content", () => {
+	const doctypeOnly = replaceSectionContent(body(), "Scope", "<!DOCTYPE html>");
+	assertFailure(validateReviewContractBody(doctypeOnly), "Scope");
+});
+
+test("rejects processing-instruction-only section content", () => {
+	const processingInstructionOnly = replaceSectionContent(
+		body(),
+		"Scope",
+		'<?xml version="1.0"?>',
+	);
+	assertFailure(validateReviewContractBody(processingInstructionOnly), "Scope");
+});
+
+test("rejects comments declarations and empty tags combined", () => {
+	const structuralOnly = replaceSectionContent(
+		body(),
+		"Scope",
+		"<!-- placeholder -->\n<!doctype html>\n<div>\n<p></p>\n</div>",
+	);
+	assertFailure(validateReviewContractBody(structuralOnly), "Scope");
+});
+
+test("accepts visible text inside multiline raw HTML tags", () => {
+	const withText = replaceSectionContent(
+		body(),
+		"Scope",
+		"<details\n  open\n>\nValidated in CI\n</details>",
+	);
+	assert.equal(validateReviewContractBody(withText).valid, true);
+});
+
+test("handles a greater-than character inside a quoted HTML attribute", () => {
+	const emptyElement = replaceSectionContent(
+		body(),
+		"Scope",
+		'<div data-expression="5 > 3"></div>',
+	);
+	assertFailure(validateReviewContractBody(emptyElement), "Scope");
+});
+
+test("preserves inner text after a greater-than character in a quoted HTML attribute", () => {
+	const withText = replaceSectionContent(
+		body(),
+		"Scope",
+		'<div data-expression="5 > 3">Validated in CI</div>',
+	);
+	assert.equal(validateReviewContractBody(withText).valid, true);
+});
+
+test("preserves URL autolinks while stripping multiline HTML", () => {
+	const withAutolink = replaceSectionContent(
+		body(),
+		"Scope",
+		"<details\n  open\n>\n<https://ci.example.test/runs/42>\n</details>",
+	);
+	assert.equal(validateReviewContractBody(withAutolink).valid, true);
+});
+
+test("preserves email autolinks while stripping multiline HTML", () => {
+	const withAutolink = replaceSectionContent(
+		body(),
+		"Scope",
+		"<details\n  open\n>\n<user@example.test>\n<mailto:user@example.test>\n</details>",
+	);
+	assert.equal(validateReviewContractBody(withAutolink).valid, true);
+});
+
+test("accepts a visible Markdown URL autolink as section content", () => {
+	const withAutolink = replaceSectionContent(
+		body(),
+		"Validation",
+		"- [x] <https://ci.example.test/runs/42>",
+	);
+	assert.equal(validateReviewContractBody(withAutolink).valid, true);
+});
+
+test("accepts visible Markdown email autolinks as section content", () => {
+	for (const content of ["<user@example.test>", "<mailto:user@example.test>"]) {
+		assert.equal(
+			validateReviewContractBody(replaceSectionContent(body(), "Scope", content)).valid,
+			true,
+		);
+	}
+});
+
+test("preserves comparison text using angle brackets", () => {
+	for (const content of ["threshold < 5", "5 > threshold"]) {
+		assert.equal(
+			validateReviewContractBody(replaceSectionContent(body(), "Scope", content)).valid,
+			true,
+		);
+	}
+});
+
+test("accepts a visible Markdown link as section content", () => {
+	const withLink = replaceSectionContent(
+		body(),
+		"Scope",
+		"[CI run](https://ci.example.test/runs/42)",
+	);
+	assert.equal(validateReviewContractBody(withLink).valid, true);
+});
+
+test("preserves visible text inside HTML tags", () => {
+	for (const content of ["<strong>Validated</strong>", "<p>Validated</p>"]) {
+		assert.equal(
+			validateReviewContractBody(replaceSectionContent(body(), "Scope", content)).valid,
+			true,
+		);
+	}
+});
+
+test("non-breaking whitespace entities do not satisfy a required section", () => {
+	for (const content of ["&nbsp;", "&#160;", "&#xA0;"]) {
+		assertFailure(
+			validateReviewContractBody(replaceSectionContent(body(), "Scope", content)),
+			"Scope",
+		);
+	}
+});
+
+test("HTML-comment-only content does not satisfy a required section", () => {
+	const commentOnly = replaceSectionContent(body(), "Scope", "<!-- explain the scope -->");
+	assertFailure(validateReviewContractBody(commentOnly), "Scope");
+});
+
+test("inline and fenced code count as visible section content", () => {
+	for (const content of [
+		"`pnpm run test`",
+		"`<br>`",
+		"```text\npnpm run test\n```",
+		"```html\n<br>\n```",
+	]) {
+		assert.equal(
+			validateReviewContractBody(replaceSectionContent(body(), "Scope", content)).valid,
+			true,
+		);
+	}
+});
+
+test("shell-like and HTML-like section content remains inert data", () => {
+	const root = mkdtempSync(path.join(tmpdir(), "pr-review-contract-html-inert-"));
+	try {
+		const marker = path.join(root, "must-not-exist");
+		const inertBody = replaceSectionContent(
+			body(),
+			"Scope",
+			`<strong>$(touch ${marker})</strong>`,
+		);
+		assert.equal(validateReviewContractBody(inertBody).valid, true);
+		assert.equal(existsSync(marker), false);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("missing Scope fails", () => {
