@@ -588,6 +588,46 @@ describe("provider execution authority", () => {
 		).rejects.toThrow("Provider execution authority changed");
 	});
 
+	it("rejects completed A provider evidence for both direct and retry revalidation after B publishes", async () => {
+		const subject = fixture();
+
+		await expect(
+			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
+		).resolves.toBeUndefined();
+
+		subject.status.generationId = "generation-b";
+		subject.status.lastRefreshedAt = new Date(subject.status.lastRefreshedAt.getTime() + 1_000);
+		subject.status.lastAttemptAt = new Date(subject.status.lastRefreshedAt);
+		subject.setRows([
+			{
+				...subject.status,
+				id: "plex-row-b",
+				instanceId: subject.instance.id,
+				tmdbId: 43,
+				mediaType: "movie",
+				sectionId: "2",
+				sectionTitle: "Movies B",
+				lastWatchedAt: subject.status.lastRefreshedAt,
+				watchCount: 5,
+				watchedByUsers: "[]",
+				onDeck: true,
+				userRating: null,
+				collections: "[]",
+				labels: "[]",
+				addedAt: null,
+				connectionGeneration: 3,
+				identityGeneration: 7,
+			},
+		]);
+
+		await expect(
+			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
+		).rejects.toThrow("Provider execution authority changed");
+		await expect(
+			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
+		).rejects.toThrow("Provider execution authority changed");
+	});
+
 	it("does not authorize retry or direct execution after a failed latest Plex attempt", async () => {
 		const subject = fixture({
 			lastAttemptResult: "error",

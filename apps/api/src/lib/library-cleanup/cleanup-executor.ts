@@ -44,7 +44,6 @@ import {
 	type AvailablePlexInstanceEvidence,
 	getCurrentPlexMutationAuthorityForOwnedInstance,
 	listObservedRows,
-	loadAuthoritativePolicySnapshot,
 	loadInstanceEpisodeEvidence,
 	loadMutationEvidenceForOwnedInstances,
 	type PlexInstanceEvidence,
@@ -5862,10 +5861,18 @@ async function prefetchTautulliData(
  * Also includes collections and labels from the PlexCache table.
  * Returns undefined if no Plex instance is configured.
  */
+interface PlexPolicyDataSnapshot extends ProviderCacheSnapshot<PlexWatchMap> {
+	plexSectionTitles: Set<string>;
+	plexSectionInventoryComplete: boolean;
+	completedAt: Date;
+	generationFingerprint: string;
+	generationIdsByInstance: Map<string, string>;
+}
+
 async function loadPlexDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
-): Promise<ProviderCacheSnapshot<PlexWatchMap> | undefined> {
+): Promise<PlexPolicyDataSnapshot | undefined> {
 	const { prisma, log } = deps;
 
 	const plexInstances = await loadProviderInstances(deps, userId, ["PLEX"]);
@@ -5989,11 +5996,33 @@ async function loadPlexDataSnapshot(
 		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false))) {
 			throw new Error("Plex cache generation changed while rows were read");
 		}
+		const availableEvidence = authoritativeEvidence as AvailablePlexInstanceEvidence[];
 		log.info(
 			{ totalRows, totalEntries: map.size },
 			"Plex watch data prefetch complete for cleanup",
 		);
-		return snapshot;
+		return {
+			...snapshot,
+			plexSectionTitles: new Set(
+				availableEvidence.flatMap((entry) => entry.sections.map((section) => section.title)),
+			),
+			plexSectionInventoryComplete: availableEvidence.every((entry) => entry.sections.length > 0),
+			completedAt: new Date(
+				Math.min(...availableEvidence.map((entry) => entry.publishedAt.getTime())),
+			),
+			generationFingerprint: evidenceFingerprint(
+				availableEvidence.map((entry) => ({
+					instanceId: entry.instanceId,
+					generationId: entry.generationId,
+					publishedAt: entry.publishedAt,
+					connectionGeneration: entry.connectionGeneration,
+					identityGeneration: entry.identityGeneration,
+				})),
+			),
+			generationIdsByInstance: new Map(
+				availableEvidence.map((entry) => [entry.instanceId, entry.generationId]),
+			),
+		};
 	} catch (error) {
 		log.warn(
 			{ err: error },
@@ -6434,21 +6463,14 @@ async function evaluateAllItems(
 	];
 	const hasPlexRules = PLEX_RULE_TYPES.some((t) => activeTypes.has(t));
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(seriesRules).size > 0;
-	let plexSnapshot =
-		hasPlexRules || needsPlexSectionInventory
-			? await loadPlexDataSnapshot(deps, config.userId)
-			: undefined;
-	let publishedPlexEvidence = needsPlexSectionInventory
+	const publishedPlexEvidence = needsPlexSectionInventory
 		? await loadPublishedPlexPolicyEvidence(deps, config.userId, seriesRules)
 		: undefined;
-	if (
-		plexSnapshot &&
-		publishedPlexEvidence &&
-		!(await revalidateProviderCacheAuthority(deps, plexSnapshot.authority, false))
-	) {
-		plexSnapshot = undefined;
-		publishedPlexEvidence = undefined;
-	}
+	const plexSnapshot = needsPlexSectionInventory
+		? publishedPlexEvidence?.snapshot
+		: hasPlexRules
+			? await loadPlexDataSnapshot(deps, config.userId)
+			: undefined;
 	const plexMap = plexSnapshot?.value;
 	const plexSectionTitles =
 		publishedPlexEvidence?.plexSectionTitles ??
@@ -9787,6 +9809,7 @@ interface PlexPolicyEvidence {
 
 interface PublishedPlexPolicyEvidence extends PlexPolicyEvidence {
 	generationIdsByInstance: Map<string, string>;
+	snapshot: PlexPolicyDataSnapshot;
 }
 
 /**
@@ -9799,45 +9822,21 @@ async function loadPublishedPlexPolicyEvidenceUnsafe(
 	userId: string,
 	rules: Array<{ enabled: boolean; plexLibraryFilter?: string | null }>,
 ): Promise<PublishedPlexPolicyEvidence | undefined> {
-	const instances = await loadProviderInstances(deps, userId, ["PLEX"]);
-	if (instances.length === 0) return undefined;
-	const repositoryEvidence = await loadAuthoritativePolicySnapshot(deps.prisma, {
-		userId,
-		maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
-	});
-	if (!repositoryEvidence || repositoryEvidence.length !== instances.length) return undefined;
-
-	const sectionTitles = new Set<string>();
-	for (const entry of repositoryEvidence) {
-		if (entry.sections.length === 0) return undefined;
-		for (const section of entry.sections) sectionTitles.add(section.title);
+	const snapshot = await loadPlexDataSnapshot(deps, userId);
+	if (!snapshot?.plexSectionInventoryComplete || snapshot.plexSectionTitles.size === 0) {
+		return undefined;
 	}
 	const configuredTitles = collectConfiguredPlexSectionTitles(rules);
 	for (const title of configuredTitles) {
-		if (!sectionTitles.has(title)) return undefined;
+		if (!snapshot.plexSectionTitles.has(title)) return undefined;
 	}
-
-	const plexMap = await prefetchPlexData(deps, userId);
-	if (!plexMap) return undefined;
-	const generationFingerprint = evidenceFingerprint(
-		repositoryEvidence.map((entry) => ({
-			instanceId: entry.instanceId,
-			generationId: entry.generationId,
-			publishedAt: entry.publishedAt,
-			connectionGeneration: entry.connectionGeneration,
-			identityGeneration: entry.identityGeneration,
-		})),
-	);
 	return {
-		plexMap,
-		plexSectionTitles: sectionTitles,
-		completedAt: new Date(
-			Math.min(...repositoryEvidence.map((entry) => entry.publishedAt.getTime())),
-		),
-		generationFingerprint,
-		generationIdsByInstance: new Map(
-			repositoryEvidence.map((entry) => [entry.instanceId, entry.generationId]),
-		),
+		plexMap: snapshot.value,
+		plexSectionTitles: snapshot.plexSectionTitles,
+		completedAt: snapshot.completedAt,
+		generationFingerprint: snapshot.generationFingerprint,
+		generationIdsByInstance: snapshot.generationIdsByInstance,
+		snapshot,
 	};
 }
 
@@ -10781,11 +10780,13 @@ export async function buildEvalContextWithHealth(
 	const needsTmdb = activeTypes.has("tmdb_list_member");
 	const needsTrakt = activeTypes.has("trakt_list_member");
 	const needsPlexSectionInventory = collectConfiguredPlexSectionTitles(rules).size > 0;
+	const plexEvidence = needsPlexSectionInventory
+		? await loadPublishedPlexPolicyEvidence(deps, userId, rules)
+		: undefined;
 	const [
 		seerrMap,
 		tautulliSnapshot,
 		plexSnapshot,
-		plexEvidence,
 		plexEpisodeSnapshot,
 		jellyfinSnapshot,
 		jellyfinEpisodeSnapshot,
@@ -10793,19 +10794,18 @@ export async function buildEvalContextWithHealth(
 	] = await Promise.all([
 		needsSeerr ? prefetchSeerrRequests(deps, userId) : undefined,
 		needsTautulli ? loadTautulliDataSnapshot(deps, userId) : undefined,
-		needsPlex || needsPlexSectionInventory ? loadPlexDataSnapshot(deps, userId) : undefined,
-		needsPlexSectionInventory ? loadPublishedPlexPolicyEvidence(deps, userId, rules) : undefined,
+		needsPlexSectionInventory
+			? plexEvidence?.snapshot
+			: needsPlex
+				? loadPlexDataSnapshot(deps, userId)
+				: undefined,
 		needsPlexEpisodes ? loadPlexEpisodeDataSnapshot(deps, userId) : undefined,
 		needsJellyfin ? loadJellyfinDataSnapshot(deps, userId) : undefined,
 		needsJellyfinEpisodes ? loadJellyfinEpisodeDataSnapshot(deps, userId) : undefined,
 		refreshListMutationEvidence(deps, userId, rules),
 	]);
-	const plexAuthorityConsistent =
-		!plexSnapshot ||
-		!plexEvidence ||
-		(await revalidateProviderCacheAuthority(deps, plexSnapshot.authority, false));
-	const effectivePlexSnapshot = plexAuthorityConsistent ? plexSnapshot : undefined;
-	const effectivePlexEvidence = plexAuthorityConsistent ? plexEvidence : undefined;
+	const effectivePlexSnapshot = plexSnapshot;
+	const effectivePlexEvidence = plexEvidence;
 	const tautulliMap = tautulliSnapshot?.value;
 	const plexEpisodeMap = plexEpisodeSnapshot?.value;
 	const jellyfinMap = jellyfinSnapshot?.value;

@@ -2493,7 +2493,7 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 	});
 
-	it("blocks direct episode mutation when provider execution authority fails", async () => {
+	it("blocks direct episode mutation when its selected A provider evidence is superseded", async () => {
 		const fixture = makeSonarrDeps();
 		configureRetryStore(fixture.deps);
 		const checker = (
@@ -2528,6 +2528,39 @@ describe("verified Sonarr mutation handoff", () => {
 
 		expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 0, itemsSkipped: 1 });
 		expect(checker).toHaveBeenCalledTimes(2);
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+	});
+
+	it("blocks retry episode mutation when its saved A provider evidence is superseded", async () => {
+		const fixture = makeSonarrDeps();
+		const context = createSharedPlexSafetyContext();
+		const episodeTarget = exactEpisodeTarget();
+		await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+		const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+		if (plan?.kind !== "verified_sonarr_episode") throw new Error("Expected episode plan");
+		const storedRetry = {
+			...approval(),
+			status: "retry_pending",
+			targetScope: "episode",
+			arrEpisodeId: 9_001,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			episodeTitle: "Episode 1",
+			safetySnapshot: serializeExecutableSafetyPlan(plan, TEST_PLEX_PROVIDER_EVIDENCE),
+		};
+		configureApprovalStore(fixture.deps, storedRetry);
+		const checker = (
+			fixture.deps as CleanupExecutorDeps & {
+				providerEvidenceAuthorityChecker: ReturnType<typeof vi.fn>;
+			}
+		).providerEvidenceAuthorityChecker;
+		checker.mockRejectedValue(new ProviderExecutionAuthorityChangedError());
+
+		const result = await executeRetryItems(fixture.deps, "user-1", ["approval-1"]);
+
+		expect(result).toMatchObject({ removed: 0, reconciled: 0, failed: 1 });
+		expect(storedRetry).toMatchObject({ status: "expired" });
 		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 	});

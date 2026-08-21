@@ -523,7 +523,213 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 			],
 		);
 
-		expect(statusReads).toHaveBeenCalledTimes(3);
+		expect(statusReads).toHaveBeenCalledTimes(2);
+		expect(result.failedSources).toContain("plex");
+		expect(result.ctx.plexMap).toBeUndefined();
+		expect(result.ctx.plexSectionTitles).toBeUndefined();
+		expect(result.providerEvidence?.dependencies).toEqual([]);
+		expect(result.providerEvidence?.sources).toEqual([]);
+	});
+
+	it("withholds a configured Plex policy when one contributing instance has no published sections", async () => {
+		const first = verifiedPlexInstance({ id: "plex-inst-a" });
+		const second = verifiedPlexInstance({ id: "plex-inst-b" });
+		const completedAt = new Date();
+		const firstStatus = {
+			...completeStatus(first.id, completedAt, 1),
+			generationId: "plex-generation-a",
+			generationMetadata: JSON.stringify({ sections: [] }),
+		};
+		const secondStatus = {
+			...completeStatus(second.id, completedAt, 1),
+			generationId: "plex-generation-b",
+			generationMetadata: JSON.stringify({
+				sections: [{ key: "movies", title: "Movies", type: "movie" }],
+			}),
+		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([first, second]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn(async ({ where }: { where: { instanceId: string | { in: string[] } } }) => {
+					const ids =
+						typeof where.instanceId === "string" ? [where.instanceId] : where.instanceId.in;
+					return ids.map((id) => (id === first.id ? firstStatus : secondStatus));
+				}),
+			},
+			plexCache: {
+				count: vi.fn(async ({ where }: { where: { instanceId: string } }) =>
+					where.instanceId === first.id || where.instanceId === second.id ? 1 : 0,
+				),
+				findMany: vi.fn(
+					async ({ where, cursor }: { where: { instanceId: string }; cursor?: { id: string } }) =>
+						cursor
+							? []
+							: [
+									makePlexRow({
+										id: "row-a",
+										instanceId: first.id,
+										tmdbId: 41,
+										mediaType: "movie",
+										sectionId: "missing",
+										sectionTitle: "Missing inventory",
+									}),
+									makePlexRow({
+										id: "row-b",
+										instanceId: second.id,
+										tmdbId: 42,
+										mediaType: "movie",
+										sectionId: "movies",
+										sectionTitle: "Movies",
+									}),
+								].filter((row) => row.instanceId === where.instanceId),
+				),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[
+				{
+					enabled: true,
+					ruleType: "age",
+					parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+					conditions: null,
+					plexLibraryFilter: JSON.stringify(["Movies"]),
+				},
+			],
+		);
+
+		expect(result.failedSources).toContain("plex");
+		expect(result.ctx.plexMap).toBeUndefined();
+		expect(result.ctx.plexSectionTitles).toBeUndefined();
+		expect(result.providerEvidence?.dependencies).toEqual([]);
+		expect(result.providerEvidence?.sources).toEqual([]);
+	});
+
+	it("withholds all configured Plex policy evidence when one instance advances generation during the read", async () => {
+		const stable = verifiedPlexInstance({ id: "plex-inst-stable" });
+		const advancing = verifiedPlexInstance({ id: "plex-inst-advancing" });
+		const completedAt = new Date();
+		const stableStatus = {
+			...completeStatus(stable.id, completedAt, 1),
+			generationId: "stable-generation-a",
+			generationMetadata: JSON.stringify({
+				sections: [{ key: "stable", title: "Stable Movies", type: "movie" }],
+			}),
+		};
+		const advancingA = {
+			...completeStatus(advancing.id, completedAt, 1),
+			generationId: "advancing-generation-a",
+			generationMetadata: JSON.stringify({
+				sections: [{ key: "advancing-a", title: "Advancing Movies A", type: "movie" }],
+			}),
+		};
+		const advancingB = {
+			...advancingA,
+			generationId: "advancing-generation-b",
+			generationMetadata: JSON.stringify({
+				sections: [{ key: "advancing-b", title: "Advancing Movies B", type: "movie" }],
+			}),
+		};
+		let advancingStatusReads = 0;
+		const rows = [
+			makePlexRow({
+				id: "stable-row",
+				instanceId: stable.id,
+				tmdbId: 41,
+				mediaType: "movie",
+				sectionId: "stable",
+				sectionTitle: "Stable Movies",
+				watchCount: 0,
+			}),
+			makePlexRow({
+				id: "advancing-row",
+				instanceId: advancing.id,
+				tmdbId: 42,
+				mediaType: "movie",
+				sectionId: "advancing-a",
+				sectionTitle: "Advancing Movies A",
+				watchCount: 0,
+			}),
+		];
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([stable, advancing]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn(async ({ where }: { where: { instanceId: string } }) => {
+					if (where.instanceId === stable.id) return [stableStatus];
+					advancingStatusReads += 1;
+					return [advancingStatusReads === 1 ? advancingA : advancingB];
+				}),
+			},
+			plexCache: {
+				findMany: vi.fn(async ({ where }: { where: { instanceId: string } }) =>
+					rows.filter((row) => row.instanceId === where.instanceId),
+				),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[
+				{
+					enabled: true,
+					ruleType: "age",
+					parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+					conditions: null,
+					plexLibraryFilter: JSON.stringify(["Stable Movies"]),
+				},
+			],
+		);
+
+		expect(result.failedSources).toContain("plex");
+		expect(result.ctx.plexMap).toBeUndefined();
+		expect(result.ctx.plexSectionTitles).toBeUndefined();
+		expect(result.providerEvidence?.dependencies).toEqual([]);
+		expect(result.providerEvidence?.sources).toEqual([]);
+	});
+
+	it("does not validate a configured B-only section against A generation rows", async () => {
+		const instance = verifiedPlexInstance();
+		const status = {
+			...completeStatus(instance.id, new Date(), 1),
+			generationId: "plex-generation-a",
+			generationMetadata: JSON.stringify({
+				sections: [{ key: "movies-a", title: "Movies A", type: "movie" }],
+			}),
+		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
+			plexCache: {
+				findMany: vi.fn().mockResolvedValue([
+					makePlexRow({
+						id: "row-a",
+						tmdbId: 42,
+						mediaType: "movie",
+						sectionId: "movies-a",
+						sectionTitle: "Movies A",
+						watchCount: 0,
+					}),
+				]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await buildEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[
+				{
+					enabled: true,
+					ruleType: "age",
+					parameters: JSON.stringify({ operator: "older_than", days: 30 }),
+					conditions: null,
+					plexLibraryFilter: JSON.stringify(["Movies B"]),
+				},
+			],
+		);
+
 		expect(result.failedSources).toContain("plex");
 		expect(result.ctx.plexMap).toBeUndefined();
 		expect(result.ctx.plexSectionTitles).toBeUndefined();
