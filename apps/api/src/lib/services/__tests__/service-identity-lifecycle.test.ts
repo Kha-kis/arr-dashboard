@@ -6,6 +6,7 @@ import {
 import {
 	createProviderReplacementAuthority,
 	expireApprovalsForProviderReplacement,
+	verifiedIdentityData,
 } from "../service-identity-lifecycle.js";
 
 function approvalStore(rows: Array<Record<string, unknown>>) {
@@ -27,6 +28,110 @@ function approvalStore(rows: Array<Record<string, unknown>>) {
 		},
 	};
 }
+
+describe("verifiedIdentityData", () => {
+	const observation = {
+		service: "PLEX" as const,
+		identityKind: "plex-machine-identifier" as const,
+		rawIdentity: "plex-machine-a",
+		confirmationDigest: "digest",
+		fingerprint: "fingerprint",
+	};
+
+	it("restores a temporarily mismatched enrolled identity without advancing its generation", () => {
+		const now = new Date("2026-08-20T12:00:00.000Z");
+
+		const restored = verifiedIdentityData(
+			{
+				service: "PLEX",
+				expectedIdentity: "plex-machine-a",
+				identityStatus: "MISMATCH",
+				identityGeneration: 7,
+			},
+			observation,
+			now,
+		);
+
+		expect(restored).toMatchObject({
+			expectedIdentity: "plex-machine-a",
+			identityStatus: "VERIFIED",
+			identityGeneration: 7,
+			identityVerifiedAt: now,
+		});
+	});
+
+	it("advances the generation for a different observed identity after mismatch", () => {
+		const replacement = verifiedIdentityData(
+			{
+				service: "PLEX",
+				expectedIdentity: "plex-machine-b",
+				identityStatus: "MISMATCH",
+				identityGeneration: 7,
+			},
+			observation,
+		);
+
+		expect(replacement.identityGeneration).toBe(8);
+	});
+
+	it.each([
+		["Tautulli after mismatch", "TAUTULLI", "tautulli-pms-identifier", "MISMATCH"],
+		["Tautulli after unverified", "TAUTULLI", "tautulli-pms-identifier", "UNVERIFIED"],
+		["Jellyfin after mismatch", "JELLYFIN", "jellyfin-server-id", "MISMATCH"],
+		["Jellyfin after unverified", "JELLYFIN", "jellyfin-server-id", "UNVERIFIED"],
+		["Emby after mismatch", "EMBY", "emby-server-id", "MISMATCH"],
+		["Emby after unverified", "EMBY", "emby-server-id", "UNVERIFIED"],
+	] as const)(
+		"advances the %s generation when the same identity is verified",
+		(_label, service, identityKind, identityStatus) => {
+			const verified = verifiedIdentityData(
+				{
+					service,
+					expectedIdentity: "same-enrolled-identity",
+					identityStatus,
+					identityGeneration: 7,
+				},
+				{
+					service,
+					identityKind,
+					rawIdentity: "same-enrolled-identity",
+					confirmationDigest: "digest",
+					fingerprint: "fingerprint",
+				},
+			);
+
+			expect(verified.identityGeneration).toBe(8);
+		},
+	);
+
+	it.each([
+		["Plex", "PLEX", "plex-machine-identifier"],
+		["Tautulli", "TAUTULLI", "tautulli-pms-identifier"],
+		["Jellyfin", "JELLYFIN", "jellyfin-server-id"],
+		["Emby", "EMBY", "emby-server-id"],
+	] as const)(
+		"preserves the %s generation for an already-verified same identity",
+		(_label, service, identityKind) => {
+			const verified = verifiedIdentityData(
+				{
+					service,
+					expectedIdentity: "same-enrolled-identity",
+					identityStatus: "VERIFIED",
+					identityGeneration: 7,
+				},
+				{
+					service,
+					identityKind,
+					rawIdentity: "same-enrolled-identity",
+					confirmationDigest: "digest",
+					fingerprint: "fingerprint",
+				},
+			);
+
+			expect(verified.identityGeneration).toBe(7);
+		},
+	);
+});
 
 describe("expireApprovalsForProviderReplacement", () => {
 	it("expires only v2 approvals whose provider evidence matches the replaced authority", async () => {

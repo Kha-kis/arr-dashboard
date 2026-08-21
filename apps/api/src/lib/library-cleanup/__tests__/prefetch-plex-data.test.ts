@@ -636,6 +636,68 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 });
 
 describe("prefetchFreshPlexEpisodeWatchData", () => {
+	it.each([
+		["metadata-only instance update", "updatedAt"],
+		["same-identity reverification", "identityVerifiedAt"],
+	] as const)("keeps current episode evidence after a %s", async (_label, field) => {
+		const now = new Date("2026-07-30T12:00:00.000Z");
+		const completedAt = new Date("2026-07-30T11:45:00.000Z");
+		const warnings: string[] = [];
+		const currentInstance = {
+			id: "plex-inst-1",
+			service: "PLEX",
+			enabled: true,
+			baseUrl: "http://plex.internal:32400",
+			encryptedApiKey: "encrypted-token",
+			encryptionIv: "iv",
+			encryptedHttpAuthCredentials: null,
+			httpAuthEncryptionIv: null,
+			expectedIdentity: "stored-plex-machine-identity",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: new Date(0),
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			updatedAt: new Date(0),
+			[field]: new Date("2026-07-30T11:50:00.000Z"),
+		};
+		const prisma = {
+			plexCache: { count: vi.fn().mockResolvedValue(1) },
+			plexEpisodeCache: {
+				groupBy: vi.fn().mockResolvedValue([{ instanceId: "plex-inst-1", _count: { id: 1 } }]),
+				findMany: vi.fn().mockResolvedValue([
+					{
+						instanceId: "plex-inst-1",
+						showTmdbId: 42,
+						seasonNumber: 1,
+						episodeNumber: 2,
+						watchCount: 3,
+						lastWatchedAt: now,
+						watchedByUsers: '["Viewer"]',
+						ratingKey: "episode-123",
+						refreshedAt: completedAt,
+						sourceFingerprint: plexConnectionFingerprint(currentInstance as never),
+						connectionGeneration: 3,
+						identityGeneration: 7,
+					},
+				]),
+			},
+			cacheRefreshStatus: {
+				findMany: episodeStatuses("plex-inst-1", completedAt, 1),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const result = await prefetchFreshPlexEpisodeWatchData(
+			{ prisma, log } as CleanupExecutorDeps,
+			[currentInstance] as never,
+			now,
+			warnings,
+		);
+
+		expect(result.get("42:1:2")).toHaveLength(1);
+		expect(warnings).toEqual([]);
+	});
+
 	it("ignores fresh-looking evidence produced by the pre-repoint Plex connection", async () => {
 		const now = new Date("2026-07-30T12:00:00.000Z");
 		const warnings: string[] = [];

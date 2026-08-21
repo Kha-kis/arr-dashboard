@@ -1427,8 +1427,9 @@ async function loadProviderExecutionEvidence(
 					status.lastAttemptResult !== null &&
 					status.lastAttemptResult !== "success") ||
 				status.lastRefreshedAt.getTime() < freshnessThreshold ||
-				status.lastRefreshedAt.getTime() < instance.updatedAt.getTime() ||
-				status.lastRefreshedAt.getTime() < instance.identityVerifiedAt.getTime() ||
+				(!isPlexEvidence && status.lastRefreshedAt.getTime() < instance.updatedAt.getTime()) ||
+				(!isPlexEvidence &&
+					status.lastRefreshedAt.getTime() < instance.identityVerifiedAt.getTime()) ||
 				status.connectionGeneration !== instance.connectionGeneration ||
 				status.identityGeneration !== instance.identityGeneration
 			) {
@@ -3847,7 +3848,6 @@ async function verifyEpisodePlexWatchProof(
 	for (const row of policyRows) {
 		const plexInstance = enabledPlexInstances.find((instance) => instance.id === row.instanceId);
 		const sourceFingerprint = plexInstance ? plexEvidenceSourceFingerprint(plexInstance) : null;
-		const sourceUpdatedAt = plexInstance?.updatedAt.getTime();
 		if (
 			!plexInstance ||
 			typeof sourceFingerprint !== "string" ||
@@ -3856,9 +3856,7 @@ async function verifyEpisodePlexWatchProof(
 			row.watchCount === null ||
 			row.refreshedAt === null ||
 			row.sourceFingerprint !== sourceFingerprint ||
-			!Number.isFinite(sourceUpdatedAt) ||
-			row.refreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000 ||
-			row.refreshedAt.getTime() < sourceUpdatedAt!
+			row.refreshedAt.getTime() < Date.now() - 24 * 60 * 60 * 1000
 		) {
 			continue;
 		}

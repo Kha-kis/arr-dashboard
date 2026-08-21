@@ -52,6 +52,7 @@ export function confirmsIdentityCandidate(
 
 export function verifiedIdentityData(
 	current: {
+		service: string;
 		expectedIdentity: string | null;
 		identityStatus: string;
 		identityGeneration: number;
@@ -59,13 +60,16 @@ export function verifiedIdentityData(
 	observation: ProviderIdentityObservation,
 	now: Date = new Date(),
 ) {
-	const alreadyVerified =
-		current.identityStatus === "VERIFIED" && current.expectedIdentity === observation.rawIdentity;
+	const sameEnrolledIdentity = current.expectedIdentity === observation.rawIdentity;
+	const preservesIdentityGeneration =
+		sameEnrolledIdentity &&
+		(current.identityStatus === "VERIFIED" ||
+			(current.service === "PLEX" && observation.service === "PLEX"));
 	return {
 		expectedIdentity: observation.rawIdentity,
 		identityKind: toPersistedIdentityKind(observation.identityKind),
 		identityStatus: "VERIFIED" as const,
-		identityGeneration: alreadyVerified
+		identityGeneration: preservesIdentityGeneration
 			? current.identityGeneration
 			: current.identityGeneration + 1,
 		identityVerifiedAt: now,

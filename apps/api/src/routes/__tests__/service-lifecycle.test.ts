@@ -620,6 +620,42 @@ describe("Service instance lifecycle", () => {
 		});
 	});
 
+	it("restores a temporarily mismatched enrolled identity without advancing its generation", async () => {
+		const id = await createExistingVerifiedProvider();
+		const enrolled = prisma._instances.get(id);
+		if (!enrolled) throw new Error("verified provider fixture is missing");
+		const previouslyVerifiedAt = new Date("2026-08-15T00:00:00.000Z");
+		enrolled.identityStatus = "MISMATCH";
+		enrolled.identityVerifiedAt = previouslyVerifiedAt;
+		const observation = {
+			service: "PLEX" as const,
+			identityKind: "plex-machine-identifier",
+			rawIdentity: "enrolled-plex-machine",
+			fingerprint: "safe-fingerprint",
+			confirmationDigest: "a".repeat(64),
+		};
+		mockReadProviderIdentity.mockResolvedValueOnce(observation).mockResolvedValueOnce(observation);
+
+		const inspected = await inject("POST", `/services/${id}/identity/inspect`, { body: {} });
+		const verified = await inject("POST", `/services/${id}/identity/verify`, {
+			body: {
+				confirmationDigest: JSON.parse(inspected.payload).candidate.confirmationDigest,
+				expectedConnectionGeneration: 0,
+				expectedIdentityGeneration: 3,
+			},
+		});
+
+		expect(verified.statusCode).toBe(200);
+		expect(prisma._instances.get(id)).toMatchObject({
+			expectedIdentity: "enrolled-plex-machine",
+			identityStatus: "VERIFIED",
+			identityGeneration: 3,
+		});
+		expect(prisma._instances.get(id)?.identityVerifiedAt.getTime()).toBeGreaterThan(
+			previouslyVerifiedAt.getTime(),
+		);
+	});
+
 	it("rejects verification when the provider changes after inspection", async () => {
 		const id = await createExistingUnverifiedProvider();
 		mockReadProviderIdentity

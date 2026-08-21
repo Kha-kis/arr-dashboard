@@ -6735,11 +6735,6 @@ export async function prefetchFreshPlexEpisodeWatchData(
 	const plexInstanceIds = instances
 		.filter((instance) => instance.service === "PLEX" && instance.enabled)
 		.map((instance) => instance.id);
-	const plexUpdatedAtById = new Map(
-		instances
-			.filter((instance) => instance.service === "PLEX" && instance.enabled)
-			.map((instance) => [instance.id, instance.updatedAt.getTime()]),
-	);
 	const plexFingerprintById = new Map(
 		instances
 			.filter((instance) => instance.service === "PLEX" && instance.enabled)
@@ -6814,20 +6809,16 @@ export async function prefetchFreshPlexEpisodeWatchData(
 				incompleteEvidenceCount++;
 				continue;
 			}
-			const sourceUpdatedAt = plexUpdatedAtById.get(row.instanceId);
 			const sourceFingerprint = plexFingerprintById.get(row.instanceId);
 			const generation = generations.get(row.instanceId);
 			if (
-				sourceUpdatedAt === undefined ||
-				!Number.isFinite(sourceUpdatedAt) ||
 				!sourceFingerprint ||
 				!generation ||
 				row.connectionGeneration !== generation.connectionGeneration ||
 				row.identityGeneration !== generation.identityGeneration ||
 				row.sourceFingerprint !== sourceFingerprint ||
 				row.refreshedAt.getTime() !== generation.completedAt.getTime() ||
-				row.refreshedAt.getTime() < freshnessThreshold ||
-				row.refreshedAt.getTime() < sourceUpdatedAt
+				row.refreshedAt.getTime() < freshnessThreshold
 			) {
 				staleEvidenceCount++;
 				continue;

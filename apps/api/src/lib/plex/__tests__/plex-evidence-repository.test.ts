@@ -7,6 +7,7 @@ import {
 	loadInstanceSelectedEvidence,
 	loadUserEvidence,
 } from "../plex-evidence-repository.js";
+import { verifiedIdentityData } from "../../services/service-identity-lifecycle.js";
 
 const now = new Date("2026-08-20T14:00:00.000Z");
 const sections = [{ key: "movies", title: "Movies", type: "movie" as const }];
@@ -188,6 +189,49 @@ describe("Plex evidence repository", () => {
 	});
 
 	it.each([
+		["label-only edit", { label: "Renamed Plex" }],
+		["default selection edit", { isDefault: true }],
+		["tag edit", { tags: [{ tagId: "tag-1" }] }],
+		["external URL edit", { externalUrl: "https://plex.example.test" }],
+		["other non-authority metadata edit", { storageGroupId: "storage-1" }],
+		["same-identity reverification", {}],
+		["same identity restored after a temporary mismatch", {}],
+	] as const)(
+		"keeps an explicitly generation-bound publication authoritative after a %s",
+		async (_change, metadata) => {
+			const publication = new Date("2026-08-20T12:00:00.000Z");
+			const laterServiceState = new Date("2026-08-20T13:00:00.000Z");
+			const currentInstance = instance({
+				...metadata,
+				updatedAt: laterServiceState,
+				identityVerifiedAt: laterServiceState,
+			});
+			const published = status({
+				lastRefreshedAt: publication,
+				lastAttemptAt: publication,
+			});
+
+			const result = await load(
+				fixture({ instance: currentInstance, statuses: [published, { ...published }] }),
+			);
+			const mutation = await loadMutation(
+				fixture({ instance: currentInstance, statuses: [published, { ...published }] }),
+			);
+
+			expect(result).toMatchObject({
+				available: true,
+				connectionGeneration: 4,
+				identityGeneration: 9,
+				evidence: { publicationLevel: "authoritative", reasonCodes: [] },
+			});
+			expect(mutation).toMatchObject({
+				available: true,
+				evidence: { publicationLevel: "authoritative", reasonCodes: [] },
+			});
+		},
+	);
+
+	it.each([
 		["generation change", status({ generationId: "generation-2" }), "generation_changed"],
 		[
 			"published timestamp change",
@@ -224,7 +268,13 @@ describe("Plex evidence repository", () => {
 	});
 
 	it.each([
+		[
+			"null status connection",
+			status({ connectionGeneration: null }),
+			"connection_generation_mismatch",
+		],
 		["status connection", status({ connectionGeneration: 5 }), "connection_generation_mismatch"],
+		["null status identity", status({ identityGeneration: null }), "identity_generation_mismatch"],
 		["status identity", status({ identityGeneration: 10 }), "identity_generation_mismatch"],
 	])("fails closed for a %s mismatch", async (_name, changedStatus, reasonCode) => {
 		const result = await load(fixture({ statuses: [changedStatus] }));
@@ -493,6 +543,64 @@ describe("Plex evidence repository", () => {
 		expect(result).toMatchObject({
 			available: false,
 			evidence: { reasonCodes: ["disabled_instance"] },
+		});
+	});
+
+	it.each([
+		["mismatched", instance({ identityStatus: "MISMATCH" })],
+		[
+			"unverified",
+			instance({ identityStatus: "UNVERIFIED", expectedIdentity: null, identityVerifiedAt: null }),
+		],
+	])(
+		"keeps cache evidence unavailable while the identity is %s",
+		async (_state, currentInstance) => {
+			const result = await load(fixture({ instance: currentInstance }));
+
+			expect(result).toMatchObject({
+				available: false,
+				evidence: { reasonCodes: ["identity_generation_mismatch"] },
+			});
+		},
+	);
+
+	it("keeps evidence unavailable during a mismatch and restores its enrolled generation after reverification", async () => {
+		const mismatchedInstance = instance({ identityStatus: "MISMATCH" });
+		const unavailable = await load(fixture({ instance: mismatchedInstance }));
+		expect(unavailable).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["identity_generation_mismatch"] },
+		});
+
+		const restoredIdentity = verifiedIdentityData(
+			{
+				service: "PLEX",
+				expectedIdentity: mismatchedInstance.expectedIdentity,
+				identityStatus: mismatchedInstance.identityStatus,
+				identityGeneration: mismatchedInstance.identityGeneration,
+			},
+			{
+				service: "PLEX",
+				identityKind: "plex-machine-identifier",
+				rawIdentity: "machine-1",
+				confirmationDigest: "digest",
+				fingerprint: "fingerprint",
+			},
+			new Date("2026-08-20T13:00:00.000Z"),
+		);
+		const restored = await load(
+			fixture({
+				instance: instance({
+					...restoredIdentity,
+					updatedAt: new Date("2026-08-20T13:00:00.000Z"),
+				}),
+			}),
+		);
+
+		expect(restored).toMatchObject({
+			available: true,
+			identityGeneration: 9,
+			evidence: { publicationLevel: "authoritative", reasonCodes: [] },
 		});
 	});
 

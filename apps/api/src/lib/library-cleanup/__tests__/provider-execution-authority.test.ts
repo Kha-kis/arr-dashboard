@@ -24,7 +24,10 @@ function fingerprint(value: unknown): string {
 		.digest("hex");
 }
 
-function fixture(statusOverrides: Record<string, unknown> = {}) {
+function fixture(
+	statusOverrides: Record<string, unknown> = {},
+	instanceOverrides: Record<string, unknown> = {},
+) {
 	const now = new Date();
 	const instance = {
 		id: "plex-1",
@@ -46,6 +49,7 @@ function fixture(statusOverrides: Record<string, unknown> = {}) {
 		identityGeneration: 7,
 		createdAt: new Date(now.getTime() - 20_000),
 		updatedAt: new Date(now.getTime() - 10_000),
+		...instanceOverrides,
 	};
 	let instances = [instance];
 	const status = {
@@ -124,7 +128,7 @@ function fixture(statusOverrides: Record<string, unknown> = {}) {
 				connectionGeneration: 3,
 				identityGeneration: 7,
 				cacheType: "plex",
-				completedAt: now.toISOString(),
+				completedAt: status.lastRefreshedAt.toISOString(),
 				itemCount: 1,
 				verifiedAt: instance.identityVerifiedAt.toISOString(),
 				statusFingerprint,
@@ -284,9 +288,16 @@ const cacheCases = {
 	},
 } as const;
 
-function cacheTypeFixture(cacheType: keyof typeof cacheCases) {
+function cacheTypeFixture(
+	cacheType: keyof typeof cacheCases,
+	options: {
+		now?: Date;
+		providerOverrides?: Record<string, unknown>;
+		statusOverrides?: Record<string, unknown>;
+	} = {},
+) {
 	const cacheCase = cacheCases[cacheType];
-	const now = new Date();
+	const now = options.now ?? new Date();
 	const provider = {
 		id: "provider-1",
 		userId: "user-1",
@@ -307,6 +318,7 @@ function cacheTypeFixture(cacheType: keyof typeof cacheCases) {
 		identityGeneration: 7,
 		createdAt: new Date(now.getTime() - 20_000),
 		updatedAt: new Date(now.getTime() - 10_000),
+		...options.providerOverrides,
 	};
 	const status = {
 		instanceId: provider.id,
@@ -333,6 +345,7 @@ function cacheTypeFixture(cacheType: keyof typeof cacheCases) {
 							identityGeneration: 7,
 						})
 					: "{}",
+		...options.statusOverrides,
 	};
 	const statusPayload = {
 		instanceId: status.instanceId,
@@ -444,6 +457,29 @@ describe("provider execution authority", () => {
 		});
 	}
 
+	it.each(["jellyfin", "tautulli"] as const)(
+		"keeps the publication-order check for non-Plex %s evidence",
+		async (cacheType) => {
+			const now = new Date("2026-08-20T12:00:00.000Z");
+			const subject = cacheTypeFixture(cacheType, {
+				now,
+				providerOverrides: {
+					updatedAt: new Date("2026-08-20T11:50:00.000Z"),
+					identityVerifiedAt: new Date("2026-08-20T11:50:00.000Z"),
+				},
+				statusOverrides: {
+					lastRefreshedAt: new Date("2026-08-20T11:45:00.000Z"),
+					lastAttemptAt: new Date("2026-08-20T11:45:00.000Z"),
+				},
+			});
+
+			await expect(
+				assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
+			).rejects.toThrow("Provider execution authority changed");
+			expect(subject.identityReader).not.toHaveBeenCalled();
+		},
+	);
+
 	it("live-checks identity and exact rows, then fences the accepted snapshot", async () => {
 		const subject = fixture();
 		const assertLease = vi.fn().mockResolvedValue(undefined);
@@ -455,6 +491,22 @@ describe("provider execution authority", () => {
 		expect(subject.identityReader).toHaveBeenCalledTimes(1);
 		expect(assertLease).toHaveBeenCalledTimes(2);
 		expect(subject.deps.prisma.$transaction).toHaveBeenCalledTimes(1);
+	});
+
+	it.each([
+		["metadata-only instance update", "updatedAt"],
+		["same-identity reverification", "identityVerifiedAt"],
+	] as const)("accepts current Plex evidence after a %s", async (_label, field) => {
+		const publicationAt = new Date(Date.now() - 30_000);
+		const subject = fixture(
+			{ lastRefreshedAt: publicationAt, lastAttemptAt: publicationAt },
+			{ [field]: new Date(Date.now() - 10_000) },
+		);
+
+		await expect(
+			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
+		).resolves.toBeUndefined();
+		expect(subject.identityReader).toHaveBeenCalledOnce();
 	});
 
 	it("fails closed when the live provider identity does not match", async () => {

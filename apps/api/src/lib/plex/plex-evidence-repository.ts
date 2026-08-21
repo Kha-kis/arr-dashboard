@@ -185,26 +185,23 @@ function isCurrentVerifiedPlexInstance(instance: PlexEvidenceInstance): boolean 
 	);
 }
 
-function validateStatusBinding(
+function validateExplicitStatusGenerationBinding(
 	instance: PlexEvidenceInstance,
 	status: {
 		connectionGeneration: number | null;
 		identityGeneration: number | null;
-		lastRefreshedAt: Date;
 	},
 ): PlexCoverageReasonCode | null {
 	if (
 		status.connectionGeneration === null ||
-		status.connectionGeneration !== instance.connectionGeneration ||
-		status.lastRefreshedAt.getTime() < instance.updatedAt.getTime()
+		status.connectionGeneration !== instance.connectionGeneration
 	) {
 		return "connection_generation_mismatch";
 	}
 	if (
 		status.identityGeneration === null ||
 		status.identityGeneration !== instance.identityGeneration ||
-		instance.identityVerifiedAt === null ||
-		status.lastRefreshedAt.getTime() < instance.identityVerifiedAt.getTime()
+		instance.identityVerifiedAt === null
 	) {
 		return "identity_generation_mismatch";
 	}
@@ -267,14 +264,14 @@ async function loadOwnedInstanceEvidence(
 		const before = await readPlexGenerationStatus(prisma, instance.id);
 		const publishedBefore = evaluatePublishedPlexGeneration(before, options);
 		if (!publishedBefore.available) return publishedBefore;
-		const beforeBinding = validateStatusBinding(instance, before!);
+		const beforeBinding = validateExplicitStatusGenerationBinding(instance, before!);
 		if (beforeBinding) return unavailable(beforeBinding);
 
 		const rows = await listPlexCacheRows(prisma, instance.id);
 		const after = await readPlexGenerationStatus(prisma, instance.id);
 		const publishedAfter = evaluatePublishedPlexGeneration(after, options);
 		if (!publishedAfter.available) return publishedAfter;
-		const afterBinding = validateStatusBinding(instance, after!);
+		const afterBinding = validateExplicitStatusGenerationBinding(instance, after!);
 		if (afterBinding) return unavailable(afterBinding);
 
 		const generationMismatch = publishedGenerationsMatch(publishedBefore, publishedAfter);
@@ -411,7 +408,7 @@ async function loadOwnedSelectedEvidence(
 		const before = await readPlexGenerationStatus(prisma, instance.id);
 		const publishedBefore = evaluatePublishedPlexGeneration(before, options);
 		if (!publishedBefore.available) return publishedBefore;
-		const beforeBinding = validateStatusBinding(instance, before!);
+		const beforeBinding = validateExplicitStatusGenerationBinding(instance, before!);
 		if (beforeBinding) return unavailable(beforeBinding);
 
 		const [totalCount, boundCount, rows] = await Promise.all([
@@ -426,7 +423,7 @@ async function loadOwnedSelectedEvidence(
 		const after = await readPlexGenerationStatus(prisma, instance.id);
 		const publishedAfter = evaluatePublishedPlexGeneration(after, options);
 		if (!publishedAfter.available) return publishedAfter;
-		const afterBinding = validateStatusBinding(instance, after!);
+		const afterBinding = validateExplicitStatusGenerationBinding(instance, after!);
 		if (afterBinding) return unavailable(afterBinding);
 		const generationMismatch = publishedGenerationsMatch(publishedBefore, publishedAfter);
 		if (generationMismatch) return unavailable(generationMismatch);
@@ -684,7 +681,7 @@ async function loadOwnedPublishedGenerationObservation(
 		const before = await readPlexGenerationStatus(prisma, instance.id);
 		const publishedBefore = evaluatePublishedPlexGeneration(before, options);
 		if (!publishedBefore.available) return publishedBefore;
-		const binding = validateStatusBinding(instance, before!);
+		const binding = validateExplicitStatusGenerationBinding(instance, before!);
 		if (binding) return unavailable(binding);
 		const [totalCount, boundCount] = await Promise.all([
 			countPlexCacheRows(prisma, { instanceId: instance.id }),
@@ -700,7 +697,7 @@ async function loadOwnedPublishedGenerationObservation(
 		const after = await readPlexGenerationStatus(prisma, instance.id);
 		const publishedAfter = evaluatePublishedPlexGeneration(after, options);
 		if (!publishedAfter.available) return publishedAfter;
-		const afterBinding = validateStatusBinding(instance, after!);
+		const afterBinding = validateExplicitStatusGenerationBinding(instance, after!);
 		if (afterBinding) return unavailable(afterBinding);
 		const generationMismatch = publishedGenerationsMatch(publishedBefore, publishedAfter);
 		if (generationMismatch) return unavailable(generationMismatch);
@@ -891,7 +888,7 @@ export async function loadInstanceEpisodeEvidence(
 		if (now.getTime() - episodePublishedAt > options.maxAgeMs) {
 			return unavailable("published_generation_stale");
 		}
-		const binding = validateStatusBinding(instance, before);
+		const binding = validateExplicitStatusGenerationBinding(instance, before);
 		if (binding) return unavailable(binding);
 		const parentMetadata = decodePlexEpisodeGenerationMetadata(before.generationMetadata);
 		if (!parentMetadata.ok) return unavailable("malformed_metadata");
@@ -928,7 +925,7 @@ export async function loadInstanceEpisodeEvidence(
 		) {
 			return unavailable("generation_changed");
 		}
-		const afterBinding = validateStatusBinding(instance, after);
+		const afterBinding = validateExplicitStatusGenerationBinding(instance, after);
 		if (afterBinding) return unavailable(afterBinding);
 		const parentAfter = await loadOwnedPublishedGenerationObservation(prisma, instance, options);
 		if (
@@ -1033,7 +1030,7 @@ export async function loadInstanceSelectedEpisodeEvidence(
 		if (now.getTime() - episodePublishedAt > options.maxAgeMs) {
 			return unavailable("published_generation_stale");
 		}
-		const binding = validateStatusBinding(instance, before);
+		const binding = validateExplicitStatusGenerationBinding(instance, before);
 		if (binding) return unavailable(binding);
 		const parentMetadata = decodePlexEpisodeGenerationMetadata(before.generationMetadata);
 		if (!parentMetadata.ok) return unavailable("malformed_metadata");
@@ -1086,7 +1083,7 @@ export async function loadInstanceSelectedEpisodeEvidence(
 		) {
 			return unavailable("generation_changed");
 		}
-		const afterBinding = validateStatusBinding(instance, after);
+		const afterBinding = validateExplicitStatusGenerationBinding(instance, after);
 		if (afterBinding) return unavailable(afterBinding);
 		const parentAfter = await loadOwnedPublishedGenerationObservation(prisma, instance, options);
 		if (
@@ -1169,7 +1166,7 @@ async function loadOwnedEpisodeGenerationObservation(
 		if (now.getTime() - publishedAt > options.maxAgeMs) {
 			return unavailable("published_generation_stale");
 		}
-		const binding = validateStatusBinding(instance, before);
+		const binding = validateExplicitStatusGenerationBinding(instance, before);
 		if (binding) return unavailable(binding);
 		const parentMetadata = decodePlexEpisodeGenerationMetadata(before.generationMetadata);
 		if (!parentMetadata.ok) return unavailable("malformed_metadata");
@@ -1205,7 +1202,7 @@ async function loadOwnedEpisodeGenerationObservation(
 		) {
 			return unavailable("generation_changed");
 		}
-		const afterBinding = validateStatusBinding(instance, after);
+		const afterBinding = validateExplicitStatusGenerationBinding(instance, after);
 		if (afterBinding) return unavailable(afterBinding);
 		const parentAfter = await loadOwnedPublishedGenerationObservation(prisma, instance, options);
 		if (
