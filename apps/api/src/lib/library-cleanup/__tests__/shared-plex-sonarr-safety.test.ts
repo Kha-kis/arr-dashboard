@@ -23,6 +23,18 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 				return evidence.find((entry) => entry.instanceId === input.instanceId) ?? evidence[0];
 			}
 
+			async scanInstanceExactPolicy(
+				input: Parameters<typeof repository.scanInstancePolicyEvidence>[1],
+			) {
+				return await this.scanInstancePolicy(input);
+			}
+
+			async scanInstanceExactPolicyPersisted(
+				input: Parameters<typeof repository.scanInstancePolicyEvidence>[1],
+			) {
+				return await this.scanInstancePolicy(input);
+			}
+
 			async readInstanceSelectedEpisodes(
 				input: Parameters<typeof repository.loadInstanceSelectedEpisodeEvidence>[1],
 			) {

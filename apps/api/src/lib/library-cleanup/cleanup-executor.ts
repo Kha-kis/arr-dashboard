@@ -48,6 +48,7 @@ import type {
 	PlexPolicyScanEvidence,
 } from "../plex/plex-authority-service.js";
 import { PlexAuthorityService } from "../plex/plex-authority-service.js";
+import { requirePlexTargetLedgerBinding } from "../plex/plex-generation-target-ledger.js";
 import {
 	refreshOwnedPlexCache,
 	refreshOwnedPlexEpisodeCache,
@@ -219,6 +220,16 @@ interface ProviderCacheRowAuthority {
 	rowCount: number;
 	rowFingerprint: string;
 }
+
+type PlexTargetLedgerBindingsByInstance = Map<
+	string,
+	{
+		generationId: string;
+		targetLedgerVersion: 1;
+		targetCount: number;
+		targetDigest: string;
+	}
+>;
 
 interface ProviderCacheSnapshot<T> {
 	value: T;
@@ -576,13 +587,21 @@ function createProviderCacheSnapshotFromRowAuthorities<T>(
 	instances: ServiceInstance[],
 	generations: Map<string, ProviderCacheGeneration>,
 	rowAuthorities: Map<string, ProviderCacheRowAuthority>,
+	targetLedgerBindings?: PlexTargetLedgerBindingsByInstance,
 ): ProviderCacheSnapshot<T> {
+	if (cacheType === "plex" && targetLedgerBindings?.size !== instances.length) {
+		throw new Error("Plex cache evidence requires an exact target-ledger binding per instance");
+	}
 	return {
 		value,
 		evidence: createSanitizedProviderEvidence(
 			[cacheType],
 			instances.map((instance) => {
 				const generation = generations.get(instance.id)!;
+				const targetLedger = targetLedgerBindings?.get(instance.id);
+				if (cacheType === "plex" && !targetLedger) {
+					throw new Error("Plex cache evidence requires an exact target-ledger binding");
+				}
 				return {
 					service: instance.service as SanitizedProviderEvidenceSource["service"],
 					instanceFingerprint: providerInstanceAuthorityFingerprint(instance.id),
@@ -596,6 +615,7 @@ function createProviderCacheSnapshotFromRowAuthorities<T>(
 					verifiedAt: instance.identityVerifiedAt!.toISOString(),
 					statusFingerprint: generation.statusFingerprint,
 					rowFingerprint: rowAuthorities.get(instance.id)!.rowFingerprint,
+					...targetLedger,
 				};
 			}),
 		),
@@ -628,11 +648,9 @@ async function revalidateExactProviderCacheAuthority(
 		const currentEvidence: PlexPolicyScanEvidence[] = [];
 		for (const instance of currentInstances) {
 			currentEvidence.push(
-				await cleanupPlexAuthority(transactionDeps).scanInstancePolicy({
+				await cleanupPlexAuthority(transactionDeps).scanInstanceExactPolicyPersisted({
 					userId: instance.userId,
 					instanceId: instance.id,
-					domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
-					mutation: true,
 					now,
 					maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
 				}),
@@ -3474,7 +3492,6 @@ type PlexTargetLookupClient = Pick<
 >;
 
 type PlexTargetRatingKeysByInstance = Map<string, Map<string, Set<string>>>;
-
 function plexTargetIdentityKey(
 	mediaType: PlexInventoryTarget["mediaType"],
 	idType: "tmdb" | "tvdb",
@@ -3678,6 +3695,7 @@ export async function assertCurrentSeriesMutationAuthority(
 		if (plexPolicyRules.length > 0) {
 			if (
 				!policySnapshot.plexTargetRatingKeysByInstance ||
+				!policySnapshot.plexTargetLedgerBindingsByInstance ||
 				!policySnapshot.plexTopologyFingerprint
 			) {
 				throw new Error("The policy snapshot lacked complete Plex target coverage");
@@ -6055,7 +6073,7 @@ async function loadPlexDataSnapshot(
 		const authoritativeEvidence: PlexPolicyScanEvidence[] = [];
 		for (const instance of plexInstances) {
 			authoritativeEvidence.push(
-				await cleanupPlexAuthority(deps).scanInstancePolicy({
+				await cleanupPlexAuthority(deps).scanInstanceExactPolicy({
 					userId: instance.userId,
 					instanceId: instance.id,
 					domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
@@ -6147,6 +6165,18 @@ async function loadPlexDataSnapshot(
 			throw new Error("Plex cache did not have a complete fresh generation for every instance");
 		}
 		const availableEvidence = authoritativeEvidence as AvailablePlexPolicyEvidence[];
+		const targetLedgerBindings = new Map(
+			availableEvidence.map((entry) => {
+				const targetLedger = requirePlexTargetLedgerBinding(entry.metadata);
+				if (!targetLedger.ok || !entry.generationId) {
+					throw new Error("Plex cache did not have a complete exact target ledger");
+				}
+				return [
+					entry.instanceId,
+					{ generationId: entry.generationId, ...targetLedger.binding },
+				] as const;
+			}),
+		);
 		const snapshot = createProviderCacheSnapshotFromRowAuthorities(
 			map,
 			"plex",
@@ -6158,6 +6188,7 @@ async function loadPlexDataSnapshot(
 					{ rowCount: entry.rowCount, rowFingerprint: entry.rowFingerprint },
 				]),
 			),
+			targetLedgerBindings,
 		);
 		if (!(await revalidateProviderCacheAuthority(deps, snapshot.authority, false))) {
 			throw new Error("Plex cache generation changed while rows were read");
@@ -10191,6 +10222,7 @@ async function refreshPlexMutationEvidence(
 			plexMap: PlexWatchMap;
 			plexSectionTitles: Set<string>;
 			ratingKeysByInstance: PlexTargetRatingKeysByInstance;
+			targetLedgerBindingsByInstance: PlexTargetLedgerBindingsByInstance;
 			plexEpisodeMap?: PlexEpisodeMap;
 			completedAt: Date;
 			topologyFingerprint: string;
@@ -10206,6 +10238,7 @@ async function refreshPlexMutationEvidence(
 					plexMap: PlexWatchMap;
 					plexSectionTitles: Set<string>;
 					ratingKeysByInstance: PlexTargetRatingKeysByInstance;
+					targetLedgerBindingsByInstance: PlexTargetLedgerBindingsByInstance;
 					plexEpisodeMap?: PlexEpisodeMap;
 					fingerprint: string;
 					completedAt: Date;
@@ -10217,6 +10250,7 @@ async function refreshPlexMutationEvidence(
 			const ratingKeysByInstance: PlexTargetRatingKeysByInstance = new Map(
 				initial.map((instance) => [instance.id, new Map<string, Set<string>>()]),
 			);
+			const targetLedgerBindingsByInstance: PlexTargetLedgerBindingsByInstance = new Map();
 			for (const instance of initial) {
 				if (!deps.encryptor) throw new Error("Plex credentials were unavailable");
 				const refreshed = await refreshOwnedPlexCache({
@@ -10229,11 +10263,20 @@ async function refreshPlexMutationEvidence(
 				if (refreshed.errors > 0 || refreshed.complete !== true) {
 					throw new Error("Plex cache refresh was incomplete");
 				}
-				if (!refreshed.completedAt || !refreshed.generationId || !refreshed.inventoryTargets) {
+				if (
+					!refreshed.completedAt ||
+					!refreshed.generationId ||
+					!refreshed.inventoryTargets ||
+					!refreshed.targetLedger
+				) {
 					throw new Error("Plex refresh lacked complete inventory identity evidence");
 				}
 				passCompletions.push(refreshed.completedAt);
 				generationIdsByInstance.set(instance.id, refreshed.generationId);
+				targetLedgerBindingsByInstance.set(instance.id, {
+					generationId: refreshed.generationId,
+					...refreshed.targetLedger,
+				});
 				const instanceTargets = ratingKeysByInstance.get(instance.id)!;
 				for (const target of refreshed.inventoryTargets) {
 					for (const targetKey of plexInventoryTargetKeys(target)) {
@@ -10292,6 +10335,7 @@ async function refreshPlexMutationEvidence(
 				plexMap: publishedPlex.plexMap,
 				plexSectionTitles: publishedPlex.plexSectionTitles,
 				ratingKeysByInstance,
+				targetLedgerBindingsByInstance,
 				plexEpisodeMap,
 				fingerprint,
 				completedAt: new Date(Math.min(...passCompletions.map((date) => date.getTime()))),
@@ -10302,6 +10346,7 @@ async function refreshPlexMutationEvidence(
 					plexMap: accepted.plexMap,
 					plexSectionTitles: accepted.plexSectionTitles,
 					ratingKeysByInstance: accepted.ratingKeysByInstance,
+					targetLedgerBindingsByInstance: accepted.targetLedgerBindingsByInstance,
 					plexEpisodeMap: accepted.plexEpisodeMap,
 					completedAt: accepted.completedAt,
 					topologyFingerprint: topology,
@@ -10624,6 +10669,7 @@ async function buildMutationEvalContext(
 	failedSources: Set<DataSourceDependency>;
 	sourceCompletedAt: Map<Exclude<DataSourceDependency, null>, Date>;
 	plexTargetRatingKeysByInstance?: PlexTargetRatingKeysByInstance;
+	plexTargetLedgerBindingsByInstance?: PlexTargetLedgerBindingsByInstance;
 	plexTopologyFingerprint?: string;
 }> {
 	const activeTypes = collectActiveRuleTypes(rules);
@@ -10729,6 +10775,7 @@ async function buildMutationEvalContext(
 		failedSources,
 		sourceCompletedAt,
 		plexTargetRatingKeysByInstance: plexEvidence?.ratingKeysByInstance,
+		plexTargetLedgerBindingsByInstance: plexEvidence?.targetLedgerBindingsByInstance,
 		plexTopologyFingerprint: plexEvidence?.topologyFingerprint,
 	};
 }
@@ -10744,6 +10791,7 @@ export interface MutationPolicySnapshot {
 	sourceCompletedAt: Map<Exclude<DataSourceDependency, null>, Date>;
 	oldestSourceCompletedAt: Date | null;
 	plexTargetRatingKeysByInstance?: PlexTargetRatingKeysByInstance;
+	plexTargetLedgerBindingsByInstance?: PlexTargetLedgerBindingsByInstance;
 	plexTopologyFingerprint?: string;
 	providerTopologyFingerprint: string;
 }
@@ -10796,6 +10844,7 @@ async function createMutationPolicySnapshot(
 		failedSources,
 		sourceCompletedAt,
 		plexTargetRatingKeysByInstance,
+		plexTargetLedgerBindingsByInstance,
 		plexTopologyFingerprint,
 	} = await buildMutationEvalContext(deps, userId, rules, cleanupRunClaimToken);
 	const oldestSourceCompletedAt =
@@ -10826,6 +10875,7 @@ async function createMutationPolicySnapshot(
 		sourceCompletedAt,
 		oldestSourceCompletedAt,
 		plexTargetRatingKeysByInstance,
+		plexTargetLedgerBindingsByInstance,
 		plexTopologyFingerprint,
 		providerTopologyFingerprint: providerTopologyFingerprint(providerInstances),
 	};

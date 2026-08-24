@@ -168,6 +168,49 @@ describe("Plex generation metadata", () => {
 		expect(parsed).not.toHaveProperty("ratingKeys");
 	});
 
+	it("round-trips a complete bounded target-ledger binding without target rows", () => {
+		const parsed = JSON.parse(
+			encodeAuthoritativePlexGenerationMetadata({
+				sections: v3Sections,
+				itemCount: 1,
+				canonicalizationVersion: 1,
+				roots: v3Roots,
+				targetLedger: {
+					targetLedgerVersion: 1,
+					targetCount: 2,
+					targetDigest: "b".repeat(64),
+				},
+			}),
+		) as Record<string, unknown>;
+
+		expect(parsed).toMatchObject({
+			targetLedgerVersion: 1,
+			targetCount: 2,
+			targetDigest: "b".repeat(64),
+		});
+		expect(decodePlexGenerationMetadata(JSON.stringify(parsed))).toMatchObject({
+			ok: true,
+			metadata: { targetLedgerVersion: 1, targetCount: 2, targetDigest: "b".repeat(64) },
+		});
+		expect(parsed).not.toHaveProperty("targets");
+	});
+
+	it.each([
+		{ targetLedgerVersion: 1 },
+		{ targetLedgerVersion: 2, targetCount: 1, targetDigest: "a".repeat(64) },
+		{ targetLedgerVersion: 1, targetCount: -1, targetDigest: "a".repeat(64) },
+		{ targetLedgerVersion: 1, targetCount: 1, targetDigest: "not-a-digest" },
+	])("rejects malformed V3 target-ledger bindings", (binding) => {
+		expect(
+			decodePlexGenerationMetadata(
+				JSON.stringify({
+					...JSON.parse(v3Metadata),
+					...binding,
+				}),
+			),
+		).toEqual({ ok: false, reasonCode: "metadata_invalid" });
+	});
+
 	it.each([
 		["V1", JSON.stringify({ sections })],
 		[

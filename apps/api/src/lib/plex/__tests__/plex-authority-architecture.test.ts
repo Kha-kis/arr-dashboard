@@ -9,6 +9,10 @@ const rawObservationImportAllowlist = new Set([
 const directMetadataMutationAllowlist = new Set([
 	path.normalize("src/lib/plex/plex-authority-service.ts"),
 ]);
+const directTargetLedgerAccessAllowlist = new Set([
+	path.normalize("src/lib/plex/plex-authority-service.ts"),
+	path.normalize("src/lib/plex/plex-generation-target-ledger.ts"),
+]);
 const fixedPointMutationConsumers = [
 	path.normalize("src/lib/label-sync/dest-writers/plex-writer.ts"),
 	path.normalize("src/routes/plex/collection-routes.ts"),
@@ -50,6 +54,14 @@ function findPlexAuthorityViolations(relative: string, source: string): string[]
 		violations.push("performs a direct Plex metadata mutation");
 	}
 	if (
+		/\.plexGenerationTarget\s*\./.test(source) &&
+		!directTargetLedgerAccessAllowlist.has(normalized)
+	) {
+		violations.push(
+			"reads or writes the Plex generation target ledger outside its authority boundary",
+		);
+	}
+	if (
 		fixedPointMutationConsumers.includes(normalized) &&
 		!/\.mutateMetadataTag\s*\(/.test(source)
 	) {
@@ -85,6 +97,12 @@ describe("Plex authority architecture", () => {
 				"await plexClient.updateMetadataTags(key, type, action, name);",
 			),
 		).toContain("performs a direct Plex metadata mutation");
+		expect(
+			findPlexAuthorityViolations(
+				"src/routes/plex/example.ts",
+				"await prisma.plexGenerationTarget.findMany({ where: {} });",
+			),
+		).toContain("reads or writes the Plex generation target ledger outside its authority boundary");
 		expect(
 			findPlexAuthorityViolations(
 				"src/lib/label-sync/dest-writers/plex-writer.ts",

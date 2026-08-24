@@ -22,6 +22,10 @@ import type { TautulliClient } from "../../tautulli/tautulli-client.js";
 import { refreshPlexCache } from "../plex-cache-refresher.js";
 import type { PlexClient, PlexLibraryItem } from "../plex-client.js";
 import { encodeAuthoritativePlexGenerationMetadata } from "../plex-generation-metadata.js";
+import {
+	calculatePlexGenerationTargetDigest,
+	type PlexGenerationTarget,
+} from "../plex-generation-target-ledger.js";
 import { prefetchPlexData } from "../../library-cleanup/cleanup-executor.js";
 import type { CleanupExecutorDeps } from "../../library-cleanup/types.js";
 
@@ -117,6 +121,21 @@ vi.mock("../plex-authority-service.js", async (importOriginal) => {
 
 			async scanInstancePolicy(input: Parameters<typeof repository.scanInstancePolicyEvidence>[1]) {
 				return await repository.scanInstancePolicyEvidence(this.deps.prisma, input);
+			}
+
+			async scanInstanceExactPolicy(
+				input: Parameters<typeof repository.scanInstancePolicyEvidence>[1],
+			) {
+				return await new actual.PlexAuthorityService({
+					prisma: this.deps.prisma as never,
+					log: silentLog,
+				}).scanInstanceExactPolicyPersisted(input);
+			}
+
+			async scanInstanceExactPolicyPersisted(
+				input: Parameters<typeof repository.scanInstancePolicyEvidence>[1],
+			) {
+				return await this.scanInstanceExactPolicy(input);
 			}
 		},
 	};
@@ -426,6 +445,8 @@ function reportHeap(message: string): void {
 			});
 			const completedAt = new Date();
 			for (const [instanceIndex, instanceId] of PLEX_POLICY_READ_INSTANCES.entries()) {
+				const generationId = `generation-${instanceId}`;
+				const targets: PlexGenerationTarget[] = [];
 				await prisma.serviceInstance.create({
 					data: {
 						id: instanceId,
@@ -471,7 +492,30 @@ function reportHeap(message: string): void {
 						};
 					});
 					await prisma.plexCache.createMany({ data: rows });
+					const ledgerRows = rows.map((row) => ({
+						instanceId,
+						generationId,
+						sectionId: row.sectionId,
+						sectionUuid: `${row.sectionId}-uuid`,
+						mediaType: "movie" as const,
+						tmdbId: row.tmdbId,
+						tvdbId: null,
+						ratingKey: row.ratingKey,
+					}));
+					targets.push(...ledgerRows);
+					await prisma.plexGenerationTarget.createMany({ data: ledgerRows });
 				}
+				const targetLedger = {
+					targetLedgerVersion: 1 as const,
+					targetCount: targets.length,
+					targetDigest: calculatePlexGenerationTargetDigest({
+						instanceId,
+						generationId,
+						connectionGeneration: 4,
+						identityGeneration: 9,
+						targets,
+					}),
+				};
 				await prisma.cacheRefreshStatus.create({
 					data: {
 						instanceId,
@@ -479,7 +523,7 @@ function reportHeap(message: string): void {
 						lastRefreshedAt: completedAt,
 						lastResult: "success",
 						itemCount: PLEX_POLICY_READ_ITEMS_PER_INSTANCE,
-						generationId: `generation-${instanceId}`,
+						generationId,
 						generationMetadata: encodeAuthoritativePlexGenerationMetadata({
 							sections: Array.from({ length: 4 }, (_, section) => ({
 								key: `section-${section}`,
@@ -497,6 +541,7 @@ function reportHeap(message: string): void {
 								domain: "membership" as const,
 								digest: "a".repeat(64),
 							})),
+							targetLedger,
 						}),
 						lastAttemptAt: completedAt,
 						lastAttemptResult: "success",
@@ -513,6 +558,7 @@ function reportHeap(message: string): void {
 			const readPrisma = {
 				serviceInstance: prisma.serviceInstance,
 				cacheRefreshStatus: prisma.cacheRefreshStatus,
+				plexGenerationTarget: prisma.plexGenerationTarget,
 				plexCache: {
 					findMany: async (args: Parameters<typeof prisma.plexCache.findMany>[0]) => {
 						const rows = await prisma.plexCache.findMany(args as never);

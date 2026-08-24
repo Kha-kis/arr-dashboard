@@ -182,6 +182,7 @@ model ServiceInstance {
   episodeFileCache        EpisodeFileCache[]
   librarySyncStatus       LibrarySyncStatus?
   plexCaches              PlexCache[]
+  plexGenerationTargets   PlexGenerationTarget[]
   plexEpisodeCaches       PlexEpisodeCache[]
   tautulliCaches          TautulliCache[]
   jellyfinCaches          JellyfinCache[]
@@ -1601,6 +1602,26 @@ model PlexCache {
   @@index([instanceId])
   @@index([instanceId, connectionGeneration, identityGeneration])
   @@map("plex_cache")
+}
+
+/// Exact mapped provider objects for the current authoritative Plex generation.
+model PlexGenerationTarget {
+  id           String @id @default(cuid())
+  instanceId   String
+  generationId String
+  sectionId    String
+  sectionUuid  String
+  mediaType    String
+  tmdbId       Int
+  tvdbId       Int?
+  ratingKey    String
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, generationId, ratingKey])
+  @@index([instanceId, generationId])
+  @@index([instanceId, generationId, mediaType, tmdbId])
+  @@map("plex_generation_targets")
 }
 
 /// Cached Plex episode-level watch data

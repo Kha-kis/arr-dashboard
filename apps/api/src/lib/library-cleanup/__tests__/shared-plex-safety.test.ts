@@ -23,6 +23,18 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 				return evidence.find((entry) => entry.instanceId === input.instanceId) ?? evidence[0];
 			}
 
+			async scanInstanceExactPolicy(
+				input: Parameters<typeof repository.scanInstancePolicyEvidence>[1],
+			) {
+				return await this.scanInstancePolicy(input);
+			}
+
+			async scanInstanceExactPolicyPersisted(
+				input: Parameters<typeof repository.scanInstancePolicyEvidence>[1],
+			) {
+				return await this.scanInstancePolicy(input);
+			}
+
 			async readInstanceSelectedEpisodes(
 				input: Parameters<typeof repository.loadInstanceSelectedEpisodeEvidence>[1],
 			) {
@@ -47,6 +59,12 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 					...input,
 					instance,
 				});
+			}
+
+			async readInstanceEpisodesPersisted(
+				input: Parameters<typeof repository.loadInstanceEpisodeEvidence>[1],
+			) {
+				return await this.readInstanceEpisodes(input);
 			}
 
 			async revalidatePersistedSnapshot(
@@ -1065,6 +1083,9 @@ function configurePlexApprovalAuthority(
 				},
 			],
 			roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+			targetLedgerVersion: 1,
+			targetCount: rows.length,
+			targetDigest: "c".repeat(64),
 		}),
 		...options.statusOverrides,
 	});
@@ -7669,6 +7690,11 @@ describe("shared Plex deletion safety", () => {
 			completedAt,
 			generationId: "plex-generation-1",
 			inventoryTargets: [{ mediaType: "movie", tmdbId: 42, ratingKey: "plex-movie-42" }],
+			targetLedger: {
+				targetLedgerVersion: 1,
+				targetCount: 1,
+				targetDigest: "a".repeat(64),
+			},
 		} as never);
 		retries.push({
 			...approvalRecord({

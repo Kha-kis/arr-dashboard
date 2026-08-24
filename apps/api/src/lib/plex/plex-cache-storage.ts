@@ -8,6 +8,10 @@ import type {
 import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
 import type { PlexCacheRefreshAttempt } from "../services/provider-cache-status.js";
 import { selectPlexBoundedValueRows } from "./plex-canonical-projection.js";
+import {
+	replacePlexGenerationTargets,
+	type PlexGenerationTarget,
+} from "./plex-generation-target-ledger.js";
 
 export const PLEX_CACHE_READ_PAGE_SIZE = 500;
 export const PLEX_CACHE_WRITE_CHUNK_SIZE = 100;
@@ -397,6 +401,7 @@ export async function publishAuthoritativePlexCacheGeneration(
 		completedAt: Date;
 		generationId: string;
 		generationMetadata: string;
+		targets: readonly PlexGenerationTarget[];
 		attempt: PlexCacheRefreshAttempt;
 	},
 ): Promise<void> {
@@ -430,6 +435,11 @@ export async function publishAuthoritativePlexCacheGeneration(
 			data: input.rows.slice(start, start + PLEX_CACHE_WRITE_CHUNK_SIZE),
 		});
 	}
+	await replacePlexGenerationTargets(tx, {
+		instanceId: input.instance.id,
+		generationId: input.generationId,
+		targets: input.targets,
+	});
 }
 
 export async function publishAuthoritativePlexEpisodeGeneration(

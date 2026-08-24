@@ -6,6 +6,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "../prisma.js";
+import { evidenceFingerprint } from "../evidence-fingerprint.js";
 import {
 	beginPlexCacheRefreshAttempt,
 	finishPlexCacheRefreshAttemptFailure,
@@ -131,12 +132,11 @@ export async function refreshPlexEpisodeCacheWithAttempt(
 					domains: ["membership", "episode-parents", "watch"],
 					mutation: true,
 					maxAgeMs: DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
-					onBatch: ({ rows }) => {
-						for (const row of rows) {
-							if (!row.ratingKey) continue;
-							const ratingKeys = showMap.get(row.tmdbId) ?? new Set<string>();
-							ratingKeys.add(row.ratingKey);
-							showMap.set(row.tmdbId, ratingKeys);
+					onTargets: (targets) => {
+						for (const target of targets) {
+							const ratingKeys = showMap.get(target.tmdbId) ?? new Set<string>();
+							ratingKeys.add(target.ratingKey);
+							showMap.set(target.tmdbId, ratingKeys);
 						}
 					},
 				});
@@ -155,12 +155,20 @@ export async function refreshPlexEpisodeCacheWithAttempt(
 					plexConnectionFingerprint(instance),
 				);
 				if (!collected.complete) return collected;
+				const postCollectionShowMap = new Map<number, Set<string>>();
 				const parentAfter = await authority.scanInstanceEpisodeParentPolicy({
 					userId: instance.userId,
 					instanceId: instance.id,
 					domains: ["membership", "episode-parents", "watch"],
 					mutation: true,
 					maxAgeMs: DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
+					onTargets: (targets) => {
+						for (const target of targets) {
+							const ratingKeys = postCollectionShowMap.get(target.tmdbId) ?? new Set<string>();
+							ratingKeys.add(target.ratingKey);
+							postCollectionShowMap.set(target.tmdbId, ratingKeys);
+						}
+					},
 				});
 				if (
 					!parentAfter.available ||
@@ -168,7 +176,8 @@ export async function refreshPlexEpisodeCacheWithAttempt(
 					parentAfter.evidence.completeness !== "complete" ||
 					parentAfter.generationId !== parentBefore.generationId ||
 					parentAfter.connectionGeneration !== parentBefore.connectionGeneration ||
-					parentAfter.identityGeneration !== parentBefore.identityGeneration
+					parentAfter.identityGeneration !== parentBefore.identityGeneration ||
+					evidenceFingerprint(postCollectionShowMap) !== evidenceFingerprint(showMap)
 				) {
 					return failedResult(
 						["Authoritative parent Plex generation changed during episode collection"],

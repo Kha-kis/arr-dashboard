@@ -619,8 +619,8 @@ describe("collectPlexCacheLiveEvidence", () => {
 		expect(result.snapshot?.rows).toHaveLength(1);
 		expect(result.snapshot?.rows[0]?.ratingKey).toBe("edition-a");
 		expect(result.inventoryTargets).toEqual([
-			{ mediaType: "movie", tmdbId: 42, ratingKey: "edition-a" },
-			{ mediaType: "movie", tmdbId: 42, ratingKey: "edition-b" },
+			{ sectionId: "1", mediaType: "movie", tmdbId: 42, ratingKey: "edition-a" },
+			{ sectionId: "1", mediaType: "movie", tmdbId: 42, ratingKey: "edition-b" },
 		]);
 	});
 
@@ -647,7 +647,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 
 		expect(result.snapshot?.rows).toHaveLength(1);
 		expect(result.inventoryTargets).toEqual([
-			{ mediaType: "series", tmdbId: 42, tvdbId: 123, ratingKey: "show-123" },
+			{ sectionId: "2", mediaType: "series", tmdbId: 42, tvdbId: 123, ratingKey: "show-123" },
 		]);
 	});
 
@@ -863,7 +863,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 			expect(result.snapshot?.rows[0]).toEqual(expect.objectContaining({ tmdbId: 42 }));
 			expect(result.snapshot?.sections).toEqual([{ key: "1", title: "Movies", type: "movie" }]);
 			expect(result.inventoryTargets).toEqual([
-				{ mediaType: "movie", tmdbId: 42, ratingKey: "movie-1" },
+				{ sectionId: "1", mediaType: "movie", tmdbId: 42, ratingKey: "movie-1" },
 			]);
 		});
 

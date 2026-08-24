@@ -1,10 +1,17 @@
 import { createHash } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	assertCurrentProviderEvidenceAuthority,
 	createSanitizedProviderEvidence,
 } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "../types.js";
+
+const authorityCalls = vi.hoisted(() => ({
+	livePolicy: vi.fn(),
+	persistedPolicy: vi.fn(),
+	liveEpisodes: vi.fn(),
+	persistedEpisodes: vi.fn(),
+}));
 
 vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../plex/plex-authority-service.js")>();
@@ -43,12 +50,32 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 				} as never;
 			}
 
-			async scanInstancePolicy(input: { userId: string; instanceId: string }) {
+			async scanInstanceExactPolicy(input: { userId: string; instanceId: string }) {
+				authorityCalls.livePolicy();
+				const instance = await this.instance(input);
+				return repository.scanInstancePolicyEvidence(this.repositoryWithInstance(instance), input);
+			}
+
+			async scanInstanceExactPolicyPersisted(input: { userId: string; instanceId: string }) {
+				authorityCalls.persistedPolicy();
 				const instance = await this.instance(input);
 				return repository.scanInstancePolicyEvidence(this.repositoryWithInstance(instance), input);
 			}
 
 			async readInstanceEpisodes(input: { userId: string; instanceId: string }) {
+				authorityCalls.liveEpisodes();
+				const instance = await this.instance(input);
+				return repository.loadInstanceEpisodeEvidence(
+					this.prisma as never,
+					{
+						...input,
+						instance: instance as never,
+					} as never,
+				);
+			}
+
+			async readInstanceEpisodesPersisted(input: { userId: string; instanceId: string }) {
+				authorityCalls.persistedEpisodes();
 				const instance = await this.instance(input);
 				return repository.loadInstanceEpisodeEvidence(
 					this.prisma as never,
@@ -92,6 +119,9 @@ function plexV3Metadata(itemCount = 1) {
 			},
 		],
 		roots: [{ sectionKey: "1", domain: "membership", digest: "a".repeat(64) }],
+		targetLedgerVersion: 1,
+		targetCount: itemCount,
+		targetDigest: "c".repeat(64),
 	});
 }
 
@@ -233,6 +263,10 @@ function fixture(
 				verifiedAt: instance.identityVerifiedAt.toISOString(),
 				statusFingerprint,
 				rowFingerprint: fingerprint(rows),
+				generationId: status.generationId,
+				targetLedgerVersion: 1,
+				targetCount: status.itemCount,
+				targetDigest: "c".repeat(64),
 			},
 		],
 	);
@@ -484,6 +518,14 @@ function cacheTypeFixture(
 					status: statusPayload,
 				}),
 				rowFingerprint: fingerprint([cacheCase.row]),
+				...(cacheType === "plex"
+					? {
+							generationId: status.generationId,
+							targetLedgerVersion: 1 as const,
+							targetCount: status.itemCount,
+							targetDigest: "c".repeat(64),
+						}
+					: {}),
 			},
 		],
 	);
@@ -538,6 +580,13 @@ function cacheTypeFixture(
 }
 
 describe("provider execution authority", () => {
+	beforeEach(() => {
+		authorityCalls.livePolicy.mockClear();
+		authorityCalls.persistedPolicy.mockClear();
+		authorityCalls.liveEpisodes.mockClear();
+		authorityCalls.persistedEpisodes.mockClear();
+	});
+
 	for (const cacheType of Object.keys(cacheCases) as Array<keyof typeof cacheCases>) {
 		it(`accepts unchanged real ${cacheType} evidence`, async () => {
 			const subject = cacheTypeFixture(cacheType);
@@ -546,6 +595,10 @@ describe("provider execution authority", () => {
 				assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
 			).resolves.toBeUndefined();
 			expect(subject.identityReader).toHaveBeenCalledOnce();
+			if (cacheType === "plex_episode") {
+				expect(authorityCalls.liveEpisodes).toHaveBeenCalledTimes(1);
+				expect(authorityCalls.persistedEpisodes).toHaveBeenCalledTimes(1);
+			}
 		});
 	}
 
@@ -583,6 +636,8 @@ describe("provider execution authority", () => {
 		expect(subject.identityReader).toHaveBeenCalledTimes(1);
 		expect(assertLease).toHaveBeenCalledTimes(2);
 		expect(subject.deps.prisma.$transaction).toHaveBeenCalledTimes(1);
+		expect(authorityCalls.livePolicy).toHaveBeenCalledTimes(1);
+		expect(authorityCalls.persistedPolicy).toHaveBeenCalledTimes(1);
 	});
 
 	it.each([
@@ -678,6 +733,19 @@ describe("provider execution authority", () => {
 		await expect(
 			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
 		).rejects.toThrow("Provider execution authority changed");
+	});
+
+	it("rejects execution when the exact Plex target-ledger digest changes", async () => {
+		const subject = fixture();
+		subject.status.generationMetadata = subject.status.generationMetadata.replace(
+			"c".repeat(64),
+			"d".repeat(64),
+		);
+
+		await expect(
+			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
+		).rejects.toThrow("Provider execution authority changed");
+		expect(subject.identityReader).not.toHaveBeenCalled();
 	});
 
 	it("rejects completed A provider evidence for both direct and retry revalidation after B publishes", async () => {

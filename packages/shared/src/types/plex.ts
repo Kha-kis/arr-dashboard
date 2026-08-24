@@ -51,7 +51,13 @@ export type PlexCoverageReasonCode =
 	| "plex_library_activity_unknown"
 	| "plex_library_revision_changed"
 	| "plex_content_digest_changed"
-	| "plex_settlement_metadata_missing";
+	| "plex_settlement_metadata_missing"
+	| "target_ledger_binding_missing"
+	| "target_ledger_invalid"
+	| "target_ledger_unavailable"
+	| "target_count_mismatch"
+	| "target_digest_mismatch"
+	| "target_section_mismatch";
 
 export interface PlexEvidenceSummary {
 	/** Current trust, retained under the original field name for older clients. */
@@ -119,6 +125,10 @@ export interface PlexGenerationMetadataV3 {
 	canonicalizationVersion: 1;
 	sections: PlexGenerationSectionV3[];
 	roots: PlexGenerationDomainRoot[];
+	/** Absent on pre-ledger V3 observations; exact-target authority then fails closed. */
+	targetLedgerVersion?: 1;
+	targetCount?: number;
+	targetDigest?: string;
 }
 
 // ============================================================================
