@@ -125,7 +125,7 @@ export async function refreshPlexEpisodeCacheWithAttempt(
 					log,
 					createClient: () => client,
 				});
-				const parentBefore = await authority.scanInstancePolicy({
+				const parentBefore = await authority.scanInstanceEpisodeParentPolicy({
 					userId: instance.userId,
 					instanceId: instance.id,
 					domains: ["membership", "episode-parents", "watch"],
@@ -155,7 +155,7 @@ export async function refreshPlexEpisodeCacheWithAttempt(
 					plexConnectionFingerprint(instance),
 				);
 				if (!collected.complete) return collected;
-				const parentAfter = await authority.scanInstancePolicy({
+				const parentAfter = await authority.scanInstanceEpisodeParentPolicy({
 					userId: instance.userId,
 					instanceId: instance.id,
 					domains: ["membership", "episode-parents", "watch"],

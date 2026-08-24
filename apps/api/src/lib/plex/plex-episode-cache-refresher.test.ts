@@ -62,8 +62,8 @@ vi.mock("./plex-authority-service.js", async (importOriginal) => {
 				this.prisma = input.prisma;
 			}
 
-			scanInstancePolicy(input: never) {
-				return repository.scanInstancePolicyEvidence(this.prisma, input);
+			scanInstanceEpisodeParentPolicy(input: never) {
+				return repository.scanInstanceEpisodeParentPolicyEvidence(this.prisma, input);
 			}
 		},
 	};
@@ -138,7 +138,12 @@ async function refreshPlexEpisodeCache(
 }
 
 function prisma(
-	shows = [{ tmdbId: 42, ratingKey: "show-1" }],
+	shows: Array<{
+		tmdbId: number;
+		ratingKey: string;
+		mediaType?: string;
+		watchCount?: number;
+	}> = [{ tmdbId: 42, ratingKey: "show-1" }],
 	currentConnection = { service: "PLEX", enabled: true, connectionGeneration: 7 },
 	parentStatuses: Array<Record<string, unknown> | null> = [],
 ) {
@@ -244,7 +249,12 @@ function prisma(
 		},
 		plexCache: {
 			count: vi.fn().mockResolvedValue(fullShows.length),
-			findMany: vi.fn().mockResolvedValue(fullShows),
+			findMany: vi.fn(async ({ where }: { where?: Record<string, unknown> }) => {
+				if (where?.mediaType === "series" && where.watchCount) {
+					return fullShows.filter((row) => row.mediaType === "series" && row.watchCount > 0);
+				}
+				return fullShows;
+			}),
 		},
 		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
 			callback(tx),
@@ -347,6 +357,32 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			connectionGeneration: 7,
 			identityGeneration: 11,
 		});
+	});
+
+	it("ignores more than the show capacity of ineligible parent rows", async () => {
+		const fixture = prisma([
+			{ tmdbId: 42, ratingKey: "show-watched" },
+			...Array.from({ length: 201 }, (_, index) => ({
+				tmdbId: 1_000 + index,
+				ratingKey: `movie-${index}`,
+				mediaType: "movie",
+			})),
+			{ tmdbId: 126, ratingKey: "show-unwatched", watchCount: 0 },
+		]);
+		const getEpisodes = vi.fn().mockResolvedValue([episode()]);
+
+		const result = await refreshPlexEpisodeCache(
+			client({ getEpisodes } as Partial<PlexClient>),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: true, eligibleShows: 1, refreshedShows: 1 });
+		expect(getEpisodes).toHaveBeenCalledTimes(1);
+		expect(getEpisodes).toHaveBeenCalledWith("show-watched");
 	});
 
 	it("keeps prior episode rows when the authoritative parent metadata is unavailable", async () => {

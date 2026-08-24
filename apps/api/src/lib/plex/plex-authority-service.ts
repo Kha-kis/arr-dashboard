@@ -1,6 +1,7 @@
 import type { PlexCanonicalDomain, PlexCoverageReasonCode, PlexEvidenceSummary } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
+import { evidenceFingerprint } from "../evidence-fingerprint.js";
 import type { PrismaClientInstance, ServiceInstance } from "../prisma.js";
 import { collectPlexCacheLiveEvidence, isPersonalMediaSection } from "./plex-cache-refresher.js";
 import type { PlexCacheRowSelection } from "./plex-cache-storage.js";
@@ -19,14 +20,17 @@ import {
 } from "./plex-live-settlement.js";
 import {
 	isCurrentAuthoritativePlexEvidence,
+	loadInstanceEpisodeEvidence,
 	loadInstanceEvidence,
 	loadInstanceSelectedEpisodeEvidence,
 	loadInstanceSelectedEvidence,
+	scanInstanceEpisodeParentPolicyEvidence,
 	scanInstancePolicyEvidence,
 	type AvailablePlexInstanceEvidence,
 	type AvailableSelectedPlexEvidence,
 	type PlexInstanceEvidence,
 	type PlexPolicyBatchHandler,
+	type PlexEpisodeParentPolicyBatchHandler,
 	type PlexPolicyScanEvidence,
 	type SelectedPlexEvidence,
 	type SelectedPlexEpisodeEvidence,
@@ -602,6 +606,84 @@ export class PlexAuthorityService {
 			return unavailableEvidence(input.instanceId, current.evidence, "generation_changed");
 		}
 		return scanned;
+	}
+
+	async scanInstanceEpisodeParentPolicy(input: {
+		userId: string;
+		instanceId: string;
+		domains: readonly PlexCanonicalDomain[];
+		mutation?: boolean;
+		now?: Date;
+		maxAgeMs?: number;
+		onBatch?: PlexEpisodeParentPolicyBatchHandler;
+	}): Promise<PlexPolicyScanEvidence> {
+		const current = await this.readInstance(input);
+		if (!current.available) return current;
+		const scanned = await scanInstanceEpisodeParentPolicyEvidence(this.deps.prisma, input);
+		if (!scanned.available) return scanned;
+		if (scanned.generationId !== current.generationId) {
+			return unavailableEvidence(input.instanceId, current.evidence, "generation_changed");
+		}
+		return scanned;
+	}
+
+	/**
+	 * Revalidates one already-authorized persisted snapshot without contacting
+	 * Plex. This is intentionally boolean-only so callers cannot treat the
+	 * database observation as live authority.
+	 */
+	async revalidatePersistedSnapshot(input: {
+		userId: string;
+		instanceId: string;
+		cacheType: "plex" | "plex_episode";
+		expected: {
+			statusFingerprint: string;
+			rowCount: number;
+			rowFingerprint: string;
+		};
+		now?: Date;
+		maxAgeMs?: number;
+	}): Promise<boolean> {
+		const instance = await this.ownedInstance(input.userId, input.instanceId);
+		if (!instance) return false;
+		let rowCount: number;
+		let rowFingerprint: string;
+		let generationStatus: AvailablePlexInstanceEvidence["generationStatus"];
+		if (input.cacheType === "plex") {
+			const current = await scanInstancePolicyEvidence(this.deps.prisma, input);
+			if (!current.available) return false;
+			rowCount = current.rowCount;
+			rowFingerprint = current.rowFingerprint;
+			generationStatus = current.generationStatus;
+		} else {
+			const current = await loadInstanceEpisodeEvidence(this.deps.prisma, {
+				...input,
+				instance,
+			});
+			if (!current.available) return false;
+			rowCount = current.rows.length;
+			rowFingerprint = evidenceFingerprint(
+				[...current.rows].sort((left, right) => left.id.localeCompare(right.id)),
+			);
+			generationStatus = current.generationStatus;
+		}
+		const statusFingerprint = evidenceFingerprint({
+			instance: {
+				id: instance.id,
+				expectedIdentity: instance.expectedIdentity,
+				identityKind: instance.identityKind,
+				identityVerifiedAt: instance.identityVerifiedAt,
+				connectionGeneration: instance.connectionGeneration,
+				identityGeneration: instance.identityGeneration,
+				updatedAt: instance.updatedAt,
+			},
+			status: generationStatus,
+		});
+		return (
+			statusFingerprint === input.expected.statusFingerprint &&
+			rowCount === input.expected.rowCount &&
+			rowFingerprint === input.expected.rowFingerprint
+		);
 	}
 
 	async readUserSelected(input: {

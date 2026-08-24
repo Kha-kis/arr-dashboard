@@ -31,6 +31,12 @@ vi.mock("../plex-authority-service.js", async (importOriginal) => {
 				});
 				return result;
 			}
+
+			async scanInstanceEpisodeParentPolicy(input: {
+				onBatch?: (batch: { rows: Array<Record<string, unknown>> }) => void;
+			}) {
+				return this.scanInstancePolicy(input);
+			}
 		},
 	};
 });

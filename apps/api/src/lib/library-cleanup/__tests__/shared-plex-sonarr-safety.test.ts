@@ -48,6 +48,27 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 					instance,
 				});
 			}
+
+			async revalidatePersistedSnapshot(
+				input: Parameters<
+					InstanceType<typeof actual.PlexAuthorityService>["revalidatePersistedSnapshot"]
+				>[0],
+			) {
+				const instances = await this.deps.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				const instance = instances.find((entry) => entry.id === input.instanceId);
+				return await new actual.PlexAuthorityService({
+					...this.deps,
+					prisma: {
+						...this.deps.prisma,
+						serviceInstance: {
+							...this.deps.prisma.serviceInstance,
+							findFirst: vi.fn().mockResolvedValue(instance ?? null),
+						},
+					},
+				} as never).revalidatePersistedSnapshot(input);
+			}
 		},
 	};
 });

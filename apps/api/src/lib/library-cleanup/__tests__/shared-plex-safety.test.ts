@@ -48,6 +48,27 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 					instance,
 				});
 			}
+
+			async revalidatePersistedSnapshot(
+				input: Parameters<
+					InstanceType<typeof actual.PlexAuthorityService>["revalidatePersistedSnapshot"]
+				>[0],
+			) {
+				const instances = await this.deps.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				const instance = instances.find((entry) => entry.id === input.instanceId);
+				return await new actual.PlexAuthorityService({
+					...this.deps,
+					prisma: {
+						...this.deps.prisma,
+						serviceInstance: {
+							...this.deps.prisma.serviceInstance,
+							findFirst: vi.fn().mockResolvedValue(instance ?? null),
+						},
+					},
+				} as never).revalidatePersistedSnapshot(input);
+			}
 		},
 	};
 });
@@ -1885,7 +1906,7 @@ describe("shared Plex deletion safety", () => {
 		]);
 	});
 
-	it("rejects row drift even while the accepted provider status token is lagging", async () => {
+	it("rejects live row drift before opening the approval transaction", async () => {
 		const fixture = makeDeps({ mediaPartCount: 1 });
 		const authority = configurePlexApprovalAuthority(fixture, {
 			items: [{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" }],
@@ -1895,7 +1916,7 @@ describe("shared Plex deletion safety", () => {
 		const result = await executeCleanupRun(fixture.deps, "user-1");
 
 		expect(result.itemsFlagged).toBe(1);
-		expect(authority.transaction).toHaveBeenCalledOnce();
+		expect(authority.transaction).not.toHaveBeenCalled();
 		expect(authority.transactionCreate).not.toHaveBeenCalled();
 		expect(authority.rootCreate).not.toHaveBeenCalled();
 		expect(result).toMatchObject({ itemsSkipped: 1, itemsRemoved: 0, status: "partial" });
@@ -1927,11 +1948,8 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeCleanupRun(fixture.deps, "user-1");
 
-		expect(authority.transaction).toHaveBeenCalledTimes(2);
+		expect(authority.transaction).toHaveBeenCalledOnce();
 		expect(authority.transaction).toHaveBeenNthCalledWith(1, expect.any(Function), {
-			isolationLevel: "Serializable",
-		});
-		expect(authority.transaction).toHaveBeenNthCalledWith(2, expect.any(Function), {
 			isolationLevel: "Serializable",
 		});
 		expect(authority.transactionCreate).toHaveBeenCalledOnce();

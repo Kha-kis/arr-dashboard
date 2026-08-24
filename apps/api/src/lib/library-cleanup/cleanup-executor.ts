@@ -694,6 +694,86 @@ async function revalidateExactProviderCacheAuthority(
 	});
 }
 
+async function revalidatePersistedProviderCacheAuthority(
+	deps: CleanupExecutorDeps,
+	tx: Prisma.TransactionClient,
+	authority: ProviderCacheSnapshot<unknown>["authority"],
+	now: Date,
+): Promise<boolean> {
+	const transactionDeps = {
+		...deps,
+		prisma: tx as unknown as CleanupExecutorDeps["prisma"],
+	};
+	const currentInstances = await loadProviderInstances(
+		transactionDeps,
+		authority.instances[0]!.userId,
+		[...new Set(authority.instances.map((instance) => instance.service))],
+	);
+	if (
+		providerTopologyFingerprint(currentInstances) !==
+		providerTopologyFingerprint(authority.instances)
+	) {
+		return false;
+	}
+	if (authority.cacheType === "plex" || authority.cacheType === "plex_episode") {
+		const plexAuthority = cleanupPlexAuthority(transactionDeps);
+		for (const instance of currentInstances) {
+			const generation = authority.generations.get(instance.id);
+			const rows = authority.rows.get(instance.id);
+			if (!generation || !rows) return false;
+			if (
+				!(await plexAuthority.revalidatePersistedSnapshot({
+					userId: instance.userId,
+					instanceId: instance.id,
+					cacheType: authority.cacheType,
+					expected: {
+						statusFingerprint: generation.statusFingerprint,
+						rowCount: rows.rowCount,
+						rowFingerprint: rows.rowFingerprint,
+					},
+					now,
+					maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+				}))
+			) {
+				return false;
+			}
+		}
+		return currentInstances.length === authority.generations.size;
+	}
+	const currentGenerations = await loadCompleteCacheGenerations(
+		transactionDeps,
+		currentInstances,
+		authority.cacheType,
+		now,
+	);
+	if (!currentGenerations || currentGenerations.size !== authority.generations.size) return false;
+	if (
+		![...authority.generations].every(
+			([instanceId, generation]) =>
+				currentGenerations.get(instanceId)?.statusFingerprint === generation.statusFingerprint,
+		)
+	) {
+		return false;
+	}
+	const instanceIds = authority.instances.map((instance) => instance.id);
+	const currentRows = await loadExactProviderCacheRows(
+		tx,
+		authority.cacheType,
+		instanceIds,
+		authority.instances[0]!.userId,
+		authority.instances,
+	);
+	return instanceIds.every((instanceId) => {
+		const expected = authority.rows.get(instanceId);
+		const rows = currentRows.get(instanceId) ?? [];
+		return (
+			expected !== undefined &&
+			expected.rowCount === rows.length &&
+			expected.rowFingerprint === evidenceFingerprint(rows)
+		);
+	});
+}
+
 class ProviderCacheAuthorityChangedError extends Error {
 	constructor() {
 		super("Provider cache authority changed after cleanup selection");
@@ -719,6 +799,21 @@ async function createApprovalWithProviderCacheAuthority(
 		return await deps.prisma.libraryCleanupApproval.create({ data });
 	}
 	const postgresql = /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
+	// Plex settlement performs upstream I/O and must finish before Prisma opens
+	// its bounded approval transaction. The transaction then locks the provider
+	// identity and revalidates the exact persisted status and rows before write.
+	for (const authority of authorities) {
+		if (
+			!(await revalidateExactProviderCacheAuthority(
+				deps,
+				deps.prisma as unknown as Prisma.TransactionClient,
+				authority,
+				new Date(),
+			))
+		) {
+			throw new ProviderCacheAuthorityChangedError();
+		}
+	}
 	return await deps.prisma.$transaction(
 		async (tx) => {
 			const instanceIds = [
@@ -734,9 +829,11 @@ async function createApprovalWithProviderCacheAuthority(
 					);
 				}
 			}
-			const now = new Date();
+			const transactionNow = new Date();
 			for (const authority of authorities) {
-				if (!(await revalidateExactProviderCacheAuthority(deps, tx, authority, now))) {
+				if (
+					!(await revalidatePersistedProviderCacheAuthority(deps, tx, authority, transactionNow))
+				) {
 					throw new ProviderCacheAuthorityChangedError();
 				}
 			}
