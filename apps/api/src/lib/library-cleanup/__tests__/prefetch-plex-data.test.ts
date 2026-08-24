@@ -21,6 +21,114 @@ import {
 import { evaluateItemAgainstRules } from "../rule-evaluators.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
+const authorityMock = vi.hoisted(() => ({
+	policyEvidence: new Map<string, unknown>(),
+}));
+
+vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../plex/plex-authority-service.js")>();
+	const repository = await import("../../plex/plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			private readonly prisma: {
+				serviceInstance?: { findMany: (input: unknown) => Promise<Array<Record<string, unknown>>> };
+			};
+
+			constructor(input: {
+				prisma: {
+					serviceInstance?: {
+						findMany: (input: unknown) => Promise<Array<Record<string, unknown>>>;
+					};
+				};
+			}) {
+				this.prisma = input.prisma;
+			}
+
+			private async instance(input: { userId: string; instanceId: string }) {
+				if (!this.prisma.serviceInstance) {
+					return {
+						id: input.instanceId,
+						userId: input.userId,
+						service: "PLEX",
+						enabled: true,
+						label: "Plex",
+						expectedIdentity: "stored-plex-machine-identity",
+						identityKind: "PLEX_MACHINE_IDENTIFIER",
+						identityStatus: "VERIFIED",
+						identityVerifiedAt: new Date(0),
+						connectionGeneration: 3,
+						identityGeneration: 7,
+					};
+				}
+				const instances = await this.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				return instances.find((instance) => instance.id === input.instanceId);
+			}
+
+			private repositoryInput() {
+				return this.prisma as never;
+			}
+
+			private repositoryWithInstance(instance: Record<string, unknown> | undefined) {
+				return {
+					...this.prisma,
+					serviceInstance: {
+						...this.prisma.serviceInstance,
+						findFirst: vi.fn().mockResolvedValue(instance ?? null),
+					},
+				} as never;
+			}
+
+			async readInstance(input: { userId: string; instanceId: string }) {
+				const scanned = authorityMock.policyEvidence.get(input.instanceId);
+				if (scanned) return scanned;
+				const instance = await this.instance(input);
+				return repository.loadInstanceEvidence(this.repositoryWithInstance(instance), input);
+			}
+
+			async readInstanceSelected(input: { userId: string; instanceId: string }) {
+				const instance = await this.instance(input);
+				return repository.loadInstanceSelectedEvidence(
+					this.repositoryWithInstance(instance),
+					input as never,
+				);
+			}
+
+			async scanInstancePolicy(input: { userId: string; instanceId: string }) {
+				const instance = await this.instance(input);
+				const evidence = await repository.scanInstancePolicyEvidence(
+					this.repositoryWithInstance(instance),
+					input,
+				);
+				authorityMock.policyEvidence.set(input.instanceId, evidence);
+				return evidence;
+			}
+
+			scanUserPolicy(input: never) {
+				return repository.scanUserPolicyEvidence(this.repositoryInput(), input);
+			}
+
+			async readInstanceEpisodes(input: { userId: string; instanceId: string }) {
+				const instance = await this.instance(input);
+				return repository.loadInstanceEpisodeEvidence(this.repositoryInput(), {
+					...input,
+					instance: instance as never,
+				});
+			}
+
+			async readInstanceSelectedEpisodes(input: { userId: string; instanceId: string }) {
+				const instance = await this.instance(input);
+				return repository.loadInstanceSelectedEpisodeEvidence(this.repositoryInput(), {
+					...input,
+					instance: instance as never,
+				} as never);
+			}
+		},
+	};
+});
+
 function makePlexRow(overrides: {
 	id: string;
 	instanceId?: string;
@@ -99,7 +207,23 @@ function completeStatus(instanceId: string, completedAt = new Date(), itemCount 
 		itemCount,
 		generationId: `generation-${instanceId}`,
 		generationMetadata: JSON.stringify({
-			sections: [{ key: "1", title: "Movies", type: "movie" }],
+			version: 3,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			itemCount,
+			canonicalizationVersion: 1,
+			sections: [
+				{
+					key: "1",
+					uuid: "movies-uuid",
+					title: "Movies",
+					type: "movie",
+					refreshing: false,
+					scannedAt: 1_777_000_000,
+					updatedAt: 1_777_000_100,
+				},
+			],
+			roots: [{ sectionKey: "1", domain: "membership", digest: "a".repeat(64) }],
 		}),
 		lastErrorMessage: null,
 		lastAttemptAt: completedAt,
@@ -116,9 +240,12 @@ function completeEpisodeStatus(instanceId: string, completedAt: Date, itemCount:
 		cacheType: "plex_episode",
 		generationId: `episode-generation-${instanceId}`,
 		generationMetadata: JSON.stringify({
-			version: 1,
+			version: 2,
 			parentPlexGenerationId: `generation-${instanceId}`,
 			parentPublicationLevel: "authoritative",
+			parentMetadataVersion: 3,
+			canonicalizationVersion: 1,
+			episodeDigest: "b".repeat(64),
 			connectionGeneration: 3,
 			identityGeneration: 7,
 		}),
@@ -792,7 +919,7 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 
 		const map = await prefetchPlexData({ prisma, log } as never, "user-1");
 
-		// Two findMany calls — pagination must have continued past batch 1.
+		// Two paginated reads; the central service carries the proven fixed point.
 		expect(findManySpy).toHaveBeenCalledTimes(2);
 
 		// Single merged entry for movie:42 — NOT two separate entries.

@@ -50,6 +50,25 @@ vi.mock("./service-instance-fingerprint.js", () => ({
 	plexConnectionFingerprint: vi.fn(() => "fingerprint-1"),
 }));
 
+vi.mock("./plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./plex-authority-service.js")>();
+	const repository = await import("./plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			private readonly prisma: never;
+
+			constructor(input: { prisma: never }) {
+				this.prisma = input.prisma;
+			}
+
+			scanInstancePolicy(input: never) {
+				return repository.scanInstancePolicyEvidence(this.prisma, input);
+			}
+		},
+	};
+});
+
 const log = {
 	warn: vi.fn(),
 	info: vi.fn(),
@@ -136,7 +155,23 @@ function prisma(
 		itemCount: shows.length,
 		generationId: "parent-generation-1",
 		generationMetadata: JSON.stringify({
-			sections: [{ key: "shows", title: "Shows", type: "show" }],
+			version: 3,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			itemCount: shows.length,
+			canonicalizationVersion: 1,
+			sections: [
+				{
+					key: "shows",
+					uuid: "shows-uuid",
+					title: "Shows",
+					type: "show",
+					refreshing: false,
+					scannedAt: 1_777_000_000,
+					updatedAt: 1_777_000_100,
+				},
+			],
+			roots: [{ sectionKey: "shows", domain: "membership", digest: "a".repeat(64) }],
 		}),
 		lastAttemptAt: attemptedAt,
 		lastAttemptResult: "success",
@@ -303,9 +338,12 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			fixture.tx.cacheRefreshStatus.updateMany.mock.calls[0]![0].data.generationMetadata,
 		);
 		expect(metadata).toEqual({
-			version: 1,
+			version: 2,
 			parentPlexGenerationId: "parent-generation-1",
 			parentPublicationLevel: "authoritative",
+			parentMetadataVersion: 3,
+			canonicalizationVersion: 1,
+			episodeDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
 			connectionGeneration: 7,
 			identityGeneration: 11,
 		});

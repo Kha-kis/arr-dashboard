@@ -19,6 +19,24 @@
 
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../lib/plex/plex-authority-service.js")>();
+	const repository = await import("../../lib/plex/plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			constructor(
+				private readonly deps: { prisma: Parameters<typeof repository.scanUserPolicyEvidence>[0] },
+			) {}
+
+			async scanUserPolicy(input: Parameters<typeof repository.scanUserPolicyEvidence>[1]) {
+				return await repository.scanUserPolicyEvidence(this.deps.prisma, input);
+			}
+		},
+	};
+});
+
 import { registerLibraryCleanupRoutes } from "../library-cleanup.js";
 import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
 
@@ -294,9 +312,34 @@ describe("GET /library-cleanup/field-options — cursor pagination (issue #427)"
 				identityGeneration: 1,
 				generationId: "generation-1",
 				generationMetadata: JSON.stringify({
+					version: 3,
+					publicationLevel: "authoritative",
+					completeness: "complete",
+					itemCount: 501,
+					canonicalizationVersion: 1,
 					sections: [
-						{ key: "movies", title: "Movies", type: "movie" },
-						{ key: "shows", title: "TV Shows", type: "show" },
+						{
+							key: "movies",
+							title: "Movies",
+							type: "movie",
+							uuid: "movies-uuid",
+							refreshing: false,
+							scannedAt: 1,
+							updatedAt: 1,
+						},
+						{
+							key: "shows",
+							title: "TV Shows",
+							type: "show",
+							uuid: "shows-uuid",
+							refreshing: false,
+							scannedAt: 1,
+							updatedAt: 1,
+						},
+					],
+					roots: [
+						{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) },
+						{ sectionKey: "shows", domain: "membership", digest: "b".repeat(64) },
 					],
 				}),
 			},

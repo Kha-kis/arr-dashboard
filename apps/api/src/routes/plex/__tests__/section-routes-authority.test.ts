@@ -11,6 +11,19 @@ vi.mock("../../../lib/plex/plex-evidence-repository.js", async (importOriginal) 
 	loadUserSelectedEvidence: mocks.loadUserSelectedEvidence,
 }));
 
+vi.mock("../../../lib/plex/plex-authority-service.js", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../../../lib/plex/plex-authority-service.js")>();
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			readUserSelected(input: unknown) {
+				return mocks.loadUserSelectedEvidence(undefined, input);
+			}
+		},
+	};
+});
+
 import { registerSectionRoutes } from "../section-routes.js";
 
 describe("GET /api/plex/sections authority", () => {

@@ -1128,10 +1128,14 @@ export function decodePlexEpisodeGenerationMetadata(raw: string | null):
 	try {
 		const value = JSON.parse(raw) as Record<string, unknown>;
 		if (
-			value.version !== 1 ||
+			value.version !== 2 ||
 			typeof value.parentPlexGenerationId !== "string" ||
 			value.parentPlexGenerationId.trim() === "" ||
 			value.parentPublicationLevel !== "authoritative" ||
+			value.parentMetadataVersion !== 3 ||
+			value.canonicalizationVersion !== 1 ||
+			typeof value.episodeDigest !== "string" ||
+			!/^[a-f0-9]{64}$/.test(value.episodeDigest) ||
 			!Number.isSafeInteger(value.connectionGeneration) ||
 			(value.connectionGeneration as number) < 0 ||
 			!Number.isSafeInteger(value.identityGeneration) ||

@@ -6,6 +6,108 @@ import {
 } from "../shared-plex-safety.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
+vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../plex/plex-authority-service.js")>();
+	const repository = await import("../../plex/plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			private readonly prisma: {
+				serviceInstance: { findMany: (input: unknown) => Promise<Array<Record<string, unknown>>> };
+			};
+
+			constructor(input: {
+				prisma: {
+					serviceInstance: {
+						findMany: (input: unknown) => Promise<Array<Record<string, unknown>>>;
+					};
+				};
+			}) {
+				this.prisma = input.prisma;
+			}
+
+			private async instance(input: { userId: string; instanceId: string }) {
+				const instances = await this.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				return instances.find((instance) => instance.id === input.instanceId);
+			}
+
+			private repositoryWithInstance(instance: Record<string, unknown> | undefined) {
+				return {
+					...this.prisma,
+					serviceInstance: {
+						...this.prisma.serviceInstance,
+						findFirst: vi.fn().mockResolvedValue(instance ?? null),
+					},
+				} as never;
+			}
+
+			async scanInstancePolicy(input: { userId: string; instanceId: string }) {
+				const instance = await this.instance(input);
+				return repository.scanInstancePolicyEvidence(this.repositoryWithInstance(instance), input);
+			}
+
+			async readInstanceEpisodes(input: { userId: string; instanceId: string }) {
+				const instance = await this.instance(input);
+				return repository.loadInstanceEpisodeEvidence(
+					this.prisma as never,
+					{
+						...input,
+						instance: instance as never,
+					} as never,
+				);
+			}
+
+			async readInstanceSelectedEpisodes(input: { userId: string; instanceId: string }) {
+				const instance = await this.instance(input);
+				return repository.loadInstanceSelectedEpisodeEvidence(
+					this.prisma as never,
+					{
+						...input,
+						instance: instance as never,
+					} as never,
+				);
+			}
+		},
+	};
+});
+
+function plexV3Metadata(itemCount = 1) {
+	return JSON.stringify({
+		version: 3,
+		publicationLevel: "authoritative",
+		completeness: "complete",
+		itemCount,
+		canonicalizationVersion: 1,
+		sections: [
+			{
+				key: "1",
+				uuid: "movies-uuid",
+				title: "Movies",
+				type: "movie",
+				refreshing: false,
+				scannedAt: 1_777_000_000,
+				updatedAt: 1_777_000_100,
+			},
+		],
+		roots: [{ sectionKey: "1", domain: "membership", digest: "a".repeat(64) }],
+	});
+}
+
+function plexEpisodeV2Metadata(parentGenerationId: string) {
+	return JSON.stringify({
+		version: 2,
+		parentPlexGenerationId: parentGenerationId,
+		parentPublicationLevel: "authoritative",
+		parentMetadataVersion: 3,
+		canonicalizationVersion: 1,
+		episodeDigest: "b".repeat(64),
+		connectionGeneration: 3,
+		identityGeneration: 7,
+	});
+}
+
 function fingerprint(value: unknown): string {
 	const canonicalize = (input: unknown): unknown => {
 		if (input instanceof Date) return input.toISOString();
@@ -65,9 +167,7 @@ function fixture(
 		connectionGeneration: 3,
 		identityGeneration: 7,
 		generationId: "generation-a",
-		generationMetadata: JSON.stringify({
-			sections: [{ key: "1", title: "Movies", type: "movie" }],
-		}),
+		generationMetadata: plexV3Metadata(),
 		...statusOverrides,
 	};
 	let rows = [
@@ -335,15 +435,9 @@ function cacheTypeFixture(
 		generationId: "generation-a",
 		generationMetadata:
 			cacheType === "plex"
-				? JSON.stringify({ sections: [{ key: "1", title: "Movies", type: "movie" }] })
+				? plexV3Metadata()
 				: cacheType === "plex_episode"
-					? JSON.stringify({
-							version: 1,
-							parentPlexGenerationId: "parent-generation-a",
-							parentPublicationLevel: "authoritative",
-							connectionGeneration: 3,
-							identityGeneration: 7,
-						})
+					? plexEpisodeV2Metadata("parent-generation-a")
 					: "{}",
 		...options.statusOverrides,
 	};
@@ -410,9 +504,7 @@ function cacheTypeFixture(
 								...status,
 								cacheType: "plex",
 								generationId: "parent-generation-a",
-								generationMetadata: JSON.stringify({
-									sections: [{ key: "1", title: "Movies", type: "movie" }],
-								}),
+								generationMetadata: plexV3Metadata(),
 							},
 						]
 					: [status],

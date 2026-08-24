@@ -23,6 +23,55 @@ vi.mock("../../../lib/plex/plex-evidence-repository.js", async (importOriginal) 
 	scanUserPolicyEvidence: mocks.scanUserPolicyEvidence,
 }));
 
+vi.mock("../../../lib/plex/plex-authority-service.js", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../../../lib/plex/plex-authority-service.js")>();
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			private readonly prisma: unknown;
+
+			constructor(input: { prisma: unknown }) {
+				this.prisma = input.prisma;
+			}
+
+			readInstance(input: unknown) {
+				return mocks.loadInstanceEvidence(this.prisma, input);
+			}
+
+			readInstanceSelected(input: unknown) {
+				return mocks.loadInstanceEvidence(this.prisma, input);
+			}
+
+			readUserSelected(input: unknown) {
+				return mocks.loadUserSelectedEvidence(this.prisma, input);
+			}
+
+			async scanInstancePolicy(input: { onBatch?: (batch: { rows: unknown[] }) => void }) {
+				const evidence = await mocks.scanInstancePolicyEvidence(this.prisma, input);
+				if (evidence.available) input.onBatch?.({ rows: evidence.rows });
+				return evidence;
+			}
+
+			async scanUserPolicy(input: { onBatch?: (batch: { rows: unknown[] }) => void }) {
+				const evidence = await mocks.scanUserPolicyEvidence(this.prisma, input);
+				for (const entry of evidence) {
+					if (entry.available) input.onBatch?.({ rows: entry.rows });
+				}
+				return evidence;
+			}
+
+			readInstanceEpisodes(input: unknown) {
+				return mocks.loadInstanceEpisodeEvidence(this.prisma, input);
+			}
+
+			readInstanceSelectedEpisodes(input: unknown) {
+				return mocks.loadInstanceSelectedEpisodeEvidence(this.prisma, input);
+			}
+		},
+	};
+});
+
 import { registerCollectionRoutes } from "../collection-routes.js";
 import { registerCollectionStatsRoutes } from "../collection-stats-routes.js";
 import { registerEpisodeRoutes } from "../episode-routes.js";

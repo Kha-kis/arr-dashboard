@@ -1,5 +1,5 @@
 import type { Prisma, ServiceInstance } from "../prisma.js";
-import { loadInstanceEpisodeEvidence } from "../plex/plex-evidence-repository.js";
+import type { PlexAuthorityService } from "../plex/plex-authority-service.js";
 
 export const PROVIDER_CACHE_ROW_SELECTS = {
 	plex: {
@@ -122,6 +122,7 @@ export async function loadExactProviderCacheRows(
 	instanceIds: string[],
 	userId?: string,
 	instances?: ServiceInstance[],
+	plexAuthority?: PlexAuthorityService,
 ): Promise<Map<string, unknown[]>> {
 	const where = { instanceId: { in: instanceIds } };
 	switch (cacheType) {
@@ -132,13 +133,26 @@ export async function loadExactProviderCacheRows(
 			return groupProviderRowsByInstance(instanceIds, []);
 		}
 		case "plex_episode": {
-			if (!userId || !instances) return groupProviderRowsByInstance(instanceIds, []);
+			if (!userId || !instances || !plexAuthority) {
+				return groupProviderRowsByInstance(instanceIds, []);
+			}
 			const rows = [];
 			for (const instance of instances.filter((candidate) => instanceIds.includes(candidate.id))) {
-				const evidence = await loadInstanceEpisodeEvidence(tx as never, {
+				const parent = await plexAuthority.readInstance({
 					userId,
 					instanceId: instance.id,
-					instance,
+					domains: ["membership", "episode-parents"],
+				});
+				if (!parent.available) return groupProviderRowsByInstance(instanceIds, []);
+				const showTmdbIds = [
+					...new Set(
+						parent.rows.filter((row) => row.mediaType === "series").map((row) => row.tmdbId),
+					),
+				];
+				const evidence = await plexAuthority.readInstanceSelectedEpisodes({
+					userId,
+					instanceId: instance.id,
+					showTmdbIds,
 				});
 				if (!evidence.available) return groupProviderRowsByInstance(instanceIds, []);
 				rows.push(...evidence.rows);

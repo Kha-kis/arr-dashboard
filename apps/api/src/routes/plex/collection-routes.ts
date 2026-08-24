@@ -10,10 +10,9 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
 	isCurrentAuthoritativePlexEvidence,
-	scanInstancePolicyEvidence,
 	summarizePlexEvidence,
-} from "../../lib/plex/plex-evidence-repository.js";
-import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
+} from "../../lib/plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
@@ -57,9 +56,14 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 		}
 
 		const collectionCounts = new Map<string, number>();
-		const evidence = await scanInstancePolicyEvidence(app.prisma, {
+		const evidence = await new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		}).scanInstancePolicy({
 			userId,
 			instanceId,
+			domains: ["membership", "collections"],
 			onBatch: ({ rows }) => {
 				for (const row of rows) {
 					try {
@@ -104,9 +108,14 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 		}
 
 		const labelCounts = new Map<string, number>();
-		const evidence = await scanInstancePolicyEvidence(app.prisma, {
+		const evidence = await new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		}).scanInstancePolicy({
 			userId,
 			instanceId,
+			domains: ["membership", "labels"],
 			onBatch: ({ rows }) => {
 				for (const row of rows) {
 					try {
@@ -144,8 +153,44 @@ export async function registerCollectionRoutes(app: FastifyInstance, _opts: Fast
 		const body = validateRequest(tagUpdateBody, request.body);
 		const userId = request.currentUser!.id;
 
-		const { client } = await requirePlexClient(app, userId, instanceId);
-		await client.updateMetadataTags(ratingKey, body.type, body.action, body.name);
+		const authority = new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		});
+		const evidence = await authority.readInstance({
+			userId,
+			instanceId,
+			domains: ["membership", body.type === "label" ? "labels" : "collections"],
+		});
+		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
+			return reply.status(503).send({
+				error: "Plex mutation authority is unavailable",
+				evidence: evidence.evidence,
+			});
+		}
+		const matches = evidence.rows.filter((row) => row.ratingKey?.trim() === ratingKey);
+		if (
+			matches.length !== 1 ||
+			(matches[0]?.mediaType !== "movie" && matches[0]?.mediaType !== "series")
+		) {
+			return reply.status(409).send({ error: "Plex target identity is ambiguous or unavailable" });
+		}
+		const mutation = await authority.mutateMetadataTag({
+			userId,
+			instanceId,
+			target: { tmdbId: matches[0].tmdbId, mediaType: matches[0].mediaType },
+			expectedRatingKey: ratingKey,
+			type: body.type,
+			action: body.action,
+			name: body.name,
+		});
+		if (!mutation.ok) {
+			return reply.status(503).send({
+				error: "Plex mutation authority changed before the upstream write",
+				evidence: mutation.evidence,
+			});
+		}
 
 		return reply.send({ success: true });
 	});

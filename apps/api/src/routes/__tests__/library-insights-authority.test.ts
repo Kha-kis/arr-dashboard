@@ -13,6 +13,15 @@ vi.mock("../../lib/plex/plex-evidence-repository.js", async (importOriginal) => 
 	scanUserPolicyEvidence: mocks.scanUserPolicyEvidence,
 }));
 
+vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../lib/plex/plex-authority-service.js")>()),
+	PlexAuthorityService: class {
+		async scanUserPolicy(input: unknown) {
+			return await mocks.scanUserPolicyEvidence(undefined, input);
+		}
+	},
+}));
+
 import { registerInsightsRoutes } from "../library/insights-routes.js";
 
 const unavailableEvidence = {

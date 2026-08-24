@@ -12,7 +12,7 @@ import type {
 	SourceReaderOpts,
 	SourceReadResult,
 } from "../strategy-types.js";
-import { loadInstanceSelectedEvidence } from "../../plex/plex-evidence-repository.js";
+import { PlexAuthorityService } from "../../plex/plex-authority-service.js";
 
 export const plexSourceReader: SourceReader = {
 	prismaService: "PLEX",
@@ -21,10 +21,18 @@ export const plexSourceReader: SourceReader = {
 
 		let rows: Array<{ tmdbId: number; mediaType: string; title: string; labels: string }>;
 		try {
-			const evidence = await loadInstanceSelectedEvidence(prisma, {
+			const evidence = await new PlexAuthorityService({
+				prisma,
+				encryptor: opts.encryptor,
+				log,
+			}).readInstanceSelected({
 				userId: rule.userId,
 				instanceId: sourceInstance.id,
 				selection: { kind: "label-membership", label: rule.sourceTagName },
+				// The selection itself proves membership in the configured source
+				// label. Unrelated labels on the same selected item are outside this
+				// read's authority domain and must not revoke otherwise stable evidence.
+				domains: ["membership", "display"],
 			});
 			if (
 				!evidence.available ||

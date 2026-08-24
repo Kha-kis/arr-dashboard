@@ -105,8 +105,20 @@ async function publish(
 			completedAt: new Date(),
 			generationId,
 			generationMetadata: encodeAuthoritativePlexGenerationMetadata({
-				sections: [{ key: "movies", title: "Movies", type: "movie" }],
+				sections: [
+					{
+						key: "movies",
+						uuid: "movies-uuid",
+						title: "Movies",
+						type: "movie",
+						refreshing: false,
+						scannedAt: 1,
+						updatedAt: 1,
+					},
+				],
 				itemCount: 1,
+				canonicalizationVersion: 1,
+				roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
 			}),
 			attempt: attempt!,
 		});

@@ -12,6 +12,7 @@ import type { Encryptor } from "../auth/encryption.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 import { parseUpstreamOrThrow } from "../validation/parse-upstream.js";
 import {
+	plexActivitiesResponseSchema,
 	plexAccountsResponseSchema,
 	plexAllLeavesResponseSchema,
 	plexEpisodeMediaItemsResponseSchema,
@@ -21,8 +22,10 @@ import {
 	plexLibraryGuidItemsResponseSchema,
 	plexLibraryItemsResponseSchema,
 	plexLibraryMediaItemsResponseSchema,
+	plexMetadataTagsResponseSchema,
 	plexOnDeckResponseSchema,
 	plexSectionsResponseSchema,
+	plexSettlementSectionsResponseSchema,
 	plexServerInfoResponseSchema,
 	plexSessionsResponseSchema,
 } from "./plex-schemas.js";
@@ -45,6 +48,18 @@ export interface PlexLibrary {
 	agent?: string; // e.g. "tv.plex.agents.movie", "com.plexapp.agents.none"
 }
 
+export interface PlexSettlementLibrary extends PlexLibrary {
+	uuid: string;
+	refreshing: boolean;
+	scannedAt: number | null;
+	updatedAt: number;
+}
+
+export interface PlexActivity {
+	type: string;
+	Context?: { librarySectionID?: string };
+}
+
 export interface PlexGuid {
 	id: string; // e.g. "tmdb://12345", "imdb://tt1234567"
 }
@@ -56,6 +71,8 @@ export interface PlexLibraryItem {
 	year?: number;
 	userRating?: number; // 0-10 scale
 	addedAt?: number; // Unix timestamp
+	viewCount?: number;
+	lastViewedAt?: number; // Unix timestamp
 	thumb?: string; // Plex thumbnail path
 	Guid?: PlexGuid[];
 	Collection?: Array<{ tag: string }>;
@@ -173,6 +190,7 @@ export class PlexClient {
 	private readonly log: FastifyBaseLogger;
 	private readonly timeout: number;
 	private readonly httpAuthHeaders: Record<string, string>;
+	private readonly ordinaryReadFlights = new Map<string, Promise<unknown>>();
 	constructor(
 		baseUrl: string,
 		token: string,
@@ -240,6 +258,58 @@ export class PlexClient {
 		}));
 	}
 
+	/** Strict complete section-state probe used by live settlement authority. */
+	async getLibrarySettlementSections(
+		options: { uncached?: boolean } = {},
+	): Promise<PlexSettlementLibrary[]> {
+		return this.runOrdinaryRead(
+			"library-settlement-sections",
+			async () => {
+				const data = await this.request("/library/sections", {
+					schema: plexSettlementSectionsResponseSchema,
+				});
+				const directories = data.MediaContainer.Directory ?? [];
+				this.assertCompleteSinglePageContainer(
+					data.MediaContainer,
+					directories.length,
+					"Plex library settlement section inventory",
+				);
+				return directories.map((directory) => ({
+					key: directory.key,
+					uuid: directory.uuid,
+					title: directory.title,
+					type: directory.type,
+					agent: directory.agent,
+					refreshing: directory.refreshing,
+					scannedAt: directory.scannedAt,
+					updatedAt: directory.updatedAt,
+				}));
+			},
+			options.uncached === true,
+		);
+	}
+
+	/** Strict complete activity probe used by live settlement authority. */
+	async getActivities(options: { uncached?: boolean } = {}): Promise<PlexActivity[]> {
+		return this.runOrdinaryRead(
+			"activities",
+			async () => {
+				const data = await this.request("/activities", { schema: plexActivitiesResponseSchema });
+				const activities = data.MediaContainer.Activity ?? [];
+				this.assertCompleteSinglePageContainer(
+					data.MediaContainer,
+					activities.length,
+					"Plex activity inventory",
+				);
+				return activities.map((activity) => ({
+					type: activity.type,
+					...(activity.Context ? { Context: activity.Context } : {}),
+				}));
+			},
+			options.uncached === true,
+		);
+	}
+
 	/**
 	 * Get all items from a library section.
 	 */
@@ -249,6 +319,7 @@ export class PlexClient {
 			plexLibraryItemsResponseSchema,
 			(item) => item.ratingKey,
 		);
+		const tags = await this.getAuthoritativeMetadataTags(items.map((item) => item.ratingKey));
 
 		return items.map((m) => ({
 			ratingKey: m.ratingKey,
@@ -257,11 +328,43 @@ export class PlexClient {
 			year: m.year,
 			userRating: m.userRating,
 			addedAt: m.addedAt,
+			viewCount: m.viewCount,
+			lastViewedAt: m.lastViewedAt,
 			thumb: m.thumb,
 			Guid: m.Guid?.map((g) => ({ id: g.id })),
-			Collection: m.Collection?.map((c) => ({ tag: c.tag })),
-			Label: m.Label?.map((l) => ({ tag: l.tag })),
+			Collection: tags.get(m.ratingKey)?.Collection?.map((c) => ({ tag: c.tag })),
+			Label: tags.get(m.ratingKey)?.Label?.map((l) => ({ tag: l.tag })),
 		}));
+	}
+
+	private async getAuthoritativeMetadataTags(ratingKeys: readonly string[]) {
+		const tags = new Map<
+			string,
+			{ Collection?: Array<{ tag: string }>; Label?: Array<{ tag: string }> }
+		>();
+		for (let offset = 0; offset < ratingKeys.length; offset += SAFETY_PAGE_SIZE) {
+			const chunk = ratingKeys.slice(offset, offset + SAFETY_PAGE_SIZE);
+			const path = `/library/metadata/${chunk.map(encodeURIComponent).join(",")}?includeCollections=1&includeLabels=1`;
+			const data = await this.request(path, { schema: plexMetadataTagsResponseSchema });
+			const metadata = data.MediaContainer.Metadata ?? [];
+			if (data.MediaContainer.size !== metadata.length || metadata.length !== chunk.length) {
+				throw new Error("Plex metadata tag inventory was incomplete");
+			}
+			const expected = new Set(chunk);
+			for (const item of metadata) {
+				if (!expected.has(item.ratingKey) || tags.has(item.ratingKey)) {
+					throw new Error("Plex metadata tag inventory returned an unexpected or duplicate item");
+				}
+				tags.set(item.ratingKey, {
+					...(item.Collection ? { Collection: item.Collection.map(({ tag }) => ({ tag })) } : {}),
+					...(item.Label ? { Label: item.Label.map(({ tag }) => ({ tag })) } : {}),
+				});
+			}
+		}
+		if (tags.size !== ratingKeys.length) {
+			throw new Error("Plex metadata tag inventory did not cover every library item");
+		}
+		return tags;
 	}
 
 	private async getCompleteSafetyMetadata<T>(
@@ -649,13 +752,19 @@ export class PlexClient {
 	 */
 	async updateMetadataTags(
 		ratingKey: string,
+		mediaType: "movie" | "series",
 		type: "collection" | "label",
 		action: "add" | "remove",
 		name: string,
 	): Promise<void> {
 		const tagType = type === "collection" ? "collection" : "label";
 		const suffix = action === "remove" ? "-" : "";
-		const path = `/library/metadata/${ratingKey}?${tagType}[0].tag.tag${suffix}=${encodeURIComponent(name)}`;
+		const params = new URLSearchParams({
+			type: mediaType === "movie" ? "1" : "2",
+			[`${tagType}.locked`]: "1",
+			[`${tagType}[0].tag.tag${suffix}`]: name,
+		});
+		const path = `/library/metadata/${ratingKey}?${params.toString()}`;
 		await this.request(path, { method: "PUT" });
 	}
 
@@ -691,6 +800,24 @@ export class PlexClient {
 		) {
 			throw new Error(`${label} did not provide a complete single-page result`);
 		}
+	}
+
+	private runOrdinaryRead<T>(key: string, load: () => Promise<T>, uncached: boolean): Promise<T> {
+		if (uncached) return load();
+		const existing = this.ordinaryReadFlights.get(key) as Promise<T> | undefined;
+		if (existing) return existing;
+		let promise!: Promise<T>;
+		promise = (async () => {
+			try {
+				return await load();
+			} finally {
+				if (this.ordinaryReadFlights.get(key) === promise) {
+					this.ordinaryReadFlights.delete(key);
+				}
+			}
+		})();
+		this.ordinaryReadFlights.set(key, promise);
+		return promise;
 	}
 
 	/**

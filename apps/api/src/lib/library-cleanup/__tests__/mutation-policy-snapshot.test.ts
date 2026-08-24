@@ -60,6 +60,86 @@ vi.mock("../../jellyfin/jellyfin-episode-cache-refresher.js", () => ({
 	refreshJellyfinEpisodeCache: refreshMocks.jellyfinEpisodes,
 }));
 
+vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../plex/plex-authority-service.js")>();
+	const repository = await import("../../plex/plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			private readonly prisma: {
+				serviceInstance: { findMany: (input: unknown) => Promise<Array<Record<string, unknown>>> };
+			};
+
+			constructor(input: {
+				prisma: {
+					serviceInstance: {
+						findMany: (input: unknown) => Promise<Array<Record<string, unknown>>>;
+					};
+				};
+			}) {
+				this.prisma = input.prisma;
+			}
+
+			async scanInstancePolicy(input: { userId: string; instanceId: string }) {
+				const instances = await this.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				const instance = instances.find((entry) => entry.id === input.instanceId);
+				const result = await repository.scanInstancePolicyEvidence(
+					{
+						...this.prisma,
+						serviceInstance: {
+							...this.prisma.serviceInstance,
+							findFirst: vi.fn().mockResolvedValue(instance ?? null),
+						},
+					} as never,
+					input,
+				);
+				return result;
+			}
+
+			async readInstance(input: { userId: string; instanceId: string }) {
+				const instances = await this.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				const instance = instances.find((entry) => entry.id === input.instanceId);
+				return repository.loadInstanceEvidence(
+					{
+						...this.prisma,
+						serviceInstance: {
+							...this.prisma.serviceInstance,
+							findFirst: vi.fn().mockResolvedValue(instance ?? null),
+						},
+					} as never,
+					input,
+				);
+			}
+		},
+	};
+});
+
+function plexV3Metadata(itemCount: number) {
+	return JSON.stringify({
+		version: 3,
+		publicationLevel: "authoritative",
+		completeness: "complete",
+		itemCount,
+		canonicalizationVersion: 1,
+		sections: [
+			{
+				key: "movies",
+				uuid: "movies-uuid",
+				title: "Movies",
+				type: "movie",
+				refreshing: false,
+				scannedAt: 1_777_000_000,
+				updatedAt: 1_777_000_100,
+			},
+		],
+		roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+	});
+}
+
 function rule(ruleType: string) {
 	return {
 		id: `rule-${ruleType}`,
@@ -155,9 +235,7 @@ function makeDeps(
 					lastResult: "success",
 					itemCount: 0,
 					generationId: `generation-${instanceId}`,
-					generationMetadata: JSON.stringify({
-						sections: [{ key: "1", title: "Movies", type: "movie" }],
-					}),
+					generationMetadata: plexV3Metadata(0),
 					lastErrorMessage: null,
 					lastAttemptAt: publishedAt,
 					lastAttemptResult: "success",
@@ -673,9 +751,7 @@ describe("authoritative mutation policy snapshots", () => {
 						lastResult: "success",
 						itemCount: instanceId === plexB.id ? 1 : 0,
 						generationId: generationIds.get(instanceId),
-						generationMetadata: JSON.stringify({
-							sections: [{ key: "movies", title: "Movies", type: "movie" }],
-						}),
+						generationMetadata: plexV3Metadata(instanceId === plexB.id ? 1 : 0),
 						lastErrorMessage: null,
 						lastAttemptAt: publishedAt,
 						lastAttemptResult: "success",

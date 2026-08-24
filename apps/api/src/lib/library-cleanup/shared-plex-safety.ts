@@ -14,10 +14,7 @@ import type {
 import { evidenceFingerprint } from "../evidence-fingerprint.js";
 import { createOwnedJellyfinPublicationSnapshot } from "../jellyfin/jellyfin-cache-refresher.js";
 import { createOwnedPlexPublicationSnapshot } from "../plex/plex-cache-refresher.js";
-import {
-	loadInstanceEpisodeEvidence,
-	scanMutationPolicyEvidenceForOwnedInstances,
-} from "../plex/plex-evidence-repository.js";
+import { PlexAuthorityService } from "../plex/plex-authority-service.js";
 import {
 	createPlexClient,
 	type PlexClient,
@@ -1290,13 +1287,14 @@ function isCurrentProviderExecutionInstance(instance: ServiceInstance): boolean 
 }
 
 async function loadProviderExecutionEvidence(
-	prisma: CleanupExecutorDeps["prisma"],
+	deps: CleanupExecutorDeps,
 	userId: string,
 	dependencies: string[],
 	cacheTypes: ProviderCacheType[],
 	now: Date,
 	target?: Pick<ProviderScanTarget, "instanceId" | "service">,
 ): Promise<{ evidence: SanitizedProviderEvidence; instances: ServiceInstance[] }> {
+	const { prisma } = deps;
 	const services = providerCacheServicesForDependencies(dependencies);
 	const uniqueCacheTypes = [...new Set(cacheTypes)];
 	if (
@@ -1377,8 +1375,16 @@ async function loadProviderExecutionEvidence(
 			let plexRowAuthority: { rowCount: number; rowFingerprint: string } | undefined;
 			const isPlexEvidence = cacheType === "plex" || cacheType === "plex_episode";
 			if (cacheType === "plex") {
-				const [current] = await scanMutationPolicyEvidenceForOwnedInstances(prisma as never, {
-					instances: [instance],
+				const current = await new PlexAuthorityService({
+					prisma,
+					...(deps.encryptor ? { encryptor: deps.encryptor } : {}),
+					log: deps.log,
+					...(deps.plexCacheClientFactory ? { createClient: deps.plexCacheClientFactory } : {}),
+				}).scanInstancePolicy({
+					userId,
+					instanceId: instance.id,
+					domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
+					mutation: true,
 					now,
 					maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
 				});
@@ -1395,10 +1401,15 @@ async function loadProviderExecutionEvidence(
 					rowFingerprint: current.rowFingerprint,
 				};
 			} else if (cacheType === "plex_episode") {
-				const current = await loadInstanceEpisodeEvidence(prisma as never, {
+				const current = await new PlexAuthorityService({
+					prisma,
+					...(deps.encryptor ? { encryptor: deps.encryptor } : {}),
+					log: deps.log,
+					...(deps.plexCacheClientFactory ? { createClient: deps.plexCacheClientFactory } : {}),
+				}).readInstanceEpisodes({
 					userId,
 					instanceId: instance.id,
-					instance,
+					mutation: true,
 					now,
 					maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
 				});
@@ -1470,7 +1481,7 @@ async function loadProviderExecutionEvidence(
 }
 
 async function loadCurrentProviderExecutionEvidence(
-	prisma: CleanupExecutorDeps["prisma"],
+	deps: CleanupExecutorDeps,
 	userId: string,
 	accepted: SanitizedProviderEvidence,
 	now: Date,
@@ -1481,7 +1492,7 @@ async function loadCurrentProviderExecutionEvidence(
 		throw new ProviderExecutionAuthorityChangedError();
 	}
 	return loadProviderExecutionEvidence(
-		prisma,
+		deps,
 		userId,
 		accepted.dependencies,
 		cacheTypes as ProviderCacheType[],
@@ -1505,7 +1516,7 @@ export async function captureCurrentProviderScanAuthority(
 
 		const cacheType: ProviderCacheType = target.service === "PLEX" ? "plex" : "jellyfin";
 		const current = await loadProviderExecutionEvidence(
-			deps.prisma,
+			deps,
 			userId,
 			[cacheType],
 			[cacheType],
@@ -1551,7 +1562,7 @@ export async function createCurrentProviderScanAuthority(
 			acceptedSources.map(({ fingerprint: _fingerprint, ...source }) => source),
 		);
 		const current = await loadCurrentProviderExecutionEvidence(
-			deps.prisma,
+			deps,
 			userId,
 			targetRequest,
 			new Date(),
@@ -1729,7 +1740,7 @@ async function authorizeProviderEvidence(
 		}
 		await assertLease?.();
 		const before = await loadCurrentProviderExecutionEvidence(
-			deps.prisma,
+			deps,
 			userId,
 			accepted,
 			new Date(),
@@ -1774,7 +1785,7 @@ async function authorizeProviderEvidence(
 					}
 				}
 				const current = await loadCurrentProviderExecutionEvidence(
-					tx as unknown as CleanupExecutorDeps["prisma"],
+					{ ...deps, prisma: tx as unknown as CleanupExecutorDeps["prisma"] },
 					userId,
 					accepted,
 					new Date(),
@@ -3795,12 +3806,19 @@ async function verifyEpisodePlexWatchProof(
 		(instance) => instance.service === "PLEX" && instance.enabled === true,
 	);
 	const policyEvidence = [];
+	const authority = new PlexAuthorityService({
+		prisma: deps.prisma,
+		...(deps.encryptor ? { encryptor: deps.encryptor } : {}),
+		log: deps.log,
+		...(deps.plexCacheClientFactory ? { createClient: deps.plexCacheClientFactory } : {}),
+	});
 	for (const instance of enabledPlexInstances) {
 		policyEvidence.push(
-			await loadInstanceEpisodeEvidence(deps.prisma, {
+			await authority.readInstanceSelectedEpisodes({
 				userId: instance.userId,
 				instanceId: instance.id,
-				instance,
+				showTmdbIds: [showTmdbId],
+				mutation: true,
 				maxAgeMs: 24 * 60 * 60 * 1000,
 			}),
 		);
@@ -4016,10 +4034,11 @@ async function verifyEpisodePlexWatchProof(
 		if (!Number.isFinite(plexUpdatedAt) || approvedRefreshedAt.getTime() < plexUpdatedAt) {
 			continue;
 		}
-		const currentGeneration = await loadInstanceEpisodeEvidence(deps.prisma, {
+		const currentGeneration = await authority.readInstanceSelectedEpisodes({
 			userId: plexInstance.userId,
 			instanceId: plexInstance.id,
-			instance: plexInstance,
+			showTmdbIds: [showTmdbId],
+			mutation: true,
 			maxAgeMs: 24 * 60 * 60 * 1000,
 		});
 		const currentEvidence = currentGeneration.available

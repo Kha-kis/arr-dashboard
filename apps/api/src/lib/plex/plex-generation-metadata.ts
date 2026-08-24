@@ -2,18 +2,22 @@ import type {
 	PlexAttemptState,
 	PlexCoverageReasonCode,
 	PlexEvidenceSummary,
-	PlexGenerationMetadataV2,
+	PlexGenerationDomainRoot,
+	PlexGenerationMetadataV3,
 	PlexGenerationSection,
+	PlexGenerationSectionV3,
 	PlexPublicationLevel,
 } from "@arr/shared";
 
-export type DecodedPlexGenerationMetadata = {
-	version: 1 | 2;
-	publicationLevel: PlexPublicationLevel;
-	completeness: "complete" | "partial";
-	itemCount: number | null;
-	sections: PlexGenerationSection[];
-};
+export type DecodedPlexGenerationMetadata =
+	| {
+			version: 1 | 2;
+			publicationLevel: PlexPublicationLevel;
+			completeness: "complete" | "partial";
+			itemCount: number | null;
+			sections: PlexGenerationSection[];
+	  }
+	| PlexGenerationMetadataV3;
 
 export type PlexGenerationMetadataDecodeResult =
 	| { ok: true; metadata: DecodedPlexGenerationMetadata }
@@ -150,6 +154,76 @@ function normalizeSections(value: unknown): PlexGenerationSection[] | PlexCovera
 	return sections;
 }
 
+function normalizeV3Sections(value: unknown): PlexGenerationSectionV3[] | PlexCoverageReasonCode {
+	const base = normalizeSections(value);
+	if (typeof base === "string") return base;
+	const entries = value as Record<string, unknown>[];
+	const sections: PlexGenerationSectionV3[] = [];
+	for (let index = 0; index < base.length; index++) {
+		const entry = entries[index]!;
+		if (
+			typeof entry.uuid !== "string" ||
+			entry.uuid.trim() === "" ||
+			entry.refreshing !== false ||
+			!Number.isSafeInteger(entry.scannedAt) ||
+			(entry.scannedAt as number) < 0 ||
+			!Number.isSafeInteger(entry.updatedAt) ||
+			(entry.updatedAt as number) < 0
+		) {
+			return "invalid_sections";
+		}
+		sections.push({
+			...base[index]!,
+			uuid: entry.uuid,
+			refreshing: false,
+			scannedAt: entry.scannedAt as number,
+			updatedAt: entry.updatedAt as number,
+		});
+	}
+	return sections;
+}
+
+const canonicalDomains = new Set([
+	"membership",
+	"display",
+	"labels",
+	"collections",
+	"watch",
+	"on-deck",
+	"episode-parents",
+	"episodes",
+]);
+
+function normalizeV3Roots(
+	value: unknown,
+	sectionKeys: ReadonlySet<string>,
+): PlexGenerationDomainRoot[] | PlexCoverageReasonCode {
+	if (!Array.isArray(value)) return "metadata_invalid";
+	const roots: PlexGenerationDomainRoot[] = [];
+	const identities = new Set<string>();
+	for (const entry of value) {
+		if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+			return "metadata_invalid";
+		}
+		const root = entry as Record<string, unknown>;
+		if (
+			typeof root.sectionKey !== "string" ||
+			!sectionKeys.has(root.sectionKey) ||
+			typeof root.domain !== "string" ||
+			!canonicalDomains.has(root.domain) ||
+			typeof root.digest !== "string" ||
+			!/^[a-f0-9]{64}$/.test(root.digest)
+		) {
+			return "metadata_invalid";
+		}
+		const identity = `${root.sectionKey}\u0000${root.domain}`;
+		if (identities.has(identity)) return "metadata_invalid";
+		identities.add(identity);
+		roots.push(root as unknown as PlexGenerationDomainRoot);
+	}
+	return roots;
+}
+
 export function decodePlexGenerationMetadata(
 	raw: string | null | undefined,
 ): PlexGenerationMetadataDecodeResult {
@@ -164,7 +238,10 @@ export function decodePlexGenerationMetadata(
 		return { ok: false, reasonCode: "malformed_metadata" };
 	}
 	const envelope = parsed as Record<string, unknown>;
-	const normalizedSections = normalizeSections(envelope.sections);
+	const normalizedSections =
+		envelope.version === 3
+			? normalizeV3Sections(envelope.sections)
+			: normalizeSections(envelope.sections);
 	if (typeof normalizedSections === "string") {
 		return { ok: false, reasonCode: normalizedSections };
 	}
@@ -181,7 +258,9 @@ export function decodePlexGenerationMetadata(
 			},
 		};
 	}
-	if (envelope.version !== 2) return { ok: false, reasonCode: "unknown_metadata_version" };
+	if (envelope.version !== 2 && envelope.version !== 3) {
+		return { ok: false, reasonCode: "unknown_metadata_version" };
+	}
 	if (
 		envelope.publicationLevel !== "authoritative" &&
 		envelope.publicationLevel !== "positive-only"
@@ -200,6 +279,32 @@ export function decodePlexGenerationMetadata(
 	if (!Number.isSafeInteger(envelope.itemCount) || (envelope.itemCount as number) < 0) {
 		return { ok: false, reasonCode: "invalid_item_count" };
 	}
+	if (envelope.version === 3) {
+		if (
+			envelope.publicationLevel !== "authoritative" ||
+			envelope.completeness !== "complete" ||
+			envelope.canonicalizationVersion !== 1
+		) {
+			return { ok: false, reasonCode: "metadata_invalid" };
+		}
+		const roots = normalizeV3Roots(
+			envelope.roots,
+			new Set(normalizedSections.map((section) => section.key)),
+		);
+		if (typeof roots === "string") return { ok: false, reasonCode: roots };
+		return {
+			ok: true,
+			metadata: {
+				version: 3,
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				itemCount: envelope.itemCount as number,
+				canonicalizationVersion: 1,
+				sections: normalizedSections as PlexGenerationSectionV3[],
+				roots,
+			},
+		};
+	}
 	return {
 		ok: true,
 		metadata: {
@@ -213,15 +318,19 @@ export function decodePlexGenerationMetadata(
 }
 
 export function encodeAuthoritativePlexGenerationMetadata(input: {
-	sections: PlexGenerationSection[];
+	sections: PlexGenerationSectionV3[];
 	itemCount: number;
+	canonicalizationVersion: 1;
+	roots: PlexGenerationDomainRoot[];
 }): string {
-	const metadata: PlexGenerationMetadataV2 = {
-		version: 2,
+	const metadata: PlexGenerationMetadataV3 = {
+		version: 3,
 		publicationLevel: "authoritative",
 		completeness: "complete",
 		itemCount: input.itemCount,
+		canonicalizationVersion: input.canonicalizationVersion,
 		sections: input.sections,
+		roots: input.roots,
 	};
 	const decoded = decodePlexGenerationMetadata(JSON.stringify(metadata));
 	if (!decoded.ok || decoded.metadata.publicationLevel !== "authoritative") {
@@ -272,7 +381,10 @@ export function evaluatePublishedPlexGeneration(
 		decoded.metadata.completeness === "partial" &&
 		(attempt.attemptState === "partial" || attempt.attemptState === "success") &&
 		(attempt.reasonCode === null || attempt.reasonCode === "latest_attempt_partial");
+	const settlementMetadataMissing =
+		decoded.metadata.version < 3 && decoded.metadata.publicationLevel === "authoritative";
 	const authoritativeCurrent =
+		decoded.metadata.version === 3 &&
 		decoded.metadata.publicationLevel === "authoritative" &&
 		decoded.metadata.completeness === "complete" &&
 		attempt.attemptState === "success" &&
@@ -297,7 +409,11 @@ export function evaluatePublishedPlexGeneration(
 					? "positive-only"
 					: "unavailable",
 			completeness: authoritativeCurrent ? "complete" : currentPositiveOnly ? "partial" : "unknown",
-			reasonCodes: attempt.reasonCode ? [attempt.reasonCode] : [],
+			reasonCodes: attempt.reasonCode
+				? [attempt.reasonCode]
+				: settlementMetadataMissing
+					? ["plex_settlement_metadata_missing"]
+					: [],
 			publishedGeneration,
 		},
 	};

@@ -1,5 +1,57 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../plex/plex-authority-service.js")>();
+	const repository = await import("../../plex/plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			constructor(
+				private readonly deps: {
+					prisma: Parameters<typeof repository.scanInstancePolicyEvidence>[0];
+				},
+			) {}
+
+			async readInstance(input: Parameters<typeof repository.loadInstanceEvidence>[1]) {
+				const evidence = await repository.loadUserEvidence(this.deps.prisma, input);
+				return evidence.find((entry) => entry.instanceId === input.instanceId) ?? evidence[0];
+			}
+
+			async scanInstancePolicy(input: Parameters<typeof repository.scanInstancePolicyEvidence>[1]) {
+				const evidence = await repository.scanUserPolicyEvidence(this.deps.prisma, input);
+				return evidence.find((entry) => entry.instanceId === input.instanceId) ?? evidence[0];
+			}
+
+			async readInstanceSelectedEpisodes(
+				input: Parameters<typeof repository.loadInstanceSelectedEpisodeEvidence>[1],
+			) {
+				const instances = await this.deps.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				const instance = instances.find((entry) => entry.id === input.instanceId);
+				return await repository.loadInstanceSelectedEpisodeEvidence(this.deps.prisma, {
+					...input,
+					instance,
+				});
+			}
+
+			async readInstanceEpisodes(
+				input: Parameters<typeof repository.loadInstanceEpisodeEvidence>[1],
+			) {
+				const instances = await this.deps.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				const instance = instances.find((entry) => entry.id === input.instanceId);
+				return await repository.loadInstanceEpisodeEvidence(this.deps.prisma, {
+					...input,
+					instance,
+				});
+			}
+		},
+	};
+});
+
 import { PlexSeriesNotFoundError } from "../../plex/plex-client.js";
 import { plexConnectionFingerprint } from "../../plex/service-instance-fingerprint.js";
 import {
@@ -483,7 +535,23 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		itemCount: parentRows.length,
 		generationId: parentGenerationId,
 		generationMetadata: JSON.stringify({
-			sections: [{ key: "shows", title: "Shows", type: "show" }],
+			version: 3,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			itemCount: parentRows.length,
+			canonicalizationVersion: 1,
+			sections: [
+				{
+					key: "shows",
+					title: "Shows",
+					type: "show",
+					uuid: "shows-uuid",
+					refreshing: false,
+					scannedAt: 1,
+					updatedAt: 1,
+				},
+			],
+			roots: [{ sectionKey: "shows", domain: "membership", digest: "a".repeat(64) }],
 		}),
 		connectionGeneration: 1,
 		identityGeneration: 1,
@@ -494,9 +562,12 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 		itemCount: episodeRows.length,
 		generationId: "plex-episode-generation-1",
 		generationMetadata: JSON.stringify({
-			version: 1,
+			version: 2,
 			parentPlexGenerationId: parentGenerationId,
 			parentPublicationLevel: "authoritative",
+			parentMetadataVersion: 3,
+			canonicalizationVersion: 1,
+			episodeDigest: "b".repeat(64),
 			connectionGeneration: 1,
 			identityGeneration: 1,
 		}),
@@ -595,6 +666,7 @@ function makeSonarrDeps(options: SonarrTestOptions = {}) {
 			},
 			plexEpisodeCache: {
 				findMany: vi.fn().mockResolvedValue(episodeRows),
+				count: vi.fn(async () => episodeStatus.itemCount),
 				findFirst: vi.fn().mockResolvedValue({
 					watchCount: 1,
 					refreshedAt: new Date(),
@@ -3056,9 +3128,12 @@ describe("verified Sonarr mutation handoff", () => {
 			itemCount: secondEpisodeRows.length,
 			generationId: "plex-episode-generation-2",
 			generationMetadata: JSON.stringify({
-				version: 1,
+				version: 2,
 				parentPlexGenerationId: secondParentGenerationId,
 				parentPublicationLevel: "authoritative",
+				parentMetadataVersion: 3,
+				canonicalizationVersion: 1,
+				episodeDigest: "c".repeat(64),
 				connectionGeneration: 1,
 				identityGeneration: 1,
 			}),

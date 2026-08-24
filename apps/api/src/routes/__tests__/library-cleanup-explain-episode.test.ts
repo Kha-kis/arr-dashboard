@@ -4,6 +4,43 @@ import { plexConnectionFingerprint } from "../../lib/plex/service-instance-finge
 import { registerLibraryCleanupRoutes } from "../library-cleanup.js";
 import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
 
+vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../lib/plex/plex-authority-service.js")>();
+	const repository = await import("../../lib/plex/plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			private readonly prisma: {
+				serviceInstance: { findMany: (input: unknown) => Promise<Array<Record<string, unknown>>> };
+			};
+
+			constructor(input: {
+				prisma: {
+					serviceInstance: {
+						findMany: (input: unknown) => Promise<Array<Record<string, unknown>>>;
+					};
+				};
+			}) {
+				this.prisma = input.prisma;
+			}
+
+			async readInstanceEpisodes(input: { userId: string; instanceId: string }) {
+				const instances = await this.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				const instance = instances.find((entry) => entry.id === input.instanceId);
+				return repository.loadInstanceEpisodeEvidence(
+					this.prisma as never,
+					{
+						...input,
+						instance: instance as never,
+					} as never,
+				);
+			}
+		},
+	};
+});
+
 const USER_ID = "user-episode-explain";
 const SONARR_INSTANCE_ID = "sonarr-1";
 const PLEX_INSTANCE_ID = "plex-1";
@@ -170,7 +207,23 @@ beforeEach(async () => {
 								cacheType: "plex",
 								generationId: parentGenerationId,
 								generationMetadata: JSON.stringify({
-									sections: [{ key: "1", title: "TV", type: "show" }],
+									version: 3,
+									publicationLevel: "authoritative",
+									completeness: "complete",
+									itemCount: 1,
+									canonicalizationVersion: 1,
+									sections: [
+										{
+											key: "1",
+											uuid: "shows-uuid",
+											title: "TV",
+											type: "show",
+											refreshing: false,
+											scannedAt: 1_777_000_000,
+											updatedAt: 1_777_000_100,
+										},
+									],
+									roots: [{ sectionKey: "1", domain: "membership", digest: "a".repeat(64) }],
 								}),
 							}
 						: {
@@ -178,9 +231,12 @@ beforeEach(async () => {
 								cacheType: "plex_episode",
 								generationId: "plex-episode-generation-1",
 								generationMetadata: JSON.stringify({
-									version: 1,
+									version: 2,
 									parentPlexGenerationId: parentGenerationId,
 									parentPublicationLevel: "authoritative",
+									parentMetadataVersion: 3,
+									canonicalizationVersion: 1,
+									episodeDigest: "b".repeat(64),
 									connectionGeneration: 4,
 									identityGeneration: 9,
 								}),

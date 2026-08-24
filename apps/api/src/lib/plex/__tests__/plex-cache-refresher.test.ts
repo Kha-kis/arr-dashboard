@@ -140,6 +140,68 @@ describe("collectPlexCacheLiveEvidence", () => {
 		expect(transaction).not.toHaveBeenCalled();
 	});
 
+	it("preserves item-level watch state when PMS has not emitted a history row", async () => {
+		const lastViewedAt = 1_723_000_123;
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "rk-1",
+					title: "Watched Movie",
+					type: "movie",
+					Guid: [{ id: "tmdb://12345" }],
+					viewCount: 3,
+					lastViewedAt,
+				},
+			]),
+			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+
+		const result = await collectPlexCacheLiveEvidence(mockClient, "inst-1", silentLog);
+
+		expect(result.snapshot?.rows).toEqual([
+			expect.objectContaining({
+				tmdbId: 12345,
+				watchCount: 3,
+				lastWatchedAt: new Date(lastViewedAt * 1000),
+			}),
+		]);
+	});
+
+	it("preserves duplicate provider identities in a fresh authority observation", async () => {
+		const mockClient = {
+			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "rk-1",
+					title: "First copy",
+					type: "movie",
+					Guid: [{ id: "tmdb://12345" }],
+				},
+				{
+					ratingKey: "rk-2",
+					title: "Second copy",
+					type: "movie",
+					Guid: [{ id: "tmdb://12345" }],
+				},
+			]),
+			getHistory: vi.fn().mockResolvedValue([]),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck: vi.fn().mockResolvedValue([]),
+		} as unknown as PlexClient;
+
+		const result = await collectPlexCacheLiveEvidence(mockClient, "inst-1", silentLog, {
+			preserveProviderDuplicates: true,
+		});
+
+		expect(result.complete).toBe(true);
+		expect(result.snapshot?.rows.map((row) => row.ratingKey).sort()).toEqual(["rk-1", "rk-2"]);
+	});
+
 	it("keeps the previous generation when history changes after enrichment", async () => {
 		const verifyHistorySnapshot = vi.fn().mockRejectedValue(new Error("history changed"));
 		const mockClient = {

@@ -8,9 +8,9 @@ import type { PlexSectionsResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import {
 	hasAuthoritativeSelectedPlexEvidence,
-	loadUserSelectedEvidence,
 	summarizePlexEvidence,
-} from "../../lib/plex/plex-evidence-repository.js";
+} from "../../lib/plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { mapToSections } from "./lib/section-helpers.js";
 
 export async function registerSectionRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
@@ -23,9 +23,14 @@ export async function registerSectionRoutes(app: FastifyInstance, _opts: Fastify
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const evidence = await loadUserSelectedEvidence(app.prisma, {
+		const evidence = await new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		}).readUserSelected({
 			userId,
 			selection: { kind: "authority-only" },
+			domains: [],
 		});
 		const summary = summarizePlexEvidence(evidence);
 		if (!hasAuthoritativeSelectedPlexEvidence(evidence)) {

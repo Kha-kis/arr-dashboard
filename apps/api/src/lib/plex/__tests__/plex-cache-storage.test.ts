@@ -22,6 +22,12 @@ type EpisodeParentBatchScanner = (
 	onBatch: (rows: ReadonlyArray<Record<string, unknown>>) => Promise<void> | void,
 ) => Promise<void>;
 
+type SelectedRowsReader = (
+	prisma: unknown,
+	instanceId: string,
+	selection: { kind: "on-deck" | "recently-added"; limit: number },
+) => Promise<Array<{ id: string }>>;
+
 describe("Plex policy cache storage", () => {
 	it("streams the fixed policy projection in id-cursor batches", async () => {
 		const storage = (await import("../plex-cache-storage.js")) as Record<string, unknown>;
@@ -50,6 +56,7 @@ describe("Plex policy cache storage", () => {
 					mediaType: true,
 					sectionId: true,
 					sectionTitle: true,
+					ratingKey: true,
 					lastWatchedAt: true,
 					watchCount: true,
 					watchedByUsers: true,
@@ -179,4 +186,74 @@ describe("Plex episode cache storage selection", () => {
 			expect(findMany).not.toHaveBeenCalled();
 		},
 	);
+});
+
+describe("Plex bounded value selection", () => {
+	it("applies the on-deck limit after canonical identity ordering", async () => {
+		const storage = (await import("../plex-cache-storage.js")) as Record<string, unknown>;
+		const listRows = storage.listSelectedPlexCacheRows as SelectedRowsReader;
+		const rows = [
+			{ id: "db-a", sectionId: "2", mediaType: "movie", tmdbId: 2, ratingKey: "2", onDeck: true },
+			{ id: "db-b", sectionId: "1", mediaType: "movie", tmdbId: 1, ratingKey: "1", onDeck: true },
+		];
+		const findMany = vi.fn().mockResolvedValueOnce(rows);
+
+		const selected = await listRows({ plexCache: { findMany } }, "plex-1", {
+			kind: "on-deck",
+			limit: 1,
+		});
+
+		expect(selected.map((row) => row.id)).toEqual(["db-b"]);
+		expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 500 }));
+	});
+
+	it("uses canonical identity as the recently-added timestamp tie breaker", async () => {
+		const storage = (await import("../plex-cache-storage.js")) as Record<string, unknown>;
+		const listRows = storage.listSelectedPlexCacheRows as SelectedRowsReader;
+		const addedAt = new Date("2026-08-20T12:00:00.000Z");
+		const rows = [
+			{ id: "db-a", sectionId: "2", mediaType: "movie", tmdbId: 2, ratingKey: "2", addedAt },
+			{ id: "db-b", sectionId: "1", mediaType: "movie", tmdbId: 1, ratingKey: "1", addedAt },
+		];
+		const findMany = vi.fn().mockResolvedValueOnce(rows);
+
+		const selected = await listRows({ plexCache: { findMany } }, "plex-1", {
+			kind: "recently-added",
+			limit: 1,
+		});
+
+		expect(selected.map((row) => row.id)).toEqual(["db-b"]);
+		expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ take: 500 }));
+	});
+
+	it("preserves newest-first recently-added response ordering", async () => {
+		const storage = (await import("../plex-cache-storage.js")) as Record<string, unknown>;
+		const listRows = storage.listSelectedPlexCacheRows as SelectedRowsReader;
+		const rows = [
+			{
+				id: "older",
+				sectionId: "1",
+				mediaType: "movie",
+				tmdbId: 1,
+				ratingKey: "1",
+				addedAt: new Date("2026-08-19T12:00:00.000Z"),
+			},
+			{
+				id: "newer",
+				sectionId: "2",
+				mediaType: "movie",
+				tmdbId: 2,
+				ratingKey: "2",
+				addedAt: new Date("2026-08-20T12:00:00.000Z"),
+			},
+		];
+		const findMany = vi.fn().mockResolvedValueOnce(rows);
+
+		const selected = await listRows({ plexCache: { findMany } }, "plex-1", {
+			kind: "recently-added",
+			limit: 2,
+		});
+
+		expect(selected.map((row) => row.id)).toEqual(["newer", "older"]);
+	});
 });

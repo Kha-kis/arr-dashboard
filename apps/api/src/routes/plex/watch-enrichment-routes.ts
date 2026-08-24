@@ -10,9 +10,9 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
 	hasAuthoritativeSelectedPlexEvidence,
-	loadUserSelectedEvidence,
 	summarizePlexEvidence,
-} from "../../lib/plex/plex-evidence-repository.js";
+} from "../../lib/plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateWatchEnrichment } from "./lib/watch-enrichment-helpers.js";
 
@@ -76,7 +76,11 @@ export async function registerWatchEnrichmentRoutes(
 
 		const tmdbIdList = [...new Set(tmdbIds)];
 
-		const plexEvidence = await loadUserSelectedEvidence(app.prisma, {
+		const plexEvidence = await new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		}).readUserSelected({
 			userId,
 			selection: {
 				kind: "targets",
@@ -85,6 +89,7 @@ export async function registerWatchEnrichmentRoutes(
 					{ tmdbId, mediaType: "series" as const },
 				]),
 			},
+			domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
 		});
 		const evidenceSummary = summarizePlexEvidence(plexEvidence);
 		if (plexEvidence.length > 0 && !hasAuthoritativeSelectedPlexEvidence(plexEvidence)) {

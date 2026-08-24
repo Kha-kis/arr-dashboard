@@ -7,9 +7,9 @@
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import {
 	hasAuthoritativePlexEvidence,
-	scanUserPolicyEvidence,
 	summarizePlexEvidence,
-} from "../../lib/plex/plex-evidence-repository.js";
+} from "../../lib/plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { createCollectionStatsAccumulator } from "./lib/collection-stats-helpers.js";
 
 export async function registerCollectionStatsRoutes(
@@ -20,8 +20,13 @@ export async function registerCollectionStatsRoutes(
 		const userId = request.currentUser!.id;
 
 		const accumulator = createCollectionStatsAccumulator();
-		const evidence = await scanUserPolicyEvidence(app.prisma, {
+		const evidence = await new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		}).scanUserPolicy({
 			userId,
+			domains: ["membership", "collections"],
 			onBatch: ({ rows }) => accumulator.add(rows),
 		});
 		const summary = summarizePlexEvidence(evidence);

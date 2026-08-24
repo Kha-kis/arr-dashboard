@@ -28,6 +28,19 @@ vi.mock("../../../lib/plex/plex-evidence-repository.js", async (importOriginal) 
 	getPublishedEpisodeGenerationObservation: mocks.getPublishedEpisodeGenerationObservation,
 }));
 
+vi.mock("../../../lib/plex/plex-authority-service.js", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../../../lib/plex/plex-authority-service.js")>();
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			async readInstance() {
+				return await mocks.getPublishedGenerationObservation();
+			}
+		},
+	};
+});
+
 import { registerCacheRoutes } from "../cache-routes.js";
 
 describe("POST /api/plex/cache/:instanceId/refresh publication authority", () => {

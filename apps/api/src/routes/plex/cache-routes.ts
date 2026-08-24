@@ -12,10 +12,12 @@ import { requireEnabledInstance } from "../../lib/arr/instance-helpers.js";
 import { AppValidationError } from "../../lib/errors.js";
 import {
 	getPublishedEpisodeGenerationObservation,
-	getPublishedGenerationObservation,
-	isCurrentAuthoritativePlexEvidence,
 	loadUserGenerationObservations,
-} from "../../lib/plex/plex-evidence-repository.js";
+} from "../../lib/plex/plex-persisted-observation-repository.js";
+import {
+	isCurrentAuthoritativePlexEvidence,
+	PlexAuthorityService,
+} from "../../lib/plex/plex-authority-service.js";
 import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
 import { refreshOwnedPlexCache } from "../../lib/plex/plex-refresh-orchestration.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -40,7 +42,15 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		// Verify ownership
 		await requirePlexClient(app, userId, instanceId);
 
-		const evidence = await getPublishedGenerationObservation(app.prisma, { userId, instanceId });
+		const evidence = await new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		}).readInstance({
+			userId,
+			instanceId,
+			domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
+		});
 		if (!evidence.available || !isCurrentAuthoritativePlexEvidence(evidence.evidence)) {
 			return reply.status(503).send({
 				error: "Plex cache evidence is unavailable",
