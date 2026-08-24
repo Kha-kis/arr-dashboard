@@ -7,6 +7,33 @@ import {
 } from "../plex-generation-metadata.js";
 
 const sections = [{ key: "movies", title: "Movies", type: "movie" as const }];
+const v3Sections = [
+	{
+		key: "movies",
+		uuid: "section-uuid-movies",
+		title: "Movies",
+		type: "movie" as const,
+		refreshing: false as const,
+		scannedAt: 1_777_000_000,
+		updatedAt: 1_777_000_100,
+	},
+];
+const v3Roots = [
+	{
+		sectionKey: "movies",
+		domain: "membership" as const,
+		digest: "a".repeat(64),
+	},
+];
+const v3Metadata = JSON.stringify({
+	version: 3,
+	publicationLevel: "authoritative",
+	completeness: "complete",
+	itemCount: 1,
+	canonicalizationVersion: 1,
+	sections: v3Sections,
+	roots: v3Roots,
+});
 
 function status(overrides: Record<string, unknown> = {}) {
 	return {
@@ -17,7 +44,7 @@ function status(overrides: Record<string, unknown> = {}) {
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
 		generationId: "generation-1",
-		generationMetadata: JSON.stringify({ sections }),
+		generationMetadata: v3Metadata,
 		itemCount: 1,
 		...overrides,
 	};
@@ -58,8 +85,23 @@ describe("Plex generation metadata", () => {
 		});
 	});
 
+	it("decodes a bounded V3 authoritative envelope", () => {
+		expect(decodePlexGenerationMetadata(v3Metadata)).toEqual({
+			ok: true,
+			metadata: {
+				version: 3,
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				itemCount: 1,
+				canonicalizationVersion: 1,
+				sections: v3Sections,
+				roots: v3Roots,
+			},
+		});
+	});
+
 	it.each([
-		["unknown version", JSON.stringify({ version: 3, sections }), "unknown_metadata_version"],
+		["unknown version", JSON.stringify({ version: 4, sections }), "unknown_metadata_version"],
 		["null", null, "missing_metadata"],
 		["missing", undefined, "missing_metadata"],
 		["invalid JSON", "{", "malformed_metadata"],
@@ -103,21 +145,63 @@ describe("Plex generation metadata", () => {
 		});
 	});
 
-	it("keeps top-level sections and excludes target identities in new metadata", () => {
+	it("keeps bounded section/domain roots and excludes target identities in V3 metadata", () => {
 		const parsed = JSON.parse(
-			encodeAuthoritativePlexGenerationMetadata({ sections, itemCount: 1 }),
+			encodeAuthoritativePlexGenerationMetadata({
+				sections: v3Sections,
+				itemCount: 1,
+				canonicalizationVersion: 1,
+				roots: v3Roots,
+			}),
 		) as Record<string, unknown>;
 
 		expect(parsed).toEqual({
-			version: 2,
+			version: 3,
 			publicationLevel: "authoritative",
 			completeness: "complete",
 			itemCount: 1,
-			sections,
+			canonicalizationVersion: 1,
+			sections: v3Sections,
+			roots: v3Roots,
 		});
 		expect(parsed).not.toHaveProperty("targets");
 		expect(parsed).not.toHaveProperty("ratingKeys");
 	});
+
+	it.each([
+		["V1", JSON.stringify({ sections })],
+		[
+			"V2",
+			JSON.stringify({
+				version: 2,
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				itemCount: 1,
+				sections,
+			}),
+		],
+	])(
+		"retains %s as historical observation without exact or mutation authority",
+		(_name, metadata) => {
+			const options = {
+				now: new Date("2026-08-20T14:00:00.000Z"),
+				maxAgeMs: 3 * 60 * 60 * 1000,
+			};
+			const historicalStatus = status({ generationMetadata: metadata });
+
+			expect(evaluatePublishedPlexGeneration(historicalStatus, options)).toMatchObject({
+				available: true,
+				evidence: {
+					availability: "last-known",
+					authority: "unavailable",
+					publicationLevel: "unavailable",
+					completeness: "unknown",
+					reasonCodes: ["plex_settlement_metadata_missing"],
+				},
+			});
+			expect(evaluatePlexMutationAuthority(historicalStatus, options).available).toBe(false);
+		},
+	);
 
 	it("keeps immutable authoritative publication facts but withholds current trust after failure", () => {
 		const result = evaluatePublishedPlexGeneration(

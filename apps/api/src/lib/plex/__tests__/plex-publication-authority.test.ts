@@ -13,7 +13,33 @@ const authority = vi.hoisted(() => ({
 	identities: [] as string[],
 	identityError: undefined as Error | undefined,
 	events: [] as string[],
+	parentScans: [] as Array<Record<string, unknown>>,
 }));
+
+vi.mock("../plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../plex-authority-service.js")>();
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			async scanInstancePolicy(input: {
+				onBatch?: (batch: { rows: Array<Record<string, unknown>> }) => void;
+			}) {
+				const result = authority.parentScans.shift();
+				if (!result) throw new Error("Parent authority scan was not configured");
+				input.onBatch?.({
+					rows: [{ tmdbId: 42, ratingKey: "show-1" }],
+				});
+				return result;
+			}
+
+			async scanInstanceEpisodeParentPolicy(input: {
+				onBatch?: (batch: { rows: Array<Record<string, unknown>> }) => void;
+			}) {
+				return this.scanInstancePolicy(input);
+			}
+		},
+	};
+});
 
 vi.mock("../plex-client.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../plex-client.js")>();
@@ -80,7 +106,20 @@ function ownedSnapshot(
 }
 
 function dataClient(itemCount = 1): PlexClient {
+	const settlementSections = [
+		{
+			key: "movies",
+			uuid: "movies-uuid",
+			title: "Movies",
+			type: "movie",
+			refreshing: false,
+			scannedAt: 1_777_000_000,
+			updatedAt: 1_777_000_100,
+		},
+	];
 	return {
+		getActivities: vi.fn().mockResolvedValue([]),
+		getLibrarySettlementSections: vi.fn().mockResolvedValue(settlementSections),
 		getAccounts: vi.fn(async () => {
 			authority.events.push("collect");
 			return [{ id: 1, name: "Alice" }];
@@ -164,6 +203,7 @@ describe("Plex publication authority", () => {
 		authority.identities = [];
 		authority.identityError = undefined;
 		authority.events = [];
+		authority.parentScans = [];
 		vi.stubEnv("DATABASE_URL", "file:test.db");
 	});
 
@@ -183,6 +223,7 @@ describe("Plex publication authority", () => {
 			"predicate",
 			"attempt",
 			"identity",
+			"collect",
 			"collect",
 			"identity",
 			"predicate",
@@ -221,6 +262,104 @@ describe("Plex publication authority", () => {
 				}),
 			}),
 		);
+	});
+
+	it("publishes only bounded V3 settlement metadata", async () => {
+		const fixture = prisma();
+		const result = await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+
+		expect(result).toMatchObject({ complete: true, errors: 0, upserted: 1 });
+		const successCall = fixture.tx.cacheRefreshStatus.updateMany.mock.calls.find(
+			([call]) => call.data.lastAttemptResult === "success",
+		)?.[0];
+		expect(successCall).toBeDefined();
+		const metadata = JSON.parse(
+			(successCall as unknown as { data: { generationMetadata: string } }).data.generationMetadata,
+		) as Record<string, unknown>;
+		expect(metadata).toMatchObject({
+			version: 3,
+			canonicalizationVersion: 1,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+		});
+		expect(metadata).toHaveProperty("roots");
+		expect(metadata).not.toHaveProperty("targets");
+		expect(metadata).not.toHaveProperty("ratingKeys");
+	});
+
+	it("does not publish while a supported section scan is active", async () => {
+		const fixture = prisma();
+		authority.client = {
+			...dataClient(),
+			getActivities: vi
+				.fn()
+				.mockResolvedValue([
+					{ type: "library.update.section", Context: { librarySectionID: "movies" } },
+				]),
+		} as unknown as PlexClient;
+
+		const result = await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
+		expect(fixture.tx.cacheRefreshStatus.updateMany).not.toHaveBeenCalledWith(
+			expect.objectContaining({ data: expect.objectContaining({ lastAttemptResult: "success" }) }),
+		);
+	});
+
+	it("does not publish when the post-end final canonical pass changes", async () => {
+		const fixture = prisma();
+		const client = dataClient();
+		const first = {
+			ratingKey: "movie-1",
+			title: "Movie 1",
+			type: "movie",
+			Guid: [{ id: "tmdb://42" }],
+		};
+		const changed = { ...first, title: "Changed after end probe" };
+		client.getLibraryItems = vi
+			.fn()
+			.mockResolvedValueOnce([first])
+			.mockResolvedValueOnce([first])
+			.mockResolvedValueOnce([changed])
+			.mockResolvedValueOnce([changed]);
+		authority.client = client;
+
+		const result = await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(result.errorMessages.join(" ")).toMatch(/canonical.*changed/i);
+		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("makes the final canonical collection the terminal upstream observation", async () => {
+		const fixture = prisma();
+		const events: string[] = [];
+		const client = dataClient();
+		client.getLibrarySettlementSections = vi.fn(async () => {
+			events.push("probe");
+			return [
+				{
+					key: "movies",
+					uuid: "movies-uuid",
+					title: "Movies",
+					type: "movie",
+					refreshing: false,
+					scannedAt: 1_777_000_000,
+					updatedAt: 1_777_000_100,
+				},
+			];
+		});
+		client.getAccounts = vi.fn(async () => {
+			events.push("collect");
+			return [{ id: 1, name: "Alice" }];
+		});
+		authority.client = client;
+
+		const result = await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+
+		expect(result).toMatchObject({ complete: true, upserted: 1 });
+		expect(events).toEqual(["probe", "collect", "probe", "probe", "collect"]);
 	});
 
 	it("durably revokes prior mutation authority before the first Plex identity read", async () => {
@@ -275,6 +414,7 @@ describe("Plex publication authority", () => {
 			"predicate",
 			"attempt",
 			"identity",
+			"collect",
 			"collect",
 			"identity",
 			"predicate",
@@ -360,8 +500,8 @@ describe("Plex publication authority", () => {
 			sectionTitle: "Shows",
 			title: "Example Show",
 			ratingKey: "show-1",
-			lastWatchedAt: parentPublishedAt,
-			watchCount: 1,
+			lastWatchedAt: null,
+			watchCount: 0,
 			watchedByUsers: "[]",
 			onDeck: false,
 			userRating: null,
@@ -386,7 +526,23 @@ describe("Plex publication authority", () => {
 			identityGeneration: 9,
 			generationId: "parent-generation-1",
 			generationMetadata: JSON.stringify({
-				sections: [{ key: "shows", title: "Shows", type: "show" }],
+				version: 3,
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				itemCount: 1,
+				canonicalizationVersion: 1,
+				sections: [
+					{
+						key: "shows",
+						uuid: "shows-uuid",
+						title: "Shows",
+						type: "show",
+						refreshing: false,
+						scannedAt: 1_777_000_000,
+						updatedAt: 1_777_000_100,
+					},
+				],
+				roots: [{ sectionKey: "shows", domain: "membership", digest: "a".repeat(64) }],
 			}),
 		};
 		const parentInstance = {
@@ -395,6 +551,22 @@ describe("Plex publication authority", () => {
 			identityVerifiedAt: new Date(0),
 			updatedAt: new Date(0),
 		};
+		authority.parentScans = [
+			{
+				available: true,
+				evidence: { publicationLevel: "authoritative", completeness: "complete" },
+				generationId: "parent-generation-1",
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			},
+			{
+				available: true,
+				evidence: { publicationLevel: "authoritative", completeness: "complete" },
+				generationId: "parent-generation-1",
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			},
+		];
 		const db = fixture.db as never as {
 			serviceInstance: { findFirst: ReturnType<typeof vi.fn> };
 			cacheRefreshStatus: { findMany: ReturnType<typeof vi.fn> };
@@ -406,7 +578,31 @@ describe("Plex publication authority", () => {
 			findMany: vi.fn().mockResolvedValue([parentRow]),
 			count: vi.fn().mockResolvedValue(1),
 		};
+		const parentClient = dataClient();
 		authority.client = {
+			...parentClient,
+			getLibrarySettlementSections: vi.fn().mockResolvedValue([
+				{
+					key: "shows",
+					uuid: "shows-uuid",
+					title: "Shows",
+					type: "show",
+					refreshing: false,
+					scannedAt: 1_777_000_000,
+					updatedAt: 1_777_000_100,
+				},
+			]),
+			getLibrarySections: vi
+				.fn()
+				.mockResolvedValue([{ key: "shows", title: "Shows", type: "show" }]),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "show-1",
+					title: "Example Show",
+					type: "show",
+					Guid: [{ id: "tmdb://42" }],
+				},
+			]),
 			getHistory: vi.fn().mockResolvedValue([
 				{
 					type: "episode",
@@ -434,6 +630,7 @@ describe("Plex publication authority", () => {
 			log,
 		});
 
+		expect(result.errorMessages).toEqual([]);
 		expect(result).toMatchObject({ complete: true, upserted: 1 });
 		expect(fixture.tx.plexEpisodeCache.createMany).toHaveBeenCalledWith({
 			data: [expect.objectContaining({ connectionGeneration: 4, identityGeneration: 9 })],

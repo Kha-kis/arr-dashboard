@@ -16,6 +16,51 @@ import {
 	serializeProviderScanAuthority,
 } from "../shared-plex-safety.js";
 
+vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../plex/plex-authority-service.js")>();
+	const repository = await import("../../plex/plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			private readonly prisma: never;
+
+			constructor(input: { prisma: never }) {
+				this.prisma = input.prisma;
+			}
+
+			readInstance(input: never) {
+				return repository.loadInstanceEvidence(this.prisma, input);
+			}
+
+			scanInstancePolicy(input: never) {
+				return repository.scanInstancePolicyEvidence(this.prisma, input);
+			}
+		},
+	};
+});
+
+function plexV3Metadata(itemCount: number) {
+	return JSON.stringify({
+		version: 3,
+		publicationLevel: "authoritative",
+		completeness: "complete",
+		itemCount,
+		canonicalizationVersion: 1,
+		sections: [
+			{
+				key: "movies",
+				uuid: "movies-uuid",
+				title: "Movies",
+				type: "movie",
+				refreshing: false,
+				scannedAt: 1_777_000_000,
+				updatedAt: 1_777_000_100,
+			},
+		],
+		roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+	});
+}
+
 function authorityFingerprint(value: unknown): string {
 	const canonicalize = (input: unknown): unknown => {
 		if (input instanceof Date) return input.toISOString();
@@ -584,7 +629,7 @@ describe("durable media-server rescans", () => {
 						connectionGeneration: 3,
 						identityGeneration: 7,
 						generationId: "plex-generation-1",
-						generationMetadata: '{"sections":[{"key":"movies","title":"Movies","type":"movie"}]}',
+						generationMetadata: plexV3Metadata(0),
 					},
 				]),
 			},
@@ -1084,7 +1129,7 @@ describe("durable media-server rescans", () => {
 						connectionGeneration: 3,
 						identityGeneration: 7,
 						generationId: "generation-b",
-						generationMetadata: '{"sections":[{"key":"movies","title":"Movies","type":"movie"}]}',
+						generationMetadata: plexV3Metadata(1),
 					},
 				]),
 			},

@@ -60,9 +60,9 @@ import {
 import {
 	hasAuthoritativePlexEvidence,
 	listPublishedSections,
-	scanUserPolicyEvidence,
 	summarizePlexEvidence,
-} from "../lib/plex/plex-evidence-repository.js";
+} from "../lib/plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../lib/plex/plex-authority-service.js";
 import { createQuiClient } from "../lib/qui/client-factory.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
 import { safeJsonParse as utilSafeJsonParse } from "../lib/utils/json.js";
@@ -524,8 +524,13 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 		const scannedPlexUsers = new Set<string>();
 		const scannedPlexCollections = new Set<string>();
 		const scannedPlexLabels = new Set<string>();
-		const plexEvidence = await scanUserPolicyEvidence(app.prisma, {
+		const plexEvidence = await new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		}).scanUserPolicy({
 			userId,
+			domains: ["membership", "watch", "collections", "labels"],
 			onBatch: ({ rows }) => {
 				for (const row of rows) {
 					collectStrings(row.watchedByUsers, scannedPlexUsers);

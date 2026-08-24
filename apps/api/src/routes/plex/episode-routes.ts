@@ -9,9 +9,9 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
 	isCurrentAuthoritativePlexEvidence,
-	loadInstanceSelectedEpisodeEvidence,
 	summarizePlexEvidence,
-} from "../../lib/plex/plex-evidence-repository.js";
+} from "../../lib/plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const episodeQuery = z.object({
@@ -37,7 +37,11 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 		const { instanceId, showTmdbId } = validateRequest(episodeQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const evidence = await loadInstanceSelectedEpisodeEvidence(app.prisma, {
+		const evidence = await new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		}).readInstanceSelectedEpisodes({
 			userId,
 			instanceId,
 			showTmdbIds: [showTmdbId],

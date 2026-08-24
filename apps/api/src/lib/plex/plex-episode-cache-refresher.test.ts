@@ -50,6 +50,25 @@ vi.mock("./service-instance-fingerprint.js", () => ({
 	plexConnectionFingerprint: vi.fn(() => "fingerprint-1"),
 }));
 
+vi.mock("./plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("./plex-authority-service.js")>();
+	const repository = await import("./plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			private readonly prisma: never;
+
+			constructor(input: { prisma: never }) {
+				this.prisma = input.prisma;
+			}
+
+			scanInstanceEpisodeParentPolicy(input: never) {
+				return repository.scanInstanceEpisodeParentPolicyEvidence(this.prisma, input);
+			}
+		},
+	};
+});
+
 const log = {
 	warn: vi.fn(),
 	info: vi.fn(),
@@ -119,7 +138,12 @@ async function refreshPlexEpisodeCache(
 }
 
 function prisma(
-	shows = [{ tmdbId: 42, ratingKey: "show-1" }],
+	shows: Array<{
+		tmdbId: number;
+		ratingKey: string;
+		mediaType?: string;
+		watchCount?: number;
+	}> = [{ tmdbId: 42, ratingKey: "show-1" }],
 	currentConnection = { service: "PLEX", enabled: true, connectionGeneration: 7 },
 	parentStatuses: Array<Record<string, unknown> | null> = [],
 ) {
@@ -136,7 +160,23 @@ function prisma(
 		itemCount: shows.length,
 		generationId: "parent-generation-1",
 		generationMetadata: JSON.stringify({
-			sections: [{ key: "shows", title: "Shows", type: "show" }],
+			version: 3,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			itemCount: shows.length,
+			canonicalizationVersion: 1,
+			sections: [
+				{
+					key: "shows",
+					uuid: "shows-uuid",
+					title: "Shows",
+					type: "show",
+					refreshing: false,
+					scannedAt: 1_777_000_000,
+					updatedAt: 1_777_000_100,
+				},
+			],
+			roots: [{ sectionKey: "shows", domain: "membership", digest: "a".repeat(64) }],
 		}),
 		lastAttemptAt: attemptedAt,
 		lastAttemptResult: "success",
@@ -209,7 +249,12 @@ function prisma(
 		},
 		plexCache: {
 			count: vi.fn().mockResolvedValue(fullShows.length),
-			findMany: vi.fn().mockResolvedValue(fullShows),
+			findMany: vi.fn(async ({ where }: { where?: Record<string, unknown> }) => {
+				if (where?.mediaType === "series" && where.watchCount) {
+					return fullShows.filter((row) => row.mediaType === "series" && row.watchCount > 0);
+				}
+				return fullShows;
+			}),
 		},
 		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
 			callback(tx),
@@ -303,12 +348,41 @@ describe("refreshPlexEpisodeCache authoritative publication", () => {
 			fixture.tx.cacheRefreshStatus.updateMany.mock.calls[0]![0].data.generationMetadata,
 		);
 		expect(metadata).toEqual({
-			version: 1,
+			version: 2,
 			parentPlexGenerationId: "parent-generation-1",
 			parentPublicationLevel: "authoritative",
+			parentMetadataVersion: 3,
+			canonicalizationVersion: 1,
+			episodeDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
 			connectionGeneration: 7,
 			identityGeneration: 11,
 		});
+	});
+
+	it("ignores more than the show capacity of ineligible parent rows", async () => {
+		const fixture = prisma([
+			{ tmdbId: 42, ratingKey: "show-watched" },
+			...Array.from({ length: 201 }, (_, index) => ({
+				tmdbId: 1_000 + index,
+				ratingKey: `movie-${index}`,
+				mediaType: "movie",
+			})),
+			{ tmdbId: 126, ratingKey: "show-unwatched", watchCount: 0 },
+		]);
+		const getEpisodes = vi.fn().mockResolvedValue([episode()]);
+
+		const result = await refreshPlexEpisodeCache(
+			client({ getEpisodes } as Partial<PlexClient>),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: true, eligibleShows: 1, refreshedShows: 1 });
+		expect(getEpisodes).toHaveBeenCalledTimes(1);
+		expect(getEpisodes).toHaveBeenCalledWith("show-watched");
 	});
 
 	it("keeps prior episode rows when the authoritative parent metadata is unavailable", async () => {

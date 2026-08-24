@@ -103,7 +103,25 @@ function makeStaleRow(overrides: Partial<CacheStatusRow> = {}): CacheStatusRow {
 		lastAttemptErrorMessage: null,
 		itemCount: 0,
 		generationId: "plex-generation-1",
-		generationMetadata: '{"sections":[]}',
+		generationMetadata: JSON.stringify({
+			version: 3,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			itemCount: 0,
+			canonicalizationVersion: 1,
+			sections: [
+				{
+					key: "movies",
+					title: "Movies",
+					type: "movie",
+					uuid: "movies-uuid",
+					refreshing: false,
+					scannedAt: 1,
+					updatedAt: 1,
+				},
+			],
+			roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+		}),
 		connectionGeneration: 1,
 		identityGeneration: 1,
 		instance: {

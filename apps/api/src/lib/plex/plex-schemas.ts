@@ -50,6 +50,59 @@ export const plexSectionsResponseSchema = z.looseObject({
 	}),
 });
 
+const plexBooleanFlagSchema = z
+	.union([z.boolean(), z.literal(0), z.literal(1), z.literal("0"), z.literal("1")])
+	.transform((value) => value === true || value === 1 || value === "1");
+
+const plexUnixTimestampSchema = z.coerce.number().int().nonnegative().refine(Number.isSafeInteger);
+
+const plexUninitializedUnixTimestampSchema = z.preprocess(
+	(value) => (value === undefined || value === null || value === "" ? null : value),
+	plexUnixTimestampSchema.nullable(),
+);
+
+/** Strict /library/sections settlement probe. */
+export const plexSettlementSectionsResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		offset: plexPaginationFields.offset.optional(),
+		size: plexPaginationFields.size,
+		totalSize: plexPaginationFields.totalSize.optional(),
+		Directory: z
+			.array(
+				z.looseObject({
+					key: z.coerce.string().min(1),
+					uuid: z.string().min(1),
+					title: z.string(),
+					type: z.string().min(1),
+					agent: z.string().optional(),
+					refreshing: plexBooleanFlagSchema,
+					scannedAt: plexUninitializedUnixTimestampSchema,
+					updatedAt: plexUnixTimestampSchema,
+				}),
+			)
+			.optional(),
+	}),
+});
+
+/** Strict complete /activities settlement probe. */
+export const plexActivitiesResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		offset: plexPaginationFields.offset.optional(),
+		size: plexPaginationFields.size,
+		totalSize: plexPaginationFields.totalSize.optional(),
+		Activity: z
+			.array(
+				z.looseObject({
+					type: z.string().min(1),
+					Context: z
+						.looseObject({ librarySectionID: z.coerce.string().min(1).optional() })
+						.optional(),
+				}),
+			)
+			.optional(),
+	}),
+});
+
 /** /library/sections/{id}/all endpoint */
 export const plexLibraryItemsResponseSchema = z.looseObject({
 	MediaContainer: z.looseObject({
@@ -63,8 +116,26 @@ export const plexLibraryItemsResponseSchema = z.looseObject({
 					year: z.number().optional(),
 					userRating: z.number().optional(),
 					addedAt: z.number().optional(),
+					viewCount: plexUnixTimestampSchema.optional(),
+					lastViewedAt: plexUnixTimestampSchema.optional(),
 					thumb: z.string().optional(),
 					Guid: z.array(z.looseObject({ id: z.string() })).optional(),
+					Collection: z.array(z.looseObject({ tag: z.string() })).optional(),
+					Label: z.array(z.looseObject({ tag: z.string() })).optional(),
+				}),
+			)
+			.optional(),
+	}),
+});
+
+/** /library/metadata/{ids} bounded tag enrichment response. */
+export const plexMetadataTagsResponseSchema = z.looseObject({
+	MediaContainer: z.looseObject({
+		size: plexPaginationFields.size,
+		Metadata: z
+			.array(
+				z.looseObject({
+					ratingKey: z.string().min(1),
 					Collection: z.array(z.looseObject({ tag: z.string() })).optional(),
 					Label: z.array(z.looseObject({ tag: z.string() })).optional(),
 				}),

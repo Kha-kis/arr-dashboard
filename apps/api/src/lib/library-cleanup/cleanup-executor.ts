@@ -41,15 +41,13 @@ import {
 	PlexMovieNotFoundError,
 	PlexSeriesNotFoundError,
 } from "../plex/plex-client.js";
-import {
-	type AvailablePlexInstanceEvidence,
-	getCurrentPlexMutationAuthorityForOwnedInstance,
-	loadInstanceEpisodeEvidence,
-	scanMutationPolicyEvidenceForOwnedInstances,
-	type AvailablePlexPolicyEvidence,
-	type PlexInstanceEvidence,
-	type PlexPolicyScanEvidence,
-} from "../plex/plex-evidence-repository.js";
+import type {
+	AvailablePlexInstanceEvidence,
+	AvailablePlexPolicyEvidence,
+	PlexInstanceEvidence,
+	PlexPolicyScanEvidence,
+} from "../plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../plex/plex-authority-service.js";
 import {
 	refreshOwnedPlexCache,
 	refreshOwnedPlexEpisodeCache,
@@ -293,6 +291,18 @@ function hasOnlyAuthoritativePlexEntries(
 	);
 }
 
+function cleanupPlexAuthority(
+	deps: CleanupExecutorDeps,
+	prisma: CleanupExecutorDeps["prisma"] = deps.prisma,
+): PlexAuthorityService {
+	return new PlexAuthorityService({
+		prisma,
+		...(deps.encryptor ? { encryptor: deps.encryptor } : {}),
+		log: deps.log,
+		...(deps.plexCacheClientFactory ? { createClient: deps.plexCacheClientFactory } : {}),
+	});
+}
+
 type PlexCleanupEvidenceInstance = Pick<
 	ServiceInstance,
 	| "userId"
@@ -355,8 +365,11 @@ async function loadCompleteCacheGenerations(
 	if (cacheType === "plex") {
 		const evidence: PlexPolicyScanEvidence[] = [];
 		for (const instance of instances) {
-			const current = await getCurrentPlexMutationAuthorityForOwnedInstance(deps.prisma, {
-				instance,
+			const current = await cleanupPlexAuthority(deps).readInstance({
+				userId: instance.userId,
+				instanceId: instance.id,
+				domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
+				mutation: true,
 				now,
 				maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
 			});
@@ -368,10 +381,10 @@ async function loadCompleteCacheGenerations(
 		const evidence = [];
 		for (const instance of instances) {
 			evidence.push(
-				await loadInstanceEpisodeEvidence(deps.prisma, {
+				await cleanupPlexAuthority(deps).readInstanceEpisodes({
 					userId: instance.userId,
 					instanceId: instance.id,
-					instance,
+					mutation: true,
 					now,
 					maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
 				}),
@@ -482,8 +495,11 @@ async function revalidateProviderCacheAuthority(
 	}
 	if (authority.cacheType === "plex") {
 		for (const instance of currentInstances) {
-			const current = await getCurrentPlexMutationAuthorityForOwnedInstance(deps.prisma, {
-				instance,
+			const current = await cleanupPlexAuthority(deps).readInstance({
+				userId: instance.userId,
+				instanceId: instance.id,
+				domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
+				mutation: true,
 				now,
 				maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
 			});
@@ -609,14 +625,19 @@ async function revalidateExactProviderCacheAuthority(
 		return false;
 	}
 	if (authority.cacheType === "plex") {
-		const currentEvidence = await scanMutationPolicyEvidenceForOwnedInstances(
-			transactionDeps.prisma,
-			{
-				instances: currentInstances,
-				now,
-				maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
-			},
-		);
+		const currentEvidence: PlexPolicyScanEvidence[] = [];
+		for (const instance of currentInstances) {
+			currentEvidence.push(
+				await cleanupPlexAuthority(transactionDeps).scanInstancePolicy({
+					userId: instance.userId,
+					instanceId: instance.id,
+					domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
+					mutation: true,
+					now,
+					maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+				}),
+			);
+		}
 		const currentGenerations = plexGenerationsFromEvidence(currentInstances, currentEvidence);
 		if (!currentGenerations || currentGenerations.size !== authority.generations.size) return false;
 		if (
@@ -659,8 +680,89 @@ async function revalidateExactProviderCacheAuthority(
 		instanceIds,
 		authority.instances[0]!.userId,
 		authority.instances,
+		cleanupPlexAuthority(transactionDeps),
 	);
 	if (!currentRows) return false;
+	return instanceIds.every((instanceId) => {
+		const expected = authority.rows.get(instanceId);
+		const rows = currentRows.get(instanceId) ?? [];
+		return (
+			expected !== undefined &&
+			expected.rowCount === rows.length &&
+			expected.rowFingerprint === evidenceFingerprint(rows)
+		);
+	});
+}
+
+async function revalidatePersistedProviderCacheAuthority(
+	deps: CleanupExecutorDeps,
+	tx: Prisma.TransactionClient,
+	authority: ProviderCacheSnapshot<unknown>["authority"],
+	now: Date,
+): Promise<boolean> {
+	const transactionDeps = {
+		...deps,
+		prisma: tx as unknown as CleanupExecutorDeps["prisma"],
+	};
+	const currentInstances = await loadProviderInstances(
+		transactionDeps,
+		authority.instances[0]!.userId,
+		[...new Set(authority.instances.map((instance) => instance.service))],
+	);
+	if (
+		providerTopologyFingerprint(currentInstances) !==
+		providerTopologyFingerprint(authority.instances)
+	) {
+		return false;
+	}
+	if (authority.cacheType === "plex" || authority.cacheType === "plex_episode") {
+		const plexAuthority = cleanupPlexAuthority(transactionDeps);
+		for (const instance of currentInstances) {
+			const generation = authority.generations.get(instance.id);
+			const rows = authority.rows.get(instance.id);
+			if (!generation || !rows) return false;
+			if (
+				!(await plexAuthority.revalidatePersistedSnapshot({
+					userId: instance.userId,
+					instanceId: instance.id,
+					cacheType: authority.cacheType,
+					expected: {
+						statusFingerprint: generation.statusFingerprint,
+						rowCount: rows.rowCount,
+						rowFingerprint: rows.rowFingerprint,
+					},
+					now,
+					maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+				}))
+			) {
+				return false;
+			}
+		}
+		return currentInstances.length === authority.generations.size;
+	}
+	const currentGenerations = await loadCompleteCacheGenerations(
+		transactionDeps,
+		currentInstances,
+		authority.cacheType,
+		now,
+	);
+	if (!currentGenerations || currentGenerations.size !== authority.generations.size) return false;
+	if (
+		![...authority.generations].every(
+			([instanceId, generation]) =>
+				currentGenerations.get(instanceId)?.statusFingerprint === generation.statusFingerprint,
+		)
+	) {
+		return false;
+	}
+	const instanceIds = authority.instances.map((instance) => instance.id);
+	const currentRows = await loadExactProviderCacheRows(
+		tx,
+		authority.cacheType,
+		instanceIds,
+		authority.instances[0]!.userId,
+		authority.instances,
+	);
 	return instanceIds.every((instanceId) => {
 		const expected = authority.rows.get(instanceId);
 		const rows = currentRows.get(instanceId) ?? [];
@@ -697,6 +799,21 @@ async function createApprovalWithProviderCacheAuthority(
 		return await deps.prisma.libraryCleanupApproval.create({ data });
 	}
 	const postgresql = /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
+	// Plex settlement performs upstream I/O and must finish before Prisma opens
+	// its bounded approval transaction. The transaction then locks the provider
+	// identity and revalidates the exact persisted status and rows before write.
+	for (const authority of authorities) {
+		if (
+			!(await revalidateExactProviderCacheAuthority(
+				deps,
+				deps.prisma as unknown as Prisma.TransactionClient,
+				authority,
+				new Date(),
+			))
+		) {
+			throw new ProviderCacheAuthorityChangedError();
+		}
+	}
 	return await deps.prisma.$transaction(
 		async (tx) => {
 			const instanceIds = [
@@ -712,9 +829,11 @@ async function createApprovalWithProviderCacheAuthority(
 					);
 				}
 			}
-			const now = new Date();
+			const transactionNow = new Date();
 			for (const authority of authorities) {
-				if (!(await revalidateExactProviderCacheAuthority(deps, tx, authority, now))) {
+				if (
+					!(await revalidatePersistedProviderCacheAuthority(deps, tx, authority, transactionNow))
+				) {
 					throw new ProviderCacheAuthorityChangedError();
 				}
 			}
@@ -5924,7 +6043,7 @@ async function loadPlexDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<PlexPolicyDataSnapshot | undefined> {
-	const { prisma, log } = deps;
+	const { log } = deps;
 
 	const plexInstances = await loadProviderInstances(deps, userId, ["PLEX"]);
 
@@ -5933,85 +6052,96 @@ async function loadPlexDataSnapshot(
 	try {
 		const map: PlexWatchMap = new Map();
 		let totalRows = 0;
-		const authoritativeEvidence = await scanMutationPolicyEvidenceForOwnedInstances(prisma, {
-			instances: plexInstances,
-			maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
-			onBatch: ({ rows }) => {
-				for (const row of rows) {
-					totalRows += 1;
-					try {
-						// Key is mediaType:tmdbId (aggregating across sections)
-						const key = `${row.mediaType}:${row.tmdbId}`;
-						const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
-						const collections = (safeJsonParse(row.collections) as string[]) ?? [];
-						const labels = (safeJsonParse(row.labels) as string[]) ?? [];
+		const authoritativeEvidence: PlexPolicyScanEvidence[] = [];
+		for (const instance of plexInstances) {
+			authoritativeEvidence.push(
+				await cleanupPlexAuthority(deps).scanInstancePolicy({
+					userId: instance.userId,
+					instanceId: instance.id,
+					domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
+					mutation: true,
+					maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+					onBatch: ({ rows }) => {
+						for (const row of rows) {
+							totalRows += 1;
+							try {
+								// Key is mediaType:tmdbId (aggregating across sections)
+								const key = `${row.mediaType}:${row.tmdbId}`;
+								const watchedByUsers = (safeJsonParse(row.watchedByUsers) as string[]) ?? [];
+								const collections = (safeJsonParse(row.collections) as string[]) ?? [];
+								const labels = (safeJsonParse(row.labels) as string[]) ?? [];
 
-						const sectionInfo: PlexSectionWatchInfo = {
-							sectionId: row.sectionId,
-							sectionTitle: row.sectionTitle,
-							lastWatchedAt: row.lastWatchedAt,
-							watchCount: row.watchCount,
-							watchedByUsers,
-							onDeck: row.onDeck,
-							userRating: row.userRating,
-							collections,
-							labels,
-							addedAt: row.addedAt,
-						};
+								const sectionInfo: PlexSectionWatchInfo = {
+									sectionId: row.sectionId,
+									sectionTitle: row.sectionTitle,
+									lastWatchedAt: row.lastWatchedAt,
+									watchCount: row.watchCount,
+									watchedByUsers,
+									onDeck: row.onDeck,
+									userRating: row.userRating,
+									collections,
+									labels,
+									addedAt: row.addedAt,
+								};
 
-						const existing = map.get(key);
-						if (existing) {
-							existing.sections.push(sectionInfo);
-							// Update aggregates: merge across sections
-							if (
-								row.lastWatchedAt &&
-								(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
-							) {
-								existing.lastWatchedAt = row.lastWatchedAt;
-							}
-							existing.watchCount += row.watchCount;
-							for (const user of watchedByUsers) {
-								if (!existing.watchedByUsers.includes(user)) {
-									existing.watchedByUsers.push(user);
+								const existing = map.get(key);
+								if (existing) {
+									existing.sections.push(sectionInfo);
+									// Update aggregates: merge across sections
+									if (
+										row.lastWatchedAt &&
+										(!existing.lastWatchedAt || row.lastWatchedAt > existing.lastWatchedAt)
+									) {
+										existing.lastWatchedAt = row.lastWatchedAt;
+									}
+									existing.watchCount += row.watchCount;
+									for (const user of watchedByUsers) {
+										if (!existing.watchedByUsers.includes(user)) {
+											existing.watchedByUsers.push(user);
+										}
+									}
+									existing.onDeck = existing.onDeck || row.onDeck;
+									if (row.userRating != null) {
+										existing.userRating =
+											existing.userRating != null
+												? Math.max(existing.userRating, row.userRating)
+												: row.userRating;
+									}
+									// Merge collections and labels
+									for (const c of collections) {
+										if (!existing.collections.includes(c)) existing.collections.push(c);
+									}
+									for (const l of labels) {
+										if (!existing.labels.includes(l)) existing.labels.push(l);
+									}
+									// Merge addedAt: take earliest (first appearance in any library)
+									if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
+										existing.addedAt = row.addedAt;
+									}
+								} else {
+									map.set(key, {
+										lastWatchedAt: row.lastWatchedAt,
+										watchCount: row.watchCount,
+										watchedByUsers: [...watchedByUsers],
+										onDeck: row.onDeck,
+										userRating: row.userRating,
+										collections: [...collections],
+										labels: [...labels],
+										addedAt: row.addedAt,
+										sections: [sectionInfo],
+									});
 								}
+							} catch (rowErr) {
+								log.warn(
+									{ err: rowErr, tmdbId: row.tmdbId },
+									"Skipping Plex cache row with bad data",
+								);
 							}
-							existing.onDeck = existing.onDeck || row.onDeck;
-							if (row.userRating != null) {
-								existing.userRating =
-									existing.userRating != null
-										? Math.max(existing.userRating, row.userRating)
-										: row.userRating;
-							}
-							// Merge collections and labels
-							for (const c of collections) {
-								if (!existing.collections.includes(c)) existing.collections.push(c);
-							}
-							for (const l of labels) {
-								if (!existing.labels.includes(l)) existing.labels.push(l);
-							}
-							// Merge addedAt: take earliest (first appearance in any library)
-							if (row.addedAt && (!existing.addedAt || row.addedAt < existing.addedAt)) {
-								existing.addedAt = row.addedAt;
-							}
-						} else {
-							map.set(key, {
-								lastWatchedAt: row.lastWatchedAt,
-								watchCount: row.watchCount,
-								watchedByUsers: [...watchedByUsers],
-								onDeck: row.onDeck,
-								userRating: row.userRating,
-								collections: [...collections],
-								labels: [...labels],
-								addedAt: row.addedAt,
-								sections: [sectionInfo],
-							});
 						}
-					} catch (rowErr) {
-						log.warn({ err: rowErr, tmdbId: row.tmdbId }, "Skipping Plex cache row with bad data");
-					}
-				}
-			},
-		});
+					},
+				}),
+			);
+		}
 		const generations = plexGenerationsFromEvidence(plexInstances, authoritativeEvidence);
 		if (!generations) {
 			throw new Error("Plex cache did not have a complete fresh generation for every instance");
@@ -6308,7 +6438,7 @@ async function loadPlexEpisodeDataSnapshot(
 	deps: CleanupExecutorDeps,
 	userId: string,
 ): Promise<ProviderCacheSnapshot<PlexEpisodeMap> | undefined> {
-	const { prisma, log } = deps;
+	const { log } = deps;
 
 	try {
 		const instances = await loadProviderInstances(deps, userId, ["PLEX"]);
@@ -6319,10 +6449,9 @@ async function loadPlexEpisodeDataSnapshot(
 		const episodeEvidence = [];
 		for (const instance of instances) {
 			episodeEvidence.push(
-				await loadInstanceEpisodeEvidence(prisma, {
+				await cleanupPlexAuthority(deps).readInstanceEpisodes({
 					userId,
 					instanceId: instance.id,
-					instance,
 					maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
 				}),
 			);
@@ -6823,10 +6952,10 @@ export async function prefetchFreshPlexEpisodeWatchData(
 		const repositoryEvidence = [];
 		for (const instance of plexInstances) {
 			repositoryEvidence.push(
-				await loadInstanceEpisodeEvidence(deps.prisma, {
+				await cleanupPlexAuthority(deps).readInstanceEpisodes({
 					userId: instance.userId,
 					instanceId: instance.id,
-					instance,
+					mutation: true,
 					now,
 					maxAgeMs: PLEX_EPISODE_FRESHNESS_MS,
 				}),

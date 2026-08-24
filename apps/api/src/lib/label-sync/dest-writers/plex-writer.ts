@@ -6,8 +6,7 @@
  * apply the destination label.
  */
 
-import { createPlexClient } from "../../plex/plex-client.js";
-import { loadInstanceSelectedMutationEvidence } from "../../plex/plex-evidence-repository.js";
+import { PlexAuthorityService } from "../../plex/plex-authority-service.js";
 import type { DestWriteResult, DestWriter, DestWriterOpts } from "../strategy-types.js";
 
 export const plexDestWriter: DestWriter = {
@@ -35,10 +34,12 @@ export const plexDestWriter: DestWriter = {
 			tmdbId: candidate.tmdbId,
 			mediaType: candidate.mediaType,
 		}));
-		const evidence = await loadInstanceSelectedMutationEvidence(prisma, {
+		const authority = new PlexAuthorityService({ prisma, encryptor, log });
+		const evidence = await authority.readInstanceSelected({
 			userId: rule.userId,
 			instanceId: rule.destInstanceId,
 			selection: { kind: "targets", targets },
+			domains: ["membership"],
 		});
 		if (
 			!evidence.available ||
@@ -72,26 +73,23 @@ export const plexDestWriter: DestWriter = {
 			}
 			if (attemptedRatingKeys.has(ratingKey)) continue;
 			attemptedRatingKeys.add(ratingKey);
-			const currentEvidence = await loadInstanceSelectedMutationEvidence(prisma, {
-				userId: rule.userId,
-				instanceId: rule.destInstanceId,
-				selection: {
-					kind: "targets",
-					targets: [{ tmdbId: row.tmdbId, mediaType: row.mediaType }],
-				},
-			});
-			if (
-				!currentEvidence.available ||
-				currentEvidence.evidence.publicationLevel !== "authoritative" ||
-				currentEvidence.evidence.completeness !== "complete" ||
-				currentEvidence.evidence.reasonCodes.length > 0 ||
-				!currentEvidence.rows.some(
-					(current) =>
-						current.tmdbId === row.tmdbId &&
-						current.mediaType === row.mediaType &&
-						resolveParitySafeCachedRatingKey(current) === ratingKey,
-				)
-			) {
+			let mutation: Awaited<ReturnType<PlexAuthorityService["mutateMetadataTag"]>>;
+			try {
+				mutation = await authority.mutateMetadataTag({
+					userId: rule.userId,
+					instanceId: rule.destInstanceId,
+					target: { tmdbId: row.tmdbId, mediaType: row.mediaType },
+					expectedRatingKey: ratingKey,
+					type: "label",
+					action: "add",
+					name: rule.destTagName,
+				});
+			} catch (err) {
+				log.warn({ ratingKey, err }, "Failed to apply Plex label");
+				failures++;
+				continue;
+			}
+			if (!mutation.ok) {
 				log.warn(
 					{ tmdbId: row.tmdbId, ratingKey },
 					"Plex label target evidence changed before mutation",
@@ -99,35 +97,7 @@ export const plexDestWriter: DestWriter = {
 				failures++;
 				continue;
 			}
-			const currentInstance = await prisma.serviceInstance.findFirst({
-				where: {
-					id: rule.destInstanceId,
-					userId: rule.userId,
-					service: "PLEX",
-					enabled: true,
-				},
-			});
-			if (
-				!currentInstance ||
-				currentInstance.connectionGeneration !== currentEvidence.connectionGeneration ||
-				currentInstance.identityGeneration !== currentEvidence.identityGeneration
-			) {
-				log.warn(
-					{ tmdbId: row.tmdbId, ratingKey },
-					"Plex label destination connection changed before mutation",
-				);
-				failures++;
-				continue;
-			}
-
-			try {
-				const plexClient = createPlexClient(encryptor, currentInstance, log);
-				await plexClient.updateMetadataTags(ratingKey, "label", "add", rule.destTagName);
-				labelsApplied++;
-			} catch (err) {
-				log.warn({ ratingKey, err }, "Failed to apply Plex label");
-				failures++;
-			}
+			labelsApplied++;
 		}
 
 		return { matchesFound: matched.length, labelsApplied, failures };

@@ -14,9 +14,9 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import {
 	hasAuthoritativePlexEvidence,
-	scanUserPolicyEvidence,
 	summarizePlexEvidence,
-} from "../../lib/plex/plex-evidence-repository.js";
+} from "../../lib/plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { SeerrClient } from "../../lib/seerr/seerr-client.js";
 import { safeJsonParse } from "../../lib/utils/json.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -104,8 +104,13 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		// Get user's media server instances to load watch data
 		const watchCounts = new Map<string, number>();
 		const [plexEvidence, jellyfinInstances] = await Promise.all([
-			scanUserPolicyEvidence(app.prisma, {
+			new PlexAuthorityService({
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				log: request.log,
+			}).scanUserPolicy({
 				userId,
+				domains: ["membership", "watch"],
 				onBatch: ({ rows }) => {
 					for (const row of rows) {
 						const key = `${row.mediaType}:${row.tmdbId}`;
@@ -252,8 +257,13 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 			}
 		};
 		const [plexEvidence, jellyfinInstances] = await Promise.all([
-			scanUserPolicyEvidence(app.prisma, {
+			new PlexAuthorityService({
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				log: request.log,
+			}).scanUserPolicy({
 				userId,
+				domains: ["membership", "watch"],
 				onBatch: ({ rows }) => {
 					for (const row of rows) {
 						mergeWatchRow(`${row.mediaType}:${row.tmdbId}`, row.watchCount, row.lastWatchedAt);
@@ -390,8 +400,13 @@ export const registerInsightsRoutes: FastifyPluginCallback = (app, _opts, done) 
 		// Get media server watch data — Plex + Jellyfin/Emby
 		const watchCounts = new Map<string, number>();
 		const [plexEvidence, jellyfinInstances] = await Promise.all([
-			scanUserPolicyEvidence(app.prisma, {
+			new PlexAuthorityService({
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				log: request.log,
+			}).scanUserPolicy({
 				userId,
+				domains: ["membership", "watch"],
 				onBatch: ({ rows }) => {
 					for (const row of rows) {
 						const key = `${row.mediaType}:${row.tmdbId}`;

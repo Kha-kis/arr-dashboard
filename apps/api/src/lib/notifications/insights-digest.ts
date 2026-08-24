@@ -8,10 +8,9 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import {
-	hasAuthoritativePlexEvidence,
-	scanUserPolicyEvidence,
-} from "../plex/plex-evidence-repository.js";
+import type { Encryptor } from "../auth/encryption.js";
+import { hasAuthoritativePlexEvidence } from "../plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../plex/plex-authority-service.js";
 import type { PrismaClient } from "../prisma.js";
 import {
 	passthroughTickWrapper,
@@ -37,6 +36,7 @@ export class InsightsDigestScheduler {
 		private prisma: PrismaClient,
 		private logger: FastifyBaseLogger,
 		private arrClientFactory: ArrClientFactory,
+		private encryptor: Encryptor,
 		private notifyFn?: (payload: NotificationPayload) => Promise<void>,
 		options?: { trackTick?: TickWrapper },
 	) {
@@ -161,8 +161,13 @@ export class InsightsDigestScheduler {
 
 		// Get Plex watch data
 		const plexWatchCounts = new Map<string, number>();
-		const plexEvidence = await scanUserPolicyEvidence(this.prisma, {
+		const plexEvidence = await new PlexAuthorityService({
+			prisma: this.prisma,
+			encryptor: this.encryptor,
+			log: this.logger,
+		}).scanUserPolicy({
 			userId,
+			domains: ["membership", "watch"],
 			onBatch: ({ rows }) => {
 				for (const row of rows) {
 					const key = `${row.mediaType}:${row.tmdbId}`;
@@ -258,8 +263,13 @@ export class InsightsDigestScheduler {
 	): Promise<Array<{ title: string; watchCount: number }>> {
 		// Get Plex watch data
 		const plexWatchData = new Map<string, { watchCount: number }>();
-		const plexEvidence = await scanUserPolicyEvidence(this.prisma, {
+		const plexEvidence = await new PlexAuthorityService({
+			prisma: this.prisma,
+			encryptor: this.encryptor,
+			log: this.logger,
+		}).scanUserPolicy({
 			userId,
+			domains: ["membership", "watch"],
 			onBatch: ({ rows }) => {
 				for (const row of rows) {
 					const key = `${row.mediaType}:${row.tmdbId}`;

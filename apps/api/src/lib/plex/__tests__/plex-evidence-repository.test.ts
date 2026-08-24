@@ -13,7 +13,29 @@ import {
 import { verifiedIdentityData } from "../../services/service-identity-lifecycle.js";
 
 const now = new Date("2026-08-20T14:00:00.000Z");
-const sections = [{ key: "movies", title: "Movies", type: "movie" as const }];
+const sections = [
+	{
+		key: "movies",
+		uuid: "movies-uuid",
+		title: "Movies",
+		type: "movie" as const,
+		refreshing: false,
+		scannedAt: 1_777_000_000,
+		updatedAt: 1_777_000_100,
+	},
+];
+
+function v3Metadata(itemCount = 1) {
+	return JSON.stringify({
+		version: 3,
+		publicationLevel: "authoritative",
+		completeness: "complete",
+		itemCount,
+		canonicalizationVersion: 1,
+		sections,
+		roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+	});
+}
 
 function instance(overrides: Record<string, unknown> = {}) {
 	return {
@@ -34,6 +56,7 @@ function instance(overrides: Record<string, unknown> = {}) {
 }
 
 function status(overrides: Record<string, unknown> = {}) {
+	const itemCount = typeof overrides.itemCount === "number" ? overrides.itemCount : 1;
 	return {
 		id: "status-1",
 		instanceId: "plex-1",
@@ -41,9 +64,9 @@ function status(overrides: Record<string, unknown> = {}) {
 		lastRefreshedAt: new Date("2026-08-20T12:00:00.000Z"),
 		lastResult: "success",
 		lastErrorMessage: null,
-		itemCount: 1,
+		itemCount,
 		generationId: "generation-1",
-		generationMetadata: JSON.stringify({ sections }),
+		generationMetadata: v3Metadata(itemCount),
 		lastAttemptAt: new Date("2026-08-20T12:00:00.000Z"),
 		lastAttemptResult: "success",
 		lastAttemptErrorMessage: null,
@@ -85,9 +108,12 @@ function episodeStatus(overrides: Record<string, unknown> = {}) {
 		cacheType: "plex_episode",
 		generationId: "episode-generation-1",
 		generationMetadata: JSON.stringify({
-			version: 1,
+			version: 2,
 			parentPlexGenerationId: "generation-1",
 			parentPublicationLevel: "authoritative",
+			parentMetadataVersion: 3,
+			canonicalizationVersion: 1,
+			episodeDigest: "b".repeat(64),
 			connectionGeneration: 4,
 			identityGeneration: 9,
 		}),
@@ -688,7 +714,7 @@ describe("Plex evidence repository", () => {
 	});
 
 	it("keeps an authoritative empty generation distinct from unavailable", async () => {
-		const emptyStatus = status({ itemCount: 0, generationMetadata: JSON.stringify({ sections }) });
+		const emptyStatus = status({ itemCount: 0 });
 		const result = await load(fixture({ rows: [], statuses: [emptyStatus, { ...emptyStatus }] }));
 		expect(result).toMatchObject({ available: true, rows: [], itemCount: 0 });
 	});
@@ -1134,9 +1160,12 @@ describe("Plex episode evidence repository", () => {
 			episodeFixture({
 				episode: episodeStatus({
 					generationMetadata: JSON.stringify({
-						version: 1,
+						version: 2,
 						parentPlexGenerationId: "other-parent",
 						parentPublicationLevel: "authoritative",
+						parentMetadataVersion: 3,
+						canonicalizationVersion: 1,
+						episodeDigest: "b".repeat(64),
 						connectionGeneration: 4,
 						identityGeneration: 9,
 					}),

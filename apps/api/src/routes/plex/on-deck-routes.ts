@@ -9,9 +9,9 @@ import type { PlexOnDeckResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import {
 	hasAuthoritativeSelectedPlexEvidence,
-	loadUserSelectedEvidence,
 	summarizePlexEvidence,
-} from "../../lib/plex/plex-evidence-repository.js";
+} from "../../lib/plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { mapToOnDeckItems } from "./lib/on-deck-helpers.js";
 
 export async function registerOnDeckRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
@@ -23,9 +23,14 @@ export async function registerOnDeckRoutes(app: FastifyInstance, _opts: FastifyP
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const evidence = await loadUserSelectedEvidence(app.prisma, {
+		const evidence = await new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		}).readUserSelected({
 			userId,
 			selection: { kind: "on-deck", limit: 50 },
+			domains: ["membership", "display", "on-deck"],
 		});
 		const summary = summarizePlexEvidence(evidence);
 		if (!hasAuthoritativeSelectedPlexEvidence(evidence)) {

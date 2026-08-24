@@ -10,9 +10,9 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
 	hasCompleteAuthoritativePlexEvidence,
-	loadInstanceSelectedEpisodeEvidence,
 	summarizePlexEvidence,
-} from "../../lib/plex/plex-evidence-repository.js";
+} from "../../lib/plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { aggregateSeriesProgress } from "./lib/series-progress-helpers.js";
 
@@ -64,9 +64,14 @@ export async function registerSeriesProgressRoutes(
 		}
 
 		const evidence = [];
+		const authority = new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		});
 		for (const instance of plexInstances) {
 			evidence.push(
-				await loadInstanceSelectedEpisodeEvidence(app.prisma, {
+				await authority.readInstanceSelectedEpisodes({
 					userId,
 					instanceId: instance.id,
 					showTmdbIds: tmdbIds,

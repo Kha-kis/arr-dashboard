@@ -31,6 +31,7 @@ const insightsDigestSchedulerPlugin = fastifyPlugin(
 						app.prisma,
 						app.log,
 						app.arrClientFactory,
+						app.encryptor,
 						(payload) => app.notificationService.notify(payload),
 						{ trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.insightsDigest, fn) },
 					);

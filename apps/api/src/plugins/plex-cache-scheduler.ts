@@ -7,7 +7,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { loadGenerationObservationsForOwnedInstances } from "../lib/plex/plex-evidence-repository.js";
+import { loadGenerationObservationsForOwnedInstances } from "../lib/plex/plex-persisted-observation-repository.js";
 import { refreshOwnedPlexCache } from "../lib/plex/plex-refresh-orchestration.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 

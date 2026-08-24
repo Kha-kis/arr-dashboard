@@ -43,7 +43,15 @@ export type PlexCoverageReasonCode =
 	| "metadata_invalid"
 	| "mutation_authority_unavailable"
 	| "query_failed"
-	| "parent_generation_unavailable";
+	| "parent_generation_unavailable"
+	| "plex_activity_unavailable"
+	| "plex_section_state_unavailable"
+	| "plex_library_scan_in_progress"
+	| "plex_metadata_refresh_in_progress"
+	| "plex_library_activity_unknown"
+	| "plex_library_revision_changed"
+	| "plex_content_digest_changed"
+	| "plex_settlement_metadata_missing";
 
 export interface PlexEvidenceSummary {
 	/** Current trust, retained under the original field name for older clients. */
@@ -75,6 +83,42 @@ export interface PlexGenerationMetadataV2 {
 	completeness: "complete" | "partial";
 	itemCount: number;
 	sections: PlexGenerationSection[];
+}
+
+export const PLEX_CANONICAL_DOMAINS = [
+	"membership",
+	"display",
+	"labels",
+	"collections",
+	"watch",
+	"on-deck",
+	"episode-parents",
+	"episodes",
+] as const;
+
+export type PlexCanonicalDomain = (typeof PLEX_CANONICAL_DOMAINS)[number];
+
+export interface PlexGenerationSectionV3 extends PlexGenerationSection {
+	uuid: string;
+	refreshing: false;
+	scannedAt: number;
+	updatedAt: number;
+}
+
+export interface PlexGenerationDomainRoot {
+	sectionKey: string;
+	domain: PlexCanonicalDomain;
+	digest: string;
+}
+
+export interface PlexGenerationMetadataV3 {
+	version: 3;
+	publicationLevel: "authoritative";
+	completeness: "complete";
+	itemCount: number;
+	canonicalizationVersion: 1;
+	sections: PlexGenerationSectionV3[];
+	roots: PlexGenerationDomainRoot[];
 }
 
 // ============================================================================

@@ -8,7 +8,7 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { getPublishedEpisodeGenerationObservation } from "../lib/plex/plex-evidence-repository.js";
+import { getPublishedEpisodeGenerationObservation } from "../lib/plex/plex-persisted-observation-repository.js";
 import { refreshOwnedPlexEpisodeCache } from "../lib/plex/plex-refresh-orchestration.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 

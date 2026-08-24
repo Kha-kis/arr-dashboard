@@ -9,10 +9,74 @@ const mocks = vi.hoisted(() => ({
 	createPlexClient: vi.fn(),
 }));
 
-vi.mock("../../plex/plex-evidence-repository.js", () => ({
-	loadInstanceSelectedEvidence: mocks.loadInstanceSelectedEvidence,
-	loadInstanceSelectedMutationEvidence: mocks.loadInstanceSelectedEvidence,
+vi.mock("../../plex/plex-authority-service.js", () => ({
+	PlexAuthorityService: class {
+		private readonly prisma: {
+			serviceInstance?: { findFirst: (input: unknown) => Promise<Record<string, unknown> | null> };
+		};
+		private lastEvidence?: ReturnType<typeof authoritativeEvidence>;
+
+		constructor(input: { prisma: PlexAuthorityServiceTestPrisma }) {
+			this.prisma = input.prisma;
+		}
+
+		async readInstanceSelected(input: Record<string, unknown>) {
+			const evidence = await mocks.loadInstanceSelectedEvidence(this.prisma, input);
+			this.lastEvidence = evidence;
+			return evidence;
+		}
+
+		async mutateMetadataTag(input: {
+			target: { tmdbId: number; mediaType: string };
+			expectedRatingKey: string;
+			type: string;
+			action: string;
+			name: string;
+		}) {
+			const evidence = await mocks.loadInstanceSelectedEvidence(this.prisma, {
+				selection: { kind: "targets", targets: [input.target] },
+				domains: ["membership"],
+			});
+			if (
+				!evidence.available ||
+				evidence.evidence.publicationLevel !== "authoritative" ||
+				evidence.evidence.completeness !== "complete" ||
+				evidence.evidence.reasonCodes.length > 0
+			) {
+				return { ok: false, reasonCode: "plex_content_digest_changed" };
+			}
+			const matching = evidence.rows.filter(
+				(row: {
+					tmdbId: number;
+					mediaType: string;
+					ratingKey: string | null;
+					thumb: string | null;
+				}) =>
+					row.tmdbId === input.target.tmdbId &&
+					row.mediaType === input.target.mediaType &&
+					row.ratingKey === input.expectedRatingKey &&
+					row.thumb?.match(/\/library\/metadata\/(\d+)/)?.[1] === input.expectedRatingKey,
+			);
+			if (new Set(matching.map((row: { ratingKey: string }) => row.ratingKey)).size !== 1) {
+				return { ok: false, reasonCode: "plex_content_digest_changed" };
+			}
+			const current = await this.prisma.serviceInstance?.findFirst({});
+			if (
+				!current ||
+				current.connectionGeneration !== this.lastEvidence?.connectionGeneration ||
+				current.identityGeneration !== this.lastEvidence?.identityGeneration
+			) {
+				return { ok: false, reasonCode: "connection_generation_mismatch" };
+			}
+			await mocks.updateMetadataTags(input.expectedRatingKey, input.type, input.action, input.name);
+			return { ok: true };
+		}
+	},
 }));
+
+type PlexAuthorityServiceTestPrisma = {
+	serviceInstance?: { findFirst: (input: unknown) => Promise<Record<string, unknown> | null> };
+};
 
 vi.mock("../../plex/plex-client.js", () => ({
 	createPlexClient: mocks.createPlexClient,
@@ -135,6 +199,7 @@ describe("Plex label-sync evidence boundary", () => {
 			userId: "user-1",
 			instanceId: "plex-source",
 			selection: { kind: "label-membership", label: "Kids" },
+			domains: ["membership", "display"],
 		});
 	});
 

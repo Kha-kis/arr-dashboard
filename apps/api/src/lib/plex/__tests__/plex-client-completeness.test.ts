@@ -45,16 +45,50 @@ describe("PlexClient authoritative inventory completeness", () => {
 			)
 			.mockResolvedValueOnce(
 				response({ offset: 200, size: 1, totalSize: 201, Metadata: [libraryItem(201)] }),
-			);
+			)
+			.mockResolvedValueOnce(response({ size: 200, Metadata: firstPage }))
+			.mockResolvedValueOnce(response({ size: 1, Metadata: [libraryItem(201)] }));
 		vi.stubGlobal("fetch", fetchMock);
 		const client = new PlexClient("http://plex.test", "token", log);
 
 		const items = await client.getLibraryItems("movies");
 
 		expect(items).toHaveLength(201);
-		expect(fetchMock).toHaveBeenCalledTimes(2);
+		expect(fetchMock).toHaveBeenCalledTimes(4);
 		const secondUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
 		expect(secondUrl.searchParams.get("X-Plex-Container-Start")).toBe("200");
+	});
+
+	it("enriches complete section rows with item-level labels and collections", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				response({ offset: 0, size: 1, totalSize: 1, Metadata: [libraryItem(1)] }),
+			)
+			.mockResolvedValueOnce(
+				response({
+					size: 1,
+					Metadata: [
+						{
+							...libraryItem(1),
+							Label: [{ tag: "Family" }],
+							Collection: [{ tag: "Classics" }],
+						},
+					],
+				}),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getLibraryItems("movies")).resolves.toEqual([
+			expect.objectContaining({
+				ratingKey: "item-1",
+				Label: [{ tag: "Family" }],
+				Collection: [{ tag: "Classics" }],
+			}),
+		]);
+		const metadataUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
+		expect(metadataUrl.pathname).toBe("/library/metadata/item-1");
 	});
 
 	it("rejects a library page that stops before its declared total", async () => {
@@ -379,6 +413,150 @@ describe("PlexClient authoritative inventory completeness", () => {
 
 		const history = await client.getHistory({ maxResults: 100_000, requireComplete: true });
 		expect(history[0]?.librarySectionID).toBeUndefined();
+	});
+
+	it("returns the bounded live section settlement fields", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValueOnce(
+				response({
+					size: 1,
+					Directory: [
+						{
+							key: "1",
+							uuid: "movie-section-uuid",
+							title: "Movies",
+							type: "movie",
+							agent: "tv.plex.agents.movie",
+							refreshing: "0",
+							scannedAt: "1777000000",
+							updatedAt: 1777000100,
+						},
+					],
+				}),
+			),
+		);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getLibrarySettlementSections()).resolves.toEqual([
+			{
+				key: "1",
+				uuid: "movie-section-uuid",
+				title: "Movies",
+				type: "movie",
+				agent: "tv.plex.agents.movie",
+				refreshing: false,
+				scannedAt: 1_777_000_000,
+				updatedAt: 1_777_000_100,
+			},
+		]);
+	});
+
+	it("preserves an uninitialized section scannedAt as unavailable live state", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValueOnce(
+				response({
+					size: 1,
+					Directory: [
+						{
+							key: "6",
+							uuid: "new-movie-section-uuid",
+							title: "New Movies",
+							type: "movie",
+							refreshing: "1",
+							updatedAt: 1_777_000_100,
+						},
+					],
+				}),
+			),
+		);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getLibrarySettlementSections()).resolves.toEqual([
+			{
+				key: "6",
+				uuid: "new-movie-section-uuid",
+				title: "New Movies",
+				type: "movie",
+				refreshing: true,
+				scannedAt: null,
+				updatedAt: 1_777_000_100,
+			},
+		]);
+	});
+
+	it("sends the Plex metadata type and locks a tag field before editing it", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, { status: 200 }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await client.updateMetadataTags("123", "movie", "label", "add", "Family");
+
+		const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+		expect(url.pathname).toBe("/library/metadata/123");
+		expect(url.searchParams.get("type")).toBe("1");
+		expect(url.searchParams.get("label.locked")).toBe("1");
+		expect(url.searchParams.get("label[0].tag.tag")).toBe("Family");
+		expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PUT" });
+	});
+
+	it("loads a complete bounded activity inventory", async () => {
+		const fetchMock = vi.fn().mockResolvedValueOnce(
+			response({
+				size: 2,
+				Activity: [
+					{ type: "library.update.section", Context: { librarySectionID: 1 } },
+					{ type: "media.generate.bif" },
+				],
+			}),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getActivities()).resolves.toEqual([
+			{ type: "library.update.section", Context: { librarySectionID: "1" } },
+			{ type: "media.generate.bif" },
+		]);
+		expect(new URL(fetchMock.mock.calls[0]?.[0] as string).pathname).toBe("/activities");
+	});
+
+	it("fails closed when the activity inventory is malformed or incomplete", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(response({ size: 1, Activity: [{ Context: {} }] }))
+			.mockResolvedValueOnce(response({ size: 2, Activity: [{ type: "media.generate.bif" }] }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await expect(client.getActivities()).rejects.toThrow();
+		await expect(client.getActivities()).rejects.toThrow(/complete single-page/i);
+	});
+
+	it("shares only simultaneous ordinary activity reads and never completed results", async () => {
+		const fetchMock = vi.fn().mockImplementation(async () => response({ size: 0, Activity: [] }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		const [first, second] = await Promise.all([client.getActivities(), client.getActivities()]);
+		expect(first).toEqual([]);
+		expect(second).toEqual([]);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+
+		await client.getActivities();
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("does not coalesce uncached mutation probes", async () => {
+		const fetchMock = vi.fn().mockImplementation(async () => response({ size: 0, Activity: [] }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new PlexClient("http://plex.test", "token", log);
+
+		await Promise.all([
+			client.getActivities({ uncached: true }),
+			client.getActivities({ uncached: true }),
+		]);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 
 	it("rejects inconsistent optional pagination metadata on sections and accounts", async () => {

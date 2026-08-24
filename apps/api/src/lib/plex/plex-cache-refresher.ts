@@ -15,6 +15,11 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type {
+	PlexCanonicalDomain,
+	PlexGenerationDomainRoot,
+	PlexGenerationSectionV3,
+} from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import type { Prisma, PrismaClient, ServiceInstance } from "../prisma.js";
@@ -37,7 +42,12 @@ import {
 	publishAuthoritativePlexCacheGeneration,
 } from "./plex-cache-storage.js";
 import { PlexClient } from "./plex-client.js";
+import {
+	PLEX_CANONICALIZATION_VERSION,
+	createPlexSelectionProjection,
+} from "./plex-canonical-projection.js";
 import { encodeAuthoritativePlexGenerationMetadata } from "./plex-generation-metadata.js";
+import { evaluatePlexLiveSettlement } from "./plex-live-settlement.js";
 
 /** Bound Prisma's cached createMany query plans for production-sized libraries. */
 export const PLEX_CACHE_PUBLICATION_CHUNK_SIZE = PLEX_CACHE_WRITE_CHUNK_SIZE;
@@ -99,7 +109,7 @@ function parsePlexTvdbId(guids: Array<{ id: string }> | undefined): number | nul
  */
 const PERSONAL_MEDIA_AGENTS = new Set(["com.plexapp.agents.none"]);
 
-function isPersonalMediaSection(section: { type: string; agent?: string }): boolean {
+export function isPersonalMediaSection(section: { type: string; agent?: string }): boolean {
 	return section.agent !== undefined && PERSONAL_MEDIA_AGENTS.has(section.agent);
 }
 
@@ -173,7 +183,20 @@ export interface PlexCacheRefreshResult {
 	generationId?: string;
 	snapshot?: PlexCacheSnapshot;
 	inventoryTargets?: PlexInventoryTarget[];
+	settlement?: {
+		sections: PlexGenerationSectionV3[];
+		roots: PlexGenerationDomainRoot[];
+	};
 }
+
+const PLEX_CACHE_CANONICAL_DOMAINS = [
+	"membership",
+	"display",
+	"labels",
+	"collections",
+	"watch",
+	"on-deck",
+] as const satisfies readonly PlexCanonicalDomain[];
 
 function onDeckSignature(items: Awaited<ReturnType<PlexClient["getOnDeck"]>>): string[] {
 	return items
@@ -208,6 +231,8 @@ function libraryInventoryItemSignature(
 		item.title,
 		item.userRating ?? null,
 		item.addedAt ?? null,
+		item.viewCount ?? 0,
+		item.lastViewedAt ?? null,
 		item.thumb ?? null,
 		(item.Guid ?? []).map((guid) => guid.id).sort(),
 		(item.Collection ?? []).map((collection) => collection.tag).sort(),
@@ -329,7 +354,11 @@ export async function refreshPlexCacheWithAttempt(
 			instance,
 			log,
 			async () =>
-				await collectPlexCacheLiveEvidence(plexClientForSnapshot(instance, log), instance.id, log),
+				await collectSettledPlexCacheLiveEvidence(
+					plexClientForSnapshot(instance, log),
+					instance.id,
+					log,
+				),
 			async (tx, collected) => await publishPlexCacheSnapshot(tx, instance, attempt!, collected),
 			{
 				cleanupRunClaimToken: context.cleanupRunClaimToken,
@@ -386,13 +415,22 @@ async function publishPlexCacheSnapshot(
 	attempt: PlexCacheRefreshAttempt,
 	collected: PlexCacheRefreshResult,
 ): Promise<PlexCacheRefreshResult> {
-	if (!collected.complete || !collected.completedAt || !collected.snapshot) return collected;
+	if (
+		!collected.complete ||
+		!collected.completedAt ||
+		!collected.snapshot ||
+		!collected.settlement
+	) {
+		return collected;
+	}
 
 	const rows = collected.snapshot.rows;
 	const generationId = randomUUID();
 	const generationMetadata = encodeAuthoritativePlexGenerationMetadata({
-		sections: collected.snapshot.sections,
+		sections: collected.settlement.sections,
 		itemCount: rows.length,
+		canonicalizationVersion: PLEX_CANONICALIZATION_VERSION,
+		roots: collected.settlement.roots,
 	});
 	await publishAuthoritativePlexCacheGeneration(tx, {
 		instance,
@@ -414,6 +452,147 @@ async function publishPlexCacheSnapshot(
 	};
 }
 
+function supportedSettlementSections(
+	sections: Awaited<ReturnType<PlexClient["getLibrarySettlementSections"]>>,
+): PlexGenerationSectionV3[] {
+	return sections
+		.filter(
+			(section) =>
+				(section.type === "movie" || section.type === "show") && !isPersonalMediaSection(section),
+		)
+		.map((section) => {
+			if (section.refreshing) throw new Error("Plex supported library scan is in progress");
+			if (section.scannedAt === null)
+				throw new Error("Plex supported library revision is not initialized");
+			return {
+				key: section.key,
+				uuid: section.uuid,
+				title: section.title,
+				type: section.type as "movie" | "show",
+				refreshing: false as const,
+				scannedAt: section.scannedAt,
+				updatedAt: section.updatedAt,
+			};
+		})
+		.sort(
+			(left, right) =>
+				left.key.localeCompare(right.key) ||
+				left.uuid.localeCompare(right.uuid) ||
+				left.type.localeCompare(right.type) ||
+				left.title.localeCompare(right.title),
+		);
+}
+
+function settlementSectionIdentity(sections: readonly PlexGenerationSectionV3[]): string {
+	return JSON.stringify(
+		sections.map((section) => [section.key, section.uuid, section.type, section.title]),
+	);
+}
+
+function snapshotProjection(snapshot: PlexCacheSnapshot) {
+	return createPlexSelectionProjection({
+		rows: snapshot.rows,
+		selection: { kind: "all" },
+		domains: PLEX_CACHE_CANONICAL_DOMAINS,
+	});
+}
+
+function snapshotRoots(
+	snapshot: PlexCacheSnapshot,
+	sections: readonly PlexGenerationSectionV3[],
+): PlexGenerationDomainRoot[] {
+	const roots: PlexGenerationDomainRoot[] = [];
+	for (const section of sections) {
+		const rows = snapshot.rows.filter((row) => row.sectionId === section.key);
+		const projection = createPlexSelectionProjection({
+			rows,
+			selection: { kind: "all" },
+			domains: PLEX_CACHE_CANONICAL_DOMAINS,
+		});
+		for (const domain of PLEX_CACHE_CANONICAL_DOMAINS) {
+			const digest = projection.domains[domain];
+			if (!digest) throw new Error(`Missing Plex canonical ${domain} root`);
+			roots.push({ sectionKey: section.key, domain, digest });
+		}
+	}
+	return roots;
+}
+
+async function loadPublicationSettlementProbe(client: PlexClient) {
+	const [activities, sections] = await Promise.all([
+		client.getActivities({ uncached: true }),
+		client.getLibrarySettlementSections({ uncached: true }),
+	]);
+	const supportedSectionKeys = sections
+		.filter(
+			(section) =>
+				(section.type === "movie" || section.type === "show") && !isPersonalMediaSection(section),
+		)
+		.map((section) => section.key);
+	const settlement = evaluatePlexLiveSettlement({
+		activities,
+		sections,
+		selectedSectionKeys: supportedSectionKeys,
+	});
+	if (!settlement.settled) {
+		throw new Error(`Plex live settlement unavailable: ${settlement.reasonCodes.join(",")}`);
+	}
+	return supportedSettlementSections(sections);
+}
+
+/**
+ * Bracket complete collection with uncached settlement probes, then perform a
+ * post-end complete canonical pass before allowing publication. The last
+ * complete collection is deliberately the terminal upstream observation: a
+ * trailing probe would create a gap in which its older rows could be accepted.
+ * Plex exposes no read lock or atomic snapshot, so a new change may still begin
+ * after that terminal observation; callers only claim authority for the fixed
+ * point that was actually observed.
+ */
+export async function collectSettledPlexCacheLiveEvidence(
+	client: PlexClient,
+	instanceId: string,
+	log: FastifyBaseLogger,
+): Promise<PlexCacheRefreshResult> {
+	try {
+		const startSections = await loadPublicationSettlementProbe(client);
+		const preliminary = await collectPlexCacheLiveEvidence(client, instanceId, log);
+		if (!preliminary.complete || !preliminary.snapshot) return preliminary;
+
+		const endSections = await loadPublicationSettlementProbe(client);
+		if (settlementSectionIdentity(endSections) !== settlementSectionIdentity(startSections)) {
+			throw new Error("Plex library section identity changed during settlement");
+		}
+
+		const finalSections = await loadPublicationSettlementProbe(client);
+		if (settlementSectionIdentity(finalSections) !== settlementSectionIdentity(endSections)) {
+			throw new Error("Plex library section identity changed before final canonical pass");
+		}
+		const final = await collectPlexCacheLiveEvidence(client, instanceId, log);
+		if (!final.complete || !final.snapshot) return final;
+		if (
+			snapshotProjection(final.snapshot).digest !== snapshotProjection(preliminary.snapshot).digest
+		) {
+			throw new Error("Plex canonical projection changed after the settlement end probe");
+		}
+
+		return {
+			...final,
+			settlement: {
+				sections: finalSections,
+				roots: snapshotRoots(final.snapshot, finalSections),
+			},
+		};
+	} catch (error) {
+		return {
+			upserted: 0,
+			errors: 1,
+			errorMessages: [`Plex settlement publication failed: ${getErrorMessage(error)}`],
+			complete: false,
+		};
+	}
+}
+
 // ============================================================================
 // Refresher
 // ============================================================================
@@ -425,6 +604,7 @@ export async function collectPlexCacheLiveEvidence(
 	client: PlexClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
+	options: { preserveProviderDuplicates?: boolean } = {},
 ): Promise<PlexCacheRefreshResult> {
 	const upserted = 0;
 	let errors = 0;
@@ -495,6 +675,8 @@ export async function collectPlexCacheLiveEvidence(
 				collections: string[];
 				labels: string[];
 				addedAt: number | null;
+				viewCount: number;
+				lastViewedAt: number | null;
 				thumb: string | null;
 			}
 		>();
@@ -538,6 +720,8 @@ export async function collectPlexCacheLiveEvidence(
 						collections: item.Collection?.map((c) => c.tag) ?? [],
 						labels: item.Label?.map((l) => l.tag) ?? [],
 						addedAt: item.addedAt ?? null,
+						viewCount: item.viewCount ?? 0,
+						lastViewedAt: item.lastViewedAt ?? null,
 						thumb: item.thumb ?? null,
 					});
 				}
@@ -599,7 +783,9 @@ export async function collectPlexCacheLiveEvidence(
 				continue;
 			}
 
-			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
+			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}${
+				options.preserveProviderDuplicates ? `:${itemData.ratingKey}` : ""
+			}`;
 			if (!username) {
 				markIncomplete("historyItemsWithUnknownAccounts");
 				continue;
@@ -636,8 +822,21 @@ export async function collectPlexCacheLiveEvidence(
 
 		// Ensure all library items are in aggregations (even if unwatched)
 		for (const [_ratingKey, itemData] of ratingKeyMap) {
-			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
-			if (!aggregations.has(aggKey)) {
+			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}${
+				options.preserveProviderDuplicates ? `:${itemData.ratingKey}` : ""
+			}`;
+			const itemLastWatchedAt =
+				itemData.lastViewedAt === null ? null : new Date(itemData.lastViewedAt * 1000);
+			const existing = aggregations.get(aggKey);
+			if (existing) {
+				existing.watchCount = Math.max(existing.watchCount, itemData.viewCount);
+				if (
+					itemLastWatchedAt &&
+					(!existing.lastWatchedAt || itemLastWatchedAt > existing.lastWatchedAt)
+				) {
+					existing.lastWatchedAt = itemLastWatchedAt;
+				}
+			} else {
 				aggregations.set(aggKey, {
 					tmdbId: itemData.tmdbId,
 					mediaType: itemData.mediaType,
@@ -645,8 +844,8 @@ export async function collectPlexCacheLiveEvidence(
 					sectionTitle: itemData.sectionTitle,
 					title: itemData.title,
 					ratingKey: itemData.ratingKey,
-					lastWatchedAt: null,
-					watchCount: 0,
+					lastWatchedAt: itemLastWatchedAt,
+					watchCount: itemData.viewCount,
 					watchedByUsers: new Set(),
 					onDeck: false,
 					userRating: itemData.userRating,
@@ -678,7 +877,9 @@ export async function collectPlexCacheLiveEvidence(
 					continue;
 				}
 
-				const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}`;
+				const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}${
+					options.preserveProviderDuplicates ? `:${itemData.ratingKey}` : ""
+				}`;
 				const agg = aggregations.get(aggKey);
 				if (agg) {
 					agg.onDeck = true;

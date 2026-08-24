@@ -10,9 +10,9 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import {
 	hasAuthoritativeSelectedPlexEvidence,
-	loadUserSelectedEvidence,
 	summarizePlexEvidence,
-} from "../../lib/plex/plex-evidence-repository.js";
+} from "../../lib/plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { mapToRecentlyAddedItems } from "./lib/recently-added-helpers.js";
 
@@ -40,9 +40,14 @@ export async function registerRecentlyAddedRoutes(
 		const { limit } = validateRequest(recentlyAddedQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const evidence = await loadUserSelectedEvidence(app.prisma, {
+		const evidence = await new PlexAuthorityService({
+			prisma: app.prisma,
+			encryptor: app.encryptor,
+			log: request.log,
+		}).readUserSelected({
 			userId,
 			selection: { kind: "recently-added", limit },
+			domains: ["membership", "display"],
 		});
 		const summary = summarizePlexEvidence(evidence);
 		if (!hasAuthoritativeSelectedPlexEvidence(evidence)) {

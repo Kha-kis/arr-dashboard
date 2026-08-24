@@ -32,7 +32,7 @@ import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import {
 	getPublishedEpisodeGenerationObservation,
 	loadUserGenerationObservations,
-} from "../plex/plex-evidence-repository.js";
+} from "../plex/plex-persisted-observation-repository.js";
 import { createPlexClient } from "../plex/plex-client.js";
 import { createQuiClient } from "../qui/client-factory.js";
 import { listQuiInstances } from "../qui/instance-helpers.js";

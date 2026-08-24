@@ -1,5 +1,78 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../../plex/plex-authority-service.js")>();
+	const repository = await import("../../plex/plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			constructor(
+				private readonly deps: {
+					prisma: Parameters<typeof repository.scanInstancePolicyEvidence>[0];
+				},
+			) {}
+
+			async readInstance(input: Parameters<typeof repository.loadInstanceEvidence>[1]) {
+				const evidence = await repository.loadUserEvidence(this.deps.prisma, input);
+				return evidence.find((entry) => entry.instanceId === input.instanceId) ?? evidence[0];
+			}
+
+			async scanInstancePolicy(input: Parameters<typeof repository.scanInstancePolicyEvidence>[1]) {
+				const evidence = await repository.scanUserPolicyEvidence(this.deps.prisma, input);
+				return evidence.find((entry) => entry.instanceId === input.instanceId) ?? evidence[0];
+			}
+
+			async readInstanceSelectedEpisodes(
+				input: Parameters<typeof repository.loadInstanceSelectedEpisodeEvidence>[1],
+			) {
+				const instances = await this.deps.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				const instance = instances.find((entry) => entry.id === input.instanceId);
+				return await repository.loadInstanceSelectedEpisodeEvidence(this.deps.prisma, {
+					...input,
+					instance,
+				});
+			}
+
+			async readInstanceEpisodes(
+				input: Parameters<typeof repository.loadInstanceEpisodeEvidence>[1],
+			) {
+				const instances = await this.deps.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				const instance = instances.find((entry) => entry.id === input.instanceId);
+				return await repository.loadInstanceEpisodeEvidence(this.deps.prisma, {
+					...input,
+					instance,
+				});
+			}
+
+			async revalidatePersistedSnapshot(
+				input: Parameters<
+					InstanceType<typeof actual.PlexAuthorityService>["revalidatePersistedSnapshot"]
+				>[0],
+			) {
+				const instances = await this.deps.prisma.serviceInstance.findMany({
+					where: { userId: input.userId, service: "PLEX", enabled: true },
+				});
+				const instance = instances.find((entry) => entry.id === input.instanceId);
+				return await new actual.PlexAuthorityService({
+					...this.deps,
+					prisma: {
+						...this.deps.prisma,
+						serviceInstance: {
+							...this.deps.prisma.serviceInstance,
+							findFirst: vi.fn().mockResolvedValue(instance ?? null),
+						},
+					},
+				} as never).revalidatePersistedSnapshot(input);
+			}
+		},
+	};
+});
+
 import * as plexRefreshOrchestration from "../../plex/plex-refresh-orchestration.js";
 import { withQuiObservationTopologyGuard } from "../../qui/observation-topology-guard.js";
 import {
@@ -975,11 +1048,23 @@ function configurePlexApprovalAuthority(
 		identityGeneration: 7,
 		generationId: `plex-generation-${generationRevision}`,
 		generationMetadata: JSON.stringify({
-			version: 2,
+			version: 3,
 			publicationLevel: "authoritative",
 			completeness: "complete",
 			itemCount: rows.length,
-			sections: [{ key: "movies", title: "Movies", type: "movie" }],
+			canonicalizationVersion: 1,
+			sections: [
+				{
+					key: "movies",
+					title: "Movies",
+					type: "movie",
+					uuid: "movies-uuid",
+					refreshing: false,
+					scannedAt: 1,
+					updatedAt: 1,
+				},
+			],
+			roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
 		}),
 		...options.statusOverrides,
 	});
@@ -1821,7 +1906,7 @@ describe("shared Plex deletion safety", () => {
 		]);
 	});
 
-	it("rejects row drift even while the accepted provider status token is lagging", async () => {
+	it("rejects live row drift before opening the approval transaction", async () => {
 		const fixture = makeDeps({ mediaPartCount: 1 });
 		const authority = configurePlexApprovalAuthority(fixture, {
 			items: [{ id: "cache-provider-1", arrItemId: 101, title: "Example Movie" }],
@@ -1831,7 +1916,7 @@ describe("shared Plex deletion safety", () => {
 		const result = await executeCleanupRun(fixture.deps, "user-1");
 
 		expect(result.itemsFlagged).toBe(1);
-		expect(authority.transaction).toHaveBeenCalledOnce();
+		expect(authority.transaction).not.toHaveBeenCalled();
 		expect(authority.transactionCreate).not.toHaveBeenCalled();
 		expect(authority.rootCreate).not.toHaveBeenCalled();
 		expect(result).toMatchObject({ itemsSkipped: 1, itemsRemoved: 0, status: "partial" });
@@ -1863,11 +1948,8 @@ describe("shared Plex deletion safety", () => {
 
 		const result = await executeCleanupRun(fixture.deps, "user-1");
 
-		expect(authority.transaction).toHaveBeenCalledTimes(2);
+		expect(authority.transaction).toHaveBeenCalledOnce();
 		expect(authority.transaction).toHaveBeenNthCalledWith(1, expect.any(Function), {
-			isolationLevel: "Serializable",
-		});
-		expect(authority.transaction).toHaveBeenNthCalledWith(2, expect.any(Function), {
 			isolationLevel: "Serializable",
 		});
 		expect(authority.transactionCreate).toHaveBeenCalledOnce();

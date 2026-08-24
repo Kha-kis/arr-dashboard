@@ -7,6 +7,7 @@ import type {
 } from "../prisma.js";
 import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
 import type { PlexCacheRefreshAttempt } from "../services/provider-cache-status.js";
+import { selectPlexBoundedValueRows } from "./plex-canonical-projection.js";
 
 export const PLEX_CACHE_READ_PAGE_SIZE = 500;
 export const PLEX_CACHE_WRITE_CHUNK_SIZE = 100;
@@ -34,6 +35,7 @@ export const PLEX_POLICY_CACHE_ROW_SELECT = {
 	instanceId: true,
 	tmdbId: true,
 	mediaType: true,
+	ratingKey: true,
 	sectionId: true,
 	sectionTitle: true,
 	lastWatchedAt: true,
@@ -223,14 +225,12 @@ export async function listSelectedPlexCacheRows(
 ): Promise<PlexCache[]> {
 	if (selection.kind === "authority-only") return [];
 	if (selection.kind === "on-deck") {
-		return listPlexCacheRowsWhere(prisma, { instanceId, onDeck: true }, { limit: selection.limit });
+		const rows = await listPlexCacheRowsWhere(prisma, { instanceId, onDeck: true });
+		return selectPlexBoundedValueRows(rows, selection);
 	}
 	if (selection.kind === "recently-added") {
-		return listPlexCacheRowsWhere(
-			prisma,
-			{ instanceId, addedAt: { not: null } },
-			{ limit: selection.limit, orderBy: { addedAt: "desc" } },
-		);
+		const rows = await listPlexCacheRowsWhere(prisma, { instanceId, addedAt: { not: null } });
+		return selectPlexBoundedValueRows(rows, selection);
 	}
 	if (selection.kind === "label-membership") {
 		return listPlexCacheRowsWhere(prisma, {

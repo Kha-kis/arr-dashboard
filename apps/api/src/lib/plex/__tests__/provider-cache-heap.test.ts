@@ -99,6 +99,29 @@ vi.mock("../../services/provider-identity-guard.js", async (importOriginal) => {
 	};
 });
 
+vi.mock("../plex-authority-service.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../plex-authority-service.js")>();
+	const repository = await import("../plex-evidence-repository.js");
+	return {
+		...actual,
+		PlexAuthorityService: class {
+			constructor(
+				private readonly deps: {
+					prisma: Parameters<typeof repository.scanInstancePolicyEvidence>[0];
+				},
+			) {}
+
+			async readInstance(input: Parameters<typeof repository.scanInstancePolicyEvidence>[1]) {
+				return await repository.scanInstancePolicyEvidence(this.deps.prisma, input);
+			}
+
+			async scanInstancePolicy(input: Parameters<typeof repository.scanInstancePolicyEvidence>[1]) {
+				return await repository.scanInstancePolicyEvidence(this.deps.prisma, input);
+			}
+		},
+	};
+});
+
 const RUN_HEAP_TESTS = process.env.TEST_HEAP === "true";
 const MIB = 1024 * 1024;
 const PLEX_ITEMS = 15_000;
@@ -204,6 +227,18 @@ function reportHeap(message: string): void {
 			}));
 			plexClient = {
 				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getActivities: vi.fn().mockResolvedValue([]),
+				getLibrarySettlementSections: vi.fn().mockResolvedValue([
+					{
+						key: "1",
+						title: "Movies",
+						type: "movie",
+						uuid: "movies-uuid",
+						refreshing: false,
+						scannedAt: 1,
+						updatedAt: 1,
+					},
+				]),
 				getLibrarySections: vi
 					.fn()
 					.mockResolvedValue([{ key: "1", title: "Movies", type: "movie" }]),
@@ -448,10 +483,20 @@ function reportHeap(message: string): void {
 						generationMetadata: encodeAuthoritativePlexGenerationMetadata({
 							sections: Array.from({ length: 4 }, (_, section) => ({
 								key: `section-${section}`,
+								uuid: `section-${section}-uuid`,
 								title: `Movies ${section}`,
-								type: "movie",
+								type: "movie" as const,
+								refreshing: false as const,
+								scannedAt: 1,
+								updatedAt: 1,
 							})),
 							itemCount: PLEX_POLICY_READ_ITEMS_PER_INSTANCE,
+							canonicalizationVersion: 1,
+							roots: Array.from({ length: 4 }, (_, section) => ({
+								sectionKey: `section-${section}`,
+								domain: "membership" as const,
+								digest: "a".repeat(64),
+							})),
 						}),
 						lastAttemptAt: completedAt,
 						lastAttemptResult: "success",
@@ -517,7 +562,7 @@ function reportHeap(message: string): void {
 			expect(selectedFields).not.toHaveLength(0);
 			for (const select of selectedFields) {
 				expect(select).not.toHaveProperty("title");
-				expect(select).not.toHaveProperty("ratingKey");
+				expect(select).toHaveProperty("ratingKey", true);
 				expect(select).not.toHaveProperty("thumb");
 			}
 			expect(afterRepeatedRelease - afterFirstRelease).toBeLessThan(16 * MIB);
