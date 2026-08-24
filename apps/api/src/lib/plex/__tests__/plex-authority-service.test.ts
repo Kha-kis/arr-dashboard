@@ -1,5 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PlexCanonicalObservation } from "../plex-canonical-projection.js";
+
+const repositoryMocks = vi.hoisted(() => ({
+	loadInstanceSelectedEvidence: vi.fn(),
+}));
+
+vi.mock("../plex-evidence-repository.js", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../plex-evidence-repository.js")>();
+	return {
+		...actual,
+		loadInstanceSelectedEvidence: repositoryMocks.loadInstanceSelectedEvidence,
+	};
+});
+
 import {
 	plexEpisodeParentAuthorityChanged,
 	PlexAuthorityService,
@@ -25,6 +38,25 @@ const musicSection = {
 	refreshing: false,
 	scannedAt: 1_777_000_000,
 	updatedAt: 1_777_000_100,
+};
+const secondMovieSection = {
+	...section,
+	key: "movies-b",
+	uuid: "movies-b-uuid",
+	title: "Movies B",
+};
+const firstShowSection = {
+	...section,
+	key: "shows-a",
+	uuid: "shows-a-uuid",
+	title: "Shows A",
+	type: "show" as const,
+};
+const secondShowSection = {
+	...firstShowSection,
+	key: "shows-b",
+	uuid: "shows-b-uuid",
+	title: "Shows B",
 };
 const rowA: PlexCanonicalObservation = {
 	sectionId: "movies",
@@ -95,7 +127,6 @@ async function settle(
 			| { kind: "targets"; targets: Array<{ mediaType: string; tmdbId: number }> };
 		domains?: Array<"membership" | "labels" | "watch">;
 		mutation?: boolean;
-		requireCompleteSectionCatalog?: boolean;
 	} = {},
 ) {
 	const before = input.persisted ?? persisted();
@@ -110,9 +141,7 @@ async function settle(
 		persisted: before,
 		selection: input.selection ?? { kind: "all" },
 		domains: input.domains ?? ["membership", "labels", "watch"],
-		selectedSectionKeys: ["movies"],
 		mutation: input.mutation ?? false,
-		requireCompleteSectionCatalog: input.requireCompleteSectionCatalog ?? false,
 		loadProbe: vi.fn(async () => {
 			const value = probes.shift();
 			if (value instanceof Error) throw value;
@@ -330,10 +359,11 @@ describe("PlexAuthorityService settlement window", () => {
 	it("23. unrelated watch-domain changes preserve selected label authority", async () => {
 		await expect(
 			settle({
+				selection: { kind: "targets", targets: [{ mediaType: "movie", tmdbId: 1 }] },
 				domains: ["membership", "labels"],
 				fresh: [
-					[{ ...rowA, watchCount: 99 }, rowB],
-					[{ ...rowA, watchCount: 99 }, rowB],
+					[rowA, { ...rowB, watchCount: 99 }],
+					[rowA, { ...rowB, watchCount: 99 }],
 				],
 			}),
 		).resolves.toMatchObject({ ok: true });
@@ -377,7 +407,6 @@ describe("PlexAuthorityService settlement window", () => {
 			persisted: before,
 			selection: { kind: "all" },
 			domains: ["membership"],
-			selectedSectionKeys: ["movies"],
 			mutation: true,
 			loadProbe: vi.fn(async () => {
 				events.push("probe");
@@ -406,7 +435,6 @@ describe("PlexAuthorityService settlement window", () => {
 		};
 		await expect(
 			settle({
-				requireCompleteSectionCatalog: true,
 				probes: [
 					probe({
 						activities: [
@@ -431,7 +459,6 @@ describe("PlexAuthorityService settlement window", () => {
 		};
 		await expect(
 			settle({
-				requireCompleteSectionCatalog: true,
 				probes: [probe({ sections: [section, addedSection, musicSection] })],
 			}),
 		).resolves.toMatchObject({ ok: false, reasonCode: "plex_library_revision_changed" });
@@ -519,6 +546,222 @@ describe("PlexAuthorityService settlement window", () => {
 		expect(result).toMatchObject({
 			available: false,
 			evidence: { reasonCodes: ["generation_changed"] },
+		});
+	});
+
+	it("32. selected target authority rejects a scan in another persisted supported section", async () => {
+		const before = persisted({
+			metadata: {
+				...persisted().metadata,
+				itemCount: 1,
+				sections: [section, secondMovieSection],
+			},
+			rows: [rowA],
+		});
+		const scanningProbe = probe({
+			activities: [
+				{
+					type: "library.update.section",
+					Context: { librarySectionID: secondMovieSection.key },
+				},
+			],
+			sections: [section, secondMovieSection, musicSection],
+		});
+
+		await expect(
+			settle({
+				persisted: before,
+				selection: { kind: "targets", targets: [{ mediaType: "movie", tmdbId: 1 }] },
+				domains: ["membership"],
+				probes: [scanningProbe, scanningProbe, scanningProbe],
+				fresh: [[rowA], [rowA]],
+			}),
+		).resolves.toMatchObject({
+			ok: false,
+			reasonCode: "plex_library_scan_in_progress",
+		});
+	});
+
+	it("33. selected target authority accepts the complete unchanged supported catalog", async () => {
+		const before = persisted({
+			metadata: {
+				...persisted().metadata,
+				itemCount: 1,
+				sections: [section, secondMovieSection],
+			},
+			rows: [rowA],
+		});
+		const settledProbe = probe({ sections: [section, secondMovieSection, musicSection] });
+
+		await expect(
+			settle({
+				persisted: before,
+				selection: { kind: "targets", targets: [{ mediaType: "movie", tmdbId: 1 }] },
+				domains: ["membership"],
+				probes: [settledProbe, settledProbe, settledProbe],
+				fresh: [[rowA], [rowA]],
+			}),
+		).resolves.toMatchObject({ ok: true });
+	});
+
+	it("34. selected target authority rejects an idle supported section absent from V3", async () => {
+		const expandedProbe = probe({ sections: [section, secondMovieSection, musicSection] });
+
+		await expect(
+			settle({
+				persisted: persisted({ rows: [rowA] }),
+				selection: { kind: "targets", targets: [{ mediaType: "movie", tmdbId: 1 }] },
+				domains: ["membership"],
+				probes: [expandedProbe, expandedProbe, expandedProbe],
+				fresh: [[rowA], [rowA]],
+			}),
+		).resolves.toMatchObject({
+			ok: false,
+			reasonCode: "plex_library_revision_changed",
+		});
+	});
+
+	it("35. full exact authority rejects an active newly added supported section", async () => {
+		const expandedScanningProbe = probe({
+			activities: [
+				{
+					type: "library.update.section",
+					Context: { librarySectionID: secondMovieSection.key },
+				},
+			],
+			sections: [section, secondMovieSection, musicSection],
+		});
+
+		await expect(
+			settle({
+				probes: [expandedScanningProbe, expandedScanningProbe, expandedScanningProbe],
+			}),
+		).resolves.toMatchObject({
+			ok: false,
+			reasonCode: "plex_library_scan_in_progress",
+		});
+	});
+
+	it("36. selected episode parent authority rejects a scan in another supported Show section", async () => {
+		const showRow = {
+			...rowA,
+			sectionId: firstShowSection.key,
+			sectionTitle: firstShowSection.title,
+			mediaType: "series",
+		};
+		const before = persisted({
+			metadata: {
+				...persisted().metadata,
+				itemCount: 1,
+				sections: [firstShowSection, secondShowSection],
+			},
+			rows: [showRow],
+		});
+		const scanningProbe = probe({
+			activities: [
+				{
+					type: "library.update.section",
+					Context: { librarySectionID: secondShowSection.key },
+				},
+			],
+			sections: [firstShowSection, secondShowSection, musicSection],
+		});
+
+		await expect(
+			settle({
+				persisted: before,
+				selection: { kind: "targets", targets: [{ mediaType: "series", tmdbId: 1 }] },
+				domains: ["membership"],
+				probes: [scanningProbe, scanningProbe, scanningProbe],
+				fresh: [[showRow], [showRow]],
+			}),
+		).resolves.toMatchObject({
+			ok: false,
+			reasonCode: "plex_library_scan_in_progress",
+		});
+	});
+
+	it("37. target mutation does not reach Plex while another supported section scans", async () => {
+		const targetRow = {
+			...rowA,
+			thumb: "/library/metadata/101/thumb/1",
+		};
+		const metadata = {
+			...persisted().metadata,
+			itemCount: 1,
+			sections: [section, secondMovieSection],
+		};
+		const evidence = {
+			available: true,
+			instanceId: "plex-1",
+			instanceName: "Plex",
+			generationId: "generation-1",
+			publishedAt: new Date("2026-08-20T12:00:00.000Z"),
+			itemCount: 1,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			metadata,
+			generationStatus: {},
+			sections: metadata.sections,
+			rows: [targetRow],
+			evidence: {
+				availability: "current",
+				authority: "authoritative",
+				attemptState: "success",
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				reasonCodes: [],
+			},
+		};
+		repositoryMocks.loadInstanceSelectedEvidence.mockResolvedValue(evidence);
+		const updateMetadataTags = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			getActivities: vi.fn().mockResolvedValue([
+				{
+					type: "library.update.section",
+					Context: { librarySectionID: secondMovieSection.key },
+				},
+			]),
+			getLibrarySettlementSections: vi
+				.fn()
+				.mockResolvedValue([section, secondMovieSection, musicSection]),
+			updateMetadataTags,
+		};
+		const service = new PlexAuthorityService({
+			prisma: {
+				serviceInstance: {
+					findFirst: vi.fn().mockResolvedValue({
+						id: "plex-1",
+						userId: "user-1",
+						service: "PLEX",
+						enabled: true,
+						expectedIdentity: "plex-machine-a",
+					}),
+				},
+			} as never,
+			log: {} as never,
+			createClient: () => client as never,
+		});
+		vi.spyOn(
+			service as unknown as {
+				freshRows: (...args: unknown[]) => Promise<readonly PlexCanonicalObservation[]>;
+			},
+			"freshRows",
+		).mockResolvedValue([targetRow]);
+		const result = await service.mutateMetadataTag({
+			userId: "user-1",
+			instanceId: "plex-1",
+			target: { mediaType: "movie", tmdbId: 1 },
+			expectedRatingKey: "101",
+			type: "label",
+			action: "add",
+			name: "Keep",
+		});
+
+		expect(updateMetadataTags).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			ok: false,
+			evidence: { reasonCodes: ["plex_library_scan_in_progress"] },
 		});
 	});
 });

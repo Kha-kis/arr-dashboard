@@ -81,52 +81,52 @@ export type PlexAuthorityWindowResult =
 	| { ok: true; persisted: PlexPersistedSelectionObservation }
 	| { ok: false; reasonCode: PlexCoverageReasonCode };
 
-function selectedSectionIdentity(
-	sections: readonly PlexLiveSection[],
-	selectedSectionKeys: readonly string[],
-): string | null {
-	const byKey = new Map(sections.map((section) => [section.key, section]));
-	const identity: Array<[string, string, string, string]> = [];
-	for (const key of [...new Set(selectedSectionKeys)].sort()) {
-		const section = byKey.get(key);
-		if (!section) return null;
-		identity.push([section.key, section.uuid, section.type, section.title]);
-	}
-	return JSON.stringify(identity);
+function sectionCatalogIdentity(
+	sections: ReadonlyArray<{ key: string; uuid: string; type: string; title: string }>,
+): string {
+	return JSON.stringify(
+		sections
+			.map(
+				(section) =>
+					[section.key, section.uuid, section.type, section.title] as [
+						string,
+						string,
+						string,
+						string,
+					],
+			)
+			.sort(
+				(left, right) =>
+					left[0].localeCompare(right[0]) ||
+					left[1].localeCompare(right[1]) ||
+					left[2].localeCompare(right[2]) ||
+					left[3].localeCompare(right[3]),
+			),
+	);
 }
 
-function persistedSectionIdentity(
-	metadata: DecodedPlexGenerationMetadata,
-	selectedSectionKeys: readonly string[],
-): string | null {
+function persistedSectionCatalogIdentity(metadata: DecodedPlexGenerationMetadata): string | null {
 	if (metadata.version !== 3) return null;
-	return selectedSectionIdentity(metadata.sections, selectedSectionKeys);
+	return sectionCatalogIdentity(metadata.sections);
 }
 
 function evaluateProbe(
 	probe: PlexAuthorityProbe,
-	selectedSectionKeys: readonly string[],
 	expectedSectionIdentity: string,
-	requireCompleteSectionCatalog: boolean,
 ): PlexCoverageReasonCode | null {
 	const supportedSections = probe.sections.filter(
 		(section) =>
 			(section.type === "movie" || section.type === "show") && !isPersonalMediaSection(section),
 	);
-	const settlementSectionKeys = requireCompleteSectionCatalog
-		? supportedSections.map((section) => section.key)
-		: selectedSectionKeys;
+	const settlementSectionKeys = supportedSections.map((section) => section.key);
 	const settlement = evaluatePlexLiveSettlement({
 		activities: probe.activities,
 		sections: probe.sections,
 		selectedSectionKeys: settlementSectionKeys,
 	});
 	if (!settlement.settled) return settlement.reasonCodes[0] ?? "plex_section_state_unavailable";
-	const identity = selectedSectionIdentity(
-		requireCompleteSectionCatalog ? supportedSections : probe.sections,
-		settlementSectionKeys,
-	);
-	if (identity === null || identity !== expectedSectionIdentity) {
+	const identity = sectionCatalogIdentity(supportedSections);
+	if (identity !== expectedSectionIdentity) {
 		return "plex_library_revision_changed";
 	}
 	return null;
@@ -205,9 +205,7 @@ export async function settlePlexAuthorityWindow(input: {
 	persisted: PlexPersistedSelectionObservation;
 	selection: PlexCanonicalSelection;
 	domains: readonly PlexCanonicalDomain[];
-	selectedSectionKeys: readonly string[];
 	mutation: boolean;
-	requireCompleteSectionCatalog?: boolean;
 	loadProbe: (options: { uncached: boolean }) => Promise<PlexAuthorityProbe>;
 	loadFreshRows: (options: { uncached: boolean }) => Promise<readonly PlexCanonicalObservation[]>;
 	rereadPersisted: () => Promise<PlexPersistedSelectionObservation>;
@@ -215,32 +213,19 @@ export async function settlePlexAuthorityWindow(input: {
 	if (input.persisted.metadata.version !== 3) {
 		return { ok: false, reasonCode: "plex_settlement_metadata_missing" };
 	}
-	const expectedSectionIdentity = persistedSectionIdentity(
-		input.persisted.metadata,
-		input.selectedSectionKeys,
-	);
+	const expectedSectionIdentity = persistedSectionCatalogIdentity(input.persisted.metadata);
 	if (expectedSectionIdentity === null) {
 		return { ok: false, reasonCode: "plex_settlement_metadata_missing" };
 	}
 	const options = { uncached: input.mutation };
 	try {
 		const startProbe = await input.loadProbe(options);
-		const startReason = evaluateProbe(
-			startProbe,
-			input.selectedSectionKeys,
-			expectedSectionIdentity,
-			input.requireCompleteSectionCatalog === true,
-		);
+		const startReason = evaluateProbe(startProbe, expectedSectionIdentity);
 		if (startReason) return { ok: false, reasonCode: startReason };
 
 		const preliminaryRows = await input.loadFreshRows(options);
 		const endProbe = await input.loadProbe(options);
-		const endReason = evaluateProbe(
-			endProbe,
-			input.selectedSectionKeys,
-			expectedSectionIdentity,
-			input.requireCompleteSectionCatalog === true,
-		);
+		const endReason = evaluateProbe(endProbe, expectedSectionIdentity);
 		if (endReason) return { ok: false, reasonCode: endReason };
 
 		const preliminary = createPlexSelectionProjection({
@@ -249,12 +234,7 @@ export async function settlePlexAuthorityWindow(input: {
 			domains: input.domains,
 		});
 		const finalProbe = await input.loadProbe(options);
-		const finalReason = evaluateProbe(
-			finalProbe,
-			input.selectedSectionKeys,
-			expectedSectionIdentity,
-			input.requireCompleteSectionCatalog === true,
-		);
+		const finalReason = evaluateProbe(finalProbe, expectedSectionIdentity);
 		if (finalReason) return { ok: false, reasonCode: finalReason };
 		const finalRows = await input.loadFreshRows(options);
 
@@ -325,23 +305,6 @@ function canonicalSelection(selection: PlexCacheRowSelection): PlexCanonicalSele
 		};
 	}
 	return selection;
-}
-
-function selectionSectionKeys(
-	persisted: AvailablePersistedEvidence,
-	selection: PlexCacheRowSelection | { kind: "all" },
-): string[] {
-	const all = persisted.metadata.sections.map((section) => section.key).sort();
-	if (selection.kind !== "targets") return all;
-	const keys = new Set<string>();
-	for (const target of selection.targets) {
-		const matches = persisted.rows.filter(
-			(row) => row.tmdbId === target.tmdbId && row.mediaType === target.mediaType,
-		);
-		if (matches.length === 0) return all;
-		for (const row of matches) keys.add(row.sectionId);
-	}
-	return [...keys].sort();
 }
 
 function persistedObservation(
@@ -482,9 +445,7 @@ export class PlexAuthorityService {
 			persisted: before,
 			selection,
 			domains: input.domains,
-			selectedSectionKeys: selectionSectionKeys(input.before, input.selection),
 			mutation: input.mutation,
-			requireCompleteSectionCatalog: input.selection.kind === "authority-only",
 			loadProbe: async ({ uncached }) => await this.probe(client, uncached),
 			loadFreshRows: async () => await this.freshRows(client, input.instanceId),
 			rereadPersisted: async () => {
@@ -914,15 +875,10 @@ export class PlexAuthorityService {
 			metadata: parent.metadata,
 			rows: canonicalEpisodeRows(before.rows, parent.rows),
 		};
-		const selectedSectionKeys = selectionSectionKeys(parent, {
-			kind: "targets",
-			targets: showTargets,
-		});
 		const window = await settlePlexAuthorityWindow({
 			persisted: initialObservation,
 			selection: { kind: "all" },
 			domains: ["episodes"],
-			selectedSectionKeys,
 			mutation: input.mutation === true,
 			loadProbe: async ({ uncached }) => await this.probe(client, uncached),
 			loadFreshRows: async () => {
