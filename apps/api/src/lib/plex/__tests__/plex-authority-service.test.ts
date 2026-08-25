@@ -580,6 +580,11 @@ describe("PlexAuthorityService settlement window", () => {
 			sectionUuid: "shows-b-uuid",
 			ratingKey: "show-42-copy",
 		};
+		const sameSectionDuplicateTarget = {
+			...target,
+			id: "target-42-same-section-copy",
+			ratingKey: "show-42-same-section-copy",
+		};
 		const otherTarget = {
 			...duplicateTarget,
 			id: "target-99",
@@ -592,7 +597,7 @@ describe("PlexAuthorityService settlement window", () => {
 			generationId: target.generationId,
 			connectionGeneration: 4,
 			identityGeneration: 9,
-			targets: [target, duplicateTarget, otherTarget],
+			targets: [target, sameSectionDuplicateTarget, duplicateTarget, otherTarget],
 		});
 		repositoryMocks.loadPositiveEpisodeParentEvidence.mockResolvedValue({
 			available: true,
@@ -663,7 +668,9 @@ describe("PlexAuthorityService settlement window", () => {
 					}),
 				},
 				plexGenerationTarget: {
-					findMany: vi.fn().mockResolvedValue([target, duplicateTarget, otherTarget]),
+					findMany: vi
+						.fn()
+						.mockResolvedValue([target, sameSectionDuplicateTarget, duplicateTarget, otherTarget]),
 				},
 			} as never,
 			log: {} as never,
@@ -689,10 +696,15 @@ describe("PlexAuthorityService settlement window", () => {
 			]),
 			targets: expect.arrayContaining([
 				expect.objectContaining({ tmdbId: 42, ratingKey: "show-42" }),
+				expect.objectContaining({
+					tmdbId: 42,
+					sectionId: "shows-a",
+					ratingKey: "show-42-same-section-copy",
+				}),
 				expect.objectContaining({ tmdbId: 99, ratingKey: "show-99" }),
 			]),
 		});
-		expect(result.targets).toHaveLength(2);
+		expect(result.targets).toHaveLength(3);
 		expect(result.targets).not.toContainEqual(
 			expect.objectContaining({ ratingKey: "show-42-copy" }),
 		);

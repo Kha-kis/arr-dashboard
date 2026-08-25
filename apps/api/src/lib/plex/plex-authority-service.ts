@@ -882,7 +882,14 @@ export class PlexAuthorityService {
 				(selectedIds === undefined || selectedIds.includes(target.tmdbId)),
 		);
 		const targetsByRatingKey = new Map(targets.map((target) => [target.ratingKey, target]));
-		const observedTargets: PlexGenerationTarget[] = [];
+		const targetsByCoordinate = new Map<string, PlexGenerationTarget[]>();
+		for (const target of targets) {
+			const key = JSON.stringify([target.tmdbId, target.sectionId]);
+			const group = targetsByCoordinate.get(key) ?? [];
+			group.push(target);
+			targetsByCoordinate.set(key, group);
+		}
+		const observedTargets = new Map<string, PlexGenerationTarget>();
 		let unmatchedObservedRow = false;
 		const rows = observed.rows.flatMap((row) => {
 			if (!row.ratingKey) {
@@ -896,7 +903,11 @@ export class PlexAuthorityService {
 				target.tmdbId === row.tmdbId &&
 				target.sectionId === row.sectionId
 			) {
-				observedTargets.push(target);
+				for (const observedTarget of targetsByCoordinate.get(
+					JSON.stringify([row.tmdbId, row.sectionId]),
+				) ?? []) {
+					observedTargets.set(observedTarget.ratingKey, observedTarget);
+				}
 				return [
 					{
 						instanceId: row.instanceId,
@@ -932,7 +943,7 @@ export class PlexAuthorityService {
 				parentTargetCount: binding.binding.targetCount,
 			},
 			rows,
-			targets: observedTargets,
+			targets: [...observedTargets.values()],
 			evidence: observed.evidence,
 		};
 	}
