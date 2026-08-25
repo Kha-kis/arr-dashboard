@@ -25,6 +25,36 @@ const v3Roots = [
 		digest: "a".repeat(64),
 	},
 ];
+const showSection = {
+	key: "shows",
+	uuid: "section-uuid-shows",
+	title: "Shows",
+	type: "show" as const,
+	refreshing: false as const,
+	scannedAt: 1_777_000_000,
+	updatedAt: 1_777_000_100,
+};
+const validV4Metadata = {
+	version: 4,
+	publicationLevel: "positive-only",
+	completeness: "partial",
+	itemCount: 1,
+	canonicalizationVersion: 1,
+	sections: [...v3Sections, showSection],
+	observedRoots: [{ sectionKey: "shows", domain: "episode-parents", digest: "a".repeat(64) }],
+	capabilities: [
+		{
+			domain: "episode-parents",
+			field: "membership",
+			semantics: "observed-targets-only",
+			operators: [],
+		},
+	],
+	targetLedgerVersion: 1,
+	targetCount: 1,
+	targetDigest: "b".repeat(64),
+	partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+} as const;
 const v3Metadata = JSON.stringify({
 	version: 3,
 	publicationLevel: "authoritative",
@@ -51,6 +81,12 @@ function status(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Plex generation metadata", () => {
+	it("rejects a partial V4 envelope that does not explain why it is partial", () => {
+		expect(
+			decodePlexGenerationMetadata(JSON.stringify({ ...validV4Metadata, partialReasons: [] })),
+		).toEqual({ ok: false, reasonCode: "metadata_invalid" });
+	});
+
 	it("normalizes legacy sections-only metadata as authoritative", () => {
 		expect(decodePlexGenerationMetadata(JSON.stringify({ sections }))).toEqual({
 			ok: true,
@@ -101,7 +137,7 @@ describe("Plex generation metadata", () => {
 	});
 
 	it.each([
-		["unknown version", JSON.stringify({ version: 4, sections }), "unknown_metadata_version"],
+		["bare V4", JSON.stringify({ version: 4, sections }), "metadata_invalid"],
 		["null", null, "missing_metadata"],
 		["missing", undefined, "missing_metadata"],
 		["invalid JSON", "{", "malformed_metadata"],
@@ -319,14 +355,8 @@ describe("Plex generation metadata", () => {
 		});
 	});
 
-	it("recognizes a future positive-only publication without granting mutation authority", () => {
-		const partialMetadata = JSON.stringify({
-			version: 2,
-			publicationLevel: "positive-only",
-			completeness: "partial",
-			itemCount: 1,
-			sections,
-		});
+	it("recognizes a well-formed V4 positive-only publication without granting mutation authority", () => {
+		const partialMetadata = JSON.stringify(validV4Metadata);
 		const partialStatus = status({
 			generationMetadata: partialMetadata,
 			lastAttemptResult: "partial",
@@ -338,6 +368,7 @@ describe("Plex generation metadata", () => {
 
 		expect(evaluatePublishedPlexGeneration(partialStatus, options)).toMatchObject({
 			available: true,
+			metadata: { version: 4, publicationLevel: "positive-only" },
 			evidence: {
 				availability: "current",
 				authority: "positive-only",
@@ -349,6 +380,41 @@ describe("Plex generation metadata", () => {
 			},
 		});
 		expect(evaluatePlexMutationAuthority(partialStatus, options).available).toBe(false);
+	});
+
+	it.each([
+		["an unknown envelope field", { ...validV4Metadata, labelsComplete: true }],
+		[
+			"an unknown capability field",
+			{
+				...validV4Metadata,
+				capabilities: [{ ...validV4Metadata.capabilities[0], grantsAbsence: true }],
+			},
+		],
+		[
+			"an unknown reason field",
+			{
+				...validV4Metadata,
+				partialReasons: [
+					{ ...validV4Metadata.partialReasons[0], detail: "sensitive upstream material" },
+				],
+			},
+		],
+		[
+			"an episode-parent root on a Movie section",
+			{
+				...validV4Metadata,
+				observedRoots: [
+					{ sectionKey: "movies", domain: "episode-parents", digest: "a".repeat(64) },
+				],
+			},
+		],
+		["a missing Show section root", { ...validV4Metadata, observedRoots: [] }],
+	])("rejects V4 with %s", (_description, metadata) => {
+		expect(decodePlexGenerationMetadata(JSON.stringify(metadata))).toEqual({
+			ok: false,
+			reasonCode: "metadata_invalid",
+		});
 	});
 
 	it("bases freshness on the published generation timestamp", () => {

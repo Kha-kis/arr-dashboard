@@ -30,6 +30,13 @@ import { runJellyfinCacheRefreshSingleFlight } from "../jellyfin/jellyfin-cache-
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
 import { refreshJellyfinEpisodeCache } from "../jellyfin/jellyfin-episode-cache-refresher.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
+import type {
+	AvailablePlexInstanceEvidence,
+	AvailablePlexPolicyEvidence,
+	PlexInstanceEvidence,
+	PlexPolicyScanEvidence,
+} from "../plex/plex-authority-service.js";
+import { PlexAuthorityService } from "../plex/plex-authority-service.js";
 import {
 	collectPlexCacheLiveEvidence,
 	type PlexCacheSnapshotRow,
@@ -41,13 +48,6 @@ import {
 	PlexMovieNotFoundError,
 	PlexSeriesNotFoundError,
 } from "../plex/plex-client.js";
-import type {
-	AvailablePlexInstanceEvidence,
-	AvailablePlexPolicyEvidence,
-	PlexInstanceEvidence,
-	PlexPolicyScanEvidence,
-} from "../plex/plex-authority-service.js";
-import { PlexAuthorityService } from "../plex/plex-authority-service.js";
 import { requirePlexTargetLedgerBinding } from "../plex/plex-generation-target-ledger.js";
 import {
 	refreshOwnedPlexCache,
@@ -104,6 +104,7 @@ import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
 	evaluateEpisodeWatchCountRule,
+	evaluateEpisodeWatchCountEvidence,
 	isSupportedEpisodeCleanupRule,
 	toEpisodeTargetMetadata,
 } from "./episode-scope.js";
@@ -165,6 +166,7 @@ import {
 	type SharedMediaSafetyPlan,
 	SonarrFilesChangedDuringSafetyCheckError,
 	serializeExecutableSafetyPlan,
+	type VerifiedEpisodePlexWatchProof,
 	type VerifiedEpisodePlexWatchSource,
 	type VerifiedRadarrFileIdentity,
 	type VerifiedSonarrFileIdentity,
@@ -246,6 +248,16 @@ interface MatchedRuleProviderAuthority {
 	evidence: SanitizedProviderEvidence;
 	authorities: Array<ProviderCacheSnapshot<unknown>["authority"]>;
 	complete: boolean;
+	boundedPositiveOnly: boolean;
+}
+
+interface BoundedPositiveEpisodeAuthority {
+	userId: string;
+	seasonNumber: number;
+	episodeNumber: number;
+	watchProof: VerifiedEpisodePlexWatchProof & {
+		positiveProof: NonNullable<VerifiedEpisodePlexWatchProof["positiveProof"]>;
+	};
 }
 
 export function mergeSanitizedProviderEvidence(
@@ -792,6 +804,65 @@ async function revalidatePersistedProviderCacheAuthority(
 	});
 }
 
+function boundedPositiveEpisodeAuthorityFromPlan(
+	userId: string,
+	plan: SharedMediaSafetyPlan | undefined,
+): BoundedPositiveEpisodeAuthority | undefined {
+	if (plan?.kind !== "verified_sonarr_episode" || !plan.watchProof.positiveProof) return undefined;
+	return {
+		userId,
+		seasonNumber: plan.episode.seasonNumber,
+		episodeNumber: plan.episode.episodeNumber,
+		watchProof: {
+			...plan.watchProof,
+			positiveProof: plan.watchProof.positiveProof,
+		},
+	};
+}
+
+async function revalidateBoundedPositiveEpisodeAuthority(
+	deps: CleanupExecutorDeps,
+	authority: BoundedPositiveEpisodeAuthority,
+	now = new Date(),
+): Promise<boolean> {
+	const { watchProof } = authority;
+	const proof = watchProof.positiveProof;
+	const current = await cleanupPlexAuthority(deps).readPositiveEpisodeEvidence({
+		userId: authority.userId,
+		instanceId: watchProof.plexInstanceId,
+		now,
+		maxAgeMs: PROVIDER_EVIDENCE_FRESHNESS_MS,
+	});
+	if (
+		!current.available ||
+		current.connectionGeneration !== proof.connectionGeneration ||
+		current.identityGeneration !== proof.identityGeneration ||
+		current.provenance.publicationLevel !== "positive-only" ||
+		current.provenance.parentPlexGenerationId !== proof.parentGenerationId ||
+		current.provenance.parentTargetDigest !== proof.parentTargetDigest ||
+		current.provenance.episodeGenerationId !== proof.episodeGenerationId ||
+		current.provenance.episodeDigest !== proof.episodeDigest ||
+		current.provenance.publishedAt !== proof.observedAt ||
+		watchProof.sourceFingerprint.trim() === "" ||
+		watchProof.ratingKey.trim() === ""
+	) {
+		return false;
+	}
+	const matchingRows = current.rows.filter(
+		(row) =>
+			row.showTmdbId === proof.showTmdbId &&
+			row.seasonNumber === authority.seasonNumber &&
+			row.episodeNumber === authority.episodeNumber &&
+			row.ratingKey === watchProof.ratingKey,
+	);
+	return (
+		matchingRows.length === 1 &&
+		matchingRows[0]!.sourceFingerprint === watchProof.sourceFingerprint &&
+		matchingRows[0]!.lowerBound === proof.observedLowerBound &&
+		evidenceFingerprint(matchingRows[0]!.soleParentTarget) === proof.soleParentTargetFingerprint
+	);
+}
+
 class ProviderCacheAuthorityChangedError extends Error {
 	constructor() {
 		super("Provider cache authority changed after cleanup selection");
@@ -812,8 +883,9 @@ async function createApprovalWithProviderCacheAuthority(
 	deps: CleanupExecutorDeps,
 	authorities: Array<ProviderCacheSnapshot<unknown>["authority"]>,
 	data: Prisma.LibraryCleanupApprovalUncheckedCreateInput,
+	boundedPositiveAuthority?: BoundedPositiveEpisodeAuthority,
 ): Promise<LibraryCleanupApproval> {
-	if (authorities.length === 0) {
+	if (authorities.length === 0 && !boundedPositiveAuthority) {
 		return await deps.prisma.libraryCleanupApproval.create({ data });
 	}
 	const postgresql = /^postgres(ql)?:\/\//i.test(process.env.DATABASE_URL ?? "");
@@ -832,12 +904,19 @@ async function createApprovalWithProviderCacheAuthority(
 			throw new ProviderCacheAuthorityChangedError();
 		}
 	}
+	if (
+		boundedPositiveAuthority &&
+		!(await revalidateBoundedPositiveEpisodeAuthority(deps, boundedPositiveAuthority))
+	) {
+		throw new ProviderCacheAuthorityChangedError();
+	}
 	return await deps.prisma.$transaction(
 		async (tx) => {
 			const instanceIds = [
-				...new Set(
-					authorities.flatMap((authority) => authority.instances.map((instance) => instance.id)),
-				),
+				...new Set([
+					...authorities.flatMap((authority) => authority.instances.map((instance) => instance.id)),
+					...(boundedPositiveAuthority ? [boundedPositiveAuthority.watchProof.plexInstanceId] : []),
+				]),
 			].sort();
 			if (postgresql) {
 				for (const instanceId of instanceIds) {
@@ -851,6 +930,21 @@ async function createApprovalWithProviderCacheAuthority(
 			for (const authority of authorities) {
 				if (
 					!(await revalidatePersistedProviderCacheAuthority(deps, tx, authority, transactionNow))
+				) {
+					throw new ProviderCacheAuthorityChangedError();
+				}
+			}
+			if (boundedPositiveAuthority) {
+				const transactionDeps = {
+					...deps,
+					prisma: tx as unknown as CleanupExecutorDeps["prisma"],
+				};
+				if (
+					!(await revalidateBoundedPositiveEpisodeAuthority(
+						transactionDeps,
+						boundedPositiveAuthority,
+						transactionNow,
+					))
 				) {
 					throw new ProviderCacheAuthorityChangedError();
 				}
@@ -1445,6 +1539,9 @@ function episodePlanTargetFields(
 				ratingKey: plan.watchProof.ratingKey,
 				watchCount: plan.watchProof.watchCount,
 				refreshedAt: plan.watchProof.refreshedAt,
+				...(plan.watchProof.positiveProof
+					? { positiveProof: { ...plan.watchProof.positiveProof } }
+					: {}),
 			},
 		],
 		respectQuiSeeding: respectQuiSeeding || plan.quiIdentity.enabled,
@@ -1496,10 +1593,14 @@ function episodePlansMatchWithRefreshedWatchProof(
 		: liveProofIdentity;
 	const approvedRefreshTime = Date.parse(approvedRefreshedAt);
 	const liveRefreshTime = Date.parse(liveRefreshedAt);
+	const approvedPositiveProof = approvedProofIdentity.positiveProof;
+	const livePositiveProof = liveProofIdentity.positiveProof;
 	if (
 		JSON.stringify(approvedComparableProofIdentity) !==
 			JSON.stringify(liveComparableProofIdentity) ||
-		liveWatchCount < approvedWatchCount ||
+		(approvedPositiveProof
+			? !livePositiveProof || liveWatchCount <= approvedPositiveProof.threshold
+			: liveWatchCount < approvedWatchCount) ||
 		!Number.isFinite(approvedRefreshTime) ||
 		!Number.isFinite(liveRefreshTime) ||
 		liveRefreshTime < approvedRefreshTime
@@ -1711,7 +1812,8 @@ function withSharedPlexOwnershipRevalidation(
 			if (
 				blocks.has(targetKey) ||
 				!comparableLivePlan ||
-				!executableSafetyPlansEqual(safetyPlan, comparableLivePlan)
+				(!executableSafetyPlansEqual(safetyPlan, comparableLivePlan) &&
+					!episodePlansMatchWithRefreshedWatchProof(safetyPlan, comparableLivePlan, false))
 			) {
 				throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
 					"Skipped for safety: the verified Sonarr episode identity, Plex ownership, or qUI physical-file evidence changed at the mutation boundary.",
@@ -3436,6 +3538,7 @@ interface ExpectedCleanupRule {
 	matchedRuleId: string;
 	action: RuleAction;
 	scanMediaServerAfterDelete: boolean;
+	ruleFingerprint?: string;
 	providerDependencies?: string[];
 }
 
@@ -3995,6 +4098,12 @@ async function assertCurrentEpisodeMutationAuthority(
 		!currentEpisodeRule ||
 		!isSupportedEpisodeCleanupRule(currentEpisodeRule) ||
 		currentEpisodeRule.action !== expectedRule.action ||
+		(expectedRule.ruleFingerprint !== undefined &&
+			evidenceFingerprint({
+				id: currentEpisodeRule.id,
+				parameters: currentEpisodeRule.parameters,
+				action: currentEpisodeRule.action,
+			}) !== expectedRule.ruleFingerprint) ||
 		(currentEpisodeRule.scanMediaServerAfterDelete === true) !==
 			expectedRule.scanMediaServerAfterDelete
 	) {
@@ -4538,6 +4647,7 @@ async function executeQueuedCleanupItemsCore(
 			if (
 				!sharedPlexBlock &&
 				approvedPlan?.kind === "verified_sonarr_episode" &&
+				approvedPlan.watchProof.positiveProof === undefined &&
 				!approvedProviderEvidence?.dependencies.some(
 					(dependency) => dependency === "plex_episode" || dependency === "plex",
 				)
@@ -4852,6 +4962,12 @@ async function executeQueuedCleanupItemsCore(
 						options.assertExecutionAllowed,
 					);
 					if (safetyPlan!.kind === "verified_sonarr_episode") {
+						const positiveProof = safetyPlan!.watchProof.positiveProof;
+						if (positiveProof && positiveProof.ruleId !== approval.matchedRuleId) {
+							throw new ArrMutationAuthorityChangedDuringSafetyCheckError(
+								"Skipped for safety: the approved positive Plex proof did not match the queued cleanup rule.",
+							);
+						}
 						await assertCurrentEpisodeMutationAuthority(
 							deps,
 							userId,
@@ -4861,6 +4977,7 @@ async function executeQueuedCleanupItemsCore(
 								matchedRuleId: approval.matchedRuleId,
 								action,
 								scanMediaServerAfterDelete: approval.scanMediaServerAfterDelete === true,
+								...(positiveProof ? { ruleFingerprint: positiveProof.ruleFingerprint } : {}),
 							},
 							evidence && "liveEpisodeWatchSources" in evidence ? evidence : undefined,
 							expectedConfigFingerprint,
@@ -5535,11 +5652,19 @@ function buildMatchedProviderAuthority(
 	rule: LibraryCleanupRule,
 	evidenceConditions: RuleEvidenceCondition[],
 	snapshotsByCacheType: Map<ProviderCacheType, ProviderCacheSnapshot<unknown>>,
+	flaggedItem?: FlaggedItem,
 ): MatchedRuleProviderAuthority {
 	const requiredCacheTypes = providerCacheTypesForEvidence(rule, evidenceConditions);
 	const matchedSnapshots = [...requiredCacheTypes]
 		.map((cacheType) => snapshotsByCacheType.get(cacheType))
 		.filter((snapshot): snapshot is ProviderCacheSnapshot<unknown> => snapshot !== undefined);
+	const boundedPositiveOnly =
+		isSupportedEpisodeCleanupRule(rule) &&
+		flaggedItem?.episodeTarget?.plexWatchEvidence.some(
+			(evidence) => evidence.positiveProof !== undefined,
+		) === true &&
+		requiredCacheTypes.size === 1 &&
+		requiredCacheTypes.has("plex_episode");
 	return {
 		evidence: createSanitizedProviderEvidence(
 			matchedSnapshots.flatMap((snapshot) => snapshot.evidence.dependencies),
@@ -5548,7 +5673,8 @@ function buildMatchedProviderAuthority(
 			),
 		),
 		authorities: matchedSnapshots.map((snapshot) => snapshot.authority),
-		complete: matchedSnapshots.length === requiredCacheTypes.size,
+		complete: matchedSnapshots.length === requiredCacheTypes.size || boundedPositiveOnly,
+		boundedPositiveOnly,
 	};
 }
 
@@ -6894,7 +7020,7 @@ async function evaluateAllItems(
 					if (!matchedRule) continue;
 					providerAuthoritiesByTarget.set(
 						cleanupDeleteTargetKey(flaggedDeleteTarget(episodeItem)),
-						buildMatchedProviderAuthority(matchedRule, [], snapshotsByCacheType),
+						buildMatchedProviderAuthority(matchedRule, [], snapshotsByCacheType, episodeItem),
 					);
 				}
 			}
@@ -6949,6 +7075,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 		};
 	} = {},
 ): Promise<Map<string, EpisodePlexWatchEvidence[]>> {
+	const positiveResult = new Map<string, EpisodePlexWatchEvidence[]>();
 	const plexInstanceIds = instances
 		.filter((instance) => instance.service === "PLEX" && instance.enabled)
 		.map((instance) => instance.id);
@@ -6968,9 +7095,81 @@ export async function prefetchFreshPlexEpisodeWatchData(
 		const plexInstances = instances.filter(
 			(instance) => instance.service === "PLEX" && instance.enabled,
 		);
+		const positiveEvidenceInstanceIds = new Set<string>();
+		for (const instance of plexInstances) {
+			const positive = await cleanupPlexAuthority(deps)
+				.readPositiveEpisodeEvidence({
+					userId: instance.userId,
+					instanceId: instance.id,
+					now,
+					maxAgeMs: PLEX_EPISODE_FRESHNESS_MS,
+				})
+				.catch((error: unknown) => {
+					deps.log.warn(
+						{ err: error, instanceId: instance.id },
+						"Positive Plex episode evidence was unavailable for one instance",
+					);
+					return undefined;
+				});
+			if (
+				!positive?.available ||
+				positive.connectionGeneration !== instance.connectionGeneration ||
+				positive.identityGeneration !== instance.identityGeneration
+			) {
+				continue;
+			}
+			const sourceFingerprint = plexFingerprintById.get(instance.id);
+			const observedAt = new Date(positive.provenance.publishedAt);
+			if (!sourceFingerprint || !Number.isFinite(observedAt.getTime())) continue;
+			positiveEvidenceInstanceIds.add(instance.id);
+			for (const row of positive.rows) {
+				if (
+					row.sourceFingerprint !== sourceFingerprint ||
+					!Number.isSafeInteger(row.lowerBound) ||
+					row.lowerBound <= 0 ||
+					(options.coordinate &&
+						(row.showTmdbId !== options.coordinate.showTmdbId ||
+							row.seasonNumber !== options.coordinate.seasonNumber ||
+							row.episodeNumber !== options.coordinate.episodeNumber))
+				) {
+					continue;
+				}
+				const key = episodeCoordinateKey(row.showTmdbId, row.seasonNumber, row.episodeNumber);
+				const evidence: EpisodePlexWatchEvidence = {
+					plexInstanceId: instance.id,
+					sourceFingerprint,
+					ratingKey: row.ratingKey,
+					watchCount: 0,
+					lowerBound: row.lowerBound,
+					lastWatchedAt: null,
+					watchedByUsers: [],
+					refreshedAt: observedAt,
+					positiveProof: {
+						connectionGeneration: positive.connectionGeneration,
+						identityGeneration: positive.identityGeneration,
+						parentGenerationId: positive.provenance.parentPlexGenerationId,
+						parentPublicationLevel: positive.provenance.publicationLevel,
+						parentTargetDigest: positive.provenance.parentTargetDigest,
+						soleParentTargetFingerprint: evidenceFingerprint(row.soleParentTarget),
+						episodeGenerationId: positive.provenance.episodeGenerationId,
+						episodeDigest: positive.provenance.episodeDigest,
+						showTmdbId: row.showTmdbId,
+						observedLowerBound: row.lowerBound,
+						observedAt,
+					},
+				};
+				const current = positiveResult.get(key) ?? [];
+				current.push(evidence);
+				positiveResult.set(key, current);
+			}
+		}
+		const authoritativeInstances = plexInstances.filter(
+			(instance) => !positiveEvidenceInstanceIds.has(instance.id),
+		);
+		if (authoritativeInstances.length === 0) return positiveResult;
 		const generations = await loadCompleteCacheGenerations(
 			deps,
-			plexInstances,
+			authoritativeInstances,
 			"plex_episode",
 			now,
 		);
@@ -6978,10 +7177,10 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			warnings.push(
 				"Plex episode evidence had no complete fresh published generation for every enabled instance; episode-scoped cleanup targets were skipped.",
 			);
-			return new Map();
+			return positiveResult;
 		}
 		const repositoryEvidence = [];
-		for (const instance of plexInstances) {
+		for (const instance of authoritativeInstances) {
 			repositoryEvidence.push(
 				await cleanupPlexAuthority(deps).readInstanceEpisodes({
 					userId: instance.userId,
@@ -6996,7 +7195,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			warnings.push(
 				"Plex episode evidence did not match its published parent generation; episode-scoped cleanup targets were skipped.",
 			);
-			return new Map();
+			return positiveResult;
 		}
 		const rows = repositoryEvidence
 			.flatMap((entry) => (entry.available ? entry.rows : []))
@@ -7010,7 +7209,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			);
 		const result = new Map<string, EpisodePlexWatchEvidence[]>();
 		const rowsByInstance = new Map<string, unknown[]>(
-			plexInstances.map((instance) => [instance.id, []]),
+			authoritativeInstances.map((instance) => [instance.id, []]),
 		);
 		let staleEvidenceCount = 0;
 		let incompleteEvidenceCount = 0;
@@ -7081,7 +7280,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 		const snapshot = createProviderCacheSnapshot(
 			result,
 			"plex_episode",
-			plexInstances,
+			authoritativeInstances,
 			generations,
 			rowsByInstance,
 		);
@@ -7089,16 +7288,25 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			warnings.push(
 				"Plex episode evidence changed while it was read; episode-scoped cleanup targets were skipped.",
 			);
-			return new Map();
+			return positiveResult;
 		}
 		options.evidenceSink?.(snapshot.evidence);
-		return result;
+		for (const [key, exactEvidence] of result) {
+			const merged = [...(positiveResult.get(key) ?? []), ...exactEvidence];
+			merged.sort(
+				(left, right) =>
+					(right.lowerBound ?? right.watchCount) - (left.lowerBound ?? left.watchCount) ||
+					left.plexInstanceId.localeCompare(right.plexInstanceId),
+			);
+			positiveResult.set(key, merged);
+		}
+		return positiveResult;
 	} catch (error) {
 		deps.log.error({ err: error }, "Failed to load fresh Plex episode watch data");
 		warnings.push(
 			"Plex episode watch data was unavailable or stale; episode-scoped rules were skipped for safety.",
 		);
-		return new Map();
+		return positiveResult;
 	}
 }
 
@@ -7264,19 +7472,36 @@ async function evaluateSeriesEpisodes(
 			// satisfied this rule. Carrying a lower-count source here would let a
 			// physical-path match on that server authorize a rule that only passed
 			// because a different server had enough watches.
-			const qualifyingWatchEvidence = watchEvidence.filter(
-				(evidence) => evidence.watchCount > watchCountThreshold,
-			);
-			if (qualifyingWatchEvidence.length === 0) continue;
+			const watchEvaluation = evaluateEpisodeWatchCountEvidence(watchEvidence, rule);
+			if (watchEvaluation.state !== "true" || !watchEvaluation.match) continue;
+			const qualifyingWatchEvidence = watchEvaluation.qualifyingEvidence;
+			const ruleFingerprint = evidenceFingerprint({
+				id: rule.id,
+				parameters: rule.parameters,
+				action: rule.action,
+			});
 			const ruleCandidate: EpisodeCleanupCandidate = {
 				...candidate,
-				watchCount: qualifyingWatchEvidence[0]!.watchCount,
+				watchCount:
+					qualifyingWatchEvidence[0]!.lowerBound ?? qualifyingWatchEvidence[0]!.watchCount,
 				lastWatchedAt: qualifyingWatchEvidence[0]!.lastWatchedAt,
 				watchedByUsers: qualifyingWatchEvidence[0]!.watchedByUsers,
-				plexWatchEvidence: qualifyingWatchEvidence,
+				plexWatchEvidence: qualifyingWatchEvidence.map((evidence) => ({
+					...evidence,
+					...(evidence.positiveProof
+						? {
+								positiveProof: {
+									...evidence.positiveProof,
+									operator: "greater_than",
+									threshold: watchCountThreshold,
+									ruleId: rule.id,
+									ruleFingerprint,
+								},
+							}
+						: {}),
+				})),
 			};
-			const match = evaluateEpisodeWatchCountRule(ruleCandidate, rule);
-			if (!match) continue;
+			const match = watchEvaluation.match;
 			flagged.push({
 				cacheItem: { ...item, sizeOnDisk: file.size },
 				match,
@@ -7651,8 +7876,20 @@ async function executeWithApproval(
 				evidence: createSanitizedProviderEvidence([], []),
 				authorities: [],
 				complete: false,
+				boundedPositiveOnly: false,
 			};
 			if (!matchedRuleAuthority.complete) {
+				throw new ProviderCacheAuthorityChangedError();
+			}
+			const executablePlan =
+				asExecutableSafetyPlan(safetyPlans.get(targetKey)) ??
+				(() => {
+					throw new Error("No executable cleanup safety plan was produced");
+				})();
+			const boundedPositiveAuthority = matchedRuleAuthority.boundedPositiveOnly
+				? boundedPositiveEpisodeAuthorityFromPlan(config.userId, executablePlan)
+				: undefined;
+			if (matchedRuleAuthority.boundedPositiveOnly && !boundedPositiveAuthority) {
 				throw new ProviderCacheAuthorityChangedError();
 			}
 			const approval = await createApprovalWithProviderCacheAuthority(
@@ -7680,14 +7917,12 @@ async function executeWithApproval(
 					rating: item.rating,
 					status: "pending",
 					safetySnapshot: serializeExecutableSafetyPlan(
-						asExecutableSafetyPlan(safetyPlans.get(targetKey)) ??
-							(() => {
-								throw new Error("No executable cleanup safety plan was produced");
-							})(),
+						executablePlan,
 						matchedRuleAuthority.evidence,
 					),
 					expiresAt,
 				},
+				boundedPositiveAuthority,
 			);
 
 			details.push(
@@ -8090,6 +8325,16 @@ export async function executeDirectRemoval(
 		let directMutationExecutionToken: string;
 		let directProviderEvidence = itemProviderEvidence;
 		try {
+			const boundedPositiveAuthority = matchedRuleAuthority?.boundedPositiveOnly
+				? boundedPositiveEpisodeAuthorityFromPlan(userId, safetyPlan)
+				: undefined;
+			if (
+				matchedRuleAuthority?.boundedPositiveOnly &&
+				(!boundedPositiveAuthority ||
+					!(await revalidateBoundedPositiveEpisodeAuthority(deps, boundedPositiveAuthority)))
+			) {
+				throw new Error("Bounded positive Plex episode authority changed after selection");
+			}
 			if (
 				!(
 					await Promise.all(

@@ -93,6 +93,34 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 		expect(mocks.refresh.mock.calls[0]).not.toContainEqual({ server: "caller-controlled" });
 	});
 
+	it("reports a committed positive-only generation as a successful partial refresh", async () => {
+		mocks.refresh.mockResolvedValue({
+			kind: "positive-observation",
+			complete: false,
+			completedAt: new Date("2026-08-24T12:00:00.000Z"),
+			upserted: 1,
+			errors: 0,
+			errorMessages: [],
+			observation: {
+				partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+			},
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/api/plex/cache/plex-1/refresh");
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({
+			success: true,
+			publicationLevel: "positive-only",
+			completeness: "partial",
+			complete: false,
+			observedItemCount: 1,
+			partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+			upserted: 1,
+			errors: 0,
+		});
+	});
+
 	it("returns an actionable sanitized response when preparation cannot publish", async () => {
 		mocks.refresh.mockResolvedValue({
 			complete: false,

@@ -23,6 +23,7 @@ import type { CleanupExecutorDeps } from "../types.js";
 
 const authorityMock = vi.hoisted(() => ({
 	policyEvidence: new Map<string, unknown>(),
+	positiveEpisodeEvidence: new Map<string, unknown>(),
 }));
 
 vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
@@ -132,6 +133,16 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 					...input,
 					instance: instance as never,
 				} as never);
+			}
+
+			async readPositiveEpisodeEvidence(input: { instanceId: string }) {
+				return (
+					authorityMock.positiveEpisodeEvidence.get(input.instanceId) ?? {
+						available: false,
+						instanceId: input.instanceId,
+						evidence: { reasonCode: "positive_episode_unavailable" },
+					}
+				);
 			}
 		},
 	};
@@ -626,19 +637,36 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 	it("rejects an interleaved map/section generation", async () => {
 		const instance = verifiedPlexInstance();
 		const completedAt = new Date();
-		const status = (generationId: string, includeNewSection: boolean) => ({
-			...completeStatus(instance.id, completedAt, 1),
-			generationId,
-			generationMetadata: JSON.stringify({
-				sections: [
-					{ key: "1", title: "Movies", type: "movie" },
-					...(includeNewSection ? [{ key: "2", title: "New Movies", type: "movie" }] : []),
-				],
-			}),
-			lastErrorMessage: null,
-			lastAttemptResult: "success",
-			lastAttemptErrorMessage: null,
-		});
+		const status = (generationId: string, includeNewSection: boolean) => {
+			const complete = completeStatus(instance.id, completedAt, 1);
+			const metadata = JSON.parse(complete.generationMetadata);
+			return {
+				...complete,
+				generationId,
+				generationMetadata: JSON.stringify({
+					...metadata,
+					sections: [
+						metadata.sections[0],
+						...(includeNewSection
+							? [
+									{
+										key: "2",
+										uuid: "new-movies-uuid",
+										title: "New Movies",
+										type: "movie",
+										refreshing: false,
+										scannedAt: 1_777_000_000,
+										updatedAt: 1_777_000_100,
+									},
+								]
+							: []),
+					],
+				}),
+				lastErrorMessage: null,
+				lastAttemptResult: "success",
+				lastAttemptErrorMessage: null,
+			};
+		};
 		const statusReads = vi
 			.fn()
 			.mockResolvedValueOnce([status("generation-1", false)])
@@ -1094,6 +1122,117 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 });
 
 describe("prefetchFreshPlexEpisodeWatchData", () => {
+	it("uses one positive lower-bound source without requiring a complete V2 episode generation", async () => {
+		const now = new Date("2026-08-24T12:00:00.000Z");
+		const instance = verifiedPlexInstance();
+		authorityMock.positiveEpisodeEvidence.set(instance.id, {
+			available: true,
+			instanceId: instance.id,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			provenance: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				connectionGeneration: 3,
+				identityGeneration: 7,
+				parentPlexGenerationId: "parent-v4",
+				parentTargetDigest: "parent-target-digest",
+				parentTargetCount: 1,
+				episodeGenerationId: "episode-v3",
+				episodeDigest: "episode-digest",
+				publishedAt: now.toISOString(),
+			},
+			rows: [
+				{
+					showTmdbId: 42,
+					seasonNumber: 1,
+					episodeNumber: 1,
+					ratingKey: "episode-a",
+					lowerBound: 2,
+					sourceFingerprint: plexConnectionFingerprint(instance as never),
+					soleParentTarget: { ratingKey: "show-a" },
+				},
+			],
+		});
+		const warnings: string[] = [];
+
+		const result = await prefetchFreshPlexEpisodeWatchData(
+			{
+				prisma: { serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) } },
+				log,
+			} as never,
+			[instance] as never,
+			now,
+			warnings,
+		);
+
+		expect(result.get("42:1:1")).toMatchObject([{ lowerBound: 2, watchCount: 0 }]);
+		expect(warnings).toEqual([]);
+		authorityMock.positiveEpisodeEvidence.clear();
+	});
+
+	it("retains one valid positive source when another Plex source has no complete exact generation", async () => {
+		const now = new Date("2026-08-24T12:00:00.000Z");
+		const positiveInstance = verifiedPlexInstance({ id: "plex-positive" });
+		const unavailableInstance = verifiedPlexInstance({
+			id: "plex-unavailable",
+			baseUrl: "http://plex-unavailable.internal:32400",
+		});
+		authorityMock.positiveEpisodeEvidence.set(positiveInstance.id, {
+			available: true,
+			instanceId: positiveInstance.id,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			provenance: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				connectionGeneration: 3,
+				identityGeneration: 7,
+				parentPlexGenerationId: "parent-v4",
+				parentTargetDigest: "parent-target-digest",
+				parentTargetCount: 1,
+				episodeGenerationId: "episode-v3",
+				episodeDigest: "episode-digest",
+				publishedAt: now.toISOString(),
+			},
+			rows: [
+				{
+					showTmdbId: 42,
+					seasonNumber: 1,
+					episodeNumber: 1,
+					ratingKey: "episode-a",
+					lowerBound: 2,
+					sourceFingerprint: plexConnectionFingerprint(positiveInstance as never),
+					soleParentTarget: { ratingKey: "show-a" },
+				},
+			],
+		});
+		const warnings: string[] = [];
+
+		const result = await prefetchFreshPlexEpisodeWatchData(
+			{
+				prisma: {
+					serviceInstance: {
+						findMany: vi.fn().mockResolvedValue([positiveInstance, unavailableInstance]),
+					},
+					cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([]) },
+				},
+				log,
+			} as never,
+			[positiveInstance, unavailableInstance] as never,
+			now,
+			warnings,
+		);
+
+		expect(result.get("42:1:1")).toMatchObject([
+			{ plexInstanceId: "plex-positive", lowerBound: 2, watchCount: 0 },
+		]);
+		expect(warnings).toContainEqual(
+			expect.stringContaining("no complete fresh published generation"),
+		);
+		authorityMock.positiveEpisodeEvidence.clear();
+	});
+
 	it.each([
 		["metadata-only instance update", "updatedAt"],
 		["same-identity reverification", "identityVerifiedAt"],

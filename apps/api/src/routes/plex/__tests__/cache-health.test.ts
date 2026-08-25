@@ -164,6 +164,21 @@ describe("buildCacheHealthItems", () => {
 		expect(items[0]).toMatchObject({ lastResult: "partial", evidence });
 	});
 
+	it("names a V4 partial row count as observedItemCount, never an exact denominator", () => {
+		const evidence = {
+			publicationLevel: "positive-only",
+			completeness: "partial",
+			reasonCodes: [],
+		} satisfies PlexEvidenceSummary;
+		const [item] = buildCacheHealthItems(
+			[makeRow({ itemCount: 7 })],
+			instanceNameMap,
+			baseDateMs,
+			new Map([["inst-1:plex", evidence]]),
+		);
+		expect(item).toMatchObject({ lastResult: "partial", itemCount: null, observedItemCount: 7 });
+	});
+
 	it("reports unavailable Plex evidence as an error instead of a successful empty cache", () => {
 		const evidence = {
 			publicationLevel: "unavailable",

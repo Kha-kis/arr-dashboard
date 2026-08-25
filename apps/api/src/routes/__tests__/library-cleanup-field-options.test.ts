@@ -436,4 +436,100 @@ describe("GET /library-cleanup/field-options — cursor pagination (issue #427)"
 			publishedGeneration: { publicationLevel: "authoritative" },
 		});
 	});
+
+	it("does not expose partial V4 rows as exact cleanup field options", async () => {
+		serviceInstanceFindMany.mockImplementation(({ where }: { where: { service: unknown } }) => {
+			if (where.service === "PLEX") {
+				return Promise.resolve([
+					{
+						id: PLEX_INSTANCE_ID,
+						userId: currentUserId,
+						service: "PLEX",
+						enabled: true,
+						label: "Plex",
+						expectedIdentity: "plex-machine-1",
+						identityKind: "PLEX_MACHINE_IDENTIFIER",
+						identityStatus: "VERIFIED",
+						identityVerifiedAt: new Date(0),
+						connectionGeneration: 1,
+						identityGeneration: 1,
+						updatedAt: new Date(0),
+					},
+				]);
+			}
+			return Promise.resolve([]);
+		});
+		plexCacheFindMany.mockResolvedValue([
+			makePlexRow("pc-1", {
+				sectionTitle: "TV Shows",
+				watchedByUsers: ["must-not-leak"],
+				collections: ["Partial Collection"],
+				labels: ["partial-label"],
+			}),
+		]);
+		const completedAt = new Date();
+		cacheRefreshStatusFindMany.mockResolvedValue([
+			{
+				instanceId: PLEX_INSTANCE_ID,
+				cacheType: "plex",
+				lastRefreshedAt: completedAt,
+				lastResult: "success",
+				lastErrorMessage: null,
+				lastAttemptAt: completedAt,
+				lastAttemptResult: "partial",
+				lastAttemptErrorMessage: null,
+				itemCount: 1,
+				connectionGeneration: 1,
+				identityGeneration: 1,
+				generationId: "generation-v4",
+				generationMetadata: JSON.stringify({
+					version: 4,
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					itemCount: 1,
+					canonicalizationVersion: 1,
+					sections: [
+						{
+							key: "shows",
+							title: "TV Shows",
+							type: "show",
+							uuid: "shows-uuid",
+							refreshing: false,
+							scannedAt: 1,
+							updatedAt: 1,
+						},
+					],
+					observedRoots: [
+						{ sectionKey: "shows", domain: "episode-parents", digest: "a".repeat(64) },
+					],
+					capabilities: [
+						{
+							domain: "episode-parents",
+							field: "membership",
+							semantics: "observed-targets-only",
+							operators: [],
+						},
+					],
+					targetLedgerVersion: 1,
+					targetCount: 1,
+					targetDigest: "b".repeat(64),
+					partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+				}),
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)("GET", "/library-cleanup/field-options");
+		const body = response.json();
+
+		expect(response.statusCode).toBe(200);
+		expect(body.plexUsers).toEqual([]);
+		expect(body.plexLibraries).toEqual([]);
+		expect(body.plexCollections).toEqual([]);
+		expect(body.plexLabels).toEqual([]);
+		expect(body.plexEvidence).toMatchObject({
+			authority: "unavailable",
+			publicationLevel: "unavailable",
+			completeness: "unknown",
+		});
+	});
 });

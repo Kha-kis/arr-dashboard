@@ -123,4 +123,29 @@ describe("GET /api/plex/sections authority", () => {
 		});
 		expect(response.json()).not.toHaveProperty("sections");
 	});
+
+	it("withholds section contents from a current V4 positive-only catalog", async () => {
+		mocks.loadUserSelectedEvidence.mockResolvedValue([
+			{
+				available: true,
+				instanceId: "plex-1",
+				instanceName: "Primary",
+				sections: [{ key: "shows", title: "Shows", type: "show" }],
+				rows: [],
+				evidence: {
+					availability: "current",
+					authority: "positive-only",
+					attemptState: "partial",
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					reasonCodes: ["latest_attempt_partial"],
+				},
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)("GET", "/api/plex/sections");
+
+		expect(response.statusCode).toBe(503);
+		expect(response.json()).not.toHaveProperty("sections");
+	});
 });

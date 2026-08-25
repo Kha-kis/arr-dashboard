@@ -5,12 +5,12 @@ import type {
 	Prisma,
 	PrismaClientInstance,
 } from "../prisma.js";
-import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
 import type { PlexCacheRefreshAttempt } from "../services/provider-cache-status.js";
+import type { OwnedProviderPublicationSnapshot } from "../services/provider-identity-guard.js";
 import { selectPlexBoundedValueRows } from "./plex-canonical-projection.js";
 import {
-	replacePlexGenerationTargets,
 	type PlexGenerationTarget,
+	replacePlexGenerationTargets,
 } from "./plex-generation-target-ledger.js";
 
 export const PLEX_CACHE_READ_PAGE_SIZE = 500;
@@ -442,6 +442,55 @@ export async function publishAuthoritativePlexCacheGeneration(
 	});
 }
 
+export async function publishPositivePlexCacheGeneration(
+	tx: Prisma.TransactionClient,
+	input: {
+		instance: OwnedProviderPublicationSnapshot;
+		rows: Prisma.PlexCacheCreateManyInput[];
+		completedAt: Date;
+		generationId: string;
+		generationMetadata: string;
+		targets: readonly PlexGenerationTarget[];
+		attempt: PlexCacheRefreshAttempt;
+	},
+): Promise<void> {
+	const published = await tx.cacheRefreshStatus.updateMany({
+		where: {
+			instanceId: input.instance.id,
+			cacheType: "plex",
+			lastAttemptAt: input.attempt.attemptedAt,
+			lastAttemptResult: input.attempt.resultMarker,
+			connectionGeneration: input.instance.connectionGeneration,
+			identityGeneration: input.instance.identityGeneration,
+		},
+		data: {
+			lastRefreshedAt: input.completedAt,
+			lastResult: "success",
+			lastErrorMessage: null,
+			itemCount: input.rows.length,
+			generationId: input.generationId,
+			generationMetadata: input.generationMetadata,
+			lastAttemptAt: input.completedAt,
+			lastAttemptResult: "partial",
+			lastAttemptErrorMessage: null,
+			connectionGeneration: input.instance.connectionGeneration,
+			identityGeneration: input.instance.identityGeneration,
+		},
+	});
+	if (published.count !== 1) throw new PlexRefreshAttemptSupersededError();
+	await tx.plexCache.deleteMany({ where: { instanceId: input.instance.id } });
+	for (let start = 0; start < input.rows.length; start += PLEX_CACHE_WRITE_CHUNK_SIZE) {
+		await tx.plexCache.createMany({
+			data: input.rows.slice(start, start + PLEX_CACHE_WRITE_CHUNK_SIZE),
+		});
+	}
+	await replacePlexGenerationTargets(tx, {
+		instanceId: input.instance.id,
+		generationId: input.generationId,
+		targets: input.targets,
+	});
+}
+
 export async function publishAuthoritativePlexEpisodeGeneration(
 	tx: Prisma.TransactionClient,
 	input: {
@@ -471,6 +520,50 @@ export async function publishAuthoritativePlexEpisodeGeneration(
 			generationMetadata: input.generationMetadata,
 			lastAttemptAt: input.completedAt,
 			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			connectionGeneration: input.instance.connectionGeneration,
+			identityGeneration: input.instance.identityGeneration,
+		},
+	});
+	if (published.count !== 1) throw new PlexRefreshAttemptSupersededError();
+	await tx.plexEpisodeCache.deleteMany({ where: { instanceId: input.instance.id } });
+	for (let start = 0; start < input.rows.length; start += PLEX_CACHE_WRITE_CHUNK_SIZE) {
+		await tx.plexEpisodeCache.createMany({
+			data: input.rows.slice(start, start + PLEX_CACHE_WRITE_CHUNK_SIZE),
+		});
+	}
+}
+
+/** Atomically replaces the current episode generation with bounded positive evidence. */
+export async function publishPositivePlexEpisodeGeneration(
+	tx: Prisma.TransactionClient,
+	input: {
+		instance: OwnedProviderPublicationSnapshot;
+		rows: Prisma.PlexEpisodeCacheCreateManyInput[];
+		completedAt: Date;
+		generationId: string;
+		generationMetadata: string;
+		attempt: PlexCacheRefreshAttempt;
+	},
+): Promise<void> {
+	const published = await tx.cacheRefreshStatus.updateMany({
+		where: {
+			instanceId: input.instance.id,
+			cacheType: "plex_episode",
+			lastAttemptAt: input.attempt.attemptedAt,
+			lastAttemptResult: input.attempt.resultMarker,
+			connectionGeneration: input.instance.connectionGeneration,
+			identityGeneration: input.instance.identityGeneration,
+		},
+		data: {
+			lastRefreshedAt: input.completedAt,
+			lastResult: "success",
+			lastErrorMessage: null,
+			itemCount: input.rows.length,
+			generationId: input.generationId,
+			generationMetadata: input.generationMetadata,
+			lastAttemptAt: input.completedAt,
+			lastAttemptResult: "partial",
 			lastAttemptErrorMessage: null,
 			connectionGeneration: input.instance.connectionGeneration,
 			identityGeneration: input.instance.identityGeneration,

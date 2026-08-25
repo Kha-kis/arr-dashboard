@@ -71,7 +71,11 @@ import {
 } from "@arr/shared";
 import type { LibraryCleanupRule } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
-import { evaluateEpisodeWatchCountRule, isSupportedEpisodeCleanupRule } from "./episode-scope.js";
+import {
+	evaluateEpisodeWatchCountEvidence,
+	isSupportedEpisodeCleanupRule,
+	type EpisodePlexWatchEvidence,
+} from "./episode-scope.js";
 import type {
 	CacheItemForEval,
 	EvalContext,
@@ -89,8 +93,7 @@ import { listMembershipKey } from "./types.js";
 
 export interface EpisodeExplainEvidence {
 	arrEpisodeId: number;
-	watchCount: number | null;
-	available: boolean;
+	watchEvidence: EpisodePlexWatchEvidence[];
 }
 
 // ============================================================================
@@ -3010,18 +3013,6 @@ export function explainItemAgainstRules(
 			continue;
 		}
 
-		if (targetsEpisode && episodeEvidence && !episodeEvidence.available) {
-			results.push({
-				ruleId: rule.id,
-				ruleName: rule.name,
-				matched: false,
-				reason: null,
-				filteredBy: "evidence_unavailable",
-				retentionMode: rule.retentionMode,
-			});
-			continue;
-		}
-
 		// Check pre-filters and report which one blocked
 		const filteredBy = getFilterReason(item, rule, instanceService);
 		if (filteredBy) {
@@ -3039,15 +3030,11 @@ export function explainItemAgainstRules(
 		// Evaluate the rule
 		let evaluation: RuleEvaluation;
 		if (targetsEpisode) {
-			if (episodeEvidence?.watchCount === null || episodeEvidence?.watchCount === undefined) {
-				evaluation = { state: "unknown", match: null, evidenceConditions: [] };
-			} else {
-				const match = evaluateEpisodeWatchCountRule(
-					{ watchCount: episodeEvidence.watchCount },
-					rule,
-				);
-				evaluation = { state: match ? "true" : "false", match, evidenceConditions: [] };
-			}
+			const episodeEvaluation = evaluateEpisodeWatchCountEvidence(
+				episodeEvidence?.watchEvidence ?? [],
+				rule,
+			);
+			evaluation = { ...episodeEvaluation, evidenceConditions: [] };
 		} else {
 			evaluation = evaluateRuleState(item, rule, instanceService, ctx, failedSources);
 		}

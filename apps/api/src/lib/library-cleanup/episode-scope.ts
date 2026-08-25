@@ -14,6 +14,25 @@ export interface EpisodePlexWatchEvidence {
 	sourceFingerprint: string;
 	ratingKey: string;
 	watchCount: number;
+	/** Positive-only episode evidence is a lower bound, not an exact count. */
+	lowerBound?: number;
+	positiveProof?: {
+		connectionGeneration: number;
+		identityGeneration: number;
+		parentGenerationId: string;
+		parentPublicationLevel: "positive-only";
+		parentTargetDigest: string;
+		soleParentTargetFingerprint: string;
+		episodeGenerationId: string;
+		episodeDigest: string;
+		showTmdbId: number;
+		observedLowerBound: number;
+		observedAt: Date;
+		operator?: "greater_than";
+		threshold?: number;
+		ruleId?: string;
+		ruleFingerprint?: string;
+	};
 	lastWatchedAt: Date | null;
 	watchedByUsers: string[];
 	refreshedAt: Date;
@@ -109,7 +128,8 @@ export function isSupportedEpisodeCleanupRule(rule: EpisodeCleanupRuleShape): bo
 	return (
 		params?.operator === "greater_than" &&
 		typeof params.count === "number" &&
-		Number.isFinite(params.count)
+		Number.isFinite(params.count) &&
+		params.count >= 0
 	);
 }
 
@@ -125,6 +145,7 @@ export function toEpisodeTargetMetadata(candidate: EpisodeCleanupCandidate): Epi
 		episodeTitle: candidate.episodeTitle,
 		plexWatchEvidence: candidate.plexWatchEvidence.map((evidence) => ({
 			...evidence,
+			...(evidence.positiveProof ? { positiveProof: { ...evidence.positiveProof } } : {}),
 			watchedByUsers: [...evidence.watchedByUsers],
 		})),
 		fileInfoHash: candidate.file.infoHash,
@@ -145,18 +166,25 @@ export function buildEpisodeTargetKey(
 }
 
 export function evaluateEpisodeWatchCountRule(
-	candidate: Pick<EpisodeCleanupCandidate, "watchCount">,
+	candidate: Pick<EpisodeCleanupCandidate, "watchCount"> &
+		Partial<Pick<EpisodeCleanupCandidate, "plexWatchEvidence">>,
 	rule: EpisodeWatchCountRule,
 ): RuleMatch | null {
+	if (candidate.plexWatchEvidence !== undefined) {
+		return evaluateEpisodeWatchCountEvidence(candidate.plexWatchEvidence, rule).match;
+	}
 	const params = safeJsonParse(rule.parameters) as PlexWatchCountParameters | null;
 	if (
 		params?.operator !== "greater_than" ||
 		typeof params.count !== "number" ||
-		!Number.isFinite(params.count)
+		!Number.isFinite(params.count) ||
+		params.count < 0
 	) {
 		return null;
 	}
-	if (candidate.watchCount <= params.count) return null;
+	const threshold = params.count;
+	const count = candidate.watchCount;
+	if (count <= threshold) return null;
 
 	if (rule.action !== "delete" && rule.action !== "delete_files" && rule.action !== "unmonitor") {
 		return null;
@@ -165,8 +193,58 @@ export function evaluateEpisodeWatchCountRule(
 	return {
 		ruleId: rule.id,
 		ruleName: rule.name,
-		reason: `Plex watch count ${candidate.watchCount} > ${params.count}`,
+		reason: `Plex watch count ${count} > ${threshold}`,
 		action,
 		...(rule.scanMediaServerAfterDelete === true ? { scanMediaServerAfterDelete: true } : {}),
 	};
+}
+
+export interface EpisodeWatchCountEvidenceEvaluation {
+	state: "true" | "false" | "unknown";
+	match: RuleMatch | null;
+	qualifyingEvidence: EpisodePlexWatchEvidence[];
+}
+
+/**
+ * Evaluate independent Plex episode sources without adding their counts.
+ * Positive-only rows can prove TRUE but can never prove FALSE; FALSE requires
+ * at least one exact row and no partial source whose exact count is unknown.
+ */
+export function evaluateEpisodeWatchCountEvidence(
+	evidence: EpisodePlexWatchEvidence[],
+	rule: EpisodeWatchCountRule,
+): EpisodeWatchCountEvidenceEvaluation {
+	const params = safeJsonParse(rule.parameters) as PlexWatchCountParameters | null;
+	if (
+		params?.operator !== "greater_than" ||
+		typeof params.count !== "number" ||
+		!Number.isFinite(params.count) ||
+		params.count < 0 ||
+		(rule.action !== "delete" && rule.action !== "delete_files" && rule.action !== "unmonitor")
+	) {
+		return { state: "unknown", match: null, qualifyingEvidence: [] };
+	}
+	const threshold = params.count;
+	const qualifyingEvidence = evidence.filter((source) => {
+		const count = source.lowerBound ?? source.watchCount;
+		return Number.isSafeInteger(count) && count >= 0 && count > threshold;
+	});
+	if (qualifyingEvidence.length > 0) {
+		const count = qualifyingEvidence[0]!.lowerBound ?? qualifyingEvidence[0]!.watchCount;
+		return {
+			state: "true",
+			qualifyingEvidence,
+			match: {
+				ruleId: rule.id,
+				ruleName: rule.name,
+				reason: `Plex watch count ${count} > ${threshold}`,
+				action: rule.action as RuleAction,
+				...(rule.scanMediaServerAfterDelete === true ? { scanMediaServerAfterDelete: true } : {}),
+			},
+		};
+	}
+	if (evidence.length === 0 || evidence.some((source) => source.lowerBound !== undefined)) {
+		return { state: "unknown", match: null, qualifyingEvidence: [] };
+	}
+	return { state: "false", match: null, qualifyingEvidence: [] };
 }

@@ -4,6 +4,10 @@ import { plexConnectionFingerprint } from "../../lib/plex/service-instance-finge
 import { registerLibraryCleanupRoutes } from "../library-cleanup.js";
 import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
 
+const authorityMock = vi.hoisted(() => ({
+	positiveEpisodeEvidence: new Map<string, unknown>(),
+}));
+
 vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../lib/plex/plex-authority-service.js")>();
 	const repository = await import("../../lib/plex/plex-evidence-repository.js");
@@ -29,12 +33,22 @@ vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => {
 					where: { userId: input.userId, service: "PLEX", enabled: true },
 				});
 				const instance = instances.find((entry) => entry.id === input.instanceId);
-				return repository.loadInstanceEpisodeEvidence(
+				return await repository.loadInstanceEpisodeEvidence(
 					this.prisma as never,
 					{
 						...input,
 						instance: instance as never,
 					} as never,
+				);
+			}
+
+			async readPositiveEpisodeEvidence(input: { instanceId: string }) {
+				return (
+					authorityMock.positiveEpisodeEvidence.get(input.instanceId) ?? {
+						available: false as const,
+						instanceId: input.instanceId,
+						evidence: { reasonCodes: ["positive_episode_unavailable"] },
+					}
 				);
 			}
 		},
@@ -78,6 +92,30 @@ const plexInstance = {
 	updatedAt: NOW,
 };
 
+function episodeRule(threshold = 2) {
+	return {
+		id: "episode-rule",
+		configId: "cleanup-config",
+		name: "Watched episodes",
+		enabled: true,
+		priority: 0,
+		ruleType: "plex_watch_count",
+		parameters: JSON.stringify({ operator: "greater_than", count: threshold }),
+		serviceFilter: null,
+		instanceFilter: null,
+		excludeTags: null,
+		excludeTitles: null,
+		plexLibraryFilter: null,
+		targetScope: "episode",
+		action: "delete",
+		operator: null,
+		conditions: null,
+		retentionMode: false,
+		createdAt: NOW,
+		updatedAt: NOW,
+	};
+}
+
 let app: FastifyInstance;
 let plexEpisodeCacheFindMany: ReturnType<typeof vi.fn>;
 let plexCacheFindMany: ReturnType<typeof vi.fn>;
@@ -96,10 +134,12 @@ beforeEach(async () => {
 		.mockResolvedValueOnce([
 			{
 				id: "plex-series",
+				instanceId: PLEX_INSTANCE_ID,
 				tmdbId: 12345,
 				mediaType: "series",
 				sectionId: "1",
 				sectionTitle: "TV",
+				ratingKey: "plex-show-12345",
 				lastWatchedAt: NOW,
 				watchCount: 99,
 				watchedByUsers: "[]",
@@ -108,6 +148,10 @@ beforeEach(async () => {
 				collections: "[]",
 				labels: "[]",
 				addedAt: NOW,
+				refreshedAt: NOW,
+				sourceFingerprint: plexConnectionFingerprint(plexInstance),
+				connectionGeneration: 4,
+				identityGeneration: 9,
 			},
 		])
 		.mockResolvedValueOnce([]);
@@ -132,29 +176,7 @@ beforeEach(async () => {
 	]);
 	libraryCleanupConfigFindUnique = vi.fn().mockResolvedValue({
 		id: "cleanup-config",
-		rules: [
-			{
-				id: "episode-rule",
-				configId: "cleanup-config",
-				name: "Watched episodes",
-				enabled: true,
-				priority: 0,
-				ruleType: "plex_watch_count",
-				parameters: JSON.stringify({ operator: "greater_than", count: 2 }),
-				serviceFilter: null,
-				instanceFilter: null,
-				excludeTags: null,
-				excludeTitles: null,
-				plexLibraryFilter: null,
-				targetScope: "episode",
-				action: "delete",
-				operator: null,
-				conditions: null,
-				retentionMode: false,
-				createdAt: NOW,
-				updatedAt: NOW,
-			},
-		],
+		rules: [episodeRule()],
 	});
 
 	app = Fastify({ logger: false });
@@ -224,6 +246,9 @@ beforeEach(async () => {
 										},
 									],
 									roots: [{ sectionKey: "1", domain: "membership", digest: "a".repeat(64) }],
+									targetLedgerVersion: 1,
+									targetCount: 1,
+									targetDigest: "c".repeat(64),
 								}),
 							}
 						: {
@@ -270,6 +295,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	authorityMock.positiveEpisodeEvidence.clear();
 	await app?.close();
 });
 
@@ -336,6 +362,90 @@ describe("POST /library-cleanup/explain episode scope", () => {
 					filteredBy: "evidence_unavailable",
 				},
 			],
+		});
+	});
+
+	it.each([
+		["lower bound 2 greater than 0", 0, true, null],
+		["lower bound 2 greater than 1", 1, true, null],
+		["lower bound 2 not proven greater than 2", 2, false, "evidence_unavailable"],
+		["lower bound 2 not proven greater than 3", 3, false, "evidence_unavailable"],
+	] as const)(
+		"uses positive-only episode semantics for %s",
+		async (_case, threshold, matched, filteredBy) => {
+			libraryCleanupConfigFindUnique.mockResolvedValue({
+				id: "cleanup-config",
+				rules: [episodeRule(threshold)],
+			});
+			authorityMock.positiveEpisodeEvidence.set(PLEX_INSTANCE_ID, {
+				available: true,
+				instanceId: PLEX_INSTANCE_ID,
+				connectionGeneration: 4,
+				identityGeneration: 9,
+				provenance: {
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					parentPlexGenerationId: "parent-v4",
+					parentTargetDigest: "parent-target-digest",
+					episodeGenerationId: "episode-v3",
+					episodeDigest: "episode-digest",
+					publishedAt: NOW.toISOString(),
+				},
+				rows: [
+					{
+						showTmdbId: 12345,
+						seasonNumber: 1,
+						episodeNumber: 2,
+						ratingKey: "plex-episode-202",
+						lowerBound: 2,
+						sourceFingerprint: plexConnectionFingerprint(plexInstance),
+						soleParentTarget: { ratingKey: "plex-show-12345" },
+					},
+				],
+			});
+
+			const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/explain", {
+				body: { instanceId: SONARR_INSTANCE_ID, arrItemId: 101, arrEpisodeId: 202 },
+			});
+
+			expect(response.statusCode).toBe(200);
+			expect(JSON.parse(response.payload)).toMatchObject({
+				results: [{ ruleId: "episode-rule", matched, filteredBy }],
+			});
+		},
+	);
+
+	it("reports an authoritative exact zero as false instead of unavailable", async () => {
+		libraryCleanupConfigFindUnique.mockResolvedValue({
+			id: "cleanup-config",
+			rules: [episodeRule(0)],
+		});
+		plexEpisodeCacheFindMany.mockResolvedValue([
+			{
+				id: "plex-episode-row-202",
+				instanceId: PLEX_INSTANCE_ID,
+				showTmdbId: 12345,
+				seasonNumber: 1,
+				episodeNumber: 2,
+				title: "The Second Episode",
+				watched: false,
+				watchCount: 0,
+				lastWatchedAt: null,
+				watchedByUsers: "[]",
+				ratingKey: "plex-episode-202",
+				refreshedAt: NOW,
+				sourceFingerprint: plexConnectionFingerprint(plexInstance),
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			},
+		]);
+
+		const response = await createInjectAuthenticated(app)("POST", "/library-cleanup/explain", {
+			body: { instanceId: SONARR_INSTANCE_ID, arrItemId: 101, arrEpisodeId: 202 },
+		});
+
+		expect(JSON.parse(response.payload)).toMatchObject({
+			results: [{ ruleId: "episode-rule", matched: false, filteredBy: null }],
 		});
 	});
 

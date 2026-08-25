@@ -3,7 +3,11 @@
 import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient } from "../../prisma.js";
-import { collectPlexCacheLiveEvidence } from "../plex-cache-refresher.js";
+import {
+	canPublishPositivePlexObservation,
+	collectPlexCacheLiveEvidence,
+	collectSettledPlexCacheLiveEvidence,
+} from "../plex-cache-refresher.js";
 import type { PlexClient } from "../plex-client.js";
 
 const silentLog = {
@@ -29,6 +33,258 @@ async function refreshPlexCache(
 }
 
 describe("collectPlexCacheLiveEvidence", () => {
+	function positiveObservationClient(input: {
+		accounts?: Array<{ id: number; name: string }>;
+		librarySections?: Array<{ key: string; title: string; type: "movie" | "show" }>;
+		libraryItems?: Array<{
+			ratingKey: string;
+			title: string;
+			type: "movie" | "show";
+			Guid: Array<{ id: string }>;
+		}>;
+		libraryItemsBySection?: Record<
+			string,
+			Array<{
+				ratingKey: string;
+				title: string;
+				type: "movie" | "show";
+				Guid: Array<{ id: string }>;
+			}>
+		>;
+		history?: unknown[];
+		onDeck?: unknown[] | Error;
+		activities?: Array<{ type: string }>;
+		settlementSections?: Array<{
+			key: string;
+			uuid: string;
+			title: string;
+			type: "movie" | "show";
+			refreshing: boolean;
+			scannedAt: number | null;
+			updatedAt: number;
+		}>;
+	}) {
+		const librarySections = input.librarySections ?? [
+			{ key: "shows", title: "Shows", type: "show" },
+		];
+		const settlementSections = input.settlementSections ?? [
+			{
+				key: "shows",
+				uuid: "shows-uuid",
+				title: "Shows",
+				type: "show" as const,
+				refreshing: false,
+				scannedAt: 1,
+				updatedAt: 1,
+			},
+		];
+		return {
+			getActivities: vi.fn().mockResolvedValue(input.activities ?? []),
+			getLibrarySettlementSections: vi.fn().mockResolvedValue(settlementSections),
+			getAccounts: vi.fn().mockResolvedValue(input.accounts ?? [{ id: 1, name: "Alice" }]),
+			getLibrarySections: vi.fn().mockResolvedValue(librarySections),
+			getLibraryItems: vi.fn().mockImplementation((sectionId: string) =>
+				Promise.resolve(
+					input.libraryItemsBySection?.[sectionId] ??
+						input.libraryItems ?? [
+							{
+								ratingKey: "show-1",
+								title: "Mapped Show",
+								type: "show" as const,
+								Guid: [{ id: "tmdb://42" }, { id: "tvdb://42" }],
+							},
+							{
+								ratingKey: "legacy-movie",
+								title: "Legacy Movie",
+								type: "movie" as const,
+								Guid: [],
+							},
+						],
+				),
+			),
+			getHistory: vi.fn().mockResolvedValue(input.history ?? []),
+			verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+			getOnDeck:
+				input.onDeck instanceof Error
+					? vi.fn().mockRejectedValue(input.onDeck)
+					: vi.fn().mockResolvedValue(input.onDeck ?? []),
+		} as unknown as PlexClient;
+	}
+
+	it("returns a settled positive observation without a snapshot for mapped rows beside an unmappable item", async () => {
+		// Removing the positive-only branch, returning the rows under `snapshot`, or
+		// omitting its bound target/root must make this fail.
+		const result = await collectSettledPlexCacheLiveEvidence(
+			positiveObservationClient({}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result).toMatchObject({
+			kind: "positive-observation",
+			complete: false,
+			observation: {
+				rows: [expect.objectContaining({ tmdbId: 42, ratingKey: "show-1" })],
+				observedTargets: [
+					expect.objectContaining({
+						tmdbId: 42,
+						tvdbId: 42,
+						ratingKey: "show-1",
+						sectionUuid: "shows-uuid",
+					}),
+				],
+				capabilities: [
+					{
+						domain: "episode-parents",
+						field: "membership",
+						semantics: "observed-targets-only",
+						operators: [],
+					},
+				],
+				observedRoots: [
+					expect.objectContaining({ sectionKey: "shows", domain: "episode-parents" }),
+				],
+				partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+				settlement: { sections: [expect.objectContaining({ key: "shows", uuid: "shows-uuid" })] },
+			},
+		});
+		expect("snapshot" in result).toBe(false);
+	});
+
+	it("scopes settled positive evidence to Show parents and assigns its completion time only after settlement", async () => {
+		const librarySections = [
+			{ key: "movies", title: "Movies", type: "movie" as const },
+			{ key: "shows", title: "Shows", type: "show" as const },
+		];
+		const settlementSections = [
+			{
+				key: "movies",
+				uuid: "movies-uuid",
+				title: "Movies",
+				type: "movie" as const,
+				refreshing: false,
+				scannedAt: 1,
+				updatedAt: 1,
+			},
+			{
+				key: "shows",
+				uuid: "shows-uuid",
+				title: "Shows",
+				type: "show" as const,
+				refreshing: false,
+				scannedAt: 1,
+				updatedAt: 1,
+			},
+		];
+		const libraryItemsBySection = {
+			movies: [
+				{
+					ratingKey: "movie-1",
+					title: "Mapped Movie",
+					type: "movie" as const,
+					Guid: [{ id: "tmdb://1" }],
+				},
+				{ ratingKey: "legacy-1", title: "Legacy Movie", type: "movie" as const, Guid: [] },
+			],
+			shows: [
+				{
+					ratingKey: "show-1",
+					title: "Mapped Show",
+					type: "show" as const,
+					Guid: [{ id: "tmdb://42" }, { id: "tvdb://42" }],
+				},
+			],
+		};
+		const input = { librarySections, settlementSections, libraryItemsBySection };
+
+		const unsettled = await collectPlexCacheLiveEvidence(
+			positiveObservationClient(input),
+			"inst-1",
+			silentLog,
+		);
+		expect(unsettled.kind).toBe("positive-observation");
+		expect(unsettled.completedAt).toBeUndefined();
+
+		const settled = await collectSettledPlexCacheLiveEvidence(
+			positiveObservationClient(input),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(settled).toMatchObject({ kind: "positive-observation", completedAt: expect.any(Date) });
+		if (settled.kind !== "positive-observation") throw new Error("Expected positive observation");
+		expect(settled.observation.rows.map((row) => row.ratingKey)).toEqual(["show-1"]);
+		expect(settled.observation.observedTargets.map((target) => target.ratingKey)).toEqual([
+			"show-1",
+		]);
+		expect(settled.observation.observedRoots.map((root) => root.sectionKey)).toEqual(["shows"]);
+		expect(settled.observation.settlement?.sections.map((section) => section.key)).toEqual([
+			"movies",
+			"shows",
+		]);
+	});
+
+	it.each([
+		"currentItemsWithoutTmdbMetadata",
+		"currentLibraryItemsWithoutRatingKeys",
+		"historyItemsWithoutUsableMediaKey",
+		"currentHistoryItemsWithoutMappedMetadata",
+		"historyItemsWithUnknownAccounts",
+		"onDeckItemsWithoutMappedMetadata",
+		"onDeckFetchFailures",
+	] as const)("allows only the declared positive-only reason %s", (reason) => {
+		expect(canPublishPositivePlexObservation({ [reason]: 1 })).toBe(true);
+	});
+
+	it("blocks unknown partial reasons by default", () => {
+		// Extending collection with a new incomplete reason must not silently grant
+		// observed-target authority before its policy is explicitly reviewed.
+		expect(canPublishPositivePlexObservation({ futureReason: 1 })).toBe(false);
+	});
+
+	it.each([
+		["no user accounts", positiveObservationClient({ accounts: [] })],
+		["no media libraries", positiveObservationClient({ librarySections: [] })],
+		[
+			"a library snapshot failure",
+			(() => {
+				const client = positiveObservationClient({});
+				vi.mocked(client.getLibraryItems).mockRejectedValue(new Error("section unavailable"));
+				return client;
+			})(),
+		],
+	] as const)("keeps partial evidence unpublished for %s", async (_caseName, client) => {
+		const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result.kind).toBe("unpublished");
+	});
+
+	it.each([
+		[
+			"an active scan",
+			positiveObservationClient({
+				settlementSections: [
+					{
+						key: "shows",
+						uuid: "shows-uuid",
+						title: "Shows",
+						type: "show",
+						refreshing: true,
+						scannedAt: 1,
+						updatedAt: 1,
+					},
+				],
+			}),
+		],
+		[
+			"metadata activity",
+			positiveObservationClient({ activities: [{ type: "library.update.item.metadata" }] }),
+		],
+	] as const)("keeps a positive observation unpublished during %s", async (_caseName, client) => {
+		const result = await collectSettledPlexCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result.kind).toBe("unpublished");
+	});
 	it("collects a complete large-library snapshot without publishing", async () => {
 		// Stands in for "manual smoke on a Docker + SQLite deployment with a large
 		// Plex library" — runs the full refreshPlexCache path with >1,000 items

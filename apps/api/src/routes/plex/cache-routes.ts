@@ -11,14 +11,14 @@ import { z } from "zod";
 import { requireEnabledInstance } from "../../lib/arr/instance-helpers.js";
 import { AppValidationError } from "../../lib/errors.js";
 import {
-	getPublishedEpisodeGenerationObservation,
-	loadUserGenerationObservations,
-} from "../../lib/plex/plex-persisted-observation-repository.js";
-import {
 	isCurrentAuthoritativePlexEvidence,
 	PlexAuthorityService,
 } from "../../lib/plex/plex-authority-service.js";
 import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
+import {
+	getPublishedEpisodeGenerationObservation,
+	loadUserGenerationObservations,
+} from "../../lib/plex/plex-persisted-observation-repository.js";
 import { refreshOwnedPlexCache } from "../../lib/plex/plex-refresh-orchestration.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { buildCacheHealthItems } from "./lib/cache-health-helpers.js";
@@ -90,12 +90,28 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 				log: request.log,
 			});
 
-			if (!result.complete || !result.completedAt) {
+			const positiveObservation =
+				result.kind === "positive-observation" && result.completedAt && result.observation
+					? result.observation
+					: null;
+			if (!positiveObservation && (!result.complete || !result.completedAt)) {
 				return reply.status(503).send({
 					success: false,
 					upserted: result.upserted,
 					errors: result.errors,
 					error: result.errorMessages[0] ?? "Plex cache refresh did not publish a generation",
+				});
+			}
+			if (positiveObservation) {
+				return reply.send({
+					success: true,
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					complete: false,
+					observedItemCount: result.upserted,
+					partialReasons: positiveObservation.partialReasons,
+					upserted: result.upserted,
+					errors: result.errors,
 				});
 			}
 
