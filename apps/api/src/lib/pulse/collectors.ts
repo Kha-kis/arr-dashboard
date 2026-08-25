@@ -29,11 +29,13 @@ import {
 } from "../arr/client-helpers.js";
 import { QuiApiError, QuiInstanceUnreachableError } from "../errors.js";
 import { createJellyfinClient } from "../jellyfin/jellyfin-client.js";
+import { createPlexClient } from "../plex/plex-client.js";
+import { decodePlexGenerationMetadata } from "../plex/plex-generation-metadata.js";
+import { decodePlexPositiveEpisodeGenerationMetadata } from "../plex/plex-positive-episode-generation-metadata.js";
 import {
 	getPublishedEpisodeGenerationObservation,
 	loadUserGenerationObservations,
 } from "../plex/plex-persisted-observation-repository.js";
-import { createPlexClient } from "../plex/plex-client.js";
 import { createQuiClient } from "../qui/client-factory.js";
 import { listQuiInstances } from "../qui/instance-helpers.js";
 import {
@@ -685,6 +687,29 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				(evidence?.publicationLevel === "positive-only" || evidence?.completeness === "partial")
 			) {
 				effectiveResult = "partial";
+				const metadata = decodePlexGenerationMetadata(status.generationMetadata);
+				if (status.cacheType === "plex" && metadata.ok && metadata.metadata.version === 4) {
+					effectiveError = [
+						"publicationLevel: positive-only",
+						`observedItemCount: ${metadata.metadata.itemCount}`,
+						`partialReasons: ${metadata.metadata.partialReasons
+							.map((reason) => `${reason.code}=${reason.count}`)
+							.join(", ")}`,
+					].join("; ");
+				} else if (status.cacheType === "plex_episode") {
+					const episodeMetadata = decodePlexPositiveEpisodeGenerationMetadata(
+						status.generationMetadata,
+					);
+					if (episodeMetadata.ok) {
+						effectiveError = [
+							"publicationLevel: positive-only",
+							`observedItemCount: ${episodeMetadata.metadata.itemCount}`,
+							`partialReasons: ${episodeMetadata.metadata.partialReasons
+								.map((reason) => `${reason.code}=${reason.count}`)
+								.join(", ")}`,
+						].join("; ");
+					}
+				}
 			} else if (status.lastResult === "success" && !evidence) {
 				effectiveResult = "error";
 				effectiveError = "Published Plex evidence is unavailable (missing_status)";

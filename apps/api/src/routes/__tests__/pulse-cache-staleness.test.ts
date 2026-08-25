@@ -214,6 +214,137 @@ describe("GET /pulse — cache.refresh action emission", () => {
 		});
 	});
 
+	it("names positive-only coverage and observed count without implying an exact universe", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "positive-diagnostic",
+				itemCount: 7,
+				lastRefreshedAt: new Date(),
+				generationMetadata: JSON.stringify({
+					version: 4,
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					itemCount: 7,
+					canonicalizationVersion: 1,
+					sections: [
+						{
+							key: "shows",
+							uuid: "shows-uuid",
+							title: "Shows",
+							type: "show",
+							refreshing: false,
+							scannedAt: 1,
+							updatedAt: 1,
+						},
+					],
+					observedRoots: [
+						{ sectionKey: "shows", domain: "episode-parents", digest: "a".repeat(64) },
+					],
+					capabilities: [
+						{
+							domain: "episode-parents",
+							field: "membership",
+							semantics: "observed-targets-only",
+							operators: [],
+						},
+					],
+					targetLedgerVersion: 1,
+					targetCount: 1,
+					targetDigest: "b".repeat(64),
+					partialReasons: [
+						{ code: "currentItemsWithoutTmdbMetadata", count: 2 },
+						{ code: "onDeckFetchFailures", count: 1 },
+					],
+				}),
+			}),
+		];
+		evidenceMocks.loadUserGenerationObservations.mockResolvedValueOnce([
+			{
+				available: true,
+				instanceId: "inst-1",
+				metadata: {
+					version: 4,
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					partialReasons: [
+						{ code: "currentItemsWithoutTmdbMetadata", count: 2 },
+						{ code: "onDeckFetchFailures", count: 1 },
+					],
+				},
+				evidence: {
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					reasonCodes: [],
+				},
+			},
+		]);
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find((candidate: { id: string }) =>
+			candidate.id.includes("positive-diagnostic"),
+		);
+
+		expect(item).toMatchObject({
+			id: "cache-partial-positive-diagnostic",
+			detail:
+				"publicationLevel: positive-only; observedItemCount: 7; partialReasons: currentItemsWithoutTmdbMetadata=2, onDeckFetchFailures=1",
+		});
+		expect(item.detail).not.toContain("itemCount:");
+	});
+
+	it("names positive-only episode coverage and observed count without an exact denominator", async () => {
+		cacheStatuses = [
+			makeRow({
+				id: "positive-episode-diagnostic",
+				cacheType: "plex_episode",
+				itemCount: 1,
+				lastRefreshedAt: new Date(),
+				generationMetadata: JSON.stringify({
+					version: 3,
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					itemCount: 1,
+					canonicalizationVersion: 1,
+					capability: {
+						domain: "episodes",
+						field: "watchCount",
+						semantics: "lower-bound",
+						operator: "greater_than",
+					},
+					parentPlexGenerationId: "parent-v4",
+					parentMetadataVersion: 4,
+					parentPublicationLevel: "positive-only",
+					parentTargetDigest: "a".repeat(64),
+					episodeDigest: "b".repeat(64),
+					partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+					connectionGeneration: 1,
+					identityGeneration: 1,
+				}),
+			}),
+		];
+		evidenceMocks.getPublishedEpisodeGenerationObservation.mockResolvedValueOnce({
+			available: true,
+			instanceId: "inst-1",
+			evidence: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				reasonCodes: ["latest_attempt_partial"],
+			},
+		});
+
+		const body = JSON.parse((await injectAuthenticated("GET", "/pulse")).payload);
+		const item = body.items.find((candidate: { id: string }) =>
+			candidate.id.includes("positive-episode-diagnostic"),
+		);
+
+		expect(item).toMatchObject({
+			id: "cache-partial-positive-episode-diagnostic",
+			detail:
+				"publicationLevel: positive-only; observedItemCount: 1; partialReasons: currentItemsWithoutTmdbMetadata=1",
+		});
+		expect(item.detail).not.toContain("itemCount:");
+	});
+
 	it("reports an opaque active Plex attempt as refreshing without exposing its token", async () => {
 		const token = "in_progress:do-not-expose";
 		cacheStatuses = [

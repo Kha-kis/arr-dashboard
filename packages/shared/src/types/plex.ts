@@ -130,6 +130,39 @@ export interface PlexGenerationMetadataV3 {
 	targetCount?: number;
 	targetDigest?: string;
 }
+export type PlexPartialReasonCode =
+	| "currentItemsWithoutTmdbMetadata"
+	| "currentLibraryItemsWithoutRatingKeys"
+	| "historyItemsWithoutUsableMediaKey"
+	| "currentHistoryItemsWithoutMappedMetadata"
+	| "historyItemsWithUnknownAccounts"
+	| "onDeckItemsWithoutMappedMetadata"
+	| "onDeckFetchFailures";
+export interface PlexPartialReason {
+	code: PlexPartialReasonCode;
+	count: number;
+}
+export interface PlexPositiveGenerationMetadataV4 {
+	version: 4;
+	publicationLevel: "positive-only";
+	completeness: "partial";
+	itemCount: number;
+	canonicalizationVersion: 1;
+	sections: PlexGenerationSectionV3[];
+	observedRoots: PlexGenerationDomainRoot[];
+	capabilities: readonly [
+		{
+			domain: "episode-parents";
+			field: "membership";
+			semantics: "observed-targets-only";
+			operators: readonly [];
+		},
+	];
+	targetLedgerVersion: 1;
+	targetCount: number;
+	targetDigest: string;
+	partialReasons: readonly PlexPartialReason[];
+}
 
 // ============================================================================
 // Watch Enrichment (F1)
@@ -337,6 +370,8 @@ export interface PlexAccountsResponse {
 // ============================================================================
 
 export interface CacheHealthItem {
+	/** Partial positive-only generations expose this bounded observed count, never an exact universe count. */
+	observedItemCount?: number;
 	instanceId: string;
 	instanceName: string;
 	cacheType:

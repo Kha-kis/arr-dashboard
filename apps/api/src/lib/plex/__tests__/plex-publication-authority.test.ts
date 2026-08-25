@@ -5,6 +5,7 @@ import type { OwnedProviderPublicationSnapshot } from "../../services/provider-i
 import { refreshPlexCache } from "../plex-cache-refresher.js";
 import type { PlexClient } from "../plex-client.js";
 import { refreshPlexEpisodeCache } from "../plex-episode-cache-refresher.js";
+import { decodePlexGenerationMetadata } from "../plex-generation-metadata.js";
 
 const authority = vi.hoisted(() => ({
 	client: undefined as PlexClient | undefined,
@@ -146,6 +147,64 @@ function dataClient(itemCount = 1): PlexClient {
 	} as unknown as PlexClient;
 }
 
+function positiveDataClient(): PlexClient {
+	const settlementSections = [
+		{
+			key: "movies",
+			uuid: "movies-uuid",
+			title: "Movies",
+			type: "movie",
+			refreshing: false,
+			scannedAt: 1_777_000_000,
+			updatedAt: 1_777_000_100,
+		},
+		{
+			key: "shows",
+			uuid: "shows-uuid",
+			title: "Shows",
+			type: "show",
+			refreshing: false,
+			scannedAt: 1_777_000_000,
+			updatedAt: 1_777_000_100,
+		},
+	];
+	return {
+		getActivities: vi.fn().mockResolvedValue([]),
+		getLibrarySettlementSections: vi.fn().mockResolvedValue(settlementSections),
+		getAccounts: vi.fn(async () => {
+			authority.events.push("collect");
+			return [{ id: 1, name: "Alice" }];
+		}),
+		getLibrarySections: vi.fn().mockResolvedValue([
+			{ key: "movies", title: "Movies", type: "movie" },
+			{ key: "shows", title: "Shows", type: "show" },
+		]),
+		getLibraryItems: vi.fn(async (sectionId: string) =>
+			sectionId === "movies"
+				? [
+						{
+							ratingKey: "movie-1",
+							title: "Mapped Movie",
+							type: "movie",
+							Guid: [{ id: "tmdb://1" }],
+						},
+						{ ratingKey: "legacy-1", title: "Legacy Movie", type: "movie", Guid: [] },
+					]
+				: [
+						{
+							ratingKey: "show-1",
+							title: "Mapped Show",
+							type: "show",
+							Guid: [{ id: "tmdb://42" }, { id: "tvdb://42" }],
+						},
+					],
+		),
+		getHistory: vi.fn().mockResolvedValue([]),
+		verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+		getOnDeck: vi.fn().mockResolvedValue([]),
+	} as unknown as PlexClient;
+}
+
 function prisma(finalPredicateMatches = true, publicationClaimMatches = true) {
 	const rows: unknown[] = [];
 	const targetRows: unknown[] = [];
@@ -211,7 +270,12 @@ function prisma(finalPredicateMatches = true, publicationClaimMatches = true) {
 			}),
 			updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
 				authority.events.push(data.lastAttemptResult === "success" ? "status" : "failure");
-				if (data.lastAttemptResult === "success" && claimMatches) Object.assign(status, data);
+				if (
+					(data.lastAttemptResult === "success" || data.lastAttemptResult === "partial") &&
+					claimMatches
+				) {
+					Object.assign(status, data);
+				}
 				return { count: claimMatches ? 1 : 0 };
 			}),
 		},
@@ -339,6 +403,73 @@ describe("Plex publication authority", () => {
 		expect(metadata).toHaveProperty("roots");
 		expect(metadata).not.toHaveProperty("targets");
 		expect(metadata).not.toHaveProperty("ratingKeys");
+	});
+
+	it("atomically replaces V3 cache and ledger state with settled V4 positive-only evidence", async () => {
+		const fixture = prisma();
+		await expect(
+			refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log }),
+		).resolves.toMatchObject({ kind: "authoritative-snapshot", complete: true, upserted: 1 });
+		const previousGeneration = fixture.status.generationId;
+		authority.client = positiveDataClient();
+
+		const result = await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+
+		expect(result).toMatchObject({
+			kind: "positive-observation",
+			complete: false,
+			upserted: 1,
+			completedAt: expect.any(Date),
+		});
+		expect(fixture.status).toMatchObject({
+			lastResult: "success",
+			lastErrorMessage: null,
+			lastAttemptResult: "partial",
+			lastAttemptErrorMessage: null,
+			itemCount: 1,
+		});
+		expect(fixture.status.generationId).not.toBe(previousGeneration);
+		expect(fixture.rows).toEqual([
+			expect.objectContaining({ mediaType: "series", ratingKey: "show-1" }),
+		]);
+		expect(fixture.targetRows).toEqual([
+			expect.objectContaining({
+				generationId: fixture.status.generationId,
+				mediaType: "series",
+				ratingKey: "show-1",
+			}),
+		]);
+		const decoded = decodePlexGenerationMetadata(fixture.status.generationMetadata as string);
+		expect(decoded).toMatchObject({
+			ok: true,
+			metadata: {
+				version: 4,
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				itemCount: 1,
+				targetCount: 1,
+			},
+		});
+	});
+
+	it("rolls back V4 rows, ledger, metadata, and status when positive target replacement fails", async () => {
+		const fixture = prisma();
+		await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+		const previous = structuredClone({
+			rows: fixture.rows,
+			targetRows: fixture.targetRows,
+			status: fixture.status,
+		});
+		fixture.setTargetWriteError(new Error("target write failed"));
+		authority.client = positiveDataClient();
+
+		await expect(
+			refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log }),
+		).resolves.toMatchObject({ kind: "unpublished", complete: false });
+
+		expect(fixture.rows).toEqual(previous.rows);
+		expect(fixture.targetRows).toEqual(previous.targetRows);
+		expect(fixture.status).toMatchObject(previous.status);
 	});
 
 	it("does not publish while a supported section scan is active", async () => {

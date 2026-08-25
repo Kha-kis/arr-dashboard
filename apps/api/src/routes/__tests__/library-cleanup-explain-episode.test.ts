@@ -29,13 +29,21 @@ vi.mock("../../lib/plex/plex-authority-service.js", async (importOriginal) => {
 					where: { userId: input.userId, service: "PLEX", enabled: true },
 				});
 				const instance = instances.find((entry) => entry.id === input.instanceId);
-				return repository.loadInstanceEpisodeEvidence(
+				return await repository.loadInstanceEpisodeEvidence(
 					this.prisma as never,
 					{
 						...input,
 						instance: instance as never,
 					} as never,
 				);
+			}
+
+			async readPositiveEpisodeEvidence(input: { instanceId: string }) {
+				return {
+					available: false as const,
+					instanceId: input.instanceId,
+					evidence: { reasonCodes: ["positive_episode_unavailable"] },
+				};
 			}
 		},
 	};
@@ -96,10 +104,12 @@ beforeEach(async () => {
 		.mockResolvedValueOnce([
 			{
 				id: "plex-series",
+				instanceId: PLEX_INSTANCE_ID,
 				tmdbId: 12345,
 				mediaType: "series",
 				sectionId: "1",
 				sectionTitle: "TV",
+				ratingKey: "plex-show-12345",
 				lastWatchedAt: NOW,
 				watchCount: 99,
 				watchedByUsers: "[]",
@@ -108,6 +118,10 @@ beforeEach(async () => {
 				collections: "[]",
 				labels: "[]",
 				addedAt: NOW,
+				refreshedAt: NOW,
+				sourceFingerprint: plexConnectionFingerprint(plexInstance),
+				connectionGeneration: 4,
+				identityGeneration: 9,
 			},
 		])
 		.mockResolvedValueOnce([]);
@@ -224,6 +238,9 @@ beforeEach(async () => {
 										},
 									],
 									roots: [{ sectionKey: "1", domain: "membership", digest: "a".repeat(64) }],
+									targetLedgerVersion: 1,
+									targetCount: 1,
+									targetDigest: "c".repeat(64),
 								}),
 							}
 						: {

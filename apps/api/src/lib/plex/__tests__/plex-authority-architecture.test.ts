@@ -13,6 +13,9 @@ const directTargetLedgerAccessAllowlist = new Set([
 	path.normalize("src/lib/plex/plex-authority-service.ts"),
 	path.normalize("src/lib/plex/plex-generation-target-ledger.ts"),
 ]);
+const positiveV4ConsumerAllowlist = new Set([
+	path.normalize("src/lib/plex/plex-authority-service.ts"),
+]);
 const fixedPointMutationConsumers = [
 	path.normalize("src/lib/label-sync/dest-writers/plex-writer.ts"),
 	path.normalize("src/routes/plex/collection-routes.ts"),
@@ -46,6 +49,14 @@ function findPlexAuthorityViolations(relative: string, source: string): string[]
 		!rawObservationImportAllowlist.has(normalized)
 	) {
 		violations.push("imports the raw persisted-observation repository");
+	}
+	if (
+		/import\s*\{[^}]*\bloadPositiveEpisode(?:Parent)?Evidence\b[^}]*\}\s*from\s+["'][^"']*plex-evidence-repository\.js["']/.test(
+			source,
+		) &&
+		!positiveV4ConsumerAllowlist.has(normalized)
+	) {
+		violations.push("bypasses the explicit positive V4 authority reader");
 	}
 	if (
 		/\.updateMetadataTags\s*\(/.test(source) &&
@@ -91,6 +102,18 @@ describe("Plex authority architecture", () => {
 				'import { loadInstanceEvidence } from "../../lib/plex/plex-evidence-repository.js";',
 			),
 		).toContain("imports the raw persisted-observation repository");
+		expect(
+			findPlexAuthorityViolations(
+				"src/lib/library-cleanup/example.ts",
+				'import { loadPositiveEpisodeParentEvidence } from "../plex/plex-evidence-repository.js";',
+			),
+		).toContain("bypasses the explicit positive V4 authority reader");
+		expect(
+			findPlexAuthorityViolations(
+				"src/lib/library-cleanup/example.ts",
+				'import { loadPositiveEpisodeEvidence } from "../plex/plex-evidence-repository.js";',
+			),
+		).toContain("bypasses the explicit positive V4 authority reader");
 		expect(
 			findPlexAuthorityViolations(
 				"src/routes/plex/example.ts",

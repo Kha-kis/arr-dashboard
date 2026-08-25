@@ -1,10 +1,13 @@
 import type { FastifyBaseLogger } from "fastify";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrismaClientInstance } from "../prisma.js";
 import type { PlexClient } from "./plex-client.js";
 import { refreshPlexEpisodeCache as refreshGuardedPlexEpisodeCache } from "./plex-episode-cache-refresher.js";
 
-const publication = vi.hoisted(() => ({ client: undefined as PlexClient | undefined }));
+const publication = vi.hoisted(() => ({
+	client: undefined as PlexClient | undefined,
+	positiveParents: undefined as Array<Record<string, unknown>> | undefined,
+}));
 
 vi.mock("./plex-client.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("./plex-client.js")>();
@@ -75,6 +78,12 @@ vi.mock("./plex-authority-service.js", async (importOriginal) => {
 					}>,
 				) => void | Promise<void>;
 			}) {
+				if (publication.positiveParents) {
+					return {
+						available: false,
+						evidence: { publicationLevel: "unavailable", completeness: "unknown" },
+					};
+				}
 				const scanned = await repository.scanInstanceEpisodeParentPolicyEvidence(
 					this.prisma,
 					input,
@@ -96,6 +105,21 @@ vi.mock("./plex-authority-service.js", async (importOriginal) => {
 						})),
 				);
 				return scanned;
+			}
+
+			async readPositiveEpisodeParents() {
+				if (!publication.positiveParents) {
+					return {
+						available: false,
+						evidence: { publicationLevel: "unavailable", completeness: "unknown" },
+					};
+				}
+				return (
+					publication.positiveParents.shift() ?? {
+						available: false,
+						evidence: { publicationLevel: "unavailable", completeness: "unknown" },
+					}
+				);
 			}
 		},
 	};
@@ -296,6 +320,280 @@ function prisma(
 }
 
 describe("refreshPlexEpisodeCache authoritative publication", () => {
+	beforeEach(() => {
+		publication.positiveParents = undefined;
+	});
+
+	function positiveParent(overrides: Record<string, unknown> = {}) {
+		const target = {
+			instanceId: "plex-1",
+			generationId: "parent-positive-generation-1",
+			sectionId: "shows",
+			sectionUuid: "shows-uuid",
+			mediaType: "series" as const,
+			tmdbId: 42,
+			tvdbId: 84,
+			ratingKey: "show-1",
+		};
+		return {
+			available: true,
+			instanceId: "plex-1",
+			generationId: "parent-positive-generation-1",
+			connectionGeneration: 7,
+			identityGeneration: 11,
+			capability: {
+				domain: "episode-parents",
+				field: "membership",
+				semantics: "observed-targets-only",
+				operators: [],
+			},
+			partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+			provenance: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				parentTargetDigest: "a".repeat(64),
+				parentTargetCount: 1,
+			},
+			rows: [{ instanceId: "plex-1", tmdbId: 42, sectionId: "shows", ratingKey: "show-1" }],
+			targets: [target],
+			evidence: { publicationLevel: "positive-only", completeness: "partial" },
+			...overrides,
+		};
+	}
+
+	it("publishes settled V4 parent evidence as a partial V3 episode generation without history", async () => {
+		const fixture = prisma();
+		const getHistory = vi.fn();
+		publication.positiveParents = [positiveParent(), positiveParent(), positiveParent()];
+
+		const result = await refreshPlexEpisodeCache(
+			client({
+				getHistory,
+				getEpisodes: vi
+					.fn()
+					.mockResolvedValue([episode("episode-positive", 2), episode("episode-zero", 0)]),
+			} as Partial<PlexClient>),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({
+			publicationLevel: "positive-only",
+			complete: false,
+			errors: 0,
+			upserted: 1,
+		});
+		expect(getHistory).not.toHaveBeenCalled();
+		expect(fixture.published).toEqual([
+			expect.objectContaining({ ratingKey: "episode-positive", watchCount: 2 }),
+		]);
+		const metadata = JSON.parse(
+			fixture.tx.cacheRefreshStatus.updateMany.mock.calls[0]![0].data.generationMetadata,
+		);
+		expect(metadata).toMatchObject({
+			version: 3,
+			publicationLevel: "positive-only",
+			completeness: "partial",
+			parentMetadataVersion: 4,
+			parentTargetDigest: "a".repeat(64),
+			capability: {
+				domain: "episodes",
+				field: "watchCount",
+				semantics: "lower-bound",
+				operator: "greater_than",
+			},
+		});
+		expect(fixture.tx.cacheRefreshStatus.updateMany).toHaveBeenCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ lastResult: "success", lastAttemptResult: "partial" }),
+			}),
+		);
+	});
+
+	it("queries only parents explicitly observed by V4 and leaves ledger-only parents unknown", async () => {
+		const fixture = prisma();
+		const observed = positiveParent();
+		const ledgerOnlyTarget = {
+			...observed.targets[0]!,
+			tmdbId: 84,
+			tvdbId: 168,
+			ratingKey: "show-ledger-only",
+		};
+		publication.positiveParents = [
+			positiveParent({ targets: [...observed.targets, ledgerOnlyTarget] }),
+			positiveParent({ targets: [...observed.targets, ledgerOnlyTarget] }),
+			positiveParent({ targets: [...observed.targets, ledgerOnlyTarget] }),
+		];
+		const getEpisodes = vi.fn().mockResolvedValue([episode("episode-positive", 2)]);
+
+		const result = await refreshPlexEpisodeCache(
+			client({ getEpisodes } as Partial<PlexClient>),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ publicationLevel: "positive-only", upserted: 1 });
+		expect(getEpisodes).toHaveBeenCalledTimes(2);
+		expect(getEpisodes).toHaveBeenNthCalledWith(1, "show-1");
+		expect(getEpisodes).toHaveBeenNthCalledWith(2, "show-1");
+		expect(getEpisodes).not.toHaveBeenCalledWith("show-ledger-only");
+	});
+
+	it("treats duplicate ledger parents as unknown even when stored parent rows are collapsed", async () => {
+		const fixture = prisma();
+		const duplicateTargets = [
+			{
+				instanceId: "plex-1",
+				generationId: "parent-positive-generation-1",
+				sectionId: "shows",
+				sectionUuid: "shows-uuid",
+				mediaType: "series" as const,
+				tmdbId: 42,
+				tvdbId: 84,
+				ratingKey: "show-copy-a",
+			},
+			{
+				instanceId: "plex-1",
+				generationId: "parent-positive-generation-1",
+				sectionId: "shows-4k",
+				sectionUuid: "shows-4k-uuid",
+				mediaType: "series" as const,
+				tmdbId: 42,
+				tvdbId: 84,
+				ratingKey: "show-copy-b",
+			},
+		];
+		publication.positiveParents = [
+			positiveParent({ targets: duplicateTargets }),
+			positiveParent({ targets: duplicateTargets }),
+			positiveParent({ targets: duplicateTargets }),
+		];
+		const getEpisodes = vi.fn().mockResolvedValue([episode("episode-positive", 2)]);
+
+		const result = await refreshPlexEpisodeCache(
+			client({ getEpisodes }),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(getEpisodes).not.toHaveBeenCalled();
+		expect(result).toMatchObject({
+			publicationLevel: "positive-only",
+			upserted: 0,
+			partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+		});
+		expect(fixture.published).toEqual([]);
+	});
+
+	it("keeps the prior episode generation when the positive parent target digest changes", async () => {
+		const fixture = prisma();
+		publication.positiveParents = [
+			positiveParent(),
+			positiveParent({
+				provenance: {
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					parentTargetDigest: "b".repeat(64),
+					parentTargetCount: 1,
+				},
+			}),
+		];
+
+		const result = await refreshPlexEpisodeCache(
+			client({ getEpisodes: vi.fn().mockResolvedValue([episode("episode-positive", 2)]) }),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
+		expect(result.errorMessages.join(" ")).toMatch(/positive parent Plex generation changed/i);
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("keeps the prior episode generation when the positive row digest changes", async () => {
+		const fixture = prisma();
+		publication.positiveParents = [positiveParent(), positiveParent(), positiveParent()];
+		const getEpisodes = vi
+			.fn()
+			.mockResolvedValueOnce([episode("episode-positive", 2)])
+			.mockResolvedValueOnce([episode("episode-positive", 3)]);
+
+		const result = await refreshPlexEpisodeCache(
+			client({ getEpisodes } as Partial<PlexClient>),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0, errors: 1 });
+		expect(result.errorMessages.join(" ")).toMatch(/positive Plex episode evidence changed/i);
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("does not replace rows when the positive episode publication CAS is superseded", async () => {
+		const fixture = prisma();
+		fixture.tx.cacheRefreshStatus.updateMany.mockResolvedValue({ count: 0 });
+		publication.positiveParents = [positiveParent(), positiveParent(), positiveParent()];
+
+		const result = await refreshPlexEpisodeCache(
+			client({ getEpisodes: vi.fn().mockResolvedValue([episode("episode-positive", 2)]) }),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ superseded: true, errors: 0, upserted: 0 });
+		expect(fixture.tx.plexEpisodeCache.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("rolls back positive episode row replacement when the atomic write fails", async () => {
+		const fixture = prisma();
+		const storedRows: Array<{ ratingKey: string }> = [{ ratingKey: "prior-episode" }];
+		fixture.tx.plexEpisodeCache.deleteMany.mockImplementation(async () => {
+			storedRows.splice(0, storedRows.length);
+			return { count: 1 };
+		});
+		fixture.tx.plexEpisodeCache.createMany.mockRejectedValue(new Error("episode write failed"));
+		fixture.db.$transaction = vi.fn(async (callback) => {
+			const before = [...storedRows];
+			try {
+				return await callback(fixture.tx);
+			} catch (error) {
+				storedRows.splice(0, storedRows.length, ...before);
+				throw error;
+			}
+		});
+		publication.positiveParents = [positiveParent(), positiveParent(), positiveParent()];
+
+		const result = await refreshPlexEpisodeCache(
+			client({ getEpisodes: vi.fn().mockResolvedValue([episode("episode-positive", 2)]) }),
+			fixture.db,
+			"plex-1",
+			log,
+			"fingerprint-1",
+			undefined,
+		);
+
+		expect(result).toMatchObject({ complete: false, errors: 1, upserted: 0 });
+		expect(storedRows).toEqual([{ ratingKey: "prior-episode" }]);
+	});
+
 	it("uses stable parent authority timestamps within one fixture", () => {
 		vi.useFakeTimers();
 		try {

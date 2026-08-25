@@ -1,16 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
+import { verifiedIdentityData } from "../../services/service-identity-lifecycle.js";
+import { createPositivePlexEpisodeDigest } from "../plex-episode-live-collector.js";
 import {
 	getPublishedEpisodeGenerationObservation,
 	loadInstanceEpisodeEvidence,
 	loadInstanceEvidence,
 	loadInstanceMutationEvidence,
 	loadInstanceSelectedEvidence,
-	scanInstancePolicyEvidence,
-	scanInstanceEpisodeParentPolicyEvidence,
-	scanUserPolicyEvidence,
+	loadPositiveEpisodeEvidence,
 	loadUserEvidence,
+	scanInstanceEpisodeParentPolicyEvidence,
+	scanInstancePolicyEvidence,
+	scanUserPolicyEvidence,
 } from "../plex-evidence-repository.js";
-import { verifiedIdentityData } from "../../services/service-identity-lifecycle.js";
 
 const now = new Date("2026-08-20T14:00:00.000Z");
 const sections = [
@@ -34,6 +36,40 @@ function v3Metadata(itemCount = 1) {
 		canonicalizationVersion: 1,
 		sections,
 		roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+	});
+}
+
+function v4Metadata(itemCount = 1) {
+	return JSON.stringify({
+		version: 4,
+		publicationLevel: "positive-only",
+		completeness: "partial",
+		itemCount,
+		canonicalizationVersion: 1,
+		sections: [
+			{
+				key: "shows",
+				uuid: "shows-uuid",
+				title: "Shows",
+				type: "show",
+				refreshing: false,
+				scannedAt: 1_777_000_000,
+				updatedAt: 1_777_000_100,
+			},
+		],
+		observedRoots: [{ sectionKey: "shows", domain: "episode-parents", digest: "a".repeat(64) }],
+		capabilities: [
+			{
+				domain: "episode-parents",
+				field: "membership",
+				semantics: "observed-targets-only",
+				operators: [],
+			},
+		],
+		targetLedgerVersion: 1,
+		targetCount: 1,
+		targetDigest: "b".repeat(64),
+		partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
 	});
 }
 
@@ -142,6 +178,45 @@ function episodeRow(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function positiveEpisodeMetadata(rows: ReturnType<typeof episodeRow>[]) {
+	const episodeDigest = createPositivePlexEpisodeDigest(
+		[
+			{
+				instanceId: "plex-1",
+				generationId: "generation-v4",
+				showTmdbId: 42,
+				sectionId: "shows",
+				sectionUuid: "shows-uuid",
+				mediaType: "series",
+				tvdbId: null,
+				ratingKey: "show-42",
+			},
+		],
+		rows,
+	);
+	return JSON.stringify({
+		version: 3,
+		publicationLevel: "positive-only",
+		completeness: "partial",
+		itemCount: rows.length,
+		canonicalizationVersion: 1,
+		capability: {
+			domain: "episodes",
+			field: "watchCount",
+			semantics: "lower-bound",
+			operator: "greater_than",
+		},
+		parentPlexGenerationId: "generation-v4",
+		parentMetadataVersion: 4,
+		parentPublicationLevel: "positive-only",
+		parentTargetDigest: "b".repeat(64),
+		episodeDigest,
+		partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+		connectionGeneration: 4,
+		identityGeneration: 9,
+	});
+}
+
 function fixture(
 	options: {
 		instance?: ReturnType<typeof instance> | null;
@@ -215,6 +290,55 @@ describe("Plex evidence repository", () => {
 				reasonCodes: [],
 			},
 		});
+	});
+
+	it("withholds V4 rows from the generic exact reader", async () => {
+		const positiveStatus = status({
+			generationMetadata: v4Metadata(),
+			lastAttemptResult: "partial",
+		});
+
+		const result = await load(
+			fixture({
+				statuses: [positiveStatus, { ...positiveStatus }],
+				rows: [
+					row({
+						mediaType: "series",
+						sectionId: "shows",
+						sectionTitle: "Shows",
+					}),
+				],
+			}),
+		);
+
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { publicationLevel: "unavailable", completeness: "unknown" },
+		});
+	});
+
+	it("withholds V4 rows from generic policy scans", async () => {
+		const positiveStatus = status({
+			generationMetadata: v4Metadata(),
+			lastAttemptResult: "partial",
+		});
+		const testFixture = fixture({
+			statuses: [positiveStatus, { ...positiveStatus }],
+			rows: [row({ mediaType: "series", sectionId: "shows", sectionTitle: "Shows" })],
+		});
+
+		const result = await scanInstancePolicyEvidence(testFixture.prisma as never, {
+			userId: "user-1",
+			instanceId: "plex-1",
+			now,
+			maxAgeMs: 3 * 60 * 60 * 1000,
+		});
+
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { publicationLevel: "unavailable", completeness: "unknown" },
+		});
+		expect(testFixture.events).toEqual(["instance", "status"]);
 	});
 
 	it("streams generation-bound policy rows without materializing them in the result", async () => {
@@ -411,7 +535,7 @@ describe("Plex evidence repository", () => {
 		});
 	});
 
-	it("loads valid V2 authoritative metadata", async () => {
+	it("withholds legacy V2 metadata from the generic exact reader", async () => {
 		const generationMetadata = JSON.stringify({
 			version: 2,
 			publicationLevel: "authoritative",
@@ -424,7 +548,10 @@ describe("Plex evidence repository", () => {
 				statuses: [status({ generationMetadata }), status({ generationMetadata })],
 			}),
 		);
-		expect(result).toMatchObject({ available: true, metadata: { version: 2 } });
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { publicationLevel: "unavailable", completeness: "unknown" },
+		});
 	});
 
 	it("retains an earlier authoritative generation after the latest attempt fails", async () => {
@@ -973,6 +1100,95 @@ describe("Plex episode evidence repository", () => {
 		});
 	}
 
+	it("reads a V3 positive episode generation only when it is bound to the current V4 parent", async () => {
+		const rows = [episodeRow({ watchCount: 3, watched: true })];
+		const repository = episodeFixture({
+			parentStatus: status({
+				generationId: "generation-v4",
+				generationMetadata: v4Metadata(),
+				lastAttemptResult: "partial",
+			}),
+			episode: episodeStatus({
+				generationMetadata: positiveEpisodeMetadata(rows),
+				lastAttemptResult: "partial",
+			}),
+			episodeRows: rows,
+		});
+
+		const result = await loadPositiveEpisodeEvidence(repository as never, {
+			userId: "user-1",
+			instanceId: "plex-1",
+			instance: instance(),
+			now,
+			maxAgeMs: 3 * 60 * 60 * 1000,
+		});
+
+		expect(result).toMatchObject({
+			available: true,
+			generationId: "episode-generation-1",
+			parentGenerationId: "generation-v4",
+			metadata: {
+				capability: {
+					domain: "episodes",
+					field: "watchCount",
+					semantics: "lower-bound",
+					operator: "greater_than",
+				},
+			},
+			rows: [expect.objectContaining({ id: "episode-row-1", watchCount: 3 })],
+		});
+	});
+
+	it("rejects positive episode evidence when its parent target digest is not current", async () => {
+		const rows = [episodeRow({ watchCount: 3, watched: true })];
+		const metadata = JSON.parse(positiveEpisodeMetadata(rows)) as Record<string, unknown>;
+		metadata.parentTargetDigest = "c".repeat(64);
+		const repository = episodeFixture({
+			parentStatus: status({
+				generationId: "generation-v4",
+				generationMetadata: v4Metadata(),
+				lastAttemptResult: "partial",
+			}),
+			episode: episodeStatus({
+				generationMetadata: JSON.stringify(metadata),
+				lastAttemptResult: "partial",
+			}),
+			episodeRows: rows,
+		});
+
+		const result = await loadPositiveEpisodeEvidence(repository as never, {
+			userId: "user-1",
+			instanceId: "plex-1",
+			instance: instance(),
+			now,
+			maxAgeMs: 3 * 60 * 60 * 1000,
+		});
+
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["target_digest_mismatch"] },
+		});
+	});
+
+	it("keeps the exact episode reader V2-only when a positive V3 episode generation exists", async () => {
+		const rows = [episodeRow({ watchCount: 3, watched: true })];
+		const result = await loadEpisode(
+			episodeFixture({
+				parentStatus: status({ generationId: "generation-v4" }),
+				episode: episodeStatus({
+					generationMetadata: positiveEpisodeMetadata(rows),
+					lastAttemptResult: "success",
+				}),
+				episodeRows: rows,
+			}),
+		);
+
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["malformed_metadata"] },
+		});
+	});
+
 	it("reads selected episode rows while rejecting a full-generation bound-count mismatch", async () => {
 		const repositoryModule = (await import("../plex-evidence-repository.js")) as Record<
 			string,
@@ -1205,6 +1421,42 @@ describe("Plex episode evidence repository", () => {
 		expect(result).toMatchObject({
 			available: false,
 			evidence: { reasonCodes: ["latest_attempt_failed"] },
+		});
+	});
+
+	it("reports a valid positive episode V3 publication as partial observation", async () => {
+		const rows = [episodeRow({ watchCount: 3, watched: true })];
+		const repository = episodeFixture({
+			parentStatus: status({
+				generationId: "generation-v4",
+				generationMetadata: v4Metadata(),
+				lastAttemptResult: "partial",
+			}),
+			episode: episodeStatus({
+				generationMetadata: positiveEpisodeMetadata(rows),
+				lastAttemptResult: "partial",
+			}),
+			episodeRows: rows,
+		});
+
+		const result = await getPublishedEpisodeGenerationObservation(repository as never, {
+			userId: "user-1",
+			instanceId: "plex-1",
+			instance: instance(),
+			now,
+			maxAgeMs: 3 * 60 * 60 * 1000,
+		});
+
+		expect(result).toMatchObject({
+			available: true,
+			itemCount: 1,
+			evidence: {
+				availability: "current",
+				authority: "positive-only",
+				attemptState: "partial",
+				publicationLevel: "positive-only",
+				completeness: "partial",
+			},
 		});
 	});
 

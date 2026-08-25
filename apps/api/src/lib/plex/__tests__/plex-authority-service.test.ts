@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { PlexCanonicalObservation } from "../plex-canonical-projection.js";
+import { createPositivePlexEpisodeDigest } from "../plex-episode-live-collector.js";
 
 const repositoryMocks = vi.hoisted(() => ({
 	loadInstanceSelectedEvidence: vi.fn(),
+	loadPositiveEpisodeEvidence: vi.fn(),
+	loadPositiveEpisodeParentEvidence: vi.fn(),
 	scanInstanceEpisodeParentPolicyEvidence: vi.fn(),
 }));
 
@@ -11,17 +14,19 @@ vi.mock("../plex-evidence-repository.js", async (importOriginal) => {
 	return {
 		...actual,
 		loadInstanceSelectedEvidence: repositoryMocks.loadInstanceSelectedEvidence,
+		loadPositiveEpisodeEvidence: repositoryMocks.loadPositiveEpisodeEvidence,
+		loadPositiveEpisodeParentEvidence: repositoryMocks.loadPositiveEpisodeParentEvidence,
 		scanInstanceEpisodeParentPolicyEvidence:
 			repositoryMocks.scanInstanceEpisodeParentPolicyEvidence,
 	};
 });
 
 import {
-	plexEpisodeParentAuthorityChanged,
 	PlexAuthorityService,
 	PlexAuthorityUnavailableError,
-	settlePlexAuthorityWindow,
 	type PlexPersistedSelectionObservation,
+	plexEpisodeParentAuthorityChanged,
+	settlePlexAuthorityWindow,
 } from "../plex-authority-service.js";
 import { createPlexTargetLedgerBinding } from "../plex-generation-target-ledger.js";
 
@@ -281,6 +286,497 @@ async function mutateWithLedgerEvidence(input: {
 }
 
 describe("PlexAuthorityService settlement window", () => {
+	it("exposes ledger-bound positive episode rows as lower bounds", async () => {
+		const target = {
+			id: "target-episode",
+			instanceId: "plex-1",
+			generationId: "generation-v4",
+			sectionId: "shows-a",
+			sectionUuid: "shows-a-uuid",
+			mediaType: "series" as const,
+			tmdbId: 42,
+			tvdbId: 84,
+			ratingKey: "show-42",
+		};
+		const targetBinding = createPlexTargetLedgerBinding({
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [target],
+		});
+		const positiveEpisodeRow = {
+			id: "episode-1",
+			instanceId: "plex-1",
+			showTmdbId: 42,
+			seasonNumber: 1,
+			episodeNumber: 1,
+			ratingKey: "episode-1",
+			title: "Pilot",
+			watched: true,
+			watchedByUsers: "[]",
+			lastWatchedAt: null,
+			watchCount: 3,
+			refreshedAt: new Date("2026-08-20T12:00:00.000Z"),
+			sourceFingerprint: "source-1",
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		};
+		const episodeDigest = createPositivePlexEpisodeDigest(
+			[
+				{
+					instanceId: target.instanceId,
+					generationId: target.generationId,
+					showTmdbId: target.tmdbId,
+					sectionId: target.sectionId,
+					sectionUuid: target.sectionUuid,
+					mediaType: "series",
+					tvdbId: target.tvdbId,
+					ratingKey: target.ratingKey,
+				},
+			],
+			[positiveEpisodeRow],
+		);
+		const observed = {
+			available: true,
+			instanceId: "plex-1",
+			generationId: "episode-generation-v3",
+			parentGenerationId: "generation-v4",
+			publishedAt: new Date("2026-08-20T12:00:00.000Z"),
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			metadata: {
+				version: 3,
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				itemCount: 1,
+				canonicalizationVersion: 1,
+				capability: {
+					domain: "episodes",
+					field: "watchCount",
+					semantics: "lower-bound",
+					operator: "greater_than",
+				},
+				parentPlexGenerationId: "generation-v4",
+				parentMetadataVersion: 4,
+				parentPublicationLevel: "positive-only",
+				parentTargetDigest: targetBinding.targetDigest,
+				episodeDigest,
+				partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			},
+			parentMetadata: {
+				version: 4,
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				itemCount: 1,
+				canonicalizationVersion: 1,
+				sections: [firstShowSection],
+				observedRoots: [
+					{ sectionKey: firstShowSection.key, domain: "episode-parents", digest: "a".repeat(64) },
+				],
+				capabilities: [
+					{
+						domain: "episode-parents",
+						field: "membership",
+						semantics: "observed-targets-only",
+						operators: [],
+					},
+				],
+				...targetBinding,
+				partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+			},
+			rows: [positiveEpisodeRow],
+			evidence: {
+				availability: "current",
+				authority: "positive-only",
+				attemptState: "partial",
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				reasonCodes: ["latest_attempt_partial"],
+			},
+		};
+		repositoryMocks.loadPositiveEpisodeEvidence.mockResolvedValue(observed);
+		const service = new PlexAuthorityService({
+			prisma: {
+				plexGenerationTarget: { findMany: vi.fn().mockResolvedValue([target]) },
+			} as never,
+			log: {} as never,
+		});
+
+		const result = await service.readPositiveEpisodeEvidence({
+			userId: "user-1",
+			instanceId: "plex-1",
+		});
+
+		expect(result).toMatchObject({
+			available: true,
+			capability: {
+				domain: "episodes",
+				field: "watchCount",
+				semantics: "lower-bound",
+				operator: "greater_than",
+			},
+			provenance: {
+				parentPlexGenerationId: "generation-v4",
+				parentTargetDigest: targetBinding.targetDigest,
+			},
+			rows: [
+				{
+					showTmdbId: 42,
+					seasonNumber: 1,
+					episodeNumber: 1,
+					ratingKey: "episode-1",
+					lowerBound: 3,
+					sourceFingerprint: "source-1",
+					soleParentTarget: expect.objectContaining({
+						generationId: "generation-v4",
+						sectionId: "shows-a",
+						ratingKey: "show-42",
+					}),
+				},
+			],
+		});
+		if (result.available) expect(result.rows[0]).not.toHaveProperty("watchCount");
+
+		repositoryMocks.loadPositiveEpisodeEvidence.mockResolvedValueOnce({
+			...observed,
+			metadata: { ...observed.metadata, episodeDigest: "d".repeat(64) },
+		});
+		const tampered = await service.readPositiveEpisodeEvidence({
+			userId: "user-1",
+			instanceId: "plex-1",
+		});
+		expect(tampered).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["plex_content_digest_changed"] },
+		});
+	});
+
+	it("omits positive episode rows for duplicate parent targets", async () => {
+		const targets = [
+			{
+				id: "target-42-a",
+				instanceId: "plex-1",
+				generationId: "generation-v4-duplicate",
+				sectionId: "shows-a",
+				sectionUuid: "shows-a-uuid",
+				mediaType: "series" as const,
+				tmdbId: 42,
+				tvdbId: 84,
+				ratingKey: "show-42-a",
+			},
+			{
+				id: "target-42-b",
+				instanceId: "plex-1",
+				generationId: "generation-v4-duplicate",
+				sectionId: "shows-b",
+				sectionUuid: "shows-b-uuid",
+				mediaType: "series" as const,
+				tmdbId: 42,
+				tvdbId: 84,
+				ratingKey: "show-42-b",
+			},
+		];
+		const targetBinding = createPlexTargetLedgerBinding({
+			instanceId: "plex-1",
+			generationId: "generation-v4-duplicate",
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets,
+		});
+		repositoryMocks.loadPositiveEpisodeEvidence.mockResolvedValue({
+			available: true,
+			instanceId: "plex-1",
+			generationId: "episode-generation-v3-duplicate",
+			parentGenerationId: "generation-v4-duplicate",
+			publishedAt: new Date("2026-08-20T12:00:00.000Z"),
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			metadata: {
+				version: 3,
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				itemCount: 0,
+				canonicalizationVersion: 1,
+				capability: {
+					domain: "episodes",
+					field: "watchCount",
+					semantics: "lower-bound",
+					operator: "greater_than",
+				},
+				parentPlexGenerationId: "generation-v4-duplicate",
+				parentMetadataVersion: 4,
+				parentPublicationLevel: "positive-only",
+				parentTargetDigest: targetBinding.targetDigest,
+				episodeDigest: createPositivePlexEpisodeDigest([], []),
+				partialReasons: [{ code: "ambiguous_episode_parent_targets", count: 2 }],
+				connectionGeneration: 4,
+				identityGeneration: 9,
+			},
+			parentMetadata: {
+				version: 4,
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				itemCount: 2,
+				canonicalizationVersion: 1,
+				sections: [firstShowSection, secondShowSection],
+				observedRoots: [
+					{ sectionKey: firstShowSection.key, domain: "episode-parents", digest: "a".repeat(64) },
+				],
+				capabilities: [
+					{
+						domain: "episode-parents",
+						field: "membership",
+						semantics: "observed-targets-only",
+						operators: [],
+					},
+				],
+				...targetBinding,
+				partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+			},
+			rows: [],
+			evidence: {
+				availability: "current",
+				authority: "positive-only",
+				attemptState: "partial",
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				reasonCodes: ["latest_attempt_partial"],
+			},
+		});
+		const service = new PlexAuthorityService({
+			prisma: {
+				plexGenerationTarget: { findMany: vi.fn().mockResolvedValue(targets) },
+			} as never,
+			log: {} as never,
+		});
+
+		const result = await service.readPositiveEpisodeEvidence({
+			userId: "user-1",
+			instanceId: "plex-1",
+		});
+
+		expect(result).toMatchObject({ available: true, rows: [] });
+	});
+
+	it("reads only ledger-verified observed Show parents from a positive V4 generation", async () => {
+		const target = {
+			id: "target-1",
+			instanceId: "plex-1",
+			generationId: "generation-v4",
+			sectionId: "shows-a",
+			sectionUuid: "shows-a-uuid",
+			mediaType: "series" as const,
+			tmdbId: 42,
+			tvdbId: 84,
+			ratingKey: "show-42",
+		};
+		const duplicateTarget = {
+			...target,
+			id: "target-42-copy",
+			sectionId: "shows-b",
+			sectionUuid: "shows-b-uuid",
+			ratingKey: "show-42-copy",
+		};
+		const otherTarget = {
+			...duplicateTarget,
+			id: "target-99",
+			tmdbId: 99,
+			tvdbId: 198,
+			ratingKey: "show-99",
+		};
+		const targetBinding = createPlexTargetLedgerBinding({
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [target, duplicateTarget, otherTarget],
+		});
+		repositoryMocks.loadPositiveEpisodeParentEvidence.mockResolvedValue({
+			available: true,
+			instanceId: "plex-1",
+			generationId: "generation-v4",
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			metadata: {
+				version: 4,
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				itemCount: 2,
+				canonicalizationVersion: 1,
+				sections: [firstShowSection, secondShowSection],
+				observedRoots: [
+					{ sectionKey: firstShowSection.key, domain: "episode-parents", digest: "a".repeat(64) },
+				],
+				capabilities: [
+					{
+						domain: "episode-parents",
+						field: "membership",
+						semantics: "observed-targets-only",
+						operators: [],
+					},
+				],
+				...targetBinding,
+				partialReasons: [{ code: "currentItemsWithoutTmdbMetadata", count: 1 }],
+			},
+			rows: [
+				{
+					...rowA,
+					instanceId: "plex-1",
+					mediaType: "series",
+					tmdbId: 42,
+					sectionId: "shows-a",
+					ratingKey: "show-42",
+					connectionGeneration: 4,
+					identityGeneration: 9,
+				},
+				{
+					...rowA,
+					instanceId: "plex-1",
+					mediaType: "series",
+					tmdbId: 99,
+					sectionId: "shows-b",
+					ratingKey: "show-99",
+					connectionGeneration: 4,
+					identityGeneration: 9,
+				},
+			],
+			evidence: {
+				availability: "current",
+				authority: "positive-only",
+				attemptState: "partial",
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				reasonCodes: ["latest_attempt_partial"],
+			},
+		});
+		const service = new PlexAuthorityService({
+			prisma: {
+				serviceInstance: {
+					findFirst: vi.fn().mockResolvedValue({
+						id: "plex-1",
+						userId: "user-1",
+						service: "PLEX",
+						enabled: true,
+					}),
+				},
+				plexGenerationTarget: {
+					findMany: vi.fn().mockResolvedValue([target, duplicateTarget, otherTarget]),
+				},
+			} as never,
+			log: {} as never,
+		});
+
+		const result = await service.readPositiveEpisodeParents({
+			userId: "user-1",
+			instanceId: "plex-1",
+			showTmdbIds: [42, 99, 999],
+		});
+		expect(result.available).toBe(true);
+		if (!result.available) return;
+		expect(result).toMatchObject({
+			available: true,
+			capability: {
+				domain: "episode-parents",
+				field: "membership",
+				semantics: "observed-targets-only",
+			},
+			rows: expect.arrayContaining([
+				expect.objectContaining({ tmdbId: 42, sectionId: "shows-a", ratingKey: "show-42" }),
+				expect.objectContaining({ tmdbId: 99, sectionId: "shows-b", ratingKey: "show-99" }),
+			]),
+			targets: expect.arrayContaining([
+				expect.objectContaining({ tmdbId: 42, ratingKey: "show-42" }),
+				expect.objectContaining({ tmdbId: 99, ratingKey: "show-99" }),
+			]),
+		});
+		expect(result.targets).toHaveLength(2);
+		expect(result.targets).not.toContainEqual(
+			expect.objectContaining({ ratingKey: "show-42-copy" }),
+		);
+		expect(result).not.toMatchObject({
+			rows: [expect.objectContaining({ watchCount: expect.anything() })],
+		});
+	});
+
+	it("uses an authoritative V3 generation through the positive parent reader", async () => {
+		const target = {
+			id: "target-v3",
+			instanceId: "plex-1",
+			generationId: "generation-v3",
+			sectionId: "shows-a",
+			sectionUuid: "shows-a-uuid",
+			mediaType: "series" as const,
+			tmdbId: 42,
+			tvdbId: 84,
+			ratingKey: "show-42",
+		};
+		const targetBinding = createPlexTargetLedgerBinding({
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [target],
+		});
+		repositoryMocks.loadPositiveEpisodeParentEvidence.mockResolvedValue({
+			available: true,
+			instanceId: "plex-1",
+			generationId: "generation-v3",
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			metadata: {
+				version: 3,
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				itemCount: 1,
+				canonicalizationVersion: 1,
+				sections: [firstShowSection],
+				roots: [{ sectionKey: "shows-a", domain: "episode-parents", digest: "a".repeat(64) }],
+				...targetBinding,
+			},
+			rows: [
+				{
+					...rowA,
+					instanceId: "plex-1",
+					mediaType: "series",
+					tmdbId: 42,
+					sectionId: "shows-a",
+					ratingKey: "show-42",
+					connectionGeneration: 4,
+					identityGeneration: 9,
+				},
+			],
+			evidence: {
+				availability: "current",
+				authority: "authoritative",
+				attemptState: "success",
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				reasonCodes: [],
+			},
+		});
+		const service = new PlexAuthorityService({
+			prisma: {
+				plexGenerationTarget: { findMany: vi.fn().mockResolvedValue([target]) },
+			} as never,
+			log: {} as never,
+		});
+
+		const result = await service.readPositiveEpisodeParents({
+			userId: "user-1",
+			instanceId: "plex-1",
+			showTmdbIds: [42],
+		});
+
+		expect(result).toMatchObject({
+			available: true,
+			provenance: { publicationLevel: "authoritative", completeness: "complete" },
+			partialReasons: [],
+			rows: [{ tmdbId: 42, ratingKey: "show-42" }],
+		});
+	});
 	it.each([
 		[
 			1,

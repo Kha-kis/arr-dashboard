@@ -5,8 +5,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { Prisma } from "../prisma.js";
 import { evidenceFingerprint } from "../evidence-fingerprint.js";
+import type { Prisma } from "../prisma.js";
 import {
 	beginPlexCacheRefreshAttempt,
 	finishPlexCacheRefreshAttemptFailure,
@@ -17,21 +17,28 @@ import {
 	withGuardedProviderPublication,
 } from "../services/provider-identity-guard.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import type { PlexPublicationContext } from "./plex-cache-refresher.js";
-import {
-	PlexRefreshAttemptSupersededError,
-	publishAuthoritativePlexEpisodeGeneration,
-} from "./plex-cache-storage.js";
-import { PlexClient } from "./plex-client.js";
-import {
-	collectPlexEpisodeLiveEvidence,
-	type PlexEpisodeRow,
-} from "./plex-episode-live-collector.js";
-import { createPlexSelectionProjection } from "./plex-canonical-projection.js";
 import {
 	DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
 	PlexAuthorityService,
 } from "./plex-authority-service.js";
+import type { PlexPublicationContext } from "./plex-cache-refresher.js";
+import {
+	PlexRefreshAttemptSupersededError,
+	publishAuthoritativePlexEpisodeGeneration,
+	publishPositivePlexEpisodeGeneration,
+} from "./plex-cache-storage.js";
+import { createPlexSelectionProjection } from "./plex-canonical-projection.js";
+import { PlexClient } from "./plex-client.js";
+import {
+	type CollectedPositivePlexEpisodeRefresh,
+	collectPlexEpisodeLiveEvidence,
+	collectPositivePlexEpisodeLiveEvidence,
+	type PlexEpisodeRow,
+} from "./plex-episode-live-collector.js";
+import {
+	encodePlexPositiveEpisodeGenerationMetadata,
+	type PlexPositiveEpisodePartialReason,
+} from "./plex-positive-episode-generation-metadata.js";
 import { plexConnectionFingerprint } from "./service-instance-fingerprint.js";
 
 export interface PlexEpisodeRefreshResult {
@@ -45,9 +52,12 @@ export interface PlexEpisodeRefreshResult {
 	complete: boolean;
 	completedAt?: Date;
 	superseded?: boolean;
+	publicationLevel?: "authoritative" | "positive-only";
+	partialReasons?: readonly PlexPositiveEpisodePartialReason[];
 }
 
 type CollectedPlexEpisodeRefresh = PlexEpisodeRefreshResult & {
+	kind?: undefined;
 	rows?: PlexEpisodeRow[];
 	parentAuthority?: {
 		generationId: string;
@@ -56,6 +66,19 @@ type CollectedPlexEpisodeRefresh = PlexEpisodeRefreshResult & {
 		identityGeneration: number;
 	};
 };
+
+type CollectedPositiveEpisodeRefresh = CollectedPositivePlexEpisodeRefresh & {
+	parentAuthority: {
+		generationId: string;
+		connectionGeneration: number;
+		identityGeneration: number;
+		parentTargetDigest: string;
+		parentTargetCount: number;
+		partialReasons: readonly { code: string; count: number }[];
+	};
+};
+
+type StagedPlexEpisodeRefresh = CollectedPlexEpisodeRefresh | CollectedPositiveEpisodeRefresh;
 
 function failedResult(
 	errorMessages: string[],
@@ -73,6 +96,65 @@ function failedResult(
 		capacityDegraded,
 		complete: false,
 	};
+}
+
+function positiveParentSignature(parent: {
+	generationId: string;
+	connectionGeneration: number;
+	identityGeneration: number;
+	provenance: { parentTargetDigest: string; parentTargetCount: number };
+	rows: readonly { instanceId: string; tmdbId: number; sectionId: string; ratingKey: string }[];
+}) {
+	return JSON.stringify({
+		generationId: parent.generationId,
+		connectionGeneration: parent.connectionGeneration,
+		identityGeneration: parent.identityGeneration,
+		parentTargetDigest: parent.provenance.parentTargetDigest,
+		parentTargetCount: parent.provenance.parentTargetCount,
+		rows: [...parent.rows]
+			.sort(
+				(left, right) =>
+					left.instanceId.localeCompare(right.instanceId) ||
+					left.tmdbId - right.tmdbId ||
+					left.sectionId.localeCompare(right.sectionId) ||
+					left.ratingKey.localeCompare(right.ratingKey),
+			)
+			.map((row) => [row.instanceId, row.tmdbId, row.sectionId, row.ratingKey]),
+	});
+}
+
+function observedPositiveParentTargets<
+	T extends { instanceId: string; tmdbId: number; sectionId: string; ratingKey: string },
+>(parent: {
+	rows: readonly { instanceId: string; tmdbId: number; sectionId: string; ratingKey: string }[];
+	targets: readonly T[];
+}): T[] {
+	const observed = new Set(
+		parent.rows.map(
+			(row) => `${row.instanceId}\u0000${row.tmdbId}\u0000${row.sectionId}\u0000${row.ratingKey}`,
+		),
+	);
+	return parent.targets.filter((target) =>
+		observed.has(
+			`${target.instanceId}\u0000${target.tmdbId}\u0000${target.sectionId}\u0000${target.ratingKey}`,
+		),
+	);
+}
+
+function mergePositivePartialReasons(
+	parentReasons: readonly { code: string; count: number }[],
+	ambiguityReasons: readonly { code: "ambiguous_episode_parent_targets"; count: number }[],
+): PlexPositiveEpisodePartialReason[] | null {
+	const counts = new Map<string, number>();
+	for (const reason of [...parentReasons, ...ambiguityReasons]) {
+		if (!Number.isSafeInteger(reason.count) || reason.count < 1) return null;
+		const current = counts.get(reason.code) ?? 0;
+		if (!Number.isSafeInteger(current + reason.count)) return null;
+		counts.set(reason.code, current + reason.count);
+	}
+	return [...counts.entries()]
+		.sort(([left], [right]) => left.localeCompare(right))
+		.map(([code, count]) => ({ code, count })) as PlexPositiveEpisodePartialReason[];
 }
 
 export async function refreshPlexEpisodeCache(
@@ -141,64 +223,169 @@ export async function refreshPlexEpisodeCacheWithAttempt(
 					},
 				});
 				if (
-					!parentBefore.available ||
-					parentBefore.evidence.publicationLevel !== "authoritative" ||
-					parentBefore.evidence.completeness !== "complete"
+					parentBefore.available &&
+					parentBefore.evidence.publicationLevel === "authoritative" &&
+					parentBefore.evidence.completeness === "complete"
 				) {
-					return failedResult(["Authoritative parent Plex generation is unavailable"], 0, 0);
+					const collected = await collectPlexEpisodeLiveEvidence(
+						client,
+						showMap,
+						instance.id,
+						log,
+						plexConnectionFingerprint(instance),
+					);
+					if (!collected.complete) return collected;
+					const postCollectionShowMap = new Map<number, Set<string>>();
+					const parentAfter = await authority.scanInstanceEpisodeParentPolicy({
+						userId: instance.userId,
+						instanceId: instance.id,
+						domains: ["membership", "episode-parents", "watch"],
+						mutation: true,
+						maxAgeMs: DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
+						onTargets: (targets) => {
+							for (const target of targets) {
+								const ratingKeys = postCollectionShowMap.get(target.tmdbId) ?? new Set<string>();
+								ratingKeys.add(target.ratingKey);
+								postCollectionShowMap.set(target.tmdbId, ratingKeys);
+							}
+						},
+					});
+					if (
+						!parentAfter.available ||
+						parentAfter.evidence.publicationLevel !== "authoritative" ||
+						parentAfter.evidence.completeness !== "complete" ||
+						parentAfter.generationId !== parentBefore.generationId ||
+						parentAfter.connectionGeneration !== parentBefore.connectionGeneration ||
+						parentAfter.identityGeneration !== parentBefore.identityGeneration ||
+						evidenceFingerprint(postCollectionShowMap) !== evidenceFingerprint(showMap)
+					) {
+						return failedResult(
+							["Authoritative parent Plex generation changed during episode collection"],
+							collected.eligibleShows,
+							collected.refreshedShows,
+						);
+					}
+					return {
+						...collected,
+						parentAuthority: {
+							generationId: parentBefore.generationId,
+							publicationLevel: "authoritative" as const,
+							connectionGeneration: parentBefore.connectionGeneration,
+							identityGeneration: parentBefore.identityGeneration,
+						},
+					};
 				}
-				const collected = await collectPlexEpisodeLiveEvidence(
+
+				const positiveBefore = await authority.readPositiveEpisodeParents({
+					userId: instance.userId,
+					instanceId: instance.id,
+					maxAgeMs: DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
+				});
+				if (
+					!positiveBefore.available ||
+					positiveBefore.provenance.publicationLevel !== "positive-only" ||
+					positiveBefore.provenance.completeness !== "partial"
+				) {
+					return failedResult(["Positive parent Plex generation is unavailable"], 0, 0);
+				}
+				const beforeSignature = positiveParentSignature(positiveBefore);
+				const first = await collectPositivePlexEpisodeLiveEvidence(
 					client,
-					showMap,
-					instance.id,
+					observedPositiveParentTargets(positiveBefore).map((target) => ({
+						instanceId: target.instanceId,
+						generationId: target.generationId,
+						showTmdbId: target.tmdbId,
+						sectionId: target.sectionId,
+						sectionUuid: target.sectionUuid,
+						mediaType: target.mediaType as "series",
+						tvdbId: target.tvdbId,
+						ratingKey: target.ratingKey,
+					})),
 					log,
 					plexConnectionFingerprint(instance),
 				);
-				if (!collected.complete) return collected;
-				const postCollectionShowMap = new Map<number, Set<string>>();
-				const parentAfter = await authority.scanInstanceEpisodeParentPolicy({
+				if (first.kind !== "positive-observation") return first;
+				const positiveMiddle = await authority.readPositiveEpisodeParents({
 					userId: instance.userId,
 					instanceId: instance.id,
-					domains: ["membership", "episode-parents", "watch"],
-					mutation: true,
 					maxAgeMs: DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
-					onTargets: (targets) => {
-						for (const target of targets) {
-							const ratingKeys = postCollectionShowMap.get(target.tmdbId) ?? new Set<string>();
-							ratingKeys.add(target.ratingKey);
-							postCollectionShowMap.set(target.tmdbId, ratingKeys);
-						}
-					},
 				});
 				if (
-					!parentAfter.available ||
-					parentAfter.evidence.publicationLevel !== "authoritative" ||
-					parentAfter.evidence.completeness !== "complete" ||
-					parentAfter.generationId !== parentBefore.generationId ||
-					parentAfter.connectionGeneration !== parentBefore.connectionGeneration ||
-					parentAfter.identityGeneration !== parentBefore.identityGeneration ||
-					evidenceFingerprint(postCollectionShowMap) !== evidenceFingerprint(showMap)
+					!positiveMiddle.available ||
+					positiveParentSignature(positiveMiddle) !== beforeSignature
 				) {
 					return failedResult(
-						["Authoritative parent Plex generation changed during episode collection"],
-						collected.eligibleShows,
-						collected.refreshedShows,
+						["Positive parent Plex generation changed during episode collection"],
+						first.eligibleShows,
+						first.refreshedShows,
+					);
+				}
+				const final = await collectPositivePlexEpisodeLiveEvidence(
+					client,
+					observedPositiveParentTargets(positiveMiddle).map((target) => ({
+						instanceId: target.instanceId,
+						generationId: target.generationId,
+						showTmdbId: target.tmdbId,
+						sectionId: target.sectionId,
+						sectionUuid: target.sectionUuid,
+						mediaType: target.mediaType as "series",
+						tvdbId: target.tvdbId,
+						ratingKey: target.ratingKey,
+					})),
+					log,
+					plexConnectionFingerprint(instance),
+				);
+				if (final.kind !== "positive-observation") return final;
+				const positiveAfter = await authority.readPositiveEpisodeParents({
+					userId: instance.userId,
+					instanceId: instance.id,
+					maxAgeMs: DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
+				});
+				if (
+					!positiveAfter.available ||
+					positiveParentSignature(positiveAfter) !== beforeSignature ||
+					final.episodeDigest !== first.episodeDigest
+				) {
+					return failedResult(
+						["Positive Plex episode evidence changed during collection"],
+						final.eligibleShows,
+						final.refreshedShows,
+					);
+				}
+				const partialReasons = mergePositivePartialReasons(
+					positiveBefore.partialReasons,
+					final.partialReasons,
+				);
+				if (!partialReasons) {
+					return failedResult(
+						["Positive Plex episode partial reasons were invalid"],
+						final.eligibleShows,
+						final.refreshedShows,
 					);
 				}
 				return {
-					...collected,
+					...final,
+					partialReasons,
 					parentAuthority: {
-						generationId: parentBefore.generationId,
-						publicationLevel: "authoritative" as const,
-						connectionGeneration: parentBefore.connectionGeneration,
-						identityGeneration: parentBefore.identityGeneration,
+						generationId: positiveBefore.generationId,
+						connectionGeneration: positiveBefore.connectionGeneration,
+						identityGeneration: positiveBefore.identityGeneration,
+						parentTargetDigest: positiveBefore.provenance.parentTargetDigest,
+						parentTargetCount: positiveBefore.provenance.parentTargetCount,
+						partialReasons: positiveBefore.partialReasons,
 					},
 				};
 			},
-			async (tx, collected) => await publishPlexEpisodeCache(tx, instance, attempt!, collected),
+			async (tx, collected) =>
+				await publishPlexEpisodeCache(
+					tx,
+					instance,
+					attempt!,
+					collected as StagedPlexEpisodeRefresh,
+				),
 			{ cleanupRunClaimToken: context.cleanupRunClaimToken },
 		);
-		if (!result.complete || !result.completedAt) {
+		if ((!result.complete && result.publicationLevel !== "positive-only") || !result.completedAt) {
 			const finished = await finishPlexCacheRefreshAttemptFailure(
 				prisma,
 				"plex_episode",
@@ -263,9 +450,49 @@ async function publishPlexEpisodeCache(
 	tx: Prisma.TransactionClient,
 	instance: PlexPublicationContext["instance"],
 	attempt: PlexCacheRefreshAttempt,
-	collected: CollectedPlexEpisodeRefresh,
+	collected: StagedPlexEpisodeRefresh,
 ): Promise<PlexEpisodeRefreshResult> {
-	if (!collected.complete || !collected.completedAt || !collected.rows) return collected;
+	if (!collected.completedAt || !collected.rows) return collected;
+	const rows = collected.rows;
+	const generationId = randomUUID();
+	const storedRows = rows.map((row) => ({
+		...row,
+		connectionGeneration: instance.connectionGeneration,
+		identityGeneration: instance.identityGeneration,
+	}));
+	if (collected.kind === "positive-observation") {
+		const generationMetadata = encodePlexPositiveEpisodeGenerationMetadata({
+			version: 3,
+			publicationLevel: "positive-only",
+			completeness: "partial",
+			itemCount: rows.length,
+			canonicalizationVersion: 1,
+			capability: {
+				domain: "episodes",
+				field: "watchCount",
+				semantics: "lower-bound",
+				operator: "greater_than",
+			},
+			parentPlexGenerationId: collected.parentAuthority.generationId,
+			parentMetadataVersion: 4,
+			parentPublicationLevel: "positive-only",
+			parentTargetDigest: collected.parentAuthority.parentTargetDigest,
+			episodeDigest: collected.episodeDigest,
+			partialReasons: collected.partialReasons,
+			connectionGeneration: collected.parentAuthority.connectionGeneration,
+			identityGeneration: collected.parentAuthority.identityGeneration,
+		});
+		await publishPositivePlexEpisodeGeneration(tx, {
+			instance,
+			rows: storedRows,
+			completedAt: collected.completedAt,
+			generationId,
+			generationMetadata,
+			attempt,
+		});
+		return { ...collected, upserted: rows.length, publicationLevel: "positive-only" };
+	}
+	if (!collected.complete) return collected;
 	if (!collected.parentAuthority) {
 		return failedResult(
 			["Authoritative parent Plex generation is unavailable"],
@@ -273,8 +500,6 @@ async function publishPlexEpisodeCache(
 			collected.refreshedShows,
 		);
 	}
-	const rows = collected.rows;
-	const generationId = randomUUID();
 	const episodeDigest = createPlexSelectionProjection({
 		rows: rows.map((row) => ({
 			sectionId: "",
@@ -304,11 +529,7 @@ async function publishPlexEpisodeCache(
 	});
 	await publishAuthoritativePlexEpisodeGeneration(tx, {
 		instance,
-		rows: rows.map((row) => ({
-			...row,
-			connectionGeneration: instance.connectionGeneration,
-			identityGeneration: instance.identityGeneration,
-		})),
+		rows: storedRows,
 		completedAt: collected.completedAt,
 		generationId,
 		generationMetadata,

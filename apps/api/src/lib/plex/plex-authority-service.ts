@@ -1,4 +1,10 @@
-import type { PlexCanonicalDomain, PlexCoverageReasonCode, PlexEvidenceSummary } from "@arr/shared";
+import type {
+	PlexCanonicalDomain,
+	PlexCoverageReasonCode,
+	PlexEvidenceSummary,
+	PlexPartialReason,
+	PlexPositiveGenerationMetadataV4,
+} from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import { evidenceFingerprint } from "../evidence-fingerprint.js";
@@ -9,50 +15,66 @@ import {
 	isPersonalMediaSection,
 } from "./plex-cache-refresher.js";
 import type { PlexCacheRowSelection } from "./plex-cache-storage.js";
-import { createPlexClient, type PlexClient } from "./plex-client.js";
-import { collectPlexEpisodeLiveEvidence } from "./plex-episode-live-collector.js";
 import {
 	createPlexSelectionProjection,
 	type PlexCanonicalObservation,
 	type PlexCanonicalSelection,
 } from "./plex-canonical-projection.js";
+import { createPlexClient, type PlexClient } from "./plex-client.js";
+import {
+	collectPlexEpisodeLiveEvidence,
+	createPositivePlexEpisodeDigest,
+	type PlexEpisodeRow,
+	type PlexPositiveEpisodeParentTarget,
+} from "./plex-episode-live-collector.js";
+import {
+	type AvailablePlexInstanceEvidence,
+	type AvailableSelectedPlexEvidence,
+	isCurrentAuthoritativePlexEvidence,
+	loadInstanceEpisodeEvidence,
+	loadInstanceEvidence,
+	loadInstanceSelectedEpisodeEvidence,
+	loadInstanceSelectedEvidence,
+	loadPositiveEpisodeEvidence,
+	loadPositiveEpisodeParentEvidence,
+	type PlexEpisodeParentPolicyBatchHandler,
+	type PlexInstanceEvidence,
+	type PlexPolicyBatchHandler,
+	type PlexPolicyScanEvidence,
+	type SelectedPlexEpisodeEvidence,
+	type SelectedPlexEvidence,
+	scanInstanceEpisodeParentPolicyEvidence,
+	scanInstancePolicyEvidence,
+	type UnavailablePlexInstanceEvidence,
+} from "./plex-evidence-repository.js";
 import type { DecodedPlexGenerationMetadata } from "./plex-generation-metadata.js";
 import {
 	normalizePlexGenerationTargets,
+	type PlexGenerationTarget,
 	readPlexGenerationTargetsForSelection,
 	requirePlexTargetLedgerBinding,
 	samePlexGenerationBinding,
 	samePlexGenerationTargetSet,
 	selectSinglePlexGenerationTarget,
 	verifyPersistedPlexGenerationTargets,
-	type PlexGenerationTarget,
 } from "./plex-generation-target-ledger.js";
 import {
 	evaluatePlexLiveSettlement,
 	type PlexLiveActivity,
 	type PlexLiveSection,
 } from "./plex-live-settlement.js";
-import {
-	isCurrentAuthoritativePlexEvidence,
-	loadInstanceEpisodeEvidence,
-	loadInstanceEvidence,
-	loadInstanceSelectedEpisodeEvidence,
-	loadInstanceSelectedEvidence,
-	scanInstanceEpisodeParentPolicyEvidence,
-	scanInstancePolicyEvidence,
-	type AvailablePlexInstanceEvidence,
-	type AvailableSelectedPlexEvidence,
-	type PlexInstanceEvidence,
-	type PlexPolicyBatchHandler,
-	type PlexEpisodeParentPolicyBatchHandler,
-	type PlexPolicyScanEvidence,
-	type SelectedPlexEvidence,
-	type SelectedPlexEpisodeEvidence,
-	type UnavailablePlexInstanceEvidence,
-} from "./plex-evidence-repository.js";
 import { plexConnectionFingerprint } from "./service-instance-fingerprint.js";
 
+export type {
+	AvailablePlexInstanceEvidence,
+	AvailablePlexPolicyEvidence,
+	PlexInstanceEvidence,
+	PlexPolicyScanEvidence,
+	SelectedPlexEpisodeEvidence,
+	SelectedPlexEvidence,
+} from "./plex-evidence-repository.js";
 export {
+	DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS,
 	hasAuthoritativePlexEvidence,
 	hasAuthoritativeSelectedPlexEvidence,
 	hasCompleteAuthoritativePlexEvidence,
@@ -60,15 +82,6 @@ export {
 	listPublishedSections,
 	summarizePlexEvidence,
 } from "./plex-evidence-repository.js";
-export type {
-	AvailablePlexInstanceEvidence,
-	AvailablePlexPolicyEvidence,
-	PlexInstanceEvidence,
-	PlexPolicyScanEvidence,
-	SelectedPlexEvidence,
-	SelectedPlexEpisodeEvidence,
-} from "./plex-evidence-repository.js";
-export { DEFAULT_PLEX_EVIDENCE_FRESHNESS_MS } from "./plex-evidence-repository.js";
 
 export type PlexPersistedSelectionObservation = {
 	generationId: string;
@@ -94,6 +107,66 @@ export class PlexAuthorityUnavailableError extends Error {
 export type PlexAuthorityWindowResult =
 	| { ok: true; persisted: PlexPersistedSelectionObservation }
 	| { ok: false; reasonCode: PlexCoverageReasonCode };
+
+export type PositiveEpisodeParentAuthority =
+	| {
+			available: true;
+			instanceId: string;
+			generationId: string;
+			connectionGeneration: number;
+			identityGeneration: number;
+			capability: PlexPositiveGenerationMetadataV4["capabilities"][number];
+			partialReasons: readonly PlexPartialReason[];
+			provenance: {
+				publicationLevel: "authoritative" | "positive-only";
+				completeness: "complete" | "partial";
+				parentTargetDigest: string;
+				parentTargetCount: number;
+			};
+			rows: Array<{ instanceId: string; tmdbId: number; sectionId: string; ratingKey: string }>;
+			targets: PlexGenerationTarget[];
+			evidence: PlexEvidenceSummary;
+	  }
+	| UnavailablePlexInstanceEvidence;
+
+export type PositiveEpisodeAuthority =
+	| {
+			available: true;
+			instanceId: string;
+			generationId: string;
+			connectionGeneration: number;
+			identityGeneration: number;
+			capability: {
+				domain: "episodes";
+				field: "watchCount";
+				semantics: "lower-bound";
+				operator: "greater_than";
+			};
+			partialReasons: ReadonlyArray<{ code: string; count: number }>;
+			provenance: {
+				publicationLevel: "positive-only";
+				completeness: "partial";
+				connectionGeneration: number;
+				identityGeneration: number;
+				parentPlexGenerationId: string;
+				parentTargetDigest: string;
+				parentTargetCount: number;
+				episodeGenerationId: string;
+				episodeDigest: string;
+				publishedAt: string;
+			};
+			rows: Array<{
+				showTmdbId: number;
+				seasonNumber: number;
+				episodeNumber: number;
+				ratingKey: string;
+				lowerBound: number;
+				sourceFingerprint: string;
+				soleParentTarget: PlexPositiveEpisodeParentTarget;
+			}>;
+			evidence: PlexEvidenceSummary;
+	  }
+	| UnavailablePlexInstanceEvidence;
 
 function sectionCatalogIdentity(
 	sections: ReadonlyArray<{ key: string; uuid: string; type: string; title: string }>,
@@ -599,6 +672,269 @@ export class PlexAuthorityService {
 			mutation: input.mutation === true,
 			reread: async () => await loadInstanceEvidence(this.deps.prisma, input),
 		})) as PlexInstanceEvidence;
+	}
+
+	/**
+	 * The sole persisted positive-episode reader. Its rows are explicit lower
+	 * bounds, never an exact episode universe: omitted episodes are unknown.
+	 */
+	async readPositiveEpisodeEvidence(input: {
+		userId: string;
+		instanceId: string;
+		now?: Date;
+		maxAgeMs?: number;
+	}): Promise<PositiveEpisodeAuthority> {
+		const observed = await loadPositiveEpisodeEvidence(this.deps.prisma, input);
+		if (!observed.available) return observed;
+		const binding = requirePlexTargetLedgerBinding(observed.parentMetadata);
+		if (!binding.ok) {
+			return unavailableEvidence(
+				input.instanceId,
+				observed.evidence,
+				"target_ledger_binding_missing",
+			);
+		}
+		if (binding.binding.targetDigest !== observed.metadata.parentTargetDigest) {
+			return unavailableEvidence(input.instanceId, observed.evidence, "target_digest_mismatch");
+		}
+		const ledgerTargets = await readPlexGenerationTargetsForSelection(this.deps.prisma, {
+			instanceId: observed.instanceId,
+			generationId: observed.parentGenerationId,
+		});
+		const targetLedger = await verifyPersistedPlexGenerationTargets(this.deps.prisma, {
+			expected: {
+				instanceId: observed.instanceId,
+				generationId: observed.parentGenerationId,
+				connectionGeneration: observed.connectionGeneration,
+				identityGeneration: observed.identityGeneration,
+				...binding.binding,
+			},
+			sections: observed.parentMetadata.sections,
+		});
+		if (!targetLedger.ok) {
+			return unavailableEvidence(
+				input.instanceId,
+				observed.evidence,
+				targetLedger.reason as PlexCoverageReasonCode,
+			);
+		}
+		const soleParentGroups = new Map<number, PlexGenerationTarget[]>();
+		for (const target of ledgerTargets) {
+			if (target.mediaType !== "series") continue;
+			const group = soleParentGroups.get(target.tmdbId) ?? [];
+			group.push(target);
+			soleParentGroups.set(target.tmdbId, group);
+		}
+		const soleParentTargets = [...soleParentGroups.values()]
+			.filter((group) => group.length === 1)
+			.map((group) => {
+				const target = group[0]!;
+				return {
+					instanceId: target.instanceId,
+					generationId: target.generationId,
+					showTmdbId: target.tmdbId,
+					sectionId: target.sectionId,
+					sectionUuid: target.sectionUuid,
+					mediaType: "series" as const,
+					tvdbId: target.tvdbId,
+					ratingKey: target.ratingKey,
+				};
+			});
+		const rows: PlexEpisodeRow[] = [];
+		for (const row of observed.rows) {
+			if (
+				typeof row.sourceFingerprint !== "string" ||
+				row.sourceFingerprint.trim() === "" ||
+				!(row.refreshedAt instanceof Date) ||
+				!Number.isFinite(row.refreshedAt.getTime()) ||
+				typeof row.watchCount !== "number" ||
+				!Number.isSafeInteger(row.watchCount) ||
+				row.watchCount <= 0
+			) {
+				return unavailableEvidence(
+					input.instanceId,
+					observed.evidence,
+					"plex_content_digest_changed",
+				);
+			}
+			rows.push({
+				instanceId: row.instanceId,
+				showTmdbId: row.showTmdbId,
+				seasonNumber: row.seasonNumber,
+				episodeNumber: row.episodeNumber,
+				ratingKey: row.ratingKey,
+				title: row.title,
+				watched: row.watched,
+				watchedByUsers: row.watchedByUsers,
+				lastWatchedAt: row.lastWatchedAt,
+				watchCount: row.watchCount,
+				refreshedAt: row.refreshedAt,
+				sourceFingerprint: row.sourceFingerprint,
+			});
+		}
+		if (
+			createPositivePlexEpisodeDigest(soleParentTargets, rows) !== observed.metadata.episodeDigest
+		) {
+			return unavailableEvidence(
+				input.instanceId,
+				observed.evidence,
+				"plex_content_digest_changed",
+			);
+		}
+		const soleParentByShow = new Map(
+			soleParentTargets.map((target) => [target.showTmdbId, target]),
+		);
+		return {
+			available: true,
+			instanceId: observed.instanceId,
+			generationId: observed.generationId,
+			connectionGeneration: observed.connectionGeneration,
+			identityGeneration: observed.identityGeneration,
+			capability: observed.metadata.capability,
+			partialReasons: observed.metadata.partialReasons,
+			provenance: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				connectionGeneration: observed.connectionGeneration,
+				identityGeneration: observed.identityGeneration,
+				parentPlexGenerationId: observed.parentGenerationId,
+				parentTargetDigest: observed.metadata.parentTargetDigest,
+				parentTargetCount: binding.binding.targetCount,
+				episodeGenerationId: observed.generationId,
+				episodeDigest: observed.metadata.episodeDigest,
+				publishedAt: observed.publishedAt.toISOString(),
+			},
+			rows: rows.flatMap((row) => {
+				const soleParentTarget = soleParentByShow.get(row.showTmdbId);
+				return soleParentTarget
+					? [
+							{
+								showTmdbId: row.showTmdbId,
+								seasonNumber: row.seasonNumber,
+								episodeNumber: row.episodeNumber,
+								ratingKey: row.ratingKey,
+								lowerBound: row.watchCount,
+								sourceFingerprint: row.sourceFingerprint,
+								soleParentTarget,
+							},
+						]
+					: [];
+			}),
+			evidence: observed.evidence,
+		};
+	}
+
+	/**
+	 * The sole V4 parent-reader. It intentionally returns only observed Show
+	 * parents and ledger targets. A requested Show absent from those arrays is
+	 * unknown; this method never produces a negative, zero, or exact-universe
+	 * assertion.
+	 */
+	async readPositiveEpisodeParents(input: {
+		userId: string;
+		instanceId: string;
+		showTmdbIds?: readonly number[];
+		now?: Date;
+		maxAgeMs?: number;
+	}): Promise<PositiveEpisodeParentAuthority> {
+		const observed = await loadPositiveEpisodeParentEvidence(this.deps.prisma, input);
+		if (!observed.available) return observed;
+		const binding = requirePlexTargetLedgerBinding(observed.metadata);
+		if (!binding.ok) {
+			return unavailableEvidence(
+				input.instanceId,
+				observed.evidence,
+				"target_ledger_binding_missing",
+			);
+		}
+		const ledgerTargets = await readPlexGenerationTargetsForSelection(this.deps.prisma, {
+			instanceId: observed.instanceId,
+			generationId: observed.generationId,
+		});
+		const targetLedger = await verifyPersistedPlexGenerationTargets(this.deps.prisma, {
+			expected: {
+				instanceId: observed.instanceId,
+				generationId: observed.generationId,
+				connectionGeneration: observed.connectionGeneration,
+				identityGeneration: observed.identityGeneration,
+				...binding.binding,
+			},
+			sections: observed.metadata.sections,
+		});
+		if (!targetLedger.ok) {
+			return unavailableEvidence(
+				input.instanceId,
+				observed.evidence,
+				targetLedger.reason as PlexCoverageReasonCode,
+			);
+		}
+		const selectedIds = input.showTmdbIds
+			? [...new Set(input.showTmdbIds)].filter(
+					(tmdbId) => Number.isSafeInteger(tmdbId) && tmdbId > 0,
+				)
+			: undefined;
+		if (input.showTmdbIds && selectedIds?.length !== input.showTmdbIds.length) {
+			return unavailableEvidence(input.instanceId, observed.evidence, "target_ledger_invalid");
+		}
+		const targets = ledgerTargets.filter(
+			(target) =>
+				target.mediaType === "series" &&
+				(selectedIds === undefined || selectedIds.includes(target.tmdbId)),
+		);
+		const targetsByRatingKey = new Map(targets.map((target) => [target.ratingKey, target]));
+		const observedTargets: PlexGenerationTarget[] = [];
+		let unmatchedObservedRow = false;
+		const rows = observed.rows.flatMap((row) => {
+			if (!row.ratingKey) {
+				unmatchedObservedRow = true;
+				return [];
+			}
+			const target = targetsByRatingKey.get(row.ratingKey);
+			if (
+				target &&
+				target.mediaType === "series" &&
+				target.tmdbId === row.tmdbId &&
+				target.sectionId === row.sectionId
+			) {
+				observedTargets.push(target);
+				return [
+					{
+						instanceId: row.instanceId,
+						tmdbId: row.tmdbId,
+						sectionId: row.sectionId,
+						ratingKey: row.ratingKey,
+					},
+				];
+			}
+			unmatchedObservedRow = true;
+			return [];
+		});
+		if (unmatchedObservedRow) {
+			return unavailableEvidence(input.instanceId, observed.evidence, "target_ledger_invalid");
+		}
+		return {
+			available: true,
+			instanceId: observed.instanceId,
+			generationId: observed.generationId,
+			connectionGeneration: observed.connectionGeneration,
+			identityGeneration: observed.identityGeneration,
+			capability: {
+				domain: "episode-parents",
+				field: "membership",
+				semantics: "observed-targets-only",
+				operators: [],
+			},
+			partialReasons: observed.metadata.version === 4 ? observed.metadata.partialReasons : [],
+			provenance: {
+				publicationLevel: observed.metadata.publicationLevel,
+				completeness: observed.metadata.completeness,
+				parentTargetDigest: binding.binding.targetDigest,
+				parentTargetCount: binding.binding.targetCount,
+			},
+			rows,
+			targets: observedTargets,
+			evidence: observed.evidence,
+		};
 	}
 
 	async scanInstancePolicy(input: {

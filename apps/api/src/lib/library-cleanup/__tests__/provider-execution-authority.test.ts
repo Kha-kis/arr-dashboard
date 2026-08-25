@@ -96,6 +96,14 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 					} as never,
 				);
 			}
+
+			async readPositiveEpisodeEvidence(input: { instanceId: string }) {
+				return {
+					available: false as const,
+					instanceId: input.instanceId,
+					evidence: { reasonCode: "positive_episode_unavailable" },
+				};
+			}
 		},
 	};
 });

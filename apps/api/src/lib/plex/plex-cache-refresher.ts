@@ -19,6 +19,8 @@ import type {
 	PlexCanonicalDomain,
 	PlexGenerationDomainRoot,
 	PlexGenerationSectionV3,
+	PlexPartialReason,
+	PlexPartialReasonCode,
 } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
@@ -40,13 +42,17 @@ import {
 	PLEX_CACHE_WRITE_CHUNK_SIZE,
 	PlexRefreshAttemptSupersededError,
 	publishAuthoritativePlexCacheGeneration,
+	publishPositivePlexCacheGeneration,
 } from "./plex-cache-storage.js";
+import {
+	createPlexSelectionProjection,
+	PLEX_CANONICALIZATION_VERSION,
+} from "./plex-canonical-projection.js";
 import { PlexClient } from "./plex-client.js";
 import {
-	PLEX_CANONICALIZATION_VERSION,
-	createPlexSelectionProjection,
-} from "./plex-canonical-projection.js";
-import { encodeAuthoritativePlexGenerationMetadata } from "./plex-generation-metadata.js";
+	encodeAuthoritativePlexGenerationMetadata,
+	encodePositivePlexGenerationMetadata,
+} from "./plex-generation-metadata.js";
 import {
 	createPlexTargetLedgerBinding,
 	normalizePlexGenerationTargets,
@@ -165,6 +171,17 @@ export interface PlexCacheSnapshot {
 	sections: Array<{ key: string; title: string; type: "movie" | "show" }>;
 }
 
+export type PlexPositiveCapability = {
+	domain: "episode-parents";
+	field: "membership";
+	semantics: "observed-targets-only";
+	operators: readonly [];
+};
+
+export type PlexPublicationBlock = {
+	reasons: readonly string[];
+};
+
 export interface PlexInventoryTarget {
 	sectionId: string;
 	sectionUuid?: string;
@@ -172,6 +189,18 @@ export interface PlexInventoryTarget {
 	tmdbId: number;
 	tvdbId?: number;
 	ratingKey: string;
+}
+
+export interface PlexCachePositiveObservation {
+	rows: PlexCacheSnapshotRow[];
+	observedTargets: PlexInventoryTarget[];
+	capabilities: readonly [PlexPositiveCapability];
+	observedRoots: PlexGenerationDomainRoot[];
+	partialReasons: readonly PlexPartialReason[];
+	settlement?: {
+		sections: PlexGenerationSectionV3[];
+		roots: PlexGenerationDomainRoot[];
+	};
 }
 
 export interface PlexPublicationContext {
@@ -195,6 +224,83 @@ export interface PlexCacheRefreshResult {
 	settlement?: {
 		sections: PlexGenerationSectionV3[];
 		roots: PlexGenerationDomainRoot[];
+	};
+	kind?: "authoritative-snapshot" | "positive-observation" | "unpublished";
+	observation?: PlexCachePositiveObservation;
+	block?: PlexPublicationBlock;
+}
+
+export type PlexCacheCollectionResult =
+	| (PlexCacheRefreshResult & {
+			kind: "authoritative-snapshot";
+			complete: true;
+			snapshot: PlexCacheSnapshot;
+			inventoryTargets: PlexInventoryTarget[];
+	  })
+	| (PlexCacheRefreshResult & {
+			kind: "positive-observation";
+			complete: false;
+			observation: PlexCachePositiveObservation;
+			snapshot?: never;
+			inventoryTargets?: never;
+	  })
+	| (PlexCacheRefreshResult & {
+			kind: "unpublished";
+			complete: false;
+			block: PlexPublicationBlock;
+			snapshot?: never;
+			inventoryTargets?: never;
+			observation?: never;
+	  });
+
+const POSITIVE_OBSERVATION_REASON_CODES = new Set<PlexPartialReasonCode>([
+	"currentItemsWithoutTmdbMetadata",
+	"currentLibraryItemsWithoutRatingKeys",
+	"historyItemsWithoutUsableMediaKey",
+	"currentHistoryItemsWithoutMappedMetadata",
+	"historyItemsWithUnknownAccounts",
+	"onDeckItemsWithoutMappedMetadata",
+	"onDeckFetchFailures",
+]);
+
+export function canPublishPositivePlexObservation(
+	incompleteReasons: Readonly<Record<string, number>>,
+): boolean {
+	const entries = Object.entries(incompleteReasons);
+	return (
+		entries.length > 0 &&
+		entries.length <= POSITIVE_OBSERVATION_REASON_CODES.size &&
+		entries.every(
+			([reason, count]) =>
+				POSITIVE_OBSERVATION_REASON_CODES.has(reason as PlexPartialReasonCode) &&
+				Number.isSafeInteger(count) &&
+				count > 0,
+		)
+	);
+}
+
+function sortedPartialReasons(
+	incompleteReasons: Readonly<Record<string, number>>,
+): PlexPartialReason[] {
+	return Object.entries(incompleteReasons)
+		.map(([code, count]) => ({ code: code as PlexPartialReasonCode, count }))
+		.sort((left, right) => left.code.localeCompare(right.code));
+}
+
+function unpublishedCollection(input: {
+	errors: number;
+	errorMessages: string[];
+	reasons: readonly string[];
+	superseded?: boolean;
+}): PlexCacheCollectionResult {
+	return {
+		kind: "unpublished",
+		upserted: 0,
+		errors: input.errors,
+		errorMessages: input.errorMessages,
+		complete: false,
+		...(input.superseded ? { superseded: true } : {}),
+		block: { reasons: [...input.reasons].sort((left, right) => left.localeCompare(right)) },
 	};
 }
 
@@ -305,24 +411,22 @@ function unpublishedResult(error: unknown): PlexCacheRefreshResult {
 		(error instanceof ProviderIdentityGuardError && error.code === "PUBLICATION_SUPERSEDED") ||
 		error instanceof PlexRefreshAttemptSupersededError
 	) {
-		return {
-			upserted: 0,
+		return unpublishedCollection({
 			errors: 0,
 			errorMessages: [],
-			complete: false,
+			reasons: ["superseded"],
 			superseded: true,
-		};
+		});
 	}
-	return {
-		upserted: 0,
+	return unpublishedCollection({
 		errors: 1,
 		errorMessages: [
 			error instanceof ProviderIdentityGuardError
 				? error.message
 				: `Atomic Plex cache publication failed: ${getErrorMessage(error)}`,
 		],
-		complete: false,
-	};
+		reasons: ["publication-error"],
+	});
 }
 
 /**
@@ -374,12 +478,12 @@ export async function refreshPlexCacheWithAttempt(
 				timeout: PLEX_CACHE_PUBLICATION_TRANSACTION_TIMEOUT_MS,
 			},
 		);
-		if (!result.complete || !result.completedAt) {
+		if (result.kind === "unpublished" || !result.completedAt) {
 			const finished = await finishPlexCacheRefreshAttemptFailure(
 				prisma,
 				"plex",
 				result.errorMessages.slice(0, 3).join("; ").slice(0, 500) ||
-					"Plex refresh did not produce a complete generation",
+					"Plex refresh did not publish a generation",
 				instance,
 				attempt,
 				log,
@@ -422,24 +526,24 @@ async function publishPlexCacheSnapshot(
 	tx: Prisma.TransactionClient,
 	instance: OwnedProviderPublicationSnapshot,
 	attempt: PlexCacheRefreshAttempt,
-	collected: PlexCacheRefreshResult,
-): Promise<PlexCacheRefreshResult> {
-	if (
-		!collected.complete ||
-		!collected.completedAt ||
-		!collected.snapshot ||
-		!collected.settlement
-	) {
+	collected: PlexCacheCollectionResult,
+): Promise<PlexCacheCollectionResult> {
+	if (collected.kind === "unpublished" || !collected.completedAt) {
 		return collected;
 	}
 
-	const rows = collected.snapshot.rows;
-	if (!collected.inventoryTargets) {
+	const positiveOnly = collected.kind === "positive-observation";
+	const rows = positiveOnly ? collected.observation.rows : collected.snapshot.rows;
+	const inventoryTargets = positiveOnly
+		? collected.observation.observedTargets
+		: collected.inventoryTargets;
+	const settlement = positiveOnly ? collected.observation.settlement : collected.settlement;
+	if (!inventoryTargets || !settlement) {
 		throw new Error("Plex settled collection lacked exact inventory targets");
 	}
 	const generationId = randomUUID();
 	const targets: PlexGenerationTarget[] = normalizePlexGenerationTargets(
-		collected.inventoryTargets.map((target) => {
+		inventoryTargets.map((target) => {
 			if (!target.sectionUuid) {
 				throw new Error("Plex settled inventory target lacked its section UUID");
 			}
@@ -463,31 +567,51 @@ async function publishPlexCacheSnapshot(
 		identityGeneration: instance.identityGeneration,
 		targets,
 	});
-	const generationMetadata = encodeAuthoritativePlexGenerationMetadata({
-		sections: collected.settlement.sections,
-		itemCount: rows.length,
-		canonicalizationVersion: PLEX_CANONICALIZATION_VERSION,
-		roots: collected.settlement.roots,
-		targetLedger,
-	});
-	await publishAuthoritativePlexCacheGeneration(tx, {
-		instance,
-		rows: rows.map((row) => ({
-			...row,
-			connectionGeneration: instance.connectionGeneration,
-			identityGeneration: instance.identityGeneration,
-		})),
-		completedAt: collected.completedAt,
-		generationId,
-		generationMetadata,
-		targets,
-		attempt,
-	});
+	const storedRows = rows.map((row) => ({
+		...row,
+		connectionGeneration: instance.connectionGeneration,
+		identityGeneration: instance.identityGeneration,
+	}));
+	if (positiveOnly) {
+		const generationMetadata = encodePositivePlexGenerationMetadata({
+			sections: settlement.sections,
+			itemCount: rows.length,
+			canonicalizationVersion: PLEX_CANONICALIZATION_VERSION,
+			observedRoots: collected.observation.observedRoots,
+			targetLedger,
+			partialReasons: collected.observation.partialReasons,
+		});
+		await publishPositivePlexCacheGeneration(tx, {
+			instance,
+			rows: storedRows,
+			completedAt: collected.completedAt,
+			generationId,
+			generationMetadata,
+			targets,
+			attempt,
+		});
+	} else {
+		const generationMetadata = encodeAuthoritativePlexGenerationMetadata({
+			sections: settlement.sections,
+			itemCount: rows.length,
+			canonicalizationVersion: PLEX_CANONICALIZATION_VERSION,
+			roots: settlement.roots,
+			targetLedger,
+		});
+		await publishAuthoritativePlexCacheGeneration(tx, {
+			instance,
+			rows: storedRows,
+			completedAt: collected.completedAt,
+			generationId,
+			generationMetadata,
+			targets,
+			attempt,
+		});
+	}
 	return {
 		...collected,
 		upserted: rows.length,
 		generationId,
-		inventoryTargets: collected.inventoryTargets,
 		targetLedger,
 	};
 }
@@ -558,6 +682,41 @@ function snapshotRoots(
 	return roots;
 }
 
+function positiveObservationRoots(
+	rows: readonly PlexCacheSnapshotRow[],
+	sections: readonly PlexGenerationSectionV3[],
+): PlexGenerationDomainRoot[] {
+	return sections.map((section) => {
+		const projection = createPlexSelectionProjection({
+			rows: rows.filter((row) => row.sectionId === section.key),
+			selection: { kind: "all" },
+			domains: ["episode-parents"],
+		});
+		const digest = projection.domains["episode-parents"];
+		if (!digest) throw new Error("Missing Plex canonical episode-parent root");
+		return { sectionKey: section.key, domain: "episode-parents", digest };
+	});
+}
+
+function positiveObservationSignature(observation: PlexCachePositiveObservation): string {
+	const projection = createPlexSelectionProjection({
+		rows: observation.rows,
+		selection: { kind: "all" },
+		domains: ["episode-parents"],
+	});
+	return JSON.stringify({
+		rows: projection.domains["episode-parents"],
+		targets: observation.observedTargets.map((target) => [
+			target.sectionId,
+			target.mediaType,
+			target.tmdbId,
+			target.tvdbId ?? null,
+			target.ratingKey,
+		]),
+		reasons: observation.partialReasons,
+	});
+}
+
 async function loadPublicationSettlementProbe(client: PlexClient) {
 	const [activities, sections] = await Promise.all([
 		client.getActivities({ uncached: true }),
@@ -593,11 +752,11 @@ export async function collectSettledPlexCacheLiveEvidence(
 	client: PlexClient,
 	instanceId: string,
 	log: FastifyBaseLogger,
-): Promise<PlexCacheRefreshResult> {
+): Promise<PlexCacheCollectionResult> {
 	try {
 		const startSections = await loadPublicationSettlementProbe(client);
 		const preliminary = await collectPlexCacheLiveEvidence(client, instanceId, log);
-		if (!preliminary.complete || !preliminary.snapshot) return preliminary;
+		if (preliminary.kind === "unpublished") return preliminary;
 
 		const endSections = await loadPublicationSettlementProbe(client);
 		if (settlementSectionIdentity(endSections) !== settlementSectionIdentity(startSections)) {
@@ -609,13 +768,48 @@ export async function collectSettledPlexCacheLiveEvidence(
 			throw new Error("Plex library section identity changed before final canonical pass");
 		}
 		const final = await collectPlexCacheLiveEvidence(client, instanceId, log);
-		if (!final.complete || !final.snapshot) return final;
+		if (final.kind === "unpublished") return final;
+		if (final.kind !== preliminary.kind) {
+			throw new Error("Plex collection kind changed during settlement");
+		}
 		if (
+			final.kind === "authoritative-snapshot" &&
+			preliminary.kind === "authoritative-snapshot" &&
 			snapshotProjection(final.snapshot).digest !== snapshotProjection(preliminary.snapshot).digest
 		) {
 			throw new Error("Plex canonical projection changed after the settlement end probe");
 		}
+		if (
+			final.kind === "positive-observation" &&
+			preliminary.kind === "positive-observation" &&
+			positiveObservationSignature(final.observation) !==
+				positiveObservationSignature(preliminary.observation)
+		) {
+			throw new Error("Plex observed targets changed after the settlement end probe");
+		}
+
 		const sectionUuids = new Map(finalSections.map((section) => [section.key, section.uuid]));
+		if (final.kind === "positive-observation") {
+			const positiveSections = finalSections.filter((section) => section.type === "show");
+			const roots = positiveObservationRoots(final.observation.rows, positiveSections);
+			const observedTargets = final.observation.observedTargets.map((target) => {
+				const sectionUuid = sectionUuids.get(target.sectionId);
+				if (!sectionUuid) {
+					throw new Error("Plex final observed target section was absent from settlement catalog");
+				}
+				return { ...target, sectionUuid };
+			});
+			return {
+				...final,
+				completedAt: new Date(),
+				observation: {
+					...final.observation,
+					observedTargets,
+					observedRoots: roots,
+					settlement: { sections: finalSections, roots },
+				},
+			};
+		}
 		const inventoryTargets = final.inventoryTargets?.map((target) => {
 			const sectionUuid = sectionUuids.get(target.sectionId);
 			if (!sectionUuid) {
@@ -634,12 +828,11 @@ export async function collectSettledPlexCacheLiveEvidence(
 			},
 		};
 	} catch (error) {
-		return {
-			upserted: 0,
+		return unpublishedCollection({
 			errors: 1,
 			errorMessages: [`Plex settlement publication failed: ${getErrorMessage(error)}`],
-			complete: false,
-		};
+			reasons: ["settlement-unavailable"],
+		});
 	}
 }
 
@@ -655,7 +848,7 @@ export async function collectPlexCacheLiveEvidence(
 	instanceId: string,
 	log: FastifyBaseLogger,
 	options: { preserveProviderDuplicates?: boolean } = {},
-): Promise<PlexCacheRefreshResult> {
+): Promise<PlexCacheCollectionResult> {
 	const upserted = 0;
 	let errors = 0;
 	let complete = true;
@@ -665,7 +858,6 @@ export async function collectPlexCacheLiveEvidence(
 	let totalLibraryItems = 0;
 	let mappedLibraryItems = 0;
 	let ignoredHistoricalItems = 0;
-	let verifiedInventoryTargets: PlexInventoryTarget[] | undefined;
 	const markIncomplete = (reason: string) => {
 		complete = false;
 		incompleteReasons[reason] = (incompleteReasons[reason] ?? 0) + 1;
@@ -952,6 +1144,36 @@ export async function collectPlexCacheLiveEvidence(
 		const aggregationsArray = [...aggregations.values()];
 		// Release Map hash table — aggregationsArray now owns all references (#239)
 		aggregations.clear();
+		const rows: PlexCacheSnapshotRow[] = aggregationsArray.map((agg) => ({
+			instanceId,
+			tmdbId: agg.tmdbId,
+			mediaType: agg.mediaType,
+			sectionId: agg.sectionId,
+			sectionTitle: agg.sectionTitle,
+			title: agg.title,
+			ratingKey: agg.ratingKey,
+			lastWatchedAt: agg.lastWatchedAt,
+			watchCount: agg.watchCount,
+			watchedByUsers: JSON.stringify([...agg.watchedByUsers].sort()),
+			onDeck: agg.onDeck,
+			userRating: agg.userRating,
+			collections: JSON.stringify([...agg.collections].sort()),
+			labels: JSON.stringify([...agg.labels].sort()),
+			addedAt: agg.addedAt,
+			thumb: agg.thumb,
+		}));
+		const snapshotSections = mediaLibs
+			.map((section) => ({
+				key: section.key,
+				title: section.title,
+				type: section.type as "movie" | "show",
+			}))
+			.sort(
+				(left, right) =>
+					left.key.localeCompare(right.key) ||
+					left.title.localeCompare(right.title) ||
+					left.type.localeCompare(right.type),
+			);
 
 		if (errors === 0 && complete) {
 			const latestSections = await client.getLibrarySections();
@@ -984,46 +1206,16 @@ export async function collectPlexCacheLiveEvidence(
 			if (JSON.stringify(latestOnDeckSignature) !== JSON.stringify(verifiedOnDeckSignature)) {
 				throw new Error("Plex on-deck state changed before cache publication");
 			}
-			verifiedInventoryTargets = inventoryTargets;
 			completedAt = new Date();
-			const sections = mediaLibs
-				.map((section) => ({
-					key: section.key,
-					title: section.title,
-					type: section.type as "movie" | "show",
-				}))
-				.sort(
-					(left, right) =>
-						left.key.localeCompare(right.key) ||
-						left.title.localeCompare(right.title) ||
-						left.type.localeCompare(right.type),
-				);
-			const rows: PlexCacheSnapshotRow[] = aggregationsArray.map((agg) => ({
-				instanceId,
-				tmdbId: agg.tmdbId,
-				mediaType: agg.mediaType,
-				sectionId: agg.sectionId,
-				sectionTitle: agg.sectionTitle,
-				title: agg.title,
-				ratingKey: agg.ratingKey,
-				lastWatchedAt: agg.lastWatchedAt,
-				watchCount: agg.watchCount,
-				watchedByUsers: JSON.stringify([...agg.watchedByUsers].sort()),
-				onDeck: agg.onDeck,
-				userRating: agg.userRating,
-				collections: JSON.stringify([...agg.collections].sort()),
-				labels: JSON.stringify([...agg.labels].sort()),
-				addedAt: agg.addedAt,
-				thumb: agg.thumb,
-			}));
 			return {
+				kind: "authoritative-snapshot",
 				upserted: 0,
 				errors: 0,
 				errorMessages: [],
 				complete: true,
 				completedAt,
 				inventoryTargets,
-				snapshot: { rows, sections },
+				snapshot: { rows, sections: snapshotSections },
 			};
 		}
 		log.warn(
@@ -1053,6 +1245,43 @@ export async function collectPlexCacheLiveEvidence(
 			},
 			"Plex cache refresh complete",
 		);
+
+		if (canPublishPositivePlexObservation(incompleteReasons)) {
+			appendIncompleteReasonMessages(errorMessages, incompleteReasons);
+			try {
+				await client.verifyHistorySnapshot(history);
+			} catch (error) {
+				errorMessages.push(
+					`Plex positive observation verification failed: ${getErrorMessage(error)}`,
+				);
+				return unpublishedCollection({
+					errors: errors + 1,
+					errorMessages,
+					reasons: [...Object.keys(incompleteReasons), "verification-exception"],
+				});
+			}
+			return {
+				kind: "positive-observation",
+				upserted: 0,
+				errors,
+				errorMessages,
+				complete: false,
+				observation: {
+					rows: rows.filter((row) => row.mediaType === "series"),
+					observedTargets: inventoryTargets.filter((target) => target.mediaType === "series"),
+					capabilities: [
+						{
+							domain: "episode-parents",
+							field: "membership",
+							semantics: "observed-targets-only",
+							operators: [],
+						},
+					],
+					observedRoots: [],
+					partialReasons: sortedPartialReasons(incompleteReasons),
+				},
+			};
+		}
 	} catch (error) {
 		complete = false;
 		const msg = `Plex cache refresh failed: ${getErrorMessage(error)}`;
@@ -1063,13 +1292,9 @@ export async function collectPlexCacheLiveEvidence(
 
 	appendIncompleteReasonMessages(errorMessages, incompleteReasons);
 
-	return {
-		upserted,
+	return unpublishedCollection({
 		errors,
 		errorMessages,
-		complete: complete && errors === 0,
-		completedAt,
-		inventoryTargets:
-			complete && errors === 0 && completedAt ? verifiedInventoryTargets : undefined,
-	};
+		reasons: Object.keys(incompleteReasons),
+	});
 }

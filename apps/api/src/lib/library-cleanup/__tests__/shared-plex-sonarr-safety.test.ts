@@ -1,5 +1,9 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
+import { evidenceFingerprint } from "../../evidence-fingerprint.js";
+
+const positiveEpisodeEvidence = vi.hoisted(() => new Map<string, unknown>());
+const exactEpisodeEvidenceUnavailable = vi.hoisted(() => ({ value: false }));
 
 vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("../../plex/plex-authority-service.js")>();
@@ -38,6 +42,12 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 			async readInstanceSelectedEpisodes(
 				input: Parameters<typeof repository.loadInstanceSelectedEpisodeEvidence>[1],
 			) {
+				if (exactEpisodeEvidenceUnavailable.value) {
+					return {
+						available: false as const,
+						evidence: { reasonCodes: ["exact_episode_unavailable"] },
+					};
+				}
 				const instances = await this.deps.prisma.serviceInstance.findMany({
 					where: { userId: input.userId, service: "PLEX", enabled: true },
 				});
@@ -59,6 +69,16 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 					...input,
 					instance,
 				});
+			}
+
+			async readPositiveEpisodeEvidence(input: { instanceId: string }) {
+				return (
+					positiveEpisodeEvidence.get(input.instanceId) ?? {
+						available: false as const,
+						instanceId: input.instanceId,
+						evidence: { reasonCode: "positive_episode_unavailable" },
+					}
+				);
 			}
 
 			async revalidatePersistedSnapshot(
@@ -123,6 +143,13 @@ const PLEX_SOURCE_FINGERPRINT = plexConnectionFingerprint({
 	baseUrl: "http://plex.internal:32400",
 	encryptedApiKey: "encrypted",
 	encryptionIv: "iv",
+});
+const POSITIVE_PARENT_DIGEST = "4".repeat(64);
+const POSITIVE_EPISODE_DIGEST = "5".repeat(64);
+const POSITIVE_RULE_FINGERPRINT = evidenceFingerprint({
+	id: "episode-rule",
+	parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+	action: "delete",
 });
 
 const TEST_PLEX_PROVIDER_EVIDENCE = createSanitizedProviderEvidence(
@@ -947,6 +974,92 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		).resolves.toEqual(new Map());
 
 		expect(fixture.getEpisodeWatchCount).toHaveBeenCalledWith("episode-1");
+	});
+
+	it("reproves a positive-only lower bound with the exact live rating key before a delete", async () => {
+		const fixture = makeSonarrDeps();
+		const observedAt = new Date();
+		const soleParentTarget = {
+			instanceId: "plex-1",
+			generationId: "parent-v4",
+			showTmdbId: 456,
+			sectionId: "shows",
+			sectionUuid: "shows-uuid",
+			mediaType: "series" as const,
+			tvdbId: 123,
+			ratingKey: "show-1",
+		};
+		positiveEpisodeEvidence.set("plex-1", {
+			available: true,
+			instanceId: "plex-1",
+			connectionGeneration: 1,
+			identityGeneration: 1,
+			provenance: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				parentPlexGenerationId: "parent-v4",
+				parentTargetDigest: POSITIVE_PARENT_DIGEST,
+				episodeGenerationId: "episode-v3",
+				episodeDigest: POSITIVE_EPISODE_DIGEST,
+				publishedAt: observedAt.toISOString(),
+			},
+			rows: [
+				{
+					showTmdbId: 456,
+					seasonNumber: 1,
+					episodeNumber: 1,
+					ratingKey: "episode-1",
+					lowerBound: 2,
+					sourceFingerprint: PLEX_SOURCE_FINGERPRINT,
+					soleParentTarget,
+				},
+			],
+		});
+		const episodeTarget = {
+			...exactEpisodeTarget(),
+			plexWatchEvidence: [
+				{
+					...exactEpisodeTarget().plexWatchEvidence[0]!,
+					watchCount: 0,
+					lowerBound: 2,
+					positiveProof: {
+						connectionGeneration: 1,
+						identityGeneration: 1,
+						parentGenerationId: "parent-v4",
+						parentPublicationLevel: "positive-only" as const,
+						parentTargetDigest: POSITIVE_PARENT_DIGEST,
+						soleParentTargetFingerprint: evidenceFingerprint(soleParentTarget),
+						episodeGenerationId: "episode-v3",
+						episodeDigest: POSITIVE_EPISODE_DIGEST,
+						showTmdbId: 456,
+						observedLowerBound: 2,
+						observedAt,
+						operator: "greater_than" as const,
+						threshold: 0,
+						ruleId: "episode-rule",
+						ruleFingerprint: POSITIVE_RULE_FINGERPRINT,
+					},
+				},
+			],
+		};
+		const context = createSharedPlexSafetyContext();
+
+		await expect(
+			findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context),
+		).resolves.toEqual(new Map());
+		expect(fixture.getEpisodeWatchCount).toHaveBeenCalledWith("episode-1");
+		expect(context.plans.get(cleanupDeleteTargetKey(episodeTarget))).toMatchObject({
+			kind: "verified_sonarr_episode",
+			watchProof: {
+				watchCount: 1,
+				positiveProof: {
+					threshold: 0,
+					observedLowerBound: 2,
+					parentGenerationId: "parent-v4",
+				},
+			},
+		});
+		positiveEpisodeEvidence.clear();
 	});
 
 	it("matches the exact episode path across duplicate Plex show copies", async () => {
@@ -4712,6 +4825,149 @@ describe("verified Sonarr mutation handoff", () => {
 		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
 		expect(fixture.bulkDelete).not.toHaveBeenCalled();
 	});
+
+	it.each([
+		[
+			"executes after the live count decreases but remains above threshold",
+			false,
+			false,
+			1,
+			false,
+			true,
+		],
+		[
+			"accepts authoritative recovery when the same predicate remains true",
+			true,
+			false,
+			1,
+			false,
+			true,
+		],
+		["blocks execution when the live count falls to the threshold", false, false, 0, false, false],
+		["reproves the same positive predicate for a retry", false, true, 1, false, true],
+		["blocks execution when the positive generation changes", false, false, 2, true, false],
+	] as const)(
+		"%s",
+		async (_case, recoverToAuthoritative, retry, liveCount, driftGeneration, succeeds) => {
+			const fixture = makeSonarrDeps({ livePlexWatchCount: 2 });
+			const observedAt = new Date();
+			const soleParentTarget = {
+				instanceId: "plex-1",
+				generationId: "parent-v4",
+				showTmdbId: 456,
+				sectionId: "shows",
+				sectionUuid: "shows-uuid",
+				mediaType: "series" as const,
+				tvdbId: 123,
+				ratingKey: "show-1",
+			};
+			const positiveEvidence = {
+				available: true,
+				instanceId: "plex-1",
+				connectionGeneration: 1,
+				identityGeneration: 1,
+				provenance: {
+					publicationLevel: "positive-only",
+					completeness: "partial",
+					parentPlexGenerationId: "parent-v4",
+					parentTargetDigest: POSITIVE_PARENT_DIGEST,
+					episodeGenerationId: "episode-v3",
+					episodeDigest: POSITIVE_EPISODE_DIGEST,
+					publishedAt: observedAt.toISOString(),
+				},
+				rows: [
+					{
+						showTmdbId: 456,
+						seasonNumber: 1,
+						episodeNumber: 1,
+						ratingKey: "episode-1",
+						lowerBound: 2,
+						sourceFingerprint: PLEX_SOURCE_FINGERPRINT,
+						soleParentTarget,
+					},
+				],
+			};
+			positiveEpisodeEvidence.set("plex-1", positiveEvidence);
+			const episodeTarget = {
+				...exactEpisodeTarget(),
+				plexWatchEvidence: [
+					{
+						...exactEpisodeTarget().plexWatchEvidence[0]!,
+						watchCount: 0,
+						lowerBound: 2,
+						positiveProof: {
+							connectionGeneration: 1,
+							identityGeneration: 1,
+							parentGenerationId: "parent-v4",
+							parentPublicationLevel: "positive-only" as const,
+							parentTargetDigest: POSITIVE_PARENT_DIGEST,
+							soleParentTargetFingerprint: evidenceFingerprint(soleParentTarget),
+							episodeGenerationId: "episode-v3",
+							episodeDigest: POSITIVE_EPISODE_DIGEST,
+							showTmdbId: 456,
+							observedLowerBound: 2,
+							observedAt,
+							operator: "greater_than" as const,
+							threshold: 0,
+							ruleId: "episode-rule",
+							ruleFingerprint: POSITIVE_RULE_FINGERPRINT,
+						},
+					},
+				],
+			};
+			const context = createSharedPlexSafetyContext();
+			await findSharedPlexDeleteBlocks(fixture.deps, "user-1", [episodeTarget], context);
+			const plan = context.plans.get(cleanupDeleteTargetKey(episodeTarget));
+			if (plan?.kind !== "verified_sonarr_episode") {
+				throw new Error("Expected verified Sonarr episode plan");
+			}
+			const storedApproval = {
+				...approval(),
+				...(retry
+					? {
+							status: "retry_pending",
+							lastExecutionError: "Interrupted cleanup mutation requires recovery",
+						}
+					: {}),
+				targetScope: "episode",
+				arrEpisodeId: 9_001,
+				seasonNumber: 1,
+				episodeNumber: 1,
+				episodeTitle: "Episode 1",
+				safetySnapshot: serializeExecutableSafetyPlanRaw(
+					plan,
+					createSanitizedProviderEvidence([], []),
+				),
+			};
+			configureApprovalStore(fixture.deps, storedApproval);
+			if (recoverToAuthoritative) positiveEpisodeEvidence.clear();
+			if (driftGeneration) {
+				exactEpisodeEvidenceUnavailable.value = true;
+				positiveEvidence.provenance.episodeGenerationId = "episode-v3-new";
+				positiveEvidence.provenance.episodeDigest = "9".repeat(64);
+				positiveEvidence.provenance.publishedAt = new Date(
+					observedAt.getTime() + 1_000,
+				).toISOString();
+				positiveEvidence.rows[0]!.lowerBound = 3;
+			}
+			fixture.getEpisodeWatchCount.mockResolvedValue(liveCount);
+
+			const result = retry
+				? await executeRetryItems(fixture.deps, "user-1", ["approval-1"])
+				: await executeApprovedItems(fixture.deps, "user-1", ["approval-1"]);
+
+			expect(result).toMatchObject(
+				succeeds ? { removed: 1, failed: 0 } : { removed: 0, failed: 1 },
+			);
+			if (succeeds) {
+				expect(fixture.bulkDelete).toHaveBeenCalledWith([3_001]);
+			} else {
+				expect(fixture.bulkDelete).not.toHaveBeenCalled();
+			}
+			positiveEpisodeEvidence.clear();
+			exactEpisodeEvidenceUnavailable.value = false;
+		},
+	);
 
 	it.each(["approved", "retry-recovery"] as const)(
 		"blocks %s execution when same-coordinate media belongs to another Plex rating key",

@@ -13,10 +13,8 @@ import type {
 } from "arr-sdk/sonarr";
 import { evidenceFingerprint } from "../evidence-fingerprint.js";
 import { createOwnedJellyfinPublicationSnapshot } from "../jellyfin/jellyfin-cache-refresher.js";
-import { createOwnedPlexPublicationSnapshot } from "../plex/plex-cache-refresher.js";
 import { PlexAuthorityService } from "../plex/plex-authority-service.js";
-
-import { requirePlexTargetLedgerBinding } from "../plex/plex-generation-target-ledger.js";
+import { createOwnedPlexPublicationSnapshot } from "../plex/plex-cache-refresher.js";
 import {
 	createPlexClient,
 	type PlexClient,
@@ -24,6 +22,7 @@ import {
 	type PlexSeriesMediaItem,
 	PlexSeriesNotFoundError,
 } from "../plex/plex-client.js";
+import { requirePlexTargetLedgerBinding } from "../plex/plex-generation-target-ledger.js";
 import { plexConnectionFingerprint as plexEvidenceSourceFingerprint } from "../plex/service-instance-fingerprint.js";
 import type { ServiceInstance } from "../prisma.js";
 import {
@@ -64,6 +63,23 @@ export interface CleanupDeleteTarget {
 		ratingKey: string;
 		watchCount: number;
 		refreshedAt: Date | string;
+		positiveProof?: {
+			connectionGeneration?: number;
+			identityGeneration?: number;
+			parentGenerationId?: string;
+			parentPublicationLevel?: "positive-only";
+			parentTargetDigest?: string;
+			soleParentTargetFingerprint?: string;
+			episodeGenerationId?: string;
+			episodeDigest?: string;
+			showTmdbId?: number;
+			observedLowerBound?: number;
+			observedAt?: Date | string;
+			operator?: "greater_than";
+			threshold?: number;
+			ruleId?: string;
+			ruleFingerprint?: string;
+		};
 	}>;
 	respectQuiSeeding?: boolean;
 	episodeFileInfoHash?: string | null;
@@ -205,6 +221,23 @@ export interface VerifiedEpisodePlexWatchProof {
 	fullPath: NormalizedMediaPath;
 	size: number;
 	mapping: { from: NormalizedMediaPath; to: NormalizedMediaPath } | null;
+	positiveProof?: {
+		connectionGeneration: number;
+		identityGeneration: number;
+		parentGenerationId: string;
+		parentPublicationLevel: "positive-only";
+		parentTargetDigest: string;
+		soleParentTargetFingerprint: string;
+		episodeGenerationId: string;
+		episodeDigest: string;
+		showTmdbId: number;
+		observedLowerBound: number;
+		observedAt: string;
+		operator: "greater_than";
+		threshold: number;
+		ruleId: string;
+		ruleFingerprint: string;
+	};
 }
 
 export interface VerifiedEpisodePlexWatchSource {
@@ -415,6 +448,13 @@ function requiredNonEmptyString(value: unknown, label: string): string {
 	return value.trim();
 }
 
+function requiredSha256(value: unknown, label: string): string {
+	if (!isSha256(value)) {
+		throw new FileMatchVerificationError(`${label} is invalid`);
+	}
+	return value.toLowerCase();
+}
+
 function canonicalTargetIdentity(value: unknown): VerifiedArrTargetIdentity {
 	if (!value || typeof value !== "object") {
 		throw new FileMatchVerificationError("ARR target identity is invalid");
@@ -524,6 +564,69 @@ function canonicalEpisodeWatchProof(value: unknown): VerifiedEpisodePlexWatchPro
 		throw new FileMatchVerificationError("Plex watch refresh time is invalid");
 	}
 	const mapping = proof.mapping as Record<string, unknown> | null | undefined;
+	const rawPositiveProof = proof.positiveProof;
+	let positiveProof: VerifiedEpisodePlexWatchProof["positiveProof"];
+	if (rawPositiveProof !== undefined) {
+		if (!rawPositiveProof || typeof rawPositiveProof !== "object") {
+			throw new FileMatchVerificationError("Positive Plex episode proof is invalid");
+		}
+		const positive = rawPositiveProof as Record<string, unknown>;
+		const observedAt = requiredNonEmptyString(
+			positive.observedAt,
+			"Positive Plex observation time",
+		);
+		if (
+			!Number.isFinite(Date.parse(observedAt)) ||
+			positive.parentPublicationLevel !== "positive-only" ||
+			positive.operator !== "greater_than" ||
+			typeof positive.connectionGeneration !== "number" ||
+			!Number.isSafeInteger(positive.connectionGeneration) ||
+			positive.connectionGeneration < 0 ||
+			typeof positive.identityGeneration !== "number" ||
+			!Number.isSafeInteger(positive.identityGeneration) ||
+			positive.identityGeneration < 0 ||
+			typeof positive.showTmdbId !== "number" ||
+			!Number.isSafeInteger(positive.showTmdbId) ||
+			positive.showTmdbId <= 0 ||
+			typeof positive.observedLowerBound !== "number" ||
+			!Number.isSafeInteger(positive.observedLowerBound) ||
+			positive.observedLowerBound <= 0 ||
+			typeof positive.threshold !== "number" ||
+			!Number.isFinite(positive.threshold) ||
+			positive.threshold < 0
+		) {
+			throw new FileMatchVerificationError("Positive Plex episode proof is invalid");
+		}
+		positiveProof = {
+			connectionGeneration: positive.connectionGeneration,
+			identityGeneration: positive.identityGeneration,
+			parentGenerationId: requiredNonEmptyString(
+				positive.parentGenerationId,
+				"Positive Plex parent generation",
+			),
+			parentPublicationLevel: "positive-only",
+			parentTargetDigest: requiredSha256(
+				positive.parentTargetDigest,
+				"Positive Plex parent digest",
+			),
+			soleParentTargetFingerprint: requiredSha256(
+				positive.soleParentTargetFingerprint,
+				"Positive Plex parent fingerprint",
+			),
+			episodeGenerationId: requiredNonEmptyString(
+				positive.episodeGenerationId,
+				"Positive Plex episode generation",
+			),
+			episodeDigest: requiredSha256(positive.episodeDigest, "Positive Plex episode digest"),
+			showTmdbId: positive.showTmdbId,
+			observedLowerBound: positive.observedLowerBound,
+			observedAt: new Date(observedAt).toISOString(),
+			operator: "greater_than",
+			threshold: positive.threshold,
+			ruleId: requiredNonEmptyString(positive.ruleId, "Positive Plex rule ID"),
+			ruleFingerprint: requiredSha256(positive.ruleFingerprint, "Positive Plex rule fingerprint"),
+		};
+	}
 	return {
 		plexInstanceId: requiredNonEmptyString(proof.plexInstanceId, "Plex watch instance ID"),
 		sourceFingerprint: requiredNonEmptyString(
@@ -543,6 +646,7 @@ function canonicalEpisodeWatchProof(value: unknown): VerifiedEpisodePlexWatchPro
 						from: normalizeMediaPath((mapping?.from as Record<string, unknown> | undefined)?.value),
 						to: normalizeMediaPath((mapping?.to as Record<string, unknown> | undefined)?.value),
 					},
+		...(positiveProof ? { positiveProof } : {}),
 	};
 }
 
@@ -3888,37 +3992,124 @@ async function verifyEpisodePlexWatchProof(
 	const enabledPlexInstances = plexInstances.filter(
 		(instance) => instance.service === "PLEX" && instance.enabled === true,
 	);
-	const policyEvidence = [];
 	const authority = new PlexAuthorityService({
 		prisma: deps.prisma,
 		...(deps.encryptor ? { encryptor: deps.encryptor } : {}),
 		log: deps.log,
 		...(deps.plexCacheClientFactory ? { createClient: deps.plexCacheClientFactory } : {}),
 	});
-	for (const instance of enabledPlexInstances) {
-		policyEvidence.push(
-			await authority.readInstanceSelectedEpisodes({
+	type EpisodePolicyRow = {
+		instanceId: string;
+		showTmdbId: number;
+		seasonNumber: number;
+		episodeNumber: number;
+		ratingKey: string | null;
+		watchCount: number | null;
+		refreshedAt: Date | null;
+		sourceFingerprint: string | null;
+	};
+	let policyRows: EpisodePolicyRow[] = [];
+	const approvedPositiveSources = target.plexWatchEvidence?.filter(
+		(evidence) => evidence.positiveProof !== undefined,
+	);
+	if (approvedPositiveSources?.length) {
+		for (const evidence of approvedPositiveSources) {
+			const proof = evidence.positiveProof;
+			const threshold = proof?.threshold;
+			if (
+				proof?.parentPublicationLevel !== "positive-only" ||
+				proof.operator !== "greater_than" ||
+				typeof threshold !== "number" ||
+				!Number.isFinite(threshold) ||
+				threshold < 0 ||
+				proof.showTmdbId !== showTmdbId ||
+				(!(proof.observedAt instanceof Date) && typeof proof.observedAt !== "string")
+			) {
+				continue;
+			}
+			const instance = enabledPlexInstances.find(
+				(candidate) => candidate.id === evidence.plexInstanceId,
+			);
+			if (
+				!instance ||
+				instance.connectionGeneration !== proof.connectionGeneration ||
+				instance.identityGeneration !== proof.identityGeneration ||
+				plexEvidenceSourceFingerprint(instance) !== evidence.sourceFingerprint
+			) {
+				continue;
+			}
+			const current = await authority.readPositiveEpisodeEvidence({
 				userId: instance.userId,
 				instanceId: instance.id,
-				showTmdbIds: [showTmdbId],
-				mutation: true,
 				maxAgeMs: 24 * 60 * 60 * 1000,
-			}),
-		);
+			});
+			const approvedObservedAt =
+				proof.observedAt instanceof Date ? proof.observedAt : new Date(proof.observedAt);
+			if (
+				!current.available ||
+				current.connectionGeneration !== proof.connectionGeneration ||
+				current.identityGeneration !== proof.identityGeneration ||
+				current.provenance.publicationLevel !== "positive-only" ||
+				current.provenance.parentPlexGenerationId !== proof.parentGenerationId ||
+				current.provenance.parentTargetDigest !== proof.parentTargetDigest ||
+				current.provenance.episodeGenerationId !== proof.episodeGenerationId ||
+				current.provenance.episodeDigest !== proof.episodeDigest ||
+				!Number.isFinite(approvedObservedAt.getTime()) ||
+				current.provenance.publishedAt !== approvedObservedAt.toISOString()
+			) {
+				continue;
+			}
+			const row = current.rows.find(
+				(candidate) =>
+					candidate.showTmdbId === showTmdbId &&
+					candidate.seasonNumber === seasonNumber &&
+					candidate.episodeNumber === exactEpisodeNumber &&
+					candidate.ratingKey === evidence.ratingKey &&
+					candidate.sourceFingerprint === evidence.sourceFingerprint &&
+					evidenceFingerprint(candidate.soleParentTarget) === proof.soleParentTargetFingerprint &&
+					candidate.lowerBound === proof.observedLowerBound &&
+					candidate.lowerBound > threshold,
+			);
+			if (!row) continue;
+			policyRows.push({
+				instanceId: instance.id,
+				showTmdbId: row.showTmdbId,
+				seasonNumber: row.seasonNumber,
+				episodeNumber: row.episodeNumber,
+				ratingKey: row.ratingKey,
+				watchCount: row.lowerBound,
+				refreshedAt: new Date(current.provenance.publishedAt),
+				sourceFingerprint: row.sourceFingerprint,
+			});
+		}
 	}
-	if (policyEvidence.some((entry) => !entry.available)) {
-		throw new EpisodeWatchProofError(
-			"No complete Plex episode policy evidence was available at the mutation boundary",
-		);
+	if (policyRows.length === 0) {
+		const policyEvidence = [];
+		for (const instance of enabledPlexInstances) {
+			policyEvidence.push(
+				await authority.readInstanceSelectedEpisodes({
+					userId: instance.userId,
+					instanceId: instance.id,
+					showTmdbIds: [showTmdbId],
+					mutation: true,
+					maxAgeMs: 24 * 60 * 60 * 1000,
+				}),
+			);
+		}
+		if (policyEvidence.some((entry) => !entry.available)) {
+			throw new EpisodeWatchProofError(
+				"No complete Plex episode policy evidence was available at the mutation boundary",
+			);
+		}
+		policyRows = policyEvidence
+			.flatMap((entry) => (entry.available ? entry.rows : []))
+			.filter(
+				(row) =>
+					row.showTmdbId === showTmdbId &&
+					row.seasonNumber === seasonNumber &&
+					row.episodeNumber === exactEpisodeNumber,
+			);
 	}
-	const policyRows = policyEvidence
-		.flatMap((entry) => (entry.available ? entry.rows : []))
-		.filter(
-			(row) =>
-				row.showTmdbId === showTmdbId &&
-				row.seasonNumber === seasonNumber &&
-				row.episodeNumber === exactEpisodeNumber,
-		);
 	if (policyRows.length === 0) {
 		throw new EpisodeWatchProofError(
 			"No complete Plex episode policy evidence was available at the mutation boundary",
@@ -4114,6 +4305,84 @@ async function verifyEpisodePlexWatchProof(
 		const plexUpdatedAt = plexInstance.updatedAt.getTime();
 		const currentPlexFingerprint = plexEvidenceSourceFingerprint(plexInstance);
 		if (evidence.sourceFingerprint !== currentPlexFingerprint) continue;
+		const positiveProof = evidence.positiveProof;
+		if (
+			positiveProof?.operator === "greater_than" &&
+			typeof positiveProof.threshold === "number" &&
+			Number.isFinite(positiveProof.threshold) &&
+			positiveProof.threshold >= 0 &&
+			typeof positiveProof.connectionGeneration === "number" &&
+			Number.isSafeInteger(positiveProof.connectionGeneration) &&
+			positiveProof.connectionGeneration >= 0 &&
+			typeof positiveProof.identityGeneration === "number" &&
+			Number.isSafeInteger(positiveProof.identityGeneration) &&
+			positiveProof.identityGeneration >= 0 &&
+			typeof positiveProof.parentGenerationId === "string" &&
+			positiveProof.parentGenerationId.length > 0 &&
+			typeof positiveProof.parentTargetDigest === "string" &&
+			positiveProof.parentTargetDigest.length > 0 &&
+			typeof positiveProof.soleParentTargetFingerprint === "string" &&
+			positiveProof.soleParentTargetFingerprint.length > 0 &&
+			typeof positiveProof.episodeGenerationId === "string" &&
+			positiveProof.episodeGenerationId.length > 0 &&
+			typeof positiveProof.episodeDigest === "string" &&
+			positiveProof.episodeDigest.length > 0 &&
+			typeof positiveProof.showTmdbId === "number" &&
+			Number.isSafeInteger(positiveProof.showTmdbId) &&
+			positiveProof.showTmdbId > 0 &&
+			typeof positiveProof.observedLowerBound === "number" &&
+			Number.isSafeInteger(positiveProof.observedLowerBound) &&
+			positiveProof.observedLowerBound > 0 &&
+			typeof positiveProof.ruleId === "string" &&
+			positiveProof.ruleId.length > 0 &&
+			typeof positiveProof.ruleFingerprint === "string" &&
+			positiveProof.ruleFingerprint.length > 0
+		) {
+			const verifiedSource = verifiedPolicySources.get(`${plexInstance.id}:${evidence.ratingKey}`);
+			if (
+				verifiedSource &&
+				verifiedSource.sourceFingerprint === currentPlexFingerprint &&
+				verifiedSource.source.liveWatchCount > positiveProof.threshold
+			) {
+				const match = verifiedSource.match;
+				return {
+					proof: {
+						plexInstanceId: plexInstance.id,
+						sourceFingerprint: currentPlexFingerprint,
+						plexServerUrl: verifiedSource.serverUrl,
+						ratingKey: evidence.ratingKey,
+						watchCount: verifiedSource.source.liveWatchCount,
+						refreshedAt: new Date().toISOString(),
+						fullPath: normalizeMediaPath(match.part.file),
+						size: match.part.size,
+						mapping: match.mapping,
+						positiveProof: {
+							connectionGeneration: positiveProof.connectionGeneration!,
+							identityGeneration: positiveProof.identityGeneration!,
+							parentGenerationId: positiveProof.parentGenerationId!,
+							parentPublicationLevel: "positive-only",
+							parentTargetDigest: positiveProof.parentTargetDigest!,
+							soleParentTargetFingerprint: positiveProof.soleParentTargetFingerprint!,
+							episodeGenerationId: positiveProof.episodeGenerationId!,
+							episodeDigest: positiveProof.episodeDigest!,
+							showTmdbId: positiveProof.showTmdbId!,
+							observedLowerBound: positiveProof.observedLowerBound!,
+							observedAt:
+								positiveProof.observedAt instanceof Date
+									? positiveProof.observedAt.toISOString()
+									: positiveProof.observedAt!,
+							operator: "greater_than",
+							threshold: positiveProof.threshold,
+							ruleId: positiveProof.ruleId!,
+							ruleFingerprint: positiveProof.ruleFingerprint!,
+						},
+					},
+					liveWatchSources: [...verifiedPolicySources.values()].map(({ source }) => source),
+				};
+			}
+			continue;
+		}
+		if (positiveProof) continue;
 		if (!Number.isFinite(plexUpdatedAt) || approvedRefreshedAt.getTime() < plexUpdatedAt) {
 			continue;
 		}

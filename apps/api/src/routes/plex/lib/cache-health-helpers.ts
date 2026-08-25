@@ -98,6 +98,7 @@ export function buildCacheHealthItems(
 							(unavailable ? "Published Plex cache evidence is unavailable" : null)),
 			),
 			itemCount: unavailable || positiveOnly ? null : status.itemCount,
+			...(positiveOnly ? { observedItemCount: status.itemCount } : {}),
 			isStale: now - status.lastRefreshedAt.getTime() > STALE_THRESHOLD_MS,
 			...(evidence ? { evidence } : {}),
 		};

@@ -130,6 +130,22 @@ const unavailable = {
 	evidence: unavailableEvidence,
 };
 
+const positiveOnly = {
+	available: true,
+	instanceId: "plex-1",
+	instanceName: "Primary",
+	rows: [],
+	sections: [],
+	evidence: {
+		availability: "current",
+		authority: "positive-only",
+		attemptState: "partial",
+		publicationLevel: "positive-only",
+		completeness: "partial",
+		reasonCodes: ["latest_attempt_partial"],
+	},
+};
+
 describe("Plex value route evidence contracts", () => {
 	let app: FastifyInstance;
 	let plexInstances: Array<{ id: string }>;
@@ -197,6 +213,36 @@ describe("Plex value route evidence contracts", () => {
 		expect(body).not.toHaveProperty(field);
 		expect(JSON.stringify(body)).not.toContain("in_progress:");
 	});
+
+	it.each([
+		["on-deck", "/api/plex/on-deck", "items"],
+		["recently added", "/api/plex/recently-added", "items"],
+		["collections", "/api/plex/plex-1/collections", "collections"],
+		["labels", "/api/plex/plex-1/labels", "labels"],
+		["collection statistics", "/api/plex/collection-stats", "collections"],
+		["series progress", "/api/plex/series-progress?tmdbIds=1", "progress"],
+		["episode status", "/api/plex/episodes?instanceId=plex-1&showTmdbId=1", "episodes"],
+		["episode completion", "/api/plex/user-episode-completion?tmdbIds=1", "shows"],
+		["watch enrichment", "/api/plex/watch-enrichment?tmdbIds=1&types=movie", "items"],
+	] as const)(
+		"withholds %s exact values from a current V4 generation",
+		async (_name, url, field) => {
+			mocks.loadInstanceEvidence.mockResolvedValue(positiveOnly);
+			mocks.loadInstanceEpisodeEvidence.mockResolvedValue(positiveOnly);
+			mocks.loadInstanceSelectedEpisodeEvidence.mockResolvedValue(positiveOnly);
+			mocks.loadUserEvidence.mockResolvedValue([positiveOnly]);
+			mocks.loadUserSelectedEvidence.mockResolvedValue([positiveOnly]);
+			mocks.scanInstancePolicyEvidence.mockResolvedValue(positiveOnly);
+			mocks.scanUserPolicyEvidence.mockResolvedValue([positiveOnly]);
+
+			const response = await createInjectAuthenticated(app)("GET", url);
+			const body = response.json();
+
+			expect(response.statusCode).toBe(503);
+			expect(body).not.toHaveProperty(field);
+			expect(JSON.stringify(body)).not.toContain('"watchCount":0');
+		},
+	);
 
 	it.each([
 		["on-deck", "/api/plex/on-deck", { items: [], evidence: authoritativeEvidence }],
