@@ -47,6 +47,7 @@ import {
 	CleanupMaintenanceConflictError,
 	withCleanupOperationGuard,
 } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
+import type { EpisodePlexWatchEvidence } from "../lib/library-cleanup/episode-scope.js";
 import {
 	type EpisodeExplainEvidence,
 	explainItemAgainstRules,
@@ -1995,7 +1996,7 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 			}
 
 			const tmdbId = extractSeriesTmdbId(cacheItem.data);
-			let watchCount: number | null = null;
+			let watchEvidence: EpisodePlexWatchEvidence[] = [];
 			if (tmdbId !== null) {
 				const instances = await app.prisma.serviceInstance.findMany({
 					where: { userId, enabled: true },
@@ -2013,17 +2014,14 @@ export const registerLibraryCleanupRoutes: FastifyPluginCallback = (app, _opts, 
 						coordinate: { showTmdbId: tmdbId, seasonNumber, episodeNumber },
 					},
 				);
-				const watchEvidence = watchMap.get(
-					episodeCoordinateKey(tmdbId, seasonNumber, episodeNumber),
-				)?.[0];
-				watchCount = watchEvidence?.watchCount ?? null;
+				watchEvidence =
+					watchMap.get(episodeCoordinateKey(tmdbId, seasonNumber, episodeNumber)) ?? [];
 				episodeEvidence = {
 					arrEpisodeId,
-					watchCount,
-					available: watchEvidence !== undefined,
+					watchEvidence,
 				};
 			}
-			episodeEvidence ??= { arrEpisodeId, watchCount, available: false };
+			episodeEvidence ??= { arrEpisodeId, watchEvidence: [] };
 			episodeDisplay = {
 				arrEpisodeId,
 				seasonNumber,

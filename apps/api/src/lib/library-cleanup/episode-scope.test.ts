@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildEpisodeTargetKey,
 	type EpisodeCleanupCandidate,
+	evaluateEpisodeWatchCountEvidence,
 	evaluateEpisodeWatchCountRule,
 } from "./episode-scope.js";
 
@@ -119,6 +120,28 @@ describe("episode cleanup scope", () => {
 				action: "delete",
 			}),
 		).toBeNull();
+	});
+
+	it("uses one independently qualifying lower bound instead of summing sources", () => {
+		const source = candidate().plexWatchEvidence[0]!;
+		const evaluation = evaluateEpisodeWatchCountEvidence(
+			[
+				{ ...source, plexInstanceId: "plex-a", watchCount: 0, lowerBound: 1 },
+				{ ...source, plexInstanceId: "plex-b", watchCount: 0, lowerBound: 3 },
+			],
+			{
+				id: "rule-episode",
+				name: "More than two plays",
+				parameters: JSON.stringify({ operator: "greater_than", count: 2 }),
+				action: "delete",
+			},
+		);
+
+		expect(evaluation).toMatchObject({
+			state: "true",
+			match: { reason: "Plex watch count 3 > 2" },
+			qualifyingEvidence: [{ plexInstanceId: "plex-b", lowerBound: 3 }],
+		});
 	});
 
 	it("selects an episode only when one positive lower-bound source is above the threshold", () => {

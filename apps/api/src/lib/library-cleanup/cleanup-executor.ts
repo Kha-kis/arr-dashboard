@@ -104,6 +104,7 @@ import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
 	evaluateEpisodeWatchCountRule,
+	evaluateEpisodeWatchCountEvidence,
 	isSupportedEpisodeCleanupRule,
 	toEpisodeTargetMetadata,
 } from "./episode-scope.js";
@@ -7074,6 +7075,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 		};
 	} = {},
 ): Promise<Map<string, EpisodePlexWatchEvidence[]>> {
+	const positiveResult = new Map<string, EpisodePlexWatchEvidence[]>();
 	const plexInstanceIds = instances
 		.filter((instance) => instance.service === "PLEX" && instance.enabled)
 		.map((instance) => instance.id);
@@ -7093,17 +7095,24 @@ export async function prefetchFreshPlexEpisodeWatchData(
 		const plexInstances = instances.filter(
 			(instance) => instance.service === "PLEX" && instance.enabled,
 		);
-		const positiveResult = new Map<string, EpisodePlexWatchEvidence[]>();
 		const positiveEvidenceInstanceIds = new Set<string>();
 		for (const instance of plexInstances) {
-			const positive = await cleanupPlexAuthority(deps).readPositiveEpisodeEvidence({
-				userId: instance.userId,
-				instanceId: instance.id,
-				now,
-				maxAgeMs: PLEX_EPISODE_FRESHNESS_MS,
-			});
+			const positive = await cleanupPlexAuthority(deps)
+				.readPositiveEpisodeEvidence({
+					userId: instance.userId,
+					instanceId: instance.id,
+					now,
+					maxAgeMs: PLEX_EPISODE_FRESHNESS_MS,
+				})
+				.catch((error: unknown) => {
+					deps.log.warn(
+						{ err: error, instanceId: instance.id },
+						"Positive Plex episode evidence was unavailable for one instance",
+					);
+					return undefined;
+				});
 			if (
-				!positive.available ||
+				!positive?.available ||
 				positive.connectionGeneration !== instance.connectionGeneration ||
 				positive.identityGeneration !== instance.identityGeneration
 			) {
@@ -7168,7 +7177,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			warnings.push(
 				"Plex episode evidence had no complete fresh published generation for every enabled instance; episode-scoped cleanup targets were skipped.",
 			);
-			return new Map();
+			return positiveResult;
 		}
 		const repositoryEvidence = [];
 		for (const instance of authoritativeInstances) {
@@ -7186,7 +7195,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			warnings.push(
 				"Plex episode evidence did not match its published parent generation; episode-scoped cleanup targets were skipped.",
 			);
-			return new Map();
+			return positiveResult;
 		}
 		const rows = repositoryEvidence
 			.flatMap((entry) => (entry.available ? entry.rows : []))
@@ -7198,7 +7207,7 @@ export async function prefetchFreshPlexEpisodeWatchData(
 						row.seasonNumber === options.coordinate.seasonNumber &&
 						row.episodeNumber === options.coordinate.episodeNumber),
 			);
-		const result = positiveResult;
+		const result = new Map<string, EpisodePlexWatchEvidence[]>();
 		const rowsByInstance = new Map<string, unknown[]>(
 			authoritativeInstances.map((instance) => [instance.id, []]),
 		);
@@ -7279,16 +7288,25 @@ export async function prefetchFreshPlexEpisodeWatchData(
 			warnings.push(
 				"Plex episode evidence changed while it was read; episode-scoped cleanup targets were skipped.",
 			);
-			return new Map();
+			return positiveResult;
 		}
 		options.evidenceSink?.(snapshot.evidence);
-		return result;
+		for (const [key, exactEvidence] of result) {
+			const merged = [...(positiveResult.get(key) ?? []), ...exactEvidence];
+			merged.sort(
+				(left, right) =>
+					(right.lowerBound ?? right.watchCount) - (left.lowerBound ?? left.watchCount) ||
+					left.plexInstanceId.localeCompare(right.plexInstanceId),
+			);
+			positiveResult.set(key, merged);
+		}
+		return positiveResult;
 	} catch (error) {
 		deps.log.error({ err: error }, "Failed to load fresh Plex episode watch data");
 		warnings.push(
 			"Plex episode watch data was unavailable or stale; episode-scoped rules were skipped for safety.",
 		);
-		return new Map();
+		return positiveResult;
 	}
 }
 
@@ -7454,10 +7472,9 @@ async function evaluateSeriesEpisodes(
 			// satisfied this rule. Carrying a lower-count source here would let a
 			// physical-path match on that server authorize a rule that only passed
 			// because a different server had enough watches.
-			const qualifyingWatchEvidence = watchEvidence.filter(
-				(evidence) => (evidence.lowerBound ?? evidence.watchCount) > watchCountThreshold,
-			);
-			if (qualifyingWatchEvidence.length === 0) continue;
+			const watchEvaluation = evaluateEpisodeWatchCountEvidence(watchEvidence, rule);
+			if (watchEvaluation.state !== "true" || !watchEvaluation.match) continue;
+			const qualifyingWatchEvidence = watchEvaluation.qualifyingEvidence;
 			const ruleFingerprint = evidenceFingerprint({
 				id: rule.id,
 				parameters: rule.parameters,
@@ -7484,8 +7501,7 @@ async function evaluateSeriesEpisodes(
 						: {}),
 				})),
 			};
-			const match = evaluateEpisodeWatchCountRule(ruleCandidate, rule);
-			if (!match) continue;
+			const match = watchEvaluation.match;
 			flagged.push({
 				cacheItem: { ...item, sizeOnDisk: file.size },
 				match,

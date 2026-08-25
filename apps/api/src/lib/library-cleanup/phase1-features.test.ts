@@ -110,6 +110,20 @@ function makeCacheItem(overrides: Partial<CacheItemForEval> = {}): CacheItemForE
 	};
 }
 
+function exactEpisodeWatchEvidence(watchCount: number) {
+	return [
+		{
+			plexInstanceId: "plex-1",
+			sourceFingerprint: "source-1",
+			ratingKey: "episode-202",
+			watchCount,
+			lastWatchedAt: null,
+			watchedByUsers: [],
+			refreshedAt: new Date("2026-01-01T00:00:00.000Z"),
+		},
+	];
+}
+
 function makeRule(overrides: Partial<TestRule> = {}): TestRule {
 	return {
 		id: "rule-1",
@@ -524,8 +538,7 @@ describe("explainItemAgainstRules", () => {
 
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "SONARR", ctx, {
 			arrEpisodeId: 202,
-			watchCount: 1,
-			available: true,
+			watchEvidence: exactEpisodeWatchEvidence(1),
 		});
 
 		expect(results[0]).toMatchObject({
@@ -549,8 +562,7 @@ describe("explainItemAgainstRules", () => {
 
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "SONARR", ctx, {
 			arrEpisodeId: 202,
-			watchCount: 1,
-			available: true,
+			watchEvidence: exactEpisodeWatchEvidence(1),
 		});
 
 		expect(results[0]).toMatchObject({
@@ -593,8 +605,7 @@ describe("explainItemAgainstRules", () => {
 
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "SONARR", ctx, {
 			arrEpisodeId: 202,
-			watchCount: null,
-			available: false,
+			watchEvidence: [],
 		});
 
 		expect(results[0]).toMatchObject({
@@ -618,8 +629,7 @@ describe("explainItemAgainstRules", () => {
 
 		const results = explainItemAgainstRules(makeCacheItem(), rules, "SONARR", ctx, {
 			arrEpisodeId: 202,
-			watchCount: 1,
-			available: true,
+			watchEvidence: exactEpisodeWatchEvidence(1),
 		});
 
 		expect(results[0]).toMatchObject({
@@ -646,7 +656,7 @@ describe("explainItemAgainstRules", () => {
 			rules,
 			"SONARR",
 			baseCtx(),
-			{ arrEpisodeId: 202, watchCount: 1, available: true },
+			{ arrEpisodeId: 202, watchEvidence: exactEpisodeWatchEvidence(1) },
 			new Set(["plex"]),
 		);
 

@@ -1171,6 +1171,68 @@ describe("prefetchFreshPlexEpisodeWatchData", () => {
 		authorityMock.positiveEpisodeEvidence.clear();
 	});
 
+	it("retains one valid positive source when another Plex source has no complete exact generation", async () => {
+		const now = new Date("2026-08-24T12:00:00.000Z");
+		const positiveInstance = verifiedPlexInstance({ id: "plex-positive" });
+		const unavailableInstance = verifiedPlexInstance({
+			id: "plex-unavailable",
+			baseUrl: "http://plex-unavailable.internal:32400",
+		});
+		authorityMock.positiveEpisodeEvidence.set(positiveInstance.id, {
+			available: true,
+			instanceId: positiveInstance.id,
+			connectionGeneration: 3,
+			identityGeneration: 7,
+			provenance: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				connectionGeneration: 3,
+				identityGeneration: 7,
+				parentPlexGenerationId: "parent-v4",
+				parentTargetDigest: "parent-target-digest",
+				parentTargetCount: 1,
+				episodeGenerationId: "episode-v3",
+				episodeDigest: "episode-digest",
+				publishedAt: now.toISOString(),
+			},
+			rows: [
+				{
+					showTmdbId: 42,
+					seasonNumber: 1,
+					episodeNumber: 1,
+					ratingKey: "episode-a",
+					lowerBound: 2,
+					sourceFingerprint: plexConnectionFingerprint(positiveInstance as never),
+					soleParentTarget: { ratingKey: "show-a" },
+				},
+			],
+		});
+		const warnings: string[] = [];
+
+		const result = await prefetchFreshPlexEpisodeWatchData(
+			{
+				prisma: {
+					serviceInstance: {
+						findMany: vi.fn().mockResolvedValue([positiveInstance, unavailableInstance]),
+					},
+					cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([]) },
+				},
+				log,
+			} as never,
+			[positiveInstance, unavailableInstance] as never,
+			now,
+			warnings,
+		);
+
+		expect(result.get("42:1:1")).toMatchObject([
+			{ plexInstanceId: "plex-positive", lowerBound: 2, watchCount: 0 },
+		]);
+		expect(warnings).toContainEqual(
+			expect.stringContaining("no complete fresh published generation"),
+		);
+		authorityMock.positiveEpisodeEvidence.clear();
+	});
+
 	it.each([
 		["metadata-only instance update", "updatedAt"],
 		["same-identity reverification", "identityVerifiedAt"],

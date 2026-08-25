@@ -1383,6 +1383,212 @@ describe("shared Plex deletion safety for Sonarr", () => {
 		expect(fixture.deps.quiClientFactory).not.toHaveBeenCalled();
 	});
 
+	it("selects the reporter episode from Plex A while Plex B remains degraded", async () => {
+		const fixture = makeSonarrDeps();
+		const secondPlexInstance = {
+			...fixture.plexInstance,
+			id: "plex-2",
+			baseUrl: "http://plex-2.internal:32400",
+			encryptedApiKey: "encrypted-2",
+		};
+		const observedAt = new Date();
+		positiveEpisodeEvidence.set(fixture.plexInstance.id, {
+			available: true,
+			instanceId: fixture.plexInstance.id,
+			connectionGeneration: 1,
+			identityGeneration: 1,
+			provenance: {
+				publicationLevel: "positive-only",
+				completeness: "partial",
+				parentPlexGenerationId: "parent-v4",
+				parentTargetDigest: POSITIVE_PARENT_DIGEST,
+				episodeGenerationId: "episode-v3",
+				episodeDigest: POSITIVE_EPISODE_DIGEST,
+				publishedAt: observedAt.toISOString(),
+			},
+			rows: [
+				{
+					showTmdbId: 456,
+					seasonNumber: 1,
+					episodeNumber: 1,
+					ratingKey: "episode-1",
+					lowerBound: 2,
+					sourceFingerprint: PLEX_SOURCE_FINGERPRINT,
+					soleParentTarget: { ratingKey: "show-123" },
+				},
+			],
+		});
+		vi.mocked(fixture.deps.prisma.libraryCleanupConfig.findUnique).mockResolvedValue({
+			id: "config-1",
+			userId: "user-1",
+			enabled: true,
+			dryRunMode: true,
+			requireApproval: false,
+			maxRemovalsPerRun: 10,
+			respectQuiSeeding: false,
+			rules: [episodeCleanupRule()],
+		} as never);
+		vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation(((args: {
+			where?: { service?: string };
+		}) => {
+			if (args.where?.service === "PLEX") {
+				return Promise.resolve([fixture.plexInstance, secondPlexInstance]);
+			}
+			if (args.where?.service === "QUI") return Promise.resolve([]);
+			if (args.where?.service) return Promise.resolve([fixture.targetInstance]);
+			return Promise.resolve([fixture.targetInstance, fixture.plexInstance, secondPlexInstance]);
+		}) as never);
+		vi.mocked(fixture.deps.prisma.cacheRefreshStatus.findMany).mockImplementation(((args: {
+			where: { instanceId?: string; cacheType: string };
+		}) => {
+			if (args.where.instanceId === secondPlexInstance.id) return Promise.resolve([]);
+			return Promise.resolve([
+				args.where.cacheType === "plex" ? fixture.mainStatus : fixture.episodeStatus,
+			]);
+		}) as never);
+		vi.mocked(fixture.deps.prisma.libraryCache.findMany)
+			.mockResolvedValueOnce([
+				{
+					id: "series-cache-1",
+					instanceId: fixture.targetInstance.id,
+					arrItemId: fixture.series.id,
+					itemType: "series",
+					title: fixture.series.title,
+					year: 2024,
+					monitored: true,
+					hasFile: true,
+					status: "continuing",
+					qualityProfileId: 1,
+					qualityProfileName: "4K",
+					sizeOnDisk: 4_003n,
+					arrAddedAt: new Date("2025-01-01T00:00:00.000Z"),
+					cachedAt: new Date(),
+					data: JSON.stringify({
+						remoteIds: { tvdbId: fixture.series.tvdbId, tmdbId: fixture.series.tmdbId },
+						path: fixture.series.path,
+						_arrDashboardSource: { serviceFingerprint: sonarrServiceFingerprint },
+					}),
+				},
+			] as never)
+			.mockResolvedValueOnce([]);
+
+		const result = await executeCleanupPreview(fixture.deps, "user-1");
+
+		expect(result).toMatchObject({ itemsFlagged: 1, itemsRemoved: 0 });
+		expect(result.details).toEqual([
+			expect.objectContaining({
+				targetScope: "episode",
+				arrEpisodeId: 9_001,
+				previewDisposition: "selected",
+			}),
+		]);
+		expect(result.warnings).toContainEqual(
+			expect.stringContaining("no complete fresh published generation"),
+		);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		positiveEpisodeEvidence.clear();
+	});
+
+	it("does not bypass shared-Plex safety when an independent Plex source is unavailable", async () => {
+		const fixture = makeSonarrDeps();
+		const secondPlexInstance = {
+			...fixture.plexInstance,
+			id: "plex-2",
+			baseUrl: "http://plex-2.internal:32400",
+			encryptedApiKey: "encrypted-2",
+		};
+		const primaryClient = fixture.deps.plexClientFactory!(fixture.plexInstance as never);
+		vi.mocked(fixture.deps.plexClientFactory!).mockImplementation((instance) =>
+			instance.id === secondPlexInstance.id
+				? ({
+						getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Owner" }]),
+						getMovieMediaPartsByTmdbId: vi.fn(),
+						getSeriesEpisodeMediaPartsByTvdbId: vi
+							.fn()
+							.mockRejectedValue(new Error("Plex B unavailable")),
+						getEpisodeWatchCount: vi.fn(),
+					} as never)
+				: primaryClient,
+		);
+		vi.mocked(fixture.deps.prisma.serviceInstance.findMany).mockImplementation(((args: {
+			where?: { service?: string };
+		}) =>
+			args.where?.service === "PLEX"
+				? Promise.resolve([fixture.plexInstance, secondPlexInstance])
+				: args.where?.service === "QUI"
+					? Promise.resolve([fixture.quiInstance])
+					: Promise.resolve([fixture.targetInstance])) as never);
+		fixture.targetClient.notification.getAll.mockResolvedValue([
+			fixture.notification,
+			{
+				...fixture.notification,
+				fields: fixture.notification.fields.map((field) =>
+					field.name === "host" ? { ...field, value: "plex-2.internal" } : field,
+				),
+			},
+		]);
+		const episodeTarget = exactEpisodeTarget();
+		const flaggedItem = {
+			cacheItem: {
+				id: "series-cache",
+				instanceId: fixture.targetInstance.id,
+				arrItemId: fixture.series.id,
+				itemType: "series",
+				title: fixture.series.title,
+				year: 2024,
+				monitored: true,
+				hasFile: true,
+				status: "continuing",
+				qualityProfileId: 1,
+				qualityProfileName: "HD",
+				sizeOnDisk: 2_001n,
+				arrAddedAt: new Date(),
+				cachedAt: new Date(),
+				data: JSON.stringify({
+					_arrDashboardSource: { serviceFingerprint: sonarrServiceFingerprint },
+					path: fixture.series.path,
+					remoteIds: { tvdbId: fixture.series.tvdbId, tmdbId: fixture.series.tmdbId },
+				}),
+			},
+			match: {
+				ruleId: "episode-rule",
+				ruleName: "Remove watched episodes",
+				reason: "Plex watch count 1 > 0",
+				action: "delete",
+			},
+			rating: 8.2,
+			episodeTarget: {
+				...episodeTarget,
+				seriesTitle: fixture.series.title,
+				episodeTitle: "Episode 1",
+				fileInfoHash: episodeTarget.episodeFileInfoHash,
+				fileTorrentState: episodeTarget.episodeFileTorrentState,
+			},
+		} as never;
+
+		const result = await executeDirectRemoval(
+			fixture.deps,
+			{
+				id: "config-1",
+				maxRemovalsPerRun: 10,
+				respectQuiSeeding: true,
+				rules: [episodeCleanupRule()],
+			} as never,
+			"user-1",
+			[flaggedItem],
+			1,
+			1,
+			Date.now(),
+		);
+
+		expect(result).toMatchObject({ itemsRemoved: 0, itemsFilesDeleted: 0 });
+		expect(result.details).toEqual([
+			expect.objectContaining({ action: "skipped", reason: expect.stringContaining("Plex") }),
+		]);
+		expect(fixture.bulkDelete).not.toHaveBeenCalled();
+		expect(fixture.setEpisodeMonitored).not.toHaveBeenCalled();
+	});
+
 	it("reuses one complete qUI inode snapshot across episode paths in a safety operation", async () => {
 		const fixture = makeSonarrDeps();
 		const first = exactEpisodeTarget();
