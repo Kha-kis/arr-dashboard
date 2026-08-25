@@ -294,6 +294,11 @@ export type NotificationAggregationConfig = Prisma.NotificationAggregationConfig
  */
 export type PlexCache = Prisma.PlexCacheModel
 /**
+ * Model PlexGenerationTarget
+ * Exact mapped provider objects for the current authoritative Plex generation.
+ */
+export type PlexGenerationTarget = Prisma.PlexGenerationTargetModel
+/**
  * Model PlexEpisodeCache
  * Cached Plex episode-level watch data
  */

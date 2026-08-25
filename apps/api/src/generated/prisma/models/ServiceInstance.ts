@@ -391,6 +391,7 @@ export type ServiceInstanceWhereInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheListRelationFilter
   librarySyncStatus?: Prisma.XOR<Prisma.LibrarySyncStatusNullableScalarRelationFilter, Prisma.LibrarySyncStatusWhereInput> | null
   plexCaches?: Prisma.PlexCacheListRelationFilter
+  plexGenerationTargets?: Prisma.PlexGenerationTargetListRelationFilter
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheListRelationFilter
   tautulliCaches?: Prisma.TautulliCacheListRelationFilter
   jellyfinCaches?: Prisma.JellyfinCacheListRelationFilter
@@ -449,6 +450,7 @@ export type ServiceInstanceOrderByWithRelationInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheOrderByRelationAggregateInput
   librarySyncStatus?: Prisma.LibrarySyncStatusOrderByWithRelationInput
   plexCaches?: Prisma.PlexCacheOrderByRelationAggregateInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetOrderByRelationAggregateInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheOrderByRelationAggregateInput
   tautulliCaches?: Prisma.TautulliCacheOrderByRelationAggregateInput
   jellyfinCaches?: Prisma.JellyfinCacheOrderByRelationAggregateInput
@@ -510,6 +512,7 @@ export type ServiceInstanceWhereUniqueInput = Prisma.AtLeast<{
   episodeFileCache?: Prisma.EpisodeFileCacheListRelationFilter
   librarySyncStatus?: Prisma.XOR<Prisma.LibrarySyncStatusNullableScalarRelationFilter, Prisma.LibrarySyncStatusWhereInput> | null
   plexCaches?: Prisma.PlexCacheListRelationFilter
+  plexGenerationTargets?: Prisma.PlexGenerationTargetListRelationFilter
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheListRelationFilter
   tautulliCaches?: Prisma.TautulliCacheListRelationFilter
   jellyfinCaches?: Prisma.JellyfinCacheListRelationFilter
@@ -629,6 +632,7 @@ export type ServiceInstanceCreateInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -686,6 +690,7 @@ export type ServiceInstanceUncheckedCreateInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -743,6 +748,7 @@ export type ServiceInstanceUpdateInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -800,6 +806,7 @@ export type ServiceInstanceUncheckedUpdateInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -1327,6 +1334,20 @@ export type ServiceInstanceUpdateOneRequiredWithoutPlexCachesNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutPlexCachesInput, Prisma.ServiceInstanceUpdateWithoutPlexCachesInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutPlexCachesInput>
 }
 
+export type ServiceInstanceCreateNestedOneWithoutPlexGenerationTargetsInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutPlexGenerationTargetsInput, Prisma.ServiceInstanceUncheckedCreateWithoutPlexGenerationTargetsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutPlexGenerationTargetsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+}
+
+export type ServiceInstanceUpdateOneRequiredWithoutPlexGenerationTargetsNestedInput = {
+  create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutPlexGenerationTargetsInput, Prisma.ServiceInstanceUncheckedCreateWithoutPlexGenerationTargetsInput>
+  connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutPlexGenerationTargetsInput
+  upsert?: Prisma.ServiceInstanceUpsertWithoutPlexGenerationTargetsInput
+  connect?: Prisma.ServiceInstanceWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.ServiceInstanceUpdateToOneWithWhereWithoutPlexGenerationTargetsInput, Prisma.ServiceInstanceUpdateWithoutPlexGenerationTargetsInput>, Prisma.ServiceInstanceUncheckedUpdateWithoutPlexGenerationTargetsInput>
+}
+
 export type ServiceInstanceCreateNestedOneWithoutPlexEpisodeCachesInput = {
   create?: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutPlexEpisodeCachesInput, Prisma.ServiceInstanceUncheckedCreateWithoutPlexEpisodeCachesInput>
   connectOrCreate?: Prisma.ServiceInstanceCreateOrConnectWithoutPlexEpisodeCachesInput
@@ -1525,6 +1546,7 @@ export type ServiceInstanceCreateWithoutUserInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -1581,6 +1603,7 @@ export type ServiceInstanceUncheckedCreateWithoutUserInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -1693,6 +1716,7 @@ export type ServiceInstanceCreateWithoutInodeIndexCacheInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -1749,6 +1773,7 @@ export type ServiceInstanceUncheckedCreateWithoutInodeIndexCacheInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -1821,6 +1846,7 @@ export type ServiceInstanceUpdateWithoutInodeIndexCacheInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -1877,6 +1903,7 @@ export type ServiceInstanceUncheckedUpdateWithoutInodeIndexCacheInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -1932,6 +1959,7 @@ export type ServiceInstanceCreateWithoutTagsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -1988,6 +2016,7 @@ export type ServiceInstanceUncheckedCreateWithoutTagsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -2060,6 +2089,7 @@ export type ServiceInstanceUpdateWithoutTagsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -2116,6 +2146,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTagsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -2172,6 +2203,7 @@ export type ServiceInstanceCreateWithoutTrashSyncHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -2228,6 +2260,7 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSyncHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -2300,6 +2333,7 @@ export type ServiceInstanceUpdateWithoutTrashSyncHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -2356,6 +2390,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSyncHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -2412,6 +2447,7 @@ export type ServiceInstanceCreateWithoutTrashBackupsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -2468,6 +2504,7 @@ export type ServiceInstanceUncheckedCreateWithoutTrashBackupsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -2540,6 +2577,7 @@ export type ServiceInstanceUpdateWithoutTrashBackupsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -2596,6 +2634,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashBackupsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -2652,6 +2691,7 @@ export type ServiceInstanceCreateWithoutTrashSchedulesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -2708,6 +2748,7 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSchedulesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -2780,6 +2821,7 @@ export type ServiceInstanceUpdateWithoutTrashSchedulesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -2836,6 +2878,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSchedulesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -2892,6 +2935,7 @@ export type ServiceInstanceCreateWithoutQualityProfileMappingsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -2948,6 +2992,7 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileMappingsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -3020,6 +3065,7 @@ export type ServiceInstanceUpdateWithoutQualityProfileMappingsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -3076,6 +3122,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileMappingsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -3132,6 +3179,7 @@ export type ServiceInstanceCreateWithoutQualityProfileOverridesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -3188,6 +3236,7 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileOverridesInput = 
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -3260,6 +3309,7 @@ export type ServiceInstanceUpdateWithoutQualityProfileOverridesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -3316,6 +3366,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileOverridesInput = 
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -3372,6 +3423,7 @@ export type ServiceInstanceCreateWithoutDeploymentHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -3428,6 +3480,7 @@ export type ServiceInstanceUncheckedCreateWithoutDeploymentHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -3500,6 +3553,7 @@ export type ServiceInstanceUpdateWithoutDeploymentHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -3556,6 +3610,7 @@ export type ServiceInstanceUncheckedUpdateWithoutDeploymentHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -3612,6 +3667,7 @@ export type ServiceInstanceCreateWithoutStandaloneCFDeploymentsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -3668,6 +3724,7 @@ export type ServiceInstanceUncheckedCreateWithoutStandaloneCFDeploymentsInput = 
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -3740,6 +3797,7 @@ export type ServiceInstanceUpdateWithoutStandaloneCFDeploymentsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -3796,6 +3854,7 @@ export type ServiceInstanceUncheckedUpdateWithoutStandaloneCFDeploymentsInput = 
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -3852,6 +3911,7 @@ export type ServiceInstanceCreateWithoutQualitySizeMappingInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -3908,6 +3968,7 @@ export type ServiceInstanceUncheckedCreateWithoutQualitySizeMappingInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -3980,6 +4041,7 @@ export type ServiceInstanceUpdateWithoutQualitySizeMappingInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -4036,6 +4098,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQualitySizeMappingInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -4092,6 +4155,7 @@ export type ServiceInstanceCreateWithoutHuntConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -4148,6 +4212,7 @@ export type ServiceInstanceUncheckedCreateWithoutHuntConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -4220,6 +4285,7 @@ export type ServiceInstanceUpdateWithoutHuntConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -4276,6 +4342,7 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -4332,6 +4399,7 @@ export type ServiceInstanceCreateWithoutHuntLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -4388,6 +4456,7 @@ export type ServiceInstanceUncheckedCreateWithoutHuntLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -4460,6 +4529,7 @@ export type ServiceInstanceUpdateWithoutHuntLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -4516,6 +4586,7 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -4572,6 +4643,7 @@ export type ServiceInstanceCreateWithoutLibraryCacheInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -4628,6 +4700,7 @@ export type ServiceInstanceUncheckedCreateWithoutLibraryCacheInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -4700,6 +4773,7 @@ export type ServiceInstanceUpdateWithoutLibraryCacheInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -4756,6 +4830,7 @@ export type ServiceInstanceUncheckedUpdateWithoutLibraryCacheInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -4812,6 +4887,7 @@ export type ServiceInstanceCreateWithoutEpisodeFileCacheInput = {
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -4868,6 +4944,7 @@ export type ServiceInstanceUncheckedCreateWithoutEpisodeFileCacheInput = {
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -4940,6 +5017,7 @@ export type ServiceInstanceUpdateWithoutEpisodeFileCacheInput = {
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -4996,6 +5074,7 @@ export type ServiceInstanceUncheckedUpdateWithoutEpisodeFileCacheInput = {
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -5052,6 +5131,7 @@ export type ServiceInstanceCreateWithoutLibrarySyncStatusInput = {
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -5108,6 +5188,7 @@ export type ServiceInstanceUncheckedCreateWithoutLibrarySyncStatusInput = {
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -5180,6 +5261,7 @@ export type ServiceInstanceUpdateWithoutLibrarySyncStatusInput = {
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -5236,6 +5318,7 @@ export type ServiceInstanceUncheckedUpdateWithoutLibrarySyncStatusInput = {
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -5292,6 +5375,7 @@ export type ServiceInstanceCreateWithoutQueueCleanerConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -5348,6 +5432,7 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -5420,6 +5505,7 @@ export type ServiceInstanceUpdateWithoutQueueCleanerConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -5476,6 +5562,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -5532,6 +5619,7 @@ export type ServiceInstanceCreateWithoutQueueCleanerLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -5588,6 +5676,7 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -5660,6 +5749,7 @@ export type ServiceInstanceUpdateWithoutQueueCleanerLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -5716,6 +5806,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -5772,6 +5863,7 @@ export type ServiceInstanceCreateWithoutQueueCleanerStrikesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -5828,6 +5920,7 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerStrikesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -5900,6 +5993,7 @@ export type ServiceInstanceUpdateWithoutQueueCleanerStrikesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -5956,6 +6050,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerStrikesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -6012,6 +6107,7 @@ export type ServiceInstanceCreateWithoutPlexCachesInput = {
   libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -6068,6 +6164,7 @@ export type ServiceInstanceUncheckedCreateWithoutPlexCachesInput = {
   libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -6140,6 +6237,7 @@ export type ServiceInstanceUpdateWithoutPlexCachesInput = {
   libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -6196,6 +6294,251 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexCachesInput = {
   libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedUpdateOneWithoutInstanceNestedInput
+}
+
+export type ServiceInstanceCreateWithoutPlexGenerationTargetsInput = {
+  id?: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  user: Prisma.UserCreateNestedOneWithoutServiceInstancesInput
+  tags?: Prisma.ServiceInstanceTagCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheCreateNestedOneWithoutInstanceInput
+}
+
+export type ServiceInstanceUncheckedCreateWithoutPlexGenerationTargetsInput = {
+  id?: string
+  userId: string
+  service: $Enums.ServiceType
+  label: string
+  baseUrl: string
+  externalUrl?: string | null
+  encryptedApiKey: string
+  encryptionIv: string
+  encryptedHttpAuthCredentials?: string | null
+  httpAuthEncryptionIv?: string | null
+  isDefault?: boolean
+  enabled?: boolean
+  storageGroupId?: string | null
+  hasLocalFilesystemAccess?: boolean
+  pathPrefix?: string | null
+  connectionGeneration?: number
+  expectedIdentity?: string | null
+  identityKind?: $Enums.ProviderIdentityKind | null
+  identityStatus?: $Enums.ProviderIdentityStatus
+  identityGeneration?: number
+  identityVerifiedAt?: Date | string | null
+  identityLastCheckedAt?: Date | string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  tags?: Prisma.ServiceInstanceTagUncheckedCreateNestedManyWithoutInstanceInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  trashBackups?: Prisma.TrashBackupUncheckedCreateNestedManyWithoutInstanceInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedCreateNestedManyWithoutInstanceInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedCreateNestedManyWithoutInstanceInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedCreateNestedManyWithoutInstanceInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedCreateNestedOneWithoutInstanceInput
+  huntConfig?: Prisma.HuntConfigUncheckedCreateNestedOneWithoutInstanceInput
+  huntLogs?: Prisma.HuntLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedCreateNestedOneWithoutInstanceInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedCreateNestedManyWithoutInstanceInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedCreateNestedManyWithoutInstanceInput
+  libraryCache?: Prisma.LibraryCacheUncheckedCreateNestedManyWithoutInstanceInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
+  plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUncheckedCreateNestedManyWithoutInstanceInput
+  sessionSnapshots?: Prisma.SessionSnapshotUncheckedCreateNestedManyWithoutInstanceInput
+  namingConfig?: Prisma.NamingConfigUncheckedCreateNestedOneWithoutInstanceInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUncheckedCreateNestedManyWithoutInstanceInput
+  seerrActionLogs?: Prisma.SeerrActionLogUncheckedCreateNestedManyWithoutInstanceInput
+  quiActionLogs?: Prisma.QuiActionLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  quiEventLogs?: Prisma.QuiEventLogUncheckedCreateNestedManyWithoutServiceInstanceInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUncheckedCreateNestedOneWithoutInstanceInput
+}
+
+export type ServiceInstanceCreateOrConnectWithoutPlexGenerationTargetsInput = {
+  where: Prisma.ServiceInstanceWhereUniqueInput
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutPlexGenerationTargetsInput, Prisma.ServiceInstanceUncheckedCreateWithoutPlexGenerationTargetsInput>
+}
+
+export type ServiceInstanceUpsertWithoutPlexGenerationTargetsInput = {
+  update: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutPlexGenerationTargetsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutPlexGenerationTargetsInput>
+  create: Prisma.XOR<Prisma.ServiceInstanceCreateWithoutPlexGenerationTargetsInput, Prisma.ServiceInstanceUncheckedCreateWithoutPlexGenerationTargetsInput>
+  where?: Prisma.ServiceInstanceWhereInput
+}
+
+export type ServiceInstanceUpdateToOneWithWhereWithoutPlexGenerationTargetsInput = {
+  where?: Prisma.ServiceInstanceWhereInput
+  data: Prisma.XOR<Prisma.ServiceInstanceUpdateWithoutPlexGenerationTargetsInput, Prisma.ServiceInstanceUncheckedUpdateWithoutPlexGenerationTargetsInput>
+}
+
+export type ServiceInstanceUpdateWithoutPlexGenerationTargetsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  user?: Prisma.UserUpdateOneRequiredWithoutServiceInstancesNestedInput
+  tags?: Prisma.ServiceInstanceTagUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
+  jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
+  cacheRefreshStatuses?: Prisma.CacheRefreshStatusUpdateManyWithoutInstanceNestedInput
+  sessionSnapshots?: Prisma.SessionSnapshotUpdateManyWithoutInstanceNestedInput
+  namingConfig?: Prisma.NamingConfigUpdateOneWithoutInstanceNestedInput
+  namingDeployHistory?: Prisma.NamingDeployHistoryUpdateManyWithoutInstanceNestedInput
+  seerrActionLogs?: Prisma.SeerrActionLogUpdateManyWithoutInstanceNestedInput
+  quiActionLogs?: Prisma.QuiActionLogUpdateManyWithoutServiceInstanceNestedInput
+  quiEventLogs?: Prisma.QuiEventLogUpdateManyWithoutServiceInstanceNestedInput
+  inodeIndexCache?: Prisma.InodeIndexCacheUpdateOneWithoutInstanceNestedInput
+}
+
+export type ServiceInstanceUncheckedUpdateWithoutPlexGenerationTargetsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  userId?: Prisma.StringFieldUpdateOperationsInput | string
+  service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
+  label?: Prisma.StringFieldUpdateOperationsInput | string
+  baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
+  encryptedHttpAuthCredentials?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  httpAuthEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  hasLocalFilesystemAccess?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  pathPrefix?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  connectionGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  expectedIdentity?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  identityKind?: Prisma.NullableEnumProviderIdentityKindFieldUpdateOperationsInput | $Enums.ProviderIdentityKind | null
+  identityStatus?: Prisma.EnumProviderIdentityStatusFieldUpdateOperationsInput | $Enums.ProviderIdentityStatus
+  identityGeneration?: Prisma.IntFieldUpdateOperationsInput | number
+  identityVerifiedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  identityLastCheckedAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  tags?: Prisma.ServiceInstanceTagUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSyncHistory?: Prisma.TrashSyncHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  trashBackups?: Prisma.TrashBackupUncheckedUpdateManyWithoutInstanceNestedInput
+  trashSchedules?: Prisma.TrashSyncScheduleUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileOverrides?: Prisma.InstanceQualityProfileOverrideUncheckedUpdateManyWithoutInstanceNestedInput
+  qualityProfileMappings?: Prisma.TemplateQualityProfileMappingUncheckedUpdateManyWithoutInstanceNestedInput
+  deploymentHistory?: Prisma.TemplateDeploymentHistoryUncheckedUpdateManyWithoutInstanceNestedInput
+  standaloneCFDeployments?: Prisma.StandaloneCFDeploymentUncheckedUpdateManyWithoutInstanceNestedInput
+  qualitySizeMapping?: Prisma.QualitySizeMappingUncheckedUpdateOneWithoutInstanceNestedInput
+  huntConfig?: Prisma.HuntConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  huntLogs?: Prisma.HuntLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerConfig?: Prisma.QueueCleanerConfigUncheckedUpdateOneWithoutInstanceNestedInput
+  queueCleanerLogs?: Prisma.QueueCleanerLogUncheckedUpdateManyWithoutInstanceNestedInput
+  queueCleanerStrikes?: Prisma.QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput
+  libraryCache?: Prisma.LibraryCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
+  plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -6253,6 +6596,7 @@ export type ServiceInstanceCreateWithoutPlexEpisodeCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
@@ -6309,6 +6653,7 @@ export type ServiceInstanceUncheckedCreateWithoutPlexEpisodeCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -6381,6 +6726,7 @@ export type ServiceInstanceUpdateWithoutPlexEpisodeCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
@@ -6437,6 +6783,7 @@ export type ServiceInstanceUncheckedUpdateWithoutPlexEpisodeCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -6493,6 +6840,7 @@ export type ServiceInstanceCreateWithoutJellyfinCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
@@ -6549,6 +6897,7 @@ export type ServiceInstanceUncheckedCreateWithoutJellyfinCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -6621,6 +6970,7 @@ export type ServiceInstanceUpdateWithoutJellyfinCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
@@ -6677,6 +7027,7 @@ export type ServiceInstanceUncheckedUpdateWithoutJellyfinCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -6733,6 +7084,7 @@ export type ServiceInstanceCreateWithoutJellyfinEpisodeCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -6789,6 +7141,7 @@ export type ServiceInstanceUncheckedCreateWithoutJellyfinEpisodeCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -6861,6 +7214,7 @@ export type ServiceInstanceUpdateWithoutJellyfinEpisodeCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -6917,6 +7271,7 @@ export type ServiceInstanceUncheckedUpdateWithoutJellyfinEpisodeCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -6973,6 +7328,7 @@ export type ServiceInstanceCreateWithoutTautulliCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheCreateNestedManyWithoutInstanceInput
@@ -7029,6 +7385,7 @@ export type ServiceInstanceUncheckedCreateWithoutTautulliCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -7101,6 +7458,7 @@ export type ServiceInstanceUpdateWithoutTautulliCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUpdateManyWithoutInstanceNestedInput
@@ -7157,6 +7515,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTautulliCachesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinEpisodeCaches?: Prisma.JellyfinEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -7213,6 +7572,7 @@ export type ServiceInstanceCreateWithoutCacheRefreshStatusesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -7269,6 +7629,7 @@ export type ServiceInstanceUncheckedCreateWithoutCacheRefreshStatusesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -7341,6 +7702,7 @@ export type ServiceInstanceUpdateWithoutCacheRefreshStatusesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -7397,6 +7759,7 @@ export type ServiceInstanceUncheckedUpdateWithoutCacheRefreshStatusesInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -7453,6 +7816,7 @@ export type ServiceInstanceCreateWithoutSessionSnapshotsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -7509,6 +7873,7 @@ export type ServiceInstanceUncheckedCreateWithoutSessionSnapshotsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -7581,6 +7946,7 @@ export type ServiceInstanceUpdateWithoutSessionSnapshotsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -7637,6 +8003,7 @@ export type ServiceInstanceUncheckedUpdateWithoutSessionSnapshotsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -7693,6 +8060,7 @@ export type ServiceInstanceCreateWithoutNamingConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -7749,6 +8117,7 @@ export type ServiceInstanceUncheckedCreateWithoutNamingConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -7821,6 +8190,7 @@ export type ServiceInstanceUpdateWithoutNamingConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -7877,6 +8247,7 @@ export type ServiceInstanceUncheckedUpdateWithoutNamingConfigInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -7933,6 +8304,7 @@ export type ServiceInstanceCreateWithoutNamingDeployHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -7989,6 +8361,7 @@ export type ServiceInstanceUncheckedCreateWithoutNamingDeployHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -8061,6 +8434,7 @@ export type ServiceInstanceUpdateWithoutNamingDeployHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -8117,6 +8491,7 @@ export type ServiceInstanceUncheckedUpdateWithoutNamingDeployHistoryInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -8173,6 +8548,7 @@ export type ServiceInstanceCreateWithoutSeerrActionLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -8229,6 +8605,7 @@ export type ServiceInstanceUncheckedCreateWithoutSeerrActionLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -8301,6 +8678,7 @@ export type ServiceInstanceUpdateWithoutSeerrActionLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -8357,6 +8735,7 @@ export type ServiceInstanceUncheckedUpdateWithoutSeerrActionLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -8413,6 +8792,7 @@ export type ServiceInstanceCreateWithoutQuiActionLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -8469,6 +8849,7 @@ export type ServiceInstanceUncheckedCreateWithoutQuiActionLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -8541,6 +8922,7 @@ export type ServiceInstanceUpdateWithoutQuiActionLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -8597,6 +8979,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQuiActionLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -8653,6 +9036,7 @@ export type ServiceInstanceCreateWithoutQuiEventLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheCreateNestedManyWithoutInstanceInput
@@ -8709,6 +9093,7 @@ export type ServiceInstanceUncheckedCreateWithoutQuiEventLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedCreateNestedManyWithoutInstanceInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedCreateNestedOneWithoutInstanceInput
   plexCaches?: Prisma.PlexCacheUncheckedCreateNestedManyWithoutInstanceInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedCreateNestedManyWithoutInstanceInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedCreateNestedManyWithoutInstanceInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedCreateNestedManyWithoutInstanceInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedCreateNestedManyWithoutInstanceInput
@@ -8781,6 +9166,7 @@ export type ServiceInstanceUpdateWithoutQuiEventLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -8837,6 +9223,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQuiEventLogsInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -8918,6 +9305,7 @@ export type ServiceInstanceUpdateWithoutUserInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUpdateManyWithoutInstanceNestedInput
@@ -8974,6 +9362,7 @@ export type ServiceInstanceUncheckedUpdateWithoutUserInput = {
   episodeFileCache?: Prisma.EpisodeFileCacheUncheckedUpdateManyWithoutInstanceNestedInput
   librarySyncStatus?: Prisma.LibrarySyncStatusUncheckedUpdateOneWithoutInstanceNestedInput
   plexCaches?: Prisma.PlexCacheUncheckedUpdateManyWithoutInstanceNestedInput
+  plexGenerationTargets?: Prisma.PlexGenerationTargetUncheckedUpdateManyWithoutInstanceNestedInput
   plexEpisodeCaches?: Prisma.PlexEpisodeCacheUncheckedUpdateManyWithoutInstanceNestedInput
   tautulliCaches?: Prisma.TautulliCacheUncheckedUpdateManyWithoutInstanceNestedInput
   jellyfinCaches?: Prisma.JellyfinCacheUncheckedUpdateManyWithoutInstanceNestedInput
@@ -9034,6 +9423,7 @@ export type ServiceInstanceCountOutputType = {
   libraryCache: number
   episodeFileCache: number
   plexCaches: number
+  plexGenerationTargets: number
   plexEpisodeCaches: number
   tautulliCaches: number
   jellyfinCaches: number
@@ -9061,6 +9451,7 @@ export type ServiceInstanceCountOutputTypeSelect<ExtArgs extends runtime.Types.E
   libraryCache?: boolean | ServiceInstanceCountOutputTypeCountLibraryCacheArgs
   episodeFileCache?: boolean | ServiceInstanceCountOutputTypeCountEpisodeFileCacheArgs
   plexCaches?: boolean | ServiceInstanceCountOutputTypeCountPlexCachesArgs
+  plexGenerationTargets?: boolean | ServiceInstanceCountOutputTypeCountPlexGenerationTargetsArgs
   plexEpisodeCaches?: boolean | ServiceInstanceCountOutputTypeCountPlexEpisodeCachesArgs
   tautulliCaches?: boolean | ServiceInstanceCountOutputTypeCountTautulliCachesArgs
   jellyfinCaches?: boolean | ServiceInstanceCountOutputTypeCountJellyfinCachesArgs
@@ -9184,6 +9575,13 @@ export type ServiceInstanceCountOutputTypeCountPlexCachesArgs<ExtArgs extends ru
 /**
  * ServiceInstanceCountOutputType without action
  */
+export type ServiceInstanceCountOutputTypeCountPlexGenerationTargetsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.PlexGenerationTargetWhereInput
+}
+
+/**
+ * ServiceInstanceCountOutputType without action
+ */
 export type ServiceInstanceCountOutputTypeCountPlexEpisodeCachesArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   where?: Prisma.PlexEpisodeCacheWhereInput
 }
@@ -9296,6 +9694,7 @@ export type ServiceInstanceSelect<ExtArgs extends runtime.Types.Extensions.Inter
   episodeFileCache?: boolean | Prisma.ServiceInstance$episodeFileCacheArgs<ExtArgs>
   librarySyncStatus?: boolean | Prisma.ServiceInstance$librarySyncStatusArgs<ExtArgs>
   plexCaches?: boolean | Prisma.ServiceInstance$plexCachesArgs<ExtArgs>
+  plexGenerationTargets?: boolean | Prisma.ServiceInstance$plexGenerationTargetsArgs<ExtArgs>
   plexEpisodeCaches?: boolean | Prisma.ServiceInstance$plexEpisodeCachesArgs<ExtArgs>
   tautulliCaches?: boolean | Prisma.ServiceInstance$tautulliCachesArgs<ExtArgs>
   jellyfinCaches?: boolean | Prisma.ServiceInstance$jellyfinCachesArgs<ExtArgs>
@@ -9415,6 +9814,7 @@ export type ServiceInstanceInclude<ExtArgs extends runtime.Types.Extensions.Inte
   episodeFileCache?: boolean | Prisma.ServiceInstance$episodeFileCacheArgs<ExtArgs>
   librarySyncStatus?: boolean | Prisma.ServiceInstance$librarySyncStatusArgs<ExtArgs>
   plexCaches?: boolean | Prisma.ServiceInstance$plexCachesArgs<ExtArgs>
+  plexGenerationTargets?: boolean | Prisma.ServiceInstance$plexGenerationTargetsArgs<ExtArgs>
   plexEpisodeCaches?: boolean | Prisma.ServiceInstance$plexEpisodeCachesArgs<ExtArgs>
   tautulliCaches?: boolean | Prisma.ServiceInstance$tautulliCachesArgs<ExtArgs>
   jellyfinCaches?: boolean | Prisma.ServiceInstance$jellyfinCachesArgs<ExtArgs>
@@ -9458,6 +9858,7 @@ export type $ServiceInstancePayload<ExtArgs extends runtime.Types.Extensions.Int
     episodeFileCache: Prisma.$EpisodeFileCachePayload<ExtArgs>[]
     librarySyncStatus: Prisma.$LibrarySyncStatusPayload<ExtArgs> | null
     plexCaches: Prisma.$PlexCachePayload<ExtArgs>[]
+    plexGenerationTargets: Prisma.$PlexGenerationTargetPayload<ExtArgs>[]
     plexEpisodeCaches: Prisma.$PlexEpisodeCachePayload<ExtArgs>[]
     tautulliCaches: Prisma.$TautulliCachePayload<ExtArgs>[]
     jellyfinCaches: Prisma.$JellyfinCachePayload<ExtArgs>[]
@@ -9909,6 +10310,7 @@ export interface Prisma__ServiceInstanceClient<T, Null = never, ExtArgs extends 
   episodeFileCache<T extends Prisma.ServiceInstance$episodeFileCacheArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$episodeFileCacheArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$EpisodeFileCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   librarySyncStatus<T extends Prisma.ServiceInstance$librarySyncStatusArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$librarySyncStatusArgs<ExtArgs>>): Prisma.Prisma__LibrarySyncStatusClient<runtime.Types.Result.GetResult<Prisma.$LibrarySyncStatusPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   plexCaches<T extends Prisma.ServiceInstance$plexCachesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$plexCachesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PlexCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  plexGenerationTargets<T extends Prisma.ServiceInstance$plexGenerationTargetsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$plexGenerationTargetsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PlexGenerationTargetPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   plexEpisodeCaches<T extends Prisma.ServiceInstance$plexEpisodeCachesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$plexEpisodeCachesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PlexEpisodeCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   tautulliCaches<T extends Prisma.ServiceInstance$tautulliCachesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$tautulliCachesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$TautulliCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   jellyfinCaches<T extends Prisma.ServiceInstance$jellyfinCachesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.ServiceInstance$jellyfinCachesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$JellyfinCachePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
@@ -10782,6 +11184,30 @@ export type ServiceInstance$plexCachesArgs<ExtArgs extends runtime.Types.Extensi
   take?: number
   skip?: number
   distinct?: Prisma.PlexCacheScalarFieldEnum | Prisma.PlexCacheScalarFieldEnum[]
+}
+
+/**
+ * ServiceInstance.plexGenerationTargets
+ */
+export type ServiceInstance$plexGenerationTargetsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the PlexGenerationTarget
+   */
+  select?: Prisma.PlexGenerationTargetSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the PlexGenerationTarget
+   */
+  omit?: Prisma.PlexGenerationTargetOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.PlexGenerationTargetInclude<ExtArgs> | null
+  where?: Prisma.PlexGenerationTargetWhereInput
+  orderBy?: Prisma.PlexGenerationTargetOrderByWithRelationInput | Prisma.PlexGenerationTargetOrderByWithRelationInput[]
+  cursor?: Prisma.PlexGenerationTargetWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.PlexGenerationTargetScalarFieldEnum | Prisma.PlexGenerationTargetScalarFieldEnum[]
 }
 
 /**

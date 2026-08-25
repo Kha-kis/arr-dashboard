@@ -3,7 +3,11 @@ import type { FastifyBaseLogger } from "fastify";
 import type { Encryptor } from "../auth/encryption.js";
 import { evidenceFingerprint } from "../evidence-fingerprint.js";
 import type { PrismaClientInstance, ServiceInstance } from "../prisma.js";
-import { collectPlexCacheLiveEvidence, isPersonalMediaSection } from "./plex-cache-refresher.js";
+import {
+	collectPlexCacheLiveEvidence,
+	collectSettledPlexCacheLiveEvidence,
+	isPersonalMediaSection,
+} from "./plex-cache-refresher.js";
 import type { PlexCacheRowSelection } from "./plex-cache-storage.js";
 import { createPlexClient, type PlexClient } from "./plex-client.js";
 import { collectPlexEpisodeLiveEvidence } from "./plex-episode-live-collector.js";
@@ -13,6 +17,16 @@ import {
 	type PlexCanonicalSelection,
 } from "./plex-canonical-projection.js";
 import type { DecodedPlexGenerationMetadata } from "./plex-generation-metadata.js";
+import {
+	normalizePlexGenerationTargets,
+	readPlexGenerationTargetsForSelection,
+	requirePlexTargetLedgerBinding,
+	samePlexGenerationBinding,
+	samePlexGenerationTargetSet,
+	selectSinglePlexGenerationTarget,
+	verifyPersistedPlexGenerationTargets,
+	type PlexGenerationTarget,
+} from "./plex-generation-target-ledger.js";
 import {
 	evaluatePlexLiveSettlement,
 	type PlexLiveActivity,
@@ -269,10 +283,47 @@ export async function settlePlexAuthorityWindow(input: {
 
 type PlexAuthorityPrisma = Pick<
 	PrismaClientInstance,
-	"serviceInstance" | "cacheRefreshStatus" | "plexCache" | "plexEpisodeCache"
+	| "serviceInstance"
+	| "cacheRefreshStatus"
+	| "plexCache"
+	| "plexEpisodeCache"
+	| "plexGenerationTarget"
 >;
 
 type AvailablePersistedEvidence = AvailablePlexInstanceEvidence | AvailableSelectedPlexEvidence;
+
+async function verifyExactGenerationTargets(
+	prisma: Pick<PrismaClientInstance, "plexGenerationTarget">,
+	input: {
+		instanceId: string;
+		generationId: string;
+		connectionGeneration: number;
+		identityGeneration: number;
+		metadata: DecodedPlexGenerationMetadata;
+	},
+): Promise<
+	| { ok: true; expected: { instanceId: string; generationId: string } }
+	| { ok: false; reasonCode: PlexCoverageReasonCode }
+> {
+	if (input.metadata.version !== 3) {
+		return { ok: false, reasonCode: "target_ledger_binding_missing" };
+	}
+	const binding = requirePlexTargetLedgerBinding(input.metadata);
+	if (!binding.ok) return { ok: false, reasonCode: "target_ledger_binding_missing" };
+	const verified = await verifyPersistedPlexGenerationTargets(prisma, {
+		expected: {
+			instanceId: input.instanceId,
+			generationId: input.generationId,
+			connectionGeneration: input.connectionGeneration,
+			identityGeneration: input.identityGeneration,
+			...binding.binding,
+		},
+		sections: input.metadata.sections,
+	});
+	return verified.ok
+		? { ok: true, expected: { instanceId: input.instanceId, generationId: input.generationId } }
+		: { ok: false, reasonCode: verified.reason as PlexCoverageReasonCode };
+}
 
 function unavailableEvidence(
 	instanceId: string,
@@ -569,6 +620,55 @@ export class PlexAuthorityService {
 		return scanned;
 	}
 
+	async scanInstanceExactPolicy(input: {
+		userId: string;
+		instanceId: string;
+		domains: readonly PlexCanonicalDomain[];
+		mutation?: boolean;
+		now?: Date;
+		maxAgeMs?: number;
+		onBatch?: PlexPolicyBatchHandler;
+	}): Promise<PlexPolicyScanEvidence> {
+		const current = await this.readInstance(input);
+		if (!current.available) return current;
+		const exactTargets = await verifyExactGenerationTargets(this.deps.prisma, current);
+		if (!exactTargets.ok) {
+			return unavailableEvidence(input.instanceId, current.evidence, exactTargets.reasonCode);
+		}
+		const scanned = await scanInstancePolicyEvidence(this.deps.prisma, input);
+		if (!scanned.available) return scanned;
+		if (scanned.generationId !== current.generationId) {
+			return unavailableEvidence(input.instanceId, current.evidence, "generation_changed");
+		}
+		return scanned;
+	}
+
+	/**
+	 * Revalidates persisted policy rows and their exact target ledger without
+	 * contacting Plex. This is reserved for the final database transaction after
+	 * the caller has already completed live settlement and identity checks.
+	 */
+	async scanInstanceExactPolicyPersisted(input: {
+		userId: string;
+		instanceId: string;
+		now?: Date;
+		maxAgeMs?: number;
+		onBatch?: PlexPolicyBatchHandler;
+	}): Promise<PlexPolicyScanEvidence> {
+		const current = await loadInstanceEvidence(this.deps.prisma, input);
+		if (!current.available) return current;
+		const exactTargets = await verifyExactGenerationTargets(this.deps.prisma, current);
+		if (!exactTargets.ok) {
+			return unavailableEvidence(input.instanceId, current.evidence, exactTargets.reasonCode);
+		}
+		const scanned = await scanInstancePolicyEvidence(this.deps.prisma, input);
+		if (!scanned.available) return scanned;
+		if (scanned.generationId !== current.generationId) {
+			return unavailableEvidence(input.instanceId, current.evidence, "generation_changed");
+		}
+		return scanned;
+	}
+
 	async scanInstanceEpisodeParentPolicy(input: {
 		userId: string;
 		instanceId: string;
@@ -577,14 +677,37 @@ export class PlexAuthorityService {
 		now?: Date;
 		maxAgeMs?: number;
 		onBatch?: PlexEpisodeParentPolicyBatchHandler;
+		onTargets?: (targets: readonly PlexGenerationTarget[]) => void | Promise<void>;
 	}): Promise<PlexPolicyScanEvidence> {
 		const current = await this.readInstance(input);
 		if (!current.available) return current;
-		const scanned = await scanInstanceEpisodeParentPolicyEvidence(this.deps.prisma, input);
+		const exactTargets = await verifyExactGenerationTargets(this.deps.prisma, current);
+		if (!exactTargets.ok) {
+			return unavailableEvidence(input.instanceId, current.evidence, exactTargets.reasonCode);
+		}
+		const selectedShowTmdbIds = new Set<number>();
+		const scanned = await scanInstanceEpisodeParentPolicyEvidence(this.deps.prisma, {
+			...input,
+			onBatch: async (batch) => {
+				for (const row of batch.rows) {
+					if (row.mediaType === "series" && row.ratingKey?.trim()) {
+						selectedShowTmdbIds.add(row.tmdbId);
+					}
+				}
+				await input.onBatch?.(batch);
+			},
+		});
 		if (!scanned.available) return scanned;
 		if (scanned.generationId !== current.generationId) {
 			return unavailableEvidence(input.instanceId, current.evidence, "generation_changed");
 		}
+		await input.onTargets?.(
+			await readPlexGenerationTargetsForSelection(
+				this.deps.prisma,
+				exactTargets.expected,
+				[...selectedShowTmdbIds].map((tmdbId) => ({ mediaType: "series" as const, tmdbId })),
+			),
+		);
 		return scanned;
 	}
 
@@ -781,6 +904,121 @@ export class PlexAuthorityService {
 				}),
 		});
 		if (!current.available) return { ok: false, evidence: current.evidence };
+		const targetBinding = requirePlexTargetLedgerBinding(current.metadata);
+		if (!targetBinding.ok) {
+			return {
+				ok: false,
+				evidence: unavailableEvidence(
+					input.instanceId,
+					current.evidence,
+					"target_ledger_binding_missing",
+				).evidence,
+			};
+		}
+		const targetLedger = await verifyPersistedPlexGenerationTargets(this.deps.prisma, {
+			expected: {
+				instanceId: input.instanceId,
+				generationId: current.generationId,
+				connectionGeneration: current.connectionGeneration,
+				identityGeneration: current.identityGeneration,
+				...targetBinding.binding,
+			},
+			sections: current.metadata.sections as Array<{
+				key: string;
+				uuid: string;
+				type: "movie" | "show";
+			}>,
+		});
+		if (!targetLedger.ok) {
+			const reasonCode = targetLedger.reason as PlexCoverageReasonCode;
+			return {
+				ok: false,
+				evidence: unavailableEvidence(input.instanceId, current.evidence, reasonCode).evidence,
+			};
+		}
+		const persistedTargets = await readPlexGenerationTargetsForSelection(
+			this.deps.prisma,
+			{ instanceId: input.instanceId, generationId: current.generationId },
+			[input.target],
+		);
+		const live = await collectSettledPlexCacheLiveEvidence(client, input.instanceId, this.deps.log);
+		if (!live.complete || !live.inventoryTargets) {
+			return {
+				ok: false,
+				evidence: unavailableEvidence(
+					input.instanceId,
+					current.evidence,
+					"plex_content_digest_changed",
+				).evidence,
+			};
+		}
+		let liveTargets: PlexGenerationTarget[];
+		try {
+			liveTargets = normalizePlexGenerationTargets(
+				live.inventoryTargets
+					.filter(
+						(target) =>
+							target.tmdbId === input.target.tmdbId && target.mediaType === input.target.mediaType,
+					)
+					.map((target) => ({
+						instanceId: input.instanceId,
+						generationId: current.generationId,
+						sectionId: target.sectionId,
+						sectionUuid: target.sectionUuid ?? "",
+						mediaType: target.mediaType,
+						tmdbId: target.tmdbId,
+						tvdbId: target.tvdbId ?? null,
+						ratingKey: target.ratingKey,
+					})),
+				{ instanceId: input.instanceId, generationId: current.generationId },
+			);
+		} catch {
+			return {
+				ok: false,
+				evidence: unavailableEvidence(input.instanceId, current.evidence, "target_ledger_invalid")
+					.evidence,
+			};
+		}
+		if (!samePlexGenerationTargetSet(persistedTargets, liveTargets)) {
+			return {
+				ok: false,
+				evidence: unavailableEvidence(
+					input.instanceId,
+					current.evidence,
+					"plex_content_digest_changed",
+				).evidence,
+			};
+		}
+		const after = await loadInstanceSelectedEvidence(this.deps.prisma, {
+			userId: input.userId,
+			instanceId: input.instanceId,
+			selection,
+		});
+		const afterInstance = await this.ownedInstance(input.userId, input.instanceId);
+		if (
+			!after.available ||
+			!afterInstance ||
+			after.generationId !== current.generationId ||
+			!samePlexGenerationBinding(current, after) ||
+			!samePlexGenerationBinding(current, afterInstance)
+		) {
+			return {
+				ok: false,
+				evidence: unavailableEvidence(input.instanceId, current.evidence, "generation_changed")
+					.evidence,
+			};
+		}
+		const singleTarget = selectSinglePlexGenerationTarget(persistedTargets);
+		if (!singleTarget.ok) {
+			return {
+				ok: false,
+				evidence: unavailableEvidence(
+					input.instanceId,
+					current.evidence,
+					"mutation_authority_unavailable",
+				).evidence,
+			};
+		}
 		const ratingKeys = [
 			...new Set(
 				current.rows
@@ -797,6 +1035,7 @@ export class PlexAuthorityService {
 		];
 		if (
 			ratingKeys.length !== 1 ||
+			ratingKeys[0] !== singleTarget.target.ratingKey ||
 			(input.expectedRatingKey !== undefined && ratingKeys[0] !== input.expectedRatingKey)
 		) {
 			return {
@@ -843,6 +1082,10 @@ export class PlexAuthorityService {
 		if (!instance?.expectedIdentity) {
 			return unavailableEvidence(input.instanceId, parent.evidence, "identity_generation_mismatch");
 		}
+		const parentTargets = await verifyExactGenerationTargets(this.deps.prisma, parent);
+		if (!parentTargets.ok) {
+			return unavailableEvidence(input.instanceId, parent.evidence, parentTargets.reasonCode);
+		}
 		const before = await loadInstanceSelectedEpisodeEvidence(this.deps.prisma, input);
 		if (!before.available) return before;
 		if (before.parentGenerationId !== parent.generationId) {
@@ -853,11 +1096,16 @@ export class PlexAuthorityService {
 			);
 		}
 		const showMap = new Map<number, Set<string>>();
-		for (const row of parent.rows) {
-			if (row.mediaType !== "series" || !row.ratingKey?.trim()) continue;
-			const ratingKeys = showMap.get(row.tmdbId) ?? new Set<string>();
-			ratingKeys.add(row.ratingKey);
-			showMap.set(row.tmdbId, ratingKeys);
+		const selectedParentTargets = await readPlexGenerationTargetsForSelection(
+			this.deps.prisma,
+			parentTargets.expected,
+			showTargets,
+		);
+		for (const target of selectedParentTargets) {
+			if (target.mediaType !== "series" || !input.showTmdbIds.includes(target.tmdbId)) continue;
+			const ratingKeys = showMap.get(target.tmdbId) ?? new Set<string>();
+			ratingKeys.add(target.ratingKey);
+			showMap.set(target.tmdbId, ratingKeys);
 		}
 		if (showTargets.some((target) => !showMap.has(target.tmdbId))) {
 			return unavailableEvidence(
@@ -907,6 +1155,13 @@ export class PlexAuthorityService {
 				if (!parentAfter.available || !episodeAfter.available || !instanceAfter?.expectedIdentity) {
 					throw new PlexAuthorityUnavailableError("generation_changed");
 				}
+				const parentAfterTargets = await verifyExactGenerationTargets(
+					this.deps.prisma,
+					parentAfter,
+				);
+				if (!parentAfterTargets.ok || !samePlexGenerationBinding(parent, parentAfter)) {
+					throw new PlexAuthorityUnavailableError("generation_changed");
+				}
 				return {
 					generationId: `${parentAfter.generationId}\u0000${episodeAfter.generationId}`,
 					connectionGeneration: episodeAfter.connectionGeneration,
@@ -930,6 +1185,10 @@ export class PlexAuthorityService {
 			domains: ["membership", "episode-parents", "watch"],
 		});
 		if (!parentAfter.available) return parentAfter;
+		const parentAfterTargets = await verifyExactGenerationTargets(this.deps.prisma, parentAfter);
+		if (!parentAfterTargets.ok || !samePlexGenerationBinding(parent, parentAfter)) {
+			return unavailableEvidence(input.instanceId, before.evidence, "generation_changed");
+		}
 		const parentInstanceAfter = await this.ownedInstance(input.userId, input.instanceId);
 		if (!parentInstanceAfter?.expectedIdentity) {
 			return unavailableEvidence(input.instanceId, before.evidence, "identity_generation_mismatch");
@@ -986,5 +1245,26 @@ export class PlexAuthorityService {
 		return parentChanged
 			? unavailableEvidence(input.instanceId, episodes.evidence, parentChanged)
 			: episodes;
+	}
+
+	/** Database-only companion used by the final cleanup approval transaction. */
+	async readInstanceEpisodesPersisted(input: {
+		userId: string;
+		instanceId: string;
+		now?: Date;
+		maxAgeMs?: number;
+	}): Promise<SelectedPlexEpisodeEvidence> {
+		const parent = await this.scanInstanceExactPolicyPersisted(input);
+		if (!parent.available) return parent;
+		const episodes = await loadInstanceEpisodeEvidence(this.deps.prisma, input);
+		if (!episodes.available) return episodes;
+		if (episodes.parentGenerationId !== parent.generationId) {
+			return unavailableEvidence(
+				input.instanceId,
+				episodes.evidence,
+				"parent_generation_unavailable",
+			);
+		}
+		return episodes;
 	}
 }

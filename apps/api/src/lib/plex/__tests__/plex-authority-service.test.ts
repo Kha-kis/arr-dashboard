@@ -3,6 +3,7 @@ import type { PlexCanonicalObservation } from "../plex-canonical-projection.js";
 
 const repositoryMocks = vi.hoisted(() => ({
 	loadInstanceSelectedEvidence: vi.fn(),
+	scanInstanceEpisodeParentPolicyEvidence: vi.fn(),
 }));
 
 vi.mock("../plex-evidence-repository.js", async (importOriginal) => {
@@ -10,6 +11,8 @@ vi.mock("../plex-evidence-repository.js", async (importOriginal) => {
 	return {
 		...actual,
 		loadInstanceSelectedEvidence: repositoryMocks.loadInstanceSelectedEvidence,
+		scanInstanceEpisodeParentPolicyEvidence:
+			repositoryMocks.scanInstanceEpisodeParentPolicyEvidence,
 	};
 });
 
@@ -20,6 +23,7 @@ import {
 	settlePlexAuthorityWindow,
 	type PlexPersistedSelectionObservation,
 } from "../plex-authority-service.js";
+import { createPlexTargetLedgerBinding } from "../plex-generation-target-ledger.js";
 
 const section = {
 	key: "movies",
@@ -150,6 +154,130 @@ async function settle(
 		loadFreshRows: vi.fn(async () => fresh.shift() ?? [rowA, rowB]),
 		rereadPersisted: vi.fn(async () => input.reread ?? before),
 	});
+}
+
+async function mutateWithLedgerEvidence(input: {
+	metadata?: PlexPersistedSelectionObservation["metadata"];
+	reread?: Partial<{
+		connectionGeneration: number;
+		identityGeneration: number;
+	}>;
+	ledgerRows?: unknown[];
+	withBinding?: boolean;
+}) {
+	const targetRow = { ...rowA, thumb: "/library/metadata/101/thumb/1" };
+	const ledgerTarget = {
+		id: "target-1",
+		instanceId: "plex-1",
+		generationId: "generation-1",
+		sectionId: "movies",
+		sectionUuid: "movies-uuid",
+		mediaType: "movie" as const,
+		tmdbId: 1,
+		tvdbId: null,
+		ratingKey: "101",
+	};
+	const metadata =
+		input.metadata ??
+		(input.withBinding
+			? {
+					...persisted().metadata,
+					itemCount: 1,
+					...createPlexTargetLedgerBinding({
+						instanceId: "plex-1",
+						generationId: "generation-1",
+						connectionGeneration: 4,
+						identityGeneration: 9,
+						targets: [ledgerTarget],
+					}),
+				}
+			: { ...persisted().metadata, itemCount: 1 });
+	const evidence = {
+		available: true,
+		instanceId: "plex-1",
+		instanceName: "Plex",
+		generationId: "generation-1",
+		publishedAt: new Date("2026-08-20T12:00:00.000Z"),
+		itemCount: 1,
+		connectionGeneration: 4,
+		identityGeneration: 9,
+		metadata,
+		generationStatus: {},
+		sections: metadata.sections,
+		rows: [targetRow],
+		evidence: {
+			availability: "current" as const,
+			authority: "authoritative" as const,
+			attemptState: "success" as const,
+			publicationLevel: "authoritative" as const,
+			completeness: "complete" as const,
+			reasonCodes: [],
+		},
+	};
+	const reread = { ...evidence, ...input.reread };
+	repositoryMocks.loadInstanceSelectedEvidence.mockReset();
+	repositoryMocks.loadInstanceSelectedEvidence
+		.mockResolvedValueOnce(evidence)
+		.mockResolvedValueOnce(reread);
+	const updateMetadataTags = vi.fn().mockResolvedValue(undefined);
+	const plexGenerationTarget = {
+		findMany: vi
+			.fn()
+			.mockResolvedValue(input.ledgerRows ?? (input.withBinding ? [ledgerTarget] : [])),
+	};
+	const plexCache = {
+		findMany: vi.fn(() => {
+			throw new Error("synthetic cache backfill");
+		}),
+	};
+	const service = new PlexAuthorityService({
+		prisma: {
+			serviceInstance: {
+				findFirst: vi.fn().mockResolvedValue({
+					id: "plex-1",
+					userId: "user-1",
+					service: "PLEX",
+					enabled: true,
+					expectedIdentity: "plex-machine-a",
+				}),
+			},
+			plexGenerationTarget,
+			plexCache,
+		} as never,
+		log: {} as never,
+		createClient: () =>
+			({
+				getActivities: vi.fn().mockResolvedValue([]),
+				getLibrarySettlementSections: vi.fn().mockResolvedValue([section, musicSection]),
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "admin" }]),
+				getLibrarySections: vi
+					.fn()
+					.mockResolvedValue([{ key: "movies", title: "Movies", type: "movie" }]),
+				getLibraryItems: vi
+					.fn()
+					.mockResolvedValue([
+						{ ratingKey: "101", title: "A", type: "movie", Guid: [{ id: "tmdb://1" }] },
+					]),
+				getHistory: vi.fn().mockResolvedValue([]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+				updateMetadataTags,
+			}) as never,
+	});
+	vi.spyOn(
+		service as unknown as { freshRows: () => Promise<readonly PlexCanonicalObservation[]> },
+		"freshRows",
+	).mockResolvedValue([targetRow]);
+	const result = await service.mutateMetadataTag({
+		userId: "user-1",
+		instanceId: "plex-1",
+		target: { mediaType: "movie", tmdbId: 1 },
+		expectedRatingKey: "101",
+		type: "label",
+		action: "add",
+		name: "Keep",
+	});
+	return { result, updateMetadataTags, plexGenerationTarget, plexCache };
 }
 
 describe("PlexAuthorityService settlement window", () => {
@@ -763,5 +891,212 @@ describe("PlexAuthorityService settlement window", () => {
 			ok: false,
 			evidence: { reasonCodes: ["plex_library_scan_in_progress"] },
 		});
+	});
+
+	it("13/16/29. ledger-dependent mutation denies an old V3 binding without reading PlexCache to synthesize targets", async () => {
+		const { result, updateMetadataTags, plexGenerationTarget, plexCache } =
+			await mutateWithLedgerEvidence({
+				metadata: { ...persisted().metadata, itemCount: 1 },
+				ledgerRows: [],
+			});
+
+		expect(result).toMatchObject({
+			ok: false,
+			evidence: { reasonCodes: ["target_ledger_binding_missing"] },
+		});
+		expect(updateMetadataTags).not.toHaveBeenCalled();
+		expect(plexGenerationTarget.findMany).not.toHaveBeenCalled();
+		expect(plexCache.findMany).not.toHaveBeenCalled();
+	});
+
+	it("15. ordinary policy observation preserves an authoritative old V3 generation", async () => {
+		const now = new Date();
+		const metadata = persisted().metadata;
+		const status = {
+			instanceId: "plex-1",
+			lastRefreshedAt: now,
+			lastResult: "success",
+			lastErrorMessage: null,
+			lastAttemptAt: now,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			itemCount: 1,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			generationId: "generation-1",
+			generationMetadata: JSON.stringify({ ...metadata, itemCount: 1 }),
+		};
+		const instance = {
+			id: "plex-1",
+			userId: "user-1",
+			service: "PLEX",
+			enabled: true,
+			label: "Plex",
+			expectedIdentity: "plex-machine-a",
+			identityKind: "PLEX_MACHINE_IDENTIFIER",
+			identityStatus: "VERIFIED",
+			identityVerifiedAt: now,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		};
+		const cacheRow = {
+			id: "cache-1",
+			instanceId: "plex-1",
+			tmdbId: 1,
+			mediaType: "movie",
+			sectionId: "movies",
+			sectionTitle: "Movies",
+			lastWatchedAt: null,
+			watchCount: 0,
+			watchedByUsers: "[]",
+			onDeck: false,
+			userRating: null,
+			collections: "[]",
+			labels: "[]",
+			addedAt: null,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+		};
+		const service = new PlexAuthorityService({
+			prisma: {
+				serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
+				cacheRefreshStatus: { findMany: vi.fn().mockResolvedValue([status]) },
+				plexCache: { findMany: vi.fn().mockResolvedValue([cacheRow]) },
+			} as never,
+			log: {} as never,
+		});
+		vi.spyOn(service, "readInstance").mockResolvedValue({
+			available: true,
+			instanceId: "plex-1",
+			instanceName: "Plex",
+			generationId: "generation-1",
+			publishedAt: now,
+			itemCount: 1,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			metadata: { ...metadata, itemCount: 1 },
+			generationStatus: status,
+			sections: metadata.sections,
+			rows: [rowA],
+			evidence: {
+				availability: "current",
+				authority: "authoritative",
+				attemptState: "success",
+				publicationLevel: "authoritative",
+				completeness: "complete",
+				reasonCodes: [],
+			},
+		} as never);
+
+		await expect(
+			service.scanInstancePolicy({
+				userId: "user-1",
+				instanceId: "plex-1",
+				domains: ["membership"],
+			}),
+		).resolves.toMatchObject({ available: true, generationId: "generation-1", rowCount: 1 });
+	});
+
+	it("38. episode parent scans send every selected duplicate Show rating key from the verified ledger", async () => {
+		const showRow = {
+			...rowA,
+			sectionId: "shows-a",
+			sectionTitle: "Shows A",
+			mediaType: "series" as const,
+			tmdbId: 7,
+			ratingKey: "show-a",
+		};
+		const targets = ["show-a", "show-b"].map((ratingKey) => ({
+			id: `target-${ratingKey}`,
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			sectionId: "shows-a",
+			sectionUuid: "shows-a-uuid",
+			mediaType: "series" as const,
+			tmdbId: 7,
+			tvdbId: 70,
+			ratingKey,
+		}));
+		const metadata = {
+			...persisted().metadata,
+			itemCount: 1,
+			sections: [firstShowSection],
+			...createPlexTargetLedgerBinding({
+				instanceId: "plex-1",
+				generationId: "generation-1",
+				connectionGeneration: 4,
+				identityGeneration: 9,
+				targets,
+			}),
+		};
+		const current = {
+			available: true,
+			instanceId: "plex-1",
+			instanceName: "Plex",
+			generationId: "generation-1",
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			metadata,
+			rows: [showRow],
+			evidence: persisted().metadata,
+		};
+		repositoryMocks.scanInstanceEpisodeParentPolicyEvidence.mockImplementation(
+			async (
+				_prisma: unknown,
+				input: { onBatch?: (batch: { rows: (typeof showRow)[] }) => Promise<void> },
+			) => {
+				await input.onBatch?.({ rows: [showRow] });
+				return current;
+			},
+		);
+		const service = new PlexAuthorityService({
+			prisma: {
+				plexGenerationTarget: { findMany: vi.fn().mockResolvedValue(targets) },
+			} as never,
+			log: {} as never,
+		});
+		vi.spyOn(service, "readInstance").mockResolvedValue(current as never);
+		const received: string[] = [];
+
+		await expect(
+			service.scanInstanceEpisodeParentPolicy({
+				userId: "user-1",
+				instanceId: "plex-1",
+				domains: ["membership", "episode-parents", "watch"],
+				onTargets: (selected) => {
+					received.push(...selected.map((target) => target.ratingKey));
+				},
+			}),
+		).resolves.toMatchObject({ available: true });
+
+		expect(received.sort()).toEqual(["show-a", "show-b"]);
+	});
+
+	it("24. ledger-dependent mutation denies connection generation that changes during verification", async () => {
+		const { result, updateMetadataTags, plexGenerationTarget } = await mutateWithLedgerEvidence({
+			reread: { connectionGeneration: 5 },
+			withBinding: true,
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			evidence: { reasonCodes: ["connection_generation_mismatch"] },
+		});
+		expect(updateMetadataTags).not.toHaveBeenCalled();
+		expect(plexGenerationTarget.findMany).not.toHaveBeenCalled();
+	});
+
+	it("25. ledger-dependent mutation denies identity generation that changes during verification", async () => {
+		const { result, updateMetadataTags, plexGenerationTarget } = await mutateWithLedgerEvidence({
+			reread: { identityGeneration: 10 },
+			withBinding: true,
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			evidence: { reasonCodes: ["identity_generation_mismatch"] },
+		});
+		expect(updateMetadataTags).not.toHaveBeenCalled();
+		expect(plexGenerationTarget.findMany).not.toHaveBeenCalled();
 	});
 });

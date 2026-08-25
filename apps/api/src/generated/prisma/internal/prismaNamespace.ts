@@ -443,6 +443,7 @@ export const ModelName = {
   NotificationRule: 'NotificationRule',
   NotificationAggregationConfig: 'NotificationAggregationConfig',
   PlexCache: 'PlexCache',
+  PlexGenerationTarget: 'PlexGenerationTarget',
   PlexEpisodeCache: 'PlexEpisodeCache',
   JellyfinCache: 'JellyfinCache',
   JellyfinEpisodeCache: 'JellyfinEpisodeCache',
@@ -475,7 +476,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexGenerationTarget" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -3883,6 +3884,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    PlexGenerationTarget: {
+      payload: Prisma.$PlexGenerationTargetPayload<ExtArgs>
+      fields: Prisma.PlexGenerationTargetFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.PlexGenerationTargetFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.PlexGenerationTargetFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload>
+        }
+        findFirst: {
+          args: Prisma.PlexGenerationTargetFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.PlexGenerationTargetFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload>
+        }
+        findMany: {
+          args: Prisma.PlexGenerationTargetFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload>[]
+        }
+        create: {
+          args: Prisma.PlexGenerationTargetCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload>
+        }
+        createMany: {
+          args: Prisma.PlexGenerationTargetCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.PlexGenerationTargetCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload>[]
+        }
+        delete: {
+          args: Prisma.PlexGenerationTargetDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload>
+        }
+        update: {
+          args: Prisma.PlexGenerationTargetUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload>
+        }
+        deleteMany: {
+          args: Prisma.PlexGenerationTargetDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.PlexGenerationTargetUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.PlexGenerationTargetUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload>[]
+        }
+        upsert: {
+          args: Prisma.PlexGenerationTargetUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$PlexGenerationTargetPayload>
+        }
+        aggregate: {
+          args: Prisma.PlexGenerationTargetAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregatePlexGenerationTarget>
+        }
+        groupBy: {
+          args: Prisma.PlexGenerationTargetGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PlexGenerationTargetGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.PlexGenerationTargetCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.PlexGenerationTargetCountAggregateOutputType> | number
+        }
+      }
+    }
     PlexEpisodeCache: {
       payload: Prisma.$PlexEpisodeCachePayload<ExtArgs>
       fields: Prisma.PlexEpisodeCacheFieldRefs
@@ -6114,6 +6189,21 @@ export const PlexCacheScalarFieldEnum = {
 export type PlexCacheScalarFieldEnum = (typeof PlexCacheScalarFieldEnum)[keyof typeof PlexCacheScalarFieldEnum]
 
 
+export const PlexGenerationTargetScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  generationId: 'generationId',
+  sectionId: 'sectionId',
+  sectionUuid: 'sectionUuid',
+  mediaType: 'mediaType',
+  tmdbId: 'tmdbId',
+  tvdbId: 'tvdbId',
+  ratingKey: 'ratingKey'
+} as const
+
+export type PlexGenerationTargetScalarFieldEnum = (typeof PlexGenerationTargetScalarFieldEnum)[keyof typeof PlexGenerationTargetScalarFieldEnum]
+
+
 export const PlexEpisodeCacheScalarFieldEnum = {
   id: 'id',
   instanceId: 'instanceId',
@@ -6718,6 +6808,7 @@ export type GlobalOmitConfig = {
   notificationRule?: Prisma.NotificationRuleOmit
   notificationAggregationConfig?: Prisma.NotificationAggregationConfigOmit
   plexCache?: Prisma.PlexCacheOmit
+  plexGenerationTarget?: Prisma.PlexGenerationTargetOmit
   plexEpisodeCache?: Prisma.PlexEpisodeCacheOmit
   jellyfinCache?: Prisma.JellyfinCacheOmit
   jellyfinEpisodeCache?: Prisma.JellyfinEpisodeCacheOmit

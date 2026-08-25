@@ -47,6 +47,12 @@ import {
 	createPlexSelectionProjection,
 } from "./plex-canonical-projection.js";
 import { encodeAuthoritativePlexGenerationMetadata } from "./plex-generation-metadata.js";
+import {
+	createPlexTargetLedgerBinding,
+	normalizePlexGenerationTargets,
+	type PlexGenerationTarget,
+	type PlexTargetLedgerBinding,
+} from "./plex-generation-target-ledger.js";
 import { evaluatePlexLiveSettlement } from "./plex-live-settlement.js";
 
 /** Bound Prisma's cached createMany query plans for production-sized libraries. */
@@ -160,6 +166,8 @@ export interface PlexCacheSnapshot {
 }
 
 export interface PlexInventoryTarget {
+	sectionId: string;
+	sectionUuid?: string;
 	mediaType: "movie" | "series";
 	tmdbId: number;
 	tvdbId?: number;
@@ -183,6 +191,7 @@ export interface PlexCacheRefreshResult {
 	generationId?: string;
 	snapshot?: PlexCacheSnapshot;
 	inventoryTargets?: PlexInventoryTarget[];
+	targetLedger?: PlexTargetLedgerBinding;
 	settlement?: {
 		sections: PlexGenerationSectionV3[];
 		roots: PlexGenerationDomainRoot[];
@@ -425,12 +434,41 @@ async function publishPlexCacheSnapshot(
 	}
 
 	const rows = collected.snapshot.rows;
+	if (!collected.inventoryTargets) {
+		throw new Error("Plex settled collection lacked exact inventory targets");
+	}
 	const generationId = randomUUID();
+	const targets: PlexGenerationTarget[] = normalizePlexGenerationTargets(
+		collected.inventoryTargets.map((target) => {
+			if (!target.sectionUuid) {
+				throw new Error("Plex settled inventory target lacked its section UUID");
+			}
+			return {
+				instanceId: instance.id,
+				generationId,
+				sectionId: target.sectionId,
+				sectionUuid: target.sectionUuid,
+				mediaType: target.mediaType,
+				tmdbId: target.tmdbId,
+				tvdbId: target.tvdbId ?? null,
+				ratingKey: target.ratingKey,
+			};
+		}),
+		{ instanceId: instance.id, generationId },
+	);
+	const targetLedger = createPlexTargetLedgerBinding({
+		instanceId: instance.id,
+		generationId,
+		connectionGeneration: instance.connectionGeneration,
+		identityGeneration: instance.identityGeneration,
+		targets,
+	});
 	const generationMetadata = encodeAuthoritativePlexGenerationMetadata({
 		sections: collected.settlement.sections,
 		itemCount: rows.length,
 		canonicalizationVersion: PLEX_CANONICALIZATION_VERSION,
 		roots: collected.settlement.roots,
+		targetLedger,
 	});
 	await publishAuthoritativePlexCacheGeneration(tx, {
 		instance,
@@ -442,6 +480,7 @@ async function publishPlexCacheSnapshot(
 		completedAt: collected.completedAt,
 		generationId,
 		generationMetadata,
+		targets,
 		attempt,
 	});
 	return {
@@ -449,6 +488,7 @@ async function publishPlexCacheSnapshot(
 		upserted: rows.length,
 		generationId,
 		inventoryTargets: collected.inventoryTargets,
+		targetLedger,
 	};
 }
 
@@ -575,9 +615,19 @@ export async function collectSettledPlexCacheLiveEvidence(
 		) {
 			throw new Error("Plex canonical projection changed after the settlement end probe");
 		}
+		const sectionUuids = new Map(finalSections.map((section) => [section.key, section.uuid]));
+		const inventoryTargets = final.inventoryTargets?.map((target) => {
+			const sectionUuid = sectionUuids.get(target.sectionId);
+			if (!sectionUuid) {
+				throw new Error("Plex final target section was absent from settlement catalog");
+			}
+			return { ...target, sectionUuid };
+		});
+		if (!inventoryTargets) throw new Error("Plex final collection lacked exact inventory targets");
 
 		return {
 			...final,
+			inventoryTargets,
 			settlement: {
 				sections: finalSections,
 				roots: snapshotRoots(final.snapshot, finalSections),
@@ -704,6 +754,7 @@ export async function collectPlexCacheLiveEvidence(
 					const mediaType: "movie" | "series" = item.type === "movie" ? "movie" : "series";
 					const tvdbId = mediaType === "series" ? parsePlexTvdbId(item.Guid) : null;
 					inventoryTargets.push({
+						sectionId: lib.key,
 						mediaType,
 						tmdbId,
 						...(tvdbId ? { tvdbId } : {}),

@@ -15,6 +15,8 @@ import { evidenceFingerprint } from "../evidence-fingerprint.js";
 import { createOwnedJellyfinPublicationSnapshot } from "../jellyfin/jellyfin-cache-refresher.js";
 import { createOwnedPlexPublicationSnapshot } from "../plex/plex-cache-refresher.js";
 import { PlexAuthorityService } from "../plex/plex-authority-service.js";
+
+import { requirePlexTargetLedgerBinding } from "../plex/plex-generation-target-ledger.js";
 import {
 	createPlexClient,
 	type PlexClient,
@@ -377,6 +379,11 @@ export interface SanitizedProviderEvidenceSource {
 	verifiedAt: string;
 	statusFingerprint: string;
 	rowFingerprint: string;
+	/** Exact Plex target authority is persisted only as this bounded binding, never target rows. */
+	generationId?: string;
+	targetLedgerVersion?: 1;
+	targetCount?: number;
+	targetDigest?: string;
 	fingerprint: string;
 }
 
@@ -1122,6 +1129,14 @@ function providerSourcePayload(source: Omit<SanitizedProviderEvidenceSource, "fi
 		verifiedAt: source.verifiedAt,
 		statusFingerprint: source.statusFingerprint,
 		rowFingerprint: source.rowFingerprint,
+		...(source.generationId === undefined
+			? {}
+			: {
+					generationId: source.generationId,
+					targetLedgerVersion: source.targetLedgerVersion,
+					targetCount: source.targetCount,
+					targetDigest: source.targetDigest,
+				}),
 	};
 }
 
@@ -1293,6 +1308,7 @@ async function loadProviderExecutionEvidence(
 	cacheTypes: ProviderCacheType[],
 	now: Date,
 	target?: Pick<ProviderScanTarget, "instanceId" | "service">,
+	plexAuthorityMode: "live" | "persisted" = "live",
 ): Promise<{ evidence: SanitizedProviderEvidence; instances: ServiceInstance[] }> {
 	const { prisma } = deps;
 	const services = providerCacheServicesForDependencies(dependencies);
@@ -1373,21 +1389,38 @@ async function loadProviderExecutionEvidence(
 			let status = statusesByKey.get(`${instance.id}:${cacheType}`);
 			let rows = rowsByType.get(cacheType)?.get(instance.id) ?? [];
 			let plexRowAuthority: { rowCount: number; rowFingerprint: string } | undefined;
+			let plexTargetLedger:
+				| {
+						generationId: string;
+						targetLedgerVersion: 1;
+						targetCount: number;
+						targetDigest: string;
+				  }
+				| undefined;
 			const isPlexEvidence = cacheType === "plex" || cacheType === "plex_episode";
 			if (cacheType === "plex") {
-				const current = await new PlexAuthorityService({
+				const authority = new PlexAuthorityService({
 					prisma,
 					...(deps.encryptor ? { encryptor: deps.encryptor } : {}),
 					log: deps.log,
 					...(deps.plexCacheClientFactory ? { createClient: deps.plexCacheClientFactory } : {}),
-				}).scanInstancePolicy({
-					userId,
-					instanceId: instance.id,
-					domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
-					mutation: true,
-					now,
-					maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
 				});
+				const current =
+					plexAuthorityMode === "live"
+						? await authority.scanInstanceExactPolicy({
+								userId,
+								instanceId: instance.id,
+								domains: ["membership", "display", "labels", "collections", "watch", "on-deck"],
+								mutation: true,
+								now,
+								maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
+							})
+						: await authority.scanInstanceExactPolicyPersisted({
+								userId,
+								instanceId: instance.id,
+								now,
+								maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
+							});
 				if (
 					!current?.available ||
 					current.evidence.publicationLevel !== "authoritative" ||
@@ -1400,19 +1433,33 @@ async function loadProviderExecutionEvidence(
 					rowCount: current.rowCount,
 					rowFingerprint: current.rowFingerprint,
 				};
+				const targetLedger = requirePlexTargetLedgerBinding(current.metadata);
+				if (!targetLedger.ok || !current.generationId) {
+					throw new ProviderExecutionAuthorityChangedError();
+				}
+				plexTargetLedger = { generationId: current.generationId, ...targetLedger.binding };
 			} else if (cacheType === "plex_episode") {
-				const current = await new PlexAuthorityService({
+				const authority = new PlexAuthorityService({
 					prisma,
 					...(deps.encryptor ? { encryptor: deps.encryptor } : {}),
 					log: deps.log,
 					...(deps.plexCacheClientFactory ? { createClient: deps.plexCacheClientFactory } : {}),
-				}).readInstanceEpisodes({
-					userId,
-					instanceId: instance.id,
-					mutation: true,
-					now,
-					maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
 				});
+				const current =
+					plexAuthorityMode === "live"
+						? await authority.readInstanceEpisodes({
+								userId,
+								instanceId: instance.id,
+								mutation: true,
+								now,
+								maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
+							})
+						: await authority.readInstanceEpisodesPersisted({
+								userId,
+								instanceId: instance.id,
+								now,
+								maxAgeMs: PROVIDER_EXECUTION_EVIDENCE_FRESHNESS_MS,
+							});
 				if (!current.available) throw new ProviderExecutionAuthorityChangedError();
 				status = { ...current.generationStatus, cacheType };
 				rows = current.rows;
@@ -1474,6 +1521,7 @@ async function loadProviderExecutionEvidence(
 					},
 				}),
 				rowFingerprint: plexRowAuthority?.rowFingerprint ?? providerExecutionFingerprint(rows),
+				...plexTargetLedger,
 			});
 		}
 	}
@@ -1486,6 +1534,7 @@ async function loadCurrentProviderExecutionEvidence(
 	accepted: SanitizedProviderEvidence,
 	now: Date,
 	target?: Pick<ProviderScanTarget, "instanceId" | "service">,
+	plexAuthorityMode: "live" | "persisted" = "live",
 ): Promise<{ evidence: SanitizedProviderEvidence; instances: ServiceInstance[] }> {
 	const cacheTypes = [...new Set(accepted.sources.map((source) => source.cacheType))];
 	if (cacheTypes.some((cacheType) => !isProviderCacheType(cacheType))) {
@@ -1498,6 +1547,7 @@ async function loadCurrentProviderExecutionEvidence(
 		cacheTypes as ProviderCacheType[],
 		now,
 		target,
+		plexAuthorityMode,
 	);
 }
 
@@ -1623,7 +1673,11 @@ function stableProviderEvidenceMatches(
 				acceptedSource.connectionGeneration === currentSource.connectionGeneration &&
 				acceptedSource.identityGeneration === currentSource.identityGeneration &&
 				acceptedSource.cacheType === currentSource.cacheType &&
-				acceptedSource.verifiedAt === currentSource.verifiedAt,
+				acceptedSource.verifiedAt === currentSource.verifiedAt &&
+				acceptedSource.generationId === currentSource.generationId &&
+				acceptedSource.targetLedgerVersion === currentSource.targetLedgerVersion &&
+				acceptedSource.targetCount === currentSource.targetCount &&
+				acceptedSource.targetDigest === currentSource.targetDigest,
 		);
 		if (matchIndex < 0) return false;
 		remaining.splice(matchIndex, 1);
@@ -1790,6 +1844,7 @@ async function authorizeProviderEvidence(
 					accepted,
 					new Date(),
 					target,
+					"persisted",
 				);
 				if (
 					!currentEvidenceMatches(before.evidence, current.evidence) ||
@@ -1946,6 +2001,26 @@ function canonicalProviderEvidence(value: unknown): SanitizedProviderEvidence {
 		) {
 			throw new FileMatchVerificationError("Cleanup provider evidence source is invalid");
 		}
+		const ledgerFields = [
+			row.generationId,
+			row.targetLedgerVersion,
+			row.targetCount,
+			row.targetDigest,
+		];
+		if (
+			ledgerFields.some((field) => field !== undefined) &&
+			(ledgerFields.some((field) => field === undefined) ||
+				row.service !== "PLEX" ||
+				row.cacheType !== "plex" ||
+				typeof row.generationId !== "string" ||
+				row.generationId.trim() === "" ||
+				row.targetLedgerVersion !== 1 ||
+				!Number.isSafeInteger(row.targetCount) ||
+				(row.targetCount as number) < 0 ||
+				!isSha256(row.targetDigest))
+		) {
+			throw new FileMatchVerificationError("Cleanup provider target ledger evidence is invalid");
+		}
 		const canonical = {
 			service: row.service as SanitizedProviderEvidenceSource["service"],
 			...(row.instanceFingerprint === undefined
@@ -1961,6 +2036,14 @@ function canonicalProviderEvidence(value: unknown): SanitizedProviderEvidence {
 			verifiedAt: row.verifiedAt as string,
 			statusFingerprint: row.statusFingerprint as string,
 			rowFingerprint: row.rowFingerprint as string,
+			...(row.generationId === undefined
+				? {}
+				: {
+						generationId: row.generationId as string,
+						targetLedgerVersion: 1 as const,
+						targetCount: row.targetCount as number,
+						targetDigest: row.targetDigest as string,
+					}),
 		};
 		if (canonicalFingerprint(canonical) !== row.fingerprint) {
 			throw new FileMatchVerificationError("Cleanup provider evidence source was tampered");

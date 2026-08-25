@@ -98,6 +98,14 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 				return result;
 			}
 
+			async scanInstanceExactPolicy(input: { userId: string; instanceId: string }) {
+				return await this.scanInstancePolicy(input);
+			}
+
+			async scanInstanceExactPolicyPersisted(input: { userId: string; instanceId: string }) {
+				return await this.scanInstancePolicy(input);
+			}
+
 			async readInstance(input: { userId: string; instanceId: string }) {
 				const instances = await this.prisma.serviceInstance.findMany({
 					where: { userId: input.userId, service: "PLEX", enabled: true },
@@ -137,6 +145,9 @@ function plexV3Metadata(itemCount: number) {
 			},
 		],
 		roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+		targetLedgerVersion: 1,
+		targetCount: itemCount,
+		targetDigest: "a".repeat(64),
 	});
 }
 
@@ -293,6 +304,11 @@ describe("authoritative mutation policy snapshots", () => {
 			completedAt: new Date(),
 			generationId: `generation-${plexRefreshInstanceId(args)}`,
 			inventoryTargets: [],
+			targetLedger: {
+				targetLedgerVersion: 1,
+				targetCount: 0,
+				targetDigest: "a".repeat(64),
+			},
 		}));
 		refreshMocks.plexEpisodes.mockResolvedValue({
 			upserted: 0,
@@ -431,6 +447,11 @@ describe("authoritative mutation policy snapshots", () => {
 			completedAt: new Date(),
 			generationId: "different-generation",
 			inventoryTargets: [],
+			targetLedger: {
+				targetLedgerVersion: 1,
+				targetCount: 0,
+				targetDigest: "a".repeat(64),
+			},
 		});
 		const { deps } = makeDeps([rule("plex_watch_count")], [instance("PLEX")]);
 
@@ -782,6 +803,14 @@ describe("authoritative mutation policy snapshots", () => {
 						...(mediaType === "series" ? { tvdbId: 84 } : {}),
 						ratingKey,
 					})),
+					targetLedger: {
+						targetLedgerVersion: 1,
+						targetCount:
+							instanceId === plexA.id
+								? plexATargetsAtSnapshot.length
+								: plexBTargetsAtSnapshot.length,
+						targetDigest: "a".repeat(64),
+					},
 				};
 			});
 

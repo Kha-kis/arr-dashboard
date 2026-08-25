@@ -106,6 +106,14 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 				return evidence;
 			}
 
+			async scanInstanceExactPolicy(input: { userId: string; instanceId: string }) {
+				return await this.scanInstancePolicy(input);
+			}
+
+			async scanInstanceExactPolicyPersisted(input: { userId: string; instanceId: string }) {
+				return await this.scanInstancePolicy(input);
+			}
+
 			scanUserPolicy(input: never) {
 				return repository.scanUserPolicyEvidence(this.repositoryInput(), input);
 			}
@@ -224,6 +232,9 @@ function completeStatus(instanceId: string, completedAt = new Date(), itemCount 
 				},
 			],
 			roots: [{ sectionKey: "1", domain: "membership", digest: "a".repeat(64) }],
+			targetLedgerVersion: 1,
+			targetCount: itemCount,
+			targetDigest: "c".repeat(64),
 		}),
 		lastErrorMessage: null,
 		lastAttemptAt: completedAt,
@@ -509,6 +520,16 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		expect(result.ctx.plexMap?.get("series:42")).toEqual(
 			expect.objectContaining({ watchCount: 0 }),
 		);
+		expect(result.providerEvidence?.sources).toEqual([
+			expect.objectContaining({
+				service: "PLEX",
+				cacheType: "plex",
+				generationId: status.generationId,
+				targetLedgerVersion: 1,
+				targetCount: 1,
+				targetDigest: "c".repeat(64),
+			}),
+		]);
 	});
 
 	it("rejects a Plex map when its published generation changes while rows are read", async () => {

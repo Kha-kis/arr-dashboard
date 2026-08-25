@@ -97,6 +97,7 @@ export const ModelName = {
   NotificationRule: 'NotificationRule',
   NotificationAggregationConfig: 'NotificationAggregationConfig',
   PlexCache: 'PlexCache',
+  PlexGenerationTarget: 'PlexGenerationTarget',
   PlexEpisodeCache: 'PlexEpisodeCache',
   JellyfinCache: 'JellyfinCache',
   JellyfinEpisodeCache: 'JellyfinEpisodeCache',
@@ -1064,6 +1065,21 @@ export const PlexCacheScalarFieldEnum = {
 } as const
 
 export type PlexCacheScalarFieldEnum = (typeof PlexCacheScalarFieldEnum)[keyof typeof PlexCacheScalarFieldEnum]
+
+
+export const PlexGenerationTargetScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  generationId: 'generationId',
+  sectionId: 'sectionId',
+  sectionUuid: 'sectionUuid',
+  mediaType: 'mediaType',
+  tmdbId: 'tmdbId',
+  tvdbId: 'tvdbId',
+  ratingKey: 'ratingKey'
+} as const
+
+export type PlexGenerationTargetScalarFieldEnum = (typeof PlexGenerationTargetScalarFieldEnum)[keyof typeof PlexGenerationTargetScalarFieldEnum]
 
 
 export const PlexEpisodeCacheScalarFieldEnum = {

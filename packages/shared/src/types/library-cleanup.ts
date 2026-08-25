@@ -760,6 +760,11 @@ export interface CleanupProviderEvidenceSource {
 	verifiedAt: string;
 	statusFingerprint: string;
 	rowFingerprint: string;
+	/** Bounded exact Plex target authority; target rows never leave the API. */
+	generationId?: string;
+	targetLedgerVersion?: 1;
+	targetCount?: number;
+	targetDigest?: string;
 	fingerprint: string;
 }
 

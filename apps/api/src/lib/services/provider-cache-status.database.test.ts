@@ -313,6 +313,18 @@ describe("provider cache status SQLite takeover contract", () => {
 				],
 				completedAt,
 				generationId: "replacement-generation",
+				targets: [
+					{
+						instanceId: authority.id,
+						generationId: "replacement-generation",
+						sectionId: "movies",
+						sectionUuid: "movies-uuid",
+						mediaType: "movie",
+						tmdbId: 2,
+						tvdbId: null,
+						ratingKey: "replacement",
+					},
+				],
 				generationMetadata: encodeAuthoritativePlexGenerationMetadata({
 					sections: [
 						{

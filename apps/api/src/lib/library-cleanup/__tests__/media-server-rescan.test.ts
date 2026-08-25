@@ -35,6 +35,14 @@ vi.mock("../../plex/plex-authority-service.js", async (importOriginal) => {
 			scanInstancePolicy(input: never) {
 				return repository.scanInstancePolicyEvidence(this.prisma, input);
 			}
+
+			scanInstanceExactPolicy(input: never) {
+				return repository.scanInstancePolicyEvidence(this.prisma, input);
+			}
+
+			scanInstanceExactPolicyPersisted(input: never) {
+				return repository.scanInstancePolicyEvidence(this.prisma, input);
+			}
 		},
 	};
 });
@@ -58,6 +66,9 @@ function plexV3Metadata(itemCount: number) {
 			},
 		],
 		roots: [{ sectionKey: "movies", domain: "membership", digest: "a".repeat(64) }],
+		targetLedgerVersion: 1,
+		targetCount: itemCount,
+		targetDigest: "c".repeat(64),
 	});
 }
 
@@ -1080,6 +1091,10 @@ describe("durable media-server rescans", () => {
 					verifiedAt: plexInstance.identityVerifiedAt.toISOString(),
 					statusFingerprint: "a".repeat(64),
 					rowFingerprint: "b".repeat(64),
+					generationId: "generation-b",
+					targetLedgerVersion: 1,
+					targetCount: 1,
+					targetDigest: "c".repeat(64),
 				},
 			],
 		);

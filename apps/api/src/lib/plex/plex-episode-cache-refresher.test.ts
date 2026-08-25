@@ -56,14 +56,46 @@ vi.mock("./plex-authority-service.js", async (importOriginal) => {
 	return {
 		...actual,
 		PlexAuthorityService: class {
-			private readonly prisma: never;
+			private readonly prisma: PrismaClientInstance;
 
-			constructor(input: { prisma: never }) {
+			constructor(input: { prisma: PrismaClientInstance }) {
 				this.prisma = input.prisma;
 			}
 
-			scanInstanceEpisodeParentPolicy(input: never) {
-				return repository.scanInstanceEpisodeParentPolicyEvidence(this.prisma, input);
+			async scanInstanceEpisodeParentPolicy(input: {
+				userId: string;
+				instanceId: string;
+				now?: Date;
+				maxAgeMs?: number;
+				onTargets?: (
+					targets: Array<{
+						mediaType: "movie" | "series";
+						tmdbId: number;
+						ratingKey: string;
+					}>,
+				) => void | Promise<void>;
+			}) {
+				const scanned = await repository.scanInstanceEpisodeParentPolicyEvidence(
+					this.prisma,
+					input,
+				);
+				if (!scanned.available) return scanned;
+				const rows = await this.prisma.plexCache.findMany({
+					where: { mediaType: "series", watchCount: { gt: 0 } },
+				});
+				await input.onTargets?.(
+					rows
+						.filter(
+							(row: { mediaType: string; ratingKey: string | null }) =>
+								row.mediaType === "series" && Boolean(row.ratingKey),
+						)
+						.map((row) => ({
+							mediaType: "series" as const,
+							tmdbId: row.tmdbId,
+							ratingKey: row.ratingKey!,
+						})),
+				);
+				return scanned;
 			}
 		},
 	};

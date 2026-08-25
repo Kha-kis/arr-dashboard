@@ -8,6 +8,10 @@ import type {
 	PlexGenerationSectionV3,
 	PlexPublicationLevel,
 } from "@arr/shared";
+import {
+	decodePlexTargetLedgerBinding,
+	type PlexTargetLedgerBinding,
+} from "./plex-generation-target-ledger.js";
 
 export type DecodedPlexGenerationMetadata =
 	| {
@@ -292,6 +296,8 @@ export function decodePlexGenerationMetadata(
 			new Set(normalizedSections.map((section) => section.key)),
 		);
 		if (typeof roots === "string") return { ok: false, reasonCode: roots };
+		const targetLedger = decodePlexTargetLedgerBinding(envelope);
+		if (!targetLedger.ok) return { ok: false, reasonCode: "metadata_invalid" };
 		return {
 			ok: true,
 			metadata: {
@@ -302,6 +308,7 @@ export function decodePlexGenerationMetadata(
 				canonicalizationVersion: 1,
 				sections: normalizedSections as PlexGenerationSectionV3[],
 				roots,
+				...(targetLedger.binding ?? {}),
 			},
 		};
 	}
@@ -322,6 +329,7 @@ export function encodeAuthoritativePlexGenerationMetadata(input: {
 	itemCount: number;
 	canonicalizationVersion: 1;
 	roots: PlexGenerationDomainRoot[];
+	targetLedger?: PlexTargetLedgerBinding;
 }): string {
 	const metadata: PlexGenerationMetadataV3 = {
 		version: 3,
@@ -331,6 +339,7 @@ export function encodeAuthoritativePlexGenerationMetadata(input: {
 		canonicalizationVersion: input.canonicalizationVersion,
 		sections: input.sections,
 		roots: input.roots,
+		...(input.targetLedger ?? {}),
 	};
 	const decoded = decodePlexGenerationMetadata(JSON.stringify(metadata));
 	if (!decoded.ok || decoded.metadata.publicationLevel !== "authoritative") {

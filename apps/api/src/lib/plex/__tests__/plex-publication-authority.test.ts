@@ -34,8 +34,13 @@ vi.mock("../plex-authority-service.js", async (importOriginal) => {
 
 			async scanInstanceEpisodeParentPolicy(input: {
 				onBatch?: (batch: { rows: Array<Record<string, unknown>> }) => void;
+				onTargets?: (
+					targets: Array<{ mediaType: "series"; tmdbId: number; ratingKey: string }>,
+				) => void;
 			}) {
-				return this.scanInstancePolicy(input);
+				const result = await this.scanInstancePolicy(input);
+				input.onTargets?.([{ mediaType: "series", tmdbId: 42, ratingKey: "show-1" }]);
+				return result;
 			}
 		},
 	};
@@ -143,6 +148,15 @@ function dataClient(itemCount = 1): PlexClient {
 
 function prisma(finalPredicateMatches = true, publicationClaimMatches = true) {
 	const rows: unknown[] = [];
+	const targetRows: unknown[] = [];
+	let claimMatches = publicationClaimMatches;
+	let targetWriteError: Error | undefined;
+	const status: Record<string, unknown> = {
+		generationId: "previous-generation",
+		generationMetadata: "previous-metadata",
+		lastResult: "success",
+		lastAttemptResult: "success",
+	};
 	const tx = {
 		libraryCleanupConfig: {
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
@@ -158,11 +172,25 @@ function prisma(finalPredicateMatches = true, publicationClaimMatches = true) {
 		plexCache: {
 			deleteMany: vi.fn(async () => {
 				authority.events.push("delete");
+				rows.splice(0, rows.length);
 				return { count: 0 };
 			}),
 			createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
 				authority.events.push("create");
 				rows.push(...data);
+				return { count: data.length };
+			}),
+		},
+		plexGenerationTarget: {
+			deleteMany: vi.fn(async () => {
+				authority.events.push("target-delete");
+				targetRows.splice(0, targetRows.length);
+				return { count: 0 };
+			}),
+			createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
+				authority.events.push("target-create");
+				if (targetWriteError) throw targetWriteError;
+				targetRows.push(...data);
 				return { count: data.length };
 			}),
 		},
@@ -181,18 +209,40 @@ function prisma(finalPredicateMatches = true, publicationClaimMatches = true) {
 				);
 				return {};
 			}),
-			updateMany: vi.fn(async ({ data }: { data: { lastAttemptResult?: string } }) => {
+			updateMany: vi.fn(async ({ data }: { data: Record<string, unknown> }) => {
 				authority.events.push(data.lastAttemptResult === "success" ? "status" : "failure");
-				return { count: publicationClaimMatches ? 1 : 0 };
+				if (data.lastAttemptResult === "success" && claimMatches) Object.assign(status, data);
+				return { count: claimMatches ? 1 : 0 };
 			}),
 		},
 	};
 	const db = {
-		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
-			callback(tx),
-		),
+		$transaction: vi.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => {
+			const snapshot = structuredClone({ rows, targetRows, status });
+			try {
+				return await callback(tx);
+			} catch (error) {
+				rows.splice(0, rows.length, ...snapshot.rows);
+				targetRows.splice(0, targetRows.length, ...snapshot.targetRows);
+				for (const key of Object.keys(status)) delete status[key];
+				Object.assign(status, snapshot.status);
+				throw error;
+			}
+		}),
 	} as unknown as PrismaClient;
-	return { db, tx, rows };
+	return {
+		db,
+		tx,
+		rows,
+		targetRows,
+		status,
+		setClaimMatches: (value: boolean) => {
+			claimMatches = value;
+		},
+		setTargetWriteError: (error: Error | undefined) => {
+			targetWriteError = error;
+		},
+	};
 }
 
 describe("Plex publication authority", () => {
@@ -232,6 +282,10 @@ describe("Plex publication authority", () => {
 			"create",
 			"create",
 			"create",
+			"target-delete",
+			"target-create",
+			"target-create",
+			"target-create",
 		]);
 		expect(fixture.rows).toHaveLength(205);
 		expect(fixture.rows[0]).toEqual(
@@ -486,6 +540,141 @@ describe("Plex publication authority", () => {
 		expect(result).toMatchObject({ complete: false, superseded: true, upserted: 0, errors: 0 });
 		expect(fixture.tx.plexCache.deleteMany).not.toHaveBeenCalled();
 		expect(fixture.tx.plexCache.createMany).not.toHaveBeenCalled();
+	});
+
+	it("5. publishes two exact targets when duplicate provider objects aggregate into one PlexCache row", async () => {
+		const fixture = prisma();
+		authority.client = {
+			...dataClient(),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{ ratingKey: "edition-a", title: "Edition A", type: "movie", Guid: [{ id: "tmdb://42" }] },
+				{ ratingKey: "edition-b", title: "Edition B", type: "movie", Guid: [{ id: "tmdb://42" }] },
+			]),
+		} as unknown as PlexClient;
+
+		const result = await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+
+		expect(result).toMatchObject({ complete: true, upserted: 1 });
+		expect(fixture.rows).toHaveLength(1);
+		expect(fixture.targetRows).toEqual([
+			expect.objectContaining({ ratingKey: "edition-a", tmdbId: 42 }),
+			expect.objectContaining({ ratingKey: "edition-b", tmdbId: 42 }),
+		]);
+	});
+
+	it("17. rolls back cache, status, attempt, and ledger state when the target write fails", async () => {
+		const fixture = prisma();
+		fixture.rows.push({ id: "old-cache" });
+		fixture.targetRows.push({ id: "old-target", generationId: "previous-generation" });
+		fixture.setTargetWriteError(new Error("target write failed"));
+
+		const result = await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(fixture.rows).toEqual([{ id: "old-cache" }]);
+		expect(fixture.targetRows).toEqual([{ id: "old-target", generationId: "previous-generation" }]);
+		expect(fixture.status).toMatchObject({
+			generationId: "previous-generation",
+			generationMetadata: "previous-metadata",
+			lastAttemptResult: "success",
+		});
+		expect(fixture.tx.plexGenerationTarget.createMany).toHaveBeenCalled();
+	});
+
+	it("18. invokes the real lost-CAS path without replacing the previously published ledger", async () => {
+		const fixture = prisma();
+		await expect(
+			refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log }),
+		).resolves.toMatchObject({ complete: true });
+		const firstLedger = structuredClone(fixture.targetRows);
+		expect(firstLedger).toHaveLength(1);
+		const targetCallsAfterFirstPublication =
+			fixture.tx.plexGenerationTarget.createMany.mock.calls.length;
+		fixture.setClaimMatches(false);
+		authority.client = dataClient(2);
+
+		await expect(
+			refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log }),
+		).resolves.toMatchObject({ superseded: true, complete: false });
+
+		expect(fixture.targetRows).toEqual(firstLedger);
+		expect(fixture.tx.plexGenerationTarget.createMany).toHaveBeenCalledTimes(
+			targetCallsAfterFirstPublication,
+		);
+	});
+
+	it("19. atomically replaces the current cache and exact ledger with the next generation", async () => {
+		const fixture = prisma();
+		await expect(
+			refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log }),
+		).resolves.toMatchObject({ complete: true });
+		const firstGeneration = fixture.status.generationId;
+		authority.client = {
+			...dataClient(),
+			getLibraryItems: vi.fn().mockResolvedValue([
+				{
+					ratingKey: "movie-next",
+					title: "Movie Next",
+					type: "movie",
+					Guid: [{ id: "tmdb://43" }],
+				},
+			]),
+		} as unknown as PlexClient;
+
+		await expect(
+			refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log }),
+		).resolves.toMatchObject({ complete: true });
+
+		expect(fixture.status.generationId).not.toBe(firstGeneration);
+		expect(fixture.rows).toEqual([
+			expect.objectContaining({ tmdbId: 43, ratingKey: "movie-next" }),
+		]);
+		expect(fixture.targetRows).toEqual([
+			expect.objectContaining({
+				generationId: fixture.status.generationId,
+				tmdbId: 43,
+				ratingKey: "movie-next",
+			}),
+		]);
+	});
+
+	it("23. rejects a complete collection whose exact target is absent from the settled supported-section catalog", async () => {
+		const fixture = prisma();
+		authority.client = {
+			...dataClient(),
+			getLibrarySettlementSections: vi.fn().mockResolvedValue([
+				{
+					key: "movies",
+					uuid: "movies-uuid",
+					title: "Movies",
+					type: "movie",
+					refreshing: false,
+					scannedAt: 1_777_000_000,
+					updatedAt: 1_777_000_100,
+				},
+			]),
+			getLibrarySections: vi.fn().mockResolvedValue([
+				{ key: "movies", title: "Movies", type: "movie" },
+				{ key: "shows", title: "Shows", type: "show" },
+			]),
+			getLibraryItems: vi.fn(async (sectionId: string) =>
+				sectionId === "movies"
+					? [{ ratingKey: "movie-1", title: "Movie", type: "movie", Guid: [{ id: "tmdb://42" }] }]
+					: [
+							{
+								ratingKey: "show-1",
+								title: "Show",
+								type: "show",
+								Guid: [{ id: "tmdb://43" }, { id: "tvdb://99" }],
+							},
+						],
+			),
+		} as unknown as PlexClient;
+
+		const result = await refreshPlexCache({ prisma: fixture.db, instance: ownedSnapshot(), log });
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		expect(fixture.tx.plexGenerationTarget.createMany).not.toHaveBeenCalled();
 	});
 
 	it("publishes episode rows and status with the same two generations", async () => {

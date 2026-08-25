@@ -23,6 +23,10 @@ describe("cleanup provider-evidence snapshots", () => {
 					verifiedAt: "2026-08-15T03:00:00.000Z",
 					statusFingerprint: "c".repeat(64),
 					rowFingerprint: "d".repeat(64),
+					generationId: "generation-1",
+					targetLedgerVersion: 1,
+					targetCount: 2,
+					targetDigest: "e".repeat(64),
 				},
 			],
 		);
@@ -61,6 +65,10 @@ describe("cleanup provider-evidence snapshots", () => {
 						identityFingerprint: "b".repeat(64),
 						connectionGeneration: 3,
 						identityGeneration: 7,
+						generationId: "generation-1",
+						targetLedgerVersion: 1,
+						targetCount: 2,
+						targetDigest: "e".repeat(64),
 					},
 				],
 			},
@@ -78,6 +86,12 @@ describe("cleanup provider-evidence snapshots", () => {
 			"source count",
 			(evidence: Record<string, unknown>) => {
 				(evidence.sources as Array<Record<string, unknown>>)[0]!.itemCount = 2;
+			},
+		],
+		[
+			"Plex target-ledger digest",
+			(evidence: Record<string, unknown>) => {
+				(evidence.sources as Array<Record<string, unknown>>)[0]!.targetDigest = "f".repeat(64);
 			},
 		],
 	])("rejects a tampered %s", (_label, tamper) => {

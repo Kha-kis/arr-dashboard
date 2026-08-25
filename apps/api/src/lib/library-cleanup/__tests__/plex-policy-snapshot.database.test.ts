@@ -104,6 +104,18 @@ async function publish(
 			],
 			completedAt: new Date(),
 			generationId,
+			targets: [
+				{
+					instanceId: authority.id,
+					generationId,
+					sectionId: "movies",
+					sectionUuid: "movies-uuid",
+					mediaType: "movie",
+					tmdbId,
+					tvdbId: null,
+					ratingKey: `rating-${tmdbId}`,
+				},
+			],
 			generationMetadata: encodeAuthoritativePlexGenerationMetadata({
 				sections: [
 					{
