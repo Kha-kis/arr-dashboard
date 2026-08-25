@@ -8,8 +8,8 @@
  * Requires: Jellyseerr container with pending requests (created in bootstrap).
  */
 
-import { test, expect } from "@playwright/test";
-import { ROUTES, TIMEOUTS, selectTab } from "../../utils/test-helpers";
+import { expect, test } from "@playwright/test";
+import { ROUTES, selectTab, TIMEOUTS } from "../../utils/test-helpers";
 import { ensureAuthenticated } from "../utils/auth-helpers";
 
 // ============================================================================
@@ -18,7 +18,10 @@ import { ensureAuthenticated } from "../utils/auth-helpers";
 
 /** Wait for the approval queue to show the Seerr tab bar. */
 async function waitForSeerrTabs(page: import("@playwright/test").Page): Promise<boolean> {
-	const tab = page.locator("button").filter({ hasText: /approval queue/i }).first();
+	const tab = page
+		.locator("button")
+		.filter({ hasText: /approval queue/i })
+		.first();
 	const empty = page.getByText(/no seerr instances/i);
 	try {
 		await tab.or(empty).waitFor({ state: "visible", timeout: TIMEOUTS.apiResponse });
@@ -55,7 +58,10 @@ test.describe("Requests - Approval Queue", () => {
 		test.skip(!hasPreview, "No pending requests in approval queue");
 
 		// Verify the card has the expected structure
-		const card = page.locator("[role='button']").filter({ hasText: /movie|tv/i }).first();
+		const card = page
+			.locator("[role='button']")
+			.filter({ hasText: /movie|tv/i })
+			.first();
 		await expect(card).toBeVisible();
 	});
 
@@ -113,8 +119,7 @@ test.describe("Requests - Approval Queue", () => {
 		test.skip(!hasSeerr, "No Seerr instance registered");
 
 		const previewButtons = page.locator("button[aria-label='Preview request']");
-		const count = await previewButtons.count();
-		test.skip(count < 2, "Need at least 2 pending requests");
+		await expect(previewButtons).toHaveCount(2, { timeout: TIMEOUTS.apiResponse });
 
 		// Open first
 		await previewButtons.first().click();
@@ -127,7 +132,7 @@ test.describe("Requests - Approval Queue", () => {
 
 		// Only one panel visible
 		let visible = 0;
-		for (let i = 0; i < await panels.count(); i++) {
+		for (let i = 0; i < (await panels.count()); i++) {
 			if (await panels.nth(i).isVisible()) visible++;
 		}
 		expect(visible).toBe(1);
@@ -209,7 +214,10 @@ test.describe("Requests - ARIA Verification", () => {
 		await selectTab(page, "All Requests");
 		await expect(page.locator("select").first()).toBeVisible({ timeout: TIMEOUTS.apiResponse });
 
-		const card = page.locator("[role='button']").filter({ hasText: /movie|tv/i }).first();
+		const card = page
+			.locator("[role='button']")
+			.filter({ hasText: /movie|tv/i })
+			.first();
 		await expect(card).toBeVisible({ timeout: TIMEOUTS.apiResponse });
 		await card.click();
 
@@ -236,7 +244,10 @@ test.describe("Requests - ARIA Verification", () => {
 		await selectTab(page, "All Requests");
 		await expect(page.locator("select").first()).toBeVisible({ timeout: TIMEOUTS.apiResponse });
 
-		const card = page.locator("[role='button']").filter({ hasText: /movie|tv/i }).first();
+		const card = page
+			.locator("[role='button']")
+			.filter({ hasText: /movie|tv/i })
+			.first();
 		await expect(card).toBeVisible({ timeout: TIMEOUTS.apiResponse });
 
 		// Compact timeline: role="img" with aria-label starting with "Status:"

@@ -7,8 +7,8 @@
  * - Service type badges appear correctly
  */
 
-import { test, expect } from "@playwright/test";
-import { ROUTES, TIMEOUTS, waitForLoadingComplete, SERVICE_TYPES } from "../../utils/test-helpers";
+import { expect, test } from "@playwright/test";
+import { ROUTES, SERVICE_TYPES, TIMEOUTS, waitForLoadingComplete } from "../../utils/test-helpers";
 import { ensureAuthenticated } from "../utils/auth-helpers";
 
 test.describe("Dashboard Overview with Real Data", () => {
@@ -34,7 +34,9 @@ test.describe("Dashboard Overview with Real Data", () => {
 	test("should show non-zero instance counts", async ({ page }) => {
 		// With 3 services registered, at least one stat card should show a count > 0
 		// Look for numeric values in stat cards
-		const statValues = page.locator('[class*="stat"] h2, [class*="stat"] h3, [data-testid="stat-card"] h2');
+		const statValues = page.locator(
+			'[class*="stat"] h2, [class*="stat"] h3, [data-testid="stat-card"] h2',
+		);
 		const count = await statValues.count();
 
 		if (count > 0) {
@@ -53,27 +55,34 @@ test.describe("Dashboard Overview with Real Data", () => {
 
 	test("should display Configured Instances section", async ({ page }) => {
 		// "Configured Instances" is an h2 in the overview tab
-		await expect(
-			page.getByRole("heading", { name: /configured instances/i }),
-		).toBeVisible({ timeout: TIMEOUTS.long });
+		await expect(page.getByRole("heading", { name: /configured instances/i })).toBeVisible({
+			timeout: TIMEOUTS.long,
+		});
 	});
 
-	test("should show all three services in instances table", async ({ page }) => {
-		// Wait for instances section to render
-		await expect(
-			page.getByRole("heading", { name: /configured instances/i }),
-		).toBeVisible({ timeout: TIMEOUTS.long });
+	test("should list core instances while surfacing expected setup warnings", async ({ page }) => {
+		const instancesDisclosure = page.getByRole("button", { name: /configured instances/i });
+		await expect(instancesDisclosure).toBeVisible({ timeout: TIMEOUTS.long });
+		await instancesDisclosure.click();
 
+		const instancesTable = page.getByRole("table");
 		for (const label of ["E2E Sonarr", "E2E Radarr", "E2E Prowlarr"]) {
-			await expect(page.getByText(label)).toBeVisible({ timeout: TIMEOUTS.medium });
+			await expect(instancesTable.getByRole("cell", { name: label, exact: true })).toBeVisible({
+				timeout: TIMEOUTS.medium,
+			});
 		}
+
+		// These fixtures intentionally omit indexers/download clients. Keep that
+		// degraded health state visible instead of weakening the application check.
+		await expect(page.getByText("Needs Attention").first()).toBeVisible();
+		await expect(page.getByText(/E2E Sonarr:.*download client/i)).toBeVisible();
 	});
 
 	test("should show service type badges in instances table", async ({ page }) => {
 		// Wait for instances section
-		await expect(
-			page.getByRole("heading", { name: /configured instances/i }),
-		).toBeVisible({ timeout: TIMEOUTS.long });
+		await expect(page.getByRole("heading", { name: /configured instances/i })).toBeVisible({
+			timeout: TIMEOUTS.long,
+		});
 
 		// Service type indicators (sonarr/radarr/prowlarr) should appear
 		const serviceTypes = page.getByText(/sonarr|radarr|prowlarr/i);
