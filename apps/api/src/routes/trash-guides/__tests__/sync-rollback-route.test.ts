@@ -49,18 +49,23 @@ describe("sync rollback route", () => {
 	const formatDelete = vi.fn();
 	const syncUpdate = vi.fn().mockResolvedValue({});
 	const syncFindFirst = vi.fn();
+	const syncFindMany = vi.fn();
 	const deploymentFindMany = vi.fn();
 	const deploymentUpdateMany = vi.fn();
 	const formatGetAll = vi.fn();
 	const formatGetById = vi.fn();
 	const formatUpdate = vi.fn();
 	const profileGetById = vi.fn();
+	const profileGetAll = vi.fn();
 	const rawRequest = vi.fn();
+	const cleanupUpdateMany = vi.fn();
+	const transaction = vi.fn();
 	let syncRecord: Record<string, unknown>;
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
 		syncUpdate.mockResolvedValue({ count: 1 });
+		deploymentUpdateMany.mockResolvedValue({ count: 1 });
 		const beforeProfile = qualityProfile([]);
 		const deployedProfile = qualityProfile([{ format: 7, score: 100 }]);
 		const beforeFormat = {
@@ -120,7 +125,9 @@ describe("sync rollback route", () => {
 		syncFindFirst.mockResolvedValue(syncRecord);
 		const client = {
 			qualityProfile: {
-				getAll: vi.fn().mockResolvedValueOnce([deployedProfile]).mockResolvedValue([beforeProfile]),
+				getAll: profileGetAll
+					.mockResolvedValueOnce([deployedProfile])
+					.mockResolvedValue([beforeProfile]),
 				getById: profileGetById
 					.mockResolvedValueOnce(deployedProfile)
 					.mockResolvedValue(beforeProfile),
@@ -142,20 +149,25 @@ describe("sync rollback route", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
 			},
 			trashSyncHistory: {
 				findFirst: syncFindFirst,
-				findMany: vi.fn().mockResolvedValue([]),
+				findMany: syncFindMany.mockResolvedValue([]),
 				update: syncUpdate,
 				updateMany: syncUpdate,
 			},
 			templateDeploymentHistory: {
 				findMany: deploymentFindMany.mockResolvedValue([
 					{
+						id: "deployment-paired",
 						templateId: sync.templateId,
 						backupId: sync.backupId,
 						status: "SUCCESS",
+						rolledBack: false,
+						undeployStatus: null,
+						undeployAttemptedAt: null,
+						undeployProgress: null,
 						deployedAt: new Date("2026-01-01"),
 						backup: sync.backup,
 					},
@@ -165,11 +177,11 @@ describe("sync rollback route", () => {
 				findFirst: vi.fn().mockResolvedValue(instance),
 				findMany: vi.fn().mockResolvedValue([instance]),
 			},
-			$transaction: vi.fn(async (callback) =>
+			$transaction: transaction.mockImplementation(async (callback) =>
 				callback({
 					trashSyncHistory: { update: syncUpdate, updateMany: syncUpdate },
 					templateDeploymentHistory: {
-						updateMany: deploymentUpdateMany.mockResolvedValue({ count: 1 }),
+						updateMany: deploymentUpdateMany,
 					},
 				}),
 			),
@@ -203,6 +215,345 @@ describe("sync rollback route", () => {
 		await app.close();
 		callOrder.length = 0;
 		vi.clearAllMocks();
+	});
+
+	it("acquires the topology lease before claiming a rollback", async () => {
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode, response.body).toBe(200);
+		const acquireIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
+			args.data.runClaimToken ? [index] : [],
+		);
+		const releaseIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
+			args.data.runClaimToken === null ? [index] : [],
+		);
+		expect(acquireIndexes).toHaveLength(1);
+		expect(releaseIndexes).toHaveLength(1);
+		const finalWriteIndex = syncUpdate.mock.calls.findIndex(
+			([args]) => args.data.rollbackStatus === "PARTIAL",
+		);
+		expect(finalWriteIndex).toBeGreaterThanOrEqual(0);
+		expect(cleanupUpdateMany.mock.invocationCallOrder[acquireIndexes[0]!]).toBeLessThan(
+			syncUpdate.mock.invocationCallOrder[0]!,
+		);
+		expect(syncUpdate.mock.invocationCallOrder[finalWriteIndex]).toBeLessThan(
+			cleanupUpdateMany.mock.invocationCallOrder[releaseIndexes[0]!]!,
+		);
+	});
+
+	it("uses the exact claim timestamp for paired rollback progress", async () => {
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode, response.body).toBe(200);
+		const claimTimestamp = syncUpdate.mock.calls.find(
+			([call]) => call.data?.rollbackStatus === "IN_PROGRESS" && !call.data.rollbackProgress,
+		)?.[0].data.rollbackAttemptedAt;
+		const pairedTimestamp = deploymentUpdateMany.mock.calls.find(
+			([call]) => call.data?.undeployStatus === "IN_PROGRESS",
+		)?.[0].data.undeployAttemptedAt;
+		expect(pairedTimestamp).toBe(claimTimestamp);
+	});
+
+	it("refuses a rollback claim when paired deployment history disappears before the lease", async () => {
+		deploymentFindMany
+			.mockReset()
+			.mockResolvedValueOnce([{ id: "deployment-paired" }])
+			.mockResolvedValueOnce([]);
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json()).toMatchObject({ error: "ROLLBACK_HISTORY_CHANGED" });
+		expect(syncUpdate).not.toHaveBeenCalled();
+		expect(profileUpdate).not.toHaveBeenCalled();
+		expect(formatUpdate).not.toHaveBeenCalled();
+		expect(formatDelete).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["already active", false, "IN_PROGRESS"],
+		["already completed", true, "COMPLETED"],
+	])(
+		"rejects paired deployment history that is %s before claiming the group",
+		async (_case, rolledBack, undeployStatus) => {
+			deploymentFindMany.mockImplementation(async (args) =>
+				args.select?.id && !args.select?.undeployStatus
+					? [{ id: "deployment-paired" }]
+					: [
+							{
+								id: "deployment-paired",
+								status: "SUCCESS",
+								rolledBack,
+								undeployStatus,
+								undeployAttemptedAt: new Date("2026-08-08T12:00:00.000Z"),
+								undeployProgress: "[]",
+							},
+						],
+			);
+
+			const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+			expect(response.statusCode).toBe(409);
+			expect(response.json()).toMatchObject({ error: "ROLLBACK_HISTORY_CONFLICT" });
+			expect(transaction).not.toHaveBeenCalled();
+			expect(profileUpdate).not.toHaveBeenCalled();
+		},
+	);
+
+	it("rejects a terminal paired sync before claiming the group", async () => {
+		syncFindMany.mockImplementation(async (args) =>
+			args.select?.rollbackProgress
+				? [
+						{
+							id: "sync-terminal",
+							rolledBack: true,
+							rollbackStatus: "COMPLETED",
+							rollbackAttemptedAt: new Date("2026-08-08T12:00:00.000Z"),
+							rollbackProgress: "[]",
+						},
+					]
+				: [],
+		);
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json()).toMatchObject({ error: "ROLLBACK_HISTORY_CONFLICT" });
+		expect(transaction).not.toHaveBeenCalled();
+		expect(profileUpdate).not.toHaveBeenCalled();
+	});
+
+	it("rolls back the whole claim when a paired deployment CAS misses", async () => {
+		deploymentUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json()).toMatchObject({ error: "ROLLBACK_HISTORY_CONFLICT" });
+		expect(transaction).toHaveBeenCalledOnce();
+		expect(profileUpdate).not.toHaveBeenCalled();
+	});
+
+	it("restores every paired recovery row after a late pre-write persistence failure", async () => {
+		const priorSyncAttemptedAt = new Date("2026-08-08T12:00:00.000Z");
+		const priorSyncProgress = JSON.stringify([{ key: "sync-prior", outcome: "restored" }]);
+		const priorUndeployAttemptedAt = new Date("2026-08-08T12:05:00.000Z");
+		const priorUndeployProgress = JSON.stringify([
+			{ key: "deployment-prior", outcome: "restored" },
+		]);
+		const survivorNaming = { id: 1, standardMovieFormat: "Survivor" };
+		const targetBackup = JSON.parse(
+			(syncRecord.backup as { backupData: string }).backupData,
+		) as Record<string, unknown>;
+		targetBackup.customFormatDeployments = [];
+		targetBackup.managedCustomFormats = [];
+		targetBackup.qualityProfileDeployment = {
+			beforeProfile: null,
+			status: "not_started",
+			action: "created",
+			profileId: null,
+			profileName: null,
+			postStateToken: null,
+			intendedPostStateToken: null,
+		};
+		targetBackup.namingDeployment = {
+			beforeConfig: { id: 1, standardMovieFormat: "Before" },
+			status: "pending",
+			postStateToken: null,
+			intendedPostStateToken: null,
+		};
+		const targetBackupRecord = { id: "backup-1", backupData: JSON.stringify(targetBackup) };
+		syncRecord.backup = targetBackupRecord;
+		const survivorBackup = {
+			...targetBackup,
+			namingDeployment: {
+				beforeConfig: { id: 1, standardMovieFormat: "Older" },
+				status: "applied",
+				postStateToken: createUpstreamResourceStateToken(survivorNaming),
+				intendedPostStateToken: createUpstreamResourceStateToken(survivorNaming),
+			},
+		};
+		rawRequest.mockResolvedValue({
+			ok: true,
+			status: 200,
+			json: vi.fn().mockResolvedValue(survivorNaming),
+		});
+		syncFindMany.mockImplementation(async (args) =>
+			args.select?.rollbackProgress
+				? [
+						{
+							id: "sync-paired",
+							rollbackStatus: "PARTIAL",
+							rollbackAttemptedAt: priorSyncAttemptedAt,
+							rollbackProgress: priorSyncProgress,
+						},
+					]
+				: [],
+		);
+		deploymentFindMany.mockImplementation(async (args) =>
+			args.select?.id && !args.select?.undeployStatus
+				? [{ id: "deployment-paired" }]
+				: args.select?.undeployProgress
+					? [
+							{
+								id: "deployment-paired",
+								undeployStatus: "PARTIAL",
+								undeployAttemptedAt: priorUndeployAttemptedAt,
+								undeployProgress: priorUndeployProgress,
+							},
+						]
+					: [
+							{
+								templateId: "template-1",
+								backupId: "backup-1",
+								status: "SUCCESS",
+								deployedAt: new Date("2026-01-02"),
+								backup: targetBackupRecord,
+							},
+							{
+								templateId: "template-survivor",
+								backupId: "backup-survivor",
+								status: "SUCCESS",
+								deployedAt: new Date("2026-01-01"),
+								backup: { id: "backup-survivor", backupData: JSON.stringify(survivorBackup) },
+							},
+						],
+		);
+		transaction
+			.mockReset()
+			.mockImplementationOnce(async (callback) =>
+				callback({
+					trashSyncHistory: { update: syncUpdate, updateMany: syncUpdate },
+					templateDeploymentHistory: { updateMany: deploymentUpdateMany },
+				}),
+			)
+			.mockRejectedValueOnce(new Error("late rollback progress write failed"))
+			.mockImplementationOnce(async (callback) =>
+				callback({
+					trashSyncHistory: { update: syncUpdate, updateMany: syncUpdate },
+					templateDeploymentHistory: { updateMany: deploymentUpdateMany },
+				}),
+			);
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode).toBe(500);
+		expect(profileUpdate).not.toHaveBeenCalled();
+		expect(formatUpdate).not.toHaveBeenCalled();
+		expect(formatDelete).not.toHaveBeenCalled();
+		expect(transaction).toHaveBeenCalledTimes(3);
+		const claimTimestamp = syncUpdate.mock.calls[0]?.[0].data.rollbackAttemptedAt;
+		expect(syncUpdate).toHaveBeenCalledWith({
+			where: {
+				id: "sync-paired",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+				rollbackAttemptedAt: claimTimestamp,
+			},
+			data: {
+				rollbackStatus: "PARTIAL",
+				rollbackAttemptedAt: priorSyncAttemptedAt,
+				rollbackProgress: priorSyncProgress,
+			},
+		});
+		expect(deploymentUpdateMany).toHaveBeenCalledWith({
+			where: {
+				id: "deployment-paired",
+				userId,
+				rolledBack: false,
+				undeployStatus: "IN_PROGRESS",
+				undeployAttemptedAt: claimTimestamp,
+			},
+			data: {
+				status: undefined,
+				undeployStatus: "PARTIAL",
+				undeployAttemptedAt: priorUndeployAttemptedAt,
+				undeployProgress: priorUndeployProgress,
+			},
+		});
+	});
+
+	it("marks every paired recovery row partial after a mutation-attempt persistence failure", async () => {
+		syncFindMany.mockImplementation(async (args) =>
+			args.select?.rollbackProgress
+				? [
+						{
+							id: "sync-paired",
+							rollbackStatus: null,
+							rollbackAttemptedAt: null,
+							rollbackProgress: null,
+						},
+					]
+				: [],
+		);
+		const ownershipHistory = {
+			templateId: "template-1",
+			backupId: "backup-1",
+			status: "SUCCESS",
+			deployedAt: new Date("2026-01-01"),
+			backup: (syncRecord as { backup: unknown }).backup,
+		};
+		deploymentFindMany.mockImplementation(async (args) =>
+			args.select?.id && !args.select?.undeployStatus
+				? [{ id: "deployment-paired" }]
+				: args.select?.undeployProgress
+					? [
+							{
+								id: "deployment-paired",
+								undeployStatus: null,
+								undeployAttemptedAt: null,
+								undeployProgress: null,
+							},
+						]
+					: [ownershipHistory],
+		);
+		transaction
+			.mockReset()
+			.mockImplementationOnce(async (callback) =>
+				callback({
+					trashSyncHistory: { update: syncUpdate, updateMany: syncUpdate },
+					templateDeploymentHistory: { updateMany: deploymentUpdateMany },
+				}),
+			)
+			.mockImplementationOnce(async (callback) =>
+				callback({
+					trashSyncHistory: { update: syncUpdate, updateMany: syncUpdate },
+					templateDeploymentHistory: { updateMany: deploymentUpdateMany },
+				}),
+			)
+			.mockRejectedValueOnce(new Error("post-write rollback progress failed"))
+			.mockImplementationOnce(async (callback) =>
+				callback({
+					trashSyncHistory: { update: syncUpdate, updateMany: syncUpdate },
+					templateDeploymentHistory: { updateMany: deploymentUpdateMany },
+				}),
+			);
+
+		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
+
+		expect(response.statusCode).toBe(207);
+		const claimTimestamp = syncUpdate.mock.calls[0]?.[0].data.rollbackAttemptedAt;
+		expect(syncUpdate).toHaveBeenCalledWith({
+			where: {
+				id: "sync-paired",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+				rollbackAttemptedAt: claimTimestamp,
+			},
+			data: { rollbackStatus: "PARTIAL" },
+		});
+		expect(deploymentUpdateMany).toHaveBeenCalledWith({
+			where: {
+				id: "deployment-paired",
+				userId,
+				rolledBack: false,
+				undeployStatus: "IN_PROGRESS",
+				undeployAttemptedAt: claimTimestamp,
+			},
+			data: { status: "PARTIAL_UNDEPLOY", undeployStatus: "PARTIAL" },
+		});
 	});
 
 	it("acknowledges a backup-less uncertain sync only after explicit review", async () => {
@@ -410,7 +761,12 @@ describe("sync rollback route", () => {
 			expect.objectContaining({ data: expect.objectContaining({ undeployStatus: "PARTIAL" }) }),
 		);
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { backupId: "backup-1", userId, rolledBack: false },
+			where: expect.objectContaining({
+				id: "sync-1",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+			}),
 			data: expect.objectContaining({
 				rollbackStatus: "PARTIAL",
 				rollbackProgress: expect.stringContaining(
@@ -455,6 +811,17 @@ describe("sync rollback route", () => {
 				]),
 			);
 			syncFindFirst.mockImplementation(async ({ where }) => rows.get(where.id) ?? null);
+			syncFindMany.mockImplementation(async (args) =>
+				args.select?.rollbackProgress
+					? [...rows.values()].map((row) => ({
+							id: row.id,
+							rolledBack: row.rolledBack,
+							rollbackStatus: row.rollbackStatus,
+							rollbackAttemptedAt: row.rollbackAttemptedAt ?? null,
+							rollbackProgress: row.rollbackProgress,
+						}))
+					: [],
+			);
 			syncUpdate.mockImplementation(async ({ where, data }) => {
 				let count = 0;
 				for (const row of rows.values()) {
@@ -554,7 +921,12 @@ describe("sync rollback route", () => {
 			expect.objectContaining({ data: expect.objectContaining({ undeployStatus: "PARTIAL" }) }),
 		);
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { backupId: "backup-1", userId, rolledBack: false },
+			where: expect.objectContaining({
+				id: "sync-1",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+			}),
 			data: expect.objectContaining({
 				rollbackStatus: "PARTIAL",
 				rollbackProgress: expect.stringContaining("no conditional update"),
@@ -586,7 +958,12 @@ describe("sync rollback route", () => {
 		expect(formatUpdate).not.toHaveBeenCalled();
 		expect(formatDelete).not.toHaveBeenCalled();
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { backupId: "backup-1", userId, rolledBack: false },
+			where: expect.objectContaining({
+				id: "sync-1",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+			}),
 			data: expect.objectContaining({
 				rollbackStatus: "PARTIAL",
 				rollbackProgress: expect.stringContaining('"key":"custom_format:7"'),
@@ -657,7 +1034,12 @@ describe("sync rollback route", () => {
 		expect(response.json().errors[0]).toContain("post-deployment state was not verified");
 		expect(rawRequest).toHaveBeenCalledWith(instance, "/api/v3/config/naming");
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { backupId: "backup-1", userId, rolledBack: false },
+			where: expect.objectContaining({
+				id: "sync-1",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+			}),
 			data: expect.objectContaining({ rollbackStatus: "PARTIAL" }),
 		});
 	});
@@ -731,7 +1113,12 @@ describe("sync rollback route", () => {
 			expect.objectContaining({ method: "PUT" }),
 		);
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { backupId: "backup-1", userId, rolledBack: false },
+			where: expect.objectContaining({
+				id: "sync-1",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+			}),
 			data: expect.objectContaining({ rollbackStatus: "COMPLETED" }),
 		});
 	});
@@ -854,7 +1241,12 @@ describe("sync rollback route", () => {
 		expect(formatUpdate).not.toHaveBeenCalled();
 		expect(formatDelete).not.toHaveBeenCalled();
 		expect(syncUpdate).toHaveBeenCalledWith({
-			where: { backupId: "backup-1", userId, rolledBack: false },
+			where: expect.objectContaining({
+				id: "sync-1",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+			}),
 			data: expect.objectContaining({
 				rollbackStatus: "PARTIAL",
 				rollbackProgress: expect.stringContaining(

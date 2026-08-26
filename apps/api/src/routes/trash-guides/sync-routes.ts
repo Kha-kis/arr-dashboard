@@ -35,6 +35,7 @@ import {
 	isDeploymentBackupEndpointIdentityCurrent,
 } from "../../lib/trash-guides/deployment-target.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { claimRollbackRecoveryGroup } from "../../lib/trash-guides/recovery-history-claim.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
 import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
@@ -86,6 +87,10 @@ const rollbackAppliedConfigsSchema = z.array(
 );
 
 type AppliedConfig = z.infer<typeof rollbackAppliedConfigsSchema>[number];
+
+function isClaimableRecoveryStatus(status: string | null | undefined): boolean {
+	return status == null || status === "PARTIAL";
+}
 
 // ============================================================================
 // In-Memory Progress Tracking (temporary - will move to Redis/cache later)
@@ -638,91 +643,259 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 				message: "This sync has already been rolled back",
 			});
 		}
-
-		const priorRollbackStatus = sync.rollbackStatus;
-		const priorRollbackAttemptedAt = sync.rollbackAttemptedAt;
-		const priorRollbackProgress = sync.rollbackProgress;
-		const rollbackAttemptedAt = new Date();
-		const claim = await app.prisma.trashSyncHistory.updateMany({
-			where: {
-				id: syncId,
-				userId,
-				rolledBack: false,
-				OR: [{ rollbackStatus: null }, { rollbackStatus: "PARTIAL" }],
-			},
-			data: {
-				rollbackStatus: "IN_PROGRESS",
-				rollbackAttemptedAt,
-			},
+		const initialPairedDeploymentRows = await app.prisma.templateDeploymentHistory.findMany({
+			where: { backupId: sync.backupId, userId },
+			select: { id: true },
 		});
+		const initialPairedDeploymentIds = new Set(
+			initialPairedDeploymentRows.map((deployment) => deployment.id),
+		);
 
-		if (claim.count !== 1) {
-			return reply.status(409).send({
-				error: "ROLLBACK_IN_PROGRESS",
-				message: "A rollback is already in progress for this sync operation",
-			});
-		}
+		return await withCleanupTopologyMutationLease(
+			{ prisma: app.prisma, log: request.log },
+			userId,
+			async () => {
+				const leasedSync = await app.prisma.trashSyncHistory.findFirst({
+					where: { id: syncId, userId },
+					include: { backup: true, instance: true, template: true },
+				});
+				if (!leasedSync) {
+					return reply.status(404).send({ error: "NOT_FOUND", message: "Sync not found" });
+				}
+				if (!leasedSync.backupId || !leasedSync.backup) {
+					return reply.status(400).send({
+						error: "NO_BACKUP",
+						message: "No backup available for this sync operation",
+					});
+				}
+				if (leasedSync.rolledBack) {
+					return reply.status(400).send({
+						error: "ALREADY_ROLLED_BACK",
+						message: "This sync has already been rolled back",
+					});
+				}
+				const persistedPairedSyncStates = await app.prisma.trashSyncHistory.findMany({
+					where: { backupId: leasedSync.backupId, userId },
+					select: {
+						id: true,
+						rolledBack: true,
+						rollbackStatus: true,
+						rollbackAttemptedAt: true,
+						rollbackProgress: true,
+					},
+				});
+				const priorPairedSyncStates = [...persistedPairedSyncStates];
+				if (!priorPairedSyncStates.some((paired) => paired.id === leasedSync.id)) {
+					priorPairedSyncStates.push({
+						id: leasedSync.id,
+						rolledBack: leasedSync.rolledBack,
+						rollbackStatus: leasedSync.rollbackStatus,
+						rollbackAttemptedAt: leasedSync.rollbackAttemptedAt,
+						rollbackProgress: leasedSync.rollbackProgress,
+					});
+				}
+				const priorPairedDeploymentStates = await app.prisma.templateDeploymentHistory.findMany({
+					where: { backupId: leasedSync.backupId, userId },
+					select: {
+						id: true,
+						status: true,
+						rolledBack: true,
+						undeployStatus: true,
+						undeployAttemptedAt: true,
+						undeployProgress: true,
+					},
+				});
+				const currentPairedDeploymentIds = new Set(
+					priorPairedDeploymentStates.map((deployment) => deployment.id),
+				);
+				if (
+					initialPairedDeploymentIds.size !== currentPairedDeploymentIds.size ||
+					[...initialPairedDeploymentIds].some((id) => !currentPairedDeploymentIds.has(id))
+				) {
+					return reply.status(409).send({
+						error: "ROLLBACK_HISTORY_CHANGED",
+						message:
+							"Paired deployment history changed while rollback was starting. Refresh and try again.",
+					});
+				}
 
-		const persistPartialRollback = async () => {
-			const result = await app.prisma.trashSyncHistory.updateMany({
-				where: {
-					id: syncId,
+				const priorRollbackStatus = leasedSync.rollbackStatus;
+				const priorRollbackAttemptedAt = leasedSync.rollbackAttemptedAt;
+				const priorRollbackProgress = leasedSync.rollbackProgress;
+				if (
+					priorPairedSyncStates.some(
+						(paired) => paired.rolledBack || !isClaimableRecoveryStatus(paired.rollbackStatus),
+					) ||
+					priorPairedDeploymentStates.some(
+						(paired) => paired.rolledBack || !isClaimableRecoveryStatus(paired.undeployStatus),
+					)
+				) {
+					return reply.status(409).send({
+						error: "ROLLBACK_HISTORY_CONFLICT",
+						message:
+							"Paired recovery history is already active or terminal and cannot be claimed safely.",
+					});
+				}
+				const rollbackAttemptedAt = new Date();
+				const claimed = await claimRollbackRecoveryGroup(
+					app.prisma,
 					userId,
-					rolledBack: false,
-					rollbackStatus: "IN_PROGRESS",
+					priorPairedSyncStates,
+					priorPairedDeploymentStates,
 					rollbackAttemptedAt,
-				},
-				data: {
-					rollbackStatus: "PARTIAL",
-				},
-			});
-			if (result.count !== 1) {
-				throw new Error("Rollback recovery state changed before progress could be persisted");
-			}
-		};
-		// Release this request's claim back to the exact recovery state that existed
-		// before the claim. The compare-and-set guard ensures a stale request cannot
-		// release a newer claim that another process has since taken over.
-		const releaseRollbackClaim = async () => {
-			const result = await app.prisma.trashSyncHistory.updateMany({
-				where: {
-					id: syncId,
-					userId,
-					rolledBack: false,
-					rollbackStatus: "IN_PROGRESS",
-					rollbackAttemptedAt,
-				},
-				data: {
-					rollbackStatus: priorRollbackStatus,
-					rollbackAttemptedAt: priorRollbackAttemptedAt,
-					rollbackProgress: priorRollbackProgress,
-				},
-			});
-			if (result.count !== 1) {
-				throw new Error("Rollback recovery state changed before the claim could be released");
-			}
-		};
-		const stopClaimedRollback = async (
-			statusCode: number,
-			payload: { error: string; message: string },
-		) => {
-			await releaseRollbackClaim();
-			return reply.status(statusCode).send(payload);
-		};
-		let upstreamMutationAttempted = false;
+				);
+				if (!claimed) {
+					return reply.status(409).send({
+						error: "ROLLBACK_HISTORY_CONFLICT",
+						message:
+							"Paired recovery history changed, is already active, or requires explicit resolution.",
+					});
+				}
+				let pairedProgressPersisted = true;
 
-		// Start metrics tracking
-		const metrics = getSyncMetrics();
-		const completeMetrics = metrics.startOperation("rollback");
+				const persistPartialRollback = async () => {
+					if (pairedProgressPersisted) {
+						await app.prisma.$transaction(async (tx) => {
+							for (const prior of priorPairedSyncStates) {
+								const paired = await tx.trashSyncHistory.updateMany({
+									where: {
+										id: prior.id,
+										userId,
+										rolledBack: false,
+										rollbackStatus: "IN_PROGRESS",
+										rollbackAttemptedAt,
+									},
+									data: { rollbackStatus: "PARTIAL" },
+								});
+								if (paired.count !== 1) {
+									throw new Error(
+										"Paired rollback state changed before progress could be persisted",
+									);
+								}
+							}
+							for (const prior of priorPairedDeploymentStates) {
+								const paired = await tx.templateDeploymentHistory.updateMany({
+									where: {
+										id: prior.id,
+										userId,
+										rolledBack: false,
+										undeployStatus: "IN_PROGRESS",
+										undeployAttemptedAt: rollbackAttemptedAt,
+									},
+									data: { status: "PARTIAL_UNDEPLOY", undeployStatus: "PARTIAL" },
+								});
+								if (paired.count !== 1) {
+									throw new Error(
+										"Paired undeploy state changed before progress could be persisted",
+									);
+								}
+							}
+						});
+						return;
+					}
+					const result = await app.prisma.trashSyncHistory.updateMany({
+						where: {
+							id: syncId,
+							userId,
+							rolledBack: false,
+							rollbackStatus: "IN_PROGRESS",
+							rollbackAttemptedAt,
+						},
+						data: {
+							rollbackStatus: "PARTIAL",
+						},
+					});
+					if (result.count !== 1) {
+						throw new Error("Rollback recovery state changed before progress could be persisted");
+					}
+				};
+				// Release this request's claim back to the exact recovery state that existed
+				// before the claim. The compare-and-set guard ensures a stale request cannot
+				// release a newer claim that another process has since taken over.
+				const releaseRollbackClaim = async () => {
+					if (pairedProgressPersisted) {
+						await app.prisma.$transaction(async (tx) => {
+							for (const prior of priorPairedSyncStates) {
+								const paired = await tx.trashSyncHistory.updateMany({
+									where: {
+										id: prior.id,
+										userId,
+										rolledBack: false,
+										rollbackStatus: "IN_PROGRESS",
+										rollbackAttemptedAt,
+									},
+									data: {
+										rollbackStatus: prior.rollbackStatus,
+										rollbackAttemptedAt: prior.rollbackAttemptedAt,
+										rollbackProgress: prior.rollbackProgress,
+									},
+								});
+								if (paired.count !== 1) {
+									throw new Error(
+										"Paired rollback state changed before the claim could be released",
+									);
+								}
+							}
+							for (const prior of priorPairedDeploymentStates) {
+								const paired = await tx.templateDeploymentHistory.updateMany({
+									where: {
+										id: prior.id,
+										userId,
+										rolledBack: false,
+										undeployStatus: "IN_PROGRESS",
+										undeployAttemptedAt: rollbackAttemptedAt,
+									},
+									data: {
+										status: prior.status,
+										undeployStatus: prior.undeployStatus,
+										undeployAttemptedAt: prior.undeployAttemptedAt,
+										undeployProgress: prior.undeployProgress,
+									},
+								});
+								if (paired.count !== 1) {
+									throw new Error(
+										"Paired undeploy state changed before the claim could be released",
+									);
+								}
+							}
+						});
+						return;
+					}
+					const result = await app.prisma.trashSyncHistory.updateMany({
+						where: {
+							id: syncId,
+							userId,
+							rolledBack: false,
+							rollbackStatus: "IN_PROGRESS",
+							rollbackAttemptedAt,
+						},
+						data: {
+							rollbackStatus: priorRollbackStatus,
+							rollbackAttemptedAt: priorRollbackAttemptedAt,
+							rollbackProgress: priorRollbackProgress,
+						},
+					});
+					if (result.count !== 1) {
+						throw new Error("Rollback recovery state changed before the claim could be released");
+					}
+				};
+				const stopClaimedRollback = async (
+					statusCode: number,
+					payload: { error: string; message: string },
+				) => {
+					await releaseRollbackClaim();
+					return reply.status(statusCode).send(payload);
+				};
+				let upstreamMutationAttempted = false;
 
-		try {
-			return await withCleanupTopologyMutationLease(
-				{ prisma: app.prisma, log: request.log },
-				userId,
-				() =>
-					app.deploymentExecutor.runWithEndpointMutation(
+				// Start metrics tracking
+				const metrics = getSyncMetrics();
+				const completeMetrics = metrics.startOperation("rollback");
+
+				try {
+					return await app.deploymentExecutor.runWithEndpointMutation(
 						userId,
-						sync.instance,
+						leasedSync.instance,
 						"Rollback",
 						async (endpointKey) => {
 							const sync = await app.prisma.trashSyncHistory.findFirst({
@@ -952,25 +1125,51 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 											step.outcome === "skipped_shared"),
 								);
 							};
-							const rollbackAttemptedAt = new Date();
 							const persistRollbackProgress = async (
 								rollbackStatus: "IN_PROGRESS" | "PARTIAL",
 							): Promise<void> => {
 								const rollbackProgress = JSON.stringify([...stepByKey.values()]);
 								await app.prisma.$transaction(async (tx) => {
-									await tx.trashSyncHistory.updateMany({
-										where: { backupId: sync.backupId, userId, rolledBack: false },
-										data: { rollbackStatus, rollbackAttemptedAt, rollbackProgress },
-									});
-									await tx.templateDeploymentHistory.updateMany({
-										where: { backupId: sync.backupId, userId },
-										data: {
-											undeployStatus: rollbackStatus,
-											undeployAttemptedAt: rollbackAttemptedAt,
-											undeployProgress: rollbackProgress,
-										},
-									});
+									for (const prior of priorPairedSyncStates) {
+										const paired = await tx.trashSyncHistory.updateMany({
+											where: {
+												id: prior.id,
+												userId,
+												rolledBack: false,
+												rollbackStatus: "IN_PROGRESS",
+												rollbackAttemptedAt,
+											},
+											data: { rollbackStatus, rollbackAttemptedAt, rollbackProgress },
+										});
+										if (paired.count !== 1) {
+											throw new Error(
+												"Paired rollback claim changed before progress was persisted",
+											);
+										}
+									}
+									for (const prior of priorPairedDeploymentStates) {
+										const paired = await tx.templateDeploymentHistory.updateMany({
+											where: {
+												id: prior.id,
+												userId,
+												rolledBack: false,
+												undeployStatus: "IN_PROGRESS",
+												undeployAttemptedAt: rollbackAttemptedAt,
+											},
+											data: {
+												undeployStatus: rollbackStatus,
+												undeployAttemptedAt: rollbackAttemptedAt,
+												undeployProgress: rollbackProgress,
+											},
+										});
+										if (paired.count !== 1) {
+											throw new Error(
+												"Paired undeploy claim changed before progress was persisted",
+											);
+										}
+									}
 								});
+								pairedProgressPersisted = true;
 							};
 							await persistRollbackProgress("IN_PROGRESS");
 							if (
@@ -1362,19 +1561,38 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 							if (failedCount === 0) {
 								const rolledBackAt = new Date();
 								await app.prisma.$transaction(async (tx) => {
-									await tx.trashSyncHistory.updateMany({
-										where: { backupId: sync.backupId, userId, rolledBack: false },
-										data: {
-											rolledBack: true,
-											rolledBackAt,
-											rollbackStatus: "COMPLETED",
-											rollbackAttemptedAt,
-											rollbackProgress: JSON.stringify(rollbackSteps),
-										},
-									});
-									if (sync.backupId) {
-										await tx.templateDeploymentHistory.updateMany({
-											where: { backupId: sync.backupId, userId },
+									for (const prior of priorPairedSyncStates) {
+										const paired = await tx.trashSyncHistory.updateMany({
+											where: {
+												id: prior.id,
+												userId,
+												rolledBack: false,
+												rollbackStatus: "IN_PROGRESS",
+												rollbackAttemptedAt,
+											},
+											data: {
+												rolledBack: true,
+												rolledBackAt,
+												rollbackStatus: "COMPLETED",
+												rollbackAttemptedAt,
+												rollbackProgress: JSON.stringify(rollbackSteps),
+											},
+										});
+										if (paired.count !== 1) {
+											throw new Error(
+												"Paired rollback claim changed before completion was persisted",
+											);
+										}
+									}
+									for (const prior of priorPairedDeploymentStates) {
+										const paired = await tx.templateDeploymentHistory.updateMany({
+											where: {
+												id: prior.id,
+												userId,
+												rolledBack: false,
+												undeployStatus: "IN_PROGRESS",
+												undeployAttemptedAt: rollbackAttemptedAt,
+											},
 											data: {
 												rolledBack: true,
 												rolledBackAt,
@@ -1384,6 +1602,11 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 												undeployProgress: JSON.stringify(rollbackSteps),
 											},
 										});
+										if (paired.count !== 1) {
+											throw new Error(
+												"Paired undeploy claim changed before completion was persisted",
+											);
+										}
 									}
 								});
 							} else {
@@ -1426,39 +1649,40 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 										: `Rollback completed with errors: ${restoredCount} restored, ${deletedCount} deleted, ${failedCount} failed`,
 							});
 						},
-					),
-			);
-		} catch (error) {
-			// Specialized catch: records failure metrics before propagating
-			const errorMessage = getErrorMessage(error, "Rollback failed");
-			try {
-				if (upstreamMutationAttempted) {
-					await persistPartialRollback();
-				} else {
-					await releaseRollbackClaim();
-				}
-			} catch (stateError) {
-				request.log.error(
-					{ err: stateError, syncId, rollbackAttemptedAt },
-					"Failed to persist rollback failure state",
-				);
-			}
-			const metricsResult = completeMetrics();
-			metricsResult.recordFailure(errorMessage);
+					);
+				} catch (error) {
+					// Specialized catch: records failure metrics before propagating
+					const errorMessage = getErrorMessage(error, "Rollback failed");
+					try {
+						if (upstreamMutationAttempted) {
+							await persistPartialRollback();
+						} else {
+							await releaseRollbackClaim();
+						}
+					} catch (stateError) {
+						request.log.error(
+							{ err: stateError, syncId, rollbackAttemptedAt },
+							"Failed to persist rollback failure state",
+						);
+					}
+					const metricsResult = completeMetrics();
+					metricsResult.recordFailure(errorMessage);
 
-			request.log.error({ error, syncId }, "Sync rollback failed");
-			const statusCode =
-				error &&
-				typeof error === "object" &&
-				"statusCode" in error &&
-				typeof error.statusCode === "number"
-					? error.statusCode
-					: 500;
-			return reply.status(upstreamMutationAttempted ? 207 : statusCode).send({
-				error: "ROLLBACK_FAILED",
-				message: errorMessage,
-			});
-		}
+					request.log.error({ error, syncId }, "Sync rollback failed");
+					const statusCode =
+						error &&
+						typeof error === "object" &&
+						"statusCode" in error &&
+						typeof error.statusCode === "number"
+							? error.statusCode
+							: 500;
+					return reply.status(upstreamMutationAttempted ? 207 : statusCode).send({
+						error: "ROLLBACK_FAILED",
+						message: errorMessage,
+					});
+				}
+			},
+		);
 	});
 
 	/**
