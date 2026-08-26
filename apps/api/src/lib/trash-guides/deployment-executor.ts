@@ -269,6 +269,82 @@ function assertIntendedWritableState(
 	}
 }
 
+function normalizeCustomFormatReadbackDefaults(
+	actual: unknown,
+	intended: Record<string, unknown>,
+): unknown {
+	if (!actual || typeof actual !== "object" || Array.isArray(actual)) return actual;
+	const actualRecord = actual as Record<string, unknown>;
+	const actualSpecifications = actualRecord.specifications;
+	const intendedSpecifications = intended.specifications;
+	if (!Array.isArray(actualSpecifications) || !Array.isArray(intendedSpecifications)) {
+		return actual;
+	}
+
+	return {
+		...actualRecord,
+		specifications: actualSpecifications.map((actualSpecification, index) => {
+			const intendedSpecification = intendedSpecifications[index];
+			if (
+				!actualSpecification ||
+				typeof actualSpecification !== "object" ||
+				Array.isArray(actualSpecification) ||
+				!intendedSpecification ||
+				typeof intendedSpecification !== "object" ||
+				Array.isArray(intendedSpecification)
+			) {
+				return actualSpecification;
+			}
+			const actualSpec = actualSpecification as Record<string, unknown>;
+			const intendedSpec = intendedSpecification as Record<string, unknown>;
+			if (
+				actualSpec.implementation !== "LanguageSpecification" ||
+				intendedSpec.implementation !== "LanguageSpecification" ||
+				!Array.isArray(actualSpec.fields) ||
+				!Array.isArray(intendedSpec.fields)
+			) {
+				return actualSpecification;
+			}
+			const intendedDefinesExceptLanguage = intendedSpec.fields.some(
+				(field) =>
+					field !== null &&
+					typeof field === "object" &&
+					!Array.isArray(field) &&
+					(field as Record<string, unknown>).name === "exceptLanguage",
+			);
+			if (intendedDefinesExceptLanguage) return actualSpecification;
+
+			const defaultFieldIndexes = actualSpec.fields.flatMap((field, fieldIndex) =>
+				field !== null &&
+				typeof field === "object" &&
+				!Array.isArray(field) &&
+				(field as Record<string, unknown>).name === "exceptLanguage" &&
+				(field as Record<string, unknown>).value === false
+					? [fieldIndex]
+					: [],
+			);
+			if (defaultFieldIndexes.length !== 1) return actualSpecification;
+
+			return {
+				...actualSpec,
+				fields: actualSpec.fields.filter((_, fieldIndex) => fieldIndex !== defaultFieldIndexes[0]),
+			};
+		}),
+	};
+}
+
+function assertIntendedCustomFormatWritableState(
+	actual: unknown,
+	intended: Record<string, unknown>,
+	resourceLabel: string,
+): void {
+	assertIntendedWritableState(
+		normalizeCustomFormatReadbackDefaults(actual, intended),
+		intended,
+		resourceLabel,
+	);
+}
+
 function toPublicQualityProfileMutation(
 	mutation: QualityProfileMutation | undefined,
 ): DeploymentResult["qualityProfileApplied"] {
@@ -762,7 +838,7 @@ export class DeploymentExecutorService {
 						updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
 					);
 					const postWriteFormat = await client.customFormat.getById(existingCF.id);
-					assertIntendedWritableState(
+					assertIntendedCustomFormatWritableState(
 						postWriteFormat,
 						updatedCF as Record<string, unknown>,
 						`Custom Format "${templateCF.name}"`,
@@ -816,7 +892,7 @@ export class DeploymentExecutorService {
 					mutationState.postStateToken = createUpstreamResourceStateToken(createdFormat);
 					await persistMutationState(mutationState, false);
 					const postWriteFormat = await client.customFormat.getById(createdFormat.id);
-					assertIntendedWritableState(
+					assertIntendedCustomFormatWritableState(
 						postWriteFormat,
 						newCF as Record<string, unknown>,
 						`Custom Format "${templateCF.name}"`,
