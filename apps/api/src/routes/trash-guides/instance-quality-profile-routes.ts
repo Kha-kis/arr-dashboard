@@ -665,6 +665,10 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 						const write = await transaction.instanceQualityProfileOverride.updateMany({
 							where: {
 								id: override.id,
+								userId,
+								instanceId: override.instanceId,
+								connectionGeneration: override.connectionGeneration,
+								connectionStateToken: override.connectionStateToken,
 								updatedAt: override.updatedAt,
 								status: { in: ["APPLIED", "PENDING", "UNCERTAIN"] },
 							},
@@ -1069,6 +1073,10 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 								const write = await transaction.instanceQualityProfileOverride.updateMany({
 									where: {
 										id: intent.id,
+										userId,
+										instanceId: intent.instanceId,
+										connectionGeneration: intent.connectionGeneration,
+										connectionStateToken: intent.connectionStateToken,
 										updatedAt: intent.updatedAt,
 										status: { in: ["PENDING", "UNCERTAIN"] },
 										intentOperation: "SET_SCORE",
