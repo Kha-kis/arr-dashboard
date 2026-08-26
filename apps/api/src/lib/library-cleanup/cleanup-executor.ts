@@ -95,6 +95,7 @@ import {
 	acquireCleanupRunLease,
 	CLEANUP_RUN_LEASE_MS,
 	CleanupRunAlreadyInProgressError,
+	type CleanupRunLease,
 	CleanupRunLeaseLostError,
 	releaseCleanupRunLease,
 	renewCleanupRunLease,
@@ -103,8 +104,8 @@ import {
 import {
 	type EpisodeCleanupCandidate,
 	type EpisodePlexWatchEvidence,
-	evaluateEpisodeWatchCountRule,
 	evaluateEpisodeWatchCountEvidence,
+	evaluateEpisodeWatchCountRule,
 	isSupportedEpisodeCleanupRule,
 	toEpisodeTargetMetadata,
 } from "./episode-scope.js";
@@ -986,7 +987,7 @@ export class CleanupPolicyMutationConflictError extends Error {
 async function withCleanupMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
-	mutate: () => Promise<T>,
+	mutate: (runLease: CleanupRunLease) => Promise<T>,
 	conflictError: () => Error,
 	options: {
 		configId?: string;
@@ -998,7 +999,7 @@ async function withCleanupMutationLease<T>(
 		? withExclusiveCleanupOperationGuard
 		: withCleanupOperationGuard;
 	return await runWithOperationGuard(async () => {
-		const { prisma, log } = deps;
+		const { prisma } = deps;
 		// Ensure the per-user coordination row exists when the caller does not
 		// already have its ID. This closes the initialization race between a
 		// cleanup-sensitive write and the first cleanup run.
@@ -1010,27 +1011,20 @@ async function withCleanupMutationLease<T>(
 					create: { userId },
 					select: { id: true },
 				});
-		const runClaimToken = await acquireCleanupRunLease(prisma, userId, config.id);
-		if (!runClaimToken) throw conflictError();
+		let runLease: CleanupRunLease;
+		try {
+			runLease = await startCleanupRunLease(deps, userId, config.id, {
+				leaseRowMayBeDeleted: options.leaseRowMayBeDeleted,
+			});
+		} catch (error) {
+			if (error instanceof CleanupRunAlreadyInProgressError) throw conflictError();
+			throw error;
+		}
 
 		try {
-			return await mutate();
+			return await mutate(runLease);
 		} finally {
-			await releaseCleanupRunLease(prisma, userId, config.id, runClaimToken)
-				.then((released) => {
-					if (!released && !options.leaseRowMayBeDeleted) {
-						log.warn(
-							{ configId: config.id },
-							"Service topology mutation finished after its cleanup lease ownership changed",
-						);
-					}
-				})
-				.catch((error) => {
-					log.error(
-						{ err: error, configId: config.id },
-						"Service topology mutation finished but its cleanup lease could not be released",
-					);
-				});
+			await runLease.release();
 		}
 	});
 }
@@ -1038,7 +1032,7 @@ async function withCleanupMutationLease<T>(
 export async function withCleanupTopologyMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
-	mutate: () => Promise<T>,
+	mutate: (runLease: CleanupRunLease) => Promise<T>,
 	options: { leaseRowMayBeDeleted?: boolean } = {},
 ): Promise<T> {
 	return await withCleanupMutationLease(
@@ -1054,7 +1048,7 @@ export async function withCleanupTopologyMutationLease<T>(
 export async function withExclusiveCleanupTopologyMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
-	mutate: () => Promise<T>,
+	mutate: (runLease: CleanupRunLease) => Promise<T>,
 	options: { leaseRowMayBeDeleted?: boolean } = {},
 ): Promise<T> {
 	return await withCleanupMutationLease(
@@ -1069,7 +1063,7 @@ export async function withExclusiveCleanupTopologyMutationLease<T>(
 export async function withCleanupPolicyMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
-	mutate: () => Promise<T>,
+	mutate: (runLease: CleanupRunLease) => Promise<T>,
 	options: { configId?: string } = {},
 ): Promise<T> {
 	return await withCleanupMutationLease(

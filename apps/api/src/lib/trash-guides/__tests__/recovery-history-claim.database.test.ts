@@ -21,7 +21,32 @@ const ids = {
 	syncA: `recovery-claim-sync-a-${runId}`,
 	syncB: `recovery-claim-sync-b-${runId}`,
 	deployment: `recovery-claim-deployment-${runId}`,
+	deploymentLater: `recovery-claim-deployment-z-${runId}`,
 };
+const syncRecoveryStateSelect = {
+	id: true,
+	userId: true,
+	instanceId: true,
+	templateId: true,
+	backupId: true,
+	status: true,
+	rolledBack: true,
+	rollbackStatus: true,
+	rollbackAttemptedAt: true,
+	rollbackProgress: true,
+} as const;
+const deploymentRecoveryStateSelect = {
+	id: true,
+	userId: true,
+	instanceId: true,
+	templateId: true,
+	backupId: true,
+	status: true,
+	rolledBack: true,
+	undeployStatus: true,
+	undeployAttemptedAt: true,
+	undeployProgress: true,
+} as const;
 
 runDatabaseTests("recovery history group claim Prisma contract", () => {
 	let prisma: PrismaClientInstance;
@@ -87,9 +112,9 @@ runDatabaseTests("recovery history group claim Prisma contract", () => {
 				backupId: ids.backup,
 			})),
 		});
-		await prisma.templateDeploymentHistory.create({
-			data: {
-				id: ids.deployment,
+		await prisma.templateDeploymentHistory.createMany({
+			data: [ids.deployment, ids.deploymentLater].map((id) => ({
+				id,
 				templateId: ids.template,
 				instanceId: ids.instance,
 				userId: ids.user,
@@ -97,7 +122,7 @@ runDatabaseTests("recovery history group claim Prisma contract", () => {
 				status: "SUCCESS",
 				backupId: ids.backup,
 				canRollback: true,
-			},
+			})),
 		});
 	});
 
@@ -106,6 +131,8 @@ runDatabaseTests("recovery history group claim Prisma contract", () => {
 			prisma.trashSyncHistory.updateMany({
 				where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
 				data: {
+					status: "SUCCESS",
+					backupId: ids.backup,
 					rolledBack: false,
 					rolledBackAt: null,
 					rollbackStatus: null,
@@ -114,9 +141,13 @@ runDatabaseTests("recovery history group claim Prisma contract", () => {
 				},
 			}),
 			prisma.templateDeploymentHistory.updateMany({
-				where: { id: ids.deployment, userId: ids.user },
+				where: {
+					id: { in: [ids.deployment, ids.deploymentLater] },
+					userId: ids.user,
+				},
 				data: {
 					status: "SUCCESS",
+					backupId: ids.backup,
 					rolledBack: false,
 					rolledBackAt: null,
 					rolledBackBy: null,
@@ -131,7 +162,10 @@ runDatabaseTests("recovery history group claim Prisma contract", () => {
 	afterAll(async () => {
 		if (prisma) {
 			await prisma.templateDeploymentHistory.deleteMany({
-				where: { id: ids.deployment, userId: ids.user },
+				where: {
+					id: { in: [ids.deployment, ids.deploymentLater] },
+					userId: ids.user,
+				},
 			});
 			await prisma.trashSyncHistory.deleteMany({
 				where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
@@ -151,27 +185,18 @@ runDatabaseTests("recovery history group claim Prisma contract", () => {
 		const syncStates = await prisma.trashSyncHistory.findMany({
 			where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
 			orderBy: { id: "asc" },
-			select: {
-				id: true,
-				rolledBack: true,
-				rollbackStatus: true,
-				rollbackAttemptedAt: true,
-				rollbackProgress: true,
-			},
+			select: syncRecoveryStateSelect,
 		});
-		const deploymentState = await prisma.templateDeploymentHistory.findFirstOrThrow({
-			where: { id: ids.deployment, userId: ids.user },
-			select: {
-				id: true,
-				status: true,
-				rolledBack: true,
-				undeployStatus: true,
-				undeployAttemptedAt: true,
-				undeployProgress: true,
+		const deploymentStates = await prisma.templateDeploymentHistory.findMany({
+			where: {
+				id: { in: [ids.deployment, ids.deploymentLater] },
+				userId: ids.user,
 			},
+			orderBy: { id: "asc" },
+			select: deploymentRecoveryStateSelect,
 		});
 		await prisma.templateDeploymentHistory.update({
-			where: { id: ids.deployment },
+			where: { id: ids.deploymentLater },
 			data: {
 				undeployStatus: "IN_PROGRESS",
 				undeployAttemptedAt: new Date("2026-08-08T11:00:00.000Z"),
@@ -182,13 +207,28 @@ runDatabaseTests("recovery history group claim Prisma contract", () => {
 			prisma,
 			ids.user,
 			syncStates,
-			[deploymentState],
+			deploymentStates,
 			new Date("2026-08-08T12:00:00.000Z"),
 		);
 
 		expect(claimed).toBe(false);
+		expect(
+			await prisma.templateDeploymentHistory.findMany({
+				where: { id: { in: [ids.deployment, ids.deploymentLater] }, userId: ids.user },
+				orderBy: { id: "asc" },
+				select: { id: true, undeployStatus: true, undeployAttemptedAt: true },
+			}),
+		).toEqual([
+			{ id: ids.deployment, undeployStatus: null, undeployAttemptedAt: null },
+			{
+				id: ids.deploymentLater,
+				undeployStatus: "IN_PROGRESS",
+				undeployAttemptedAt: new Date("2026-08-08T11:00:00.000Z"),
+			},
+		]);
 		const syncRows = await prisma.trashSyncHistory.findMany({
 			where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
+			orderBy: { id: "asc" },
 			select: { rollbackStatus: true, rollbackAttemptedAt: true },
 		});
 		expect(syncRows).toEqual([
@@ -200,25 +240,12 @@ runDatabaseTests("recovery history group claim Prisma contract", () => {
 	it("rolls back an undeploy target claim when a later sync CAS misses", async () => {
 		const deploymentState = await prisma.templateDeploymentHistory.findFirstOrThrow({
 			where: { id: ids.deployment, userId: ids.user },
-			select: {
-				id: true,
-				status: true,
-				rolledBack: true,
-				undeployStatus: true,
-				undeployAttemptedAt: true,
-				undeployProgress: true,
-			},
+			select: deploymentRecoveryStateSelect,
 		});
 		const syncStates = await prisma.trashSyncHistory.findMany({
 			where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
 			orderBy: { id: "asc" },
-			select: {
-				id: true,
-				rolledBack: true,
-				rollbackStatus: true,
-				rollbackAttemptedAt: true,
-				rollbackProgress: true,
-			},
+			select: syncRecoveryStateSelect,
 		});
 		await prisma.trashSyncHistory.updateMany({
 			where: { id: ids.syncB, userId: ids.user },
@@ -251,30 +278,81 @@ runDatabaseTests("recovery history group claim Prisma contract", () => {
 		).toEqual({ rollbackStatus: null, rollbackAttemptedAt: null });
 	});
 
+	it("rejects a claim when a snapshotted sync status changes", async () => {
+		const syncStates = await prisma.trashSyncHistory.findMany({
+			where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
+			orderBy: { id: "asc" },
+			select: syncRecoveryStateSelect,
+		});
+		const deploymentState = await prisma.templateDeploymentHistory.findFirstOrThrow({
+			where: { id: ids.deployment, userId: ids.user },
+			select: deploymentRecoveryStateSelect,
+		});
+		await prisma.trashSyncHistory.update({
+			where: { id: ids.syncB },
+			data: { status: "FAILED" },
+		});
+
+		await expect(
+			claimRollbackRecoveryGroup(
+				prisma,
+				ids.user,
+				syncStates,
+				[deploymentState],
+				new Date("2026-08-08T12:00:00.000Z"),
+			),
+		).resolves.toBe(false);
+		expect(
+			await prisma.templateDeploymentHistory.findUniqueOrThrow({
+				where: { id: ids.deployment },
+				select: { undeployStatus: true },
+			}),
+		).toEqual({ undeployStatus: null });
+	});
+
+	it("rejects a claim when a snapshotted backup grouping changes", async () => {
+		const syncStates = await prisma.trashSyncHistory.findMany({
+			where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
+			orderBy: { id: "asc" },
+			select: syncRecoveryStateSelect,
+		});
+		const deploymentState = await prisma.templateDeploymentHistory.findFirstOrThrow({
+			where: { id: ids.deployment, userId: ids.user },
+			select: deploymentRecoveryStateSelect,
+		});
+		await prisma.templateDeploymentHistory.update({
+			where: { id: ids.deployment },
+			data: { backupId: null },
+		});
+
+		await expect(
+			claimUndeployRecoveryGroup(
+				prisma,
+				ids.user,
+				deploymentState,
+				syncStates,
+				new Date("2026-08-08T12:00:00.000Z"),
+			),
+		).resolves.toBe(false);
+		expect(
+			await prisma.trashSyncHistory.findMany({
+				where: { id: { in: [ids.syncA, ids.syncB] } },
+				select: { rollbackStatus: true },
+			}),
+		).toEqual([{ rollbackStatus: null }, { rollbackStatus: null }]);
+	});
+
 	it.runIf(isPostgresDatabase)(
 		"allows exactly one concurrent claimant across two PostgreSQL clients",
 		async () => {
 			const syncStates = await prisma.trashSyncHistory.findMany({
 				where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
 				orderBy: { id: "asc" },
-				select: {
-					id: true,
-					rolledBack: true,
-					rollbackStatus: true,
-					rollbackAttemptedAt: true,
-					rollbackProgress: true,
-				},
+				select: syncRecoveryStateSelect,
 			});
 			const deploymentState = await prisma.templateDeploymentHistory.findFirstOrThrow({
 				where: { id: ids.deployment, userId: ids.user },
-				select: {
-					id: true,
-					status: true,
-					rolledBack: true,
-					undeployStatus: true,
-					undeployAttemptedAt: true,
-					undeployProgress: true,
-				},
+				select: deploymentRecoveryStateSelect,
 			});
 			const attemptedAtA = new Date("2026-08-08T12:30:00.000Z");
 			const attemptedAtB = new Date("2026-08-08T12:31:00.000Z");
@@ -311,28 +389,68 @@ runDatabaseTests("recovery history group claim Prisma contract", () => {
 		},
 	);
 
+	it.runIf(isPostgresDatabase)(
+		"serializes concurrent undeploy and rollback entrypoints with opposite input order",
+		async () => {
+			const syncStates = await prisma.trashSyncHistory.findMany({
+				where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
+				orderBy: { id: "asc" },
+				select: syncRecoveryStateSelect,
+			});
+			const deploymentState = await prisma.templateDeploymentHistory.findFirstOrThrow({
+				where: { id: ids.deployment, userId: ids.user },
+				select: deploymentRecoveryStateSelect,
+			});
+			const undeployAttemptedAt = new Date("2026-08-08T12:40:00.000Z");
+			const rollbackAttemptedAt = new Date("2026-08-08T12:41:00.000Z");
+
+			const results = await Promise.all([
+				claimUndeployRecoveryGroup(
+					prisma,
+					ids.user,
+					deploymentState,
+					[...syncStates].reverse(),
+					undeployAttemptedAt,
+				),
+				claimRollbackRecoveryGroup(
+					peerPrisma,
+					ids.user,
+					syncStates,
+					[deploymentState],
+					rollbackAttemptedAt,
+				),
+			]);
+
+			expect(results.filter(Boolean)).toHaveLength(1);
+			const winningAttemptedAt = results[0] ? undeployAttemptedAt : rollbackAttemptedAt;
+			expect(
+				await prisma.templateDeploymentHistory.findUniqueOrThrow({
+					where: { id: ids.deployment },
+					select: { undeployStatus: true, undeployAttemptedAt: true },
+				}),
+			).toEqual({ undeployStatus: "IN_PROGRESS", undeployAttemptedAt: winningAttemptedAt });
+			expect(
+				await prisma.trashSyncHistory.findMany({
+					where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
+					orderBy: { id: "asc" },
+					select: { rollbackStatus: true, rollbackAttemptedAt: true },
+				}),
+			).toEqual([
+				{ rollbackStatus: "IN_PROGRESS", rollbackAttemptedAt: winningAttemptedAt },
+				{ rollbackStatus: "IN_PROGRESS", rollbackAttemptedAt: winningAttemptedAt },
+			]);
+		},
+	);
+
 	it("claims an undeploy target and every paired sync with one timestamp", async () => {
 		const syncStates = await prisma.trashSyncHistory.findMany({
 			where: { id: { in: [ids.syncA, ids.syncB] }, userId: ids.user },
 			orderBy: { id: "asc" },
-			select: {
-				id: true,
-				rolledBack: true,
-				rollbackStatus: true,
-				rollbackAttemptedAt: true,
-				rollbackProgress: true,
-			},
+			select: syncRecoveryStateSelect,
 		});
 		const deploymentState = await prisma.templateDeploymentHistory.findFirstOrThrow({
 			where: { id: ids.deployment, userId: ids.user },
-			select: {
-				id: true,
-				status: true,
-				rolledBack: true,
-				undeployStatus: true,
-				undeployAttemptedAt: true,
-				undeployProgress: true,
-			},
+			select: deploymentRecoveryStateSelect,
 		});
 		const attemptedAt = new Date("2026-08-08T13:00:00.000Z");
 
