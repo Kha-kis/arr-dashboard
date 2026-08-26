@@ -33,6 +33,9 @@ describe("BulkScoreManager canonical profile identity", () => {
 		]);
 		const findMappings = vi.fn(async ({ where }) => {
 			const bindings = Array.isArray(where.OR) ? where.OR : [];
+			expect(bindings).not.toContainEqual(
+				expect.objectContaining({ credentialIdentity: expect.anything() }),
+			);
 			const managedCustomFormats = JSON.stringify([
 				{
 					trashId: "trash-reject",

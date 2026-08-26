@@ -811,6 +811,26 @@ describe("instance quality profile score persistence", () => {
 				}),
 			}),
 		);
+		expect(findOverrides.mock.calls[0]?.[0].where.OR[0].OR[0]).not.toHaveProperty(
+			"credentialIdentity",
+		);
+	});
+
+	it("does not pass runtime credential identity evidence to Prisma override reads", async () => {
+		findOverrides.mockImplementationOnce(async ({ where }) => {
+			if (JSON.stringify(where).includes("credentialIdentity")) {
+				throw new Error("Unknown argument `credentialIdentity`");
+			}
+			return [];
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"GET",
+			"/instance-1/quality-profiles/4/overrides",
+		);
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(findOverrides).toHaveBeenCalledOnce();
 	});
 
 	it("exposes retryable uncertain intent without treating it as an applied override", async () => {
