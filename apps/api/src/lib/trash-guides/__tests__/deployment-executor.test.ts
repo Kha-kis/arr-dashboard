@@ -8,6 +8,11 @@ import type { SonarrClient } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { ConflictError } from "../../errors.js";
 import { extractTrashId } from "../cf-field-utils.js";
+import {
+	type CustomFormatRollbackState,
+	createIntendedCustomFormatPostStateToken,
+	rollbackCustomFormatDeployment,
+} from "../deployment-custom-format-state.js";
 import { DeploymentExecutorService } from "../deployment-executor.js";
 import {
 	createDeploymentEndpointKey,
@@ -62,19 +67,53 @@ const sonarrLanguageReadbackSpecification = {
 	],
 };
 
-function runCustomFormatUpdateVerification(
+const metadataRichSonarrLanguageReadbackSpecification = {
+	...sonarrLanguageReadbackSpecification,
+	id: 12,
+	implementationName: "Language",
+	infoLink: "https://example.invalid/language",
+	fields: [
+		{ name: "value", value: 1, order: 0, label: "Language", type: "select" },
+		{
+			name: "exceptLanguage",
+			value: false,
+			order: 1,
+			label: "Except language",
+			type: "checkbox",
+		},
+	],
+};
+
+function runCustomFormatVerification(
+	method: "POST" | "PUT",
 	readbackSpecifications: unknown[],
 	intendedSpecifications: unknown[] = [intendedLanguageSpecification],
+	service: "SONARR" | "RADARR" = "SONARR",
+	readbackOverrides: Record<string, unknown> = {},
 ): Promise<unknown> {
-	const before = { id: 1, name: "Test CF", specifications: [] } as SdkCustomFormat;
+	const before = {
+		id: 1,
+		name: "Test CF",
+		includeCustomFormatWhenRenaming: false,
+		specifications: [],
+	} as SdkCustomFormat;
+	const readback = {
+		...before,
+		specifications: readbackSpecifications,
+		...readbackOverrides,
+	};
 	const client = {
-		customFormat: {
-			getById: vi
-				.fn()
-				.mockResolvedValueOnce(before)
-				.mockResolvedValueOnce({ ...before, specifications: readbackSpecifications }),
-			update: vi.fn().mockResolvedValue(undefined),
-		},
+		customFormat:
+			method === "PUT"
+				? {
+						getById: vi.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(readback),
+						update: vi.fn().mockResolvedValue(undefined),
+					}
+				: {
+						getAll: vi.fn().mockResolvedValue([]),
+						create: vi.fn().mockResolvedValue({ id: 1 }),
+						getById: vi.fn().mockResolvedValue(readback),
+					},
 	};
 	const executor = new DeploymentExecutorService({} as never, {} as never);
 	const run = (
@@ -91,10 +130,11 @@ function runCustomFormatUpdateVerification(
 				originalConfig: { specifications: intendedSpecifications },
 			},
 		],
-		new Map([["cf-1", before]]),
-		new Map([["Test CF", before]]),
+		method === "PUT" ? new Map([["cf-1", before]]) : new Map(),
+		method === "PUT" ? new Map([["Test CF", before]]) : new Map(),
 		undefined,
 		vi.fn().mockResolvedValue(undefined),
+		service,
 	);
 }
 
@@ -252,6 +292,8 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 					byTrashId: Map<string, SdkCustomFormat>,
 					byName: Map<string, SdkCustomFormat>,
 					resolutions: undefined,
+					persist: undefined,
+					service: "SONARR" | "RADARR",
 				) => Promise<unknown>;
 			}
 		).deployCustomFormats(
@@ -266,6 +308,8 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 			new Map([["cf-1", existing]]),
 			new Map([["Test CF", existing]]),
 			undefined,
+			undefined,
+			"SONARR",
 		);
 
 	it("aborts instead of overwriting an existing format changed after preview", async () => {
@@ -313,6 +357,8 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 				new Map([["cf-1", existing]]),
 				new Map([["Test CF", existing]]),
 				{ "cf-1": "keep_existing" },
+				undefined,
+				"SONARR",
 			),
 		).rejects.toThrow("changed during deployment");
 		expect(client.customFormat.getById).toHaveBeenCalledWith(1);
@@ -336,7 +382,7 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 		expect(create).not.toHaveBeenCalled();
 	});
 
-	it("records the exact created Custom Format state before the follow-up read", async () => {
+	it("records the created Custom Format ID without treating the POST response as materialized state", async () => {
 		const created = {
 			id: 7,
 			name: "Test CF",
@@ -366,6 +412,7 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 				new Map(),
 				undefined,
 				persistMutationState,
+				"SONARR",
 			),
 		).rejects.toThrow("post-write state could not be verified");
 		expect(persistMutationState).toHaveBeenNthCalledWith(
@@ -373,30 +420,185 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 			expect.objectContaining({
 				resourceId: 7,
 				status: "pending",
-				postStateToken: createUpstreamResourceStateToken(created),
+				postStateToken: null,
+				intendedPostStateToken: createIntendedCustomFormatPostStateToken(created, "SONARR"),
 			}),
 			false,
 		);
 	});
 
-	it("preserves a verified creation when final ledger persistence fails", async () => {
-		const created = {
+	it.each(["POST", "PUT"] as const)(
+		"does not start a Custom Format %s when the initial pending ledger cannot be persisted",
+		async (method) => {
+			const before = {
+				id: 1,
+				name: "Test CF",
+				includeCustomFormatWhenRenaming: false,
+				specifications: [],
+			} as SdkCustomFormat;
+			const create = vi.fn();
+			const update = vi.fn();
+			const client = {
+				customFormat:
+					method === "POST"
+						? { getAll: vi.fn().mockResolvedValue([]), create }
+						: { getById: vi.fn().mockResolvedValue(before), update },
+			};
+			const executor = new DeploymentExecutorService({} as never, {} as never);
+			const run = (
+				executor as unknown as {
+					deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+				}
+			).deployCustomFormats.bind(executor);
+
+			await expect(
+				run(
+					client,
+					[{ trashId: "cf-1", name: "Test CF", originalConfig: { specifications: [] } }],
+					method === "PUT" ? new Map([["cf-1", before]]) : new Map(),
+					method === "PUT" ? new Map([["Test CF", before]]) : new Map(),
+					undefined,
+					vi.fn().mockRejectedValue(new Error("ledger unavailable")),
+					"SONARR",
+				),
+			).resolves.toMatchObject({ created: 0, updated: 0, details: { failed: ["Test CF"] } });
+			expect(create).not.toHaveBeenCalled();
+			expect(update).not.toHaveBeenCalled();
+		},
+	);
+
+	it("stops after POST when the returned ID cannot be made durable", async () => {
+		const durableStates: CustomFormatRollbackState[] = [];
+		const persist = vi.fn(async (state: CustomFormatRollbackState) => {
+			if (durableStates.length === 1) throw new Error("ID checkpoint unavailable");
+			durableStates.push(structuredClone(state));
+		});
+		const create = vi.fn().mockResolvedValue({ id: 7 });
+		const getById = vi.fn();
+		const client = {
+			customFormat: { getAll: vi.fn().mockResolvedValue([]), create, getById },
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployCustomFormats.bind(executor);
+
+		await expect(
+			run(
+				client,
+				[{ trashId: "cf-1", name: "Test CF", originalConfig: { specifications: [] } }],
+				new Map(),
+				new Map(),
+				undefined,
+				persist,
+				"SONARR",
+			),
+		).rejects.toMatchObject({
+			deploymentResultUncertain: true,
+			partialDeployment: { created: 0, updated: 0 },
+		});
+		expect(durableStates).toEqual([
+			expect.objectContaining({ resourceId: null, postStateToken: null }),
+		]);
+		expect(create).toHaveBeenCalledOnce();
+		expect(getById).not.toHaveBeenCalled();
+	});
+
+	it("reconciles metadata-rich Sonarr state when the exact POST token checkpoint fails", async () => {
+		const intended = {
 			id: 7,
 			name: "Test CF",
 			includeCustomFormatWhenRenaming: false,
-			specifications: [],
+			specifications: [intendedLanguageSpecification],
 		};
-		const persistMutationState = vi
-			.fn()
-			.mockResolvedValueOnce(undefined)
-			.mockResolvedValueOnce(undefined)
-			.mockRejectedValueOnce(new Error("final ledger unavailable"));
+		const materialized = {
+			...intended,
+			specifications: [metadataRichSonarrLanguageReadbackSpecification],
+		};
+		const durableStates: CustomFormatRollbackState[] = [];
+		const persist = vi.fn(async (state: CustomFormatRollbackState) => {
+			if (durableStates.length === 2) throw new Error("exact token checkpoint unavailable");
+			durableStates.push(structuredClone(state));
+		});
+		const create = vi.fn().mockResolvedValue({ id: 7 });
 		const client = {
 			customFormat: {
-				getAll: vi.fn().mockResolvedValue([]),
-				create: vi.fn().mockResolvedValue(created),
-				getById: vi.fn().mockResolvedValue(created),
+				getAll: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([materialized]),
+				create,
+				getById: vi.fn().mockResolvedValue(materialized),
 			},
+			qualityProfile: { getAll: vi.fn().mockResolvedValue([]) },
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployCustomFormats.bind(executor);
+
+		await expect(
+			run(
+				client,
+				[
+					{
+						trashId: "cf-1",
+						name: "Test CF",
+						originalConfig: { specifications: [intendedLanguageSpecification] },
+					},
+				],
+				new Map(),
+				new Map(),
+				undefined,
+				persist,
+				"SONARR",
+			),
+		).rejects.toMatchObject({
+			deploymentResultUncertain: true,
+			partialDeployment: {
+				created: 1,
+				updated: 0,
+				details: { created: ["Test CF"] },
+			},
+		});
+		expect(durableStates[1]).toMatchObject({
+			resourceId: 7,
+			status: "pending",
+			postStateToken: null,
+			intendedPostStateToken: createIntendedCustomFormatPostStateToken(intended, "SONARR"),
+		});
+		await expect(
+			rollbackCustomFormatDeployment(client as never, durableStates[1]!),
+		).rejects.toThrow("cannot be deleted safely");
+		expect(create).toHaveBeenCalledOnce();
+	});
+
+	it("preserves exact Sonarr recovery evidence when final POST ledger persistence fails", async () => {
+		const intended = {
+			id: 7,
+			name: "Test CF",
+			includeCustomFormatWhenRenaming: false,
+			specifications: [intendedLanguageSpecification],
+		};
+		const materialized = {
+			...intended,
+			specifications: [metadataRichSonarrLanguageReadbackSpecification],
+		};
+		const durableStates: CustomFormatRollbackState[] = [];
+		const persistMutationState = vi.fn(
+			async (state: CustomFormatRollbackState, _append: boolean) => {
+				if (durableStates.length === 3) throw new Error("final ledger unavailable");
+				durableStates.push(structuredClone(state));
+			},
+		);
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([materialized]),
+				create: vi.fn().mockResolvedValue({ id: 7 }),
+				getById: vi.fn().mockResolvedValue(materialized),
+			},
+			qualityProfile: { getAll: vi.fn().mockResolvedValue([]) },
 		};
 		const executor = new DeploymentExecutorService({} as never, {} as never);
 		const run = (
@@ -409,11 +611,18 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 		try {
 			await run(
 				client,
-				[{ trashId: "cf-1", name: "Test CF", originalConfig: { specifications: [] } }],
+				[
+					{
+						trashId: "cf-1",
+						name: "Test CF",
+						originalConfig: { specifications: [intendedLanguageSpecification] },
+					},
+				],
 				new Map(),
 				new Map(),
 				undefined,
 				persistMutationState,
+				"SONARR",
 			);
 		} catch (error) {
 			conflict = error;
@@ -427,6 +636,15 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 				details: { created: ["Test CF"], updated: [], failed: [] },
 			},
 		});
+		expect(durableStates[2]).toMatchObject({
+			resourceId: 7,
+			status: "pending",
+			postStateToken: createUpstreamResourceStateToken(materialized),
+			intendedPostStateToken: createIntendedCustomFormatPostStateToken(intended, "SONARR"),
+		});
+		await expect(
+			rollbackCustomFormatDeployment(client as never, durableStates[2]!),
+		).rejects.toThrow("cannot be deleted safely");
 	});
 
 	it("attaches earlier successful writes when a later format drifts", async () => {
@@ -464,6 +682,8 @@ describe("DeploymentExecutorService - Custom Format drift", () => {
 				new Map(),
 				new Map(),
 				undefined,
+				undefined,
+				"SONARR",
 			);
 		} catch (error) {
 			conflict = error;
@@ -688,6 +908,7 @@ describe("DeploymentExecutorService - backup parity", () => {
 			new Map([["Test CF", before]]),
 			undefined,
 			persist,
+			"SONARR",
 		);
 
 		expect(persisted[0]).toMatchObject({
@@ -695,6 +916,14 @@ describe("DeploymentExecutorService - backup parity", () => {
 			state: { status: "pending", resourceId: 1, action: "updated" },
 		});
 		expect(persisted[1]).toMatchObject({
+			append: false,
+			state: {
+				status: "pending",
+				resourceId: 1,
+				postStateToken: expect.any(String),
+			},
+		});
+		expect(persisted[2]).toMatchObject({
 			append: false,
 			state: {
 				status: "applied",
@@ -728,7 +957,10 @@ describe("DeploymentExecutorService - backup parity", () => {
 				},
 			],
 		};
-		const persist = vi.fn().mockResolvedValue(undefined);
+		const persisted: Array<{ state: Record<string, unknown>; append: boolean }> = [];
+		const persist = vi.fn(async (state: Record<string, unknown>, append: boolean) => {
+			persisted.push({ state: structuredClone(state), append });
+		});
 		const client = {
 			customFormat: {
 				getById: vi.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(sonarrReadback),
@@ -756,22 +988,204 @@ describe("DeploymentExecutorService - backup parity", () => {
 				new Map([["Test CF", before]]),
 				undefined,
 				persist,
+				"SONARR",
 			),
 		).resolves.toMatchObject({ updated: 1 });
-		expect(persist).toHaveBeenLastCalledWith(
-			expect.objectContaining({ status: "applied", postStateToken: expect.any(String) }),
-			false,
+		const intendedState = { ...before, specifications: intendedSpecifications };
+		expect(persisted).toEqual([
+			{
+				append: true,
+				state: expect.objectContaining({
+					status: "pending",
+					postStateToken: null,
+					intendedPostStateToken: createIntendedCustomFormatPostStateToken(intendedState, "SONARR"),
+				}),
+			},
+			{
+				append: false,
+				state: expect.objectContaining({
+					status: "pending",
+					postStateToken: createUpstreamResourceStateToken(sonarrReadback),
+					intendedPostStateToken: createIntendedCustomFormatPostStateToken(intendedState, "SONARR"),
+				}),
+			},
+			{
+				append: false,
+				state: expect.objectContaining({
+					status: "applied",
+					postStateToken: createUpstreamResourceStateToken(sonarrReadback),
+					intendedPostStateToken: createIntendedCustomFormatPostStateToken(intendedState, "SONARR"),
+				}),
+			},
+		]);
+		expect(createUpstreamResourceStateToken(sonarrReadback)).not.toBe(
+			createUpstreamResourceStateToken(intendedState),
 		);
 	});
 
-	it("accepts Sonarr's default false exceptLanguage field after a Custom Format POST", async () => {
-		const readback = {
+	it("preserves exact Sonarr recovery evidence when final PUT ledger persistence fails", async () => {
+		const before = {
 			id: 1,
 			name: "Test CF",
 			includeCustomFormatWhenRenaming: false,
+			specifications: [],
+		} as SdkCustomFormat;
+		const intended = {
+			...before,
+			specifications: [intendedLanguageSpecification],
+		};
+		const materialized = {
+			...intended,
+			specifications: [metadataRichSonarrLanguageReadbackSpecification],
+		};
+		const durableStates: CustomFormatRollbackState[] = [];
+		const persist = vi.fn(async (state: CustomFormatRollbackState, _append: boolean) => {
+			if (durableStates.length === 2) throw new Error("final ledger unavailable");
+			durableStates.push(structuredClone(state));
+		});
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([materialized]),
+				getById: vi
+					.fn()
+					.mockResolvedValueOnce(before)
+					.mockResolvedValueOnce(materialized)
+					.mockResolvedValue(materialized),
+				update: vi.fn().mockResolvedValue(undefined),
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployCustomFormats.bind(executor);
+
+		await expect(
+			run(
+				client,
+				[
+					{
+						trashId: "cf-1",
+						name: "Test CF",
+						originalConfig: { specifications: [intendedLanguageSpecification] },
+					},
+				],
+				new Map([["cf-1", before]]),
+				new Map([["Test CF", before]]),
+				undefined,
+				persist,
+				"SONARR",
+			),
+		).rejects.toMatchObject({
+			deploymentResultUncertain: true,
+			partialDeployment: {
+				created: 0,
+				updated: 1,
+				details: { updated: ["Test CF"] },
+			},
+		});
+		expect(durableStates[1]).toMatchObject({
+			resourceId: 1,
+			status: "pending",
+			postStateToken: createUpstreamResourceStateToken(materialized),
+			intendedPostStateToken: createIntendedCustomFormatPostStateToken(intended, "SONARR"),
+		});
+		await expect(
+			rollbackCustomFormatDeployment(client as never, durableStates[1]!),
+		).rejects.toThrow("cannot be restored safely");
+	});
+
+	it("reconciles metadata-rich Sonarr state when the exact PUT token checkpoint fails", async () => {
+		const before = {
+			id: 1,
+			name: "Test CF",
+			includeCustomFormatWhenRenaming: false,
+			specifications: [],
+		} as SdkCustomFormat;
+		const intended = {
+			...before,
+			specifications: [intendedLanguageSpecification],
+		};
+		const materialized = {
+			...intended,
+			specifications: [metadataRichSonarrLanguageReadbackSpecification],
+		};
+		const durableStates: CustomFormatRollbackState[] = [];
+		const persist = vi.fn(async (state: CustomFormatRollbackState) => {
+			if (durableStates.length === 1) throw new Error("exact token checkpoint unavailable");
+			durableStates.push(structuredClone(state));
+		});
+		const update = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([materialized]),
+				getById: vi
+					.fn()
+					.mockResolvedValueOnce(before)
+					.mockResolvedValueOnce(materialized)
+					.mockResolvedValue(materialized),
+				update,
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployCustomFormats.bind(executor);
+
+		await expect(
+			run(
+				client,
+				[
+					{
+						trashId: "cf-1",
+						name: "Test CF",
+						originalConfig: { specifications: [intendedLanguageSpecification] },
+					},
+				],
+				new Map([["cf-1", before]]),
+				new Map([["Test CF", before]]),
+				undefined,
+				persist,
+				"SONARR",
+			),
+		).rejects.toMatchObject({
+			deploymentResultUncertain: true,
+			partialDeployment: {
+				created: 0,
+				updated: 1,
+				details: { updated: ["Test CF"] },
+			},
+		});
+		expect(durableStates[0]).toMatchObject({
+			resourceId: 1,
+			status: "pending",
+			postStateToken: null,
+			intendedPostStateToken: createIntendedCustomFormatPostStateToken(intended, "SONARR"),
+		});
+		await expect(
+			rollbackCustomFormatDeployment(client as never, durableStates[0]!),
+		).rejects.toThrow("cannot be restored safely");
+		expect(update).toHaveBeenCalledOnce();
+	});
+
+	it("accepts Sonarr's default false exceptLanguage field after a Custom Format POST", async () => {
+		const intendedState = {
+			id: 1,
+			name: "Test CF",
+			includeCustomFormatWhenRenaming: false,
+			specifications: [intendedLanguageSpecification],
+		};
+		const readback = {
+			...intendedState,
 			specifications: [sonarrLanguageReadbackSpecification],
 		};
-		const persist = vi.fn().mockResolvedValue(undefined);
+		const persisted: Array<{ state: Record<string, unknown>; append: boolean }> = [];
+		const persist = vi.fn(async (state: Record<string, unknown>, append: boolean) => {
+			persisted.push({ state: structuredClone(state), append });
+		});
 		const client = {
 			customFormat: {
 				getAll: vi.fn().mockResolvedValue([]),
@@ -800,15 +1214,51 @@ describe("DeploymentExecutorService - backup parity", () => {
 				new Map(),
 				undefined,
 				persist,
+				"SONARR",
 			),
 		).resolves.toMatchObject({ created: 1 });
-		expect(persist).toHaveBeenLastCalledWith(
-			expect.objectContaining({ status: "applied", postStateToken: expect.any(String) }),
-			false,
-		);
+		expect(persisted).toEqual([
+			{
+				append: true,
+				state: expect.objectContaining({
+					resourceId: null,
+					status: "pending",
+					postStateToken: null,
+					intendedPostStateToken: null,
+				}),
+			},
+			{
+				append: false,
+				state: expect.objectContaining({
+					resourceId: 1,
+					status: "pending",
+					postStateToken: null,
+					intendedPostStateToken: createIntendedCustomFormatPostStateToken(intendedState, "SONARR"),
+				}),
+			},
+			{
+				append: false,
+				state: expect.objectContaining({
+					resourceId: 1,
+					status: "pending",
+					postStateToken: createUpstreamResourceStateToken(readback),
+					intendedPostStateToken: createIntendedCustomFormatPostStateToken(intendedState, "SONARR"),
+				}),
+			},
+			{
+				append: false,
+				state: expect.objectContaining({
+					resourceId: 1,
+					status: "applied",
+					postStateToken: createUpstreamResourceStateToken(readback),
+					intendedPostStateToken: createIntendedCustomFormatPostStateToken(intendedState, "SONARR"),
+				}),
+			},
+		]);
 	});
 
 	it.each([
+		["missing specification", []],
 		["specification name", [{ ...sonarrLanguageReadbackSpecification, name: "Language: English" }]],
 		[
 			"implementation",
@@ -836,6 +1286,44 @@ describe("DeploymentExecutorService - backup parity", () => {
 					fields: [
 						{ name: "value", value: 1 },
 						{ name: "exceptLanguage", value: true },
+					],
+				},
+			],
+		],
+		[
+			"duplicate default exceptLanguage fields",
+			[
+				{
+					...sonarrLanguageReadbackSpecification,
+					fields: [
+						{ name: "value", value: 1 },
+						{ name: "exceptLanguage", value: false },
+						{ name: "exceptLanguage", value: false },
+					],
+				},
+			],
+		],
+		[
+			"conflicting false and true exceptLanguage fields",
+			[
+				{
+					...sonarrLanguageReadbackSpecification,
+					fields: [
+						{ name: "value", value: 1 },
+						{ name: "exceptLanguage", value: false },
+						{ name: "exceptLanguage", value: true },
+					],
+				},
+			],
+		],
+		[
+			"wrong field name",
+			[
+				{
+					...sonarrLanguageReadbackSpecification,
+					fields: [
+						{ name: "language", value: 1 },
+						{ name: "exceptLanguage", value: false },
 					],
 				},
 			],
@@ -876,9 +1364,11 @@ describe("DeploymentExecutorService - backup parity", () => {
 			],
 		],
 	])("rejects Custom Format drift in %s after Sonarr normalization", async (_label, readback) => {
-		await expect(runCustomFormatUpdateVerification(readback)).rejects.toMatchObject({
-			deploymentResultUncertain: true,
-		});
+		for (const method of ["POST", "PUT"] as const) {
+			await expect(runCustomFormatVerification(method, readback)).rejects.toMatchObject({
+				deploymentResultUncertain: true,
+			});
+		}
 	});
 
 	it("rejects a changed regex after Sonarr normalization", async () => {
@@ -894,12 +1384,15 @@ describe("DeploymentExecutorService - backup parity", () => {
 			fields: [{ name: "value", value: "changed-regex" }],
 		};
 
-		await expect(
-			runCustomFormatUpdateVerification(
-				[sonarrLanguageReadbackSpecification, changedRegexSpecification],
-				[intendedLanguageSpecification, intendedRegexSpecification],
-			),
-		).rejects.toMatchObject({ deploymentResultUncertain: true });
+		for (const method of ["POST", "PUT"] as const) {
+			await expect(
+				runCustomFormatVerification(
+					method,
+					[sonarrLanguageReadbackSpecification, changedRegexSpecification],
+					[intendedLanguageSpecification, intendedRegexSpecification],
+				),
+			).rejects.toMatchObject({ deploymentResultUncertain: true });
+		}
 	});
 
 	it("rejects swapped specification association after Sonarr normalization", async () => {
@@ -911,13 +1404,104 @@ describe("DeploymentExecutorService - backup parity", () => {
 			fields: [{ name: "value", value: "original-regex" }],
 		};
 
-		await expect(
-			runCustomFormatUpdateVerification(
-				[intendedRegexSpecification, sonarrLanguageReadbackSpecification],
-				[intendedLanguageSpecification, intendedRegexSpecification],
-			),
-		).rejects.toMatchObject({ deploymentResultUncertain: true });
+		for (const method of ["POST", "PUT"] as const) {
+			await expect(
+				runCustomFormatVerification(
+					method,
+					[intendedRegexSpecification, sonarrLanguageReadbackSpecification],
+					[intendedLanguageSpecification, intendedRegexSpecification],
+				),
+			).rejects.toMatchObject({ deploymentResultUncertain: true });
+		}
 	});
+
+	it.each(["POST", "PUT"] as const)(
+		"keeps Radarr strict when exceptLanguage=false appears after %s",
+		async (method) => {
+			await expect(
+				runCustomFormatVerification(
+					method,
+					[sonarrLanguageReadbackSpecification],
+					[intendedLanguageSpecification],
+					"RADARR",
+				),
+			).rejects.toMatchObject({ deploymentResultUncertain: true });
+		},
+	);
+
+	it.each(["POST", "PUT"] as const)(
+		"accepts an exact Radarr LanguageSpecification state after %s",
+		async (method) => {
+			await expect(
+				runCustomFormatVerification(
+					method,
+					[intendedLanguageSpecification],
+					[intendedLanguageSpecification],
+					"RADARR",
+				),
+			).resolves.toMatchObject(method === "POST" ? { created: 1 } : { updated: 1 });
+		},
+	);
+
+	it.each([false, true])(
+		"accepts an explicitly intended exceptLanguage=%s value exactly after POST and PUT",
+		async (exceptLanguage) => {
+			const intended = {
+				...intendedLanguageSpecification,
+				fields: [
+					...intendedLanguageSpecification.fields,
+					{ name: "exceptLanguage", value: exceptLanguage },
+				],
+			};
+			for (const method of ["POST", "PUT"] as const) {
+				await expect(
+					runCustomFormatVerification(method, [intended], [intended]),
+				).resolves.toMatchObject(method === "POST" ? { created: 1 } : { updated: 1 });
+			}
+		},
+	);
+
+	it.each([
+		["name", { name: "Changed CF" }],
+		["includeCustomFormatWhenRenaming", { includeCustomFormatWhenRenaming: true }],
+	] as const)("rejects top-level %s drift after POST and PUT", async (_label, overrides) => {
+		for (const method of ["POST", "PUT"] as const) {
+			await expect(
+				runCustomFormatVerification(
+					method,
+					[sonarrLanguageReadbackSpecification],
+					[intendedLanguageSpecification],
+					"SONARR",
+					overrides,
+				),
+			).rejects.toMatchObject({ deploymentResultUncertain: true });
+		}
+	});
+
+	it.each(["POST", "PUT"] as const)(
+		"rejects exceptLanguage=false on a non-language specification after %s",
+		async (method) => {
+			const intended = {
+				name: "Release title",
+				implementation: "ReleaseTitleSpecification",
+				negate: false,
+				required: false,
+				fields: [{ name: "value", value: "original-regex" }],
+			};
+			await expect(
+				runCustomFormatVerification(
+					method,
+					[
+						{
+							...intended,
+							fields: [...intended.fields, { name: "exceptLanguage", value: false }],
+						},
+					],
+					[intended],
+				),
+			).rejects.toMatchObject({ deploymentResultUncertain: true });
+		},
+	);
 
 	it("keeps a Custom Format pending when ARR returns a different writable state", async () => {
 		const before = { id: 1, name: "Test CF", specifications: [] } as SdkCustomFormat;
@@ -952,6 +1536,7 @@ describe("DeploymentExecutorService - backup parity", () => {
 				new Map([["Test CF", before]]),
 				undefined,
 				persist,
+				"SONARR",
 			),
 		).rejects.toMatchObject({
 			message: expect.stringContaining("post-write state could not be verified"),
@@ -997,6 +1582,7 @@ describe("DeploymentExecutorService - backup parity", () => {
 				]),
 				undefined,
 				vi.fn().mockResolvedValue(undefined),
+				"SONARR",
 			),
 		).rejects.toMatchObject({
 			message: expect.stringContaining("post-write state could not be verified"),

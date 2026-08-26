@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
 	type CustomFormatRollbackState,
+	createIntendedCustomFormatPostStateToken,
+	matchesIntendedCustomFormatPostStateToken,
 	rollbackCustomFormatDeployment,
 } from "../deployment-custom-format-state.js";
 import { createUpstreamResourceStateToken } from "../deployment-target.js";
@@ -373,5 +375,132 @@ describe("rollbackCustomFormatDeployment", () => {
 				}),
 			),
 		).rejects.toThrow("ID is unknown");
+	});
+});
+
+describe("Custom Format intended post-state tokens", () => {
+	const intended = {
+		id: 7,
+		name: "Created CF",
+		includeCustomFormatWhenRenaming: false,
+		specifications: [
+			{
+				name: "Language: Not English",
+				implementation: "LanguageSpecification",
+				negate: true,
+				required: false,
+				fields: [{ name: "value", value: 1 }],
+			},
+		],
+	};
+	const metadataRichSonarrReadback = {
+		...intended,
+		specifications: [
+			{
+				...intended.specifications[0],
+				id: 12,
+				implementationName: "Language",
+				infoLink: "https://example.invalid/language",
+				fields: [
+					{ name: "value", value: 1, order: 0, label: "Language", type: "select" },
+					{
+						name: "exceptLanguage",
+						value: false,
+						order: 1,
+						label: "Except language",
+						type: "checkbox",
+					},
+				],
+			},
+		],
+	};
+
+	it("recognizes an exact state and Sonarr's one omitted false default despite readback metadata", () => {
+		const token = createIntendedCustomFormatPostStateToken(intended, "SONARR");
+		expect(matchesIntendedCustomFormatPostStateToken(intended, token)).toBe(true);
+		expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, token)).toBe(true);
+	});
+
+	it("does not apply the Sonarr exception to a Radarr recovery token", () => {
+		const token = createIntendedCustomFormatPostStateToken(intended, "RADARR");
+		expect(matchesIntendedCustomFormatPostStateToken(metadataRichSonarrReadback, token)).toBe(
+			false,
+		);
+	});
+
+	it("never lets intended writable evidence override a different exact post-state token", async () => {
+		const current = {
+			...metadataRichSonarrReadback,
+			specifications: [
+				{
+					...metadataRichSonarrReadback.specifications[0],
+					infoLink: "https://example.invalid/changed-metadata",
+				},
+			],
+		};
+		const qualityProfileGetAll = vi.fn();
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([current]),
+				getById: vi.fn().mockResolvedValue(current),
+			},
+			qualityProfile: { getAll: qualityProfileGetAll },
+		};
+
+		await expect(
+			rollbackCustomFormatDeployment(
+				client as never,
+				appliedState({
+					status: "pending",
+					postStateToken: createUpstreamResourceStateToken(metadataRichSonarrReadback),
+					intendedPostStateToken: createIntendedCustomFormatPostStateToken(intended, "SONARR"),
+				}),
+			),
+		).rejects.toThrow("unverified deployment state");
+		expect(qualityProfileGetAll).not.toHaveBeenCalled();
+	});
+
+	it("does not remove a false field when the intent explicitly defines exceptLanguage=true", () => {
+		const explicitTrue = {
+			...intended,
+			specifications: [
+				{
+					...intended.specifications[0],
+					fields: [...intended.specifications[0]!.fields, { name: "exceptLanguage", value: true }],
+				},
+			],
+		};
+		const conflictingReadback = {
+			...explicitTrue,
+			specifications: [
+				{
+					...explicitTrue.specifications[0],
+					fields: [
+						{ name: "value", value: 1 },
+						{ name: "exceptLanguage", value: false },
+						{ name: "exceptLanguage", value: true },
+					],
+				},
+			],
+		};
+		const token = createIntendedCustomFormatPostStateToken(explicitTrue, "SONARR");
+		expect(matchesIntendedCustomFormatPostStateToken(conflictingReadback, token)).toBe(false);
+	});
+
+	it("rejects real writable drift even when server metadata is present", () => {
+		const token = createIntendedCustomFormatPostStateToken(intended, "SONARR");
+		const drifted = {
+			...metadataRichSonarrReadback,
+			specifications: [
+				{
+					...metadataRichSonarrReadback.specifications[0],
+					fields: [
+						{ name: "value", value: 2, order: 0, label: "Language", type: "select" },
+						metadataRichSonarrReadback.specifications[0]!.fields[1],
+					],
+				},
+			],
+		};
+		expect(matchesIntendedCustomFormatPostStateToken(drifted, token)).toBe(false);
 	});
 });

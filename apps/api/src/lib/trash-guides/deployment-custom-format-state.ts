@@ -3,6 +3,150 @@ import { z } from "zod";
 import { createUpstreamResourceStateToken } from "./deployment-target.js";
 
 type ArrClient = SonarrClient | RadarrClient;
+const intendedWritableStateTokenPrefix = "arr-dashboard-custom-format-writable-v1";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function projectWritableCustomFormatState(value: unknown): unknown {
+	if (!isRecord(value)) return value;
+	return {
+		name: value.name,
+		includeCustomFormatWhenRenaming: value.includeCustomFormatWhenRenaming,
+		specifications: Array.isArray(value.specifications)
+			? value.specifications.map((specification) => {
+					if (!isRecord(specification)) return specification;
+					return {
+						name: specification.name,
+						implementation: specification.implementation,
+						negate: specification.negate,
+						required: specification.required,
+						fields: Array.isArray(specification.fields)
+							? specification.fields.map((field) =>
+									isRecord(field) ? { name: field.name, value: field.value } : field,
+								)
+							: specification.fields,
+					};
+				})
+			: value.specifications,
+	};
+}
+
+function getDefaultableSonarrLanguageSpecificationIndexes(
+	intended: Record<string, unknown>,
+): number[] {
+	if (!Array.isArray(intended.specifications)) return [];
+	return intended.specifications.flatMap((specification, index) => {
+		if (
+			!isRecord(specification) ||
+			specification.implementation !== "LanguageSpecification" ||
+			!Array.isArray(specification.fields) ||
+			specification.fields.some((field) => isRecord(field) && field.name === "exceptLanguage")
+		) {
+			return [];
+		}
+		return [index];
+	});
+}
+
+function removeMaterializedSonarrDefaults(actual: unknown, defaultableIndexes: number[]): unknown {
+	if (!isRecord(actual) || !Array.isArray(actual.specifications)) return actual;
+	const defaultableIndexSet = new Set(defaultableIndexes);
+	return {
+		...actual,
+		specifications: actual.specifications.map((specification, index) => {
+			if (
+				!defaultableIndexSet.has(index) ||
+				!isRecord(specification) ||
+				specification.implementation !== "LanguageSpecification" ||
+				!Array.isArray(specification.fields)
+			) {
+				return specification;
+			}
+			const exceptLanguageFields = specification.fields.flatMap((field, fieldIndex) =>
+				isRecord(field) && field.name === "exceptLanguage" ? [{ field, fieldIndex }] : [],
+			);
+			if (exceptLanguageFields.length !== 1 || exceptLanguageFields[0]?.field.value !== false) {
+				return specification;
+			}
+			return {
+				...specification,
+				fields: specification.fields.filter(
+					(_, fieldIndex) => fieldIndex !== exceptLanguageFields[0]?.fieldIndex,
+				),
+			};
+		}),
+	};
+}
+
+function createWritableCustomFormatStateToken(value: unknown): string {
+	return createUpstreamResourceStateToken(projectWritableCustomFormatState(value));
+}
+
+/**
+ * Persist a versioned token in the same writable-state domain used by post-write verification.
+ * The token records exactly which Sonarr LanguageSpecifications omitted exceptLanguage, so
+ * recovery cannot apply Sonarr's false-default exception to Radarr or to an explicit value.
+ */
+export function createIntendedCustomFormatPostStateToken(
+	intended: Record<string, unknown>,
+	service: string,
+): string {
+	if (service !== "SONARR" && service !== "RADARR") {
+		throw new Error(`Unsupported Custom Format mutation service: ${service}`);
+	}
+	const defaultableIndexes =
+		service === "SONARR" ? getDefaultableSonarrLanguageSpecificationIndexes(intended) : [];
+	return [
+		intendedWritableStateTokenPrefix,
+		service,
+		defaultableIndexes.length > 0 ? defaultableIndexes.join(",") : "-",
+		createWritableCustomFormatStateToken(intended),
+	].join(":");
+}
+
+/** Reconcile a pending mutation without accepting any state the original verifier rejected. */
+export function matchesIntendedCustomFormatPostStateToken(
+	actual: unknown,
+	intendedToken: string,
+): boolean {
+	const [prefix, service, rawIndexes, expectedHash, ...extra] = intendedToken.split(":");
+	if (
+		prefix !== intendedWritableStateTokenPrefix ||
+		(service !== "SONARR" && service !== "RADARR") ||
+		extra.length > 0 ||
+		!/^[a-f0-9]{64}$/.test(expectedHash ?? "")
+	) {
+		return false;
+	}
+	const defaultableIndexes =
+		rawIndexes === "-"
+			? []
+			: /^\d+(?:,\d+)*$/.test(rawIndexes ?? "")
+				? rawIndexes!.split(",").map(Number)
+				: null;
+	if (
+		defaultableIndexes === null ||
+		defaultableIndexes.some(
+			(index, position) =>
+				!Number.isSafeInteger(index) ||
+				index < 0 ||
+				index <= (defaultableIndexes[position - 1] ?? -1),
+		)
+	) {
+		return false;
+	}
+	if (createWritableCustomFormatStateToken(actual) === expectedHash) return true;
+	return (
+		service === "SONARR" &&
+		defaultableIndexes.length > 0 &&
+		createWritableCustomFormatStateToken(
+			removeMaterializedSonarrDefaults(actual, defaultableIndexes),
+		) === expectedHash
+	);
+}
+
 const restorableCustomFormatFieldSchema = z.looseObject({
 	name: z.string().min(1),
 	type: z.string().min(1),
@@ -77,10 +221,19 @@ export async function rollbackCustomFormatDeployment(
 		) {
 			return "noop";
 		}
-		if (state.postStateToken && currentToken === state.postStateToken) {
+		if (state.postStateToken) {
+			if (currentToken !== state.postStateToken) {
+				throw new Error(
+					`Custom Format "${state.name}" has an unverified deployment state and was not changed.`,
+				);
+			}
 			verifiedPostStateToken = state.postStateToken;
-		} else if (state.intendedPostStateToken && currentToken === state.intendedPostStateToken) {
-			verifiedPostStateToken = state.intendedPostStateToken;
+		} else if (
+			state.intendedPostStateToken &&
+			(currentToken === state.intendedPostStateToken ||
+				matchesIntendedCustomFormatPostStateToken(current, state.intendedPostStateToken))
+		) {
+			verifiedPostStateToken = currentToken;
 		} else {
 			throw new Error(
 				`Custom Format "${state.name}" has an unverified deployment state and was not changed.`,

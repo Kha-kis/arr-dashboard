@@ -3,6 +3,8 @@ import { SonarrClient } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { DeploymentExecutorService } from "../deployment-executor.js";
 
+// Reproducible fixture verified from local OCI metadata:
+// lscr.io/linuxserver/sonarr:4.0.19.2979-ls322@sha256:c19aa4ecdf03d73e1d5c901da33744cb7eb4d921f89bafed1ca264601d7fa224
 const sonarrUrl = process.env.SONARR_INTEGRATION_URL;
 const sonarrApiKey = process.env.SONARR_INTEGRATION_API_KEY;
 const hasLiveSonarr = Boolean(process.env.INTEGRATION_TESTS === "1" && sonarrUrl && sonarrApiKey);
@@ -26,17 +28,19 @@ describe.skipIf(!hasLiveSonarr)("DeploymentExecutorService with live Sonarr", ()
 		const syntheticName = `ARR Dashboard Sonarr post-write integration ${runId}`;
 		const syntheticTrashId = `sonarr-except-language-integration-${runId}`;
 		let createdId: number | undefined;
-		const persistMutationState = vi
-			.fn()
-			.mockImplementation(
-				async (state: { action: "created" | "updated"; resourceId: number | null }) => {
-					if (state.action !== "created" || state.resourceId === null) return;
-					if (createdId !== undefined && createdId !== state.resourceId) {
-						throw new Error("Live Sonarr test observed more than one created resource ID");
-					}
-					createdId = state.resourceId;
-				},
-			);
+		const persistMutationState = vi.fn().mockResolvedValue(undefined);
+		const createCustomFormat = client.customFormat.create.bind(client.customFormat);
+		vi.spyOn(client.customFormat, "create").mockImplementation(async (format) => {
+			const created = await createCustomFormat(format);
+			if (!Number.isSafeInteger(created.id) || (created.id ?? 0) <= 0) {
+				throw new Error("Live Sonarr test POST returned no exact positive resource ID");
+			}
+			if (createdId !== undefined && createdId !== created.id) {
+				throw new Error("Live Sonarr test observed more than one created resource ID");
+			}
+			createdId = created.id;
+			return created;
+		});
 		const specification = {
 			name: "Language: Not English",
 			implementation: "LanguageSpecification",
@@ -46,6 +50,8 @@ describe.skipIf(!hasLiveSonarr)("DeploymentExecutorService with live Sonarr", ()
 		};
 		let operationError: unknown;
 		try {
+			const systemStatus = await client.system.get();
+			expect(systemStatus.version).toBe("4.0.19.2979");
 			const createResult = await deployCustomFormats(
 				client,
 				[
@@ -59,6 +65,7 @@ describe.skipIf(!hasLiveSonarr)("DeploymentExecutorService with live Sonarr", ()
 				new Map(),
 				undefined,
 				persistMutationState,
+				"SONARR",
 			);
 			expect(createResult.created).toBe(1);
 			expect(createdId).toEqual(expect.any(Number));
@@ -86,6 +93,7 @@ describe.skipIf(!hasLiveSonarr)("DeploymentExecutorService with live Sonarr", ()
 				new Map([[syntheticName, created]]),
 				undefined,
 				persistMutationState,
+				"SONARR",
 			);
 			expect(updateResult.updated).toBe(1);
 		} catch (error) {
@@ -97,18 +105,25 @@ describe.skipIf(!hasLiveSonarr)("DeploymentExecutorService with live Sonarr", ()
 			if (createdId !== undefined) {
 				const current = await client.customFormat.getById(createdId);
 				const currentSpecification = current.specifications?.[0];
-				const currentValue = currentSpecification?.fields?.find(
-					(field) => field.name === "value",
-				)?.value;
+				const currentFields = currentSpecification?.fields?.map(({ name, value }) => ({
+					name,
+					value,
+				}));
 				if (
+					current.id !== createdId ||
 					current.name !== syntheticName ||
+					current.includeCustomFormatWhenRenaming !== false ||
 					current.specifications?.length !== 1 ||
 					currentSpecification?.name !== specification.name ||
 					currentSpecification.implementation !== specification.implementation ||
-					currentValue !== 1
+					currentSpecification.negate !== specification.negate ||
+					currentSpecification.required !== specification.required ||
+					currentFields?.length !== 2 ||
+					!currentFields.some((field) => field.name === "value" && field.value === 1) ||
+					!currentFields.some((field) => field.name === "exceptLanguage" && field.value === false)
 				) {
 					cleanupError = new Error(
-						"Refusing to clean up a live Sonarr resource whose identity or contents changed",
+						`Refusing to clean up live Sonarr Custom Format "${syntheticName}" with exact ID ${createdId} because its identity or contents changed`,
 					);
 				} else {
 					await client.customFormat.delete(createdId);
