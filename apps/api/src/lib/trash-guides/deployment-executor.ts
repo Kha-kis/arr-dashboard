@@ -32,7 +32,10 @@ import {
 } from "./cf-field-utils.js";
 import { checkMutualExclusions } from "./conflict-checker.js";
 import { shouldRetainDeploymentBackup } from "./deployment-backup-state.js";
-import type { CustomFormatRollbackState } from "./deployment-custom-format-state.js";
+import {
+	type CustomFormatRollbackState,
+	createIntendedCustomFormatPostStateToken,
+} from "./deployment-custom-format-state.js";
 import {
 	finalizeDeploymentHistory,
 	finalizeDeploymentHistoryWithFailure,
@@ -336,7 +339,15 @@ function assertIntendedCustomFormatWritableState(
 	actual: unknown,
 	intended: Record<string, unknown>,
 	resourceLabel: string,
+	service: ServiceType,
 ): void {
+	try {
+		assertIntendedWritableState(actual, intended, resourceLabel);
+		return;
+	} catch (error) {
+		if (!(error instanceof ConflictError) || service !== "SONARR") throw error;
+	}
+
 	assertIntendedWritableState(
 		normalizeCustomFormatReadbackDefaults(actual, intended),
 		intended,
@@ -744,6 +755,7 @@ export class DeploymentExecutorService {
 			state: CustomFormatRollbackState,
 			append: boolean,
 		) => Promise<void> = async () => {},
+		service: ServiceType = "RADARR",
 	): Promise<DeployCustomFormatsResult> {
 		const errors: string[] = [];
 		const details: DeploymentDetails = {
@@ -827,7 +839,10 @@ export class DeploymentExecutorService {
 						name: templateCF.name,
 						status: "pending",
 						postStateToken: null,
-						intendedPostStateToken: createUpstreamResourceStateToken(updatedCF),
+						intendedPostStateToken: createIntendedCustomFormatPostStateToken(
+							updatedCF as Record<string, unknown>,
+							service,
+						),
 					};
 					await persistMutationState(mutationState, true);
 
@@ -841,12 +856,14 @@ export class DeploymentExecutorService {
 						postWriteFormat,
 						updatedCF as Record<string, unknown>,
 						`Custom Format "${templateCF.name}"`,
+						service,
 					);
-					mutationState.status = "applied";
-					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
-					await persistMutationState(mutationState, false);
 					updated++;
 					details.updated.push(templateCF.name);
+					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
+					await persistMutationState(mutationState, false);
+					mutationState.status = "applied";
+					await persistMutationState(mutationState, false);
 				} else {
 					const freshFormats = await client.customFormat.getAll();
 					const appearedDuringDeployment = freshFormats.find(
@@ -888,18 +905,23 @@ export class DeploymentExecutorService {
 						throw new Error("ARR created the Custom Format without returning its ID");
 					}
 					mutationState.resourceId = createdFormat.id;
-					mutationState.postStateToken = createUpstreamResourceStateToken(createdFormat);
+					mutationState.intendedPostStateToken = createIntendedCustomFormatPostStateToken(
+						{ ...newCF, id: createdFormat.id },
+						service,
+					);
 					await persistMutationState(mutationState, false);
 					const postWriteFormat = await client.customFormat.getById(createdFormat.id);
 					assertIntendedCustomFormatWritableState(
 						postWriteFormat,
 						newCF as Record<string, unknown>,
 						`Custom Format "${templateCF.name}"`,
+						service,
 					);
-					mutationState.status = "applied";
-					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
 					created++;
 					details.created.push(templateCF.name);
+					mutationState.postStateToken = createUpstreamResourceStateToken(postWriteFormat);
+					await persistMutationState(mutationState, false);
+					mutationState.status = "applied";
 					await persistMutationState(mutationState, false);
 					resolvedResourceIds.set(templateCF.trashId, createdFormat.id);
 				}
@@ -2258,6 +2280,7 @@ export class DeploymentExecutorService {
 						throw error;
 					}
 				},
+				instance.service,
 			);
 			partialCFResult = cfResult;
 			deploymentPhase = "quality_profile";
