@@ -56,6 +56,7 @@ import {
 	assertEquivalentDeploymentMappingAuthority,
 	createAutomationCatchUpTemplateStateToken,
 	createDeploymentConnectionBindingCandidates,
+	createDeploymentConnectionPersistenceBindings,
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
 	createDeploymentMappingAuthorityState,
@@ -2415,7 +2416,9 @@ export class DeploymentExecutorService {
 										userId: orphanedOverrideCleanup.userId,
 										qualityProfileId: orphanedOverrideCleanup.qualityProfileId,
 										customFormatId: { in: orphanedOverrideCleanup.customFormatIds },
-										OR: orphanedOverrideCleanup.connectionReadBindings,
+										OR: createDeploymentConnectionPersistenceBindings(
+											orphanedOverrideCleanup.connectionReadBindings,
+										),
 									},
 								});
 							}

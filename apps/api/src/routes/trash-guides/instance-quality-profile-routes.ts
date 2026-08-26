@@ -14,13 +14,14 @@ import { assertNoPendingDeploymentOperation } from "../../lib/trash-guides/deplo
 import {
 	assertNoLegacyDeploymentConnectionMappings,
 	createDeploymentConnectionBindingCandidates,
+	createDeploymentConnectionPersistenceBindings,
 	createDeploymentConnectionStateToken,
 	createDeploymentEndpointKey,
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
 	getEquivalentServiceInstanceIds,
-	isVerifiedClonedProfileSourceConnection,
 	isCurrentDeploymentConnectionMapping,
+	isVerifiedClonedProfileSourceConnection,
 } from "../../lib/trash-guides/deployment-target.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -475,7 +476,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				const mappings = await app.prisma.templateQualityProfileMapping.findMany({
 					where: {
 						qualityProfileId: profileId,
-						OR: connectionBindings,
+						OR: createDeploymentConnectionPersistenceBindings(connectionBindings),
 						template: { userId },
 					},
 					include: { template: true },
@@ -636,7 +637,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 						qualityProfileId: profileId,
 						customFormatId: { in: customFormatIds },
 						status: { in: ["APPLIED", "PENDING", "UNCERTAIN"] },
-						OR: connectionBindings,
+						OR: createDeploymentConnectionPersistenceBindings(connectionBindings),
 					},
 				});
 				assertCurrentConnectionRows(overrides, connectionBindings, "saved score override");
@@ -1327,7 +1328,12 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				userId,
 				qualityProfileId: profileIdNum,
 				OR: [
-					{ status: "APPLIED", OR: connectionContext.connectionReadBindings },
+					{
+						status: "APPLIED",
+						OR: createDeploymentConnectionPersistenceBindings(
+							connectionContext.connectionReadBindings,
+						),
+					},
 					{
 						status: { in: ["PENDING", "UNCERTAIN"] },
 						instanceId: { in: connectionContext.equivalentInstanceIds },
@@ -1421,7 +1427,12 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 						customFormatId,
 						userId,
 						OR: [
-							{ status: "APPLIED", OR: connectionContext.connectionReadBindings },
+							{
+								status: "APPLIED",
+								OR: createDeploymentConnectionPersistenceBindings(
+									connectionContext.connectionReadBindings,
+								),
+							},
 							{
 								status: { in: ["PENDING", "UNCERTAIN"] },
 								instanceId: { in: connectionContext.equivalentInstanceIds },
@@ -1461,7 +1472,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					{
 						where: {
 							qualityProfileId: profileIdNum,
-							OR: connectionBindings,
+							OR: createDeploymentConnectionPersistenceBindings(connectionBindings),
 							template: { userId },
 						},
 						include: { template: true },
@@ -1552,7 +1563,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					const transactionMappings = await transaction.templateQualityProfileMapping.findMany({
 						where: {
 							qualityProfileId: profileIdNum,
-							OR: connectionBindings,
+							OR: createDeploymentConnectionPersistenceBindings(connectionBindings),
 							template: { userId },
 						},
 						select: {
@@ -1598,7 +1609,12 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 							customFormatId,
 							userId,
 							OR: [
-								{ status: "APPLIED", OR: connectionContext.connectionReadBindings },
+								{
+									status: "APPLIED",
+									OR: createDeploymentConnectionPersistenceBindings(
+										connectionContext.connectionReadBindings,
+									),
+								},
 								{
 									status: { in: ["PENDING", "UNCERTAIN"] },
 									instanceId: { in: connectionContext.equivalentInstanceIds },
@@ -1676,7 +1692,12 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					in: profileIds,
 				},
 				OR: [
-					{ status: "APPLIED", OR: connectionContext.connectionReadBindings },
+					{
+						status: "APPLIED",
+						OR: createDeploymentConnectionPersistenceBindings(
+							connectionContext.connectionReadBindings,
+						),
+					},
 					{
 						status: { in: ["PENDING", "UNCERTAIN"] },
 						instanceId: { in: connectionContext.equivalentInstanceIds },
