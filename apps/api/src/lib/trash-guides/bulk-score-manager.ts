@@ -248,6 +248,7 @@ export class BulkScoreManager {
 				? await this.prisma.trashTemplate.findMany({
 						where: {
 							id: { in: templateIds },
+							userId,
 						},
 						select: {
 							id: true,

@@ -126,6 +126,17 @@ runDatabaseTests("instance quality-profile override route Prisma contract", () =
 					connectionStateToken,
 				},
 				{
+					id: `override-route-database-alias-unique-applied-${runId}`,
+					instanceId: ids.alias,
+					qualityProfileId: 4,
+					customFormatId: 16,
+					score: 1_600,
+					status: "APPLIED",
+					userId: ids.user,
+					connectionGeneration: sharedConnection.connectionGeneration,
+					connectionStateToken,
+				},
+				{
 					id: `override-route-database-alias-uncertain-${runId}`,
 					instanceId: ids.alias,
 					qualityProfileId: 4,
@@ -137,6 +148,41 @@ runDatabaseTests("instance quality-profile override route Prisma contract", () =
 					userId: ids.user,
 					connectionGeneration: sharedConnection.connectionGeneration,
 					connectionStateToken,
+				},
+				{
+					id: `override-route-database-alias-pending-${runId}`,
+					instanceId: ids.alias,
+					qualityProfileId: 4,
+					customFormatId: 15,
+					score: 75,
+					status: "PENDING",
+					intentOperation: "SET_SCORE",
+					intendedScore: 75,
+					userId: ids.user,
+					connectionGeneration: sharedConnection.connectionGeneration,
+					connectionStateToken,
+				},
+				{
+					id: `override-route-database-stale-generation-applied-${runId}`,
+					instanceId: ids.primary,
+					qualityProfileId: 4,
+					customFormatId: 13,
+					score: 1_300,
+					status: "APPLIED",
+					userId: ids.user,
+					connectionGeneration: sharedConnection.connectionGeneration - 1,
+					connectionStateToken,
+				},
+				{
+					id: `override-route-database-stale-token-applied-${runId}`,
+					instanceId: ids.primary,
+					qualityProfileId: 4,
+					customFormatId: 14,
+					score: 1_400,
+					status: "APPLIED",
+					userId: ids.user,
+					connectionGeneration: sharedConnection.connectionGeneration,
+					connectionStateToken: `stale-connection-state-token-${runId}`,
 				},
 				{
 					id: `override-route-database-other-credential-applied-${runId}`,
@@ -227,33 +273,57 @@ runDatabaseTests("instance quality-profile override route Prisma contract", () =
 
 		expect(response.statusCode, response.body).toBe(200);
 		const body = response.json();
-		expect(body.overrides).toHaveLength(1);
-		expect(body.overrides[0]).toMatchObject({
-			customFormatId: 7,
-			score: 100,
-			status: "APPLIED",
-			userId: ids.user,
-		});
+		expect(body.overrides).toHaveLength(2);
+		expect(body.overrides).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					customFormatId: 7,
+					score: 100,
+					status: "APPLIED",
+					userId: ids.user,
+				}),
+				expect.objectContaining({
+					customFormatId: 16,
+					score: 1_600,
+					status: "APPLIED",
+					userId: ids.user,
+				}),
+			]),
+		);
 		expect(body.recoveryPlans).toMatchObject([
 			{
 				qualityProfileId: 4,
 				retryable: true,
 				requiresManualReconciliation: false,
-				entries: [
+				entries: expect.arrayContaining([
 					{
 						customFormatId: 8,
 						operation: "SET_SCORE",
 						intendedScore: 25,
 						status: "UNCERTAIN",
 					},
-				],
+					{
+						customFormatId: 15,
+						operation: "SET_SCORE",
+						intendedScore: 75,
+						status: "PENDING",
+					},
+				]),
 				retryAction: {
 					method: "PATCH",
 					recoveryToken: expect.stringMatching(/^[a-f0-9]{64}$/),
-					scoreUpdates: [{ customFormatId: 8, score: 25 }],
+					scoreUpdates: expect.arrayContaining([
+						{ customFormatId: 8, score: 25 },
+						{ customFormatId: 15, score: 75 },
+					]),
 				},
 			},
 		]);
+		for (const staleCustomFormatId of [13, 14]) {
+			expect(body.overrides).not.toEqual(
+				expect.arrayContaining([expect.objectContaining({ customFormatId: staleCustomFormatId })]),
+			);
+		}
 		expect(response.body).not.toContain(ids.otherEndpoint);
 		expect(response.body).not.toContain(ids.otherCredential);
 		expect(response.body).not.toContain(ids.foreignInstance);
