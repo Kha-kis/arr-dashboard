@@ -46,6 +46,58 @@ const createSpecWithObjectFields = (
 	fields: fields as unknown as SdkSpecification["fields"],
 });
 
+const intendedLanguageSpecification = {
+	name: "Language: Not English",
+	implementation: "LanguageSpecification",
+	negate: true,
+	required: false,
+	fields: [{ name: "value", value: 1 }],
+};
+
+const sonarrLanguageReadbackSpecification = {
+	...intendedLanguageSpecification,
+	fields: [
+		{ name: "value", value: 1 },
+		{ name: "exceptLanguage", value: false },
+	],
+};
+
+function runCustomFormatUpdateVerification(
+	readbackSpecifications: unknown[],
+	intendedSpecifications: unknown[] = [intendedLanguageSpecification],
+): Promise<unknown> {
+	const before = { id: 1, name: "Test CF", specifications: [] } as SdkCustomFormat;
+	const client = {
+		customFormat: {
+			getById: vi
+				.fn()
+				.mockResolvedValueOnce(before)
+				.mockResolvedValueOnce({ ...before, specifications: readbackSpecifications }),
+			update: vi.fn().mockResolvedValue(undefined),
+		},
+	};
+	const executor = new DeploymentExecutorService({} as never, {} as never);
+	const run = (
+		executor as unknown as {
+			deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+		}
+	).deployCustomFormats.bind(executor);
+	return run(
+		client,
+		[
+			{
+				trashId: "cf-1",
+				name: "Test CF",
+				originalConfig: { specifications: intendedSpecifications },
+			},
+		],
+		new Map([["cf-1", before]]),
+		new Map([["Test CF", before]]),
+		undefined,
+		vi.fn().mockResolvedValue(undefined),
+	);
+}
+
 describe("extractTrashId", () => {
 	it("should extract trash_id from array format fields", () => {
 		const cf: SdkCustomFormat = {
@@ -651,6 +703,220 @@ describe("DeploymentExecutorService - backup parity", () => {
 			},
 		});
 		expect(persist.mock.invocationCallOrder[0]).toBeLessThan(update.mock.invocationCallOrder[0]!);
+	});
+
+	it("accepts Sonarr's default false exceptLanguage field after a Custom Format PUT", async () => {
+		const before = { id: 1, name: "Test CF", specifications: [] } as SdkCustomFormat;
+		const intendedSpecifications = [
+			{
+				name: "Language: Not English",
+				implementation: "LanguageSpecification",
+				negate: true,
+				required: false,
+				fields: [{ name: "value", value: 1 }],
+			},
+		];
+		const sonarrReadback = {
+			...before,
+			specifications: [
+				{
+					...intendedSpecifications[0],
+					fields: [
+						{ name: "value", value: 1 },
+						{ name: "exceptLanguage", value: false },
+					],
+				},
+			],
+		};
+		const persist = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			customFormat: {
+				getById: vi.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(sonarrReadback),
+				update: vi.fn().mockResolvedValue(undefined),
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployCustomFormats.bind(executor);
+
+		await expect(
+			run(
+				client,
+				[
+					{
+						trashId: "cf-1",
+						name: "Test CF",
+						originalConfig: { specifications: intendedSpecifications },
+					},
+				],
+				new Map([["cf-1", before]]),
+				new Map([["Test CF", before]]),
+				undefined,
+				persist,
+			),
+		).resolves.toMatchObject({ updated: 1 });
+		expect(persist).toHaveBeenLastCalledWith(
+			expect.objectContaining({ status: "applied", postStateToken: expect.any(String) }),
+			false,
+		);
+	});
+
+	it("accepts Sonarr's default false exceptLanguage field after a Custom Format POST", async () => {
+		const readback = {
+			id: 1,
+			name: "Test CF",
+			includeCustomFormatWhenRenaming: false,
+			specifications: [sonarrLanguageReadbackSpecification],
+		};
+		const persist = vi.fn().mockResolvedValue(undefined);
+		const client = {
+			customFormat: {
+				getAll: vi.fn().mockResolvedValue([]),
+				create: vi.fn().mockResolvedValue({ id: 1 }),
+				getById: vi.fn().mockResolvedValue(readback),
+			},
+		};
+		const executor = new DeploymentExecutorService({} as never, {} as never);
+		const run = (
+			executor as unknown as {
+				deployCustomFormats: (...args: unknown[]) => Promise<unknown>;
+			}
+		).deployCustomFormats.bind(executor);
+
+		await expect(
+			run(
+				client,
+				[
+					{
+						trashId: "cf-1",
+						name: "Test CF",
+						originalConfig: { specifications: [intendedLanguageSpecification] },
+					},
+				],
+				new Map(),
+				new Map(),
+				undefined,
+				persist,
+			),
+		).resolves.toMatchObject({ created: 1 });
+		expect(persist).toHaveBeenLastCalledWith(
+			expect.objectContaining({ status: "applied", postStateToken: expect.any(String) }),
+			false,
+		);
+	});
+
+	it.each([
+		["specification name", [{ ...sonarrLanguageReadbackSpecification, name: "Language: English" }]],
+		[
+			"implementation",
+			[{ ...sonarrLanguageReadbackSpecification, implementation: "ReleaseTitleSpecification" }],
+		],
+		["negate", [{ ...sonarrLanguageReadbackSpecification, negate: false }]],
+		["required", [{ ...sonarrLanguageReadbackSpecification, required: true }]],
+		[
+			"selected language",
+			[
+				{
+					...sonarrLanguageReadbackSpecification,
+					fields: [
+						{ name: "value", value: 2 },
+						{ name: "exceptLanguage", value: false },
+					],
+				},
+			],
+		],
+		[
+			"semantic exceptLanguage value",
+			[
+				{
+					...sonarrLanguageReadbackSpecification,
+					fields: [
+						{ name: "value", value: 1 },
+						{ name: "exceptLanguage", value: true },
+					],
+				},
+			],
+		],
+		[
+			"missing intended field",
+			[
+				{
+					...sonarrLanguageReadbackSpecification,
+					fields: [{ name: "exceptLanguage", value: false }],
+				},
+			],
+		],
+		[
+			"unexpected semantic field",
+			[
+				{
+					...sonarrLanguageReadbackSpecification,
+					fields: [
+						{ name: "value", value: 1 },
+						{ name: "unexpected", value: false },
+						{ name: "exceptLanguage", value: false },
+					],
+				},
+			],
+		],
+		[
+			"specification count",
+			[
+				sonarrLanguageReadbackSpecification,
+				{
+					name: "Unexpected",
+					implementation: "ReleaseTitleSpecification",
+					negate: false,
+					required: false,
+					fields: [{ name: "value", value: "unexpected" }],
+				},
+			],
+		],
+	])("rejects Custom Format drift in %s after Sonarr normalization", async (_label, readback) => {
+		await expect(runCustomFormatUpdateVerification(readback)).rejects.toMatchObject({
+			deploymentResultUncertain: true,
+		});
+	});
+
+	it("rejects a changed regex after Sonarr normalization", async () => {
+		const intendedRegexSpecification = {
+			name: "Release title",
+			implementation: "ReleaseTitleSpecification",
+			negate: false,
+			required: false,
+			fields: [{ name: "value", value: "original-regex" }],
+		};
+		const changedRegexSpecification = {
+			...intendedRegexSpecification,
+			fields: [{ name: "value", value: "changed-regex" }],
+		};
+
+		await expect(
+			runCustomFormatUpdateVerification(
+				[sonarrLanguageReadbackSpecification, changedRegexSpecification],
+				[intendedLanguageSpecification, intendedRegexSpecification],
+			),
+		).rejects.toMatchObject({ deploymentResultUncertain: true });
+	});
+
+	it("rejects swapped specification association after Sonarr normalization", async () => {
+		const intendedRegexSpecification = {
+			name: "Release title",
+			implementation: "ReleaseTitleSpecification",
+			negate: false,
+			required: false,
+			fields: [{ name: "value", value: "original-regex" }],
+		};
+
+		await expect(
+			runCustomFormatUpdateVerification(
+				[intendedRegexSpecification, sonarrLanguageReadbackSpecification],
+				[intendedLanguageSpecification, intendedRegexSpecification],
+			),
+		).rejects.toMatchObject({ deploymentResultUncertain: true });
 	});
 
 	it("keeps a Custom Format pending when ARR returns a different writable state", async () => {
