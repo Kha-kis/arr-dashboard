@@ -107,6 +107,7 @@ describe("deployment history undeploy", () => {
 	const rawRequest = vi.fn();
 	const systemGet = vi.fn();
 	const transaction = vi.fn();
+	const cleanupUpdateMany = vi.fn();
 	let transactionClient: Record<string, unknown>;
 
 	beforeEach(async () => {
@@ -115,14 +116,14 @@ describe("deployment history undeploy", () => {
 		setupAuthInjection(app, { id: userId, username: "admin" });
 		registerTestErrorHandler(app);
 		transactionClient = {
-			templateDeploymentHistory: { update: historyUpdate },
+			templateDeploymentHistory: { update: historyUpdate, updateMany: historyUpdateMany },
 			trashSyncHistory: { updateMany: syncUpdateMany },
 		};
 		transaction.mockImplementation(async (callback) => callback(transactionClient));
 		const prisma = {
 			libraryCleanupConfig: {
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
 			},
 			templateDeploymentHistory: {
 				findFirst: historyFindFirst,
@@ -201,6 +202,8 @@ describe("deployment history undeploy", () => {
 			userId,
 			status: "SUCCESS",
 			rolledBack: false,
+			undeployStatus: null,
+			undeployAttemptedAt: null,
 			undeployProgress: null,
 			backupId: "backup-1",
 			deployedAt: new Date("2026-01-01"),
@@ -222,7 +225,7 @@ describe("deployment history undeploy", () => {
 		expect(response.json()).toMatchObject({
 			message: "This deployment has already been undeployed",
 		});
-		expect(historyUpdate).not.toHaveBeenCalled();
+		expect(historyUpdateMany).not.toHaveBeenCalled();
 		expect(deleteFormat).not.toHaveBeenCalled();
 	});
 
@@ -249,8 +252,11 @@ describe("deployment history undeploy", () => {
 			where: {
 				id: "history-1",
 				userId,
+				status: "SUCCESS",
 				rolledBack: false,
-				OR: [{ undeployStatus: null }, { undeployStatus: "PARTIAL" }],
+				undeployStatus: "PARTIAL",
+				undeployAttemptedAt: null,
+				undeployProgress: history.undeployProgress,
 			},
 			data: {
 				undeployStatus: "IN_PROGRESS",
@@ -259,6 +265,34 @@ describe("deployment history undeploy", () => {
 		});
 		expect(historyUpdateMany.mock.invocationCallOrder[0]).toBeLessThan(
 			systemGet.mock.invocationCallOrder[0]!,
+		);
+	});
+
+	it("acquires the topology lease before claiming an undeploy", async () => {
+		const history = currentHistory(backupData());
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode, response.body).toBe(200);
+		const acquireIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
+			args.data.runClaimToken ? [index] : [],
+		);
+		const releaseIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
+			args.data.runClaimToken === null ? [index] : [],
+		);
+		expect(acquireIndexes).toHaveLength(1);
+		expect(releaseIndexes).toHaveLength(1);
+		const finalWriteIndex = historyUpdateMany.mock.calls.findIndex(
+			([args]) => args.data.rolledBack === true,
+		);
+		expect(finalWriteIndex).toBeGreaterThanOrEqual(0);
+		expect(cleanupUpdateMany.mock.invocationCallOrder[acquireIndexes[0]!]).toBeLessThan(
+			historyUpdateMany.mock.invocationCallOrder[0]!,
+		);
+		expect(historyUpdateMany.mock.invocationCallOrder[finalWriteIndex]).toBeLessThan(
+			cleanupUpdateMany.mock.invocationCallOrder[releaseIndexes[0]!]!,
 		);
 	});
 
@@ -271,7 +305,63 @@ describe("deployment history undeploy", () => {
 
 		expect(response.statusCode).toBe(409);
 		expect(systemGet).not.toHaveBeenCalled();
-		expect(historyFindFirst).toHaveBeenCalledOnce();
+		expect(historyFindFirst).toHaveBeenCalledTimes(2);
+	});
+
+	it.each([
+		["already active", false, "IN_PROGRESS"],
+		["already completed", true, "COMPLETED"],
+	])(
+		"rejects a paired sync that is %s before claiming the group",
+		async (_case, rolledBack, status) => {
+			const history = currentHistory(backupData());
+			historyFindFirst.mockResolvedValue(history);
+			syncFindMany.mockImplementation(async (args) =>
+				args.select?.rollbackProgress
+					? [
+							{
+								id: "sync-paired",
+								rolledBack,
+								rollbackStatus: status,
+								rollbackAttemptedAt: new Date("2026-08-08T12:00:00.000Z"),
+								rollbackProgress: "[]",
+							},
+						]
+					: [],
+			);
+
+			const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+			expect(response.statusCode).toBe(409);
+			expect(transaction).not.toHaveBeenCalled();
+			expect(systemGet).not.toHaveBeenCalled();
+			expect(historyUpdateMany).not.toHaveBeenCalled();
+		},
+	);
+
+	it("rolls back the whole claim when a paired sync CAS misses", async () => {
+		const history = currentHistory(backupData());
+		historyFindFirst.mockResolvedValue(history);
+		syncFindMany.mockImplementation(async (args) =>
+			args.select?.rollbackProgress
+				? [
+						{
+							id: "sync-paired",
+							rolledBack: false,
+							rollbackStatus: null,
+							rollbackAttemptedAt: null,
+							rollbackProgress: null,
+						},
+					]
+				: [],
+		);
+		syncUpdateMany.mockResolvedValueOnce({ count: 0 });
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode).toBe(409);
+		expect(transaction).toHaveBeenCalledOnce();
+		expect(systemGet).not.toHaveBeenCalled();
 	});
 
 	it("releases the undeploy claim back to null when ARR is unreachable", async () => {
@@ -291,6 +381,7 @@ describe("deployment history undeploy", () => {
 			where: {
 				id: "history-1",
 				userId,
+				status: "SUCCESS",
 				rolledBack: false,
 				undeployStatus: "IN_PROGRESS",
 				undeployAttemptedAt: expect.any(Date),
@@ -333,6 +424,7 @@ describe("deployment history undeploy", () => {
 			where: {
 				id: "history-1",
 				userId,
+				status: "PARTIAL_UNDEPLOY",
 				rolledBack: false,
 				undeployStatus: "IN_PROGRESS",
 				undeployAttemptedAt: expect.any(Date),
@@ -345,6 +437,53 @@ describe("deployment history undeploy", () => {
 			},
 		});
 		expect(deleteFormat).not.toHaveBeenCalled();
+	});
+
+	it("restores paired rollback state when final persistence fails before an ARR mutation", async () => {
+		const priorRollbackAttemptedAt = new Date("2026-08-08T12:00:00.000Z");
+		const priorRollbackProgress = JSON.stringify([{ key: "prior", outcome: "restored" }]);
+		const history = currentHistory(backupData());
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+		syncFindMany.mockImplementation(async (args) =>
+			args.select?.rollbackProgress
+				? [
+						{
+							id: "sync-paired",
+							rollbackStatus: "PARTIAL",
+							rollbackAttemptedAt: priorRollbackAttemptedAt,
+							rollbackProgress: priorRollbackProgress,
+						},
+					]
+				: [],
+		);
+		transaction
+			.mockReset()
+			.mockImplementationOnce(async (callback) => callback(transactionClient))
+			.mockRejectedValueOnce(new Error("final deployment history write failed"))
+			.mockImplementationOnce(async (callback) => callback(transactionClient));
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode).toBe(500);
+		expect(deleteFormat).not.toHaveBeenCalled();
+		expect(updateFormat).not.toHaveBeenCalled();
+		expect(updateProfile).not.toHaveBeenCalled();
+		const claimTimestamp = historyUpdateMany.mock.calls[0]?.[0].data.undeployAttemptedAt;
+		expect(syncUpdateMany).toHaveBeenCalledWith({
+			where: {
+				id: "sync-paired",
+				userId,
+				rolledBack: false,
+				rollbackStatus: "IN_PROGRESS",
+				rollbackAttemptedAt: claimTimestamp,
+			},
+			data: {
+				rollbackStatus: "PARTIAL",
+				rollbackAttemptedAt: priorRollbackAttemptedAt,
+				rollbackProgress: priorRollbackProgress,
+			},
+		});
 	});
 
 	it("releases the undeploy claim when a legacy backup cannot be undeployed", async () => {
@@ -363,6 +502,7 @@ describe("deployment history undeploy", () => {
 			where: {
 				id: "history-1",
 				userId,
+				status: "SUCCESS",
 				rolledBack: false,
 				undeployStatus: "IN_PROGRESS",
 				undeployAttemptedAt: expect.any(Date),
@@ -505,9 +645,9 @@ describe("deployment history undeploy", () => {
 		expect(response.json().data.errors[0]).toContain("older target cannot restore it safely");
 		expect(deleteFormat).not.toHaveBeenCalled();
 		expect(updateFormat).not.toHaveBeenCalled();
-		expect(historyUpdate).toHaveBeenCalledWith(
+		expect(historyUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: "history-1" },
+				where: expect.objectContaining({ id: "history-1", userId, rolledBack: false }),
 				data: expect.objectContaining({
 					undeployStatus: "PARTIAL",
 					undeployProgress: expect.stringContaining('"outcome":"failed"'),
@@ -593,9 +733,9 @@ describe("deployment history undeploy", () => {
 		});
 		expect(response.json().data.errors[0]).toContain("upstream API has no conditional update");
 		expect(updateFormat).not.toHaveBeenCalled();
-		expect(historyUpdate).toHaveBeenCalledWith(
+		expect(historyUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: "history-1" },
+				where: expect.objectContaining({ id: "history-1", userId, rolledBack: false }),
 				data: expect.objectContaining({
 					undeployStatus: "PARTIAL",
 					undeployProgress: expect.stringContaining(
@@ -708,7 +848,7 @@ describe("deployment history undeploy", () => {
 		expect(response.json().success).toBe(false);
 		expect(response.json().data.errors[0]).toContain("upstream API has no conditional update");
 		expect(updateProfile).not.toHaveBeenCalled();
-		expect(historyUpdate).toHaveBeenCalledWith(
+		expect(historyUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
 					undeployStatus: "PARTIAL",
@@ -817,7 +957,7 @@ describe("deployment history undeploy", () => {
 			"/api/v3/config/naming",
 			expect.objectContaining({ method: "PUT" }),
 		);
-		expect(historyUpdate).toHaveBeenCalledWith(
+		expect(historyUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
 				data: expect.objectContaining({
 					undeployStatus: "PARTIAL",
@@ -879,7 +1019,7 @@ describe("deployment history undeploy", () => {
 			"/api/v3/config/naming",
 			expect.objectContaining({ method: "PUT" }),
 		);
-		for (const [args] of historyUpdate.mock.calls) {
+		for (const [args] of historyUpdateMany.mock.calls) {
 			expect(args.data).not.toHaveProperty("errors");
 		}
 	});
@@ -916,9 +1056,9 @@ describe("deployment history undeploy", () => {
 			"/api/v3/config/naming",
 			expect.objectContaining({ method: "PUT" }),
 		);
-		expect(historyUpdate).toHaveBeenCalledWith(
+		expect(historyUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: "history-1" },
+				where: expect.objectContaining({ id: "history-1", userId, rolledBack: false }),
 				data: expect.objectContaining({
 					undeployStatus: "PARTIAL",
 					undeployProgress: expect.stringContaining(
@@ -927,7 +1067,7 @@ describe("deployment history undeploy", () => {
 				}),
 			}),
 		);
-		for (const [args] of historyUpdate.mock.calls) {
+		for (const [args] of historyUpdateMany.mock.calls) {
 			expect(args.data).not.toHaveProperty("errors");
 		}
 	});
@@ -964,7 +1104,7 @@ describe("deployment history undeploy", () => {
 			"/api/v3/config/naming",
 			expect.objectContaining({ method: "PUT" }),
 		);
-		for (const [args] of historyUpdate.mock.calls) {
+		for (const [args] of historyUpdateMany.mock.calls) {
 			expect(args.data).not.toHaveProperty("errors");
 		}
 	});
@@ -1010,18 +1150,18 @@ describe("deployment history undeploy", () => {
 		expect(response.json().data.errors[0]).toContain("cannot be deleted safely");
 		expect(updateProfile).not.toHaveBeenCalled();
 		expect(deleteFormat).not.toHaveBeenCalled();
-		expect(historyUpdate).toHaveBeenCalledWith(
+		expect(historyUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: "history-1" },
+				where: expect.objectContaining({ id: "history-1", userId, rolledBack: false }),
 				data: expect.objectContaining({ undeployStatus: "IN_PROGRESS" }),
 			}),
 		);
-		for (const [args] of historyUpdate.mock.calls) {
+		for (const [args] of historyUpdateMany.mock.calls) {
 			expect(args.data).not.toHaveProperty("errors");
 		}
-		expect(historyUpdate).toHaveBeenCalledWith(
+		expect(historyUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: "history-1" },
+				where: expect.objectContaining({ id: "history-1", userId, rolledBack: false }),
 				data: expect.objectContaining({
 					undeployStatus: "PARTIAL",
 					undeployProgress: expect.stringContaining(
@@ -1030,9 +1170,9 @@ describe("deployment history undeploy", () => {
 				}),
 			}),
 		);
-		expect(historyUpdate).toHaveBeenCalledWith(
+		expect(historyUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: "history-1" },
+				where: expect.objectContaining({ id: "history-1", userId, rolledBack: false }),
 				data: expect.objectContaining({
 					undeployStatus: "PARTIAL",
 					undeployProgress: expect.stringContaining('"outcome":"failed"'),
@@ -1084,9 +1224,9 @@ describe("deployment history undeploy", () => {
 		expect(updateProfile).not.toHaveBeenCalled();
 		expect(getAllFormats).not.toHaveBeenCalled();
 		expect(deleteFormat).not.toHaveBeenCalled();
-		expect(historyUpdate).toHaveBeenCalledWith(
+		expect(historyUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: "history-1" },
+				where: expect.objectContaining({ id: "history-1", userId, rolledBack: false }),
 				data: expect.objectContaining({
 					undeployStatus: "PARTIAL",
 					undeployProgress: expect.stringContaining(
@@ -1232,6 +1372,19 @@ describe("deployment history undeploy", () => {
 		};
 		historyFindFirst.mockResolvedValue(history);
 		historyFindMany.mockResolvedValue([history, legacy]);
+		syncFindMany.mockImplementation(async (args) =>
+			args.select?.rollbackProgress
+				? [
+						{
+							id: "sync-paired",
+							rolledBack: false,
+							rollbackStatus: null,
+							rollbackAttemptedAt: null,
+							rollbackProgress: null,
+						},
+					]
+				: [],
+		);
 		getAllFormats.mockResolvedValue([]);
 
 		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
@@ -1239,9 +1392,9 @@ describe("deployment history undeploy", () => {
 		expect(response.statusCode, response.body).toBe(200);
 		expect(response.json().success).toBe(true);
 		expect(deleteFormat).not.toHaveBeenCalled();
-		expect(historyUpdate).toHaveBeenCalledWith(
+		expect(historyUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { id: "history-1" },
+				where: expect.objectContaining({ id: "history-1", userId, rolledBack: false }),
 				data: expect.objectContaining({
 					rolledBack: true,
 					undeployStatus: "COMPLETED",
@@ -1250,7 +1403,13 @@ describe("deployment history undeploy", () => {
 		);
 		expect(syncUpdateMany).toHaveBeenCalledWith(
 			expect.objectContaining({
-				where: { backupId: "backup-1", userId },
+				where: expect.objectContaining({
+					id: "sync-paired",
+					userId,
+					rolledBack: false,
+					rollbackStatus: "IN_PROGRESS",
+					rollbackAttemptedAt: expect.any(Date),
+				}),
 				data: expect.objectContaining({
 					rolledBack: true,
 					rollbackStatus: "COMPLETED",
@@ -1266,6 +1425,7 @@ describe("deployment history delete", () => {
 	const historyDeleteMany = vi.fn();
 	const syncFindMany = vi.fn();
 	const backupFindFirst = vi.fn();
+	const cleanupUpdateMany = vi.fn();
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
@@ -1273,6 +1433,10 @@ describe("deployment history delete", () => {
 		setupAuthInjection(app, { id: userId, username: "admin" });
 		registerTestErrorHandler(app);
 		const prisma = {
+			libraryCleanupConfig: {
+				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
+			},
 			templateDeploymentHistory: {
 				findFirst: historyFindFirst,
 				deleteMany: historyDeleteMany,
@@ -1463,6 +1627,28 @@ describe("deployment history delete", () => {
 
 		expect(response.statusCode).toBe(200);
 		expect(historyDeleteMany).toHaveBeenCalled();
+	});
+
+	it("holds the topology lease while checking paired recovery state and deleting", async () => {
+		let leaseHeld = false;
+		cleanupUpdateMany.mockImplementation(async ({ data }) => {
+			leaseHeld = data.runClaimToken !== null;
+			return { count: 1 };
+		});
+		historyFindFirst.mockResolvedValue(historyRow({ undeployStatus: "COMPLETED" }));
+		syncFindMany.mockImplementation(async () => {
+			expect(leaseHeld).toBe(true);
+			return [];
+		});
+		historyDeleteMany.mockImplementation(async () => {
+			expect(leaseHeld).toBe(true);
+			return { count: 1 };
+		});
+
+		const response = await createInjectAuthenticated(app)("DELETE", "/history/history-1");
+
+		expect(response.statusCode, response.body).toBe(200);
+		expect(leaseHeld).toBe(false);
 	});
 
 	it("allows deleting an ordinary terminal audit row that cannot block new work", async () => {
