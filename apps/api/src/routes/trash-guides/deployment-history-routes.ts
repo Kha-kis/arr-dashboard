@@ -8,7 +8,10 @@ import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginAsync } from "fastify";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { isNonterminalUndeploy } from "../../lib/backup/backup-validation.js";
-import { withCleanupTopologyMutationLease } from "../../lib/library-cleanup/cleanup-executor.js";
+import {
+	CleanupRunLeaseLostError,
+	withCleanupTopologyMutationLease,
+} from "../../lib/library-cleanup/cleanup-executor.js";
 import {
 	type ActiveDeploymentOwnership,
 	assertSharedDeploymentRestorationAllowed,
@@ -33,7 +36,10 @@ import {
 	getEquivalentServiceInstanceIds,
 	isDeploymentBackupEndpointIdentityCurrent,
 } from "../../lib/trash-guides/deployment-target.js";
-import { claimUndeployRecoveryGroup } from "../../lib/trash-guides/recovery-history-claim.js";
+import {
+	claimUndeployRecoveryGroup,
+	mutateClaimedRecoveryGroup,
+} from "../../lib/trash-guides/recovery-history-claim.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 interface UndeployStep {
@@ -525,7 +531,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		return withCleanupTopologyMutationLease(
 			{ prisma: app.prisma, log: request.log },
 			userId,
-			async () => {
+			async (topologyLease) => {
 				const leasedHistory = await app.prisma.templateDeploymentHistory.findFirst({
 					where: { id: historyId, userId },
 					include: {
@@ -562,6 +568,11 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 							where: { backupId: leasedHistory.backupId, userId },
 							select: {
 								id: true,
+								userId: true,
+								instanceId: true,
+								templateId: true,
+								backupId: true,
+								status: true,
 								rolledBack: true,
 								rollbackStatus: true,
 								rollbackAttemptedAt: true,
@@ -588,17 +599,23 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					});
 				}
 				const undeployAttemptedAt = new Date();
+				const deploymentRecoveryState = {
+					id: historyId,
+					userId: leasedHistory.userId,
+					instanceId: leasedHistory.instanceId,
+					templateId: leasedHistory.templateId,
+					backupId: leasedHistory.backupId,
+					status: priorStatus,
+					rolledBack: false,
+					undeployStatus: priorUndeployStatus,
+					undeployAttemptedAt: priorUndeployAttemptedAt,
+					undeployProgress: priorUndeployProgress,
+				};
+				await topologyLease.assertOwnership();
 				const claimed = await claimUndeployRecoveryGroup(
 					app.prisma,
 					userId,
-					{
-						id: historyId,
-						status: priorStatus,
-						rolledBack: false,
-						undeployStatus: priorUndeployStatus,
-						undeployAttemptedAt: priorUndeployAttemptedAt,
-						undeployProgress: priorUndeployProgress,
-					},
+					deploymentRecoveryState,
 					priorPairedSyncStates,
 					undeployAttemptedAt,
 				);
@@ -610,131 +627,48 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 							"Paired recovery history changed, is already active, or requires explicit resolution.",
 					});
 				}
-				let pairedProgressPersisted = true;
-
 				const persistPartialUndeploy = async () => {
-					if (!pairedProgressPersisted) {
-						const result = await app.prisma.templateDeploymentHistory.updateMany({
-							where: {
-								id: historyId,
-								userId,
-								status: priorStatus,
-								rolledBack: false,
-								undeployStatus: "IN_PROGRESS",
-								undeployAttemptedAt,
-							},
-							data: {
+					await mutateClaimedRecoveryGroup(
+						app.prisma,
+						userId,
+						[deploymentRecoveryState],
+						priorPairedSyncStates,
+						undeployAttemptedAt,
+						{
+							deploymentData: () => ({
 								status: "PARTIAL_UNDEPLOY",
 								undeployStatus: "PARTIAL",
-							},
-						});
-						if (result.count !== 1) {
-							throw new Error("Undeploy recovery state changed before progress could be persisted");
-						}
-						return;
-					}
-					await app.prisma.$transaction(async (tx) => {
-						const result = await tx.templateDeploymentHistory.updateMany({
-							where: {
-								id: historyId,
-								userId,
-								status: priorStatus,
-								rolledBack: false,
-								undeployStatus: "IN_PROGRESS",
-								undeployAttemptedAt,
-							},
-							data: { status: "PARTIAL_UNDEPLOY", undeployStatus: "PARTIAL" },
-						});
-						if (result.count !== 1) {
-							throw new Error("Undeploy recovery state changed before progress could be persisted");
-						}
-						for (const prior of priorPairedSyncStates) {
-							const paired = await tx.trashSyncHistory.updateMany({
-								where: {
-									id: prior.id,
-									userId,
-									rolledBack: false,
-									rollbackStatus: "IN_PROGRESS",
-									rollbackAttemptedAt: undeployAttemptedAt,
-								},
-								data: { rollbackStatus: "PARTIAL" },
-							});
-							if (paired.count !== 1) {
-								throw new Error("Paired rollback state changed before progress could be persisted");
-							}
-						}
-					});
+							}),
+							syncData: () => ({ rollbackStatus: "PARTIAL" }),
+							conflictMessage: "Recovery state changed before partial undeploy could be persisted",
+						},
+					);
 				};
 				// Release this request's claim back to the exact recovery state that existed
 				// before the claim. The compare-and-set guard ensures a stale request cannot
 				// release a newer claim that another process has since taken over.
 				const releaseUndeployClaim = async () => {
-					if (pairedProgressPersisted) {
-						await app.prisma.$transaction(async (tx) => {
-							const result = await tx.templateDeploymentHistory.updateMany({
-								where: {
-									id: historyId,
-									userId,
-									status: priorStatus,
-									rolledBack: false,
-									undeployStatus: "IN_PROGRESS",
-									undeployAttemptedAt,
-								},
-								data: {
-									status: priorStatus,
-									undeployStatus: priorUndeployStatus,
-									undeployAttemptedAt: priorUndeployAttemptedAt,
-									undeployProgress: priorUndeployProgress,
-								},
-							});
-							if (result.count !== 1) {
-								throw new Error(
-									"Undeploy recovery state changed before the claim could be released",
-								);
-							}
-							for (const prior of priorPairedSyncStates) {
-								const paired = await tx.trashSyncHistory.updateMany({
-									where: {
-										id: prior.id,
-										userId,
-										rolledBack: false,
-										rollbackStatus: "IN_PROGRESS",
-										rollbackAttemptedAt: undeployAttemptedAt,
-									},
-									data: {
-										rollbackStatus: prior.rollbackStatus,
-										rollbackAttemptedAt: prior.rollbackAttemptedAt,
-										rollbackProgress: prior.rollbackProgress,
-									},
-								});
-								if (paired.count !== 1) {
-									throw new Error(
-										"Paired rollback state changed before the claim could be released",
-									);
-								}
-							}
-						});
-						return;
-					}
-					const result = await app.prisma.templateDeploymentHistory.updateMany({
-						where: {
-							id: historyId,
-							userId,
-							status: priorStatus,
-							rolledBack: false,
-							undeployStatus: "IN_PROGRESS",
-							undeployAttemptedAt,
+					await mutateClaimedRecoveryGroup(
+						app.prisma,
+						userId,
+						[deploymentRecoveryState],
+						priorPairedSyncStates,
+						undeployAttemptedAt,
+						{
+							deploymentData: () => ({
+								status: priorStatus,
+								undeployStatus: priorUndeployStatus,
+								undeployAttemptedAt: priorUndeployAttemptedAt,
+								undeployProgress: priorUndeployProgress,
+							}),
+							syncData: (prior) => ({
+								rollbackStatus: prior.rollbackStatus,
+								rollbackAttemptedAt: prior.rollbackAttemptedAt,
+								rollbackProgress: prior.rollbackProgress,
+							}),
+							conflictMessage: "Recovery state changed before the undeploy claim could be released",
 						},
-						data: {
-							status: priorStatus,
-							undeployStatus: priorUndeployStatus,
-							undeployAttemptedAt: priorUndeployAttemptedAt,
-							undeployProgress: priorUndeployProgress,
-						},
-					});
-					if (result.count !== 1) {
-						throw new Error("Undeploy recovery state changed before the claim could be released");
-					}
+					);
 				};
 				const stopClaimedUndeploy = async (
 					statusCode: number,
@@ -918,49 +852,29 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 								stepByKey.set(step.key, step);
 							};
 							const persistProgress = async (undeployStatus: "IN_PROGRESS" | "PARTIAL") => {
+								await topologyLease.assertOwnership();
 								const progress = [...stepByKey.values()];
 								const progressJson = JSON.stringify(progress);
-								await app.prisma.$transaction(async (tx) => {
-									const deployment = await tx.templateDeploymentHistory.updateMany({
-										where: {
-											id: historyId,
-											userId,
-											rolledBack: false,
-											undeployStatus: "IN_PROGRESS",
-											undeployAttemptedAt: attemptedAt,
-										},
-										data: {
+								await mutateClaimedRecoveryGroup(
+									app.prisma,
+									userId,
+									[deploymentRecoveryState],
+									priorPairedSyncStates,
+									attemptedAt,
+									{
+										deploymentData: () => ({
 											undeployStatus,
 											undeployAttemptedAt: attemptedAt,
 											undeployProgress: progressJson,
-										},
-									});
-									if (deployment.count !== 1) {
-										throw new Error("Undeploy claim changed before progress could be persisted");
-									}
-									for (const prior of priorPairedSyncStates) {
-										const paired = await tx.trashSyncHistory.updateMany({
-											where: {
-												id: prior.id,
-												userId,
-												rolledBack: false,
-												rollbackStatus: "IN_PROGRESS",
-												rollbackAttemptedAt: attemptedAt,
-											},
-											data: {
-												rollbackStatus: undeployStatus,
-												rollbackAttemptedAt: attemptedAt,
-												rollbackProgress: progressJson,
-											},
-										});
-										if (paired.count !== 1) {
-											throw new Error(
-												"Paired rollback claim changed before progress could be persisted",
-											);
-										}
-									}
-								});
-								pairedProgressPersisted = true;
+										}),
+										syncData: () => ({
+											rollbackStatus: undeployStatus,
+											rollbackAttemptedAt: attemptedAt,
+											rollbackProgress: progressJson,
+										}),
+										conflictMessage: "Recovery claim changed before progress could be persisted",
+									},
+								);
 							};
 							const isFinished = (key: string): boolean => {
 								const outcome = stepByKey.get(key)?.outcome;
@@ -1023,6 +937,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 													createQualityProfileStateToken(profileState.beforeProfile),
 													resourceLabel,
 												);
+												await topologyLease.assertOwnership();
 												upstreamMutationAttempted = true;
 												await rollbackQualityProfileDeployment(client, {
 													...profileState,
@@ -1044,6 +959,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 												});
 											}
 										} catch (error) {
+											if (error instanceof CleanupRunLeaseLostError) throw error;
 											const message = `Failed to verify shared quality profile: ${getErrorMessage(error)}`;
 											setStep({
 												key,
@@ -1056,6 +972,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 										}
 									} else {
 										try {
+											await topologyLease.assertOwnership();
 											upstreamMutationAttempted = true;
 											await rollbackQualityProfileDeployment(client, {
 												...profileState,
@@ -1068,6 +985,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 												outcome: "restored",
 											});
 										} catch (error) {
+											if (error instanceof CleanupRunLeaseLostError) throw error;
 											const message = `Failed to restore quality profile: ${getErrorMessage(error)}`;
 											setStep({
 												key,
@@ -1124,6 +1042,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 												createUpstreamResourceStateToken(state.beforeFormat),
 												resourceLabel,
 											);
+											await topologyLease.assertOwnership();
 											upstreamMutationAttempted = true;
 											await rollbackCustomFormatDeployment(client, state);
 											const restoredFormat = await client.customFormat.getById(state.resourceId);
@@ -1140,6 +1059,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 											});
 										}
 									} catch (error) {
+										if (error instanceof CleanupRunLeaseLostError) throw error;
 										const message = `Failed to verify shared Custom Format "${state.name}": ${getErrorMessage(error)}`;
 										setStep({
 											key,
@@ -1153,6 +1073,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 									continue;
 								}
 								try {
+									await topologyLease.assertOwnership();
 									upstreamMutationAttempted = true;
 									const result = await rollbackCustomFormatDeployment(client, state);
 									setStep({
@@ -1162,6 +1083,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 										outcome: result === "noop" ? "already_reversed" : result,
 									});
 								} catch (error) {
+									if (error instanceof CleanupRunLeaseLostError) throw error;
 									const message = `Failed to undeploy "${state.name}": ${getErrorMessage(error)}`;
 									setStep({
 										key,
@@ -1220,6 +1142,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 													createUpstreamResourceStateToken(namingState.beforeConfig),
 													"naming configuration",
 												);
+												await topologyLease.assertOwnership();
 												upstreamMutationAttempted = true;
 												await restoreNamingDeployment(
 													app.arrClientFactory,
@@ -1251,6 +1174,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 												});
 											}
 										} catch (error) {
+											if (error instanceof CleanupRunLeaseLostError) throw error;
 											const message = `Failed to verify shared naming configuration: ${getErrorMessage(error)}`;
 											setStep({
 												key,
@@ -1272,6 +1196,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 										});
 									} else {
 										try {
+											await topologyLease.assertOwnership();
 											upstreamMutationAttempted = true;
 											await restoreNamingDeployment(
 												app.arrClientFactory,
@@ -1286,6 +1211,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 												outcome: "restored",
 											});
 										} catch (error) {
+											if (error instanceof CleanupRunLeaseLostError) throw error;
 											const message = `Failed to restore naming configuration: ${getErrorMessage(error)}`;
 											setStep({
 												key,
@@ -1316,51 +1242,32 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 
 							if (errors.length === 0) {
 								const now = new Date();
-								await app.prisma.$transaction(async (tx) => {
-									const deployment = await tx.templateDeploymentHistory.updateMany({
-										where: {
-											id: historyId,
-											userId,
-											rolledBack: false,
-											undeployStatus: "IN_PROGRESS",
-											undeployAttemptedAt: attemptedAt,
-										},
-										data: {
+								await topologyLease.assertOwnership();
+								await mutateClaimedRecoveryGroup(
+									app.prisma,
+									userId,
+									[deploymentRecoveryState],
+									priorPairedSyncStates,
+									attemptedAt,
+									{
+										deploymentData: () => ({
 											rolledBack: true,
 											rolledBackAt: now,
 											rolledBackBy: userId,
 											undeployStatus: "COMPLETED",
 											undeployAttemptedAt: attemptedAt,
 											undeployProgress: JSON.stringify(progress),
-										},
-									});
-									if (deployment.count !== 1) {
-										throw new Error("Undeploy claim changed before completion could be persisted");
-									}
-									for (const prior of priorPairedSyncStates) {
-										const paired = await tx.trashSyncHistory.updateMany({
-											where: {
-												id: prior.id,
-												userId,
-												rolledBack: false,
-												rollbackStatus: "IN_PROGRESS",
-												rollbackAttemptedAt: attemptedAt,
-											},
-											data: {
-												rolledBack: true,
-												rolledBackAt: now,
-												rollbackStatus: "COMPLETED",
-												rollbackAttemptedAt: attemptedAt,
-												rollbackProgress: JSON.stringify(progress),
-											},
-										});
-										if (paired.count !== 1) {
-											throw new Error(
-												"Paired rollback claim changed before completion could be persisted",
-											);
-										}
-									}
-								});
+										}),
+										syncData: () => ({
+											rolledBack: true,
+											rolledBackAt: now,
+											rollbackStatus: "COMPLETED",
+											rollbackAttemptedAt: attemptedAt,
+											rollbackProgress: JSON.stringify(progress),
+										}),
+										conflictMessage: "Recovery claim changed before completion could be persisted",
+									},
+								);
 							} else {
 								await persistProgress("PARTIAL");
 							}

@@ -78,6 +78,7 @@ export async function startCleanupRunLease(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
 	configId: string,
+	options: { leaseRowMayBeDeleted?: boolean } = {},
 ): Promise<CleanupRunLease> {
 	const { prisma, log } = deps;
 	const runClaimToken = await acquireCleanupRunLease(prisma, userId, configId);
@@ -115,7 +116,7 @@ export async function startCleanupRunLease(
 			clearInterval(heartbeat);
 			await releaseCleanupRunLease(prisma, userId, configId, runClaimToken)
 				.then((released) => {
-					if (!released) {
+					if (!released && !options.leaseRowMayBeDeleted) {
 						log.warn(
 							{ configId },
 							"Library cleanup finished after its database run lease ownership changed",

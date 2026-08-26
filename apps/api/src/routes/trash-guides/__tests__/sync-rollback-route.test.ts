@@ -42,6 +42,38 @@ function qualityProfile(formatItems: Array<{ format: number; score: number }>) {
 	};
 }
 
+function pairedSyncState(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "sync-paired",
+		userId,
+		instanceId: instance.id,
+		templateId: "template-1",
+		backupId: "backup-1",
+		status: "SUCCESS",
+		rolledBack: false,
+		rollbackStatus: null,
+		rollbackAttemptedAt: null,
+		rollbackProgress: null,
+		...overrides,
+	};
+}
+
+function pairedDeploymentState(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "deployment-paired",
+		userId,
+		instanceId: instance.id,
+		templateId: "template-1",
+		backupId: "backup-1",
+		status: "SUCCESS",
+		rolledBack: false,
+		undeployStatus: null,
+		undeployAttemptedAt: null,
+		undeployProgress: null,
+		...overrides,
+	};
+}
+
 describe("sync rollback route", () => {
 	let app: FastifyInstance;
 	const callOrder: string[] = [];
@@ -61,6 +93,15 @@ describe("sync rollback route", () => {
 	const cleanupUpdateMany = vi.fn();
 	const transaction = vi.fn();
 	let syncRecord: Record<string, unknown>;
+	const mockDeploymentOwnershipRows = (rows: Record<string, unknown>[]) => {
+		deploymentFindMany.mockImplementation(async (args) =>
+			args.select?.id && !args.select?.undeployStatus
+				? [{ id: "deployment-paired" }]
+				: args.select?.undeployProgress
+					? [pairedDeploymentState()]
+					: rows,
+		);
+	};
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
@@ -112,6 +153,7 @@ describe("sync rollback route", () => {
 			templateId: "template-1",
 			userId,
 			backupId: "backup-1",
+			status: "SUCCESS",
 			rolledBack: false,
 			appliedConfigs: "[]",
 			instance,
@@ -161,6 +203,8 @@ describe("sync rollback route", () => {
 				findMany: deploymentFindMany.mockResolvedValue([
 					{
 						id: "deployment-paired",
+						userId,
+						instanceId: instance.id,
 						templateId: sync.templateId,
 						backupId: sync.backupId,
 						status: "SUCCESS",
@@ -381,12 +425,11 @@ describe("sync rollback route", () => {
 		syncFindMany.mockImplementation(async (args) =>
 			args.select?.rollbackProgress
 				? [
-						{
-							id: "sync-paired",
+						pairedSyncState({
 							rollbackStatus: "PARTIAL",
 							rollbackAttemptedAt: priorSyncAttemptedAt,
 							rollbackProgress: priorSyncProgress,
-						},
+						}),
 					]
 				: [],
 		);
@@ -395,12 +438,11 @@ describe("sync rollback route", () => {
 				? [{ id: "deployment-paired" }]
 				: args.select?.undeployProgress
 					? [
-							{
-								id: "deployment-paired",
+							pairedDeploymentState({
 								undeployStatus: "PARTIAL",
 								undeployAttemptedAt: priorUndeployAttemptedAt,
 								undeployProgress: priorUndeployProgress,
-							},
+							}),
 						]
 					: [
 							{
@@ -447,6 +489,10 @@ describe("sync rollback route", () => {
 			where: {
 				id: "sync-paired",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
+				status: "SUCCESS",
 				rolledBack: false,
 				rollbackStatus: "IN_PROGRESS",
 				rollbackAttemptedAt: claimTimestamp,
@@ -461,12 +507,16 @@ describe("sync rollback route", () => {
 			where: {
 				id: "deployment-paired",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
+				status: "SUCCESS",
 				rolledBack: false,
 				undeployStatus: "IN_PROGRESS",
 				undeployAttemptedAt: claimTimestamp,
 			},
 			data: {
-				status: undefined,
+				status: "SUCCESS",
 				undeployStatus: "PARTIAL",
 				undeployAttemptedAt: priorUndeployAttemptedAt,
 				undeployProgress: priorUndeployProgress,
@@ -476,16 +526,7 @@ describe("sync rollback route", () => {
 
 	it("marks every paired recovery row partial after a mutation-attempt persistence failure", async () => {
 		syncFindMany.mockImplementation(async (args) =>
-			args.select?.rollbackProgress
-				? [
-						{
-							id: "sync-paired",
-							rollbackStatus: null,
-							rollbackAttemptedAt: null,
-							rollbackProgress: null,
-						},
-					]
-				: [],
+			args.select?.rollbackProgress ? [pairedSyncState()] : [],
 		);
 		const ownershipHistory = {
 			templateId: "template-1",
@@ -498,14 +539,7 @@ describe("sync rollback route", () => {
 			args.select?.id && !args.select?.undeployStatus
 				? [{ id: "deployment-paired" }]
 				: args.select?.undeployProgress
-					? [
-							{
-								id: "deployment-paired",
-								undeployStatus: null,
-								undeployAttemptedAt: null,
-								undeployProgress: null,
-							},
-						]
+					? [pairedDeploymentState()]
 					: [ownershipHistory],
 		);
 		transaction
@@ -538,6 +572,10 @@ describe("sync rollback route", () => {
 			where: {
 				id: "sync-paired",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
+				status: "SUCCESS",
 				rolledBack: false,
 				rollbackStatus: "IN_PROGRESS",
 				rollbackAttemptedAt: claimTimestamp,
@@ -548,6 +586,10 @@ describe("sync rollback route", () => {
 			where: {
 				id: "deployment-paired",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
+				status: "SUCCESS",
 				rolledBack: false,
 				undeployStatus: "IN_PROGRESS",
 				undeployAttemptedAt: claimTimestamp,
@@ -641,6 +683,10 @@ describe("sync rollback route", () => {
 			where: {
 				id: "sync-1",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
+				status: "SUCCESS",
 				rolledBack: false,
 				rollbackStatus: "IN_PROGRESS",
 				rollbackAttemptedAt: expect.any(Date),
@@ -682,6 +728,10 @@ describe("sync rollback route", () => {
 			where: {
 				id: "sync-1",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
+				status: "SUCCESS",
 				rolledBack: false,
 				rollbackStatus: "IN_PROGRESS",
 				rollbackAttemptedAt: expect.any(Date),
@@ -815,6 +865,11 @@ describe("sync rollback route", () => {
 				args.select?.rollbackProgress
 					? [...rows.values()].map((row) => ({
 							id: row.id,
+							userId: row.userId,
+							instanceId: row.instanceId,
+							templateId: row.templateId,
+							backupId: row.backupId,
+							status: row.status,
 							rolledBack: row.rolledBack,
 							rollbackStatus: row.rollbackStatus,
 							rollbackAttemptedAt: row.rollbackAttemptedAt ?? null,
@@ -1005,7 +1060,7 @@ describe("sync rollback route", () => {
 				intendedPostStateToken: createUpstreamResourceStateToken(survivorNaming),
 			},
 		};
-		deploymentFindMany.mockResolvedValue([
+		mockDeploymentOwnershipRows([
 			{
 				templateId: "template-1",
 				backupId: "backup-1",
@@ -1077,7 +1132,7 @@ describe("sync rollback route", () => {
 				intendedPostStateToken: createUpstreamResourceStateToken(survivorNaming),
 			},
 		};
-		deploymentFindMany.mockResolvedValue([
+		mockDeploymentOwnershipRows([
 			{
 				templateId: "template-1",
 				backupId: "backup-1",
@@ -1191,7 +1246,7 @@ describe("sync rollback route", () => {
 				intendedPostStateToken: null,
 			},
 		};
-		deploymentFindMany.mockResolvedValue([
+		mockDeploymentOwnershipRows([
 			{
 				templateId: "template-1",
 				backupId: "backup-1",

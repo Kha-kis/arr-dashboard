@@ -84,6 +84,22 @@ function backupData(overrides: Record<string, unknown> = {}) {
 	});
 }
 
+function pairedSyncState(overrides: Record<string, unknown> = {}) {
+	return {
+		id: "sync-paired",
+		userId,
+		instanceId: instance.id,
+		templateId: "template-1",
+		backupId: "backup-1",
+		status: "SUCCESS",
+		rolledBack: false,
+		rollbackStatus: null,
+		rollbackAttemptedAt: null,
+		rollbackProgress: null,
+		...overrides,
+	};
+}
+
 describe("deployment history undeploy", () => {
 	let app: FastifyInstance;
 	const historyFindFirst = vi.fn();
@@ -252,6 +268,9 @@ describe("deployment history undeploy", () => {
 			where: {
 				id: "history-1",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
 				status: "SUCCESS",
 				rolledBack: false,
 				undeployStatus: "PARTIAL",
@@ -296,6 +315,85 @@ describe("deployment history undeploy", () => {
 		);
 	});
 
+	it("restores the full claim when topology ownership is lost before an ARR mutation", async () => {
+		const targetFormat = { id: 7, name: "Created CF", specifications: [] };
+		const history = currentHistory(
+			backupData({
+				customFormatDeployments: [
+					{
+						beforeFormat: null,
+						action: "created",
+						resourceId: 7,
+						name: "Created CF",
+						status: "applied",
+						postStateToken: createUpstreamResourceStateToken(targetFormat),
+						intendedPostStateToken: null,
+					},
+				],
+			}),
+		);
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+		getFormatById.mockResolvedValue(targetFormat);
+		let renewals = 0;
+		cleanupUpdateMany.mockImplementation(async ({ data }) => {
+			if (!("runClaimToken" in data) && ++renewals === 3) return { count: 0 };
+			return { count: 1 };
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode).toBe(500);
+		expect(deleteFormat).not.toHaveBeenCalled();
+		expect(historyUpdateMany).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({ status: "SUCCESS", undeployStatus: null }),
+			}),
+		);
+	});
+
+	it("marks the full claim partial when ownership is lost after entering an ARR mutation boundary", async () => {
+		const targetFormat = { id: 7, name: "Created CF", specifications: [] };
+		const history = currentHistory(
+			backupData({
+				customFormatDeployments: [
+					{
+						beforeFormat: null,
+						action: "created",
+						resourceId: 7,
+						name: "Created CF",
+						status: "applied",
+						postStateToken: createUpstreamResourceStateToken(targetFormat),
+						intendedPostStateToken: null,
+					},
+				],
+			}),
+		);
+		historyFindFirst.mockResolvedValue(history);
+		historyFindMany.mockResolvedValue([history]);
+		getAllFormats.mockResolvedValue([targetFormat]);
+		getAllProfiles.mockResolvedValue([]);
+		getFormatById.mockResolvedValue(targetFormat);
+		let renewals = 0;
+		cleanupUpdateMany.mockImplementation(async ({ data }) => {
+			if (!("runClaimToken" in data) && ++renewals === 4) return { count: 0 };
+			return { count: 1 };
+		});
+
+		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
+
+		expect(response.statusCode).toBe(207);
+		expect(getFormatById).toHaveBeenCalled();
+		expect(historyUpdateMany).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				data: expect.objectContaining({
+					status: "PARTIAL_UNDEPLOY",
+					undeployStatus: "PARTIAL",
+				}),
+			}),
+		);
+	});
+
 	it("stops before ARR access when another undeploy owns the claim", async () => {
 		const history = currentHistory(backupData());
 		historyFindFirst.mockResolvedValue(history);
@@ -319,13 +417,12 @@ describe("deployment history undeploy", () => {
 			syncFindMany.mockImplementation(async (args) =>
 				args.select?.rollbackProgress
 					? [
-							{
-								id: "sync-paired",
+							pairedSyncState({
 								rolledBack,
 								rollbackStatus: status,
 								rollbackAttemptedAt: new Date("2026-08-08T12:00:00.000Z"),
 								rollbackProgress: "[]",
-							},
+							}),
 						]
 					: [],
 			);
@@ -343,17 +440,7 @@ describe("deployment history undeploy", () => {
 		const history = currentHistory(backupData());
 		historyFindFirst.mockResolvedValue(history);
 		syncFindMany.mockImplementation(async (args) =>
-			args.select?.rollbackProgress
-				? [
-						{
-							id: "sync-paired",
-							rolledBack: false,
-							rollbackStatus: null,
-							rollbackAttemptedAt: null,
-							rollbackProgress: null,
-						},
-					]
-				: [],
+			args.select?.rollbackProgress ? [pairedSyncState()] : [],
 		);
 		syncUpdateMany.mockResolvedValueOnce({ count: 0 });
 
@@ -381,6 +468,9 @@ describe("deployment history undeploy", () => {
 			where: {
 				id: "history-1",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
 				status: "SUCCESS",
 				rolledBack: false,
 				undeployStatus: "IN_PROGRESS",
@@ -424,6 +514,9 @@ describe("deployment history undeploy", () => {
 			where: {
 				id: "history-1",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
 				status: "PARTIAL_UNDEPLOY",
 				rolledBack: false,
 				undeployStatus: "IN_PROGRESS",
@@ -448,12 +541,11 @@ describe("deployment history undeploy", () => {
 		syncFindMany.mockImplementation(async (args) =>
 			args.select?.rollbackProgress
 				? [
-						{
-							id: "sync-paired",
+						pairedSyncState({
 							rollbackStatus: "PARTIAL",
 							rollbackAttemptedAt: priorRollbackAttemptedAt,
 							rollbackProgress: priorRollbackProgress,
-						},
+						}),
 					]
 				: [],
 		);
@@ -474,6 +566,10 @@ describe("deployment history undeploy", () => {
 			where: {
 				id: "sync-paired",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
+				status: "SUCCESS",
 				rolledBack: false,
 				rollbackStatus: "IN_PROGRESS",
 				rollbackAttemptedAt: claimTimestamp,
@@ -502,6 +598,9 @@ describe("deployment history undeploy", () => {
 			where: {
 				id: "history-1",
 				userId,
+				instanceId: instance.id,
+				templateId: "template-1",
+				backupId: "backup-1",
 				status: "SUCCESS",
 				rolledBack: false,
 				undeployStatus: "IN_PROGRESS",
@@ -1373,17 +1472,7 @@ describe("deployment history undeploy", () => {
 		historyFindFirst.mockResolvedValue(history);
 		historyFindMany.mockResolvedValue([history, legacy]);
 		syncFindMany.mockImplementation(async (args) =>
-			args.select?.rollbackProgress
-				? [
-						{
-							id: "sync-paired",
-							rolledBack: false,
-							rollbackStatus: null,
-							rollbackAttemptedAt: null,
-							rollbackProgress: null,
-						},
-					]
-				: [],
+			args.select?.rollbackProgress ? [pairedSyncState()] : [],
 		);
 		getAllFormats.mockResolvedValue([]);
 
