@@ -301,6 +301,8 @@ jobs:
           test -x docker/test-dump-heap.sh
           test -x docker/test-shutdown-grace.sh
           test -x docker/test-stop-timing.sh
+          test -x docker/test-web-cache-permissions.sh
+          docker/test-web-cache-permissions.sh arr-dashboard:smoke
           docker/test-combined-supervision.sh arr-dashboard:smoke
           docker/test-launcher-contract.sh arr-dashboard:smoke
           docker/test-combined-restart.sh arr-dashboard:smoke

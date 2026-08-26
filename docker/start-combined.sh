@@ -118,6 +118,23 @@ run_as_user() {
     fi
 }
 
+# Next writes optimized image artifacts at runtime. The image creates only
+# this disposable cache with a cross-UID writable mode; verify it as the actual
+# runtime user before either service can accept traffic.
+NEXT_IMAGE_CACHE=/app/web/apps/web/.next/cache
+NEXT_IMAGE_CACHE_PROBE="$NEXT_IMAGE_CACHE/.startup-check-$$"
+if [ ! -d "$NEXT_IMAGE_CACHE" ] || ! run_as_user sh -c '
+    probe=$1
+    printf first > "$probe" &&
+    printf second >> "$probe" &&
+    rm -f "$probe"
+' sh "$NEXT_IMAGE_CACHE_PROBE"; then
+    run_as_user rm -f "$NEXT_IMAGE_CACHE_PROBE" 2>/dev/null || true
+    echo "ERROR: Next image cache is not writable: $NEXT_IMAGE_CACHE (UID:$PUID GID:$PGID)" >&2
+    exit 1
+fi
+echo "Next image cache ready: $NEXT_IMAGE_CACHE (UID:$PUID GID:$PGID)"
+
 # ============================================
 # Process supervision helpers
 # ============================================
