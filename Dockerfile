@@ -115,9 +115,17 @@ COPY --from=builder --chown=abc:abc /app/deploy-api ./api
 RUN printf '{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"Bundler","esModuleInterop":true,"skipLibCheck":true}}\n' > /app/api/tsconfig.json
 
 # Copy Web (single layer: standalone + static + public + custom server)
-COPY --from=builder --chown=abc:abc /app/apps/web/.next/standalone ./web
-COPY --from=builder --chown=abc:abc /app/apps/web/.next/static ./web/apps/web/.next/static
-COPY --from=builder --chown=abc:abc /app/apps/web/public ./web/apps/web/public
+COPY --from=builder --chown=root:root /app/apps/web/.next/standalone ./web
+COPY --from=builder --chown=root:root /app/apps/web/.next/static ./web/apps/web/.next/static
+COPY --from=builder --chown=root:root /app/apps/web/public ./web/apps/web/public
+
+# The standalone web application is immutable at runtime. Next's optimized
+# image cache is the sole writable exception: it is disposable, contains no
+# secrets, and must support image-default, remapped PUID/PGID, and arbitrary
+# rootless users without a recursive startup chown.
+RUN chown root:root /app/web \
+    && mkdir -p /app/web/apps/web/.next/cache \
+    && chmod 1777 /app/web/apps/web/.next/cache
 
 # Copy startup scripts and fix line endings (single layer)
 COPY --chown=abc:abc docker/start-combined.sh ./
