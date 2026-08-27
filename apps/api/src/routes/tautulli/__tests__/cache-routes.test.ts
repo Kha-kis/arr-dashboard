@@ -4,6 +4,7 @@ import { createInjectAuthenticated, setupAuthInjection } from "../../__tests__/t
 
 const routeMocks = vi.hoisted(() => ({
 	requireClient: vi.fn(),
+	requireInstance: vi.fn(),
 	createSnapshot: vi.fn(),
 	refresh: vi.fn(),
 	recordFailure: vi.fn(),
@@ -14,10 +15,16 @@ const routeMocks = vi.hoisted(() => ({
 
 vi.mock("../../../lib/tautulli/tautulli-helpers.js", () => ({
 	requireTautulliClient: routeMocks.requireClient,
+	requireTautulliInstance: routeMocks.requireInstance,
 }));
 vi.mock("../../../lib/tautulli/tautulli-cache-refresher.js", () => ({
 	createOwnedTautulliPublicationSnapshot: routeMocks.createSnapshot,
 	refreshTautulliCache: routeMocks.refresh,
+	summarizeTautulliRefreshResultForLog: (result: {
+		kind?: string;
+		upserted: number;
+		errors: number;
+	}) => ({ terminalKind: result.kind, upserted: result.upserted, errors: result.errors }),
 }));
 vi.mock("../../../lib/services/provider-cache-status.js", () => ({
 	recordWatchProviderCacheRefreshFailure: routeMocks.recordFailure,
@@ -37,13 +44,17 @@ describe("Tautulli cache routes", () => {
 	beforeEach(async () => {
 		vi.clearAllMocks();
 		routeMocks.requireClient.mockResolvedValue({ client: helperClient, instance: storedInstance });
+		routeMocks.requireInstance.mockResolvedValue(storedInstance);
 		routeMocks.createSnapshot.mockReturnValue(publicationInstance);
 		routeMocks.refresh.mockResolvedValue({
+			kind: "published-authoritative",
 			complete: true,
 			completedAt: new Date(),
+			publicationLevel: "authoritative",
 			upserted: 5,
 			errors: 0,
 			errorMessages: [],
+			reasonCodes: [],
 		});
 		app = Fastify({ logger: false });
 		setupAuthInjection(app);
@@ -79,6 +90,71 @@ describe("Tautulli cache routes", () => {
 		);
 		expect(routeMocks.refresh.mock.calls.flat()).not.toContain(helperClient);
 		expect(routeMocks.recordFailure).not.toHaveBeenCalled();
+	});
+
+	it("reports a positive-only manual publication as a successful partial terminal result", async () => {
+		routeMocks.refresh.mockResolvedValue({
+			kind: "published-positive",
+			complete: false,
+			completedAt: new Date(),
+			publicationLevel: "positive-only",
+			upserted: 1,
+			errors: 1,
+			errorMessages: ["observation_count_unavailable"],
+			reasonCodes: ["observation_count_unavailable"],
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/api/tautulli/cache/tautulli-1/refresh",
+		);
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toEqual({
+			success: true,
+			partial: true,
+			terminalResult: "published-positive",
+			upserted: 1,
+			errors: 1,
+		});
+		expect(routeMocks.recordFailure).not.toHaveBeenCalled();
+	});
+
+	it("redacts unexpected manual-refresh exception details", async () => {
+		routeMocks.refresh.mockRejectedValue(
+			new Error("CANARY_RAW_ERROR https://private.invalid token=CANARY_TOKEN"),
+		);
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/api/tautulli/cache/tautulli-1/refresh",
+		);
+
+		expect(response.statusCode).toBe(500);
+		expect(response.body).not.toMatch(/CANARY_RAW_ERROR|private\.invalid|CANARY_TOKEN/);
+		expect(routeMocks.recordFailure).not.toHaveBeenCalled();
+	});
+
+	it("records only a bounded reason when owned-snapshot creation fails before attempt ownership", async () => {
+		routeMocks.createSnapshot.mockImplementation(() => {
+			throw new Error("CANARY_DECRYPT_SECRET");
+		});
+
+		const response = await createInjectAuthenticated(app)(
+			"POST",
+			"/api/tautulli/cache/tautulli-1/refresh",
+		);
+
+		expect(response.statusCode).toBe(500);
+		expect(response.body).not.toContain("CANARY_DECRYPT_SECRET");
+		expect(routeMocks.refresh).not.toHaveBeenCalled();
+		expect(routeMocks.recordFailure).toHaveBeenCalledWith(
+			app.prisma,
+			"tautulli",
+			"credentials_unavailable",
+			expect.objectContaining({ id: "tautulli-1", service: "TAUTULLI" }),
+			expect.anything(),
+		);
 	});
 
 	it("does not report a metadata-only generation as current when persisted roots fail", async () => {

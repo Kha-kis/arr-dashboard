@@ -20,6 +20,7 @@ export interface TautulliLibrary {
 /** Tautulli history item (from get_history) */
 export interface TautulliHistoryItem {
 	row_id?: number;
+	section_id?: string;
 	rating_key: string;
 	parent_rating_key: string;
 	grandparent_rating_key: string;

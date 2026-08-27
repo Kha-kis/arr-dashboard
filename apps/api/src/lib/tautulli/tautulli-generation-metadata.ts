@@ -10,6 +10,7 @@ export const TAUTULLI_REASON_CODES = [
 	"metadata_unavailable",
 	"metadata_identity_mismatch",
 	"metadata_tmdb_unmapped",
+	"observation_count_unavailable",
 	"history_changed",
 	"history_partial",
 	"publication_superseded",

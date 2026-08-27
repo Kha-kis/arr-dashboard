@@ -86,18 +86,74 @@ describe("refreshScheduledTautulliCacheInstance", () => {
 		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
 	});
 
-	it("records incomplete attempts with the exact publication snapshot", async () => {
-		mocks.refresh.mockResolvedValue({
-			complete: false,
-			upserted: 0,
-			errors: 1,
-			errorMessages: ["history failed"],
+	it("preserves a centrally sealed unpublished attempt without wrapper finalization", async () => {
+		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
+		mocks.refresh.mockImplementation(async () => {
+			Object.assign(state.status, {
+				lastAttemptResult: "error",
+				lastAttemptErrorMessage: "history_partial",
+			});
+			return {
+				kind: "unpublished",
+				complete: false,
+				upserted: 0,
+				errors: 1,
+				errorMessages: ["history_partial"],
+				reasonCodes: ["history_partial"],
+			};
 		});
 
-		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
 		await refreshScheduledTautulliCacheInstance(state.app as never, state.instance as never);
 
 		expect(state.status.lastAttemptResult).toBe("error");
-		expect(state.status.lastAttemptErrorMessage).toBe("history failed");
+		expect(state.status.lastAttemptErrorMessage).toBe("history_partial");
+		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+	});
+
+	it("preserves a centrally sealed positive publication as partial and logs only a safe summary", async () => {
+		const state = watchSchedulerDecryptFailureFixture("TAUTULLI");
+		const canaries = {
+			title: "CANARY_TITLE",
+			username: "CANARY_USERNAME",
+			sectionId: "CANARY_SECTION",
+			ratingKey: "CANARY_RATING_KEY",
+			tmdbId: 987654,
+			guid: "plex://movie/CANARY_GUID",
+			url: "https://CANARY_URL.invalid",
+			token: "CANARY_TOKEN",
+		};
+		mocks.refresh.mockImplementation(async () => {
+			Object.assign(state.status, {
+				lastResult: "partial",
+				lastAttemptResult: "partial",
+				lastAttemptErrorMessage: "observation_count_unavailable",
+			});
+			return {
+				kind: "published-positive",
+				complete: false,
+				publicationLevel: "positive-only",
+				completedAt: new Date(),
+				upserted: 1,
+				errors: 1,
+				errorMessages: ["observation_count_unavailable"],
+				reasonCodes: ["observation_count_unavailable"],
+				partialReasons: [{ code: "observation_count_unavailable", count: 1 }],
+				snapshot: { rows: [canaries], exactObservations: [canaries] },
+			};
+		});
+
+		await refreshScheduledTautulliCacheInstance(state.app as never, state.instance as never);
+
+		expect(state.status.lastAttemptResult).toBe("partial");
+		expect(state.status.lastAttemptErrorMessage).toBe("observation_count_unavailable");
+		expect(state.tx.cacheRefreshStatus.upsert).not.toHaveBeenCalled();
+		const serializedLogs = JSON.stringify([
+			...state.app.log.info.mock.calls,
+			...state.app.log.warn.mock.calls,
+			...state.app.log.error.mock.calls,
+		]);
+		for (const value of Object.values(canaries)) {
+			expect(serializedLogs).not.toContain(String(value));
+		}
 	});
 });

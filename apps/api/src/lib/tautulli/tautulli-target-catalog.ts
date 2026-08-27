@@ -13,6 +13,12 @@ export const TAUTULLI_CATALOG_PAGE_SIZE = 250;
 export const TAUTULLI_METADATA_CONCURRENCY = 6;
 export const TAUTULLI_MAX_EXACT_TARGETS = 20_000;
 
+export type TautulliSupportedSection = Readonly<{
+	sectionId: string;
+	sectionType: "movie" | "show";
+	declaredCount: number;
+}>;
+
 export type TautulliCatalogRow = {
 	section_id: string;
 	rating_key: string;
@@ -108,9 +114,9 @@ async function boundedMap<T, R>(
 
 async function collectSection(
 	client: Client,
-	section: TautulliLibrary,
+	section: TautulliSupportedSection,
 ): Promise<TautulliCatalogRow[]> {
-	await client.refreshLibraryMediaInfo(section.section_id);
+	await client.refreshLibraryMediaInfo(section.sectionId);
 	const rows: TautulliCatalogRow[] = [];
 	const seen = new Set<string>();
 	let expectedTotal: number | undefined;
@@ -119,7 +125,7 @@ async function collectSection(
 		let page: TautulliCatalogPage;
 		try {
 			page = await client.getLibraryMediaInfo({
-				sectionId: section.section_id,
+				sectionId: section.sectionId,
 				start,
 				length: TAUTULLI_CATALOG_PAGE_SIZE,
 			});
@@ -132,20 +138,24 @@ async function collectSection(
 			page.recordsFiltered !== page.recordsTotal
 		)
 			throw new TautulliEvidenceError("catalog_total_mismatch");
+		if (page.recordsFiltered !== section.declaredCount)
+			throw new TautulliEvidenceError("catalog_total_mismatch");
 		if (expectedTotal === undefined) expectedTotal = page.recordsFiltered;
 		if (page.recordsFiltered !== expectedTotal)
 			throw new TautulliEvidenceError("catalog_total_mismatch");
-		const currentTimestamp = String(page.last_refreshed ?? "").trim();
-		if (!currentTimestamp || (timestamp !== undefined && timestamp !== currentTimestamp))
-			throw new TautulliEvidenceError("catalog_changed");
-		timestamp = currentTimestamp;
+		if (expectedTotal > 0) {
+			const currentTimestamp = String(page.last_refreshed ?? "").trim();
+			if (!currentTimestamp || (timestamp !== undefined && timestamp !== currentTimestamp))
+				throw new TautulliEvidenceError("catalog_changed");
+			timestamp = currentTimestamp;
+		}
 		const expectedPageLength = Math.min(TAUTULLI_CATALOG_PAGE_SIZE, expectedTotal - start);
 		if (page.data.length !== expectedPageLength)
 			throw new TautulliEvidenceError("catalog_total_mismatch");
 		for (const row of page.data) {
 			if (
-				row.section_id !== section.section_id ||
-				row.media_type !== section.section_type ||
+				row.section_id !== section.sectionId ||
+				row.media_type !== section.sectionType ||
 				!row.rating_key.trim()
 			)
 				throw new TautulliEvidenceError("metadata_identity_mismatch");
@@ -160,7 +170,7 @@ async function collectSection(
 }
 
 type CatalogPartialReason = {
-	code: "metadata_unavailable" | "metadata_tmdb_unmapped";
+	code: "metadata_unavailable" | "metadata_tmdb_unmapped" | "observation_count_unavailable";
 	count: number;
 };
 type CatalogMetadataOutcome =
@@ -186,26 +196,69 @@ function catalogDigest(rows: readonly TautulliCatalogRow[]): string {
 		.digest("hex");
 }
 
+function parseDeclaredCount(value: unknown): number {
+	if (typeof value !== "string" || !/^(0|[1-9]\d*)$/.test(value)) {
+		throw new TautulliEvidenceError("catalog_total_mismatch");
+	}
+	const count = Number(value);
+	if (!safeTotal(count)) throw new TautulliEvidenceError("catalog_total_mismatch");
+	return count;
+}
+
+function createSupportedSectionManifest(libraries: readonly TautulliLibrary[]) {
+	const supported = libraries
+		.filter((library) => library.section_type === "movie" || library.section_type === "show")
+		.map((library) =>
+			Object.freeze({
+				sectionId: library.section_id,
+				sectionType: library.section_type as "movie" | "show",
+				declaredCount: parseDeclaredCount(library.count),
+			}),
+		)
+		.sort((left, right) => left.sectionId.localeCompare(right.sectionId));
+	if (supported.length === 0) throw new TautulliEvidenceError("catalog_unavailable");
+	const seen = new Set<string>();
+	let total = 0;
+	for (const section of supported) {
+		if (!section.sectionId.trim() || seen.has(section.sectionId)) {
+			throw new TautulliEvidenceError("catalog_changed");
+		}
+		seen.add(section.sectionId);
+		total += section.declaredCount;
+		if (!safeTotal(total)) throw new TautulliEvidenceError("catalog_total_mismatch");
+	}
+	return Object.freeze(supported) as readonly TautulliSupportedSection[];
+}
+
+async function readSupportedSectionManifest(
+	client: Client,
+): Promise<readonly TautulliSupportedSection[]> {
+	try {
+		return createSupportedSectionManifest(await client.getLibraries());
+	} catch (error) {
+		if (error instanceof TautulliEvidenceError) throw error;
+		throw new TautulliEvidenceError("catalog_unavailable");
+	}
+}
+
+function manifestsMatch(
+	left: readonly TautulliSupportedSection[],
+	right: readonly TautulliSupportedSection[],
+): boolean {
+	return JSON.stringify(left) === JSON.stringify(right);
+}
+
 async function collectPass(
 	client: Client,
 	scope: Scope,
+	sections: readonly TautulliSupportedSection[],
 ): Promise<{
 	observations: TautulliGenerationObservation[];
 	partialReasons: CatalogPartialReason[];
 	catalogDigest: string;
 }> {
-	let libraries: TautulliLibrary[];
-	try {
-		libraries = await client.getLibraries();
-	} catch {
-		throw new TautulliEvidenceError("catalog_unavailable");
-	}
-	const supported = libraries
-		.filter((library) => library.section_type === "movie" || library.section_type === "show")
-		.sort((a, b) => a.section_id.localeCompare(b.section_id));
-	if (supported.length === 0) throw new TautulliEvidenceError("catalog_unavailable");
 	const catalogRows: TautulliCatalogRow[] = [];
-	for (const section of supported) {
+	for (const section of sections) {
 		catalogRows.push(...(await collectSection(client, section)));
 		if (catalogRows.length > TAUTULLI_MAX_EXACT_TARGETS)
 			throw new TautulliEvidenceError("catalog_total_mismatch");
@@ -240,6 +293,9 @@ async function collectPass(
 				}
 				throw error;
 			}
+			if (!Number.isSafeInteger(row.play_count) || (row.play_count as number) < 0) {
+				return { reasonCode: "observation_count_unavailable" as const };
+			}
 			return {
 				observation: {
 					...scope,
@@ -248,7 +304,7 @@ async function collectPass(
 					providerGuidFingerprint: fingerprintProviderGuid(metadata.guid ?? ""),
 					mediaType: row.media_type === "show" ? ("series" as const) : ("movie" as const),
 					tmdbId,
-					observedWatchCount: row.play_count ?? 0,
+					observedWatchCount: row.play_count,
 					lastWatchedAt: row.last_played == null ? null : new Date(row.last_played * 1000),
 				},
 			};
@@ -283,9 +339,15 @@ export async function collectStableTautulliTargetCatalog(
 	observationRoot: TautulliGenerationRoot;
 	/** @deprecated compatibility alias for the observation root */
 	root: TautulliGenerationRoot;
+	sections: readonly TautulliSupportedSection[];
 }> {
-	const first = await collectPass(client, scope);
-	const second = await collectPass(client, scope);
+	const sections = await readSupportedSectionManifest(client);
+	const first = await collectPass(client, scope, sections);
+	const comparisonSections = await readSupportedSectionManifest(client);
+	if (!manifestsMatch(sections, comparisonSections)) {
+		throw new TautulliEvidenceError("catalog_changed");
+	}
+	const second = await collectPass(client, scope, sections);
 	if (
 		first.catalogDigest !== second.catalogDigest ||
 		JSON.stringify(first.partialReasons) !== JSON.stringify(second.partialReasons)
@@ -314,5 +376,6 @@ export async function collectStableTautulliTargetCatalog(
 		targetCatalogRoot: createTautulliTargetCatalogRoot({ ...scope, rows: secondRows }),
 		observationRoot: secondRoot,
 		root: secondRoot,
+		sections,
 	};
 }

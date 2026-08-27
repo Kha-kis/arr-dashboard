@@ -133,6 +133,48 @@ describe("tautulliLibraryMediaInfoSchema", () => {
 			}),
 		).toThrow();
 	});
+
+	it.each([
+		["null", null, null],
+		["missing", undefined, null],
+		["empty", "", null],
+		["explicit zero", 0, 0],
+		["positive integer", 3, 3],
+	])("preserves %s play-count semantics", (_label, playCount, expected) => {
+		const item: Record<string, unknown> = {
+			section_id: "1",
+			rating_key: "100",
+			media_type: "movie",
+			last_played: null,
+		};
+		if (playCount !== undefined) item.play_count = playCount;
+		const parsed = tautulliLibraryMediaInfoSchema.parse({
+			data: [item],
+			recordsFiltered: 1,
+			recordsTotal: 1,
+			last_refreshed: 1,
+		});
+		expect(parsed.data[0]?.play_count).toBe(expected);
+	});
+
+	it.each([-1, "not-a-count", 1.5])("rejects invalid play count %s", (playCount) => {
+		expect(() =>
+			tautulliLibraryMediaInfoSchema.parse({
+				data: [
+					{
+						section_id: "1",
+						rating_key: "100",
+						media_type: "movie",
+						play_count: playCount,
+						last_played: null,
+					},
+				],
+				recordsFiltered: 1,
+				recordsTotal: 1,
+				last_refreshed: 1,
+			}),
+		).toThrow();
+	});
 });
 
 describe("tautulliHistoryDataSchema", () => {

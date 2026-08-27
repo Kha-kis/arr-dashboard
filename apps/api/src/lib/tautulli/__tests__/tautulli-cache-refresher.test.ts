@@ -1,6 +1,10 @@
 import type { FastifyBaseLogger } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { collectTautulliCacheLiveEvidence } from "../tautulli-cache-refresher.js";
+import {
+	collectTautulliCacheLiveEvidence,
+	summarizeTautulliRefreshResultForLog,
+	type TautulliCacheRefreshResult,
+} from "../tautulli-cache-refresher.js";
 import type { TautulliClient } from "../tautulli-client.js";
 
 const logWarn = vi.fn();
@@ -28,6 +32,7 @@ const catalog = [
 ];
 const history = [
 	{
+		section_id: "1",
 		row_id: 1,
 		rating_key: "100",
 		parent_rating_key: "",
@@ -40,6 +45,7 @@ const history = [
 		play_count: 1,
 	},
 	{
+		section_id: "1",
 		row_id: 2,
 		rating_key: "history-only",
 		parent_rating_key: "",
@@ -83,7 +89,12 @@ describe("Tautulli exact-evidence refresh collection", () => {
 
 	it("publishes catalog targets and ignores history-only target existence", async () => {
 		const result = await collectTautulliCacheLiveEvidence(client(), "tautulli-1", log, scope);
-		expect(result).toMatchObject({ complete: true, errors: 0, generationId: "generation-1" });
+		expect(result).toMatchObject({
+			kind: "published-authoritative",
+			complete: true,
+			errors: 0,
+			generationId: "generation-1",
+		});
 		expect(result.snapshot?.exactObservations.map((row) => row.ratingKey)).toEqual(["100", "101"]);
 		expect(result.snapshot?.rows).toEqual([
 			expect.objectContaining({
@@ -181,6 +192,7 @@ describe("Tautulli exact-evidence refresh collection", () => {
 			scope,
 		);
 		expect(result).toMatchObject({
+			kind: "published-positive",
 			complete: false,
 			publicationLevel: "positive-only",
 			reasonCodes: ["metadata_tmdb_unmapped"],
@@ -189,6 +201,104 @@ describe("Tautulli exact-evidence refresh collection", () => {
 			expect.objectContaining({ ratingKey: "100", observedWatchCount: 2 }),
 		]);
 		expect(JSON.stringify(result.snapshot)).not.toContain('"ratingKey":"101"');
+	});
+
+	it("uses the catalog's frozen section manifest for both history passes", async () => {
+		const frozenLibraries = [
+			{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
+			{ section_id: "2", section_name: "Shows", section_type: "show", count: "1" },
+		];
+		const laterIncompleteLibraries = [frozenLibraries[0]!];
+		const getLibraries = vi
+			.fn()
+			.mockResolvedValueOnce(frozenLibraries)
+			.mockResolvedValueOnce(frozenLibraries)
+			.mockResolvedValue(laterIncompleteLibraries);
+		const sectionRows = {
+			"1": [catalog[0]!],
+			"2": [
+				{
+					section_id: "2",
+					rating_key: "200",
+					media_type: "show",
+					play_count: 1,
+					last_played: null,
+				},
+			],
+		};
+		const getHistory = vi.fn(async ({ section_id }: { section_id: string }) => ({
+			data:
+				section_id === "1"
+					? [{ ...history[0]!, section_id: "1" }]
+					: [
+							{
+								...history[0]!,
+								section_id: "2",
+								row_id: 2,
+								media_type: "episode",
+								rating_key: "episode-200",
+								parent_rating_key: "season-200",
+								grandparent_rating_key: "200",
+							},
+						],
+			recordsFiltered: 1,
+			recordsTotal: 1,
+		}));
+		const upstream = client({
+			getLibraries,
+			getLibraryMediaInfo: vi.fn(async ({ sectionId }: { sectionId: "1" | "2" }) => ({
+				data: sectionRows[sectionId],
+				recordsFiltered: 1,
+				recordsTotal: 1,
+				last_refreshed: 1,
+			})),
+			getMetadata: vi.fn(async (ratingKey: string) => ({
+				rating_key: ratingKey,
+				section_id: ratingKey === "200" ? "2" : "1",
+				media_type: ratingKey === "200" ? "show" : "movie",
+				guid: `plex://${ratingKey === "200" ? "show" : "movie"}/${ratingKey}`,
+				guids: [`tmdb://${ratingKey === "200" ? 77 : 55}`],
+			})),
+			getHistory,
+		});
+
+		const result = await collectTautulliCacheLiveEvidence(upstream, "tautulli-1", log, scope);
+
+		expect(result.kind).toBe("published-authoritative");
+		expect(getLibraries).toHaveBeenCalledTimes(2);
+		expect(getHistory).toHaveBeenCalledTimes(4);
+		expect(getHistory.mock.calls.map(([input]) => input.section_id)).toEqual(["1", "2", "1", "2"]);
+		expect(result.snapshot?.exactObservations.map((item) => item.ratingKey)).toEqual([
+			"100",
+			"200",
+		]);
+	});
+
+	it("fails closed when frozen-section history is unavailable", async () => {
+		const getHistory = vi.fn().mockRejectedValue(new Error("private section failure"));
+		const result = await collectTautulliCacheLiveEvidence(
+			client({ getHistory }),
+			"tautulli-1",
+			log,
+			scope,
+		);
+		expect(result).toMatchObject({ kind: "unpublished", reasonCodes: ["history_partial"] });
+		expect(JSON.stringify(logWarn.mock.calls)).not.toContain("private section failure");
+	});
+
+	it("rejects history rows outside the frozen section instead of inferring empty users", async () => {
+		const getHistory = vi.fn().mockResolvedValue({
+			data: [{ ...history[0]!, section_id: "999" }],
+			recordsFiltered: 1,
+			recordsTotal: 1,
+		});
+		const result = await collectTautulliCacheLiveEvidence(
+			client({ getHistory }),
+			"tautulli-1",
+			log,
+			scope,
+		);
+		expect(result).toMatchObject({ kind: "unpublished", reasonCodes: ["history_partial"] });
 	});
 
 	it("rejects history churn between the two verification passes", async () => {
@@ -278,5 +388,82 @@ describe("Tautulli exact-evidence refresh collection", () => {
 			scope,
 		);
 		expect(result).toMatchObject({ complete: false, reasonCodes: ["history_partial"] });
+	});
+});
+
+describe("Tautulli refresh log projection", () => {
+	it.each([
+		["published-authoritative", "authoritative", true],
+		["published-positive", "positive-only", false],
+		["unpublished", undefined, false],
+		["superseded", undefined, false],
+	] as const)("projects %s through one bounded allowlist", (kind, publicationLevel, complete) => {
+		const result = {
+			kind,
+			publicationLevel,
+			complete,
+			upserted: 1,
+			errors: kind === "unpublished" ? 1 : 0,
+			errorMessages: ["raw-upstream-error-canary"],
+			reasonCodes: kind === "unpublished" ? ["unknown_failure"] : [],
+			partialReasons:
+				kind === "published-positive" ? [{ code: "observation_count_unavailable", count: 1 }] : [],
+			superseded: kind === "superseded",
+			snapshot: {
+				rows: [
+					{
+						instanceId: "instance-canary",
+						generationId: "generation-canary",
+						tmdbId: 987_654,
+						mediaType: "movie",
+						lastWatchedAt: null,
+						watchCount: 1,
+						watchedByUsers: '["username-canary"]',
+						connectionGeneration: 1,
+						identityGeneration: 1,
+					},
+				],
+				exactObservations: [
+					{
+						instanceId: "instance-canary",
+						generationId: "generation-canary",
+						sectionId: "section-canary",
+						ratingKey: "rating-key-canary",
+						providerGuidFingerprint: "guid-canary",
+						mediaType: "movie",
+						tmdbId: 987_654,
+						observedWatchCount: 1,
+						lastWatchedAt: null,
+						connectionGeneration: 1,
+						identityGeneration: 1,
+					},
+				],
+			},
+			providerPayload: {
+				title: "title-canary",
+				url: "https://url-canary.invalid",
+				token: "token-canary",
+			},
+		} as TautulliCacheRefreshResult;
+
+		const summary = summarizeTautulliRefreshResultForLog(result);
+
+		expect(Object.keys(summary).sort()).toEqual(
+			[
+				"aggregateObservedCount",
+				"complete",
+				"errors",
+				"partialReasonCount",
+				"publicationLevel",
+				"publishedObservationCount",
+				"reasonCodes",
+				"superseded",
+				"terminalKind",
+				"upserted",
+			].sort(),
+		);
+		expect(JSON.stringify(summary)).not.toMatch(
+			/title-canary|username-canary|section-canary|rating-key-canary|987654|guid-canary|url-canary|token-canary|raw-upstream-error-canary|generation-canary/,
+		);
 	});
 });

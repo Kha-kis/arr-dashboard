@@ -21,8 +21,8 @@ import {
 import {
 	createOwnedTautulliPublicationSnapshot,
 	refreshTautulliCache,
+	summarizeTautulliRefreshResultForLog,
 } from "../lib/tautulli/tautulli-cache-refresher.js";
-import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const STARTUP_DELAY_MS = 2 * 60_000; // 2 minutes — staggered after plex-cache (30s) to reduce peak memory
@@ -41,30 +41,26 @@ export async function refreshScheduledTautulliCacheInstance(
 			log: app.log,
 		});
 		app.log.info(
-			{ instanceId: instance.id, label: instance.label, ...result },
+			{ instanceId: instance.id, ...summarizeTautulliRefreshResultForLog(result) },
 			"Tautulli cache refresh completed for instance",
 		);
-
-		if ((!result.complete || !result.completedAt) && !result.superseded) {
-			await recordScheduledTautulliFailure(
-				app,
-				publicationInstance,
-				result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
-					"Tautulli refresh did not produce a complete generation",
-			);
-		}
-	} catch (err) {
+	} catch {
 		app.log.error(
-			{ err, instanceId: instance.id, label: instance.label },
+			{
+				instanceId: instance.id,
+				reasonCode: publicationInstance
+					? "unexpected_refresh_rejection"
+					: "credentials_unavailable",
+			},
 			"Tautulli cache refresh failed for instance",
 		);
-		await recordScheduledTautulliFailure(
-			app,
-			publicationInstance ?? authority,
-			publicationInstance
-				? getErrorMessage(err, "Unknown error")
-				: "Provider credentials could not be decrypted.",
-		);
+		if (!publicationInstance) {
+			await recordScheduledTautulliFailure(
+				app,
+				authority,
+				"Provider credentials could not be decrypted.",
+			);
+		}
 	}
 }
 
@@ -79,11 +75,17 @@ async function recordScheduledTautulliFailure(
 			"tautulli",
 			message,
 			publicationInstance,
-			app.log,
+			{
+				warn: () =>
+					app.log.warn(
+						{ instanceId: publicationInstance.id, reasonCode: "status_record_failed" },
+						"Tautulli cache refresh failed to record status",
+					),
+			} as Pick<typeof app.log, "warn">,
 		);
-	} catch (trackErr) {
+	} catch {
 		app.log.warn(
-			{ err: trackErr, instanceId: publicationInstance.id },
+			{ instanceId: publicationInstance.id, reasonCode: "status_record_failed" },
 			"Tautulli cache refresh failed to record status",
 		);
 	}

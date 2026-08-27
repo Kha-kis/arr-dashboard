@@ -50,6 +50,10 @@ export const tautulliHistoryDataSchema = z.looseObject({
 	data: z.array(
 		z.looseObject({
 			row_id: z.coerce.number().int().nonnegative().optional(),
+			section_id: z.preprocess(
+				(value) => (value === undefined || value === null ? undefined : value),
+				z.coerce.string().optional(),
+			),
 			rating_key: z.coerce.string(),
 			parent_rating_key: z.preprocess((value) => value ?? "", z.coerce.string()),
 			grandparent_rating_key: z.preprocess((value) => value ?? "", z.coerce.string()),

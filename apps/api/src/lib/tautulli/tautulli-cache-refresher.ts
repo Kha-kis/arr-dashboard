@@ -34,6 +34,7 @@ import {
 import { TautulliClient } from "./tautulli-client.js";
 import {
 	collectStableTautulliTargetCatalog,
+	type TautulliSupportedSection,
 	TautulliEvidenceError,
 } from "./tautulli-target-catalog.js";
 
@@ -66,7 +67,14 @@ export interface TautulliPublicationContext {
 	cleanupRunClaimToken?: string;
 }
 
+export type TautulliRefreshTerminalKind =
+	| "published-authoritative"
+	| "published-positive"
+	| "unpublished"
+	| "superseded";
+
 export interface TautulliCacheRefreshResult {
+	kind: TautulliRefreshTerminalKind;
 	upserted: number;
 	errors: number;
 	errorMessages: string[];
@@ -121,12 +129,28 @@ function reasonFor(error: unknown): TautulliReasonCode {
 
 function unpublished(reasonCode: TautulliReasonCode): TautulliCacheRefreshResult {
 	return {
+		kind: reasonCode === "publication_superseded" ? "superseded" : "unpublished",
 		upserted: 0,
 		errors: reasonCode === "publication_superseded" ? 0 : 1,
 		errorMessages: [reasonCode],
 		reasonCodes: [reasonCode],
 		complete: false,
 		...(reasonCode === "publication_superseded" ? { superseded: true } : {}),
+	};
+}
+
+export function summarizeTautulliRefreshResultForLog(result: TautulliCacheRefreshResult) {
+	return {
+		terminalKind: result.kind,
+		publicationLevel: result.publicationLevel ?? null,
+		complete: result.complete,
+		upserted: result.upserted,
+		errors: result.errors,
+		reasonCodes: [...(result.reasonCodes ?? [])],
+		partialReasonCount: result.partialReasons?.reduce((sum, reason) => sum + reason.count, 0) ?? 0,
+		publishedObservationCount: result.snapshot?.exactObservations.length ?? 0,
+		aggregateObservedCount: result.snapshot?.rows.length ?? 0,
+		superseded: result.kind === "superseded",
 	};
 }
 
@@ -259,30 +283,33 @@ function historyTargetRatingKey(item: TautulliHistoryItem): string {
 async function collectHistoryPass(
 	client: TautulliClient,
 	targetRatingKeys: ReadonlySet<string>,
+	sections: readonly TautulliSupportedSection[],
 ): Promise<{ users: HistoryUserMap; digest: string }> {
-	const libraries = (await client.getLibraries()).filter(
-		(library) => library.section_type === "movie" || library.section_type === "show",
-	);
 	const users: HistoryUserMap = new Map();
 	const signatures: string[] = [];
 	let totalRows = 0;
 	let requests = 0;
-	for (const library of libraries) {
+	for (const section of sections) {
 		let start = 0;
 		let expectedTotal: number | undefined;
 		let previousRowId = -1;
 		const seen = new Set<number>();
 		while (expectedTotal === undefined || start < expectedTotal) {
 			if (++requests > MAX_HISTORY_REQUESTS) throw new TautulliEvidenceError("history_partial");
-			const result = await client.getHistory({
-				section_id: library.section_id,
-				start,
-				length: HISTORY_PAGE_SIZE,
-				order_column: "row_id",
-				order_dir: "asc",
-				grouping: 0,
-				include_activity: 0,
-			});
+			let result;
+			try {
+				result = await client.getHistory({
+					section_id: section.sectionId,
+					start,
+					length: HISTORY_PAGE_SIZE,
+					order_column: "row_id",
+					order_dir: "asc",
+					grouping: 0,
+					include_activity: 0,
+				});
+			} catch {
+				throw new TautulliEvidenceError("history_partial");
+			}
 			if (
 				!Number.isSafeInteger(result.recordsFiltered) ||
 				result.recordsFiltered < 0 ||
@@ -300,6 +327,13 @@ async function collectHistoryPass(
 			const expectedPage = Math.min(HISTORY_PAGE_SIZE, expectedTotal - start);
 			if (result.data.length !== expectedPage) throw new TautulliEvidenceError("history_partial");
 			for (const item of result.data) {
+				if (
+					(item.section_id !== undefined && item.section_id !== section.sectionId) ||
+					(section.sectionType === "movie" && item.media_type !== "movie") ||
+					(section.sectionType === "show" && item.media_type !== "episode")
+				) {
+					throw new TautulliEvidenceError("history_partial");
+				}
 				if (
 					!Number.isSafeInteger(item.row_id) ||
 					item.row_id === undefined ||
@@ -331,6 +365,7 @@ function aggregateObservations(
 ): TautulliCacheSnapshotRow[] {
 	const rows = new Map<string, TautulliCacheSnapshotRow & { users: Set<string> }>();
 	for (const observation of observations) {
+		if (observation.observedWatchCount === null) continue;
 		const key = `${observation.mediaType}:${observation.tmdbId}`;
 		const existing = rows.get(key);
 		const users = usersByRatingKey.get(observation.ratingKey) ?? new Set<string>();
@@ -377,13 +412,17 @@ export async function collectTautulliCacheLiveEvidence(
 	try {
 		const catalog = await collectStableTautulliTargetCatalog(client, { instanceId, ...scope });
 		const ratingKeys = new Set(catalog.observations.map((row) => row.ratingKey));
-		const firstHistory = await collectHistoryPass(client, ratingKeys);
-		const secondHistory = await collectHistoryPass(client, ratingKeys);
+		const firstHistory = await collectHistoryPass(client, ratingKeys, catalog.sections);
+		const secondHistory = await collectHistoryPass(client, ratingKeys, catalog.sections);
 		if (firstHistory.digest !== secondHistory.digest) {
 			throw new TautulliEvidenceError("history_changed");
 		}
 		const rows = aggregateObservations(catalog.observations, secondHistory.users);
 		return {
+			kind:
+				catalog.publicationLevel === "authoritative"
+					? "published-authoritative"
+					: "published-positive",
 			upserted: 0,
 			errors: catalog.partialReasons.reduce((sum, reason) => sum + reason.count, 0),
 			errorMessages: catalog.partialReasons.map((reason) => reason.code),

@@ -57,7 +57,165 @@ describe("Tautulli target catalog", () => {
 		});
 		expect(upstream.refreshLibraryMediaInfo).toHaveBeenCalledTimes(2);
 		expect(upstream.getLibraryMediaInfo).toHaveBeenCalledTimes(2);
+		expect(result.sections).toEqual([{ sectionId: "1", sectionType: "movie", declaredCount: 1 }]);
+		expect(upstream.getLibraries).toHaveBeenCalledTimes(2);
 		expect(upstream).not.toHaveProperty("getHistory");
+	});
+
+	it.each([
+		["stable truncation", "10", 9],
+		["media total above declaration", "1", 2],
+		["malformed declaration", "many", 1],
+		["negative declaration", "-1", 1],
+		["unsafe declaration", String(Number.MAX_SAFE_INTEGER + 1), 1],
+	])("rejects %s before target-bound publication", async (_label, declaredCount, mediaTotal) => {
+		const rows = Array.from({ length: mediaTotal }, (_, index) => ({
+			...row,
+			rating_key: String(100 + index),
+		}));
+		await expect(
+			collectStableTautulliTargetCatalog(
+				client({
+					getLibraries: vi.fn().mockResolvedValue([
+						{
+							section_id: "1",
+							section_name: "Movies",
+							section_type: "movie",
+							count: declaredCount,
+						},
+					]),
+					getLibraryMediaInfo: vi.fn().mockResolvedValue({
+						data: rows,
+						recordsFiltered: mediaTotal,
+						recordsTotal: mediaTotal,
+						last_refreshed: 1,
+					}),
+					getMetadata: vi.fn(async (ratingKey: string) => ({
+						...metadata,
+						rating_key: ratingKey,
+						guid: `plex://movie/${ratingKey}`,
+						guids: [`tmdb://${ratingKey}`],
+					})),
+				}),
+				scope,
+			),
+		).rejects.toMatchObject({ code: "catalog_total_mismatch" });
+	});
+
+	it("accepts an empty supported section only when declaration and media total are both zero", async () => {
+		const upstream = client({
+			getLibraries: vi.fn().mockResolvedValue([
+				{
+					section_id: "3",
+					section_name: "Empty Movies",
+					section_type: "movie",
+					count: "0",
+				},
+			]),
+			getLibraryMediaInfo: vi.fn().mockResolvedValue({
+				data: [],
+				recordsFiltered: 0,
+				recordsTotal: 0,
+				last_refreshed: null,
+			}),
+		});
+
+		const result = await collectStableTautulliTargetCatalog(upstream, scope);
+
+		expect(result.publicationLevel).toBe("authoritative");
+		expect(result.observations).toEqual([]);
+		expect(result.sections).toEqual([{ sectionId: "3", sectionType: "movie", declaredCount: 0 }]);
+	});
+
+	it("rejects a declared-count change without replacing the frozen manifest", async () => {
+		const getLibraries = vi
+			.fn()
+			.mockResolvedValueOnce([
+				{ section_id: "1", section_name: "Movies", section_type: "movie", count: "1" },
+			])
+			.mockResolvedValueOnce([
+				{ section_id: "1", section_name: "Movies", section_type: "movie", count: "2" },
+			]);
+
+		await expect(
+			collectStableTautulliTargetCatalog(client({ getLibraries }), scope),
+		).rejects.toMatchObject({ code: "catalog_changed" });
+	});
+
+	it("rejects a second-pass media total that no longer matches the frozen declaration", async () => {
+		const getLibraryMediaInfo = vi
+			.fn()
+			.mockResolvedValueOnce({
+				data: [row],
+				recordsFiltered: 1,
+				recordsTotal: 1,
+				last_refreshed: 1,
+			})
+			.mockResolvedValueOnce({
+				data: [],
+				recordsFiltered: 0,
+				recordsTotal: 0,
+				last_refreshed: 2,
+			});
+
+		await expect(
+			collectStableTautulliTargetCatalog(client({ getLibraryMediaInfo }), scope),
+		).rejects.toMatchObject({ code: "catalog_total_mismatch" });
+	});
+
+	it.each([null, undefined, "", -1, "not-a-count"])(
+		"treats unavailable play count %s as UNKNOWN instead of zero",
+		async (playCount) => {
+			const unknownRow = { ...row, play_count: playCount };
+			const upstream = client({
+				getLibraryMediaInfo: vi.fn().mockResolvedValue({
+					data: [unknownRow],
+					recordsFiltered: 1,
+					recordsTotal: 1,
+					last_refreshed: 1,
+				}),
+			});
+
+			await expect(
+				collectStableTautulliTargetCatalog(upstream as never, scope),
+			).rejects.toMatchObject({
+				code: "observation_count_unavailable",
+			});
+		},
+	);
+
+	it("publishes only explicit positives when another mapped target count is unknown", async () => {
+		const rows = [
+			{ ...row, rating_key: "100", play_count: 2 },
+			{ ...row, rating_key: "101", play_count: null },
+		];
+		const upstream = client({
+			getLibraries: vi
+				.fn()
+				.mockResolvedValue([
+					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "2" },
+				]),
+			getLibraryMediaInfo: vi.fn().mockResolvedValue({
+				data: rows,
+				recordsFiltered: 2,
+				recordsTotal: 2,
+				last_refreshed: 1,
+			}),
+			getMetadata: vi.fn(async (ratingKey: string) => ({
+				...metadata,
+				rating_key: ratingKey,
+				guid: `plex://movie/${ratingKey}`,
+				guids: [`tmdb://${ratingKey}`],
+			})),
+		});
+
+		const result = await collectStableTautulliTargetCatalog(upstream, scope);
+
+		expect(result.publicationLevel).toBe("positive-only");
+		expect(result.partialReasons).toEqual([{ code: "observation_count_unavailable", count: 1 }]);
+		expect(result.observations).toEqual([
+			expect.objectContaining({ ratingKey: "100", observedWatchCount: 2 }),
+		]);
 	});
 
 	it.each([
@@ -197,6 +355,14 @@ describe("Tautulli target catalog", () => {
 		let active = 0;
 		let peak = 0;
 		const upstream = client({
+			getLibraries: vi.fn().mockResolvedValue([
+				{
+					section_id: "1",
+					section_name: "Movies",
+					section_type: "movie",
+					count: String(rows.length),
+				},
+			]),
 			getLibraryMediaInfo: vi.fn().mockResolvedValue({
 				data: rows,
 				recordsFiltered: rows.length,
@@ -276,6 +442,11 @@ describe("Tautulli target catalog", () => {
 			{ ...row, rating_key: "101", play_count: 0 },
 		];
 		const upstream = client({
+			getLibraries: vi
+				.fn()
+				.mockResolvedValue([
+					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "2" },
+				]),
 			getLibraryMediaInfo: vi.fn().mockResolvedValue({
 				data: rows,
 				recordsFiltered: 2,
@@ -304,6 +475,11 @@ describe("Tautulli target catalog", () => {
 			{ ...row, rating_key: "101", play_count: 0 },
 		];
 		const upstream = client({
+			getLibraries: vi
+				.fn()
+				.mockResolvedValue([
+					{ section_id: "1", section_name: "Movies", section_type: "movie", count: "2" },
+				]),
 			getLibraryMediaInfo: vi.fn().mockResolvedValue({
 				data: rows,
 				recordsFiltered: 2,

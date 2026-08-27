@@ -52,6 +52,17 @@ export async function requireTautulliClient(
 	userId: string,
 	instanceId: string,
 ): Promise<{ client: TautulliClient; instance: ServiceInstance }> {
+	const instance = await requireTautulliInstance(app, userId, instanceId);
+	const client = createTautulliClient(app.encryptor, instance, app.log);
+	return { client, instance };
+}
+
+/** Resolve ownership and service type without decrypting provider credentials. */
+export async function requireTautulliInstance(
+	app: Pick<FastifyInstance, "prisma">,
+	userId: string,
+	instanceId: string,
+): Promise<ServiceInstance> {
 	const instance = await app.prisma.serviceInstance.findFirst({
 		where: { id: instanceId, userId, enabled: true },
 	});
@@ -63,9 +74,7 @@ export async function requireTautulliClient(
 	if (instance.service !== "TAUTULLI") {
 		throw new AppValidationError("Instance is not a Tautulli service");
 	}
-
-	const client = createTautulliClient(app.encryptor, instance, app.log);
-	return { client, instance };
+	return instance;
 }
 
 // ============================================================================
