@@ -119,7 +119,7 @@ function parsePlexTvdbId(guids: Array<{ id: string }> | undefined): number | nul
  * source, not a section-level primary agent, and is not equivalent to a
  * Personal Media library.
  */
-const PERSONAL_MEDIA_AGENTS = new Set(["com.plexapp.agents.none"]);
+const PERSONAL_MEDIA_AGENTS = new Set(["com.plexapp.agents.none", "tv.plex.agents.none"]);
 
 export function isPersonalMediaSection(section: { type: string; agent?: string }): boolean {
 	return section.agent !== undefined && PERSONAL_MEDIA_AGENTS.has(section.agent);

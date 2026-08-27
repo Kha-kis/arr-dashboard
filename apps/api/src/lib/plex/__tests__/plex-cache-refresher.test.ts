@@ -7,6 +7,7 @@ import {
 	canPublishPositivePlexObservation,
 	collectPlexCacheLiveEvidence,
 	collectSettledPlexCacheLiveEvidence,
+	isPersonalMediaSection,
 } from "../plex-cache-refresher.js";
 import type { PlexClient } from "../plex-client.js";
 
@@ -1096,6 +1097,147 @@ describe("collectPlexCacheLiveEvidence", () => {
 			{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
 			{ key: "2", title: "Other Videos", type: "movie", agent: "com.plexapp.agents.none" },
 		];
+
+		it.each([
+			["com.plexapp.agents.none", true],
+			["tv.plex.agents.none", true],
+			["tv.plex.agents.movie", false],
+			["tv.plex.agents.series", false],
+			["example.plex.agents.none", false],
+			["tv.plex.agents.none.custom", false],
+			["tv.plex.agent.none", false],
+			["agents.none", false],
+			[undefined, false],
+		] as const)("classifies only the exact Personal Media agent %s", (agent, expected) => {
+			expect(isPersonalMediaSection({ type: "movie", agent })).toBe(expected);
+		});
+
+		it("excludes a Show-type section using the modern Personal Media agent", async () => {
+			const mockClient = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi.fn().mockResolvedValue([
+					{ key: "1", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
+					{ key: "2", title: "Personal", type: "show", agent: "tv.plex.agents.none" },
+				]),
+				getLibraryItems: vi
+					.fn()
+					.mockImplementation((key: string) =>
+						key === "1"
+							? [supportedMovie]
+							: [{ ratingKey: "", title: "Personal", type: "show", Guid: [] }],
+					),
+				getHistory: vi.fn().mockResolvedValue([]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+
+			expect(result).toMatchObject({ kind: "authoritative-snapshot", complete: true });
+			expect(result.snapshot?.rows.map((row) => row.ratingKey)).toEqual(["movie-1"]);
+			expect(result.inventoryTargets).toEqual([
+				{ sectionId: "1", mediaType: "movie", tmdbId: 42, ratingKey: "movie-1" },
+			]);
+		});
+
+		it("publishes only fully mapped Movie/Show evidence for the reporter topology", async () => {
+			const sections = [
+				{ key: "movies", title: "Movies", type: "movie", agent: "tv.plex.agents.movie" },
+				{ key: "shows", title: "Shows", type: "show", agent: "tv.plex.agents.series" },
+				{ key: "personal", title: "Other", type: "movie", agent: "tv.plex.agents.none" },
+				{ key: "music", title: "Music", type: "artist", agent: "tv.plex.agents.music" },
+			];
+			const mockClient = {
+				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
+				getLibrarySections: vi.fn().mockResolvedValue(sections),
+				getLibraryItems: vi.fn().mockImplementation((key: string) => {
+					if (key === "movies") {
+						return [
+							{
+								ratingKey: "movie-1",
+								title: "Movie",
+								type: "movie",
+								Guid: [{ id: "tmdb://10" }],
+							},
+						];
+					}
+					if (key === "shows") {
+						return [
+							{
+								ratingKey: "show-1",
+								title: "Show",
+								type: "show",
+								Guid: [{ id: "tmdb://20" }, { id: "tvdb://30" }],
+							},
+						];
+					}
+					if (key === "personal") {
+						return [
+							{ ratingKey: "personal-1", title: "Personal", type: "movie", Guid: [] },
+							{ ratingKey: "", title: "Keyless Personal", type: "movie", Guid: [] },
+						];
+					}
+					throw new Error("Unsupported section type entered Movie/Show collection");
+				}),
+				getHistory: vi.fn().mockResolvedValue([
+					{
+						historyKey: "history-personal-movie",
+						type: "movie",
+						ratingKey: "",
+						librarySectionID: "personal",
+						accountID: 1,
+						viewedAt: 1_700_000_000,
+					},
+					{
+						historyKey: "history-personal-episode",
+						type: "episode",
+						ratingKey: "personal-episode",
+						librarySectionID: "personal",
+						accountID: 1,
+						viewedAt: 1_700_000_001,
+					},
+					{
+						historyKey: "history-stale-supported",
+						type: "movie",
+						ratingKey: "stale-supported",
+						librarySectionID: "movies",
+						accountID: 1,
+						viewedAt: 1_700_000_002,
+					},
+				]),
+				verifyHistorySnapshot: vi.fn().mockResolvedValue(undefined),
+				getOnDeck: vi.fn().mockResolvedValue([]),
+			} as unknown as PlexClient;
+			const prisma = { $transaction: vi.fn() } as unknown as PrismaClient;
+
+			const result = await refreshPlexCache(mockClient, prisma, "inst-1", silentLog);
+
+			expect(result).toMatchObject({
+				kind: "authoritative-snapshot",
+				complete: true,
+				errors: 0,
+				errorMessages: [],
+			});
+			expect(result.snapshot?.sections).toEqual([
+				{ key: "movies", title: "Movies", type: "movie" },
+				{ key: "shows", title: "Shows", type: "show" },
+			]);
+			expect(result.snapshot?.rows.map((row) => row.ratingKey).sort()).toEqual([
+				"movie-1",
+				"show-1",
+			]);
+			expect(result.inventoryTargets).toEqual([
+				{ sectionId: "movies", mediaType: "movie", tmdbId: 10, ratingKey: "movie-1" },
+				{
+					sectionId: "shows",
+					mediaType: "series",
+					tmdbId: 20,
+					tvdbId: 30,
+					ratingKey: "show-1",
+				},
+			]);
+		});
 
 		it("excludes a Personal Media section from the supported-media authority domain", async () => {
 			const mockClient = {
