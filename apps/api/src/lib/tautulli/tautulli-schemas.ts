@@ -51,10 +51,10 @@ export const tautulliHistoryDataSchema = z.looseObject({
 		z.looseObject({
 			row_id: z.coerce.number().int().nonnegative().optional(),
 			rating_key: z.coerce.string(),
-			parent_rating_key: z.coerce.string(),
-			grandparent_rating_key: z.coerce.string(),
-			title: z.string(),
-			grandparent_title: z.string(),
+			parent_rating_key: z.preprocess((value) => value ?? "", z.coerce.string()),
+			grandparent_rating_key: z.preprocess((value) => value ?? "", z.coerce.string()),
+			title: z.preprocess((value) => value ?? "", z.string()),
+			grandparent_title: z.preprocess((value) => value ?? "", z.string()),
 			media_type: z.string(),
 			user: z.string(),
 			date: z.number(),
@@ -64,6 +64,28 @@ export const tautulliHistoryDataSchema = z.looseObject({
 	),
 	recordsFiltered: z.number(),
 	recordsTotal: z.number(),
+});
+
+/** get_library_media_info — cached catalog page after an explicit refresh trigger. */
+export const tautulliLibraryMediaInfoSchema = z.looseObject({
+	data: z.array(
+		z.looseObject({
+			section_id: z.coerce.string(),
+			rating_key: z.coerce.string(),
+			media_type: z.string(),
+			play_count: z.preprocess(
+				(value) => (value === undefined || value === null || value === "" ? null : value),
+				z.coerce.number().int().nonnegative().nullable(),
+			),
+			last_played: z.preprocess(
+				(value) => (value === undefined || value === null || value === "" ? null : value),
+				z.coerce.number().int().nonnegative().nullable(),
+			),
+		}),
+	),
+	recordsFiltered: z.number().int().nonnegative(),
+	recordsTotal: z.number().int().nonnegative(),
+	last_refreshed: z.union([z.string(), z.number()]).nullable(),
 });
 
 /** get_activity — inner data */
@@ -152,4 +174,6 @@ export const tautulliMetadataSchema = z.looseObject({
 	media_type: z.preprocess((v) => v ?? "unknown", z.string()),
 	title: z.preprocess((v) => v ?? "", z.string()),
 	rating_key: z.coerce.string().optional(),
+	section_id: z.coerce.string().optional(),
+	guid: z.string().optional(),
 });

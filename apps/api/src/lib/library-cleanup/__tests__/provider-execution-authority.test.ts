@@ -595,7 +595,7 @@ describe("provider execution authority", () => {
 		authorityCalls.persistedEpisodes.mockClear();
 	});
 
-	for (const cacheType of Object.keys(cacheCases) as Array<keyof typeof cacheCases>) {
+	for (const cacheType of ["plex", "plex_episode", "jellyfin", "jellyfin_episode"] as const) {
 		it(`accepts unchanged real ${cacheType} evidence`, async () => {
 			const subject = cacheTypeFixture(cacheType);
 
@@ -609,6 +609,15 @@ describe("provider execution authority", () => {
 			}
 		});
 	}
+
+	it("rejects unchanged Tautulli evidence as mutation authority pending explicit mapping", async () => {
+		const subject = cacheTypeFixture("tautulli");
+
+		await expect(
+			assertCurrentProviderEvidenceAuthority(subject.deps, "user-1", subject.evidence, vi.fn()),
+		).rejects.toThrow("Provider execution authority changed");
+		expect(subject.identityReader).not.toHaveBeenCalled();
+	});
 
 	it.each(["jellyfin", "tautulli"] as const)(
 		"keeps the publication-order check for non-Plex %s evidence",

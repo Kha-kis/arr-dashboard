@@ -185,6 +185,7 @@ model ServiceInstance {
   plexGenerationTargets   PlexGenerationTarget[]
   plexEpisodeCaches       PlexEpisodeCache[]
   tautulliCaches          TautulliCache[]
+  tautulliGenerationObservations TautulliGenerationObservation[]
   jellyfinCaches          JellyfinCache[]
   jellyfinEpisodeCaches   JellyfinEpisodeCache[]
   cacheRefreshStatuses    CacheRefreshStatus[]
@@ -1729,6 +1730,7 @@ model TautulliCache {
   lastWatchedAt  DateTime?
   watchCount     Int
   watchedByUsers String // JSON array of usernames
+  generationId   String?
   // Null on legacy rows: readable for UI, never cleanup-authoritative.
   connectionGeneration Int?
   identityGeneration   Int?
@@ -1737,8 +1739,34 @@ model TautulliCache {
 
   @@unique([instanceId, tmdbId, mediaType])
   @@index([instanceId])
+  @@index([instanceId, generationId])
   @@index([instanceId, connectionGeneration, identityGeneration])
   @@map("tautulli_cache")
+}
+
+/// Exact current-generation Tautulli provider objects. Identifying provider
+/// values remain internal and are never exposed through status or diagnostics.
+model TautulliGenerationObservation {
+  id                      String   @id @default(cuid())
+  instanceId              String
+  generationId            String
+  sectionId               String
+  ratingKey               String
+  providerGuidFingerprint String
+  mediaType               String
+  tmdbId                   Int
+  observedWatchCount      Int?
+  lastWatchedAt           DateTime?
+  connectionGeneration    Int
+  identityGeneration      Int
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, generationId, ratingKey])
+  @@index([instanceId, generationId])
+  @@index([instanceId, generationId, mediaType, tmdbId])
+  @@index([instanceId, generationId, sectionId])
+  @@map("tautulli_generation_observation")
 }
 
 // ============================================================================

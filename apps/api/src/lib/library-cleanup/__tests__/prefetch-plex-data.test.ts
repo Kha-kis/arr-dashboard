@@ -424,6 +424,52 @@ describe("prefetchPlexData — cross-batch Map merge (v2.18.4 OOM fix)", () => {
 		expect(result.failedSources).toContain("tautulli");
 	});
 
+	it("keeps complete single-source Tautulli evidence unavailable without section-to-ARR mapping", async () => {
+		const instance = {
+			...verifiedPlexInstance(),
+			id: "tautulli-1",
+			service: "TAUTULLI",
+		};
+		const prisma = {
+			serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
+			cacheRefreshStatus: {
+				findMany: vi.fn().mockResolvedValue([completeStatus(instance.id, new Date(), 1)]),
+			},
+			tautulliCache: {
+				findMany: vi.fn().mockResolvedValue([
+					{
+						id: "tautulli-row-1",
+						instanceId: instance.id,
+						generationId: `generation-${instance.id}`,
+						tmdbId: 42,
+						mediaType: "movie",
+						lastWatchedAt: null,
+						watchCount: 5,
+						watchedByUsers: '["alice"]',
+						connectionGeneration: 3,
+						identityGeneration: 7,
+					},
+				]),
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+
+		const rule = {
+			enabled: true,
+			ruleType: "tautulli_watch_count",
+			parameters: JSON.stringify({ operator: "greater_than", count: 0 }),
+			conditions: null,
+			plexLibraryFilter: null,
+		};
+		const result = await buildEvalContextWithHealth(
+			{ prisma, log } as CleanupExecutorDeps,
+			"user-1",
+			[rule],
+		);
+
+		expect(result.ctx.tautulliMap).toBeUndefined();
+		expect(result.failedSources).toContain("tautulli");
+	});
+
 	it.each(unavailablePlexEvidenceCases)(
 		"blocks Plex cleanup evidence for %s",
 		async (caseName, overrides) => {

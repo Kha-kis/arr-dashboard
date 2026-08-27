@@ -295,6 +295,12 @@ export type JellyfinEpisodeCache = Prisma.JellyfinEpisodeCacheModel
  */
 export type TautulliCache = Prisma.TautulliCacheModel
 /**
+ * Model TautulliGenerationObservation
+ * Exact current-generation Tautulli provider objects. Identifying provider
+ * values remain internal and are never exposed through status or diagnostics.
+ */
+export type TautulliGenerationObservation = Prisma.TautulliGenerationObservationModel
+/**
  * Model CacheRefreshStatus
  * 
  */

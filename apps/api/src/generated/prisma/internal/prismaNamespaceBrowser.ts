@@ -102,6 +102,7 @@ export const ModelName = {
   JellyfinCache: 'JellyfinCache',
   JellyfinEpisodeCache: 'JellyfinEpisodeCache',
   TautulliCache: 'TautulliCache',
+  TautulliGenerationObservation: 'TautulliGenerationObservation',
   CacheRefreshStatus: 'CacheRefreshStatus',
   SessionSnapshot: 'SessionSnapshot',
   NamingConfig: 'NamingConfig',
@@ -1153,11 +1154,30 @@ export const TautulliCacheScalarFieldEnum = {
   lastWatchedAt: 'lastWatchedAt',
   watchCount: 'watchCount',
   watchedByUsers: 'watchedByUsers',
+  generationId: 'generationId',
   connectionGeneration: 'connectionGeneration',
   identityGeneration: 'identityGeneration'
 } as const
 
 export type TautulliCacheScalarFieldEnum = (typeof TautulliCacheScalarFieldEnum)[keyof typeof TautulliCacheScalarFieldEnum]
+
+
+export const TautulliGenerationObservationScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  generationId: 'generationId',
+  sectionId: 'sectionId',
+  ratingKey: 'ratingKey',
+  providerGuidFingerprint: 'providerGuidFingerprint',
+  mediaType: 'mediaType',
+  tmdbId: 'tmdbId',
+  observedWatchCount: 'observedWatchCount',
+  lastWatchedAt: 'lastWatchedAt',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
+} as const
+
+export type TautulliGenerationObservationScalarFieldEnum = (typeof TautulliGenerationObservationScalarFieldEnum)[keyof typeof TautulliGenerationObservationScalarFieldEnum]
 
 
 export const CacheRefreshStatusScalarFieldEnum = {

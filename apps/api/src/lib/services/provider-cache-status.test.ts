@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	beginPlexCacheRefreshAttempt,
+	beginTautulliCacheRefreshAttempt,
 	classifyProviderCacheStatusGeneration,
 	finishPlexCacheRefreshAttemptFailure,
+	finishTautulliCacheRefreshAttemptFailure,
 	recordPlexCacheRefreshFailure,
 	recordWatchProviderCacheRefreshFailure,
 } from "./provider-cache-status.js";
@@ -431,6 +433,42 @@ describe("Plex cache refresh attempt lifecycle", () => {
 		);
 
 		expect(result).toBe("superseded");
+	});
+});
+
+describe("Tautulli cache refresh attempt lifecycle", () => {
+	it("uses the provider-neutral CAS while persisting only a bounded Tautulli reason", async () => {
+		const current = plexSnapshot({ id: "tautulli-1", service: "TAUTULLI", label: "Tautulli" });
+		const state = publicationFixture(current, null);
+
+		const attempt = await beginTautulliCacheRefreshAttempt(state.prisma as never, current);
+
+		expect(attempt?.resultMarker).toMatch(/^in_progress:/);
+		expect(state.tx.cacheRefreshStatus.upsert).toHaveBeenCalledWith(
+			expect.objectContaining({
+				create: expect.objectContaining({
+					cacheType: "tautulli",
+					lastErrorMessage: "unknown_failure",
+				}),
+			}),
+		);
+
+		await finishTautulliCacheRefreshAttemptFailure(
+			state.prisma as never,
+			"catalog_changed",
+			current,
+			attempt!,
+			log,
+		);
+		expect(state.tx.cacheRefreshStatus.updateMany).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					cacheType: "tautulli",
+					lastAttemptResult: attempt?.resultMarker,
+				}),
+				data: { lastAttemptResult: "error", lastAttemptErrorMessage: "catalog_changed" },
+			}),
+		);
 	});
 });
 

@@ -145,6 +145,7 @@ const RUN_HEAP_TESTS = process.env.TEST_HEAP === "true";
 const MIB = 1024 * 1024;
 const PLEX_ITEMS = 15_000;
 const JELLYFIN_ITEMS = 12_000;
+const TAUTULLI_ITEMS = 20_000;
 const PLEX_POLICY_READ_ITEMS_PER_INSTANCE = 10_000;
 const PLEX_POLICY_READ_INSTANCES = ["heap-read-plex-a", "heap-read-plex-b"] as const;
 
@@ -221,6 +222,15 @@ function reportHeap(message: string): void {
 						baseUrl: "http://tautulli.invalid",
 						encryptedApiKey: "x",
 						encryptionIv: "y",
+						encryptedHttpAuthCredentials: null,
+						httpAuthEncryptionIv: null,
+						enabled: true,
+						connectionGeneration: 0,
+						expectedIdentity: "plex-a",
+						identityKind: "TAUTULLI_PMS_IDENTIFIER",
+						identityStatus: "VERIFIED",
+						identityGeneration: 0,
+						identityVerifiedAt: new Date("2020-01-01T00:00:00.000Z"),
 					},
 				],
 			});
@@ -289,6 +299,13 @@ function reportHeap(message: string): void {
 				getNextUp: vi.fn().mockResolvedValue([]),
 			} as unknown as JellyfinClient;
 
+			const tautulliCatalog = Array.from({ length: TAUTULLI_ITEMS }, (_, index) => ({
+				section_id: "1",
+				rating_key: `tautulli-${index}`,
+				media_type: "movie",
+				play_count: index % 2,
+				last_played: index % 2 === 0 ? 1_700_000_000 + index : null,
+			}));
 			const tautulliHistory = Array.from({ length: 201 }, (_, index) => ({
 				row_id: index + 1,
 				rating_key: `tautulli-${index}`,
@@ -302,19 +319,34 @@ function reportHeap(message: string): void {
 				play_count: 1,
 			}));
 			tautulliClient = {
-				getLibraries: vi
-					.fn()
-					.mockResolvedValue([
-						{ section_id: "1", section_name: "Movies", section_type: "movie", count: "201" },
-					]),
+				getLibraries: vi.fn().mockResolvedValue([
+					{
+						section_id: "1",
+						section_name: "Movies",
+						section_type: "movie",
+						count: String(TAUTULLI_ITEMS),
+					},
+				]),
+				refreshLibraryMediaInfo: vi.fn().mockResolvedValue(undefined),
+				getLibraryMediaInfo: vi.fn(
+					async ({ start, length }: { start: number; length: number }) => ({
+						data: tautulliCatalog.slice(start, start + length),
+						recordsFiltered: tautulliCatalog.length,
+						recordsTotal: tautulliCatalog.length,
+						last_refreshed: 1_777_000_100,
+					}),
+				),
 				getHistory: vi.fn(async ({ start, length }: { start: number; length: number }) => ({
 					data: tautulliHistory.slice(start, start + length),
 					recordsFiltered: tautulliHistory.length,
 					recordsTotal: tautulliHistory.length,
 				})),
 				getMetadata: vi.fn(async (ratingKey: string) => ({
+					rating_key: ratingKey,
+					section_id: "1",
 					guids: [`tmdb://${300_000 + Number(ratingKey.replace("tautulli-", ""))}`],
 					media_type: "movie",
+					guid: `plex://movie/${ratingKey}`,
 					title: ratingKey,
 				})),
 			} as unknown as TautulliClient;
@@ -437,6 +469,40 @@ function reportHeap(message: string): void {
 			// while failing far below the production regression.
 			expect(firstGrowth).toBeLessThan(100 * MIB);
 			expect(repeatedGrowth).toBeLessThan(50 * MIB);
+		}, 180_000);
+
+		it("bounds a deterministic 20,000-target Tautulli exact publication", async () => {
+			const baseline = collectHeap();
+			let peak = baseline;
+			const sample = setInterval(() => {
+				peak = Math.max(peak, process.memoryUsage().heapUsed);
+			}, 5);
+			let result: Awaited<ReturnType<typeof refreshTautulliCache>>;
+			try {
+				result = await refreshTautulli();
+			} finally {
+				clearInterval(sample);
+				peak = Math.max(peak, process.memoryUsage().heapUsed);
+			}
+			const retained = collectHeap();
+			const catalogRequests = vi.mocked(tautulliClient.getLibraryMediaInfo).mock.calls.length;
+			const metadataRequests = vi.mocked(tautulliClient.getMetadata).mock.calls.length;
+			reportHeap(
+				`Tautulli exact publication: targets=${TAUTULLI_ITEMS} catalogRequests=${catalogRequests} metadataRequests=${metadataRequests} peakGrowth=${((peak - baseline) / MIB).toFixed(1)} MB retainedGrowth=${((retained - baseline) / MIB).toFixed(1)} MB`,
+			);
+			expect(result).toMatchObject({ complete: true, errors: 0, upserted: TAUTULLI_ITEMS });
+			expect(catalogRequests).toBe(Math.ceil(TAUTULLI_ITEMS / 250) * 2);
+			expect(metadataRequests).toBe(TAUTULLI_ITEMS * 2);
+			expect(
+				await prisma.tautulliGenerationObservation.count({
+					where: { instanceId: "heap-tautulli" },
+				}),
+			).toBe(TAUTULLI_ITEMS);
+			expect(await prisma.tautulliCache.count({ where: { instanceId: "heap-tautulli" } })).toBe(
+				TAUTULLI_ITEMS,
+			);
+			expect(peak - baseline).toBeLessThan(350 * MIB);
+			expect(retained - baseline).toBeLessThan(125 * MIB);
 		}, 180_000);
 
 		it("bounds the production-shaped full-library policy read", async () => {

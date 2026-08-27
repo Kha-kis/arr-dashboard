@@ -63,20 +63,9 @@ export const PROVIDER_CACHE_ROW_SELECTS = {
 		connectionGeneration: true,
 		identityGeneration: true,
 	},
-	tautulli: {
-		id: true,
-		instanceId: true,
-		tmdbId: true,
-		mediaType: true,
-		lastWatchedAt: true,
-		watchCount: true,
-		watchedByUsers: true,
-		connectionGeneration: true,
-		identityGeneration: true,
-	},
 } as const;
 
-export type ProviderCacheType = keyof typeof PROVIDER_CACHE_ROW_SELECTS;
+export type ProviderCacheType = keyof typeof PROVIDER_CACHE_ROW_SELECTS | "tautulli";
 export type ProviderCacheService = "PLEX" | "JELLYFIN" | "EMBY" | "TAUTULLI";
 
 export function providerCacheServicesForDependencies(
@@ -104,7 +93,7 @@ export function providerServiceUsesCacheType(
 }
 
 export function isProviderCacheType(value: string): value is ProviderCacheType {
-	return value in PROVIDER_CACHE_ROW_SELECTS;
+	return value === "tautulli" || value in PROVIDER_CACHE_ROW_SELECTS;
 }
 
 function groupProviderRowsByInstance(
@@ -178,13 +167,8 @@ export async function loadExactProviderCacheRows(
 				}),
 			);
 		case "tautulli":
-			return groupProviderRowsByInstance(
-				instanceIds,
-				await tx.tautulliCache.findMany({
-					where,
-					select: PROVIDER_CACHE_ROW_SELECTS.tautulli,
-					orderBy: { id: "asc" },
-				}),
-			);
+			// T1 persists Tautulli observations for read-only status and diagnostics.
+			// T2 must introduce explicit mapping before cleanup may load them.
+			return groupProviderRowsByInstance(instanceIds, []);
 	}
 }

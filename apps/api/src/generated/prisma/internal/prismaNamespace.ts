@@ -448,6 +448,7 @@ export const ModelName = {
   JellyfinCache: 'JellyfinCache',
   JellyfinEpisodeCache: 'JellyfinEpisodeCache',
   TautulliCache: 'TautulliCache',
+  TautulliGenerationObservation: 'TautulliGenerationObservation',
   CacheRefreshStatus: 'CacheRefreshStatus',
   SessionSnapshot: 'SessionSnapshot',
   NamingConfig: 'NamingConfig',
@@ -476,7 +477,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexGenerationTarget" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "inodeIndexCache" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "episodeFileCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike" | "libraryCleanupConfig" | "libraryCleanupRule" | "libraryCleanupApproval" | "libraryCleanupMediaServerScan" | "libraryCleanupMediaServerScanLease" | "libraryCleanupLog" | "libraryCleanupAuditEvent" | "notificationChannel" | "notificationSubscription" | "notificationLog" | "vapidKeys" | "notificationRule" | "notificationAggregationConfig" | "plexCache" | "plexGenerationTarget" | "plexEpisodeCache" | "jellyfinCache" | "jellyfinEpisodeCache" | "tautulliCache" | "tautulliGenerationObservation" | "cacheRefreshStatus" | "sessionSnapshot" | "namingConfig" | "namingDeployHistory" | "seerrActionLog" | "labelSyncRule" | "autoTagRule" | "tmdbListCache" | "traktListCache" | "listCacheRefreshStatus" | "quiActivityLog" | "quiActionLog" | "quiEventLog"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -4254,6 +4255,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    TautulliGenerationObservation: {
+      payload: Prisma.$TautulliGenerationObservationPayload<ExtArgs>
+      fields: Prisma.TautulliGenerationObservationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.TautulliGenerationObservationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.TautulliGenerationObservationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload>
+        }
+        findFirst: {
+          args: Prisma.TautulliGenerationObservationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.TautulliGenerationObservationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload>
+        }
+        findMany: {
+          args: Prisma.TautulliGenerationObservationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload>[]
+        }
+        create: {
+          args: Prisma.TautulliGenerationObservationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload>
+        }
+        createMany: {
+          args: Prisma.TautulliGenerationObservationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.TautulliGenerationObservationCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload>[]
+        }
+        delete: {
+          args: Prisma.TautulliGenerationObservationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload>
+        }
+        update: {
+          args: Prisma.TautulliGenerationObservationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload>
+        }
+        deleteMany: {
+          args: Prisma.TautulliGenerationObservationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.TautulliGenerationObservationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.TautulliGenerationObservationUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload>[]
+        }
+        upsert: {
+          args: Prisma.TautulliGenerationObservationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$TautulliGenerationObservationPayload>
+        }
+        aggregate: {
+          args: Prisma.TautulliGenerationObservationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateTautulliGenerationObservation>
+        }
+        groupBy: {
+          args: Prisma.TautulliGenerationObservationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TautulliGenerationObservationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.TautulliGenerationObservationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.TautulliGenerationObservationCountAggregateOutputType> | number
+        }
+      }
+    }
     CacheRefreshStatus: {
       payload: Prisma.$CacheRefreshStatusPayload<ExtArgs>
       fields: Prisma.CacheRefreshStatusFieldRefs
@@ -6275,11 +6350,30 @@ export const TautulliCacheScalarFieldEnum = {
   lastWatchedAt: 'lastWatchedAt',
   watchCount: 'watchCount',
   watchedByUsers: 'watchedByUsers',
+  generationId: 'generationId',
   connectionGeneration: 'connectionGeneration',
   identityGeneration: 'identityGeneration'
 } as const
 
 export type TautulliCacheScalarFieldEnum = (typeof TautulliCacheScalarFieldEnum)[keyof typeof TautulliCacheScalarFieldEnum]
+
+
+export const TautulliGenerationObservationScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  generationId: 'generationId',
+  sectionId: 'sectionId',
+  ratingKey: 'ratingKey',
+  providerGuidFingerprint: 'providerGuidFingerprint',
+  mediaType: 'mediaType',
+  tmdbId: 'tmdbId',
+  observedWatchCount: 'observedWatchCount',
+  lastWatchedAt: 'lastWatchedAt',
+  connectionGeneration: 'connectionGeneration',
+  identityGeneration: 'identityGeneration'
+} as const
+
+export type TautulliGenerationObservationScalarFieldEnum = (typeof TautulliGenerationObservationScalarFieldEnum)[keyof typeof TautulliGenerationObservationScalarFieldEnum]
 
 
 export const CacheRefreshStatusScalarFieldEnum = {
@@ -6813,6 +6907,7 @@ export type GlobalOmitConfig = {
   jellyfinCache?: Prisma.JellyfinCacheOmit
   jellyfinEpisodeCache?: Prisma.JellyfinEpisodeCacheOmit
   tautulliCache?: Prisma.TautulliCacheOmit
+  tautulliGenerationObservation?: Prisma.TautulliGenerationObservationOmit
   cacheRefreshStatus?: Prisma.CacheRefreshStatusOmit
   sessionSnapshot?: Prisma.SessionSnapshotOmit
   namingConfig?: Prisma.NamingConfigOmit

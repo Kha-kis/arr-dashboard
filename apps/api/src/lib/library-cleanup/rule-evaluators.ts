@@ -2954,6 +2954,7 @@ export function explainItemAgainstRules(
 		| "disabled"
 		| null;
 	retentionMode: boolean;
+	unavailableReasonCode?: "tautulli_mapping_required";
 }> {
 	const results: Array<{
 		ruleId: string;
@@ -2971,6 +2972,7 @@ export function explainItemAgainstRules(
 			| "disabled"
 			| null;
 		retentionMode: boolean;
+		unavailableReasonCode?: "tautulli_mapping_required";
 	}> = [];
 
 	for (const rule of rules) {
@@ -3045,6 +3047,11 @@ export function explainItemAgainstRules(
 			reason: evaluation.match?.reason ?? null,
 			filteredBy: evaluation.state === "unknown" ? "evidence_unavailable" : null,
 			retentionMode: rule.retentionMode,
+			...(evaluation.state === "unknown" &&
+			failedSources?.has("tautulli") &&
+			ruleUsesUnavailableData(rule, new Set(["tautulli"]))
+				? { unavailableReasonCode: "tautulli_mapping_required" as const }
+				: {}),
 		});
 	}
 

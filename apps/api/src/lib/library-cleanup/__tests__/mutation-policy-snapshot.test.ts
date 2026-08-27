@@ -349,7 +349,6 @@ describe("authoritative mutation policy snapshots", () => {
 
 	it.each([
 		["Plex", "plex_watch_count", "PLEX", refreshMocks.plex, { complete: false }, "plex"],
-		["Tautulli", "tautulli_watch_count", "TAUTULLI", refreshMocks.tautulli, {}, "tautulli"],
 		[
 			"Jellyfin",
 			"jellyfin_watch_count",
@@ -375,6 +374,19 @@ describe("authoritative mutation policy snapshots", () => {
 			expect(refreshMock).toHaveBeenCalledOnce();
 		},
 	);
+
+	it("does not refresh Tautulli as mutation evidence while explicit mapping is unavailable", async () => {
+		const { deps } = makeDeps([rule("tautulli_watch_count")], [instance("TAUTULLI")]);
+
+		const snapshot = await createMutationPolicySnapshotGetter(deps, "user-1")();
+
+		expect(snapshot.failedSources).toEqual(new Set(["tautulli"]));
+		expect(refreshMocks.tautulli).not.toHaveBeenCalled();
+		expect(deps.log.info).toHaveBeenCalledWith(
+			{ reasonCode: "tautulli_mapping_required" },
+			"Tautulli mutation evidence refresh is disabled pending explicit library mapping",
+		);
+	});
 
 	it("records an incomplete cleanup-triggered Jellyfin refresh without advancing freshness", async () => {
 		refreshMocks.jellyfin.mockResolvedValue({
@@ -423,7 +435,6 @@ describe("authoritative mutation policy snapshots", () => {
 
 	it.each([
 		["Plex", "plex_watch_count", "PLEX", refreshMocks.plex],
-		["Tautulli", "tautulli_watch_count", "TAUTULLI", refreshMocks.tautulli],
 		["Jellyfin", "jellyfin_watch_count", "JELLYFIN", refreshMocks.jellyfin],
 	] as const)(
 		"coordinates cleanup-owned %s publication with the active run lease",
@@ -437,6 +448,20 @@ describe("authoritative mutation policy snapshots", () => {
 			);
 		},
 	);
+
+	it("does not create cleanup-owned Tautulli publication authority from an active lease", async () => {
+		const { deps } = makeDeps([rule("tautulli_watch_count")], [instance("TAUTULLI")]);
+
+		const snapshot = await createMutationPolicySnapshotGetter(
+			deps,
+			"user-1",
+			undefined,
+			"cleanup-run",
+		)();
+
+		expect(snapshot.failedSources).toEqual(new Set(["tautulli"]));
+		expect(refreshMocks.tautulli).not.toHaveBeenCalled();
+	});
 
 	it("rejects inventory identities that do not belong to the published Plex generation", async () => {
 		refreshMocks.plex.mockResolvedValue({

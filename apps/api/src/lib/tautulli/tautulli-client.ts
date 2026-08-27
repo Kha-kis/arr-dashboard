@@ -18,6 +18,7 @@ import {
 	tautulliHomeStatSchema,
 	tautulliInfoSchema,
 	tautulliLibrarySchema,
+	tautulliLibraryMediaInfoSchema,
 	tautulliMetadataSchema,
 	tautulliPlaysByDateDataSchema,
 	tautulliResponseWrapperSchema,
@@ -44,6 +45,21 @@ export interface TautulliMetadata {
 	// (e.g., item deleted from Plex). Callers already have the rating_key as
 	// the request arg, so the response copy is informational only.
 	rating_key?: string;
+	section_id?: string;
+	guid?: string;
+}
+
+export interface TautulliLibraryMediaInfo {
+	data: Array<{
+		section_id: string;
+		rating_key: string;
+		media_type: string;
+		play_count: number | null;
+		last_played: number | null;
+	}>;
+	recordsFiltered: number;
+	recordsTotal: number;
+	last_refreshed: string | number | null;
 }
 
 export interface TautulliSessionItem {
@@ -190,6 +206,33 @@ export class TautulliClient {
 	 */
 	async getLibraries(): Promise<TautulliLibrary[]> {
 		return this.command("get_libraries", undefined, z.array(tautulliLibrarySchema));
+	}
+
+	/** Trigger Tautulli to rebuild its library media cache. The response is not a snapshot. */
+	async refreshLibraryMediaInfo(sectionId: string): Promise<void> {
+		await this.command(
+			"get_library_media_info",
+			{ section_id: sectionId, refresh: true, start: 0, length: 1 },
+			tautulliLibraryMediaInfoSchema,
+		);
+	}
+
+	/** Read one bounded page from the already-refreshed library media cache. */
+	async getLibraryMediaInfo(params: {
+		sectionId: string;
+		start: number;
+		length: number;
+	}): Promise<TautulliLibraryMediaInfo> {
+		return this.command(
+			"get_library_media_info",
+			{
+				section_id: params.sectionId,
+				refresh: false,
+				start: params.start,
+				length: params.length,
+			},
+			tautulliLibraryMediaInfoSchema,
+		);
 	}
 
 	/**

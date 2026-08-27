@@ -45,6 +45,7 @@ import {
 	safeRequest,
 } from "../statistics/statistics-utils.js";
 import { createTautulliClient } from "../tautulli/tautulli-client.js";
+import { describeTautulliReason } from "../tautulli/tautulli-generation-metadata.js";
 import { integrationHealth } from "../validation/integration-health.js";
 
 // ============================================================================
@@ -673,6 +674,9 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 				? "partial"
 				: status.lastResult;
 		let effectiveError = status.lastAttemptErrorMessage ?? status.lastErrorMessage;
+		if (status.cacheType === "tautulli" && effectiveError !== null) {
+			effectiveError = describeTautulliReason(effectiveError);
+		}
 		if (status.cacheType === "plex" || status.cacheType === "plex_episode") {
 			const evidence = plexEvidenceByStatus.get(`${status.instanceId}:${status.cacheType}`);
 			if (evidence?.attemptState === "in_progress") {

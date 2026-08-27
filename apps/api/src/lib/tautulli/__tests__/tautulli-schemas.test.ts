@@ -7,7 +7,11 @@
  * in watch history). See issue #497.
  */
 import { describe, expect, it } from "vitest";
-import { tautulliMetadataSchema } from "../tautulli-schemas.js";
+import {
+	tautulliHistoryDataSchema,
+	tautulliLibraryMediaInfoSchema,
+	tautulliMetadataSchema,
+} from "../tautulli-schemas.js";
 
 describe("tautulliMetadataSchema", () => {
 	it("parses a full metadata response with all fields present", () => {
@@ -16,12 +20,14 @@ describe("tautulliMetadataSchema", () => {
 			media_type: "movie",
 			title: "The Matrix",
 			rating_key: "118702",
+			section_id: 7,
 		};
 		const result = tautulliMetadataSchema.parse(input);
 		expect(result.guids).toEqual(["tmdb://12345", "imdb://tt1234567"]);
 		expect(result.media_type).toBe("movie");
 		expect(result.title).toBe("The Matrix");
 		expect(result.rating_key).toBe("118702");
+		expect(result.section_id).toBe("7");
 	});
 
 	it("accepts an empty {} response without throwing (#497 regression)", () => {
@@ -89,5 +95,71 @@ describe("tautulliMetadataSchema", () => {
 		expect(result.guids).toEqual([]);
 		expect(result.media_type).toBe("unknown");
 		expect(result.title).toBe("");
+	});
+});
+
+describe("tautulliLibraryMediaInfoSchema", () => {
+	it("normalizes the exact catalog fields without retaining titles or payload details", () => {
+		const parsed = tautulliLibraryMediaInfoSchema.parse({
+			data: [
+				{
+					section_id: 2,
+					rating_key: 100,
+					media_type: "movie",
+					play_count: "3",
+					last_played: "1777000000",
+					title: "Sensitive",
+				},
+			],
+			recordsFiltered: 1,
+			recordsTotal: 1,
+			last_refreshed: 1_777_000_001,
+		});
+		expect(parsed.data[0]).toMatchObject({
+			section_id: "2",
+			rating_key: "100",
+			play_count: 3,
+			last_played: 1_777_000_000,
+		});
+	});
+
+	it("rejects malformed totals before collection", () => {
+		expect(() =>
+			tautulliLibraryMediaInfoSchema.parse({
+				data: [],
+				recordsFiltered: "many",
+				recordsTotal: 0,
+				last_refreshed: 1,
+			}),
+		).toThrow();
+	});
+});
+
+describe("tautulliHistoryDataSchema", () => {
+	it("normalizes the nullable and numeric fields returned by Tautulli v2.17.2", () => {
+		const parsed = tautulliHistoryDataSchema.parse({
+			data: [
+				{
+					row_id: 1,
+					rating_key: 100,
+					parent_rating_key: 0,
+					grandparent_rating_key: 0,
+					title: "Fixture",
+					grandparent_title: null,
+					media_type: "movie",
+					user: "Fixture User",
+					date: 1_777_000_000,
+					group_count: 1,
+				},
+			],
+			recordsFiltered: 1,
+			recordsTotal: 1,
+		});
+		expect(parsed.data[0]).toMatchObject({
+			rating_key: "100",
+			parent_rating_key: "0",
+			grandparent_rating_key: "0",
+			grandparent_title: "",
+		});
 	});
 });

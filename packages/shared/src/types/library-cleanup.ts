@@ -898,6 +898,8 @@ export interface CleanupExplainResult {
 		| "disabled"
 		| null;
 	retentionMode: boolean;
+	/** Bounded dependency reason when evidence is UNKNOWN/unavailable. */
+	unavailableReasonCode?: "tautulli_mapping_required";
 }
 
 export interface CleanupExplainResponse {

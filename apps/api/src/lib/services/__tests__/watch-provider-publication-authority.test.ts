@@ -125,10 +125,21 @@ function jellyfinDataClient(): JellyfinClient {
 }
 
 function tautulliDataClient(): TautulliClient {
+	let collectionStarted = false;
 	return {
 		getLibraries: vi.fn(async () => {
-			authority.events.push("collect");
-			return [{ section_id: "movies", section_type: "movie", section_name: "Movies" }];
+			if (!collectionStarted) {
+				collectionStarted = true;
+				authority.events.push("collect");
+			}
+			return [{ section_id: "movies", section_type: "movie", section_name: "Movies", count: "0" }];
+		}),
+		refreshLibraryMediaInfo: vi.fn().mockResolvedValue(undefined),
+		getLibraryMediaInfo: vi.fn().mockResolvedValue({
+			data: [],
+			recordsFiltered: 0,
+			recordsTotal: 0,
+			last_refreshed: 1_777_000_000,
 		}),
 		getHistory: vi.fn().mockResolvedValue({ data: [], recordsFiltered: 0, recordsTotal: 0 }),
 		getMetadata: vi.fn(),
@@ -181,9 +192,21 @@ function prisma(finalPredicateMatches = true) {
 			}),
 		},
 		cacheRefreshStatus: {
+			findUnique: vi.fn().mockResolvedValue(null),
 			upsert: vi.fn(async () => {
 				authority.events.push("status");
 				return {};
+			}),
+			updateMany: vi.fn(async () => {
+				authority.events.push("status");
+				return { count: 1 };
+			}),
+		},
+		tautulliGenerationObservation: {
+			deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+			createMany: vi.fn(async ({ data }: { data: unknown[] }) => {
+				rows.push(...data);
+				return { count: data.length };
 			}),
 		},
 	};
@@ -343,6 +366,16 @@ describe("watch-provider publication authority", () => {
 				create: expect.objectContaining({ connectionGeneration: 4, identityGeneration: 9 }),
 			}),
 		);
+		expect(authority.events).toEqual([
+			"predicate",
+			"status",
+			"identity",
+			"collect",
+			"identity",
+			"predicate",
+			"status",
+			"delete",
+		]);
 	});
 
 	it("rejects disabled Tautulli publication before identity reads or collection", async () => {
@@ -370,7 +403,16 @@ describe("watch-provider publication authority", () => {
 		});
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
-		expect(authority.events).toEqual(["identity", "collect", "identity", "predicate"]);
+		expect(authority.events).toEqual([
+			"predicate",
+			"status",
+			"identity",
+			"collect",
+			"identity",
+			"predicate",
+			"predicate",
+			"status",
+		]);
 		expect(state.tx.tautulliCache.deleteMany).not.toHaveBeenCalled();
 	});
 

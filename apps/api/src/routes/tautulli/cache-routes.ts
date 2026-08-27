@@ -12,8 +12,10 @@ import {
 	createOwnedTautulliPublicationSnapshot,
 	refreshTautulliCache,
 } from "../../lib/tautulli/tautulli-cache-refresher.js";
+import { loadPersistedTautulliGeneration } from "../../lib/tautulli/tautulli-evidence-repository.js";
+import { decodeTautulliGenerationMetadata } from "../../lib/tautulli/tautulli-generation-metadata.js";
 import { requireTautulliClient } from "../../lib/tautulli/tautulli-helpers.js";
-import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { projectTautulliCacheStatus } from "../../lib/tautulli/tautulli-status.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceParams = z.object({
@@ -34,12 +36,41 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 		// Verify ownership
 		await requireTautulliClient(app, userId, instanceId);
 
-		const count = await app.prisma.tautulliCache.count({ where: { instanceId } });
+		const [count, status] = await Promise.all([
+			app.prisma.tautulliCache.count({ where: { instanceId } }),
+			app.prisma.cacheRefreshStatus.findUnique({
+				where: { instanceId_cacheType: { instanceId, cacheType: "tautulli" } },
+				select: {
+					lastResult: true,
+					lastRefreshedAt: true,
+					lastAttemptAt: true,
+					lastAttemptResult: true,
+					lastAttemptErrorMessage: true,
+					lastErrorMessage: true,
+					generationId: true,
+					generationMetadata: true,
+					itemCount: true,
+					connectionGeneration: true,
+					identityGeneration: true,
+				},
+			}),
+		]);
+
+		const decoded = decodeTautulliGenerationMetadata(status?.generationMetadata);
+		const persisted =
+			status && decoded.ok
+				? await loadPersistedTautulliGeneration(app.prisma, {
+						instanceId,
+						generationId: decoded.metadata.generationId,
+						connectionGeneration: decoded.metadata.connectionGeneration,
+						identityGeneration: decoded.metadata.identityGeneration,
+						expected: decoded.metadata.completeness,
+					})
+				: null;
 
 		return reply.send({
 			instanceId,
-			cachedItems: count,
-			hasCacheData: count > 0,
+			...projectTautulliCacheStatus(status, count, persisted?.ok === true),
 		});
 	});
 
@@ -65,17 +96,6 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 					instance: publicationInstance,
 					log: request.log,
 				});
-				if ((!result.complete || !result.completedAt) && !result.superseded) {
-					await recordWatchProviderCacheRefreshFailure(
-						app.prisma,
-						"tautulli",
-						result.errorMessages.slice(0, 3).join("; ").slice(0, 200) ||
-							"Tautulli refresh did not publish a complete generation",
-						publicationInstance,
-						request.log,
-					);
-				}
-
 				return reply.send({
 					success: result.complete && Boolean(result.completedAt),
 					upserted: result.upserted,
@@ -85,7 +105,7 @@ export async function registerCacheRoutes(app: FastifyInstance, _opts: FastifyPl
 				await recordWatchProviderCacheRefreshFailure(
 					app.prisma,
 					"tautulli",
-					getErrorMessage(err, "Unknown error"),
+					"unknown_failure",
 					publicationInstance,
 					request.log,
 				);

@@ -667,6 +667,32 @@ describe("explainItemAgainstRules", () => {
 			retentionMode: true,
 		});
 	});
+
+	it("explains Tautulli cleanup evidence as mapping-unavailable rather than false", () => {
+		const rules = [
+			makeRule({
+				id: "tautulli-cleanup",
+				name: "Remove unwatched movies",
+				ruleType: "tautulli_watch_count",
+				parameters: JSON.stringify({ operator: "less_than", count: 1 }),
+			}),
+		] as LibraryCleanupRule[];
+		const results = explainItemAgainstRules(
+			makeCacheItem(),
+			rules,
+			"RADARR",
+			baseCtx(),
+			undefined,
+			new Set(["tautulli"]),
+		);
+
+		expect(results[0]).toMatchObject({
+			matched: false,
+			reason: null,
+			filteredBy: "evidence_unavailable",
+			unavailableReasonCode: "tautulli_mapping_required",
+		});
+	});
 });
 
 describe("buildEvalContextWithHealth", () => {
