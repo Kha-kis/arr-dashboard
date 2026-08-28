@@ -129,6 +129,9 @@ describe("Tautulli cache authority", () => {
 
 	it("scopes every status and row query through the owned instance relation", async () => {
 		const prisma = {
+			$transaction: vi.fn(
+				async (operation: (tx: unknown) => Promise<unknown>) => await operation(prisma),
+			),
 			serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
 			cacheRefreshStatus: { findFirst: vi.fn().mockResolvedValue(status) },
 			tautulliCache: { count: vi.fn().mockResolvedValueOnce(2).mockResolvedValueOnce(2) },
@@ -146,20 +149,139 @@ describe("Tautulli cache authority", () => {
 				where: expect.objectContaining({ id: "tautulli-1", userId: "user-1" }),
 			}),
 		);
-		expect(prisma.cacheRefreshStatus.findFirst).toHaveBeenCalledWith({
-			where: {
-				instanceId: "tautulli-1",
-				cacheType: "tautulli",
-				instance: { userId: "user-1" },
-			},
-		});
+		expect(prisma.cacheRefreshStatus.findFirst).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					instanceId: "tautulli-1",
+					cacheType: "tautulli",
+					instance: { userId: "user-1" },
+				},
+				select: expect.objectContaining({
+					connectionGeneration: true,
+					identityGeneration: true,
+					lastAttemptResult: true,
+				}),
+			}),
+		);
 		for (const call of prisma.tautulliCache.count.mock.calls) {
 			expect(call[0].where.instance).toEqual({ userId: "user-1" });
 		}
+		expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+			isolationLevel: "Serializable",
+			timeout: expect.any(Number),
+		});
+	});
+
+	it("does not combine a pre-claim status with reads after a new attempt claim", async () => {
+		let durableStatus = { ...status };
+		const postClaimSnapshot = {
+			serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
+			cacheRefreshStatus: {
+				findFirst: vi.fn(async () => durableStatus),
+			},
+			tautulliCache: { count: vi.fn().mockResolvedValue(2) },
+		};
+		const prisma = {
+			$transaction: vi.fn(async (operation: (tx: typeof postClaimSnapshot) => Promise<unknown>) => {
+				durableStatus = { ...status, lastAttemptResult: "in_progress:new-token" };
+				return await operation(postClaimSnapshot);
+			}),
+			serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
+			cacheRefreshStatus: {
+				findFirst: vi.fn(async () => {
+					const observed = durableStatus;
+					durableStatus = { ...status, lastAttemptResult: "in_progress:new-token" };
+					return observed;
+				}),
+			},
+			tautulliCache: { count: vi.fn().mockResolvedValue(2) },
+		};
+
+		await expect(
+			readOwnedTautulliCacheAuthority(prisma as never, {
+				userId: "user-1",
+				instanceId: "tautulli-1",
+				now,
+			}),
+		).resolves.toMatchObject({
+			available: false,
+			state: "in_progress",
+			reasonCodes: ["refresh_in_progress"],
+			cachedItems: null,
+		});
+		expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+			isolationLevel: "Serializable",
+			timeout: expect.any(Number),
+		});
+		expect(prisma.serviceInstance.findFirst).not.toHaveBeenCalled();
+		expect(prisma.cacheRefreshStatus.findFirst).not.toHaveBeenCalled();
+		expect(prisma.tautulliCache.count).not.toHaveBeenCalled();
+	});
+
+	it("retries the complete authority snapshot after a transaction conflict", async () => {
+		const postClaimSnapshot = {
+			serviceInstance: { findFirst: vi.fn().mockResolvedValue(instance) },
+			cacheRefreshStatus: {
+				findFirst: vi.fn().mockResolvedValue({
+					...status,
+					lastAttemptResult: "in_progress:new-token",
+				}),
+			},
+			tautulliCache: { count: vi.fn().mockResolvedValue(2) },
+		};
+		const transaction = vi
+			.fn()
+			.mockRejectedValueOnce(Object.assign(new Error("transaction conflict"), { code: "P2034" }))
+			.mockImplementationOnce(
+				async (operation: (tx: typeof postClaimSnapshot) => Promise<unknown>) =>
+					await operation(postClaimSnapshot),
+			);
+
+		await expect(
+			readOwnedTautulliCacheAuthority({ $transaction: transaction } as never, {
+				userId: "user-1",
+				instanceId: "tautulli-1",
+				now,
+			}),
+		).resolves.toMatchObject({
+			available: false,
+			state: "in_progress",
+			reasonCodes: ["refresh_in_progress"],
+			cachedItems: null,
+		});
+		expect(transaction).toHaveBeenCalledTimes(2);
+		expect(postClaimSnapshot.serviceInstance.findFirst).toHaveBeenCalledOnce();
+	});
+
+	it("returns bounded unavailable after exhausting authority snapshot retries", async () => {
+		const transaction = vi.fn().mockRejectedValue(
+			Object.assign(new Error("database is locked: secret-provider-path"), {
+				code: "SQLITE_BUSY",
+			}),
+		);
+
+		const result = await readOwnedTautulliCacheAuthority({ $transaction: transaction } as never, {
+			userId: "user-1",
+			instanceId: "tautulli-1",
+			now,
+		});
+
+		expect(result).toEqual({
+			available: false,
+			state: "failed_unavailable",
+			reasonCodes: ["unknown_failure"],
+			cachedItems: null,
+			lastRefreshedAt: null,
+		});
+		expect(JSON.stringify(result)).not.toContain("secret-provider-path");
+		expect(transaction).toHaveBeenCalledTimes(3);
 	});
 
 	it("makes a foreign instance indistinguishable from a missing instance", async () => {
 		const prisma = {
+			$transaction: vi.fn(
+				async (operation: (tx: unknown) => Promise<unknown>) => await operation(prisma),
+			),
 			serviceInstance: { findFirst: vi.fn().mockResolvedValue(null) },
 			cacheRefreshStatus: { findFirst: vi.fn() },
 			tautulliCache: { count: vi.fn() },

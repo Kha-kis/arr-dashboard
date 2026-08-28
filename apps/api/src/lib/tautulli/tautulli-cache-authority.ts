@@ -4,9 +4,9 @@ export const TAUTULLI_CACHE_FRESHNESS_MS = 12 * 60 * 60 * 1000;
 const TAUTULLI_SELECTED_CACHE_PAGE_SIZE = 100;
 const TAUTULLI_SELECTED_CACHE_MAX_ROWS = 200;
 const TAUTULLI_SELECTED_CACHE_MAX_PAGES = 2;
-const TAUTULLI_SELECTED_CACHE_TRANSACTION_ATTEMPTS = 3;
-const TAUTULLI_SELECTED_CACHE_TRANSACTION_TIMEOUT_MS = 10_000;
-const TAUTULLI_SELECTED_CACHE_RETRY_DELAY_MS = 15;
+const TAUTULLI_CACHE_READ_TRANSACTION_ATTEMPTS = 3;
+const TAUTULLI_CACHE_READ_TRANSACTION_TIMEOUT_MS = 10_000;
+const TAUTULLI_CACHE_READ_RETRY_DELAY_MS = 15;
 
 export type TautulliCacheAuthorityReason =
 	| "no_publication"
@@ -171,6 +171,17 @@ export function evaluateTautulliCacheAuthority(
 }
 
 export async function readOwnedTautulliCacheAuthority(
+	prisma: Pick<PrismaClient, "$transaction">,
+	input: { userId: string; instanceId: string; now?: Date },
+): Promise<TautulliCacheAuthorityProjection | null> {
+	return await runBoundedSerializableTautulliRead(
+		prisma,
+		async (tx) => await readOwnedTautulliCacheAuthoritySnapshot(tx, input),
+		() => failed(["unknown_failure"], null),
+	);
+}
+
+async function readOwnedTautulliCacheAuthoritySnapshot(
 	prisma: TautulliAuthorityReader,
 	input: { userId: string; instanceId: string; now?: Date },
 ): Promise<TautulliCacheAuthorityProjection | null> {
@@ -192,6 +203,17 @@ export async function readOwnedTautulliCacheAuthority(
 			instanceId: input.instanceId,
 			cacheType: "tautulli",
 			instance: { userId: input.userId },
+		},
+		select: {
+			lastRefreshedAt: true,
+			lastResult: true,
+			lastErrorMessage: true,
+			itemCount: true,
+			lastAttemptAt: true,
+			lastAttemptResult: true,
+			lastAttemptErrorMessage: true,
+			connectionGeneration: true,
+			identityGeneration: true,
 		},
 	});
 	const baseWhere = {
@@ -242,32 +264,15 @@ export async function readUserSelectedTautulliCache(
 		return unavailableSelectedTautulliCache();
 	}
 
-	for (let attempt = 1; attempt <= TAUTULLI_SELECTED_CACHE_TRANSACTION_ATTEMPTS; attempt++) {
-		try {
-			return await prisma.$transaction(
-				async (tx) =>
-					await readUserSelectedTautulliCacheSnapshot(tx, {
-						...input,
-						targets,
-					}),
-				{
-					isolationLevel: "Serializable",
-					timeout: TAUTULLI_SELECTED_CACHE_TRANSACTION_TIMEOUT_MS,
-				},
-			);
-		} catch (error) {
-			if (
-				attempt === TAUTULLI_SELECTED_CACHE_TRANSACTION_ATTEMPTS ||
-				!isRetryableTautulliReadTransactionError(error)
-			) {
-				return unavailableSelectedTautulliCache();
-			}
-			await new Promise<void>((resolve) =>
-				setTimeout(resolve, attempt * TAUTULLI_SELECTED_CACHE_RETRY_DELAY_MS),
-			);
-		}
-	}
-	return unavailableSelectedTautulliCache();
+	return await runBoundedSerializableTautulliRead(
+		prisma,
+		async (tx) =>
+			await readUserSelectedTautulliCacheSnapshot(tx, {
+				...input,
+				targets,
+			}),
+		unavailableSelectedTautulliCache,
+	);
 }
 
 async function readUserSelectedTautulliCacheSnapshot(
@@ -298,7 +303,7 @@ async function readUserSelectedTautulliCacheSnapshot(
 		};
 	}
 	const instance = instances[0]!;
-	const authority = await readOwnedTautulliCacheAuthority(prisma, {
+	const authority = await readOwnedTautulliCacheAuthoritySnapshot(prisma, {
 		userId: input.userId,
 		instanceId: instance.id,
 		now: input.now,
@@ -364,6 +369,32 @@ function unavailableSelectedTautulliCache(): TautulliSelectedCacheResult {
 		reasonCodes: ["unknown_failure"],
 		rows: [],
 	};
+}
+
+async function runBoundedSerializableTautulliRead<T>(
+	prisma: Pick<PrismaClient, "$transaction">,
+	operation: (tx: TautulliAuthorityReader) => Promise<T>,
+	unavailable: () => T,
+): Promise<T> {
+	for (let attempt = 1; attempt <= TAUTULLI_CACHE_READ_TRANSACTION_ATTEMPTS; attempt++) {
+		try {
+			return await prisma.$transaction(async (tx) => await operation(tx), {
+				isolationLevel: "Serializable",
+				timeout: TAUTULLI_CACHE_READ_TRANSACTION_TIMEOUT_MS,
+			});
+		} catch (error) {
+			if (
+				attempt === TAUTULLI_CACHE_READ_TRANSACTION_ATTEMPTS ||
+				!isRetryableTautulliReadTransactionError(error)
+			) {
+				return unavailable();
+			}
+			await new Promise<void>((resolve) =>
+				setTimeout(resolve, attempt * TAUTULLI_CACHE_READ_RETRY_DELAY_MS),
+			);
+		}
+	}
+	return unavailable();
 }
 
 function isRetryableTautulliReadTransactionError(error: unknown): boolean {

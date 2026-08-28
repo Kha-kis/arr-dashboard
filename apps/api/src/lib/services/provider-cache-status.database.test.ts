@@ -238,11 +238,123 @@ async function exerciseConcurrentTautulliSnapshot(
 	expect(await writer.tautulliCache.count({ where: { instanceId: tautulliAuthority.id } })).toBe(0);
 }
 
+async function exerciseConcurrentTautulliAuthoritySnapshot(
+	client: PrismaClient,
+	writer: PrismaClient,
+): Promise<void> {
+	const publishedAt = new Date("2026-08-28T12:00:00.000Z");
+	const snapshotAuthority: ProviderPublicationAuthority = {
+		...tautulliAuthority,
+		id: "tautulli-authority-snapshot",
+		userId: "tautulli-authority-user",
+	};
+	await client.user.create({
+		data: { id: snapshotAuthority.userId, username: "tautulli-authority", hashedPassword: "hash" },
+	});
+	await client.serviceInstance.create({
+		data: {
+			...snapshotAuthority,
+			label: "Tautulli authority",
+			identityKind: "TAUTULLI_PMS_IDENTIFIER",
+			identityVerifiedAt: publishedAt,
+		},
+	});
+	await client.cacheRefreshStatus.create({
+		data: {
+			instanceId: snapshotAuthority.id,
+			cacheType: "tautulli",
+			lastRefreshedAt: publishedAt,
+			lastResult: "success",
+			lastErrorMessage: null,
+			itemCount: 1,
+			lastAttemptAt: publishedAt,
+			lastAttemptResult: "success",
+			lastAttemptErrorMessage: null,
+			connectionGeneration: snapshotAuthority.connectionGeneration,
+			identityGeneration: snapshotAuthority.identityGeneration,
+		},
+	});
+	await client.tautulliCache.create({
+		data: {
+			id: "tautulli-authority-row",
+			instanceId: snapshotAuthority.id,
+			tmdbId: 84,
+			mediaType: "movie",
+			lastWatchedAt: publishedAt,
+			watchCount: 4,
+			watchedByUsers: "[]",
+			connectionGeneration: snapshotAuthority.connectionGeneration,
+			identityGeneration: snapshotAuthority.identityGeneration,
+		},
+	});
+
+	let statusReadReached!: () => void;
+	const atStatusRead = new Promise<void>((resolve) => {
+		statusReadReached = resolve;
+	});
+	let releaseStatusRead!: () => void;
+	const statusReadRelease = new Promise<void>((resolve) => {
+		releaseStatusRead = resolve;
+	});
+	const reader = client.$extends({
+		query: {
+			cacheRefreshStatus: {
+				async findFirst({ args, query }) {
+					const result = await query(args);
+					statusReadReached();
+					await statusReadRelease;
+					return result;
+				},
+			},
+		},
+	});
+
+	const read = readOwnedTautulliCacheAuthority(reader as never, {
+		userId: snapshotAuthority.userId,
+		instanceId: snapshotAuthority.id,
+		now: publishedAt,
+	});
+	await atStatusRead;
+	const claim = beginProviderCacheRefreshAttempt(writer, "tautulli", snapshotAuthority);
+	releaseStatusRead();
+
+	const [result, attempt] = await Promise.all([read, claim]);
+	expect(attempt).not.toBeNull();
+	expect(result).not.toBeNull();
+	expect(result?.available && result.cachedItems === 0).toBe(false);
+	if (result?.available) {
+		expect(result).toMatchObject({
+			state: "healthy_complete",
+			reasonCodes: [],
+			cachedItems: 1,
+		});
+	} else {
+		expect(result?.cachedItems).toBeNull();
+		expect(result?.reasonCodes.length).toBeGreaterThan(0);
+	}
+	await expect(
+		writer.cacheRefreshStatus.findUniqueOrThrow({
+			where: {
+				instanceId_cacheType: {
+					instanceId: snapshotAuthority.id,
+					cacheType: "tautulli",
+				},
+			},
+		}),
+	).resolves.toMatchObject({ lastAttemptResult: expect.stringMatching(/^in_progress:/) });
+}
+
 describe("provider cache status SQLite takeover contract", () => {
 	it("serializes a lifecycle clear at the Tautulli validation-to-row-read boundary", async () => {
 		const client = await createDatabase();
 		const writer = await createDatabasePeer(client);
 		await exerciseConcurrentTautulliSnapshot(client, writer);
+	}, 30_000);
+
+	it("serializes an attempt claim at the Tautulli status-to-count boundary", async () => {
+		const client = await createDatabase();
+		const writer = await createDatabasePeer(client);
+		await exerciseConcurrentTautulliAuthoritySnapshot(client, writer);
 	}, 30_000);
 
 	it("keeps overlap A unavailable, publishes B, and prevents A from finishing over B", async () => {
@@ -613,6 +725,27 @@ describe("provider cache status PostgreSQL Serializable snapshot contract", () =
 			const writer = await createTestPgClient(connectionString);
 			try {
 				await exerciseConcurrentTautulliSnapshot(reader.prisma, writer.prisma);
+			} finally {
+				await writer.cleanup();
+				await reader.cleanup();
+			}
+		},
+		30_000,
+	);
+
+	it.runIf(Boolean(process.env.TAUTULLI_AUTHORITY_POSTGRES_URL))(
+		"serializes an attempt claim without a mixed authority projection",
+		async () => {
+			const connectionString = process.env.TAUTULLI_AUTHORITY_POSTGRES_URL!;
+			if (new URL(connectionString).pathname !== "/tautulli_authority_test") {
+				throw new Error(
+					"TAUTULLI_AUTHORITY_POSTGRES_URL must target the disposable tautulli_authority_test database",
+				);
+			}
+			const reader = await createTestPgClient(connectionString);
+			const writer = await createTestPgClient(connectionString);
+			try {
+				await exerciseConcurrentTautulliAuthoritySnapshot(reader.prisma, writer.prisma);
 			} finally {
 				await writer.cleanup();
 				await reader.cleanup();
